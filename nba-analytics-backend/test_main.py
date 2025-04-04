@@ -87,7 +87,7 @@ def test_fetch_data_endpoint_bad_request():
 
 def test_fetch_player_career_success():
     """Test fetching player career stats successfully."""
-    payload = {"target": "player_career_stats", "params": {"player_name": "Kevin Durant"}}
+    payload = {"target": "player_career_stats", "params": {"player_name": "Kevin Durant"}} # Test default per_mode36
     response = client.post("/fetch_data", json=payload)
     # Restore assertions
     assert response.status_code == 200
@@ -95,21 +95,21 @@ def test_fetch_player_career_success():
     assert "player_name" in data and data["player_name"] == "Kevin Durant"
     assert "season_totals_regular_season" in data and isinstance(data["season_totals_regular_season"], list)
     assert "career_totals_regular_season" in data and isinstance(data["career_totals_regular_season"], dict)
-    assert data.get("per_mode") == "PerGame" # Default
+    assert data.get("per_mode_requested") == "PerGame" # Check the requested mode key
 
 def test_fetch_player_career_totals_mode():
     """Test fetching player career stats with Totals per_mode."""
-    payload = {"target": "player_career_stats", "params": {"player_name": "Kevin Durant", "per_mode": "Totals"}}
+    payload = {"target": "player_career_stats", "params": {"player_name": "Kevin Durant", "per_mode36": "Totals"}} # Use per_mode36
     response = client.post("/fetch_data", json=payload)
     # Restore assertions
     assert response.status_code == 200
     data = response.json()
-    assert data.get("per_mode") == "Totals"
+    assert data.get("per_mode_requested") == "Totals" # Check the requested mode key
     assert "season_totals_regular_season" in data
 
 def test_fetch_player_career_not_found():
     """Test fetching career stats for a non-existent player."""
-    payload = {"target": "player_career_stats", "params": {"player_name": "Non Existent Player XYZ"}}
+    payload = {"target": "player_career_stats", "params": {"player_name": "Non Existent Player XYZ"}} # Test default per_mode36
     response = client.post("/fetch_data", json=payload)
     # Restore assertions - Expect 404
     assert response.status_code == 404
@@ -117,12 +117,15 @@ def test_fetch_player_career_not_found():
 
 def test_fetch_player_career_invalid_per_mode():
     """Test fetching career stats with an invalid per_mode."""
-    payload = {"target": "player_career_stats", "params": {"player_name": "Kevin Durant", "per_mode": "InvalidMode"}}
+    payload = {"target": "player_career_stats", "params": {"player_name": "Kevin Durant", "per_mode36": "InvalidMode"}} # Use per_mode36
     response = client.post("/fetch_data", json=payload)
     # Restore assertions - Expect 200 as tool defaults invalid mode
     assert response.status_code == 200
     data = response.json()
-    assert data.get("per_mode") == "PerGame" # Check it defaulted correctly
+    # Check that the *requested* mode was invalid but the *retrieved* mode defaulted
+    assert data.get("per_mode_requested") == "InvalidMode" # Check the original invalid requested mode
+    assert data.get("data_retrieved_mode") == "Default (PerMode parameter ignored)" # Verify default was used internally
+    assert data.get("data_retrieved_mode") == "Default (PerMode parameter ignored)" # Match exact string from tool
 
 # Removed async decorator
 def test_normalize_data_endpoint(): # Remove async
