@@ -2,7 +2,7 @@
 
 ## Current Task
 
-Initialize the backend project structure using the Agno framework.
+Define initial Agno agents (`DataAggregatorAgent`, `DataNormalizerAgent`, `AnalysisAgent`) and outline a basic workflow for data processing in `nba-analytics-backend/agents.py`.
 
 ## Recent Changes
 
@@ -12,12 +12,15 @@ Initialize the backend project structure using the Agno framework.
 *   [2025-04-04] Created Next.js frontend project (`nba-analytics-frontend`).
 *   [2025-04-04] Initialized `shadcn/ui` in the frontend project.
 *   [2025-04-04] Added `button` component via `shadcn/ui` to verify frontend integration.
-*   **[2025-04-04] Pivoted focus to backend setup based on user feedback.**
+*   [2025-04-04] Pivoted focus to backend setup based on user feedback.
+*   [2025-04-04] Created backend directory, venv, installed dependencies, created initial files (`main.py`, `agents.py`, `.env`, `.gitignore`, `requirements.txt`, `app.py`).
+*   [2025-04-04] Defined placeholder agents and FastAPI endpoints. Verified agent initialization via `app.py`.
+*   [2025-04-04] Committed backend setup changes (hash `44fd5ee546f299a880ef638787a3e80475b947e0`).
 
 ## Next Steps
 
-1.  **Read Agno Docs:** Review `.clinerules/memory-bank/framework_docs/agno_summary.md`.
-2.  **Plan Agno Setup:** Determine commands and structure for a new Agno project (e.g., `nba-analytics-backend`).
-3.  **Execute Agno Init:** Run the Agno initialization command.
-4.  **Define Initial Agents/Workflows:** Based on `productContext.md`, outline initial backend agents (e.g., data aggregation agent, analysis agent).
-5.  **Update Documentation:** Update relevant Memory Bank and `cline_docs` files (`techContext.md`, `techStack.md`, `codebaseSummary.md`, `progress.md`, `projectRoadmap.md`, `currentTask.md`).
+1.  **Refine Agent Definitions:** Flesh out the agent definitions in `nba-analytics-backend/agents.py` based on `productContext.md`. Add necessary tools (placeholders for now, e.g., HTTP tool for aggregator) and refine instructions.
+2.  **Outline Workflow:** Add comments or structure in `agents.py` (or a new `workflows.py`) to show the intended interaction flow (e.g., Aggregator -> Normalizer -> Analyzer).
+3.  **Refine FastAPI Endpoints:** Update `main.py` endpoints to better reflect how they will trigger agents/workflows.
+4.  **Update System Patterns:** Document the initial agent/workflow design in `systemPatterns.md`.
+5.  **Update Progress:** Update `progress.md`, `projectRoadmap.md`, and `currentTask.md`.

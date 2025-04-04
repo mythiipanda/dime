@@ -16,30 +16,36 @@
 
 *   **Project Initialization:** Standard Python project setup (`mkdir`, `python -m venv .venv`, `pip install ...`). No specific Agno CLI command for project scaffolding identified.
 *   **Core Components:**
-    *   **Agents (`agents.py`):** Define individual agents (`agno.agent.Agent`) with specific roles, models (e.g., `agno.models.google.Gemini`), tools, instructions, and potentially memory/knowledge.
-        *   `DataAggregatorAgent`: Fetches raw data from external APIs (requires HTTP tools).
-        *   `DataNormalizerAgent`: Transforms raw data into a standard schema.
-        *   `AnalysisAgent`: Interprets normalized data using an LLM (Gemini).
-    *   **API Server (`main.py`):** Uses FastAPI to expose endpoints for interacting with agents or workflows.
-    *   **Workflows (Planned):** Define stateful, multi-agent processes using Python classes inheriting from `agno.workflow.Workflow` to orchestrate agent interactions (e.g., Fetch -> Normalize -> Analyze).
+    *   **Agents (`agents.py`):** Defines `DataAggregatorAgent`, `AnalysisAgent`, `DataNormalizerAgent`.
+        *   `DataAggregatorAgent`: Uses Gemini. Equipped with tools (`get_player_info`, `get_player_gamelog`, `get_player_career_stats`, `get_team_info_and_roster`, `find_games`) imported from `tools.py`. Instructions guide tool selection. Returns wrapped JSON.
+        *   `AnalysisAgent`: Uses Gemini. Also equipped with data tools. Instructions updated to handle wrapped JSON input from `DataAggregatorAgent`.
+        *   `DataNormalizerAgent`: Placeholder definition (currently commented out).
+     *   **Teams (`teams.py`):**
+         *   `NBAnalysisTeam`: Lead agent coordinating `DataAggregatorAgent` and `AnalysisAgent`. Instructions define workflow, including sequential execution for comparisons to manage context size.
+     *   **Tools (`tools.py`, `api_tools/`):**
+         *   `tools.py`: Contains Agno `@tool` decorated wrappers. `find_games` signature simplified to avoid schema validation errors.
+         *   `api_tools/player_tools.py`, `api_tools/team_tools.py`, `api_tools/game_tools.py`: Contain core logic using `nba-api`. Return JSON strings. `game_tools.py` limits `find_games` results. Helpers included.
+     *   **API Server (`main.py`):** Uses FastAPI. `/fetch_data` now calls agent but relies on history/extraction helper (`extract_json_string`) due to agent response issues. `/analyze` uses agent. `/normalize_data` commented out.
+     *   **Testing (`test_main.py`, `app.py`):** `pytest` tests API endpoints (some fail due to agent/async issues). `app.py` tests `NBAnalysisTeam` directly.
 *   **Storage:** Uses `agno.storage.agent.SqliteAgentStorage` (or other `AgentStorage` subclasses) for persisting agent session data locally during development.
-*   **Configuration:** Uses `.env` file for managing API keys and other secrets (`python-dotenv`).
+*   **Configuration:** Uses `.env` file and `python-dotenv` for managing API keys (e.g., `GOOGLE_API_KEY`) and other secrets.
 *   **Dependencies:** Managed via `pip` and listed in `requirements.txt`.
+*   **Testing:** Uses `pytest` and `fastapi.testclient.TestClient` for synchronous testing of FastAPI endpoints (`test_main.py`).
 
-## Data Handling (Revised Plan)
+## Data Handling
 
 *   **Data Flow:** Frontend -> Backend API (FastAPI) -> Agno Workflow/Agents -> External APIs -> Agents -> Backend API -> Frontend.
-*   **Aggregation:** `DataAggregatorAgent` fetches data from NBA APIs.
-*   **Normalization:** `DataNormalizerAgent` transforms data into a consistent project schema.
-*   **Caching:** Will be implemented within the backend, potentially at the Agno agent/tool level or using FastAPI utilities, to manage API rate limits and improve performance.
+*   **Aggregation:** `DataAggregatorAgent` (coordinated by `NBAnalysisTeam`) uses tools (`tools.py` wrappers calling `api_tools/` logic) which call `nba-api`. Supports player info, gamelogs, career stats (default mode only), team info/roster, finding games (limited results, basic filters).
+*   **Normalization:** `DataNormalizerAgent` defined but commented out.
+*   **Caching:** Not yet implemented. Planned for backend.
 
 ## AI Integration (Planned)
 
-*   **Backend Processing:** The `AnalysisAgent` (using Gemini via `agno.models.google.Gemini`) will run on the server, receiving normalized data and generating insights.
-*   **Prompt Engineering:** Focus on designing effective prompts for the `AnalysisAgent` to interpret statistical data and generate meaningful text summaries or predictions based on user requests.
+*   **Backend Processing:** `AnalysisAgent` (coordinated by `NBAnalysisTeam`) uses Gemini. Receives data (potentially wrapped JSON) from `DataAggregatorAgent` and performs analysis based on the original user query. Instructions updated for JSON extraction.
+*   **Prompt Engineering:** Instructions refined for `DataAggregatorAgent` (tool selection), `AnalysisAgent` (JSON extraction), and `NBAnalysisTeam` (workflow coordination, sequential comparisons).
 
 ## Code Structure
 
 *   **Monorepo Structure (Implicit):** Separate directories for frontend (`nba-analytics-frontend`) and backend (`nba-analytics-backend`).
 *   **Frontend:** Standard Next.js App Router structure.
-*   **Backend:** Standard Python project structure with `main.py`, `agents.py`, `.venv`, `requirements.txt`.
+*   **Backend:** Modular structure: `main.py` (API), `agents.py` (Individual Agents), `teams.py` (Team Coordinator), `tools.py` (Tool Wrappers), `api_tools/` (API Logic), `app.py` (Direct Agent Test Client). Uses `.venv`, `requirements.txt`, `.env`, `pytest.ini`.

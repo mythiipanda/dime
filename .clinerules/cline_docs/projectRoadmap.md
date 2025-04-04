@@ -11,10 +11,10 @@
 
 *   **Phase 1: Foundation Setup (Current)**
     *   [X] Initial Project Setup (Next.js + shadcn/ui)
-    *   [ ] Set up basic Agno backend structure
+    *   [~] Set up basic Agno backend structure (Agents defined, API endpoints basic)
     *   [ ] Integrate free NBA data APIs (mock data first, via backend)
     *   [ ] Build basic caching layer (backend)
-    *   [ ] Normalize data formats (backend)
+    *   [ ] Normalize data formats (backend - `DataNormalizerAgent` defined but commented out).
     *   [ ] Prototype core UI components (Court Map, Comparison Matrix) (Frontend - Paused)
 *   **Phase 2: AI Analysis Layer**
     *   [ ] Design prompts for AI (e.g., Gemini)
@@ -51,5 +51,11 @@
 *   [2025-04-04] Created Next.js frontend project (`nba-analytics-frontend`).
 *   [2025-04-04] Initialized `shadcn/ui` in the frontend project.
 *   [2025-04-04] Created basic Python backend structure (`nba-analytics-backend`).
+*   [2025-04-04] Defined initial Agno agents and basic FastAPI endpoints.
+*   [2025-04-04] Configured Gemini API key for AnalysisAgent.
+*   [2025-04-04] Added initial backend tests and committed changes (d1cd90e).
+*   [2025-04-04] Refactored tools, added player gamelog/career & team info/roster tools (Commit cdbf70b).
+*   [2025-04-04] Added `find_games` tool, implemented `NBAnalysisTeam`, fixed agent response/schema issues (Commit 7ac25a49).
+*   [2025-04-04] Fixed `find_games` tool signature/API call issues, limited results, updated tests, refined JSON extraction in `main.py`, commented out normalizer agent/test (Commit 52fd1ded).
 
 *Note: Replace [YYYY-MM-DD] with actual dates.*
