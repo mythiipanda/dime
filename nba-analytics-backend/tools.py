@@ -2,17 +2,23 @@ import logging
 import json
 import time
 from agno.tools import tool
-from nba_api.stats.library.parameters import SeasonTypeAllStar, PerModeDetailed
+# Import only the necessary constants for default values, use standard types in hints
+from nba_api.stats.library.parameters import SeasonTypeAllStar, PerModeDetailed, PerMode36, LeagueID
 
 # Import logic functions from the new modules
 from api_tools.player_tools import (
     fetch_player_info_logic,
     fetch_player_gamelog_logic,
-    fetch_player_career_stats_logic
+    fetch_player_career_stats_logic,
+    _find_player_id
 )
 from api_tools.team_tools import (
     fetch_team_info_and_roster_logic,
-    CURRENT_SEASON
+    _find_team_id,
+    CURRENT_SEASON # Import the constant
+)
+from api_tools.game_tools import (
+    fetch_league_games_logic
 )
 
 logger = logging.getLogger(__name__)
@@ -20,7 +26,7 @@ logger = logging.getLogger(__name__)
 # --- Agno Tool Functions (Decorated Wrappers) ---
 
 @tool
-def get_player_info(player_name: str) -> str: # Changed return type hint to str
+def get_player_info(player_name: str) -> str:
     """
     Fetches basic player information and headline stats. Returns JSON string.
     Args: player_name (str): Full name of the player.
@@ -30,7 +36,7 @@ def get_player_info(player_name: str) -> str: # Changed return type hint to str
     return fetch_player_info_logic(player_name)
 
 @tool
-def get_player_gamelog(player_name: str, season: str, season_type: str = SeasonTypeAllStar.regular) -> str: # Changed return type hint to str
+def get_player_gamelog(player_name: str, season: str, season_type: str = SeasonTypeAllStar.regular) -> str:
     """
     Fetches the game log for a player and season. Returns JSON string.
     Args:
@@ -47,7 +53,7 @@ def get_player_gamelog(player_name: str, season: str, season_type: str = SeasonT
     return fetch_player_gamelog_logic(player_name, season, season_type)
 
 @tool
-def get_team_info_and_roster(team_identifier: str, season: str = CURRENT_SEASON) -> str: # Changed return type hint to str
+def get_team_info_and_roster(team_identifier: str, season: str = CURRENT_SEASON) -> str:
     """
     Fetches team information, ranks, roster, and coaches. Returns JSON string.
     Args:
@@ -59,72 +65,128 @@ def get_team_info_and_roster(team_identifier: str, season: str = CURRENT_SEASON)
     return fetch_team_info_and_roster_logic(team_identifier, season)
 
 @tool
-def get_player_career_stats(player_name: str, per_mode: str = PerModeDetailed.per_game) -> str: # Changed return type hint to str
+def get_player_career_stats(player_name: str, per_mode36: str = PerMode36.per_game) -> str:
     """
     Fetches player career statistics (Regular Season). Returns JSON string.
     Args:
         player_name (str): Full name of the player.
-        per_mode (str): Stat mode ('PerGame', 'Totals', etc.). Defaults to 'PerGame'.
+        per_mode36 (str): Stat mode ('PerGame', 'Totals', 'Per36', etc.). Defaults to 'PerGame'.
     Returns: str: JSON string containing career stats data or {'error': ...}.
     """
-    logger.debug(f"Tool 'get_player_career_stats' called for '{player_name}', per_mode '{per_mode}'")
-    # Corrected PerMode Validation: Check against actual values
-    valid_per_modes = [getattr(PerModeDetailed, attr) for attr in dir(PerModeDetailed) if not attr.startswith('_') and isinstance(getattr(PerModeDetailed, attr), str)]
-    if per_mode not in valid_per_modes:
-         logger.warning(f"Invalid per_mode '{per_mode}' in tool wrapper. Using default '{PerModeDetailed.per_game}'.")
-         per_mode = PerModeDetailed.per_game
-         # Don't return error here, let the logic function handle default or potentially error if needed
-    return fetch_player_career_stats_logic(player_name, per_mode)
+    logger.debug(f"Tool 'get_player_career_stats' called for '{player_name}', per_mode36 '{per_mode36}'")
+    valid_per_modes = [getattr(PerMode36, attr) for attr in dir(PerMode36) if not attr.startswith('_') and isinstance(getattr(PerMode36, attr), str)]
+    if per_mode36 not in valid_per_modes:
+         logger.warning(f"Invalid per_mode36 '{per_mode36}' in tool wrapper. Logic function will use default.")
+    return fetch_player_career_stats_logic(player_name, per_mode36)
+
+@tool
+# Simplified signature further: Removed season, season_type, league_id
+def find_games(
+    player_or_team: str = 'T',
+    player_id: int = None,
+    team_id: int = None,
+    date_from: str = None,
+    date_to: str = None
+) -> str:
+    """
+    Finds games based on Player/Team ID and optional date range. Returns JSON string.
+    You MUST provide either player_id (if player_or_team='P') or team_id (if player_or_team='T').
+    Filtering by season, season_type, league_id is temporarily disabled.
+
+    Args:
+        player_or_team (str): Search by 'P' (Player) or 'T' (Team). Defaults to 'T'.
+        player_id (int): Required if player_or_team='P'. Omit or pass None otherwise.
+        team_id (int): Required if player_or_team='T'. Omit or pass None otherwise.
+        date_from (str): Optional start date filter (MM/DD/YYYY).
+        date_to (str): Optional end date filter (MM/DD/YYYY).
+
+    Returns:
+        str: JSON string containing a list of found games or {'error': ...}.
+    """
+    logger.debug(f"Tool 'find_games' called with params: player_or_team={player_or_team}, player_id={player_id}, team_id={team_id}, date_from={date_from}, date_to={date_to}")
+    # Basic validation for required IDs
+    if player_or_team == 'P' and player_id is None:
+        return json.dumps({"error": "player_id is required when player_or_team='P'."})
+    if player_or_team == 'T' and team_id is None:
+        return json.dumps({"error": "team_id is required when player_or_team='T'."})
+
+    # Call logic function, passing None for the removed parameters
+    return fetch_league_games_logic(
+        player_or_team_abbreviation=player_or_team,
+        player_id_nullable=player_id,
+        team_id_nullable=team_id,
+        season_nullable=None, # Pass None for removed params
+        season_type_nullable=None, # Pass None
+        league_id_nullable=None, # Pass None
+        date_from_nullable=date_from,
+        date_to_nullable=date_to
+    )
 
 
 # --- Example Usage Block (for direct execution testing of logic) ---
 if __name__ == "__main__":
     # This block now tests the imported logic functions directly
-    # It helps verify the core functionality without involving the @tool decorator issues
-
+    logging.basicConfig(level=logging.DEBUG)
     print("\n--- Running Tool Logic Examples (Directly from tools.py) ---")
 
-    # --- Player Info ---
+    # ... (previous tests remain here) ...
     print("\n[Test Case 1: LeBron James Info]")
     start_time = time.time()
-    lebron_info_str = fetch_player_info_logic("LeBron James") # Returns JSON string
-    lebron_info = json.loads(lebron_info_str) # Parse JSON for assertion
+    lebron_info_str = fetch_player_info_logic("LeBron James")
+    lebron_info = json.loads(lebron_info_str)
     end_time = time.time()
     print(f"Result (took {end_time - start_time:.2f}s):")
-    print(json.dumps(lebron_info, indent=2, default=str))
+    # print(json.dumps(lebron_info, indent=2, default=str)) # Commented out for brevity
     assert 'error' not in lebron_info
 
-    # --- Player Gamelog ---
     print("\n[Test Case 5: LeBron James Game Log (2023-24)]")
     start_time = time.time()
-    lebron_log_str = fetch_player_gamelog_logic("LeBron James", "2023-24") # Returns JSON string
-    lebron_log = json.loads(lebron_log_str) # Parse JSON
+    lebron_log_str = fetch_player_gamelog_logic("LeBron James", "2023-24")
+    lebron_log = json.loads(lebron_log_str)
     end_time = time.time()
     print(f"Result (took {end_time - start_time:.2f}s):")
     if 'gamelog' in lebron_log: print(f"  Games Found: {len(lebron_log['gamelog'])}")
     else: print(json.dumps(lebron_log, indent=2, default=str))
     assert 'error' not in lebron_log
 
-    # --- Team Info & Roster ---
     print("\n[Test Case 8: Lakers Info & Roster (Default Season)]")
     start_time = time.time()
-    lakers_info_str = fetch_team_info_and_roster_logic("LAL") # Returns JSON string
-    lakers_info = json.loads(lakers_info_str) # Parse JSON
+    lakers_info_str = fetch_team_info_and_roster_logic("LAL")
+    lakers_info = json.loads(lakers_info_str)
     end_time = time.time()
     print(f"Result (took {end_time - start_time:.2f}s):")
     if 'error' not in lakers_info: print(f"  Roster Size: {len(lakers_info.get('roster', []))}")
     else: print(json.dumps(lakers_info, indent=2, default=str))
     assert 'error' not in lakers_info
 
-    # --- Player Career Stats ---
     print("\n[Test Case 11: LeBron James Career Stats (PerGame)]")
     start_time = time.time()
-    lebron_career_str = fetch_player_career_stats_logic("LeBron James", PerModeDetailed.per_game) # Returns JSON string
-    lebron_career = json.loads(lebron_career_str) # Parse JSON
+    lebron_career_str = fetch_player_career_stats_logic("LeBron James", PerMode36.per_game)
+    lebron_career = json.loads(lebron_career_str)
     end_time = time.time()
     print(f"Result (took {end_time - start_time:.2f}s):")
     if 'error' not in lebron_career: print(f"  Seasons Found: {len(lebron_career.get('season_totals_regular_season', []))}")
     else: print(json.dumps(lebron_career, indent=2, default=str))
     assert 'error' not in lebron_career
+
+    print("\n[Test Case 15: Find Lakers Games (No Filters)]")
+    try:
+        from api_tools.team_tools import _find_team_id as find_team_id_helper
+        lakers_id_test = find_team_id_helper("LAL")
+        if lakers_id_test:
+            start_time = time.time()
+            # Call logic directly without filters that were removed from tool signature
+            lakers_games_str = fetch_league_games_logic(team_id_nullable=lakers_id_test, player_or_team_abbreviation='T')
+            lakers_games = json.loads(lakers_games_str)
+            end_time = time.time()
+            print(f"Result (took {end_time - start_time:.2f}s):")
+            if 'games' in lakers_games: print(f"  Games Found: {len(lakers_games['games'])}")
+            else: print(json.dumps(lakers_games, indent=2, default=str))
+            assert 'error' not in lakers_games
+        else:
+            print("Skipping Lakers games test - could not find team ID.")
+    except ImportError:
+         print("Skipping Lakers games test - could not import helper.")
+
 
     print("\n--- Tool Logic Examples Complete ---")
