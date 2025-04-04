@@ -9,6 +9,7 @@ import os
 from dotenv import load_dotenv
 from agno.agent import Agent
 from agno.models.google import Gemini
+from tools import get_player_info, get_player_gamelog, get_team_info_and_roster, get_player_career_stats # Import new tool
 # from agno.tools. ... import ... # Import necessary tools later
 # from agno.knowledge. ... import ... # Import knowledge bases later
 from agno.storage.agent.sqlite import SqliteAgentStorage # Using SQLite for initial dev
@@ -24,7 +25,7 @@ storage = SqliteAgentStorage(table_name="agent_sessions", db_file="agno_storage.
 
 analysis_agent = Agent(
     name="NBA Analyst Agent",
-    model=Gemini(id="gemini-1.5-flash"), # Using Gemini 1.5 Flash as requested
+    model=Gemini(id="gemini-2.0-flash"), # Using Gemini 2.0 Flash as requested
     description="An AI agent specialized in analyzing NBA data (like stats, trends, comparisons) and providing clear, concise insights.",
     instructions=[
         "You receive structured NBA data (e.g., player stats, team stats, game logs).",
@@ -43,16 +44,20 @@ analysis_agent = Agent(
 
 data_aggregator_agent = Agent(
     name="NBA Data Aggregator Agent",
-    # model=None, # No LLM needed if only using tools
+    model=Gemini(id="gemini-2.0-flash"), # Assign model to potentially help tool routing/execution
     description="An agent responsible for fetching data from various NBA APIs based on requests.",
     instructions=[
-        "Receive requests for specific NBA data (e.g., player stats for player X, game log for game Y).",
-        "Identify the correct API endpoint and parameters based on the request.",
-        "Use the provided tools to make HTTP requests to the NBA APIs.",
-        "Handle potential API errors gracefully (e.g., rate limits, invalid requests).",
-        "Return the raw data obtained from the API.",
+        "Receive requests for specific NBA data.",
+        "Analyze the request to determine the data type needed (player info, player gamelog, player career stats, team info/roster).",
+        "If the request is for basic player information, use the 'get_player_info' tool with the player's full name.",
+        "If the request is for a player's game log, use the 'get_player_gamelog' tool with the player's full name, the season (e.g., '2023-24'), and optionally the season_type ('Regular Season', 'Playoffs', etc.).",
+        "If the request is for a player's career stats, use the 'get_player_career_stats' tool with the player's full name and optionally the per_mode ('PerGame', 'Totals', 'Per36', etc.).",
+        "If the request is for team information or roster, use the 'get_team_info_and_roster' tool with the team's full name or abbreviation and optionally the season.",
+        "If the request is for other data types, state that you cannot fulfill the request with current capabilities.",
+        "Handle potential errors reported by the tools gracefully.",
+        "Return the structured data dictionary obtained from the tool, or an error dictionary if applicable.",
     ],
-    tools=[], # Placeholder: Needs HTTP request tools (e.g., from agno.tools.http or custom)
+    tools=[get_player_info, get_player_gamelog, get_team_info_and_roster, get_player_career_stats], # Add the new tool
     storage=storage,
     debug_mode=True,
 )
