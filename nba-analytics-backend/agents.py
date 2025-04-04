@@ -5,18 +5,26 @@
 # - AnalysisAgent (using Gemini)
 # - Potentially a Team or Workflow orchestrating these agents
 
+import os
+from dotenv import load_dotenv
 from agno.agent import Agent
 from agno.models.google import Gemini
 # from agno.tools. ... import ... # Import necessary tools later
 # from agno.knowledge. ... import ... # Import knowledge bases later
 from agno.storage.agent.sqlite import SqliteAgentStorage # Using SQLite for initial dev
 
+# Load environment variables from .env file
+load_dotenv()
+
 # Example Placeholder (will be refined based on specific tasks)
+# Ensure GOOGLE_API_KEY is loaded before initializing Gemini
+# The Gemini model in Agno likely uses the google-generativeai library,
+# which automatically looks for the GOOGLE_API_KEY environment variable.
 storage = SqliteAgentStorage(table_name="agent_sessions", db_file="agno_storage.db") # Simple local storage for now
 
 analysis_agent = Agent(
     name="NBA Analyst Agent",
-    model=Gemini(id="gemini-2.0-flash"), #Using Gemini Flash
+    model=Gemini(id="gemini-1.5-flash"), # Using Gemini 1.5 Flash as requested
     description="An AI agent specialized in analyzing NBA data (like stats, trends, comparisons) and providing clear, concise insights.",
     instructions=[
         "You receive structured NBA data (e.g., player stats, team stats, game logs).",
@@ -35,7 +43,7 @@ analysis_agent = Agent(
 
 data_aggregator_agent = Agent(
     name="NBA Data Aggregator Agent",
-    # model=Gemini(id="gemini-1.5-flash"), # May not need a powerful model just for tool use coordination
+    # model=None, # No LLM needed if only using tools
     description="An agent responsible for fetching data from various NBA APIs based on requests.",
     instructions=[
         "Receive requests for specific NBA data (e.g., player stats for player X, game log for game Y).",
@@ -51,7 +59,7 @@ data_aggregator_agent = Agent(
 
 data_normalizer_agent = Agent(
     name="NBA Data Normalizer Agent",
-    # model=Gemini(id="gemini-1.5-flash"), # Might need a simple model if schema mapping is complex
+    # model=None, # Likely no LLM needed for schema mapping logic
     description="An agent responsible for transforming raw data from various NBA APIs into a standardized project schema.",
     instructions=[
         "Receive raw data chunks from different API sources.",
@@ -66,4 +74,4 @@ data_normalizer_agent = Agent(
     debug_mode=True,
 )
 
-print("AnalysisAgent, DataAggregatorAgent, and DataNormalizerAgent defined.")
+# print("AnalysisAgent, DataAggregatorAgent, and DataNormalizerAgent defined.") # Keep console clean
