@@ -115,29 +115,28 @@ def fetch_player_career_stats_logic(player_name: str, per_mode: str = PerModeDet
     logger.info(f"Executing fetch_player_career_stats_logic for: '{player_name}', PerMode: {per_mode}")
     if not player_name or not player_name.strip(): return json.dumps({"error": "Player name cannot be empty."})
 
-    # Corrected PerMode Validation: Check against actual values from the class
+    # Validate per_mode but don't pass it to init
     valid_per_modes = [getattr(PerModeDetailed, attr) for attr in dir(PerModeDetailed) if not attr.startswith('_') and isinstance(getattr(PerModeDetailed, attr), str)]
     if per_mode not in valid_per_modes:
         logger.warning(f"Invalid per_mode '{per_mode}'. Using default '{PerModeDetailed.per_game}'. Valid options: {valid_per_modes}")
-        # Use default instead of returning error immediately
-        per_mode = PerModeDetailed.per_game
-        # return json.dumps({"error": f"Invalid per_mode '{per_mode}'. Valid options are: {', '.join(valid_per_modes)}"}) # Removed premature error return
+        per_mode = PerModeDetailed.per_game # Use default for result dict key
 
     try:
         player_id, player_actual_name = _find_player_id(player_name)
         if player_id is None: return json.dumps({"error": f"Player '{player_name}' not found."})
 
-        logger.debug(f"Fetching playercareerstats for ID: {player_id}, PerMode: {per_mode}")
+        logger.debug(f"Fetching playercareerstats for ID: {player_id} (Ignoring per_mode in API call for now)")
         try:
-            # Corrected parameter name again (likely just 'per_mode')
+            # Initialize without per_mode parameter
             career_endpoint = playercareerstats.PlayerCareerStats(
-                player_id=player_id, per_mode=per_mode, timeout=DEFAULT_TIMEOUT
+                player_id=player_id, timeout=DEFAULT_TIMEOUT
             )
             logger.debug(f"playercareerstats API call successful for ID: {player_id}")
         except Exception as api_error:
             logger.error(f"nba_api playercareerstats failed for ID {player_id}: {api_error}", exc_info=True)
             return json.dumps({"error": f"API error fetching career stats for {player_actual_name}: {str(api_error)}"})
 
+        # Fetch default dataframes - need to investigate how nba_api returns different per_mode data
         season_totals = _process_dataframe(career_endpoint.season_totals_regular_season.get_data_frame(), single_row=False)
         career_totals = _process_dataframe(career_endpoint.career_totals_regular_season.get_data_frame(), single_row=True)
 
@@ -146,7 +145,9 @@ def fetch_player_career_stats_logic(player_name: str, per_mode: str = PerModeDet
             return json.dumps({"error": f"Failed to process career stats data from API for {player_actual_name}."})
 
         result = {
-            "player_name": player_actual_name, "player_id": player_id, "per_mode": per_mode,
+            "player_name": player_actual_name, "player_id": player_id,
+            "per_mode_requested": per_mode, # Keep requested mode for context
+            "data_retrieved_mode": "Default", # Indicate default was fetched
             "season_totals_regular_season": season_totals or [],
             "career_totals_regular_season": career_totals or {}
         }

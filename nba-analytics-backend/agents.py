@@ -48,14 +48,10 @@ data_aggregator_agent = Agent(
     description="An agent responsible for fetching data from various NBA APIs based on requests.",
     instructions=[
         "Receive requests for specific NBA data.",
-        "Analyze the request to determine the data type needed (player info, player gamelog, player career stats, team info/roster).",
-        "If the request is for basic player information, use the 'get_player_info' tool with the player's full name.",
-        "If the request is for a player's game log, use the 'get_player_gamelog' tool with the player's full name, the season (e.g., '2023-24'), and optionally the season_type ('Regular Season', 'Playoffs', etc.).",
-        "If the request is for a player's career stats, use the 'get_player_career_stats' tool with the player's full name and optionally the per_mode ('PerGame', 'Totals', 'Per36', etc.).",
-        "If the request is for team information or roster, use the 'get_team_info_and_roster' tool with the team's full name or abbreviation and optionally the season.",
-        "If the request is for other data types, state that you cannot fulfill the request with current capabilities.",
-        "Handle potential errors reported by the tools gracefully.",
-        "Return the structured data dictionary obtained from the tool, or an error dictionary if applicable.",
+        "Analyze the request to determine the correct tool to use (get_player_info, get_player_gamelog, get_player_career_stats, get_team_info_and_roster).",
+        "Extract the necessary parameters for the chosen tool from the request.",
+        "Execute the chosen tool with the extracted parameters.",
+        "CRITICAL INSTRUCTION: Your final response MUST be *only* the raw JSON string returned directly by the tool. Do not add *any* surrounding text, markdown, or explanation. Just output the JSON string.",
     ],
     tools=[get_player_info, get_player_gamelog, get_team_info_and_roster, get_player_career_stats], # Add the new tool
     storage=storage,
