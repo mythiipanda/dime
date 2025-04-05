@@ -6,13 +6,15 @@ import json
 # Import helpers carefully - avoid circular imports if moving later
 from .player_tools import _find_player_id
 from .team_tools import _find_team_id
-from .player_tools import _process_dataframe
+# from .player_tools import _process_dataframe # Changed: Import from utils
+from .utils import _process_dataframe # Import from utils
+from config import DEFAULT_TIMEOUT, MAX_GAMES_TO_RETURN # Import from config
 import re
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_TIMEOUT = 15
-MAX_GAMES_TO_RETURN = 20 # Limit results further to prevent token errors
+# DEFAULT_TIMEOUT = 15 # Removed: Use config value
+# MAX_GAMES_TO_RETURN = 20 # Removed: Use config value
 
 def fetch_league_games_logic(
     player_or_team_abbreviation: str = 'T',

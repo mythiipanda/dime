@@ -5,14 +5,16 @@ from nba_api.stats.endpoints import commonplayerinfo, playergamelog, playercaree
 from nba_api.stats.library.parameters import SeasonTypeAllStar, PerModeDetailed, PerMode36
 import re
 import json
+from config import DEFAULT_TIMEOUT # Import from config
+from .utils import _process_dataframe, _validate_season_format # Import from utils
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_TIMEOUT = 10
+# DEFAULT_TIMEOUT = 10 # Removed: Use config value
 
 # --- Helper Functions ---
-def _validate_season_format(season: str) -> bool:
-    return bool(re.match(r"^\d{4}-\d{2}$", season))
+# def _validate_season_format(season: str) -> bool: # Removed: Use utils version
+#     return bool(re.match(r"^\d{4}-\d{2}$", season))
 
 def _find_player_id(player_name: str) -> tuple[int | None, str | None]:
     logger.debug(f"Searching static players for '{player_name}'")
@@ -26,22 +28,22 @@ def _find_player_id(player_name: str) -> tuple[int | None, str | None]:
     logger.info(f"Found player: {player_actual_name} (ID: {player_id})")
     return player_id, player_actual_name
 
-def _process_dataframe(df: pd.DataFrame | None, single_row: bool = True) -> list | dict | None:
-    if df is None or df.empty:
-        return {} if single_row else []
-    try:
-        records = df.to_dict(orient='records')
-        processed_records = [
-            {k: (v if pd.notna(v) else None) for k, v in row.items()}
-            for row in records
-        ]
-        if single_row:
-            return processed_records[0] if processed_records else {}
-        else:
-            return processed_records
-    except Exception as e:
-        logger.error(f"Error processing DataFrame: {e}", exc_info=True)
-        return None
+# def _process_dataframe(df: pd.DataFrame | None, single_row: bool = True) -> list | dict | None: # Removed: Use utils version
+#     if df is None or df.empty:
+#         return {} if single_row else []
+#     try:
+#         records = df.to_dict(orient='records')
+#         processed_records = [
+#             {k: (v if pd.notna(v) else None) for k, v in row.items()}
+#             for row in records
+#         ]
+#         if single_row:
+#             return processed_records[0] if processed_records else {}
+#         else:
+#             return processed_records
+#     except Exception as e:
+#         logger.error(f"Error processing DataFrame: {e}", exc_info=True)
+#         return None
 
 # --- Player Tool Logic Functions (Returning JSON Strings) ---
 

@@ -15,8 +15,9 @@ from api_tools.player_tools import (
 from api_tools.team_tools import (
     fetch_team_info_and_roster_logic,
     _find_team_id,
-    CURRENT_SEASON # Import the constant
+    # CURRENT_SEASON # Removed: Import from config
 )
+from config import CURRENT_SEASON # Import from config
 from api_tools.game_tools import (
     fetch_league_games_logic
 )

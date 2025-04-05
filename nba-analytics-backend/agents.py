@@ -13,16 +13,18 @@ from tools import get_player_info, get_player_gamelog, get_team_info_and_roster,
 # from agno.tools. ... import ... # Import necessary tools later
 # from agno.knowledge. ... import ... # Import knowledge bases later
 from agno.storage.agent.sqlite import SqliteAgentStorage # Using SQLite for initial dev
+from config import AGENT_MODEL_ID, STORAGE_DB_FILE, AGENT_DEBUG_MODE # Import from config
 
 # Load environment variables from .env file
 load_dotenv()
 
 
+storage = SqliteAgentStorage(table_name="agent_sessions", db_file=STORAGE_DB_FILE) # Use config value
 storage = SqliteAgentStorage(table_name="agent_sessions", db_file="agno_storage.db") # Simple local storage for now
 
 analysis_agent = Agent(
     name="NBA Analyst Agent",
-    model=Gemini(id="gemini-2.0-flash"), # Using Gemini 2.0 Flash as requested
+    model=Gemini(id=AGENT_MODEL_ID), # Use config value
     description="An AI agent specialized in analyzing NBA data (like stats, trends, comparisons) and providing clear, concise insights.",
     instructions=[
         "You receive structured NBA data, potentially as a JSON string, sometimes wrapped within another structure like {'result': '<escaped_json_string>'}.",
@@ -39,12 +41,12 @@ analysis_agent = Agent(
     # knowledge=None, # No external knowledge base initially
     storage=storage, # Persist sessions locally
     markdown=True,
-    debug_mode=True, # Enable for development
+    debug_mode=AGENT_DEBUG_MODE, # Use config value
 )
 
 data_aggregator_agent = Agent(
     name="NBA Data Aggregator Agent",
-    model=Gemini(id="gemini-2.0-flash"), # Assign model to potentially help tool routing/execution
+    model=Gemini(id=AGENT_MODEL_ID), # Use config value
     description="An agent responsible for fetching data from various NBA APIs based on requests.",
     instructions=[
         "Receive requests for specific NBA data.",
@@ -60,7 +62,7 @@ data_aggregator_agent = Agent(
     tools=[get_player_info, get_player_gamelog, get_team_info_and_roster, get_player_career_stats, find_games], # Add find_games
     storage=storage,
     response_model=str, # Attempt to force string output
-    debug_mode=True,
+    debug_mode=AGENT_DEBUG_MODE, # Use config value
 )
 
 data_normalizer_agent = Agent(
@@ -77,7 +79,7 @@ data_normalizer_agent = Agent(
     ],
     # tools=[], # Likely no external tools needed initially
     storage=storage,
-    debug_mode=True,
+    debug_mode=AGENT_DEBUG_MODE, # Use config value
 )
 
 # print("AnalysisAgent, DataAggregatorAgent, and DataNormalizerAgent defined.") # Keep console clean
