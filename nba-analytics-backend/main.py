@@ -1,8 +1,9 @@
+# main.py - RESOLVED
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import Dict, Any, Generator
+from typing import Dict, Any, Generator, List # Added List for type hint
 import asyncio
 import uvicorn
 import logging
@@ -15,12 +16,13 @@ from agno.agent import Agent
 from agno.models.google import Gemini
 from agents import data_aggregator_agent, analysis_agent, storage # Import sub-agents and storage
 
-# Import tool logic functions directly for fetch_data workaround
+# Import tool logic functions
 from api_tools.player_tools import (
     fetch_player_info_logic,
     fetch_player_gamelog_logic,
     fetch_player_career_stats_logic,
-    get_player_headshot_url # Import new function
+    get_player_headshot_url, # Keep headshot import
+    find_players_by_name_fragment # Keep search import
 )
 from api_tools.team_tools import (
     fetch_team_info_and_roster_logic
@@ -74,8 +76,7 @@ app.add_middleware(
 async def read_root():
     return {"message": "NBA Analytics Backend using Agno"}
 
-
-# --- NEW ENDPOINT ---
+# --- Player Headshot Endpoint ---
 @app.get("/player/{player_id}/headshot")
 async def get_player_headshot(player_id: int):
     """
@@ -98,6 +99,27 @@ async def get_player_headshot(player_id: int):
     except Exception as e:
         logger.exception(f"Unexpected error fetching headshot for player ID {player_id}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+# --- Player Search Endpoint ---
+@app.get("/players/search", response_model=List[Dict[str, Any]]) # Add response model
+async def search_players(q: str | None = None, limit: int = 10):
+    """
+    Searches for players by a name fragment.
+    """
+    logger.info(f"Received GET /players/search request with query: '{q}', limit: {limit}")
+    if not q or len(q) < 2:
+        # Return empty list or specific error if query is too short/missing
+        # raise HTTPException(status_code=400, detail="Search query 'q' must be at least 2 characters long.")
+        return [] # Return empty list for short/missing queries
+
+    try:
+        results = find_players_by_name_fragment(q, limit=limit)
+        logger.info(f"Returning {len(results)} players for search query '{q}'")
+        return results # FastAPI automatically converts list of dicts to JSON
+    except Exception as e:
+        logger.exception(f"Unexpected error during player search for query '{q}'")
+        raise HTTPException(status_code=500, detail=f"Internal server error during player search: {str(e)}")
+
 
 # --- Request Models ---
 class AnalyzeRequest(BaseModel):
