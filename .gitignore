@@ -1,3 +1,4 @@
 .env
 .clinerules
 docs/
+nba-analytics-backend/backend_app.log

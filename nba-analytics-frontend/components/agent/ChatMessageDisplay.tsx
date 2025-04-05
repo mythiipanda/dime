@@ -2,7 +2,7 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Card, CardContent } from "@/components/ui/card";
-import { ChatMessage } from '@/lib/hooks/useAgentSSE'; // Import the interface
+import { ChatMessage } from '@/lib/hooks/useAgentChatSSE'; // Import the interface from the new hook file
 
 interface ChatMessageDisplayProps {
   message: ChatMessage;

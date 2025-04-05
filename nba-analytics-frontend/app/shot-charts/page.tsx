@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/resizable";
 import { Skeleton } from "@/components/ui/skeleton"; // Keep Skeleton for loading state
 // Import the hook and new components
-import { useAgentSSE, ChatMessage } from "@/lib/hooks/useAgentSSE"; // Import ChatMessage type
+import { useAgentChatSSE, ChatMessage } from "@/lib/hooks/useAgentChatSSE"; // Import ChatMessage type from new hook
 import { PromptInputForm } from "@/components/agent/PromptInputForm";
 import { ProgressDisplay } from "@/components/agent/ProgressDisplay";
 import { ErrorDisplay } from "@/components/agent/ErrorDisplay";
@@ -31,7 +31,7 @@ export default function ShotChartChatPage() {
     // resultData, // Keep if structured data is needed later
     submitPrompt,
     closeConnection,
-  } = useAgentSSE({
+  } = useAgentChatSSE({ // Use the new chat-specific hook
     apiUrl: process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/ask_team", // Use env variable
   });
 
@@ -53,6 +53,9 @@ export default function ShotChartChatPage() {
   React.useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatHistory]); // Run whenever chatHistory changes
+
+  // Log the chat history received from the hook before rendering
+  console.log("ShotChartChatPage rendering with chatHistory:", chatHistory);
 
   // This component now renders *only* the content area within the main layout
   return (
