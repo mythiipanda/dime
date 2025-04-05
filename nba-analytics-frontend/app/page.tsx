@@ -1,157 +1,50 @@
-"use client"; // Required for state and event handlers used in Command, Tabs etc.
+"use client";
 
-import * as React from "react"; // Import React for state
-
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import * as React from "react"; // Keep for local input state & effect
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Textarea } from "@/components/ui/textarea"; // Assuming Textarea is added
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-  CommandSeparator,
-  CommandShortcut,
-} from "@/components/ui/command";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
-import {
-  Table,
-  TableBody,
-  TableCaption,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import {
-  BotIcon,
-  TerminalIcon,
-  FileTextIcon,
-  BarChartIcon,
-  TableIcon,
-  SendIcon,
-} from "lucide-react";
+// Import the new hook and components
+import { useAgentSSE } from "@/lib/hooks/useAgentSSE";
+import { PromptInputForm } from "@/components/agent/PromptInputForm";
+import { ProgressDisplay } from "@/components/agent/ProgressDisplay";
+import { ResultsDisplay } from "@/components/agent/ResultsDisplay";
 
 // Agent Dashboard Page Content
 export default function AgentDashboardPage() {
-  // Basic state for the command input (replace with actual logic later)
+  // Local state for the controlled input
   const [inputValue, setInputValue] = React.useState("");
-  const [agentIsThinking, setAgentIsThinking] = React.useState(false);
-  const [agentResponse, setAgentResponse] = React.useState<string | null>(null);
-  const [agentError, setAgentError] = React.useState<string | null>(null);
-  const [progressSteps, setProgressSteps] = React.useState<string[]>([]); // State for progress messages
-  const eventSourceRef = React.useRef<EventSource | null>(null); // Ref to manage EventSource
-  const [resultData, setResultData] = React.useState<any>(null); // To hold structured results
 
-  const handleCommandSubmit = (e?: React.FormEvent<HTMLFormElement>) => {
+  // Use the custom hook for SSE logic
+  const {
+    isLoading,
+    response,
+    error,
+    progress,
+    resultData,
+    submitPrompt,
+    closeConnection, // Get the close function
+  } = useAgentSSE({
+    apiUrl: process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/ask_team", // Fallback URL
+  });
+
+  // Handle form submission
+  const handleFormSubmit = (e?: React.FormEvent<HTMLFormElement>) => {
     if (e) e.preventDefault();
-    if (!inputValue.trim() || agentIsThinking) return; // Don't submit empty or while thinking
-
-    const currentPrompt = inputValue;
-    console.log("Submitting prompt:", currentPrompt);
-    setInputValue("");
-    setAgentIsThinking(true);
-    setAgentResponse(null); // Clear previous response
-    setAgentError(null);
-    setResultData(null);
-    setProgressSteps(["Connecting to agent..."]); // Initial progress
-
-    // Close existing connection if any
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-    }
-
-    // Create new EventSource connection
-    const eventSource = new EventSource(`http://localhost:8000/ask_team?prompt=${encodeURIComponent(currentPrompt)}`); // Send prompt via query param for GET SSE
-    eventSourceRef.current = eventSource;
-
-    eventSource.onmessage = (event) => {
-      console.log("SSE Message:", event.data);
-      try {
-        const data = JSON.parse(event.data);
-        // Check for error type first
-        if (data.type === 'error') {
-          console.error("Received error from backend stream:", data.message);
-          setAgentError(data.message || "Unknown error from backend stream.");
-          setProgressSteps(prev => [...prev, `Error: ${data.message || "Unknown"}`]);
-          setAgentIsThinking(false);
-          eventSourceRef.current?.close(); // Close connection on error
-          eventSourceRef.current = null;
-        }
-        // Update progress for status/tool events
-        else if (data.type === 'status' || data.type === 'tool_start' || data.type === 'tool_end' || data.type === 'agent_step') {
-          setProgressSteps(prev => [...prev, data.message]);
-        }
-        // Handle other potential structured data types if needed
-      } catch (e) {
-        console.error("Failed to parse SSE data:", e);
-         // Treat as plain text message if parsing fails (could be simple status)
-         setProgressSteps(prev => [...prev, event.data]);
-      }
-    };
-
-     // Listen for specific 'final' event
-     eventSource.addEventListener('final', (event: MessageEvent) => { // Add type annotation
-       console.log("SSE Final Event:", event.data);
-       try {
-         const data = JSON.parse(event.data);
-         if (data.type === 'final_response') {
-           setAgentResponse(data.content);
-           setProgressSteps(prev => [...prev, "Final response received."]);
-           // TODO: Parse final content for structured data and set resultData
-         }
-       } catch (e) {
-         console.error("Failed to parse final SSE data:", e);
-         setAgentResponse("Received final event, but failed to parse content.");
-       }
-       setAgentIsThinking(false);
-       eventSource.close(); // Close connection on final message
-       eventSourceRef.current = null;
-     });
-
-    // Handle generic EventSource errors (like connection closed)
-    eventSource.onerror = (err) => {
-      console.error("EventSource failed:", err);
-      // Only set error if we weren't already in a final state (response received or error set)
-      // and the connection wasn't closed intentionally.
-      if (eventSourceRef.current && !agentResponse && !agentError) {
-         console.error("EventSource connection error or closed unexpectedly.");
-         setAgentError("Connection to agent lost or failed.");
-         setProgressSteps(prev => [...prev, "Error: Connection lost."]);
-         setAgentIsThinking(false);
-         eventSourceRef.current = null; // Ensure ref is cleared
-      } else {
-         console.log("EventSource closed, likely intentionally after 'final' or 'error' event.");
-      }
-      // Ensure closure regardless
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-        eventSourceRef.current = null;
-      }
-    };
+    submitPrompt(inputValue);
+    setInputValue(""); // Clear input after submission
   };
+
+  // Effect to clean up SSE connection on component unmount
+  React.useEffect(() => {
+    // Return the cleanup function
+    return () => {
+      closeConnection();
+    };
+  }, [closeConnection]); // Dependency array includes closeConnection
 
   // This component now renders *only* the content area within the main layout
   return (
@@ -163,118 +56,14 @@ export default function AgentDashboardPage() {
             <h2 className="mb-4 text-lg font-semibold">Results</h2>
             {/* Placeholder for Agent Output / Visualizations */}
             <div className="space-y-4">
-              {/* Display Progress Steps */}
-              {progressSteps.length > 0 && (
-                <Card className="mb-4 bg-secondary/50">
-                  <CardHeader><CardTitle className="text-sm">Progress</CardTitle></CardHeader>
-                  <CardContent>
-                    <ul className="list-disc pl-5 text-xs text-muted-foreground space-y-1">
-                      {progressSteps.map((step, index) => <li key={index}>{step}</li>)}
-                    </ul>
-                  </CardContent>
-                </Card>
-              )}
-              {/* Display Loading Skeleton OR Error OR Results */}
-              {agentIsThinking && !agentResponse && !agentError && (
-                 <Skeleton className="h-64 w-full" />
-              )}
-              {!agentIsThinking && agentError && (
-                 <Alert variant="destructive">
-                   <TerminalIcon className="h-4 w-4" />
-                   <AlertTitle>Error</AlertTitle>
-                   <AlertDescription>
-                     {agentError}
-                   </AlertDescription>
-                 </Alert>
-              )}
-               {!agentIsThinking && !agentError && agentResponse && (
-                 <Card className="mb-4">
-                   <CardHeader>
-                     <CardTitle className="text-base flex items-center gap-2">
-                       <BotIcon className="h-5 w-5" /> Agent Response
-                     </CardTitle>
-                   </CardHeader>
-                   <CardContent>
-                     {/* TODO: Render markdown if response contains it */}
-                     <p className="text-sm whitespace-pre-wrap">{agentResponse}</p>
-                   </CardContent>
-                 </Card>
-               )}
-               {!agentIsThinking && !agentError && resultData && (
-                  <Tabs defaultValue="summary" className="w-full">
-                    <TabsList className="grid w-full grid-cols-3">
-                      <TabsTrigger value="summary"><FileTextIcon className="mr-1 h-4 w-4" />Summary</TabsTrigger>
-                      <TabsTrigger value="table" disabled={resultData.type !== 'table'}><TableIcon className="mr-1 h-4 w-4" />Table</TabsTrigger>
-                      <TabsTrigger value="chart" disabled={resultData.type !== 'chart'}><BarChartIcon className="mr-1 h-4 w-4" />Chart</TabsTrigger>
-                    </TabsList>
-                    <TabsContent value="summary">
-                      <Card>
-                        <CardHeader>
-                          <CardTitle>Result Summary</CardTitle>
-                           <CardDescription>Summary based on agent analysis.</CardDescription>
-                        </CardHeader>
-                        <CardContent className="space-y-2">
-                           <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                             {agentResponse || "Summary placeholder..."}
-                           </p>
-                        </CardContent>
-                      </Card>
-                    </TabsContent>
-                    {/* Table Content - Placeholder */}
-                    <TabsContent value="table">
-                       <Card>
-                        <CardHeader>
-                          <CardTitle>Tabular Data</CardTitle>
-                           <CardDescription>Detailed data in table format.</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                          {resultData?.type === 'table' && resultData.data?.length > 0 ? (
-                             <Table>
-                               <TableHeader>
-                                 <TableRow>
-                                   {Object.keys(resultData.data[0] || {}).map(key => <TableHead key={key}>{key}</TableHead>)}
-                                 </TableRow>
-                               </TableHeader>
-                               <TableBody>
-                                 {resultData.data.map((row: any, index: number) => (
-                                   <TableRow key={index}>
-                                     {Object.values(row).map((val: any, i: number) => <TableCell key={i}>{String(val)}</TableCell>)}
-                                   </TableRow>
-                                 ))}
-                               </TableBody>
-                             </Table>
-                          ) : <p className="text-sm text-muted-foreground">No table data available for this response.</p>}
-                        </CardContent>
-                      </Card>
-                    </TabsContent>
-                    {/* Chart Content - Placeholder */}
-                    <TabsContent value="chart">
-                       <Card>
-                        <CardHeader>
-                          <CardTitle>Chart Visualization</CardTitle>
-                           <CardDescription>Visual representation of the data.</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                           <div className="h-96 bg-muted rounded-md flex items-center justify-center">
-                             {resultData?.type === 'chart' ? 'Chart Placeholder (Recharts integration needed)' : 'No chart data available for this response.'}
-                           </div>
-                        </CardContent>
-                      </Card>
-                    </TabsContent>
-                  </Tabs>
-               )}
-               {!agentIsThinking && !agentError && !agentResponse && !resultData && (
-                  <div className="flex flex-1 items-center justify-center rounded-lg border border-dashed shadow-sm p-4">
-                      <div className="flex flex-col items-center gap-1 text-center">
-                          <h3 className="text-2xl font-bold tracking-tight">
-                              Ask the NBA Agent
-                          </h3>
-                          <p className="text-sm text-muted-foreground">
-                              Enter your query below to get started.
-                          </p>
-                      </div>
-                  </div>
-               )}
+              {/* Use new components, passing state from hook */}
+              <ProgressDisplay progressSteps={progress} />
+              <ResultsDisplay
+                isLoading={isLoading}
+                error={error}
+                response={response}
+                resultData={resultData}
+              />
             </div>
           </ScrollArea>
         </main>
@@ -283,22 +72,13 @@ export default function AgentDashboardPage() {
       <ResizablePanel defaultSize={25} minSize={15} maxSize={40}> {/* Input/Command area */}
          <div className="flex flex-col h-full p-4 border-t">
            <h2 className="text-lg font-semibold mb-2">Enter Prompt</h2>
-           {/* Wrap input and button in a form */}
-           <form onSubmit={handleCommandSubmit} className="flex flex-col flex-1 gap-2">
-             <Command className="rounded-lg border shadow-md flex-1">
-               <CommandInput
-                 placeholder="Type your NBA query here..."
-                 value={inputValue}
-                 onValueChange={setInputValue}
-                 disabled={agentIsThinking} // Disable input while thinking
-               />
-               {/* We can add CommandList suggestions later */}
-               {/* <CommandList> <CommandEmpty>No results.</CommandEmpty> ... </CommandList> */}
-             </Command>
-             <Button type="submit" className="mt-auto" disabled={agentIsThinking || !inputValue.trim()}> {/* Disable if thinking or input empty */}
-               <SendIcon className="mr-2 h-4 w-4" /> Send Prompt
-             </Button>
-           </form>
+           {/* Use new PromptInputForm component */}
+           <PromptInputForm
+             inputValue={inputValue}
+             onInputChange={setInputValue}
+             onSubmit={handleFormSubmit}
+             isLoading={isLoading}
+           />
          </div>
       </ResizablePanel>
     </ResizablePanelGroup>
