@@ -2,16 +2,17 @@ import logging
 import pandas as pd
 from nba_api.stats.endpoints import leaguegamefinder
 from nba_api.stats.library.parameters import LeagueID, SeasonTypeNullable, SeasonNullable
-import json
+# import json # No longer needed
+# import re # Unused
 # Import helpers carefully - avoid circular imports if moving later
 from .player_tools import _find_player_id
 from .team_tools import _find_team_id
-from .player_tools import _process_dataframe
-import re
+from .utils import _process_dataframe # Corrected import
+from ..config import DEFAULT_TIMEOUT # Import from config
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_TIMEOUT = 15
+# DEFAULT_TIMEOUT moved to config.py
 MAX_GAMES_TO_RETURN = 20 # Limit results further to prevent token errors
 
 def fetch_league_games_logic(
@@ -23,21 +24,21 @@ def fetch_league_games_logic(
     league_id_nullable: LeagueID = LeagueID.nba,
     date_from_nullable: str | None = None,
     date_to_nullable: str | None = None
-) -> str:
+) -> dict:
     """
     Core logic to fetch games using LeagueGameFinder based on various criteria.
     NOTE: Filtering by vs_player/vs_team during init is not supported by the current library version used.
-    Returns JSON string containing a list of games (limited by MAX_GAMES_TO_RETURN).
+    Returns dictionary containing a list of games (limited by MAX_GAMES_TO_RETURN).
     """
     logger.info(f"Executing fetch_league_games_logic with params: player/team={player_or_team_abbreviation}, player_id={player_id_nullable}, team_id={team_id_nullable}, season={season_nullable}, type={season_type_nullable}, league={league_id_nullable}, date_from={date_from_nullable}, date_to={date_to_nullable}")
 
     # Basic validation
     if player_or_team_abbreviation not in ['P', 'T']:
-        return json.dumps({"error": "Invalid player_or_team_abbreviation. Use 'P' for Player or 'T' for Team."})
+        return {"error": "Invalid player_or_team_abbreviation. Use 'P' for Player or 'T' for Team."}
     if player_or_team_abbreviation == 'P' and player_id_nullable is None:
-         return json.dumps({"error": "player_id_nullable is required when searching by player ('P')."})
+         return {"error": "player_id_nullable is required when searching by player ('P')."}
     if player_or_team_abbreviation == 'T' and team_id_nullable is None:
-         return json.dumps({"error": "team_id_nullable is required when searching by team ('T')."})
+         return {"error": "team_id_nullable is required when searching by team ('T')."}
 
     try:
         game_finder = leaguegamefinder.LeagueGameFinder(
@@ -67,7 +68,7 @@ def fetch_league_games_logic(
 
         if games_list is None: # Check if _process_dataframe failed
             logger.error("DataFrame processing failed for LeagueGameFinder results.")
-            return json.dumps({"error": "Failed to process game finder data from API."})
+            return {"error": "Failed to process game finder data from API."}
 
         result = {
             "total_games_found": total_games_found,
@@ -75,11 +76,11 @@ def fetch_league_games_logic(
             "games": games_list # Return the limited list
         }
         logger.info(f"fetch_league_games_logic completed. Found {total_games_found} games, returning {len(games_list)}.")
-        return json.dumps(result, default=str)
+        return result
 
     except Exception as e:
         logger.critical(f"Unexpected error in fetch_league_games_logic: {e}", exc_info=True)
-        return json.dumps({"error": f"An unexpected error occurred processing the game finder request: {str(e)}"})
+        return {"error": f"An unexpected error occurred processing the game finder request: {str(e)}"}
 
 # Example Usage Block
 if __name__ == "__main__":
