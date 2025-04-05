@@ -169,3 +169,26 @@ def fetch_player_career_stats_logic(player_name: str, per_mode36: str = PerMode3
     except Exception as e:
         logger.critical(f"Unexpected error in fetch_player_career_stats_logic for '{player_name}': {e}", exc_info=True)
         return json.dumps({"error": f"Unexpected error processing career stats request for {player_name}: {str(e)}"})
+
+
+# --- Player Headshot Function ---
+
+def get_player_headshot_url(player_id: int) -> str:
+    """
+    Constructs the URL for a player's headshot based on their ID.
+    Args:
+        player_id (int): The NBA player ID.
+    Returns:
+        str: The URL to the player's headshot PNG.
+    """
+    # Basic validation
+    if not isinstance(player_id, int) or player_id <= 0:
+        logger.warning(f"Invalid player_id provided for headshot: {player_id}")
+        # Returning a placeholder or raising an error might be better,
+        # but for now, just return the formatted string which will likely 404.
+        # Consider adding more robust validation if needed (e.g., check if player ID exists).
+
+    base_url = "https://cdn.nba.com/headshots/nba/latest/260x190/"
+    headshot_url = f"{base_url}{player_id}.png"
+    logger.info(f"Generated headshot URL for player ID {player_id}: {headshot_url}")
+    return headshot_url

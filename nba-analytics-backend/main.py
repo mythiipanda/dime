@@ -19,7 +19,8 @@ from agents import data_aggregator_agent, analysis_agent, storage # Import sub-a
 from api_tools.player_tools import (
     fetch_player_info_logic,
     fetch_player_gamelog_logic,
-    fetch_player_career_stats_logic
+    fetch_player_career_stats_logic,
+    get_player_headshot_url # Import new function
 )
 from api_tools.team_tools import (
     fetch_team_info_and_roster_logic
@@ -72,6 +73,31 @@ app.add_middleware(
 @app.get("/")
 async def read_root():
     return {"message": "NBA Analytics Backend using Agno"}
+
+
+# --- NEW ENDPOINT ---
+@app.get("/player/{player_id}/headshot")
+async def get_player_headshot(player_id: int):
+    """
+    Returns the URL for the player's headshot image.
+    """
+    logger.info(f"Received GET /player/{player_id}/headshot request.")
+    try:
+        # Basic validation (can be enhanced)
+        if player_id <= 0:
+            raise HTTPException(status_code=400, detail="Invalid player_id provided.")
+
+        headshot_url = get_player_headshot_url(player_id)
+        # We could potentially add a check here to see if the URL is valid
+        # (e.g., using a HEAD request), but for simplicity, just return the URL.
+        logger.info(f"Returning headshot URL for player ID {player_id}: {headshot_url}")
+        return {"player_id": player_id, "headshot_url": headshot_url}
+    except HTTPException as http_exc:
+        # Re-raise known HTTP exceptions
+        raise http_exc
+    except Exception as e:
+        logger.exception(f"Unexpected error fetching headshot for player ID {player_id}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 # --- Request Models ---
 class AnalyzeRequest(BaseModel):
