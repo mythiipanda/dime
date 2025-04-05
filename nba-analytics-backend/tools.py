@@ -15,11 +15,11 @@ from api_tools.player_tools import (
 from api_tools.team_tools import (
     fetch_team_info_and_roster_logic,
     _find_team_id
-    # CURRENT_SEASON # Import removed, not needed directly here
 )
 from api_tools.game_tools import (
     fetch_league_games_logic
 )
+from config import CURRENT_SEASON # Import for default value
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ def get_player_gamelog(player_name: str, season: str, season_type: str = SeasonT
     return json.dumps(result, default=str)
 
 @tool
-def get_team_info_and_roster(team_identifier: str, season: str = CURRENT_SEASON) -> str:
+def get_team_info_and_roster(team_identifier: str, season: str = CURRENT_SEASON) -> str: # Use imported CURRENT_SEASON
     """
     Fetches team information, ranks, roster, and coaches. Returns JSON string.
     Args:
