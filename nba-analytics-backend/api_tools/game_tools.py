@@ -8,7 +8,7 @@ from nba_api.stats.library.parameters import LeagueID, SeasonTypeNullable, Seaso
 from .player_tools import _find_player_id
 from .team_tools import _find_team_id
 from .utils import _process_dataframe # Corrected import
-from ..config import DEFAULT_TIMEOUT # Import from config
+from config import DEFAULT_TIMEOUT # Use absolute import from project root
 
 logger = logging.getLogger(__name__)
 

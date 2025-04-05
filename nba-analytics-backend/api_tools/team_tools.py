@@ -4,12 +4,14 @@ from nba_api.stats.static import teams
 from nba_api.stats.endpoints import teaminfocommon, commonteamroster
 from nba_api.stats.library.parameters import LeagueID
 import re
-import json # Import json
+# import json # No longer needed
+from .utils import _process_dataframe # Import the moved function
+from config import DEFAULT_TIMEOUT, CURRENT_SEASON # Use absolute import from project root
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_TIMEOUT = 10
-CURRENT_SEASON = "2024-25"
+# DEFAULT_TIMEOUT moved to config.py
+# CURRENT_SEASON moved to config.py
 
 # --- Helper Functions ---
 def _validate_season_format(season: str) -> bool:
@@ -29,34 +31,19 @@ def _find_team_id(team_identifier: str) -> int | None:
     logger.warning(f"Team not found for identifier: '{team_identifier}'")
     return None
 
-def _process_dataframe(df: pd.DataFrame | None, single_row: bool = True) -> list | dict | None:
-    if df is None or df.empty:
-        return {} if single_row else []
-    try:
-        records = df.to_dict(orient='records')
-        processed_records = [
-            {k: (v if pd.notna(v) else None) for k, v in row.items()}
-            for row in records
-        ]
-        if single_row:
-            return processed_records[0] if processed_records else {}
-        else:
-            return processed_records
-    except Exception as e:
-        logger.error(f"Error processing DataFrame: {e}", exc_info=True)
-        return None
+# _process_dataframe function moved to api_tools/utils.py
 
 # --- Team Tool Logic Function (Returning JSON String) ---
 
-def fetch_team_info_and_roster_logic(team_identifier: str, season: str = CURRENT_SEASON) -> str: # Return str (JSON)
+def fetch_team_info_and_roster_logic(team_identifier: str, season: str = CURRENT_SEASON) -> dict: # Return dict
     """Core logic to fetch team info and roster."""
     logger.info(f"Executing fetch_team_info_and_roster_logic for: '{team_identifier}', Season: {season}")
-    if not team_identifier or not team_identifier.strip(): return json.dumps({"error": "Team identifier cannot be empty."})
-    if not season or not _validate_season_format(season): return json.dumps({"error": f"Invalid season format: {season}. Expected YYYY-YY."})
+    if not team_identifier or not team_identifier.strip(): return {"error": "Team identifier cannot be empty."}
+    if not season or not _validate_season_format(season): return {"error": f"Invalid season format: {season}. Expected YYYY-YY."}
 
     try:
         team_id = _find_team_id(team_identifier)
-        if team_id is None: return json.dumps({"error": f"Team '{team_identifier}' not found."})
+        if team_id is None: return {"error": f"Team '{team_identifier}' not found."}
 
         team_info_dict, team_ranks_dict, roster_list, coaches_list = {}, {}, [], []
         errors = []
@@ -89,7 +76,7 @@ def fetch_team_info_and_roster_logic(team_identifier: str, season: str = CURRENT
 
         if not team_info_dict and not team_ranks_dict and not roster_list and not coaches_list:
              logger.error(f"All team data fetching failed for team ID {team_id}, Season {season}. Errors: {errors}")
-             return json.dumps({"error": f"Failed to fetch any data for team '{team_identifier}' ({season}). Errors: {', '.join(errors)}."})
+             return {"error": f"Failed to fetch any data for team '{team_identifier}' ({season}). Errors: {', '.join(errors)}."}
 
         result = {
             "team_info": team_info_dict or {},
@@ -99,7 +86,7 @@ def fetch_team_info_and_roster_logic(team_identifier: str, season: str = CURRENT
             "fetch_errors": errors
         }
         logger.info(f"fetch_team_info_and_roster_logic completed for Team ID: {team_id}, Season: {season}")
-        return json.dumps(result, default=str) # Return JSON string
+        return result # Return dictionary
     except Exception as e:
         logger.critical(f"Unexpected critical error in fetch_team_info_and_roster_logic for '{team_identifier}', Season {season}: {e}", exc_info=True)
-        return json.dumps({"error": f"Unexpected error processing team info/roster request for {team_identifier} ({season}): {str(e)}"})
+        return {"error": f"Unexpected error processing team info/roster request for {team_identifier} ({season}): {str(e)}"}

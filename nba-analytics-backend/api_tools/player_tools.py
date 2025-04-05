@@ -6,7 +6,7 @@ from nba_api.stats.library.parameters import SeasonTypeAllStar, PerModeDetailed,
 import re
 import json
 from .utils import _process_dataframe # Import the moved function
-from ..config import DEFAULT_TIMEOUT # Import from config
+from config import DEFAULT_TIMEOUT # Use absolute import from project root
 
 logger = logging.getLogger(__name__)
 
