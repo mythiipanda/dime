@@ -5,14 +5,13 @@ from agno.models.google import Gemini # Use Gemini for the lead agent too
 
 # Import the sub-agents
 from agents import data_aggregator_agent, analysis_agent, storage
-from config import AGENT_MODEL # Import model config
 
 logger = logging.getLogger(__name__)
 
 # Define the Lead Agent (Team Coordinator)
 NBAnalysisTeam = Agent(
     name="NBA Analysis Team Lead",
-    model=Gemini(id=AGENT_MODEL), # Use configured model
+    model=Gemini(id="gemini-2.0-flash"), # Can use the same or a different model
     team=[data_aggregator_agent, analysis_agent], # Define the team members
     description="Coordinates data fetching and analysis for NBA-related queries.",
     instructions=dedent("""\

@@ -1,13 +1,20 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import Dict, Any
+from typing import Dict, Any, Generator
+import asyncio
 import uvicorn
 import logging
 import json
 import re
+from textwrap import dedent
 
-# Import defined agents
-from agents import analysis_agent, data_aggregator_agent #, data_normalizer_agent (Commented out)
+# Import agent classes/functions needed
+from agno.agent import Agent
+from agno.models.google import Gemini
+from agents import data_aggregator_agent, analysis_agent, storage # Import sub-agents and storage
+
 # Import tool logic functions directly for fetch_data workaround
 from api_tools.player_tools import (
     fetch_player_info_logic,
@@ -20,13 +27,47 @@ from api_tools.team_tools import (
 from api_tools.game_tools import (
     fetch_league_games_logic
 )
-from nba_api.stats.library.parameters import PerMode36, LeagueID, SeasonNullable, SeasonTypeNullable, SeasonTypeAllStar
+from nba_api.stats.library.parameters import PerMode36, SeasonTypeAllStar
 
-# Configure logging for main app
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+# Configure logging
+log_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+log_level = logging.DEBUG
+
+# Console Handler
+stream_handler = logging.StreamHandler()
+stream_handler.setFormatter(log_formatter)
+stream_handler.setLevel(log_level)
+
+# File Handler
+file_handler = logging.FileHandler("backend_app.log", mode='a') # Append mode
+file_handler.setFormatter(log_formatter)
+file_handler.setLevel(log_level)
+
+# Get root logger and add handlers
+root_logger = logging.getLogger()
+# Clear existing handlers (important for reload)
+if root_logger.hasHandlers():
+    root_logger.handlers.clear()
+root_logger.setLevel(log_level)
+root_logger.addHandler(stream_handler)
+root_logger.addHandler(file_handler)
+
+logger = logging.getLogger(__name__) # Get logger for this module
 
 app = FastAPI(title="NBA Analytics Backend")
+
+# Add CORS middleware
+origins = [
+    "http://localhost:3000", # Allow frontend origin
+    "http://localhost",
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.get("/")
 async def read_root():
@@ -38,17 +79,16 @@ class AnalyzeRequest(BaseModel):
     data: Dict[str, Any]
 
 class FetchRequest(BaseModel):
-    # Revert to target/params for direct logic calls
     target: str
     params: Dict[str, Any] = {}
-    prompt: str | None = None # Keep for potential future use / logging
+    prompt: str | None = None
 
 class NormalizeRequest(BaseModel):
     raw_data: Dict[str, Any]
 
-# --- Helper to Extract JSON from Agent Response ---
-# This helper might still be useful if the /analyze agent wraps output
+# --- Helper to Extract JSON ---
 def extract_json_string(response_str: str) -> str | None:
+    # ... (Keep extract_json_string function as is) ...
     """
     Attempts to extract the raw JSON string returned by the tool,
     handling potential wrapping by the agent (markdown, nested JSON).
@@ -130,7 +170,7 @@ def extract_json_string(response_str: str) -> str | None:
 
 @app.post("/analyze")
 async def analyze_data(request: AnalyzeRequest):
-    # ... (analyze endpoint remains the same, using agent history workaround) ...
+    # ... (analyze endpoint remains the same) ...
     query = request.query
     data_input = request.data
     logger.debug(f"Received /analyze request for query: {query}")
@@ -160,6 +200,127 @@ async def analyze_data(request: AnalyzeRequest):
     except Exception as e:
         logger.exception(f"Error during /analyze for query: {query}")
         raise HTTPException(status_code=500, detail=f"Analysis error: {str(e)}")
+
+# Helper function to format SSE messages
+def format_sse(data: str, event: str | None = None) -> str:
+    msg = f"data: {data}\n\n"
+    if event is not None:
+        msg = f"event: {event}\n{msg}"
+    return msg
+
+# Define team configuration locally for the endpoint
+def create_nba_team_instance():
+    # This function now creates the agent instance when called
+    return Agent(
+        name="NBA Analysis Team Lead",
+        model=Gemini(id="gemini-2.0-flash"),
+        team=[data_aggregator_agent, analysis_agent],
+        description="Coordinates data fetching and analysis for NBA-related queries.",
+        instructions=dedent("""\
+            You are the lead coordinator for an NBA data analysis team. Your goal is to answer user queries by leveraging your team members.
+
+            Workflow:
+            1. Receive the user's query.
+            2. **Identify Data Needs:** Determine what specific data points/sets are needed.
+            3. **Handle Comparisons Sequentially:** If the query requires comparing two datasets (e.g., career stats per game vs. totals):
+                a. Instruct the 'NBA Data Aggregator Agent' to fetch the *first* dataset.
+                b. Pass the *first* dataset and the relevant part of the query to the 'NBA Analyst Agent' for initial analysis.
+                c. Instruct the 'NBA Data Aggregator Agent' to fetch the *second* dataset.
+                d. Pass the *second* dataset and the relevant part of the query to the 'NBA Analyst Agent' for its analysis.
+                e. Synthesize the two analyses from the 'NBA Analyst Agent' into a final comparative response for the user.
+            4. **Handle Single Data Point Queries:** If the query needs only one dataset:
+                a. Instruct the 'NBA Data Aggregator Agent' to fetch the required data.
+                b. Pass the fetched data and the original query to the 'NBA Analyst Agent'.
+                c. Relay the 'NBA Analyst Agent's response directly to the user.
+            5. **Tool Specifics:** Remember the 'find_games' tool currently only supports filtering by player/team ID and date range.
+            6. **Error Handling:** If any step fails (data fetching or analysis), clearly explain the issue to the user.
+
+            Your Style Guide:
+            - Be helpful and informative.
+            - Clearly synthesize and present the final analysis.
+            - If data fetching fails, report the error clearly.
+            - If analysis is inconclusive, state that.
+        """),
+        storage=storage, # Use the same storage for session persistence
+        markdown=True,
+        debug_mode=True,
+    )
+
+def team_event_generator(team_instance: Agent, prompt: str) -> Generator[str, None, None]:
+    """Generator function that runs the agent and yields status/final result via SSE."""
+    try:
+        logger.info(f"Starting team execution for prompt: '{prompt}'")
+        yield format_sse(json.dumps({"type": "status", "message": "Processing prompt..."}), event="status")
+        yield format_sse(json.dumps({"type": "status", "message": "Executing agent team... (this may take time)"}), event="status")
+
+        # Use run() as stream() is causing errors
+        result = team_instance.run(prompt)
+        logger.info(f"Team run completed. Result type: {type(result)}")
+        yield format_sse(json.dumps({"type": "status", "message": "Agent finished. Extracting final response..."}), event="status")
+
+        # Attempt to extract final content
+        final_content = None
+        if hasattr(result, 'messages') and result.messages:
+             last_message = result.messages[-1]
+             if last_message.role == 'assistant' and isinstance(last_message.content, str):
+                 final_content = last_message.content
+                 logger.info("Using last assistant message content for response.")
+             else:
+                  logger.warning("Last message in history was not usable assistant content.")
+                  final_content = f"Agent finished, but last message was not standard assistant content: {str(last_message.content)}"
+        else:
+             logger.warning("No message history found in agent result.")
+             final_content = getattr(result, 'response', None) # Fallback
+             if final_content is None:
+                  logger.error(f"Team agent did not return a usable response in history or attribute for prompt: {prompt}")
+                  raise Exception("Team agent did not return a valid response.")
+             else:
+                  logger.warning(f"Falling back to result.response: Type={type(final_content)}")
+                  final_content = str(final_content) # Ensure string
+
+        yield format_sse(json.dumps({"type": "final_response", "content": final_content}), event="final")
+        logger.info(f"Yielded final response for prompt: '{prompt}'")
+
+    except Exception as e:
+        logger.exception(f"Error during team execution for prompt: {prompt}")
+        error_detail = f"Error processing team request: {str(e)}"
+        # Yield error as a standard message event
+        yield format_sse(json.dumps({"type": "error", "message": error_detail}))
+
+@app.get("/ask_team")
+def ask_team_streaming(prompt: str):
+    """
+    Endpoint to send a prompt directly to a locally instantiated NBAnalysisTeam and stream the final response.
+    (Note: Uses run() due to stream() errors, yields manual status updates and final result/error).
+    Includes debug logging for the team instance.
+    """
+    logger.info(f"Received GET /ask_team request with prompt: '{prompt}'")
+    try:
+        # Instantiate the team locally for this request
+        team_instance = create_nba_team_instance()
+        logger.info("Created local NBAnalysisTeam instance for request.")
+
+        # --- DEBUG LOGGING ---
+        logger.debug(f"Type of team_instance: {type(team_instance)}")
+        logger.debug(f"Attributes of team_instance: {dir(team_instance)}")
+        has_stream = hasattr(team_instance, 'stream')
+        logger.debug(f"Does team_instance have 'stream' attribute? {has_stream}")
+        if has_stream:
+            stream_attr = getattr(team_instance, 'stream')
+            logger.debug(f"Type of team_instance.stream: {type(stream_attr)}")
+            logger.debug(f"Is team_instance.stream callable? {callable(stream_attr)}")
+        # --- END DEBUG LOGGING ---
+
+        team_instance = create_nba_team_instance()
+        logger.info("Created local NBAnalysisTeam instance for request.")
+        return StreamingResponse(team_event_generator(team_instance, prompt), media_type="text/event-stream")
+    except Exception as e:
+        logger.exception("Failed to instantiate or stream NBAnalysisTeam")
+        # Return an error response if instantiation fails
+        # Define error_stream within this scope
+        def error_stream() -> Generator[str, None, None]:
+            yield format_sse(json.dumps({"type": "error", "message": f"Failed to initialize agent team: {str(e)}"}))
+        return StreamingResponse(error_stream(), media_type="text/event-stream", status_code=500)
 
 
 # Reverted: Endpoint calls tool logic directly due to agent/async test issues
@@ -233,32 +394,31 @@ async def fetch_data(request: FetchRequest):
              )
         # else case handled by initial target check
 
-        # Logic functions now return dictionaries directly
-        tool_data = tool_result_json # Rename variable for clarity
-
-        if tool_data is not None:
-            logger.debug(f"Direct tool result received (type: {type(tool_data)}): {str(tool_data)[:200]}...")
-            if isinstance(tool_data, dict):
-                if 'error' in tool_data:
-                    error_message = tool_data['error']
-                    logger.warning(f"Tool logic returned error: {error_message}")
-                    # Check for specific errors that should be 404
-                    if "not found" in error_message.lower() or "could not find" in error_message.lower():
-                        raise HTTPException(status_code=404, detail=error_message)
-                    # Check for specific errors that should be 400 (e.g., invalid input handled by logic)
-                    elif "invalid" in error_message.lower() or "required" in error_message.lower():
-                         raise HTTPException(status_code=400, detail=error_message)
-                    else: # Treat other tool errors as 500
-                        raise HTTPException(status_code=500, detail=f"Tool execution error: {error_message}")
-                logger.info(f"/fetch_data successful for target: {target}")
-                return tool_data # Return the successful data dictionary
-            else:
-                # If the logic function is expected to return a list (e.g., gamelog),
-                # we might need to adjust this. For now, assume dict is expected or error.
-                # Let's refine this if specific list-returning tools cause issues.
-                # For now, treat non-dict successful returns as unexpected.
-                logger.error(f"Tool logic returned unexpected type: {type(tool_data)}")
-                raise HTTPException(status_code=500, detail="Tool returned unexpected data structure.")
+        # Parse the JSON string returned by the logic function
+        if tool_result_json:
+            logger.debug(f"Attempting to parse direct tool result: {tool_result_json[:200]}...")
+            try:
+                tool_data = json.loads(tool_result_json)
+                if isinstance(tool_data, dict):
+                    if 'error' in tool_data:
+                        error_message = tool_data['error']
+                        logger.warning(f"Tool logic returned error: {error_message}")
+                        # Check for specific errors that should be 404
+                        if "not found" in error_message.lower() or "could not find" in error_message.lower():
+                            raise HTTPException(status_code=404, detail=error_message)
+                        # Check for specific errors that should be 400 (e.g., invalid input handled by logic)
+                        elif "invalid" in error_message.lower() or "required" in error_message.lower():
+                             raise HTTPException(status_code=400, detail=error_message)
+                        else: # Treat other tool errors as 500
+                            raise HTTPException(status_code=500, detail=f"Tool execution error: {error_message}")
+                    logger.info(f"/fetch_data successful for target: {target}")
+                    return tool_data # Return the successful data dictionary
+                else:
+                    logger.error(f"Tool logic returned valid JSON but not a dictionary: {tool_data}")
+                    raise HTTPException(status_code=500, detail="Tool returned unexpected data structure.")
+            except json.JSONDecodeError as json_err:
+                logger.error(f"Tool logic returned invalid JSON: {tool_result_json[:200]}... Error: {json_err}")
+                raise HTTPException(status_code=500, detail=f"Tool failed to return valid JSON data.")
         else:
             logger.error("Tool logic function returned None unexpectedly.")
             raise HTTPException(status_code=500, detail="Internal server error: Tool logic failed.")
@@ -302,4 +462,4 @@ async def fetch_data(request: FetchRequest):
 
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True) # Changed back to 127.0.0.1
