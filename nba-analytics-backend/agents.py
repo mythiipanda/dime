@@ -13,6 +13,7 @@ from tools import get_player_info, get_player_gamelog, get_team_info_and_roster,
 # from agno.tools. ... import ... # Import necessary tools later
 # from agno.knowledge. ... import ... # Import knowledge bases later
 from agno.storage.agent.sqlite import SqliteAgentStorage # Using SQLite for initial dev
+from config import AGENT_MODEL # Import model config
 
 # Load environment variables from .env file
 load_dotenv()
@@ -22,7 +23,7 @@ storage = SqliteAgentStorage(table_name="agent_sessions", db_file="agno_storage.
 
 analysis_agent = Agent(
     name="NBA Analyst Agent",
-    model=Gemini(id="gemini-2.0-flash"), # Using Gemini 2.0 Flash as requested
+    model=Gemini(id=AGENT_MODEL), # Use configured model
     description="An AI agent specialized in analyzing NBA data (like stats, trends, comparisons) and providing clear, concise insights.",
     instructions=[
         "You receive structured NBA data, potentially as a JSON string, sometimes wrapped within another structure like {'result': '<escaped_json_string>'}.",
@@ -44,7 +45,7 @@ analysis_agent = Agent(
 
 data_aggregator_agent = Agent(
     name="NBA Data Aggregator Agent",
-    model=Gemini(id="gemini-2.0-flash"), # Assign model to potentially help tool routing/execution
+    model=Gemini(id=AGENT_MODEL), # Use configured model
     description="An agent responsible for fetching data from various NBA APIs based on requests.",
     instructions=[
         "Receive requests for specific NBA data.",
@@ -54,12 +55,13 @@ data_aggregator_agent = Agent(
         "For get_team_info_and_roster: Extract team_identifier (name or abbreviation) and optional season.",
         "For find_games: Determine if the request is for a player ('P') or team ('T'). Extract the player name or team identifier (name/abbreviation) and pass it as the 'identifier' parameter. Set 'player_or_team' to 'P' or 'T' accordingly. Date/Season/League filters are NOT currently supported by this tool.", # Updated find_games instruction
         "Execute the chosen tool with the extracted parameters.",
-        "CRITICAL INSTRUCTION: Your final response MUST be *only* the raw JSON string returned directly by the tool. Do not add *any* surrounding text, markdown, or explanation. Just output the JSON string.",
+        # Instruction removed: The @tool wrapper now handles JSON serialization. Agent should just focus on calling the tool.
+        "Execute the chosen tool with the extracted parameters.",
         "If the request cannot be mapped to an available tool or parameters are missing/invalid, respond with a clear error message stating the issue.",
     ],
     tools=[get_player_info, get_player_gamelog, get_team_info_and_roster, get_player_career_stats, find_games], # Add find_games
     storage=storage,
-    response_model=str, # Attempt to force string output
+    # response_model=str, # Removed, likely unnecessary as @tool handles output format
     debug_mode=True,
 )
 
