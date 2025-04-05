@@ -1,8 +1,9 @@
+# main.py - COMPLETE CONTENT
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import Dict, Any, Generator
+from typing import Dict, Any, Generator, List # Added List for type hint
 import asyncio
 import uvicorn
 import logging
@@ -15,11 +16,13 @@ from agno.agent import Agent
 from agno.models.google import Gemini
 from agents import data_aggregator_agent, analysis_agent, storage # Import sub-agents and storage
 
-# Import tool logic functions directly for fetch_data workaround
+# Import tool logic functions
 from api_tools.player_tools import (
     fetch_player_info_logic,
     fetch_player_gamelog_logic,
-    fetch_player_career_stats_logic
+    fetch_player_career_stats_logic,
+    get_player_headshot_url, # Ensure headshot function is imported
+    find_players_by_name_fragment # Ensure search function is imported
 )
 from api_tools.team_tools import (
     fetch_team_info_and_roster_logic
@@ -72,6 +75,51 @@ app.add_middleware(
 @app.get("/")
 async def read_root():
     return {"message": "NBA Analytics Backend using Agno"}
+
+# --- Player Headshot Endpoint ---
+@app.get("/player/{player_id}/headshot")
+async def get_player_headshot(player_id: int):
+    """
+    Returns the URL for the player's headshot image.
+    """
+    logger.info(f"Received GET /player/{player_id}/headshot request.")
+    try:
+        # Basic validation (can be enhanced)
+        if player_id <= 0:
+            raise HTTPException(status_code=400, detail="Invalid player_id provided.")
+
+        headshot_url = get_player_headshot_url(player_id)
+        # We could potentially add a check here to see if the URL is valid
+        # (e.g., using a HEAD request), but for simplicity, just return the URL.
+        logger.info(f"Returning headshot URL for player ID {player_id}: {headshot_url}")
+        return {"player_id": player_id, "headshot_url": headshot_url}
+    except HTTPException as http_exc:
+        # Re-raise known HTTP exceptions
+        raise http_exc
+    except Exception as e:
+        logger.exception(f"Unexpected error fetching headshot for player ID {player_id}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+# --- Player Search Endpoint ---
+@app.get("/players/search", response_model=List[Dict[str, Any]]) # Add response model
+async def search_players(q: str | None = None, limit: int = 10):
+    """
+    Searches for players by a name fragment.
+    """
+    logger.info(f"Received GET /players/search request with query: '{q}', limit: {limit}")
+    if not q or len(q) < 2:
+        # Return empty list or specific error if query is too short/missing
+        # raise HTTPException(status_code=400, detail="Search query 'q' must be at least 2 characters long.")
+        return [] # Return empty list for short/missing queries
+
+    try:
+        results = find_players_by_name_fragment(q, limit=limit)
+        logger.info(f"Returning {len(results)} players for search query '{q}'")
+        return results # FastAPI automatically converts list of dicts to JSON
+    except Exception as e:
+        logger.exception(f"Unexpected error during player search for query '{q}'")
+        raise HTTPException(status_code=500, detail=f"Internal server error during player search: {str(e)}")
+
 
 # --- Request Models ---
 class AnalyzeRequest(BaseModel):

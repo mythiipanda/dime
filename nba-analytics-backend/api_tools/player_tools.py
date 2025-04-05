@@ -1,3 +1,4 @@
+# api_tools/player_tools.py - COMPLETE CONTENT
 import logging
 import pandas as pd
 from nba_api.stats.static import players
@@ -5,14 +6,12 @@ from nba_api.stats.endpoints import commonplayerinfo, playergamelog, playercaree
 from nba_api.stats.library.parameters import SeasonTypeAllStar, PerModeDetailed, PerMode36
 import re
 import json
+from config import DEFAULT_TIMEOUT # Import from config
+from .utils import _process_dataframe, _validate_season_format # Import from utils
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_TIMEOUT = 10
-
 # --- Helper Functions ---
-def _validate_season_format(season: str) -> bool:
-    return bool(re.match(r"^\d{4}-\d{2}$", season))
 
 def _find_player_id(player_name: str) -> tuple[int | None, str | None]:
     logger.debug(f"Searching static players for '{player_name}'")
@@ -26,28 +25,10 @@ def _find_player_id(player_name: str) -> tuple[int | None, str | None]:
     logger.info(f"Found player: {player_actual_name} (ID: {player_id})")
     return player_id, player_actual_name
 
-def _process_dataframe(df: pd.DataFrame | None, single_row: bool = True) -> list | dict | None:
-    if df is None or df.empty:
-        return {} if single_row else []
-    try:
-        records = df.to_dict(orient='records')
-        processed_records = [
-            {k: (v if pd.notna(v) else None) for k, v in row.items()}
-            for row in records
-        ]
-        if single_row:
-            return processed_records[0] if processed_records else {}
-        else:
-            return processed_records
-    except Exception as e:
-        logger.error(f"Error processing DataFrame: {e}", exc_info=True)
-        return None
-
 # --- Player Tool Logic Functions (Returning JSON Strings) ---
 
 def fetch_player_info_logic(player_name: str) -> str:
     """Core logic to fetch player info."""
-    # ... (fetch_player_info_logic remains the same) ...
     logger.info(f"Executing fetch_player_info_logic for: '{player_name}'")
     if not player_name or not player_name.strip():
         return json.dumps({"error": "Player name cannot be empty."})
@@ -81,7 +62,6 @@ def fetch_player_info_logic(player_name: str) -> str:
 
 def fetch_player_gamelog_logic(player_name: str, season: str, season_type: str = SeasonTypeAllStar.regular) -> str:
     """Core logic to fetch player game logs."""
-    # ... (fetch_player_gamelog_logic remains the same) ...
     logger.info(f"Executing fetch_player_gamelog_logic for: '{player_name}', Season: {season}, Type: {season_type}")
     if not player_name or not player_name.strip(): return json.dumps({"error": "Player name cannot be empty."})
     if not season or not _validate_season_format(season): return json.dumps({"error": f"Invalid season format: {season}. Expected YYYY-YY."})
@@ -114,13 +94,11 @@ def fetch_player_gamelog_logic(player_name: str, season: str, season_type: str =
         return json.dumps({"error": f"Unexpected error processing game log request for {player_name} ({season}): {str(e)}"})
 
 
-# Updated function signature and call to use per_mode36
 def fetch_player_career_stats_logic(player_name: str, per_mode36: str = PerMode36.per_game) -> str: # Use per_mode36
     """Core logic to fetch player career stats."""
     logger.info(f"Executing fetch_player_career_stats_logic for: '{player_name}', PerMode36: {per_mode36}")
     if not player_name or not player_name.strip(): return json.dumps({"error": "Player name cannot be empty."})
 
-    # Validate per_mode36 but don't pass it to init
     valid_per_modes = [getattr(PerMode36, attr) for attr in dir(PerMode36) if not attr.startswith('_') and isinstance(getattr(PerMode36, attr), str)]
     original_request_mode = per_mode36 # Store original request
     if per_mode36 not in valid_per_modes:
@@ -131,11 +109,6 @@ def fetch_player_career_stats_logic(player_name: str, per_mode36: str = PerMode3
         player_id, player_actual_name = _find_player_id(player_name)
         if player_id is None: return json.dumps({"error": f"Player '{player_name}' not found."})
 
-        # NOTE: Removing per_mode/PerMode from init as it causes TypeErrors.
-        # The nba_api library might implicitly return different dataframes based on
-        # how they are accessed, or require a different method to set the mode.
-        # This needs further investigation in the nba_api library itself.
-        # For now, we fetch the default dataframes available after initialization.
         logger.debug(f"Fetching playercareerstats for ID: {player_id} (Ignoring PerMode in API call)")
         try:
             career_endpoint = playercareerstats.PlayerCareerStats(
@@ -146,8 +119,6 @@ def fetch_player_career_stats_logic(player_name: str, per_mode36: str = PerMode3
             logger.error(f"nba_api playercareerstats failed for ID {player_id}: {api_error}", exc_info=True)
             return json.dumps({"error": f"API error fetching career stats for {player_actual_name}: {str(api_error)}"})
 
-        # Fetch default dataframes
-        # TODO: Investigate how to fetch dataframes corresponding to the requested per_mode36
         season_totals = _process_dataframe(career_endpoint.season_totals_regular_season.get_data_frame(), single_row=False)
         career_totals = _process_dataframe(career_endpoint.career_totals_regular_season.get_data_frame(), single_row=True)
 
@@ -157,8 +128,8 @@ def fetch_player_career_stats_logic(player_name: str, per_mode36: str = PerMode3
 
         result = {
             "player_name": player_actual_name, "player_id": player_id,
-            "per_mode_requested": original_request_mode, # Keep original requested mode
-            "data_retrieved_mode": "Default (PerMode parameter ignored)", # Indicate default was fetched due to API issues
+            "per_mode_requested": original_request_mode,
+            "data_retrieved_mode": "Default (PerMode parameter ignored)",
             "season_totals_regular_season": season_totals or [],
             "career_totals_regular_season": career_totals or {}
         }
@@ -167,3 +138,76 @@ def fetch_player_career_stats_logic(player_name: str, per_mode36: str = PerMode3
     except Exception as e:
         logger.critical(f"Unexpected error in fetch_player_career_stats_logic for '{player_name}': {e}", exc_info=True)
         return json.dumps({"error": f"Unexpected error processing career stats request for {player_name}: {str(e)}"})
+
+
+# --- Player Headshot Function ---
+
+def get_player_headshot_url(player_id: int) -> str:
+    """
+    Constructs the URL for a player's headshot based on their ID.
+    Args:
+        player_id (int): The NBA player ID.
+    Returns:
+        str: The URL to the player's headshot PNG.
+    """
+    if not isinstance(player_id, int) or player_id <= 0:
+        logger.warning(f"Invalid player_id provided for headshot: {player_id}")
+
+    base_url = "https://cdn.nba.com/headshots/nba/latest/260x190/"
+    headshot_url = f"{base_url}{player_id}.png"
+    logger.info(f"Generated headshot URL for player ID {player_id}: {headshot_url}")
+    return headshot_url
+
+
+# --- Player Search Function ---
+
+# Cache for player list to avoid repeated calls to get_players()
+_player_list_cache = None
+
+def _get_cached_player_list():
+    """Gets the full player list, caching it after the first call."""
+    global _player_list_cache
+    if _player_list_cache is None:
+        logger.info("Fetching and caching full player list...")
+        try:
+            _player_list_cache = players.get_players()
+            logger.info(f"Successfully cached {len(_player_list_cache)} players.")
+        except Exception as e:
+            logger.error(f"Failed to fetch and cache player list: {e}", exc_info=True)
+            _player_list_cache = [] # Set to empty list on error to avoid retrying constantly
+    return _player_list_cache
+
+def find_players_by_name_fragment(name_fragment: str, limit: int = 10) -> list[dict]:
+    """
+    Finds players whose full name contains the given fragment (case-insensitive).
+    Args:
+        name_fragment (str): The partial name to search for.
+        limit (int): The maximum number of results to return.
+    Returns:
+        list[dict]: A list of matching players [{'id': player_id, 'full_name': player_name}, ...].
+    """
+    if not name_fragment or len(name_fragment) < 2: # Require at least 2 characters
+        return []
+
+    all_players = _get_cached_player_list()
+    if not all_players: # Handle cache fetch error
+        return []
+
+    name_fragment_lower = name_fragment.lower()
+    matching_players = []
+
+    try:
+        for player in all_players:
+            if name_fragment_lower in player['full_name'].lower():
+                matching_players.append({
+                    'id': player['id'],
+                    'full_name': player['full_name']
+                })
+                if len(matching_players) >= limit:
+                    break # Stop once limit is reached
+    except Exception as e:
+        logger.error(f"Error filtering player list for fragment '{name_fragment}': {e}", exc_info=True)
+        return [] # Return empty on error
+
+    logger.info(f"Found {len(matching_players)} players matching fragment '{name_fragment}' (limit {limit}).")
+    return matching_players
