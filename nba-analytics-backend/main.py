@@ -233,31 +233,32 @@ async def fetch_data(request: FetchRequest):
              )
         # else case handled by initial target check
 
-        # Parse the JSON string returned by the logic function
-        if tool_result_json:
-            logger.debug(f"Attempting to parse direct tool result: {tool_result_json[:200]}...")
-            try:
-                tool_data = json.loads(tool_result_json)
-                if isinstance(tool_data, dict):
-                    if 'error' in tool_data:
-                        error_message = tool_data['error']
-                        logger.warning(f"Tool logic returned error: {error_message}")
-                        # Check for specific errors that should be 404
-                        if "not found" in error_message.lower() or "could not find" in error_message.lower():
-                            raise HTTPException(status_code=404, detail=error_message)
-                        # Check for specific errors that should be 400 (e.g., invalid input handled by logic)
-                        elif "invalid" in error_message.lower() or "required" in error_message.lower():
-                             raise HTTPException(status_code=400, detail=error_message)
-                        else: # Treat other tool errors as 500
-                            raise HTTPException(status_code=500, detail=f"Tool execution error: {error_message}")
-                    logger.info(f"/fetch_data successful for target: {target}")
-                    return tool_data # Return the successful data dictionary
-                else:
-                    logger.error(f"Tool logic returned valid JSON but not a dictionary: {tool_data}")
-                    raise HTTPException(status_code=500, detail="Tool returned unexpected data structure.")
-            except json.JSONDecodeError as json_err:
-                logger.error(f"Tool logic returned invalid JSON: {tool_result_json[:200]}... Error: {json_err}")
-                raise HTTPException(status_code=500, detail=f"Tool failed to return valid JSON data.")
+        # Logic functions now return dictionaries directly
+        tool_data = tool_result_json # Rename variable for clarity
+
+        if tool_data is not None:
+            logger.debug(f"Direct tool result received (type: {type(tool_data)}): {str(tool_data)[:200]}...")
+            if isinstance(tool_data, dict):
+                if 'error' in tool_data:
+                    error_message = tool_data['error']
+                    logger.warning(f"Tool logic returned error: {error_message}")
+                    # Check for specific errors that should be 404
+                    if "not found" in error_message.lower() or "could not find" in error_message.lower():
+                        raise HTTPException(status_code=404, detail=error_message)
+                    # Check for specific errors that should be 400 (e.g., invalid input handled by logic)
+                    elif "invalid" in error_message.lower() or "required" in error_message.lower():
+                         raise HTTPException(status_code=400, detail=error_message)
+                    else: # Treat other tool errors as 500
+                        raise HTTPException(status_code=500, detail=f"Tool execution error: {error_message}")
+                logger.info(f"/fetch_data successful for target: {target}")
+                return tool_data # Return the successful data dictionary
+            else:
+                # If the logic function is expected to return a list (e.g., gamelog),
+                # we might need to adjust this. For now, assume dict is expected or error.
+                # Let's refine this if specific list-returning tools cause issues.
+                # For now, treat non-dict successful returns as unexpected.
+                logger.error(f"Tool logic returned unexpected type: {type(tool_data)}")
+                raise HTTPException(status_code=500, detail="Tool returned unexpected data structure.")
         else:
             logger.error("Tool logic function returned None unexpectedly.")
             raise HTTPException(status_code=500, detail="Internal server error: Tool logic failed.")
