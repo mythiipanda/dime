@@ -25,7 +25,8 @@ export default function AgentDashboardPage() {
     submitPrompt,
     closeConnection,
   } = useAgentChatSSE({
-    apiUrl: process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/ask_team", // Fallback URL
+    // Provide only the base URL. The hook or rewrite will handle the path.
+    apiUrl: process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000", // Fallback URL (BASE ONLY)
   });
 
   // Ref for scrolling chat area

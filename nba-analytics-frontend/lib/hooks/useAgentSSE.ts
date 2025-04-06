@@ -48,10 +48,10 @@ export function useAgentSSE({ apiUrl }: UseAgentSSEProps) {
     }
 
     // Construct the full URL including the /api prefix
-    // Construct URL based on environment (apiUrl is base URL)
-    const baseUrl = apiUrl; // Assuming apiUrl is the base backend URL
-    const endpointPath = baseUrl.includes('localhost') ? '/ask_team' : '/api/ask_team';
-    const fullApiUrl = `${baseUrl}${endpointPath}?prompt=${encodeURIComponent(prompt)}`;
+    // Always use relative /api path. Rewrite handles local dev.
+    // NOTE: The `apiUrl` prop is now ignored by this hook, as the path is fixed.
+    // Consider removing `apiUrl` prop if no longer needed elsewhere.
+    const fullApiUrl = `/api/ask_team?prompt=${encodeURIComponent(prompt)}`;
     console.log(`SSE connecting to: ${fullApiUrl}`); // Add log
     const eventSource = new EventSource(fullApiUrl);
     eventSourceRef.current = eventSource;

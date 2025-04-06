@@ -74,9 +74,9 @@ export default function PlayersPage() {
     try {
       // --- Fetch Player Info ---
       // Use relative path for API calls, Vercel will route correctly
-      const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-      const infoUrl = `${baseUrl}${baseUrl.includes('localhost') ? '' : '/api'}/fetch_data`;
-      console.log(`Fetching player info from: ${infoUrl}`); // Add log
+      // Always use relative /api path.
+      const infoUrl = `/api/fetch_data`;
+      console.log(`Fetching player info from: ${infoUrl}`);
       const infoResponse = await fetch(infoUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -101,8 +101,9 @@ export default function PlayersPage() {
       const playerId = infoData.player_info.PERSON_ID;
 
       // --- Fetch Headshot URL ---
-      const headshotUrlPath = `${baseUrl}${baseUrl.includes('localhost') ? '' : '/api'}/player/${playerId}/headshot`;
-      console.log(`Fetching headshot from: ${headshotUrlPath}`); // Add log
+      // Always use relative /api path.
+      const headshotUrlPath = `/api/player/${playerId}/headshot`;
+      console.log(`Fetching headshot from: ${headshotUrlPath}`);
       const headshotResponse = await fetch(headshotUrlPath);
       if (!headshotResponse.ok) {
          // Don't throw error for missing headshot, just log and continue
@@ -154,10 +155,9 @@ export default function PlayersPage() {
     debounceTimer.current = setTimeout(async () => {
       try {
         console.log(`Fetching suggestions for: ${searchTerm}`);
-        // Construct URL based on environment
-        const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-        const suggestionsUrl = `${baseUrl}${baseUrl.includes('localhost') ? '' : '/api'}/players/search?q=${encodeURIComponent(searchTerm)}&limit=5`;
-        console.log(`Fetching suggestions from: ${suggestionsUrl}`); // Add log
+        // Always use relative /api path. Next.js rewrite handles local dev.
+        const suggestionsUrl = `/api/players/search?q=${encodeURIComponent(searchTerm)}&limit=5`;
+        console.log(`Fetching suggestions from: ${suggestionsUrl}`);
         const response = await fetch(suggestionsUrl);
         if (!response.ok) {
           throw new Error(`Failed to fetch suggestions (${response.status})`);
