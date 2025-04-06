@@ -4,9 +4,10 @@ import * as React from "react"; // Keep for local input state & effect
 import { ScrollArea } from "@/components/ui/scroll-area";
 // Remove Resizable components
 // Import the CHAT hook and specific components needed
-import { useAgentChatSSE, ChatMessage } from "@/lib/hooks/useAgentChatSSE"; // Switch hook
+import { useAgentChatSSE, ChatMessage } from "@/lib/hooks/useAgentChatSSE";
 import { PromptInputForm } from "@/components/agent/PromptInputForm";
-import { ChatMessageDisplay } from "@/components/agent/ChatMessageDisplay"; // Import message display
+import { ChatMessageDisplay } from "@/components/agent/ChatMessageDisplay";
+import { InitialChatScreen } from "@/components/agent/InitialChatScreen"; // Import new component
 import { ErrorDisplay } from "@/components/agent/ErrorDisplay"; // Keep for potential top-level errors
 
 // Agent Dashboard Page Content
@@ -34,7 +35,8 @@ export default function AgentDashboardPage() {
   const handleFormSubmit = (e?: React.FormEvent<HTMLFormElement>) => {
     if (e) e.preventDefault();
     submitPrompt(inputValue);
-    setInputValue(""); // Clear input after submission
+    // Don't clear input here, submitPrompt handles it via state update triggering re-render
+    // setInputValue("");
   };
 
   // Effect to scroll down when chat history updates
@@ -51,6 +53,14 @@ export default function AgentDashboardPage() {
     };
   }, [closeConnection]);
 
+  // Handle clicking an example prompt
+  const handleExampleClick = (prompt: string) => {
+    setInputValue(prompt); // Set input value
+    // Optionally, submit immediately after setting? Or let user press send?
+    // For now, just set the input value. User can press send.
+    // If immediate submit is desired: submitPrompt(prompt); setInputValue('');
+  };
+
   // This component now renders *only* the content area within the main layout
   return (
     // Main container with flex column layout
@@ -58,22 +68,27 @@ export default function AgentDashboardPage() {
       {/* Optional: Display top-level errors */}
       {error && !isLoading && <ErrorDisplay error={error} />}
 
-      {/* Scrollable Chat History Area */}
-      <ScrollArea className="flex-1 p-4" ref={scrollAreaRef}>
-        <div className="space-y-4">
-          {chatHistory.map((message, index) => (
-            <ChatMessageDisplay key={index} message={message} />
-          ))}
-          {/* Optional: Show loading indicator at the end */}
-          {isLoading && (
-             <div className="flex justify-start">
-                <div className="p-2 text-sm text-muted-foreground">Agent is thinking...</div>
-             </div>
-          )}
-        </div>
-      </ScrollArea>
+      {/* Conditional Rendering: Initial Screen or Chat History */}
+      {chatHistory.length === 0 && !isLoading && !error ? (
+        <InitialChatScreen onExampleClick={handleExampleClick} />
+      ) : (
+        <ScrollArea className="flex-1 p-4" ref={scrollAreaRef}>
+          <div className="space-y-4">
+            {chatHistory.map((message, index) => (
+              <ChatMessageDisplay key={index} message={message} />
+            ))}
+            {/* Optional: Show loading indicator at the end */}
+            {isLoading && (
+               <div className="flex justify-start">
+                  {/* You might want a spinner or a more distinct loading indicator here */}
+                  <div className="p-2 text-sm text-muted-foreground">Agent is thinking...</div>
+               </div>
+            )}
+          </div>
+        </ScrollArea>
+      )}
 
-      {/* Input Form Area */}
+      {/* Input Form Area (Always visible unless maybe error state?) */}
       <div className="p-4 border-t">
         <PromptInputForm
           inputValue={inputValue}
