@@ -1,5 +1,5 @@
 // components/agent/InitialChatScreen.tsx
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+// Removed unused Card components
 import { Button } from "@/components/ui/button";
 import { ZapIcon, MessageSquareIcon, AlertTriangleIcon } from "lucide-react"; // Example icons
 
@@ -51,7 +51,7 @@ export function InitialChatScreen({ onExampleClick }: InitialChatScreenProps) {
                 className="h-auto whitespace-normal text-xs"
                 onClick={() => onExampleClick(prompt)}
               >
-                "{prompt}"
+                &quot;{prompt}&quot; {/* Use &quot; for quotes */}
               </Button>
             ))}
           </div>

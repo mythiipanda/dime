@@ -1,7 +1,6 @@
-import {
+import { // Removed CardDescription
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";

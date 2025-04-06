@@ -2,7 +2,7 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Card, CardContent } from "@/components/ui/card";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"; // Removed AvatarImage
 import { UserIcon, BotIcon } from "lucide-react";
 import clsx from 'clsx'; // Import clsx
 import { ChatMessage } from '@/lib/hooks/useAgentChatSSE'; // Import the interface from the new hook file
