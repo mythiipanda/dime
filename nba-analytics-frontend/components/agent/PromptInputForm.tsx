@@ -2,7 +2,7 @@
 import * as React from 'react';
 import { Textarea } from "@/components/ui/textarea"; // Import Textarea
 import { Button } from "@/components/ui/button";
-import { SendIcon, CornerDownLeftIcon } from "lucide-react"; // Add CornerDownLeftIcon
+import { SendIcon } from "lucide-react"; // Removed unused CornerDownLeftIcon
 
 interface PromptInputFormProps {
   inputValue: string;

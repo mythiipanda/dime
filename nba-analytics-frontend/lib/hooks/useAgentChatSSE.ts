@@ -14,7 +14,7 @@ export interface ChatMessage {
 // Define a type for structured results (mirroring ResultsDisplay)
 interface StructuredResult {
   type: 'table' | 'chart' | string;
-  data?: Record<string, any>[];
+  data?: Record<string, unknown>[]; // Use unknown instead of any
 }
 
 interface AgentChatSSEState {
@@ -167,7 +167,7 @@ export function useAgentChatSSE({ apiUrl }: UseAgentChatSSEProps) {
       }
     };
   // Include chatHistory in dependency array
-  }, [apiUrl, state.isLoading, state.error, state.chatHistory]);
+  }, [apiUrl, state.isLoading, state.error]); // Removed state.chatHistory
 
   const closeConnection = useCallback(() => {
     if (eventSourceRef.current) {

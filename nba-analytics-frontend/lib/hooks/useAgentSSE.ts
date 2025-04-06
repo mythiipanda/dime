@@ -8,7 +8,7 @@ interface UseAgentSSEProps {
 // Define a type for structured results (mirroring ResultsDisplay)
 interface StructuredResult {
   type: 'table' | 'chart' | string;
-  data?: Record<string, any>[];
+  data?: Record<string, unknown>[]; // Use unknown instead of any
 }
 
 // Updated state interface

@@ -10,7 +10,7 @@ import ReactMarkdown from 'react-markdown'; // Import ReactMarkdown
 // Define a more specific type for structured results
 interface StructuredResult {
   type: 'table' | 'chart' | string; // Allow other types potentially
-  data?: Record<string, any>[]; // Array of objects for table data
+  data?: Record<string, unknown>[]; // Use unknown instead of any
   // Add other potential fields for chart data later if needed
 }
 
@@ -74,9 +74,9 @@ export function ResultsDisplay({ isLoading, error, response, resultData }: Resul
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {resultData.data?.map((row: Record<string, any>, index: number) => ( // Type row
+                      {resultData.data?.map((row: Record<string, unknown>, index: number) => ( // Use unknown
                         <TableRow key={index}>
-                          {Object.values(row).map((val: unknown, i: number) => <TableCell key={i}>{String(val)}</TableCell>)} // Type val as unknown
+                          {Object.values(row).map((val: unknown, i: number) => <TableCell key={i}>{String(val)}</TableCell>)} {/* Type val as unknown */}
                         </TableRow>
                       ))}
                     </TableBody>
