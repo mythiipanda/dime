@@ -23,7 +23,8 @@ export function ChatMessageDisplay({ message }: ChatMessageDisplayProps) {
       <Card className={`max-w-[75%] ${message.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
         <CardContent className="p-2"> {/* Removed max-height/overflow */}
           {message.role === 'assistant' ? (
-            <div className="prose prose-sm dark:prose-invert max-w-none">
+            {/* Added overflow-wrap: break-word; via style prop to ensure content fits */}
+            <div className="prose prose-sm dark:prose-invert max-w-none" style={{ overflowWrap: 'break-word' }}>
               {/* Render markdown for assistant messages */}
               <ReactMarkdown remarkPlugins={[remarkGfm]}>
                 {message.content}
