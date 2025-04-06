@@ -11,12 +11,18 @@ export interface ChatMessage {
   content: string;
 }
 
+// Define a type for structured results (mirroring ResultsDisplay)
+interface StructuredResult {
+  type: 'table' | 'chart' | string;
+  data?: Record<string, any>[];
+}
+
 interface AgentChatSSEState {
   isLoading: boolean;
   error: string | null;
   progress: string[];
   chatHistory: ChatMessage[]; // Manages chat history
-  resultData: any; // Keep for potential future structured data alongside chat
+  resultData: StructuredResult | null; // Use specific type
 }
 
 export function useAgentChatSSE({ apiUrl }: UseAgentChatSSEProps) {

@@ -5,13 +5,19 @@ interface UseAgentSSEProps {
   apiUrl: string;
 }
 
-// Original state interface
+// Define a type for structured results (mirroring ResultsDisplay)
+interface StructuredResult {
+  type: 'table' | 'chart' | string;
+  data?: Record<string, any>[];
+}
+
+// Updated state interface
 interface AgentSSEState {
   isLoading: boolean;
   response: string | null; // Keep single response
   error: string | null;
   progress: string[];
-  resultData: any;
+  resultData: StructuredResult | null; // Use specific type
 }
 
 export function useAgentSSE({ apiUrl }: UseAgentSSEProps) {
