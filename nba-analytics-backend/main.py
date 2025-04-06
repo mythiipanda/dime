@@ -15,6 +15,11 @@ from textwrap import dedent
 from agno.agent import Agent
 from agno.models.google import Gemini
 from agents import data_aggregator_agent, analysis_agent, storage # Import sub-agents and storage
+from config import ( # Import constants
+    LOG_FILENAME, LOG_FILE_MODE, CORS_ALLOWED_ORIGINS,
+    SUPPORTED_FETCH_TARGETS, UVICORN_HOST, UVICORN_PORT,
+    AGENT_MODEL_ID # Import AGENT_MODEL_ID for team instance
+)
 
 # Import tool logic functions
 from api_tools.player_tools import (
@@ -42,7 +47,7 @@ stream_handler.setFormatter(log_formatter)
 stream_handler.setLevel(log_level)
 
 # File Handler
-file_handler = logging.FileHandler("backend_app.log", mode='a') # Append mode
+file_handler = logging.FileHandler(LOG_FILENAME, mode=LOG_FILE_MODE) # Use config values
 file_handler.setFormatter(log_formatter)
 file_handler.setLevel(log_level)
 
@@ -60,10 +65,7 @@ logger = logging.getLogger(__name__) # Get logger for this module
 app = FastAPI(title="NBA Analytics Backend")
 
 # Add CORS middleware
-origins = [
-    "http://localhost:3000", # Allow frontend origin
-    "http://localhost",
-]
+origins = CORS_ALLOWED_ORIGINS # Use config value
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -134,86 +136,7 @@ class FetchRequest(BaseModel):
 class NormalizeRequest(BaseModel):
     raw_data: Dict[str, Any]
 
-# --- Helper to Extract JSON ---
-def extract_json_string(response_str: str) -> str | None:
-    # ... (Keep extract_json_string function as is) ...
-    """
-    Attempts to extract the raw JSON string returned by the tool,
-    handling potential wrapping by the agent (markdown, nested JSON).
-    Focuses on the specific observed structure:
-    {"<tool_name>_response": "{\"result\": \"<escaped_tool_output_json>\"}"}
-    """
-    if not isinstance(response_str, str):
-        logger.debug(f"Input to extract_json_string is not a string: {type(response_str)}")
-        return None
-
-    logger.debug(f"Attempting to extract JSON from: {response_str[:200]}...")
-    original_str = response_str
-    content_to_parse = response_str
-
-    # 1. Strip markdown code block if present
-    match_md = re.search(r"```json\s*(.*?)\s*```", content_to_parse, re.DOTALL | re.IGNORECASE)
-    if match_md:
-        content_to_parse = match_md.group(1).strip()
-        logger.debug(f"Stripped markdown, now processing: {content_to_parse[:100]}...")
-
-    # 2. Check if the current string is valid JSON
-    try:
-        json.loads(content_to_parse)
-        logger.debug("String is valid JSON after potential markdown stripping.")
-        return content_to_parse
-    except json.JSONDecodeError:
-        logger.debug("String is not direct JSON, checking for specific Agno wrapper...")
-
-    # 3. Check specifically for the observed Agno double-wrapper structure
-    try:
-        # First parse: {"<tool_name>_response": "<value_string>"}
-        outer_dict = json.loads(content_to_parse)
-        if isinstance(outer_dict, dict) and len(outer_dict) == 1:
-            key = list(outer_dict.keys())[0]
-            value_str = list(outer_dict.values())[0] # This should be "{\"result\": \"<escaped_json>\"}"
-
-            if isinstance(key, str) and key.endswith("_response") and isinstance(value_str, str):
-                logger.debug(f"Detected Agno wrapper. Key: {key}. Parsing inner value string: {value_str[:100]}...")
-                try:
-                    # Second parse: {"result": "<escaped_json>"}
-                    inner_dict = json.loads(value_str)
-                    if isinstance(inner_dict, dict) and "result" in inner_dict and isinstance(inner_dict["result"], str):
-                        final_escaped_json_str = inner_dict["result"] # This is "<escaped_json>"
-                        # Final validation: Can the innermost string be parsed as JSON?
-                        try:
-                            json.loads(final_escaped_json_str)
-                            logger.debug("Successfully extracted JSON from Agno double wrapper ('result' key).")
-                            return final_escaped_json_str # Return the innermost JSON string
-                        except json.JSONDecodeError:
-                             logger.error(f"Innermost 'result' string was not valid JSON: {final_escaped_json_str[:100]}...")
-                             return None # Failed validation
-                    else:
-                         logger.warning("Inner dict from wrapper value didn't contain 'result' string.")
-                         # Maybe value_str itself was the intended JSON? Try parsing it directly.
-                         try:
-                             json.loads(value_str)
-                             logger.debug("Treating wrapper value string as the final JSON.")
-                             return value_str
-                         except json.JSONDecodeError:
-                             logger.warning("Value string was not valid JSON either.")
-                             return None
-                except json.JSONDecodeError:
-                     logger.warning(f"Value string '{value_str[:100]}...' in Agno wrapper was not valid JSON for 'result' structure.")
-                     return None # Value wasn't JSON
-            else:
-                logger.debug("Structure is single-key dict, but doesn't match Agno wrapper pattern.")
-        else:
-            logger.debug("Response string is not a single-key dict wrapper.")
-
-    except json.JSONDecodeError:
-        logger.debug("Response string could not be parsed as outer JSON for wrapper check.")
-        pass
-
-    # 4. If no patterns matched
-    logger.error(f"Failed to extract valid JSON string from agent response: {original_str[:200]}...")
-    return None
-
+# (Removed unused extract_json_string helper function)
 # --- Agent Interaction Endpoints ---
 
 @app.post("/analyze")
@@ -261,7 +184,7 @@ def create_nba_team_instance():
     # This function now creates the agent instance when called
     return Agent(
         name="NBA Analysis Team Lead",
-        model=Gemini(id="gemini-2.0-flash"),
+        model=Gemini(id=AGENT_MODEL_ID), # Use config value
         team=[data_aggregator_agent, analysis_agent],
         description="Coordinates data fetching and analysis for NBA-related queries.",
         instructions=dedent("""\
@@ -380,7 +303,7 @@ async def fetch_data(request: FetchRequest):
     tool_result_json = None
 
     # Validate target first
-    supported_targets = ["player_info", "player_gamelog", "team_info", "player_career_stats", "find_games"]
+    supported_targets = SUPPORTED_FETCH_TARGETS # Use config value
     if target not in supported_targets:
         raise HTTPException(status_code=400, detail=f"Unsupported target '{target}'. Supported targets: {', '.join(supported_targets)}.")
 
@@ -510,4 +433,4 @@ async def fetch_data(request: FetchRequest):
 
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True) # Changed back to 127.0.0.1
+    uvicorn.run("main:app", host=UVICORN_HOST, port=UVICORN_PORT, reload=True) # Use config values

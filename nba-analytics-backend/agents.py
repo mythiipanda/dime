@@ -27,9 +27,13 @@ analysis_agent = Agent(
     model=Gemini(id=AGENT_MODEL_ID), # Use config value
     description="An AI agent specialized in analyzing NBA data (like stats, trends, comparisons) and providing clear, concise insights.",
     instructions=[
-        "You receive structured NBA data, potentially as a JSON string, sometimes wrapped within another structure like {'result': '<escaped_json_string>'}.",
-        "**CRITICAL FIRST STEP:** If the input data is a string containing a structure like {'result': '...'}, you MUST first parse this outer structure and extract the inner JSON string from the 'result' field. Then, parse the extracted inner string to get the actual data dictionary/list.",
-        "If the input data is already a direct JSON string representing a dictionary or list, parse it directly.",
+        "You receive structured NBA data, potentially as a JSON string.",
+        # NOTE: When receiving data from DataAggregatorAgent via the NBAnalysisTeam coordinator,
+        #       the data might be implicitly wrapped by the Agno framework (e.g., in a {'result': '<escaped_json>'} structure),
+        #       even if the DataAggregatorAgent was instructed to return only the raw JSON string.
+        #       Therefore, you must handle this potential wrapping as the first step.
+        "**CRITICAL FIRST STEP:** Check if the input data string looks like a wrapped structure (e.g., `{\"result\": \"...\"}`). If it does, you MUST parse the outer structure, extract the inner JSON string (likely from the 'result' field), and then parse that inner string to get the actual data dictionary/list.",
+        "If the input data string appears to be a direct JSON representation of a dictionary or list (not wrapped), parse it directly.",
         "Once you have the actual data dictionary/list, analyze it based on the user's request (e.g., compare players, explain a team's performance, identify trends).",
         "Provide insights in a clear, easy-to-understand manner.",
         "Use markdown for formatting responses, including tables or lists where appropriate.",
@@ -56,6 +60,10 @@ data_aggregator_agent = Agent(
         "For get_team_info_and_roster: Extract team_identifier (name or abbreviation) and optional season.",
         "For find_games: Determine if the request is for a player ('P') or team ('T'). Extract the player name or team identifier (name/abbreviation) and pass it as the 'identifier' parameter. Set 'player_or_team' to 'P' or 'T' accordingly. Date/Season/League filters are NOT currently supported by this tool.", # Updated find_games instruction
         "Execute the chosen tool with the extracted parameters.",
+        # NOTE: Despite the critical instruction below, when this agent's string output is passed
+        #       to another agent within an Agno Team workflow (coordinated by NBAnalysisTeam),
+        #       the framework might implicitly wrap it (e.g., {'result': '<escaped_json>'}).
+        #       The receiving agent (AnalysisAgent) is instructed to handle this potential wrapping.
         "CRITICAL INSTRUCTION: Your final response MUST be *only* the raw JSON string returned directly by the tool. Do not add *any* surrounding text, markdown, or explanation. Just output the JSON string.",
         "If the request cannot be mapped to an available tool or parameters are missing/invalid, respond with a clear error message stating the issue.",
     ],
@@ -65,6 +73,11 @@ data_aggregator_agent = Agent(
     debug_mode=AGENT_DEBUG_MODE, # Use config value
 )
 
+# TODO: DataNormalizerAgent - Defined but currently unused.
+# The corresponding API endpoint (/normalize_data in main.py) is commented out.
+# This agent was previously reported to cause an ImportError when imported elsewhere,
+# likely due to missing dependencies or incomplete implementation.
+# Needs further investigation and implementation if data normalization is required.
 data_normalizer_agent = Agent(
     name="NBA Data Normalizer Agent",
     # model=None, # Likely no LLM needed for schema mapping logic
