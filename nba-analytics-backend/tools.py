@@ -84,10 +84,10 @@ def get_player_career_stats(player_name: str, per_mode36: str = PerMode36.per_ga
 # Simplified signature further: Removed season, season_type, league_id
 def find_games(
     player_or_team: str = 'T',
-    player_id: int | None = None,
-    team_id: int | None = None,
-    date_from: str | None = None,
-    date_to: str | None = None
+    player_id: int = None, # Reverted type hint
+    team_id: int = None, # Reverted type hint
+    date_from: str = None, # Reverted type hint
+    date_to: str = None # Reverted type hint
 ) -> str:
     """
     Finds games based on Player/Team ID and optional date range. Returns JSON string.
@@ -96,10 +96,10 @@ def find_games(
 
     Args:
         player_or_team (str): Search by 'P' (Player) or 'T' (Team). Defaults to 'T'.
-        player_id (int | None): Required if player_or_team='P'. Omit or pass None otherwise.
-        team_id (int | None): Required if player_or_team='T'. Omit or pass None otherwise.
-        date_from (str | None): Optional start date filter (MM/DD/YYYY).
-        date_to (str | None): Optional end date filter (MM/DD/YYYY).
+        player_id (int): Required if player_or_team='P'. Omit or pass None otherwise.
+        team_id (int): Required if player_or_team='T'. Omit or pass None otherwise.
+        date_from (str): Optional start date filter (MM/DD/YYYY).
+        date_to (str): Optional end date filter (MM/DD/YYYY).
 
     Returns:
         str: JSON string containing a list of found games or {'error': ...}.
