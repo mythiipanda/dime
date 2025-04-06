@@ -15,7 +15,15 @@ import { Button } from "@/components/ui/button"; // Import Button
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"; // Import Avatar
 import { Skeleton } from "@/components/ui/skeleton"; // Import Skeleton
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"; // Import Alert
-import { TerminalIcon, SearchIcon } from "lucide-react"; // Import icons
+import { TerminalIcon, SearchIcon, Loader2Icon } from "lucide-react"; // Import icons, add Loader2Icon
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command"; // Import Command components
 
 // Define interfaces for expected data structures (can be refined)
 interface PlayerInfo {
@@ -52,6 +60,8 @@ export default function PlayersPage() {
   const [headshotUrl, setHeadshotUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [suggestions, setSuggestions] = useState<{ id: number; full_name: string }[]>([]);
+  const [isSuggestionLoading, setIsSuggestionLoading] = useState(false);
 
   const handleSearch = async () => {
     if (!searchTerm.trim()) return;
@@ -116,6 +126,52 @@ export default function PlayersPage() {
       handleSearch();
   }
 
+  // Debounce timer ref
+  const debounceTimer = React.useRef<NodeJS.Timeout | null>(null);
+
+  // Effect to fetch suggestions on searchTerm change (debounced)
+  React.useEffect(() => {
+    // Clear previous results when search term is short
+    if (searchTerm.trim().length < 2) {
+      setSuggestions([]);
+      return;
+    }
+
+    // Clear existing timer
+    if (debounceTimer.current) {
+      clearTimeout(debounceTimer.current);
+    }
+
+    // Set loading state for suggestions
+    setIsSuggestionLoading(true);
+
+    // Set new timer
+    debounceTimer.current = setTimeout(async () => {
+      try {
+        console.log(`Fetching suggestions for: ${searchTerm}`);
+        const response = await fetch(`/api/players/search?q=${encodeURIComponent(searchTerm)}&limit=5`); // Limit suggestions
+        if (!response.ok) {
+          throw new Error(`Failed to fetch suggestions (${response.status})`);
+        }
+        const data = await response.json();
+        setSuggestions(data || []);
+      } catch (error) {
+        console.error("Failed to fetch suggestions:", error);
+        setSuggestions([]); // Clear suggestions on error
+      } finally {
+        setIsSuggestionLoading(false);
+      }
+    }, 300); // 300ms debounce
+
+    // Cleanup function to clear timer on unmount or searchTerm change
+    return () => {
+      if (debounceTimer.current) {
+        clearTimeout(debounceTimer.current);
+      }
+    };
+  }, [searchTerm]); // Dependency array includes searchTerm
+  // Removed extra closing brace here
+
   return (
     <main className="flex flex-1 flex-col gap-4 p-4 lg:gap-6 lg:p-6">
       <div className="flex items-center">
@@ -129,19 +185,51 @@ export default function PlayersPage() {
             <CardDescription>Enter a player&apos;s name to find their info.</CardDescription> {/* Escaped quote */}
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleFormSubmit} className="flex w-full items-center space-x-2">
-              <Input
-                type="text"
-                placeholder="e.g., LeBron James"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                disabled={isLoading}
-                className="flex-1"
-              />
-              <Button type="submit" disabled={isLoading || !searchTerm.trim()}>
-                {isLoading ? "Searching..." : <><SearchIcon className="mr-2 h-4 w-4" /> Search</>}
-              </Button>
-            </form>
+            {/* Use Command component for input and suggestions */}
+            <Command className="rounded-lg border shadow-md">
+              <div className="flex items-center border-b px-3"> {/* Wrapper for input and button */}
+                <SearchIcon className="mr-2 h-4 w-4 shrink-0 opacity-50" />
+                <CommandInput
+                  placeholder="e.g., LeBron James"
+                  value={searchTerm}
+                  onValueChange={setSearchTerm} // Use CommandInput's handler
+                  disabled={isLoading}
+                  className="flex-1 border-0 shadow-none focus-visible:ring-0 pl-0 h-10" // Adjust styling
+                />
+                 <Button
+                    type="button" // Change type to button as Command handles selection/submission
+                    onClick={handleSearch} // Trigger search directly
+                    disabled={isLoading || !searchTerm.trim()}
+                    size="sm"
+                    className="ml-2"
+                  >
+                    {isLoading ? <Loader2Icon className="h-4 w-4 animate-spin" /> : "Search"}
+                  </Button>
+              </div>
+              <CommandList>
+                {isSuggestionLoading && <CommandItem>Loading suggestions...</CommandItem>}
+                {!isSuggestionLoading && suggestions.length === 0 && searchTerm.trim().length >= 2 && (
+                  <CommandEmpty>No players found.</CommandEmpty>
+                )}
+                {!isSuggestionLoading && suggestions.length > 0 && (
+                  <CommandGroup heading="Suggestions">
+                    {suggestions.map((player) => (
+                      <CommandItem
+                        key={player.id}
+                        value={player.full_name} // Value used for filtering/selection
+                        onSelect={(currentValue) => {
+                          setSearchTerm(currentValue); // Set search term on selection
+                          setSuggestions([]); // Clear suggestions
+                          handleSearch(); // Trigger search immediately on selection
+                        }}
+                      >
+                        {player.full_name}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                )}
+              </CommandList>
+            </Command>
           </CardContent>
         </Card>
 

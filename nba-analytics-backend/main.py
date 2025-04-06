@@ -27,7 +27,8 @@ from api_tools.player_tools import (
     fetch_player_gamelog_logic,
     fetch_player_career_stats_logic,
     get_player_headshot_url, # Keep headshot import
-    find_players_by_name_fragment # Keep search import
+    find_players_by_name_fragment, # Keep search import
+    _get_cached_player_list # Import helper to potentially pre-warm cache if needed
 )
 from api_tools.team_tools import (
     fetch_team_info_and_roster_logic
@@ -102,6 +103,15 @@ async def get_player_headshot(player_id: int):
         logger.exception(f"Unexpected error fetching headshot for player ID {player_id}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
+# --- Pre-warm player cache (optional, run on startup) ---
+# try:
+#     logger.info("Pre-warming player list cache...")
+#     _get_cached_player_list()
+#     logger.info("Player list cache pre-warmed.")
+# except Exception as cache_err:
+#     logger.error(f"Failed to pre-warm player cache: {cache_err}")
+
+
 # --- Player Search Endpoint ---
 @app.get("/players/search", response_model=List[Dict[str, Any]]) # Add response model
 async def search_players(q: str | None = None, limit: int = 10):
@@ -121,6 +131,30 @@ async def search_players(q: str | None = None, limit: int = 10):
     except Exception as e:
         logger.exception(f"Unexpected error during player search for query '{q}'")
         raise HTTPException(status_code=500, detail=f"Internal server error during player search: {str(e)}")
+
+# NOTE: This endpoint is added to support the player search suggestions dropdown.
+# It directly calls the logic function from player_tools.
+@app.get("/players/search", response_model=List[Dict[str, Any]])
+async def search_players_api(q: str | None = None, limit: int = 5): # Keep limit low for suggestions
+    """
+    API endpoint to search for players by name fragment (for suggestions).
+    Matches the function signature used in the frontend fetch call.
+    """
+    logger.info(f"Received API GET /players/search request with query: '{q}', limit: {limit}")
+    if not q or len(q) < 2:
+        # Return empty list for short/missing queries, consistent with frontend expectation
+        return []
+
+    try:
+        # Directly call the logic function used by the tool
+        results = find_players_by_name_fragment(q, limit=limit)
+        logger.info(f"API returning {len(results)} players for search query '{q}'")
+        return results
+    except Exception as e:
+        logger.exception(f"API unexpected error during player search for query '{q}'")
+        # Don't expose internal errors directly, return empty list for suggestion failures
+        # raise HTTPException(status_code=500, detail=f"Internal server error during player search: {str(e)}")
+        return []
 
 
 # --- Request Models ---
@@ -433,4 +467,4 @@ async def fetch_data(request: FetchRequest):
 
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host=UVICORN_HOST, port=UVICORN_PORT, reload=True) # Use config values
+    uvicorn.run("main:app", host=UVICORN_HOST, port=UVICORN_PORT, reload=True, reload_excludes=["app_test_output.log"]) # Use config values
