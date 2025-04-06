@@ -63,7 +63,8 @@ export default function PlayersPage() {
 
     try {
       // --- Fetch Player Info ---
-      const infoResponse = await fetch(`http://localhost:8000/fetch_data`, {
+      // Use relative path for API calls, Vercel will route correctly
+      const infoResponse = await fetch(`/api/fetch_data`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -87,7 +88,7 @@ export default function PlayersPage() {
       const playerId = infoData.player_info.PERSON_ID;
 
       // --- Fetch Headshot URL ---
-      const headshotResponse = await fetch(`http://localhost:8000/player/${playerId}/headshot`);
+      const headshotResponse = await fetch(`/api/player/${playerId}/headshot`);
       if (!headshotResponse.ok) {
          // Don't throw error for missing headshot, just log and continue
          console.warn(`Failed to fetch headshot for player ID ${playerId} (${headshotResponse.status})`);

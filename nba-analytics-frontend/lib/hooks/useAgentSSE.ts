@@ -47,7 +47,8 @@ export function useAgentSSE({ apiUrl }: UseAgentSSEProps) {
       eventSourceRef.current.close();
     }
 
-    const fullApiUrl = `${apiUrl}?prompt=${encodeURIComponent(prompt)}`;
+    // Construct the full URL including the /api prefix
+    const fullApiUrl = `${apiUrl}/api/ask_team?prompt=${encodeURIComponent(prompt)}`;
     const eventSource = new EventSource(fullApiUrl);
     eventSourceRef.current = eventSource;
 

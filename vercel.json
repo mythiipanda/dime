@@ -4,12 +4,21 @@
       "src": "nba-analytics-backend/main.py",
       "use": "@vercel/python",
       "config": { "maxLambdaSize": "15mb", "runtime": "python3.12" }
+    },
+    {
+      "src": "nba-analytics-frontend/package.json",
+      "use": "@vercel/next",
+      "config": { "distDir": "nba-analytics-frontend/.next" }
     }
   ],
   "routes": [
     {
-      "src": "/(.*)",
+      "src": "/api/(.*)",
       "dest": "nba-analytics-backend/main.py"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "nba-analytics-frontend/$1"
     }
   ]
 }
