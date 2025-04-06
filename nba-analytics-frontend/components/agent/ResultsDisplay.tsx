@@ -5,12 +5,20 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { BotIcon, FileTextIcon, TableIcon, BarChartIcon } from "lucide-react";
 import { ErrorDisplay } from "./ErrorDisplay"; // Import ErrorDisplay
+import ReactMarkdown from 'react-markdown'; // Import ReactMarkdown
+
+// Define a more specific type for structured results
+interface StructuredResult {
+  type: 'table' | 'chart' | string; // Allow other types potentially
+  data?: Record<string, any>[]; // Array of objects for table data
+  // Add other potential fields for chart data later if needed
+}
 
 interface ResultsDisplayProps {
   isLoading: boolean;
   error: string | null;
   response: string | null;
-  resultData: any; // Keep simple for now
+  resultData: StructuredResult | null; // Use the new type, allow null
 }
 
 export function ResultsDisplay({ isLoading, error, response, resultData }: ResultsDisplayProps) {
@@ -57,17 +65,18 @@ export function ResultsDisplay({ isLoading, error, response, resultData }: Resul
                 <CardDescription>Detailed data in table format.</CardDescription>
               </CardHeader>
               <CardContent>
-                {resultData?.type === 'table' && resultData.data?.length > 0 ? (
+                {resultData?.type === 'table' && resultData.data && resultData.data.length > 0 ? ( // Explicitly check resultData.data exists
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        {/* Access data safely, already checked it exists and has length > 0 */}
                         {Object.keys(resultData.data[0] || {}).map(key => <TableHead key={key}>{key}</TableHead>)}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {resultData.data.map((row: any, index: number) => (
+                      {resultData.data?.map((row: Record<string, any>, index: number) => ( // Type row
                         <TableRow key={index}>
-                          {Object.values(row).map((val: any, i: number) => <TableCell key={i}>{String(val)}</TableCell>)}
+                          {Object.values(row).map((val: unknown, i: number) => <TableCell key={i}>{String(val)}</TableCell>)} // Type val as unknown
                         </TableRow>
                       ))}
                     </TableBody>
@@ -104,8 +113,11 @@ export function ResultsDisplay({ isLoading, error, response, resultData }: Resul
              </CardTitle>
            </CardHeader>
            <CardContent>
-             {/* TODO: Render markdown if response contains it */}
-             <p className="text-sm whitespace-pre-wrap">{response}</p>
+             {/* Render response using ReactMarkdown */}
+             {/* Wrap ReactMarkdown in a div for styling */}
+             <div className="prose prose-sm dark:prose-invert max-w-none">
+               <ReactMarkdown>{response}</ReactMarkdown>
+             </div>
            </CardContent>
          </Card>
        );

@@ -4,7 +4,8 @@ import "./globals.css";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { HomeIcon, LineChartIcon, Package2Icon, PackageIcon, UsersIcon, BotIcon, SettingsIcon } from "lucide-react";
+import { Package2Icon, SettingsIcon } from "lucide-react"; // Keep only used icons here
+import { SidebarNav } from "@/components/layout/SidebarNav"; // Import the new component
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -44,45 +45,8 @@ export default function RootLayout({
               </div>
               <div className="flex-1">
                 <ScrollArea className="h-full py-4"> {/* Added padding */}
-                  <nav className="grid items-start px-2 text-sm font-medium lg:px-4">
-                    {/* TODO: Use Next.js Link component and manage active state */}
-                    <a
-                      href="/" // Link to dashboard page
-                      className="flex items-center gap-3 rounded-lg px-3 py-2 text-muted-foreground transition-all hover:text-primary"
-                      // Add logic for active state: e.g., bg-muted text-primary
-                    >
-                      <BotIcon className="h-4 w-4" />
-                      Agent Dashboard
-                    </a>
-                    <a
-                      href="/players" // Link to players page
-                      className="flex items-center gap-3 rounded-lg px-3 py-2 text-muted-foreground transition-all hover:text-primary"
-                    >
-                      <UsersIcon className="h-4 w-4" />
-                      Players
-                    </a>
-                    <a
-                      href="/teams" // Link to teams page
-                      className="flex items-center gap-3 rounded-lg px-3 py-2 text-muted-foreground transition-all hover:text-primary"
-                    >
-                      <PackageIcon className="h-4 w-4" /> {/* Replace icon */}
-                      Teams
-                    </a>
-                    <a
-                      href="/games" // Link to games page
-                      className="flex items-center gap-3 rounded-lg px-3 py-2 text-muted-foreground transition-all hover:text-primary"
-                    >
-                       <PackageIcon className="h-4 w-4" /> {/* Replace icon */}
-                      Games
-                    </a>
-                     <a
-                      href="/shot-charts" // Link to shot charts page
-                      className="flex items-center gap-3 rounded-lg px-3 py-2 text-muted-foreground transition-all hover:text-primary"
-                    >
-                      <LineChartIcon className="h-4 w-4" />
-                      Shot Charts
-                    </a>
-                  </nav>
+                  {/* Replace old nav with the new client component */}
+                  <SidebarNav />
                 </ScrollArea>
               </div>
                {/* Optional: Footer section in sidebar */}

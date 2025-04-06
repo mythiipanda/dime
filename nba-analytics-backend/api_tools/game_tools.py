@@ -29,6 +29,9 @@ def fetch_league_games_logic(
     """
     Core logic to fetch games using LeagueGameFinder based on various criteria.
     NOTE: Filtering by vs_player/vs_team during init is not supported by the current library version used.
+    TODO: Filtering by season, season_type, league_id was disabled in the tool wrapper (tools.py)
+          and corresponding logic here due to API schema validation errors.
+          Needs investigation if these filters are required.
     Returns JSON string containing a list of games (limited by MAX_GAMES_TO_RETURN).
     """
     logger.info(f"Executing fetch_league_games_logic with params: player/team={player_or_team_abbreviation}, player_id={player_id_nullable}, team_id={team_id_nullable}, season={season_nullable}, type={season_type_nullable}, league={league_id_nullable}, date_from={date_from_nullable}, date_to={date_to_nullable}")

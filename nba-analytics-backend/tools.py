@@ -84,10 +84,10 @@ def get_player_career_stats(player_name: str, per_mode36: str = PerMode36.per_ga
 # Simplified signature further: Removed season, season_type, league_id
 def find_games(
     player_or_team: str = 'T',
-    player_id: int = None,
-    team_id: int = None,
-    date_from: str = None,
-    date_to: str = None
+    player_id: int = None, # Reverted type hint
+    team_id: int = None, # Reverted type hint
+    date_from: str = None, # Reverted type hint
+    date_to: str = None # Reverted type hint
 ) -> str:
     """
     Finds games based on Player/Team ID and optional date range. Returns JSON string.

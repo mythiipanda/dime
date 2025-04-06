@@ -20,4 +20,37 @@ STORAGE_DB_FILE: str = "agno_storage.db" # Local SQLite DB for agent sessions
 AGENT_DEBUG_MODE: bool = True # Enable debug logging for agents
 
 # --- Logging ---
+LOG_FILENAME: str = "backend_app.log"
+LOG_FILE_MODE: str = 'a' # Append mode for log file
 # Basic logging config can be set up here if needed, or handled in main.py/app entry point
+
+# --- CORS ---
+CORS_ALLOWED_ORIGINS: list[str] = [
+    "http://localhost:3000", # Frontend dev server
+    "http://localhost",      # General localhost access
+]
+
+# --- API Settings ---
+SUPPORTED_FETCH_TARGETS: list[str] = [
+    "player_info",
+    "player_gamelog",
+    "team_info",
+    "player_career_stats",
+    "find_games"
+]
+
+# --- Server Settings ---
+UVICORN_HOST: str = "127.0.0.1"
+UVICORN_PORT: int = 8000
+
+# --- External URLs ---
+HEADSHOT_BASE_URL: str = "https://cdn.nba.com/headshots/nba/latest/260x190/"
+
+# --- Search Settings ---
+DEFAULT_PLAYER_SEARCH_LIMIT: int = 10
+MIN_PLAYER_SEARCH_LENGTH: int = 2
+
+# --- Caching ---
+# TODO: Implement a caching strategy (e.g., using Redis or in-memory cache like cachetools)
+#       to reduce redundant API calls, especially for static data (player IDs, team IDs)
+#       and potentially for results from nba_api endpoints with appropriate TTLs.

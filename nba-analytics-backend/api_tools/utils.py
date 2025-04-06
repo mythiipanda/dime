@@ -22,12 +22,7 @@ def _process_dataframe(df: pd.DataFrame | None, single_row: bool = True) -> list
         df_processed = df.where(pd.notna(df), None)
         records = df_processed.to_dict(orient='records')
 
-        # Ensure all values within records are JSON serializable (redundant if where worked, but safe)
-        # processed_records = [
-        #     {k: (v if pd.notna(v) else None) for k, v in row.items()}
-        #     for row in records
-        # ] # This inner loop might be redundant now
-
+        # Note: The df.where(pd.notna(df), None) step handles NaN/NaT conversion.
         if single_row:
             return records[0] if records else {}
         else:

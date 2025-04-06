@@ -6,7 +6,7 @@ from nba_api.stats.endpoints import commonplayerinfo, playergamelog, playercaree
 from nba_api.stats.library.parameters import SeasonTypeAllStar, PerModeDetailed, PerMode36
 import re
 import json
-from config import DEFAULT_TIMEOUT # Import from config
+from config import DEFAULT_TIMEOUT, HEADSHOT_BASE_URL, DEFAULT_PLAYER_SEARCH_LIMIT, MIN_PLAYER_SEARCH_LENGTH # Import from config
 from .utils import _process_dataframe, _validate_season_format # Import from utils
 
 logger = logging.getLogger(__name__)
@@ -117,6 +117,10 @@ def fetch_player_career_stats_logic(player_name: str, per_mode36: str = PerMode3
         player_id, player_actual_name = _find_player_id(player_name)
         if player_id is None: return json.dumps({"error": f"Player '{player_name}' not found."})
 
+        # TODO: The 'per_mode36' parameter is currently ignored in the API call below
+        #       due to suspected issues with the nba_api library handling it correctly
+        #       for playercareerstats. It always fetches the default (PerGame).
+        #       Needs investigation if other PerModes are required.
         logger.debug(f"Fetching playercareerstats for ID: {player_id} (Ignoring PerMode in API call)")
         try:
             career_endpoint = playercareerstats.PlayerCareerStats(
@@ -165,7 +169,7 @@ def get_player_headshot_url(player_id: int) -> str:
         # but for now, just return the formatted string which will likely 404.
         # Consider adding more robust validation if needed (e.g., check if player ID exists).
 
-    base_url = "https://cdn.nba.com/headshots/nba/latest/260x190/"
+    base_url = HEADSHOT_BASE_URL # Use config value
     headshot_url = f"{base_url}{player_id}.png"
     logger.info(f"Generated headshot URL for player ID {player_id}: {headshot_url}")
     return headshot_url
@@ -176,7 +180,7 @@ def get_player_headshot_url(player_id: int) -> str:
 # Cache for player list to avoid repeated calls to get_players()
 _player_list_cache = None
 
-def _get_cached_player_list():
+def _get_cached_player_list() -> list[dict]:
     """Gets the full player list, caching it after the first call."""
     global _player_list_cache
     if _player_list_cache is None:
@@ -189,7 +193,7 @@ def _get_cached_player_list():
             _player_list_cache = [] # Set to empty list on error to avoid retrying constantly
     return _player_list_cache
 
-def find_players_by_name_fragment(name_fragment: str, limit: int = 10) -> list[dict]:
+def find_players_by_name_fragment(name_fragment: str, limit: int = DEFAULT_PLAYER_SEARCH_LIMIT) -> list[dict]:
     """
     Finds players whose full name contains the given fragment (case-insensitive).
     Args:
@@ -198,7 +202,7 @@ def find_players_by_name_fragment(name_fragment: str, limit: int = 10) -> list[d
     Returns:
         list[dict]: A list of matching players [{'id': player_id, 'full_name': player_name}, ...].
     """
-    if not name_fragment or len(name_fragment) < 2: # Require at least 2 characters
+    if not name_fragment or len(name_fragment) < MIN_PLAYER_SEARCH_LENGTH: # Use config value
         return []
 
     all_players = _get_cached_player_list()
