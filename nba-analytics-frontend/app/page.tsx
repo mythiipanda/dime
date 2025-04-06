@@ -4,7 +4,7 @@ import * as React from "react"; // Keep for local input state & effect
 import { ScrollArea } from "@/components/ui/scroll-area";
 // Remove Resizable components
 // Import the CHAT hook and specific components needed
-import { useAgentChatSSE, ChatMessage } from "@/lib/hooks/useAgentChatSSE";
+import { useAgentChatSSE } from "@/lib/hooks/useAgentChatSSE"; // Removed unused ChatMessage
 import { PromptInputForm } from "@/components/agent/PromptInputForm";
 import { ChatMessageDisplay } from "@/components/agent/ChatMessageDisplay";
 import { InitialChatScreen } from "@/components/agent/InitialChatScreen"; // Import new component

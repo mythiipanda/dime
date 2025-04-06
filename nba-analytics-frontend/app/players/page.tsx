@@ -9,7 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { ScrollArea } from "@/components/ui/scroll-area";
+// Removed unused ScrollArea
 import { Input } from "@/components/ui/input"; // Import Input
 import { Button } from "@/components/ui/button"; // Import Button
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"; // Import Avatar
@@ -98,9 +98,11 @@ export default function PlayersPage() {
          setHeadshotUrl(headshotData.headshot_url);
       }
 
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Search failed:", err);
-      setError(err.message || "An unknown error occurred during search.");
+      // Type check before accessing message property
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      setError(errorMessage || "An unknown error occurred during search.");
       setPlayerData(null); // Clear data on error
       setHeadshotUrl(null);
     } finally {
@@ -123,7 +125,7 @@ export default function PlayersPage() {
         <Card className="md:col-span-1">
           <CardHeader>
             <CardTitle>Player Search</CardTitle>
-            <CardDescription>Enter a player's name to find their info.</CardDescription>
+            <CardDescription>Enter a player&apos;s name to find their info.</CardDescription> {/* Escaped quote */}
           </CardHeader>
           <CardContent>
             <form onSubmit={handleFormSubmit} className="flex w-full items-center space-x-2">

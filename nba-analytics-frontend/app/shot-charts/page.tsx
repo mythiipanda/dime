@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/resizable";
 import { Skeleton } from "@/components/ui/skeleton"; // Keep Skeleton for loading state
 // Import the hook and new components
-import { useAgentChatSSE, ChatMessage } from "@/lib/hooks/useAgentChatSSE"; // Import ChatMessage type from new hook
+import { useAgentChatSSE } from "@/lib/hooks/useAgentChatSSE"; // Removed unused ChatMessage
 import { PromptInputForm } from "@/components/agent/PromptInputForm";
 import { ProgressDisplay } from "@/components/agent/ProgressDisplay";
 import { ErrorDisplay } from "@/components/agent/ErrorDisplay";
@@ -97,7 +97,7 @@ export default function ShotChartChatPage() {
                        Ask about Shot Charts
                      </h3>
                      <p className="text-sm text-muted-foreground">
-                       Enter a player and season (e.g., "LeBron James 2023-24 shot chart") below.
+                       Enter a player and season (e.g., &quot;LeBron James 2023-24 shot chart&quot;) below. {/* Escaped quotes */}
                      </p>
                    </div>
                  </div>

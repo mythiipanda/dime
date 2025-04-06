@@ -3,8 +3,9 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import Link from 'next/link'; // Import Link
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Package2Icon, SettingsIcon } from "lucide-react"; // Keep only used icons here
+import { Package2Icon, SettingsIcon } from "lucide-react";
 import { SidebarNav } from "@/components/layout/SidebarNav"; // Import the new component
 
 const geistSans = Geist({
@@ -38,9 +39,10 @@ export default function RootLayout({
           <div className="hidden border-r bg-muted/40 md:block">
             <div className="flex h-full max-h-screen flex-col gap-2">
               <div className="flex h-14 items-center border-b px-4 lg:h-[60px] lg:px-6">
-                <a href="/" className="flex items-center gap-2 font-semibold">
+                <Link href="/" className="flex items-center gap-2 font-semibold">
                   <Package2Icon className="h-6 w-6" /> {/* Replace with NBA logo/icon */}
                   <span className="">NBA Analytics</span>
+                </Link> {/* Close Link */}
                 </a>
               </div>
               <div className="flex-1">
