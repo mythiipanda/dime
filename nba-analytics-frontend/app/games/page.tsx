@@ -1,7 +1,6 @@
-import {
+import { // Removed CardDescription
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -23,10 +22,10 @@ export default function GamesPage() {
         <div className="grid gap-4 md:grid-cols-2">
            <Card>
              <CardHeader>
-               <CardTitle>Today's Games</CardTitle>
+               <CardTitle>Today&apos;s Games</CardTitle> {/* Escaped quote */}
              </CardHeader>
              <CardContent>
-               <p>Placeholder for today's game schedule/scoreboard.</p>
+               <p>Placeholder for today&apos;s game schedule/scoreboard.</p> {/* Escaped quote */}
              </CardContent>
            </Card>
            <Card>
