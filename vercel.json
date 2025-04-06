@@ -15,10 +15,6 @@
     {
       "src": "/api/(.*)",
       "dest": "nba-analytics-backend/main.py"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "nba-analytics-frontend/$1"
     }
   ]
 }

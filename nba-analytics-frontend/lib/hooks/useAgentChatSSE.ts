@@ -55,7 +55,11 @@ export function useAgentChatSSE({ apiUrl }: UseAgentChatSSEProps) {
     }
 
     // Construct the full URL including the /api prefix
-    const fullApiUrl = `${apiUrl}/api/ask_team?prompt=${encodeURIComponent(prompt)}`;
+    // Construct URL based on environment (apiUrl is base URL)
+    const baseUrl = apiUrl; // Assuming apiUrl is the base backend URL
+    const endpointPath = baseUrl.includes('localhost') ? '/ask_team' : '/api/ask_team';
+    const fullApiUrl = `${baseUrl}${endpointPath}?prompt=${encodeURIComponent(prompt)}`;
+    console.log(`Chat SSE connecting to: ${fullApiUrl}`); // Add log
     const eventSource = new EventSource(fullApiUrl);
     eventSourceRef.current = eventSource;
 

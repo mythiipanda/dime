@@ -74,7 +74,10 @@ export default function PlayersPage() {
     try {
       // --- Fetch Player Info ---
       // Use relative path for API calls, Vercel will route correctly
-      const infoResponse = await fetch(`/api/fetch_data`, {
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const infoUrl = `${baseUrl}${baseUrl.includes('localhost') ? '' : '/api'}/fetch_data`;
+      console.log(`Fetching player info from: ${infoUrl}`); // Add log
+      const infoResponse = await fetch(infoUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -98,7 +101,9 @@ export default function PlayersPage() {
       const playerId = infoData.player_info.PERSON_ID;
 
       // --- Fetch Headshot URL ---
-      const headshotResponse = await fetch(`/api/player/${playerId}/headshot`);
+      const headshotUrlPath = `${baseUrl}${baseUrl.includes('localhost') ? '' : '/api'}/player/${playerId}/headshot`;
+      console.log(`Fetching headshot from: ${headshotUrlPath}`); // Add log
+      const headshotResponse = await fetch(headshotUrlPath);
       if (!headshotResponse.ok) {
          // Don't throw error for missing headshot, just log and continue
          console.warn(`Failed to fetch headshot for player ID ${playerId} (${headshotResponse.status})`);
@@ -149,7 +154,11 @@ export default function PlayersPage() {
     debounceTimer.current = setTimeout(async () => {
       try {
         console.log(`Fetching suggestions for: ${searchTerm}`);
-        const response = await fetch(`/api/players/search?q=${encodeURIComponent(searchTerm)}&limit=5`); // Limit suggestions
+        // Construct URL based on environment
+        const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+        const suggestionsUrl = `${baseUrl}${baseUrl.includes('localhost') ? '' : '/api'}/players/search?q=${encodeURIComponent(searchTerm)}&limit=5`;
+        console.log(`Fetching suggestions from: ${suggestionsUrl}`); // Add log
+        const response = await fetch(suggestionsUrl);
         if (!response.ok) {
           throw new Error(`Failed to fetch suggestions (${response.status})`);
         }
