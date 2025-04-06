@@ -1,8 +1,8 @@
 // components/agent/PromptInputForm.tsx
 import * as React from 'react';
-import { Command, CommandInput } from "@/components/ui/command";
+import { Textarea } from "@/components/ui/textarea"; // Import Textarea
 import { Button } from "@/components/ui/button";
-import { SendIcon } from "lucide-react";
+import { SendIcon, CornerDownLeftIcon } from "lucide-react"; // Add CornerDownLeftIcon
 
 interface PromptInputFormProps {
   inputValue: string;
@@ -17,21 +17,49 @@ export function PromptInputForm({
   onSubmit,
   isLoading,
 }: PromptInputFormProps) {
+  const textAreaRef = React.useRef<HTMLTextAreaElement>(null);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault(); // Prevent newline on Enter
+      if (!isLoading && inputValue.trim()) {
+        onSubmit(); // Trigger submit
+      }
+    }
+    // Allow Shift+Enter for newlines (default behavior)
+  };
+
+  // Adjust textarea height dynamically (optional but nice)
+  React.useEffect(() => {
+    if (textAreaRef.current) {
+      textAreaRef.current.style.height = 'auto'; // Reset height
+      textAreaRef.current.style.height = `${textAreaRef.current.scrollHeight}px`; // Set to scroll height
+    }
+  }, [inputValue]);
+
+
   return (
-    <form onSubmit={onSubmit} className="flex flex-col flex-1 gap-2">
-      <Command className="rounded-lg border shadow-md flex-1">
-        <CommandInput
-          placeholder="Type your NBA query here..."
+    <form onSubmit={onSubmit} className="relative overflow-hidden rounded-lg border bg-background focus-within:ring-1 focus-within:ring-ring">
+       <Textarea
+          ref={textAreaRef}
+          placeholder="Type your NBA query here... (Shift+Enter for newline)"
           value={inputValue}
-          onValueChange={onInputChange}
-          disabled={isLoading} // Disable input while loading
+          onChange={(e) => onInputChange(e.target.value)} // Use standard onChange
+          onKeyDown={handleKeyDown} // Add keydown handler
+          disabled={isLoading}
+          rows={1} // Start with 1 row
+          className="min-h-[60px] w-full resize-none border-0 p-3 shadow-none focus-visible:ring-0"
         />
-        {/* We can add CommandList suggestions later */}
-        {/* <CommandList> <CommandEmpty>No results.</CommandEmpty> ... </CommandList> */}
-      </Command>
-      <Button type="submit" className="mt-auto" disabled={isLoading || !inputValue.trim()}> {/* Disable if loading or input empty */}
-        <SendIcon className="mr-2 h-4 w-4" /> Send Prompt
-      </Button>
+      <div className="flex items-center p-3 pt-0">
+         {/* Optional: Add other controls like clear button here */}
+         <span className="ml-auto text-xs text-muted-foreground">
+           Enter to send, Shift+Enter for newline
+         </span>
+        <Button type="submit" size="sm" className="ml-2" disabled={isLoading || !inputValue.trim()}>
+          <SendIcon className="h-4 w-4" />
+          <span className="sr-only">Send</span> {/* Accessibility */}
+        </Button>
+      </div>
     </form>
   );
 }
