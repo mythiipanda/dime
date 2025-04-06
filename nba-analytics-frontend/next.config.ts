@@ -1,11 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  output: 'export', // Enable static export
-  // Required for static export, especially for environments like GitHub Pages
-  images: {
-    unoptimized: true,
-  },
+  // Reverted: Removed output: 'export' and images.unoptimized for Vercel deployment
+  /* config options here */
 };
 
 export default nextConfig;
