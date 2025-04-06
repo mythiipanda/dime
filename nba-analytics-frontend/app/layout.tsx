@@ -43,7 +43,7 @@ export default function RootLayout({
                   <Package2Icon className="h-6 w-6" /> {/* Replace with NBA logo/icon */}
                   <span className="">NBA Analytics</span>
                 </Link> {/* Close Link */}
-                </a>
+                {/* Removed stray </a> tag */}
               </div>
               <div className="flex-1">
                 <ScrollArea className="h-full py-4"> {/* Added padding */}
