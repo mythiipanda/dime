@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Dict, Any, Generator, List # Added List for type hint
+from agno.agent import RunResponse # Import RunResponse
 import asyncio
 import uvicorn
 import logging
@@ -15,6 +16,8 @@ from textwrap import dedent
 from agno.agent import Agent
 from agno.models.google import Gemini
 from agents import data_aggregator_agent, analysis_agent, storage # Import sub-agents and storage
+from teams import nba_analysis_team # Import the Team instance
+# Removed duplicate import
 from config import ( # Import constants
     LOG_FILENAME, LOG_FILE_MODE, CORS_ALLOWED_ORIGINS,
     SUPPORTED_FETCH_TARGETS, UVICORN_HOST, UVICORN_PORT,
@@ -213,119 +216,113 @@ def format_sse(data: str, event: str | None = None) -> str:
         msg = f"event: {event}\n{msg}"
     return msg
 
-# Define team configuration locally for the endpoint
-def create_nba_team_instance():
-    # This function now creates the agent instance when called
-    return Agent(
-        name="NBA Analysis Team Lead",
-        model=Gemini(id=AGENT_MODEL_ID), # Use config value
-        team=[data_aggregator_agent, analysis_agent],
-        description="Coordinates data fetching and analysis for NBA-related queries.",
-        instructions=dedent("""\
-            You are the lead coordinator for an NBA data analysis team. Your goal is to answer user queries by leveraging your team members.
+# Removed local create_nba_team_instance function, using imported Team now
 
-            Workflow:
-            1. Receive the user's query.
-            2. **Identify Data Needs:** Determine what specific data points/sets are needed.
-            3. **Handle Comparisons Sequentially:** If the query requires comparing two datasets (e.g., career stats per game vs. totals):
-                a. Instruct the 'NBA Data Aggregator Agent' to fetch the *first* dataset.
-                b. Pass the *first* dataset and the relevant part of the query to the 'NBA Analyst Agent' for initial analysis.
-                c. Instruct the 'NBA Data Aggregator Agent' to fetch the *second* dataset.
-                d. Pass the *second* dataset and the relevant part of the query to the 'NBA Analyst Agent' for its analysis.
-                e. Synthesize the two analyses from the 'NBA Analyst Agent' into a final comparative response for the user.
-            4. **Handle Single Data Point Queries:** If the query needs only one dataset:
-                a. Instruct the 'NBA Data Aggregator Agent' to fetch the required data.
-                b. Pass the fetched data and the original query to the 'NBA Analyst Agent'.
-                c. Relay the 'NBA Analyst Agent's response directly to the user.
-            5. **Tool Specifics:** Remember the 'find_games' tool currently only supports filtering by player/team ID and date range.
-            6. **Error Handling:** If any step fails (data fetching or analysis), clearly explain the issue to the user.
-
-            Your Style Guide:
-            - Be helpful and informative.
-            - Clearly synthesize and present the final analysis.
-            - If data fetching fails, report the error clearly.
-            - If analysis is inconclusive, state that.
-        """),
-        storage=storage, # Use the same storage for session persistence
-        markdown=True,
-        debug_mode=True,
-    )
-
-def team_event_generator(team_instance: Agent, prompt: str) -> Generator[str, None, None]:
-    """Generator function that runs the agent and yields status/final result via SSE."""
-    try:
-        logger.info(f"Starting team execution for prompt: '{prompt}'")
-        yield format_sse(json.dumps({"type": "status", "message": "Processing prompt..."}), event="status")
-        yield format_sse(json.dumps({"type": "status", "message": "Executing agent team... (this may take time)"}), event="status")
-
-        # Use run() as stream() is causing errors
-        result = team_instance.run(prompt)
-        logger.info(f"Team run completed. Result type: {type(result)}")
-        yield format_sse(json.dumps({"type": "status", "message": "Agent finished. Extracting final response..."}), event="status")
-
-        # Attempt to extract final content
-        final_content = None
-        if hasattr(result, 'messages') and result.messages:
-             last_message = result.messages[-1]
-             if last_message.role == 'assistant' and isinstance(last_message.content, str):
-                 final_content = last_message.content
-                 logger.info("Using last assistant message content for response.")
-             else:
-                  logger.warning("Last message in history was not usable assistant content.")
-                  final_content = f"Agent finished, but last message was not standard assistant content: {str(last_message.content)}"
-        else:
-             logger.warning("No message history found in agent result.")
-             final_content = getattr(result, 'response', None) # Fallback
-             if final_content is None:
-                  logger.error(f"Team agent did not return a usable response in history or attribute for prompt: {prompt}")
-                  raise Exception("Team agent did not return a valid response.")
-             else:
-                  logger.warning(f"Falling back to result.response: Type={type(final_content)}")
-                  final_content = str(final_content) # Ensure string
-
-        yield format_sse(json.dumps({"type": "final_response", "content": final_content}), event="final")
-        logger.info(f"Yielded final response for prompt: '{prompt}'")
-
-    except Exception as e:
-        logger.exception(f"Error during team execution for prompt: {prompt}")
-        error_detail = f"Error processing team request: {str(e)}"
-        # Yield error as a standard message event
-        yield format_sse(json.dumps({"type": "error", "message": error_detail}))
-
-@app.get("/ask_team")
-def ask_team_streaming(prompt: str):
+@app.get("/ask_team") # Keep as GET, but will return StreamingResponse
+async def ask_team_keepalive_sse(request: Request, prompt: str):
     """
-    Endpoint to send a prompt directly to a locally instantiated NBAnalysisTeam and stream the final response.
-    (Note: Uses run() due to stream() errors, yields manual status updates and final result/error).
-    Includes debug logging for the team instance.
+    Endpoint that sends initial SSE status, runs agent sync in background,
+    sends keep-alive messages, then sends final SSE result using the imported Team.
     """
-    logger.info(f"Received GET /ask_team request with prompt: '{prompt}'")
-    try:
-        # Instantiate the team locally for this request
-        team_instance = create_nba_team_instance()
-        logger.info("Created local NBAnalysisTeam instance for request.")
+    logger.info(f"Received GET /ask_team (sync) request with prompt: '{prompt}'")
+    # Use the imported team instance directly
+    team_instance = nba_analysis_team
+    logger.info("Using imported NBA Analysis Team instance for request.")
 
-        # --- DEBUG LOGGING ---
-        logger.debug(f"Type of team_instance: {type(team_instance)}")
-        logger.debug(f"Attributes of team_instance: {dir(team_instance)}")
-        has_stream = hasattr(team_instance, 'stream')
-        logger.debug(f"Does team_instance have 'stream' attribute? {has_stream}")
-        if has_stream:
-            stream_attr = getattr(team_instance, 'stream')
-            logger.debug(f"Type of team_instance.stream: {type(stream_attr)}")
-            logger.debug(f"Is team_instance.stream callable? {callable(stream_attr)}")
-        # --- END DEBUG LOGGING ---
+    async def keepalive_sse_generator():
+        """Sends keep-alive messages while agent runs in background, then sends final result."""
+        logger.info(f"START keepalive_sse_generator for prompt: '{prompt}'")
+        agent_task = None
+        keep_alive_interval = 5 # Seconds
+        mock_messages = ["Analyzing data...", "Consulting sources...", "Synthesizing findings...", "Cross-referencing stats...", "Checking historical trends...", "Almost there..."]
+        msg_index = 0
+        try:
+            # 1. Send initial status messages immediately
+            yield format_sse(json.dumps({"type": "status", "message": "Processing prompt..."}), event="status")
+            await asyncio.sleep(0.1) # Ensure flush
+            # Removed disconnect check here as it's handled in the loop
 
-        team_instance = create_nba_team_instance()
-        logger.info("Created local NBAnalysisTeam instance for request.")
-        return StreamingResponse(team_event_generator(team_instance, prompt), media_type="text/event-stream")
-    except Exception as e:
-        logger.exception("Failed to instantiate or stream NBAnalysisTeam")
-        # Return an error response if instantiation fails
-        # Define error_stream within this scope
-        def error_stream() -> Generator[str, None, None]:
-            yield format_sse(json.dumps({"type": "error", "message": f"Failed to initialize agent team: {str(e)}"}))
-        return StreamingResponse(error_stream(), media_type="text/event-stream", status_code=500)
+            yield format_sse(json.dumps({"type": "status", "message": "Starting agent execution (this may take a while)..."}), event="status")
+            await asyncio.sleep(0.1)
+            # Removed disconnect check here
+
+            # 2. Start agent task in background
+            logger.info(f"Starting agent task in background for prompt: '{prompt}'")
+            agent_task = asyncio.create_task(team_instance.arun(prompt)) # Use arun, not print_response
+
+            # 3. Loop sending keep-alive/mock status until agent task is done
+            while not agent_task.done():
+                if await request.is_disconnected():
+                    logger.warning("Client disconnected, cancelling agent task.")
+                    agent_task.cancel()
+                    raise asyncio.CancelledError("Client disconnected during keep-alive")
+
+                # Send mock status
+                status_msg = mock_messages[msg_index % len(mock_messages)]
+                yield format_sse(json.dumps({"type": "status", "message": status_msg}), event="status")
+                logger.debug(f"Sent keep-alive status: {status_msg}")
+                msg_index += 1
+
+                # Wait for the interval, checking frequently for task completion/disconnection
+                wait_step = 0.5 # Check every 0.5 seconds
+                for _ in range(int(keep_alive_interval / wait_step)):
+                    if agent_task.done() or await request.is_disconnected():
+                        break
+                    await asyncio.sleep(wait_step)
+                if agent_task.done() or await request.is_disconnected():
+                        break # Exit outer loop if task finished or client disconnected during sleep
+
+            # 4. Agent task finished or client disconnected
+            if await request.is_disconnected():
+                 # Task might have been cancelled above, or client disconnected just now
+                 if agent_task and not agent_task.done(): agent_task.cancel()
+                 raise asyncio.CancelledError("Client disconnected before agent completion")
+
+            # Log prompt safely before processing result
+            safe_prompt_log = prompt.encode('utf-8', errors='replace').decode('utf-8', errors='ignore')
+            logger.info(f"Agent task finished for prompt: '{safe_prompt_log}'")
+            result = await agent_task # Get result (or raise exception if task failed)
+            # 5. Extract final content (Simplified: Use result.content directly)
+            final_content = None
+            final_content = result.content
+            # Removed print statement and block attempting to send "thinking" events.
+
+            # 6. Send final result (result.content) or error via SSE
+            if final_content is None:
+                 # Log the full result object if content extraction failed
+                 logger.error(f"Final content extraction failed. Result type: {type(result)}, Result: {result!r}")
+                 yield format_sse(json.dumps({"type": "error", "message": "Agent did not produce a recognizable final response."}))
+            else:
+                logger.debug(f"Sending final content via SSE: {final_content[:100]}...")
+                final_sse_data = {"type": "final_response", "content": final_content}
+                yield format_sse(json.dumps(final_sse_data), event="final")
+
+        except asyncio.CancelledError as ce:
+             logger.warning(f"Task cancelled: {ce}")
+             # Ensure agent task is cancelled if it exists and isn't done
+             if agent_task and not agent_task.done():
+                 agent_task.cancel()
+        except Exception as e:
+            logger.exception(f"Error DURING keepalive_sse_generator for prompt: {prompt}")
+            error_detail = f"Error processing team request: {str(e)}"
+            try:
+                 # Attempt to send error message back to client
+                 yield format_sse(json.dumps({"type": "error", "message": error_detail}))
+            except Exception as send_err:
+                 logger.error(f"Failed to send error message back to client: {send_err}")
+        finally:
+            # Log prompt safely, replacing encoding errors
+            # Removed prompt from log message to avoid encoding errors
+            logger.info("END keepalive_sse_generator.")
+
+    # Use the keep-alive generator with SSE headers
+    headers = {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
+    }
+    return StreamingResponse(keepalive_sse_generator(), headers=headers)
 
 
 # Reverted: Endpoint calls tool logic directly due to agent/async test issues

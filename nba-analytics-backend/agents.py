@@ -8,12 +8,12 @@
 import os
 from dotenv import load_dotenv
 from agno.agent import Agent
-from agno.models.google import Gemini
+from agno.models.openrouter import OpenRouter # Changed import
 from tools import get_player_info, get_player_gamelog, get_team_info_and_roster, get_player_career_stats, find_games # Import find_games
 # from agno.tools. ... import ... # Import necessary tools later
 # from agno.knowledge. ... import ... # Import knowledge bases later
 from agno.storage.agent.sqlite import SqliteAgentStorage # Using SQLite for initial dev
-from config import AGENT_MODEL_ID, STORAGE_DB_FILE, AGENT_DEBUG_MODE # Import from config
+from config import AGENT_MODEL_ID, STORAGE_DB_FILE, AGENT_DEBUG_MODE # Re-added AGENT_MODEL_ID import
 
 # Load environment variables from .env file
 load_dotenv()
@@ -24,7 +24,7 @@ storage = SqliteAgentStorage(table_name="agent_sessions", db_file="agno_storage.
 
 analysis_agent = Agent(
     name="NBA Analyst Agent",
-    model=Gemini(id=AGENT_MODEL_ID), # Use config value
+    model=OpenRouter(id=AGENT_MODEL_ID, api_key=os.getenv("OPENROUTER_API_KEY"), max_retries=3), # Add max_retries
     description="An AI agent specialized in analyzing NBA data (like stats, trends, comparisons) and providing clear, concise insights.",
     instructions=[
         "You receive structured NBA data, potentially as a JSON string.",
@@ -44,13 +44,15 @@ analysis_agent = Agent(
     tools=[get_player_info, get_player_gamelog, get_team_info_and_roster, get_player_career_stats, find_games], # Add data tools
     # knowledge=None, # No external knowledge base initially
     storage=storage, # Persist sessions locally
+    add_history_to_messages=True, # Enable chat history memory
+    num_history_responses=5,      # Number of past messages to include
     markdown=True,
     debug_mode=AGENT_DEBUG_MODE, # Use config value
 )
 
 data_aggregator_agent = Agent(
     name="NBA Data Aggregator Agent",
-    model=Gemini(id=AGENT_MODEL_ID), # Use config value
+    model=OpenRouter(id=AGENT_MODEL_ID, api_key=os.getenv("OPENROUTER_API_KEY"), max_retries=3), # Add max_retries
     description="An agent responsible for fetching data from various NBA APIs based on requests.",
     instructions=[
         "Receive requests for specific NBA data.",
@@ -69,7 +71,9 @@ data_aggregator_agent = Agent(
     ],
     tools=[get_player_info, get_player_gamelog, get_team_info_and_roster, get_player_career_stats, find_games], # Add find_games
     storage=storage,
-    response_model=str, # Attempt to force string output
+    add_history_to_messages=True, # Enable chat history memory
+    num_history_responses=5,      # Number of past messages to include
+    # response_model=str, # Removed as it caused issues with OpenRouter/structured output check
     debug_mode=AGENT_DEBUG_MODE, # Use config value
 )
 
@@ -80,7 +84,7 @@ data_aggregator_agent = Agent(
 # Needs further investigation and implementation if data normalization is required.
 data_normalizer_agent = Agent(
     name="NBA Data Normalizer Agent",
-    # model=None, # Likely no LLM needed for schema mapping logic
+    model=OpenRouter(id=AGENT_MODEL_ID), # Use config value
     description="An agent responsible for transforming raw data from various NBA APIs into a standardized project schema.",
     instructions=[
         "Receive raw data chunks from different API sources.",

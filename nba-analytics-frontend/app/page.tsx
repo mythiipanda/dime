@@ -73,7 +73,7 @@ export default function AgentDashboardPage() {
       {chatHistory.length === 0 && !isLoading && !error ? (
         <InitialChatScreen onExampleClick={handleExampleClick} />
       ) : (
-        <ScrollArea className="flex-1 p-4" ref={scrollAreaRef}>
+        <ScrollArea className="flex-1 p-4 h-[60vh] overflow-y-auto" ref={scrollAreaRef}> {/* Added fixed height and scroll */}
           <div className="space-y-4">
             {chatHistory.map((message, index) => (
               <ChatMessageDisplay key={index} message={message} />
