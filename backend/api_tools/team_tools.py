@@ -6,7 +6,7 @@ from nba_api.stats.static import teams
 from nba_api.stats.endpoints import teaminfocommon, commonteamroster
 from nba_api.stats.library.parameters import LeagueID
 
-from config import DEFAULT_TIMEOUT, CURRENT_SEASON, ErrorMessages as Errors
+from ..config import DEFAULT_TIMEOUT, CURRENT_SEASON, ErrorMessages as Errors
 from .utils import _process_dataframe, _validate_season_format
 
 logger = logging.getLogger(__name__)

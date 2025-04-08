@@ -4,8 +4,8 @@ from agno.agent import Agent
 from agno.models.google import Gemini
 from agno.storage.agent.sqlite import SqliteAgentStorage
 
-from tools import get_player_info, get_player_gamelog, get_team_info_and_roster, get_player_career_stats, find_games
-from config import AGENT_MODEL_ID, STORAGE_DB_FILE, AGENT_DEBUG_MODE
+from .tools import get_player_info, get_player_gamelog, get_team_info_and_roster, get_player_career_stats, find_games
+from .config import AGENT_MODEL_ID, STORAGE_DB_FILE, AGENT_DEBUG_MODE
 
 # Load environment variables
 load_dotenv()

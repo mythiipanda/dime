@@ -6,19 +6,19 @@ from agno.tools import tool
 from nba_api.stats.library.parameters import SeasonTypeAllStar, PerModeDetailed, PerMode36, LeagueID
 
 # Import logic functions from the new modules
-from api_tools.player_tools import (
+from .api_tools.player_tools import (
     fetch_player_info_logic,
     fetch_player_gamelog_logic,
     fetch_player_career_stats_logic,
     _find_player_id
 )
-from api_tools.team_tools import (
+from .api_tools.team_tools import (
     fetch_team_info_and_roster_logic,
     _find_team_id,
     # CURRENT_SEASON # Removed: Import from config
 )
-from config import CURRENT_SEASON # Import from config
-from api_tools.game_tools import (
+from .config import CURRENT_SEASON # Import from config
+from .api_tools.game_tools import (
     fetch_league_games_logic
 )
 
@@ -172,7 +172,7 @@ if __name__ == "__main__":
 
     print("\n[Test Case 15: Find Lakers Games (No Filters)]")
     try:
-        from api_tools.team_tools import _find_team_id as find_team_id_helper
+        from .api_tools.team_tools import _find_team_id as find_team_id_helper
         lakers_id_test = find_team_id_helper("LAL")
         if lakers_id_test:
             start_time = time.time()

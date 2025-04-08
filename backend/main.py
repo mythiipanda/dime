@@ -19,11 +19,11 @@ if root_logger.hasHandlers():
 
 root_logger.addHandler(console_handler)
 
-from config import CORS_ALLOWED_ORIGINS
-from routes.player import router as player_router
-from routes.analyze import router as analyze_router
-from routes.fetch import router as fetch_router
-from routes.sse import router as sse_router
+from .config import CORS_ALLOWED_ORIGINS
+from .routes.player import router as player_router
+from .routes.analyze import router as analyze_router
+from .routes.fetch import router as fetch_router
+from .routes.sse import router as sse_router
 
 logger = logging.getLogger(__name__)
 

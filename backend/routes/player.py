@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 from typing import List, Dict, Any
 import logging
 
-from api_tools.player_tools import get_player_headshot_url, find_players_by_name_fragment
+from ..api_tools.player_tools import get_player_headshot_url, find_players_by_name_fragment
 
 logger = logging.getLogger(__name__)
 

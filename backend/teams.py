@@ -2,8 +2,8 @@ from textwrap import dedent
 from agno.team import Team
 import os
 from agno.models.google import Gemini
-from agents import data_aggregator_agent, analysis_agent, storage
-from config import AGENT_MODEL_ID, AGENT_DEBUG_MODE
+from .agents import data_aggregator_agent, analysis_agent, storage
+from .config import AGENT_MODEL_ID, AGENT_DEBUG_MODE
 
 nba_analysis_team = Team(
     name="NBA Analysis Team",

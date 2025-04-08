@@ -1,8 +1,8 @@
 from fastapi import APIRouter, HTTPException
 import logging
 
-from schemas import AnalyzeRequest
-from agents import analysis_agent
+from ..schemas import AnalyzeRequest
+from ..agents import analysis_agent
 
 logger = logging.getLogger(__name__)
 

@@ -1,7 +1,7 @@
 import logging
 from typing import List, Dict
 from nba_api.stats.static import players
-from config import DEFAULT_PLAYER_SEARCH_LIMIT, MIN_PLAYER_SEARCH_LENGTH
+from ..config import DEFAULT_PLAYER_SEARCH_LIMIT, MIN_PLAYER_SEARCH_LENGTH
 
 logger = logging.getLogger(__name__)
 
