@@ -8,25 +8,31 @@ interface InitialChatScreenProps {
 }
 
 const examplePrompts = [
-  "Compare LeBron James and Michael Jordan's career stats.",
-  "Show me Steph Curry's shot chart for the 2023-24 season.",
-  "What was the score of the last Lakers vs Celtics game?",
-  "Give me the roster for the Denver Nuggets.",
+  "What awards has LeBron James won?", // Uses get_player_awards
+  "Show the box score for game ID 0022300001.", // Uses get_boxscore_traditional
+  "What are the current NBA standings?", // Uses get_league_standings
+  "Who won the games played yesterday?", // Uses get_scoreboard with offset
+  "Who leads the league in points per game this season?", // Uses get_league_leaders
+  "Show the play-by-play for the 4th quarter of game 0022300001.", // Uses get_playbyplay
+  "Who was the first pick in the 2003 NBA draft?", // Uses get_draft_history
+  "Get Michael Jordan's career stats.", // Uses get_player_career_stats
 ];
 
 const capabilities = [
-  "Fetch player stats, game logs, and career info.",
+  "Fetch player stats, game logs, career info, and awards.",
   "Retrieve team rosters and basic information.",
-  "Find game results and schedules.",
-  "Display player shot charts.",
-  "Compare player or team statistics.",
+  "Find game results, schedules, box scores, and play-by-play.",
+  "Get current league standings and league leaders.",
+  "Look up historical draft picks.",
+  "Analyze and compare retrieved statistics.",
 ];
 
 const limitations = [
-  "Knowledge limited to available NBA API data.",
+  "Knowledge limited to available NBA stats API data.",
   "May not understand highly complex or ambiguous queries.",
-  "Game finder filters are currently limited.",
-  "Analysis capabilities are still under development.",
+  "Analysis is based solely on retrieved data.",
+  "Does not have real-time injury updates or live game commentary beyond scores/PBP.",
+  "Some advanced stats (e.g., player tracking details beyond box scores) may require specific tools not yet implemented.",
 ];
 
 export function InitialChatScreen({ onExampleClick }: InitialChatScreenProps) {
