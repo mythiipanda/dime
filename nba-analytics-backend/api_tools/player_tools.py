@@ -164,3 +164,18 @@ def get_player_headshot_url(player_id: int) -> str:
     headshot_url = f"{HEADSHOT_BASE_URL}{player_id}.png"
     logger.info(f"Generated headshot URL for player ID {player_id}: {headshot_url}")
     return headshot_url
+def find_players_by_name_fragment(name_fragment: str, limit: int = 10):
+    """
+    Search for players whose names contain the given fragment (case-insensitive).
+    Returns a list of dicts with player info.
+    """
+    if not name_fragment or len(name_fragment) < 2:
+        return []
+
+    all_players = players.get_players()
+    fragment_lower = name_fragment.lower()
+    matches = [
+        p for p in all_players
+        if fragment_lower in p.get('full_name', '').lower()
+    ]
+    return matches[:limit]

@@ -41,7 +41,7 @@ export function useAgentChat({ apiUrl }: UseAgentChatProps) {
 
     try {
       // Use relative path - Next.js rewrite handles proxying
-      const fullApiUrl = `/api/ask_team?prompt=${encodeURIComponent(prompt)}`;
+      const fullApiUrl = `http://localhost:8000/ask_team?prompt=${encodeURIComponent(prompt)}`;
       console.log(`Fetching from: ${fullApiUrl}`);
 
       const response = await fetch(fullApiUrl, {

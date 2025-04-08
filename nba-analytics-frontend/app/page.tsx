@@ -19,15 +19,19 @@ export default function AgentDashboardPage() {
   const {
     isLoading,
     error,
-    // progress, // Progress might be handled differently now
-    chatHistory, // Get chat history
+    chatText,  // Get live chat text
+    chatHistory,
     // resultData, // Not using structured data display for now
     submitPrompt,
     closeConnection,
   } = useAgentChatSSE({
-    // Provide only the base URL. The hook or rewrite will handle the path.
-    apiUrl: process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000", // Fallback URL (BASE ONLY)
+    apiUrl: process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000",
   });
+
+  console.log("Render: isLoading", isLoading);
+  console.log("Render: error", error);
+  console.log("Render: chatText", chatText);
+  console.log("Render: chatHistory", chatHistory);
 
   // Ref for scrolling chat area
   const scrollAreaRef = React.useRef<HTMLDivElement>(null);
@@ -81,8 +85,9 @@ export default function AgentDashboardPage() {
             {/* Optional: Show loading indicator at the end */}
             {isLoading && (
                <div className="flex justify-start">
-                  {/* You might want a spinner or a more distinct loading indicator here */}
-                  <div className="p-2 text-sm text-muted-foreground">Agent is thinking...</div>
+                  <div className="p-2 text-sm text-muted-foreground">
+                    {chatText}  {/* Show live chatText updates */}
+                  </div>
                </div>
             )}
           </div>

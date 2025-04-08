@@ -11,12 +11,30 @@ else:
 # API Keys
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
+# Agent-related configs
+AGENT_MODEL_ID = os.getenv("AGENT_MODEL_ID", "gemini-2.0-flash")
+STORAGE_DB_FILE = os.getenv("STORAGE_DB_FILE", "agno_storage.db")
+AGENT_DEBUG_MODE = os.getenv("AGENT_DEBUG_MODE", "false").lower() == "true"
+
 # Constants
 CURRENT_SEASON = "2024-25"
 DEFAULT_TIMEOUT = 10
 HEADSHOT_BASE_URL = "https://ak-static.cms.nba.com/wp-content/uploads/headshots/nba/latest/260x190/"
 DEFAULT_PLAYER_SEARCH_LIMIT = 10
 MIN_PLAYER_SEARCH_LENGTH = 3
+MAX_GAMES_TO_RETURN = 20
+
+# Supported fetch targets
+SUPPORTED_FETCH_TARGETS = [
+    "player_info",
+    "player_gamelog",
+    "team_info",
+    "player_career_stats",
+    "find_games"
+]
+
+# CORS allowed origins
+CORS_ALLOWED_ORIGINS = ["*"]  # Change to specific origins in production
 
 # Error Messages
 class ErrorMessages:

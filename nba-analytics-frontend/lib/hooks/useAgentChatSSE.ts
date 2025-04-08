@@ -23,6 +23,7 @@ interface AgentChatSSEState {
   progress: string[];
   chatHistory: ChatMessage[]; // Manages chat history
   resultData: StructuredResult | null; // Use specific type
+  chatText: string; // Add chatText for intermediate updates
 }
 
 export function useAgentChatSSE({ apiUrl }: UseAgentChatSSEProps) {
@@ -32,6 +33,7 @@ export function useAgentChatSSE({ apiUrl }: UseAgentChatSSEProps) {
     progress: [],
     chatHistory: [], // Initialize chat history
     resultData: null,
+    chatText: "Agent thinking...", // Initialize chatText
   });
   const eventSourceRef = useRef<EventSource | null>(null);
 
@@ -46,6 +48,7 @@ export function useAgentChatSSE({ apiUrl }: UseAgentChatSSEProps) {
       isLoading: true,
       error: null,
       progress: ["Connecting to agent..."],
+      chatText: "Agent thinking...",
       chatHistory: [...prev.chatHistory, userMessage],
       resultData: null,
     }));
@@ -58,7 +61,7 @@ export function useAgentChatSSE({ apiUrl }: UseAgentChatSSEProps) {
     // Always use relative /api path. Rewrite handles local dev.
     // NOTE: The `apiUrl` prop is now ignored by this hook, as the path is fixed.
     // Consider removing `apiUrl` prop if no longer needed elsewhere.
-    const fullApiUrl = `/api/ask_team?prompt=${encodeURIComponent(prompt)}`;
+    const fullApiUrl = `http://localhost:8000/ask_team?prompt=${encodeURIComponent(prompt)}`;
     console.log(`Chat SSE connecting to: ${fullApiUrl}`); // Add log
     const eventSource = new EventSource(fullApiUrl);
     eventSourceRef.current = eventSource;
@@ -95,9 +98,31 @@ export function useAgentChatSSE({ apiUrl }: UseAgentChatSSEProps) {
           });
         } else if (data.type === 'status' || data.type === 'tool_start' || data.type === 'tool_end' || data.type === 'thinking' || data.type === 'tool_call' || data.type === 'reasoning') {
            const progressMessage = data.message || `Processing: ${data.type}`;
-           setState(prev => ({ ...prev, progress: [...prev.progress, progressMessage] }));
+           setState(prev => ({
+             ...prev,
+             progress: [...prev.progress, progressMessage],
+             chatText: progressMessage,  // Update chat text with status
+           }));
         }
       } catch (e) {
+    eventSource.addEventListener('status', (event: MessageEvent) => {
+      console.log("SSE Status Event (Chat hook):", event.data);
+      try {
+        const data = JSON.parse(event.data);
+        console.log("Parsed status event data:", data);
+        const progressMessage = data.message || "Processing...";
+        setState(prev => {
+          console.log("Updating chatText to:", progressMessage);
+          return {
+            ...prev,
+            progress: [...prev.progress, progressMessage],
+            chatText: progressMessage,
+          };
+        });
+      } catch (e) {
+        console.warn("Failed to parse status SSE event", e);
+      }
+    });
         console.error("Failed to parse SSE data (Chat hook):", e);
         setState(prev => ({ ...prev, progress: [...prev.progress, event.data] }));
       }
@@ -127,6 +152,7 @@ export function useAgentChatSSE({ apiUrl }: UseAgentChatSSEProps) {
               return {
                 ...prev,
                 chatHistory: finalHistory,
+                chatText: finalContent,
                 progress: [...prev.progress, "Final response received."],
                 isLoading: false,
                 // resultData: parseStructuredData(finalContent), // TODO
@@ -189,6 +215,7 @@ export function useAgentChatSSE({ apiUrl }: UseAgentChatSSEProps) {
     progress: state.progress,
     chatHistory: state.chatHistory,
     resultData: state.resultData,
+    chatText: state.chatText,
     submitPrompt,
     closeConnection
   };
