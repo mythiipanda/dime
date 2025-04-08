@@ -61,7 +61,7 @@ export function useAgentChatSSE({ apiUrl }: UseAgentChatSSEProps) {
     // Always use relative /api path. Rewrite handles local dev.
     // NOTE: The `apiUrl` prop is now ignored by this hook, as the path is fixed.
     // Consider removing `apiUrl` prop if no longer needed elsewhere.
-    const fullApiUrl = `http://localhost:8000/ask_team?prompt=${encodeURIComponent(prompt)}`;
+    const fullApiUrl = `http://localhost:8000/ask?prompt=${encodeURIComponent(prompt)}`;
     console.log(`Chat SSE connecting to: ${fullApiUrl}`); // Add log
     const eventSource = new EventSource(fullApiUrl);
     eventSourceRef.current = eventSource;

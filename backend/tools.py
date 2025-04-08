@@ -3,7 +3,7 @@ import json
 import time
 from agno.tools import tool
 # Import only the necessary constants for default values, use standard types in hints
-from nba_api.stats.library.parameters import SeasonTypeAllStar, PerModeDetailed, PerMode36, LeagueID
+from nba_api.stats.library.parameters import SeasonTypeAllStar, PerModeDetailed, PerMode36, LeagueID, PerMode48
 
 # Import logic functions from the new modules
 from .api_tools.player_tools import (

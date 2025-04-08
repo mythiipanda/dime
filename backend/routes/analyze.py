@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 import logging
 
 from ..schemas import AnalyzeRequest
-from ..agents import analysis_agent
+from ..agents import nba_agent # Import the new single agent
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +14,7 @@ async def analyze_data(request: AnalyzeRequest):
     data_input = request.data
     logger.debug(f"Received /analyze request for query: {query}")
     try:
-        result = await analysis_agent.arun(f"{query}. Analyze the following data: {str(data_input)}")
+        result = await nba_agent.arun(f"{query}. Analyze the following data: {str(data_input)}") # Use nba_agent
         final_content = None
         if hasattr(result, 'messages') and result.messages:
             last_message = result.messages[-1]

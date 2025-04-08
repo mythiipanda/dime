@@ -38,16 +38,16 @@ def format_sse(data: str, event: str | None = None) -> str:
     msg += ":" + (" " * 2048) + "\n\n"
     return msg
 
-@router.get("/ask_team")
-async def ask_team_keepalive_sse(request: Request, prompt: str):
+@router.get("/ask")
+async def ask_agent_keepalive_sse(request: Request, prompt: str):
     logger.info(f"Received GET /ask_team request with prompt: '{prompt}'")
-    team_instance = nba_analysis_team
+    agent_instance = nba_analysis_team
 
     async def keepalive_sse_generator():
         logger.info(f"START keepalive_sse_generator for prompt: '{prompt}'")
         try:
-            logger.info(f"Starting streaming Agno agent for prompt: {prompt}")
-            run_stream = await team_instance.arun(prompt, stream=True, stream_intermediate_steps=True)
+            logger.info(f"Starting streaming NBA agent for prompt: {prompt}")
+            run_stream = await agent_instance.arun(prompt, stream=True, stream_intermediate_steps=True)
             async for chunk in run_stream:
                 chunk_dict = recursive_asdict(chunk)
                 event_type = chunk_dict.get("event")
@@ -100,7 +100,7 @@ async def ask_team_keepalive_sse(request: Request, prompt: str):
                 yield format_sse(json.dumps(final_sse_data), event="final")
         except Exception as e:
             logger.exception("Error during SSE generation")
-            error_detail = f"Error processing team request: {str(e)}"
+            error_detail = f"Error processing agent request: {str(e)}"
             try:
                 yield format_sse(json.dumps({"type": "error", "message": error_detail}))
             except Exception as send_err:
@@ -115,10 +115,10 @@ async def ask_team_keepalive_sse(request: Request, prompt: str):
         "X-Accel-Buffering": "no",
     }
     return StreamingResponse(keepalive_sse_generator(), headers=headers)
-@router.get("/test_streaming")
-async def test_streaming(request: Request, prompt: str):
+@router.get("/test_stream")
+async def test_agent_stream(request: Request, prompt: str):
     logger.info(f"Received GET /test_streaming request with prompt: '{prompt}'")
-    run_stream: Iterator[RunResponse] = await nba_analysis_team.arun(
+    run_stream: Iterator[RunResponse] = await nba_analysis_team.arun(  # Now points to nba_agent
         prompt,
         stream=True,
         stream_intermediate_steps=True,

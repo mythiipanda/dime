@@ -8,14 +8,14 @@ interface InitialChatScreenProps {
 }
 
 const examplePrompts = [
-  "What awards has LeBron James won?", // Uses get_player_awards
-  "Show the box score for game ID 0022300001.", // Uses get_boxscore_traditional
-  "What are the current NBA standings?", // Uses get_league_standings
-  "Who won the games played yesterday?", // Uses get_scoreboard with offset
-  "Who leads the league in points per game this season?", // Uses get_league_leaders
-  "Show the play-by-play for the 4th quarter of game 0022300001.", // Uses get_playbyplay
-  "Who was the first pick in the 2003 NBA draft?", // Uses get_draft_history
-  "Get Michael Jordan's career stats.", // Uses get_player_career_stats
+  "What awards has LeBron James won?",
+  "Show the box score for the last Lakers game.", // Requires find_games then get_boxscore_traditional
+  "What are the current NBA standings?",
+  "Who won the games played yesterday?",
+  "Who leads the league in points per game this season?",
+  "Give me the play-by-play for the Celtics vs Knicks game on 2024-12-25.", // Requires find_games then get_playbyplay
+  "Who was the first pick in the 2003 NBA draft?",
+  "Get Michael Jordan's career stats.",
 ];
 
 const capabilities = [
