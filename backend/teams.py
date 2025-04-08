@@ -2,7 +2,7 @@ from textwrap import dedent
 from agno.team import Team
 import os
 from agno.models.google import Gemini
-from .agents import data_aggregator_agent, analysis_agent, storage
+from .agents import data_aggregator_agent, analysis_agent
 from .config import AGENT_MODEL_ID, AGENT_DEBUG_MODE
 
 nba_analysis_team = Team(
@@ -11,7 +11,6 @@ nba_analysis_team = Team(
     model=Gemini(id=AGENT_MODEL_ID),
     members=[data_aggregator_agent, analysis_agent],
     markdown=True,
-    debug_mode=AGENT_DEBUG_MODE,
     description="Coordinates data fetching and analysis for NBA-related queries.",
     instructions=dedent("""\
         You are the lead coordinator for an NBA data analysis team. Your goal is to answer user queries by leveraging your team members: 'NBA Data Aggregator Agent' and 'NBA Analyst Agent'.

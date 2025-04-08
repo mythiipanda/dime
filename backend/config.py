@@ -12,7 +12,7 @@ else:
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
 # Agent-related configs
-AGENT_MODEL_ID = os.getenv("AGENT_MODEL_ID", "gemini-2.0-flash")
+AGENT_MODEL_ID = "gemini-2.0-flash"
 STORAGE_DB_FILE = os.getenv("STORAGE_DB_FILE", "agno_storage.db")
 AGENT_DEBUG_MODE = os.getenv("AGENT_DEBUG_MODE", "false").lower() == "true"
 

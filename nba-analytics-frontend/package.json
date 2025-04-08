@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "vercel-build": "PYTHONPATH=.. pip3 install -r ../backend/requirements.txt && PYTHONPATH=.. python3 -m uvicorn backend.main:app --host 0.0.0.0 --port 8000"
+    "vercel-build": "next build"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.1.3",
@@ -36,7 +36,7 @@
     "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
-    "@types/react": "^19",
+    "@types/react": "19.1.0",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "15.2.4",
