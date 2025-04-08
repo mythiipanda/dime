@@ -80,6 +80,13 @@ export function useAgentChatSSE({ apiUrl }: UseAgentChatSSEProps) {
           }));
           eventSourceRef.current?.close();
           eventSourceRef.current = null;
+        } else if (data.type === 'agent_chunk') {
+          const progressMessage = data.message || "Processing...";
+          setState(prev => ({
+            ...prev,
+            progress: [...prev.progress, progressMessage],
+            chatText: progressMessage,
+          }));
         } else if (data.type === 'agent_step') {
           // Handle streaming content for chat history
           setState(prev => {

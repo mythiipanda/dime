@@ -21,6 +21,7 @@ export default function AgentDashboardPage() {
     error,
     chatText,  // Get live chat text
     chatHistory,
+    progress,  // Add progress array
     // resultData, // Not using structured data display for now
     submitPrompt,
     closeConnection,
@@ -72,6 +73,16 @@ export default function AgentDashboardPage() {
     <div className="flex flex-col h-full max-h-full"> {/* Ensure it fills height */}
       {/* Optional: Display top-level errors */}
       {error && !isLoading && <ErrorDisplay error={error} />}
+
+      {/* Progress panel */}
+      <div className="p-2 border-b bg-gray-50 overflow-y-auto max-h-40">
+        <h3 className="font-semibold mb-1">Agent Progress</h3>
+        <div className="space-y-1 text-sm font-mono whitespace-pre-wrap">
+          {progress.map((msg, idx) => (
+            <div key={idx} className="p-1 rounded bg-gray-100">{msg}</div>
+          ))}
+        </div>
+      </div>
 
       {/* Conditional Rendering: Initial Screen or Chat History */}
       {chatHistory.length === 0 && !isLoading && !error ? (
