@@ -200,25 +200,25 @@ def get_draft_history(season_year: str = None) -> str:
 def get_league_leaders(
     stat_category: str,
     season: str = CURRENT_SEASON,
-    season_type: str = SeasonTypeAllStar.regular,
-    per_mode: str = PerMode48.per_game
+    season_type_all_star: str = SeasonTypeAllStar.regular,
+    per_mode48: str = PerMode48.per_game
 ) -> str:
     """
     Fetches league leaders for a specific stat category and season. Returns JSON string.
     Args:
         stat_category (str): Stat category abbreviation (e.g., 'PTS', 'REB', 'AST', 'STL', 'BLK', 'FG_PCT', 'FT_PCT', 'FG3_PCT', 'EFF').
         season (str): Season identifier (e.g., "2023-24"). Defaults to current.
-        season_type (str): 'Regular Season', 'Playoffs', etc. Defaults to Regular Season.
-        per_mode (str): Stat mode ('PerGame', 'Totals', 'Per48', etc.). Defaults to 'PerGame'.
+        season_type_all_star (str): 'Regular Season', 'Playoffs', etc. Defaults to Regular Season.
+        per_mode48 (str): Stat mode ('PerGame', 'Totals', 'Per48', etc.). Defaults to 'PerGame'.
     Returns: str: JSON string containing league leaders or {'error': ...}.
     """
-    logger.debug(f"Tool 'get_league_leaders' called for stat '{stat_category}', season '{season}', type '{season_type}', mode '{per_mode}'")
+    logger.debug(f"Tool 'get_league_leaders' called for stat '{stat_category}', season '{season}', type '{season_type_all_star}', mode '{per_mode48}'")
     # Logic function handles default scope and league ID
     return fetch_league_leaders_logic(
         stat_category=stat_category,
         season=season,
-        season_type=season_type,
-        per_mode=per_mode
+        season_type_all_star=season_type_all_star,
+        per_mode48=per_mode48
     )
 
 

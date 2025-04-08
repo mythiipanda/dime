@@ -174,35 +174,33 @@ def fetch_draft_history_logic(
 def fetch_league_leaders_logic(
     stat_category: str = StatCategoryAbbreviation.pts,
     season: str = CURRENT_SEASON,
-    season_type: str = SeasonTypeAllStar.regular,
-    per_mode: str = PerMode48.per_game,
-    scope: str = Scope.s, # S = Season, RS = Rank Season? Defaulting to S
+    season_type_all_star: str = SeasonTypeAllStar.regular,
+    per_mode48: str = PerMode48.per_game,
+    scope: str = Scope.s,
     league_id: str = LeagueID.nba
 ) -> str:
     """
     Fetches league leaders for a specific stat category and season.
     Returns JSON string.
     """
-    logger.info(f"Executing fetch_league_leaders_logic for Stat: {stat_category}, Season: {season}, Type: {season_type}, PerMode: {per_mode}, Scope: {scope}, League: {league_id}")
+    logger.info(f"Executing fetch_league_leaders_logic for Stat: {stat_category}, Season: {season}")
 
     # Basic validation (can be expanded)
     valid_stats = [getattr(StatCategoryAbbreviation, attr) for attr in dir(StatCategoryAbbreviation) if not attr.startswith('_')]
     if stat_category not in valid_stats:
          logger.error(f"Invalid stat_category: {stat_category}. Valid options: {valid_stats}")
-         return json.dumps({"error": Errors.INVALID_STAT_CATEGORY.format(stat=stat_category)}) # Need to add
-
-    # Add validation for other params if needed (per_mode, season_type, scope)
+         return json.dumps({"error": Errors.INVALID_STAT_CATEGORY.format(stat=stat_category)})
 
     try:
-        logger.debug(f"Fetching leagueleaders for Stat: {stat_category}, Season: {season}, Type: {season_type}")
+        logger.debug(f"Fetching leagueleaders for Stat: {stat_category}, Season: {season}")
         try:
             leaders_endpoint = leagueleaders.LeagueLeaders(
                 league_id=league_id,
-                per_mode=per_mode,
+                per_mode48=per_mode48,
                 scope=scope,
                 season=season,
-                season_type=season_type,
-                stat_category=stat_category,
+                season_type_all_star=season_type_all_star,
+                stat_category_abbreviation=stat_category,
                 timeout=DEFAULT_TIMEOUT
             )
             logger.debug(f"leagueleaders API call successful for Stat: {stat_category}, Season: {season}")
@@ -217,10 +215,10 @@ def fetch_league_leaders_logic(
             return json.dumps({"error": Errors.LEAGUE_LEADERS_PROCESSING.format(stat=stat_category, season=season)}) # Need to add
 
         result = {
-            "stat_category": stat_category,
+            "stat_category_abbreviation": stat_category,
             "season": season,
-            "season_type": season_type,
-            "per_mode": per_mode,
+            "season_type_all_star": season_type_all_star,
+            "per_mode48": per_mode48,
             "scope": scope,
             "league_id": league_id,
             "leaders": leaders_list or []
