@@ -10,7 +10,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 // Removed unused ScrollArea
-import { Input } from "@/components/ui/input"; // Import Input
 import { Button } from "@/components/ui/button"; // Import Button
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"; // Import Avatar
 import { Skeleton } from "@/components/ui/skeleton"; // Import Skeleton
@@ -127,10 +126,6 @@ export default function PlayersPage() {
     }
   };
 
-  const handleFormSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-      e.preventDefault();
-      handleSearch();
-  }
 
   // Debounce timer ref
   const debounceTimer = React.useRef<NodeJS.Timeout | null>(null);

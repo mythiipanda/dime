@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "vercel-build": "pip3 install -r ../nba-analytics-backend/requirements.txt && python3 -m uvicorn nba-analytics-backend.main:app --host 0.0.0.0 --port 8000"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.1.3",

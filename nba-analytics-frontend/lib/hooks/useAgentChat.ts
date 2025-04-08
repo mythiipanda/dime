@@ -19,7 +19,7 @@ interface UseAgentChatProps {
   apiUrl: string; // Base API URL (e.g., http://localhost:8000) - used by proxy
 }
 
-export function useAgentChat({ apiUrl }: UseAgentChatProps) {
+export function useAgentChat({}: UseAgentChatProps) {
   const [state, setState] = useState<AgentChatState>({
     isLoading: false,
     error: null,
@@ -63,7 +63,7 @@ export function useAgentChat({ apiUrl }: UseAgentChatProps) {
             // Try to parse error response from backend
             const errorData = await response.json();
             errorBody = errorData.detail || errorData.message || JSON.stringify(errorData);
-        } catch (parseError) {
+        } catch {
             // If parsing fails, use the status text
             errorBody = response.statusText;
         }
@@ -95,7 +95,7 @@ export function useAgentChat({ apiUrl }: UseAgentChatProps) {
       }));
     }
   // Keep apiUrl dependency for consistency, though not directly used in fetch URL
-  }, [apiUrl]); // Removed state dependency as functional updates are used
+  }, [state.isLoading]); // Add missing dependency
 
   // Return state values and submit function
   return {
