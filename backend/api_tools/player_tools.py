@@ -2,7 +2,8 @@ import logging
 import pandas as pd
 from typing import Tuple, Optional
 from nba_api.stats.static import players
-from nba_api.stats.endpoints import commonplayerinfo, playergamelog, playercareerstats
+# Import new endpoint
+from nba_api.stats.endpoints import commonplayerinfo, playergamelog, playercareerstats, playerawards
 from nba_api.stats.library.parameters import SeasonTypeAllStar, PerMode36
 import json
 
@@ -179,3 +180,41 @@ def find_players_by_name_fragment(name_fragment: str, limit: int = 10):
         if fragment_lower in p.get('full_name', '').lower()
     ]
     return matches[:limit]
+
+def fetch_player_awards_logic(player_name: str) -> str:
+    """Core logic to fetch player awards."""
+    logger.info(f"Executing fetch_player_awards_logic for: '{player_name}'")
+    if not player_name or not player_name.strip():
+        return json.dumps({"error": Errors.PLAYER_NAME_EMPTY})
+
+    try:
+        player_id, player_actual_name = _find_player_id(player_name)
+        if player_id is None:
+            return json.dumps({"error": Errors.PLAYER_NOT_FOUND.format(name=player_name)})
+
+        logger.debug(f"Fetching playerawards for ID: {player_id}")
+        try:
+            awards_endpoint = playerawards.PlayerAwards(player_id=player_id, timeout=DEFAULT_TIMEOUT)
+            logger.debug(f"playerawards API call successful for ID: {player_id}")
+        except Exception as api_error:
+            logger.error(f"nba_api playerawards failed for ID {player_id}: {api_error}", exc_info=True)
+            return json.dumps({"error": Errors.PLAYER_AWARDS_API.format(name=player_actual_name, error=str(api_error))}) # Need to add this error message
+
+        awards_list = _process_dataframe(awards_endpoint.player_awards.get_data_frame(), single_row=False)
+
+        if awards_list is None:
+            logger.error(f"DataFrame processing failed for awards of {player_actual_name}.")
+            # Return empty list if processing fails but API call succeeded (might mean no awards)
+            awards_list = []
+            # return json.dumps({"error": Errors.PLAYER_AWARDS_PROCESSING.format(name=player_actual_name)}) # Need to add this error message
+
+        result = {
+            "player_name": player_actual_name,
+            "player_id": player_id,
+            "awards": awards_list
+        }
+        logger.info(f"fetch_player_awards_logic completed for '{player_actual_name}'")
+        return json.dumps(result, default=str)
+    except Exception as e:
+        logger.critical(f"Unexpected error in fetch_player_awards_logic for '{player_name}': {e}", exc_info=True)
+        return json.dumps({"error": Errors.PLAYER_AWARDS_UNEXPECTED.format(name=player_name, error=str(e))}) # Need to add this error message

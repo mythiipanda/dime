@@ -50,6 +50,9 @@ class ErrorMessages:
     PLAYER_INFO_API = "API error fetching details for {name}: {error}"
     PLAYER_INFO_PROCESSING = "Failed to process data from API for {name}."
     PLAYER_INFO_UNEXPECTED = "Unexpected error processing request for {name}: {error}"
+    PLAYER_AWARDS_API = "API error fetching awards for {name}: {error}"
+    PLAYER_AWARDS_PROCESSING = "Failed to process awards data from API for {name}." # Currently unused in logic but good to have
+    PLAYER_AWARDS_UNEXPECTED = "Unexpected error processing awards request for {name}: {error}"
     
     # Team-related errors
     TEAM_NOT_FOUND = "Team '{identifier}' not found."
@@ -63,12 +66,37 @@ class ErrorMessages:
     FIND_GAMES_API = "API error fetching games: {error}"
     FIND_GAMES_PROCESSING = "Failed to process game data from API."
     FIND_GAMES_UNEXPECTED = "Unexpected error processing find games request: {error}"
+    GAME_ID_EMPTY = "Game ID cannot be empty."
+    INVALID_GAME_ID_FORMAT = "Invalid Game ID format: {game_id}. Expected 10 digits."
+    BOXSCORE_API = "API error fetching box score for game ID {game_id}: {error}"
+    BOXSCORE_PROCESSING = "Failed to process box score data from API for game ID {game_id}."
+    BOXSCORE_UNEXPECTED = "Unexpected error processing box score request for game ID {game_id}: {error}"
+    PLAYBYPLAY_API = "API error fetching play-by-play for game ID {game_id}: {error}"
+    PLAYBYPLAY_PROCESSING = "Failed to process play-by-play data from API for game ID {game_id}."
+    PLAYBYPLAY_UNEXPECTED = "Unexpected error processing play-by-play request for game ID {game_id}: {error}"
     
     # General validation errors
     INVALID_SEASON_FORMAT = "Invalid season format: {season}. Expected YYYY-YY."
     INVALID_PLAYER_OR_TEAM = "Invalid player_or_team value. Must be 'P' for Player or 'T' for Team."
     MISSING_PLAYER_ID = "player_id is required when player_or_team='P'."
     MISSING_TEAM_ID = "team_id is required when player_or_team='T'."
+
+    # League-related errors
+    STANDINGS_API = "API error fetching standings for season {season}: {error}"
+    STANDINGS_PROCESSING = "Failed to process standings data from API for season {season}."
+    STANDINGS_UNEXPECTED = "Unexpected error processing standings request for season {season}: {error}"
+    INVALID_DATE_FORMAT = "Invalid date format: {date}. Expected YYYY-MM-DD."
+    SCOREBOARD_API = "API error fetching scoreboard for date {date}: {error}"
+    SCOREBOARD_PROCESSING = "Failed to process scoreboard data from API for date {date}."
+    SCOREBOARD_UNEXPECTED = "Unexpected error processing scoreboard request for date {date}: {error}"
+    INVALID_DRAFT_YEAR_FORMAT = "Invalid draft year format: {year}. Expected YYYY."
+    DRAFT_HISTORY_API = "API error fetching draft history for year {year}: {error}"
+    DRAFT_HISTORY_PROCESSING = "Failed to process draft history data from API for year {year}."
+    DRAFT_HISTORY_UNEXPECTED = "Unexpected error processing draft history request for year {year}: {error}"
+    INVALID_STAT_CATEGORY = "Invalid stat category provided: {stat}."
+    LEAGUE_LEADERS_API = "API error fetching league leaders for {stat}, season {season}: {error}"
+    LEAGUE_LEADERS_PROCESSING = "Failed to process league leaders data from API for {stat}, season {season}."
+    LEAGUE_LEADERS_UNEXPECTED = "Unexpected error processing league leaders request for {stat}, season {season}: {error}"
 
 # Validation for environment variables
 if not GOOGLE_API_KEY:

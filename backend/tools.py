@@ -10,6 +10,7 @@ from .api_tools.player_tools import (
     fetch_player_info_logic,
     fetch_player_gamelog_logic,
     fetch_player_career_stats_logic,
+    fetch_player_awards_logic, # Import new logic function
     _find_player_id
 )
 from .api_tools.team_tools import (
@@ -19,8 +20,12 @@ from .api_tools.team_tools import (
 )
 from .config import CURRENT_SEASON # Import from config
 from .api_tools.game_tools import (
-    fetch_league_games_logic
+    fetch_league_games_logic,
+    fetch_boxscore_traditional_logic,
+    fetch_playbyplay_logic # Import new logic function
 )
+# Import from new league_tools module
+from .api_tools.league_tools import fetch_league_standings_logic, fetch_scoreboard_logic, fetch_draft_history_logic, fetch_league_leaders_logic
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +126,99 @@ def find_games(
         league_id_nullable=None, # Pass None
         date_from_nullable=date_from,
         date_to_nullable=date_to
+    )
+
+@tool
+def get_player_awards(player_name: str) -> str:
+    """
+    Fetches the awards won by a specific player. Returns JSON string.
+    Args: player_name (str): Full name of the player.
+    Returns: str: JSON string containing a list of awards or {'error': ...}.
+    """
+    logger.debug(f"Tool 'get_player_awards' called for '{player_name}'")
+    return fetch_player_awards_logic(player_name)
+
+@tool
+def get_boxscore_traditional(game_id: str) -> str:
+    """
+    Fetches the traditional box score (V3) for a specific game. Returns JSON string.
+    Args: game_id (str): The 10-digit ID of the game.
+    Returns: str: JSON string containing player and team stats or {'error': ...}.
+    """
+    logger.debug(f"Tool 'get_boxscore_traditional' called for game_id '{game_id}'")
+    return fetch_boxscore_traditional_logic(game_id)
+
+@tool
+def get_league_standings(season: str = CURRENT_SEASON) -> str:
+    """
+    Fetches the league standings (V3) for a specific season (Regular Season only). Returns JSON string.
+    Args: season (str): Season identifier (e.g., "2023-24"). Defaults to current.
+    Returns: str: JSON string containing standings data or {'error': ...}.
+    """
+    logger.debug(f"Tool 'get_league_standings' called for season '{season}'")
+    # Logic function handles default season type and league ID
+    return fetch_league_standings_logic(season=season)
+
+@tool
+def get_scoreboard(game_date: str = None, day_offset: int = 0) -> str:
+    """
+    Fetches the scoreboard (V2) for a specific date. Returns JSON string.
+    Args:
+        game_date (str): Date string (YYYY-MM-DD). Defaults to today if None.
+        day_offset (int): Offset from game_date (e.g., -1 for yesterday). Defaults to 0.
+    Returns: str: JSON string containing scoreboard data or {'error': ...}.
+    """
+    logger.debug(f"Tool 'get_scoreboard' called for date '{game_date}', offset '{day_offset}'")
+    # Logic function handles default date if game_date is None
+    return fetch_scoreboard_logic(game_date=game_date, day_offset=day_offset)
+
+@tool
+def get_playbyplay(game_id: str, start_period: int = 0, end_period: int = 0) -> str:
+    """
+    Fetches the play-by-play data (V3) for a specific game. Returns JSON string.
+    Args:
+        game_id (str): The 10-digit ID of the game.
+        start_period (int): Optional starting period filter (0 for all). Defaults to 0.
+        end_period (int): Optional ending period filter (0 for all). Defaults to 0.
+    Returns: str: JSON string containing play-by-play actions or {'error': ...}.
+    """
+    logger.debug(f"Tool 'get_playbyplay' called for game_id '{game_id}', start '{start_period}', end '{end_period}'")
+    return fetch_playbyplay_logic(game_id=game_id, start_period=start_period, end_period=end_period)
+
+@tool
+def get_draft_history(season_year: str = None) -> str:
+    """
+    Fetches the NBA draft history, optionally filtered by year. Returns JSON string.
+    Args: season_year (str): Optional year filter (YYYY format). If None, fetches all history.
+    Returns: str: JSON string containing draft picks or {'error': ...}.
+    """
+    logger.debug(f"Tool 'get_draft_history' called for year '{season_year or 'All'}'")
+    # Logic function handles default league ID
+    return fetch_draft_history_logic(season_year=season_year)
+
+@tool
+def get_league_leaders(
+    stat_category: str,
+    season: str = CURRENT_SEASON,
+    season_type: str = SeasonTypeAllStar.regular,
+    per_mode: str = PerMode48.per_game
+) -> str:
+    """
+    Fetches league leaders for a specific stat category and season. Returns JSON string.
+    Args:
+        stat_category (str): Stat category abbreviation (e.g., 'PTS', 'REB', 'AST', 'STL', 'BLK', 'FG_PCT', 'FT_PCT', 'FG3_PCT', 'EFF').
+        season (str): Season identifier (e.g., "2023-24"). Defaults to current.
+        season_type (str): 'Regular Season', 'Playoffs', etc. Defaults to Regular Season.
+        per_mode (str): Stat mode ('PerGame', 'Totals', 'Per48', etc.). Defaults to 'PerGame'.
+    Returns: str: JSON string containing league leaders or {'error': ...}.
+    """
+    logger.debug(f"Tool 'get_league_leaders' called for stat '{stat_category}', season '{season}', type '{season_type}', mode '{per_mode}'")
+    # Logic function handles default scope and league ID
+    return fetch_league_leaders_logic(
+        stat_category=stat_category,
+        season=season,
+        season_type=season_type,
+        per_mode=per_mode
     )
 
 

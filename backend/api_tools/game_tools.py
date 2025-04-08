@@ -2,7 +2,8 @@ import logging
 import json
 from typing import Optional
 import pandas as pd
-from nba_api.stats.endpoints import leaguegamefinder
+# Import new endpoints
+from nba_api.stats.endpoints import leaguegamefinder, boxscoretraditionalv3, playbyplayv3
 from nba_api.stats.library.parameters import LeagueID, SeasonTypeNullable, SeasonNullable
 
 from .utils import _process_dataframe
@@ -72,3 +73,100 @@ def fetch_league_games_logic(
     except Exception as e:
         logger.critical(Errors.FIND_GAMES_UNEXPECTED.format(error=str(e)), exc_info=True)
         return json.dumps({"error": Errors.FIND_GAMES_UNEXPECTED.format(error=str(e))})
+
+def fetch_boxscore_traditional_logic(game_id: str) -> str:
+    """
+    Fetches traditional box score stats (V3) for a specific game.
+    Returns JSON string with player and team stats.
+    """
+    logger.info(f"Executing fetch_boxscore_traditional_logic for game_id: '{game_id}'")
+    if not game_id or not game_id.strip():
+        return json.dumps({"error": Errors.GAME_ID_EMPTY}) # Need to add this error message
+    if not game_id.isdigit() or len(game_id) != 10:
+         return json.dumps({"error": Errors.INVALID_GAME_ID_FORMAT.format(game_id=game_id)}) # Need to add this error message
+
+    try:
+        logger.debug(f"Fetching boxscoretraditionalv3 for game ID: {game_id}")
+        try:
+            boxscore_endpoint = boxscoretraditionalv3.BoxScoreTraditionalV3(
+                game_id=game_id,
+                # Default values for range/period seem okay for full game stats
+                start_period='0',
+                end_period='0',
+                start_range='0',
+                end_range='0',
+                range_type='0',
+                timeout=DEFAULT_TIMEOUT
+            )
+            logger.debug(f"boxscoretraditionalv3 API call successful for game ID: {game_id}")
+        except Exception as api_error:
+            logger.error(f"nba_api boxscoretraditionalv3 failed for game ID {game_id}: {api_error}", exc_info=True)
+            return json.dumps({"error": Errors.BOXSCORE_API.format(game_id=game_id, error=str(api_error))}) # Need to add this error message
+
+        player_stats_list = _process_dataframe(boxscore_endpoint.player_stats.get_data_frame(), single_row=False)
+        team_stats_list = _process_dataframe(boxscore_endpoint.team_stats.get_data_frame(), single_row=False) # Should be 2 rows (teams)
+
+        if player_stats_list is None or team_stats_list is None:
+            logger.error(f"DataFrame processing failed for boxscore of game {game_id}.")
+            return json.dumps({"error": Errors.BOXSCORE_PROCESSING.format(game_id=game_id)}) # Need to add this error message
+
+        result = {
+            "game_id": game_id,
+            "player_stats": player_stats_list or [],
+            "team_stats": team_stats_list or []
+        }
+        logger.info(f"fetch_boxscore_traditional_logic completed for game ID: {game_id}")
+        return json.dumps(result, default=str)
+
+    except Exception as e:
+        logger.critical(f"Unexpected error in fetch_boxscore_traditional_logic for game ID '{game_id}': {e}", exc_info=True)
+        return json.dumps({"error": Errors.BOXSCORE_UNEXPECTED.format(game_id=game_id, error=str(e))}) # Need to add this error message
+
+def fetch_playbyplay_logic(game_id: str, start_period: int = 0, end_period: int = 0) -> str:
+    """
+    Fetches play-by-play data (V3) for a specific game, optionally filtered by period.
+    Returns JSON string.
+    """
+    logger.info(f"Executing fetch_playbyplay_logic for game_id: '{game_id}', StartPeriod: {start_period}, EndPeriod: {end_period}")
+    if not game_id or not game_id.strip():
+        return json.dumps({"error": Errors.GAME_ID_EMPTY})
+    if not game_id.isdigit() or len(game_id) != 10:
+         return json.dumps({"error": Errors.INVALID_GAME_ID_FORMAT.format(game_id=game_id)})
+
+    # Ensure periods are strings for the API call
+    start_period_str = str(start_period)
+    end_period_str = str(end_period)
+
+    try:
+        logger.debug(f"Fetching playbyplayv3 for game ID: {game_id}, Start: {start_period_str}, End: {end_period_str}")
+        try:
+            pbp_endpoint = playbyplayv3.PlayByPlayV3(
+                game_id=game_id,
+                start_period=start_period_str,
+                end_period=end_period_str,
+                timeout=DEFAULT_TIMEOUT
+            )
+            logger.debug(f"playbyplayv3 API call successful for game ID: {game_id}")
+        except Exception as api_error:
+            logger.error(f"nba_api playbyplayv3 failed for game ID {game_id}: {api_error}", exc_info=True)
+            return json.dumps({"error": Errors.PLAYBYPLAY_API.format(game_id=game_id, error=str(api_error))}) # Need to add this error message
+
+        # The main data is in the 'actions' attribute
+        pbp_list = _process_dataframe(pbp_endpoint.play_by_play.get_data_frame(), single_row=False)
+
+        if pbp_list is None:
+            logger.error(f"DataFrame processing failed for play-by-play of game {game_id}.")
+            return json.dumps({"error": Errors.PLAYBYPLAY_PROCESSING.format(game_id=game_id)}) # Need to add this error message
+
+        result = {
+            "game_id": game_id,
+            "start_period_requested": start_period,
+            "end_period_requested": end_period,
+            "actions": pbp_list or []
+        }
+        logger.info(f"fetch_playbyplay_logic completed for game ID: {game_id}")
+        return json.dumps(result, default=str)
+
+    except Exception as e:
+        logger.critical(f"Unexpected error in fetch_playbyplay_logic for game ID '{game_id}': {e}", exc_info=True)
+        return json.dumps({"error": Errors.PLAYBYPLAY_UNEXPECTED.format(game_id=game_id, error=str(e))}) # Need to add this error message
