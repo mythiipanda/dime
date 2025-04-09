@@ -2,13 +2,13 @@ import logging
 from fastapi import APIRouter, HTTPException
 from typing import Optional, List, Dict, Any
 import json
-from api_tools.player_tools import (
+from backend.api_tools.player_tools import (
     get_player_headshot_url, 
     find_players_by_name_fragment,
     fetch_player_stats_logic,
     fetch_player_info_logic
 )
-from api_tools.player_tracking import (
+from backend.api_tools.player_tracking import (
     fetch_player_clutch_stats_logic,
     fetch_player_shots_tracking_logic,
     fetch_player_rebounding_stats_logic,

@@ -3,7 +3,7 @@ import json
 from typing import Optional, Dict, List, Tuple, Any
 import pandas as pd
 from nba_api.stats.static import teams
-from nba_api.stats.endpoints import teaminfocommon, commonteamroster, teamdashboardbygeneralsplits
+from nba_api.stats.endpoints import teaminfocommon, commonteamroster, teamdashboardbygeneralsplits, teamdashptpass
 from nba_api.stats.library.parameters import LeagueID, SeasonTypeAllStar
 
 from config import DEFAULT_TIMEOUT, CURRENT_SEASON, ErrorMessages as Errors
@@ -205,3 +205,65 @@ def fetch_team_stats_logic(team_name: str, season: str = CURRENT_SEASON, season_
     except Exception as e:
         logger.critical(f"Unexpected error in fetch_team_stats_logic for '{team_name}': {e}", exc_info=True)
         return json.dumps({"error": f"Unexpected error retrieving team stats: {str(e)}"})
+
+def fetch_team_passing_stats_logic(team_name: str, season: str = CURRENT_SEASON, season_type: str = SeasonTypeAllStar.regular) -> str:
+    """
+    Fetches team passing statistics.
+    
+    Args:
+        team_name (str): The name of the team to fetch stats for
+        season (str): The season to fetch stats for (e.g., '2023-24')
+        season_type (str): The type of season (regular, playoffs, etc.)
+        
+    Returns:
+        str: JSON string containing team passing statistics or error message
+    """
+    logger.info(f"Executing fetch_team_passing_stats_logic for: '{team_name}', Season: {season}")
+    
+    if not team_name or not team_name.strip():
+        return json.dumps({"error": Errors.TEAM_NAME_EMPTY})
+    if not season or not _validate_season_format(season):
+        return json.dumps({"error": Errors.INVALID_SEASON_FORMAT.format(season=season)})
+    
+    try:
+        # Find team ID
+        team_id, team_full_name = _find_team_id(team_name)
+        if team_id is None:
+            return json.dumps({"error": Errors.TEAM_NOT_FOUND.format(identifier=team_name)})
+        
+        # Get team passing stats
+        try:
+            passing_stats = teamdashptpass.TeamDashPtPass(
+                team_id=team_id,
+                season=season,
+                season_type_all_star=season_type,
+                timeout=DEFAULT_TIMEOUT
+            )
+            logger.debug(f"teamdashptpass API call successful for ID: {team_id}, Season: {season}")
+        except Exception as api_error:
+            logger.error(f"nba_api teamdashptpass failed for ID {team_id}, Season {season}: {api_error}", exc_info=True)
+            return json.dumps({"error": Errors.TEAM_STATS_API.format(name=team_full_name, season=season, error=str(api_error))})
+            
+        passes_made = _process_dataframe(passing_stats.passes_made.get_data_frame(), single_row=False)
+        passes_received = _process_dataframe(passing_stats.passes_received.get_data_frame(), single_row=False)
+        
+        if passes_made is None or passes_received is None:
+            logger.error(f"DataFrame processing failed for team passing stats of {team_full_name} ({season}).")
+            return json.dumps({"error": Errors.TEAM_STATS_PROCESSING.format(name=team_full_name, season=season)})
+        
+        # Combine results
+        result = {
+            "team_name": team_full_name,
+            "team_id": team_id,
+            "season": season,
+            "season_type": season_type,
+            "passes_made": passes_made,
+            "passes_received": passes_received
+        }
+        
+        logger.info(f"fetch_team_passing_stats_logic completed for '{team_full_name}'")
+        return json.dumps(result, default=str)
+        
+    except Exception as e:
+        logger.critical(f"Unexpected error in fetch_team_passing_stats_logic for '{team_name}': {e}", exc_info=True)
+        return json.dumps({"error": Errors.TEAM_STATS_UNEXPECTED.format(identifier=team_name, season=season, error=str(e))})

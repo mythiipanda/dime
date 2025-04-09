@@ -5,31 +5,38 @@ from agno.tools import tool
 # Import only the necessary constants for default values, use standard types in hints
 from nba_api.stats.library.parameters import SeasonTypeAllStar, PerModeDetailed, PerMode36, LeagueID, PerMode48
 
+from config import CURRENT_SEASON
+
 # Import logic functions from the new modules
 from backend.api_tools.player_tools import (
-    fetch_player_info_logic,
-    fetch_player_gamelog_logic,
-    fetch_player_career_stats_logic,
-    fetch_player_awards_logic, # Import new logic function
-    _find_player_id
+    fetch_player_info_logic as fetch_player_info,
+    fetch_player_gamelog_logic as fetch_player_gamelog,
+    fetch_player_career_stats_logic as fetch_player_career_stats,
+    fetch_player_awards_logic as fetch_player_awards
 )
 from backend.api_tools.team_tools import (
-    fetch_team_info_and_roster_logic,
-    _find_team_id,
-    # CURRENT_SEASON # Removed: Import from config
+    fetch_team_info_and_roster_logic as fetch_team_info_and_roster,
+    fetch_team_stats_logic as fetch_team_stats
 )
-from backend.config import CURRENT_SEASON # Import from config
 from backend.api_tools.game_tools import (
-    fetch_league_games_logic,
-    fetch_boxscore_traditional_logic,
-    fetch_playbyplay_logic,
-    fetch_boxscore_advanced_logic,
-    fetch_boxscore_fourfactors_logic # Import new logic function
+    fetch_boxscore_traditional_logic as fetch_boxscore_traditional,
+    fetch_boxscore_advanced_logic as fetch_boxscore_advanced,
+    fetch_boxscore_fourfactors_logic as fetch_boxscore_fourfactors,
+    fetch_playbyplay_logic as fetch_playbyplay,
+    fetch_league_games_logic as find_games
 )
-# Import from new league_tools module
-from backend.api_tools.league_tools import fetch_league_standings_logic, fetch_scoreboard_logic, fetch_draft_history_logic, fetch_league_leaders_logic
-# Import from new player_tracking module 
-from backend.api_tools.player_tracking import fetch_player_clutch_stats_logic, fetch_player_passing_stats_logic
+from backend.api_tools.league_tools import (
+    fetch_league_standings_logic as fetch_league_standings,
+    fetch_scoreboard_logic as fetch_scoreboard,
+    fetch_draft_history_logic as fetch_draft_history,
+    fetch_league_leaders_logic as fetch_league_leaders
+)
+from backend.api_tools.player_tracking import (
+    fetch_player_clutch_stats_logic as fetch_player_clutch_stats,
+    fetch_player_passing_stats_logic as fetch_player_passing_stats,
+    fetch_player_shots_tracking_logic as fetch_player_shots_tracking,
+    fetch_player_rebounding_stats_logic as fetch_player_rebounding_stats
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +50,7 @@ def get_player_info(player_name: str) -> str:
     Returns: str: JSON string containing player info/stats or {'error': ...}.
     """
     logger.debug(f"Tool 'get_player_info' called for '{player_name}'")
-    return fetch_player_info_logic(player_name)
+    return fetch_player_info(player_name)
 
 @tool
 def get_player_gamelog(player_name: str, season: str, season_type: str = SeasonTypeAllStar.regular) -> str:
@@ -60,7 +67,7 @@ def get_player_gamelog(player_name: str, season: str, season_type: str = SeasonT
     if season_type not in valid_season_types:
         logger.warning(f"Invalid season_type '{season_type}' in tool wrapper. Using default '{SeasonTypeAllStar.regular}'.")
         season_type = SeasonTypeAllStar.regular
-    return fetch_player_gamelog_logic(player_name, season, season_type)
+    return fetch_player_gamelog(player_name, season, season_type)
 
 @tool
 def get_team_info_and_roster(team_identifier: str, season: str = CURRENT_SEASON) -> str:
@@ -72,7 +79,7 @@ def get_team_info_and_roster(team_identifier: str, season: str = CURRENT_SEASON)
     Returns: str: JSON string containing team data or {'error': ...}.
     """
     logger.debug(f"Tool 'get_team_info_and_roster' called for '{team_identifier}', season '{season}'")
-    return fetch_team_info_and_roster_logic(team_identifier, season)
+    return fetch_team_info_and_roster(team_identifier, season)
 
 @tool
 def get_player_career_stats(player_name: str, per_mode36: str = PerMode36.per_game) -> str:
@@ -87,7 +94,7 @@ def get_player_career_stats(player_name: str, per_mode36: str = PerMode36.per_ga
     valid_per_modes = [getattr(PerMode36, attr) for attr in dir(PerMode36) if not attr.startswith('_') and isinstance(getattr(PerMode36, attr), str)]
     if per_mode36 not in valid_per_modes:
          logger.warning(f"Invalid per_mode36 '{per_mode36}' in tool wrapper. Logic function will use default.")
-    return fetch_player_career_stats_logic(player_name, per_mode36)
+    return fetch_player_career_stats(player_name, per_mode36)
 
 @tool
 # Simplified signature further: Removed season, season_type, league_id
@@ -121,7 +128,7 @@ def find_games(
         return json.dumps({"error": "team_id is required when player_or_team='T'."})
 
     # Call logic function, passing None for the removed parameters
-    return fetch_league_games_logic(
+    return find_games(
         player_or_team_abbreviation=player_or_team,
         player_id_nullable=player_id,
         team_id_nullable=team_id,
@@ -140,7 +147,7 @@ def get_player_awards(player_name: str) -> str:
     Returns: str: JSON string containing a list of awards or {'error': ...}.
     """
     logger.debug(f"Tool 'get_player_awards' called for '{player_name}'")
-    return fetch_player_awards_logic(player_name)
+    return fetch_player_awards(player_name)
 
 @tool
 def get_boxscore_traditional(game_id: str) -> str:
@@ -150,7 +157,7 @@ def get_boxscore_traditional(game_id: str) -> str:
     Returns: str: JSON string containing player and team stats or {'error': ...}.
     """
     logger.debug(f"Tool 'get_boxscore_traditional' called for game_id '{game_id}'")
-    return fetch_boxscore_traditional_logic(game_id)
+    return fetch_boxscore_traditional(game_id)
 
 @tool
 def get_league_standings(season: str = CURRENT_SEASON) -> str:
@@ -161,7 +168,7 @@ def get_league_standings(season: str = CURRENT_SEASON) -> str:
     """
     logger.debug(f"Tool 'get_league_standings' called for season '{season}'")
     # Logic function handles default season type and league ID
-    return fetch_league_standings_logic(season=season)
+    return fetch_league_standings(season=season)
 
 @tool
 def get_scoreboard(game_date: str = None, day_offset: int = 0) -> str:
@@ -174,7 +181,7 @@ def get_scoreboard(game_date: str = None, day_offset: int = 0) -> str:
     """
     logger.debug(f"Tool 'get_scoreboard' called for date '{game_date}', offset '{day_offset}'")
     # Logic function handles default date if game_date is None
-    return fetch_scoreboard_logic(game_date=game_date, day_offset=day_offset)
+    return fetch_scoreboard(game_date=game_date, day_offset=day_offset)
 
 @tool
 def get_playbyplay(game_id: str, start_period: int = 0, end_period: int = 0) -> str:
@@ -187,7 +194,7 @@ def get_playbyplay(game_id: str, start_period: int = 0, end_period: int = 0) -> 
     Returns: str: JSON string containing play-by-play actions or {'error': ...}.
     """
     logger.debug(f"Tool 'get_playbyplay' called for game_id '{game_id}', start '{start_period}', end '{end_period}'")
-    return fetch_playbyplay_logic(game_id=game_id, start_period=start_period, end_period=end_period)
+    return fetch_playbyplay(game_id=game_id, start_period=start_period, end_period=end_period)
 
 @tool
 def get_draft_history(season_year: str = None) -> str:
@@ -198,7 +205,7 @@ def get_draft_history(season_year: str = None) -> str:
     """
     logger.debug(f"Tool 'get_draft_history' called for year '{season_year or 'All'}'")
     # Logic function handles default league ID
-    return fetch_draft_history_logic(season_year=season_year)
+    return fetch_draft_history(season_year=season_year)
 
 @tool
 def get_league_leaders(
@@ -218,7 +225,7 @@ def get_league_leaders(
     """
     logger.debug(f"Tool 'get_league_leaders' called for stat '{stat_category}', season '{season}', type '{season_type_all_star}', mode '{per_mode48}'")
     # Logic function handles default scope and league ID
-    return fetch_league_leaders_logic(
+    return fetch_league_leaders(
         stat_category=stat_category,
         season=season,
         season_type_all_star=season_type_all_star,
@@ -234,7 +241,7 @@ def get_boxscore_advanced(game_id: str) -> str:
     Returns: str: JSON string containing advanced player and team stats or {'error': ...}.
     """
     logger.debug(f"Tool 'get_boxscore_advanced' called for game_id '{game_id}'")
-    return fetch_boxscore_advanced_logic(game_id)
+    return fetch_boxscore_advanced(game_id)
 
 @tool
 def get_boxscore_fourfactors(game_id: str) -> str:
@@ -245,7 +252,7 @@ def get_boxscore_fourfactors(game_id: str) -> str:
     Returns: str: JSON string containing Four Factors player and team stats or {'error': ...}.
     """
     logger.debug(f"Tool 'get_boxscore_fourfactors' called for game_id '{game_id}'")
-    return fetch_boxscore_fourfactors_logic(game_id)
+    return fetch_boxscore_fourfactors(game_id)
 
 @tool
 def get_team_passing_stats(
@@ -265,64 +272,7 @@ def get_team_passing_stats(
         String JSON with passing statistics for the team
     """
     logger.debug(f"Tool get_team_passing_stats called for {team_name}, season {season}")
-    from backend.api_tools.team_tracking import fetch_team_passing_stats_logic
-    return fetch_team_passing_stats_logic(
-        team_identifier=team_name,
-        season=season,
-        season_type=season_type,
-        per_mode=per_mode
-    )
-
-@tool
-def get_team_shooting_stats(
-    team_name: str,
-    season: str,
-    season_type: str = SeasonTypeAllStar.regular,
-    per_mode: str = PerModeDetailed.per_game
-) -> str:
-    """
-    Get detailed team shooting stats based on tracking data.
-    
-    Args:
-        team_name: Name of the team or team abbreviation (e.g., "Lakers" or "LAL")
-        season: Season to get data for, in format "YYYY-YY" (e.g., "2022-23")
-        season_type: "Regular Season", "Playoffs", or other valid season type
-        per_mode: Mode of stats, like "PerGame" or "Totals"
-        
-    Returns:
-        String JSON with shooting statistics for the team
-    """
-    logger.debug(f"Tool 'get_team_shooting_stats' called for {team_name}, season {season}")
-    from backend.api_tools.team_tracking import fetch_team_shooting_stats_logic
-    return fetch_team_shooting_stats_logic(
-        team_identifier=team_name,
-        season=season,
-        season_type=season_type,
-        per_mode=per_mode
-    )
-
-@tool
-def get_team_rebounding_stats(
-    team_name: str,
-    season: str,
-    season_type: str = SeasonTypeAllStar.regular,
-    per_mode: str = PerModeDetailed.per_game
-) -> str:
-    """
-    Get detailed team rebounding stats based on tracking data.
-    
-    Args:
-        team_name: Name of the team or team abbreviation (e.g., "Lakers" or "LAL")
-        season: Season to get data for, in format "YYYY-YY" (e.g., "2022-23")
-        season_type: "Regular Season", "Playoffs", or other valid season type
-        per_mode: Mode of stats, like "PerGame" or "Totals"
-        
-    Returns:
-        String JSON with rebounding statistics for the team
-    """
-    logger.debug(f"Tool 'get_team_rebounding_stats' called for {team_name}, season {season}")
-    from backend.api_tools.team_tracking import fetch_team_rebounding_stats_logic
-    return fetch_team_rebounding_stats_logic(
+    return fetch_team_stats(
         team_identifier=team_name,
         season=season,
         season_type=season_type,
@@ -349,8 +299,7 @@ def get_player_passing_stats(
         str: JSON string containing player passing statistics
     """
     logger.debug(f"Tool get_player_passing_stats called for {player_name}, season {season}")
-    from backend.api_tools.player_tracking import fetch_player_passing_stats_logic
-    return fetch_player_passing_stats_logic(
+    return fetch_player_passing_stats(
         player_name=player_name,
         season=season,
         season_type=season_type,
@@ -366,7 +315,7 @@ if __name__ == "__main__":
     # ... (previous tests remain here) ...
     print("\n[Test Case 1: LeBron James Info]")
     start_time = time.time()
-    lebron_info_str = fetch_player_info_logic("LeBron James")
+    lebron_info_str = fetch_player_info("LeBron James")
     lebron_info = json.loads(lebron_info_str)
     end_time = time.time()
     print(f"Result (took {end_time - start_time:.2f}s):")
@@ -375,7 +324,7 @@ if __name__ == "__main__":
 
     print("\n[Test Case 5: LeBron James Game Log (2023-24)]")
     start_time = time.time()
-    lebron_log_str = fetch_player_gamelog_logic("LeBron James", "2023-24")
+    lebron_log_str = fetch_player_gamelog("LeBron James", "2023-24")
     lebron_log = json.loads(lebron_log_str)
     end_time = time.time()
     print(f"Result (took {end_time - start_time:.2f}s):")
@@ -385,7 +334,7 @@ if __name__ == "__main__":
 
     print("\n[Test Case 8: Lakers Info & Roster (Default Season)]")
     start_time = time.time()
-    lakers_info_str = fetch_team_info_and_roster_logic("LAL")
+    lakers_info_str = fetch_team_info_and_roster("LAL")
     lakers_info = json.loads(lakers_info_str)
     end_time = time.time()
     print(f"Result (took {end_time - start_time:.2f}s):")
@@ -395,7 +344,7 @@ if __name__ == "__main__":
 
     print("\n[Test Case 11: LeBron James Career Stats (PerGame)]")
     start_time = time.time()
-    lebron_career_str = fetch_player_career_stats_logic("LeBron James", PerMode36.per_game)
+    lebron_career_str = fetch_player_career_stats("LeBron James", PerMode36.per_game)
     lebron_career = json.loads(lebron_career_str)
     end_time = time.time()
     print(f"Result (took {end_time - start_time:.2f}s):")
@@ -424,8 +373,9 @@ if __name__ == "__main__":
 
 
     print("\n--- Tool Logic Examples Complete ---")
+
 @tool
 def get_player_clutch_stats(player_name: str, season: str, season_type: str = SeasonTypeAllStar.regular) -> str:
     """Fetches player stats in clutch situations. Returns JSON string."""
     logger.debug(f"Tool get_player_clutch_stats called for {player_name}, season {season}")
-    return fetch_player_clutch_stats_logic(player_name, season, season_type)
+    return fetch_player_clutch_stats(player_name, season, season_type)

@@ -3,13 +3,14 @@ import sys
 import pytest
 import logging
 import time
-from api_tools.http_client import configure_nba_api_client
 
 # Get the absolute path of the backend directory
 backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Add the backend directory to the Python path
 sys.path.insert(0, backend_dir)
+
+from api_tools.http_client import configure_nba_api_client
 
 @pytest.fixture(autouse=True)
 def setup_test_env():
