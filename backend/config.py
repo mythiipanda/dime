@@ -74,6 +74,12 @@ class ErrorMessages:
     PLAYBYPLAY_API = "API error fetching play-by-play for game ID {game_id}: {error}"
     PLAYBYPLAY_PROCESSING = "Failed to process play-by-play data from API for game ID {game_id}."
     PLAYBYPLAY_UNEXPECTED = "Unexpected error processing play-by-play request for game ID {game_id}: {error}"
+    BOXSCORE_ADVANCED_API = "API error fetching advanced box score for game ID {game_id}: {error}"
+    BOXSCORE_ADVANCED_PROCESSING = "Failed to process advanced box score data from API for game ID {game_id}."
+    BOXSCORE_ADVANCED_UNEXPECTED = "Unexpected error processing advanced box score request for game ID {game_id}: {error}"
+    BOXSCORE_FOURFACTORS_API = "API error fetching Four Factors box score for game ID {game_id}: {error}"
+    BOXSCORE_FOURFACTORS_PROCESSING = "Failed to process Four Factors box score data from API for game ID {game_id}."
+    BOXSCORE_FOURFACTORS_UNEXPECTED = "Unexpected error processing Four Factors box score request for game ID {game_id}: {error}"
     
     # General validation errors
     INVALID_SEASON_FORMAT = "Invalid season format: {season}. Expected YYYY-YY."

@@ -1,4 +1,5 @@
 .env
-.clinerules
+.clinerules/
 docs/
 nba-analytics-backend/backend_app.log
+.cursorrules/

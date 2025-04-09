@@ -3,7 +3,7 @@ import json
 from typing import Optional
 import pandas as pd
 # Import new endpoints
-from nba_api.stats.endpoints import leaguegamefinder, boxscoretraditionalv3, playbyplayv3
+from nba_api.stats.endpoints import leaguegamefinder, boxscoretraditionalv3, playbyplayv3, boxscoreadvancedv3, boxscorefourfactorsv3 # Added boxscorefourfactorsv3
 from nba_api.stats.library.parameters import LeagueID, SeasonTypeNullable, SeasonNullable
 
 from .utils import _process_dataframe
@@ -170,3 +170,105 @@ def fetch_playbyplay_logic(game_id: str, start_period: int = 0, end_period: int 
     except Exception as e:
         logger.critical(f"Unexpected error in fetch_playbyplay_logic for game ID '{game_id}': {e}", exc_info=True)
         return json.dumps({"error": Errors.PLAYBYPLAY_UNEXPECTED.format(game_id=game_id, error=str(e))}) # Need to add this error message
+
+def fetch_boxscore_advanced_logic(game_id: str) -> str:
+    """
+    Fetches advanced box score stats (V3) for a specific game.
+    Returns JSON string with player and team stats.
+    """
+    logger.info(f"Executing fetch_boxscore_advanced_logic for game_id: '{game_id}'")
+    if not game_id or not game_id.strip():
+        return json.dumps({"error": Errors.GAME_ID_EMPTY})
+    if not game_id.isdigit() or len(game_id) != 10:
+         return json.dumps({"error": Errors.INVALID_GAME_ID_FORMAT.format(game_id=game_id)})
+
+    try:
+        logger.debug(f"Fetching boxscoreadvancedv3 for game ID: {game_id}")
+        try:
+            boxscore_endpoint = boxscoreadvancedv3.BoxScoreAdvancedV3(
+                game_id=game_id,
+                # Default values for range/period seem okay for full game stats
+                start_period='0',
+                end_period='0',
+                start_range='0',
+                end_range='0',
+                range_type='0',
+                timeout=DEFAULT_TIMEOUT
+            )
+            logger.debug(f"boxscoreadvancedv3 API call successful for game ID: {game_id}")
+        except Exception as api_error:
+            logger.error(f"nba_api boxscoreadvancedv3 failed for game ID {game_id}: {api_error}", exc_info=True)
+            # Use specific error message for advanced boxscore API failure
+            return json.dumps({"error": Errors.BOXSCORE_ADVANCED_API.format(game_id=game_id, error=str(api_error))}) # Need to add this error message
+
+        player_stats_list = _process_dataframe(boxscore_endpoint.player_stats.get_data_frame(), single_row=False)
+        team_stats_list = _process_dataframe(boxscore_endpoint.team_stats.get_data_frame(), single_row=False) # Should be 2 rows (teams)
+
+        if player_stats_list is None or team_stats_list is None:
+            logger.error(f"DataFrame processing failed for advanced boxscore of game {game_id}.")
+            # Use specific error message for advanced boxscore processing failure
+            return json.dumps({"error": Errors.BOXSCORE_ADVANCED_PROCESSING.format(game_id=game_id)}) # Need to add this error message
+
+        result = {
+            "game_id": game_id,
+            "player_stats_advanced": player_stats_list or [],
+            "team_stats_advanced": team_stats_list or []
+        }
+        logger.info(f"fetch_boxscore_advanced_logic completed for game ID: {game_id}")
+        return json.dumps(result, default=str)
+
+    except Exception as e:
+        logger.critical(f"Unexpected error in fetch_boxscore_advanced_logic for game ID '{game_id}': {e}", exc_info=True)
+        # Use specific error message for unexpected advanced boxscore errors
+        return json.dumps({"error": Errors.BOXSCORE_ADVANCED_UNEXPECTED.format(game_id=game_id, error=str(e))}) # Need to add this error message
+
+def fetch_boxscore_fourfactors_logic(game_id: str) -> str:
+    """
+    Fetches Four Factors box score stats (V3) for a specific game.
+    Returns JSON string with player and team stats.
+    """
+    logger.info(f"Executing fetch_boxscore_fourfactors_logic for game_id: '{game_id}'")
+    if not game_id or not game_id.strip():
+        return json.dumps({"error": Errors.GAME_ID_EMPTY})
+    if not game_id.isdigit() or len(game_id) != 10:
+         return json.dumps({"error": Errors.INVALID_GAME_ID_FORMAT.format(game_id=game_id)})
+
+    try:
+        logger.debug(f"Fetching boxscorefourfactorsv3 for game ID: {game_id}")
+        try:
+            boxscore_endpoint = boxscorefourfactorsv3.BoxScoreFourFactorsV3(
+                game_id=game_id,
+                # Default values for range/period seem okay for full game stats
+                start_period='0',
+                end_period='0',
+                start_range='0',
+                end_range='0',
+                range_type='0',
+                timeout=DEFAULT_TIMEOUT
+            )
+            logger.debug(f"boxscorefourfactorsv3 API call successful for game ID: {game_id}")
+        except Exception as api_error:
+            logger.error(f"nba_api boxscorefourfactorsv3 failed for game ID {game_id}: {api_error}", exc_info=True)
+            # Use specific error message for four factors API failure
+            return json.dumps({"error": Errors.BOXSCORE_FOURFACTORS_API.format(game_id=game_id, error=str(api_error))}) # Need to add this error message
+
+        player_stats_list = _process_dataframe(boxscore_endpoint.player_stats.get_data_frame(), single_row=False)
+        team_stats_list = _process_dataframe(boxscore_endpoint.team_stats.get_data_frame(), single_row=False) # Should be 2 rows (teams)
+
+        if player_stats_list is None or team_stats_list is None:
+            logger.error(f"DataFrame processing failed for four factors boxscore of game {game_id}.")
+            # Use specific error message for four factors processing failure
+            return json.dumps({"error": Errors.BOXSCORE_FOURFACTORS_PROCESSING.format(game_id=game_id)}) # Need to add this error message
+
+        result = {
+            "game_id": game_id,
+            "player_stats_fourfactors": player_stats_list or [],
+            "team_stats_fourfactors": team_stats_list or []
+        }
+        logger.info(f"fetch_boxscore_fourfactors_logic completed for game ID: {game_id}")
+        return json.dumps(result, default=str)
+
+    except Exception as e:
+        logger.critical(f"Unexpected error in fetch_boxscore_fourfactors_logic for game ID '{game_id}': {e}", exc_info=True)
+        # Use specific error message for unexpected four factors errors
+        return json.dumps({"error": Errors.BOXSCORE_FOURFACTORS_UNEXPECTED.format(game_id=game_id, error=str(e))}) # Need to add this error message

@@ -22,7 +22,9 @@ from .config import CURRENT_SEASON # Import from config
 from .api_tools.game_tools import (
     fetch_league_games_logic,
     fetch_boxscore_traditional_logic,
-    fetch_playbyplay_logic # Import new logic function
+    fetch_playbyplay_logic,
+    fetch_boxscore_advanced_logic,
+    fetch_boxscore_fourfactors_logic # Import new logic function
 )
 # Import from new league_tools module
 from .api_tools.league_tools import fetch_league_standings_logic, fetch_scoreboard_logic, fetch_draft_history_logic, fetch_league_leaders_logic
@@ -220,6 +222,28 @@ def get_league_leaders(
         season_type_all_star=season_type_all_star,
         per_mode48=per_mode48
     )
+
+@tool
+def get_boxscore_advanced(game_id: str) -> str:
+    """
+    Fetches the advanced box score (V3) for a specific game. Returns JSON string.
+    Includes stats like Offensive/Defensive Rating, Pace, eFG%, TS%, etc.
+    Args: game_id (str): The 10-digit ID of the game.
+    Returns: str: JSON string containing advanced player and team stats or {'error': ...}.
+    """
+    logger.debug(f"Tool 'get_boxscore_advanced' called for game_id '{game_id}'")
+    return fetch_boxscore_advanced_logic(game_id)
+
+@tool
+def get_boxscore_fourfactors(game_id: str) -> str:
+    """
+    Fetches the Four Factors box score (V3) for a specific game. Returns JSON string.
+    Includes stats like effective field goal %, turnover ratio, offensive rebounding %, free throw rate.
+    Args: game_id (str): The 10-digit ID of the game.
+    Returns: str: JSON string containing Four Factors player and team stats or {'error': ...}.
+    """
+    logger.debug(f"Tool 'get_boxscore_fourfactors' called for game_id '{game_id}'")
+    return fetch_boxscore_fourfactors_logic(game_id)
 
 
 # --- Example Usage Block (for direct execution testing of logic) ---
