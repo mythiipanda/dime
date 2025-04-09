@@ -1,35 +1,32 @@
 import logging
 import pandas as pd
-from typing import Tuple, Optional
+from typing import Tuple, Optional, List, Dict, Any
 from nba_api.stats.static import players
 # Import new endpoint
 from nba_api.stats.endpoints import commonplayerinfo, playergamelog, playercareerstats, playerawards
-from nba_api.stats.library.parameters import SeasonTypeAllStar, PerMode36
+from nba_api.stats.library.parameters import SeasonTypeAllStar, PerMode36, LeagueID
 import json
+import requests
 
-from ..config import DEFAULT_TIMEOUT, HEADSHOT_BASE_URL, ErrorMessages as Errors
+from config import DEFAULT_TIMEOUT, HEADSHOT_BASE_URL, ErrorMessages as Errors, CURRENT_SEASON
 from .utils import _process_dataframe, _validate_season_format
 
 logger = logging.getLogger(__name__)
 
-def _find_player_id(player_name: str) -> Tuple[Optional[int], Optional[str]]:
-    """
-    Finds a player's ID and actual name from the NBA API.
-    Args:
-        player_name (str): Full name of the player to search for.
-    Returns:
-        Tuple[Optional[int], Optional[str]]: (player_id, player_actual_name) or (None, None) if not found.
-    """
-    logger.debug(f"Searching static players for '{player_name}'")
-    player_list = players.find_players_by_full_name(player_name)
-    if not player_list:
-        logger.warning(f"Player '{player_name}' not found in static data.")
+def _find_player_id(player_name: str) -> tuple[str, str]:
+    """Find a player's ID by their name."""
+    if not player_name:
         return None, None
-    player_data = player_list[0]
-    player_id = player_data['id']
-    player_actual_name = player_data['full_name']
-    logger.info(f"Found player: {player_actual_name} (ID: {player_id})")
-    return player_id, player_actual_name
+    
+    try:
+        player_list = players.find_players_by_full_name(player_name)
+        if player_list:
+            # Return the first match's ID and full name
+            return player_list[0]['id'], player_list[0]['full_name']
+        return None, None
+    except Exception as e:
+        logger.error(f"Error finding player ID for {player_name}: {e}")
+        return None, None
 
 def fetch_player_info_logic(player_name: str) -> str:
     """Core logic to fetch player info."""
@@ -150,36 +147,103 @@ def fetch_player_career_stats_logic(player_name: str, per_mode36: str = PerMode3
         logger.critical(f"Unexpected error in fetch_player_career_stats_logic for '{player_name}': {e}", exc_info=True)
         return json.dumps({"error": Errors.PLAYER_CAREER_STATS_UNEXPECTED.format(name=player_name, error=str(e))})
 
-def get_player_headshot_url(player_id: int) -> str:
+def get_player_headshot_url(player_id: str) -> str:
     """
-    Constructs the URL for a player's headshot based on their ID.
+    Get the URL for a player's headshot image.
     Args:
-        player_id (int): The NBA player ID.
+        player_id (str): The player's ID
     Returns:
-        str: The URL to the player's headshot PNG.
+        str: The URL for the player's headshot image
     """
-    if not isinstance(player_id, int) or player_id <= 0:
-        logger.warning(f"Invalid player_id provided for headshot: {player_id}")
-        # Return a placeholder or default image URL in the future
-        
-    headshot_url = f"{HEADSHOT_BASE_URL}{player_id}.png"
-    logger.info(f"Generated headshot URL for player ID {player_id}: {headshot_url}")
-    return headshot_url
-def find_players_by_name_fragment(name_fragment: str, limit: int = 10):
-    """
-    Search for players whose names contain the given fragment (case-insensitive).
-    Returns a list of dicts with player info.
-    """
-    if not name_fragment or len(name_fragment) < 2:
-        return []
+    if not player_id:
+        raise ValueError(Errors.PLAYER_ID_EMPTY)
+    if not player_id.isdigit():
+        raise ValueError(Errors.INVALID_PLAYER_ID_FORMAT.format(player_id=player_id))
+    
+    return f"{HEADSHOT_BASE_URL}/{player_id}.png"
 
-    all_players = players.get_players()
-    fragment_lower = name_fragment.lower()
-    matches = [
-        p for p in all_players
-        if fragment_lower in p.get('full_name', '').lower()
-    ]
-    return matches[:limit]
+def find_players_by_name_fragment(name_fragment: str, limit: int = 10) -> List[Dict[str, Any]]:
+    """
+    Find players whose names contain the given fragment.
+    Args:
+        name_fragment (str): The name fragment to search for
+        limit (int): Maximum number of results to return
+    Returns:
+        List[Dict[str, Any]]: List of matching players with their details
+    """
+    if not name_fragment:
+        raise ValueError(Errors.PLAYER_NAME_EMPTY)
+    
+    try:
+        # Get all players
+        all_players = players.get_players()
+        if not all_players:
+            logger.error("No players found in NBA API")
+            raise ValueError(Errors.PLAYER_LIST_EMPTY)
+        
+        # Filter players by name fragment (case-insensitive)
+        name_fragment_lower = name_fragment.lower()
+        matching_players = [
+            player for player in all_players
+            if name_fragment_lower in player['full_name'].lower()
+        ]
+        
+        # Sort by most recent players first and limit results
+        matching_players.sort(key=lambda x: x.get('to_year', 0), reverse=True)
+        limited_players = matching_players[:limit]
+        
+        # Add headshot URLs to results
+        for player in limited_players:
+            player['headshot_url'] = get_player_headshot_url(str(player['id']))
+        
+        return limited_players
+        
+    except Exception as e:
+        logger.error(f"Error finding players by name fragment: {str(e)}", exc_info=True)
+        raise ValueError(f"Error finding players: {str(e)}")
+
+def get_player_info(player_id: str) -> Dict[str, Any]:
+    """
+    Get detailed information about a player.
+    Args:
+        player_id (str): The player's ID
+    Returns:
+        Dict[str, Any]: Player information
+    """
+    if not player_id:
+        raise ValueError(Errors.PLAYER_ID_EMPTY)
+    if not player_id.isdigit():
+        raise ValueError(Errors.INVALID_PLAYER_ID_FORMAT.format(player_id=player_id))
+    
+    try:
+        # Get player info from NBA API
+        player_info = commonplayerinfo.CommonPlayerInfo(
+            player_id=player_id,
+            league_id=LeagueID.nba,
+            timeout=DEFAULT_TIMEOUT
+        )
+        
+        # Process player info
+        info_df = player_info.common_player_info.get_data_frame()
+        if info_df is None or info_df.empty:
+            raise ValueError(f"No information found for player ID: {player_id}")
+        
+        # Convert DataFrame row to dict
+        player_dict = _process_dataframe(info_df, single_row=True)
+        if not player_dict:
+            raise ValueError(f"Error processing player information for ID: {player_id}")
+        
+        # Add headshot URL
+        player_dict['headshot_url'] = get_player_headshot_url(player_id)
+        
+        return player_dict
+        
+    except requests.exceptions.Timeout:
+        logger.error(f"Request timed out for player ID: {player_id}")
+        raise ValueError(f"Request timed out for player ID: {player_id}")
+    except Exception as e:
+        logger.error(f"Error getting player info: {str(e)}", exc_info=True)
+        raise ValueError(f"Error getting player information: {str(e)}")
 
 def fetch_player_awards_logic(player_name: str) -> str:
     """Core logic to fetch player awards."""
@@ -218,3 +282,108 @@ def fetch_player_awards_logic(player_name: str) -> str:
     except Exception as e:
         logger.critical(f"Unexpected error in fetch_player_awards_logic for '{player_name}': {e}", exc_info=True)
         return json.dumps({"error": Errors.PLAYER_AWARDS_UNEXPECTED.format(name=player_name, error=str(e))}) # Need to add this error message
+
+def fetch_player_stats_logic(player_name: str, season: str = CURRENT_SEASON, season_type: str = SeasonTypeAllStar.regular) -> str:
+    """
+    Fetches comprehensive player statistics including career stats, game logs, and info.
+    
+    Args:
+        player_name (str): The name of the player to fetch stats for
+        season (str): The season to fetch stats for (e.g., '2023-24')
+        season_type (str): The type of season (regular, playoffs, etc.)
+        
+    Returns:
+        str: JSON string containing player statistics or error message
+    """
+    logger.info(f"Executing fetch_player_stats_logic for: '{player_name}', Season: {season}")
+    
+    if not player_name or not player_name.strip():
+        return json.dumps({"error": Errors.PLAYER_NAME_EMPTY})
+    if not season or not _validate_season_format(season):
+        return json.dumps({"error": Errors.INVALID_SEASON_FORMAT.format(season=season)})
+    
+    try:
+        # Find player ID
+        player_id, player_actual_name = _find_player_id(player_name)
+        if player_id is None:
+            return json.dumps({"error": Errors.PLAYER_NOT_FOUND.format(name=player_name)})
+        
+        # Get player info
+        info_result = json.loads(fetch_player_info_logic(player_name))
+        if "error" in info_result:
+            return json.dumps({"error": info_result["error"]})
+            
+        # Get career stats
+        career_result = json.loads(fetch_player_career_stats_logic(player_name))
+        if "error" in career_result:
+            return json.dumps({"error": career_result["error"]})
+            
+        # Get game logs for the season
+        gamelog_result = json.loads(fetch_player_gamelog_logic(player_name, season, season_type))
+        if "error" in gamelog_result:
+            return json.dumps({"error": gamelog_result["error"]})
+            
+        # Get awards
+        awards_result = json.loads(fetch_player_awards_logic(player_name))
+        if "error" in awards_result:
+            return json.dumps({"error": awards_result["error"]})
+        
+        # Combine all results
+        result = {
+            "player_name": player_actual_name,
+            "player_id": player_id,
+            "season": season,
+            "season_type": season_type,
+            "info": info_result.get("player_info", {}),
+            "headline_stats": info_result.get("headline_stats", {}),
+            "career_stats": {
+                "season_totals": career_result.get("season_totals_regular_season", []),
+                "career_totals": career_result.get("career_totals_regular_season", {})
+            },
+            "current_season": {
+                "gamelog": gamelog_result.get("gamelog", [])
+            },
+            "awards": awards_result.get("awards", [])
+        }
+        
+        logger.info(f"fetch_player_stats_logic completed for '{player_actual_name}'")
+        return json.dumps(result, default=str)
+        
+    except Exception as e:
+        logger.critical(f"Unexpected error in fetch_player_stats_logic for '{player_name}': {e}", exc_info=True)
+        return json.dumps({"error": f"Unexpected error retrieving player stats: {str(e)}"})
+
+def find_player_by_name(player_name: str) -> Optional[Dict[str, Any]]:
+    """
+    Find a player by their full name using the NBA API.
+    
+    Args:
+        player_name (str): The full name of the player to search for
+        
+    Returns:
+        Optional[Dict[str, Any]]: Player information if found, None otherwise
+    """
+    logger.debug(f"Searching for player: '{player_name}'")
+    if not player_name or not player_name.strip():
+        logger.warning("Empty player name provided")
+        return None
+        
+    try:
+        # Try exact match first
+        player_list = players.find_players_by_full_name(player_name)
+        if player_list:
+            logger.info(f"Found player by full name: {player_list[0]['full_name']} (ID: {player_list[0]['id']})")
+            return player_list[0]
+            
+        # Try partial match
+        all_players = players.get_players()
+        for player in all_players:
+            if player_name.lower() in player['full_name'].lower():
+                logger.info(f"Found player by partial name: {player['full_name']} (ID: {player['id']})")
+                return player
+                
+        logger.warning(f"No player found for name: '{player_name}'")
+        return None
+    except Exception as e:
+        logger.error(f"Error finding player '{player_name}': {str(e)}", exc_info=True)
+        return None

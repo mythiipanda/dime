@@ -2,12 +2,12 @@ from fastapi import APIRouter, HTTPException
 import json
 import logging
 
-from ..schemas import FetchRequest
-from ..api_tools.player_tools import fetch_player_info_logic, fetch_player_gamelog_logic, fetch_player_career_stats_logic
-from ..api_tools.team_tools import fetch_team_info_and_roster_logic
-from ..api_tools.game_tools import fetch_league_games_logic
+from schemas import FetchRequest
+from api_tools.player_tools import fetch_player_info_logic, fetch_player_gamelog_logic, fetch_player_career_stats_logic
+from api_tools.team_tools import fetch_team_info_and_roster_logic
+from api_tools.game_tools import fetch_league_games_logic
 from nba_api.stats.library.parameters import PerMode36, SeasonTypeAllStar
-from ..config import SUPPORTED_FETCH_TARGETS
+from config import SUPPORTED_FETCH_TARGETS
 
 logger = logging.getLogger(__name__)
 

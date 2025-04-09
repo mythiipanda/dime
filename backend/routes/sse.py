@@ -4,7 +4,7 @@ import logging
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from rich.pretty import pprint
-from ..teams import nba_analysis_team
+from teams import nba_analysis_team
 from dataclasses import asdict, is_dataclass
 from agno.agent import RunResponse
 from typing import Iterator

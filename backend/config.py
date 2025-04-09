@@ -10,6 +10,8 @@ else:
 
 # API Keys
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
 # Agent-related configs
 AGENT_MODEL_ID = "gemini-2.0-flash"
@@ -17,42 +19,56 @@ STORAGE_DB_FILE = os.getenv("STORAGE_DB_FILE", "agno_storage.db")
 AGENT_DEBUG_MODE = os.getenv("AGENT_DEBUG_MODE", "false").lower() == "true"
 
 # Constants
-CURRENT_SEASON = "2024-25"
-DEFAULT_TIMEOUT = 10
-HEADSHOT_BASE_URL = "https://ak-static.cms.nba.com/wp-content/uploads/headshots/nba/latest/260x190/"
+CURRENT_SEASON = "2023-24"
+DEFAULT_TIMEOUT = 30
+HEADSHOT_BASE_URL = "https://ak-static.cms.nba.com/wp-content/uploads/headshots/nba/latest/260x190"
 DEFAULT_PLAYER_SEARCH_LIMIT = 10
 MIN_PLAYER_SEARCH_LENGTH = 3
-MAX_GAMES_TO_RETURN = 20
+MAX_SEARCH_RESULTS = 25  # Maximum number of results to return from any search
+MAX_GAMES_TO_RETURN = 50
+MAX_PLAYERS_TO_RETURN = 25
 
 # Supported fetch targets
 SUPPORTED_FETCH_TARGETS = [
-    "player_info",
-    "player_gamelog",
-    "team_info",
-    "player_career_stats",
-    "find_games"
+    "traditional",
+    "advanced",
+    "fourfactors",
+    "misc",
+    "scoring",
+    "usage",
+    "defense"
+]
+
+# Supported search targets
+SUPPORTED_SEARCH_TARGETS = [
+    "players",
+    "teams",
+    "games"
 ]
 
 # CORS allowed origins
-CORS_ALLOWED_ORIGINS = ["*"]  # Change to specific origins in production
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
 
 # Error Messages
 class ErrorMessages:
-    # Player-related errors
-    PLAYER_NOT_FOUND = "Player '{name}' not found."
-    PLAYER_NAME_EMPTY = "Player name cannot be empty."
-    PLAYER_CAREER_STATS_API = "API error fetching career stats for {name}: {error}"
-    PLAYER_CAREER_STATS_PROCESSING = "Failed to process career stats data from API for {name}."
-    PLAYER_CAREER_STATS_UNEXPECTED = "Unexpected error processing career stats request for {name}: {error}"
-    PLAYER_GAMELOG_API = "API error fetching game log for {name} ({season}): {error}"
-    PLAYER_GAMELOG_PROCESSING = "Failed to process game log data from API for {name} ({season})."
-    PLAYER_GAMELOG_UNEXPECTED = "Unexpected error processing game log request for {name} ({season}): {error}"
-    PLAYER_INFO_API = "API error fetching details for {name}: {error}"
-    PLAYER_INFO_PROCESSING = "Failed to process data from API for {name}."
-    PLAYER_INFO_UNEXPECTED = "Unexpected error processing request for {name}: {error}"
-    PLAYER_AWARDS_API = "API error fetching awards for {name}: {error}"
-    PLAYER_AWARDS_PROCESSING = "Failed to process awards data from API for {name}." # Currently unused in logic but good to have
-    PLAYER_AWARDS_UNEXPECTED = "Unexpected error processing awards request for {name}: {error}"
+    PLAYER_NAME_EMPTY = "Player name cannot be empty"
+    PLAYER_NOT_FOUND = "Player '{name}' not found"
+    INVALID_SEASON_FORMAT = "Invalid season format: {season}"
+    PLAYER_ID_EMPTY = "Player ID cannot be empty"
+    INVALID_PLAYER_ID_FORMAT = "Invalid player ID format: {player_id}"
+    PLAYER_LIST_EMPTY = "No players found in NBA API"
+    PLAYER_INFO_API = "Error fetching player info for {name}: {error}"
+    PLAYER_INFO_PROCESSING = "Error processing player info for {name}"
+    PLAYER_INFO_UNEXPECTED = "Unexpected error fetching player info for {name}: {error}"
+    PLAYER_GAMELOG_API = "Error fetching game log for {name} ({season}): {error}"
+    PLAYER_GAMELOG_PROCESSING = "Error processing game log for {name} ({season})"
+    PLAYER_GAMELOG_UNEXPECTED = "Unexpected error fetching game log for {name} ({season}): {error}"
+    PLAYER_CAREER_STATS_API = "Error fetching career stats for {name}: {error}"
+    PLAYER_CAREER_STATS_PROCESSING = "Error processing career stats for {name}"
+    PLAYER_CAREER_STATS_UNEXPECTED = "Unexpected error fetching career stats for {name}: {error}"
     
     # Team-related errors
     TEAM_NOT_FOUND = "Team '{identifier}' not found."
@@ -86,6 +102,10 @@ class ErrorMessages:
     INVALID_PLAYER_OR_TEAM = "Invalid player_or_team value. Must be 'P' for Player or 'T' for Team."
     MISSING_PLAYER_ID = "player_id is required when player_or_team='P'."
     MISSING_TEAM_ID = "team_id is required when player_or_team='T'."
+    EMPTY_SEARCH_QUERY = "Search query cannot be empty."
+    INVALID_SEARCH_TARGET = "Invalid search target. Must be one of: {targets}"
+    INVALID_SEARCH_LENGTH = "Search query must be at least {min_length} characters long."
+    INVALID_SEARCH_LIMIT = "Search limit must be between 1 and {max_limit}."
 
     # League-related errors
     STANDINGS_API = "API error fetching standings for season {season}: {error}"

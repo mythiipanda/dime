@@ -12,3 +12,14 @@ class FetchRequest(BaseModel):
 
 class NormalizeRequest(BaseModel):
     raw_data: Dict[str, Any]
+
+class TeamRequest(BaseModel):
+    team_name: str
+    season: str | None = None
+
+class SearchRequest(BaseModel):
+    target: str
+    query: str
+    limit: int = 10
+    season: str | None = None
+    season_type: str | None = None

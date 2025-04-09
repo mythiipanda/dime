@@ -3,9 +3,9 @@ import json
 from typing import Optional
 import pandas as pd
 # Import new endpoints
-from nba_api.stats.endpoints import leaguestandingsv3, scoreboardv2, drafthistory, leagueleaders
+from nba_api.stats.endpoints import leaguestandingsv3, scoreboardv2, drafthistory, leagueleaders, leaguedashlineups, leaguehustlestatsplayer
 # Import necessary parameters
-from nba_api.stats.library.parameters import LeagueID, SeasonType, PerMode48, Scope, StatCategoryAbbreviation, SeasonTypeAllStar
+from nba_api.stats.library.parameters import LeagueID, SeasonType, PerMode48, Scope, StatCategoryAbbreviation, SeasonTypeAllStar, MeasureTypeDetailedDefense, PerMode36, Season
 from datetime import datetime # Import datetime for default date
 
 from .utils import _process_dataframe
@@ -15,57 +15,43 @@ from ..config import CURRENT_SEASON # Import CURRENT_SEASON
 logger = logging.getLogger(__name__)
 
 def fetch_league_standings_logic(
-    season: str = CURRENT_SEASON,
-    season_type: str = SeasonType.regular, # V3 only supports Regular Season
-    league_id: str = LeagueID.nba
+    season: str,
+    season_type: str = SeasonTypeAllStar.regular
 ) -> str:
     """
-    Fetches league standings (V3) for a specific season.
-    Returns JSON string.
+    Fetches league standings for a specific season and season type.
+    Returns JSON string with standings data.
     """
-    logger.info(f"Executing fetch_league_standings_logic for Season: {season}, Type: {season_type}, League: {league_id}")
-
-    # Validate season format (reuse from player_tools or utils if available, assuming utils for now)
-    # from .utils import _validate_season_format # Assuming this exists or will be added
-    # if not season or not _validate_season_format(season):
-    #     return json.dumps({"error": Errors.INVALID_SEASON_FORMAT.format(season=season)})
-
-    # V3 endpoint specifically mentions only Regular Season works
-    if season_type != SeasonType.regular:
-        logger.warning(f"LeagueStandingsV3 only supports 'Regular Season'. Forcing season_type to '{SeasonType.regular}'.")
-        season_type = SeasonType.regular
-
+    logger.info(f"Executing fetch_league_standings_logic for season: {season}, type: {season_type}")
+    
     try:
-        logger.debug(f"Fetching leaguestandingsv3 for Season: {season}, League: {league_id}")
-        try:
-            standings_endpoint = leaguestandingsv3.LeagueStandingsV3(
-                league_id=league_id,
-                season=season,
-                season_type=season_type, # Will always be Regular Season here
-                timeout=DEFAULT_TIMEOUT
-            )
-            logger.debug(f"leaguestandingsv3 API call successful for Season: {season}")
-        except Exception as api_error:
-            logger.error(f"nba_api leaguestandingsv3 failed for Season {season}: {api_error}", exc_info=True)
-            return json.dumps({"error": Errors.STANDINGS_API.format(season=season, error=str(api_error))}) # Need to add this error message
-
-        standings_list = _process_dataframe(standings_endpoint.standings.get_data_frame(), single_row=False)
-
-        if standings_list is None:
-            logger.error(f"DataFrame processing failed for standings ({season}).")
-            return json.dumps({"error": Errors.STANDINGS_PROCESSING.format(season=season)}) # Need to add this error message
-
+        standings = leaguestandingsv3.LeagueStandingsV3(
+            season=season,
+            season_type=season_type,
+            timeout=DEFAULT_TIMEOUT
+        )
+        
+        standings_df = standings.standings.get_data_frame()
+        if standings_df.empty:
+            return json.dumps({
+                "season": season,
+                "season_type": season_type,
+                "standings": []
+            })
+        
+        standings_list = _process_dataframe(standings_df, single_row=False)
+        
         result = {
             "season": season,
-            "league_id": league_id,
-            "standings": standings_list or []
+            "season_type": season_type,
+            "standings": standings_list
         }
-        logger.info(f"fetch_league_standings_logic completed for Season: {season}")
-        return json.dumps(result, default=str)
-
+        
+        return json.dumps(result)
+        
     except Exception as e:
-        logger.critical(f"Unexpected error in fetch_league_standings_logic for Season '{season}': {e}", exc_info=True)
-        return json.dumps({"error": Errors.STANDINGS_UNEXPECTED.format(season=season, error=str(e))}) # Need to add this error message
+        logger.error(f"Error in fetch_league_standings_logic: {str(e)}", exc_info=True)
+        return json.dumps({"error": f"Unexpected error retrieving league standings: {str(e)}"})
 
 def fetch_scoreboard_logic(
     game_date: str = datetime.today().strftime('%Y-%m-%d'), # Default to today
@@ -172,60 +158,130 @@ def fetch_draft_history_logic(
         return json.dumps({"error": Errors.DRAFT_HISTORY_UNEXPECTED.format(year=season_year or 'All', error=str(e))}) # Need to add this error message
 
 def fetch_league_leaders_logic(
-    stat_category: str = StatCategoryAbbreviation.pts,
-    season: str = CURRENT_SEASON,
-    season_type_all_star: str = SeasonTypeAllStar.regular,
-    per_mode48: str = PerMode48.per_game,
-    scope: str = Scope.s,
-    league_id: str = LeagueID.nba
+    season: str,
+    stat_category: str = "PTS",
+    season_type: str = SeasonTypeAllStar.regular,
+    per_mode: str = PerMode36.per_game
 ) -> str:
     """
-    Fetches league leaders for a specific stat category and season.
-    Returns JSON string.
+    Fetches league leaders for a specific statistical category.
+    Returns JSON string with leaders data.
     """
-    logger.info(f"Executing fetch_league_leaders_logic for Stat: {stat_category}, Season: {season}")
-
-    # Basic validation (can be expanded)
-    valid_stats = [getattr(StatCategoryAbbreviation, attr) for attr in dir(StatCategoryAbbreviation) if not attr.startswith('_')]
-    if stat_category not in valid_stats:
-         logger.error(f"Invalid stat_category: {stat_category}. Valid options: {valid_stats}")
-         return json.dumps({"error": Errors.INVALID_STAT_CATEGORY.format(stat=stat_category)})
-
+    logger.info(f"Executing fetch_league_leaders_logic for season: {season}, category: {stat_category}")
+    
     try:
-        logger.debug(f"Fetching leagueleaders for Stat: {stat_category}, Season: {season}")
-        try:
-            leaders_endpoint = leagueleaders.LeagueLeaders(
-                league_id=league_id,
-                per_mode48=per_mode48,
-                scope=scope,
-                season=season,
-                season_type_all_star=season_type_all_star,
-                stat_category_abbreviation=stat_category,
-                timeout=DEFAULT_TIMEOUT
-            )
-            logger.debug(f"leagueleaders API call successful for Stat: {stat_category}, Season: {season}")
-        except Exception as api_error:
-            logger.error(f"nba_api leagueleaders failed for Stat {stat_category}, Season {season}: {api_error}", exc_info=True)
-            return json.dumps({"error": Errors.LEAGUE_LEADERS_API.format(stat=stat_category, season=season, error=str(api_error))}) # Need to add
-
-        leaders_list = _process_dataframe(leaders_endpoint.league_leaders.get_data_frame(), single_row=False)
-
-        if leaders_list is None:
-            logger.error(f"DataFrame processing failed for league leaders ({stat_category}, {season}).")
-            return json.dumps({"error": Errors.LEAGUE_LEADERS_PROCESSING.format(stat=stat_category, season=season)}) # Need to add
-
+        leaders = leagueleaders.LeagueLeaders(
+            season=season,
+            stat_category_abbreviation=stat_category,
+            season_type_all_star=season_type,
+            per_mode48=per_mode,
+            timeout=DEFAULT_TIMEOUT
+        )
+        
+        leaders_df = leaders.league_leaders.get_data_frame()
+        if leaders_df.empty:
+            return json.dumps({
+                "season": season,
+                "stat_category": stat_category,
+                "season_type": season_type,
+                "leaders": []
+            })
+        
+        leaders_list = _process_dataframe(leaders_df, single_row=False)
+        
         result = {
-            "stat_category_abbreviation": stat_category,
             "season": season,
-            "season_type_all_star": season_type_all_star,
-            "per_mode48": per_mode48,
-            "scope": scope,
-            "league_id": league_id,
-            "leaders": leaders_list or []
+            "stat_category": stat_category,
+            "season_type": season_type,
+            "leaders": leaders_list
         }
-        logger.info(f"fetch_league_leaders_logic completed for Stat: {stat_category}, Season: {season}")
-        return json.dumps(result, default=str)
-
+        
+        return json.dumps(result)
+        
     except Exception as e:
-        logger.critical(f"Unexpected error in fetch_league_leaders_logic for Stat '{stat_category}', Season '{season}': {e}", exc_info=True)
-        return json.dumps({"error": Errors.LEAGUE_LEADERS_UNEXPECTED.format(stat=stat_category, season=season, error=str(e))}) # Need to add
+        logger.error(f"Error in fetch_league_leaders_logic: {str(e)}", exc_info=True)
+        return json.dumps({"error": f"Unexpected error retrieving league leaders: {str(e)}"})
+
+def fetch_league_lineups_logic(
+    season: str,
+    season_type: str = SeasonTypeAllStar.regular,
+    measure_type: str = MeasureTypeDetailedDefense.base,
+    per_mode: str = PerMode36.per_game
+) -> str:
+    """
+    Fetches league lineup statistics.
+    Returns JSON string with lineup data.
+    """
+    logger.info(f"Executing fetch_league_lineups_logic for season: {season}")
+    
+    try:
+        lineups = leaguedashlineups.LeagueDashLineups(
+            season=season,
+            season_type_all_star=season_type,
+            measure_type_detailed_defense=measure_type,
+            per_mode48=per_mode,
+            timeout=DEFAULT_TIMEOUT
+        )
+        
+        lineups_df = lineups.league_dash_lineups.get_data_frame()
+        if lineups_df.empty:
+            return json.dumps({
+                "season": season,
+                "season_type": season_type,
+                "lineups": []
+            })
+        
+        lineups_list = _process_dataframe(lineups_df, single_row=False)
+        
+        result = {
+            "season": season,
+            "season_type": season_type,
+            "lineups": lineups_list
+        }
+        
+        return json.dumps(result)
+        
+    except Exception as e:
+        logger.error(f"Error in fetch_league_lineups_logic: {str(e)}", exc_info=True)
+        return json.dumps({"error": f"Unexpected error retrieving league lineups: {str(e)}"})
+
+def fetch_league_hustle_stats_logic(
+    season: str,
+    season_type: str = SeasonTypeAllStar.regular,
+    per_mode: str = PerMode36.per_game
+) -> str:
+    """
+    Fetches league-wide hustle statistics.
+    Returns JSON string with hustle stats data.
+    """
+    logger.info(f"Executing fetch_league_hustle_stats_logic for season: {season}")
+    
+    try:
+        hustle_stats = leaguehustlestatsplayer.LeagueHustleStatsPlayer(
+            season=season,
+            season_type_all_star=season_type,
+            per_mode48=per_mode,
+            timeout=DEFAULT_TIMEOUT
+        )
+        
+        hustle_stats_df = hustle_stats.league_hustle_stats_player.get_data_frame()
+        if hustle_stats_df.empty:
+            return json.dumps({
+                "season": season,
+                "season_type": season_type,
+                "hustle_stats": []
+            })
+        
+        hustle_stats_list = _process_dataframe(hustle_stats_df, single_row=False)
+        
+        result = {
+            "season": season,
+            "season_type": season_type,
+            "hustle_stats": hustle_stats_list
+        }
+        
+        return json.dumps(result)
+        
+    except Exception as e:
+        logger.error(f"Error in fetch_league_hustle_stats_logic: {str(e)}", exc_info=True)
+        return json.dumps({"error": f"Unexpected error retrieving league hustle stats: {str(e)}"})

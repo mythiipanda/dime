@@ -1,7 +1,7 @@
 import pytest
 import json
 from nba_api.stats.library.parameters import SeasonTypeAllStar, PerMode48
-from .tools import (
+from backend.tools import (
     get_player_info,
     get_player_gamelog,
     get_team_info_and_roster,
@@ -15,19 +15,19 @@ from .tools import (
     get_draft_history,
     get_league_leaders
 )
-from .api_tools.player_tools import (
+from backend.api_tools.player_tools import (
     fetch_player_info_logic,
     fetch_player_gamelog_logic,
     fetch_player_career_stats_logic,
     fetch_player_awards_logic
 )
-from .api_tools.team_tools import fetch_team_info_and_roster_logic
-from .api_tools.game_tools import (
+from backend.api_tools.team_tools import fetch_team_info_and_roster_logic
+from backend.api_tools.game_tools import (
     fetch_league_games_logic,
     fetch_boxscore_traditional_logic,
     fetch_playbyplay_logic
 )
-from .api_tools.league_tools import (
+from backend.api_tools.league_tools import (
     fetch_league_standings_logic,
     fetch_scoreboard_logic,
     fetch_draft_history_logic,
@@ -115,7 +115,7 @@ def test_get_boxscore_traditional():
 
 def test_get_league_standings():
     """Test getting league standings"""
-    result = json.loads(fetch_league_standings_logic())
+    result = json.loads(fetch_league_standings_logic(TEST_SEASON))
     assert 'error' not in result
     standings_list = result.get('standings', [])
     assert isinstance(standings_list, list)
@@ -149,25 +149,25 @@ def test_get_draft_history():
 
 def test_get_league_leaders():
     """Test getting league leaders"""
-    result = json.loads(get_league_leaders(
+    result = json.loads(fetch_league_leaders_logic(
         stat_category='PTS',
         season=TEST_SEASON,
-        season_type_all_star=SeasonTypeAllStar.regular,
-        per_mode48=PerMode48.per_game
+        season_type=SeasonTypeAllStar.regular,
+        per_mode=PerMode48.per_game
     ))
     assert 'error' not in result
     assert 'leaders' in result
     assert isinstance(result['leaders'], list)
-    assert result['stat_category_abbreviation'] == 'PTS'
-    assert result['season_type_all_star'] == SeasonTypeAllStar.regular
+    assert result['stat_category'] == 'PTS'
+    assert result['season_type'] == SeasonTypeAllStar.regular
 
 def test_get_league_leaders_invalid_stat():
     """Test handling invalid stat category"""
-    result = json.loads(get_league_leaders(
+    result = json.loads(fetch_league_leaders_logic(
         stat_category='INVALID',
         season=TEST_SEASON,
-        season_type_all_star=SeasonTypeAllStar.regular,
-        per_mode48=PerMode48.per_game
+        season_type=SeasonTypeAllStar.regular,
+        per_mode=PerMode48.per_game
     ))
     assert 'error' in result
 

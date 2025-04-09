@@ -1,32 +1,66 @@
 import logging
 import json
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Tuple, Any
 import pandas as pd
 from nba_api.stats.static import teams
-from nba_api.stats.endpoints import teaminfocommon, commonteamroster
-from nba_api.stats.library.parameters import LeagueID
+from nba_api.stats.endpoints import teaminfocommon, commonteamroster, teamdashboardbygeneralsplits
+from nba_api.stats.library.parameters import LeagueID, SeasonTypeAllStar
 
-from ..config import DEFAULT_TIMEOUT, CURRENT_SEASON, ErrorMessages as Errors
-from .utils import _process_dataframe, _validate_season_format
+from config import DEFAULT_TIMEOUT, CURRENT_SEASON, ErrorMessages as Errors
+from api_tools.utils import _process_dataframe, _validate_season_format
 
 logger = logging.getLogger(__name__)
 
-def _find_team_id(team_identifier: str) -> Optional[int]:
+def _find_team_id(team_identifier: str) -> Tuple[Optional[int], Optional[str]]:
     """
-    Finds a team's ID from abbreviation or full name.
+    Finds a team's ID and name from abbreviation or full name.
+    
+    Returns:
+        Tuple of (team_id, team_name) or (None, None) if not found
     """
     logger.debug(f"Searching for team ID using identifier: '{team_identifier}'")
     team_info = teams.find_team_by_abbreviation(team_identifier.upper())
     if team_info:
         logger.info(f"Found team by abbreviation: {team_info['full_name']} (ID: {team_info['id']})")
-        return team_info['id']
+        return team_info['id'], team_info['full_name']
     team_list = teams.find_teams_by_full_name(team_identifier)
     if team_list:
         team_info = team_list[0]
         logger.info(f"Found team by full name: {team_info['full_name']} (ID: {team_info['id']})")
-        return team_info['id']
+        return team_info['id'], team_info['full_name']
     logger.warning(f"Team not found for identifier: '{team_identifier}'")
-    return None
+    return None, None
+
+def find_team_by_name(team_name: str) -> Optional[Dict[str, Any]]:
+    """
+    Find a team by their name or abbreviation.
+    
+    Args:
+        team_name (str): The team name or abbreviation to search for
+        
+    Returns:
+        Optional[Dict[str, Any]]: Team information if found, None otherwise
+    """
+    logger.debug(f"Searching for team: '{team_name}'")
+    if not team_name or not team_name.strip():
+        logger.warning("Empty team name provided")
+        return None
+        
+    try:
+        team_id, team_full_name = _find_team_id(team_name)
+        if team_id is not None:
+            # Get full team info from NBA API
+            all_teams = teams.get_teams()
+            for team in all_teams:
+                if team['id'] == team_id:
+                    logger.info(f"Found team: {team['full_name']} (ID: {team_id})")
+                    return team
+                    
+        logger.warning(f"No team found for name: '{team_name}'")
+        return None
+    except Exception as e:
+        logger.error(f"Error finding team '{team_name}': {str(e)}", exc_info=True)
+        return None
 
 def fetch_team_info_and_roster_logic(team_identifier: str, season: str = CURRENT_SEASON) -> str:
     """
@@ -40,7 +74,7 @@ def fetch_team_info_and_roster_logic(team_identifier: str, season: str = CURRENT
         return json.dumps({"error": Errors.INVALID_SEASON_FORMAT.format(season=season)})
 
     try:
-        team_id = _find_team_id(team_identifier)
+        team_id, team_name = _find_team_id(team_identifier)
         if team_id is None:
             return json.dumps({"error": Errors.TEAM_NOT_FOUND.format(identifier=team_identifier)})
 
@@ -98,3 +132,76 @@ def fetch_team_info_and_roster_logic(team_identifier: str, season: str = CURRENT
     except Exception as e:
         logger.critical(Errors.TEAM_UNEXPECTED.format(identifier=team_identifier, season=season, error=str(e)), exc_info=True)
         return json.dumps({"error": Errors.TEAM_UNEXPECTED.format(identifier=team_identifier, season=season, error=str(e))})
+
+def fetch_team_stats_logic(team_name: str, season: str = CURRENT_SEASON, season_type: str = SeasonTypeAllStar.regular) -> str:
+    """
+    Fetches comprehensive team statistics.
+    
+    Args:
+        team_name (str): The name of the team to fetch stats for
+        season (str): The season to fetch stats for (e.g., '2023-24')
+        season_type (str): The type of season (regular, playoffs, etc.)
+        
+    Returns:
+        str: JSON string containing team statistics or error message
+    """
+    logger.info(f"Executing fetch_team_stats_logic for: '{team_name}', Season: {season}")
+    
+    if not team_name or not team_name.strip():
+        return json.dumps({"error": Errors.TEAM_NAME_EMPTY})
+    if not season or not _validate_season_format(season):
+        return json.dumps({"error": Errors.INVALID_SEASON_FORMAT.format(season=season)})
+    
+    try:
+        # Find team ID
+        team_id = _find_team_id(team_name)
+        if team_id is None:
+            return json.dumps({"error": Errors.TEAM_NOT_FOUND.format(name=team_name)})
+        
+        # Get team info and roster
+        info_result = json.loads(fetch_team_info_and_roster_logic(team_name, season))
+        if "error" in info_result:
+            return json.dumps({"error": info_result["error"]})
+            
+        # Get team dashboard stats
+        try:
+            dashboard = teamdashboardbygeneralsplits.TeamDashboardByGeneralSplits(
+                team_id=team_id,
+                season=season,
+                season_type_all_star=season_type,
+                timeout=DEFAULT_TIMEOUT
+            )
+            logger.debug(f"teamdashboardbygeneralsplits API call successful for ID: {team_id}, Season: {season}")
+        except Exception as api_error:
+            logger.error(f"nba_api teamdashboardbygeneralsplits failed for ID {team_id}, Season {season}: {api_error}", exc_info=True)
+            return json.dumps({"error": Errors.TEAM_STATS_API.format(name=team_name, season=season, error=str(api_error))})
+            
+        overall_stats = _process_dataframe(dashboard.overall_team_dashboard.get_data_frame(), single_row=True)
+        location_stats = _process_dataframe(dashboard.location_team_dashboard.get_data_frame(), single_row=False)
+        wins_losses = _process_dataframe(dashboard.wins_losses_team_dashboard.get_data_frame(), single_row=False)
+        
+        if overall_stats is None or location_stats is None or wins_losses is None:
+            logger.error(f"DataFrame processing failed for team stats of {team_name} ({season}).")
+            return json.dumps({"error": Errors.TEAM_STATS_PROCESSING.format(name=team_name, season=season)})
+        
+        # Combine all results
+        result = {
+            "team_name": team_name,
+            "team_id": team_id,
+            "season": season,
+            "season_type": season_type,
+            "info": info_result.get("info", {}),
+            "roster": info_result.get("roster", []),
+            "stats": {
+                "overall": overall_stats,
+                "by_location": location_stats,
+                "by_outcome": wins_losses
+            }
+        }
+        
+        logger.info(f"fetch_team_stats_logic completed for '{team_name}'")
+        return json.dumps(result, default=str)
+        
+    except Exception as e:
+        logger.critical(f"Unexpected error in fetch_team_stats_logic for '{team_name}': {e}", exc_info=True)
+        return json.dumps({"error": f"Unexpected error retrieving team stats: {str(e)}"})

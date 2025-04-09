@@ -6,20 +6,20 @@ from agno.tools import tool
 from nba_api.stats.library.parameters import SeasonTypeAllStar, PerModeDetailed, PerMode36, LeagueID, PerMode48
 
 # Import logic functions from the new modules
-from .api_tools.player_tools import (
+from backend.api_tools.player_tools import (
     fetch_player_info_logic,
     fetch_player_gamelog_logic,
     fetch_player_career_stats_logic,
     fetch_player_awards_logic, # Import new logic function
     _find_player_id
 )
-from .api_tools.team_tools import (
+from backend.api_tools.team_tools import (
     fetch_team_info_and_roster_logic,
     _find_team_id,
     # CURRENT_SEASON # Removed: Import from config
 )
-from .config import CURRENT_SEASON # Import from config
-from .api_tools.game_tools import (
+from backend.config import CURRENT_SEASON # Import from config
+from backend.api_tools.game_tools import (
     fetch_league_games_logic,
     fetch_boxscore_traditional_logic,
     fetch_playbyplay_logic,
@@ -27,7 +27,9 @@ from .api_tools.game_tools import (
     fetch_boxscore_fourfactors_logic # Import new logic function
 )
 # Import from new league_tools module
-from .api_tools.league_tools import fetch_league_standings_logic, fetch_scoreboard_logic, fetch_draft_history_logic, fetch_league_leaders_logic
+from backend.api_tools.league_tools import fetch_league_standings_logic, fetch_scoreboard_logic, fetch_draft_history_logic, fetch_league_leaders_logic
+# Import from new player_tracking module 
+from backend.api_tools.player_tracking import fetch_player_clutch_stats_logic, fetch_player_passing_stats_logic
 
 logger = logging.getLogger(__name__)
 
@@ -245,6 +247,115 @@ def get_boxscore_fourfactors(game_id: str) -> str:
     logger.debug(f"Tool 'get_boxscore_fourfactors' called for game_id '{game_id}'")
     return fetch_boxscore_fourfactors_logic(game_id)
 
+@tool
+def get_team_passing_stats(
+    team_name: str,
+    season: str,
+    season_type: str = SeasonTypeAllStar.regular,
+    per_mode: str = PerModeDetailed.per_game
+) -> str:
+    """
+    Fetches team passing tracking stats (passes between players). Returns JSON string.
+    Args:
+        team_name: Name of the team or team abbreviation (e.g., "Lakers" or "LAL")
+        season: Season to get data for, in format "YYYY-YY" (e.g., "2022-23")
+        season_type: "Regular Season", "Playoffs", or other valid season type
+        per_mode: Mode of stats, like "PerGame" or "Totals"
+    Returns: 
+        String JSON with passing statistics for the team
+    """
+    logger.debug(f"Tool get_team_passing_stats called for {team_name}, season {season}")
+    from backend.api_tools.team_tracking import fetch_team_passing_stats_logic
+    return fetch_team_passing_stats_logic(
+        team_identifier=team_name,
+        season=season,
+        season_type=season_type,
+        per_mode=per_mode
+    )
+
+@tool
+def get_team_shooting_stats(
+    team_name: str,
+    season: str,
+    season_type: str = SeasonTypeAllStar.regular,
+    per_mode: str = PerModeDetailed.per_game
+) -> str:
+    """
+    Get detailed team shooting stats based on tracking data.
+    
+    Args:
+        team_name: Name of the team or team abbreviation (e.g., "Lakers" or "LAL")
+        season: Season to get data for, in format "YYYY-YY" (e.g., "2022-23")
+        season_type: "Regular Season", "Playoffs", or other valid season type
+        per_mode: Mode of stats, like "PerGame" or "Totals"
+        
+    Returns:
+        String JSON with shooting statistics for the team
+    """
+    logger.debug(f"Tool 'get_team_shooting_stats' called for {team_name}, season {season}")
+    from backend.api_tools.team_tracking import fetch_team_shooting_stats_logic
+    return fetch_team_shooting_stats_logic(
+        team_identifier=team_name,
+        season=season,
+        season_type=season_type,
+        per_mode=per_mode
+    )
+
+@tool
+def get_team_rebounding_stats(
+    team_name: str,
+    season: str,
+    season_type: str = SeasonTypeAllStar.regular,
+    per_mode: str = PerModeDetailed.per_game
+) -> str:
+    """
+    Get detailed team rebounding stats based on tracking data.
+    
+    Args:
+        team_name: Name of the team or team abbreviation (e.g., "Lakers" or "LAL")
+        season: Season to get data for, in format "YYYY-YY" (e.g., "2022-23")
+        season_type: "Regular Season", "Playoffs", or other valid season type
+        per_mode: Mode of stats, like "PerGame" or "Totals"
+        
+    Returns:
+        String JSON with rebounding statistics for the team
+    """
+    logger.debug(f"Tool 'get_team_rebounding_stats' called for {team_name}, season {season}")
+    from backend.api_tools.team_tracking import fetch_team_rebounding_stats_logic
+    return fetch_team_rebounding_stats_logic(
+        team_identifier=team_name,
+        season=season,
+        season_type=season_type,
+        per_mode=per_mode
+    )
+
+@tool
+def get_player_passing_stats(
+    player_name: str,
+    season: str,
+    season_type: str = SeasonTypeAllStar.regular,
+    per_mode: str = PerModeDetailed.per_game
+) -> str:
+    """
+    Fetches player passing tracking stats (passes made/received). Returns JSON string.
+    
+    Args:
+        player_name (str): Full name of the player
+        season (str): Season identifier (e.g., "2023-24")
+        season_type (str): 'Regular Season', 'Playoffs', etc. Defaults to Regular Season
+        per_mode (str): Stat mode ('PerGame', 'Totals'). Defaults to 'PerGame'
+        
+    Returns:
+        str: JSON string containing player passing statistics
+    """
+    logger.debug(f"Tool get_player_passing_stats called for {player_name}, season {season}")
+    from backend.api_tools.player_tracking import fetch_player_passing_stats_logic
+    return fetch_player_passing_stats_logic(
+        player_name=player_name,
+        season=season,
+        season_type=season_type,
+        per_mode=per_mode
+    )
 
 # --- Example Usage Block (for direct execution testing of logic) ---
 if __name__ == "__main__":
@@ -294,7 +405,7 @@ if __name__ == "__main__":
 
     print("\n[Test Case 15: Find Lakers Games (No Filters)]")
     try:
-        from .api_tools.team_tools import _find_team_id as find_team_id_helper
+        from backend.api_tools.team_tools import _find_team_id as find_team_id_helper
         lakers_id_test = find_team_id_helper("LAL")
         if lakers_id_test:
             start_time = time.time()
@@ -313,3 +424,8 @@ if __name__ == "__main__":
 
 
     print("\n--- Tool Logic Examples Complete ---")
+@tool
+def get_player_clutch_stats(player_name: str, season: str, season_type: str = SeasonTypeAllStar.regular) -> str:
+    """Fetches player stats in clutch situations. Returns JSON string."""
+    logger.debug(f"Tool get_player_clutch_stats called for {player_name}, season {season}")
+    return fetch_player_clutch_stats_logic(player_name, season, season_type)
