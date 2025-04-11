@@ -36,14 +36,14 @@ if __name__ == "__main__":
         # ],
         "Game Analysis": [
             # "Find games where the Lakers played against the Warriors this season.",
-            # "Get the box score for the most recent Lakers vs Celtics game.",
+            "Get the box score for the most recent Lakers vs Celtics game.",
             # "Show me the play-by-play data for the last Nuggets vs Heat game.",
         ],
-        "League Analysis": [
-            "What are the current league standings?",
+        # "League Analysis": [
+            # "What are the current league standings?",
             # "Show me today's NBA scoreboard.",
             # "Who are the league leaders in assists this season?",
-        ],
+        # ],
         # "Advanced Stats": [
         #     "Compare the clutch stats of Luka Dončić and Devin Booker.",
         #     "Show me Joel Embiid's shooting stats by distance.",
