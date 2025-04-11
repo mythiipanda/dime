@@ -5,6 +5,17 @@ from agno.models.google import Gemini
 from agno.tools.thinking import ThinkingTools
 from .config import AGENT_MODEL_ID, STORAGE_DB_FILE, AGENT_DEBUG_MODE, CURRENT_SEASON
 from nba_api.stats.library.parameters import SeasonTypeAllStar, PerModeDetailed, PerMode36, PerMode48
+from .tools import (
+    get_player_info, get_player_gamelog, get_team_info_and_roster,
+    get_player_career_stats, find_games, get_player_awards,
+    get_boxscore_traditional, get_boxscore_advanced, get_boxscore_fourfactors,
+    get_league_standings, get_scoreboard, get_playbyplay,
+    get_draft_history, get_league_leaders,
+    get_team_passing_stats, get_player_passing_stats,
+    get_player_clutch_stats, get_player_shots_tracking,
+    get_player_rebounding_stats
+)
+import datetime # Import datetime
 
 # Load environment variables
 load_dotenv()
@@ -440,8 +451,15 @@ model = Gemini(
 )
 
 # --- Agent Definition ---
-# Enhanced system message (Keep existing message from previous step)
-NBA_AGENT_SYSTEM_MESSAGE = """You are an expert NBA data analyst and retrieval specialist with deep knowledge of basketball analytics. Your goal is to provide comprehensive and insightful answers to user questions about NBA statistics and analysis.
+
+# Get current date
+current_date = datetime.date.today().strftime("%Y-%m-%d")
+
+# Construct the context string
+context_header = f"Current Context:\n- Today's Date: {current_date}\n- Default NBA Season: {CURRENT_SEASON}\n\n"
+
+# Original System Message (keep the detailed instructions)
+_NBA_AGENT_SYSTEM_MESSAGE_BASE = """You are an expert NBA data analyst and retrieval specialist with deep knowledge of basketball analytics. Your goal is to provide comprehensive and insightful answers to user questions about NBA statistics and analysis.
 
 Core Capabilities:
 1. Data Retrieval & Analysis
@@ -468,9 +486,9 @@ Core Capabilities:
 - **Explain your plan:** For multi-step queries, explain your plan first.
 - **Check Tool Schemas:** Before calling a tool, carefully check its function declaration (description, parameters, required fields) to ensure you provide the correct arguments.
 - **Handle Optional Parameters:** Only provide parameters that are relevant to the current request. For example, in `find_games`, if `player_or_team='T'`, only provide `team_id`, do *not* provide `player_id`.
-- **Ask for clarification:** If a request is ambiguous or missing necessary details (like a team ID), ask the user for clarification, explaining *why* you need the information.
-- **Handle `find_games` limitations:** The `find_games` tool searches for ONE team/player at a time. To find games between Team A and Team B:
-    1. Get Team ID for Team A (e.g., using `get_team_info_and_roster`).
+- **Ask for clarification:** If a request is ambiguous or missing necessary details (like a team ID for a team-specific query), ask the user for clarification, explaining *why* you need the information.
+- **Handle `find_games` limitations:** The `find_games` tool can only search for games involving *one* specific team (or player) at a time. To find games between Team A and Team B:
+    1. Get the Team ID for Team A (e.g., using `get_team_info_and_roster`).
     2. Use `find_games` with ONLY `team_id` for Team A.
     3. *Manually* filter the returned list of games to find those where the opponent was Team B. Explain this process.
 - Cite specific sources and time periods for statistics.
@@ -502,9 +520,9 @@ Team Statistics:
 - Tracking: get_team_passing_stats (requires team name)
 
 Game & League Data:
-- Game Analysis: get_boxscore_traditional, get_boxscore_advanced
-- League Info: get_league_standings, get_scoreboard
-- Game Finding: find_games
+- Game Analysis: get_boxscore_traditional, get_boxscore_advanced, get_boxscore_fourfactors, get_playbyplay
+- League Info: get_league_standings, get_scoreboard, get_league_leaders, get_draft_history
+- Game Finding: find_games (Note: Searches for ONE team/player at a time)
 
 Information Gathering Strategy:
 1. **Identify Goal & Tools:** Understand the user's request and identify the necessary tool(s).
@@ -521,12 +539,47 @@ Special Instructions:
 4. Handle missing information by gathering context
 5. Chain API calls logically based on dependencies"""
 
+# Prepend the context to the base system message
+NBA_AGENT_SYSTEM_MESSAGE = context_header + _NBA_AGENT_SYSTEM_MESSAGE_BASE
+
 # Define the enhanced agent WITHOUT the tools list, using function declarations in the model
 nba_agent = Agent(
     name="NBAAgent",
     system_message=NBA_AGENT_SYSTEM_MESSAGE,
     model=model,
-    # tools=[ ... ] # REMOVED - Tools are defined via function_declarations in the model now
+    tools=[
+        ThinkingTools(),
+        # Player Basic Stats
+        get_player_info,
+        get_player_gamelog,
+        get_player_career_stats,
+        get_player_awards,
+        
+        # Player Advanced Stats
+        get_player_clutch_stats,
+        get_player_shots_tracking,
+        get_player_rebounding_stats,
+        get_player_passing_stats,
+        
+        # Team Stats
+        get_team_info_and_roster,
+        get_team_passing_stats,
+        
+        # Game Stats
+        get_boxscore_traditional,
+        get_boxscore_advanced,
+        get_boxscore_fourfactors,
+        get_playbyplay,
+        
+        # League Stats
+        get_league_standings,
+        get_scoreboard,
+        get_league_leaders,
+        get_draft_history,
+        
+        # Game Finding
+        find_games
+    ],
     add_history_to_messages=True,
     num_history_responses=10,
     debug_mode=AGENT_DEBUG_MODE,
@@ -535,7 +588,6 @@ nba_agent = Agent(
     stream=True,
     stream_intermediate_steps=True,
     resolve_context=True,
-    tool_call_limit=30,
     reasoning=True,
 )
 
