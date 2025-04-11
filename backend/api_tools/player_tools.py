@@ -8,7 +8,7 @@ from nba_api.stats.library.parameters import SeasonTypeAllStar, PerMode36, Leagu
 import json
 import requests
 
-from config import DEFAULT_TIMEOUT, HEADSHOT_BASE_URL, ErrorMessages as Errors, CURRENT_SEASON
+from ..config import DEFAULT_TIMEOUT, HEADSHOT_BASE_URL, ErrorMessages as Errors, CURRENT_SEASON # Use relative import
 from .utils import _process_dataframe, _validate_season_format
 
 logger = logging.getLogger(__name__)

@@ -2,9 +2,11 @@ import time
 import json
 import logging
 from typing import List, Dict, Any
-from teams import nba_analysis_team
+from .teams import nba_analysis_team # Use relative import
 import random
-
+from agno.utils.pprint import pprint_run_response
+from agno.agent import Agent, RunResponse
+from typing import Iterator
 logger = logging.getLogger(__name__)
 
 all_results: List[Dict[str, Any]] = []
@@ -23,10 +25,17 @@ def run_team_prompt(prompt: str, max_retries: int = 3, initial_delay: float = 1.
                 delay = initial_delay * (2 ** (retry_count - 1)) + random.uniform(0, 1)
                 logger.info(f"Retry {retry_count}/{max_retries} after {delay:.2f}s delay")
                 time.sleep(delay)
+            # Run the agent with streaming and collect the last message
+            result: Iterator[RunResponse] = nba_analysis_team.run(prompt, stream=True)
+            # Print the responses as they come in
+            final_response = None
+            for response in result:
+                pprint_run_response([response], markdown=True)
+                final_response = response
             
-            result = nba_analysis_team.run(prompt)
-            if hasattr(result, 'messages') and result.messages:
-                last_message = result.messages[-1]
+            # Use the final accumulated response
+            if final_response and final_response.messages:
+                last_message = final_response.messages[-1]
                 if last_message.role == 'assistant' and isinstance(last_message.content, str):
                     raw_final_message = last_message.content
                     final_result_data = {"analysis_summary": raw_final_message}

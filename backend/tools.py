@@ -1,11 +1,12 @@
 import logging
 import json
 import time
+from typing import Optional
 from agno.tools import tool
 # Import only the necessary constants for default values, use standard types in hints
 from nba_api.stats.library.parameters import SeasonTypeAllStar, PerModeDetailed, PerMode36, LeagueID, PerMode48
 
-from config import CURRENT_SEASON
+from .config import CURRENT_SEASON # Use relative import
 
 # Import logic functions from the new modules
 from backend.api_tools.player_tools import (
@@ -16,14 +17,15 @@ from backend.api_tools.player_tools import (
 )
 from backend.api_tools.team_tools import (
     fetch_team_info_and_roster_logic as fetch_team_info_and_roster,
-    fetch_team_stats_logic as fetch_team_stats
+    fetch_team_stats_logic as fetch_team_stats,
+    fetch_team_passing_stats_logic as fetch_team_passing_stats
 )
 from backend.api_tools.game_tools import (
     fetch_boxscore_traditional_logic as fetch_boxscore_traditional,
     fetch_boxscore_advanced_logic as fetch_boxscore_advanced,
     fetch_boxscore_fourfactors_logic as fetch_boxscore_fourfactors,
     fetch_playbyplay_logic as fetch_playbyplay,
-    fetch_league_games_logic as find_games
+    fetch_league_games_logic as fetch_league_games
 )
 from backend.api_tools.league_tools import (
     fetch_league_standings_logic as fetch_league_standings,
@@ -100,10 +102,10 @@ def get_player_career_stats(player_name: str, per_mode36: str = PerMode36.per_ga
 # Simplified signature further: Removed season, season_type, league_id
 def find_games(
     player_or_team: str = 'T',
-    player_id: int = None, # Reverted type hint
-    team_id: int = None, # Reverted type hint
-    date_from: str = None, # Reverted type hint
-    date_to: str = None # Reverted type hint
+    player_id: Optional[int] = None,  # Make truly optional
+    team_id: Optional[int] = None,  # Make truly optional
+    date_from: Optional[str] = None,  # Make truly optional
+    date_to: Optional[str] = None  # Make truly optional
 ) -> str:
     """
     Finds games based on Player/Team ID and optional date range. Returns JSON string.
@@ -128,7 +130,7 @@ def find_games(
         return json.dumps({"error": "team_id is required when player_or_team='T'."})
 
     # Call logic function, passing None for the removed parameters
-    return find_games(
+    return fetch_league_games(
         player_or_team_abbreviation=player_or_team,
         player_id_nullable=player_id,
         team_id_nullable=team_id,
@@ -272,11 +274,10 @@ def get_team_passing_stats(
         String JSON with passing statistics for the team
     """
     logger.debug(f"Tool get_team_passing_stats called for {team_name}, season {season}")
-    return fetch_team_stats(
-        team_identifier=team_name,
+    return fetch_team_passing_stats(
+        team_name=team_name,
         season=season,
-        season_type=season_type,
-        per_mode=per_mode
+        season_type=season_type
     )
 
 @tool
@@ -379,3 +380,15 @@ def get_player_clutch_stats(player_name: str, season: str, season_type: str = Se
     """Fetches player stats in clutch situations. Returns JSON string."""
     logger.debug(f"Tool get_player_clutch_stats called for {player_name}, season {season}")
     return fetch_player_clutch_stats(player_name, season, season_type)
+
+@tool
+def get_player_rebounding_stats(player_name: str, season: str, season_type: str = SeasonTypeAllStar.regular) -> str:
+    """Fetches player rebounding stats. Returns JSON string."""
+    logger.debug(f"Tool get_player_rebounding_stats called for {player_name}, season {season}")
+    return fetch_player_rebounding_stats(player_name, season, season_type)
+
+@tool
+def get_player_shots_tracking(player_name: str, season: str, season_type: str = SeasonTypeAllStar.regular) -> str:
+    """Fetches player shot tracking stats. Returns JSON string."""
+    logger.debug(f"Tool get_player_shots_tracking called for {player_name}, season {season}")
+    return fetch_player_shots_tracking(player_name, season, season_type)
