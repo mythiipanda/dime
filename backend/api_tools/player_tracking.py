@@ -18,7 +18,7 @@ from nba_api.stats.library.parameters import (
     MeasureTypeDetailedDefense
 )
 
-from config import DEFAULT_TIMEOUT, ErrorMessages as Errors
+from config import DEFAULT_TIMEOUT, ErrorMessages # Import the class directly
 from .utils import _process_dataframe, format_response, retry_on_timeout
 from .player_tools import _find_player_id, find_player_by_name
 from .http_client import nba_session
@@ -36,6 +36,12 @@ playerdashptshots.requests = nba_session
 def fetch_player_clutch_stats_logic(player_name: str, season: str, season_type: str = SeasonTypeAllStar.regular):
     """Fetches player stats in clutch situations."""
     logger.info(f"Executing fetch_player_clutch_stats_logic for: {player_name}, Season: {season}")
+    
+    # Add input validation
+    if not player_name or not season:
+        logger.warning("Player name or season is missing.")
+        return json.dumps({"error": ErrorMessages.MISSING_PLAYER_OR_SEASON})
+        
     player_id, player_actual_name = _find_player_id(player_name)
     if player_id is None:
         return json.dumps({"error": f"Player {player_name} not found"})

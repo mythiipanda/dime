@@ -19,15 +19,44 @@ def _find_team_id(team_identifier: str) -> Tuple[Optional[int], Optional[str]]:
         Tuple of (team_id, team_name) or (None, None) if not found
     """
     logger.debug(f"Searching for team ID using identifier: '{team_identifier}'")
-    team_info = teams.find_team_by_abbreviation(team_identifier.upper())
-    if team_info:
-        logger.info(f"Found team by abbreviation: {team_info['full_name']} (ID: {team_info['id']})")
-        return team_info['id'], team_info['full_name']
-    team_list = teams.find_teams_by_full_name(team_identifier)
-    if team_list:
-        team_info = team_list[0]
+
+    # 1. Check if the identifier is potentially an ID (numeric string)
+    # 1. Check if the identifier is potentially an ID (numeric string)
+    if isinstance(team_identifier, str) and team_identifier.isdigit():
+        try:
+            team_id_int = int(team_identifier)
+            # Correct way to find by ID: iterate through get_teams()
+            all_teams_list = teams.get_teams()
+            for team in all_teams_list:
+                if team['id'] == team_id_int:
+                    logger.info(f"Found team by ID: {team['full_name']} (ID: {team['id']})")
+                    return team['id'], team['full_name']
+        except ValueError:
+             # Should not happen if isdigit() is true, but good practice
+             pass
+
+    # 2. Check by abbreviation
+    team_info_by_abbr = teams.find_team_by_abbreviation(team_identifier.upper())
+    if team_info_by_abbr:
+        logger.info(f"Found team by abbreviation: {team_info_by_abbr['full_name']} (ID: {team_info_by_abbr['id']})")
+        return team_info_by_abbr['id'], team_info_by_abbr['full_name']
+
+    # 3. Check by full name
+    team_list_by_name = teams.find_teams_by_full_name(team_identifier)
+    if team_list_by_name:
+        team_info = team_list_by_name[0]
         logger.info(f"Found team by full name: {team_info['full_name']} (ID: {team_info['id']})")
         return team_info['id'], team_info['full_name']
+
+    # 4. Check by nickname (case-insensitive)
+    all_teams = teams.get_teams()
+    identifier_lower = team_identifier.lower()
+    for team in all_teams:
+        if team['nickname'].lower() == identifier_lower:
+            logger.info(f"Found team by nickname: {team['full_name']} (ID: {team['id']})")
+            return team['id'], team['full_name']
+
+
     logger.warning(f"Team not found for identifier: '{team_identifier}'")
     return None, None
 

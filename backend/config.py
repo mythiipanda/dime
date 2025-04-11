@@ -69,6 +69,7 @@ class ErrorMessages:
     PLAYER_CAREER_STATS_API = "Error fetching career stats for {name}: {error}"
     PLAYER_CAREER_STATS_PROCESSING = "Error processing career stats for {name}"
     PLAYER_CAREER_STATS_UNEXPECTED = "Unexpected error fetching career stats for {name}: {error}"
+    MISSING_PLAYER_OR_SEASON = "Player name and season are required" # Added for input validation
     
     # Team-related errors
     TEAM_NOT_FOUND = "Team '{identifier}' not found."

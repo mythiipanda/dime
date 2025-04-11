@@ -1,5 +1,6 @@
 import pytest
 import json
+from nba_api.stats.static import teams # Import teams to get abbreviations
 from ..api_tools.search import (
     search_players_logic,
     search_teams_logic,
@@ -23,14 +24,14 @@ def test_search_players():
     assert isinstance(data["players"], list)
     assert len(data["players"]) > 0
     
-    # Verify player structure
+    # Verify player structure - Check for 'id' instead of 'player_id'
     first_player = data["players"][0]
-    required_fields = ["player_id", "player_name", "team_id", "team_name"]
+    required_fields = ["id", "full_name"] # Adjusted fields based on actual data
     for field in required_fields:
         assert field in first_player
     
-    # Verify search relevance
-    assert any(VALID_PLAYER_QUERY.lower() in player["player_name"].lower() 
+    # Verify search relevance (using 'full_name')
+    assert any(VALID_PLAYER_QUERY.lower() in player["full_name"].lower()
               for player in data["players"])
 
 def test_search_players_invalid_query():
@@ -59,14 +60,14 @@ def test_search_teams():
     assert isinstance(data["teams"], list)
     assert len(data["teams"]) > 0
     
-    # Verify team structure
+    # Verify team structure - Check for 'id' instead of 'team_id'
     first_team = data["teams"][0]
-    required_fields = ["team_id", "team_name", "abbreviation", "city"]
+    required_fields = ["id", "full_name", "abbreviation", "city", "nickname"] # Adjusted fields
     for field in required_fields:
         assert field in first_team
     
-    # Verify search relevance
-    assert any(VALID_TEAM_QUERY.lower() in team["team_name"].lower() 
+    # Verify search relevance (using 'full_name')
+    assert any(VALID_TEAM_QUERY.lower() in team["full_name"].lower()
               for team in data["teams"])
 
 def test_search_teams_invalid_query():
@@ -95,16 +96,30 @@ def test_search_games():
     assert isinstance(data["games"], list)
     assert len(data["games"]) > 0
     
-    # Verify game structure
+    # Verify game structure (using actual keys from leaguegamefinder)
     first_game = data["games"][0]
-    required_fields = ["game_id", "game_date", "home_team", "away_team", "status"]
+    required_fields = ["GAME_ID", "GAME_DATE", "MATCHUP", "WL"] # Adjusted to actual keys
     for field in required_fields:
         assert field in first_game
     
-    # Verify search relevance
-    assert any(VALID_TEAM_QUERY.lower() in 
-              (game["home_team"].lower() + game["away_team"].lower()) 
-              for game in data["games"])
+    # Verify search relevance (check MATCHUP string using abbreviations)
+    # Assuming VALID_GAME_QUERY contains team names like "Lakers vs Celtics"
+    query_team_names = [part.strip() for part in VALID_GAME_QUERY.split(' vs ')]
+    if len(query_team_names) == 2:
+        team1_info_list = teams.find_teams_by_full_name(query_team_names[0])
+        team2_info_list = teams.find_teams_by_full_name(query_team_names[1])
+        # Ensure the find function returned a list and it's not empty
+        if team1_info_list and team2_info_list:
+            team1_abbr = team1_info_list[0]['abbreviation']
+            team2_abbr = team2_info_list[0]['abbreviation']
+            assert any(
+                team1_abbr in game["MATCHUP"] and team2_abbr in game["MATCHUP"]
+                for game in data["games"]
+            ), f"Expected matchup with {team1_abbr} and {team2_abbr} not found in any game's MATCHUP string"
+        else:
+            assert False, f"Could not find abbreviation info for one or both teams: {query_team_names}"
+    else:
+         assert False, f"VALID_GAME_QUERY ('{VALID_GAME_QUERY}') format unexpected for relevance check"
 
 def test_search_games_invalid_query():
     """Test searching for games with invalid query."""

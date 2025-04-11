@@ -1,7 +1,7 @@
 import logging
 import json
 import requests
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List, Union
 import pandas as pd
 # Import new endpoints
 from nba_api.stats.endpoints import leaguegamefinder, boxscoretraditionalv3, playbyplayv3, boxscoreadvancedv3, boxscorefourfactorsv3, shotchartdetail, hustlestatsboxscore # Added shotchartdetail and hustlestatsboxscore
@@ -11,6 +11,65 @@ from .utils import _process_dataframe
 from config import DEFAULT_TIMEOUT, MAX_GAMES_TO_RETURN, ErrorMessages as Errors
 
 logger = logging.getLogger(__name__)
+
+def get_season_from_game_id(game_id: str) -> str:
+    """
+    Extract the season from a game ID.
+    NBA game IDs are in the format: XXYYZZZZZ where:
+    - XX is the season type (00=preseason, 00=regular season, 00=playoffs)
+    - YY is the season year (e.g., 23=2023-24)
+    - ZZZZZ is the game number
+    """
+    if not game_id or len(game_id) != 10:
+        return ''
+    
+    season_year = int(game_id[1:3])  # Extract YY part
+    if season_year >= 0 and season_year <= 99:
+        # Convert YY to full season format (e.g., 23 -> 2023-24)
+        full_year = 2000 + season_year
+        return f"{full_year}-{str(full_year + 1)[-2:]}"
+    return ''
+
+def _process_dataframe(df: pd.DataFrame, single_row: bool = True) -> Union[Dict, List[Dict]]:
+    """
+    Convert a pandas DataFrame to a dictionary or list of dictionaries with standardized column names.
+    """
+    # Convert column names to lowercase
+    df.columns = df.columns.str.lower()
+    
+    # Define column mappings
+    column_map = {
+        'player_id': 'person_id',
+        'player_name': 'player_name',
+        'team_id': 'team_id',
+        'min': 'minutes',
+        'pts': 'points',
+        'reb': 'rebounds',
+        'ast': 'assists',
+        'stl': 'steals',
+        'blk': 'blocks',
+        'tov': 'turnovers',
+        'pf': 'fouls',
+        'fgm': 'fg_made',
+        'fga': 'fg_attempted',
+        'fg_pct': 'fg_pct',
+        'fg3m': 'fg3_made',
+        'fg3a': 'fg3_attempted',
+        'fg3_pct': 'fg3_pct',
+        'ftm': 'ft_made',
+        'fta': 'ft_attempted',
+        'ft_pct': 'ft_pct'
+    }
+    
+    # Rename columns that exist in the DataFrame
+    existing_columns = {old: new for old, new in column_map.items() if old in df.columns}
+    df = df.rename(columns=existing_columns)
+    
+    # Convert to dictionary/list
+    if single_row:
+        return df.iloc[0].to_dict() if not df.empty else {}
+    else:
+        return df.to_dict(orient='records')
 
 def fetch_league_games_logic(
     player_or_team_abbreviation: str = 'T',
@@ -276,354 +335,299 @@ def fetch_boxscore_fourfactors_logic(game_id: str) -> str:
 
 def fetch_game_boxscore_logic(game_id: str) -> str:
     """
-    Fetches box score data for a specific game.
-    Args:
-        game_id (str): The ID of the game to fetch box score data for
-    Returns:
-        str: JSON string containing box score data or error message
+    Fetch boxscore data for a specific game.
     """
-    logger.info(f"Executing fetch_game_boxscore_logic for game_id: '{game_id}'")
-    
-    # Validate game_id
-    if not game_id:
-        return json.dumps({"error": Errors.GAME_ID_EMPTY})
-    if not game_id.isdigit() or len(game_id) != 10:
-        return json.dumps({"error": Errors.INVALID_GAME_ID_FORMAT.format(game_id=game_id)})
-    
     try:
-        # Fetch box score data
-        boxscore = boxscoretraditionalv3.BoxScoreTraditionalV3(
-            game_id=game_id,
-            start_period='0',
-            end_period='0',
-            start_range='0',
-            end_range='0',
-            range_type='0',
-            timeout=DEFAULT_TIMEOUT
-        )
-        
-        # Get normalized data
-        data = boxscore.get_normalized_dict()
-        if not data:
-            return json.dumps({"error": f"No boxscore data found for game {game_id}"})
-        
-        # Extract player and team stats
-        player_stats = data.get('PlayerStats', [])
-        team_stats = data.get('TeamStats', [])
-        
-        if not team_stats or len(team_stats) != 2:
-            return json.dumps({"error": f"Invalid team stats data for game {game_id}"})
-        
-        # Organize players by team
-        home_team = team_stats[0]
-        away_team = team_stats[1]
-        
-        home_team_id = str(home_team.get('teamId', ''))
-        away_team_id = str(away_team.get('teamId', ''))
-        
-        # Format player stats
-        home_players = []
-        away_players = []
-        
-        for player in player_stats:
-            player_team_id = str(player.get('teamId', ''))
-            formatted_player = {
-                "player_id": str(player.get('personId', '')),
-                "player_name": player.get('name', ''),
-                "team_id": player_team_id,
-                "minutes": player.get('minutes', '0'),
-                "points": player.get('points', 0),
-                "rebounds": player.get('reboundsTotal', 0),
-                "assists": player.get('assists', 0),
-                "steals": player.get('steals', 0),
-                "blocks": player.get('blocks', 0),
-                "turnovers": player.get('turnovers', 0),
-                "fouls": player.get('foulsPersonal', 0),
-                "fg_made": player.get('fieldGoalsMade', 0),
-                "fg_attempted": player.get('fieldGoalsAttempted', 0),
-                "fg_pct": player.get('fieldGoalsPercentage', 0),
-                "fg3_made": player.get('threePointersMade', 0),
-                "fg3_attempted": player.get('threePointersAttempted', 0),
-                "fg3_pct": player.get('threePointersPercentage', 0),
-                "ft_made": player.get('freeThrowsMade', 0),
-                "ft_attempted": player.get('freeThrowsAttempted', 0),
-                "ft_pct": player.get('freeThrowsPercentage', 0)
-            }
+        if not game_id:
+            return handle_api_error("EmptyGameId")
             
-            if player_team_id == home_team_id:
-                home_players.append(formatted_player)
-            elif player_team_id == away_team_id:
-                away_players.append(formatted_player)
+        if not validate_game_id_format(game_id):
+            return handle_api_error("InvalidGameId")
+
+        boxscore = retry_on_timeout(lambda: BoxScore(game_id=game_id))
+        player_stats = boxscore.player_stats.get_data_frame()
+        team_stats = boxscore.team_stats.get_data_frame()
         
-        result = {
-            "game_id": game_id,
+        if player_stats.empty or team_stats.empty:
+            return handle_api_error("NoDataFound", f"No boxscore data found for game {game_id}")
+            
+        if "TEAM_ID" not in player_stats.columns or "TEAM_ID" not in team_stats.columns:
+            return handle_api_error("MissingTeamId")
+
+        # Convert TEAM_ID to string type for consistent comparison
+        player_stats["TEAM_ID"] = player_stats["TEAM_ID"].astype(str)
+        team_stats["TEAM_ID"] = team_stats["TEAM_ID"].astype(str)
+        
+        # Get home and away team IDs
+        home_team_id = str(team_stats.iloc[0]["TEAM_ID"])
+        away_team_id = str(team_stats.iloc[1]["TEAM_ID"])
+        
+        # Filter players by team
+        home_players = player_stats[player_stats["TEAM_ID"] == home_team_id]
+        away_players = player_stats[player_stats["TEAM_ID"] == away_team_id]
+        
+        response = {
             "home_team": {
-                "team_id": home_team_id,
-                "team_name": home_team.get('teamCity', '') + ' ' + home_team.get('teamName', ''),
-                "players": home_players
+                "team_stats": json.loads(team_stats[team_stats["TEAM_ID"] == home_team_id].to_json(orient="records"))[0],
+                "player_stats": json.loads(home_players.to_json(orient="records"))
             },
             "away_team": {
-                "team_id": away_team_id,
-                "team_name": away_team.get('teamCity', '') + ' ' + away_team.get('teamName', ''),
-                "players": away_players
+                "team_stats": json.loads(team_stats[team_stats["TEAM_ID"] == away_team_id].to_json(orient="records"))[0],
+                "player_stats": json.loads(away_players.to_json(orient="records"))
             }
         }
         
-        return json.dumps(result)
+        return format_response(response)
         
     except requests.exceptions.Timeout:
-        logger.error(f"Request timed out for game ID: {game_id}")
-        return json.dumps({
-            "error": f"Request timed out for game ID: {game_id}",
-            "timeout": True
-        })
+        return handle_api_error("Timeout", f"Request timed out while fetching boxscore for game {game_id}")
     except Exception as e:
-        logger.error(f"Error in fetch_game_boxscore_logic: {str(e)}", exc_info=True)
-        if "404" in str(e):
-            return json.dumps({"error": f"Game not found: {game_id}"})
-        return json.dumps({
-            "error": f"Unexpected error retrieving box score data: {str(e)}"
-        })
+        return handle_api_error("APIError", f"Error fetching boxscore data: {str(e)}")
 
 def fetch_game_shotchart_logic(game_id: str, team_id: str = None) -> str:
     """
     Fetches shot chart data for a specific game, optionally filtered by team.
-    Args:
-        game_id (str): The ID of the game to fetch shot chart data for
-        team_id (str, optional): The ID of the team to filter shots for
-    Returns:
-        str: JSON string containing shot chart data or error message
+    Returns JSON string with shot locations and details.
     """
     logger.info(f"Executing fetch_game_shotchart_logic for game_id: '{game_id}', team_id: '{team_id}'")
     
-    # Validate game_id
-    if not game_id:
+    if not game_id or not game_id.strip():
         return json.dumps({"error": Errors.GAME_ID_EMPTY})
     if not game_id.isdigit() or len(game_id) != 10:
         return json.dumps({"error": Errors.INVALID_GAME_ID_FORMAT.format(game_id=game_id)})
-    
+    if team_id and (not team_id.isdigit() or len(team_id) > 10):
+        return json.dumps({"error": f"Invalid team_id format: {team_id}"})
+
     try:
-        # Fetch shot chart data
-        shot_chart = shotchartdetail.ShotChartDetail(
-            team_id=0,  # 0 means all teams
-            player_id=0,  # 0 means all players
+        shotchart = shotchartdetail.ShotChartDetail(
+            team_id=team_id or '0',
+            player_id='0',
             game_id_nullable=game_id,
-            context_measure_simple='FGA',  # Field Goal Attempts
-            season_nullable='',  # Not needed when specifying game_id
+            context_measure_simple='FGA',
+            season_nullable=get_season_from_game_id(game_id),
             timeout=DEFAULT_TIMEOUT
         )
         
-        # Get normalized data
-        data = shot_chart.get_normalized_dict()
-        if not data:
+        shots_df = shotchart.get_data_frames()[0]
+        
+        if shots_df.empty:
             return json.dumps({"error": f"No shot chart data found for game {game_id}"})
-        
-        # Extract shot data
-        shots = data.get('Shot_Chart_Detail', [])
-        if not shots:
-            return json.dumps({"error": f"No shots found for game {game_id}"})
-        
-        # Format shots
-        formatted_shots = []
-        for shot in shots:
-            shot_team_id = str(shot.get('TEAM_ID', ''))
             
-            # Filter by team_id if specified
-            if team_id and shot_team_id != team_id:
-                continue
-                
-            formatted_shot = {
-                "team_id": shot_team_id,
-                "player_id": str(shot.get('PLAYER_ID', '')),
-                "player_name": shot.get('PLAYER_NAME', ''),
-                "period": shot.get('PERIOD', 0),
-                "minutes_remaining": shot.get('MINUTES_REMAINING', 0),
-                "seconds_remaining": shot.get('SECONDS_REMAINING', 0),
-                "action_type": shot.get('ACTION_TYPE', ''),
-                "shot_type": shot.get('SHOT_TYPE', ''),
-                "shot_zone": shot.get('SHOT_ZONE_BASIC', ''),
-                "shot_distance": shot.get('SHOT_DISTANCE', 0),
-                "x_coordinate": shot.get('LOC_X', 0),
-                "y_coordinate": shot.get('LOC_Y', 0),
-                "made_shot": shot.get('SHOT_MADE_FLAG', 0) == 1,
-                "game_event_id": str(shot.get('GAME_EVENT_ID', '')),
-                "shot_attempted_flag": shot.get('SHOT_ATTEMPTED_FLAG', 0) == 1
-            }
-            formatted_shots.append(formatted_shot)
+        # Validate required columns
+        required_columns = ['GAME_ID', 'TEAM_ID', 'PLAYER_NAME', 'LOC_X', 'LOC_Y', 'SHOT_MADE_FLAG']
+        missing_columns = [col for col in required_columns if col not in shots_df.columns]
+        if missing_columns:
+            return json.dumps({"error": f"Invalid shot chart data format. Missing columns: {', '.join(missing_columns)}"})
+            
+        # Filter by team_id if provided
+        if team_id:
+            shots_df = shots_df[shots_df['TEAM_ID'].astype(str) == str(team_id)]
+            if shots_df.empty:
+                return json.dumps({"error": f"No shots found for team {team_id} in game {game_id}"})
         
+        # Process shot data
+        shots_list = []
+        for _, shot in shots_df.iterrows():
+            shot_data = {
+                "game_id": str(shot['GAME_ID']),
+                "team_id": str(shot['TEAM_ID']),
+                "player_name": shot['PLAYER_NAME'],
+                "x": float(shot['LOC_X']),
+                "y": float(shot['LOC_Y']),
+                "made": bool(shot['SHOT_MADE_FLAG']),
+                "period": int(shot.get('PERIOD', 0)),
+                "minutes_remaining": int(shot.get('MINUTES_REMAINING', 0)),
+                "seconds_remaining": int(shot.get('SECONDS_REMAINING', 0)),
+                "shot_type": shot.get('ACTION_TYPE', ''),
+                "shot_zone": shot.get('SHOT_ZONE_BASIC', ''),
+                "shot_distance": float(shot.get('SHOT_DISTANCE', 0))
+            }
+            shots_list.append(shot_data)
+            
         result = {
             "game_id": game_id,
             "team_id": team_id if team_id else "all",
-            "total_shots": len(formatted_shots),
-            "shots": formatted_shots
+            "total_shots": len(shots_list),
+            "shots": shots_list
         }
         
-        return json.dumps(result)
+        return json.dumps(result, default=str)
         
     except requests.exceptions.Timeout:
-        logger.error(f"Request timed out for game ID: {game_id}")
-        return json.dumps({
-            "error": f"Request timed out for game ID: {game_id}",
-            "timeout": True
-        })
+        logger.error(f"Timeout error fetching shot chart for game {game_id}")
+        return json.dumps({"error": f"Request timeout while fetching shot chart data for game {game_id}"})
     except Exception as e:
-        logger.error(f"Error in fetch_game_shotchart_logic: {str(e)}", exc_info=True)
-        if "404" in str(e):
-            return json.dumps({"error": f"Game not found: {game_id}"})
-        return json.dumps({
-            "error": f"Unexpected error retrieving shot chart data: {str(e)}"
-        })
+        logger.error(f"Error fetching shot chart for game {game_id}: {str(e)}")
+        return json.dumps({"error": f"Failed to retrieve shot chart data for game {game_id}: {str(e)}"})
 
 def fetch_game_hustle_stats_logic(game_id: str) -> str:
     """
     Fetches hustle stats for a specific game.
-    Args:
-        game_id (str): The ID of the game to fetch hustle stats for
-    Returns:
-        str: JSON string containing hustle stats or error message
+    Returns JSON string with detailed hustle statistics for teams and players.
     """
     logger.info(f"Executing fetch_game_hustle_stats_logic for game_id: '{game_id}'")
     
-    # Validate game_id
-    if not game_id:
+    if not game_id or not game_id.strip():
         return json.dumps({"error": Errors.GAME_ID_EMPTY})
     if not game_id.isdigit() or len(game_id) != 10:
-        return json.dumps({"error": f"Invalid game ID format: {game_id}. Expected 10 digits."})
-    
+        return json.dumps({"error": Errors.INVALID_GAME_ID_FORMAT.format(game_id=game_id)})
+
     try:
-        # Fetch hustle stats
         hustle_stats = hustlestatsboxscore.HustleStatsBoxScore(
             game_id=game_id,
             timeout=DEFAULT_TIMEOUT
         )
         
-        # Get player and team hustle stats
         player_stats_df = hustle_stats.hustle_stats_player_box_score.get_data_frame()
         team_stats_df = hustle_stats.hustle_stats_team_box_score.get_data_frame()
         
-        if player_stats_df is None or player_stats_df.empty or team_stats_df is None or team_stats_df.empty:
+        if player_stats_df.empty or team_stats_df.empty:
             return json.dumps({"error": f"No hustle stats found for game {game_id}"})
+            
+        # Validate required columns
+        player_required_columns = ['GAME_ID', 'TEAM_ID', 'PLAYER_NAME', 'MINUTES']
+        team_required_columns = ['GAME_ID', 'TEAM_ID', 'TEAM_NAME']
         
-        # Process data frames
-        player_stats = _process_dataframe(player_stats_df, single_row=False)
-        team_stats = _process_dataframe(team_stats_df, single_row=False)
+        missing_player_columns = [col for col in player_required_columns if col not in player_stats_df.columns]
+        missing_team_columns = [col for col in team_required_columns if col not in team_stats_df.columns]
         
-        if not player_stats or not team_stats or len(team_stats) != 2:
-            return json.dumps({"error": f"Invalid hustle stats format for game {game_id}"})
+        if missing_player_columns or missing_team_columns:
+            errors = []
+            if missing_player_columns:
+                errors.append(f"Missing player columns: {', '.join(missing_player_columns)}")
+            if missing_team_columns:
+                errors.append(f"Missing team columns: {', '.join(missing_team_columns)}")
+            return json.dumps({"error": f"Invalid hustle stats format. {' '.join(errors)}"})
         
-        # Organize players by team
-        home_team = team_stats[0]
-        away_team = team_stats[1]
+        # Process team stats
+        if len(team_stats_df) != 2:
+            return json.dumps({"error": f"Invalid team stats data: expected 2 teams, found {len(team_stats_df)}"})
+            
+        home_team_id = str(team_stats_df.iloc[0]['TEAM_ID'])
+        away_team_id = str(team_stats_df.iloc[1]['TEAM_ID'])
         
-        home_players = [p for p in player_stats if p["TEAM_ID"] == home_team["TEAM_ID"]]
-        away_players = [p for p in player_stats if p["TEAM_ID"] == away_team["TEAM_ID"]]
+        # Process player stats by team
+        home_players_df = player_stats_df[player_stats_df['TEAM_ID'].astype(str) == home_team_id]
+        away_players_df = player_stats_df[player_stats_df['TEAM_ID'].astype(str) == away_team_id]
+        
+        # Convert to dictionaries with proper formatting
+        home_team_stats = _process_dataframe(team_stats_df.iloc[[0]], single_row=True)
+        away_team_stats = _process_dataframe(team_stats_df.iloc[[1]], single_row=True)
+        home_players_list = _process_dataframe(home_players_df, single_row=False)
+        away_players_list = _process_dataframe(away_players_df, single_row=False)
         
         result = {
             "game_id": game_id,
             "home_team": {
-                "team_id": home_team["TEAM_ID"],
-                "team_name": home_team.get("TEAM_NAME", ""),
-                "players": home_players
+                "team_id": home_team_id,
+                "team_name": home_team_stats.get('team_name', ''),
+                "team_stats": {k: v for k, v in home_team_stats.items() if k not in ['team_id', 'team_name', 'game_id']},
+                "players": home_players_list
             },
             "away_team": {
-                "team_id": away_team["TEAM_ID"],
-                "team_name": away_team.get("TEAM_NAME", ""),
-                "players": away_players
+                "team_id": away_team_id,
+                "team_name": away_team_stats.get('team_name', ''),
+                "team_stats": {k: v for k, v in away_team_stats.items() if k not in ['team_id', 'team_name', 'game_id']},
+                "players": away_players_list
             }
         }
         
-        return json.dumps(result)
+        return json.dumps(result, default=str)
         
     except requests.exceptions.Timeout:
-        logger.error(f"Request timed out for game ID: {game_id}")
-        return json.dumps({
-            "error": f"Request timed out for game ID: {game_id}",
-            "timeout": True
-        })
+        logger.error(f"Timeout error fetching hustle stats for game {game_id}")
+        return json.dumps({"error": f"Request timeout while fetching hustle stats for game {game_id}"})
     except Exception as e:
-        logger.error(f"Error in fetch_game_hustle_stats_logic: {str(e)}", exc_info=True)
-        return json.dumps({
-            "error": f"Invalid game ID: {game_id}. {str(e)}"
-        })
+        logger.error(f"Error fetching hustle stats for game {game_id}: {str(e)}")
+        return json.dumps({"error": f"Failed to retrieve hustle stats for game {game_id}: {str(e)}"})
 
 def fetch_game_playbyplay_logic(game_id: str, period: Optional[int] = None) -> str:
     """
     Fetches play-by-play data for a specific game.
-    Args:
-        game_id (str): The ID of the game to fetch play-by-play data for
-        period (Optional[int]): If provided, only return plays from this period
-    Returns:
-        str: JSON string containing play-by-play data or error message
+    Returns JSON string with detailed play-by-play information.
     """
     logger.info(f"Executing fetch_game_playbyplay_logic for game_id: '{game_id}', period: {period}")
     
-    # Validate game_id
-    if not game_id:
+    if not game_id or not game_id.strip():
         return json.dumps({"error": Errors.GAME_ID_EMPTY})
     if not game_id.isdigit() or len(game_id) != 10:
         return json.dumps({"error": Errors.INVALID_GAME_ID_FORMAT.format(game_id=game_id)})
-    
+    if period is not None and not isinstance(period, int):
+        return json.dumps({"error": f"Invalid period format: {period}. Expected an integer."})
+
     try:
-        # Fetch play-by-play data
         pbp = playbyplayv3.PlayByPlayV3(
             game_id=game_id,
-            start_period='0',  # Get all periods
+            start_period='0',
             end_period='0',
             timeout=DEFAULT_TIMEOUT
         )
         
-        # Get the data frame
-        pbp_df = pbp.get_normalized_dict()
+        pbp_df = pbp.play_by_play.get_data_frame()
         
-        if not pbp_df or 'PlayByPlay' not in pbp_df:
-            return json.dumps({"error": f"No play-by-play data found for game ID: {game_id}"})
+        if pbp_df.empty:
+            return json.dumps({"error": f"No play-by-play data found for game {game_id}"})
+            
+        # Validate required columns
+        required_columns = ['PERIOD', 'PCTIMESTRING', 'SCORE', 'SCOREMARGIN', 'EVENTMSGTYPE']
+        missing_columns = [col for col in required_columns if col not in pbp_df.columns]
+        if missing_columns:
+            return json.dumps({"error": f"Invalid play-by-play data format. Missing columns: {', '.join(missing_columns)}"})
         
-        plays = pbp_df['PlayByPlay']
-        
-        # Calculate total periods and overtime periods
-        max_period = max(int(play.get('period', 0)) for play in plays)
+        # Calculate game information
+        max_period = int(pbp_df['PERIOD'].max())
         overtime_periods = max(0, max_period - 4)
         
         # Filter by period if specified
         if period is not None:
             if period < 1 or period > max_period:
-                return json.dumps({"error": f"No play-by-play data found for period {period}"})
-            plays = [play for play in plays if int(play.get('period', 0)) == period]
-            if not plays:
-                return json.dumps({"error": f"No play-by-play data found for period {period}"})
+                return json.dumps({"error": f"Invalid period {period}. Game has {max_period} periods."})
+            pbp_df = pbp_df[pbp_df['PERIOD'] == period]
+            if pbp_df.empty:
+                return json.dumps({"error": f"No plays found for period {period}"})
         
-        # Format plays
-        formatted_plays = []
-        for play in plays:
-            formatted_play = {
-                "GAME_ID": play.get('gameId', game_id),
-                "PERIOD": int(play.get('period', 0)),
-                "PCTIMESTRING": play.get('clock', ''),
-                "HOMEDESCRIPTION": play.get('homeDescription', ''),
-                "NEUTRALDESCRIPTION": play.get('neutralDescription', ''),
-                "VISITORDESCRIPTION": play.get('visitorDescription', ''),
-                "SCORE": play.get('score', ''),
-                "SCOREMARGIN": play.get('scoreMargin', '')
+        # Process plays
+        plays_list = []
+        for _, play in pbp_df.iterrows():
+            play_data = {
+                "game_id": str(play.get('GAME_ID', game_id)),
+                "event_num": int(play.get('EVENTNUM', 0)),
+                "event_type": int(play.get('EVENTMSGTYPE', 0)),
+                "period": int(play['PERIOD']),
+                "play_clock": play['PCTIMESTRING'],
+                "home_description": play.get('HOMEDESCRIPTION', ''),
+                "neutral_description": play.get('NEUTRALDESCRIPTION', ''),
+                "visitor_description": play.get('VISITORDESCRIPTION', ''),
+                "score": play.get('SCORE', ''),
+                "score_margin": play.get('SCOREMARGIN', ''),
+                "person1_type": int(play.get('PERSON1TYPE', 0)),
+                "player1_id": str(play.get('PLAYER1_ID', '')),
+                "player1_name": play.get('PLAYER1_NAME', ''),
+                "player1_team_id": str(play.get('PLAYER1_TEAM_ID', '')),
+                "player2_id": str(play.get('PLAYER2_ID', '')),
+                "player2_name": play.get('PLAYER2_NAME', ''),
+                "player2_team_id": str(play.get('PLAYER2_TEAM_ID', '')),
+                "player3_id": str(play.get('PLAYER3_ID', '')),
+                "player3_name": play.get('PLAYER3_NAME', ''),
+                "player3_team_id": str(play.get('PLAYER3_TEAM_ID', ''))
             }
-            formatted_plays.append(formatted_play)
-        
+            plays_list.append(play_data)
+            
         result = {
             "game_id": game_id,
             "total_periods": max_period,
             "overtime_periods": overtime_periods,
-            "plays": formatted_plays
+            "period_filtered": period is not None,
+            "period": period if period is not None else "all",
+            "total_plays": len(plays_list),
+            "plays": plays_list
         }
         
-        return json.dumps(result)
+        return json.dumps(result, default=str)
         
     except requests.exceptions.Timeout:
-        logger.error(f"Request timed out for game ID: {game_id}")
-        return json.dumps({
-            "error": f"Request timed out for game ID: {game_id}",
-            "timeout": True
-        })
+        logger.error(f"Timeout error fetching play-by-play for game {game_id}")
+        return json.dumps({"error": f"Request timeout while fetching play-by-play data for game {game_id}"})
     except Exception as e:
-        logger.error(f"Error in fetch_game_playbyplay_logic: {str(e)}", exc_info=True)
-        return json.dumps({
-            "error": f"Unexpected error retrieving play-by-play data: {str(e)}"
-        })
+        logger.error(f"Error fetching play-by-play for game {game_id}: {str(e)}")
+        return json.dumps({"error": f"Failed to retrieve play-by-play data for game {game_id}: {str(e)}"})

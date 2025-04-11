@@ -108,7 +108,11 @@ def handle_api_error(error_type: str, message: Optional[str] = None, details: Op
         "InvalidPlayer": "Player not found",
         "InvalidTeam": "Team not found",
         "Timeout": "Request timed out",
-        "Unknown": "An unexpected error occurred"
+        "Unknown": "An unexpected error occurred",
+        "EmptyGameId": "Game ID cannot be empty",
+        "MissingTeamId": "Team ID is missing in the response data",
+        "NoDataFound": "No data found for the specified game",
+        "APIError": "Error fetching data from NBA API"
     }
     
     error_msg = message or error_messages.get(error_type, error_messages["Unknown"])

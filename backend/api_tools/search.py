@@ -4,7 +4,7 @@ from typing import List, Dict, Optional, Any
 import pandas as pd
 from nba_api.stats.endpoints import commonallplayers, leaguegamefinder
 from nba_api.stats.static import players, teams
-from nba_api.stats.library.parameters import SeasonTypeAllStar
+from nba_api.stats.library.parameters import SeasonTypeAllStar, LeagueIDNullable
 from fuzzywuzzy import fuzz
 
 from config import DEFAULT_PLAYER_SEARCH_LIMIT, MIN_PLAYER_SEARCH_LENGTH, DEFAULT_TIMEOUT, MAX_SEARCH_RESULTS, ErrorMessages as Errors
@@ -140,6 +140,17 @@ def search_teams_logic(query: str, limit: int = MAX_SEARCH_RESULTS) -> str:
         logger.error(f"Error in search_teams_logic: {str(e)}", exc_info=True)
         return json.dumps({"error": Errors.UNEXPECTED_ERROR})
 
+def _find_team_id_by_name(name: str) -> Optional[int]:
+    """Finds a team ID by full name, nickname, or abbreviation."""
+    all_teams = teams.get_teams()
+    name_lower = name.lower()
+    for team in all_teams:
+        if (name_lower == team['full_name'].lower() or
+            name_lower == team['nickname'].lower() or
+            name_lower == team['abbreviation'].lower()):
+            return team['id']
+    return None
+
 def search_games_logic(
     query: str,
     season: str,
@@ -147,54 +158,82 @@ def search_games_logic(
     limit: int = MAX_SEARCH_RESULTS
 ) -> str:
     """
-    Search for games by team names.
+    Search for games based on a query, attempting to find head-to-head matchups
+    (e.g., "TeamA vs TeamB") or games involving a single team.
     Returns JSON string with matching games.
     """
     logger.info(f"Executing search_games_logic with query: '{query}', season: {season}")
-    
+
     if not query:
         return json.dumps({"error": Errors.EMPTY_SEARCH_QUERY})
-    
     if not season:
         return json.dumps({"error": Errors.INVALID_SEASON})
-        
-    if season_type not in [t.value for t in SeasonTypeAllStar]:
-        return json.dumps({"error": Errors.INVALID_SEASON_TYPE})
+
+    team1_id = None
+    team2_id = None
+    query_parts = []
+
+    # Attempt to parse query for two teams (simple split)
+    delimiters = [" vs ", " at ", " vs. "]
+    for delim in delimiters:
+        if delim in query.lower():
+            parts = query.lower().split(delim)
+            if len(parts) == 2:
+                query_parts = [parts[0].strip(), parts[1].strip()]
+                break
     
+    if len(query_parts) == 2:
+        team1_id = _find_team_id_by_name(query_parts[0])
+        team2_id = _find_team_id_by_name(query_parts[1])
+        logger.info(f"Parsed query into two teams: '{query_parts[0]}' (ID: {team1_id}) and '{query_parts[1]}' (ID: {team2_id})")
+    else:
+        # If not a clear matchup, try finding a single team ID from the query
+        team1_id = _find_team_id_by_name(query)
+        logger.info(f"Could not parse into two teams. Searching for single team: '{query}' (ID: {team1_id})")
+
+    if not team1_id and not team2_id:
+         logger.warning(f"Could not find any team IDs for query: '{query}'")
+         return json.dumps({"games": []}) # No teams found
+
     try:
-        # First search for teams to get team IDs
-        teams_result = json.loads(search_teams_logic(query))
-        if "error" in teams_result or not teams_result["teams"]:
-            return json.dumps({"games": []})
-        
-        team_ids = [team["id"] for team in teams_result["teams"]]
-        
-        # Search for games involving these teams
+        game_finder = leaguegamefinder.LeagueGameFinder(
+            team_id_nullable=team1_id,
+            vs_team_id_nullable=team2_id if team1_id else None, # Only use vs_team if team1 is set
+            season_nullable=season,
+            season_type_nullable=season_type,
+            league_id_nullable=LeagueIDNullable.nba, # Ensure we only get NBA games
+            timeout=DEFAULT_TIMEOUT
+        )
+
+        games_df = game_finder.league_game_finder_results.get_data_frame()
         games_list = []
-        for team_id in team_ids:
-            game_finder = leaguegamefinder.LeagueGameFinder(
-                team_id_nullable=team_id,
-                season_nullable=season,
-                season_type_nullable=season_type,
-                timeout=DEFAULT_TIMEOUT
-            )
-            
-            games_df = game_finder.league_game_finder_results.get_data_frame()
-            if not games_df.empty:
-                games = _process_dataframe(games_df, single_row=False)
-                games_list.extend(games)
-        
+        if not games_df.empty:
+            # If we searched for two teams, ensure both are in the matchup string
+            if team1_id and team2_id:
+                 # Get team abbreviations for filtering matchup string
+                 team1_abbr = teams.find_team_name_by_id(team1_id)['abbreviation']
+                 team2_abbr = teams.find_team_name_by_id(team2_id)['abbreviation']
+                 if team1_abbr and team2_abbr:
+                     games_df = games_df[
+                         games_df['MATCHUP'].str.contains(team1_abbr) &
+                         games_df['MATCHUP'].str.contains(team2_abbr)
+                     ]
+                 else:
+                     logger.warning("Could not get abbreviations for matchup filtering.")
+
+
+            games_list = _process_dataframe(games_df, single_row=False)
+
         # Sort by date and limit results
         if games_list:
-            games_list.sort(key=lambda x: x["GAME_DATE"], reverse=True)
+            games_list.sort(key=lambda x: x.get("GAME_DATE", ""), reverse=True)
             games_list = games_list[:limit]
-        
+
         result = {
             "games": games_list
         }
-        
-        return json.dumps(result)
-        
+        return json.dumps(result, default=str)
+
     except Exception as e:
         logger.error(f"Error in search_games_logic: {str(e)}", exc_info=True)
         return json.dumps({"error": Errors.UNEXPECTED_ERROR})
