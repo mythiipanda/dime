@@ -7,7 +7,7 @@ from typing import Optional, Union, List, Dict, Any, Callable
 import pandas as pd
 from requests.exceptions import ReadTimeout, ConnectionError
 from nba_api.stats.endpoints import teamdashptpass, teamdashptreb, teamdashptshots
-from ..config import DEFAULT_TIMEOUT # Use relative import
+from config import DEFAULT_TIMEOUT  # Changed to absolute import
 
 logger = logging.getLogger(__name__)
 

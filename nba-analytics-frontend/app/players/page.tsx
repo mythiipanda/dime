@@ -8,13 +8,23 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
+  CardFooter,
 } from "@/components/ui/card";
-// Removed unused ScrollArea
 import { Button } from "@/components/ui/button"; // Import Button
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"; // Import Avatar
 import { Skeleton } from "@/components/ui/skeleton"; // Import Skeleton
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"; // Import Alert
-import { TerminalIcon, SearchIcon, Loader2Icon } from "lucide-react"; // Import icons, add Loader2Icon
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Search,
+  Filter,
+  Loader2,
+  AlertCircle,
+  ChevronRight,
+  TrendingUp,
+  BarChart2,
+  Trophy,
+} from "lucide-react"; // Import icons, add Loader2Icon and FilterIcon
 import {
   Command,
   CommandEmpty,
@@ -23,6 +33,15 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command"; // Import Command components
+import { Input } from "@/components/ui/input";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 // Define interfaces for expected data structures (can be refined)
 interface PlayerInfo {
@@ -33,6 +52,7 @@ interface PlayerInfo {
   POSITION: string;
   HEIGHT: string;
   WEIGHT: string;
+  JERSEY: string;
   // Add other relevant fields from commonplayerinfo
 }
 
@@ -43,6 +63,8 @@ interface HeadlineStats {
   PTS: number;
   AST: number;
   REB: number;
+  FG_PCT: number;
+  FG3_PCT: number;
   // Add other relevant fields from playerheadlinestats
 }
 
@@ -61,6 +83,14 @@ export default function PlayersPage() {
   const [error, setError] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<{ id: number; full_name: string }[]>([]);
   const [isSuggestionLoading, setIsSuggestionLoading] = useState(false);
+  const [selectedFilters, setSelectedFilters] = useState<string[]>([]);
+
+  const filterOptions = [
+    { label: "Position", options: ["Guard", "Forward", "Center"] },
+    { label: "Conference", options: ["Eastern", "Western"] },
+    { label: "Division", options: ["Atlantic", "Central", "Southeast", "Northwest", "Pacific", "Southwest"] },
+    { label: "Experience", options: ["Rookie", "1-3 Years", "4-7 Years", "8+ Years"] },
+  ];
 
   const handleSearch = async () => {
     if (!searchTerm.trim()) return;
@@ -177,131 +207,192 @@ export default function PlayersPage() {
   // Removed extra closing brace here
 
   return (
-    <main className="flex flex-1 flex-col gap-4 p-4 lg:gap-6 lg:p-6">
-      <div className="flex items-center">
-        <h1 className="text-lg font-semibold md:text-2xl">Players</h1>
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Players</h1>
+          <p className="text-muted-foreground">
+            Search and analyze NBA player statistics and performance metrics
+          </p>
+        </div>
+        <div className="flex items-center gap-4">
+          <Button variant="outline">
+            <TrendingUp className="mr-2 h-4 w-4" />
+            Compare Players
+          </Button>
+          <Button>
+            <BarChart2 className="mr-2 h-4 w-4" />
+            View Stats
+          </Button>
+        </div>
       </div>
-      <div className="grid gap-4 md:grid-cols-3"> {/* Adjust grid layout */}
-        {/* Search Card */}
-        <Card className="md:col-span-1">
-          <CardHeader>
-            <CardTitle>Player Search</CardTitle>
-            <CardDescription>Enter a player&apos;s name to find their info.</CardDescription> {/* Escaped quote */}
-          </CardHeader>
-          <CardContent>
-            {/* Use Command component for input and suggestions */}
-            <Command className="rounded-lg border shadow-md">
-              <div className="flex items-center border-b px-3"> {/* Wrapper for input and button */}
-                <SearchIcon className="mr-2 h-4 w-4 shrink-0 opacity-50" />
-                <CommandInput
-                  placeholder="e.g., LeBron James"
-                  value={searchTerm}
-                  onValueChange={setSearchTerm} // Use CommandInput's handler
-                  disabled={isLoading}
-                  className="flex-1 border-0 shadow-none focus-visible:ring-0 pl-0 h-10" // Adjust styling
-                />
-                 <Button
-                    type="button" // Change type to button as Command handles selection/submission
-                    onClick={handleSearch} // Trigger search directly
-                    disabled={isLoading || !searchTerm.trim()}
-                    size="sm"
-                    className="ml-2"
-                  >
-                    {isLoading ? <Loader2Icon className="h-4 w-4 animate-spin" /> : "Search"}
-                  </Button>
-              </div>
-              <CommandList>
-                {isSuggestionLoading && <CommandItem>Loading suggestions...</CommandItem>}
-                {!isSuggestionLoading && suggestions.length === 0 && searchTerm.trim().length >= 2 && (
-                  <CommandEmpty>No players found.</CommandEmpty>
-                )}
-                {!isSuggestionLoading && suggestions.length > 0 && (
-                  <CommandGroup heading="Suggestions">
+      
+      <div className="flex flex-col gap-4 md:flex-row">
+        <div className="relative flex-1">
+          <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input 
+            placeholder="Search players by name..." 
+            className="pl-8" 
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" className="w-full md:w-auto">
+              <Filter className="mr-2 h-4 w-4" />
+              Filters
+              {selectedFilters.length > 0 && (
+                <span className="ml-2 rounded-full bg-primary px-2 py-0.5 text-xs text-primary-foreground">
+                  {selectedFilters.length}
+                </span>
+              )}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56">
+            {filterOptions.map((filterGroup) => (
+              <React.Fragment key={filterGroup.label}>
+                <DropdownMenuLabel>{filterGroup.label}</DropdownMenuLabel>
+                {filterGroup.options.map((option) => (
+                  <DropdownMenuItem key={option}>
+                    {option}
+                  </DropdownMenuItem>
+                ))}
+                <DropdownMenuSeparator />
+              </React.Fragment>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
+      {error && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Error</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      {suggestions.length > 0 && (
+        <Card>
+          <ScrollArea className="h-72">
+            <CardContent className="p-0">
+              <Command>
+                <CommandList>
+                  <CommandGroup>
                     {suggestions.map((player) => (
                       <CommandItem
                         key={player.id}
-                        value={player.full_name} // Value used for filtering/selection
-                        onSelect={(currentValue) => {
-                          setSearchTerm(currentValue); // Set search term on selection
-                          setSuggestions([]); // Clear suggestions
-                          handleSearch(); // Trigger search immediately on selection
+                        onSelect={() => {
+                          setSearchTerm(player.full_name);
+                          handleSearch();
                         }}
                       >
-                        {player.full_name}
+                        <Avatar className="mr-2 h-8 w-8">
+                          <AvatarFallback>{player.full_name[0]}</AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1">
+                          <p className="text-sm font-medium">{player.full_name}</p>
+                        </div>
+                        <ChevronRight className="ml-2 h-4 w-4 text-muted-foreground" />
                       </CommandItem>
                     ))}
                   </CommandGroup>
-                )}
-              </CommandList>
-            </Command>
-          </CardContent>
+                </CommandList>
+              </Command>
+            </CardContent>
+          </ScrollArea>
         </Card>
+      )}
 
-        {/* Results Area */}
-        <div className="md:col-span-2"> {/* Make results area wider */}
-          {/* Loading State */}
-          {isLoading && (
-            <Card>
+      {isLoading ? (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {[1, 2, 3].map((i) => (
+            <Card key={i}>
               <CardHeader>
-                <Skeleton className="h-6 w-3/4" />
-                <Skeleton className="h-4 w-1/2" />
-              </CardHeader>
-              <CardContent className="flex items-center space-x-4">
-                 <Skeleton className="h-20 w-20 rounded-full" />
-                 <div className="space-y-2">
-                   <Skeleton className="h-4 w-[200px]" />
-                   <Skeleton className="h-4 w-[150px]" />
-                   <Skeleton className="h-4 w-[180px]" />
-                 </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Error State */}
-          {!isLoading && error && (
-            <Alert variant="destructive">
-              <TerminalIcon className="h-4 w-4" />
-              <AlertTitle>Search Error</AlertTitle>
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-
-          {/* Player Info Display */}
-          {!isLoading && !error && playerData && playerData.player_info && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                   <Avatar className="h-8 w-8">
-                     <AvatarImage src={headshotUrl ?? undefined} alt={playerData.player_info.DISPLAY_FIRST_LAST} />
-                     <AvatarFallback>{playerData.player_info.DISPLAY_FIRST_LAST.split(' ').map(n => n[0]).join('')}</AvatarFallback>
-                   </Avatar>
-                   {playerData.player_info.DISPLAY_FIRST_LAST}
-                </CardTitle>
-                <CardDescription>
-                    {playerData.player_info.TEAM_CITY} {playerData.player_info.TEAM_ABBREVIATION} | {playerData.player_info.POSITION} | {playerData.player_info.HEIGHT} | {playerData.player_info.WEIGHT} lbs
-                </CardDescription>
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-4 w-24" />
               </CardHeader>
               <CardContent>
-                <h4 className="mb-2 font-semibold">Headline Stats ({playerData.headline_stats?.TimeFrame || 'N/A'})</h4>
-                <div className="grid grid-cols-3 gap-2 text-sm">
-                   <div><span className="font-medium">PTS:</span> {playerData.headline_stats?.PTS ?? 'N/A'}</div>
-                   <div><span className="font-medium">AST:</span> {playerData.headline_stats?.AST ?? 'N/A'}</div>
-                   <div><span className="font-medium">REB:</span> {playerData.headline_stats?.REB ?? 'N/A'}</div>
-                   {/* Add more headline stats as needed */}
-                </div>
-                 {/* Add more detailed info sections later (e.g., game logs, career stats tables) */}
+                <Skeleton className="h-24 w-full" />
               </CardContent>
             </Card>
-          )}
-
-           {/* Initial Placeholder */}
-           {!isLoading && !error && !playerData && (
-             <div className="flex h-40 items-center justify-center rounded-lg border border-dashed shadow-sm">
-               <p className="text-muted-foreground">Search for a player to see their details.</p>
-             </div>
-           )}
+          ))}
         </div>
-      </div>
-    </main>
+      ) : playerData ? (
+        <Card>
+          <CardHeader className="flex flex-row items-center gap-4">
+            <Avatar className="h-20 w-20">
+              {headshotUrl ? (
+                <AvatarImage src={headshotUrl} alt={playerData.player_info?.DISPLAY_FIRST_LAST} />
+              ) : (
+                <AvatarFallback>{playerData.player_info?.DISPLAY_FIRST_LAST?.split(' ').map(n => n[0]).join('')}</AvatarFallback>
+              )}
+            </Avatar>
+            <div>
+              <CardTitle className="text-2xl">{playerData.player_info?.DISPLAY_FIRST_LAST}</CardTitle>
+              <CardDescription>
+                {playerData.player_info?.TEAM_CITY} {playerData.player_info?.TEAM_ABBREVIATION} •{" "}
+                #{playerData.player_info?.JERSEY} • {playerData.player_info?.POSITION}
+              </CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent className="grid gap-4 md:grid-cols-3">
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-muted-foreground">Physical</p>
+              <div className="flex justify-between">
+                <span>Height</span>
+                <span className="font-medium">{playerData.player_info?.HEIGHT}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Weight</span>
+                <span className="font-medium">{playerData.player_info?.WEIGHT} lbs</span>
+              </div>
+            </div>
+            {playerData.headline_stats && (
+              <>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-muted-foreground">Season Averages</p>
+                  <div className="flex justify-between">
+                    <span>Points</span>
+                    <span className="font-medium">{playerData.headline_stats.PTS}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Assists</span>
+                    <span className="font-medium">{playerData.headline_stats.AST}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Rebounds</span>
+                    <span className="font-medium">{playerData.headline_stats.REB}</span>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-muted-foreground">Shooting</p>
+                  <div className="flex justify-between">
+                    <span>FG%</span>
+                    <span className="font-medium">
+                      {(playerData.headline_stats.FG_PCT * 100).toFixed(1)}%
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>3P%</span>
+                    <span className="font-medium">
+                      {(playerData.headline_stats.FG3_PCT * 100).toFixed(1)}%
+                    </span>
+                  </div>
+                </div>
+              </>
+            )}
+          </CardContent>
+          <CardFooter className="justify-end space-x-2">
+            <Button variant="outline">View Stats</Button>
+            <Button>
+              <Trophy className="mr-2 h-4 w-4" />
+              Compare
+            </Button>
+          </CardFooter>
+        </Card>
+      ) : null}
+    </div>
   );
 }

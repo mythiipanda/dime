@@ -8,20 +8,22 @@ from nba_api.stats.endpoints import leaguestandingsv3, scoreboardv2, drafthistor
 from nba_api.stats.library.parameters import LeagueID, SeasonType, PerMode48, Scope, StatCategoryAbbreviation, SeasonTypeAllStar, MeasureTypeDetailedDefense, PerMode36, Season
 from datetime import datetime # Import datetime for default date
 
-from .utils import _process_dataframe
-from ..config import DEFAULT_TIMEOUT, ErrorMessages as Errors
-from ..config import CURRENT_SEASON # Import CURRENT_SEASON
+from api_tools.utils import _process_dataframe
+from config import DEFAULT_TIMEOUT, ErrorMessages as Errors
+from config import CURRENT_SEASON # Import CURRENT_SEASON
 
 logger = logging.getLogger(__name__)
 
 def fetch_league_standings_logic(
-    season: str,
+    season: Optional[str] = None,
     season_type: str = SeasonTypeAllStar.regular
 ) -> str:
     """
     Fetches league standings for a specific season and season type.
     Returns JSON string with standings data.
     """
+    # Use CURRENT_SEASON as default if season is None
+    season = season or CURRENT_SEASON
     logger.info(f"Executing fetch_league_standings_logic for season: {season}, type: {season_type}")
     
     try:
@@ -33,25 +35,55 @@ def fetch_league_standings_logic(
         
         standings_df = standings.standings.get_data_frame()
         if standings_df.empty:
+            logger.warning(f"No standings data found for season {season}")
             return json.dumps({
-                "season": season,
-                "season_type": season_type,
                 "standings": []
             })
         
-        standings_list = _process_dataframe(standings_df, single_row=False)
+        # Process the DataFrame to match frontend expectations
+        processed_standings = []
+        for _, row in standings_df.iterrows():
+            try:
+                standing = {
+                    "TeamID": int(row["TeamID"]),
+                    "TeamName": f"{row['TeamCity']} {row['TeamName']}".strip(),
+                    "Conference": row["Conference"],
+                    "PlayoffRank": int(row["PlayoffRank"]),
+                    "WinPct": float(row["WinPCT"]),
+                    "GB": float(row.get("ConferenceGamesBack", 0)),
+                    "L10": row["L10"],
+                    "STRK": row["strCurrentStreak"],
+                    # Additional fields that match the frontend TeamStanding interface
+                    "WINS": int(row["WINS"]),
+                    "LOSSES": int(row["LOSSES"]),
+                    "HOME": row["HOME"],
+                    "ROAD": row["ROAD"],
+                    "Division": row["Division"],
+                    "ClinchIndicator": row.get("ClinchIndicator", ""),
+                    "DivisionRank": int(row["DivisionRank"]),
+                    "ConferenceRecord": row["ConferenceRecord"],
+                    "DivisionRecord": row["DivisionRecord"]
+                }
+                processed_standings.append(standing)
+            except (ValueError, KeyError) as e:
+                logger.error(f"Error processing standing row: {e}", exc_info=True)
+                continue
+        
+        # Sort standings by conference and playoff rank
+        processed_standings.sort(key=lambda x: (x["Conference"], x["PlayoffRank"]))
         
         result = {
-            "season": season,
-            "season_type": season_type,
-            "standings": standings_list
+            "standings": processed_standings
         }
         
         return json.dumps(result)
         
     except Exception as e:
         logger.error(f"Error in fetch_league_standings_logic: {str(e)}", exc_info=True)
-        return json.dumps({"error": f"Unexpected error retrieving league standings: {str(e)}"})
+        error_msg = str(e) if isinstance(e, Exception) else "Unknown error"
+        return json.dumps({
+            "error": Errors.STANDINGS_API.format(season=season, error=error_msg)
+        })
 
 def fetch_scoreboard_logic(
     game_date: str = datetime.today().strftime('%Y-%m-%d'), # Default to today

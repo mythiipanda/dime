@@ -1,36 +1,57 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Dime - AI-Powered NBA Research Platform
+
+Dime is a modern, AI-powered NBA research and analytics platform that helps basketball enthusiasts, analysts, and fans explore player statistics, team performance, and game insights through an intuitive interface.
+
+## Features
+
+- **AI Research Assistant**: Get instant insights and analysis about players, teams, and games
+- **Player Analytics**: Deep dive into player statistics and performance metrics
+- **Team Analysis**: Track team performance, rankings, and historical data
+- **Game Insights**: Access game predictions, box scores, and historical matchups
+- **Shot Charts**: Visualize shooting patterns and efficiency
+- **Advanced Statistics**: Explore advanced NBA metrics and analytics
+
+## Tech Stack
+
+- **Frontend**: Next.js 14, React, TypeScript
+- **UI**: Tailwind CSS, shadcn/ui components
+- **State Management**: React Hooks
+- **API Integration**: Server-Sent Events (SSE) for real-time updates
 
 ## Getting Started
 
-First, run the development server:
+First, install the dependencies:
+
+```bash
+npm install
+```
+
+Then, run the development server:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Project Structure
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- `app/`: Next.js 14 app directory containing pages and layouts
+- `components/`: Reusable React components
+  - `ui/`: shadcn/ui components
+  - `layout/`: Layout components like navigation
+  - `agent/`: AI research assistant components
+- `lib/`: Utility functions and hooks
+- `public/`: Static assets
 
 ## Learn More
 
-To learn more about Next.js, take a look at the following resources:
+To learn more about the technologies used in this project:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- [Next.js Documentation](https://nextjs.org/docs)
+- [Tailwind CSS](https://tailwindcss.com/docs)
+- [shadcn/ui](https://ui.shadcn.com)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Deployment
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The application can be deployed on [Vercel](https://vercel.com) or any other platform that supports Next.js applications.

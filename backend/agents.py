@@ -3,9 +3,9 @@ from dotenv import load_dotenv
 from agno.agent import Agent
 from agno.models.google import Gemini
 from agno.tools.thinking import ThinkingTools
-from .config import AGENT_MODEL_ID, STORAGE_DB_FILE, AGENT_DEBUG_MODE, CURRENT_SEASON
+from config import AGENT_MODEL_ID, STORAGE_DB_FILE, AGENT_DEBUG_MODE, CURRENT_SEASON
 from nba_api.stats.library.parameters import SeasonTypeAllStar, PerModeDetailed, PerMode36, PerMode48
-from .tools import (
+from tools import (
     get_player_info, get_player_gamelog, get_team_info_and_roster,
     get_player_career_stats, find_games, get_player_awards,
     get_boxscore_traditional, get_boxscore_advanced, get_boxscore_fourfactors,

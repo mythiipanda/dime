@@ -18,7 +18,7 @@ from nba_api.stats.library.parameters import (
     MeasureTypeDetailedDefense
 )
 
-from ..config import DEFAULT_TIMEOUT, ErrorMessages # Use relative import
+from config import DEFAULT_TIMEOUT, ErrorMessages  # Changed to absolute import
 from .utils import _process_dataframe, format_response, retry_on_timeout
 from .player_tools import _find_player_id, find_player_by_name
 from .http_client import nba_session

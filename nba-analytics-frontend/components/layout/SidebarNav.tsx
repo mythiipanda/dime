@@ -2,51 +2,96 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import clsx from 'clsx';
+import { cn } from '@/lib/utils';
 import {
   BotIcon,
   UsersIcon,
-  PackageIcon, // Using PackageIcon as placeholder for Teams/Games for now
+  BarChart2Icon,
+  TrendingUpIcon,
+  TrophyIcon,
+  CalendarIcon,
+  HomeIcon,
+  ActivityIcon,
+  TableIcon,
   LineChartIcon,
+  SearchIcon,
+  HeartIcon,
+  BookOpenIcon,
 } from 'lucide-react';
 
-// Define navigation items
-const navItems = [
-  { href: '/', label: 'Agent Dashboard', icon: BotIcon },
-  { href: '/players', label: 'Players', icon: UsersIcon },
-  { href: '/teams', label: 'Teams', icon: PackageIcon }, // Placeholder icon
-  { href: '/games', label: 'Games', icon: PackageIcon }, // Placeholder icon
-  { href: '/shot-charts', label: 'Shot Charts', icon: LineChartIcon },
+interface NavItem {
+  href: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+}
+
+interface NavSection {
+  title: string;
+  items: NavItem[];
+}
+
+const navSections: NavSection[] = [
+  {
+    title: "Overview",
+    items: [
+      { href: '/dashboard', label: 'Dashboard', icon: HomeIcon },
+      { href: '/ai-assistant', label: 'AI Assistant', icon: BotIcon },
+      { href: '/research', label: 'Research', icon: BookOpenIcon },
+    ]
+  },
+  {
+    title: "Analysis",
+    items: [
+      { href: '/players', label: 'Players', icon: UsersIcon },
+      { href: '/teams', label: 'Teams', icon: TrophyIcon },
+      { href: '/games', label: 'Games', icon: CalendarIcon },
+      { href: '/statistics', label: 'Statistics', icon: BarChart2Icon },
+    ]
+  },
+  {
+    title: "Tools",
+    items: [
+      { href: '/shot-charts', label: 'Shot Charts', icon: LineChartIcon },
+      { href: '/chat', label: 'Chat', icon: ActivityIcon },
+    ]
+  }
 ];
 
 export function SidebarNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="grid items-start px-2 text-sm font-medium lg:px-4">
-      {navItems.map((item) => {
-        const Icon = item.icon;
-        const isActive = pathname === item.href;
-        // Basic active check: exact match for now.
-        // Could be enhanced later e.g., pathname.startsWith(item.href) for nested routes if needed.
+    <nav className="space-y-6">
+      {navSections.map((section) => (
+        <div key={section.title} className="space-y-3">
+          <h4 className="px-4 text-sm font-semibold uppercase tracking-wider text-muted-foreground"> {/* Size 4: text-sm font-semibold */}
+            {section.title}
+          </h4>
+          <div className="space-y-1">
+            {section.items.map((item) => {
+              const Icon = item.icon;
+              const isActive = pathname === item.href;
 
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            className={clsx(
-              "flex items-center gap-3 rounded-lg px-3 py-2 transition-all hover:text-primary",
-              {
-                "bg-muted text-primary": isActive,
-                "text-muted-foreground": !isActive,
-              }
-            )}
-          >
-            <Icon className="h-4 w-4" />
-            {item.label}
-          </Link>
-        );
-      })}
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={cn(
+                    "flex items-center gap-3 rounded-lg px-4 py-2 text-sm font-regular transition-all hover:bg-accent hover:text-accent-foreground",
+                    {
+                      "bg-accent text-accent-foreground": isActive,
+                      "text-muted-foreground": !isActive,
+                    }
+                  )}
+                >
+                  <Icon className="h-4 w-4" />
+                  <span>{item.label}</span>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      ))}
     </nav>
   );
 }

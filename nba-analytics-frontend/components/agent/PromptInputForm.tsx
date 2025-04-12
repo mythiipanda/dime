@@ -1,64 +1,93 @@
+"use client"
+
 // components/agent/PromptInputForm.tsx
-import * as React from 'react';
-import { Textarea } from "@/components/ui/textarea"; // Import Textarea
-import { Button } from "@/components/ui/button";
-import { SendIcon } from "lucide-react"; // Removed unused CornerDownLeftIcon
+import React, { useState, useRef, useEffect } from 'react';
+import { Button } from '@/components/ui/button';
+import { SendIcon, StopCircleIcon } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 interface PromptInputFormProps {
-  inputValue: string;
-  onInputChange: (value: string) => void;
-  onSubmit: (e?: React.FormEvent<HTMLFormElement>) => void;
-  isLoading: boolean;
+  onSubmit: (prompt: string) => void;
+  onStop?: () => void;
+  isLoading?: boolean;
+  className?: string;
 }
 
 export function PromptInputForm({
-  inputValue,
-  onInputChange,
   onSubmit,
-  isLoading,
+  onStop,
+  isLoading = false,
+  className,
 }: PromptInputFormProps) {
-  const textAreaRef = React.useRef<HTMLTextAreaElement>(null);
+  const [prompt, setPrompt] = useState('');
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+    }
+  }, [prompt]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (prompt.trim() && !isLoading) {
+      onSubmit(prompt.trim());
+      setPrompt('');
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto';
+      }
+    }
+  };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault(); // Prevent newline on Enter
-      if (!isLoading && inputValue.trim()) {
-        onSubmit(); // Trigger submit
-      }
+      e.preventDefault();
+      handleSubmit(e);
     }
-    // Allow Shift+Enter for newlines (default behavior)
   };
 
-  // Adjust textarea height dynamically (optional but nice)
-  React.useEffect(() => {
-    if (textAreaRef.current) {
-      textAreaRef.current.style.height = 'auto'; // Reset height
-      textAreaRef.current.style.height = `${textAreaRef.current.scrollHeight}px`; // Set to scroll height
-    }
-  }, [inputValue]);
-
-
   return (
-    <form onSubmit={onSubmit} className="relative overflow-hidden rounded-lg border bg-background focus-within:ring-1 focus-within:ring-ring">
-       <Textarea
-          ref={textAreaRef}
-          placeholder="Type your NBA query here... (Shift+Enter for newline)"
-          value={inputValue}
-          onChange={(e) => onInputChange(e.target.value)} // Use standard onChange
-          onKeyDown={handleKeyDown} // Add keydown handler
+    <form
+      onSubmit={handleSubmit}
+      className={cn(
+        'flex flex-col space-y-2 w-full max-w-4xl mx-auto p-4',
+        className
+      )}
+    >
+      <div className="flex items-end space-x-2">
+        <textarea
+          ref={textareaRef}
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Ask about NBA players, teams, games, or stats..."
+          className="flex-1 min-h-[40px] max-h-[200px] p-2 rounded-md border border-input bg-background resize-none" /* Spacing: rounded-md */
           disabled={isLoading}
-          rows={1} // Start with 1 row
-          className="min-h-[60px] w-full resize-none border-0 p-3 shadow-none focus-visible:ring-0"
+          rows={1}
         />
-      <div className="flex items-center p-3 pt-0">
-         {/* Optional: Add other controls like clear button here */}
-         <span className="ml-auto text-xs text-muted-foreground">
-           Enter to send, Shift+Enter for newline
-         </span>
-        <Button type="submit" size="sm" className="ml-2" disabled={isLoading || !inputValue.trim()}>
-          <SendIcon className="h-4 w-4" />
-          <span className="sr-only">Send</span> {/* Accessibility */}
-        </Button>
+        <div className="flex-shrink-0">
+          {isLoading && onStop ? (
+            <Button
+              type="button"
+              variant="destructive"
+              size="icon"
+              onClick={onStop}
+              className="h-10 w-10"
+            >
+              <StopCircleIcon className="h-4 w-4" />
+            </Button>
+          ) : (
+            <Button
+              type="submit"
+              disabled={!prompt.trim() || isLoading}
+              className="h-10 w-10"
+              size="icon"
+            >
+              <SendIcon className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
       </div>
     </form>
   );

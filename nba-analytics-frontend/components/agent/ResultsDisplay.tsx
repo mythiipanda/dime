@@ -115,7 +115,7 @@ export function ResultsDisplay({ isLoading, error, response, resultData }: Resul
            <CardContent>
              {/* Render response using ReactMarkdown */}
              {/* Wrap ReactMarkdown in a div for styling */}
-             <div className="prose prose-sm dark:prose-invert max-w-none">
+             <div className="prose prose-sm dark:prose-invert max-w-none font-regular prose-strong:font-semibold prose-code:font-regular"> {/* Typography: Base regular, strong semibold, code regular */}
                <ReactMarkdown>{response}</ReactMarkdown>
              </div>
            </CardContent>
@@ -126,9 +126,9 @@ export function ResultsDisplay({ isLoading, error, response, resultData }: Resul
 
   // Default initial state (before any interaction)
   return (
-    <div className="flex flex-1 items-center justify-center rounded-lg border border-dashed shadow-sm p-4">
+    <div className="flex flex-1 items-center justify-center rounded-md border border-dashed shadow-sm p-4"> {/* Spacing: rounded-md */}
       <div className="flex flex-col items-center gap-1 text-center">
-        <h3 className="text-2xl font-bold tracking-tight">
+        <h3 className="text-2xl font-semibold tracking-tight"> {/* Typography: font-semibold (Size 1) */}
           Ask the NBA Agent
         </h3>
         <p className="text-sm text-muted-foreground">

@@ -14,7 +14,7 @@ export function ProgressDisplay({ progressSteps }: ProgressDisplayProps) {
     <Card className="mb-4 bg-secondary/50">
       <CardHeader><CardTitle className="text-sm">Progress</CardTitle></CardHeader>
       <CardContent>
-        <ul className="list-disc pl-5 text-xs text-muted-foreground space-y-1">
+        <ul className="list-disc pl-5 text-sm text-muted-foreground space-y-1"> {/* Typography: text-sm */}
           {progressSteps.map((step, index) => <li key={index}>{step}</li>)}
         </ul>
       </CardContent>

@@ -1,7 +1,7 @@
 import logging
 from fastapi import APIRouter, HTTPException
 from typing import Dict, Any, Optional
-from schemas import TeamRequest
+from .schemas import TeamRequest
 from api_tools.team_tools import (
     fetch_team_info_and_roster_logic,
     fetch_team_stats_logic
@@ -11,6 +11,7 @@ from api_tools.team_tracking import (
     fetch_team_rebounding_stats_logic,
     fetch_team_shooting_stats_logic
 )
+from config import DEFAULT_TIMEOUT, CURRENT_SEASON, ErrorMessages as Errors
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

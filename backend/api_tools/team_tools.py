@@ -3,10 +3,10 @@ import json
 from typing import Optional, Dict, List, Tuple, Any
 import pandas as pd
 from nba_api.stats.static import teams
-from nba_api.stats.endpoints import teaminfocommon, commonteamroster, teamdashboardbygeneralsplits, teamdashptpass
+from nba_api.stats.endpoints import teaminfocommon, commonteamroster, teamdashboardbygeneralsplits, teamdashptpass, teamyearbyyearstats
 from nba_api.stats.library.parameters import LeagueID, SeasonTypeAllStar
 
-from ..config import DEFAULT_TIMEOUT, CURRENT_SEASON, ErrorMessages as Errors # Use relative import
+from config import DEFAULT_TIMEOUT, CURRENT_SEASON, ErrorMessages as Errors
 from .utils import _process_dataframe, _validate_season_format # Use relative import for utils too
 
 logger = logging.getLogger(__name__)

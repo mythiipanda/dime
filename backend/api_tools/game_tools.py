@@ -8,7 +8,7 @@ from nba_api.stats.endpoints import leaguegamefinder, boxscoretraditionalv3, pla
 from nba_api.stats.library.parameters import LeagueID, SeasonTypeNullable, SeasonNullable
 
 from .utils import _process_dataframe
-from ..config import DEFAULT_TIMEOUT, MAX_GAMES_TO_RETURN, ErrorMessages as Errors # Use relative import
+from config import DEFAULT_TIMEOUT, MAX_GAMES_TO_RETURN, ErrorMessages as Errors  # Changed to absolute import
 
 logger = logging.getLogger(__name__)
 
