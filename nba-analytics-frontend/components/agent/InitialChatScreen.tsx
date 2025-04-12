@@ -10,10 +10,10 @@ import {
   TrendingUpIcon,
   UserIcon,
   UsersIcon,
-  SearchIcon,
   StarIcon,
   TrophyIcon
 } from "lucide-react"
+import { PromptInputForm } from "./PromptInputForm"
 
 const EXAMPLE_PROMPTS = [
   {
@@ -56,9 +56,11 @@ const EXAMPLE_PROMPTS = [
 
 interface InitialChatScreenProps {
   onExampleClick: (prompt: string) => void
+  onSubmit: (prompt: string) => void
+  isLoading?: boolean
 }
 
-export function InitialChatScreen({ onExampleClick }: InitialChatScreenProps) {
+export function InitialChatScreen({ onExampleClick, onSubmit, isLoading }: InitialChatScreenProps) {
   return (
     <div className="space-y-6">
       {/* Welcome Section */}
@@ -69,13 +71,12 @@ export function InitialChatScreen({ onExampleClick }: InitialChatScreenProps) {
         </p>
       </div>
 
-      {/* Search Bar */}
-      <div className="relative">
-        <SearchIcon className="absolute left-4 top-3 h-4 w-4 text-muted-foreground" />
-        <input
-          type="text"
-          placeholder="Try 'Who are the top scorers this season?' or click an example below"
-          className="w-full pl-10 pr-4 py-2 rounded-full border bg-background"
+      {/* Prompt Input Form */}
+      <div className="max-w-3xl mx-auto">
+        <PromptInputForm 
+          onSubmit={onSubmit}
+          isLoading={isLoading}
+          className="shadow-lg"
         />
       </div>
 

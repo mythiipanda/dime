@@ -19,7 +19,7 @@ STORAGE_DB_FILE = os.getenv("STORAGE_DB_FILE", "agno_storage.db")
 AGENT_DEBUG_MODE = os.getenv("AGENT_DEBUG_MODE", "false").lower() == "true"
 
 # Constants
-CURRENT_SEASON = "2023-24"
+CURRENT_SEASON = "2024-25"
 DEFAULT_TIMEOUT = 30
 HEADSHOT_BASE_URL = "https://ak-static.cms.nba.com/wp-content/uploads/headshots/nba/latest/260x190"
 DEFAULT_PLAYER_SEARCH_LIMIT = 10

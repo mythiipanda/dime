@@ -52,13 +52,13 @@ app.add_middleware(
 )
 
 # Include routers
-app.include_router(sse_router, tags=["sse"])  # Mount SSE router at root for /ask endpoint
+app.include_router(sse_router, prefix="/api", tags=["sse"])  # Mount SSE router under /api prefix
 app.include_router(player_router, prefix="/api", tags=["player"])
 app.include_router(analyze_router, prefix="/api/analyze", tags=["analyze"])
-app.include_router(team_router, prefix="/api/team", tags=["team"])
-app.include_router(game_router, prefix="/api/game", tags=["game"])
-app.include_router(player_tracking_router, prefix="/api/player-tracking", tags=["player-tracking"])
-app.include_router(team_tracking_router, prefix="/api/team-tracking", tags=["team-tracking"])
+app.include_router(team_router, prefix="/api", tags=["team"])
+app.include_router(game_router, prefix="/api", tags=["game"])
+app.include_router(player_tracking_router, prefix="/api/player/tracking", tags=["player_tracking"])
+app.include_router(team_tracking_router, prefix="/api/team/tracking", tags=["team_tracking"])
 app.include_router(standings_router, prefix="/api", tags=["standings"]) # Register standings router
 
 @app.get("/")

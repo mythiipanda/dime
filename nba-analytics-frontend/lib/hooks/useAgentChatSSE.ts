@@ -1,14 +1,23 @@
 // lib/hooks/useAgentChatSSE.ts
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 
 interface UseAgentChatSSEProps {
-  apiUrl: string;
+  apiUrl: string; // Keep for potential future use, though currently overridden
 }
 
 // Define ChatMessage interface (Exported from this file now)
 export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
+  event?: string;
+  status?: string;
+  toolCalls?: {
+    type: string;
+    function: {
+      name: string;
+      arguments: string;
+    };
+  }[];
 }
 
 // Define a type for structured results (mirroring ResultsDisplay)
@@ -22,8 +31,8 @@ interface AgentChatSSEState {
   error: string | null;
   progress: string[];
   chatHistory: ChatMessage[]; // Manages chat history
-  resultData: StructuredResult | null; // Use specific type
-  chatText: string; // Add chatText for intermediate updates
+  resultData: null; // Removed since we're not using structured results
+  // chatText is removed as progress array and chatHistory handle status/content
 }
 
 export function useAgentChatSSE({ apiUrl }: UseAgentChatSSEProps) {
@@ -31,150 +40,172 @@ export function useAgentChatSSE({ apiUrl }: UseAgentChatSSEProps) {
     isLoading: false,
     error: null,
     progress: [],
-    chatHistory: [], // Initialize chat history
-    resultData: null,
-    chatText: "Agent thinking...", // Initialize chatText
+    chatHistory: [],
+    resultData: null
   });
+
   const eventSourceRef = useRef<EventSource | null>(null);
 
   const submitPrompt = useCallback((prompt: string) => {
     if (!prompt.trim() || state.isLoading) return;
 
-    console.log("Submitting prompt via Chat hook:", prompt);
-    const userMessage: ChatMessage = { role: 'user', content: prompt };
-    // Add user message and reset other relevant state parts
+    // Add user message immediately
     setState(prev => ({
       ...prev,
       isLoading: true,
       error: null,
-      progress: ["Connecting to agent..."],
-      chatText: "Agent thinking...",
-      chatHistory: [...prev.chatHistory, userMessage],
-      resultData: null,
+      chatHistory: [
+        ...prev.chatHistory,
+        { role: 'user', content: prompt }
+      ]
     }));
 
+    console.log('Starting new SSE connection for prompt:', prompt);
+
+    // Close any existing connection
     if (eventSourceRef.current) {
+      console.log('Closing existing SSE connection');
       eventSourceRef.current.close();
     }
 
-    // Construct the full URL including the /api prefix
-    // Always use relative /api path. Rewrite handles local dev.
-    // NOTE: The `apiUrl` prop is now ignored by this hook, as the path is fixed.
-    // Consider removing `apiUrl` prop if no longer needed elsewhere.
-    const fullApiUrl = `http://localhost:8000/ask?prompt=${encodeURIComponent(prompt)}`;
-    console.log(`Chat SSE connecting to: ${fullApiUrl}`); // Add log
-    const eventSource = new EventSource(fullApiUrl);
+    // Create new EventSource connection
+    const eventSource = new EventSource(`/api/ask?prompt=${encodeURIComponent(prompt)}`);
     eventSourceRef.current = eventSource;
 
+    // Handle incoming messages
     eventSource.onmessage = (event) => {
-      console.log("SSE Message (Chat hook):", event.data);
+      console.log('Received SSE message:', event.data);
+      
       try {
         const data = JSON.parse(event.data);
-        if (data.type === 'error') {
-          console.error("Received error from backend stream (Chat hook):", data.message);
-          setState(prev => ({
-            ...prev,
-            error: data.message || "Unknown error from backend stream.",
-            progress: [...prev.progress, `Error: ${data.message || "Unknown"}`],
-            isLoading: false,
-          }));
-          eventSourceRef.current?.close();
-          eventSourceRef.current = null;
-        } else if (data.type === 'agent_chunk') {
-          const progressMessage = data.message || "Processing...";
-          setState(prev => ({
-            ...prev,
-            progress: [...prev.progress, progressMessage],
-            chatText: progressMessage,
-          }));
-        } else if (data.type === 'agent_step') {
-          // Handle streaming content for chat history
-          setState(prev => {
-            const lastMessage = prev.chatHistory[prev.chatHistory.length - 1];
-            let updatedHistory: ChatMessage[];
-            if (lastMessage?.role === 'assistant') {
-              // Ensure a new array reference is created by copying
-              const historyCopy = [...prev.chatHistory];
-              historyCopy[historyCopy.length - 1] = { ...lastMessage, content: lastMessage.content + data.message };
-              updatedHistory = historyCopy;
-            } else {
-              // Ensure a new array reference is created
-              updatedHistory = [...prev.chatHistory, { role: 'assistant', content: data.message }];
-            }
-            return { ...prev, chatHistory: updatedHistory };
-          });
-        } else if (data.type === 'status' || data.type === 'tool_start' || data.type === 'tool_end' || data.type === 'thinking' || data.type === 'tool_call' || data.type === 'reasoning') {
-           const progressMessage = data.message || `Processing: ${data.type}`;
-           setState(prev => ({
-             ...prev,
-             progress: [...prev.progress, progressMessage],
-             chatText: progressMessage,  // Update chat text with status
-           }));
-        }
-      } catch (e) {
-    eventSource.addEventListener('status', (event: MessageEvent) => {
-      console.log("SSE Status Event (Chat hook):", event.data);
-      try {
-        const data = JSON.parse(event.data);
-        console.log("Parsed status event data:", data);
-        const progressMessage = data.message || "Processing...";
+        console.log('Parsed SSE data:', data);
+
+        // Handle regular message updates
         setState(prev => {
-          console.log("Updating chatText to:", progressMessage);
-          return {
+          console.log('Current state before update:', prev);
+          
+          let updatedProgress = [...prev.progress];
+          if (data.progress) {
+            updatedProgress = [...prev.progress, `Progress: ${data.progress}%`];
+          }
+
+          let updatedHistory = [...prev.chatHistory];
+          // Update the last assistant message if it exists
+          if (updatedHistory.length > 0) {
+            const lastMessage = updatedHistory[updatedHistory.length - 1];
+            if (lastMessage.role === 'assistant') {
+              // For RunResponse events, append the content
+              if (data.event === "RunResponse") {
+                if (data.content) {
+                  console.log('Updating RunResponse content:', data.content);
+                  updatedHistory[updatedHistory.length - 1] = {
+                    ...lastMessage,
+                    content: lastMessage.content + data.content,
+                    event: data.event,
+                    status: data.status,
+                    toolCalls: data.toolCalls
+                  };
+                }
+              } else if (data.content) {
+                // For other events, replace the content if it exists
+                console.log('Updating message content:', data.content);
+                updatedHistory[updatedHistory.length - 1] = {
+                  ...lastMessage,
+                  content: data.content,
+                  event: data.event,
+                  status: data.status,
+                  toolCalls: data.toolCalls
+                };
+              }
+            } else {
+              // If last message was from user, add new assistant message
+              console.log('Adding new assistant message');
+              updatedHistory.push({
+                role: 'assistant',
+                content: data.content || '',
+                event: data.event,
+                status: data.status,
+                toolCalls: data.toolCalls
+              });
+            }
+          } else {
+            // If no messages exist, add first assistant message
+            console.log('Adding first assistant message');
+            updatedHistory.push({
+              role: 'assistant',
+              content: data.content || '',
+              event: data.event,
+              status: data.status,
+              toolCalls: data.toolCalls
+            });
+          }
+
+          const newState = {
             ...prev,
-            progress: [...prev.progress, progressMessage],
-            chatText: progressMessage,
+            progress: updatedProgress,
+            chatHistory: updatedHistory,
+            isLoading: data.status !== 'complete'
           };
+          
+          console.log('New state after update:', newState);
+          return newState;
         });
+
       } catch (e) {
-        console.warn("Failed to parse status SSE event", e);
-      }
-    });
-        console.error("Failed to parse SSE data (Chat hook):", e);
-        setState(prev => ({ ...prev, progress: [...prev.progress, event.data] }));
+        console.error('Failed to parse SSE data:', e);
+        setState(prev => ({ 
+          ...prev, 
+          progress: [...prev.progress, "Received unparseable message."] 
+        }));
       }
     };
 
+    // Handle final event
     eventSource.addEventListener('final', (event: MessageEvent) => {
-      console.log("SSE Final Event (Chat hook):", event.data);
+      console.log('Received final SSE event:', event.data);
+      
       try {
         const data = JSON.parse(event.data);
-        if (data.type === 'final_response') {
-          const finalContent = data.content;
-          // Calculate final history *before* calling setState
-          // Use a function form of setState to get the most recent state
-          setState(prev => {
-              const lastMessage = prev.chatHistory[prev.chatHistory.length - 1];
-              let finalHistory: ChatMessage[];
-              if (lastMessage?.role === 'assistant') {
-                  // Ensure a new array reference is created by copying
-                  const historyCopy = [...prev.chatHistory];
-                  historyCopy[historyCopy.length - 1] = { ...lastMessage, content: finalContent };
-                  finalHistory = historyCopy;
-              } else {
-                  // Ensure a new array reference is created
-                  finalHistory = [...prev.chatHistory, { role: 'assistant', content: finalContent }];
+        setState(prev => {
+          console.log('Processing final event, current state:', prev);
+          
+          let finalHistory = [...prev.chatHistory];
+          
+          // Update or add the final assistant message
+          if (finalHistory.length > 0 && finalHistory[finalHistory.length - 1].role === 'assistant') {
+            finalHistory = [
+              ...finalHistory.slice(0, -1),
+              {
+                role: 'assistant',
+                content: data.content,
+                status: 'complete',
+                event: 'final'
               }
-              // Update state with the calculated final history
-              return {
-                ...prev,
-                chatHistory: finalHistory,
-                chatText: finalContent,
-                progress: [...prev.progress, "Final response received."],
-                isLoading: false,
-                // resultData: parseStructuredData(finalContent), // TODO
-              };
-          });
-        } else {
-           setState(prev => ({
-             ...prev,
-             error: "Received final event with unexpected structure.",
-             progress: [...prev.progress, "Final event received (unexpected structure)."],
-             isLoading: false,
-           }));
-        }
+            ];
+          } else {
+            finalHistory = [
+              ...finalHistory,
+              {
+                role: 'assistant',
+                content: data.content,
+                status: 'complete',
+                event: 'final'
+              }
+            ];
+          }
+
+          const finalState = {
+            ...prev,
+            chatHistory: finalHistory,
+            progress: [...prev.progress, "Final response received."],
+            isLoading: false
+          };
+          
+          console.log('Final state:', finalState);
+          return finalState;
+        });
       } catch (e) {
-        console.error("Failed to parse final SSE data (Chat hook):", e);
+        console.error('Failed to parse final SSE data:', e);
         setState(prev => ({
           ...prev,
           error: "Failed to parse final event content.",
@@ -186,44 +217,61 @@ export function useAgentChatSSE({ apiUrl }: UseAgentChatSSEProps) {
       eventSourceRef.current = null;
     });
 
-    eventSource.onerror = (err) => {
-      console.error("EventSource failed (Chat hook):", err);
-      if (eventSourceRef.current && state.isLoading && !state.error) {
-         setState(prev => ({
-           ...prev,
-           error: "Connection to agent lost or failed.",
-           progress: [...prev.progress, "Error: Connection lost."],
-           isLoading: false,
-         }));
-         eventSourceRef.current = null;
-      } else {
-         console.log("EventSource closed, likely intentionally (Chat hook).");
-      }
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-        eventSourceRef.current = null;
-      }
+    // Handle connection error
+    eventSource.onerror = (error) => {
+      console.error('SSE connection error:', error);
+      setState(prev => ({
+        ...prev,
+        error: "Connection error. Please try again.",
+        isLoading: false
+      }));
+      eventSource.close();
+      eventSourceRef.current = null;
     };
-  // Include chatHistory in dependency array
-  }, [apiUrl, state.isLoading, state.error]); // Removed state.chatHistory
+  }, [state.isLoading]);
 
+  // Cleanup function
   const closeConnection = useCallback(() => {
     if (eventSourceRef.current) {
-      console.log("Manually closing SSE connection (Chat hook).");
+      console.log('Cleaning up SSE connection');
       eventSourceRef.current.close();
       eventSourceRef.current = null;
     }
   }, []);
 
-  // Return state values individually
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      closeConnection();
+    };
+  }, [closeConnection]);
+
   return {
     isLoading: state.isLoading,
     error: state.error,
     progress: state.progress,
     chatHistory: state.chatHistory,
     resultData: state.resultData,
-    chatText: state.chatText,
     submitPrompt,
     closeConnection
   };
 }
+
+// Helper function (example - implement actual parsing logic if needed)
+// function parseStructuredData(content: string): StructuredResult | null {
+//   try {
+//     // Attempt to find JSON within the content or use specific markers
+//     // This is a placeholder - real implementation needed
+//     const potentialJson = content.match(/```json\n([\s\S]*?)\n```/);
+//     if (potentialJson && potentialJson[1]) { // Corrected: Use &&
+//       const parsed = JSON.parse(potentialJson[1]);
+//       // Basic validation
+//       if (parsed.type && Array.isArray(parsed.data)) { // Corrected: Use &&
+//         return parsed as StructuredResult;
+//       }
+//     }
+//   } catch (e) {
+//     console.warn("Could not parse structured data from content:", e);
+//   }
+//   return null;
+// }

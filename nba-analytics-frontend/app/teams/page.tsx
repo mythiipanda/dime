@@ -9,7 +9,9 @@ interface TeamsPageProps {
 }
 
 export default async function TeamsPage({ searchParams }: TeamsPageProps) {
-  const season = typeof searchParams.season === 'string' ? searchParams.season : "2024-25";
+  // Await searchParams before accessing its properties
+  const params = await Promise.resolve(searchParams);
+  const season = typeof params.season === 'string' ? params.season : "2024-25";
 
   try {
     const { eastern, western } = await getTeamsByConference(season);

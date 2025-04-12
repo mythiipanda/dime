@@ -584,7 +584,6 @@ nba_agent = Agent(
     num_history_responses=10,
     debug_mode=AGENT_DEBUG_MODE,
     show_tool_calls=True,
-    markdown=True,
     stream=True,
     stream_intermediate_steps=True,
     resolve_context=True,

@@ -7,7 +7,7 @@ from rich.pretty import pprint
 from teams import nba_analysis_team
 from dataclasses import asdict, is_dataclass
 from agno.agent import RunResponse
-from typing import Iterator
+from typing import Iterator, Dict, Any
 from agno.utils.common import dataclass_to_dict
 
 logger = logging.getLogger(__name__)
@@ -25,7 +25,6 @@ def recursive_asdict(obj):
     elif isinstance(obj, dict):
         return {key: recursive_asdict(value) for key, value in obj.items()}
     elif hasattr(obj, "__dict__"):
-        # Fallback for objects with __dict__ but not dataclasses
         return recursive_asdict(vars(obj))
     else:
         return obj
@@ -34,91 +33,122 @@ def format_sse(data: str, event: str | None = None) -> str:
     msg = f"data: {data}\n\n"
     if event is not None:
         msg = f"event: {event}\n{msg}"
-    # Add padding to force flush
-    msg += ":" + (" " * 2048) + "\n\n"
     return msg
+
+def format_message_data(chunk_dict: Dict[Any, Any]) -> Dict[str, Any]:
+    event_type = chunk_dict.get("event")
+    content = chunk_dict.get("content")
+    tools = chunk_dict.get("tools", [])
+    
+    message_data = {
+        "role": "assistant",
+        "content": content or "",
+        "event": event_type,
+        "status": "thinking",
+        "toolCalls": []
+    }
+
+    # Handle different event types
+    if event_type == "RunStarted":
+        message_data["status"] = "thinking"
+        message_data["content"] = "Starting to process your request..."
+    elif event_type == "RunResponse":
+        # Don't modify the content for RunResponse events
+        message_data["status"] = "thinking"
+    elif event_type == "ToolCallStarted":
+        for tool in tools:
+            message_data["toolCalls"].append({
+                "tool_name": tool.get("tool_name", "Unknown Tool"),
+                "status": "started"
+            })
+    elif event_type == "ToolCallCompleted":
+        for tool in tools:
+            message_data["toolCalls"].append({
+                "tool_name": tool.get("tool_name", "Unknown Tool"),
+                "status": "completed",
+                "content": tool.get("content", "")
+            })
+    elif event_type == "RunCompleted":
+        message_data["status"] = "complete"
+    elif event_type == "Error":
+        message_data["status"] = "error"
+        message_data["content"] = content or "An error occurred"
+
+    # Calculate progress
+    if event_type in ["RunStarted", "ToolCallStarted", "ToolCallCompleted", "RunCompleted"]:
+        progress_map = {
+            "RunStarted": 10,
+            "ToolCallStarted": 30,
+            "ToolCallCompleted": 70,
+            "RunCompleted": 100
+        }
+        message_data["progress"] = progress_map.get(event_type, 0)
+
+    return message_data
 
 @router.get("/ask")
 async def ask_agent_keepalive_sse(request: Request, prompt: str):
-    logger.info(f"Received GET /ask_team request with prompt: '{prompt}'")
+    logger.info(f"Received GET /ask request with prompt: '{prompt}'")
     agent_instance = nba_analysis_team
 
     async def keepalive_sse_generator():
-        logger.info(f"START keepalive_sse_generator for prompt: '{prompt}'")
         try:
             logger.info(f"Starting streaming NBA agent for prompt: {prompt}")
             run_stream = await agent_instance.arun(prompt, stream=True, stream_intermediate_steps=True)
+            
             async for chunk in run_stream:
                 chunk_dict = recursive_asdict(chunk)
-                event_type = chunk_dict.get("event")
-                content = chunk_dict.get("content")
-                member_responses = chunk_dict.get("member_responses") or []
-                message = ""
+                message_data = format_message_data(chunk_dict)
+                
+                logger.debug(f"Sending SSE chunk: {json.dumps(message_data)}")
+                # Send the chunk immediately and ensure it's flushed
+                yield format_sse(json.dumps(message_data))
+                await asyncio.sleep(0)  # Allow other tasks to run and ensure streaming
 
-                if event_type == "RunStarted":
-                    message = "Agent run started."
-                elif event_type == "ToolCallStarted":
-                    tools = chunk_dict.get("tools") or []
-                    if tools:
-                        tool_names = ", ".join(t.get("tool_name", "unknown") for t in tools)
-                        message = f"Calling tool(s): {tool_names}"
-                    else:
-                        message = "Tool call started."
-                elif event_type == "ToolCallCompleted":
-                    tools = chunk_dict.get("tools") or []
-                    if tools:
-                        tool_names = ", ".join(t.get("tool_name", "unknown") for t in tools)
-                        message = f"Tool(s) completed: {tool_names}"
-                    else:
-                        message = "Tool call completed."
-                elif event_type in ("RunResponse", "RunCompleted"):
-                    message = content or ""
-                else:
-                    message = content or event_type or "Agent update."
+                # Only send final event for RunCompleted
+                if chunk_dict.get("event") == "RunCompleted":
+                    # Use the same content as the last message
+                    final_data = {
+                        "role": "assistant",
+                        "content": message_data["content"],
+                        "status": "complete",
+                        "progress": 100
+                    }
+                    yield format_sse(json.dumps(final_data), event="final")
+                    await asyncio.sleep(0)  # Ensure final message is sent
 
-                # Append member responses summaries
-                for mr in member_responses:
-                    mr_content = mr.get("content")
-                    if mr_content:
-                        message += f"\nMember response: {mr_content[:200]}"
-
-                logger.debug(f"Streaming chunk: {chunk_dict}")
-                yield format_sse(json.dumps({
-                    "type": "agent_chunk",
-                    "data": chunk_dict,
-                    "message": message
-                }))
-            logger.info(f"Streaming Agno agent completed for prompt: {prompt}")
-            final_content = chunk.content if 'chunk' in locals() else None
-
-            if final_content is None:
-                logger.error("Agent did not produce a recognizable final response.")
-                yield format_sse(json.dumps({"type": "error", "message": "Agent did not produce a recognizable final response."}))
-            else:
-                logger.debug(f"Sending final content via SSE: {final_content[:100]}...")
-                final_sse_data = {"type": "final_response", "content": final_content}
-                yield format_sse(json.dumps(final_sse_data), event="final")
         except Exception as e:
             logger.exception("Error during SSE generation")
-            error_detail = f"Error processing agent request: {str(e)}"
-            try:
-                yield format_sse(json.dumps({"type": "error", "message": error_detail}))
-            except Exception as send_err:
-                logger.error(f"Failed to send error message: {send_err}")
+            error_data = {
+                "role": "assistant",
+                "content": f"Error: {str(e)}",
+                "status": "error",
+                "progress": 0
+            }
+            yield format_sse(json.dumps(error_data))
         finally:
             logger.info("END keepalive_sse_generator.")
 
+    # Set up streaming response with appropriate headers
     headers = {
-        "Content-Type": "text/event-stream; charset=utf-8",
-        "Cache-Control": "no-cache",
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache, no-transform",
         "Connection": "keep-alive",
         "X-Accel-Buffering": "no",
+        "Transfer-Encoding": "chunked"
     }
-    return StreamingResponse(keepalive_sse_generator(), headers=headers)
+
+    # Return a streaming response with a larger chunk size and immediate flushing
+    return StreamingResponse(
+        keepalive_sse_generator(),
+        headers=headers,
+        media_type="text/event-stream"
+    )
+
 @router.get("/test_stream")
 async def test_agent_stream(request: Request, prompt: str):
     logger.info(f"Received GET /test_streaming request with prompt: '{prompt}'")
-    run_stream: Iterator[RunResponse] = await nba_analysis_team.arun(  # Now points to nba_agent
+    run_stream: Iterator[RunResponse] = await nba_analysis_team.arun(
         prompt,
         stream=True,
         stream_intermediate_steps=True,

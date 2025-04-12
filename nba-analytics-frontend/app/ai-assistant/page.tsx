@@ -1,192 +1,92 @@
+// nba-analytics-frontend/app/ai-assistant/page.tsx
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import React, { useEffect, useRef } from 'react';
+import { useAgentChatSSE, ChatMessage } from '@/lib/hooks/useAgentChatSSE';
+import { InitialChatScreen } from '@/components/agent/InitialChatScreen';
+import { PromptInputForm } from '@/components/agent/PromptInputForm';
+import { ChatMessageDisplay } from '@/components/agent/ChatMessageDisplay';
+import { ErrorDisplay } from '@/components/agent/ErrorDisplay';
+import { ProgressDisplay } from '@/components/agent/ProgressDisplay'; // Assuming this component exists
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Search, Send, Brain, TrendingUp, Activity, Trophy } from "lucide-react";
-import { cn } from "@/lib/utils";
+// import { Separator } from "@/components/ui/separator"; // Component not found, needs to be added via shadcn CLI
 
-interface Message {
-  role: "user" | "assistant";
-  content: string;
-}
+// Renamed function component
+export default function AiAssistantPage() {
+  const {
+    isLoading,
+    error,
+    progress,
+    chatHistory,
+    submitPrompt,
+    closeConnection, // Get closeConnection if needed for cleanup
+  } = useAgentChatSSE({ apiUrl: '/ask' }); // apiUrl is technically ignored by the hook now
 
-export default function AIAssistantPage() {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
-
+  // Scroll to bottom whenever chatHistory changes
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
-
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (!input.trim() || isLoading) return;
-
-    const userMessage: Message = { role: "user", content: input };
-    setMessages((prev) => [...prev, userMessage]);
-    setInput("");
-    setIsLoading(true);
-
-    try {
-      // TODO: Implement actual API call here
-      const response = await new Promise((resolve) => 
-        setTimeout(() => resolve({ content: "This is a sample response from the AI assistant." }), 1000)
-      );
-      
-      const assistantMessage: Message = { 
-        role: "assistant", 
-        content: (response as any).content 
-      };
-      setMessages((prev) => [...prev, assistantMessage]);
-    } catch (error) {
-      console.error("Error:", error);
-      const errorMessage: Message = { 
-        role: "assistant", 
-        content: "Sorry, I encountered an error. Please try again." 
-      };
-      setMessages((prev) => [...prev, errorMessage]);
-    } finally {
-      setIsLoading(false);
+    if (scrollAreaRef.current) {
+      // Use setTimeout to allow the DOM to update before scrolling
+      setTimeout(() => {
+        if (scrollAreaRef.current) {
+           scrollAreaRef.current.scrollTo({ top: scrollAreaRef.current.scrollHeight, behavior: 'smooth' });
+        }
+      }, 100); // Small delay might be needed
     }
+  }, [chatHistory]);
+
+  // Optional: Close SSE connection on component unmount
+  useEffect(() => {
+    return () => {
+      closeConnection();
+    };
+  }, [closeConnection]);
+
+  const handlePromptSubmit = (prompt: string) => {
+    submitPrompt(prompt);
   };
 
-  const handleExampleClick = (query: string) => {
-    setInput(query);
+  const handleExamplePromptClick = (prompt: string) => {
+     handlePromptSubmit(prompt);
   };
 
-  const categories = [
-    {
-      title: "Player Analysis",
-      icon: Brain,
-      queries: [
-        "Compare LeBron James and Kevin Durant's stats this season",
-        "Show me Steph Curry's shooting percentages",
-        "Who are the top 3-point shooters this year?"
-      ]
-    },
-    {
-      title: "Team Performance",
-      icon: TrendingUp,
-      queries: [
-        "Which team has the best defensive rating?",
-        "Compare Lakers vs Warriors head-to-head",
-        "Show me the Celtics' win streak"
-      ]
-    },
-    {
-      title: "Game Analysis",
-      icon: Activity,
-      queries: [
-        "Analyze last night's Bucks vs Nets game",
-        "What were the key factors in the Heat's victory?",
-        "Show me clutch time statistics"
-      ]
-    },
-    {
-      title: "League Leaders",
-      icon: Trophy,
-      queries: [
-        "Who leads the NBA in assists?",
-        "Show me the top 5 scorers",
-        "Who has the most double-doubles?"
-      ]
-    }
-  ];
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)] bg-background">
-      <div className="flex-1 container py-6 space-y-6 overflow-hidden">
-        <div className="space-y-2">
-          <h1 className="text-3xl font-bold tracking-tight">Dime Assistant</h1>
-          <p className="text-muted-foreground">
-            Your AI-powered NBA research companion. Ask questions about players, teams, and games to get instant insights.
+    <div className="flex flex-col h-[calc(100vh-theme(space.24))]"> {/* Adjust height as needed */}
+      {/* Chat messages area */}
+      <ScrollArea className="flex-grow p-4" ref={scrollAreaRef}>
+        {chatHistory.length === 0 && !isLoading && !error ? (
+          <InitialChatScreen 
+            onExampleClick={handleExamplePromptClick}
+            onSubmit={handlePromptSubmit}
+            isLoading={isLoading}
+          />
+        ) : (
+          <>
+            {chatHistory.map((msg, index) => (
+              <ChatMessageDisplay 
+                key={index} 
+                message={msg} 
+                isLatest={index === chatHistory.length - 1}
+              />
+            ))}
+            {error && <ErrorDisplay error={error} />}
+          </>
+        )}
+      </ScrollArea>
+
+      {/* <Separator /> */} {/* Component not found, needs to be added via shadcn CLI */}
+
+      {/* Input area - only show when there's chat history */}
+      {chatHistory.length > 0 && (
+        <div className="p-4 space-y-4">
+          <PromptInputForm onSubmit={handlePromptSubmit} isLoading={isLoading} />
+          <p className="text-xs text-center text-muted-foreground">
+            AI may produce inaccurate information. Verify important details.
           </p>
         </div>
-
-        {messages.length === 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {categories.map((category) => (
-              <Card key={category.title} className="bg-card hover:bg-card/80 transition-colors">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    {<category.icon className="h-5 w-5" />}
-                    {category.title}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  {category.queries.map((query) => (
-                    <Button
-                      key={query}
-                      variant="ghost"
-                      className="w-full justify-start text-left h-auto whitespace-normal"
-                      onClick={() => handleExampleClick(query)}
-                    >
-                      {query}
-                    </Button>
-                  ))}
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        ) : (
-          <ScrollArea className="flex-1 pr-4 -mr-4">
-            <div className="space-y-4">
-              {messages.map((message, index) => (
-                <div
-                  key={index}
-                  className={cn(
-                    "flex w-full",
-                    message.role === "assistant" ? "justify-start" : "justify-end"
-                  )}
-                >
-                  <div
-                    className={cn(
-                      "rounded-lg px-4 py-2 max-w-[80%]",
-                      message.role === "assistant"
-                        ? "bg-muted text-foreground"
-                        : "bg-primary text-primary-foreground"
-                    )}
-                  >
-                    {message.content}
-                  </div>
-                </div>
-              ))}
-              <div ref={messagesEndRef} />
-            </div>
-          </ScrollArea>
-        )}
-      </div>
-
-      <div className="border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <form onSubmit={handleSubmit} className="container flex gap-2 py-4">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Ask about players, teams, stats, or game analysis..."
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              className="pl-9"
-            />
-          </div>
-          <Button type="submit" disabled={isLoading}>
-            {isLoading ? (
-              <div className="h-4 w-4 animate-spin rounded-full border-2 border-background border-t-foreground" />
-            ) : (
-              <Send className="h-4 w-4" />
-            )}
-            <span className="ml-2">Ask</span>
-          </Button>
-        </form>
-      </div>
+      )}
     </div>
   );
-} 
+}
