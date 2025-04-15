@@ -18,7 +18,6 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Search,
   Filter,
-  Loader2,
   AlertCircle,
   ChevronRight,
   TrendingUp,
@@ -27,9 +26,7 @@ import {
 } from "lucide-react"; // Import icons, add Loader2Icon and FilterIcon
 import {
   Command,
-  CommandEmpty,
   CommandGroup,
-  CommandInput,
   CommandItem,
   CommandList,
 } from "@/components/ui/command"; // Import Command components
@@ -82,8 +79,9 @@ export default function PlayersPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<{ id: number; full_name: string }[]>([]);
-  const [isSuggestionLoading, setIsSuggestionLoading] = useState(false);
-  const [selectedFilters, setSelectedFilters] = useState<string[]>([]);
+  // Commented out as unused
+  // const [isSuggestionLoading, setIsSuggestionLoading] = useState(false);
+  // const [selectedFilters, setSelectedFilters] = useState<string[]>([]);
 
   const filterOptions = [
     { label: "Position", options: ["Guard", "Forward", "Center"] },
@@ -174,7 +172,7 @@ export default function PlayersPage() {
     }
 
     // Set loading state for suggestions
-    setIsSuggestionLoading(true);
+    // setIsSuggestionLoading(true);
 
     // Set new timer
     debounceTimer.current = setTimeout(async () => {
@@ -193,7 +191,7 @@ export default function PlayersPage() {
         console.error("Failed to fetch suggestions:", error);
         setSuggestions([]); // Clear suggestions on error
       } finally {
-        setIsSuggestionLoading(false);
+        // setIsSuggestionLoading(false);
       }
     }, 300); // 300ms debounce
 
@@ -242,11 +240,11 @@ export default function PlayersPage() {
             <Button variant="outline" className="w-full md:w-auto">
               <Filter className="mr-2 h-4 w-4" />
               Filters
-              {selectedFilters.length > 0 && (
+              {/* {selectedFilters.length > 0 && (
                 <span className="ml-2 rounded-full bg-primary px-2 py-0.5 text-xs text-primary-foreground">
                   {selectedFilters.length}
                 </span>
-              )}
+              )} */}
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">

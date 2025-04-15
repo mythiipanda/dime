@@ -2,12 +2,11 @@
 "use client";
 
 import React, { useEffect, useRef } from 'react';
-import { useAgentChatSSE, ChatMessage } from '@/lib/hooks/useAgentChatSSE';
+import { useAgentChatSSE } from '@/lib/hooks/useAgentChatSSE';
 import { InitialChatScreen } from '@/components/agent/InitialChatScreen';
 import { PromptInputForm } from '@/components/agent/PromptInputForm';
 import { ChatMessageDisplay } from '@/components/agent/ChatMessageDisplay';
 import { ErrorDisplay } from '@/components/agent/ErrorDisplay';
-import { ProgressDisplay } from '@/components/agent/ProgressDisplay'; // Assuming this component exists
 import { ScrollArea } from "@/components/ui/scroll-area";
 // import { Separator } from "@/components/ui/separator"; // Component not found, needs to be added via shadcn CLI
 
@@ -16,7 +15,6 @@ export default function AiAssistantPage() {
   const {
     isLoading,
     error,
-    progress,
     chatHistory,
     submitPrompt,
     closeConnection, // Get closeConnection if needed for cleanup

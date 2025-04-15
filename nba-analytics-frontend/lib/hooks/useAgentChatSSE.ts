@@ -20,12 +20,6 @@ export interface ChatMessage {
   }[];
 }
 
-// Define a type for structured results (mirroring ResultsDisplay)
-interface StructuredResult {
-  type: 'table' | 'chart' | string;
-  data?: Record<string, unknown>[]; // Use unknown instead of any
-}
-
 interface AgentChatSSEState {
   isLoading: boolean;
   error: string | null;
@@ -35,7 +29,10 @@ interface AgentChatSSEState {
   // chatText is removed as progress array and chatHistory handle status/content
 }
 
-export function useAgentChatSSE({ apiUrl }: UseAgentChatSSEProps) {
+export function useAgentChatSSE({ 
+  /* eslint-disable-next-line @typescript-eslint/no-unused-vars */
+  apiUrl: _apiUrl 
+}: UseAgentChatSSEProps) {
   const [state, setState] = useState<AgentChatSSEState>({
     isLoading: false,
     error: null,
@@ -89,7 +86,7 @@ export function useAgentChatSSE({ apiUrl }: UseAgentChatSSEProps) {
             updatedProgress = [...prev.progress, `Progress: ${data.progress}%`];
           }
 
-          let updatedHistory = [...prev.chatHistory];
+          const updatedHistory = [...prev.chatHistory];
           // Update the last assistant message if it exists
           if (updatedHistory.length > 0) {
             const lastMessage = updatedHistory[updatedHistory.length - 1];

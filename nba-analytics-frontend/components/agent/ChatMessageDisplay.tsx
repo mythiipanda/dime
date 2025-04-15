@@ -1,7 +1,7 @@
 // components/agent/ChatMessageDisplay.tsx
 "use client"
 
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Card } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 import { UserIcon, BotIcon, Loader2, CheckCircle2, XCircle, ChevronDown, ChevronUp, Brain } from "lucide-react"
@@ -97,7 +97,7 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
         });
       }
     }
-  }, [message.content, message.toolCalls, isUser]);
+  }, [message.content, message.toolCalls, isUser, message.event, message.status]);
 
   const isThinking = message.status === "thinking" || message.event === "RunResponse"
   const isComplete = message.status === "complete"

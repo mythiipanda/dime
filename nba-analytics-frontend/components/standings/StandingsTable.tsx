@@ -9,7 +9,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { TeamStanding } from "@/lib/api/teams"
-import { formatRecord, formatWinPct, getGamesBehind, getRecordColor, formatStreak, getClinchIndicators } from "@/lib/api/teams"
+import { formatWinPct, getGamesBehind, getRecordColor, formatStreak, getClinchIndicators } from "@/lib/api/teams"
 import { Trophy, Star } from "lucide-react"
 import { motion } from "framer-motion"
 import { STAGGER_CHILD } from "@/lib/animations"
@@ -20,7 +20,11 @@ interface StandingsTableProps {
   conference: "Eastern" | "Western"
 }
 
-export function StandingsTable({ teams, conference }: StandingsTableProps) {
+export function StandingsTable({ 
+  teams, 
+  /* eslint-disable-next-line @typescript-eslint/no-unused-vars */
+  conference: _conference 
+}: StandingsTableProps) {
   return (
     <div className="rounded-md border">
       <Table>
@@ -40,7 +44,7 @@ export function StandingsTable({ teams, conference }: StandingsTableProps) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {teams.map((team, index) => (
+          {teams.map((team) => (
             <motion.tr
               key={team.TeamID}
               {...STAGGER_CHILD}

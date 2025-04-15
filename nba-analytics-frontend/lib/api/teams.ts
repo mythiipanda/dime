@@ -86,7 +86,7 @@ export async function getLeagueStandings(season?: string): Promise<StandingsResp
     const rawText = await response.text();
 
     // --- Attempt initial parse ---
-    let parsedData: any;
+    let parsedData: Record<string, unknown>;
     try {
         if (!rawText || rawText.trim() === '') {
              console.error('Server', 'Received empty response body.');
@@ -95,22 +95,22 @@ export async function getLeagueStandings(season?: string): Promise<StandingsResp
         parsedData = JSON.parse(rawText); // First parse
         console.log('Server', `Fetched standings for season: ${season || 'default'}`);
 
-    } catch (parseError: any) {
+    } catch (parseError: unknown) {
         console.error('Server', 'Failed initial JSON parse:', parseError);
         console.error('Server', 'Raw text that failed initial parse:', rawText.substring(0, 500) + '...');
-        throw new Error(`Failed initial JSON parse: ${parseError.message}`);
+        throw new Error(`Failed initial JSON parse: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
     }
 
     // --- Check for double encoding and perform second parse if needed ---
-    let data: any;
+    let data: Record<string, unknown>;
     if (typeof parsedData === 'string') {
         console.log('Server', 'Detected string after first parse, attempting second parse...');
         try {
             data = JSON.parse(parsedData);
-        } catch (secondParseError: any) {
+        } catch (secondParseError: unknown) {
              console.error('Server', 'Failed second JSON parse:', secondParseError);
              console.error('Server', 'String content that failed second parse:', parsedData.substring(0, 500) + '...');
-             throw new Error(`Failed second JSON parse (double encoding issue?): ${secondParseError.message}`);
+             throw new Error(`Failed second JSON parse (double encoding issue?): ${secondParseError instanceof Error ? secondParseError.message : String(secondParseError)}`);
         }
     } else {
         data = parsedData;
@@ -123,7 +123,7 @@ export async function getLeagueStandings(season?: string): Promise<StandingsResp
     }
 
     // --- Data Mapping ---
-    const mappedStandings: TeamStanding[] = data.standings.map((standing: any): TeamStanding => {
+    const mappedStandings: TeamStanding[] = data.standings.map((standing: Record<string, unknown>): TeamStanding => {
         if (!standing || typeof standing !== 'object') {
             console.warn('Server', 'Mapping warning: Invalid item in standings array:', standing);
             return {
@@ -169,8 +169,8 @@ export async function getLeagueStandings(season?: string): Promise<StandingsResp
 
     return { standings: mappedStandings };
 
-  } catch (error: any) {
-      console.error('Server', `Error fetching standings for season ${season}:`, error.message);
+  } catch (error: unknown) {
+      console.error('Server', `Error fetching standings for season ${season}:`, error instanceof Error ? error.message : String(error));
       throw error;
   }
 }

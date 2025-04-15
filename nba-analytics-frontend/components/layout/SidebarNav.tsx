@@ -7,15 +7,11 @@ import {
   BotIcon,
   UsersIcon,
   BarChart2Icon,
-  TrendingUpIcon,
   TrophyIcon,
   CalendarIcon,
   HomeIcon,
   ActivityIcon,
-  TableIcon,
   LineChartIcon,
-  SearchIcon,
-  HeartIcon,
   BookOpenIcon,
 } from 'lucide-react';
 

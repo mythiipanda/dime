@@ -1,17 +1,13 @@
 import { getTeamsByConference } from "@/lib/api/teams";
 import { TeamsContent } from "@/components/teams/TeamsContent";
 import { Suspense } from "react";
+import { PageProps } from "./types";
 
 export const revalidate = 0; // Disable cache to ensure fresh data
 
-interface TeamsPageProps {
-  searchParams: { [key: string]: string | string[] | undefined };
-}
-
-export default async function TeamsPage({ searchParams }: TeamsPageProps) {
-  // Await searchParams before accessing its properties
-  const params = await Promise.resolve(searchParams);
-  const season = typeof params.season === 'string' ? params.season : "2024-25";
+export default async function TeamsPage({ searchParams = {} }: PageProps) {
+  // Get season from search params
+  const season = typeof searchParams.season === 'string' ? searchParams.season : "2024-25";
 
   try {
     const { eastern, western } = await getTeamsByConference(season);
@@ -23,7 +19,7 @@ export default async function TeamsPage({ searchParams }: TeamsPageProps) {
         </Suspense>
       </div>
     );
-  } catch (error) {
+  } catch {
     // This error will be caught by the error boundary
     throw new Error("Failed to load team data. Please try again later.");
   }
