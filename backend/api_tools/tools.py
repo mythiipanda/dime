@@ -244,36 +244,6 @@ def get_player_career_stats(player_name: str) -> str:
         return _format_tool_response({"error": str(e)})
 
 @tool
-def get_player_shots_tracking(player_name: str, season: str = "2023-24", season_type: str = "Regular Season", per_mode: str = "PerGame") -> str:
-    """Get shots tracking data for a player."""
-    try:
-        result = fetch_player_shots_tracking_logic(player_name, season, season_type, per_mode)
-        return _format_tool_response(result)
-    except Exception as e:
-        logger.error(f"Error in get_player_shots_tracking: {e}", exc_info=True)
-        return _format_tool_response({"error": str(e)})
-
-@tool
-def get_player_rebounding_stats(player_name: str, season: str = "2023-24", season_type: str = "Regular Season", per_mode: str = "PerGame") -> str:
-    """Get rebounding statistics for a player."""
-    try:
-        result = fetch_player_rebounding_stats_logic(player_name, season, season_type, per_mode)
-        return _format_tool_response(result)
-    except Exception as e:
-        logger.error(f"Error in get_player_rebounding_stats: {e}", exc_info=True)
-        return _format_tool_response({"error": str(e)})
-
-@tool
-def get_player_passing_stats(player_name: str, season: str = "2023-24", season_type: str = "Regular Season", per_mode: str = "PerGame") -> str:
-    """Get passing statistics for a player."""
-    try:
-        result = fetch_player_passing_stats_logic(player_name, season, season_type, per_mode)
-        return _format_tool_response(result)
-    except Exception as e:
-        logger.error(f"Error in get_player_passing_stats: {e}", exc_info=True)
-        return _format_tool_response({"error": str(e)})
-
-@tool
 def get_team_info_and_roster(team_identifier: str) -> str:
     """Get team information and roster."""
     try:
@@ -281,36 +251,6 @@ def get_team_info_and_roster(team_identifier: str) -> str:
         return _format_tool_response(result)
     except Exception as e:
         logger.error(f"Error in get_team_info_and_roster: {e}", exc_info=True)
-        return _format_tool_response({"error": str(e)})
-
-@tool
-def get_team_passing_stats(team_identifier: str, season: str = "2023-24", season_type: str = "Regular Season", per_mode: str = "PerGame") -> str:
-    """Get team passing statistics."""
-    try:
-        result = fetch_team_passing_stats_logic(team_identifier, season, season_type, per_mode)
-        return _format_tool_response(result)
-    except Exception as e:
-        logger.error(f"Error in get_team_passing_stats: {e}", exc_info=True)
-        return _format_tool_response({"error": str(e)})
-
-@tool
-def get_team_shooting_stats(team_identifier: str, season: str = "2023-24", season_type: str = "Regular Season", per_mode: str = "PerGame") -> str:
-    """Get team shooting statistics."""
-    try:
-        result = fetch_team_shooting_stats_logic(team_identifier, season, season_type, per_mode)
-        return _format_tool_response(result)
-    except Exception as e:
-        logger.error(f"Error in get_team_shooting_stats: {e}", exc_info=True)
-        return _format_tool_response({"error": str(e)})
-
-@tool
-def get_team_rebounding_stats(team_identifier: str, season: str = "2023-24", season_type: str = "Regular Season", per_mode: str = "PerGame") -> str:
-    """Get team rebounding statistics."""
-    try:
-        result = fetch_team_rebounding_stats_logic(team_identifier, season, season_type, per_mode)
-        return _format_tool_response(result)
-    except Exception as e:
-        logger.error(f"Error in get_team_rebounding_stats: {e}", exc_info=True)
         return _format_tool_response({"error": str(e)})
 
 @tool

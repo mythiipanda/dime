@@ -120,10 +120,6 @@ get_player_passing_stats_declaration = {
                 "type": "string",
                 "description": get_enum_description(SeasonTypeAllStar, SeasonTypeAllStar.regular),
             },
-            "per_mode": {
-                "type": "string",
-                "description": get_enum_description(PerModeDetailed, PerModeDetailed.per_game),
-            },
         },
         "required": ["player_name", "season"],
     },
@@ -158,20 +154,12 @@ get_player_shots_tracking_declaration = {
     "parameters": {
         "type": "object",
         "properties": {
-            "player_name": {
+            "player_id": {
                 "type": "string",
-                "description": "Full name of the player.",
-            },
-            "season": {
-                "type": "string",
-                "description": "Season identifier (e.g., '2023-24').",
-            },
-            "season_type": {
-                "type": "string",
-                "description": get_enum_description(SeasonTypeAllStar, SeasonTypeAllStar.regular),
+                "description": "The NBA player ID.",
             },
         },
-        "required": ["player_name", "season"],
+        "required": ["player_id"],
     },
 }
 
@@ -464,9 +452,6 @@ all_function_declarations = [
     get_player_rebounding_stats_declaration,
     get_player_shots_tracking_declaration,
     get_team_info_and_roster_declaration,
-    get_team_passing_stats_declaration,
-    get_team_shooting_stats_declaration,
-    get_team_rebounding_stats_declaration,
     find_games_declaration,
     get_boxscore_traditional_declaration,
     # get_boxscore_advanced_declaration, # Tool disabled

@@ -123,9 +123,13 @@ def fetch_scoreboard_logic(
         # east_conf_standings = _process_dataframe(scoreboard_endpoint.east_conf_standings_by_day.get_data_frame(), single_row=False)
         # west_conf_standings = _process_dataframe(scoreboard_endpoint.west_conf_standings_by_day.get_data_frame(), single_row=False)
 
-        if game_header is None or line_score is None:
-             logger.error(f"DataFrame processing failed for scoreboard ({game_date}).")
-             return json.dumps({"error": Errors.SCOREBOARD_PROCESSING.format(date=game_date)}) # Need to add this error message
+        # Handle cases where DataFrames might be empty (e.g., no games on that date)
+        if game_header is None:
+            logger.warning(f"No game header data found for scoreboard ({game_date}).")
+            game_header = []
+        if line_score is None:
+            logger.warning(f"No line score data found for scoreboard ({game_date}).")
+            line_score = []
 
         result = {
             "game_date": game_date,
