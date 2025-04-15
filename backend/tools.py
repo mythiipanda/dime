@@ -16,7 +16,9 @@ from api_tools.player_tools import (
     fetch_player_info_logic,
     fetch_player_gamelog_logic,
     fetch_player_career_stats_logic,
-    fetch_player_awards_logic
+    fetch_player_awards_logic,
+    fetch_player_shotchart_logic,  # Added new import
+    fetch_player_defense_logic,    # Added new import
 )
 from api_tools.team_tools import (
     fetch_team_info_and_roster_logic,
@@ -36,8 +38,7 @@ from api_tools.league_tools import (
 from api_tools.player_tracking import (
     fetch_player_clutch_stats_logic,
     fetch_player_passing_stats_logic,
-    # Removed incorrect import comment
-    fetch_player_shots_tracking_logic, # Correct function for shot tracking
+    fetch_player_shots_tracking_logic,
     fetch_player_rebounding_stats_logic
 )
 from api_tools.team_tracking import (
@@ -53,7 +54,7 @@ logger = logging.getLogger(__name__)
 
 # Player Tools
 @tool
-def get_player_info(player_name: str) -> str: # Return type hint is now correct
+def get_player_info(player_name: str) -> str:
     """
     Fetches basic player information and headline stats. Returns JSON string.
     Args: player_name (str): Full name of the player.
@@ -73,11 +74,9 @@ def get_player_gamelog(player_name: str, season: str, season_type: str = SeasonT
     Returns: str: JSON string containing game log data or {'error': ...}.
     """
     logger.debug(f"Tool 'get_player_gamelog' called for '{player_name}', season '{season}', type '{season_type}'")
-    # Validation can be handled within the logic function or kept here if preferred
     valid_season_types = [st for st in dir(SeasonTypeAllStar) if not st.startswith('_') and isinstance(getattr(SeasonTypeAllStar, st), str)]
     if season_type not in valid_season_types:
         logger.warning(f"Invalid season_type '{season_type}' in tool wrapper. Logic function should handle default.")
-        # Let logic handle default if invalid: season_type = SeasonTypeAllStar.regular
     return fetch_player_gamelog_logic(player_name, season, season_type)
 
 @tool
@@ -90,7 +89,6 @@ def get_player_career_stats(player_name: str, per_mode36: str = PerMode36.per_ga
     Returns: str: JSON string containing career stats data or {'error': ...}.
     """
     logger.debug(f"Tool 'get_player_career_stats' called for '{player_name}', per_mode36 '{per_mode36}'")
-    # Validation can be handled within the logic function
     valid_per_modes = [getattr(PerMode36, attr) for attr in dir(PerMode36) if not attr.startswith('_') and isinstance(getattr(PerMode36, attr), str)]
     if per_mode36 not in valid_per_modes:
          logger.warning(f"Invalid per_mode36 '{per_mode36}' in tool wrapper. Logic function should handle default.")
@@ -106,13 +104,69 @@ def get_player_awards(player_name: str) -> str:
     logger.debug(f"Tool 'get_player_awards' called for '{player_name}'")
     return fetch_player_awards_logic(player_name)
 
+@tool
+def get_player_shotchart(
+    player_name: str,
+    season: str = CURRENT_SEASON,
+    season_type: str = SeasonTypeAllStar.regular
+) -> str:
+    """
+    Fetches detailed shot chart data for a player, including shot locations and shooting percentages.
+    Args:
+        player_name (str): Full name of the player
+        season (str): Season identifier (e.g., "2023-24"). Defaults to current season.
+        season_type (str): "Regular Season" or "Playoffs". Defaults to Regular Season.
+    Returns:
+        str: JSON string containing:
+            - Shot locations (x, y coordinates)
+            - Shot outcomes (made/missed)
+            - Shot types
+            - Shooting percentages by zone
+            - League average comparisons
+    """
+    logger.debug(f"Tool get_player_shotchart called for {player_name}, season {season}")
+    return fetch_player_shotchart_logic(
+        player_name=player_name,
+        season=season,
+        season_type=season_type
+    )
+
+@tool
+def get_player_defense_stats(
+    player_name: str,
+    season: str = CURRENT_SEASON,
+    season_type: str = SeasonTypeAllStar.regular,
+    per_mode: str = PerModeDetailed.per_game
+) -> str:
+    """
+    Fetches detailed defensive statistics for a player.
+    Args:
+        player_name (str): Full name of the player
+        season (str): Season identifier (e.g., "2023-24"). Defaults to current season.
+        season_type (str): "Regular Season" or "Playoffs". Defaults to Regular Season.
+        per_mode (str): Statistics reporting mode ("PerGame", "Totals", etc.)
+    Returns:
+        str: JSON string containing:
+            - Defensive matchup data
+            - Points allowed per possession
+            - Defensive field goal percentage allowed
+            - Blocks and steals
+            - Defensive impact metrics
+    """
+    logger.debug(f"Tool get_player_defense_stats called for {player_name}, season {season}")
+    return fetch_player_defense_logic(
+        player_name=player_name,
+        season=season,
+        season_type=season_type,
+        per_mode=per_mode
+    )
+
 # Player Tracking Tools
 @tool
 def get_player_clutch_stats(
     player_name: str,
     season: str,
     season_type: str = SeasonTypeAllStar.regular
-    # Add other relevant params based on fetch_player_clutch_stats_logic signature if needed
 ) -> str:
     """
     Fetches player stats in clutch situations. Returns JSON string.
@@ -123,14 +177,12 @@ def get_player_clutch_stats(
     Returns: str: JSON string containing clutch stats or {'error': ...}.
     """
     logger.debug(f"Tool 'get_player_clutch_stats' called for '{player_name}', season '{season}', type '{season_type}'")
-    # Assuming fetch_player_clutch_stats_logic takes these params. Adjust if necessary.
     result = fetch_player_clutch_stats_logic(
         player_name=player_name,
         season=season,
         season_type=season_type
-        # Pass other params here if the logic function requires them
     )
-    return json.dumps(result, default=str) # Serialize result
+    return json.dumps(result, default=str)
 
 @tool
 def get_player_passing_stats(
@@ -183,7 +235,6 @@ def get_player_shots_tracking(player_id: str) -> str:
     Returns: str: JSON string containing shot tracking stats or {'error': ...}.
     """
     logger.debug(f"Tool 'get_player_shots_tracking' called for player_id '{player_id}'")
-    # Logic function fetch_player_shots_tracking_logic expects only player_id
     return fetch_player_shots_tracking_logic(player_id=player_id)
 
 
@@ -203,10 +254,10 @@ def get_team_info_and_roster(team_identifier: str, season: str = CURRENT_SEASON)
 # Team Tracking Tools
 @tool
 def get_team_passing_stats(
-    team_identifier: str, # Changed from team_name for consistency
+    team_identifier: str,
     season: str,
     season_type: str = SeasonTypeAllStar.regular,
-    per_mode: str = PerModeDetailed.per_game # Check if logic func uses this
+    per_mode: str = PerModeDetailed.per_game
 ) -> str:
     """
     Fetches team passing tracking stats (passes between players). Returns JSON string.
@@ -219,20 +270,19 @@ def get_team_passing_stats(
         String JSON with passing statistics for the team
     """
     logger.debug(f"Tool get_team_passing_stats called for {team_identifier}, season {season}")
-    # Ensure logic function signature matches parameters passed
     return fetch_team_passing_stats_logic(
         team_identifier=team_identifier,
         season=season,
         season_type=season_type,
-        per_mode=per_mode  # Logic function accepts this
+        per_mode=per_mode
     )
 
 @tool
 def get_team_shooting_stats(
-    team_identifier: str, # Changed from team_name for consistency
+    team_identifier: str,
     season: str,
     season_type: str = SeasonTypeAllStar.regular,
-    per_mode: str = PerModeDetailed.per_game # Check if logic func uses this
+    per_mode: str = PerModeDetailed.per_game
 ) -> str:
     """
     Fetches team shooting tracking stats. Returns JSON string.
@@ -245,20 +295,19 @@ def get_team_shooting_stats(
         String JSON with shooting statistics for the team
     """
     logger.debug(f"Tool get_team_shooting_stats called for {team_identifier}, season {season}")
-    # Ensure logic function signature matches parameters passed
     return fetch_team_shooting_stats_logic(
         team_identifier=team_identifier,
         season=season,
         season_type=season_type,
-        per_mode=per_mode  # Logic function accepts this
+        per_mode=per_mode
     )
 
 @tool
 def get_team_rebounding_stats(
-    team_identifier: str, # Changed from team_name for consistency
+    team_identifier: str,
     season: str,
     season_type: str = SeasonTypeAllStar.regular,
-    per_mode: str = PerModeDetailed.per_game # Check if logic func uses this
+    per_mode: str = PerModeDetailed.per_game
 ) -> str:
     """
     Fetches team rebounding tracking stats. Returns JSON string.
@@ -271,12 +320,11 @@ def get_team_rebounding_stats(
         String JSON with rebounding statistics for the team
     """
     logger.debug(f"Tool get_team_rebounding_stats called for {team_identifier}, season {season}")
-    # Ensure logic function signature matches parameters passed
     return fetch_team_rebounding_stats_logic(
         team_identifier=team_identifier,
         season=season,
         season_type=season_type,
-        per_mode=per_mode  # Logic function accepts this
+        per_mode=per_mode
     )
 
 
@@ -286,9 +334,9 @@ def find_games(
     player_or_team: str = 'T',
     player_id: Optional[int] = None,
     team_id: Optional[int] = None,
-    season: Optional[str] = None, # Re-enabled based on logic function
-    season_type: Optional[str] = None, # Re-enabled based on logic function
-    league_id: Optional[str] = None, # Re-enabled based on logic function
+    season: Optional[str] = None,
+    season_type: Optional[str] = None,
+    league_id: Optional[str] = None,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None
 ) -> str:
@@ -310,13 +358,11 @@ def find_games(
         str: JSON string containing a list of found games or {'error': ...}.
     """
     logger.debug(f"Tool 'find_games' called with params: player_or_team={player_or_team}, player_id={player_id}, team_id={team_id}, date_from={date_from}, date_to={date_to}")
-    # Basic validation for required IDs
     if player_or_team == 'P' and player_id is None:
         return format_response(error="player_id is required when player_or_team='P'.")
     if player_or_team == 'T' and team_id is None:
         return format_response(error="team_id is required when player_or_team='T'.")
 
-    # Call logic function with all parameters
     result = fetch_league_games_logic(
         player_or_team_abbreviation=player_or_team,
         player_id_nullable=player_id,
@@ -338,7 +384,7 @@ def get_boxscore_traditional(game_id: str) -> str:
     """
     logger.debug(f"Tool 'get_boxscore_traditional' called for game_id '{game_id}'")
     result = fetch_boxscore_traditional_logic(game_id)
-    return json.dumps(result, default=str) # Serialize result
+    return json.dumps(result, default=str)
 
 @tool
 def get_league_standings(season: str = CURRENT_SEASON) -> str:
@@ -348,7 +394,6 @@ def get_league_standings(season: str = CURRENT_SEASON) -> str:
     Returns: str: JSON string containing standings data or {'error': ...}.
     """
     logger.debug(f"Tool 'get_league_standings' called for season '{season}'")
-    # Logic function handles default season type and league ID
     return fetch_league_standings_logic(season=season)
 
 @tool
@@ -361,7 +406,6 @@ def get_scoreboard(game_date: str = None, day_offset: int = 0) -> str:
     Returns: str: JSON string containing scoreboard data or {'error': ...}.
     """
     logger.debug(f"Tool 'get_scoreboard' called for date '{game_date}', offset '{day_offset}'")
-    # Logic function handles default date if game_date is None
     return fetch_scoreboard_logic(game_date=game_date, day_offset=day_offset)
 
 @tool
@@ -378,14 +422,13 @@ def get_playbyplay(game_id: str, start_period: int = 0, end_period: int = 0) -> 
     return fetch_playbyplay_logic(game_id=game_id, start_period=start_period, end_period=end_period)
 
 @tool
-def get_draft_history(season_year: Optional[str] = None) -> str: # Made season_year optional explicitly
+def get_draft_history(season_year: Optional[str] = None) -> str:
     """
     Fetches the NBA draft history, optionally filtered by year. Returns JSON string.
     Args: season_year (str, optional): Optional year filter (YYYY format). If None, fetches all history.
     Returns: str: JSON string containing draft picks or {'error': ...}.
     """
     logger.debug(f"Tool 'get_draft_history' called for year '{season_year or 'All'}'")
-    # Logic function handles default league ID
     return fetch_draft_history_logic(season_year=season_year)
 
 @tool

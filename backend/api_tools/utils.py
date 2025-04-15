@@ -6,7 +6,7 @@ import time
 from typing import Optional, Union, List, Dict, Any, Callable
 import pandas as pd
 from requests.exceptions import ReadTimeout, ConnectionError
-from config import DEFAULT_TIMEOUT  # Changed to relative import
+from backend.config import DEFAULT_TIMEOUT  # Fixed import path
 
 logger = logging.getLogger(__name__)
 

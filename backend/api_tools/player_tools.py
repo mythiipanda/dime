@@ -4,7 +4,14 @@ from typing import Optional, List, Dict, Any, Union
 import pandas as pd
 import requests
 from nba_api.stats.static import players
-from nba_api.stats.endpoints import commonplayerinfo, playergamelog, playerawards, playercareerstats
+from nba_api.stats.endpoints import (
+    commonplayerinfo, 
+    playergamelog, 
+    playerawards, 
+    playercareerstats,
+    shotchartdetail,
+    playerdashptshotdefend
+)
 from nba_api.stats.library.parameters import SeasonAll, SeasonTypeAllStar, PerModeDetailed, PerMode36, LeagueID
 from backend.config import DEFAULT_TIMEOUT, HEADSHOT_BASE_URL, ErrorMessages as Errors, CURRENT_SEASON
 from backend.api_tools.utils import _process_dataframe, _validate_season_format, retry_on_timeout, format_response
@@ -57,7 +64,6 @@ def fetch_player_info_logic(player_name: str) -> str:
             "player_info": player_info_dict or {},
             "headline_stats": headline_stats_dict or {}
         })
-        return result
     except Exception as e:
         logger.critical(f"Unexpected error in fetch_player_info_logic for '{player_name}': {e}", exc_info=True)
         return format_response(error=Errors.PLAYER_INFO_UNEXPECTED.format(name=player_name, error=str(e)))
@@ -120,10 +126,6 @@ def fetch_player_career_stats_logic(player_name: str, per_mode36: str = PerMode3
         if player_id is None:
             return format_response(error=Errors.PLAYER_NOT_FOUND.format(name=player_name))
 
-        # TODO: The 'per_mode36' parameter is currently ignored in the API call below
-        #       due to suspected issues with the nba_api library handling it correctly
-        #       for playercareerstats. It always fetches the default (PerGame).
-        #       Needs investigation if other PerModes are required.
         logger.debug(f"Fetching playercareerstats for ID: {player_id} (Ignoring PerMode in API call)")
         try:
             career_endpoint = playercareerstats.PlayerCareerStats(player_id=player_id, timeout=DEFAULT_TIMEOUT)
@@ -167,10 +169,6 @@ def get_player_headshot_url(player_id: str) -> str:
     
     return f"{HEADSHOT_BASE_URL}/{player_id}.png"
 
-# Removed redundant find_players_by_name_fragment function (exists in search.py)
-
-# Removed unused get_player_info function (agent uses fetch_player_info_logic via tool wrapper)
-
 def fetch_player_awards_logic(player_name: str) -> str:
     """Core logic to fetch player awards."""
     logger.info(f"Executing fetch_player_awards_logic for: '{player_name}'")
@@ -194,9 +192,7 @@ def fetch_player_awards_logic(player_name: str) -> str:
 
         if awards_list is None:
             logger.error(f"DataFrame processing failed for awards of {player_actual_name}.")
-            # Return empty list if processing fails but API call succeeded (might mean no awards)
             awards_list = []
-            # return json.dumps({"error": Errors.PLAYER_AWARDS_PROCESSING.format(name=player_actual_name)}) # Need to add this error message
 
         logger.info(f"fetch_player_awards_logic completed for '{player_actual_name}'")
         return format_response({
@@ -211,14 +207,6 @@ def fetch_player_awards_logic(player_name: str) -> str:
 def fetch_player_stats_logic(player_name: str, season: str = CURRENT_SEASON, season_type: str = SeasonTypeAllStar.regular) -> str:
     """
     Fetches comprehensive player statistics including career stats, game logs, and info.
-    
-    Args:
-        player_name (str): The name of the player to fetch stats for
-        season (str): The season to fetch stats for (e.g., '2023-24')
-        season_type (str): The type of season (regular, playoffs, etc.)
-        
-    Returns:
-        str: JSON string containing player statistics or error message
     """
     logger.info(f"Executing fetch_player_stats_logic for: '{player_name}', Season: {season}")
     
@@ -228,24 +216,20 @@ def fetch_player_stats_logic(player_name: str, season: str = CURRENT_SEASON, sea
         return format_response(error=Errors.INVALID_SEASON_FORMAT.format(season=season))
     
     try:
-        # Find player ID
         player_id, player_actual_name = _find_player_id(player_name)
         if player_id is None:
             return format_response(error=Errors.PLAYER_NOT_FOUND.format(name=player_name))
         
-        # Get all stats in parallel
         info_result = fetch_player_info_logic(player_name)
         career_result = fetch_player_career_stats_logic(player_name)
         gamelog_result = fetch_player_gamelog_logic(player_name, season, season_type)
         awards_result = fetch_player_awards_logic(player_name)
 
-        # Check each result for errors (they are already JSON strings)
         for result in [info_result, career_result, gamelog_result, awards_result]:
             if '"error":' in result:
-                return result  # Return first error encountered
+                return result
 
         try:
-            # Parse all results once for combining
             info_data = json.loads(info_result)
             career_data = json.loads(career_result)
             gamelog_data = json.loads(gamelog_result)
@@ -275,4 +259,131 @@ def fetch_player_stats_logic(player_name: str, season: str = CURRENT_SEASON, sea
         logger.critical(f"Unexpected error in fetch_player_stats_logic for '{player_name}': {e}", exc_info=True)
         return format_response(error=f"Unexpected error retrieving player stats: {str(e)}")
 
-# Removed unused find_player_by_name function
+def fetch_player_shotchart_logic(
+    player_name: str,
+    season: str = CURRENT_SEASON,
+    season_type: str = SeasonTypeAllStar.regular
+) -> str:
+    """Fetches a player's shot chart data for detailed shooting analysis.
+    
+    Args:
+        player_name (str): The name of the player
+        season (str): Season identifier (e.g., "2023-24")
+        season_type (str): "Regular Season" or "Playoffs"
+        
+    Returns:
+        str: JSON string containing shot chart data or error message
+    """
+    logger.info(f"Executing fetch_player_shotchart_logic for: '{player_name}', Season: {season}")
+    
+    if not player_name or not player_name.strip():
+        return format_response(error=Errors.PLAYER_NAME_EMPTY)
+    if not season or not _validate_season_format(season):
+        return format_response(error=Errors.INVALID_SEASON_FORMAT.format(season=season))
+    
+    try:
+        player_id, player_actual_name = _find_player_id(player_name)
+        if player_id is None:
+            return format_response(error=Errors.PLAYER_NOT_FOUND.format(name=player_name))
+
+        logger.debug(f"Fetching shotchartdetail for ID: {player_id}, Season: {season}")
+        try:
+            shotchart_endpoint = shotchartdetail.ShotChartDetail(
+                player_id=player_id,
+                team_id=0,  # 0 for all teams
+                season_nullable=season,
+                season_type_all_star=season_type,
+                timeout=DEFAULT_TIMEOUT
+            )
+            logger.debug(f"shotchartdetail API call successful for ID: {player_id}")
+            
+            shots_df = shotchart_endpoint.get_data_frames()[0]
+            league_avg_df = shotchart_endpoint.get_data_frames()[1]
+            
+            shots_data = _process_dataframe(shots_df, single_row=False)
+            league_averages = _process_dataframe(league_avg_df, single_row=False)
+            
+            if shots_data is None or league_averages is None:
+                logger.error(f"DataFrame processing failed for shot chart of {player_actual_name}")
+                return format_response(error=f"Failed to process shot chart data for {player_actual_name}")
+            
+            return format_response({
+                "player_name": player_actual_name,
+                "player_id": player_id,
+                "season": season,
+                "season_type": season_type,
+                "shot_data": shots_data,
+                "league_averages": league_averages
+            })
+            
+        except Exception as api_error:
+            logger.error(f"nba_api shotchartdetail failed for ID {player_id}: {api_error}")
+            return format_response(error=f"API error fetching shot chart: {str(api_error)}")
+            
+    except Exception as e:
+        logger.critical(f"Unexpected error in fetch_player_shotchart_logic: {e}")
+        return format_response(error=f"Unexpected error fetching shot chart: {str(e)}")
+
+def fetch_player_defense_logic(
+    player_name: str,
+    season: str = CURRENT_SEASON,
+    season_type: str = SeasonTypeAllStar.regular,
+    per_mode: str = PerModeDetailed.per_game
+) -> str:
+    """Fetches detailed defensive statistics for a player.
+    
+    Args:
+        player_name (str): The name of the player
+        season (str): Season identifier (e.g., "2023-24")
+        season_type (str): "Regular Season" or "Playoffs"
+        per_mode (str): Statistics reporting mode ("PerGame", "Totals", etc.)
+        
+    Returns:
+        str: JSON string containing defensive statistics or error message
+    """
+    logger.info(f"Executing fetch_player_defense_logic for: '{player_name}', Season: {season}")
+    
+    if not player_name or not player_name.strip():
+        return format_response(error=Errors.PLAYER_NAME_EMPTY)
+    if not season or not _validate_season_format(season):
+        return format_response(error=Errors.INVALID_SEASON_FORMAT.format(season=season))
+    
+    try:
+        player_id, player_actual_name = _find_player_id(player_name)
+        if player_id is None:
+            return format_response(error=Errors.PLAYER_NOT_FOUND.format(name=player_name))
+
+        logger.debug(f"Fetching defense stats for ID: {player_id}, Season: {season}")
+        try:
+            defense_endpoint = playerdashptshotdefend.PlayerDashPtShotDefend(
+                player_id=player_id,
+                team_id=0,  # 0 for all teams
+                season=season,
+                season_type_all_star=season_type,
+                timeout=DEFAULT_TIMEOUT
+            )
+            logger.debug(f"playerdashptshotdefend API call successful for ID: {player_id}")
+            
+            defense_df = defense_endpoint.get_data_frames()[0]
+            defense_stats = _process_dataframe(defense_df, single_row=False)  # Changed to False since we expect multiple rows
+            
+            if defense_stats is None or not defense_stats:
+                logger.error(f"No defense stats found for {player_actual_name}")
+                return format_response(error=f"No defense stats available for {player_actual_name} in {season}")
+            
+            return format_response({
+                "player_name": player_actual_name,
+                "player_id": player_id,
+                "season": season,
+                "season_type": season_type,
+                "per_mode": per_mode,
+                "defense_stats": defense_stats
+            })
+            
+        except Exception as api_error:
+            logger.error(f"nba_api playerdashptshotdefend failed for ID {player_id}: {api_error}")
+            return format_response(error=f"API error fetching defense stats: {str(api_error)}")
+            
+    except Exception as e:
+        logger.critical(f"Unexpected error in fetch_player_defense_logic: {e}")
+        return format_response(error=f"Unexpected error fetching defense stats: {str(e)}")

@@ -24,7 +24,9 @@ from nba_api.stats.endpoints import (
     commonplayerinfo,
     playerdashptreb,
     playerdashptpass,
-    playerdashptshots
+    playerdashptshots,
+    shotchartdetail,
+    leaguedashptdefend
 )
 from nba_api.stats.library.parameters import (
     SeasonAll,
@@ -38,13 +40,12 @@ from backend.config import CURRENT_SEASON, DEFAULT_TIMEOUT
 EXAMPLE_PLAYER_ID = 2544  # LeBron James
 INVALID_PLAYER_ID = 99999999  # For error testing
 
+# Create output directory if it doesn't exist
+OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "test_output")
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
 def analyze_response(response: Dict[str, Any], endpoint_name: str) -> None:
-    """Analyzes and prints information about the API response structure.
-    
-    Args:
-        response: The API response to analyze
-        endpoint_name: Name of the endpoint for logging
-    """
+    """Analyzes and prints information about the API response structure."""
     print(f"\nAnalyzing response from {endpoint_name}:")
     
     if response.get("error"):
@@ -66,14 +67,7 @@ def analyze_response(response: Dict[str, Any], endpoint_name: str) -> None:
         print(json.dumps(list(data.keys()), indent=2))
 
 def test_player_info(player_id: str = EXAMPLE_PLAYER_ID) -> Dict[str, Any]:
-    """Test the common player info endpoint.
-    
-    Args:
-        player_id: The NBA player ID to test with
-        
-    Returns:
-        Dict containing the test results
-    """
+    """Test the common player info endpoint."""
     print("\n=== Testing Common Player Info ===\n")
     
     try:
@@ -113,15 +107,7 @@ def test_player_career_stats(
     player_id: str = EXAMPLE_PLAYER_ID,
     per_mode: str = PerModeDetailed.per_game
 ) -> Dict[str, Any]:
-    """Test the player career stats endpoint.
-    
-    Args:
-        player_id: The NBA player ID to test with
-        per_mode: Stats calculation mode
-        
-    Returns:
-        Dict containing the test results
-    """
+    """Test the player career stats endpoint."""
     print("\n=== Testing Player Career Stats ===\n")
     
     try:
@@ -167,15 +153,7 @@ def test_player_tracking_stats(
     player_id: str = EXAMPLE_PLAYER_ID,
     season: str = CURRENT_SEASON
 ) -> Dict[str, Any]:
-    """Test player tracking endpoints.
-    
-    Args:
-        player_id: The NBA player ID to test with
-        season: Season to get stats for
-        
-    Returns:
-        Dict containing the test results
-    """
+    """Test player tracking endpoints."""
     print("\n=== Testing Player Tracking Stats ===\n")
     
     try:
@@ -262,23 +240,142 @@ def test_player_tracking_stats(
         analyze_response(error_result, "Player Tracking Stats")
         return error_result
 
+def test_player_shotchart(
+    player_id: str = EXAMPLE_PLAYER_ID,
+    season: str = CURRENT_SEASON,
+    season_type: str = SeasonTypeAllStar.regular
+) -> Dict[str, Any]:
+    """Test the shot chart endpoint.
+    
+    Args:
+        player_id: The NBA player ID to test with
+        season: Season to get stats for
+        season_type: Type of season (Regular Season, Playoffs, etc.)
+        
+    Returns:
+        Dict containing the test results
+    """
+    print("\n=== Testing Player Shot Chart ===\n")
+    
+    try:
+        # Get player info first to get team ID
+        info = commonplayerinfo.CommonPlayerInfo(
+            player_id=player_id,
+            timeout=DEFAULT_TIMEOUT
+        )
+        info_dict = info.get_normalized_dict()
+        team_id = info_dict["CommonPlayerInfo"][0]["TEAM_ID"]
+        
+        # Get shot chart data
+        print("\nFetching shot chart data...")
+        shotchart = shotchartdetail.ShotChartDetail(
+            player_id=player_id,
+            team_id=team_id,
+            season_nullable=season,
+            season_type_all_star=season_type,
+            timeout=DEFAULT_TIMEOUT
+        )
+        
+        result = {
+            "meta": {
+                "endpoint": "shotchartdetail",
+                "timestamp": datetime.now().isoformat(),
+                "parameters": {
+                    "player_id": player_id,
+                    "team_id": team_id,
+                    "season": season,
+                    "season_type": season_type
+                }
+            },
+            "data": {
+                "shots": shotchart.get_data_frames()[0].to_dict(orient='records'),
+                "league_averages": shotchart.get_data_frames()[1].to_dict(orient='records')
+            }
+        }
+        
+        analyze_response(result, "Shot Chart Detail")
+        return result
+        
+    except Exception as e:
+        error_result = {
+            "meta": {
+                "endpoint": "shotchartdetail",
+                "timestamp": datetime.now().isoformat(),
+                "error": str(e)
+            },
+            "data": None
+        }
+        analyze_response(error_result, "Shot Chart Detail")
+        return error_result
+
+def test_player_defense_stats(
+    player_id: str = EXAMPLE_PLAYER_ID,
+    season: str = CURRENT_SEASON,
+    season_type: str = SeasonTypeAllStar.regular,
+    per_mode: str = PerModeDetailed.per_game
+) -> Dict[str, Any]:
+    """Test the defensive stats endpoint.
+    
+    Args:
+        player_id: The NBA player ID to test with
+        season: Season to get stats for
+        season_type: Type of season (Regular Season, Playoffs, etc.)
+        per_mode: Stats calculation mode
+        
+    Returns:
+        Dict containing the test results
+    """
+    print("\n=== Testing Player Defense Stats ===\n")
+    
+    try:
+        # Get defense stats
+        print("\nFetching defense stats...")
+        defense = leaguedashptdefend.LeagueDashPtDefend(
+            player_id=player_id,
+            season=season,
+            season_type_all_star=season_type,
+            per_mode_simple=per_mode,
+            timeout=DEFAULT_TIMEOUT
+        )
+        
+        result = {
+            "meta": {
+                "endpoint": "leaguedashptdefend",
+                "timestamp": datetime.now().isoformat(),
+                "parameters": {
+                    "player_id": player_id,
+                    "season": season,
+                    "season_type": season_type,
+                    "per_mode": per_mode
+                }
+            },
+            "data": {
+                "defense_stats": defense.get_data_frames()[0].to_dict(orient='records')
+            }
+        }
+        
+        analyze_response(result, "Defense Stats")
+        return result
+        
+    except Exception as e:
+        error_result = {
+            "meta": {
+                "endpoint": "leaguedashptdefend",
+                "timestamp": datetime.now().isoformat(),
+                "error": str(e)
+            },
+            "data": None
+        }
+        analyze_response(error_result, "Defense Stats")
+        return error_result
+
 def test_player_dashboard_splits(
     player_id: str = EXAMPLE_PLAYER_ID,
     season: str = CURRENT_SEASON,
     measure_type: str = MeasureTypeDetailedDefense.base,
     per_mode: str = PerModeDetailed.per_game
 ) -> Dict[str, Any]:
-    """Test various player dashboard split endpoints.
-    
-    Args:
-        player_id: The NBA player ID to test with
-        season: Season to get stats for
-        measure_type: Type of stats to get
-        per_mode: Stats calculation mode
-        
-    Returns:
-        Dict containing the test results
-    """
+    """Test various player dashboard split endpoints."""
     print("\n=== Testing Player Dashboard Splits ===\n")
     
     splits = [
@@ -304,7 +401,6 @@ def test_player_dashboard_splits(
                 timeout=DEFAULT_TIMEOUT
             )
             
-            # Get all available data tables
             data_tables = {}
             for attr in dir(dashboard):
                 if not attr.startswith('_') and hasattr(getattr(dashboard, attr), 'get_dict'):
@@ -343,7 +439,9 @@ def test_error_cases() -> Dict[str, Any]:
     results = {
         "invalid_player_id": test_player_info(INVALID_PLAYER_ID),
         "invalid_season": test_player_tracking_stats(season="invalid"),
-        "invalid_measure_type": test_player_dashboard_splits(measure_type="invalid")
+        "invalid_measure_type": test_player_dashboard_splits(measure_type="invalid"),
+        "invalid_shotchart": test_player_shotchart(player_id=INVALID_PLAYER_ID),
+        "invalid_defense": test_player_defense_stats(player_id=INVALID_PLAYER_ID)
     }
     
     return results
@@ -358,16 +456,18 @@ def main():
         "career_stats": {
             "per_game": test_player_career_stats(per_mode=PerModeDetailed.per_game),
             "totals": test_player_career_stats(per_mode=PerModeDetailed.totals),
-            "per36": test_player_career_stats(per_mode=PerModeDetailed.per36)
+            "per36": test_player_career_stats(per_mode=PerModeDetailed.per_36)
         },
         "tracking_stats": test_player_tracking_stats(),
+        "shotchart": test_player_shotchart(),
+        "defense_stats": test_player_defense_stats(),
         "dashboard_splits": test_player_dashboard_splits(),
         "error_cases": test_error_cases()
     }
     
-    # Save results
+    # Save results to test_output directory
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"player_tools_raw_output_{timestamp}.json"
+    filename = os.path.join(OUTPUT_DIR, f"player_tools_raw_output_{timestamp}.json")
     with open(filename, "w") as f:
         json.dump(results, f, indent=2, default=str)
     print(f"\nTest results saved to {filename}")
