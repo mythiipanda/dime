@@ -73,21 +73,31 @@ export function PromptInputForm({
       {isLoading && onStop ? (
         <Button
           type="button"
-          variant="destructive"
+          variant="outline"
           size="icon"
           onClick={onStop}
-          className="h-12 w-12 shrink-0 rounded-xl"
+          className={cn(
+            "h-12 w-12 shrink-0 rounded-xl",
+            "border-2 border-red-500 hover:bg-red-500/10",
+            "transition-colors duration-200"
+          )}
         >
-          <StopCircleIcon className="h-5 w-5" />
+          <StopCircleIcon className="h-5 w-5 text-red-500" />
+          <span className="sr-only">Stop generating</span>
         </Button>
       ) : (
         <Button
           type="submit"
           disabled={!prompt.trim() || isLoading}
-          className="h-12 w-12 shrink-0 rounded-xl"
+          className={cn(
+            "h-12 w-12 shrink-0 rounded-xl",
+            "bg-primary hover:bg-primary/90",
+            "transition-colors duration-200"
+          )}
           size="icon"
         >
           <SendIcon className="h-5 w-5" />
+          <span className="sr-only">Send message</span>
         </Button>
       )}
     </form>

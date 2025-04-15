@@ -232,6 +232,23 @@ export function useAgentChatSSE({
       console.log('Cleaning up SSE connection');
       eventSourceRef.current.close();
       eventSourceRef.current = null;
+
+      // Update state to show generation has stopped
+      setState(prev => {
+        const updatedHistory = [...prev.chatHistory];
+        if (updatedHistory.length > 0 && updatedHistory[updatedHistory.length - 1].role === 'assistant') {
+          updatedHistory[updatedHistory.length - 1] = {
+            ...updatedHistory[updatedHistory.length - 1],
+            status: 'complete',
+            content: updatedHistory[updatedHistory.length - 1].content + "\n\n[Generation stopped by user]"
+          };
+        }
+        return {
+          ...prev,
+          isLoading: false,
+          chatHistory: updatedHistory
+        };
+      });
     }
   }, []);
 

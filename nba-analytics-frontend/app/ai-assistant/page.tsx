@@ -45,6 +45,10 @@ export default function AiAssistantPage() {
      handlePromptSubmit(prompt);
   };
 
+  const handleStop = () => {
+    closeConnection();
+  };
+
   return (
     <div className="min-h-screen flex flex-col">
       <main className="flex-1 flex flex-col">
@@ -61,7 +65,11 @@ export default function AiAssistantPage() {
             </div>
             <div className="border-t bg-background/95">
               <div className="container max-w-5xl mx-auto p-4">
-                <PromptInputForm onSubmit={handlePromptSubmit} isLoading={isLoading} />
+                <PromptInputForm 
+                  onSubmit={handlePromptSubmit} 
+                  onStop={handleStop}
+                  isLoading={isLoading} 
+                />
               </div>
             </div>
           </div>
@@ -78,11 +86,16 @@ export default function AiAssistantPage() {
                 ))}
                 {error && <ErrorDisplay error={error} />}
               </div>
+              <div className="h-32" />
             </ScrollArea>
 
-            <div className="border-t bg-background/95">
+            <div className="border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky bottom-0 right-0 z-20">
               <div className="container max-w-5xl mx-auto p-4 space-y-4">
-                <PromptInputForm onSubmit={handlePromptSubmit} isLoading={isLoading} />
+                <PromptInputForm 
+                  onSubmit={handlePromptSubmit} 
+                  onStop={handleStop}
+                  isLoading={isLoading} 
+                />
                 <p className="text-xs text-center text-muted-foreground opacity-75 transition-opacity hover:opacity-100">
                   AI may produce inaccurate information. Verify important details.
                 </p>

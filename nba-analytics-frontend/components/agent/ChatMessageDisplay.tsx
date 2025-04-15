@@ -4,7 +4,7 @@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Card } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
-import { UserIcon, BotIcon, Loader2, CheckCircle2, XCircle, ChevronDown, ChevronUp, Brain, Copy, Check } from "lucide-react"
+import { UserIcon, BotIcon, Loader2, CheckCircle2, XCircle, ChevronDown, ChevronUp, Brain, Copy, Check, Link, BookOpen } from "lucide-react"
 import ReactMarkdown, { Components } from 'react-markdown'
 import { Progress } from "@/components/ui/progress"
 import { useState, useEffect } from "react"
@@ -12,10 +12,17 @@ import { Button } from "@/components/ui/button"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { ChatMessage as SSEChatMessage } from "@/lib/hooks/useAgentChatSSE"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { Badge } from "@/components/ui/badge"
 
 interface ToolCall {
   tool_name: string
   status: "started" | "completed" | "error"
+  content?: string
+}
+
+interface Source {
+  title: string
+  url?: string
   content?: string
 }
 
@@ -28,12 +35,13 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
   const isUser = message.role === "user"
   const [isThinkingExpanded, setIsThinkingExpanded] = useState(true)
   const [copied, setCopied] = useState(false)
+  const [sources, setSources] = useState<Source[]>([])
   const [intermediateSteps, setIntermediateSteps] = useState<{
     thinking: string[]
     tools: ToolCall[]
   }>({ thinking: [], tools: [] })
   
-  // Update intermediate steps when message changes
+  // Update intermediate steps and sources when message changes
   useEffect(() => {
     if (!isUser && message.content) {
       if (message.status === "thinking" || message.event === "RunResponse") {
@@ -69,6 +77,31 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
             const existing = existingTools.get(newTool.tool_name);
             if (!existing || existing.status !== newTool.status) {
               existingTools.set(newTool.tool_name, newTool);
+              
+              // Extract sources from tool calls
+              if (newTool.content) {
+                try {
+                  const content = JSON.parse(newTool.content);
+                  if (content) {
+                    setSources(prev => {
+                      const newSource: Source = {
+                        title: `${newTool.tool_name} Result`,
+                        content: JSON.stringify(content, null, 2)
+                      };
+                      return [...prev, newSource];
+                    });
+                  }
+                } catch (e) {
+                  // If not JSON, add as plain text source
+                  setSources(prev => {
+                    const newSource: Source = {
+                      title: `${newTool.tool_name} Result`,
+                      content: newTool.content
+                    };
+                    return [...prev, newSource];
+                  });
+                }
+              }
             }
           });
 
@@ -237,7 +270,7 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
             {/* Intermediate Updates Box */}
             {showThinkingProcess && (
               <Card className={cn(
-                "rounded-lg border bg-background p-4",
+                "rounded-lg border bg-background p-4 mb-4",
                 "shadow-sm transition-colors hover:border-border"
               )}>
                 <Collapsible
@@ -249,115 +282,150 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-7 w-7 p-0 hover:bg-accent"
+                        className="p-0 h-auto"
                       >
-                        {isThinkingExpanded ? (
-                          <ChevronUp className="h-4 w-4" />
-                        ) : (
-                          <ChevronDown className="h-4 w-4" />
-                        )}
-                        <span className="sr-only">
-                          {isThinkingExpanded ? "Hide details" : "Show details"}
-                        </span>
+                        {isThinkingExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                       </Button>
                     </CollapsibleTrigger>
                     <div className="flex items-center gap-2">
-                      <Brain className="h-4 w-4 text-foreground" />
-                      <span className="text-sm font-medium">
-                        {isThinking ? "Thinking..." : "Steps"}
-                      </span>
+                      <Brain className="h-4 w-4" />
+                      <span className="text-sm font-medium">Thinking Process</span>
                     </div>
-                    {message.progress !== undefined && (
-                      <Progress 
-                        value={message.progress} 
-                        className="h-1.5 flex-1"
-                      />
+                    {isThinking && (
+                      <div className="flex items-center gap-2 ml-auto">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span className="text-sm text-muted-foreground">Processing...</span>
+                      </div>
                     )}
                   </div>
 
-                  <CollapsibleContent className="space-y-3">
-                    {/* Show intermediate thinking content */}
-                    {intermediateSteps.thinking.map((thought, index) => (
-                      <div 
-                        key={`thought-${index}-${thought.substring(0, 20)}`} 
-                        className={cn(
-                          "rounded-lg border p-3 text-sm transition-colors",
-                          index % 2 === 0 
-                            ? "border bg-background hover:border-border" 
-                            : "border bg-accent hover:border-border"
-                        )}
-                      >
-                        <div className="flex items-center gap-2 mb-2">
-                          <Brain className="h-3.5 w-3.5 text-muted-foreground" />
-                          <span className="text-xs font-medium tracking-wide text-muted-foreground">
-                            Reasoning Step {index + 1}
-                          </span>
+                  <CollapsibleContent>
+                    <div className="space-y-4">
+                      {/* Thinking Steps */}
+                      {intermediateSteps.thinking.length > 0 && (
+                        <div className="space-y-2">
+                          <div className="text-sm font-medium">Reasoning Steps:</div>
+                          {intermediateSteps.thinking.map((thought, index) => (
+                            <div
+                              key={index}
+                              className="text-sm text-muted-foreground pl-4 border-l-2"
+                            >
+                              {thought}
+                            </div>
+                          ))}
                         </div>
-                        <div className="prose prose-sm prose-neutral dark:prose-invert">
-                          <ReactMarkdown components={components}>
-                            {thought}
-                          </ReactMarkdown>
+                      )}
+
+                      {/* Tool Calls */}
+                      {intermediateSteps.tools.length > 0 && (
+                        <div className="space-y-2">
+                          <div className="text-sm font-medium">Data Collection:</div>
+                          {intermediateSteps.tools.map((tool, index) => (
+                            <div
+                              key={index}
+                              className="flex items-center gap-2 text-sm"
+                            >
+                              {tool.status === "started" && (
+                                <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+                              )}
+                              {tool.status === "completed" && (
+                                <CheckCircle2 className="h-3 w-3 text-green-500" />
+                              )}
+                              {tool.status === "error" && (
+                                <XCircle className="h-3 w-3 text-red-500" />
+                              )}
+                              <span className="font-mono text-xs">
+                                {tool.tool_name}
+                              </span>
+                              {tool.status === "completed" && tool.content && (
+                                <Badge variant="secondary" className="ml-2">
+                                  <Link className="h-3 w-3 mr-1" />
+                                  Source
+                                </Badge>
+                              )}
+                            </div>
+                          ))}
                         </div>
-                      </div>
-                    ))}
-                    
-                    {/* Show tool calls */}
-                    {intermediateSteps.tools.map((tool) => (
-                      <div 
-                        key={`${tool.tool_name}-${tool.status}`}
-                        className={cn(
-                          "rounded-lg border p-3 text-sm transition-colors",
-                          tool.status === "started" 
-                            ? "border bg-background hover:border-border" 
-                            : tool.status === "completed" 
-                              ? "border bg-background hover:border-border" 
-                              : "border bg-destructive/10 hover:border-border"
-                        )}
-                      >
-                        <div className="flex items-center gap-2 mb-2">
-                          {tool.status === "started" && (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin text-yellow-600" />
-                          )}
-                          {tool.status === "completed" && (
-                            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-                          )}
-                          {tool.status === "error" && (
-                            <XCircle className="h-3.5 w-3.5 text-red-600" />
-                          )}
-                          <span className="text-xs font-medium tracking-wide text-muted-foreground">
-                            {tool.tool_name}
-                          </span>
-                        </div>
-                        {tool.content && (
-                          <div className="prose prose-sm prose-neutral dark:prose-invert">
-                            <ReactMarkdown components={components}>
-                              {tool.content}
-                            </ReactMarkdown>
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                      )}
+                    </div>
                   </CollapsibleContent>
                 </Collapsible>
               </Card>
             )}
 
-            {/* Final Response */}
+            {/* Main Response */}
             <div className={cn(
               "prose prose-neutral dark:prose-invert max-w-none",
-              "rounded-2xl border p-4 transition-all duration-200",
-              !isComplete 
-                ? "border bg-background shadow-sm" 
-                : "border bg-background shadow-sm hover:border-border",
-              isThinking && "opacity-60"
+              "rounded-lg border bg-background p-4",
+              "shadow-sm transition-colors hover:border-border",
+              "relative"
             )}>
+              {/* Copy Button */}
+              <div className="absolute top-2 right-2">
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        onClick={() => copyToClipboard(message.content)}
+                      >
+                        {copied ? (
+                          <Check className="h-3 w-3" />
+                        ) : (
+                          <Copy className="h-3 w-3" />
+                        )}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="text-xs">{copied ? 'Copied!' : 'Copy response'}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+
               <ReactMarkdown components={components}>
-                {isComplete ? message.content : (message.content || "Thinking...")}
+                {message.content}
               </ReactMarkdown>
+
+              {/* Sources Section */}
+              {sources.length > 0 && isComplete && (
+                <div className="mt-6 pt-6 border-t">
+                  <div className="flex items-center gap-2 mb-4">
+                    <BookOpen className="h-4 w-4" />
+                    <span className="text-sm font-medium">Sources</span>
+                  </div>
+                  <div className="space-y-4">
+                    {sources.map((source, index) => (
+                      <Card key={index} className="p-3">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-sm font-medium">{source.title}</span>
+                          {source.url && (
+                            <a
+                              href={source.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs text-blue-500 hover:underline"
+                            >
+                              <Link className="h-3 w-3 inline" />
+                            </a>
+                          )}
+                        </div>
+                        {source.content && (
+                          <pre className="text-xs overflow-x-auto p-2 bg-muted rounded-md">
+                            {source.content}
+                          </pre>
+                        )}
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </>
         )}
       </div>
     </div>
-  )
+  );
 }
