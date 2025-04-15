@@ -5,18 +5,17 @@ interface UseAgentChatSSEProps {
   apiUrl: string; // Keep for potential future use, though currently overridden
 }
 
-// Define ChatMessage interface (Exported from this file now)
+// Define ChatMessage interface
 export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   event?: string;
-  status?: string;
+  status?: 'thinking' | 'error' | 'complete';
+  progress?: number;
   toolCalls?: {
-    type: string;
-    function: {
-      name: string;
-      arguments: string;
-    };
+    tool_name: string;
+    status: 'started' | 'completed' | 'error';
+    content?: string;
   }[];
 }
 

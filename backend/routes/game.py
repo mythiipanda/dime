@@ -6,8 +6,8 @@ from backend.api_tools.game_tools import (
     fetch_boxscore_traditional_logic as fetch_game_boxscore_logic,
     fetch_playbyplay_logic as fetch_game_playbyplay_logic,
     fetch_shotchart_logic as fetch_game_shotchart_logic,
-    fetch_league_games_logic as fetch_league_scoreboard_logic
 )
+from backend.api_tools.league_tools import fetch_scoreboard_logic # Import correct scoreboard logic
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -63,14 +63,16 @@ async def get_league_scoreboard(request: FetchRequest) -> Dict[str, Any]:
     Get league scoreboard for a specific date.
     """
     try:
-        # Although FetchRequest is used, this endpoint might not need specific params
-        # depending on fetch_league_scoreboard_logic implementation.
-        # If it needs a date, it should be passed in request.params
-        # game_date = request.params.get("game_date") # Example if date is needed
-        # if not game_date:
-        #     raise HTTPException(status_code=400, detail="game_date is required")
+        # Extract potential parameters for scoreboard logic
+        game_date = request.params.get("game_date") # Expects YYYY-MM-DD or None for today
+        day_offset_str = request.params.get("day_offset", "0")
+        try:
+            day_offset = int(day_offset_str)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="day_offset must be an integer")
 
-        result = fetch_league_scoreboard_logic() # Pass params if needed, e.g., fetch_league_scoreboard_logic(game_date)
+        # Call the correct scoreboard logic function
+        result = fetch_scoreboard_logic(game_date=game_date, day_offset=day_offset)
         return {"result": result}
     except Exception as e:
         logger.error(f"Error getting league scoreboard: {str(e)}", exc_info=True)

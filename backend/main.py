@@ -56,7 +56,7 @@ app.add_middleware(
 # Include routers
 app.include_router(sse_router, prefix="/api", tags=["sse"])  # Mount SSE router under /api prefix
 app.include_router(player_router, prefix="/api", tags=["player"])
-app.include_router(analyze_router, prefix="/api/analyze", tags=["analyze"])
+# app.include_router(analyze_router, prefix="/api/analyze", tags=["analyze"]) # Removed analyze router
 app.include_router(team_router, prefix="/api", tags=["team"])
 app.include_router(game_router, prefix="/api", tags=["game"])
 app.include_router(player_tracking_router, prefix="/api/player/tracking", tags=["player_tracking"])

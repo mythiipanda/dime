@@ -63,6 +63,29 @@ class ShootingStats(TypedDict):
     touch_time: Optional[str]
     defender_distance: Optional[str]
 
+def _validate_team_tracking_params(team_identifier: str, season: str) -> Optional[str]:
+    """Validate common parameters for team tracking stats functions."""
+    if not team_identifier or not season:
+        return format_response(error=ErrorMessages.MISSING_REQUIRED_PARAMS)
+    return None
+
+def _get_team_for_tracking(team_identifier: str) -> tuple[Optional[str], Optional[int], Optional[str]]:
+    """Get team info for tracking stats functions."""
+    team_id, team_name = _find_team_id(team_identifier)
+    if team_id is None:
+        return (format_response(error=ErrorMessages.TEAM_NOT_FOUND.format(identifier=team_identifier)), None, None)
+    return (None, team_id, team_name)
+
+def _create_team_tracking_result(team_id: int, team_name: str, season: str, season_type: str, data: Dict) -> Dict:
+    """Create a standard result structure for team tracking stats."""
+    return {
+        "team_id": team_id,
+        "team_name": team_name,
+        "season": season,
+        "season_type": season_type,
+        **data
+    }
+
 def fetch_team_passing_stats_logic(
     team_identifier: str,
     season: str,
@@ -79,36 +102,19 @@ def fetch_team_passing_stats_logic(
         per_mode (str): Per mode type (per game, per minute, etc.)
         
     Returns:
-        str: JSON string containing:
-        {
-            "team_id": str,
-            "team_name": str,
-            "season": str,
-            "season_type": str,
-            "passes_made": [
-                {
-                    "pass_from": str,
-                    "frequency": float,
-                    "passes": float,
-                    "assists": float,
-                    "shooting": {
-                        "fgm": float,
-                        "fga": float,
-                        "fg_pct": float
-                    }
-                }
-            ],
-            "passes_received": [...]
-        }
+        str: JSON string containing team passing stats
     """
     logger.info(f"Executing fetch_team_passing_stats_logic for: {team_identifier}, Season: {season}")
     
-    if not team_identifier or not season:
-        return format_response(error=ErrorMessages.MISSING_REQUIRED_PARAMS)
-
-    team_id, team_name = _find_team_id(team_identifier)
-    if team_id is None:
-        return format_response(error=ErrorMessages.TEAM_NOT_FOUND.format(identifier=team_identifier))
+    # Validate parameters
+    validation_error = _validate_team_tracking_params(team_identifier, season)
+    if validation_error:
+        return validation_error
+    
+    # Get team info
+    error_response, team_id, team_name = _get_team_for_tracking(team_identifier)
+    if error_response:
+        return error_response
 
     try:
         pass_stats = teamdashptpass.TeamDashPtPass(
@@ -166,14 +172,16 @@ def fetch_team_passing_stats_logic(
                 }
             })
 
-        result = {
-            "team_id": team_id,
-            "team_name": team_name,
-            "season": season,
-            "season_type": season_type,
-            "passes_made": processed_passes_made,
-            "passes_received": processed_passes_received
-        }
+        result = _create_team_tracking_result(
+            team_id,
+            team_name,
+            season,
+            season_type,
+            {
+                "passes_made": processed_passes_made,
+                "passes_received": processed_passes_received
+            }
+        )
 
         return format_response(result)
 
@@ -212,12 +220,15 @@ def fetch_team_rebounding_stats_logic(
     """
     logger.info(f"Executing fetch_team_rebounding_stats_logic for: {team_identifier}, Season: {season}")
     
-    if not team_identifier or not season:
-        return format_response(error=ErrorMessages.MISSING_REQUIRED_PARAMS)
-
-    team_id, team_name = _find_team_id(team_identifier)
-    if team_id is None:
-        return format_response(error=ErrorMessages.TEAM_NOT_FOUND.format(identifier=team_identifier))
+    # Validate parameters
+    validation_error = _validate_team_tracking_params(team_identifier, season)
+    if validation_error:
+        return validation_error
+    
+    # Get team info
+    error_response, team_id, team_name = _get_team_for_tracking(team_identifier)
+    if error_response:
+        return error_response
 
     try:
         reb_stats = teamdashptreb.TeamDashPtReb(
@@ -236,24 +247,26 @@ def fetch_team_rebounding_stats_logic(
         if not all([overall, shot_type, shot_dist, reb_dist]):
             return format_response(error=ErrorMessages.DATA_PROCESSING_ERROR)
 
-        result = {
-            "team_id": team_id,
-            "team_name": team_name,
-            "season": season,
-            "season_type": season_type,
-            "overall": {
-                "total": overall.get("REB", 0.0),
-                "offensive": overall.get("OREB", 0.0),
-                "defensive": overall.get("DREB", 0.0),
-                "contested": overall.get("C_REB", 0.0),
-                "uncontested": overall.get("UC_REB", 0.0),
-                "contested_pct": overall.get("C_REB_PCT", 0.0)
-            },
-            "shot_type": shot_type,
-            "shot_distance": shot_dist,
-            "rebound_distance": reb_dist,
-            "shot_distance_rebounding": shot_dist
-        }
+        result = _create_team_tracking_result(
+            team_id,
+            team_name,
+            season,
+            season_type,
+            {
+                "overall": {
+                    "total": overall.get("REB", 0.0),
+                    "offensive": overall.get("OREB", 0.0),
+                    "defensive": overall.get("DREB", 0.0),
+                    "contested": overall.get("C_REB", 0.0),
+                    "uncontested": overall.get("UC_REB", 0.0),
+                    "contested_pct": overall.get("C_REB_PCT", 0.0)
+                },
+                "shot_type": shot_type,
+                "shot_distance": shot_dist,
+                "rebound_distance": reb_dist,
+                "shot_distance_rebounding": shot_dist
+            }
+        )
 
         return format_response(result)
 
@@ -293,12 +306,15 @@ def fetch_team_shooting_stats_logic(
     """
     logger.info(f"Executing fetch_team_shooting_stats_logic for: {team_identifier}, Season: {season}")
     
-    if not team_identifier or not season:
-        return format_response(error=ErrorMessages.MISSING_REQUIRED_PARAMS)
-
-    team_id, team_name = _find_team_id(team_identifier)
-    if team_id is None:
-        return format_response(error=ErrorMessages.TEAM_NOT_FOUND.format(identifier=team_identifier))
+    # Validate parameters
+    validation_error = _validate_team_tracking_params(team_identifier, season)
+    if validation_error:
+        return validation_error
+    
+    # Get team info
+    error_response, team_id, team_name = _get_team_for_tracking(team_identifier)
+    if error_response:
+        return error_response
 
     try:
         shot_stats = teamdashptshots.TeamDashPtShots(
@@ -318,26 +334,28 @@ def fetch_team_shooting_stats_logic(
         if not all([general, shot_clock, dribbles, closest_def, touch_time]):
             return format_response(error=ErrorMessages.DATA_PROCESSING_ERROR)
 
-        result = {
-            "team_id": team_id,
-            "team_name": team_name,
-            "season": season,
-            "season_type": season_type,
-            "general": {
-                shot_type["SHOT_TYPE"].lower().replace(" ", "_"): {
-                    "frequency": shot_type.get("FGA_FREQUENCY", 0.0),
-                    "fgm": shot_type.get("FGM", 0.0),
-                    "fga": shot_type.get("FGA", 0.0),
-                    "fg_pct": shot_type.get("FG_PCT", 0.0),
-                    "efg_pct": shot_type.get("EFG_PCT", 0.0)
-                }
-                for shot_type in general
-            },
-            "shot_clock": shot_clock,
-            "dribbles": dribbles,
-            "touch_time": touch_time,
-            "defender_distance": closest_def
-        }
+        result = _create_team_tracking_result(
+            team_id,
+            team_name,
+            season,
+            season_type,
+            {
+                "general": {
+                    shot_type["SHOT_TYPE"].lower().replace(" ", "_"): {
+                        "frequency": shot_type.get("FGA_FREQUENCY", 0.0),
+                        "fgm": shot_type.get("FGM", 0.0),
+                        "fga": shot_type.get("FGA", 0.0),
+                        "fg_pct": shot_type.get("FG_PCT", 0.0),
+                        "efg_pct": shot_type.get("EFG_PCT", 0.0)
+                    }
+                    for shot_type in general
+                },
+                "shot_clock": shot_clock,
+                "dribbles": dribbles,
+                "touch_time": touch_time,
+                "defender_distance": closest_def
+            }
+        )
 
         return format_response(result)
 

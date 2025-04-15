@@ -5,7 +5,7 @@ from datetime import datetime
 from nba_api.live.nba.endpoints import scoreboard
 from nba_api.stats.endpoints import boxscoretraditionalv2, playbyplay, shotchartdetail, leaguegamefinder
 from backend.config import DEFAULT_TIMEOUT, ErrorMessages as Errors
-from backend.api_tools.utils import _process_dataframe
+from backend.api_tools.utils import _process_dataframe, format_response
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +29,7 @@ def fetch_boxscore_traditional_logic(game_id: str) -> str:
     logger.info(f"Executing fetch_boxscore_traditional_logic for game ID: {game_id}")
     
     if not game_id:
-        error_result = {"error": "Game ID cannot be empty"}
-        return json.dumps(error_result)
+        return format_response(error=Errors.GAME_ID_EMPTY)
     
     try:
         # Get boxscore data
@@ -130,12 +129,11 @@ def fetch_boxscore_traditional_logic(game_id: str) -> str:
         }
         
         logger.info(f"fetch_boxscore_traditional_logic completed for game {game_id}")
-        return json.dumps(result, default=str)
+        return format_response(result)
         
     except Exception as e:
         logger.error(f"Error fetching boxscore for game {game_id}: {str(e)}", exc_info=True)
-        error_result = {"error": f"Failed to fetch boxscore: {str(e)}"}
-        return json.dumps(error_result, default=str)
+        return format_response(error=Errors.BOXSCORE_API.format(game_id=game_id, error=str(e)))
 
 def fetch_playbyplay_logic(game_id: str) -> str:
     """
@@ -150,8 +148,7 @@ def fetch_playbyplay_logic(game_id: str) -> str:
     logger.info(f"Executing fetch_playbyplay_logic for game ID: {game_id}")
     
     if not game_id:
-        error_result = {"error": "Game ID cannot be empty"}
-        return json.dumps(error_result)
+        return format_response(error=Errors.GAME_ID_EMPTY)
     
     try:
         # Get play-by-play data
@@ -198,12 +195,11 @@ def fetch_playbyplay_logic(game_id: str) -> str:
         }
         
         logger.info(f"fetch_playbyplay_logic completed for game {game_id}")
-        return json.dumps(result, default=str)
+        return format_response(result)
         
     except Exception as e:
         logger.error(f"Error fetching play-by-play for game {game_id}: {str(e)}", exc_info=True)
-        error_result = {"error": f"Failed to fetch play-by-play: {str(e)}"}
-        return json.dumps(error_result, default=str)
+        return format_response(error=Errors.PLAYBYPLAY_API.format(game_id=game_id, error=str(e)))
 
 def _determine_play_team(row):
     """Helper function to determine which team the play belongs to"""
@@ -248,8 +244,7 @@ def fetch_shotchart_logic(game_id: str) -> str:
     logger.info(f"Executing fetch_shotchart_logic for game ID: {game_id}")
     
     if not game_id:
-        error_result = {"error": "Game ID cannot be empty"}
-        return json.dumps(error_result)
+        return format_response(error=Errors.GAME_ID_EMPTY)
     
     try:
         # Get shot chart data - set team_id and player_id to 0 to get all shots
@@ -333,12 +328,11 @@ def fetch_shotchart_logic(game_id: str) -> str:
         }
         
         logger.info(f"fetch_shotchart_logic completed for game {game_id}")
-        return json.dumps(result, default=str)
+        return format_response(result)
         
     except Exception as e:
         logger.error(f"Error fetching shot chart for game {game_id}: {str(e)}", exc_info=True)
-        error_result = {"error": f"Failed to fetch shot chart: {str(e)}"}
-        return json.dumps(error_result, default=str)
+        return format_response(error=Errors.SHOTCHART_API.format(game_id=game_id, error=str(e)))
 
 def fetch_league_games_logic(
     player_or_team_abbreviation: str = 'T',
@@ -371,9 +365,9 @@ def fetch_league_games_logic(
     try:
         # Validate required IDs
         if player_or_team_abbreviation == 'P' and player_id_nullable is None:
-            return json.dumps({"error": "player_id is required when player_or_team='P'."})
+            return format_response(error=Errors.PLAYER_ID_REQUIRED)
         if player_or_team_abbreviation == 'T' and team_id_nullable is None:
-            return json.dumps({"error": "team_id is required when player_or_team='T'."})
+            return format_response(error=Errors.TEAM_ID_REQUIRED)
         
         # Call LeagueGameFinder endpoint
         gamefinder = leaguegamefinder.LeagueGameFinder(
@@ -394,9 +388,8 @@ def fetch_league_games_logic(
         result = {"games": games}
         
         logger.info(f"fetch_league_games_logic completed. Found {len(games)} games.")
-        return json.dumps(result, default=str)
+        return format_response(result)
         
     except Exception as e:
         logger.error(f"Error fetching games: {str(e)}", exc_info=True)
-        error_result = {"error": f"Failed to fetch games: {str(e)}"}
-        return json.dumps(error_result, default=str)
+        return format_response(error=Errors.LEAGUE_GAMES_API.format(error=str(e)))

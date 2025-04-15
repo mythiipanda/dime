@@ -8,33 +8,29 @@ import { PromptInputForm } from '@/components/agent/PromptInputForm';
 import { ChatMessageDisplay } from '@/components/agent/ChatMessageDisplay';
 import { ErrorDisplay } from '@/components/agent/ErrorDisplay';
 import { ScrollArea } from "@/components/ui/scroll-area";
-// import { Separator } from "@/components/ui/separator"; // Component not found, needs to be added via shadcn CLI
+import { Separator } from "@/components/ui/separator";
 
-// Renamed function component
 export default function AiAssistantPage() {
   const {
     isLoading,
     error,
     chatHistory,
     submitPrompt,
-    closeConnection, // Get closeConnection if needed for cleanup
-  } = useAgentChatSSE({ apiUrl: '/ask' }); // apiUrl is technically ignored by the hook now
+    closeConnection,
+  } = useAgentChatSSE({ apiUrl: '/ask' });
 
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
-  // Scroll to bottom whenever chatHistory changes
   useEffect(() => {
     if (scrollAreaRef.current) {
-      // Use setTimeout to allow the DOM to update before scrolling
       setTimeout(() => {
         if (scrollAreaRef.current) {
            scrollAreaRef.current.scrollTo({ top: scrollAreaRef.current.scrollHeight, behavior: 'smooth' });
         }
-      }, 100); // Small delay might be needed
+      }, 100);
     }
   }, [chatHistory]);
 
-  // Optional: Close SSE connection on component unmount
   useEffect(() => {
     return () => {
       closeConnection();
@@ -49,42 +45,52 @@ export default function AiAssistantPage() {
      handlePromptSubmit(prompt);
   };
 
-
   return (
-    <div className="flex flex-col h-[calc(100vh-theme(space.24))]"> {/* Adjust height as needed */}
-      {/* Chat messages area */}
-      <ScrollArea className="flex-grow p-4" ref={scrollAreaRef}>
+    <div className="min-h-screen flex flex-col">
+      <main className="flex-1 flex flex-col">
         {chatHistory.length === 0 && !isLoading && !error ? (
-          <InitialChatScreen 
-            onExampleClick={handleExamplePromptClick}
-            onSubmit={handlePromptSubmit}
-            isLoading={isLoading}
-          />
+          <div className="flex-1 flex flex-col">
+            <div className="flex-1 flex items-center justify-center px-4">
+              <div className="w-full max-w-5xl">
+                <InitialChatScreen 
+                  onExampleClick={handleExamplePromptClick}
+                  onSubmit={handlePromptSubmit}
+                  isLoading={isLoading}
+                />
+              </div>
+            </div>
+            <div className="border-t bg-background/95">
+              <div className="container max-w-5xl mx-auto p-4">
+                <PromptInputForm onSubmit={handlePromptSubmit} isLoading={isLoading} />
+              </div>
+            </div>
+          </div>
         ) : (
           <>
-            {chatHistory.map((msg, index) => (
-              <ChatMessageDisplay 
-                key={index} 
-                message={msg} 
-                isLatest={index === chatHistory.length - 1}
-              />
-            ))}
-            {error && <ErrorDisplay error={error} />}
+            <ScrollArea className="flex-1 px-4 container" ref={scrollAreaRef}>
+              <div className="py-4 space-y-6 max-w-5xl mx-auto">
+                {chatHistory.map((msg, index) => (
+                  <ChatMessageDisplay 
+                    key={index} 
+                    message={msg} 
+                    isLatest={index === chatHistory.length - 1}
+                  />
+                ))}
+                {error && <ErrorDisplay error={error} />}
+              </div>
+            </ScrollArea>
+
+            <div className="border-t bg-background/95">
+              <div className="container max-w-5xl mx-auto p-4 space-y-4">
+                <PromptInputForm onSubmit={handlePromptSubmit} isLoading={isLoading} />
+                <p className="text-xs text-center text-muted-foreground opacity-75 transition-opacity hover:opacity-100">
+                  AI may produce inaccurate information. Verify important details.
+                </p>
+              </div>
+            </div>
           </>
         )}
-      </ScrollArea>
-
-      {/* <Separator /> */} {/* Component not found, needs to be added via shadcn CLI */}
-
-      {/* Input area - only show when there's chat history */}
-      {chatHistory.length > 0 && (
-        <div className="p-4 space-y-4">
-          <PromptInputForm onSubmit={handlePromptSubmit} isLoading={isLoading} />
-          <p className="text-xs text-center text-muted-foreground">
-            AI may produce inaccurate information. Verify important details.
-          </p>
-        </div>
-      )}
+      </main>
     </div>
   );
 }

@@ -150,7 +150,7 @@ get_player_rebounding_stats_declaration = {
 
 get_player_shots_tracking_declaration = {
     "name": "get_player_shots_tracking",
-    "description": "Fetches player shot tracking stats.",
+    "description": "Fetches player shot tracking stats using the player's ID.", # Updated description
     "parameters": {
         "type": "object",
         "properties": {
@@ -267,7 +267,7 @@ get_team_rebounding_stats_declaration = {
 # Game Tools Declarations
 find_games_declaration = {
     "name": "find_games",
-    "description": "Finds games based on Player/Team ID and optional date range. Filtering by season/type is disabled.",
+    "description": "Finds games based on Player/Team ID and optional filters (season, type, league, date range).", # Updated description
     "parameters": {
         "type": "object",
         "properties": {
@@ -278,11 +278,23 @@ find_games_declaration = {
             },
             "player_id": {
                 "type": "integer",
-                "description": "Required if player_or_team='P'. Omit or pass null otherwise.",
+                "description": "Player ID. Required if player_or_team='P'. Omit or pass null otherwise.",
             },
             "team_id": {
                 "type": "integer",
-                "description": "Required if player_or_team='T'. Omit or pass null otherwise.",
+                "description": "Team ID. Required if player_or_team='T'. Omit or pass null otherwise.",
+            },
+            "season": { # Added parameter
+                "type": "string",
+                "description": "Optional season identifier (e.g., '2023-24').",
+            },
+            "season_type": { # Added parameter
+                "type": "string",
+                "description": "Optional season type (e.g., 'Regular Season', 'Playoffs').",
+            },
+            "league_id": { # Added parameter
+                "type": "string",
+                "description": "Optional league ID (e.g., '00' for NBA).",
             },
             "date_from": {
                 "type": "string",
@@ -293,6 +305,9 @@ find_games_declaration = {
                 "description": "Optional end date filter (MM/DD/YYYY).",
             },
         },
+        # Note: player_id/team_id are conditionally required based on player_or_team,
+        # but the schema doesn't easily support this. Agent instructions handle it.
+        "required": [], # Removed explicit requirement here, handled by logic/instructions
     },
 }
 
@@ -311,35 +326,8 @@ get_boxscore_traditional_declaration = {
     },
 }
 
-# get_boxscore_advanced_declaration = { # Tool disabled as logic is not implemented/imported
-#     "name": "get_boxscore_advanced",
-#     "description": "Fetches the advanced box score (V3) for a specific game (e.g., Ratings, Pace).",
-#     "parameters": {
-#         "type": "object",
-#         "properties": {
-#             "game_id": {
-#                 "type": "string",
-#                 "description": "The 10-digit ID of the game.",
-#             },
-#         },
-#         "required": ["game_id"],
-#     },
-# }
-
-# get_boxscore_fourfactors_declaration = { # Tool disabled as logic is not implemented/imported
-#     "name": "get_boxscore_fourfactors",
-#     "description": "Fetches the Four Factors box score (V3) for a specific game (e.g., eFG%, TOV Ratio).",
-#     "parameters": {
-#         "type": "object",
-#         "properties": {
-#             "game_id": {
-#                 "type": "string",
-#                 "description": "The 10-digit ID of the game.",
-#             },
-#         },
-#         "required": ["game_id"],
-#     },
-# }
+# Note: get_boxscore_advanced_declaration removed as tool is disabled.
+# Note: get_boxscore_fourfactors_declaration removed as tool is disabled.
 
 get_playbyplay_declaration = {
     "name": "get_playbyplay",
@@ -454,8 +442,8 @@ all_function_declarations = [
     get_team_info_and_roster_declaration,
     find_games_declaration,
     get_boxscore_traditional_declaration,
-    # get_boxscore_advanced_declaration, # Tool disabled
-    # get_boxscore_fourfactors_declaration, # Tool disabled
+    # get_boxscore_advanced_declaration removed
+    # get_boxscore_fourfactors_declaration removed
     get_playbyplay_declaration,
     get_league_standings_declaration,
     get_scoreboard_declaration,

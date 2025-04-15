@@ -72,55 +72,7 @@ class ShootingStats(TypedDict):
     by_touch_time: List[Dict]
     by_defender_distance: List[Dict]
 
-def fetch_player_info_logic(player_name: str) -> str:
-    """
-    Fetch detailed player information.
-    
-    Args:
-        player_name (str): Player's name
-        
-    Returns:
-        str: JSON string containing:
-        {
-            "info": {basic player info},
-            "headline_stats": {current season averages},
-            "available_seasons": [list of seasons]
-        }
-    """
-    logger.info(f"Executing fetch_player_info_logic for player: {player_name}")
-    
-    if not player_name:
-        return json.dumps({"error": ErrorMessages.MISSING_REQUIRED_PARAMS})
-        
-    try:
-        # Find player ID
-        player_id, _ = _find_player_id(player_name)
-        if player_id is None:
-            return json.dumps({"error": ErrorMessages.PLAYER_NOT_FOUND.format(name=player_name)})
-            
-        player_info = commonplayerinfo.CommonPlayerInfo(
-            player_id=player_id,
-            timeout=DEFAULT_TIMEOUT
-        )
-        
-        info = _process_dataframe(player_info.common_player_info.get_data_frame(), single_row=True)
-        headline = _process_dataframe(player_info.player_headline_stats.get_data_frame(), single_row=True)
-        seasons = _process_dataframe(player_info.available_seasons.get_data_frame(), single_row=False)
-        
-        if not all([info, headline, seasons]):
-            return json.dumps({"error": ErrorMessages.DATA_PROCESSING_ERROR})
-            
-        result = {
-            "info": info,
-            "headline_stats": headline,
-            "available_seasons": seasons
-        }
-        
-        return json.dumps(result, default=str)
-        
-    except Exception as e:
-        logger.error(f"Error fetching player info: {str(e)}", exc_info=True)
-        return json.dumps({"error": f"Error fetching player info: {str(e)}"})
+# Removed duplicate fetch_player_info_logic (exists in player_tools.py)
 
 def fetch_player_rebounding_stats_logic(
     player_name: str,
@@ -204,7 +156,7 @@ def fetch_player_rebounding_stats_logic(
         
     except Exception as e:
         logger.error(f"Error fetching rebounding stats: {str(e)}", exc_info=True)
-        return format_response(error=f"Error fetching rebounding stats: {str(e)}")
+        return format_response(error=ErrorMessages.PLAYER_REBOUNDING_STATS_UNEXPECTED.format(name=player_name, error=str(e)))
 
 def fetch_player_passing_stats_logic(
     player_name: str,
@@ -304,7 +256,7 @@ def fetch_player_passing_stats_logic(
         
     except Exception as e:
         logger.error(f"Error fetching passing stats: {str(e)}", exc_info=True)
-        return format_response(error=f"Error fetching passing stats: {str(e)}")
+        return format_response(error=ErrorMessages.PLAYER_PASSING_STATS_UNEXPECTED.format(name=player_name, error=str(e)))
 
 def fetch_player_shots_tracking_logic(player_id: str) -> str:
     """
@@ -385,20 +337,83 @@ def fetch_player_shots_tracking_logic(player_id: str) -> str:
         
     except Exception as e:
         logger.error(f"Error fetching shooting stats: {str(e)}", exc_info=True)
-        return format_response(error=f"Error fetching shooting stats: {str(e)}")
+        return format_response(error=ErrorMessages.PLAYER_SHOOTING_STATS_UNEXPECTED.format(player_id=player_id, error=str(e)))
 
-def fetch_player_clutch_stats_logic(player_name: str, season: str = CURRENT_SEASON, season_type: str = SeasonTypeAllStar.regular) -> str:
-    """Core logic to fetch player clutch stats."""
-    logger.info(f"Executing fetch_player_clutch_stats_logic for: '{player_name}', Season: {season}, Type: {season_type}")
+def fetch_player_clutch_stats_logic(
+    player_name: str, 
+    season: str = CURRENT_SEASON,
+    season_type: str = SeasonTypeAllStar.regular,
+    measure_type: str = "Base",
+    per_mode: str = "Totals",
+    plus_minus: str = "N",
+    pace_adjust: str = "N",
+    rank: str = "N",
+    shot_clock_range: str = None,
+    game_segment: str = None,
+    period: int = 0,
+    last_n_games: int = 0,
+    month: int = 0,
+    opponent_team_id: int = 0,
+    location: str = None,
+    outcome: str = None,
+    vs_conference: str = None,
+    vs_division: str = None,
+    season_segment: str = None,
+    date_from: str = None,
+    date_to: str = None
+) -> str:
+    """Core logic to fetch player clutch stats.
+    
+    Args:
+        player_name (str): Player's name
+        season (str): Season in YYYY-YY format
+        season_type (str): Season type (Regular Season, Playoffs, etc.)
+        measure_type (str): One of: Base, Advanced, Misc, Four Factors, Scoring, Opponent, Usage
+        per_mode (str): One of: Totals, PerGame, MinutesPer, Per48, Per40, Per36, PerMinute, PerPossession, PerPlay, Per100Possessions, Per100Plays
+        plus_minus (str): Include plus minus stats (Y/N)
+        pace_adjust (str): Include pace adjusted stats (Y/N)
+        rank (str): Include stat rankings (Y/N)
+        shot_clock_range (str, optional): Shot clock range filter
+        game_segment (str, optional): Game segment filter (First Half, Second Half, Overtime)
+        period (int): Period filter (0 for all)
+        last_n_games (int): Last N games filter
+        month (int): Month filter (0 for all)
+        opponent_team_id (int): Filter by opponent team
+        location (str, optional): Home/Road filter
+        outcome (str, optional): W/L filter
+        vs_conference (str, optional): Conference filter
+        vs_division (str, optional): Division filter
+        season_segment (str, optional): Season segment filter
+        date_from (str, optional): Start date filter
+        date_to (str, optional): End date filter
+    """
+    logger.info(f"Executing fetch_player_clutch_stats_logic for: '{player_name}', Season: {season}")
+    
+    # Input validation
     if not player_name or not player_name.strip():
-        return json.dumps({"error": ErrorMessages.PLAYER_NAME_EMPTY})
+        return format_response(error=ErrorMessages.PLAYER_NAME_EMPTY)
     if not season or not _validate_season_format(season):
-        return json.dumps({"error": ErrorMessages.INVALID_SEASON_FORMAT.format(season=season)})
+        return format_response(error=ErrorMessages.INVALID_SEASON_FORMAT.format(season=season))
+        
+    # Validate measure type
+    valid_measure_types = ["Base", "Advanced", "Misc", "Four Factors", "Scoring", "Opponent", "Usage"]
+    if measure_type not in valid_measure_types:
+        return format_response(error=ErrorMessages.INVALID_MEASURE_TYPE)
+        
+    # Validate per mode
+    valid_per_modes = ["Totals", "PerGame", "MinutesPer", "Per48", "Per40", "Per36", "PerMinute", "PerPossession", "PerPlay", "Per100Possessions", "Per100Plays"]
+    if per_mode not in valid_per_modes:
+        return format_response(error=ErrorMessages.INVALID_PER_MODE)
+        
+    # Validate Y/N parameters
+    if plus_minus not in ["Y", "N"] or pace_adjust not in ["Y", "N"] or rank not in ["Y", "N"]:
+        return format_response(error=ErrorMessages.INVALID_PLUS_MINUS)
 
     try:
+        # Find player ID
         player_id, player_actual_name = _find_player_id(player_name)
         if player_id is None:
-            return json.dumps({"error": ErrorMessages.PLAYER_NOT_FOUND.format(name=player_name)})
+            return format_response(error=ErrorMessages.PLAYER_NOT_FOUND.format(name=player_name))
 
         logger.debug(f"Fetching playerdashboardbyclutch for ID: {player_id}, Season: {season}")
         try:
@@ -406,30 +421,77 @@ def fetch_player_clutch_stats_logic(player_name: str, season: str = CURRENT_SEAS
                 player_id=player_id,
                 season=season,
                 season_type_all_star=season_type,
+                measure_type_detailed=measure_type,
+                per_mode_detailed=per_mode,
+                plus_minus=plus_minus,
+                pace_adjust=pace_adjust,
+                rank=rank,
+                shot_clock_range=shot_clock_range,
+                game_segment_nullable=game_segment,
+                period=period,
+                last_n_games=last_n_games,
+                month=month,
+                opponent_team_id=opponent_team_id,
+                location_nullable=location,
+                outcome_nullable=outcome,
+                vs_conference_nullable=vs_conference,
+                vs_division_nullable=vs_division,
+                season_segment_nullable=season_segment,
+                date_from_nullable=date_from,
+                date_to_nullable=date_to,
                 timeout=DEFAULT_TIMEOUT
             )
             logger.debug(f"playerdashboardbyclutch API call successful for ID: {player_id}, Season: {season}")
         except Exception as api_error:
             logger.error(f"nba_api playerdashboardbyclutch failed for ID {player_id}, Season {season}: {api_error}", exc_info=True)
-            return json.dumps({"error": ErrorMessages.PLAYER_CLUTCH_STATS_API.format(name=player_actual_name, season=season, error=str(api_error))})
+            return format_response(error=ErrorMessages.PLAYER_CLUTCH_STATS_API.format(name=player_actual_name, season=season, error=str(api_error)))
 
+        # Get all clutch time period stats
         overall_clutch = _process_dataframe(clutch_endpoint.overall_player_dashboard.get_data_frame(), single_row=True)
-        last5min_clutch = _process_dataframe(clutch_endpoint.last5min_player_dashboard.get_data_frame(), single_row=True)
+        last5min_clutch = _process_dataframe(clutch_endpoint.last5_min5_point_player_dashboard.get_data_frame(), single_row=True)
+        last3min_clutch = _process_dataframe(clutch_endpoint.last3_min5_point_player_dashboard.get_data_frame(), single_row=True)
+        last1min_clutch = _process_dataframe(clutch_endpoint.last1_min5_point_player_dashboard.get_data_frame(), single_row=True)
+        last30sec_clutch = _process_dataframe(clutch_endpoint.last30_sec3_point_player_dashboard.get_data_frame(), single_row=True)
+        last10sec_clutch = _process_dataframe(clutch_endpoint.last10_sec3_point_player_dashboard.get_data_frame(), single_row=True)
 
-        if overall_clutch is None or last5min_clutch is None:
+        # Also get plus/minus versions for applicable periods
+        last5min_plus_minus = _process_dataframe(clutch_endpoint.last5_min_plus_minus5_point_player_dashboard.get_data_frame(), single_row=True)
+        last3min_plus_minus = _process_dataframe(clutch_endpoint.last3_min_plus_minus5_point_player_dashboard.get_data_frame(), single_row=True)
+        last1min_plus_minus = _process_dataframe(clutch_endpoint.last1_min_plus_minus5_point_player_dashboard.get_data_frame(), single_row=True)
+
+        # Verify we got at least the basic stats
+        if overall_clutch is None:
             logger.error(f"DataFrame processing failed for clutch stats of {player_actual_name} ({season}).")
-            return json.dumps({"error": ErrorMessages.PLAYER_CLUTCH_STATS_PROCESSING.format(name=player_actual_name, season=season)})
+            return format_response(error=ErrorMessages.PLAYER_CLUTCH_STATS_PROCESSING.format(name=player_actual_name, season=season))
 
         result = {
             "player_name": player_actual_name,
             "player_id": player_id,
             "season": season,
             "season_type": season_type,
+            "measure_type": measure_type,
+            "per_mode": per_mode,
             "overall_clutch": overall_clutch or {},
-            "last5min_clutch": last5min_clutch or {}
+            "clutch_splits": {
+                "last_5_min": {
+                    "standard": last5min_clutch or {},
+                    "plus_minus": last5min_plus_minus or {}
+                },
+                "last_3_min": {
+                    "standard": last3min_clutch or {},
+                    "plus_minus": last3min_plus_minus or {}
+                },
+                "last_1_min": {
+                    "standard": last1min_clutch or {},
+                    "plus_minus": last1min_plus_minus or {}
+                },
+                "last_30_sec": last30sec_clutch or {},
+                "last_10_sec": last10sec_clutch or {}
+            }
         }
+        
         logger.info(f"fetch_player_clutch_stats_logic completed for '{player_actual_name}', Season: {season}")
-        return json.dumps(result, default=str)
+        return format_response(result)
     except Exception as e:
         logger.critical(f"Unexpected error in fetch_player_clutch_stats_logic for '{player_name}', Season {season}: {e}", exc_info=True)
-        return json.dumps({"error": ErrorMessages.PLAYER_CLUTCH_STATS_UNEXPECTED.format(name=player_name, season=season, error=str(e))})
+        return format_response(error=ErrorMessages.PLAYER_CLUTCH_STATS_UNEXPECTED.format(name=player_name, season=season, error=str(e)))

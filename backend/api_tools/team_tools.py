@@ -7,7 +7,7 @@ from nba_api.stats.endpoints import teaminfocommon, commonteamroster, teamdashbo
 from nba_api.stats.library.parameters import LeagueID, SeasonTypeAllStar
 
 from backend.config import DEFAULT_TIMEOUT, CURRENT_SEASON, ErrorMessages as Errors
-from backend.api_tools.utils import _process_dataframe, _validate_season_format
+from backend.api_tools.utils import _process_dataframe, _validate_season_format, format_response
 
 logger = logging.getLogger(__name__)
 
@@ -60,36 +60,7 @@ def _find_team_id(team_identifier: str) -> Tuple[Optional[int], Optional[str]]:
     logger.warning(f"Team not found for identifier: '{team_identifier}'")
     return None, None
 
-def find_team_by_name(team_name: str) -> Optional[Dict[str, Any]]:
-    """
-    Find a team by their name or abbreviation.
-    
-    Args:
-        team_name (str): The team name or abbreviation to search for
-        
-    Returns:
-        Optional[Dict[str, Any]]: Team information if found, None otherwise
-    """
-    logger.debug(f"Searching for team: '{team_name}'")
-    if not team_name or not team_name.strip():
-        logger.warning("Empty team name provided")
-        return None
-        
-    try:
-        team_id, team_full_name = _find_team_id(team_name)
-        if team_id is not None:
-            # Get full team info from NBA API
-            all_teams = teams.get_teams()
-            for team in all_teams:
-                if team['id'] == team_id:
-                    logger.info(f"Found team: {team['full_name']} (ID: {team_id})")
-                    return team
-                    
-        logger.warning(f"No team found for name: '{team_name}'")
-        return None
-    except Exception as e:
-        logger.error(f"Error finding team '{team_name}': {str(e)}", exc_info=True)
-        return None
+# Removed unused find_team_by_name function
 
 def fetch_team_info_and_roster_logic(team_identifier: str, season: str = CURRENT_SEASON) -> str:
     """
@@ -98,14 +69,14 @@ def fetch_team_info_and_roster_logic(team_identifier: str, season: str = CURRENT
     """
     logger.info(f"Executing fetch_team_info_and_roster_logic for: '{team_identifier}', Season: {season}")
     if not team_identifier or not team_identifier.strip():
-        return json.dumps({"error": Errors.TEAM_IDENTIFIER_EMPTY})
+        return format_response(error=Errors.TEAM_IDENTIFIER_EMPTY)
     if not season or not _validate_season_format(season):
-        return json.dumps({"error": Errors.INVALID_SEASON_FORMAT.format(season=season)})
+        return format_response(error=Errors.INVALID_SEASON_FORMAT.format(season=season))
 
     try:
         team_id, team_name = _find_team_id(team_identifier)
         if team_id is None:
-            return json.dumps({"error": Errors.TEAM_NOT_FOUND.format(identifier=team_identifier)})
+            return format_response(error=Errors.TEAM_NOT_FOUND.format(identifier=team_identifier))
 
         team_info_dict, team_ranks_dict, roster_list, coaches_list = {}, {}, [], []
         errors: List[str] = []
@@ -146,8 +117,9 @@ def fetch_team_info_and_roster_logic(team_identifier: str, season: str = CURRENT
             errors.append("roster/coaches API")
 
         if not team_info_dict and not team_ranks_dict and not roster_list and not coaches_list:
-            logger.error(Errors.TEAM_ALL_FAILED.format(identifier=team_identifier, season=season, errors=', '.join(errors)))
-            return json.dumps({"error": Errors.TEAM_ALL_FAILED.format(identifier=team_identifier, season=season, errors=', '.join(errors))})
+            error_msg = Errors.TEAM_ALL_FAILED.format(identifier=team_identifier, season=season, errors=', '.join(errors))
+            logger.error(error_msg)
+            return format_response(error=error_msg)
 
         # Process team info into a more compact format
         compact_team_info = {}
@@ -206,127 +178,93 @@ def fetch_team_info_and_roster_logic(team_identifier: str, season: str = CURRENT
             result["errors"] = errors
             
         logger.info(f"fetch_team_info_and_roster_logic completed for Team ID: {team_id}, Season: {season}")
-        return json.dumps(result, default=str)
+        return format_response(result)
     except Exception as e:
-        logger.critical(Errors.TEAM_UNEXPECTED.format(identifier=team_identifier, season=season, error=str(e)), exc_info=True)
-        return json.dumps({"error": Errors.TEAM_UNEXPECTED.format(identifier=team_identifier, season=season, error=str(e))})
+        error_msg = Errors.TEAM_UNEXPECTED.format(identifier=team_identifier, season=season, error=str(e))
+        logger.critical(error_msg, exc_info=True)
+        return format_response(error=error_msg)
 
-def fetch_team_stats_logic(team_name: str, season: str = CURRENT_SEASON, season_type: str = SeasonTypeAllStar.regular) -> str:
+def fetch_team_stats_logic(team_identifier: str, season: str = CURRENT_SEASON) -> str:
     """
     Fetches comprehensive team statistics.
     
     Args:
-        team_name (str): The name of the team to fetch stats for
-        season (str): The season to fetch stats for (e.g., '2023-24')
-        season_type (str): The type of season (regular, playoffs, etc.)
+        team_identifier (str): Team name, abbreviation, or ID
+        season (str): NBA season in format 'YYYY-YY'
         
     Returns:
         str: JSON string containing team statistics or error message
     """
-    logger.info(f"Executing fetch_team_stats_logic for: '{team_name}', Season: {season}")
+    logger.info(f"Executing fetch_team_stats_logic for: '{team_identifier}', Season: {season}")
     
-    if not team_name or not team_name.strip():
-        return json.dumps({"error": Errors.TEAM_IDENTIFIER_EMPTY})
+    if not team_identifier or not team_identifier.strip():
+        return format_response(error=Errors.TEAM_IDENTIFIER_EMPTY)
     if not season or not _validate_season_format(season):
-        return json.dumps({"error": Errors.INVALID_SEASON_FORMAT.format(season=season)})
-    
+        return format_response(error=Errors.INVALID_SEASON_FORMAT.format(season=season))
+
     try:
-        # Find team ID
-        team_id, team_full_name = _find_team_id(team_name)
+        team_id, team_name = _find_team_id(team_identifier)
         if team_id is None:
-            return json.dumps({"error": Errors.TEAM_NOT_FOUND.format(identifier=team_name)})
-        
-        # Get team info and roster
-        info_result = json.loads(fetch_team_info_and_roster_logic(team_name, season))
-        if "error" in info_result:
-            return json.dumps({"error": info_result["error"]})
-            
-        # Get team dashboard stats
+            return format_response(error=Errors.TEAM_NOT_FOUND.format(identifier=team_identifier))
+
+        logger.debug(f"Fetching team dashboard stats for Team ID: {team_id}, Season: {season}")
         try:
             dashboard = teamdashboardbygeneralsplits.TeamDashboardByGeneralSplits(
                 team_id=team_id,
                 season=season,
-                season_type_all_star=season_type,
                 timeout=DEFAULT_TIMEOUT
             )
-            logger.debug(f"teamdashboardbygeneralsplits API call successful for ID: {team_id}, Season: {season}")
-        except Exception as api_error:
-            logger.error(f"nba_api teamdashboardbygeneralsplits failed for ID {team_id}, Season {season}: {api_error}", exc_info=True)
-            return json.dumps({"error": Errors.TEAM_API.format(data_type="teamdashboardbygeneralsplits", identifier=team_id, error=str(api_error))})
             
-        overall_stats = _process_dataframe(dashboard.overall_team_dashboard.get_data_frame(), single_row=True)
-        location_stats = _process_dataframe(dashboard.location_team_dashboard.get_data_frame(), single_row=False)
-        wins_losses = _process_dataframe(dashboard.wins_losses_team_dashboard.get_data_frame(), single_row=False)
-        
-        if overall_stats is None or location_stats is None or wins_losses is None:
-            logger.error(f"DataFrame processing failed for team stats of {team_full_name} ({season}).")
-            return json.dumps({"error": Errors.TEAM_PROCESSING.format(data_type="team dashboard stats", identifier=team_id)})
-        
-        # Process overall stats to a more compact format
-        compact_overall = {}
-        if overall_stats:
-            key_fields = ["GP", "W", "L", "W_PCT", "MIN", "FGM", "FGA", "FG_PCT", "FG3M", "FG3A", "FG3_PCT", 
-                          "FTM", "FTA", "FT_PCT", "OREB", "DREB", "REB", "AST", "TOV", "STL", "BLK", "BLKA", 
-                          "PF", "PFD", "PTS", "PLUS_MINUS"]
-            compact_overall = {k: overall_stats.get(k) for k in key_fields if k in overall_stats}
+            # Get overall team stats
+            overall_stats = _process_dataframe(dashboard.overall_team_dashboard.get_data_frame(), single_row=True)
+            if not overall_stats:
+                error_msg = Errors.TEAM_PROCESSING.format(data_type="dashboard stats", identifier=team_id)
+                logger.error(error_msg)
+                return format_response(error=error_msg)
+
+            # Get historical stats
+            historical_stats = []
+            try:
+                yearly_stats = teamyearbyyearstats.TeamYearByYearStats(
+                    team_id=team_id,
+                    per_mode_simple="PerGame",
+                    timeout=DEFAULT_TIMEOUT
+                )
+                historical_df = yearly_stats.get_data_frames()[0]
+                historical_stats = _process_dataframe(historical_df, single_row=False)
+            except Exception as hist_error:
+                logger.warning(f"Could not fetch historical stats: {str(hist_error)}")
+
+            # Create compact result with key statistics
+            key_stats = [
+                "GP", "W", "L", "W_PCT", "MIN", "FGM", "FGA", "FG_PCT", 
+                "FG3M", "FG3A", "FG3_PCT", "FTM", "FTA", "FT_PCT",
+                "OREB", "DREB", "REB", "AST", "TOV", "STL", "BLK",
+                "BLKA", "PF", "PFD", "PTS", "PLUS_MINUS"
+            ]
             
-        # Process location stats to a more compact format
-        compact_location = []
-        if location_stats:
-            for loc in location_stats:
-                compact_loc = {
-                    "GROUP_VALUE": loc.get("GROUP_VALUE"),
-                    "GP": loc.get("GP"),
-                    "W": loc.get("W"),
-                    "L": loc.get("L"),
-                    "W_PCT": loc.get("W_PCT"),
-                    "PTS": loc.get("PTS"),
-                    "AST": loc.get("AST"),
-                    "REB": loc.get("REB"),
-                    "STL": loc.get("STL"),
-                    "BLK": loc.get("BLK")
-                }
-                compact_location.append(compact_loc)
-                
-        # Process win/loss stats to a more compact format
-        compact_winloss = []
-        if wins_losses:
-            for outcome in wins_losses:
-                compact_outcome = {
-                    "GROUP_VALUE": outcome.get("GROUP_VALUE"),
-                    "GP": outcome.get("GP"),
-                    "W": outcome.get("W"),
-                    "L": outcome.get("L"),
-                    "W_PCT": outcome.get("W_PCT"),
-                    "PTS": outcome.get("PTS"),
-                    "AST": outcome.get("AST"),
-                    "REB": outcome.get("REB"),
-                    "STL": outcome.get("STL"),
-                    "BLK": outcome.get("BLK")
-                }
-                compact_winloss.append(compact_outcome)
-        
-        # Combine all results
-        result = {
-            "team_name": team_full_name,
-            "team_id": team_id,
-            "season": season,
-            "season_type": season_type,
-            "info": info_result.get("info", {}),
-            "roster": info_result.get("roster", []),
-            "stats": {
-                "overall": compact_overall,
-                "by_location": compact_location,
-                "by_outcome": compact_winloss
+            compact_stats = {k: overall_stats.get(k) for k in key_stats if k in overall_stats}
+            
+            result = {
+                "team_id": team_id,
+                "team_name": team_name,
+                "season": season,
+                "current_stats": compact_stats,
+                "historical_stats": historical_stats
             }
-        }
-        
-        logger.info(f"fetch_team_stats_logic completed for '{team_full_name}'")
-        return json.dumps(result, default=str)
-        
+            
+            logger.info(f"fetch_team_stats_logic completed for Team ID: {team_id}, Season: {season}")
+            return format_response(result)
+            
+        except Exception as api_error:
+            error_msg = Errors.TEAM_API.format(data_type="team dashboard", identifier=team_id, error=str(api_error))
+            logger.error(error_msg, exc_info=True)
+            return format_response(error=error_msg)
+            
     except Exception as e:
-        logger.critical(f"Unexpected error in fetch_team_stats_logic for '{team_name}': {e}", exc_info=True)
-        return json.dumps({"error": Errors.TEAM_UNEXPECTED.format(identifier=team_name, season=season, error=str(e))})
+        error_msg = Errors.TEAM_UNEXPECTED.format(identifier=team_identifier, season=season, error=str(e))
+        logger.critical(error_msg, exc_info=True)
+        return format_response(error=error_msg)
 
 def fetch_team_passing_stats_logic(team_name: str, season: str = CURRENT_SEASON, season_type: str = SeasonTypeAllStar.regular) -> str:
     """
@@ -343,15 +281,15 @@ def fetch_team_passing_stats_logic(team_name: str, season: str = CURRENT_SEASON,
     logger.info(f"Executing fetch_team_passing_stats_logic for: '{team_name}', Season: {season}")
     
     if not team_name or not team_name.strip():
-        return json.dumps({"error": Errors.TEAM_IDENTIFIER_EMPTY})
+        return format_response(error=Errors.TEAM_IDENTIFIER_EMPTY)
     if not season or not _validate_season_format(season):
-        return json.dumps({"error": Errors.INVALID_SEASON_FORMAT.format(season=season)})
+        return format_response(error=Errors.INVALID_SEASON_FORMAT.format(season=season))
     
     try:
         # Find team ID
         team_id, team_full_name = _find_team_id(team_name)
         if team_id is None:
-            return json.dumps({"error": Errors.TEAM_NOT_FOUND.format(identifier=team_name)})
+            return format_response(error=Errors.TEAM_NOT_FOUND.format(identifier=team_name))
         
         # Get team passing stats
         try:
@@ -364,14 +302,14 @@ def fetch_team_passing_stats_logic(team_name: str, season: str = CURRENT_SEASON,
             logger.debug(f"teamdashptpass API call successful for ID: {team_id}, Season: {season}")
         except Exception as api_error:
             logger.error(f"nba_api teamdashptpass failed for ID {team_id}, Season {season}: {api_error}", exc_info=True)
-            return json.dumps({"error": Errors.TEAM_API.format(data_type="teamdashptpass", identifier=team_id, error=str(api_error))})
+            return format_response(error=Errors.TEAM_API.format(data_type="teamdashptpass", identifier=team_id, error=str(api_error)))
             
         passes_made = _process_dataframe(passing_stats.passes_made.get_data_frame(), single_row=False)
         passes_received = _process_dataframe(passing_stats.passes_received.get_data_frame(), single_row=False)
         
         if passes_made is None or passes_received is None:
             logger.error(f"DataFrame processing failed for team passing stats of {team_full_name} ({season}).")
-            return json.dumps({"error": Errors.TEAM_PROCESSING.format(data_type="team passing stats", identifier=team_id)})
+            return format_response(error=Errors.TEAM_PROCESSING.format(data_type="team passing stats", identifier=team_id))
         
         # Process passes made into more compact format
         compact_passes_made = []
@@ -414,8 +352,9 @@ def fetch_team_passing_stats_logic(team_name: str, season: str = CURRENT_SEASON,
         }
         
         logger.info(f"fetch_team_passing_stats_logic completed for '{team_full_name}'")
-        return json.dumps(result, default=str)
+        return format_response(result)
         
     except Exception as e:
+        error_msg = Errors.TEAM_UNEXPECTED.format(identifier=team_name, season=season, error=str(e))
         logger.critical(f"Unexpected error in fetch_team_passing_stats_logic for '{team_name}': {e}", exc_info=True)
-        return json.dumps({"error": Errors.TEAM_UNEXPECTED.format(identifier=team_name, season=season, error=str(e))})
+        return format_response(error=error_msg)

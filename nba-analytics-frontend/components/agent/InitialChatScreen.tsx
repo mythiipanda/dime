@@ -71,15 +71,6 @@ export function InitialChatScreen({ onExampleClick, onSubmit, isLoading }: Initi
         </p>
       </div>
 
-      {/* Prompt Input Form */}
-      <div className="max-w-3xl mx-auto">
-        <PromptInputForm 
-          onSubmit={onSubmit}
-          isLoading={isLoading}
-          className="shadow-lg"
-        />
-      </div>
-
       {/* Example Categories */}
       <div className="grid gap-4 md:grid-cols-2">
         {EXAMPLE_PROMPTS.map((category) => (

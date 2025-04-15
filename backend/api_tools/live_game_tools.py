@@ -3,7 +3,8 @@ from nba_api.live.nba.endpoints import scoreboard
 from datetime import datetime
 import json
 import logging
-from config import DEFAULT_TIMEOUT
+from config import DEFAULT_TIMEOUT, ErrorMessages as Errors
+from backend.api_tools.utils import format_response
 
 logger = logging.getLogger(__name__)
 
@@ -121,11 +122,13 @@ def fetch_league_scoreboard_logic() -> str:
         if raw_data.get('meta', {}).get('code') != 200:
             error_msg = f"API returned non-200 status: {raw_data.get('meta', {}).get('code')}"
             logger.error(error_msg)
-            return json.dumps({
-                "error": error_msg,
-                "date": datetime.now().strftime("%Y-%m-%d"),
-                "games": []
-            })
+            return format_response(
+                {
+                    "date": datetime.now().strftime("%Y-%m-%d"),
+                    "games": []
+                },
+                error=Errors.SCOREBOARD_API_STATUS.format(status=raw_data.get('meta', {}).get('code'))
+            )
         
         # Extract games data in a compact format
         games_data: List[GameInfo] = []
@@ -173,16 +176,17 @@ def fetch_league_scoreboard_logic() -> str:
         }
         
         logger.info(f"fetch_league_scoreboard_logic completed with {len(games_data)} games")
-        return json.dumps(result, default=str)
+        return format_response(result)
         
     except Exception as e:
         logger.error(f"Error fetching scoreboard data: {str(e)}", exc_info=True)
-        error_result = {
-            "meta": {
-                "timestamp": datetime.now().isoformat(),
-                "error": str(e)
+        return format_response(
+            {
+                "meta": {
+                    "timestamp": datetime.now().isoformat(),
+                },
+                "date": datetime.now().strftime("%Y-%m-%d"),
+                "games": []
             },
-            "date": datetime.now().strftime("%Y-%m-%d"),
-            "games": []
-        }
-        return json.dumps(error_result, default=str)
+            error=Errors.SCOREBOARD_API.format(error=str(e))
+        )

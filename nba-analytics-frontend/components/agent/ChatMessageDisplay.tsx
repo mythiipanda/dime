@@ -4,13 +4,14 @@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Card } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
-import { UserIcon, BotIcon, Loader2, CheckCircle2, XCircle, ChevronDown, ChevronUp, Brain } from "lucide-react"
-import ReactMarkdown from 'react-markdown'
-import type { Components } from 'react-markdown'
+import { UserIcon, BotIcon, Loader2, CheckCircle2, XCircle, ChevronDown, ChevronUp, Brain, Copy, Check } from "lucide-react"
+import ReactMarkdown, { Components } from 'react-markdown'
 import { Progress } from "@/components/ui/progress"
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
+import { ChatMessage as SSEChatMessage } from "@/lib/hooks/useAgentChatSSE"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
 interface ToolCall {
   tool_name: string
@@ -18,23 +19,15 @@ interface ToolCall {
   content?: string
 }
 
-interface ChatMessage {
-  role: "user" | "assistant"
-  content: string
-  event?: string
-  status?: "thinking" | "error" | "complete"
-  progress?: number
-  toolCalls?: ToolCall[]
-}
-
 interface ChatMessageDisplayProps {
-  message: ChatMessage
+  message: SSEChatMessage
   isLatest?: boolean
 }
 
 export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDisplayProps) {
   const isUser = message.role === "user"
   const [isThinkingExpanded, setIsThinkingExpanded] = useState(true)
+  const [copied, setCopied] = useState(false)
   const [intermediateSteps, setIntermediateSteps] = useState<{
     thinking: string[]
     tools: ToolCall[]
@@ -45,17 +38,14 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
     if (!isUser && message.content) {
       if (message.status === "thinking" || message.event === "RunResponse") {
         setIntermediateSteps(prev => {
-          // Skip if content is empty, generic message, or contains "Final Answer"
           if (!message.content || 
               message.content === "Starting to process your request..." ||
               message.content.includes("Final Answer:")) {
             return prev;
           }
 
-          // Create new thinking array with unique entries
           const thoughts: string[] = Array.from(new Set([...prev.thinking, message.content]));
           
-          // Filter out redundant thoughts and final answers
           const uniqueThoughts = thoughts.filter(thought => 
             !thoughts.some(other => 
               other !== thought && 
@@ -75,7 +65,6 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
         setIntermediateSteps(prev => {
           const existingTools = new Map(prev.tools.map(tool => [tool.tool_name, tool]));
           
-          // Update or add new tools
           message.toolCalls?.forEach(newTool => {
             const existing = existingTools.get(newTool.tool_name);
             if (!existing || existing.status !== newTool.status) {
@@ -83,7 +72,6 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
             }
           });
 
-          // Convert back to array and sort
           const sortedTools = Array.from(existingTools.values())
             .sort((a, b) => {
               const statusOrder = { started: 0, completed: 1, error: 2 };
@@ -104,95 +92,143 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
   const hasIntermediateContent = intermediateSteps.thinking.length > 0 || intermediateSteps.tools.length > 0
   const showThinkingProcess = !isUser && (isThinking || hasIntermediateContent)
 
-  const components: Partial<Components> = {
-    code: ({ className, children }) => {
-      const match = /language-(\w+)/.exec(className || '')
-      if (!match) {
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch (err) {
+      console.error('Failed to copy text: ', err)
+    }
+  }
+
+  const components: Components = {
+    code(props) {
+      const { className, children, ...rest } = props;
+      const match = /language-(\w+)/.exec(className || '');
+      const hasLanguage = Boolean(match);
+      const codeText = String(children).replace(/\n$/, '')
+
+      if (hasLanguage && match) {
         return (
-          <code className={cn(
-            "rounded-sm bg-muted px-1.5 py-0.5",
-            isUser ? "bg-primary-foreground/20" : "bg-primary/10"
-          )}>
-            {children}
-          </code>
-        )
+          <div className="relative my-4 group">
+            <div className="absolute right-4 top-3 z-10 flex items-center gap-2">
+              <span className="rounded-md bg-muted px-2 py-1 text-xs font-mono text-muted-foreground">
+                {match[1]}
+              </span>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="opacity-0 group-hover:opacity-100 h-6 w-6 transition-opacity"
+                      onClick={() => copyToClipboard(codeText)}
+                    >
+                      {copied ? (
+                        <Check className="h-3 w-3" />
+                      ) : (
+                        <Copy className="h-3 w-3" />
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p className="text-xs">{copied ? 'Copied!' : 'Copy code'}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+            <pre className={cn(
+              "rounded-lg border bg-muted px-4 py-4 font-mono text-sm",
+              "overflow-x-auto transition-colors",
+              !isUser && "border hover:border-border"
+            )}>
+              <code className={className} {...rest}>{children}</code>
+            </pre>
+          </div>
+        );
       }
 
       return (
-        <div className="relative my-4 rounded-md bg-muted/50">
-          <div className="absolute right-3 top-3 text-xs text-muted-foreground">
-            {match[1]}
-          </div>
-          <pre className={cn(
-            "overflow-x-auto rounded-lg p-4 text-sm",
-            isUser ? "bg-primary-foreground/10" : "bg-primary/5"
-          )}>
-            <code className="block">{children}</code>
-          </pre>
-        </div>
-      )
+        <code
+          className={cn(
+            "relative rounded-md bg-muted px-[0.3rem] py-[0.2rem] font-mono text-sm",
+            !isUser && "bg-muted",
+            className
+          )}
+          {...rest}
+        >
+          {children}
+        </code>
+      );
     },
-    p(props) {
-      return <p {...props} className="mb-3 last:mb-0 leading-relaxed" />
+    p({ children, ...props }) {
+      return <p {...props} className="mb-4 leading-7 last:mb-0">{children}</p>;
     },
-    ul(props) {
-      return <ul {...props} className="list-disc pl-6 mb-3 last:mb-0 space-y-1" />
+    ul({ children, ...props }) {
+      return <ul {...props} className="my-6 ml-6 list-disc marker:text-muted-foreground [&>li]:mt-2">{children}</ul>;
     },
-    ol(props) {
-      return <ol {...props} className="list-decimal pl-6 mb-3 last:mb-0 space-y-1" />
+    ol({ children, ...props }) {
+      return <ol {...props} className="my-6 ml-6 list-decimal marker:text-muted-foreground [&>li]:mt-2">{children}</ol>;
     },
-    table(props) {
+    li({ children, ...props }) {
+      return <li {...props} className="leading-7">{children}</li>;
+    },
+    a({ children, href, ...props }) {
       return (
-        <div className="overflow-x-auto my-4">
-          <table {...props} className="min-w-full divide-y divide-border" />
-        </div>
-      )
-    },
-    th(props) {
-      return <th {...props} className="px-3 py-2 font-semibold bg-muted/50 text-left" />
-    },
-    td(props) {
-      return <td {...props} className="px-3 py-2 border-t" />
+        <a 
+          href={href}
+          className="font-medium underline underline-offset-4 transition-colors hover:text-primary"
+          target="_blank"
+          rel="noopener noreferrer"
+          {...props}
+        >
+          {children}
+        </a>
+      );
     }
-  }
+  };
 
   return (
     <div
       className={cn(
-        "flex w-full gap-4 p-4",
+        "group relative flex gap-6 py-6",
         isUser ? "flex-row-reverse" : "flex-row",
-        isLatest && "animate-in fade-in slide-in-from-bottom-5"
+        isLatest && "animate-in fade-in slide-in-from-bottom-2 duration-300"
       )}
     >
-      <Avatar className={cn(
-        "h-10 w-10 ring-2 shrink-0",
-        isUser ? "bg-primary ring-primary" : "bg-muted ring-muted"
-      )}>
-        {isUser ? (
-          <>
-            <AvatarFallback>
-              <UserIcon className="h-5 w-5" />
-            </AvatarFallback>
-          </>
-        ) : (
-          <>
-            <AvatarFallback>
-              <BotIcon className="h-5 w-5" />
-            </AvatarFallback>
-          </>
-        )}
-      </Avatar>
+      <div className="flex h-8 w-8 shrink-0 select-none items-center justify-center">
+        <Avatar className={cn(
+          "h-8 w-8 ring-2 transition-colors",
+          isUser 
+            ? "bg-background ring-border" 
+            : "bg-background ring-border"
+        )}>
+          <AvatarFallback>
+            {isUser ? (
+              <UserIcon className="h-4 w-4 text-white" />
+            ) : (
+              <BotIcon className="h-4 w-4 text-white" />
+            )}
+          </AvatarFallback>
+        </Avatar>
+      </div>
 
-      <div className="flex-1 space-y-3">
+      <div className={cn(
+        "flex-1 space-y-4",
+        isUser && "items-end"
+      )}>
         {/* User Message */}
         {isUser && (
-          <Card className="rounded-2xl px-4 py-3 shadow-md bg-primary text-primary-foreground">
-            <div className="prose prose-sm dark:prose-invert max-w-none">
-              <ReactMarkdown components={components}>
-                {message.content}
-              </ReactMarkdown>
-            </div>
-          </Card>
+          <div className={cn(
+            "prose prose-neutral dark:prose-invert max-w-none",
+            "rounded-lg border bg-background p-4",
+            "shadow-sm transition-colors hover:border-border"
+          )}>
+            <ReactMarkdown components={components}>
+              {message.content}
+            </ReactMarkdown>
+          </div>
         )}
 
         {/* Assistant Response */}
@@ -200,58 +236,64 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
           <>
             {/* Intermediate Updates Box */}
             {showThinkingProcess && (
-              <Card className="rounded-2xl px-4 py-3 shadow-sm bg-muted/5 border border-muted/20">
+              <Card className={cn(
+                "rounded-lg border bg-background p-4",
+                "shadow-sm transition-colors hover:border-border"
+              )}>
                 <Collapsible
                   open={isThinkingExpanded}
                   onOpenChange={setIsThinkingExpanded}
                 >
-                  <div className="flex items-center gap-2 mb-2">
+                  <div className="flex items-center gap-3 mb-3">
                     <CollapsibleTrigger asChild>
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-6 w-6 p-0 hover:bg-muted/20"
+                        className="h-7 w-7 p-0 hover:bg-accent"
                       >
                         {isThinkingExpanded ? (
-                          <ChevronUp className="h-3 w-3" />
+                          <ChevronUp className="h-4 w-4" />
                         ) : (
-                          <ChevronDown className="h-3 w-3" />
+                          <ChevronDown className="h-4 w-4" />
                         )}
+                        <span className="sr-only">
+                          {isThinkingExpanded ? "Hide details" : "Show details"}
+                        </span>
                       </Button>
                     </CollapsibleTrigger>
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <Brain className="h-3 w-3" />
-                      <span className="text-xs font-medium">
+                    <div className="flex items-center gap-2">
+                      <Brain className="h-4 w-4 text-foreground" />
+                      <span className="text-sm font-medium">
                         {isThinking ? "Thinking..." : "Steps"}
                       </span>
                     </div>
                     {message.progress !== undefined && (
                       <Progress 
                         value={message.progress} 
-                        className="h-1 flex-1"
+                        className="h-1.5 flex-1"
                       />
                     )}
                   </div>
 
-                  <CollapsibleContent className="space-y-2">
+                  <CollapsibleContent className="space-y-3">
                     {/* Show intermediate thinking content */}
                     {intermediateSteps.thinking.map((thought, index) => (
                       <div 
                         key={`thought-${index}-${thought.substring(0, 20)}`} 
                         className={cn(
-                          "rounded-lg p-2.5 text-xs",
+                          "rounded-lg border p-3 text-sm transition-colors",
                           index % 2 === 0 
-                            ? "bg-blue-500/5 border border-blue-500/10" 
-                            : "bg-purple-500/5 border border-purple-500/10"
+                            ? "border bg-background hover:border-border" 
+                            : "border bg-accent hover:border-border"
                         )}
                       >
-                        <div className="flex items-center gap-2 mb-1">
-                          <Brain className="h-3 w-3 text-muted-foreground" />
-                          <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Brain className="h-3.5 w-3.5 text-muted-foreground" />
+                          <span className="text-xs font-medium tracking-wide text-muted-foreground">
                             Reasoning Step {index + 1}
                           </span>
                         </div>
-                        <div className="text-foreground">
+                        <div className="prose prose-sm prose-neutral dark:prose-invert">
                           <ReactMarkdown components={components}>
                             {thought}
                           </ReactMarkdown>
@@ -264,30 +306,30 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
                       <div 
                         key={`${tool.tool_name}-${tool.status}`}
                         className={cn(
-                          "rounded-lg p-2.5 text-xs",
+                          "rounded-lg border p-3 text-sm transition-colors",
                           tool.status === "started" 
-                            ? "bg-yellow-500/5 border border-yellow-500/10" 
+                            ? "border bg-background hover:border-border" 
                             : tool.status === "completed" 
-                              ? "bg-green-500/5 border border-green-500/10" 
-                              : "bg-red-500/5 border border-red-500/10"
+                              ? "border bg-background hover:border-border" 
+                              : "border bg-destructive/10 hover:border-border"
                         )}
                       >
-                        <div className="flex items-center gap-2 mb-1">
+                        <div className="flex items-center gap-2 mb-2">
                           {tool.status === "started" && (
-                            <Loader2 className="h-3 w-3 animate-spin text-yellow-500" />
+                            <Loader2 className="h-3.5 w-3.5 animate-spin text-yellow-600" />
                           )}
                           {tool.status === "completed" && (
-                            <CheckCircle2 className="h-3 w-3 text-green-500" />
+                            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
                           )}
                           {tool.status === "error" && (
-                            <XCircle className="h-3 w-3 text-red-500" />
+                            <XCircle className="h-3.5 w-3.5 text-red-600" />
                           )}
-                          <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
+                          <span className="text-xs font-medium tracking-wide text-muted-foreground">
                             {tool.tool_name}
                           </span>
                         </div>
                         {tool.content && (
-                          <div className="text-foreground">
+                          <div className="prose prose-sm prose-neutral dark:prose-invert">
                             <ReactMarkdown components={components}>
                               {tool.content}
                             </ReactMarkdown>
@@ -302,21 +344,16 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
 
             {/* Final Response */}
             <div className={cn(
-              "rounded-2xl px-4 py-3",
+              "prose prose-neutral dark:prose-invert max-w-none",
+              "rounded-2xl border p-4 transition-all duration-200",
               !isComplete 
-                ? "shadow-sm bg-card" 
-                : "bg-gradient-to-br from-blue-500/5 to-purple-500/5 border border-blue-500/10"
+                ? "border bg-background shadow-sm" 
+                : "border bg-background shadow-sm hover:border-border",
+              isThinking && "opacity-60"
             )}>
-              <div className="prose prose-sm dark:prose-invert max-w-none">
-                <div className={cn(
-                  "transition-opacity duration-200",
-                  isThinking ? "opacity-50" : "opacity-100"
-                )}>
-                  <ReactMarkdown components={components}>
-                    {isComplete ? message.content : (message.content || "Thinking...")}
-                  </ReactMarkdown>
-                </div>
-              </div>
+              <ReactMarkdown components={components}>
+                {isComplete ? message.content : (message.content || "Thinking...")}
+              </ReactMarkdown>
             </div>
           </>
         )}

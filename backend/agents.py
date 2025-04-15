@@ -4,34 +4,28 @@ from agno.agent import Agent
 from agno.models.google import Gemini
 from agno.tools.thinking import ThinkingTools
 from config import AGENT_MODEL_ID, STORAGE_DB_FILE, AGENT_DEBUG_MODE, CURRENT_SEASON
-from api_tools.player_tools import (
+
+# Import all tool functions from the consolidated tools module
+from .tools import (
     get_player_info,
-    fetch_player_gamelog_logic as get_player_gamelog,
-    fetch_player_career_stats_logic as get_player_career_stats,
-    fetch_player_awards_logic as get_player_awards,
-    fetch_player_stats_logic as get_player_clutch_stats
-)
-from api_tools.team_tools import (
-    fetch_team_info_and_roster_logic as get_team_info_and_roster
-)
-from api_tools.game_tools import (
-    fetch_league_games_logic as find_games,
-    fetch_boxscore_traditional_logic as get_boxscore_traditional,
-    fetch_playbyplay_logic as get_playbyplay
-)
-from api_tools.league_tools import (
-    fetch_league_standings_logic as get_league_standings,
-    fetch_scoreboard_logic as get_scoreboard,
-    fetch_league_leaders_logic as get_league_leaders,
-    fetch_draft_history_logic as get_draft_history
-)
-from api_tools.tools import (
+    get_player_gamelog,
+    get_player_career_stats,
+    get_player_awards,
+    get_player_clutch_stats,
+    get_player_passing_stats,
+    get_player_rebounding_stats,
+    get_player_shots_tracking,
+    get_team_info_and_roster,
     get_team_passing_stats,
     get_team_shooting_stats,
     get_team_rebounding_stats,
-    get_player_shots_tracking,
-    get_player_rebounding_stats,
-    get_player_passing_stats
+    find_games,
+    get_boxscore_traditional,
+    get_playbyplay,
+    get_league_standings,
+    get_scoreboard,
+    get_draft_history,
+    get_league_leaders,
 )
 from function_declarations import all_function_declarations
 import datetime
@@ -43,6 +37,7 @@ load_dotenv()
 model = Gemini(
     id=AGENT_MODEL_ID,
     function_declarations=all_function_declarations
+    # Removed tool_config as it caused TypeError
 )
 
 # --- Agent Definition ---

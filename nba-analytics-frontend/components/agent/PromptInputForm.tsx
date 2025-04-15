@@ -51,44 +51,45 @@ export function PromptInputForm({
     <form
       onSubmit={handleSubmit}
       className={cn(
-        'flex flex-col space-y-2 w-full max-w-4xl mx-auto p-4',
+        'relative flex w-full items-center gap-2',
         className
       )}
     >
-      <div className="flex items-end space-x-2">
-        <textarea
-          ref={textareaRef}
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Ask about NBA players, teams, games, or stats..."
-          className="flex-1 min-h-[40px] max-h-[200px] p-2 rounded-md border border-input bg-background resize-none" /* Spacing: rounded-md */
-          disabled={isLoading}
-          rows={1}
-        />
-        <div className="flex-shrink-0">
-          {isLoading && onStop ? (
-            <Button
-              type="button"
-              variant="destructive"
-              size="icon"
-              onClick={onStop}
-              className="h-10 w-10"
-            >
-              <StopCircleIcon className="h-4 w-4" />
-            </Button>
-          ) : (
-            <Button
-              type="submit"
-              disabled={!prompt.trim() || isLoading}
-              className="h-10 w-10"
-              size="icon"
-            >
-              <SendIcon className="h-4 w-4" />
-            </Button>
-          )}
-        </div>
-      </div>
+      <textarea
+        ref={textareaRef}
+        value={prompt}
+        onChange={(e) => setPrompt(e.target.value)}
+        onKeyDown={handleKeyDown}
+        placeholder="Ask about NBA players, teams, games, or stats..."
+        className={cn(
+          "flex-1 resize-none rounded-xl border bg-background px-4 py-3",
+          "min-h-[48px] max-h-[200px] text-base leading-relaxed",
+          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+          "disabled:cursor-not-allowed disabled:opacity-50"
+        )}
+        disabled={isLoading}
+        rows={1}
+      />
+      {isLoading && onStop ? (
+        <Button
+          type="button"
+          variant="destructive"
+          size="icon"
+          onClick={onStop}
+          className="h-12 w-12 shrink-0 rounded-xl"
+        >
+          <StopCircleIcon className="h-5 w-5" />
+        </Button>
+      ) : (
+        <Button
+          type="submit"
+          disabled={!prompt.trim() || isLoading}
+          className="h-12 w-12 shrink-0 rounded-xl"
+          size="icon"
+        >
+          <SendIcon className="h-5 w-5" />
+        </Button>
+      )}
     </form>
   );
 }

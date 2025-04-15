@@ -8,7 +8,7 @@ from nba_api.stats.endpoints import leaguestandingsv3, scoreboardv2, drafthistor
 from nba_api.stats.library.parameters import LeagueID, SeasonType, PerMode48, Scope, StatCategoryAbbreviation, SeasonTypeAllStar, MeasureTypeDetailedDefense, PerMode36, Season
 from datetime import datetime # Import datetime for default date
 
-from backend.api_tools.utils import _process_dataframe
+from backend.api_tools.utils import _process_dataframe, format_response
 from backend.config import DEFAULT_TIMEOUT, ErrorMessages as Errors, CURRENT_SEASON
 
 logger = logging.getLogger(__name__)
@@ -35,9 +35,7 @@ def fetch_league_standings_logic(
         standings_df = standings.standings.get_data_frame()
         if standings_df.empty:
             logger.warning(f"No standings data found for season {season}")
-            return json.dumps({
-                "standings": []
-            })
+            return format_response({"standings": []})
         
         # Process the DataFrame to match frontend expectations
         processed_standings = []
@@ -75,14 +73,12 @@ def fetch_league_standings_logic(
             "standings": processed_standings
         }
         
-        return json.dumps(result)
+        return format_response(result)
         
     except Exception as e:
         logger.error(f"Error in fetch_league_standings_logic: {str(e)}", exc_info=True)
         error_msg = str(e) if isinstance(e, Exception) else "Unknown error"
-        return json.dumps({
-            "error": Errors.STANDINGS_API.format(season=season, error=error_msg)
-        })
+        return format_response(error=Errors.STANDINGS_API.format(season=season, error=error_msg))
 
 def fetch_scoreboard_logic(
     game_date: str = datetime.today().strftime('%Y-%m-%d'), # Default to today
@@ -100,7 +96,7 @@ def fetch_scoreboard_logic(
         datetime.strptime(game_date, '%Y-%m-%d')
     except ValueError:
         logger.error(f"Invalid game_date format: {game_date}. Expected YYYY-MM-DD.")
-        return json.dumps({"error": Errors.INVALID_DATE_FORMAT.format(date=game_date)}) # Need to add this error message
+        return format_response(error=Errors.INVALID_DATE_FORMAT.format(date=game_date))
 
     try:
         logger.debug(f"Fetching scoreboardv2 for Date: {game_date}, League: {league_id}, Offset: {day_offset}")
@@ -114,7 +110,7 @@ def fetch_scoreboard_logic(
             logger.debug(f"scoreboardv2 API call successful for Date: {game_date}")
         except Exception as api_error:
             logger.error(f"nba_api scoreboardv2 failed for Date {game_date}: {api_error}", exc_info=True)
-            return json.dumps({"error": Errors.SCOREBOARD_API.format(date=game_date, error=str(api_error))}) # Need to add this error message
+            return format_response(error=Errors.SCOREBOARD_API.format(date=game_date, error=str(api_error)))
 
         # Extract key dataframes, simplify output
         game_header = _process_dataframe(scoreboard_endpoint.game_header.get_data_frame(), single_row=False)
@@ -139,11 +135,11 @@ def fetch_scoreboard_logic(
             # "west_standings": west_conf_standings or []  # Example if added
         }
         logger.info(f"fetch_scoreboard_logic completed for Date: {game_date}")
-        return json.dumps(result, default=str)
+        return format_response(result)
 
     except Exception as e:
         logger.critical(f"Unexpected error in fetch_scoreboard_logic for Date '{game_date}': {e}", exc_info=True)
-        return json.dumps({"error": Errors.SCOREBOARD_UNEXPECTED.format(date=game_date, error=str(e))}) # Need to add this error message
+        return format_response(error=Errors.SCOREBOARD_UNEXPECTED.format(date=game_date, error=str(e)))
 
 def fetch_draft_history_logic(
     season_year: Optional[str] = None, # YYYY format
@@ -158,7 +154,7 @@ def fetch_draft_history_logic(
     # Basic validation for season_year format (YYYY)
     if season_year and (not season_year.isdigit() or len(season_year) != 4):
         logger.error(f"Invalid season_year format: {season_year}. Expected YYYY.")
-        return json.dumps({"error": Errors.INVALID_DRAFT_YEAR_FORMAT.format(year=season_year)}) # Need to add this error message
+        return format_response(error=Errors.INVALID_DRAFT_YEAR_FORMAT.format(year=season_year))
 
     try:
         logger.debug(f"Fetching drafthistory for SeasonYear: {season_year}, League: {league_id}")
@@ -172,13 +168,13 @@ def fetch_draft_history_logic(
             logger.debug(f"drafthistory API call successful for SeasonYear: {season_year}")
         except Exception as api_error:
             logger.error(f"nba_api drafthistory failed for SeasonYear {season_year}: {api_error}", exc_info=True)
-            return json.dumps({"error": Errors.DRAFT_HISTORY_API.format(year=season_year or 'All', error=str(api_error))}) # Need to add this error message
+            return format_response(error=Errors.DRAFT_HISTORY_API.format(year=season_year or 'All', error=str(api_error)))
 
         draft_list = _process_dataframe(draft_endpoint.draft_history.get_data_frame(), single_row=False)
 
         if draft_list is None:
             logger.error(f"DataFrame processing failed for draft history ({season_year or 'All'}).")
-            return json.dumps({"error": Errors.DRAFT_HISTORY_PROCESSING.format(year=season_year or 'All')}) # Need to add this error message
+            return format_response(error=Errors.DRAFT_HISTORY_PROCESSING.format(year=season_year or 'All'))
 
         result = {
             "season_year_requested": season_year or "All",
@@ -186,11 +182,11 @@ def fetch_draft_history_logic(
             "draft_picks": draft_list or []
         }
         logger.info(f"fetch_draft_history_logic completed for SeasonYear: {season_year or 'All'}")
-        return json.dumps(result, default=str)
+        return format_response(result)
 
     except Exception as e:
         logger.critical(f"Unexpected error in fetch_draft_history_logic for SeasonYear '{season_year or 'All'}': {e}", exc_info=True)
-        return json.dumps({"error": Errors.DRAFT_HISTORY_UNEXPECTED.format(year=season_year or 'All', error=str(e))}) # Need to add this error message
+        return format_response(error=Errors.DRAFT_HISTORY_UNEXPECTED.format(year=season_year or 'All', error=str(e)))
 
 def fetch_league_leaders_logic(
     season: str,
@@ -215,7 +211,7 @@ def fetch_league_leaders_logic(
         
         leaders_df = leaders.league_leaders.get_data_frame()
         if leaders_df.empty:
-            return json.dumps({
+            return format_response({
                 "season": season,
                 "stat_category": stat_category,
                 "season_type": season_type,
@@ -231,92 +227,11 @@ def fetch_league_leaders_logic(
             "leaders": leaders_list
         }
         
-        return json.dumps(result)
+        return format_response(result)
         
     except Exception as e:
         logger.error(f"Error in fetch_league_leaders_logic: {str(e)}", exc_info=True)
-        return json.dumps({"error": f"Unexpected error retrieving league leaders: {str(e)}"})
+        return format_response(error=Errors.LEAGUE_LEADERS_UNEXPECTED.format(error=str(e)))
 
-def fetch_league_lineups_logic(
-    season: str,
-    season_type: str = SeasonTypeAllStar.regular,
-    measure_type: str = MeasureTypeDetailedDefense.base,
-    per_mode: str = PerMode36.per_game
-) -> str:
-    """
-    Fetches league lineup statistics.
-    Returns JSON string with lineup data.
-    """
-    logger.info(f"Executing fetch_league_lineups_logic for season: {season}")
-    
-    try:
-        lineups = leaguedashlineups.LeagueDashLineups(
-            season=season,
-            season_type_all_star=season_type,
-            measure_type_detailed_defense=measure_type,
-            per_mode48=per_mode,
-            timeout=DEFAULT_TIMEOUT
-        )
-        
-        lineups_df = lineups.lineups.get_data_frame()
-        if lineups_df.empty:
-            return json.dumps({
-                "season": season,
-                "season_type": season_type,
-                "lineups": []
-            })
-        
-        lineups_list = _process_dataframe(lineups_df, single_row=False)
-        
-        result = {
-            "season": season,
-            "season_type": season_type,
-            "lineups": lineups_list
-        }
-        
-        return json.dumps(result)
-        
-    except Exception as e:
-        logger.error(f"Error in fetch_league_lineups_logic: {str(e)}", exc_info=True)
-        return json.dumps({"error": f"Unexpected error retrieving league lineups: {str(e)}"})
-
-def fetch_league_hustle_stats_logic(
-    season: str,
-    season_type: str = SeasonTypeAllStar.regular,
-    per_mode: str = PerMode36.per_game
-) -> str:
-    """
-    Fetches league-wide hustle statistics.
-    Returns JSON string with hustle stats data.
-    """
-    logger.info(f"Executing fetch_league_hustle_stats_logic for season: {season}")
-    
-    try:
-        hustle_stats = leaguehustlestatsplayer.LeagueHustleStatsPlayer(
-            season=season,
-            season_type_all_star=season_type,
-            per_mode48=per_mode,
-            timeout=DEFAULT_TIMEOUT
-        )
-        
-        hustle_stats_df = hustle_stats.hustle_stats_player.get_data_frame()
-        if hustle_stats_df.empty:
-            return json.dumps({
-                "season": season,
-                "season_type": season_type,
-                "hustle_stats": []
-            })
-        
-        hustle_stats_list = _process_dataframe(hustle_stats_df, single_row=False)
-        
-        result = {
-            "season": season,
-            "season_type": season_type,
-            "hustle_stats": hustle_stats_list
-        }
-        
-        return json.dumps(result)
-        
-    except Exception as e:
-        logger.error(f"Error in fetch_league_hustle_stats_logic: {str(e)}", exc_info=True)
-        return json.dumps({"error": f"Unexpected error retrieving league hustle stats: {str(e)}"})
+# Removed unused fetch_league_lineups_logic function
+# Removed unused fetch_league_hustle_stats_logic function

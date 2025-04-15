@@ -8,7 +8,7 @@ from nba_api.stats.library.parameters import SeasonTypeAllStar, LeagueIDNullable
 from fuzzywuzzy import fuzz
 
 from config import DEFAULT_PLAYER_SEARCH_LIMIT, MIN_PLAYER_SEARCH_LENGTH, DEFAULT_TIMEOUT, MAX_SEARCH_RESULTS, ErrorMessages as Errors
-from api_tools.utils import _process_dataframe
+from api_tools.utils import _process_dataframe, format_response
 
 logger = logging.getLogger(__name__)
 
@@ -71,16 +71,16 @@ def search_players_logic(query: str, limit: int = MAX_SEARCH_RESULTS) -> str:
     logger.info(f"Executing search_players_logic with query: '{query}'")
     
     if not query:
-        return json.dumps({"error": Errors.EMPTY_SEARCH_QUERY})
+        return format_response(error=Errors.EMPTY_SEARCH_QUERY)
     
     if len(query) < MIN_PLAYER_SEARCH_LENGTH:
-        return json.dumps({"error": Errors.SEARCH_QUERY_TOO_SHORT})
+        return format_response(error=Errors.SEARCH_QUERY_TOO_SHORT)
     
     try:
         # Use cached player list for better performance
         all_players = _get_cached_player_list()
         if not all_players:
-            return json.dumps({"players": []})
+            return format_response({"players": []})
         
         # Filter players based on query
         query_lower = query.lower()
@@ -96,11 +96,11 @@ def search_players_logic(query: str, limit: int = MAX_SEARCH_RESULTS) -> str:
             "players": filtered_players
         }
         
-        return json.dumps(result)
+        return format_response(result)
         
     except Exception as e:
         logger.error(f"Error in search_players_logic: {str(e)}", exc_info=True)
-        return json.dumps({"error": Errors.UNEXPECTED_ERROR})
+        return format_response(error=Errors.UNEXPECTED_ERROR)
 
 def search_teams_logic(query: str, limit: int = MAX_SEARCH_RESULTS) -> str:
     """
@@ -110,12 +110,12 @@ def search_teams_logic(query: str, limit: int = MAX_SEARCH_RESULTS) -> str:
     logger.info(f"Executing search_teams_logic with query: '{query}'")
     
     if not query:
-        return json.dumps({"error": Errors.EMPTY_SEARCH_QUERY})
+        return format_response(error=Errors.EMPTY_SEARCH_QUERY)
     
     try:
         all_teams = teams.get_teams()
         if not all_teams:
-            return json.dumps({"teams": []})
+            return format_response({"teams": []})
         
         # Filter teams based on query
         query_lower = query.lower()
@@ -134,11 +134,11 @@ def search_teams_logic(query: str, limit: int = MAX_SEARCH_RESULTS) -> str:
             "teams": filtered_teams
         }
         
-        return json.dumps(result)
+        return format_response(result)
         
     except Exception as e:
         logger.error(f"Error in search_teams_logic: {str(e)}", exc_info=True)
-        return json.dumps({"error": Errors.UNEXPECTED_ERROR})
+        return format_response(error=Errors.UNEXPECTED_ERROR)
 
 def _find_team_id_by_name(name: str) -> Optional[int]:
     """Finds a team ID by full name, nickname, or abbreviation."""
@@ -165,9 +165,9 @@ def search_games_logic(
     logger.info(f"Executing search_games_logic with query: '{query}', season: {season}")
 
     if not query:
-        return json.dumps({"error": Errors.EMPTY_SEARCH_QUERY})
+        return format_response(error=Errors.EMPTY_SEARCH_QUERY)
     if not season:
-        return json.dumps({"error": Errors.INVALID_SEASON})
+        return format_response(error=Errors.INVALID_SEASON)
 
     team1_id = None
     team2_id = None
@@ -190,10 +190,9 @@ def search_games_logic(
         # If not a clear matchup, try finding a single team ID from the query
         team1_id = _find_team_id_by_name(query)
         logger.info(f"Could not parse into two teams. Searching for single team: '{query}' (ID: {team1_id})")
-
     if not team1_id and not team2_id:
-         logger.warning(f"Could not find any team IDs for query: '{query}'")
-         return json.dumps({"games": []}) # No teams found
+        logger.warning(f"Could not find any team IDs for query: '{query}'")
+        return format_response({"games": []}) # No teams found
 
     try:
         game_finder = leaguegamefinder.LeagueGameFinder(
@@ -232,8 +231,8 @@ def search_games_logic(
         result = {
             "games": games_list
         }
-        return json.dumps(result, default=str)
+        return format_response(result)
 
     except Exception as e:
         logger.error(f"Error in search_games_logic: {str(e)}", exc_info=True)
-        return json.dumps({"error": Errors.UNEXPECTED_ERROR})
+        return format_response(error=Errors.UNEXPECTED_ERROR)

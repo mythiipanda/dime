@@ -4,10 +4,10 @@ from typing import Optional, List, Dict, Any
 import json
 from backend.api_tools.player_tools import (
     get_player_headshot_url,
-    find_players_by_name_fragment,
     fetch_player_stats_logic,
-    fetch_player_info_logic,
+    fetch_player_info_logic, # Keep this import here
 )
+from backend.api_tools.search import find_players_by_name_fragment # Import search function separately
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
