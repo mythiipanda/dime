@@ -8,9 +8,8 @@ from nba_api.stats.endpoints import leaguestandingsv3, scoreboardv2, drafthistor
 from nba_api.stats.library.parameters import LeagueID, SeasonType, PerMode48, Scope, StatCategoryAbbreviation, SeasonTypeAllStar, MeasureTypeDetailedDefense, PerMode36, Season
 from datetime import datetime # Import datetime for default date
 
-from api_tools.utils import _process_dataframe
-from config import DEFAULT_TIMEOUT, ErrorMessages as Errors
-from config import CURRENT_SEASON # Import CURRENT_SEASON
+from backend.api_tools.utils import _process_dataframe
+from backend.config import DEFAULT_TIMEOUT, ErrorMessages as Errors, CURRENT_SEASON
 
 logger = logging.getLogger(__name__)
 
@@ -255,7 +254,7 @@ def fetch_league_lineups_logic(
             timeout=DEFAULT_TIMEOUT
         )
         
-        lineups_df = lineups.league_dash_lineups.get_data_frame()
+        lineups_df = lineups.lineups.get_data_frame()
         if lineups_df.empty:
             return json.dumps({
                 "season": season,
@@ -296,7 +295,7 @@ def fetch_league_hustle_stats_logic(
             timeout=DEFAULT_TIMEOUT
         )
         
-        hustle_stats_df = hustle_stats.league_hustle_stats_player.get_data_frame()
+        hustle_stats_df = hustle_stats.hustle_stats_player.get_data_frame()
         if hustle_stats_df.empty:
             return json.dumps({
                 "season": season,

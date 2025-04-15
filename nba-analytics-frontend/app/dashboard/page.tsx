@@ -15,6 +15,7 @@ import {
   Table,
   AlertCircle,
 } from "lucide-react";
+import LiveScores from "@/components/live-scores/LiveScores"; // Import the LiveScores component
 
 export default function DashboardPage() {
   return (
@@ -37,6 +38,9 @@ export default function DashboardPage() {
           </Button>
         </div>
       </div>
+
+      {/* Add the LiveScores component here */}
+      <LiveScores />
 
       <Alert>
         <AlertCircle className="h-4 w-4" />

@@ -18,14 +18,14 @@ from api_tools.player_tools import (
 from api_tools.team_tools import (
     fetch_team_info_and_roster_logic as fetch_team_info_and_roster,
     fetch_team_stats_logic as fetch_team_stats,
-    fetch_team_passing_stats_logic as fetch_team_passing_stats
+    fetch_team_passing_stats_logic as fetch_team_passing_stats,
 )
 from api_tools.game_tools import (
     fetch_boxscore_traditional_logic as fetch_boxscore_traditional,
-    fetch_boxscore_advanced_logic as fetch_boxscore_advanced,
-    fetch_boxscore_fourfactors_logic as fetch_boxscore_fourfactors,
-    fetch_playbyplay_logic as fetch_playbyplay,
-    fetch_league_games_logic as fetch_league_games
+    # fetch_boxscore_advanced_logic as fetch_boxscore_advanced, # Logic not implemented in game_tools.py
+    # fetch_boxscore_fourfactors_logic as fetch_boxscore_fourfactors, # Logic not implemented in game_tools.py
+    fetch_playbyplay_logic as fetch_playbyplay
+    # fetch_league_games_logic as fetch_league_games # Logic not implemented in game_tools.py (uses leaguegamefinder)
 )
 from api_tools.league_tools import (
     fetch_league_standings_logic as fetch_league_standings,
@@ -33,10 +33,11 @@ from api_tools.league_tools import (
     fetch_draft_history_logic as fetch_draft_history,
     fetch_league_leaders_logic as fetch_league_leaders
 )
+
 from api_tools.player_tracking import (
     fetch_player_clutch_stats_logic as fetch_player_clutch_stats,
     fetch_player_passing_stats_logic as fetch_player_passing_stats,
-    fetch_player_shots_tracking_logic as fetch_player_shots_tracking,
+    fetch_player_shooting_stats_logic as fetch_player_shooting_stats,
     fetch_player_rebounding_stats_logic as fetch_player_rebounding_stats
 )
 
@@ -98,8 +99,9 @@ def get_player_career_stats(player_name: str, per_mode36: str = PerMode36.per_ga
          logger.warning(f"Invalid per_mode36 '{per_mode36}' in tool wrapper. Logic function will use default.")
     return fetch_player_career_stats(player_name, per_mode36)
 
+from api_tools.game_tools import fetch_league_games_logic
+
 @tool
-# Simplified signature further: Removed season, season_type, league_id
 def find_games(
     player_or_team: str = 'T',
     player_id: Optional[int] = None,  # Make truly optional
@@ -130,7 +132,7 @@ def find_games(
         return json.dumps({"error": "team_id is required when player_or_team='T'."})
 
     # Call logic function, passing None for the removed parameters
-    return fetch_league_games(
+    return fetch_league_games_logic(
         player_or_team_abbreviation=player_or_team,
         player_id_nullable=player_id,
         team_id_nullable=team_id,
@@ -192,7 +194,6 @@ def get_playbyplay(game_id: str, start_period: int = 0, end_period: int = 0) -> 
     Args:
         game_id (str): The 10-digit ID of the game.
         start_period (int): Optional starting period filter (0 for all). Defaults to 0.
-        end_period (int): Optional ending period filter (0 for all). Defaults to 0.
     Returns: str: JSON string containing play-by-play actions or {'error': ...}.
     """
     logger.debug(f"Tool 'get_playbyplay' called for game_id '{game_id}', start '{start_period}', end '{end_period}'")
@@ -234,27 +235,29 @@ def get_league_leaders(
         per_mode48=per_mode48
     )
 
-@tool
-def get_boxscore_advanced(game_id: str) -> str:
-    """
-    Fetches the advanced box score (V3) for a specific game. Returns JSON string.
-    Includes stats like Offensive/Defensive Rating, Pace, eFG%, TS%, etc.
-    Args: game_id (str): The 10-digit ID of the game.
-    Returns: str: JSON string containing advanced player and team stats or {'error': ...}.
-    """
-    logger.debug(f"Tool 'get_boxscore_advanced' called for game_id '{game_id}'")
-    return fetch_boxscore_advanced(game_id)
+# @tool # Commented out as fetch_boxscore_advanced_logic is not imported
+# def get_boxscore_advanced(game_id: str) -> str:
+#     """
+#     Fetches the advanced box score (V3) for a specific game. Returns JSON string.
+#     Includes stats like Offensive/Defensive Rating, Pace, eFG%, TS%, etc.
+#     Args: game_id (str): The 10-digit ID of the game.
+#     Returns: str: JSON string containing advanced player and team stats or {'error': ...}.
+#     """
+#     logger.debug(f"Tool 'get_boxscore_advanced' called for game_id '{game_id}'")
+#     # return fetch_boxscore_advanced(game_id) # Logic function not imported
+#     return json.dumps({"error": "get_boxscore_advanced tool is currently disabled due to missing logic implementation."})
 
-@tool
-def get_boxscore_fourfactors(game_id: str) -> str:
-    """
-    Fetches the Four Factors box score (V3) for a specific game. Returns JSON string.
-    Includes stats like effective field goal %, turnover ratio, offensive rebounding %, free throw rate.
-    Args: game_id (str): The 10-digit ID of the game.
-    Returns: str: JSON string containing Four Factors player and team stats or {'error': ...}.
-    """
-    logger.debug(f"Tool 'get_boxscore_fourfactors' called for game_id '{game_id}'")
-    return fetch_boxscore_fourfactors(game_id)
+# @tool # Commented out as fetch_boxscore_fourfactors_logic is not imported
+# def get_boxscore_fourfactors(game_id: str) -> str:
+#     """
+#     Fetches the Four Factors box score (V3) for a specific game. Returns JSON string.
+#     Includes stats like effective field goal %, turnover ratio, offensive rebounding %, free throw rate.
+#     Args: game_id (str): The 10-digit ID of the game.
+#     Returns: str: JSON string containing Four Factors player and team stats or {'error': ...}.
+#     """
+#     logger.debug(f"Tool 'get_boxscore_fourfactors' called for game_id '{game_id}'")
+#     # return fetch_boxscore_fourfactors(game_id) # Logic function not imported
+#     return json.dumps({"error": "get_boxscore_fourfactors tool is currently disabled due to missing logic implementation."})
 
 @tool
 def get_team_passing_stats(
@@ -306,89 +309,3 @@ def get_player_passing_stats(
         season_type=season_type,
         per_mode=per_mode
     )
-
-# --- Example Usage Block (for direct execution testing of logic) ---
-if __name__ == "__main__":
-    # This block now tests the imported logic functions directly
-    logging.basicConfig(level=logging.DEBUG)
-    print("\n--- Running Tool Logic Examples (Directly from tools.py) ---")
-
-    # ... (previous tests remain here) ...
-    print("\n[Test Case 1: LeBron James Info]")
-    start_time = time.time()
-    lebron_info_str = fetch_player_info("LeBron James")
-    lebron_info = json.loads(lebron_info_str)
-    end_time = time.time()
-    print(f"Result (took {end_time - start_time:.2f}s):")
-    # print(json.dumps(lebron_info, indent=2, default=str)) # Commented out for brevity
-    assert 'error' not in lebron_info
-
-    print("\n[Test Case 5: LeBron James Game Log (2023-24)]")
-    start_time = time.time()
-    lebron_log_str = fetch_player_gamelog("LeBron James", "2023-24")
-    lebron_log = json.loads(lebron_log_str)
-    end_time = time.time()
-    print(f"Result (took {end_time - start_time:.2f}s):")
-    if 'gamelog' in lebron_log: print(f"  Games Found: {len(lebron_log['gamelog'])}")
-    else: print(json.dumps(lebron_log, indent=2, default=str))
-    assert 'error' not in lebron_log
-
-    print("\n[Test Case 8: Lakers Info & Roster (Default Season)]")
-    start_time = time.time()
-    lakers_info_str = fetch_team_info_and_roster("LAL")
-    lakers_info = json.loads(lakers_info_str)
-    end_time = time.time()
-    print(f"Result (took {end_time - start_time:.2f}s):")
-    if 'error' not in lakers_info: print(f"  Roster Size: {len(lakers_info.get('roster', []))}")
-    else: print(json.dumps(lakers_info, indent=2, default=str))
-    assert 'error' not in lakers_info
-
-    print("\n[Test Case 11: LeBron James Career Stats (PerGame)]")
-    start_time = time.time()
-    lebron_career_str = fetch_player_career_stats("LeBron James", PerMode36.per_game)
-    lebron_career = json.loads(lebron_career_str)
-    end_time = time.time()
-    print(f"Result (took {end_time - start_time:.2f}s):")
-    if 'error' not in lebron_career: print(f"  Seasons Found: {len(lebron_career.get('season_totals_regular_season', []))}")
-    else: print(json.dumps(lebron_career, indent=2, default=str))
-    assert 'error' not in lebron_career
-
-    print("\n[Test Case 15: Find Lakers Games (No Filters)]")
-    try:
-        from backend.api_tools.team_tools import _find_team_id as find_team_id_helper
-        lakers_id_test = find_team_id_helper("LAL")
-        if lakers_id_test:
-            start_time = time.time()
-            # Call logic directly without filters that were removed from tool signature
-            lakers_games_str = fetch_league_games_logic(team_id_nullable=lakers_id_test, player_or_team_abbreviation='T')
-            lakers_games = json.loads(lakers_games_str)
-            end_time = time.time()
-            print(f"Result (took {end_time - start_time:.2f}s):")
-            if 'games' in lakers_games: print(f"  Games Found: {len(lakers_games['games'])}")
-            else: print(json.dumps(lakers_games, indent=2, default=str))
-            assert 'error' not in lakers_games
-        else:
-            print("Skipping Lakers games test - could not find team ID.")
-    except ImportError:
-         print("Skipping Lakers games test - could not import helper.")
-
-
-    print("\n--- Tool Logic Examples Complete ---")
-
-@tool
-def get_player_clutch_stats(player_name: str, season: str, season_type: str = SeasonTypeAllStar.regular) -> str:
-    """Fetches player stats in clutch situations. Returns JSON string."""
-    logger.debug(f"Tool get_player_clutch_stats called for {player_name}, season {season}")
-    return fetch_player_clutch_stats(player_name, season, season_type)
-
-@tool
-def get_player_rebounding_stats(player_name: str, season: str, season_type: str = SeasonTypeAllStar.regular) -> str:
-    """Fetches player rebounding stats. Returns JSON string."""
-    logger.debug(f"Tool get_player_rebounding_stats called for {player_name}, season {season}")
-    return fetch_player_rebounding_stats(player_name, season, season_type)
-
-@tool
-def get_player_shots_tracking(player_name: str, season: str, season_type: str = SeasonTypeAllStar.regular) -> str:
-    """Fetches player shot tracking stats. Returns JSON string."""
-    logger.debug(f"Tool get_player_shots_tracking called for {player_name}, season {season}")
-    return fetch_player_shots_tracking(player_name, season, season_type)

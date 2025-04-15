@@ -6,13 +6,12 @@ from urllib3.util.retry import Retry
 import logging
 from nba_api.stats.library.http import NBAStatsHTTP
 from nba_api.stats.library.parameters import SeasonAll, SeasonTypeAllStar
-from config import DEFAULT_TIMEOUT  # Changed to absolute import
+from ..config import DEFAULT_TIMEOUT  # Changed to relative import
 from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_TIMEOUT = 60  # Increased from 30 to 60 seconds
-
+# Configure the NBA API client with custom settings for better reliability
 def configure_nba_api_client(timeout: Optional[int] = None):
     """Configure the NBA API client with custom settings for better reliability.
     

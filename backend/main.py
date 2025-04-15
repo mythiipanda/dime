@@ -9,7 +9,8 @@ from pydantic import BaseModel
 
 # Add the parent directory to the Python path
 current_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(current_dir)
+parent_dir = os.path.dirname(current_dir)
+sys.path.append(parent_dir)
 
 # Configure root logger
 root_logger = logging.getLogger()
@@ -26,15 +27,16 @@ console_handler.setFormatter(formatter)
 # Add console handler to root logger
 root_logger.addHandler(console_handler)
 
-from config import CORS_ALLOWED_ORIGINS
-from routes.player import router as player_router
-from routes.analyze import router as analyze_router
-from routes.sse import router as sse_router
-from routes.team import router as team_router
-from routes.game import router as game_router
-from routes.player_tracking import router as player_tracking_router
-from routes.team_tracking import router as team_tracking_router
-from routes.standings import router as standings_router # Import standings router
+from backend.config import CORS_ALLOWED_ORIGINS
+from backend.routes.player import router as player_router
+from backend.routes.analyze import router as analyze_router
+from backend.routes.sse import router as sse_router
+from backend.routes.team import router as team_router
+from backend.routes.game import router as game_router
+from backend.routes.player_tracking import router as player_tracking_router
+from backend.routes.team_tracking import router as team_tracking_router
+from backend.routes.standings import router as standings_router
+from backend.routes.live_game import router as live_game_router
 
 app = FastAPI()
 
@@ -60,6 +62,7 @@ app.include_router(game_router, prefix="/api", tags=["game"])
 app.include_router(player_tracking_router, prefix="/api/player/tracking", tags=["player_tracking"])
 app.include_router(team_tracking_router, prefix="/api/team/tracking", tags=["team_tracking"])
 app.include_router(standings_router, prefix="/api", tags=["standings"]) # Register standings router
+app.include_router(live_game_router, prefix="/api/live", tags=["live"]) # Register live game router
 
 @app.get("/")
 async def root():

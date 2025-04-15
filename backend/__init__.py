@@ -1,4 +1,6 @@
-"""NBA Analytics Backend Package."""
+"""
+NBA Analytics Backend Package
+"""
 
 # Version
 __version__ = "0.1.0"

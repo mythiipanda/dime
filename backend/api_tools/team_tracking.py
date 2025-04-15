@@ -1,7 +1,6 @@
-# Team tracking logic functions
 import logging
 import json
-from typing import Optional, Tuple
+from typing import Dict, List, Optional, TypedDict, Union
 
 from nba_api.stats.endpoints import (
     teamdashptpass,
@@ -10,163 +9,338 @@ from nba_api.stats.endpoints import (
 )
 from nba_api.stats.library.parameters import (
     SeasonTypeAllStar,
-    PerModeDetailed # Ensure this is imported
+    PerModeDetailed
 )
 
-from config import DEFAULT_TIMEOUT, ErrorMessages # Import ErrorMessages directly
-from api_tools.utils import _process_dataframe, retry_on_timeout, format_response
-from api_tools.team_tools import _find_team_id # Import the helper
+from backend.config import DEFAULT_TIMEOUT, ErrorMessages
+from backend.api_tools.utils import _process_dataframe, retry_on_timeout, format_response
+from backend.api_tools.team_tools import _find_team_id
+from backend.api_tools.http_client import nba_session
 
 logger = logging.getLogger(__name__)
 
-def fetch_team_passing_stats_logic(team_identifier: str, season: str, season_type: str = SeasonTypeAllStar.regular, per_mode: str = PerModeDetailed.per_game) -> str:
+# Update the endpoints to use our configured session
+teamdashptpass.requests = nba_session
+teamdashptreb.requests = nba_session
+teamdashptshots.requests = nba_session
+
+class PassStats(TypedDict):
+    """Type definition for team pass statistics."""
+    frequency: float
+    passes: float
+    assists: float
+    fgm: float
+    fga: float
+    fg_pct: float
+    fg2m: float
+    fg2a: float
+    fg2_pct: float
+    fg3m: float
+    fg3a: float
+    fg3_pct: float
+
+class ReboundingStats(TypedDict):
+    """Type definition for team rebounding statistics."""
+    total: float
+    contested: float
+    uncontested: float
+    offensive: float
+    defensive: float
+    frequency: float
+    pct_contested: float
+
+class ShootingStats(TypedDict):
+    """Type definition for team shooting statistics."""
+    fga_frequency: float
+    fgm: float
+    fga: float
+    fg_pct: float
+    efg_pct: float
+    fg2_pct: float
+    fg3_pct: float
+    shot_clock: Optional[str]
+    dribbles: Optional[str]
+    touch_time: Optional[str]
+    defender_distance: Optional[str]
+
+def fetch_team_passing_stats_logic(
+    team_identifier: str,
+    season: str,
+    season_type: str = SeasonTypeAllStar.regular,
+    per_mode: str = PerModeDetailed.per_game
+) -> str:
     """
-    Fetch team passing stats from NBA API. Accepts team name or ID.
-    """
-    logger.info(f"Fetching team passing stats for: {team_identifier}, Season: {season}, Mode: {per_mode}")
-    if not team_identifier or not season:
-        logger.warning("Team identifier or season is missing.")
-        return format_response(error=ErrorMessages.TEAM_IDENTIFIER_EMPTY if not team_identifier else ErrorMessages.INVALID_SEASON_FORMAT.format(season=season))
-
-    team_id, team_name = _find_team_id(team_identifier) # Get both ID and name
-
-    # If team_id is None here, _find_team_id failed, return the error immediately
-    if team_id is None:
-        logger.warning(f"Team not found for identifier: {team_identifier}")
-        return format_response(error=ErrorMessages.TEAM_NOT_FOUND.format(identifier=team_identifier))
-
-    try:
-        logger.debug(f"Attempting API call for team ID: {team_id}")
-        passing_stats_endpoint = teamdashptpass.TeamDashPtPass(
-            team_id=str(team_id), # Ensure team_id is string if needed by API
-            season=season,
-            season_type_all_star=season_type,
-            per_mode_simple=per_mode, # Pass per_mode here
-            timeout=DEFAULT_TIMEOUT
-        )
-        # Use get_normalized_dict which might be more robust or get_dict if needed
-        data = passing_stats_endpoint.get_normalized_dict()
-        # Check if data is empty or indicates an error implicitly
-        if not data or not any(data.values()):
-             logger.warning(f"No passing data returned for team {team_id}, season {season}")
-             return format_response({"message": "No passing data found for the specified parameters."}) # Return empty data message
-        # Add input parameters to the response dictionary
-        response_data = {
-            "team_id": team_id,
-            "team_name": team_name,
-            "season": season,
-            "season_type": season_type,
-            **data # Unpack the fetched data sets
+    Fetch team passing stats from NBA API.
+    
+    Args:
+        team_identifier (str): Team name or ID
+        season (str): Season in YYYY-YY format
+        season_type (str): Type of season (regular, playoffs, etc.)
+        per_mode (str): Per mode type (per game, per minute, etc.)
+        
+    Returns:
+        str: JSON string containing:
+        {
+            "team_id": str,
+            "team_name": str,
+            "season": str,
+            "season_type": str,
+            "passes_made": [
+                {
+                    "pass_from": str,
+                    "frequency": float,
+                    "passes": float,
+                    "assists": float,
+                    "shooting": {
+                        "fgm": float,
+                        "fga": float,
+                        "fg_pct": float
+                    }
+                }
+            ],
+            "passes_received": [...]
         }
-        return format_response(response_data)
-    except KeyError as ke:
-        # Specifically handle the 'resultSet' error if it persists from the library
-        if 'resultSet' in str(ke):
-             logger.error(f"KeyError 'resultSet' fetching team passing stats for team {team_id}: {str(ke)}", exc_info=True)
-             return format_response(error="API response format error (missing 'resultSet').")
-        else:
-             logger.error(f"KeyError fetching team passing stats for team {team_id}: {str(ke)}", exc_info=True)
-             return format_response(error=f"Unexpected data key error: {str(ke)}")
-    except Exception as e:
-        logger.error(f"Error fetching team passing stats for team {team_id}: {str(e)}", exc_info=True)
-        return format_response(error=f"API error fetching passing stats: {str(e)}")
-
-
-def fetch_team_rebounding_stats_logic(team_identifier: str, season: str, season_type: str = SeasonTypeAllStar.regular, per_mode: str = PerModeDetailed.per_game) -> str:
     """
-    Fetch team rebounding stats from NBA API. Accepts team name or ID.
-    """
-    logger.info(f"Fetching team rebounding stats for: {team_identifier}, Season: {season}, Mode: {per_mode}")
+    logger.info(f"Executing fetch_team_passing_stats_logic for: {team_identifier}, Season: {season}")
+    
     if not team_identifier or not season:
-        logger.warning("Team identifier or season is missing.")
-        return format_response(error=ErrorMessages.TEAM_IDENTIFIER_EMPTY if not team_identifier else ErrorMessages.INVALID_SEASON_FORMAT.format(season=season))
+        return format_response(error=ErrorMessages.MISSING_REQUIRED_PARAMS)
 
     team_id, team_name = _find_team_id(team_identifier)
-
-    # If team_id is None here, _find_team_id failed, return the error immediately
     if team_id is None:
-        logger.warning(f"Team not found for identifier: {team_identifier}")
         return format_response(error=ErrorMessages.TEAM_NOT_FOUND.format(identifier=team_identifier))
 
     try:
-        logger.debug(f"Attempting API call for team ID: {team_id}")
-        rebounding_stats_endpoint = teamdashptreb.TeamDashPtReb(
-            team_id=str(team_id),
+        pass_stats = teamdashptpass.TeamDashPtPass(
+            team_id=team_id,
             season=season,
             season_type_all_star=season_type,
-            per_mode_simple=per_mode, # Pass per_mode here
+            per_mode_simple=per_mode,
             timeout=DEFAULT_TIMEOUT
         )
-        data = rebounding_stats_endpoint.get_normalized_dict()
-        if not data or not any(data.values()):
-             logger.warning(f"No rebounding data returned for team {team_id}, season {season}")
-             return format_response({"message": "No rebounding data found for the specified parameters."})
-        # Add input parameters to the response dictionary
-        response_data = {
+        
+        passes_made = _process_dataframe(pass_stats.passes_made.get_data_frame(), single_row=False)
+        passes_received = _process_dataframe(pass_stats.passes_received.get_data_frame(), single_row=False)
+
+        if passes_made is None or passes_received is None:
+            return format_response(error=ErrorMessages.DATA_PROCESSING_ERROR)
+
+        # Process into more focused format
+        processed_passes_made = []
+        for pass_data in passes_made:
+            processed_passes_made.append({
+                "pass_from": pass_data.get("PASS_FROM"),
+                "frequency": pass_data.get("FREQUENCY"),
+                "passes": pass_data.get("PASS"),
+                "assists": pass_data.get("AST"),
+                "shooting": {
+                    "fgm": pass_data.get("FGM"),
+                    "fga": pass_data.get("FGA"),
+                    "fg_pct": pass_data.get("FG_PCT"),
+                    "fg2m": pass_data.get("FG2M"),
+                    "fg2a": pass_data.get("FG2A"),
+                    "fg2_pct": pass_data.get("FG2_PCT"),
+                    "fg3m": pass_data.get("FG3M"),
+                    "fg3a": pass_data.get("FG3A"),
+                    "fg3_pct": pass_data.get("FG3_PCT")
+                }
+            })
+
+        processed_passes_received = []
+        for pass_data in passes_received:
+            processed_passes_received.append({
+                "pass_to": pass_data.get("PASS_TO"),
+                "frequency": pass_data.get("FREQUENCY"),
+                "passes": pass_data.get("PASS"),
+                "assists": pass_data.get("AST"),
+                "shooting": {
+                    "fgm": pass_data.get("FGM"),
+                    "fga": pass_data.get("FGA"),
+                    "fg_pct": pass_data.get("FG_PCT"),
+                    "fg2m": pass_data.get("FG2M"),
+                    "fg2a": pass_data.get("FG2A"),
+                    "fg2_pct": pass_data.get("FG2_PCT"),
+                    "fg3m": pass_data.get("FG3M"),
+                    "fg3a": pass_data.get("FG3A"),
+                    "fg3_pct": pass_data.get("FG3_PCT")
+                }
+            })
+
+        result = {
             "team_id": team_id,
             "team_name": team_name,
             "season": season,
             "season_type": season_type,
-            **data
+            "passes_made": processed_passes_made,
+            "passes_received": processed_passes_received
         }
-        return format_response(response_data)
-    except KeyError as ke:
-        if 'resultSet' in str(ke):
-             logger.error(f"KeyError 'resultSet' fetching team rebounding stats for team {team_id}: {str(ke)}", exc_info=True)
-             return format_response(error="API response format error (missing 'resultSet').")
-        else:
-             logger.error(f"KeyError fetching team rebounding stats for team {team_id}: {str(ke)}", exc_info=True)
-             return format_response(error=f"Unexpected data key error: {str(ke)}")
+
+        return format_response(result)
+
     except Exception as e:
-        logger.error(f"Error fetching team rebounding stats for team {team_id}: {str(e)}", exc_info=True)
-        return format_response(error=f"API error fetching rebounding stats: {str(e)}")
+        logger.error(f"Error fetching passing stats: {str(e)}", exc_info=True)
+        return format_response(error=f"Error fetching passing stats: {str(e)}")
 
-
-def fetch_team_shooting_stats_logic(team_identifier: str, season: str, season_type: str = SeasonTypeAllStar.regular, per_mode: str = PerModeDetailed.per_game) -> str:
+def fetch_team_rebounding_stats_logic(
+    team_identifier: str,
+    season: str,
+    season_type: str = SeasonTypeAllStar.regular,
+    per_mode: str = PerModeDetailed.per_game
+) -> str:
     """
-    Fetch team shooting stats from NBA API. Accepts team name or ID.
+    Fetch team rebounding stats from NBA API.
+    
+    Args:
+        team_identifier (str): Team name or ID
+        season (str): Season in YYYY-YY format
+        season_type (str): Type of season (regular, playoffs, etc.)
+        per_mode (str): Per mode type (per game, per minute, etc.)
+        
+    Returns:
+        str: JSON string containing:
+        {
+            "team_id": str,
+            "team_name": str,
+            "season": str,
+            "season_type": str,
+            "overall": {...},
+            "shot_type": [...],
+            "shot_distance": [...],
+            "rebound_distance": [...],
+            "shot_distance_rebounding": [...]
+        }
     """
-    logger.info(f"Fetching team shooting stats for: {team_identifier}, Season: {season}, Mode: {per_mode}")
+    logger.info(f"Executing fetch_team_rebounding_stats_logic for: {team_identifier}, Season: {season}")
+    
     if not team_identifier or not season:
-        logger.warning("Team identifier or season is missing.")
-        return format_response(error=ErrorMessages.TEAM_IDENTIFIER_EMPTY if not team_identifier else ErrorMessages.INVALID_SEASON_FORMAT.format(season=season))
+        return format_response(error=ErrorMessages.MISSING_REQUIRED_PARAMS)
 
     team_id, team_name = _find_team_id(team_identifier)
-
-    # If team_id is None here, _find_team_id failed, return the error immediately
     if team_id is None:
-        logger.warning(f"Team not found for identifier: {team_identifier}")
         return format_response(error=ErrorMessages.TEAM_NOT_FOUND.format(identifier=team_identifier))
 
     try:
-        logger.debug(f"Attempting API call for team ID: {team_id}")
-        shooting_stats_endpoint = teamdashptshots.TeamDashPtShots(
-            team_id=str(team_id),
+        reb_stats = teamdashptreb.TeamDashPtReb(
+            team_id=team_id,
             season=season,
             season_type_all_star=season_type,
-            per_mode_simple=per_mode, # Pass per_mode here
+            per_mode_simple=per_mode,
             timeout=DEFAULT_TIMEOUT
         )
-        data = shooting_stats_endpoint.get_normalized_dict()
-        if not data or not any(data.values()):
-             logger.warning(f"No shooting data returned for team {team_id}, season {season}")
-             return format_response({"message": "No shooting data found for the specified parameters."})
-        # Add input parameters to the response dictionary
-        response_data = {
+        
+        overall = _process_dataframe(reb_stats.overall_rebounding.get_data_frame(), single_row=True)
+        shot_type = _process_dataframe(reb_stats.shot_type_rebounding.get_data_frame(), single_row=False)
+        shot_dist = _process_dataframe(reb_stats.shot_distance_rebounding.get_data_frame(), single_row=False)
+        reb_dist = _process_dataframe(reb_stats.reb_distance_rebounding.get_data_frame(), single_row=False)
+
+        if not all([overall, shot_type, shot_dist, reb_dist]):
+            return format_response(error=ErrorMessages.DATA_PROCESSING_ERROR)
+
+        result = {
             "team_id": team_id,
             "team_name": team_name,
             "season": season,
             "season_type": season_type,
-            **data
+            "overall": {
+                "total": overall.get("REB", 0.0),
+                "offensive": overall.get("OREB", 0.0),
+                "defensive": overall.get("DREB", 0.0),
+                "contested": overall.get("C_REB", 0.0),
+                "uncontested": overall.get("UC_REB", 0.0),
+                "contested_pct": overall.get("C_REB_PCT", 0.0)
+            },
+            "shot_type": shot_type,
+            "shot_distance": shot_dist,
+            "rebound_distance": reb_dist,
+            "shot_distance_rebounding": shot_dist
         }
-        return format_response(response_data)
-    except KeyError as ke:
-        if 'resultSet' in str(ke):
-             logger.error(f"KeyError 'resultSet' fetching team shooting stats for team {team_id}: {str(ke)}", exc_info=True)
-             return format_response(error="API response format error (missing 'resultSet').")
-        else:
-             logger.error(f"KeyError fetching team shooting stats for team {team_id}: {str(ke)}", exc_info=True)
-             return format_response(error=f"Unexpected data key error: {str(ke)}")
+
+        return format_response(result)
+
     except Exception as e:
-        logger.error(f"Error fetching team shooting stats for team {team_id}: {str(e)}", exc_info=True)
-        return format_response(error=f"API error fetching shooting stats: {str(e)}")
+        logger.error(f"Error fetching rebounding stats: {str(e)}", exc_info=True)
+        return format_response(error=f"Error fetching rebounding stats: {str(e)}")
+
+def fetch_team_shooting_stats_logic(
+    team_identifier: str,
+    season: str,
+    season_type: str = SeasonTypeAllStar.regular,
+    per_mode: str = PerModeDetailed.per_game
+) -> str:
+    """
+    Fetch team shooting stats from NBA API.
+    
+    Args:
+        team_identifier (str): Team name or ID
+        season (str): Season in YYYY-YY format
+        season_type (str): Type of season (regular, playoffs, etc.)
+        per_mode (str): Per mode type (per game, per minute, etc.)
+        
+    Returns:
+        str: JSON string containing:
+        {
+            "team_id": str,
+            "team_name": str,
+            "season": str,
+            "season_type": str,
+            "general": {...},
+            "shot_clock": [...],
+            "dribbles": [...],
+            "touch_time": [...],
+            "defender_distance": [...],
+            "closest_defender": [...]
+        }
+    """
+    logger.info(f"Executing fetch_team_shooting_stats_logic for: {team_identifier}, Season: {season}")
+    
+    if not team_identifier or not season:
+        return format_response(error=ErrorMessages.MISSING_REQUIRED_PARAMS)
+
+    team_id, team_name = _find_team_id(team_identifier)
+    if team_id is None:
+        return format_response(error=ErrorMessages.TEAM_NOT_FOUND.format(identifier=team_identifier))
+
+    try:
+        shot_stats = teamdashptshots.TeamDashPtShots(
+            team_id=team_id,
+            season=season,
+            season_type_all_star=season_type,
+            per_mode_simple=per_mode,
+            timeout=DEFAULT_TIMEOUT
+        )
+        
+        general = _process_dataframe(shot_stats.general_shooting.get_data_frame(), single_row=False)
+        shot_clock = _process_dataframe(shot_stats.shot_clock_shooting.get_data_frame(), single_row=False)
+        dribbles = _process_dataframe(shot_stats.dribble_shooting.get_data_frame(), single_row=False)
+        closest_def = _process_dataframe(shot_stats.closest_defender_shooting.get_data_frame(), single_row=False)
+        touch_time = _process_dataframe(shot_stats.touch_time_shooting.get_data_frame(), single_row=False)
+
+        if not all([general, shot_clock, dribbles, closest_def, touch_time]):
+            return format_response(error=ErrorMessages.DATA_PROCESSING_ERROR)
+
+        result = {
+            "team_id": team_id,
+            "team_name": team_name,
+            "season": season,
+            "season_type": season_type,
+            "general": {
+                shot_type["SHOT_TYPE"].lower().replace(" ", "_"): {
+                    "frequency": shot_type.get("FGA_FREQUENCY", 0.0),
+                    "fgm": shot_type.get("FGM", 0.0),
+                    "fga": shot_type.get("FGA", 0.0),
+                    "fg_pct": shot_type.get("FG_PCT", 0.0),
+                    "efg_pct": shot_type.get("EFG_PCT", 0.0)
+                }
+                for shot_type in general
+            },
+            "shot_clock": shot_clock,
+            "dribbles": dribbles,
+            "touch_time": touch_time,
+            "defender_distance": closest_def
+        }
+
+        return format_response(result)
+
+    except Exception as e:
+        logger.error(f"Error fetching shooting stats: {str(e)}", exc_info=True)
+        return format_response(error=f"Error fetching shooting stats: {str(e)}")

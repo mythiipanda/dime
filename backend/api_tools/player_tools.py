@@ -1,14 +1,13 @@
 import logging
-import pandas as pd
-from typing import Tuple, Optional, List, Dict, Any
-from nba_api.stats.static import players
-# Import new endpoint
-from nba_api.stats.endpoints import commonplayerinfo, playergamelog, playercareerstats, playerawards, playerdashboardbyclutch
-from nba_api.stats.library.parameters import SeasonTypeAllStar, PerMode36, LeagueID
 import json
+from typing import Optional, List, Dict, Any, Union
+import pandas as pd
 import requests
-from config import DEFAULT_TIMEOUT, HEADSHOT_BASE_URL, ErrorMessages as Errors, CURRENT_SEASON  # Changed to absolute import
-from .utils import _process_dataframe, _validate_season_format
+from nba_api.stats.static import players
+from nba_api.stats.endpoints import commonplayerinfo, playergamelog, playerawards, playercareerstats
+from nba_api.stats.library.parameters import SeasonAll, SeasonTypeAllStar, PerModeDetailed, PerMode36, LeagueID
+from backend.config import DEFAULT_TIMEOUT, HEADSHOT_BASE_URL, ErrorMessages as Errors, CURRENT_SEASON
+from backend.api_tools.utils import _process_dataframe, _validate_season_format, retry_on_timeout
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +54,7 @@ def fetch_player_info_logic(player_name: str) -> str:
 
         result = {"player_info": player_info_dict or {}, "headline_stats": headline_stats_dict or {}}
         logger.info(f"fetch_player_info_logic completed for '{player_actual_name}'")
-        return json.dumps(result, default=str)
+        return result
     except Exception as e:
         logger.critical(f"Unexpected error in fetch_player_info_logic for '{player_name}': {e}", exc_info=True)
         return json.dumps({"error": Errors.PLAYER_INFO_UNEXPECTED.format(name=player_name, error=str(e))})
@@ -202,6 +201,7 @@ def find_players_by_name_fragment(name_fragment: str, limit: int = 10) -> List[D
         raise ValueError(f"Error finding players: {str(e)}")
 
 def get_player_info(player_id: str) -> Dict[str, Any]:
+    logger.info(f"get_player_info called with player_id: {player_id}")
     """
     Get detailed information about a player.
     Args:
@@ -216,14 +216,16 @@ def get_player_info(player_id: str) -> Dict[str, Any]:
     
     try:
         # Get player info from NBA API
+        logger.info(f"Calling commonplayerinfo API with player_id: {player_id}")
         player_info = commonplayerinfo.CommonPlayerInfo(
             player_id=player_id,
-            league_id=LeagueID.nba,
             timeout=DEFAULT_TIMEOUT
         )
+        logger.info(f"commonplayerinfo API call completed for player_id: {player_id}")
         
         # Process player info
         info_df = player_info.common_player_info.get_data_frame()
+        logger.info(f"Raw data from commonplayerinfo API: {info_df}")
         if info_df is None or info_df.empty:
             raise ValueError(f"No information found for player ID: {player_id}")
         
@@ -235,7 +237,7 @@ def get_player_info(player_id: str) -> Dict[str, Any]:
         # Add headshot URL
         player_dict['headshot_url'] = get_player_headshot_url(player_id)
         
-        return player_dict
+        return json.dumps(player_dict, default=str)
         
     except requests.exceptions.Timeout:
         logger.error(f"Request timed out for player ID: {player_id}")
@@ -282,53 +284,6 @@ def fetch_player_awards_logic(player_name: str) -> str:
         logger.critical(f"Unexpected error in fetch_player_awards_logic for '{player_name}': {e}", exc_info=True)
         return json.dumps({"error": Errors.PLAYER_AWARDS_UNEXPECTED.format(name=player_name, error=str(e))}) # Need to add this error message
 
-def fetch_player_clutch_stats_logic(player_name: str, season: str = CURRENT_SEASON, season_type: str = SeasonTypeAllStar.regular) -> str:
-    """Core logic to fetch player clutch stats."""
-    logger.info(f"Executing fetch_player_clutch_stats_logic for: '{player_name}', Season: {season}, Type: {season_type}")
-    if not player_name or not player_name.strip():
-        return json.dumps({"error": Errors.PLAYER_NAME_EMPTY})
-    if not season or not _validate_season_format(season):
-        return json.dumps({"error": Errors.INVALID_SEASON_FORMAT.format(season=season)})
-
-    try:
-        player_id, player_actual_name = _find_player_id(player_name)
-        if player_id is None:
-            return json.dumps({"error": Errors.PLAYER_NOT_FOUND.format(name=player_name)})
-
-        logger.debug(f"Fetching playerdashboardbyclutch for ID: {player_id}, Season: {season}")
-        try:
-            clutch_endpoint = playerdashboardbyclutch.PlayerDashboardByClutch(
-                player_id=player_id,
-                season=season,
-                season_type_all_star=season_type,
-                timeout=DEFAULT_TIMEOUT
-            )
-            logger.debug(f"playerdashboardbyclutch API call successful for ID: {player_id}, Season: {season}")
-        except Exception as api_error:
-            logger.error(f"nba_api playerdashboardbyclutch failed for ID {player_id}, Season {season}: {api_error}", exc_info=True)
-            return json.dumps({"error": Errors.PLAYER_CLUTCH_STATS_API.format(name=player_actual_name, season=season, error=str(api_error))})
-
-        overall_clutch = _process_dataframe(clutch_endpoint.overall_player_dashboard.get_data_frame(), single_row=True)
-        last5min_clutch = _process_dataframe(clutch_endpoint.last5min_player_dashboard.get_data_frame(), single_row=True)
-
-        if overall_clutch is None or last5min_clutch is None:
-            logger.error(f"DataFrame processing failed for clutch stats of {player_actual_name} ({season}).")
-            return json.dumps({"error": Errors.PLAYER_CLUTCH_STATS_PROCESSING.format(name=player_actual_name, season=season)})
-
-        result = {
-            "player_name": player_actual_name,
-            "player_id": player_id,
-            "season": season,
-            "season_type": season_type,
-            "overall_clutch": overall_clutch or {},
-            "last5min_clutch": last5min_clutch or {}
-        }
-        logger.info(f"fetch_player_clutch_stats_logic completed for '{player_actual_name}', Season: {season}")
-        return json.dumps(result, default=str)
-    except Exception as e:
-        logger.critical(f"Unexpected error in fetch_player_clutch_stats_logic for '{player_name}', Season {season}: {e}", exc_info=True)
-        return json.dumps({"error": Errors.PLAYER_CLUTCH_STATS_UNEXPECTED.format(name=player_name, season=season, error=str(e))})
-
 def fetch_player_stats_logic(player_name: str, season: str = CURRENT_SEASON, season_type: str = SeasonTypeAllStar.regular) -> str:
     """
     Fetches comprehensive player statistics including career stats, game logs, and info.
@@ -374,11 +329,6 @@ def fetch_player_stats_logic(player_name: str, season: str = CURRENT_SEASON, sea
         if "error" in awards_result:
             return json.dumps({"error": awards_result["error"]})
         
-        # Get clutch stats
-        clutch_result = json.loads(fetch_player_clutch_stats_logic(player_name, season, season_type))
-        if "error" in clutch_result:
-            return json.dumps({"error": clutch_result["error"]})
-        
         # Combine all results
         result = {
             "player_name": player_actual_name,
@@ -394,8 +344,7 @@ def fetch_player_stats_logic(player_name: str, season: str = CURRENT_SEASON, sea
             "current_season": {
                 "gamelog": gamelog_result.get("gamelog", [])
             },
-            "awards": awards_result.get("awards", []),
-            "clutch_stats": clutch_result.get("clutch_stats", {})
+            "awards": awards_result.get("awards", [])
         }
         
         logger.info(f"fetch_player_stats_logic completed for '{player_actual_name}'")

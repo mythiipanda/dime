@@ -1,0 +1,1900 @@
+{
+  "player_info": {
+    "meta": {
+      "endpoint": "commonplayerinfo",
+      "timestamp": "2025-04-15T00:49:59.649434",
+      "params": {
+        "player_id": "2544"
+      }
+    },
+    "data": {
+      "CommonPlayerInfo": [
+        {
+          "PERSON_ID": 2544,
+          "FIRST_NAME": "LeBron",
+          "LAST_NAME": "James",
+          "DISPLAY_FIRST_LAST": "LeBron James",
+          "DISPLAY_LAST_COMMA_FIRST": "James, LeBron",
+          "DISPLAY_FI_LAST": "L. James",
+          "PLAYER_SLUG": "lebron-james",
+          "BIRTHDATE": "1984-12-30T00:00:00",
+          "SCHOOL": "St. Vincent-St. Mary HS (OH)",
+          "COUNTRY": "USA",
+          "LAST_AFFILIATION": "St. Vincent-St. Mary HS (OH)/USA",
+          "HEIGHT": "6-9",
+          "WEIGHT": "250",
+          "SEASON_EXP": 21,
+          "JERSEY": "23",
+          "POSITION": "Forward",
+          "ROSTERSTATUS": "Active",
+          "GAMES_PLAYED_CURRENT_SEASON_FLAG": "Y",
+          "TEAM_ID": 1610612747,
+          "TEAM_NAME": "Lakers",
+          "TEAM_ABBREVIATION": "LAL",
+          "TEAM_CODE": "lakers",
+          "TEAM_CITY": "Los Angeles",
+          "PLAYERCODE": "lebron_james",
+          "FROM_YEAR": 2003,
+          "TO_YEAR": 2024,
+          "DLEAGUE_FLAG": "N",
+          "NBA_FLAG": "Y",
+          "GAMES_PLAYED_FLAG": "Y",
+          "DRAFT_YEAR": "2003",
+          "DRAFT_ROUND": "1",
+          "DRAFT_NUMBER": "1",
+          "GREATEST_75_FLAG": "Y"
+        }
+      ],
+      "PlayerHeadlineStats": [
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME": "LeBron James",
+          "TimeFrame": "2024-25",
+          "PTS": 24.4,
+          "AST": 8.2,
+          "REB": 7.8,
+          "PIE": 0.169
+        }
+      ],
+      "AvailableSeasons": [
+        {
+          "SEASON_ID": "12003"
+        },
+        {
+          "SEASON_ID": "22003"
+        },
+        {
+          "SEASON_ID": "12004"
+        },
+        {
+          "SEASON_ID": "22004"
+        },
+        {
+          "SEASON_ID": "32004"
+        },
+        {
+          "SEASON_ID": "12005"
+        },
+        {
+          "SEASON_ID": "22005"
+        },
+        {
+          "SEASON_ID": "32005"
+        },
+        {
+          "SEASON_ID": "42005"
+        },
+        {
+          "SEASON_ID": "12006"
+        },
+        {
+          "SEASON_ID": "22006"
+        },
+        {
+          "SEASON_ID": "32006"
+        },
+        {
+          "SEASON_ID": "42006"
+        },
+        {
+          "SEASON_ID": "12007"
+        },
+        {
+          "SEASON_ID": "22007"
+        },
+        {
+          "SEASON_ID": "32007"
+        },
+        {
+          "SEASON_ID": "42007"
+        },
+        {
+          "SEASON_ID": "12008"
+        },
+        {
+          "SEASON_ID": "22008"
+        },
+        {
+          "SEASON_ID": "32008"
+        },
+        {
+          "SEASON_ID": "42008"
+        },
+        {
+          "SEASON_ID": "12009"
+        },
+        {
+          "SEASON_ID": "22009"
+        },
+        {
+          "SEASON_ID": "32009"
+        },
+        {
+          "SEASON_ID": "42009"
+        },
+        {
+          "SEASON_ID": "12010"
+        },
+        {
+          "SEASON_ID": "22010"
+        },
+        {
+          "SEASON_ID": "32010"
+        },
+        {
+          "SEASON_ID": "42010"
+        },
+        {
+          "SEASON_ID": "12011"
+        },
+        {
+          "SEASON_ID": "22011"
+        },
+        {
+          "SEASON_ID": "32011"
+        },
+        {
+          "SEASON_ID": "42011"
+        },
+        {
+          "SEASON_ID": "12012"
+        },
+        {
+          "SEASON_ID": "22012"
+        },
+        {
+          "SEASON_ID": "32012"
+        },
+        {
+          "SEASON_ID": "42012"
+        },
+        {
+          "SEASON_ID": "12013"
+        },
+        {
+          "SEASON_ID": "22013"
+        },
+        {
+          "SEASON_ID": "32013"
+        },
+        {
+          "SEASON_ID": "42013"
+        },
+        {
+          "SEASON_ID": "12014"
+        },
+        {
+          "SEASON_ID": "22014"
+        },
+        {
+          "SEASON_ID": "32014"
+        },
+        {
+          "SEASON_ID": "42014"
+        },
+        {
+          "SEASON_ID": "12015"
+        },
+        {
+          "SEASON_ID": "22015"
+        },
+        {
+          "SEASON_ID": "32015"
+        },
+        {
+          "SEASON_ID": "42015"
+        },
+        {
+          "SEASON_ID": "12016"
+        },
+        {
+          "SEASON_ID": "22016"
+        },
+        {
+          "SEASON_ID": "32016"
+        },
+        {
+          "SEASON_ID": "42016"
+        },
+        {
+          "SEASON_ID": "12017"
+        },
+        {
+          "SEASON_ID": "22017"
+        },
+        {
+          "SEASON_ID": "32017"
+        },
+        {
+          "SEASON_ID": "42017"
+        },
+        {
+          "SEASON_ID": "12018"
+        },
+        {
+          "SEASON_ID": "22018"
+        },
+        {
+          "SEASON_ID": "32018"
+        },
+        {
+          "SEASON_ID": "12019"
+        },
+        {
+          "SEASON_ID": "22019"
+        },
+        {
+          "SEASON_ID": "32019"
+        },
+        {
+          "SEASON_ID": "42019"
+        },
+        {
+          "SEASON_ID": "12020"
+        },
+        {
+          "SEASON_ID": "22020"
+        },
+        {
+          "SEASON_ID": "32020"
+        },
+        {
+          "SEASON_ID": "42020"
+        },
+        {
+          "SEASON_ID": "52020"
+        },
+        {
+          "SEASON_ID": "12021"
+        },
+        {
+          "SEASON_ID": "22021"
+        },
+        {
+          "SEASON_ID": "32021"
+        },
+        {
+          "SEASON_ID": "12022"
+        },
+        {
+          "SEASON_ID": "22022"
+        },
+        {
+          "SEASON_ID": "32022"
+        },
+        {
+          "SEASON_ID": "42022"
+        },
+        {
+          "SEASON_ID": "52022"
+        },
+        {
+          "SEASON_ID": "12023"
+        },
+        {
+          "SEASON_ID": "22023"
+        },
+        {
+          "SEASON_ID": "32023"
+        },
+        {
+          "SEASON_ID": "42023"
+        },
+        {
+          "SEASON_ID": "52023"
+        },
+        {
+          "SEASON_ID": "62023"
+        },
+        {
+          "SEASON_ID": "12024"
+        },
+        {
+          "SEASON_ID": "22024"
+        }
+      ]
+    }
+  },
+  "clutch_stats": {
+    "meta": {
+      "endpoint": "playerdashboardbyclutch",
+      "timestamp": "2025-04-15T00:49:59.649964",
+      "error": "PlayerDashboardByClutch.__init__() got an unexpected keyword argument 'season_type_all_star'"
+    },
+    "data": null
+  },
+  "shooting_splits": {
+    "meta": {
+      "endpoint": "playerdashboardbyshootingsplits",
+      "timestamp": "2025-04-15T00:49:59.650052",
+      "error": "PlayerDashboardByShootingSplits.__init__() got an unexpected keyword argument 'season_type_all_star'"
+    },
+    "data": null
+  },
+  "rebounding_stats": {
+    "meta": {
+      "endpoint": "playerdashptreb",
+      "timestamp": "2025-04-15T00:50:00.689936",
+      "params": {
+        "player_id": "2544",
+        "team_id": 1610612747,
+        "season": "2023-24"
+      }
+    },
+    "data": {
+      "OverallRebounding": [
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "G": 71,
+          "OVERALL": "Overall",
+          "REB_FREQUENCY": 0.942,
+          "OREB": 60,
+          "DREB": 428,
+          "REB": 488,
+          "C_OREB": 34,
+          "C_DREB": 81,
+          "C_REB": 115,
+          "C_REB_PCT": 0.236,
+          "UC_OREB": 26,
+          "UC_DREB": 347,
+          "UC_REB": 373,
+          "UC_REB_PCT": 0.764
+        }
+      ],
+      "ShotTypeRebounding": [
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "SORT_ORDER": 2,
+          "G": 71,
+          "SHOT_TYPE_RANGE": "Miss 2FG",
+          "REB_FREQUENCY": 0.461,
+          "OREB": 40,
+          "DREB": 199,
+          "REB": 239,
+          "C_OREB": 26,
+          "C_DREB": 38,
+          "C_REB": 64,
+          "C_REB_PCT": 0.268,
+          "UC_OREB": 14,
+          "UC_DREB": 161,
+          "UC_REB": 175,
+          "UC_REB_PCT": 0.732
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "SORT_ORDER": 3,
+          "G": 71,
+          "SHOT_TYPE_RANGE": "Miss 3FG",
+          "REB_FREQUENCY": 0.45,
+          "OREB": 20,
+          "DREB": 213,
+          "REB": 233,
+          "C_OREB": 8,
+          "C_DREB": 43,
+          "C_REB": 51,
+          "C_REB_PCT": 0.219,
+          "UC_OREB": 12,
+          "UC_DREB": 170,
+          "UC_REB": 182,
+          "UC_REB_PCT": 0.781
+        }
+      ],
+      "NumContestedRebounding": [
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "SORT_ORDER": 1,
+          "G": 71,
+          "REB_NUM_CONTESTING_RANGE": "0 Contesting Rebounders",
+          "REB_FREQUENCY": 0.72,
+          "OREB": 26,
+          "DREB": 347,
+          "REB": 373,
+          "C_OREB": 0,
+          "C_DREB": 0,
+          "C_REB": 0,
+          "C_REB_PCT": 0.0,
+          "UC_OREB": 26,
+          "UC_DREB": 347,
+          "UC_REB": 373,
+          "UC_REB_PCT": 1.0
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "SORT_ORDER": 2,
+          "G": 71,
+          "REB_NUM_CONTESTING_RANGE": "1 Contesting Rebounder",
+          "REB_FREQUENCY": 0.191,
+          "OREB": 22,
+          "DREB": 77,
+          "REB": 99,
+          "C_OREB": 22,
+          "C_DREB": 77,
+          "C_REB": 99,
+          "C_REB_PCT": 1.0,
+          "UC_OREB": 0,
+          "UC_DREB": 0,
+          "UC_REB": 0,
+          "UC_REB_PCT": 0.0
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "SORT_ORDER": 3,
+          "G": 71,
+          "REB_NUM_CONTESTING_RANGE": "2+ Contesting Rebounders",
+          "REB_FREQUENCY": 0.031,
+          "OREB": 12,
+          "DREB": 4,
+          "REB": 16,
+          "C_OREB": 12,
+          "C_DREB": 4,
+          "C_REB": 16,
+          "C_REB_PCT": 1.0,
+          "UC_OREB": 0,
+          "UC_DREB": 0,
+          "UC_REB": 0,
+          "UC_REB_PCT": 0.0
+        }
+      ],
+      "ShotDistanceRebounding": [
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "SORT_ORDER": 1,
+          "G": 71,
+          "SHOT_DIST_RANGE": "0-6 Feet",
+          "REB_FREQUENCY": 0.197,
+          "OREB": 33,
+          "DREB": 69,
+          "REB": 102,
+          "C_OREB": 20,
+          "C_DREB": 14,
+          "C_REB": 34,
+          "C_REB_PCT": 0.333,
+          "UC_OREB": 13,
+          "UC_DREB": 55,
+          "UC_REB": 68,
+          "UC_REB_PCT": 0.667
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "SORT_ORDER": 2,
+          "G": 71,
+          "SHOT_DIST_RANGE": "7-13 Feet",
+          "REB_FREQUENCY": 0.124,
+          "OREB": 7,
+          "DREB": 57,
+          "REB": 64,
+          "C_OREB": 6,
+          "C_DREB": 12,
+          "C_REB": 18,
+          "C_REB_PCT": 0.281,
+          "UC_OREB": 1,
+          "UC_DREB": 45,
+          "UC_REB": 46,
+          "UC_REB_PCT": 0.719
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "SORT_ORDER": 3,
+          "G": 71,
+          "SHOT_DIST_RANGE": "13-19 Feet",
+          "REB_FREQUENCY": 0.098,
+          "OREB": 0,
+          "DREB": 51,
+          "REB": 51,
+          "C_OREB": 0,
+          "C_DREB": 10,
+          "C_REB": 10,
+          "C_REB_PCT": 0.196,
+          "UC_OREB": 0,
+          "UC_DREB": 41,
+          "UC_REB": 41,
+          "UC_REB_PCT": 0.804
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "SORT_ORDER": 4,
+          "G": 71,
+          "SHOT_DIST_RANGE": "19+ Feet",
+          "REB_FREQUENCY": 0.492,
+          "OREB": 20,
+          "DREB": 235,
+          "REB": 255,
+          "C_OREB": 8,
+          "C_DREB": 45,
+          "C_REB": 53,
+          "C_REB_PCT": 0.208,
+          "UC_OREB": 12,
+          "UC_DREB": 190,
+          "UC_REB": 202,
+          "UC_REB_PCT": 0.792
+        }
+      ],
+      "RebDistanceRebounding": [
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "SORT_ORDER": 1,
+          "G": 71,
+          "REB_DIST_RANGE": "0-3 Feet",
+          "REB_FREQUENCY": 0.185,
+          "OREB": 19,
+          "DREB": 77,
+          "REB": 96,
+          "C_OREB": 18,
+          "C_DREB": 27,
+          "C_REB": 45,
+          "C_REB_PCT": 0.469,
+          "UC_OREB": 1,
+          "UC_DREB": 50,
+          "UC_REB": 51,
+          "UC_REB_PCT": 0.531
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "SORT_ORDER": 2,
+          "G": 71,
+          "REB_DIST_RANGE": "3-6 Feet",
+          "REB_FREQUENCY": 0.32,
+          "OREB": 21,
+          "DREB": 145,
+          "REB": 166,
+          "C_OREB": 14,
+          "C_DREB": 28,
+          "C_REB": 42,
+          "C_REB_PCT": 0.253,
+          "UC_OREB": 7,
+          "UC_DREB": 117,
+          "UC_REB": 124,
+          "UC_REB_PCT": 0.747
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "SORT_ORDER": 3,
+          "G": 71,
+          "REB_DIST_RANGE": "6-10 Feet",
+          "REB_FREQUENCY": 0.266,
+          "OREB": 4,
+          "DREB": 134,
+          "REB": 138,
+          "C_OREB": 1,
+          "C_DREB": 22,
+          "C_REB": 23,
+          "C_REB_PCT": 0.167,
+          "UC_OREB": 3,
+          "UC_DREB": 112,
+          "UC_REB": 115,
+          "UC_REB_PCT": 0.833
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "SORT_ORDER": 4,
+          "G": 71,
+          "REB_DIST_RANGE": "10+ Feet",
+          "REB_FREQUENCY": 0.17,
+          "OREB": 16,
+          "DREB": 72,
+          "REB": 88,
+          "C_OREB": 1,
+          "C_DREB": 4,
+          "C_REB": 5,
+          "C_REB_PCT": 0.057,
+          "UC_OREB": 15,
+          "UC_DREB": 68,
+          "UC_REB": 83,
+          "UC_REB_PCT": 0.943
+        }
+      ]
+    }
+  },
+  "passing_stats": {
+    "meta": {
+      "endpoint": "playerdashptpass",
+      "timestamp": "2025-04-15T00:50:01.419164",
+      "params": {
+        "player_id": "2544",
+        "team_id": 1610612747,
+        "season": "2023-24"
+      }
+    },
+    "data": {
+      "PassesMade": [
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "TEAM_NAME": "Los Angeles Lakers",
+          "TEAM_ID": 1610612747,
+          "TEAM_ABBREVIATION": "LAL",
+          "PASS_TYPE": "made",
+          "G": 70,
+          "PASS_TO": "Hood-Schifino, Jalen",
+          "PASS_TEAMMATE_PLAYER_ID": 1641720,
+          "FREQUENCY": 0.002,
+          "PASS": 6,
+          "AST": 1,
+          "FGM": 1,
+          "FGA": 3,
+          "FG_PCT": 0.333,
+          "FG2M": 1,
+          "FG2A": 3,
+          "FG2_PCT": 0.333,
+          "FG3M": 0,
+          "FG3A": 0,
+          "FG3_PCT": 0.0
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "TEAM_NAME": "Los Angeles Lakers",
+          "TEAM_ID": 1610612747,
+          "TEAM_ABBREVIATION": "LAL",
+          "PASS_TYPE": "made",
+          "G": 70,
+          "PASS_TO": "Christie, Max",
+          "PASS_TEAMMATE_PLAYER_ID": 1631108,
+          "FREQUENCY": 0.031,
+          "PASS": 110,
+          "AST": 12,
+          "FGM": 14,
+          "FGA": 41,
+          "FG_PCT": 0.341,
+          "FG2M": 8,
+          "FG2A": 19,
+          "FG2_PCT": 0.421,
+          "FG3M": 6,
+          "FG3A": 22,
+          "FG3_PCT": 0.273
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "TEAM_NAME": "Los Angeles Lakers",
+          "TEAM_ID": 1610612747,
+          "TEAM_ABBREVIATION": "LAL",
+          "PASS_TYPE": "made",
+          "G": 70,
+          "PASS_TO": "Reaves, Austin",
+          "PASS_TEAMMATE_PLAYER_ID": 1630559,
+          "FREQUENCY": 0.245,
+          "PASS": 869,
+          "AST": 73,
+          "FGM": 103,
+          "FGA": 222,
+          "FG_PCT": 0.464,
+          "FG2M": 76,
+          "FG2A": 131,
+          "FG2_PCT": 0.58,
+          "FG3M": 27,
+          "FG3A": 91,
+          "FG3_PCT": 0.297
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "TEAM_NAME": "Los Angeles Lakers",
+          "TEAM_ID": 1610612747,
+          "TEAM_ABBREVIATION": "LAL",
+          "PASS_TYPE": "made",
+          "G": 70,
+          "PASS_TO": "Mays, Skylar",
+          "PASS_TEAMMATE_PLAYER_ID": 1630219,
+          "FREQUENCY": 0.001,
+          "PASS": 3,
+          "AST": 0,
+          "FGM": 0,
+          "FGA": 1,
+          "FG_PCT": 0.0,
+          "FG2M": 0,
+          "FG2A": 0,
+          "FG2_PCT": 0.0,
+          "FG3M": 0,
+          "FG3A": 1,
+          "FG3_PCT": 0.0
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "TEAM_NAME": "Los Angeles Lakers",
+          "TEAM_ID": 1610612747,
+          "TEAM_ABBREVIATION": "LAL",
+          "PASS_TYPE": "made",
+          "G": 70,
+          "PASS_TO": "Hayes, Jaxson",
+          "PASS_TEAMMATE_PLAYER_ID": 1629637,
+          "FREQUENCY": 0.023,
+          "PASS": 82,
+          "AST": 23,
+          "FGM": 23,
+          "FGA": 32,
+          "FG_PCT": 0.719,
+          "FG2M": 23,
+          "FG2A": 32,
+          "FG2_PCT": 0.719,
+          "FG3M": 0,
+          "FG3A": 0,
+          "FG3_PCT": 0.0
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "TEAM_NAME": "Los Angeles Lakers",
+          "TEAM_ID": 1610612747,
+          "TEAM_ABBREVIATION": "LAL",
+          "PASS_TYPE": "made",
+          "G": 70,
+          "PASS_TO": "Reddish, Cam",
+          "PASS_TEAMMATE_PLAYER_ID": 1629629,
+          "FREQUENCY": 0.033,
+          "PASS": 117,
+          "AST": 19,
+          "FGM": 19,
+          "FGA": 49,
+          "FG_PCT": 0.388,
+          "FG2M": 11,
+          "FG2A": 33,
+          "FG2_PCT": 0.333,
+          "FG3M": 8,
+          "FG3A": 16,
+          "FG3_PCT": 0.5
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "TEAM_NAME": "Los Angeles Lakers",
+          "TEAM_ID": 1610612747,
+          "TEAM_ABBREVIATION": "LAL",
+          "PASS_TYPE": "made",
+          "G": 70,
+          "PASS_TO": "Vincent, Gabe",
+          "PASS_TEAMMATE_PLAYER_ID": 1629216,
+          "FREQUENCY": 0.008,
+          "PASS": 30,
+          "AST": 1,
+          "FGM": 1,
+          "FGA": 11,
+          "FG_PCT": 0.091,
+          "FG2M": 1,
+          "FG2A": 4,
+          "FG2_PCT": 0.25,
+          "FG3M": 0,
+          "FG3A": 7,
+          "FG3_PCT": 0.0
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "TEAM_NAME": "Los Angeles Lakers",
+          "TEAM_ID": 1610612747,
+          "TEAM_ABBREVIATION": "LAL",
+          "PASS_TYPE": "made",
+          "G": 70,
+          "PASS_TO": "Hachimura, Rui",
+          "PASS_TEAMMATE_PLAYER_ID": 1629060,
+          "FREQUENCY": 0.077,
+          "PASS": 272,
+          "AST": 72,
+          "FGM": 75,
+          "FGA": 145,
+          "FG_PCT": 0.517,
+          "FG2M": 53,
+          "FG2A": 90,
+          "FG2_PCT": 0.589,
+          "FG3M": 22,
+          "FG3A": 55,
+          "FG3_PCT": 0.4
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "TEAM_NAME": "Los Angeles Lakers",
+          "TEAM_ID": 1610612747,
+          "TEAM_ABBREVIATION": "LAL",
+          "PASS_TYPE": "made",
+          "G": 70,
+          "PASS_TO": "Vanderbilt, Jarred",
+          "PASS_TEAMMATE_PLAYER_ID": 1629020,
+          "FREQUENCY": 0.014,
+          "PASS": 51,
+          "AST": 11,
+          "FGM": 14,
+          "FGA": 26,
+          "FG_PCT": 0.538,
+          "FG2M": 13,
+          "FG2A": 20,
+          "FG2_PCT": 0.65,
+          "FG3M": 1,
+          "FG3A": 6,
+          "FG3_PCT": 0.167
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "TEAM_NAME": "Los Angeles Lakers",
+          "TEAM_ID": 1610612747,
+          "TEAM_ABBREVIATION": "LAL",
+          "PASS_TYPE": "made",
+          "G": 70,
+          "PASS_TO": "Giles III, Harry",
+          "PASS_TEAMMATE_PLAYER_ID": 1628385,
+          "FREQUENCY": 0.0,
+          "PASS": 1,
+          "AST": 0,
+          "FGM": 0,
+          "FGA": 1,
+          "FG_PCT": 0.0,
+          "FG2M": 0,
+          "FG2A": 1,
+          "FG2_PCT": 0.0,
+          "FG3M": 0,
+          "FG3A": 0,
+          "FG3_PCT": 0.0
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "TEAM_NAME": "Los Angeles Lakers",
+          "TEAM_ID": 1610612747,
+          "TEAM_ABBREVIATION": "LAL",
+          "PASS_TYPE": "made",
+          "G": 70,
+          "PASS_TO": "Prince, Taurean",
+          "PASS_TEAMMATE_PLAYER_ID": 1627752,
+          "FREQUENCY": 0.084,
+          "PASS": 298,
+          "AST": 64,
+          "FGM": 65,
+          "FGA": 143,
+          "FG_PCT": 0.455,
+          "FG2M": 22,
+          "FG2A": 54,
+          "FG2_PCT": 0.407,
+          "FG3M": 43,
+          "FG3A": 89,
+          "FG3_PCT": 0.483
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "TEAM_NAME": "Los Angeles Lakers",
+          "TEAM_ID": 1610612747,
+          "TEAM_ABBREVIATION": "LAL",
+          "PASS_TYPE": "made",
+          "G": 70,
+          "PASS_TO": "Wood, Christian",
+          "PASS_TEAMMATE_PLAYER_ID": 1626174,
+          "FREQUENCY": 0.039,
+          "PASS": 137,
+          "AST": 23,
+          "FGM": 25,
+          "FGA": 63,
+          "FG_PCT": 0.397,
+          "FG2M": 19,
+          "FG2A": 40,
+          "FG2_PCT": 0.475,
+          "FG3M": 6,
+          "FG3A": 23,
+          "FG3_PCT": 0.261
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "TEAM_NAME": "Los Angeles Lakers",
+          "TEAM_ID": 1610612747,
+          "TEAM_ABBREVIATION": "LAL",
+          "PASS_TYPE": "made",
+          "G": 70,
+          "PASS_TO": "Russell, D'Angelo",
+          "PASS_TEAMMATE_PLAYER_ID": 1626156,
+          "FREQUENCY": 0.209,
+          "PASS": 740,
+          "AST": 89,
+          "FGM": 122,
+          "FGA": 256,
+          "FG_PCT": 0.477,
+          "FG2M": 60,
+          "FG2A": 119,
+          "FG2_PCT": 0.504,
+          "FG3M": 62,
+          "FG3A": 137,
+          "FG3_PCT": 0.453
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "TEAM_NAME": "Los Angeles Lakers",
+          "TEAM_ID": 1610612747,
+          "TEAM_ABBREVIATION": "LAL",
+          "PASS_TYPE": "made",
+          "G": 70,
+          "PASS_TO": "Dinwiddie, Spencer",
+          "PASS_TEAMMATE_PLAYER_ID": 203915,
+          "FREQUENCY": 0.024,
+          "PASS": 84,
+          "AST": 10,
+          "FGM": 11,
+          "FGA": 25,
+          "FG_PCT": 0.44,
+          "FG2M": 1,
+          "FG2A": 4,
+          "FG2_PCT": 0.25,
+          "FG3M": 10,
+          "FG3A": 21,
+          "FG3_PCT": 0.476
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "TEAM_NAME": "Los Angeles Lakers",
+          "TEAM_ID": 1610612747,
+          "TEAM_ABBREVIATION": "LAL",
+          "PASS_TYPE": "made",
+          "G": 70,
+          "PASS_TO": "Davis, Anthony",
+          "PASS_TEAMMATE_PLAYER_ID": 203076,
+          "FREQUENCY": 0.211,
+          "PASS": 747,
+          "AST": 169,
+          "FGM": 188,
+          "FGA": 328,
+          "FG_PCT": 0.573,
+          "FG2M": 182,
+          "FG2A": 304,
+          "FG2_PCT": 0.599,
+          "FG3M": 6,
+          "FG3A": 24,
+          "FG3_PCT": 0.25
+        }
+      ],
+      "PassesReceived": [
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "TEAM_NAME": "Los Angeles Lakers",
+          "TEAM_ID": 1610612747,
+          "TEAM_ABBREVIATION": "LAL",
+          "PASS_TYPE": "received",
+          "G": 70,
+          "PASS_FROM": "Hood-Schifino, Jalen",
+          "PASS_TEAMMATE_PLAYER_ID": 1641720,
+          "FREQUENCY": 0.002,
+          "PASS": 9,
+          "AST": 0,
+          "FGM": 0,
+          "FGA": 0,
+          "FG_PCT": 0.0,
+          "FG2M": 0,
+          "FG2A": 0,
+          "FG2_PCT": 0.0,
+          "FG3M": 0,
+          "FG3A": 0,
+          "FG3_PCT": 0.0
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "TEAM_NAME": "Los Angeles Lakers",
+          "TEAM_ID": 1610612747,
+          "TEAM_ABBREVIATION": "LAL",
+          "PASS_TYPE": "received",
+          "G": 70,
+          "PASS_FROM": "Christie, Max",
+          "PASS_TEAMMATE_PLAYER_ID": 1631108,
+          "FREQUENCY": 0.029,
+          "PASS": 125,
+          "AST": 3,
+          "FGM": 11,
+          "FGA": 27,
+          "FG_PCT": 0.407,
+          "FG2M": 5,
+          "FG2A": 13,
+          "FG2_PCT": 0.385,
+          "FG3M": 6,
+          "FG3A": 14,
+          "FG3_PCT": 0.429
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "TEAM_NAME": "Los Angeles Lakers",
+          "TEAM_ID": 1610612747,
+          "TEAM_ABBREVIATION": "LAL",
+          "PASS_TYPE": "received",
+          "G": 70,
+          "PASS_FROM": "Reaves, Austin",
+          "PASS_TEAMMATE_PLAYER_ID": 1630559,
+          "FREQUENCY": 0.218,
+          "PASS": 933,
+          "AST": 103,
+          "FGM": 159,
+          "FGA": 322,
+          "FG_PCT": 0.494,
+          "FG2M": 135,
+          "FG2A": 234,
+          "FG2_PCT": 0.577,
+          "FG3M": 24,
+          "FG3A": 88,
+          "FG3_PCT": 0.273
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "TEAM_NAME": "Los Angeles Lakers",
+          "TEAM_ID": 1610612747,
+          "TEAM_ABBREVIATION": "LAL",
+          "PASS_TYPE": "received",
+          "G": 70,
+          "PASS_FROM": "Mays, Skylar",
+          "PASS_TEAMMATE_PLAYER_ID": 1630219,
+          "FREQUENCY": 0.002,
+          "PASS": 8,
+          "AST": 0,
+          "FGM": 1,
+          "FGA": 3,
+          "FG_PCT": 0.333,
+          "FG2M": 1,
+          "FG2A": 3,
+          "FG2_PCT": 0.333,
+          "FG3M": 0,
+          "FG3A": 0,
+          "FG3_PCT": 0.0
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "TEAM_NAME": "Los Angeles Lakers",
+          "TEAM_ID": 1610612747,
+          "TEAM_ABBREVIATION": "LAL",
+          "PASS_TYPE": "received",
+          "G": 70,
+          "PASS_FROM": "Hayes, Jaxson",
+          "PASS_TEAMMATE_PLAYER_ID": 1629637,
+          "FREQUENCY": 0.042,
+          "PASS": 178,
+          "AST": 12,
+          "FGM": 23,
+          "FGA": 48,
+          "FG_PCT": 0.479,
+          "FG2M": 17,
+          "FG2A": 35,
+          "FG2_PCT": 0.486,
+          "FG3M": 6,
+          "FG3A": 13,
+          "FG3_PCT": 0.462
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "TEAM_NAME": "Los Angeles Lakers",
+          "TEAM_ID": 1610612747,
+          "TEAM_ABBREVIATION": "LAL",
+          "PASS_TYPE": "received",
+          "G": 70,
+          "PASS_FROM": "Reddish, Cam",
+          "PASS_TEAMMATE_PLAYER_ID": 1629629,
+          "FREQUENCY": 0.022,
+          "PASS": 95,
+          "AST": 9,
+          "FGM": 17,
+          "FGA": 28,
+          "FG_PCT": 0.607,
+          "FG2M": 10,
+          "FG2A": 16,
+          "FG2_PCT": 0.625,
+          "FG3M": 7,
+          "FG3A": 12,
+          "FG3_PCT": 0.583
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "TEAM_NAME": "Los Angeles Lakers",
+          "TEAM_ID": 1610612747,
+          "TEAM_ABBREVIATION": "LAL",
+          "PASS_TYPE": "received",
+          "G": 70,
+          "PASS_FROM": "Vincent, Gabe",
+          "PASS_TEAMMATE_PLAYER_ID": 1629216,
+          "FREQUENCY": 0.01,
+          "PASS": 42,
+          "AST": 5,
+          "FGM": 6,
+          "FGA": 13,
+          "FG_PCT": 0.462,
+          "FG2M": 5,
+          "FG2A": 10,
+          "FG2_PCT": 0.5,
+          "FG3M": 1,
+          "FG3A": 3,
+          "FG3_PCT": 0.333
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "TEAM_NAME": "Los Angeles Lakers",
+          "TEAM_ID": 1610612747,
+          "TEAM_ABBREVIATION": "LAL",
+          "PASS_TYPE": "received",
+          "G": 70,
+          "PASS_FROM": "Hachimura, Rui",
+          "PASS_TEAMMATE_PLAYER_ID": 1629060,
+          "FREQUENCY": 0.07,
+          "PASS": 300,
+          "AST": 13,
+          "FGM": 32,
+          "FGA": 68,
+          "FG_PCT": 0.471,
+          "FG2M": 21,
+          "FG2A": 48,
+          "FG2_PCT": 0.438,
+          "FG3M": 11,
+          "FG3A": 20,
+          "FG3_PCT": 0.55
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "TEAM_NAME": "Los Angeles Lakers",
+          "TEAM_ID": 1610612747,
+          "TEAM_ABBREVIATION": "LAL",
+          "PASS_TYPE": "received",
+          "G": 70,
+          "PASS_FROM": "Vanderbilt, Jarred",
+          "PASS_TEAMMATE_PLAYER_ID": 1629020,
+          "FREQUENCY": 0.016,
+          "PASS": 70,
+          "AST": 1,
+          "FGM": 6,
+          "FGA": 17,
+          "FG_PCT": 0.353,
+          "FG2M": 4,
+          "FG2A": 11,
+          "FG2_PCT": 0.364,
+          "FG3M": 2,
+          "FG3A": 6,
+          "FG3_PCT": 0.333
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "TEAM_NAME": "Los Angeles Lakers",
+          "TEAM_ID": 1610612747,
+          "TEAM_ABBREVIATION": "LAL",
+          "PASS_TYPE": "received",
+          "G": 70,
+          "PASS_FROM": "Prince, Taurean",
+          "PASS_TEAMMATE_PLAYER_ID": 1627752,
+          "FREQUENCY": 0.072,
+          "PASS": 310,
+          "AST": 18,
+          "FGM": 40,
+          "FGA": 87,
+          "FG_PCT": 0.46,
+          "FG2M": 34,
+          "FG2A": 69,
+          "FG2_PCT": 0.493,
+          "FG3M": 6,
+          "FG3A": 18,
+          "FG3_PCT": 0.333
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "TEAM_NAME": "Los Angeles Lakers",
+          "TEAM_ID": 1610612747,
+          "TEAM_ABBREVIATION": "LAL",
+          "PASS_TYPE": "received",
+          "G": 70,
+          "PASS_FROM": "Wood, Christian",
+          "PASS_TEAMMATE_PLAYER_ID": 1626174,
+          "FREQUENCY": 0.04,
+          "PASS": 170,
+          "AST": 5,
+          "FGM": 18,
+          "FGA": 39,
+          "FG_PCT": 0.462,
+          "FG2M": 12,
+          "FG2A": 24,
+          "FG2_PCT": 0.5,
+          "FG3M": 6,
+          "FG3A": 15,
+          "FG3_PCT": 0.4
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "TEAM_NAME": "Los Angeles Lakers",
+          "TEAM_ID": 1610612747,
+          "TEAM_ABBREVIATION": "LAL",
+          "PASS_TYPE": "received",
+          "G": 70,
+          "PASS_FROM": "Russell, D'Angelo",
+          "PASS_TEAMMATE_PLAYER_ID": 1626156,
+          "FREQUENCY": 0.199,
+          "PASS": 855,
+          "AST": 83,
+          "FGM": 139,
+          "FGA": 277,
+          "FG_PCT": 0.502,
+          "FG2M": 104,
+          "FG2A": 202,
+          "FG2_PCT": 0.515,
+          "FG3M": 35,
+          "FG3A": 75,
+          "FG3_PCT": 0.467
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "TEAM_NAME": "Los Angeles Lakers",
+          "TEAM_ID": 1610612747,
+          "TEAM_ABBREVIATION": "LAL",
+          "PASS_TYPE": "received",
+          "G": 70,
+          "PASS_FROM": "Dinwiddie, Spencer",
+          "PASS_TEAMMATE_PLAYER_ID": 203915,
+          "FREQUENCY": 0.017,
+          "PASS": 71,
+          "AST": 8,
+          "FGM": 13,
+          "FGA": 22,
+          "FG_PCT": 0.591,
+          "FG2M": 9,
+          "FG2A": 16,
+          "FG2_PCT": 0.563,
+          "FG3M": 4,
+          "FG3A": 6,
+          "FG3_PCT": 0.667
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "TEAM_NAME": "Los Angeles Lakers",
+          "TEAM_ID": 1610612747,
+          "TEAM_ABBREVIATION": "LAL",
+          "PASS_TYPE": "received",
+          "G": 70,
+          "PASS_FROM": "Davis, Anthony",
+          "PASS_TEAMMATE_PLAYER_ID": 203076,
+          "FREQUENCY": 0.262,
+          "PASS": 1122,
+          "AST": 66,
+          "FGM": 123,
+          "FGA": 251,
+          "FG_PCT": 0.49,
+          "FG2M": 96,
+          "FG2A": 179,
+          "FG2_PCT": 0.536,
+          "FG3M": 27,
+          "FG3A": 72,
+          "FG3_PCT": 0.375
+        }
+      ]
+    }
+  },
+  "shot_stats": {
+    "meta": {
+      "endpoint": "playerdashptshots",
+      "timestamp": "2025-04-15T00:50:14.127852",
+      "params": {
+        "player_id": "2544",
+        "team_id": 1610612747,
+        "season": "2023-24"
+      }
+    },
+    "data": {
+      "Overall": [
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "SORT_ORDER": 1,
+          "GP": 70,
+          "G": 70,
+          "SHOT_TYPE": "Overall",
+          "FGA_FREQUENCY": 1.0,
+          "FGM": 664,
+          "FGA": 1234,
+          "FG_PCT": 0.538,
+          "EFG_PCT": 0.596,
+          "FG2A_FREQUENCY": 0.712,
+          "FG2M": 521,
+          "FG2A": 879,
+          "FG2_PCT": 0.593,
+          "FG3A_FREQUENCY": 0.288,
+          "FG3M": 143,
+          "FG3A": 355,
+          "FG3_PCT": 0.403
+        }
+      ],
+      "GeneralShooting": [
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "SORT_ORDER": 1,
+          "GP": 70,
+          "G": 65,
+          "SHOT_TYPE": "Catch and Shoot",
+          "FGA_FREQUENCY": 0.165,
+          "FGM": 94,
+          "FGA": 203,
+          "FG_PCT": 0.463,
+          "EFG_PCT": 0.677,
+          "FG2A_FREQUENCY": 0.015,
+          "FG2M": 7,
+          "FG2A": 19,
+          "FG2_PCT": 0.368,
+          "FG3A_FREQUENCY": 0.149,
+          "FG3M": 87,
+          "FG3A": 184,
+          "FG3_PCT": 0.473
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "SORT_ORDER": 2,
+          "GP": 70,
+          "G": 69,
+          "SHOT_TYPE": "Pull Ups",
+          "FGA_FREQUENCY": 0.266,
+          "FGM": 113,
+          "FGA": 328,
+          "FG_PCT": 0.345,
+          "EFG_PCT": 0.422,
+          "FG2A_FREQUENCY": 0.143,
+          "FG2M": 62,
+          "FG2A": 176,
+          "FG2_PCT": 0.352,
+          "FG3A_FREQUENCY": 0.123,
+          "FG3M": 51,
+          "FG3A": 152,
+          "FG3_PCT": 0.336
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "SORT_ORDER": 3,
+          "GP": 70,
+          "G": 69,
+          "SHOT_TYPE": "Less than 10 ft",
+          "FGA_FREQUENCY": 0.546,
+          "FGM": 447,
+          "FGA": 674,
+          "FG_PCT": 0.663,
+          "EFG_PCT": 0.663,
+          "FG2A_FREQUENCY": 0.546,
+          "FG2M": 447,
+          "FG2A": 674,
+          "FG2_PCT": 0.663,
+          "FG3A_FREQUENCY": 0.0,
+          "FG3M": 0,
+          "FG3A": 0,
+          "FG3_PCT": null
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "SORT_ORDER": 4,
+          "GP": 70,
+          "G": 24,
+          "SHOT_TYPE": "Other",
+          "FGA_FREQUENCY": 0.024,
+          "FGM": 10,
+          "FGA": 29,
+          "FG_PCT": 0.345,
+          "EFG_PCT": 0.431,
+          "FG2A_FREQUENCY": 0.008,
+          "FG2M": 5,
+          "FG2A": 10,
+          "FG2_PCT": 0.5,
+          "FG3A_FREQUENCY": 0.015,
+          "FG3M": 5,
+          "FG3A": 19,
+          "FG3_PCT": 0.263
+        }
+      ],
+      "ShotClockShooting": [
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "SORT_ORDER": 1,
+          "GP": 70,
+          "G": 17,
+          "SHOT_CLOCK_RANGE": "24-22",
+          "FGA_FREQUENCY": 0.019,
+          "FGM": 10,
+          "FGA": 23,
+          "FG_PCT": 0.435,
+          "EFG_PCT": 0.435,
+          "FG2A_FREQUENCY": 0.019,
+          "FG2M": 10,
+          "FG2A": 23,
+          "FG2_PCT": 0.435,
+          "FG3A_FREQUENCY": 0.0,
+          "FG3M": 0,
+          "FG3A": 0,
+          "FG3_PCT": null
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "SORT_ORDER": 2,
+          "GP": 70,
+          "G": 64,
+          "SHOT_CLOCK_RANGE": "22-18 Very Early",
+          "FGA_FREQUENCY": 0.166,
+          "FGM": 136,
+          "FGA": 205,
+          "FG_PCT": 0.663,
+          "EFG_PCT": 0.705,
+          "FG2A_FREQUENCY": 0.134,
+          "FG2M": 119,
+          "FG2A": 165,
+          "FG2_PCT": 0.721,
+          "FG3A_FREQUENCY": 0.032,
+          "FG3M": 17,
+          "FG3A": 40,
+          "FG3_PCT": 0.425
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "SORT_ORDER": 3,
+          "GP": 70,
+          "G": 66,
+          "SHOT_CLOCK_RANGE": "18-15 Early",
+          "FGA_FREQUENCY": 0.167,
+          "FGM": 123,
+          "FGA": 206,
+          "FG_PCT": 0.597,
+          "EFG_PCT": 0.682,
+          "FG2A_FREQUENCY": 0.105,
+          "FG2M": 88,
+          "FG2A": 129,
+          "FG2_PCT": 0.682,
+          "FG3A_FREQUENCY": 0.062,
+          "FG3M": 35,
+          "FG3A": 77,
+          "FG3_PCT": 0.455
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "SORT_ORDER": 4,
+          "GP": 70,
+          "G": 69,
+          "SHOT_CLOCK_RANGE": "15-7 Average",
+          "FGA_FREQUENCY": 0.436,
+          "FGM": 276,
+          "FGA": 538,
+          "FG_PCT": 0.513,
+          "EFG_PCT": 0.581,
+          "FG2A_FREQUENCY": 0.298,
+          "FG2M": 203,
+          "FG2A": 368,
+          "FG2_PCT": 0.552,
+          "FG3A_FREQUENCY": 0.138,
+          "FG3M": 73,
+          "FG3A": 170,
+          "FG3_PCT": 0.429
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "SORT_ORDER": 5,
+          "GP": 70,
+          "G": 67,
+          "SHOT_CLOCK_RANGE": "7-4 Late",
+          "FGA_FREQUENCY": 0.118,
+          "FGM": 73,
+          "FGA": 146,
+          "FG_PCT": 0.5,
+          "EFG_PCT": 0.538,
+          "FG2A_FREQUENCY": 0.089,
+          "FG2M": 62,
+          "FG2A": 110,
+          "FG2_PCT": 0.564,
+          "FG3A_FREQUENCY": 0.029,
+          "FG3M": 11,
+          "FG3A": 36,
+          "FG3_PCT": 0.306
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "SORT_ORDER": 6,
+          "GP": 70,
+          "G": 53,
+          "SHOT_CLOCK_RANGE": "4-0 Very Late",
+          "FGA_FREQUENCY": 0.092,
+          "FGM": 45,
+          "FGA": 114,
+          "FG_PCT": 0.395,
+          "EFG_PCT": 0.425,
+          "FG2A_FREQUENCY": 0.066,
+          "FG2M": 38,
+          "FG2A": 82,
+          "FG2_PCT": 0.463,
+          "FG3A_FREQUENCY": 0.026,
+          "FG3M": 7,
+          "FG3A": 32,
+          "FG3_PCT": 0.219
+        }
+      ],
+      "DribbleShooting": [
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "SORT_ORDER": 1,
+          "GP": 70,
+          "G": 69,
+          "DRIBBLE_RANGE": "0 Dribbles",
+          "FGA_FREQUENCY": 0.312,
+          "FGM": 214,
+          "FGA": 385,
+          "FG_PCT": 0.556,
+          "EFG_PCT": 0.675,
+          "FG2A_FREQUENCY": 0.147,
+          "FG2M": 122,
+          "FG2A": 182,
+          "FG2_PCT": 0.67,
+          "FG3A_FREQUENCY": 0.165,
+          "FG3M": 92,
+          "FG3A": 203,
+          "FG3_PCT": 0.453
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "SORT_ORDER": 2,
+          "GP": 70,
+          "G": 61,
+          "DRIBBLE_RANGE": "1 Dribble",
+          "FGA_FREQUENCY": 0.128,
+          "FGM": 92,
+          "FGA": 158,
+          "FG_PCT": 0.582,
+          "EFG_PCT": 0.611,
+          "FG2A_FREQUENCY": 0.098,
+          "FG2M": 83,
+          "FG2A": 121,
+          "FG2_PCT": 0.686,
+          "FG3A_FREQUENCY": 0.03,
+          "FG3M": 9,
+          "FG3A": 37,
+          "FG3_PCT": 0.243
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "SORT_ORDER": 3,
+          "GP": 70,
+          "G": 54,
+          "DRIBBLE_RANGE": "2 Dribbles",
+          "FGA_FREQUENCY": 0.087,
+          "FGM": 61,
+          "FGA": 107,
+          "FG_PCT": 0.57,
+          "EFG_PCT": 0.584,
+          "FG2A_FREQUENCY": 0.082,
+          "FG2M": 58,
+          "FG2A": 101,
+          "FG2_PCT": 0.574,
+          "FG3A_FREQUENCY": 0.005,
+          "FG3M": 3,
+          "FG3A": 6,
+          "FG3_PCT": 0.5
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "SORT_ORDER": 4,
+          "GP": 70,
+          "G": 70,
+          "DRIBBLE_RANGE": "3-6 Dribbles",
+          "FGA_FREQUENCY": 0.25,
+          "FGM": 158,
+          "FGA": 309,
+          "FG_PCT": 0.511,
+          "EFG_PCT": 0.536,
+          "FG2A_FREQUENCY": 0.21,
+          "FG2M": 143,
+          "FG2A": 259,
+          "FG2_PCT": 0.552,
+          "FG3A_FREQUENCY": 0.041,
+          "FG3M": 15,
+          "FG3A": 50,
+          "FG3_PCT": 0.3
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "SORT_ORDER": 5,
+          "GP": 70,
+          "G": 66,
+          "DRIBBLE_RANGE": "7+ Dribbles",
+          "FGA_FREQUENCY": 0.223,
+          "FGM": 139,
+          "FGA": 275,
+          "FG_PCT": 0.505,
+          "EFG_PCT": 0.549,
+          "FG2A_FREQUENCY": 0.175,
+          "FG2M": 115,
+          "FG2A": 216,
+          "FG2_PCT": 0.532,
+          "FG3A_FREQUENCY": 0.048,
+          "FG3M": 24,
+          "FG3A": 59,
+          "FG3_PCT": 0.407
+        }
+      ],
+      "ClosestDefenderShooting": [
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "SORT_ORDER": 1,
+          "GP": 70,
+          "G": 60,
+          "CLOSE_DEF_DIST_RANGE": "0-2 Feet - Very Tight",
+          "FGA_FREQUENCY": 0.105,
+          "FGM": 69,
+          "FGA": 129,
+          "FG_PCT": 0.535,
+          "EFG_PCT": 0.535,
+          "FG2A_FREQUENCY": 0.105,
+          "FG2M": 69,
+          "FG2A": 129,
+          "FG2_PCT": 0.535,
+          "FG3A_FREQUENCY": 0.0,
+          "FG3M": 0,
+          "FG3A": 0,
+          "FG3_PCT": null
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "SORT_ORDER": 2,
+          "GP": 70,
+          "G": 68,
+          "CLOSE_DEF_DIST_RANGE": "2-4 Feet - Tight",
+          "FGA_FREQUENCY": 0.403,
+          "FGM": 297,
+          "FGA": 497,
+          "FG_PCT": 0.598,
+          "EFG_PCT": 0.615,
+          "FG2A_FREQUENCY": 0.367,
+          "FG2M": 280,
+          "FG2A": 453,
+          "FG2_PCT": 0.618,
+          "FG3A_FREQUENCY": 0.036,
+          "FG3M": 17,
+          "FG3A": 44,
+          "FG3_PCT": 0.386
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "SORT_ORDER": 3,
+          "GP": 70,
+          "G": 70,
+          "CLOSE_DEF_DIST_RANGE": "4-6 Feet - Open",
+          "FGA_FREQUENCY": 0.358,
+          "FGM": 210,
+          "FGA": 442,
+          "FG_PCT": 0.475,
+          "EFG_PCT": 0.564,
+          "FG2A_FREQUENCY": 0.191,
+          "FG2M": 131,
+          "FG2A": 236,
+          "FG2_PCT": 0.555,
+          "FG3A_FREQUENCY": 0.167,
+          "FG3M": 79,
+          "FG3A": 206,
+          "FG3_PCT": 0.383
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "SORT_ORDER": 4,
+          "GP": 70,
+          "G": 59,
+          "CLOSE_DEF_DIST_RANGE": "6+ Feet - Wide Open",
+          "FGA_FREQUENCY": 0.135,
+          "FGM": 88,
+          "FGA": 166,
+          "FG_PCT": 0.53,
+          "EFG_PCT": 0.672,
+          "FG2A_FREQUENCY": 0.049,
+          "FG2M": 41,
+          "FG2A": 61,
+          "FG2_PCT": 0.672,
+          "FG3A_FREQUENCY": 0.085,
+          "FG3M": 47,
+          "FG3A": 105,
+          "FG3_PCT": 0.448
+        }
+      ],
+      "ClosestDefender10ftPlusShooting": [
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "SORT_ORDER": 1,
+          "GP": 70,
+          "G": 3,
+          "CLOSE_DEF_DIST_RANGE": "0-2 Feet - Very Tight",
+          "FGA_FREQUENCY": 0.002,
+          "FGM": 0,
+          "FGA": 3,
+          "FG_PCT": 0.0,
+          "EFG_PCT": 0.0,
+          "FG2A_FREQUENCY": 0.002,
+          "FG2M": 0,
+          "FG2A": 3,
+          "FG2_PCT": 0.0,
+          "FG3A_FREQUENCY": 0.0,
+          "FG3M": 0,
+          "FG3A": 0,
+          "FG3_PCT": null
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "SORT_ORDER": 2,
+          "GP": 70,
+          "G": 46,
+          "CLOSE_DEF_DIST_RANGE": "2-4 Feet - Tight",
+          "FGA_FREQUENCY": 0.07,
+          "FGM": 26,
+          "FGA": 86,
+          "FG_PCT": 0.302,
+          "EFG_PCT": 0.401,
+          "FG2A_FREQUENCY": 0.034,
+          "FG2M": 9,
+          "FG2A": 42,
+          "FG2_PCT": 0.214,
+          "FG3A_FREQUENCY": 0.036,
+          "FG3M": 17,
+          "FG3A": 44,
+          "FG3_PCT": 0.386
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "SORT_ORDER": 3,
+          "GP": 70,
+          "G": 70,
+          "CLOSE_DEF_DIST_RANGE": "4-6 Feet - Open",
+          "FGA_FREQUENCY": 0.271,
+          "FGM": 132,
+          "FGA": 335,
+          "FG_PCT": 0.394,
+          "EFG_PCT": 0.512,
+          "FG2A_FREQUENCY": 0.105,
+          "FG2M": 53,
+          "FG2A": 129,
+          "FG2_PCT": 0.411,
+          "FG3A_FREQUENCY": 0.167,
+          "FG3M": 79,
+          "FG3A": 206,
+          "FG3_PCT": 0.383
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "SORT_ORDER": 4,
+          "GP": 70,
+          "G": 58,
+          "CLOSE_DEF_DIST_RANGE": "6+ Feet - Wide Open",
+          "FGA_FREQUENCY": 0.11,
+          "FGM": 59,
+          "FGA": 136,
+          "FG_PCT": 0.434,
+          "EFG_PCT": 0.607,
+          "FG2A_FREQUENCY": 0.025,
+          "FG2M": 12,
+          "FG2A": 31,
+          "FG2_PCT": 0.387,
+          "FG3A_FREQUENCY": 0.085,
+          "FG3M": 47,
+          "FG3A": 105,
+          "FG3_PCT": 0.448
+        }
+      ],
+      "TouchTimeShooting": [
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "SORT_ORDER": 1,
+          "GP": 70,
+          "G": 69,
+          "TOUCH_TIME_RANGE": "Touch < 2 Seconds",
+          "FGA_FREQUENCY": 0.346,
+          "FGM": 252,
+          "FGA": 427,
+          "FG_PCT": 0.59,
+          "EFG_PCT": 0.694,
+          "FG2A_FREQUENCY": 0.184,
+          "FG2M": 163,
+          "FG2A": 227,
+          "FG2_PCT": 0.718,
+          "FG3A_FREQUENCY": 0.162,
+          "FG3M": 89,
+          "FG3A": 200,
+          "FG3_PCT": 0.445
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "SORT_ORDER": 2,
+          "GP": 70,
+          "G": 70,
+          "TOUCH_TIME_RANGE": "Touch 2-6 Seconds",
+          "FGA_FREQUENCY": 0.34,
+          "FGM": 223,
+          "FGA": 419,
+          "FG_PCT": 0.532,
+          "EFG_PCT": 0.561,
+          "FG2A_FREQUENCY": 0.28,
+          "FG2M": 199,
+          "FG2A": 346,
+          "FG2_PCT": 0.575,
+          "FG3A_FREQUENCY": 0.059,
+          "FG3M": 24,
+          "FG3A": 73,
+          "FG3_PCT": 0.329
+        },
+        {
+          "PLAYER_ID": 2544,
+          "PLAYER_NAME_LAST_FIRST": "James, LeBron",
+          "SORT_ORDER": 3,
+          "GP": 70,
+          "G": 69,
+          "TOUCH_TIME_RANGE": "Touch 6+ Seconds",
+          "FGA_FREQUENCY": 0.314,
+          "FGM": 189,
+          "FGA": 388,
+          "FG_PCT": 0.487,
+          "EFG_PCT": 0.526,
+          "FG2A_FREQUENCY": 0.248,
+          "FG2M": 159,
+          "FG2A": 306,
+          "FG2_PCT": 0.52,
+          "FG3A_FREQUENCY": 0.066,
+          "FG3M": 30,
+          "FG3A": 82,
+          "FG3_PCT": 0.366
+        }
+      ]
+    }
+  }
+}

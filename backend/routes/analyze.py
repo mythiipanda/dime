@@ -1,9 +1,9 @@
 import logging
 from fastapi import APIRouter, HTTPException
 from typing import Dict, Any
-from schemas import AnalyzeRequest
-from api_tools.analyze import analyze_player_stats_logic
-from agents import nba_agent
+from backend.schemas import AnalyzeRequest
+from backend.api_tools.analyze import analyze_player_stats_logic
+from backend.agents import nba_agent
 import json
 
 router = APIRouter()
