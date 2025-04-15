@@ -264,16 +264,7 @@ def fetch_player_shotchart_logic(
     season: str = CURRENT_SEASON,
     season_type: str = SeasonTypeAllStar.regular
 ) -> str:
-    """Fetches a player's shot chart data for detailed shooting analysis.
-    
-    Args:
-        player_name (str): The name of the player
-        season (str): Season identifier (e.g., "2023-24")
-        season_type (str): "Regular Season" or "Playoffs"
-        
-    Returns:
-        str: JSON string containing shot chart data or error message
-    """
+    """Fetches a player's shot chart data for detailed shooting analysis."""
     logger.info(f"Executing fetch_player_shotchart_logic for: '{player_name}', Season: {season}")
     
     if not player_name or not player_name.strip():
@@ -307,14 +298,53 @@ def fetch_player_shotchart_logic(
                 logger.error(f"DataFrame processing failed for shot chart of {player_actual_name}")
                 return format_response(error=f"Failed to process shot chart data for {player_actual_name}")
             
-            return format_response({
+            # Create zone-based shooting summary
+            zone_summary = {}
+            total_shots = len(shots_data)
+            made_shots = sum(1 for shot in shots_data if shot.get("SHOT_MADE_FLAG", 0) == 1)
+            
+            for shot in shots_data:
+                zone = shot.get("SHOT_ZONE_BASIC", "Unknown")
+                if zone not in zone_summary:
+                    zone_summary[zone] = {
+                        "attempts": 0,
+                        "made": 0,
+                        "percentage": 0.0
+                    }
+                zone_summary[zone]["attempts"] += 1
+                if shot.get("SHOT_MADE_FLAG", 0) == 1:
+                    zone_summary[zone]["made"] += 1
+            
+            # Calculate percentages for each zone
+            for zone in zone_summary:
+                attempts = zone_summary[zone]["attempts"]
+                made = zone_summary[zone]["made"]
+                zone_summary[zone]["percentage"] = round(made / attempts * 100, 1) if attempts > 0 else 0
+            
+            shot_summary = {
                 "player_name": player_actual_name,
                 "player_id": player_id,
                 "season": season,
                 "season_type": season_type,
-                "shot_data": shots_data,
-                "league_averages": league_averages
-            })
+                "overall_stats": {
+                    "total_shots": total_shots,
+                    "made_shots": made_shots,
+                    "field_goal_percentage": round(made_shots / total_shots * 100, 1) if total_shots > 0 else 0
+                },
+                "zone_breakdown": zone_summary,
+                "shot_locations": [
+                    {
+                        "x": shot.get("LOC_X"),
+                        "y": shot.get("LOC_Y"),
+                        "made": shot.get("SHOT_MADE_FLAG") == 1,
+                        "distance": shot.get("SHOT_DISTANCE"),
+                        "zone": shot.get("SHOT_ZONE_BASIC")
+                    }
+                    for shot in shots_data[:100]  # Limit to first 100 shots for visualization
+                ]
+            }
+            
+            return format_response(shot_summary)
             
         except Exception as api_error:
             logger.error(f"nba_api shotchartdetail failed for ID {player_id}: {api_error}")
@@ -330,17 +360,7 @@ def fetch_player_defense_logic(
     season_type: str = SeasonTypeAllStar.regular,
     per_mode: str = PerModeDetailed.per_game
 ) -> str:
-    """Fetches detailed defensive statistics for a player.
-    
-    Args:
-        player_name (str): The name of the player
-        season (str): Season identifier (e.g., "2023-24")
-        season_type (str): "Regular Season" or "Playoffs"
-        per_mode (str): Statistics reporting mode ("PerGame", "Totals", etc.)
-        
-    Returns:
-        str: JSON string containing defensive statistics or error message
-    """
+    """Fetches detailed defensive statistics for a player."""
     logger.info(f"Executing fetch_player_defense_logic for: '{player_name}', Season: {season}")
     
     if not player_name or not player_name.strip():
@@ -365,20 +385,45 @@ def fetch_player_defense_logic(
             logger.debug(f"playerdashptshotdefend API call successful for ID: {player_id}")
             
             defense_df = defense_endpoint.get_data_frames()[0]
-            defense_stats = _process_dataframe(defense_df, single_row=False)  # Changed to False since we expect multiple rows
+            defense_stats = _process_dataframe(defense_df, single_row=False)
             
             if defense_stats is None or not defense_stats:
                 logger.error(f"No defense stats found for {player_actual_name}")
                 return format_response(error=f"No defense stats available for {player_actual_name} in {season}")
             
-            return format_response({
+            # Create a more structured and summarized response
+            defensive_summary = {
                 "player_name": player_actual_name,
                 "player_id": player_id,
                 "season": season,
                 "season_type": season_type,
                 "per_mode": per_mode,
-                "defense_stats": defense_stats
-            })
+                "summary": {
+                    "games_played": defense_stats[0].get("GP", 0),
+                    "overall_defense": {
+                        "field_goal_percentage_allowed": defense_stats[0].get("D_FG_PCT", 0),
+                        "league_average": defense_stats[0].get("NORMAL_FG_PCT", 0),
+                        "impact": defense_stats[0].get("PCT_PLUSMINUS", 0)
+                    },
+                    "three_point_defense": {
+                        "frequency": defense_stats[1].get("FREQ", 0),
+                        "field_goal_percentage_allowed": defense_stats[1].get("D_FG_PCT", 0),
+                        "impact": defense_stats[1].get("PCT_PLUSMINUS", 0)
+                    },
+                    "two_point_defense": {
+                        "frequency": defense_stats[2].get("FREQ", 0),
+                        "field_goal_percentage_allowed": defense_stats[2].get("D_FG_PCT", 0),
+                        "impact": defense_stats[2].get("PCT_PLUSMINUS", 0)
+                    },
+                    "rim_protection": {
+                        "frequency": defense_stats[3].get("FREQ", 0),
+                        "field_goal_percentage_allowed": defense_stats[3].get("D_FG_PCT", 0),
+                        "impact": defense_stats[3].get("PCT_PLUSMINUS", 0)
+                    }
+                }
+            }
+            
+            return format_response(defensive_summary)
             
         except Exception as api_error:
             logger.error(f"nba_api playerdashptshotdefend failed for ID {player_id}: {api_error}")

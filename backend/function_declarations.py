@@ -163,6 +163,56 @@ get_player_shots_tracking_declaration = {
     },
 }
 
+get_player_shotchart_declaration = {
+    "name": "get_player_shotchart",
+    "description": "Fetches a player's shot chart data for detailed shooting analysis.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "player_name": {
+                "type": "string",
+                "description": "Full name of the player.",
+            },
+            "season": {
+                "type": "string",
+                "description": "Season identifier (e.g., '2023-24').",
+            },
+            "season_type": {
+                "type": "string",
+                "description": get_enum_description(SeasonTypeAllStar, SeasonTypeAllStar.regular),
+            },
+        },
+        "required": ["player_name", "season"],
+    },
+}
+
+get_player_defense_stats_declaration = {
+    "name": "get_player_defense_stats",
+    "description": "Fetches detailed defensive statistics for a player.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "player_name": {
+                "type": "string",
+                "description": "Full name of the player.",
+            },
+            "season": {
+                "type": "string",
+                "description": "Season identifier (e.g., '2023-24').",
+            },
+            "season_type": {
+                "type": "string",
+                "description": get_enum_description(SeasonTypeAllStar, SeasonTypeAllStar.regular),
+            },
+            "per_mode": {
+                "type": "string",
+                "description": get_enum_description(PerModeDetailed, PerModeDetailed.per_game),
+            },
+        },
+        "required": ["player_name", "season"],
+    },
+}
+
 # Team Tools Declarations
 get_team_info_and_roster_declaration = {
     "name": "get_team_info_and_roster",
@@ -439,6 +489,8 @@ all_function_declarations = [
     get_player_passing_stats_declaration,
     get_player_rebounding_stats_declaration,
     get_player_shots_tracking_declaration,
+    get_player_shotchart_declaration,
+    get_player_defense_stats_declaration,
     get_team_info_and_roster_declaration,
     find_games_declaration,
     get_boxscore_traditional_declaration,
