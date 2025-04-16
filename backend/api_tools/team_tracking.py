@@ -12,7 +12,7 @@ from nba_api.stats.library.parameters import (
     PerModeDetailed
 )
 
-from backend.config import DEFAULT_TIMEOUT, ErrorMessages
+from backend.config import DEFAULT_TIMEOUT, Errors
 from backend.api_tools.utils import _process_dataframe, retry_on_timeout, format_response
 from backend.api_tools.team_tools import _find_team_id
 from backend.api_tools.http_client import nba_session
@@ -66,14 +66,14 @@ class ShootingStats(TypedDict):
 def _validate_team_tracking_params(team_identifier: str, season: str) -> Optional[str]:
     """Validate common parameters for team tracking stats functions."""
     if not team_identifier or not season:
-        return format_response(error=ErrorMessages.MISSING_REQUIRED_PARAMS)
+        return format_response(error=Errors.MISSING_REQUIRED_PARAMS)
     return None
 
 def _get_team_for_tracking(team_identifier: str) -> tuple[Optional[str], Optional[int], Optional[str]]:
     """Get team info for tracking stats functions."""
     team_id, team_name = _find_team_id(team_identifier)
     if team_id is None:
-        return (format_response(error=ErrorMessages.TEAM_NOT_FOUND.format(identifier=team_identifier)), None, None)
+        return (format_response(error=Errors.TEAM_NOT_FOUND.format(identifier=team_identifier)), None, None)
     return (None, team_id, team_name)
 
 def _create_team_tracking_result(team_id: int, team_name: str, season: str, season_type: str, data: Dict) -> Dict:
@@ -129,7 +129,7 @@ def fetch_team_passing_stats_logic(
         passes_received = _process_dataframe(pass_stats.passes_received.get_data_frame(), single_row=False)
 
         if passes_made is None or passes_received is None:
-            return format_response(error=ErrorMessages.DATA_PROCESSING_ERROR)
+            return format_response(error=Errors.DATA_PROCESSING_ERROR)
 
         # Process into more focused format
         processed_passes_made = []
@@ -205,18 +205,7 @@ def fetch_team_rebounding_stats_logic(
         per_mode (str): Per mode type (per game, per minute, etc.)
         
     Returns:
-        str: JSON string containing:
-        {
-            "team_id": str,
-            "team_name": str,
-            "season": str,
-            "season_type": str,
-            "overall": {...},
-            "shot_type": [...],
-            "shot_distance": [...],
-            "rebound_distance": [...],
-            "shot_distance_rebounding": [...]
-        }
+        str: JSON string containing team rebounding stats
     """
     logger.info(f"Executing fetch_team_rebounding_stats_logic for: {team_identifier}, Season: {season}")
     
@@ -238,14 +227,25 @@ def fetch_team_rebounding_stats_logic(
             per_mode_simple=per_mode,
             timeout=DEFAULT_TIMEOUT
         )
-        
+
         overall = _process_dataframe(reb_stats.overall_rebounding.get_data_frame(), single_row=True)
         shot_type = _process_dataframe(reb_stats.shot_type_rebounding.get_data_frame(), single_row=False)
-        shot_dist = _process_dataframe(reb_stats.shot_distance_rebounding.get_data_frame(), single_row=False)
+        contested = _process_dataframe(reb_stats.num_contested_rebounding.get_data_frame(), single_row=False)
+        distances = _process_dataframe(reb_stats.shot_distance_rebounding.get_data_frame(), single_row=False)
         reb_dist = _process_dataframe(reb_stats.reb_distance_rebounding.get_data_frame(), single_row=False)
 
-        if not all([overall, shot_type, shot_dist, reb_dist]):
-            return format_response(error=ErrorMessages.DATA_PROCESSING_ERROR)
+        if not all([overall, shot_type, contested, distances, reb_dist]):
+            return format_response(error=Errors.DATA_PROCESSING_ERROR)
+
+        processed_overall = {
+            "total": overall.get("REB", 0),
+            "contested": overall.get("C_REB", 0),
+            "uncontested": overall.get("UC_REB", 0),
+            "offensive": overall.get("OREB", 0),
+            "defensive": overall.get("DREB", 0),
+            "frequency": overall.get("REB_FREQUENCY", 0), # Assuming frequency is overall
+            "pct_contested": overall.get("C_REB_PCT", 0)
+        }
 
         result = _create_team_tracking_result(
             team_id,
@@ -253,21 +253,14 @@ def fetch_team_rebounding_stats_logic(
             season,
             season_type,
             {
-                "overall": {
-                    "total": overall.get("REB", 0.0),
-                    "offensive": overall.get("OREB", 0.0),
-                    "defensive": overall.get("DREB", 0.0),
-                    "contested": overall.get("C_REB", 0.0),
-                    "uncontested": overall.get("UC_REB", 0.0),
-                    "contested_pct": overall.get("C_REB_PCT", 0.0)
-                },
-                "shot_type": shot_type,
-                "shot_distance": shot_dist,
-                "rebound_distance": reb_dist,
-                "shot_distance_rebounding": shot_dist
+                "overall": processed_overall,
+                "by_shot_type": shot_type,
+                "by_contest": contested,
+                "by_shot_distance": distances,
+                "by_rebound_distance": reb_dist
             }
         )
-
+        
         return format_response(result)
 
     except Exception as e:
@@ -290,22 +283,10 @@ def fetch_team_shooting_stats_logic(
         per_mode (str): Per mode type (per game, per minute, etc.)
         
     Returns:
-        str: JSON string containing:
-        {
-            "team_id": str,
-            "team_name": str,
-            "season": str,
-            "season_type": str,
-            "general": {...},
-            "shot_clock": [...],
-            "dribbles": [...],
-            "touch_time": [...],
-            "defender_distance": [...],
-            "closest_defender": [...]
-        }
+        str: JSON string containing team shooting stats
     """
     logger.info(f"Executing fetch_team_shooting_stats_logic for: {team_identifier}, Season: {season}")
-    
+
     # Validate parameters
     validation_error = _validate_team_tracking_params(team_identifier, season)
     if validation_error:
@@ -324,15 +305,36 @@ def fetch_team_shooting_stats_logic(
             per_mode_simple=per_mode,
             timeout=DEFAULT_TIMEOUT
         )
-        
+
+        overall = _process_dataframe(shot_stats.overall.get_data_frame(), single_row=True)
         general = _process_dataframe(shot_stats.general_shooting.get_data_frame(), single_row=False)
         shot_clock = _process_dataframe(shot_stats.shot_clock_shooting.get_data_frame(), single_row=False)
         dribbles = _process_dataframe(shot_stats.dribble_shooting.get_data_frame(), single_row=False)
-        closest_def = _process_dataframe(shot_stats.closest_defender_shooting.get_data_frame(), single_row=False)
+        defender = _process_dataframe(shot_stats.closest_defender_shooting.get_data_frame(), single_row=False)
         touch_time = _process_dataframe(shot_stats.touch_time_shooting.get_data_frame(), single_row=False)
 
-        if not all([general, shot_clock, dribbles, closest_def, touch_time]):
-            return format_response(error=ErrorMessages.DATA_PROCESSING_ERROR)
+        if not all([overall, general, shot_clock, dribbles, defender, touch_time]):
+            return format_response(error=Errors.DATA_PROCESSING_ERROR)
+
+        processed_overall = {
+            "fga_frequency": overall.get("FGA_FREQUENCY", 0),
+            "fgm": overall.get("FGM", 0),
+            "fga": overall.get("FGA", 0),
+            "fg_pct": overall.get("FG_PCT", 0),
+            "efg_pct": overall.get("EFG_PCT", 0),
+            "fg2_pct": overall.get("FG2_PCT", 0),
+            "fg3_pct": overall.get("FG3_PCT", 0)
+        }
+        
+        processed_general = { 
+            data.get("SHOT_TYPE", "unknown").lower().replace(" ", "_"): {
+                "fga_frequency": data.get("FGA_FREQUENCY", 0),
+                "fgm": data.get("FGM", 0),
+                "fga": data.get("FGA", 0),
+                "fg_pct": data.get("FG_PCT", 0),
+                "efg_pct": data.get("EFG_PCT", 0)
+            } for data in general
+        }
 
         result = _create_team_tracking_result(
             team_id,
@@ -340,20 +342,12 @@ def fetch_team_shooting_stats_logic(
             season,
             season_type,
             {
-                "general": {
-                    shot_type["SHOT_TYPE"].lower().replace(" ", "_"): {
-                        "frequency": shot_type.get("FGA_FREQUENCY", 0.0),
-                        "fgm": shot_type.get("FGM", 0.0),
-                        "fga": shot_type.get("FGA", 0.0),
-                        "fg_pct": shot_type.get("FG_PCT", 0.0),
-                        "efg_pct": shot_type.get("EFG_PCT", 0.0)
-                    }
-                    for shot_type in general
-                },
-                "shot_clock": shot_clock,
-                "dribbles": dribbles,
-                "touch_time": touch_time,
-                "defender_distance": closest_def
+                "overall": processed_overall,
+                "general_shooting": processed_general,
+                "by_shot_clock": shot_clock,
+                "by_dribbles": dribbles,
+                "by_defender_distance": defender,
+                "by_touch_time": touch_time
             }
         )
 

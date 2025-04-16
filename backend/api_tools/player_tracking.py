@@ -14,7 +14,7 @@ from nba_api.stats.endpoints import (
     playerdashptshots
 )
 from nba_api.stats.library.parameters import SeasonTypeAllStar, LeagueID
-from backend.config import DEFAULT_TIMEOUT, HEADSHOT_BASE_URL, ErrorMessages, CURRENT_SEASON
+from backend.config import DEFAULT_TIMEOUT, HEADSHOT_BASE_URL, Errors, CURRENT_SEASON
 from backend.api_tools.utils import _process_dataframe, _validate_season_format, format_response
 from backend.api_tools.player_tools import _find_player_id
 
@@ -99,13 +99,13 @@ def fetch_player_rebounding_stats_logic(
     logger.info(f"Executing fetch_player_rebounding_stats_logic for player: {player_name}")
     
     if not all([player_name, season]):
-        return format_response(error=ErrorMessages.MISSING_REQUIRED_PARAMS)
+        return format_response(error=Errors.MISSING_REQUIRED_PARAMS)
         
     try:
         # Find player ID
         player_id, _ = _find_player_id(player_name)
         if player_id is None:
-            return format_response(error=ErrorMessages.PLAYER_NOT_FOUND.format(name=player_name))
+            return format_response(error=Errors.PLAYER_NOT_FOUND.format(name=player_name))
             
         # Get player info to get team ID
         player_info = commonplayerinfo.CommonPlayerInfo(
@@ -114,11 +114,11 @@ def fetch_player_rebounding_stats_logic(
         )
         info_df = _process_dataframe(player_info.common_player_info.get_data_frame(), single_row=True)
         if not info_df:
-            return format_response(error=ErrorMessages.DATA_PROCESSING_ERROR)
+            return format_response(error=Errors.DATA_PROCESSING_ERROR)
             
         team_id = info_df.get("TEAM_ID")
         if not team_id:
-            return format_response(error=ErrorMessages.TEAM_ID_NOT_FOUND)
+            return format_response(error=Errors.TEAM_ID_NOT_FOUND)
         
         reb_stats = playerdashptreb.PlayerDashPtReb(
             player_id=player_id,
@@ -135,7 +135,7 @@ def fetch_player_rebounding_stats_logic(
         reb_dist = _process_dataframe(reb_stats.reb_distance_rebounding.get_data_frame(), single_row=False)
         
         if not all([overall, shot_type, contested, distances, reb_dist]):
-            return format_response(error=ErrorMessages.DATA_PROCESSING_ERROR)
+            return format_response(error=Errors.DATA_PROCESSING_ERROR)
             
         result = {
             "overall": {
@@ -156,7 +156,7 @@ def fetch_player_rebounding_stats_logic(
         
     except Exception as e:
         logger.error(f"Error fetching rebounding stats: {str(e)}", exc_info=True)
-        return format_response(error=ErrorMessages.PLAYER_REBOUNDING_STATS_UNEXPECTED.format(name=player_name, error=str(e)))
+        return format_response(error=Errors.PLAYER_REBOUNDING_STATS_UNEXPECTED.format(name=player_name, error=str(e)))
 
 def fetch_player_passing_stats_logic(
     player_name: str,
@@ -181,13 +181,13 @@ def fetch_player_passing_stats_logic(
     logger.info(f"Executing fetch_player_passing_stats_logic for player: {player_name}")
     
     if not all([player_name, season]):
-        return format_response(error=ErrorMessages.MISSING_REQUIRED_PARAMS)
+        return format_response(error=Errors.MISSING_REQUIRED_PARAMS)
         
     try:
         # Find player ID
         player_id, _ = _find_player_id(player_name)
         if player_id is None:
-            return format_response(error=ErrorMessages.PLAYER_NOT_FOUND.format(name=player_name))
+            return format_response(error=Errors.PLAYER_NOT_FOUND.format(name=player_name))
             
         # Get player info to get team ID
         player_info = commonplayerinfo.CommonPlayerInfo(
@@ -196,11 +196,11 @@ def fetch_player_passing_stats_logic(
         )
         info_df = _process_dataframe(player_info.common_player_info.get_data_frame(), single_row=True)
         if not info_df:
-            return format_response(error=ErrorMessages.DATA_PROCESSING_ERROR)
+            return format_response(error=Errors.DATA_PROCESSING_ERROR)
             
         team_id = info_df.get("TEAM_ID")
         if not team_id:
-            return format_response(error=ErrorMessages.TEAM_ID_NOT_FOUND)
+            return format_response(error=Errors.TEAM_ID_NOT_FOUND)
         
         pass_stats = playerdashptpass.PlayerDashPtPass(
             player_id=player_id,
@@ -214,7 +214,7 @@ def fetch_player_passing_stats_logic(
         received = _process_dataframe(pass_stats.passes_received.get_data_frame(), single_row=False)
         
         if made is None or received is None:
-            return format_response(error=ErrorMessages.DATA_PROCESSING_ERROR)
+            return format_response(error=Errors.DATA_PROCESSING_ERROR)
             
         # Process into more focused format
         processed_made = [{
@@ -256,7 +256,7 @@ def fetch_player_passing_stats_logic(
         
     except Exception as e:
         logger.error(f"Error fetching passing stats: {str(e)}", exc_info=True)
-        return format_response(error=ErrorMessages.PLAYER_PASSING_STATS_UNEXPECTED.format(name=player_name, error=str(e)))
+        return format_response(error=Errors.PLAYER_PASSING_STATS_UNEXPECTED.format(name=player_name, error=str(e)))
 
 def fetch_player_shots_tracking_logic(player_id: str) -> str:
     """
@@ -271,9 +271,9 @@ def fetch_player_shots_tracking_logic(player_id: str) -> str:
     logger.info(f"Fetching shots tracking stats for player: {player_id}")
     
     if not player_id:
-        return format_response(error=ErrorMessages.PLAYER_ID_EMPTY)
+        return format_response(error=Errors.PLAYER_ID_EMPTY)
     if not player_id.isdigit():
-        return format_response(error=ErrorMessages.INVALID_PLAYER_ID_FORMAT.format(player_id=player_id))
+        return format_response(error=Errors.INVALID_PLAYER_ID_FORMAT.format(player_id=player_id))
         
     try:
         # Get player info to get team ID
@@ -283,11 +283,11 @@ def fetch_player_shots_tracking_logic(player_id: str) -> str:
         )
         info_df = _process_dataframe(player_info.common_player_info.get_data_frame(), single_row=True)
         if not info_df:
-            return format_response(error=ErrorMessages.DATA_PROCESSING_ERROR)
+            return format_response(error=Errors.DATA_PROCESSING_ERROR)
             
         team_id = info_df.get("TEAM_ID")
         if not team_id:
-            return format_response(error=ErrorMessages.TEAM_ID_NOT_FOUND)
+            return format_response(error=Errors.TEAM_ID_NOT_FOUND)
         
         shot_stats = playerdashptshots.PlayerDashPtShots(
             player_id=player_id,
@@ -303,7 +303,7 @@ def fetch_player_shots_tracking_logic(player_id: str) -> str:
         touch_time = _process_dataframe(shot_stats.touch_time_shooting.get_data_frame(), single_row=False)
         
         if not all([overall, general, shot_clock, dribbles, defender, touch_time]):
-            return format_response(error=ErrorMessages.DATA_PROCESSING_ERROR)
+            return format_response(error=Errors.DATA_PROCESSING_ERROR)
             
         result = {
             "player_id": player_id,
@@ -337,7 +337,7 @@ def fetch_player_shots_tracking_logic(player_id: str) -> str:
         
     except Exception as e:
         logger.error(f"Error fetching shooting stats: {str(e)}", exc_info=True)
-        return format_response(error=ErrorMessages.PLAYER_SHOOTING_STATS_UNEXPECTED.format(player_id=player_id, error=str(e)))
+        return format_response(error=Errors.PLAYER_SHOOTING_STATS_UNEXPECTED.format(player_id=player_id, error=str(e)))
 
 def fetch_player_clutch_stats_logic(
     player_name: str, 
@@ -391,29 +391,29 @@ def fetch_player_clutch_stats_logic(
     
     # Input validation
     if not player_name or not player_name.strip():
-        return format_response(error=ErrorMessages.PLAYER_NAME_EMPTY)
+        return format_response(error=Errors.PLAYER_NAME_EMPTY)
     if not season or not _validate_season_format(season):
-        return format_response(error=ErrorMessages.INVALID_SEASON_FORMAT.format(season=season))
+        return format_response(error=Errors.INVALID_SEASON_FORMAT.format(season=season))
         
     # Validate measure type
     valid_measure_types = ["Base", "Advanced", "Misc", "Four Factors", "Scoring", "Opponent", "Usage"]
     if measure_type not in valid_measure_types:
-        return format_response(error=ErrorMessages.INVALID_MEASURE_TYPE)
+        return format_response(error=Errors.INVALID_MEASURE_TYPE)
         
     # Validate per mode
     valid_per_modes = ["Totals", "PerGame", "MinutesPer", "Per48", "Per40", "Per36", "PerMinute", "PerPossession", "PerPlay", "Per100Possessions", "Per100Plays"]
     if per_mode not in valid_per_modes:
-        return format_response(error=ErrorMessages.INVALID_PER_MODE)
+        return format_response(error=Errors.INVALID_PER_MODE)
         
     # Validate Y/N parameters
     if plus_minus not in ["Y", "N"] or pace_adjust not in ["Y", "N"] or rank not in ["Y", "N"]:
-        return format_response(error=ErrorMessages.INVALID_PLUS_MINUS)
+        return format_response(error=Errors.INVALID_PLUS_MINUS)
 
     try:
         # Find player ID
         player_id, player_actual_name = _find_player_id(player_name)
         if player_id is None:
-            return format_response(error=ErrorMessages.PLAYER_NOT_FOUND.format(name=player_name))
+            return format_response(error=Errors.PLAYER_NOT_FOUND.format(name=player_name))
 
         logger.debug(f"Fetching playerdashboardbyclutch for ID: {player_id}, Season: {season}")
         try:
@@ -444,7 +444,7 @@ def fetch_player_clutch_stats_logic(
             logger.debug(f"playerdashboardbyclutch API call successful for ID: {player_id}, Season: {season}")
         except Exception as api_error:
             logger.error(f"nba_api playerdashboardbyclutch failed for ID {player_id}, Season {season}: {api_error}", exc_info=True)
-            return format_response(error=ErrorMessages.PLAYER_CLUTCH_STATS_API.format(name=player_actual_name, season=season, error=str(api_error)))
+            return format_response(error=Errors.PLAYER_CLUTCH_STATS_API.format(name=player_actual_name, season=season, error=str(api_error)))
 
         # Get all clutch time period stats
         overall_clutch = _process_dataframe(clutch_endpoint.overall_player_dashboard.get_data_frame(), single_row=True)
@@ -462,7 +462,7 @@ def fetch_player_clutch_stats_logic(
         # Verify we got at least the basic stats
         if overall_clutch is None:
             logger.error(f"DataFrame processing failed for clutch stats of {player_actual_name} ({season}).")
-            return format_response(error=ErrorMessages.PLAYER_CLUTCH_STATS_PROCESSING.format(name=player_actual_name, season=season))
+            return format_response(error=Errors.PLAYER_CLUTCH_STATS_PROCESSING.format(name=player_actual_name, season=season))
 
         result = {
             "player_name": player_actual_name,
@@ -494,4 +494,4 @@ def fetch_player_clutch_stats_logic(
         return format_response(result)
     except Exception as e:
         logger.critical(f"Unexpected error in fetch_player_clutch_stats_logic for '{player_name}', Season {season}: {e}", exc_info=True)
-        return format_response(error=ErrorMessages.PLAYER_CLUTCH_STATS_UNEXPECTED.format(name=player_name, season=season, error=str(e)))
+        return format_response(error=Errors.PLAYER_CLUTCH_STATS_UNEXPECTED.format(name=player_name, season=season, error=str(e)))

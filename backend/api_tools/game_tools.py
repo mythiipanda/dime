@@ -4,7 +4,7 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime
 from nba_api.live.nba.endpoints import scoreboard
 from nba_api.stats.endpoints import boxscoretraditionalv2, playbyplay, shotchartdetail, leaguegamefinder
-from backend.config import DEFAULT_TIMEOUT, ErrorMessages as Errors
+from backend.config import DEFAULT_TIMEOUT, Errors
 from backend.api_tools.utils import _process_dataframe, format_response
 
 logger = logging.getLogger(__name__)

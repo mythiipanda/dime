@@ -3,7 +3,7 @@ from nba_api.live.nba.endpoints import scoreboard
 from datetime import datetime
 import json
 import logging
-from config import DEFAULT_TIMEOUT, ErrorMessages as Errors
+from config import DEFAULT_TIMEOUT, Errors
 from backend.api_tools.utils import format_response
 
 logger = logging.getLogger(__name__)

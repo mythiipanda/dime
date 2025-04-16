@@ -11,7 +11,7 @@ from backend.api_tools.team_tracking import (
     fetch_team_rebounding_stats_logic,
     fetch_team_shooting_stats_logic
 )
-from backend.config import DEFAULT_TIMEOUT, CURRENT_SEASON, ErrorMessages as Errors
+from backend.config import DEFAULT_TIMEOUT, CURRENT_SEASON, Errors
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

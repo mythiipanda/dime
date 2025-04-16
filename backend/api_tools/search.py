@@ -7,7 +7,7 @@ from nba_api.stats.static import players, teams
 from nba_api.stats.library.parameters import SeasonTypeAllStar, LeagueIDNullable
 from fuzzywuzzy import fuzz
 
-from config import DEFAULT_PLAYER_SEARCH_LIMIT, MIN_PLAYER_SEARCH_LENGTH, DEFAULT_TIMEOUT, MAX_SEARCH_RESULTS, ErrorMessages as Errors
+from config import DEFAULT_PLAYER_SEARCH_LIMIT, MIN_PLAYER_SEARCH_LENGTH, DEFAULT_TIMEOUT, MAX_SEARCH_RESULTS, Errors
 from api_tools.utils import _process_dataframe, format_response
 
 logger = logging.getLogger(__name__)

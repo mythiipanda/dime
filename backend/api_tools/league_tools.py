@@ -9,7 +9,7 @@ from nba_api.stats.library.parameters import LeagueID, SeasonType, PerMode48, Sc
 from datetime import datetime # Import datetime for default date
 
 from backend.api_tools.utils import _process_dataframe, format_response
-from backend.config import DEFAULT_TIMEOUT, ErrorMessages as Errors, CURRENT_SEASON
+from backend.config import DEFAULT_TIMEOUT, Errors, CURRENT_SEASON
 
 logger = logging.getLogger(__name__)
 
