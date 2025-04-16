@@ -1,7 +1,18 @@
 import logging
 import json
-from typing import Optional
+from typing import Optional, List
 from agno.tools import tool
+from nba_api.stats.endpoints import (
+    leaguedashplayerstats, playerestimatedmetrics, teamestimatedmetrics, commonplayerinfo, 
+    playerprofilev2, teaminfocommon, commonteamroster, playercareerstats, teamdetails
+)
+from backend.utils.data_processing import (
+    process_player_stats, process_player_metrics, process_team_metrics, 
+    process_player_info, process_team_info, process_roster_data, process_player_career_stats,
+    process_team_details
+)
+from backend.utils.cache import cache_data, get_cached_data
+import datetime
 
 # Import only the necessary constants for default values, use standard types in hints
 from nba_api.stats.library.parameters import (
@@ -49,6 +60,7 @@ from api_tools.team_tracking import (
     fetch_team_shooting_stats_logic,
     fetch_team_rebounding_stats_logic
 )
+from api_tools.scoreboard.scoreboard_tools import fetch_scoreboard_data_logic
 
 
 logger = logging.getLogger(__name__)
@@ -456,16 +468,17 @@ def get_league_standings(season: str = CURRENT_SEASON) -> str:
     return fetch_league_standings_logic(season=season)
 
 @tool
-def get_scoreboard(game_date: str = None, day_offset: int = 0) -> str:
-    """
-    Fetches the scoreboard (V2) for a specific date. Returns JSON string.
+def get_scoreboard(game_date: Optional[str] = None) -> str:
+    """Fetches NBA scoreboard data for a specific date, including status, scores, and basic info.
     Args:
-        game_date (str): Date string (YYYY-MM-DD). Defaults to today if None.
-        day_offset (int): Offset from game_date (e.g., -1 for yesterday). Defaults to 0.
-    Returns: str: JSON string containing scoreboard data or {'error': ...}.
+        game_date (str, optional): Date in YYYY-MM-DD format. Defaults to today if None.
+    Returns:
+        str: JSON string containing scoreboard data or {'error': ...}.
     """
-    logger.debug(f"Tool 'get_scoreboard' called for date '{game_date}', offset '{day_offset}'")
-    return fetch_scoreboard_logic(game_date=game_date, day_offset=day_offset)
+    logger.debug(f"Tool 'get_scoreboard' called for date: {game_date or 'today'}")
+    # The logic function handles date validation and returns a dict
+    result_dict = fetch_scoreboard_data_logic(game_date=game_date)
+    return format_response(data=result_dict) # format_response handles dict -> JSON string and errors
 
 @tool
 def get_playbyplay(game_id: str, start_period: int = 0, end_period: int = 0) -> str:

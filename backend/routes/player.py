@@ -1,39 +1,19 @@
 import logging
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from typing import Optional, List, Dict, Any
 import json
 from backend.api_tools.player_tools import (
     get_player_headshot_url,
     fetch_player_stats_logic,
-    fetch_player_info_logic, # Keep this import here
+    fetch_player_profile_logic,
 )
-from backend.api_tools.search import find_players_by_name_fragment # Import search function separately
+from backend.api_tools.search import find_players_by_name_fragment
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-@router.get("/headshot")
-async def get_player_headshot(player_id: str):
-    """Get the URL for a player's headshot."""
-    try:
-        url = get_player_headshot_url(player_id)
-        return {"url": url}
-    except Exception as e:
-        logger.error(f"Error getting player headshot: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/search")
-async def search_players(query: str, limit: Optional[int] = 10) -> Dict[str, Any]:
-    """Search for players by name fragment."""
-    try:
-        players = find_players_by_name_fragment(query, limit)
-        return {"players": players}
-    except Exception as e:
-        logger.error(f"Error searching players: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-
 @router.get("/player/{player_id}/headshot")
-async def get_player_headshot(player_id: int):
+async def get_player_headshot_by_id(player_id: int):
     logger.info(f"Received GET /player/{player_id}/headshot request.")
     if player_id <= 0:
         raise HTTPException(status_code=400, detail="Invalid player_id provided.")
@@ -43,13 +23,13 @@ async def get_player_headshot(player_id: int):
     except Exception as e:
         logger.exception(f"Unexpected error fetching headshot for player ID {player_id}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
-    except Exception as e:
-        logger.exception(f"Unexpected error fetching headshot for player ID {player_id}")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
-@router.get("/players/search", response_model=List[Dict[str, Any]])
-async def search_players(q: str | None = None, limit: int = 10):
-    logger.info(f"Received GET /players/search request with query: '{q}', limit: {limit}")
+@router.get("/search", response_model=List[Dict[str, Any]])
+async def search_players_by_name(
+    q: Optional[str] = Query(None, description="Search query for player name"), 
+    limit: int = Query(10, description="Maximum number of results to return")
+):
+    logger.info(f"Received GET /search request with query: '{q}', limit: {limit}")
     if not q or len(q) < 2:
         return []
     try:
@@ -61,7 +41,7 @@ async def search_players(q: str | None = None, limit: int = 10):
         raise HTTPException(status_code=500, detail=f"Internal server error during player search: {str(e)}")
 
 @router.get("/stats")
-async def fetch_player_stats(player_name: str, season: Optional[str] = None) -> Dict[str, Any]:
+async def fetch_player_stats_endpoint(player_name: str, season: Optional[str] = None) -> Dict[str, Any]:
     """
     Get comprehensive player statistics.
     
@@ -77,18 +57,29 @@ async def fetch_player_stats(player_name: str, season: Optional[str] = None) -> 
         logger.error(f"Error fetching player stats: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/info")
-async def fetch_player_info(player_name: str) -> Dict[str, Any]:
+@router.get("/profile")
+async def fetch_player_profile_endpoint(player_name: str) -> Dict[str, Any]:
     """
-    Get player information.
+    Get comprehensive player profile including career totals, season totals, highs etc.
     
     Args:
-        player_name (str): The name of the player to fetch info for
+        player_name (str): The name of the player to fetch profile for
     """
-    logger.info(f"Received GET /info request for player: '{player_name}'")
+    logger.info(f"Received GET /profile request for player: '{player_name}'")
     try:
-        result = fetch_player_info_logic(player_name)
-        return {"result": result}
+        result_json_string = fetch_player_profile_logic(player_name)
+        result_data = json.loads(result_json_string)
+        
+        if isinstance(result_data, dict) and 'error' in result_data:
+            logger.error(f"Error fetching player profile from logic: {result_data['error']}")
+            status_code = 404 if "not found" in result_data['error'].lower() else 500
+            raise HTTPException(status_code=status_code, detail=result_data['error'])
+            
+        return result_data 
+        
+    except json.JSONDecodeError as json_err:
+        logger.error(f"Failed to parse JSON response from fetch_player_profile_logic: {json_err}")
+        raise HTTPException(status_code=500, detail="Internal server error: Invalid data format from service.")
     except Exception as e:
-        logger.error(f"Error fetching player info: {str(e)}", exc_info=True)
+        logger.error(f"Error fetching player profile: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

@@ -158,18 +158,18 @@ def fetch_player_career_stats_logic(player_name: str, per_mode36: str = PerMode3
         logger.critical(f"Unexpected error in fetch_player_career_stats_logic for '{player_name}': {e}", exc_info=True)
         return format_response(error=Errors.PLAYER_CAREER_STATS_UNEXPECTED.format(name=player_name, error=str(e)))
 
-def get_player_headshot_url(player_id: str) -> str:
+def get_player_headshot_url(player_id: int) -> str:
     """
     Get the URL for a player's headshot image.
     Args:
-        player_id (str): The player's ID
+        player_id (int): The player's ID
     Returns:
         str: The URL for the player's headshot image
     """
-    if not player_id:
-        raise ValueError(Errors.PLAYER_ID_EMPTY)
-    if not player_id.isdigit():
-        raise ValueError(Errors.INVALID_PLAYER_ID_FORMAT.format(player_id=player_id))
+    if not player_id or player_id <= 0:
+        # Use the defined error constant if available, otherwise raise ValueError
+        # raise ValueError(Errors.INVALID_PLAYER_ID_FORMAT.format(player_id=player_id))
+        raise ValueError(f"Invalid player ID provided: {player_id}")
     
     return f"{HEADSHOT_BASE_URL}/{player_id}.png"
 
@@ -551,6 +551,15 @@ def fetch_player_profile_logic(player_name: str, per_mode: str = PerModeDetailed
 
         logger.debug(f"Fetching playerprofilev2 for ID: {player_id}, PerMode: {per_mode}")
         try:
+            # Fetch basic player info first
+            info_endpoint = commonplayerinfo.CommonPlayerInfo(player_id=player_id, timeout=DEFAULT_TIMEOUT)
+            player_info_dict = _process_dataframe(info_endpoint.common_player_info.get_data_frame(), single_row=True)
+            if player_info_dict is None:
+                 logger.error(f"Failed to process commonplayerinfo for {player_actual_name}.")
+                 # Decide if this should be a fatal error or just log a warning
+                 return format_response(error=Errors.PLAYER_INFO_PROCESSING.format(name=player_actual_name))
+
+            # Fetch profile details
             profile_endpoint = playerprofilev2.PlayerProfileV2(
                 player_id=player_id,
                 per_mode36=per_mode,  # Note: API uses per_mode36 param name
@@ -586,6 +595,7 @@ def fetch_player_profile_logic(player_name: str, per_mode: str = PerModeDetailed
         return format_response({
             "player_name": player_actual_name,
             "player_id": player_id,
+            "player_info": player_info_dict or {},
             "per_mode_requested": per_mode,
             "career_highs": career_highs or {},
             "season_highs": season_highs or {},

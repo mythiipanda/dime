@@ -7,6 +7,7 @@ from typing import Optional, Union, List, Dict, Any, Callable
 import pandas as pd
 from requests.exceptions import ReadTimeout, ConnectionError
 from backend.config import DEFAULT_TIMEOUT  # Fixed import path
+import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +86,18 @@ def validate_game_id_format(game_id: str) -> bool:
     
     pattern = r'^\d{10}$'
     return bool(re.match(pattern, game_id))
+
+def validate_date_format(date_string: str) -> bool:
+    """
+    Validate that a date string is in the correct format (YYYY-MM-DD).
+    """
+    if not date_string or not isinstance(date_string, str):
+        return False
+    try:
+        datetime.datetime.strptime(date_string, '%Y-%m-%d')
+        return True
+    except ValueError:
+        return False
 
 def format_response(data: Optional[Dict] = None, error: Optional[str] = None) -> str:
     """

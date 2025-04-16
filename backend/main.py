@@ -6,6 +6,7 @@ from typing import Optional, Dict, Any
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import uvicorn
 
 # Add the parent directory to the Python path
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -37,37 +38,76 @@ from backend.routes.player_tracking import router as player_tracking_router
 from backend.routes.team_tracking import router as team_tracking_router
 from backend.routes.standings import router as standings_router
 from backend.routes.live_game import router as live_game_router
+from backend.routes.scoreboard import router as scoreboard_router
 
-app = FastAPI()
+app = FastAPI(
+    title="NBA Analytics API",
+    description="API for fetching NBA player, team, game stats, and interacting with an AI agent.",
+    version="0.1.0",
+)
 
-# Configure CORS with specific settings for SSE
+# Configure CORS
+origins = [
+    "http://localhost:3000",  # Allow frontend origin
+    "http://127.0.0.1:3000",
+    os.environ.get("FRONTEND_URL"), # Allow configured frontend URL
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",  # Next.js development server
-        "http://127.0.0.1:3000",
-    ],
+    allow_origins=[origin for origin in origins if origin], # Filter out None/empty origins
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization"],
-    expose_headers=["Content-Type", "Content-Length"],
+    allow_methods=["*"], # Allows all methods
+    allow_headers=["*"], # Allows all headers
 )
 
 # Include routers
-app.include_router(sse_router, prefix="/api", tags=["sse"])  # Mount SSE router under /api prefix
-app.include_router(player_router, prefix="/api", tags=["player"])
+API_PREFIX = "/api/v1"
+
+# Add legacy alias for ask endpoint under /api
+app.include_router(sse_router, prefix="/api", tags=["sse_legacy"])
+# Mount SSE router under versioned API prefix
+app.include_router(sse_router, prefix=API_PREFIX, tags=["sse"])  # Mount SSE router under /api/v1 prefix
+app.include_router(player_router, prefix=API_PREFIX + "/players", tags=["Players"])
 # app.include_router(analyze_router, prefix="/api/analyze", tags=["analyze"]) # Removed analyze router
-app.include_router(team_router, prefix="/api", tags=["team"])
-app.include_router(game_router, prefix="/api", tags=["game"])
-app.include_router(player_tracking_router, prefix="/api/player/tracking", tags=["player_tracking"])
-app.include_router(team_tracking_router, prefix="/api/team/tracking", tags=["team_tracking"])
-app.include_router(standings_router, prefix="/api", tags=["standings"]) # Register standings router
-app.include_router(live_game_router, prefix="/api/live", tags=["live"]) # Register live game router
+app.include_router(team_router, prefix=API_PREFIX + "/teams", tags=["Teams"])
+app.include_router(game_router, prefix=API_PREFIX + "/games", tags=["Games"])
+app.include_router(player_tracking_router, prefix=API_PREFIX + "/player/tracking", tags=["player_tracking"])
+app.include_router(team_tracking_router, prefix=API_PREFIX + "/team/tracking", tags=["team_tracking"])
+# Standings endpoint under versioned API prefix
+app.include_router(standings_router, prefix=API_PREFIX, tags=["Standings"])
+app.include_router(live_game_router, prefix=API_PREFIX + "/live", tags=["live"]) # Register live game router
+app.include_router(scoreboard_router, prefix=API_PREFIX + "/scoreboard", tags=["Scoreboard"]) # Include scoreboard router
 
 @app.get("/")
 async def root():
     return {"message": "Welcome to the NBA Stats API"}
 
+@app.get("/health", tags=["Health"])
+async def health_check():
+    root_logger.info("Health check endpoint called.")
+    return {"status": "healthy"}
+
+# Add more global exception handlers if needed
+@app.exception_handler(Exception)
+async def generic_exception_handler(request, exc):
+    root_logger.error(f"Unhandled exception: {exc}", exc_info=True)
+    return HTTPException(status_code=500, detail="Internal server error")
+
+# --- Add Route Printing Here ---
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Print registered routes for debugging
+    print("--- Registered Routes ---")
+    for route in app.routes:
+        if hasattr(route, "path"):
+            print(f"Path: {route.path}, Name: {getattr(route, 'name', 'N/A')}, Methods: {getattr(route, 'methods', 'N/A')}")
+        elif hasattr(route, "routes") and isinstance(route.routes, list):
+             # Handle mounted routers/apps
+             print(f"Mounted Router/App at: {route.path}")
+             for sub_route in route.routes:
+                 if hasattr(sub_route, "path"):
+                    print(f"  Path: {sub_route.path}, Name: {getattr(sub_route, 'name', 'N/A')}, Methods: {getattr(sub_route, 'methods', 'N/A')}")
+    print("-----------------------")
+    
+    root_logger.info("Starting NBA Analytics API server...")
+    uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
