@@ -90,32 +90,14 @@ interface CareerHighs {
     BLK_HIGH?: number;
 }
 
-// Interface for the nested season_totals object
-interface SeasonTotals {
-    regular_season: CareerOrSeasonStat[] | null;
-    post_season: CareerOrSeasonStat[] | null;
-    all_star?: CareerOrSeasonStat[] | null; // Optional based on API response
-    preseason?: CareerOrSeasonStat[] | null; // Optional based on API response
-    college?: CareerOrSeasonStat[] | null;   // Optional based on API response
-}
-
-// Interface for the nested career_totals object
-interface CareerTotals {
-    regular_season: CareerOrSeasonStat | null;
-    post_season: CareerOrSeasonStat | null;
-    all_star?: CareerOrSeasonStat | null; // Optional based on API response
-    preseason?: CareerOrSeasonStat | null; // Optional based on API response
-    college?: CareerOrSeasonStat | null;   // Optional based on API response
-}
-
 interface PlayerData {
-  player_info: PlayerInfo | null; 
-  career_totals: CareerTotals | null; // Use the nested CareerTotals interface
-  season_totals: SeasonTotals | null; // Use the nested SeasonTotals interface
-  career_highs: CareerHighs | null; 
-  // Add other datasets like season_highs, next_game if needed by the component
-  season_highs?: CareerHighs | null; // Make optional or define fully if used
-  next_game?: any | null; // Use specific type if next_game structure is stable and used
+  player_info: PlayerInfo | null;
+  career_totals_regular_season: CareerOrSeasonStat | null;
+  season_totals_regular_season: CareerOrSeasonStat[] | null;
+  career_totals_post_season: CareerOrSeasonStat | null; 
+  season_totals_post_season: CareerOrSeasonStat[] | null;
+  career_highs: CareerHighs | null;
+  // Add other datasets if needed
 }
 
 interface Suggestion {
@@ -138,11 +120,10 @@ interface PlayerProfileCardProps {
 
 function PlayerProfileCard({ playerData, headshotUrl }: PlayerProfileCardProps) {
   const info = playerData.player_info;
-  // Access nested properties safely
-  const careerRegular = playerData.career_totals?.regular_season;
-  const seasonRegular = playerData.season_totals?.regular_season;
-  const careerPost = playerData.career_totals?.post_season;
-  const seasonPost = playerData.season_totals?.post_season;
+  const careerRegular = playerData.career_totals_regular_season;
+  const seasonRegular = playerData.season_totals_regular_season;
+  const careerPost = playerData.career_totals_post_season;
+  const seasonPost = playerData.season_totals_post_season;
   const careerHighs = playerData.career_highs;
 
   // Log the raw season data received by the component
@@ -415,14 +396,10 @@ export default function PlayersPage() {
 
       const mappedPlayerData: PlayerData = {
           player_info: rawData.player_info,
-          career_totals: {
-              regular_season: rawData.career_totals?.regular_season ?? null,
-              post_season: rawData.career_totals?.post_season ?? null,
-          },
-          season_totals: {
-              regular_season: rawData.season_totals?.regular_season ?? null,
-              post_season: rawData.season_totals?.post_season ?? null,
-          },
+          career_totals_regular_season: rawData.career_totals?.regular_season ?? null,
+          season_totals_regular_season: rawData.season_totals?.regular_season ?? null,
+          career_totals_post_season: rawData.career_totals?.post_season ?? null,
+          season_totals_post_season: rawData.season_totals?.post_season ?? null,
           career_highs: rawData.career_highs ?? null,
       };
       setPlayerData(mappedPlayerData);
@@ -433,13 +410,13 @@ export default function PlayersPage() {
       const headshotUrlPath = `${API_BASE_URL}/players/player/${playerId}/headshot`;
       console.log(`Fetching headshot from: ${headshotUrlPath}`);
       try {
-          const headshotResponse = await fetch(headshotUrlPath);
-          if (!headshotResponse.ok) {
-            console.warn(`Failed to fetch headshot for player ID ${playerId} (${headshotResponse.status})`);
+      const headshotResponse = await fetch(headshotUrlPath);
+      if (!headshotResponse.ok) {
+         console.warn(`Failed to fetch headshot for player ID ${playerId} (${headshotResponse.status})`);
             setHeadshotUrl(null); // Explicitly set to null on failure
-          } else {
-            const headshotData = await headshotResponse.json();
-            console.log("Headshot Data:", headshotData);
+      } else {
+         const headshotData = await headshotResponse.json();
+         console.log("Headshot Data:", headshotData);
             setHeadshotUrl(headshotData?.headshot_url || null);
           }
       } catch (headshotErr) {
@@ -452,7 +429,7 @@ export default function PlayersPage() {
       // Catch unexpected errors during profile fetch/processing
        if (!noPlayerFoundError) { // Avoid double logging 404s
            console.error("Failed to fetch player details (outer catch):", err);
-           const errorMessage = err instanceof Error ? err.message : String(err);
+      const errorMessage = err instanceof Error ? err.message : String(err);
            setError(errorMessage || "An unknown error occurred while fetching player details.");
        }
       setPlayerData(null);
@@ -543,11 +520,11 @@ export default function PlayersPage() {
            {/* Search Bar with Suggestions */}
          <div className="relative flex-grow w-full md:w-auto">
            <form onSubmit={handleSearchSubmit} className="flex gap-2">
-             <Input
+          <Input 
                type="search"
                placeholder="Search for a player (e.g., LeBron James)"
-               value={searchTerm}
-               onChange={(e) => setSearchTerm(e.target.value)}
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
                className="pr-10 w-full" // Adjust padding for potential button/icon
              />
              <Button type="submit" disabled={isLoading}>
@@ -570,7 +547,7 @@ export default function PlayersPage() {
                </CardContent>
              </Card>
            )}
-         </div>
+        </div>
 
 
         {/* Filters */}
@@ -588,7 +565,7 @@ export default function PlayersPage() {
                 ))}
               </SelectContent>
             </Select>
-          ))}
+            ))}
           <Button variant="outline">Apply Filters</Button>
         </div> */}
       </div>
@@ -607,10 +584,10 @@ export default function PlayersPage() {
        {error && !isLoading && (
          <Alert variant="destructive" className="mt-4 max-w-4xl mx-auto">
            <ExclamationTriangleIcon className="h-4 w-4" />
-           <AlertTitle>Error</AlertTitle>
-           <AlertDescription>{error}</AlertDescription>
-         </Alert>
-       )}
+          <AlertTitle>Error</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
        {noPlayerFoundError && !isLoading && (
          <Alert variant="default" className="mt-4 max-w-4xl mx-auto">
               <AlertTitle>Not Found</AlertTitle>

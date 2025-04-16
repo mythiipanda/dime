@@ -77,12 +77,12 @@ def fetch_scoreboard_data_logic(game_date: Optional[str] = None) -> Dict[str, An
                 
                 games = []
                 # Check if necessary data keys exist
-                if "GameHeader" in raw_data and "LineScore" in raw_data:
-                    game_headers = {g['GAME_ID']: g for g in raw_data.get("GameHeader", [])}
+                if "game_header" in raw_data and "line_score" in raw_data:
+                    game_headers = {g['GAME_ID']: g for g in raw_data.get("game_header", [])}
                     line_scores_by_game = {}
 
                     # Group line scores by game_id and team (home/away)
-                    for ls in raw_data.get("LineScore", []):
+                    for ls in raw_data.get("line_score", []):
                         game_id = ls.get('GAME_ID')
                         team_id = ls.get('TEAM_ID')
                         header = game_headers.get(game_id)
@@ -139,7 +139,7 @@ def fetch_scoreboard_data_logic(game_date: Optional[str] = None) -> Dict[str, An
                     
                     logger.info(f"Successfully processed {len(games)} games from ScoreboardV2 data for {target_date_str}.")
                 else:
-                    logger.warning(f"Missing 'GameHeader' or 'LineScore' in ScoreboardV2 response for {target_date_str}. Cannot process games.")
+                    logger.warning(f"Missing 'game_header' or 'line_score' in ScoreboardV2 response for {target_date_str}. Cannot process games.")
 
                 result_data = {
                      "gameDate": target_date_str,
