@@ -3,6 +3,7 @@ import json
 from typing import Optional, List, Dict, Any, Union
 import pandas as pd
 import requests
+import os
 from nba_api.stats.static import players
 from nba_api.stats.endpoints import (
     commonplayerinfo, 
@@ -15,6 +16,7 @@ from nba_api.stats.endpoints import (
 from nba_api.stats.library.parameters import SeasonAll, SeasonTypeAllStar, PerModeDetailed, PerMode36, LeagueID
 from backend.config import DEFAULT_TIMEOUT, HEADSHOT_BASE_URL, ErrorMessages as Errors, CURRENT_SEASON
 from backend.api_tools.utils import _process_dataframe, _validate_season_format, retry_on_timeout, format_response
+from backend.api_tools.visualization import create_shotchart
 
 logger = logging.getLogger(__name__)
 
@@ -284,7 +286,8 @@ def fetch_player_shotchart_logic(
                 team_id=0,  # 0 for all teams
                 season_nullable=season,
                 season_type_all_star=season_type,
-                timeout=DEFAULT_TIMEOUT
+                timeout=DEFAULT_TIMEOUT,
+                context_measure_simple='FGA'
             )
             logger.debug(f"shotchartdetail API call successful for ID: {player_id}")
             
@@ -340,9 +343,18 @@ def fetch_player_shotchart_logic(
                         "distance": shot.get("SHOT_DISTANCE"),
                         "zone": shot.get("SHOT_ZONE_BASIC")
                     }
-                    for shot in shots_data[:100]  # Limit to first 100 shots for visualization
+                    for shot in shots_data  # Include all shots
                 ]
             }
+            
+            # Generate visualization
+            output_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "output")
+            try:
+                visualization_path = create_shotchart(shot_summary, output_dir)
+                shot_summary["visualization_path"] = visualization_path
+            except Exception as viz_error:
+                logger.error(f"Failed to create shot chart visualization: {viz_error}")
+                shot_summary["visualization_error"] = str(viz_error)
             
             return format_response(shot_summary)
             

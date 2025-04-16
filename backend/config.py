@@ -1,6 +1,6 @@
 import os
 from dotenv import load_dotenv
-from backend.api_tools.errors import Errors as ErrorMessages
+from api_tools.errors import Errors as ErrorMessages
 
 # Load environment variables
 dotenv_path = os.path.join(os.path.dirname(__file__), '.env')

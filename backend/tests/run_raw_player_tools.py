@@ -273,7 +273,8 @@ def test_player_shotchart(
             team_id=team_id,
             season_nullable=season,
             season_type_all_star=season_type,
-            timeout=DEFAULT_TIMEOUT
+            timeout=DEFAULT_TIMEOUT,
+            context_measure_simple='FGA'
         )
         
         result = {
