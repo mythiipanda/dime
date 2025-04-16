@@ -17,6 +17,8 @@ from .tools import (
     get_player_shots_tracking,
     get_player_shotchart,
     get_player_defense_stats,
+    get_player_hustle_stats,
+    get_player_profile,
     get_team_info_and_roster,
     get_team_passing_stats,
     get_team_shooting_stats,
@@ -197,6 +199,8 @@ nba_agent = Agent(
         get_player_passing_stats,
         get_player_shotchart,
         get_player_defense_stats,
+        get_player_hustle_stats,
+        get_player_profile,
         
         # Team Stats
         get_team_info_and_roster,

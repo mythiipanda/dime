@@ -135,7 +135,7 @@ def fetch_boxscore_traditional_logic(game_id: str) -> str:
         logger.error(f"Error fetching boxscore for game {game_id}: {str(e)}", exc_info=True)
         return format_response(error=Errors.BOXSCORE_API.format(game_id=game_id, error=str(e)))
 
-def fetch_playbyplay_logic(game_id: str) -> str:
+def fetch_playbyplay_logic(game_id: str, start_period: int = 0, end_period: int = 0) -> str:
     """
     Fetches play-by-play data for a specific game.
     
@@ -152,7 +152,11 @@ def fetch_playbyplay_logic(game_id: str) -> str:
     
     try:
         # Get play-by-play data
-        pbp = playbyplay.PlayByPlay(game_id=game_id)
+        pbp = playbyplay.PlayByPlay(
+            game_id=game_id,
+            start_period=start_period,
+            end_period=end_period
+        )
         
         # Process play-by-play data
         plays_raw = pbp.play_by_play.get_data_frame()
@@ -182,15 +186,26 @@ def fetch_playbyplay_logic(game_id: str) -> str:
                 }
                 
                 # Add the play to the appropriate period
-                periods[period].append(play)
+                # Filter plays based on period if filters are set
+                if (start_period == 0 and end_period == 0) or \
+                   (start_period <= period <= end_period):
+                    periods[period].append(play)
         
         # Convert periods dict to a list for better JSON ordering
         periods_list = [{"period": p, "plays": periods[p]} for p in sorted(periods.keys())]
         
         # Combine all results
+        # Only include periods within the filtered range
+        if start_period > 0 and end_period > 0:
+            periods_list = [p for p in periods_list if start_period <= p["period"] <= end_period]
+
         result = {
             "game_id": game_id,
             "has_video": pbp.available_video.get_data_frame().iloc[0][0] == 1 if not pbp.available_video.get_data_frame().empty else False,
+            "filtered_periods": {
+                "start": start_period,
+                "end": end_period
+            } if start_period > 0 or end_period > 0 else None,
             "periods": periods_list
         }
         

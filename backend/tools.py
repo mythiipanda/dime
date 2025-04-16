@@ -17,11 +17,14 @@ from api_tools.player_tools import (
     fetch_player_gamelog_logic,
     fetch_player_career_stats_logic,
     fetch_player_awards_logic,
-    fetch_player_shotchart_logic,  # Added new import
-    fetch_player_defense_logic,    # Added new import
+    fetch_player_shotchart_logic,
+    fetch_player_defense_logic,
+    fetch_player_hustle_stats_logic,
+    fetch_player_profile_logic
 )
 from api_tools.team_tools import (
     fetch_team_info_and_roster_logic,
+    fetch_team_lineups_logic,
     # fetch_team_stats_logic, # Logic exists but no corresponding tool wrapper defined
 )
 from api_tools.game_tools import (
@@ -303,6 +306,62 @@ def get_team_shooting_stats(
     )
 
 @tool
+@tool
+def get_team_lineups(
+    team_id: Optional[int] = None,
+    season: str = CURRENT_SEASON,
+    season_type: str = SeasonTypeAllStar.regular,
+    per_mode: str = PerModeDetailed.per_game,
+    month: int = 0,
+    date_from: str = None,
+    date_to: str = None,
+    opponent_team_id: int = 0,
+    vs_conference: str = None,
+    vs_division: str = None,
+    game_segment: str = None,
+    period: int = 0,
+    last_n_games: int = 0
+) -> str:
+    """
+    Fetches detailed lineup statistics with various filtering options.
+    Args:
+        team_id: Optional NBA team ID. If None, returns all team lineups.
+        season: Season identifier (e.g., "2023-24"). Defaults to current.
+        season_type: Season type (e.g., "Regular Season", "Playoffs").
+        per_mode: Stats calculation mode (e.g., "PerGame", "Totals").
+        month: Filter by month (0 for all).
+        date_from: Start date filter (YYYY-MM-DD).
+        date_to: End date filter (YYYY-MM-DD).
+        opponent_team_id: Filter by opponent (0 for all).
+        vs_conference: Filter by conference.
+        vs_division: Filter by division.
+        game_segment: Filter by game segment.
+        period: Filter by period (0 for all).
+        last_n_games: Filter by last N games (0 for all).
+    Returns:
+        str: JSON string with detailed lineup statistics including:
+            - Basic stats (minutes, points, +/-)
+            - Shooting stats (FG%, 3P%, FT%)
+            - Advanced metrics (Off/Def Rating, Pace, TS%)
+            - Player combinations
+    """
+    logger.debug(f"Tool get_team_lineups called for season {season}")
+    return fetch_team_lineups_logic(
+        team_id=team_id,
+        season=season,
+        season_type=season_type,
+        per_mode=per_mode,
+        month=month,
+        date_from=date_from,
+        date_to=date_to,
+        opponent_team_id=opponent_team_id,
+        vs_conference=vs_conference,
+        vs_division=vs_division,
+        game_segment=game_segment,
+        period=period,
+        last_n_games=last_n_games
+    )
+
 def get_team_rebounding_stats(
     team_identifier: str,
     season: str,
@@ -454,3 +513,46 @@ def get_league_leaders(
         season_type=season_type,
         per_mode=per_mode
     )
+
+@tool
+def get_player_hustle_stats(
+    season: str = CURRENT_SEASON,
+    season_type: str = SeasonTypeAllStar.regular,
+    per_mode: str = PerModeDetailed.per_game
+) -> str:
+    """
+    Fetches players' hustle stats like deflections, loose balls recovered, screen assists etc.
+    Args:
+        season (str): Season identifier (e.g., "2023-24")
+        season_type (str): Season type (e.g., "Regular Season", "Playoffs")
+        per_mode (str): Mode of stats (e.g., "PerGame", "Totals")
+    Returns:
+        str: JSON string containing hustle statistics for all players:
+            - Defensive stats (charges drawn, contested shots, deflections)
+            - Loose ball recoveries (offensive/defensive)
+            - Screen assists and points
+            - Box outs (offensive/defensive)
+    """
+    logger.debug(f"Tool get_player_hustle_stats called for season {season}")
+    return fetch_player_hustle_stats_logic(
+        season=season,
+        season_type=season_type,
+        per_mode=per_mode
+    )
+
+@tool
+def get_player_profile(player_name: str, per_mode: str = PerModeDetailed.per_game) -> str:
+    """
+    Fetches a comprehensive player profile including career totals, season totals, highs, and next game info.
+    Args:
+        player_name (str): Full name of the player.
+        per_mode (str): Stat mode ('PerGame', 'Totals', 'Per36', etc.). Defaults to 'PerGame'.
+    Returns:
+        str: JSON string containing detailed player profile data or {'error': ...}.
+    """
+    logger.debug(f"Tool get_player_profile called for '{player_name}', per_mode '{per_mode}'")
+    valid_per_modes = [getattr(PerModeDetailed, attr) for attr in dir(PerModeDetailed) if not attr.startswith('_') and isinstance(getattr(PerModeDetailed, attr), str)]
+    if per_mode not in valid_per_modes:
+         logger.warning(f"Invalid per_mode '{per_mode}' in tool wrapper. Logic function should handle default.")
+         # Let the logic function handle the default value assignment
+    return fetch_player_profile_logic(player_name=player_name, per_mode=per_mode)

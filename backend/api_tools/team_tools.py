@@ -3,10 +3,22 @@ import json
 from typing import Optional, Dict, List, Tuple, Any
 import pandas as pd
 from nba_api.stats.static import teams
-from nba_api.stats.endpoints import teaminfocommon, commonteamroster, teamdashboardbygeneralsplits, teamdashptpass, teamyearbyyearstats
-from nba_api.stats.library.parameters import LeagueID, SeasonTypeAllStar
+from nba_api.stats.endpoints import (
+    teaminfocommon,
+    commonteamroster,
+    teamdashboardbygeneralsplits,
+    teamdashptpass,
+    teamyearbyyearstats,
+    leaguedashlineups
+)
+from nba_api.stats.library.parameters import (
+    LeagueID,
+    SeasonTypeAllStar,
+    MeasureTypeDetailedDefense,
+    PerModeDetailed
+)
 
-from backend.config import DEFAULT_TIMEOUT, CURRENT_SEASON, ErrorMessages as Errors
+from backend.config import DEFAULT_TIMEOUT, CURRENT_SEASON, Errors
 from backend.api_tools.utils import _process_dataframe, _validate_season_format, format_response
 
 logger = logging.getLogger(__name__)
@@ -358,3 +370,170 @@ def fetch_team_passing_stats_logic(team_name: str, season: str = CURRENT_SEASON,
         error_msg = Errors.TEAM_UNEXPECTED.format(identifier=team_name, season=season, error=str(e))
         logger.critical(f"Unexpected error in fetch_team_passing_stats_logic for '{team_name}': {e}", exc_info=True)
         return format_response(error=error_msg)
+
+def fetch_team_lineups_logic(
+    team_id: Optional[int] = None,
+    season: str = CURRENT_SEASON,
+    season_type: str = SeasonTypeAllStar.regular,
+    per_mode: str = PerModeDetailed.per_game,
+    measure_type: str = MeasureTypeDetailedDefense.base,
+    month: int = 0,
+    date_from: str = None,
+    date_to: str = None,
+    opponent_team_id: int = 0,
+    vs_conference: str = None,
+    vs_division: str = None,
+    game_segment: str = None,
+    period: int = 0,
+    last_n_games: int = 0
+) -> str:
+    """
+    Fetches lineup statistics, optionally filtered by various parameters.
+    
+    Args:
+        team_id: Optional NBA team ID. If None, returns all team lineups.
+        season: Season identifier (e.g., "2023-24")
+        season_type: Type of season (regular, playoffs, etc.)
+        per_mode: Per game, per possession, etc.
+        measure_type: Type of metrics to return
+        month: Filter by month (0 for all)
+        date_from: Start date filter (YYYY-MM-DD)
+        date_to: End date filter (YYYY-MM-DD)
+        opponent_team_id: Filter by opponent (0 for all)
+        vs_conference: Filter by conference
+        vs_division: Filter by division
+        game_segment: Filter by game segment
+        period: Filter by period (0 for all)
+        last_n_games: Filter by last N games (0 for all)
+        
+    Returns:
+        str: JSON string with lineup statistics
+    """
+    logger.info(f"Executing fetch_team_lineups_logic for season {season}")
+    
+    if not season or not _validate_season_format(season):
+        return format_response(error=Errors.INVALID_SEASON_FORMAT.format(season=season))
+
+    # Validate season_type
+    valid_season_types = [getattr(SeasonTypeAllStar, attr) for attr in dir(SeasonTypeAllStar) if not attr.startswith('_') and isinstance(getattr(SeasonTypeAllStar, attr), str)]
+    if season_type not in valid_season_types:
+        logger.error(f"Invalid season_type '{season_type}' provided.")
+        return format_response(error=f"Invalid season_type: '{season_type}'. Valid options: {valid_season_types}")
+
+    # Validate per_mode
+    valid_per_modes = [getattr(PerModeDetailed, attr) for attr in dir(PerModeDetailed) if not attr.startswith('_') and isinstance(getattr(PerModeDetailed, attr), str)]
+    if per_mode not in valid_per_modes:
+        logger.error(f"Invalid per_mode '{per_mode}' provided.")
+        return format_response(error=f"Invalid per_mode: '{per_mode}'. Valid options: {valid_per_modes}")
+
+    # Validate measure_type
+    valid_measure_types = [getattr(MeasureTypeDetailedDefense, attr) for attr in dir(MeasureTypeDetailedDefense) if not attr.startswith('_') and isinstance(getattr(MeasureTypeDetailedDefense, attr), str)]
+    if measure_type not in valid_measure_types:
+        logger.error(f"Invalid measure_type '{measure_type}' provided.")
+        return format_response(error=f"Invalid measure_type: '{measure_type}'. Valid options: {valid_measure_types}")
+
+    # Validate month (0 is valid for all months)
+    if not isinstance(month, int) or month < 0 or month > 12:
+        logger.error(f"Invalid month '{month}' provided.")
+        return format_response(error=f"Invalid month: '{month}'. Must be an integer between 0 and 12.")
+
+    try:
+        logger.debug(f"Fetching lineup stats for season {season}")
+        lineups = leaguedashlineups.LeagueDashLineups(
+            team_id_nullable=team_id,
+            season=season,
+            season_type_all_star=season_type,
+            per_mode_detailed=per_mode,
+            measure_type_detailed_defense=measure_type,
+            month=month,
+            date_from_nullable=date_from,
+            date_to_nullable=date_to,
+            opponent_team_id=opponent_team_id,
+            vs_conference_nullable=vs_conference,
+            vs_division_nullable=vs_division,
+            game_segment_nullable=game_segment,
+            period=period,
+            last_n_games=last_n_games,
+            timeout=DEFAULT_TIMEOUT
+        )
+        
+        lineups_df = lineups.get_data_frames()[0]
+        if lineups_df.empty:
+            logger.error(f"No lineup stats found for given parameters")
+            return format_response(error="No lineup statistics available for the specified filters")
+        
+        # Process lineup statistics
+        lineup_stats = []
+        for _, row in lineups_df.iterrows():
+            lineup = {
+                "group_id": row.get("GROUP_ID"),
+                "group_name": row.get("GROUP_NAME"),
+                "players": [
+                    player.strip() for player in str(row.get("GROUP_NAME")).split(" - ")
+                ],
+                "games_played": int(row.get("GP", 0)),
+                "minutes": float(row.get("MIN", 0)),
+                "offensive_stats": {
+                    "points": float(row.get("PTS", 0)),
+                    "field_goals": {
+                        "made": float(row.get("FGM", 0)),
+                        "attempts": float(row.get("FGA", 0)),
+                        "pct": float(row.get("FG_PCT", 0))
+                    },
+                    "three_points": {
+                        "made": float(row.get("FG3M", 0)),
+                        "attempts": float(row.get("FG3A", 0)),
+                        "pct": float(row.get("FG3_PCT", 0))
+                    },
+                    "free_throws": {
+                        "made": float(row.get("FTM", 0)),
+                        "attempts": float(row.get("FTA", 0)),
+                        "pct": float(row.get("FT_PCT", 0))
+                    },
+                    "assists": float(row.get("AST", 0)),
+                    "turnovers": float(row.get("TOV", 0))
+                },
+                "defensive_stats": {
+                    "rebounds": {
+                        "offensive": float(row.get("OREB", 0)),
+                        "defensive": float(row.get("DREB", 0)),
+                        "total": float(row.get("REB", 0))
+                    },
+                    "steals": float(row.get("STL", 0)),
+                    "blocks": float(row.get("BLK", 0))
+                },
+                "plus_minus": float(row.get("PLUS_MINUS", 0)),
+                "advanced_stats": {
+                    "offensive_rating": float(row.get("OFF_RATING", 0)),
+                    "defensive_rating": float(row.get("DEF_RATING", 0)),
+                    "net_rating": float(row.get("NET_RATING", 0)),
+                    "pace": float(row.get("PACE", 0)),
+                    "true_shooting_pct": float(row.get("TS_PCT", 0))
+                }
+            }
+            lineup_stats.append(lineup)
+        
+        result = {
+            "season": season,
+            "season_type": season_type,
+            "per_mode": per_mode,
+            "filters": {
+                "team_id": team_id,
+                "month": month if month != 0 else None,
+                "date_range": {"from": date_from, "to": date_to} if date_from or date_to else None,
+                "opponent_team_id": opponent_team_id if opponent_team_id != 0 else None,
+                "vs_conference": vs_conference,
+                "vs_division": vs_division,
+                "game_segment": game_segment,
+                "period": period if period != 0 else None,
+                "last_n_games": last_n_games if last_n_games != 0 else None
+            },
+            "lineups": lineup_stats
+        }
+        
+        logger.info(f"Successfully fetched stats for {len(lineup_stats)} lineups")
+        return format_response(result)
+        
+    except Exception as e:
+        logger.critical(f"Unexpected error in fetch_team_lineups_logic: {e}")
+        return format_response(error=f"Unexpected error fetching lineup stats: {str(e)}")

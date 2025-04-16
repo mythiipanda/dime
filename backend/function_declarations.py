@@ -213,6 +213,29 @@ get_player_defense_stats_declaration = {
     },
 }
 
+get_player_hustle_stats_declaration = {
+    "name": "get_player_hustle_stats",
+    "description": "Fetches players' hustle stats like deflections, loose balls recovered, screen assists etc.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "season": {
+                "type": "string",
+                "description": f"Season identifier (e.g., '2023-24'). Defaults to current ({CURRENT_SEASON}).",
+            },
+            "season_type": {
+                "type": "string",
+                "description": get_enum_description(SeasonTypeAllStar, SeasonTypeAllStar.regular),
+            },
+            "per_mode": {
+                "type": "string",
+                "description": get_enum_description(PerModeDetailed, PerModeDetailed.per_game),
+            },
+        },
+        "required": [],
+    },
+}
+
 # Team Tools Declarations
 get_team_info_and_roster_declaration = {
     "name": "get_team_info_and_roster",
@@ -312,6 +335,69 @@ get_team_rebounding_stats_declaration = {
         },
         "required": ["team_name", "season"],
     },
+}
+
+get_team_lineups_declaration = {
+    "name": "get_team_lineups",
+    "description": "Fetches detailed lineup statistics with various filtering options.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "team_id": {
+                "type": ["integer", "null"],
+                "description": "NBA team ID. If None, returns all team lineups."
+            },
+            "season": {
+                "type": "string",
+                "description": f"Season identifier (e.g., '2023-24'). Defaults to current ({CURRENT_SEASON})."
+            },
+            "season_type": {
+                "type": "string",
+                "description": get_enum_description(SeasonTypeAllStar, SeasonTypeAllStar.regular)
+            },
+            "per_mode": {
+                "type": "string",
+                "description": get_enum_description(PerModeDetailed, PerModeDetailed.per_game)
+            },
+            "month": {
+                "type": "integer",
+                "description": "Filter by month (0 for all). Defaults to 0."
+            },
+            "date_from": {
+                "type": ["string", "null"],
+                "description": "Start date filter (YYYY-MM-DD)."
+            },
+            "date_to": {
+                "type": ["string", "null"],
+                "description": "End date filter (YYYY-MM-DD)."
+            },
+            "opponent_team_id": {
+                "type": "integer",
+                "description": "Filter by opponent (0 for all). Defaults to 0."
+            },
+            "vs_conference": {
+                "type": ["string", "null"],
+                "description": "Filter by conference."
+            },
+            "vs_division": {
+                "type": ["string", "null"],
+                "description": "Filter by division."
+            },
+            "game_segment": {
+                "type": ["string", "null"],
+                "description": "Filter by game segment."
+            },
+            "period": {
+                "type": "integer",
+                "description": "Filter by period (0 for all). Defaults to 0."
+            },
+            "last_n_games": {
+                "type": "integer",
+                "description": "Filter by last N games (0 for all). Defaults to 0."
+            }
+        },
+        "required": ["season"]
+    }
 }
 
 # Game Tools Declarations
@@ -479,9 +565,31 @@ get_league_leaders_declaration = {
     },
 }
 
+get_player_profile_declaration = {
+    "name": "get_player_profile",
+    "description": "Fetches a comprehensive player profile including career totals, season totals, highs, and next game info.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "player_name": {
+                "type": "string",
+                "description": "Full name of the player.",
+            },
+            "per_mode": {
+                "type": "string",
+                "description": get_enum_description(PerModeDetailed, PerModeDetailed.per_game),
+            },
+        },
+        "required": ["player_name"],
+    },
+}
+
 # Combined declarations list
 all_function_declarations = [
     get_player_info_declaration,
+    get_player_hustle_stats_declaration,
+    get_team_lineups_declaration,
+    get_player_profile_declaration,
     get_player_gamelog_declaration,
     get_player_career_stats_declaration,
     get_player_awards_declaration,

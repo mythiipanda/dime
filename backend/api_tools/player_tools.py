@@ -11,10 +11,12 @@ from nba_api.stats.endpoints import (
     playerawards, 
     playercareerstats,
     shotchartdetail,
-    playerdashptshotdefend
+    playerdashptshotdefend,
+    playerprofilev2,
+    leaguehustlestatsplayer
 )
 from nba_api.stats.library.parameters import SeasonAll, SeasonTypeAllStar, PerModeDetailed, PerMode36, LeagueID
-from backend.config import DEFAULT_TIMEOUT, HEADSHOT_BASE_URL, ErrorMessages as Errors, CURRENT_SEASON
+from backend.config import DEFAULT_TIMEOUT, HEADSHOT_BASE_URL, Errors, CURRENT_SEASON
 from backend.api_tools.utils import _process_dataframe, _validate_season_format, retry_on_timeout, format_response
 from backend.api_tools.visualization import create_shotchart
 
@@ -444,3 +446,165 @@ def fetch_player_defense_logic(
     except Exception as e:
         logger.critical(f"Unexpected error in fetch_player_defense_logic: {e}")
         return format_response(error=f"Unexpected error fetching defense stats: {str(e)}")
+
+def fetch_player_hustle_stats_logic(
+    season: str = CURRENT_SEASON,
+    season_type: str = SeasonTypeAllStar.regular,
+    per_mode: str = PerModeDetailed.per_game
+) -> str:
+    """Fetches hustle stats (deflections, loose balls, etc.) for all players."""
+    logger.info(f"Executing fetch_player_hustle_stats_logic for season {season}")
+    
+    if not season or not _validate_season_format(season):
+        return format_response(error=Errors.INVALID_SEASON_FORMAT.format(season=season))
+
+    # Validate season_type
+    valid_season_types = [getattr(SeasonTypeAllStar, attr) for attr in dir(SeasonTypeAllStar) if not attr.startswith('_') and isinstance(getattr(SeasonTypeAllStar, attr), str)]
+    if season_type not in valid_season_types:
+        logger.error(f"Invalid season_type '{season_type}' provided.")
+        return format_response(error=f"Invalid season_type: '{season_type}'. Valid options: {valid_season_types}")
+
+    # Validate per_mode
+    valid_per_modes = [getattr(PerModeDetailed, attr) for attr in dir(PerModeDetailed) if not attr.startswith('_') and isinstance(getattr(PerModeDetailed, attr), str)]
+    if per_mode not in valid_per_modes:
+        logger.error(f"Invalid per_mode '{per_mode}' provided.")
+        return format_response(error=f"Invalid per_mode: '{per_mode}'. Valid options: {valid_per_modes}")
+
+    try:
+        logger.debug(f"Fetching hustle stats for season {season}")
+        hustle = leaguehustlestatsplayer.LeagueHustleStatsPlayer(
+            season=season,
+            season_type_all_star=season_type,
+            per_mode_time=per_mode,
+            timeout=DEFAULT_TIMEOUT
+        )
+        
+        hustle_df = hustle.get_data_frames()[0]
+        if hustle_df.empty:
+            logger.error(f"No hustle stats found for season {season}")
+            return format_response(error=f"No hustle stats available for season {season}")
+        
+        # Process hustle stats
+        hustle_stats = []
+        for _, row in hustle_df.iterrows():
+            player_stats = {
+                "player": {
+                    "id": row.get("PLAYER_ID"),
+                    "name": row.get("PLAYER_NAME"),
+                    "team": row.get("TEAM_ABBREVIATION")
+                },
+                "games_played": row.get("G", 0),
+                "minutes": row.get("MIN", 0),
+                "defensive_stats": {
+                    "charges_drawn": row.get("CHARGES_DRAWN", 0),
+                    "contested_shots": row.get("CONTESTED_SHOTS", 0),
+                    "contested_shots_3pt": row.get("CONTESTED_SHOTS_3PT", 0),
+                    "contested_shots_2pt": row.get("CONTESTED_SHOTS_2PT", 0),
+                    "deflections": row.get("DEFLECTIONS", 0)
+                },
+                "loose_ball_stats": {
+                    "loose_balls_recovered": row.get("LOOSE_BALLS_RECOVERED", 0),
+                    "loose_balls_recovered_offensive": row.get("LOOSE_BALLS_RECOVERED_OFF", 0),
+                    "loose_balls_recovered_defensive": row.get("LOOSE_BALLS_RECOVERED_DEF", 0)
+                },
+                "screen_stats": {
+                    "screen_assists": row.get("SCREEN_ASSISTS", 0),
+                    "screen_assist_points": row.get("SCREEN_AST_PTS", 0)
+                },
+                "box_out_stats": {
+                    "box_outs": row.get("BOX_OUTS", 0),
+                    "box_outs_offensive": row.get("BOX_OUTS_OFF", 0),
+                    "box_outs_defensive": row.get("BOX_OUTS_DEF", 0)
+                }
+            }
+            hustle_stats.append(player_stats)
+        
+        result = {
+            "season": season,
+            "season_type": season_type,
+            "per_mode": per_mode,
+            "hustle_stats": hustle_stats
+        }
+        
+        logger.info(f"Successfully fetched hustle stats for {len(hustle_stats)} players")
+        return format_response(result)
+        
+    except Exception as e:
+        logger.critical(f"Unexpected error in fetch_player_hustle_stats_logic: {e}")
+        return format_response(error=f"Unexpected error fetching hustle stats: {str(e)}")
+
+def fetch_player_profile_logic(player_name: str, per_mode: str = PerModeDetailed.per_game) -> str:
+    """Fetches comprehensive player profile information including career highs, next game, etc."""
+    logger.info(f"Executing fetch_player_profile_logic for: '{player_name}', PerMode: {per_mode}")
+    if not player_name or not player_name.strip():
+        return format_response(error=Errors.PLAYER_NAME_EMPTY)
+
+    valid_per_modes = [getattr(PerModeDetailed, attr) for attr in dir(PerModeDetailed) if not attr.startswith('_') and isinstance(getattr(PerModeDetailed, attr), str)]
+    if per_mode not in valid_per_modes:
+        logger.warning(f"Invalid per_mode '{per_mode}'. Using default '{PerModeDetailed.per_game}'. Valid options: {valid_per_modes}")
+        per_mode = PerModeDetailed.per_game
+
+    try:
+        player_id, player_actual_name = _find_player_id(player_name)
+        if player_id is None:
+            return format_response(error=Errors.PLAYER_NOT_FOUND.format(name=player_name))
+
+        logger.debug(f"Fetching playerprofilev2 for ID: {player_id}, PerMode: {per_mode}")
+        try:
+            profile_endpoint = playerprofilev2.PlayerProfileV2(
+                player_id=player_id,
+                per_mode36=per_mode,  # Note: API uses per_mode36 param name
+                timeout=DEFAULT_TIMEOUT
+            )
+            logger.debug(f"playerprofilev2 API call successful for ID: {player_id}")
+        except Exception as api_error:
+            logger.error(f"nba_api playerprofilev2 failed for ID {player_id}: {api_error}", exc_info=True)
+            return format_response(error=Errors.PLAYER_PROFILE_API.format(name=player_actual_name, error=str(api_error))) # Assumes PLAYER_PROFILE_API error exists
+
+        # Process the different dataframes available in the endpoint
+        career_totals_allstar_season = _process_dataframe(profile_endpoint.career_totals_all_star_season.get_data_frame(), single_row=True)
+        career_totals_college_season = _process_dataframe(profile_endpoint.career_totals_college_season.get_data_frame(), single_row=True)
+        career_totals_post_season = _process_dataframe(profile_endpoint.career_totals_post_season.get_data_frame(), single_row=True)
+        career_totals_preseason = _process_dataframe(profile_endpoint.career_totals_preseason.get_data_frame(), single_row=True)
+        career_totals_regular_season = _process_dataframe(profile_endpoint.career_totals_regular_season.get_data_frame(), single_row=True)
+        season_highs = _process_dataframe(profile_endpoint.season_highs.get_data_frame(), single_row=True)
+        career_highs = _process_dataframe(profile_endpoint.career_highs.get_data_frame(), single_row=True)
+        next_game = _process_dataframe(profile_endpoint.next_game.get_data_frame(), single_row=True)
+        # Season totals are split by season type
+        season_totals_allstar_season = _process_dataframe(profile_endpoint.season_totals_all_star_season.get_data_frame(), single_row=False)
+        season_totals_college_season = _process_dataframe(profile_endpoint.season_totals_college_season.get_data_frame(), single_row=False)
+        season_totals_post_season = _process_dataframe(profile_endpoint.season_totals_post_season.get_data_frame(), single_row=False)
+        season_totals_preseason = _process_dataframe(profile_endpoint.season_totals_preseason.get_data_frame(), single_row=False)
+        season_totals_regular_season = _process_dataframe(profile_endpoint.season_totals_regular_season.get_data_frame(), single_row=False)
+
+        # Check if primary data (regular season totals) failed
+        if career_totals_regular_season is None and season_totals_regular_season is None:
+             logger.error(f"Essential profile data processing failed for {player_actual_name}.")
+             return format_response(error=Errors.PLAYER_PROFILE_PROCESSING.format(name=player_actual_name)) # Assumes PLAYER_PROFILE_PROCESSING error exists
+
+        logger.info(f"fetch_player_profile_logic completed for '{player_actual_name}'")
+        return format_response({
+            "player_name": player_actual_name,
+            "player_id": player_id,
+            "per_mode_requested": per_mode,
+            "career_highs": career_highs or {},
+            "season_highs": season_highs or {},
+            "next_game": next_game or {},
+            "career_totals": {
+                "regular_season": career_totals_regular_season or {},
+                "post_season": career_totals_post_season or {},
+                "all_star": career_totals_allstar_season or {},
+                "preseason": career_totals_preseason or {},
+                "college": career_totals_college_season or {}
+            },
+            "season_totals": {
+                "regular_season": season_totals_regular_season or [],
+                "post_season": season_totals_post_season or [],
+                "all_star": season_totals_allstar_season or [],
+                "preseason": season_totals_preseason or [],
+                "college": season_totals_college_season or []
+            }
+        })
+    except Exception as e:
+        logger.critical(f"Unexpected error in fetch_player_profile_logic for '{player_name}': {e}", exc_info=True)
+        return format_response(error=Errors.PLAYER_PROFILE_UNEXPECTED.format(name=player_name, error=str(e))) # Assumes PLAYER_PROFILE_UNEXPECTED error exists
