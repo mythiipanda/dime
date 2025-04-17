@@ -1,0 +1,43 @@
+<svg width="800" height="500" viewBox="0 0 800 500" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="800" height="500" rx="8" fill="#111111"/>
+  <rect x="1" y="1" width="798" height="498" rx="7" stroke="white" stroke-opacity="0.1" stroke-width="2"/>
+  <rect x="0" y="0" width="800" height="40" rx="8" fill="#1A1A1A"/>
+  <circle cx="20" cy="20" r="6" fill="#FF5F57"/>
+  <circle cx="40" cy="20" r="6" fill="#FEBC2E"/>
+  <circle cx="60" cy="20" r="6" fill="#28C840"/>
+  
+  <!-- Sidebar -->
+  <rect x="0" y="40" width="200" height="460" fill="#1A1A1A"/>
+  <rect x="20" y="70" width="160" height="40" rx="4" fill="#333333"/>
+  <rect x="20" y="120" width="160" height="10" rx="2" fill="#444444"/>
+  <rect x="20" y="140" width="100" height="10" rx="2" fill="#444444"/>
+  <rect x="20" y="160" width="140" height="10" rx="2" fill="#444444"/>
+  <rect x="20" y="200" width="160" height="10" rx="2" fill="#444444"/>
+  <rect x="20" y="220" width="100" height="10" rx="2" fill="#444444"/>
+  <rect x="20" y="240" width="140" height="10" rx="2" fill="#444444"/>
+  
+  <!-- Main Content -->
+  <rect x="220" y="60" width="560" height="40" rx="4" fill="#333333"/>
+  <rect x="230" y="70" width="300" height="20" rx="2" fill="#444444"/>
+  
+  <!-- Dashboard Cards -->
+  <rect x="220" y="120" width="270" height="180" rx="8" fill="#333333"/>
+  <rect x="240" y="140" width="230" height="20" rx="2" fill="#444444"/>
+  <rect x="240" y="170" width="230" height="110" rx="2" fill="#222222"/>
+  <path d="M260 250 L280 230 L300 240 L320 200 L340 210 L360 190 L380 220 L400 180 L420 230 L440 210" stroke="#FFFFFF" stroke-width="2"/>
+  
+  <rect x="510" y="120" width="270" height="180" rx="8" fill="#333333"/>
+  <rect x="530" y="140" width="230" height="20" rx="2" fill="#444444"/>
+  
+  <!-- Data Table -->
+  <rect x="530" y="170" width="230" height="20" rx="2" fill="#222222"/>
+  <rect x="530" y="190" width="230" height="20" rx="2" fill="#2A2A2A"/>
+  <rect x="530" y="210" width="230" height="20" rx="2" fill="#222222"/>
+  <rect x="530" y="230" width="230" height="20" rx="2" fill="#2A2A2A"/>
+  <rect x="530" y="250" width="230" height="20" rx="2" fill="#222222"/>
+  
+  <!-- Bottom Content -->
+  <rect x="220" y="320" width="560" height="150" rx="8" fill="#333333"/>
+  <rect x="240" y="340" width="230" height="20" rx="2" fill="#444444"/>
+  <rect x="240" y="370" width="520" height="80" rx="2" fill="#222222"/>
+</svg>
