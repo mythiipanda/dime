@@ -23,7 +23,7 @@ export default function LayoutClient({ children }: LayoutClientProps) {
   return (
     <div className="relative flex min-h-screen">
       {!isLanding && (
-        <aside className="fixed hidden h-screen w-64 border-r bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/75 px-4 py-6 lg:block">
+        <aside className="fixed hidden h-screen w-72 border-r bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/75 px-6 py-8 lg:block">
           <div className="flex h-full flex-col justify-between">
             <div className="space-y-6">
               {/* Logo */}
@@ -61,7 +61,7 @@ export default function LayoutClient({ children }: LayoutClientProps) {
         </aside>
       )}
       {!isLanding && (
-        <header className="fixed top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/75 lg:hidden">
+        <header className="fixed top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/75 lg:hidden px-6">
           <div className="flex h-16 items-center gap-4 px-4">
             <Button variant="ghost" size="icon" className="hover:bg-accent">
               <Menu className="h-5 w-5" />
@@ -90,8 +90,8 @@ export default function LayoutClient({ children }: LayoutClientProps) {
           </div>
         </header>
       )}
-      <main className={isLanding ? 'flex-auto' : 'flex-1 overflow-y-auto lg:pl-64'}>
-        <div className={isLanding ? 'w-full' : 'container min-h-screen px-4 py-6 lg:px-8 lg:py-8'}>
+      <main className={isLanding ? 'flex-auto' : 'flex-1 overflow-y-auto lg:pl-72'}>
+        <div className={isLanding ? 'w-full' : 'max-w-7xl mx-auto min-h-screen px-6 py-8 lg:px-8 lg:py-12'}>
           {children}
         </div>
       </main>
