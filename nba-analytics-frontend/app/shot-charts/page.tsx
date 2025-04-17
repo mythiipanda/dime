@@ -9,9 +9,8 @@ import {
 } from "@/components/ui/resizable";
 import { Skeleton } from "@/components/ui/skeleton"; // Keep Skeleton for loading state
 // Import the hook and new components
-import { useAgentChatSSE } from "@/lib/hooks/useAgentChatSSE"; // Removed unused ChatMessage
+import { useAgentChatSSE } from "@/lib/hooks/useAgentChatSSE";
 import { PromptInputForm } from "@/components/agent/PromptInputForm";
-import { ProgressDisplay } from "@/components/agent/ProgressDisplay";
 import { ErrorDisplay } from "@/components/agent/ErrorDisplay";
 import { ChatMessageDisplay } from "@/components/agent/ChatMessageDisplay";
 
@@ -26,7 +25,6 @@ export default function ShotChartChatPage() {
   const {
     isLoading,
     error,
-    progress,
     chatHistory, // Use chatHistory from hook
     // resultData, // Keep if structured data is needed later
     submitPrompt,
@@ -35,10 +33,9 @@ export default function ShotChartChatPage() {
     apiUrl: process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/ask_team", // Use env variable
   });
 
-  // Handle form submission
-  const handleFormSubmit = (e?: React.FormEvent<HTMLFormElement>) => {
-    if (e) e.preventDefault();
-    submitPrompt(inputValue);
+  // Handle form submission - Takes prompt string directly
+  const handleFormSubmit = (submittedPrompt: string) => {
+    submitPrompt(submittedPrompt);
     setInputValue(""); // Clear input after submission
   };
 
@@ -54,9 +51,6 @@ export default function ShotChartChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatHistory]); // Run whenever chatHistory changes
 
-  // Log the chat history received from the hook before rendering
-  console.log("ShotChartChatPage rendering with chatHistory:", chatHistory);
-
   // This component now renders *only* the content area within the main layout
   return (
     <ResizablePanelGroup direction="vertical" className="h-full"> {/* Use h-full to fill parent */}
@@ -68,8 +62,6 @@ export default function ShotChartChatPage() {
             <h2 className="mb-4 text-lg font-semibold">Shot Chart Analysis Chat</h2>
             {/* Render using extracted components */}
             <div className="space-y-4">
-              <ProgressDisplay progressSteps={progress} />
-
               {/* Display Chat History */}
               <div className="space-y-4 mb-4">
                 {chatHistory.map((message, index) => (
@@ -97,7 +89,7 @@ export default function ShotChartChatPage() {
                        Ask about Shot Charts
                      </h3>
                      <p className="text-sm text-muted-foreground">
-                       Enter a player and season (e.g., &quot;LeBron James 2023-24 shot chart&quot;) below. {/* Escaped quotes */}
+                       Enter a player and season (e.g., "LeBron James 2023-24 shot chart") below. {/* Escaped quotes */}
                      </p>
                    </div>
                  </div>
@@ -112,8 +104,6 @@ export default function ShotChartChatPage() {
            <h2 className="text-lg font-semibold mb-2">Enter Prompt</h2>
            {/* Use PromptInputForm component */}
            <PromptInputForm
-             inputValue={inputValue}
-             onInputChange={setInputValue}
              onSubmit={handleFormSubmit}
              isLoading={isLoading}
            />

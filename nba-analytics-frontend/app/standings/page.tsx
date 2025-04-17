@@ -2,12 +2,12 @@ import { Suspense } from "react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { getLeagueStandings } from "@/lib/api/teams"
 import { StandingsTable } from "@/components/standings/StandingsTable"
-import { StandingsHeader } from "@/components/standings/StandingsHeader"
 import { ErrorBoundaryHandler } from "@/components/ui/error-boundary"
 import { TableSkeleton } from "@/components/ui/loading-state"
 import { motion } from "framer-motion"
 import { FADE_IN } from "@/lib/animations"
 import { Metadata } from "next"
+import { TeamStanding } from "@/lib/api/teams"
 
 export const metadata: Metadata = {
   title: "NBA Standings | NBA Analytics",
@@ -26,12 +26,18 @@ function StandingsLoading() {
 
 export default async function StandingsPage() {
   try {
-    const { eastern, western } = await getLeagueStandings()
+    const { standings } = await getLeagueStandings()
+
+    const eastern = standings
+      .filter((team) => team.Conference === "East")
+      .sort((a, b) => a.PlayoffRank - b.PlayoffRank)
+      
+    const western = standings
+      .filter((team) => team.Conference === "West")
+      .sort((a, b) => a.PlayoffRank - b.PlayoffRank)
 
     return (
       <div className="flex-1 space-y-4 p-4 md:p-8 pt-6">
-        <StandingsHeader />
-
         <motion.div {...FADE_IN}>
           <Tabs defaultValue="eastern" className="space-y-4">
             <TabsList className="grid w-full grid-cols-2">

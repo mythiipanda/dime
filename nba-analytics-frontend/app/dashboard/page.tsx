@@ -15,17 +15,14 @@ import {
   Table,
   AlertCircle,
 } from "lucide-react";
-// import LiveScores from "@/components/live-scores/LiveScores"; // Commented out import
-// import UserActivityFeed from "@/components/dashboard/UserActivityFeed"; // Removed incorrect import
-// import { fetchTrackedItems } from "@/lib/actions/tracking"; // Removed incorrect import
 
 export default function DashboardPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1> {/* Size 1: text-2xl font-semibold */}
-          <p className="text-base font-regular text-muted-foreground"> {/* Size 3: text-base font-regular */}
+          <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
+          <p className="text-base font-regular text-muted-foreground">
             Your central hub for NBA analytics and insights
           </p>
         </div>
@@ -52,42 +49,42 @@ export default function DashboardPage() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-regular">Total Players Analyzed</CardTitle> {/* Size 4: text-sm font-regular */}
+            <CardTitle className="text-sm font-regular">Total Players Analyzed</CardTitle>
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-semibold">450+</div> {/* Size 1: text-2xl font-semibold */}
-            <p className="text-sm font-regular text-muted-foreground">Active NBA players</p> {/* Size 4: text-sm font-regular */}
+            <div className="text-2xl font-semibold">450+</div>
+            <p className="text-sm font-regular text-muted-foreground">Active NBA players</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-regular">Games Tracked</CardTitle> {/* Size 4: text-sm font-regular */}
+            <CardTitle className="text-sm font-regular">Games Tracked</CardTitle>
             <Calendar className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-semibold">1,230</div> {/* Size 1: text-2xl font-semibold */}
-            <p className="text-sm font-regular text-muted-foreground">2023-24 season</p> {/* Size 4: text-sm font-regular */}
+            <div className="text-2xl font-semibold">1,230</div>
+            <p className="text-sm font-regular text-muted-foreground">2023-24 season</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-regular">Teams Covered</CardTitle> {/* Size 4: text-sm font-regular */}
+            <CardTitle className="text-sm font-regular">Teams Covered</CardTitle>
             <Trophy className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-semibold">30</div> {/* Size 1: text-2xl font-semibold */}
-            <p className="text-sm font-regular text-muted-foreground">All NBA teams</p> {/* Size 4: text-sm font-regular */}
+            <div className="text-2xl font-semibold">30</div>
+            <p className="text-sm font-regular text-muted-foreground">All NBA teams</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-regular">Data Points</CardTitle> {/* Size 4: text-sm font-regular */}
+            <CardTitle className="text-sm font-regular">Data Points</CardTitle>
             <BarChart2 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-semibold">1M+</div> {/* Size 1: text-2xl font-semibold */}
-            <p className="text-sm font-regular text-muted-foreground">Statistical entries</p> {/* Size 4: text-sm font-regular */}
+            <div className="text-2xl font-semibold">1M+</div>
+            <p className="text-sm font-regular text-muted-foreground">Statistical entries</p>
           </CardContent>
         </Card>
       </div>
@@ -196,25 +193,13 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      {/* Live Scores Section - Commented out */}
-      {/* 
-      <div className="mb-8">
-         <h2 className="text-2xl font-semibold mb-4">Live Scores</h2>
-         <LiveScores /> 
-      </div> 
-      */}
-
-      {/* Placeholder for User Activity Feed or other sections */}
-       {/* <UserActivityFeed /> */}
-
-       {/* Example Alert */}
-        <Alert>
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Heads up!</AlertTitle>
-          <AlertDescription>
-            NBA API usage limits may apply. Monitor your requests.
-          </AlertDescription>
-        </Alert>
+      <Alert>
+        <AlertCircle className="h-4 w-4" />
+        <AlertTitle>Heads up!</AlertTitle>
+        <AlertDescription>
+          NBA API usage limits may apply. Monitor your requests.
+        </AlertDescription>
+      </Alert>
 
     </div>
   );

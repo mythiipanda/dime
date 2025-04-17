@@ -61,11 +61,14 @@ export async function GET(request: NextRequest) {
     console.log(`Successfully fetched scoreboard data for ${game_date || 'today'} from backend.`);
     return NextResponse.json(data);
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Error fetching scoreboard data:', error);
-    const status = error.cause?.status || (error.message.includes("Invalid date format") ? 400 : 500);
+    // Attempt to get status code from error cause, or infer based on message
+    const status = (error instanceof Error && (error as any).cause?.status) || 
+                   (error instanceof Error && error.message.includes("Invalid date format") ? 400 : 500);
+    const message = error instanceof Error ? error.message : 'Failed to fetch scoreboard data';
     return NextResponse.json(
-      { message: error.message || 'Failed to fetch scoreboard data' }, 
+      { message }, 
       { status: status }
     );
   }

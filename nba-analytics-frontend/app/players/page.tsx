@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import {
-  Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter,
+  Card, CardContent, CardDescription, CardHeader, CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -14,20 +14,13 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
-  Search, Filter, AlertCircle, ChevronRight, TrendingUp, BarChart2, Trophy, UserRoundX, Info,
+  Search, Trophy,
 } from "lucide-react";
-import {
-  Command, CommandGroup, CommandItem, CommandList,
-} from "@/components/ui/command";
 import { Input } from "@/components/ui/input";
-import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { API_BASE_URL } from "@/lib/config";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ExclamationTriangleIcon } from '@radix-ui/react-icons';
 
 // --- Expanded Interfaces based on PlayerProfileV2 structure ---
@@ -142,30 +135,21 @@ function PlayerProfileCard({ playerData, headshotUrl }: PlayerProfileCardProps) 
   // Sort seasons descending for display
   const sortedRegularSeasons = useMemo(() => {
       const sorted = seasonRegular?.slice().sort((a, b) => (b.SEASON_ID ?? '').localeCompare(a.SEASON_ID ?? '')) || [];
-      // Log the result of sorting
-      console.log("PlayerProfileCard sortedRegularSeasons:", sorted);
       return sorted;
     },
       [seasonRegular]
   );
   const sortedPostSeasons = useMemo(() => {
       const sorted = seasonPost?.slice().sort((a, b) => (b.SEASON_ID ?? '').localeCompare(a.SEASON_ID ?? '')) || [];
-      // Log the result of sorting
-      console.log("PlayerProfileCard sortedPostSeasons:", sorted);
       return sorted;
     },
       [seasonPost]
   );
 
   const renderSeasonTable = (seasons: CareerOrSeasonStat[], title: string) => {
-    // Log when the function is called and the data it receives
-    console.log(`renderSeasonTable called for ${title} with ${seasons?.length ?? 0} seasons.`);
-
     if (!seasons || seasons.length === 0) {
-        console.log(`renderSeasonTable (${title}): Condition matched, rendering 'No data'.`);
         return <p className="text-muted-foreground text-center py-4">No {title.toLowerCase()} data available.</p>;
     }
-    console.log(`renderSeasonTable (${title}): Rendering table.`);
     return (
         <div>
             <h3 className="text-lg font-semibold mb-2">{title} by Season</h3>
@@ -300,11 +284,6 @@ function PlayerProfileCard({ playerData, headshotUrl }: PlayerProfileCardProps) 
          </Tabs>
 
       </CardContent>
-       {/* Footer can be added back if needed */}
-       {/* <CardFooter className="justify-end space-x-2">
-         <Button variant=\"outline\">Full Stats</Button>
-         <Button>Compare</Button>
-       </CardFooter> */}
     </Card>
   );
 }
@@ -403,7 +382,7 @@ export default function PlayersPage() {
           career_highs: rawData.career_highs ?? null,
       };
       setPlayerData(mappedPlayerData);
-      const playerId = mappedPlayerData.player_info.PERSON_ID;
+      const playerId = mappedPlayerData.player_info!.PERSON_ID;
       console.log(`Successfully fetched profile data for ID: ${playerId}`);
 
       // --- Fetch Headshot URL ---
@@ -523,9 +502,9 @@ export default function PlayersPage() {
           <Input 
                type="search"
                placeholder="Search for a player (e.g., LeBron James)"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-               className="pr-10 w-full" // Adjust padding for potential button/icon
+               value={searchTerm}
+               onChange={(e) => setSearchTerm(e.target.value)}
+               className="pr-10 w-full"
              />
              <Button type="submit" disabled={isLoading}>
                {isLoading ? 'Searching...' : 'Search'}

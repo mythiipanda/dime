@@ -20,11 +20,8 @@ export function TeamsHeader() {
   const currentSeason = (searchParams.get("season") as Season) || "2024-25"
 
   const handleSeasonChange = (season: Season) => {
-    // Create a new URLSearchParams object with current params
     const params = new URLSearchParams(searchParams.toString())
-    // Update or add the season parameter
     params.set("season", season)
-    // Update the URL with the new season
     router.push(`/teams?${params.toString()}`)
   }
 

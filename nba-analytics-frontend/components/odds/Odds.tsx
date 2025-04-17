@@ -38,8 +38,10 @@ const Odds: React.FC = () => {
         if (!res.ok) throw new Error(res.statusText);
         const data = await res.json();
         setGames(data.games || []);
-      } catch (e: any) {
-        setError(e.message);
+      } catch (e: unknown) {
+        console.error("Failed to fetch odds:", e);
+        const message = e instanceof Error ? e.message : "An unknown error occurred";
+        setError(message);
       } finally {
         setLoading(false);
       }

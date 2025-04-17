@@ -187,10 +187,9 @@ export default function GamesPage() {
              setScoreboardData(data);
     setError(null);
              if (isLoading) {
-                console.log("Setting isLoading to false"); // Check if this logs
                 setIsLoading(false); 
              }
-             console.log("Scoreboard state updated via WebSocket"); // Renamed log for clarity
+             console.log("Scoreboard state updated via WebSocket");
            } else {
              console.warn("Received invalid data format from WebSocket:", event.data);
            }
@@ -330,13 +329,14 @@ export default function GamesPage() {
         if (!isPollingUpdate) console.log("PBP data fetched successfully:", data.result);
       } else {
         console.error("Invalid PBP data structure received:", data);
-        // Keep previous data on polling error?
+        // Keep previous data on polling error to avoid clearing the view
         if (!isPollingUpdate) setPbpError("Received invalid PBP data structure.");
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Failed to load PBP data:", err);
-      // Keep previous data on polling error?
-      if (!isPollingUpdate) setPbpError(err.message || "Could not load play-by-play.");
+      // Keep previous data on polling error to avoid clearing the view
+      const message = err instanceof Error ? err.message : "Could not load play-by-play.";
+      if (!isPollingUpdate) setPbpError(message);
     } finally {
        // Only stop initial loading indicator
       if (!isPollingUpdate) {
@@ -476,8 +476,6 @@ export default function GamesPage() {
       {error && !isLoading && (
          <div className="text-center text-red-600 dark:text-red-400 pt-10">
            <p>Error: {error}</p>
-           {/* Optional: Add retry logic specific to HTTP/WS if needed */}
-           {/* <Button onClick={fetchData} variant="outline" className="mt-4">Retry</Button> */}
          </div>
        )}
 

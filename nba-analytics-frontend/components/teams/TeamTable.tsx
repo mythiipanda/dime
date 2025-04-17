@@ -9,7 +9,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { TeamStanding, getClinchIndicators, formatStreak, formatRecord } from "@/lib/api/teams";
+import { TeamStanding, getClinchIndicators, formatStreak } from "@/lib/api/teams";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -89,8 +89,10 @@ interface TeamTableSkeletonProps {
   rowCount?: number;
 }
 
+const DEFAULT_SKELETON_ROW_COUNT = 10;
+
 // Basic Skeleton component for the table
-export function TeamTableSkeleton({ conference, rowCount = 10 }: TeamTableSkeletonProps) {
+export function TeamTableSkeleton({ conference, rowCount = DEFAULT_SKELETON_ROW_COUNT }: TeamTableSkeletonProps) {
   return (
     <div>
       <h2 className="text-xl font-semibold mb-4">{conference} Conference</h2>

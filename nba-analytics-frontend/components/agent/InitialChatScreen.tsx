@@ -13,7 +13,6 @@ import {
   StarIcon,
   TrophyIcon
 } from "lucide-react"
-import { PromptInputForm } from "./PromptInputForm"
 
 const EXAMPLE_PROMPTS = [
   {
@@ -56,11 +55,9 @@ const EXAMPLE_PROMPTS = [
 
 interface InitialChatScreenProps {
   onExampleClick: (prompt: string) => void
-  onSubmit: (prompt: string) => void
-  isLoading?: boolean
 }
 
-export function InitialChatScreen({ onExampleClick, onSubmit, isLoading }: InitialChatScreenProps) {
+export function InitialChatScreen({ onExampleClick }: InitialChatScreenProps) {
   return (
     <div className="space-y-6">
       {/* Welcome Section */}

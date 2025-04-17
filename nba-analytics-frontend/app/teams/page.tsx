@@ -2,7 +2,7 @@ import { Suspense } from "react";
 // Fetch raw standings data instead of transformed team stats
 import { getLeagueStandings, TeamStanding } from "@/lib/api/teams"; 
 import { TeamTable, TeamTableSkeleton } from "@/components/teams/TeamTable";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"; // Import Tabs components
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface PageProps {
   searchParams?: { [key: string]: string | string[] | undefined };
@@ -16,23 +16,20 @@ export default async function TeamsStandingsPage({ searchParams }: PageProps) {
   console.log("Fetching standings for season:", season);
 
   try {
-    // Fetch raw standings data
     const { standings } = await getLeagueStandings(season);
 
-    // Separate standings by conference
     const easternStandings: TeamStanding[] = standings
       .filter((team) => team.Conference === "East")
-      .sort((a, b) => a.PlayoffRank - b.PlayoffRank); // Sort by rank
+      .sort((a, b) => a.PlayoffRank - b.PlayoffRank);
       
     const westernStandings: TeamStanding[] = standings
       .filter((team) => team.Conference === "West")
-      .sort((a, b) => a.PlayoffRank - b.PlayoffRank); // Sort by rank
+      .sort((a, b) => a.PlayoffRank - b.PlayoffRank);
 
     return (
       <div className="container mx-auto px-4 py-8">
         <h1 className="text-3xl font-bold mb-8 text-center">NBA Standings ({season})</h1>
         
-        {/* Add Tabs component */}
         <Tabs defaultValue="eastern" className="w-full">
           <TabsList className="grid w-full grid-cols-2 mb-6">
             <TabsTrigger value="eastern">Eastern Conference</TabsTrigger>

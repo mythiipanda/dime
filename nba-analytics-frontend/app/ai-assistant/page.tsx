@@ -8,7 +8,6 @@ import { PromptInputForm } from '@/components/agent/PromptInputForm';
 import { ChatMessageDisplay } from '@/components/agent/ChatMessageDisplay';
 import { ErrorDisplay } from '@/components/agent/ErrorDisplay';
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 
 export default function AiAssistantPage() {
   const {
@@ -58,8 +57,6 @@ export default function AiAssistantPage() {
               <div className="w-full max-w-5xl">
                 <InitialChatScreen 
                   onExampleClick={handleExamplePromptClick}
-                  onSubmit={handlePromptSubmit}
-                  isLoading={isLoading}
                 />
               </div>
             </div>

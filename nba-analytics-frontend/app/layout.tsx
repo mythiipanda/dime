@@ -5,7 +5,7 @@ import { SidebarNav } from "@/components/layout/SidebarNav";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Menu, Settings, CircleDot } from "lucide-react";
-import { ModeToggle } from "@/components/mode-toggle"; // Added ModeToggle import
+import { ModeToggle } from "@/components/mode-toggle";
 import "./globals.css";
 import { cn } from '@/lib/utils'
 
@@ -51,12 +51,12 @@ export default function RootLayout({
                 <div className="space-y-6">
                   {/* Logo */}
                   <div className="flex items-center gap-2 px-2">
-                    <div className="rounded-lg bg-primary p-2"> {/* Changed p-1.5 to p-2 */}
+                    <div className="rounded-lg bg-primary p-2">
                       <CircleDot className="h-6 w-6 text-primary-foreground" />
                     </div>
                     <div className="flex flex-col">
-                      <span className="text-xl font-semibold tracking-tight">Dime</span> {/* Size 2: text-xl font-semibold */}
-                      <span className="text-sm font-regular text-muted-foreground">NBA Analytics</span> {/* Size 4: text-sm font-regular */}
+                      <span className="text-xl font-semibold tracking-tight">Dime</span>
+                      <span className="text-sm font-regular text-muted-foreground">NBA Analytics</span>
                     </div>
                   </div>
                   
@@ -72,14 +72,14 @@ export default function RootLayout({
                       <AvatarFallback>U</AvatarFallback>
                     </Avatar>
                     <div className="flex-1">
-                      <p className="text-sm font-regular leading-none">John Doe</p> {/* Size 4: text-sm font-regular */}
-                      <p className="text-sm font-regular text-muted-foreground mt-1">Pro Plan</p> {/* Size 4: text-sm font-regular */}
+                      <p className="text-sm font-regular leading-none">John Doe</p>
+                      <p className="text-sm font-regular text-muted-foreground mt-1">Pro Plan</p>
                     </div>
                     <Button variant="ghost" size="icon" className="hover:bg-accent">
                       <Settings className="h-4 w-4" />
                       <span className="sr-only">Settings</span>
                     </Button>
-                    <ModeToggle /> {/* Added ModeToggle component */}
+                    <ModeToggle />
                   </div>
                 </div>
               </div>
@@ -97,8 +97,8 @@ export default function RootLayout({
                     <CircleDot className="h-5 w-5 text-primary-foreground" />
                   </div>
                   <div className="flex flex-col">
-                    <span className="text-xl font-semibold tracking-tight">Dime</span> {/* Size 2: text-xl font-semibold */}
-                    <span className="text-sm font-regular text-muted-foreground">NBA Analytics</span> {/* Size 4: text-sm font-regular */}
+                    <span className="text-xl font-semibold tracking-tight">Dime</span>
+                    <span className="text-sm font-regular text-muted-foreground">NBA Analytics</span>
                   </div>
                 </div>
               </div>

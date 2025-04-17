@@ -34,12 +34,15 @@ export async function GET(request: NextRequest) {
     });
     if (!res.ok) {
       const errorData = await res.json().catch(() => ({ detail: res.statusText }));
+      console.error(`Backend error fetching standings: ${res.status} ${res.statusText}`, errorData);
       return NextResponse.json(errorData, { status: res.status });
     }
     const data: StandingsData = await res.json();
     return NextResponse.json(data);
-  } catch (error: any) {
-    return NextResponse.json({ message: error.message }, { status: 500 });
+  } catch (error: unknown) {
+    console.error('Error fetching standings data:', error);
+    const message = error instanceof Error ? error.message : 'An unknown error occurred';
+    return NextResponse.json({ message }, { status: 500 });
   }
 }
 

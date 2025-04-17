@@ -6,7 +6,6 @@ import { Card } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 import { UserIcon, BotIcon, Loader2, CheckCircle2, XCircle, ChevronDown, ChevronUp, Brain, Copy, Check, Link, BookOpen } from "lucide-react"
 import ReactMarkdown, { Components } from 'react-markdown'
-import { Progress } from "@/components/ui/progress"
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
