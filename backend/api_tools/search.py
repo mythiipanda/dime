@@ -49,11 +49,15 @@ def find_players_by_name_fragment(name_fragment: str, limit: int = DEFAULT_PLAYE
 
     try:
         for player in all_players:
+            # Check if the fragment matches the full name
             if name_fragment_lower in player['full_name'].lower():
+                # Add player info including the is_active flag
                 matching_players.append({
                     'id': player['id'],
-                    'full_name': player['full_name']
+                    'full_name': player['full_name'],
+                    'is_active': player.get('is_active', False) # Include is_active status, default to False if missing
                 })
+                # Stop if we've reached the limit
                 if len(matching_players) >= limit:
                     break
     except Exception as e:

@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   BarChart2,
   TrendingUp,
@@ -17,6 +18,8 @@ import {
 } from "lucide-react";
 
 export default function DashboardPage() {
+  const isLoading = false;
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -102,8 +105,16 @@ export default function DashboardPage() {
                 <CardTitle>Hot Players</CardTitle>
                 <CardDescription>Players with notable recent performances</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-2">
-                {/* Add player list here */}
+              <CardContent className="space-y-3">
+                {isLoading ? (
+                  <>
+                    <Skeleton className="h-5 w-4/5" />
+                    <Skeleton className="h-5 w-3/5" />
+                    <Skeleton className="h-5 w-4/5" />
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Player data goes here...</p>
+                )}
               </CardContent>
             </Card>
             <Card>
@@ -111,8 +122,16 @@ export default function DashboardPage() {
                 <CardTitle>Team Streaks</CardTitle>
                 <CardDescription>Current winning and losing streaks</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-2">
-                {/* Add team streaks here */}
+              <CardContent className="space-y-3">
+                {isLoading ? (
+                  <>
+                    <Skeleton className="h-5 w-4/5" />
+                    <Skeleton className="h-5 w-3/5" />
+                    <Skeleton className="h-5 w-4/5" />
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Team streak data goes here...</p>
+                )}
               </CardContent>
             </Card>
             <Card>
@@ -120,8 +139,16 @@ export default function DashboardPage() {
                 <CardTitle>Upcoming Games</CardTitle>
                 <CardDescription>Next 24 hours of NBA action</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-2">
-                {/* Add upcoming games here */}
+              <CardContent className="space-y-3">
+                {isLoading ? (
+                  <>
+                    <Skeleton className="h-5 w-4/5" />
+                    <Skeleton className="h-5 w-3/5" />
+                    <Skeleton className="h-5 w-4/5" />
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Upcoming games data goes here...</p>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -134,7 +161,15 @@ export default function DashboardPage() {
                 <CardDescription>Top performers in key categories</CardDescription>
               </CardHeader>
               <CardContent>
-                {/* Add statistical leaders here */}
+                {isLoading ? (
+                  <>
+                    <Skeleton className="h-5 w-4/5 mb-2" />
+                    <Skeleton className="h-5 w-3/5 mb-2" />
+                    <Skeleton className="h-5 w-4/5" />
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Stat leaders data goes here...</p>
+                )}
               </CardContent>
             </Card>
             <Card>
@@ -143,7 +178,15 @@ export default function DashboardPage() {
                 <CardDescription>Performance metrics and trends</CardDescription>
               </CardHeader>
               <CardContent>
-                {/* Add team analysis here */}
+                {isLoading ? (
+                  <>
+                    <Skeleton className="h-5 w-4/5 mb-2" />
+                    <Skeleton className="h-5 w-3/5 mb-2" />
+                    <Skeleton className="h-5 w-4/5" />
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Team analysis data goes here...</p>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -155,7 +198,15 @@ export default function DashboardPage() {
               <CardDescription>Players, teams, and stats you follow</CardDescription>
             </CardHeader>
             <CardContent>
-              {/* Add favorites content here */}
+              {isLoading ? (
+                <>
+                  <Skeleton className="h-5 w-4/5 mb-2" />
+                  <Skeleton className="h-5 w-3/5 mb-2" />
+                  <Skeleton className="h-5 w-4/5" />
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">Favorites data goes here...</p>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -168,7 +219,15 @@ export default function DashboardPage() {
             <CardDescription>Your latest NBA analytics questions</CardDescription>
           </CardHeader>
           <CardContent>
-            {/* Add recent queries list here */}
+            {isLoading ? (
+              <>
+                <Skeleton className="h-5 w-full mb-2" />
+                <Skeleton className="h-5 w-4/5 mb-2" />
+                <Skeleton className="h-5 w-full" />
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">Recent queries list goes here...</p>
+            )}
           </CardContent>
         </Card>
         <Card>

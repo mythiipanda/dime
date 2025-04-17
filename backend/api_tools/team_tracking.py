@@ -131,46 +131,34 @@ def fetch_team_passing_stats_logic(
         if passes_made is None or passes_received is None:
             return format_response(error=Errors.DATA_PROCESSING_ERROR)
 
-        # Process into more focused format
-        processed_passes_made = []
-        for pass_data in passes_made:
-            processed_passes_made.append({
+        # Process using list comprehensions
+        processed_passes_made = [
+            {
                 "pass_from": pass_data.get("PASS_FROM"),
                 "frequency": pass_data.get("FREQUENCY"),
                 "passes": pass_data.get("PASS"),
                 "assists": pass_data.get("AST"),
                 "shooting": {
-                    "fgm": pass_data.get("FGM"),
-                    "fga": pass_data.get("FGA"),
-                    "fg_pct": pass_data.get("FG_PCT"),
-                    "fg2m": pass_data.get("FG2M"),
-                    "fg2a": pass_data.get("FG2A"),
-                    "fg2_pct": pass_data.get("FG2_PCT"),
-                    "fg3m": pass_data.get("FG3M"),
-                    "fg3a": pass_data.get("FG3A"),
-                    "fg3_pct": pass_data.get("FG3_PCT")
+                    "fgm": pass_data.get("FGM"), "fga": pass_data.get("FGA"), "fg_pct": pass_data.get("FG_PCT"),
+                    "fg2m": pass_data.get("FG2M"), "fg2a": pass_data.get("FG2A"), "fg2_pct": pass_data.get("FG2_PCT"),
+                    "fg3m": pass_data.get("FG3M"), "fg3a": pass_data.get("FG3A"), "fg3_pct": pass_data.get("FG3_PCT")
                 }
-            })
+            } for pass_data in passes_made
+        ] if passes_made else []
 
-        processed_passes_received = []
-        for pass_data in passes_received:
-            processed_passes_received.append({
+        processed_passes_received = [
+            {
                 "pass_to": pass_data.get("PASS_TO"),
                 "frequency": pass_data.get("FREQUENCY"),
                 "passes": pass_data.get("PASS"),
                 "assists": pass_data.get("AST"),
                 "shooting": {
-                    "fgm": pass_data.get("FGM"),
-                    "fga": pass_data.get("FGA"),
-                    "fg_pct": pass_data.get("FG_PCT"),
-                    "fg2m": pass_data.get("FG2M"),
-                    "fg2a": pass_data.get("FG2A"),
-                    "fg2_pct": pass_data.get("FG2_PCT"),
-                    "fg3m": pass_data.get("FG3M"),
-                    "fg3a": pass_data.get("FG3A"),
-                    "fg3_pct": pass_data.get("FG3_PCT")
+                    "fgm": pass_data.get("FGM"), "fga": pass_data.get("FGA"), "fg_pct": pass_data.get("FG_PCT"),
+                    "fg2m": pass_data.get("FG2M"), "fg2a": pass_data.get("FG2A"), "fg2_pct": pass_data.get("FG2_PCT"),
+                    "fg3m": pass_data.get("FG3M"), "fg3a": pass_data.get("FG3A"), "fg3_pct": pass_data.get("FG3_PCT")
                 }
-            })
+            } for pass_data in passes_received
+        ] if passes_received else []
 
         result = _create_team_tracking_result(
             team_id,
@@ -238,14 +226,11 @@ def fetch_team_rebounding_stats_logic(
             return format_response(error=Errors.DATA_PROCESSING_ERROR)
 
         processed_overall = {
-            "total": overall.get("REB", 0),
-            "contested": overall.get("C_REB", 0),
-            "uncontested": overall.get("UC_REB", 0),
-            "offensive": overall.get("OREB", 0),
-            "defensive": overall.get("DREB", 0),
-            "frequency": overall.get("REB_FREQUENCY", 0), # Assuming frequency is overall
+            "total": overall.get("REB", 0), "contested": overall.get("C_REB", 0),
+            "uncontested": overall.get("UC_REB", 0), "offensive": overall.get("OREB", 0),
+            "defensive": overall.get("DREB", 0), "frequency": overall.get("REB_FREQUENCY", 0),
             "pct_contested": overall.get("C_REB_PCT", 0)
-        }
+        } if overall else {}
 
         result = _create_team_tracking_result(
             team_id,
@@ -317,24 +302,20 @@ def fetch_team_shooting_stats_logic(
             return format_response(error=Errors.DATA_PROCESSING_ERROR)
 
         processed_overall = {
-            "fga_frequency": overall.get("FGA_FREQUENCY", 0),
-            "fgm": overall.get("FGM", 0),
-            "fga": overall.get("FGA", 0),
-            "fg_pct": overall.get("FG_PCT", 0),
-            "efg_pct": overall.get("EFG_PCT", 0),
-            "fg2_pct": overall.get("FG2_PCT", 0),
+            "fga_frequency": overall.get("FGA_FREQUENCY", 0), "fgm": overall.get("FGM", 0),
+            "fga": overall.get("FGA", 0), "fg_pct": overall.get("FG_PCT", 0),
+            "efg_pct": overall.get("EFG_PCT", 0), "fg2_pct": overall.get("FG2_PCT", 0),
             "fg3_pct": overall.get("FG3_PCT", 0)
-        }
+        } if overall else {}
         
-        processed_general = { 
+        # Use dictionary comprehension for general shooting stats
+        processed_general = {
             data.get("SHOT_TYPE", "unknown").lower().replace(" ", "_"): {
-                "fga_frequency": data.get("FGA_FREQUENCY", 0),
-                "fgm": data.get("FGM", 0),
-                "fga": data.get("FGA", 0),
-                "fg_pct": data.get("FG_PCT", 0),
+                "fga_frequency": data.get("FGA_FREQUENCY", 0), "fgm": data.get("FGM", 0),
+                "fga": data.get("FGA", 0), "fg_pct": data.get("FG_PCT", 0),
                 "efg_pct": data.get("EFG_PCT", 0)
             } for data in general
-        }
+        } if general else {}
 
         result = _create_team_tracking_result(
             team_id,

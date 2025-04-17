@@ -1,7 +1,9 @@
 import logging
 import json
-from typing import Optional
+from typing import Optional, Dict, Any
 import pandas as pd
+from functools import lru_cache
+from datetime import datetime, timedelta
 # Import new endpoints
 from nba_api.stats.endpoints import leaguestandingsv3, scoreboardv2, drafthistory, leagueleaders, leaguedashlineups, leaguehustlestatsplayer
 # Import necessary parameters
@@ -12,6 +14,24 @@ from backend.api_tools.utils import _process_dataframe, format_response
 from backend.config import DEFAULT_TIMEOUT, Errors, CURRENT_SEASON
 
 logger = logging.getLogger(__name__)
+
+CACHE_DURATION = 3600  # Cache duration in seconds (1 hour)
+
+# Cache standings for 1 hour to reduce API calls
+@lru_cache(maxsize=32)
+def get_cached_standings(season: str, season_type: str, timestamp: str) -> pd.DataFrame:
+    """
+    Cached wrapper for leaguestandingsv3.LeagueStandingsV3.
+    timestamp parameter forces cache invalidation every hour.
+    Returns processed DataFrame with standings data.
+    """
+    logger.info(f"Cache miss for standings - fetching new data for season {season}")
+    standings = leaguestandingsv3.LeagueStandingsV3(
+        season=season,
+        season_type=season_type,
+        timeout=DEFAULT_TIMEOUT
+    )
+    return standings.standings.get_data_frame()
 
 def fetch_league_standings_logic(
     season: Optional[str] = None,
@@ -26,31 +46,33 @@ def fetch_league_standings_logic(
     logger.info(f"Executing fetch_league_standings_logic for season: {season}, type: {season_type}")
     
     try:
-        standings = leaguestandingsv3.LeagueStandingsV3(
-            season=season,
-            season_type=season_type,
-            timeout=DEFAULT_TIMEOUT
-        )
+        # Generate timestamp for current hour to use as cache key
+        cache_timestamp = datetime.now().replace(minute=0, second=0, microsecond=0).isoformat()
         
-        standings_df = standings.standings.get_data_frame()
+        # Get cached standings data
+        standings_df = get_cached_standings(season, season_type, cache_timestamp)
         if standings_df.empty:
             logger.warning(f"No standings data found for season {season}")
             return format_response({"standings": []})
         
-        # Process the DataFrame to match frontend expectations
-        processed_standings = []
-        for _, row in standings_df.iterrows():
-            try:
-                standing = {
+        try:
+            # Process DataFrame using vectorized operations
+            standings_df = standings_df.assign(
+                TeamName=standings_df['TeamCity'] + ' ' + standings_df['TeamName'],
+                GB=standings_df['ConferenceGamesBack'].fillna(0)
+            )
+            
+            # Convert to list of dictionaries
+            processed_standings = standings_df.apply(
+                lambda row: {
                     "TeamID": int(row["TeamID"]),
-                    "TeamName": f"{row['TeamCity']} {row['TeamName']}".strip(),
+                    "TeamName": row["TeamName"].strip(),
                     "Conference": row["Conference"],
                     "PlayoffRank": int(row["PlayoffRank"]),
                     "WinPct": float(row["WinPCT"]),
-                    "GB": float(row.get("ConferenceGamesBack", 0)),
+                    "GB": float(row["GB"]),
                     "L10": row["L10"],
                     "STRK": row["strCurrentStreak"],
-                    # Additional fields that match the frontend TeamStanding interface
                     "WINS": int(row["WINS"]),
                     "LOSSES": int(row["LOSSES"]),
                     "HOME": row["HOME"],
@@ -60,21 +82,21 @@ def fetch_league_standings_logic(
                     "DivisionRank": int(row["DivisionRank"]),
                     "ConferenceRecord": row["ConferenceRecord"],
                     "DivisionRecord": row["DivisionRecord"]
-                }
-                processed_standings.append(standing)
-            except (ValueError, KeyError) as e:
-                logger.error(f"Error processing standing row: {e}", exc_info=True)
-                continue
-        
-        # Sort standings by conference and playoff rank
-        processed_standings.sort(key=lambda x: (x["Conference"], x["PlayoffRank"]))
-        
-        result = {
-            "standings": processed_standings
-        }
-        
-        return format_response(result)
-        
+                },
+                axis=1
+            ).tolist()
+            
+            # Sort standings by conference and playoff rank
+            processed_standings.sort(key=lambda x: (x["Conference"], x["PlayoffRank"]))
+            return format_response({"standings": processed_standings})
+            
+        except (ValueError, KeyError) as e:
+            logger.error(f"Error processing standings data: {e}", exc_info=True)
+            return format_response(error=Errors.STANDINGS_API.format(
+                season=season,
+                error="Error processing standings data"
+            ))
+            
     except Exception as e:
         logger.error(f"Error in fetch_league_standings_logic: {str(e)}", exc_info=True)
         error_msg = str(e) if isinstance(e, Exception) else "Unknown error"

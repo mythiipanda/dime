@@ -109,7 +109,7 @@ export async function getLeagueStandings(season?: string): Promise<StandingsResp
             data = JSON.parse(parsedData);
         } catch (secondParseError: unknown) {
              console.error('Server', 'Failed second JSON parse:', secondParseError);
-             console.error('Server', 'String content that failed second parse:', parsedData.substring(0, 500) + '...');
+             console.error('Server', 'String content that failed second parse:', (parsedData as string).substring(0, 500) + '...');
              throw new Error(`Failed second JSON parse (double encoding issue?): ${secondParseError instanceof Error ? secondParseError.message : String(secondParseError)}`);
         }
     } else {
@@ -229,10 +229,10 @@ export function getClinchIndicators(indicator?: string): string[] {
       case 'y': return 'Clinched Division Title'; // Most common meaning for y
       case 'z': return 'Clinched Conference Best Record';
       case '*': return 'Clinched Conference Best Record'; // Or potentially 'Clinched' generally
-      case 'w': return 'Clinched Conference/Division'; // Ambiguous - label cautiously or check API docs
+      case 'w': return 'Clinched Conference/Division';
       case 'p': return 'Clinched Play-In Spot';
       case 'pi': return 'Clinched Play-In Spot';
-      case 'e': return 'Eliminated from Contention';
+      case 'e': return 'Clinched Conference/Division';
       case 'o': return 'Eliminated from Contention';
 
       // Division Titles

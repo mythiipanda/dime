@@ -133,47 +133,28 @@ def fetch_team_info_and_roster_logic(team_identifier: str, season: str = CURRENT
             logger.error(error_msg)
             return format_response(error=error_msg)
 
-        # Process team info into a more compact format
-        compact_team_info = {}
-        if team_info_dict:
-            key_fields = ["TEAM_NAME", "TEAM_CITY", "TEAM_ABBREVIATION", "TEAM_CONFERENCE", "TEAM_DIVISION", 
-                         "W", "L", "PCT", "CONF_RANK", "DIV_RANK", "PTS_PG", "OPP_PTS_PG", "ARENA_NAME", "HEAD_COACH"]
-            compact_team_info = {k: team_info_dict.get(k) for k in key_fields if k in team_info_dict}
+        # Process dataframes into compact dictionaries/lists using pandas
+        compact_team_info = team_info_dict if team_info_dict else {}
+        compact_team_ranks = team_ranks_dict if team_ranks_dict else {}
         
-        # Process team ranks into a more compact format
-        compact_team_ranks = {}
-        if team_ranks_dict:
-            rank_fields = ["MIN_RANK", "PTS_RANK", "REB_RANK", "AST_RANK", "STL_RANK", "BLK_RANK", 
-                          "FG_PCT_RANK", "FT_PCT_RANK", "FG3_PCT_RANK", "NET_RATING_RANK"]
-            compact_team_ranks = {k: team_ranks_dict.get(k) for k in rank_fields if k in team_ranks_dict}
-            
-        # Process roster into a more compact format
+        # Define desired columns and rename mapping for roster
+        roster_cols = {
+            "PLAYER_ID": "PLAYER_ID", "PLAYER": "PLAYER", "NUM": "JERSEY",
+            "POSITION": "POSITION", "HEIGHT": "HEIGHT", "WEIGHT": "WEIGHT",
+            "AGE": "AGE", "EXP": "EXPERIENCE", "DRAFT_YEAR": "DRAFT_YEAR"
+        }
         compact_roster = []
         if roster_list:
-            for player in roster_list:
-                compact_player = {
-                    "PLAYER_ID": player.get("PLAYER_ID"),
-                    "PLAYER": player.get("PLAYER"),
-                    "JERSEY": player.get("NUM"),
-                    "POSITION": player.get("POSITION"),
-                    "HEIGHT": player.get("HEIGHT"),
-                    "WEIGHT": player.get("WEIGHT"),
-                    "AGE": player.get("AGE"),
-                    "EXPERIENCE": player.get("EXP"),
-                    "DRAFT_YEAR": player.get("DRAFT_YEAR")
-                }
-                compact_roster.append(compact_player)
-                
-        # Process coaches into a more compact format
+            roster_df = pd.DataFrame(roster_list)
+            # Select and rename columns, then convert to list of dicts
+            compact_roster = roster_df.filter(items=roster_cols.keys()).rename(columns=roster_cols).to_dict('records')
+
+        # Define desired columns and rename mapping for coaches
+        coach_cols = {"COACH_NAME": "COACH_NAME", "COACH_TYPE": "COACH_TYPE", "COACH_TITLE": "COACH_TITLE"}
         compact_coaches = []
         if coaches_list:
-            for coach in coaches_list:
-                compact_coach = {
-                    "COACH_NAME": coach.get("COACH_NAME"),
-                    "COACH_TYPE": coach.get("COACH_TYPE"),
-                    "COACH_TITLE": coach.get("COACH_TITLE")
-                }
-                compact_coaches.append(compact_coach)
+            coach_df = pd.DataFrame(coaches_list)
+            compact_coaches = coach_df.filter(items=coach_cols.keys()).rename(columns=coach_cols).to_dict('records')
 
         # Create the final compact result
         result = {
@@ -247,15 +228,9 @@ def fetch_team_stats_logic(team_identifier: str, season: str = CURRENT_SEASON) -
             except Exception as hist_error:
                 logger.warning(f"Could not fetch historical stats: {str(hist_error)}")
 
-            # Create compact result with key statistics
-            key_stats = [
-                "GP", "W", "L", "W_PCT", "MIN", "FGM", "FGA", "FG_PCT", 
-                "FG3M", "FG3A", "FG3_PCT", "FTM", "FTA", "FT_PCT",
-                "OREB", "DREB", "REB", "AST", "TOV", "STL", "BLK",
-                "BLKA", "PF", "PFD", "PTS", "PLUS_MINUS"
-            ]
-            
-            compact_stats = {k: overall_stats.get(k) for k in key_stats if k in overall_stats}
+            # Create compact result using the overall_stats dictionary directly
+            # (assuming _process_dataframe already returns a suitable dict)
+            compact_stats = overall_stats if overall_stats else {}
             
             result = {
                 "team_id": team_id,

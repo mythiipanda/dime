@@ -399,12 +399,29 @@ def fetch_player_defense_logic(
             logger.debug(f"playerdashptshotdefend API call successful for ID: {player_id}")
             
             defense_df = defense_endpoint.get_data_frames()[0]
-            defense_stats = _process_dataframe(defense_df, single_row=False)
-            
-            if defense_stats is None or not defense_stats:
+            defense_stats_list = _process_dataframe(defense_df, single_row=False)
+
+            if defense_stats_list is None or not defense_stats_list:
                 logger.error(f"No defense stats found for {player_actual_name}")
                 return format_response(error=f"No defense stats available for {player_actual_name} in {season}")
-            
+
+            # Process into a dictionary keyed by DEFENSE_CATEGORY for robust access
+            defense_by_category = {item.get("DEFENSE_CATEGORY", "Unknown"): item for item in defense_stats_list}
+
+            # Helper to safely get stats from the category dictionary
+            def get_category_stats(category_name, default_val=0):
+                category_data = defense_by_category.get(category_name, {})
+                return {
+                    "frequency": category_data.get("FREQ", default_val),
+                    "field_goal_percentage_allowed": category_data.get("D_FG_PCT", default_val),
+                    "impact": category_data.get("PCT_PLUSMINUS", default_val)
+                }
+
+            overall_stats = defense_by_category.get("Overall", {})
+            three_pt_stats = get_category_stats("3 Pointers")
+            two_pt_stats = get_category_stats("2 Pointers")
+            rim_stats = get_category_stats("Less Than 6Ft") # Assuming 'Less Than 6Ft' corresponds to rim protection
+
             # Create a more structured and summarized response
             defensive_summary = {
                 "player_name": player_actual_name,
@@ -413,27 +430,15 @@ def fetch_player_defense_logic(
                 "season_type": season_type,
                 "per_mode": per_mode,
                 "summary": {
-                    "games_played": defense_stats[0].get("GP", 0),
+                    "games_played": overall_stats.get("GP", 0),
                     "overall_defense": {
-                        "field_goal_percentage_allowed": defense_stats[0].get("D_FG_PCT", 0),
-                        "league_average": defense_stats[0].get("NORMAL_FG_PCT", 0),
-                        "impact": defense_stats[0].get("PCT_PLUSMINUS", 0)
+                        "field_goal_percentage_allowed": overall_stats.get("D_FG_PCT", 0),
+                        "league_average": overall_stats.get("NORMAL_FG_PCT", 0),
+                        "impact": overall_stats.get("PCT_PLUSMINUS", 0)
                     },
-                    "three_point_defense": {
-                        "frequency": defense_stats[1].get("FREQ", 0),
-                        "field_goal_percentage_allowed": defense_stats[1].get("D_FG_PCT", 0),
-                        "impact": defense_stats[1].get("PCT_PLUSMINUS", 0)
-                    },
-                    "two_point_defense": {
-                        "frequency": defense_stats[2].get("FREQ", 0),
-                        "field_goal_percentage_allowed": defense_stats[2].get("D_FG_PCT", 0),
-                        "impact": defense_stats[2].get("PCT_PLUSMINUS", 0)
-                    },
-                    "rim_protection": {
-                        "frequency": defense_stats[3].get("FREQ", 0),
-                        "field_goal_percentage_allowed": defense_stats[3].get("D_FG_PCT", 0),
-                        "impact": defense_stats[3].get("PCT_PLUSMINUS", 0)
-                    }
+                    "three_point_defense": three_pt_stats,
+                    "two_point_defense": two_pt_stats,
+                    "rim_protection": rim_stats # Stats for shots less than 6ft
                 }
             }
             
@@ -484,22 +489,16 @@ def fetch_player_hustle_stats_logic(
             logger.error(f"No hustle stats found for season {season}")
             return format_response(error=f"No hustle stats available for season {season}")
         
-        # Process hustle stats
-        hustle_stats = []
-        for _, row in hustle_df.iterrows():
-            player_stats = {
+        # Process hustle stats using list comprehension
+        hustle_stats = [
+            {
                 "player": {
-                    "id": row.get("PLAYER_ID"),
-                    "name": row.get("PLAYER_NAME"),
-                    "team": row.get("TEAM_ABBREVIATION")
+                    "id": row.get("PLAYER_ID"), "name": row.get("PLAYER_NAME"), "team": row.get("TEAM_ABBREVIATION")
                 },
-                "games_played": row.get("G", 0),
-                "minutes": row.get("MIN", 0),
+                "games_played": row.get("G", 0), "minutes": row.get("MIN", 0),
                 "defensive_stats": {
-                    "charges_drawn": row.get("CHARGES_DRAWN", 0),
-                    "contested_shots": row.get("CONTESTED_SHOTS", 0),
-                    "contested_shots_3pt": row.get("CONTESTED_SHOTS_3PT", 0),
-                    "contested_shots_2pt": row.get("CONTESTED_SHOTS_2PT", 0),
+                    "charges_drawn": row.get("CHARGES_DRAWN", 0), "contested_shots": row.get("CONTESTED_SHOTS", 0),
+                    "contested_shots_3pt": row.get("CONTESTED_SHOTS_3PT", 0), "contested_shots_2pt": row.get("CONTESTED_SHOTS_2PT", 0),
                     "deflections": row.get("DEFLECTIONS", 0)
                 },
                 "loose_ball_stats": {
@@ -508,16 +507,14 @@ def fetch_player_hustle_stats_logic(
                     "loose_balls_recovered_defensive": row.get("LOOSE_BALLS_RECOVERED_DEF", 0)
                 },
                 "screen_stats": {
-                    "screen_assists": row.get("SCREEN_ASSISTS", 0),
-                    "screen_assist_points": row.get("SCREEN_AST_PTS", 0)
+                    "screen_assists": row.get("SCREEN_ASSISTS", 0), "screen_assist_points": row.get("SCREEN_AST_PTS", 0)
                 },
                 "box_out_stats": {
-                    "box_outs": row.get("BOX_OUTS", 0),
-                    "box_outs_offensive": row.get("BOX_OUTS_OFF", 0),
+                    "box_outs": row.get("BOX_OUTS", 0), "box_outs_offensive": row.get("BOX_OUTS_OFF", 0),
                     "box_outs_defensive": row.get("BOX_OUTS_DEF", 0)
                 }
-            }
-            hustle_stats.append(player_stats)
+            } for _, row in hustle_df.iterrows()
+        ] if not hustle_df.empty else []
         
         result = {
             "season": season,

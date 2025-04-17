@@ -1,7 +1,7 @@
 import logging
 from fastapi import APIRouter, HTTPException
 from typing import Dict, Any, Optional
-from backend.routes.schemas import TeamRequest
+from fastapi import Query  # Import Query for GET parameters
 from backend.api_tools.team_tools import (
     fetch_team_info_and_roster_logic,
     fetch_team_stats_logic
@@ -27,7 +27,8 @@ async def fetch_team_stats(team_name: str, season: Optional[str] = None) -> Dict
     """
     logger.info(f"Received GET /stats request for team: '{team_name}', season: {season}")
     try:
-        result = fetch_team_stats_logic(team_name, season) if season else fetch_team_stats_logic(team_name)
+        # Pass season directly, logic function should handle None
+        result = fetch_team_stats_logic(team_name=team_name, season=season)
         return {"result": result}
     except Exception as e:
         logger.error(f"Error fetching team stats: {str(e)}", exc_info=True)
@@ -44,43 +45,56 @@ async def fetch_team_info(team_name: str, season: Optional[str] = None) -> Dict[
     """
     logger.info(f"Received GET /info request for team: '{team_name}', season: {season}")
     try:
-        result = fetch_team_info_and_roster_logic(team_name, season) if season else fetch_team_info_and_roster_logic(team_name)
+        # Pass season directly, logic function should handle None
+        result = fetch_team_info_and_roster_logic(team_name=team_name, season=season)
         return {"result": result}
     except Exception as e:
         logger.error(f"Error fetching team info: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/passing")
-async def get_team_passing_stats(request: TeamRequest) -> Dict[str, Any]:
+@router.get("/passing")
+async def get_team_passing_stats(
+    team_name: str = Query(...),
+    season: Optional[str] = Query(None)
+) -> Dict[str, Any]:
     """
     Get team passing statistics.
     """
+    logger.info(f"Received GET /passing request for team: '{team_name}', season: {season}")
     try:
-        result = fetch_team_passing_stats_logic(request.team_name, request.season)
+        result = fetch_team_passing_stats_logic(team_name=team_name, season=season)
         return {"result": result}
     except Exception as e:
         logger.error(f"Error getting team passing stats: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/rebounding")
-async def get_team_rebounding_stats(request: TeamRequest) -> Dict[str, Any]:
+@router.get("/rebounding")
+async def get_team_rebounding_stats(
+    team_name: str = Query(...),
+    season: Optional[str] = Query(None)
+) -> Dict[str, Any]:
     """
     Get team rebounding statistics.
     """
+    logger.info(f"Received GET /rebounding request for team: '{team_name}', season: {season}")
     try:
-        result = fetch_team_rebounding_stats_logic(request.team_name, request.season)
+        result = fetch_team_rebounding_stats_logic(team_name=team_name, season=season)
         return {"result": result}
     except Exception as e:
         logger.error(f"Error getting team rebounding stats: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/shooting")
-async def get_team_shooting_stats(request: TeamRequest) -> Dict[str, Any]:
+@router.get("/shooting")
+async def get_team_shooting_stats(
+    team_name: str = Query(...),
+    season: Optional[str] = Query(None)
+) -> Dict[str, Any]:
     """
     Get team shooting statistics.
     """
+    logger.info(f"Received GET /shooting request for team: '{team_name}', season: {season}")
     try:
-        result = fetch_team_shooting_stats_logic(request.team_name, request.season)
+        result = fetch_team_shooting_stats_logic(team_name=team_name, season=season)
         return {"result": result}
     except Exception as e:
         logger.error(f"Error getting team shooting stats: {str(e)}", exc_info=True)

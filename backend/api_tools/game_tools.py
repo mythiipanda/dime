@@ -39,90 +39,51 @@ def fetch_boxscore_traditional_logic(game_id: str) -> str:
         # Get boxscore data
         boxscore = boxscoretraditionalv2.BoxScoreTraditionalV2(game_id=game_id)
         
-        # Process player stats
+        # Process player stats using apply
         player_stats_raw = boxscore.player_stats.get_data_frame()
-        player_stats = []
-        
-        if not player_stats_raw.empty:
-            for _, row in player_stats_raw.iterrows():
-                player = {
-                    "player_id": row.get("PLAYER_ID"),
-                    "name": row.get("PLAYER_NAME"),
-                    "team": row.get("TEAM_ABBREVIATION"),
-                    "position": row.get("START_POSITION", ""),
-                    "minutes": row.get("MIN", "0"),
-                    "points": row.get("PTS", 0),
-                    "rebounds": {
-                        "offensive": row.get("OREB", 0),
-                        "defensive": row.get("DREB", 0),
-                        "total": row.get("REB", 0)
-                    },
-                    "assists": row.get("AST", 0),
-                    "steals": row.get("STL", 0),
-                    "blocks": row.get("BLK", 0),
-                    "turnovers": row.get("TO", 0),
-                    "fouls": row.get("PF", 0),
-                    "shooting": {
-                        "fg": f"{row.get('FGM', 0)}-{row.get('FGA', 0)}",
-                        "fg_pct": row.get("FG_PCT", 0.0),
-                        "fg3": f"{row.get('FG3M', 0)}-{row.get('FG3A', 0)}",
-                        "fg3_pct": row.get("FG3_PCT", 0.0),
-                        "ft": f"{row.get('FTM', 0)}-{row.get('FTA', 0)}",
-                        "ft_pct": row.get("FT_PCT", 0.0)
-                    },
-                    "plus_minus": row.get("PLUS_MINUS", 0)
-                }
-                player_stats.append(player)
-        
-        # Process team stats
+        player_stats = player_stats_raw.apply(
+            lambda row: {
+                "player_id": row.get("PLAYER_ID"), "name": row.get("PLAYER_NAME"), "team": row.get("TEAM_ABBREVIATION"),
+                "position": row.get("START_POSITION", ""), "minutes": row.get("MIN", "0"), "points": row.get("PTS", 0),
+                "rebounds": {"offensive": row.get("OREB", 0), "defensive": row.get("DREB", 0), "total": row.get("REB", 0)},
+                "assists": row.get("AST", 0), "steals": row.get("STL", 0), "blocks": row.get("BLK", 0),
+                "turnovers": row.get("TO", 0), "fouls": row.get("PF", 0),
+                "shooting": {
+                    "fg": f"{row.get('FGM', 0)}-{row.get('FGA', 0)}", "fg_pct": row.get("FG_PCT", 0.0),
+                    "fg3": f"{row.get('FG3M', 0)}-{row.get('FG3A', 0)}", "fg3_pct": row.get("FG3_PCT", 0.0),
+                    "ft": f"{row.get('FTM', 0)}-{row.get('FTA', 0)}", "ft_pct": row.get("FT_PCT", 0.0)
+                },
+                "plus_minus": row.get("PLUS_MINUS", 0)
+            }, axis=1
+        ).tolist() if not player_stats_raw.empty else []
+
+        # Process team stats using apply
         team_stats_raw = boxscore.team_stats.get_data_frame()
-        team_stats = []
-        
-        if not team_stats_raw.empty:
-            for _, row in team_stats_raw.iterrows():
-                team = {
-                    "team_id": row.get("TEAM_ID"),
-                    "name": f"{row.get('TEAM_CITY', '')} {row.get('TEAM_NAME', '')}",
-                    "abbreviation": row.get("TEAM_ABBREVIATION"),
-                    "points": row.get("PTS", 0),
-                    "rebounds": {
-                        "offensive": row.get("OREB", 0),
-                        "defensive": row.get("DREB", 0),
-                        "total": row.get("REB", 0)
-                    },
-                    "assists": row.get("AST", 0),
-                    "steals": row.get("STL", 0),
-                    "blocks": row.get("BLK", 0),
-                    "turnovers": row.get("TO", 0),
-                    "fouls": row.get("PF", 0),
-                    "shooting": {
-                        "fg": f"{row.get('FGM', 0)}-{row.get('FGA', 0)}",
-                        "fg_pct": round(row.get("FG_PCT", 0.0), 3),
-                        "fg3": f"{row.get('FG3M', 0)}-{row.get('FG3A', 0)}",
-                        "fg3_pct": round(row.get("FG3_PCT", 0.0), 3),
-                        "ft": f"{row.get('FTM', 0)}-{row.get('FTA', 0)}",
-                        "ft_pct": round(row.get("FT_PCT", 0.0), 3)
-                    },
-                    "plus_minus": row.get("PLUS_MINUS", 0)
-                }
-                team_stats.append(team)
-        
-        # Organize the starters/bench breakdown
+        team_stats = team_stats_raw.apply(
+            lambda row: {
+                "team_id": row.get("TEAM_ID"), "name": f"{row.get('TEAM_CITY', '')} {row.get('TEAM_NAME', '')}",
+                "abbreviation": row.get("TEAM_ABBREVIATION"), "points": row.get("PTS", 0),
+                "rebounds": {"offensive": row.get("OREB", 0), "defensive": row.get("DREB", 0), "total": row.get("REB", 0)},
+                "assists": row.get("AST", 0), "steals": row.get("STL", 0), "blocks": row.get("BLK", 0),
+                "turnovers": row.get("TO", 0), "fouls": row.get("PF", 0),
+                "shooting": {
+                    "fg": f"{row.get('FGM', 0)}-{row.get('FGA', 0)}", "fg_pct": round(row.get("FG_PCT", 0.0), 3),
+                    "fg3": f"{row.get('FG3M', 0)}-{row.get('FG3A', 0)}", "fg3_pct": round(row.get("FG3_PCT", 0.0), 3),
+                    "ft": f"{row.get('FTM', 0)}-{row.get('FTA', 0)}", "ft_pct": round(row.get("FT_PCT", 0.0), 3)
+                },
+                "plus_minus": row.get("PLUS_MINUS", 0)
+            }, axis=1
+        ).tolist() if not team_stats_raw.empty else []
+
+        # Process starters/bench stats using apply
         starters_bench_raw = boxscore.team_starter_bench_stats.get_data_frame()
-        starters_bench = []
-        
-        if not starters_bench_raw.empty:
-            for _, row in starters_bench_raw.iterrows():
-                group = {
-                    "team_id": row.get("TEAM_ID"),
-                    "team_abbreviation": row.get("TEAM_ABBREVIATION"),
-                    "group": row.get("STARTERS_BENCH"),
-                    "minutes": row.get("MIN", "0"),
-                    "points": row.get("PTS", 0),
-                    "rebounds": row.get("REB", 0),
-                    "assists": row.get("AST", 0)
-                }
-                starters_bench.append(group)
+        starters_bench = starters_bench_raw.apply(
+            lambda row: {
+                "team_id": row.get("TEAM_ID"), "team_abbreviation": row.get("TEAM_ABBREVIATION"),
+                "group": row.get("STARTERS_BENCH"), "minutes": row.get("MIN", "0"),
+                "points": row.get("PTS", 0), "rebounds": row.get("REB", 0), "assists": row.get("AST", 0)
+            }, axis=1
+        ).tolist() if not starters_bench_raw.empty else []
         
         # Combine all results
         result = {
@@ -340,54 +301,31 @@ def fetch_shotchart_logic(game_id: str) -> str:
             season_nullable="2023-24"  # Using current season
         )
         
-        # Process shot chart data
+        # Process shot chart data using apply
         shots_raw = shotchart.shot_chart_detail.get_data_frame()
-        shots = []
-        
-        if not shots_raw.empty:
-            for _, row in shots_raw.iterrows():
-                shot = {
-                    "player": {
-                        "id": row.get("PLAYER_ID"),
-                        "name": row.get("PLAYER_NAME")
-                    },
-                    "team": {
-                        "id": row.get("TEAM_ID"),
-                        "name": row.get("TEAM_NAME")
-                    },
-                    "period": row.get("PERIOD"),
-                    "time_remaining": f"{row.get('MINUTES_REMAINING')}:{str(row.get('SECONDS_REMAINING')).zfill(2)}",
-                    "shot_type": row.get("SHOT_TYPE"),
-                    "shot_zone": {
-                        "basic": row.get("SHOT_ZONE_BASIC"),
-                        "area": row.get("SHOT_ZONE_AREA"),
-                        "range": row.get("SHOT_ZONE_RANGE")
-                    },
-                    "distance": row.get("SHOT_DISTANCE"),
-                    "coordinates": {
-                        "x": row.get("LOC_X"),
-                        "y": row.get("LOC_Y")
-                    },
-                    "made": row.get("SHOT_MADE_FLAG") == 1,
-                    "action_type": row.get("ACTION_TYPE")
-                }
-                shots.append(shot)
-        
-        # Get league averages for zones
+        shots = shots_raw.apply(
+            lambda row: {
+                "player": {"id": row.get("PLAYER_ID"), "name": row.get("PLAYER_NAME")},
+                "team": {"id": row.get("TEAM_ID"), "name": row.get("TEAM_NAME")},
+                "period": row.get("PERIOD"),
+                "time_remaining": f"{row.get('MINUTES_REMAINING')}:{str(row.get('SECONDS_REMAINING')).zfill(2)}",
+                "shot_type": row.get("SHOT_TYPE"),
+                "shot_zone": {"basic": row.get("SHOT_ZONE_BASIC"), "area": row.get("SHOT_ZONE_AREA"), "range": row.get("SHOT_ZONE_RANGE")},
+                "distance": row.get("SHOT_DISTANCE"),
+                "coordinates": {"x": row.get("LOC_X"), "y": row.get("LOC_Y")},
+                "made": row.get("SHOT_MADE_FLAG") == 1,
+                "action_type": row.get("ACTION_TYPE")
+            }, axis=1
+        ).tolist() if not shots_raw.empty else []
+
+        # Process league averages using apply
         league_avgs_raw = shotchart.league_averages.get_data_frame()
-        league_avgs = []
-        
-        if not league_avgs_raw.empty:
-            for _, row in league_avgs_raw.iterrows():
-                zone = {
-                    "zone_basic": row.get("SHOT_ZONE_BASIC"),
-                    "zone_area": row.get("SHOT_ZONE_AREA"),
-                    "zone_range": row.get("SHOT_ZONE_RANGE"),
-                    "attempts": row.get("FGA"),
-                    "made": row.get("FGM"),
-                    "pct": row.get("FG_PCT")
-                }
-                league_avgs.append(zone)
+        league_avgs = league_avgs_raw.apply(
+            lambda row: {
+                "zone_basic": row.get("SHOT_ZONE_BASIC"), "zone_area": row.get("SHOT_ZONE_AREA"), "zone_range": row.get("SHOT_ZONE_RANGE"),
+                "attempts": row.get("FGA"), "made": row.get("FGM"), "pct": row.get("FG_PCT")
+            }, axis=1
+        ).tolist() if not league_avgs_raw.empty else []
         
         # Organize shots by team
         teams = {}
