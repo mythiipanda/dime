@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import styles from './LiveScores.module.css';
 
 // Import our frontend API base for scoreboard
@@ -35,35 +35,67 @@ const LiveScores: React.FC = () => {
   const [scores, setScores] = useState<ScoreboardData | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [isConnected, setIsConnected] = useState<boolean>(false);
+  const ws = useRef<WebSocket | null>(null);
 
   useEffect(() => {
-    const fetchScores = async () => {
-      setLoading(true);
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/api/games/scoreboard/ws`;
+
+    console.log(`Attempting to connect WebSocket: ${wsUrl}`);
+    ws.current = new WebSocket(wsUrl);
+
+    ws.current.onopen = () => {
+      console.log("WebSocket connected");
+      setIsConnected(true);
       setError(null);
-      try {
-        // Fetch live scores via our Next.js API
-        const response = await fetch('/api/games/scoreboard');
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        const data: ScoreboardData = await response.json();
-        setScores(data);
-      } catch (e: any) {
-        console.error("Failed to fetch scores:", e);
-        setError(`Failed to load scores: ${e.message}`);
-      } finally {
-        setLoading(false);
+    };
+
+    ws.current.onclose = () => {
+      console.log("WebSocket disconnected");
+      setIsConnected(false);
+      if (!scores) {
+         setLoading(true); 
+         setError("WebSocket disconnected. Attempting to reconnect...");
       }
     };
 
-    fetchScores();
-    // TODO: Implement polling or WebSocket for real-time updates
-    // const intervalId = setInterval(fetchScores, 30000); // Poll every 30 seconds
-    // return () => clearInterval(intervalId);
-  }, []);
+    ws.current.onerror = (event) => {
+      console.error("WebSocket error:", event);
+      setError("WebSocket connection error. Please try refreshing.");
+      setLoading(false);
+      setIsConnected(false);
+    };
 
-  if (loading) {
-    return <div className={styles.loading}>Loading live scores...</div>;
+    ws.current.onmessage = (event) => {
+      try {
+        const data: ScoreboardData = JSON.parse(event.data);
+        if (data && data.games && Array.isArray(data.games)) {
+           setScores(data);
+           setError(null);
+           if (loading) setLoading(false);
+           console.log("Scoreboard updated via WebSocket");
+        } else {
+           console.warn("Received invalid data format from WebSocket:", event.data);
+        }
+       
+      } catch (e) {
+        console.error("Failed to parse WebSocket message:", e);
+      }
+    };
+
+    return () => {
+      console.log("Closing WebSocket connection");
+      ws.current?.close();
+    };
+  }, [scores === null]);
+
+  if (loading && !isConnected && !error) {
+     return <div className={styles.loading}>Connecting to live scores...</div>;
+  }
+  
+  if (loading && isConnected && !scores && !error){
+     return <div className={styles.loading}>Waiting for initial scores...</div>;
   }
 
   if (error) {
@@ -71,7 +103,10 @@ const LiveScores: React.FC = () => {
   }
 
   if (!scores || scores.games.length === 0) {
-    return <div className={styles.noGames}>No live games currently.</div>;
+    if (!isConnected && !error) {
+       return <div className={styles.noGames}>Connecting...</div>;
+    }
+    return <div className={styles.noGames}>No live games currently or waiting for data.</div>;
   }
 
   return (
@@ -82,7 +117,9 @@ const LiveScores: React.FC = () => {
           <div key={game.gameId} className={styles.gameCard}>
             <div className={styles.gameStatus}>
               <span>{game.gameStatusText}</span>
-              {game.gameStatus === 2 && <span> - Q{game.period} {game.gameClock}</span>}
+              {game.gameStatus === 2 && game.period && game.gameClock && (
+                <span> - Q{game.period} {game.gameClock}</span>
+              )}
             </div>
             <div className={styles.teamInfo}>
               <span className={styles.teamName}>{game.awayTeam.teamTricode}</span>

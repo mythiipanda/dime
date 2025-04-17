@@ -15,7 +15,9 @@ import {
   Table,
   AlertCircle,
 } from "lucide-react";
-import LiveScores from "@/components/live-scores/LiveScores"; // Import the LiveScores component
+// import LiveScores from "@/components/live-scores/LiveScores"; // Commented out import
+// import UserActivityFeed from "@/components/dashboard/UserActivityFeed"; // Removed incorrect import
+// import { fetchTrackedItems } from "@/lib/actions/tracking"; // Removed incorrect import
 
 export default function DashboardPage() {
   return (
@@ -38,9 +40,6 @@ export default function DashboardPage() {
           </Button>
         </div>
       </div>
-
-      {/* Add the LiveScores component here */}
-      <LiveScores />
 
       <Alert>
         <AlertCircle className="h-4 w-4" />
@@ -196,6 +195,27 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Live Scores Section - Commented out */}
+      {/* 
+      <div className="mb-8">
+         <h2 className="text-2xl font-semibold mb-4">Live Scores</h2>
+         <LiveScores /> 
+      </div> 
+      */}
+
+      {/* Placeholder for User Activity Feed or other sections */}
+       {/* <UserActivityFeed /> */}
+
+       {/* Example Alert */}
+        <Alert>
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Heads up!</AlertTitle>
+          <AlertDescription>
+            NBA API usage limits may apply. Monitor your requests.
+          </AlertDescription>
+        </Alert>
+
     </div>
   );
 }

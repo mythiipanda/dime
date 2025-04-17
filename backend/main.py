@@ -39,6 +39,7 @@ from backend.routes.team_tracking import router as team_tracking_router
 from backend.routes.standings import router as standings_router
 from backend.routes.live_game import router as live_game_router
 from backend.routes.scoreboard import router as scoreboard_router
+from backend.routes.odds import router as odds_router
 
 app = FastAPI(
     title="NBA Analytics API",
@@ -47,18 +48,24 @@ app = FastAPI(
 )
 
 # Configure CORS
+# Simplified origins list for testing WebSocket CORS issues
 origins = [
-    "http://localhost:3000",  # Allow frontend origin
+    "http://localhost:3000",  
     "http://127.0.0.1:3000",
-    os.environ.get("FRONTEND_URL"), # Allow configured frontend URL
+    # Add any other essential origins if needed, e.g., from FRONTEND_URL if deployed
 ]
+# Ensure FRONTEND_URL is added if it's different and required
+# frontend_url = os.environ.get("FRONTEND_URL")
+# if frontend_url and frontend_url not in origins:
+#     origins.append(frontend_url)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[origin for origin in origins if origin], # Filter out None/empty origins
+    # Use the simplified list directly
+    allow_origins=origins, 
     allow_credentials=True,
-    allow_methods=["*"], # Allows all methods
-    allow_headers=["*"], # Allows all headers
+    allow_methods=["*"], 
+    allow_headers=["*"], 
 )
 
 # Include routers
@@ -78,6 +85,7 @@ app.include_router(team_tracking_router, prefix=API_PREFIX + "/team/tracking", t
 app.include_router(standings_router, prefix=API_PREFIX, tags=["Standings"])
 app.include_router(live_game_router, prefix=API_PREFIX + "/live", tags=["live"]) # Register live game router
 app.include_router(scoreboard_router, prefix=API_PREFIX + "/scoreboard", tags=["Scoreboard"]) # Include scoreboard router
+app.include_router(odds_router, prefix=API_PREFIX, tags=["Odds"])
 
 @app.get("/")
 async def root():

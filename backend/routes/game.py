@@ -8,6 +8,7 @@ from backend.api_tools.game_tools import (
     fetch_shotchart_logic as fetch_game_shotchart_logic,
 )
 from backend.api_tools.league_tools import fetch_scoreboard_logic # Import correct scoreboard logic
+import json
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -30,16 +31,33 @@ async def get_game_boxscore(request: FetchRequest) -> Dict[str, Any]:
 @router.post("/playbyplay")
 async def get_game_playbyplay(request: FetchRequest) -> Dict[str, Any]:
     """
-    Get game play-by-play data.
+    Get game play-by-play data using V3 endpoint logic.
     """
     try:
         game_id = request.params.get("game_id")
         if not game_id:
-            raise HTTPException(status_code=400, detail="game_id is required")
-        result = fetch_game_playbyplay_logic(game_id)
-        return {"result": result}
+            raise HTTPException(status_code=400, detail="game_id is required in request body params")
+        
+        # Call the logic function (which now returns a dictionary)
+        result_dict = fetch_game_playbyplay_logic(game_id=game_id)
+        
+        # Check if the logic function returned an error
+        if "error" in result_dict:
+             # Log the specific error from the logic function
+             logger.error(f"Play-by-play logic failed for game {game_id}: {result_dict['error']}")
+             # Return a generic server error, or potentially a more specific one
+             raise HTTPException(status_code=500, detail="Failed to fetch play-by-play data.")
+
+        # Return the successful result dictionary, wrapped in "result" key for consistency 
+        # (or adjust frontend to expect data directly at top level)
+        return {"result": result_dict}
+            
+    except KeyError:
+         # This catches if 'params' or 'game_id' within params is missing
+         raise HTTPException(status_code=400, detail="'params' object with 'game_id' key missing or malformed in request body")
     except Exception as e:
-        logger.error(f"Error getting game play-by-play: {str(e)}", exc_info=True)
+        # Catch any other unexpected errors
+        logger.error(f"Error in /playbyplay route handler: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/shotchart")

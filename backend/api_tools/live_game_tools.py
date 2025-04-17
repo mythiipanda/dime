@@ -1,10 +1,9 @@
-from typing import Dict, List, Optional, TypedDict
+from typing import Dict, List, Optional, TypedDict, Any
 from nba_api.live.nba.endpoints import scoreboard
 from datetime import datetime
 import json
 import logging
 from config import DEFAULT_TIMEOUT, Errors
-from backend.api_tools.utils import format_response
 
 logger = logging.getLogger(__name__)
 
@@ -59,134 +58,99 @@ def _format_game_leader(leader_data: Dict) -> GameLeader:
 
 def fetch_league_scoreboard_logic() -> str:
     """
-    Fetches live scoreboard data for current NBA games.
+    Fetches live scoreboard data for current NBA games and formats it 
+    to match the frontend's ScoreboardData interface.
     
     Returns:
-        str: JSON string containing current game information in a structured format:
+        str: JSON string containing current game information matching the frontend structure.
         {
-            "meta": {
-                "version": int,
-                "timestamp": str,
-                "code": int,
-                "request_url": str
-            },
-            "date": str,
+            "gameDate": "YYYY-MM-DD",
             "games": [
                 {
-                    "game_id": str,
-                    "start_time": str,
-                    "status": {
-                        "clock": str,
-                        "period": int,
-                        "state": str
-                    },
-                    "home_team": {
-                        "id": str,
-                        "code": str,
-                        "name": str,
+                    "gameId": str,
+                    "gameStatus": int,      // 1 = Scheduled, 2 = In Progress, 3 = Final
+                    "gameStatusText": str,  // e.g., "Q1 0:35.3", "Final", "7:00 PM ET"
+                    "period": int,         // Current period (if live)
+                    "gameClock": str,      // Current clock (if live)
+                    "homeTeam": {
+                        "teamId": int,
+                        "teamTricode": str,
                         "score": int,
-                        "record": str
+                        "wins": int,      // Optional
+                        "losses": int     // Optional
                     },
-                    "away_team": {
-                        "id": str,
-                        "code": str,
-                        "name": str,
+                    "awayTeam": {
+                        "teamId": int,
+                        "teamTricode": str,
                         "score": int,
-                        "record": str
+                        "wins": int,      // Optional
+                        "losses": int     // Optional
                     },
-                    "leaders": {
-                        "home": {
-                            "name": str,
-                            "stats": str
-                        },
-                        "away": {
-                            "name": str,
-                            "stats": str
-                        }
-                    }
+                    "gameEt": str          // Game start time (ISO format or similar)
                 }
             ]
         }
         
     Raises:
-        Any exceptions are caught and returned as error JSON responses
+        Catches exceptions and returns an error JSON string.
     """
-    logger.info("Executing fetch_league_scoreboard_logic")
+    logger.info("Executing fetch_league_scoreboard_logic to fetch and format for frontend")
     
     try:
-        # Get the scoreboard data
         board = scoreboard.ScoreBoard()
         raw_data = board.get_dict()
         
-        # Validate API response
-        if raw_data.get('meta', {}).get('code') != 200:
-            error_msg = f"API returned non-200 status: {raw_data.get('meta', {}).get('code')}"
-            logger.error(error_msg)
-            return format_response(
-                {
-                    "date": datetime.now().strftime("%Y-%m-%d"),
-                    "games": []
+        scoreboard_outer = raw_data.get('scoreboard', {})
+        raw_games = scoreboard_outer.get('games', [])
+        game_date = scoreboard_outer.get('gameDate', datetime.now().strftime("%Y-%m-%d"))
+        
+        formatted_games: List[Dict[str, Any]] = []
+        for game in raw_games:
+            home_team_raw = game.get("homeTeam", {})
+            away_team_raw = game.get("awayTeam", {})
+            
+            # Transform raw game data to match frontend Game interface
+            formatted_game = {
+                "gameId": game.get("gameId"),
+                "gameStatus": game.get("gameStatus", 0), # Default to 0 if missing?
+                "gameStatusText": game.get("gameStatusText", ""),
+                "period": game.get("period"), # Will be None if not applicable
+                "gameClock": game.get("gameClock"), # Will be None if not applicable
+                "homeTeam": {
+                    "teamId": home_team_raw.get("teamId"),
+                    "teamTricode": home_team_raw.get("teamTricode", "N/A"),
+                    "score": home_team_raw.get("score", 0),
+                    "wins": home_team_raw.get("wins"),
+                    "losses": home_team_raw.get("losses")
                 },
-                error=Errors.SCOREBOARD_API_STATUS.format(status=raw_data.get('meta', {}).get('code'))
-            )
+                "awayTeam": {
+                    "teamId": away_team_raw.get("teamId"),
+                    "teamTricode": away_team_raw.get("teamTricode", "N/A"),
+                    "score": away_team_raw.get("score", 0),
+                    "wins": away_team_raw.get("wins"),
+                    "losses": away_team_raw.get("losses")
+                },
+                 # Use gameTimeUTC as gameEt, ensure it exists
+                "gameEt": game.get("gameTimeUTC", "")
+            }
+            formatted_games.append(formatted_game)
         
-        # Extract games data in a compact format
-        games_data: List[GameInfo] = []
-        if raw_data.get('scoreboard', {}).get('games'):
-            for game in raw_data['scoreboard']['games']:
-                # Create a more focused game object
-                game_info: GameInfo = {
-                    "game_id": game.get("gameId"),
-                    "start_time": game.get("gameTimeUTC", ""),
-                    "status": {
-                        "clock": game.get("gameClock", ""),
-                        "period": game.get("period", 0),
-                        "state": game.get("gameStatusText", "")
-                    },
-                    "home_team": {
-                        "id": game.get("homeTeam", {}).get("teamId", ""),
-                        "code": game.get("homeTeam", {}).get("teamTricode", ""),
-                        "name": f"{game.get('homeTeam', {}).get('teamCity', '')} {game.get('homeTeam', {}).get('teamName', '')}",
-                        "score": game.get("homeTeam", {}).get("score", 0),
-                        "record": f"{game.get('homeTeam', {}).get('wins', 0)}-{game.get('homeTeam', {}).get('losses', 0)}"
-                    },
-                    "away_team": {
-                        "id": game.get("awayTeam", {}).get("teamId", ""),
-                        "code": game.get("awayTeam", {}).get("teamTricode", ""),
-                        "name": f"{game.get('awayTeam', {}).get('teamCity', '')} {game.get('awayTeam', {}).get('teamName', '')}",
-                        "score": game.get("awayTeam", {}).get("score", 0),
-                        "record": f"{game.get('awayTeam', {}).get('wins', 0)}-{game.get('awayTeam', {}).get('losses', 0)}"
-                    },
-                    "leaders": {
-                        "home": _format_game_leader(game.get("gameLeaders", {}).get("homeLeaders", {})),
-                        "away": _format_game_leader(game.get("gameLeaders", {}).get("awayLeaders", {}))
-                    }
-                }
-                games_data.append(game_info)
-        
-        result: ScoreboardResponse = {
-            "meta": {
-                "version": raw_data['meta']['version'],
-                "timestamp": raw_data['meta']['time'],
-                "code": raw_data['meta']['code'],
-                "request_url": raw_data['meta']['request']
-            },
-            "date": raw_data['scoreboard']['gameDate'],
-            "games": games_data
+        # Create final structure matching ScoreboardData
+        result: Dict[str, Any] = {
+            "gameDate": game_date,
+            "games": formatted_games
         }
         
-        logger.info(f"fetch_league_scoreboard_logic completed with {len(games_data)} games")
-        return format_response(result)
+        logger.info(f"fetch_league_scoreboard_logic formatted {len(formatted_games)} games for frontend")
+        # Return as a JSON string
+        return json.dumps(result)
         
     except Exception as e:
-        logger.error(f"Error fetching scoreboard data: {str(e)}", exc_info=True)
-        return format_response(
-            {
-                "meta": {
-                    "timestamp": datetime.now().isoformat(),
-                },
-                "date": datetime.now().strftime("%Y-%m-%d"),
-                "games": []
-            },
-            error=Errors.SCOREBOARD_API.format(error=str(e))
-        )
+        logger.error(f"Error fetching/formatting scoreboard data: {str(e)}", exc_info=True)
+        # Return an error structure (could be simpler)
+        error_result = {
+            "gameDate": datetime.now().strftime("%Y-%m-%d"),
+            "games": [],
+            "error": Errors.SCOREBOARD_API.format(error=str(e))
+        }
+        return json.dumps(error_result)
