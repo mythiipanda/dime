@@ -420,7 +420,7 @@ def fetch_player_clutch_stats_logic(
             clutch_endpoint = playerdashboardbyclutch.PlayerDashboardByClutch(
                 player_id=player_id,
                 season=season,
-                season_type_all_star=season_type,
+                season_type_playoffs=season_type,
                 measure_type_detailed=measure_type,
                 per_mode_detailed=per_mode,
                 plus_minus=plus_minus,
@@ -444,54 +444,43 @@ def fetch_player_clutch_stats_logic(
             logger.debug(f"playerdashboardbyclutch API call successful for ID: {player_id}, Season: {season}")
         except Exception as api_error:
             logger.error(f"nba_api playerdashboardbyclutch failed for ID {player_id}, Season {season}: {api_error}", exc_info=True)
-            return format_response(error=Errors.PLAYER_CLUTCH_STATS_API.format(name=player_actual_name, season=season, error=str(api_error)))
+            return format_response(error=Errors.PLAYER_CAREER_STATS_API.format(name=player_actual_name, season=season, error=str(api_error)))
 
         # Get all clutch time period stats
-        overall_clutch = _process_dataframe(clutch_endpoint.overall_player_dashboard.get_data_frame(), single_row=True)
-        last5min_clutch = _process_dataframe(clutch_endpoint.last5_min5_point_player_dashboard.get_data_frame(), single_row=True)
-        last3min_clutch = _process_dataframe(clutch_endpoint.last3_min5_point_player_dashboard.get_data_frame(), single_row=True)
-        last1min_clutch = _process_dataframe(clutch_endpoint.last1_min5_point_player_dashboard.get_data_frame(), single_row=True)
-        last30sec_clutch = _process_dataframe(clutch_endpoint.last30_sec3_point_player_dashboard.get_data_frame(), single_row=True)
-        last10sec_clutch = _process_dataframe(clutch_endpoint.last10_sec3_point_player_dashboard.get_data_frame(), single_row=True)
+        clutch_data = clutch_endpoint.get_dict()
+        results = clutch_data.get('resultSets', [])
+        processed_data = {}
+        for result_set in results:
+            name = result_set.get('name')
+            headers = result_set.get('headers')
+            row_set = result_set.get('rowSet')
+            if name and headers and row_set:
+                # Process only the specific clutch timeframes if needed, or overall
+                # Example: Process 'OverallPlayerDashboard'
+                if name == 'OverallPlayerDashboard' and len(row_set) > 0:
+                    processed_data[name] = [dict(zip(headers, row)) for row in row_set]
+                    # You might want to return just this specific part
+                    # return format_response(data=processed_data[name][0]) # Return the first row if only one player's overall expected
+        if not processed_data:
+            logger.warning(f"No relevant clutch data sets found for {player_actual_name} in season {season}")
+            # Return empty success or a specific message
+            return format_response(data={})
 
-        # Also get plus/minus versions for applicable periods
-        last5min_plus_minus = _process_dataframe(clutch_endpoint.last5_min_plus_minus5_point_player_dashboard.get_data_frame(), single_row=True)
-        last3min_plus_minus = _process_dataframe(clutch_endpoint.last3_min_plus_minus5_point_player_dashboard.get_data_frame(), single_row=True)
-        last1min_plus_minus = _process_dataframe(clutch_endpoint.last1_min_plus_minus5_point_player_dashboard.get_data_frame(), single_row=True)
+        # Return all processed datasets or just the overall one
+        # Example returning just the first row of Overall data if found
+        overall_data = processed_data.get('OverallPlayerDashboard')
+        if overall_data and len(overall_data) > 0:
+            return format_response(data=overall_data[0])
+        else:
+            logger.warning(f"OverallPlayerDashboard data not found for {player_actual_name} in season {season}")
+            return format_response(data={}) # Or return an error
 
-        # Verify we got at least the basic stats
-        if overall_clutch is None:
-            logger.error(f"DataFrame processing failed for clutch stats of {player_actual_name} ({season}).")
-            return format_response(error=Errors.PLAYER_CLUTCH_STATS_PROCESSING.format(name=player_actual_name, season=season))
-
-        result = {
-            "player_name": player_actual_name,
-            "player_id": player_id,
-            "season": season,
-            "season_type": season_type,
-            "measure_type": measure_type,
-            "per_mode": per_mode,
-            "overall_clutch": overall_clutch or {},
-            "clutch_splits": {
-                "last_5_min": {
-                    "standard": last5min_clutch or {},
-                    "plus_minus": last5min_plus_minus or {}
-                },
-                "last_3_min": {
-                    "standard": last3min_clutch or {},
-                    "plus_minus": last3min_plus_minus or {}
-                },
-                "last_1_min": {
-                    "standard": last1min_clutch or {},
-                    "plus_minus": last1min_plus_minus or {}
-                },
-                "last_30_sec": last30sec_clutch or {},
-                "last_10_sec": last10sec_clutch or {}
-            }
-        }
-        
-        logger.info(f"fetch_player_clutch_stats_logic completed for '{player_actual_name}', Season: {season}")
-        return format_response(result)
     except Exception as e:
-        logger.critical(f"Unexpected error in fetch_player_clutch_stats_logic for '{player_name}', Season {season}: {e}", exc_info=True)
-        return format_response(error=Errors.PLAYER_CLUTCH_STATS_UNEXPECTED.format(name=player_name, season=season, error=str(e)))
+        api_error = e # Store the original exception
+        logger.error(f"nba_api playerdashboardbyclutch failed for ID {player_id}, Season {season}: {e}")
+        # Use suggested error constant name
+        return format_response(error=Errors.PLAYER_CAREER_STATS_API.format(name=player_actual_name, season=season, error=str(api_error)))
+    except Exception as e:
+        logger.critical(f"Unexpected error in fetch_player_clutch_stats_logic for '{player_actual_name}', Season {season}: {e}")
+        # Use suggested error constant name
+        return format_response(error=Errors.PLAYER_CAREER_STATS_UNEXPECTED.format(name=player_actual_name, season=season, error=str(e)))
