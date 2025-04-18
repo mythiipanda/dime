@@ -15,24 +15,24 @@ export function LandingNavbar() {
   
   return (
     // Updated header styling based on Figma (Nodes 11:4206, 11:4223)
-    <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ease-in-out ${
-      scrolled ? 'bg-[#000E0F]/80 backdrop-blur-md border-b border-white/10 shadow-lg' : 'bg-transparent border-b border-transparent'
+    <header className={`fixed top-4 left-4 right-4 z-50 px-3 py-1 transition-all duration-300 ease-in-out ${
+      scrolled ? 'bg-background/80 backdrop-blur-md border border-border rounded-full shadow-lg' : 'bg-transparent'
     }`}>
-      <div className="container mx-auto max-w-7xl px-4 h-16 flex items-center justify-between">
+      <div className="container mx-auto max-w-7xl px-3 h-10 flex items-center justify-between">
         {/* Logo - Based on Node 11:4208 */}
         <Link href="/" className="flex items-center gap-2 text-xl font-bold">
           {/* Replace with actual SVG/Component from Figma if available */}
-          <div className="w-8 h-8 flex items-center justify-center bg-gradient-to-br from-blue-500 to-cyan-500 rounded-lg shadow-md">
-             <span className='text-black font-bold text-lg'>D</span> {/* Placeholder */} 
+          <div className="w-8 h-8 flex items-center justify-center bg-primary rounded-lg shadow">
+             <span className='text-primary-foreground font-bold text-lg'>D</span> {/* Placeholder */} 
           </div>
-           <span className="text-transparent bg-clip-text bg-gradient-to-r from-white to-gray-300">Dime</span> {/* Adjusted name */} 
+           <span className="text-foreground font-bold">Dime</span> {/* Adjusted name */} 
         </Link>
         
         {/* Navigation Links - Simple text links */}
         <nav className="hidden md:flex items-center space-x-6">
-          <a href="#features" className="text-[#A7BEBE] hover:text-white text-sm font-medium transition-colors duration-200">Features</a>
-          <a href="#vision" className="text-[#A7BEBE] hover:text-white text-sm font-medium transition-colors duration-200">Vision</a>
-          <a href="#pricing" className="text-[#A7BEBE] hover:text-white text-sm font-medium transition-colors duration-200">Pricing</a>
+          <a href="#features" className="text-muted-foreground hover:text-foreground text-sm font-medium transition-colors duration-200">Features</a>
+          <a href="#vision" className="text-muted-foreground hover:text-foreground text-sm font-medium transition-colors duration-200">Vision</a>
+          <a href="#pricing" className="text-muted-foreground hover:text-foreground text-sm font-medium transition-colors duration-200">Pricing</a>
           {/* Add other links if needed */}
         </nav>
         
@@ -41,23 +41,17 @@ export function LandingNavbar() {
           <SignedIn>
             <Link href="/dashboard">
               {/* Adjusted Button Style */}
-              <Button size="sm" className="bg-blue-500 text-white hover:bg-blue-600 font-semibold rounded-full px-5 py-1.5 shadow-md text-sm">
-                Dashboard
-              </Button>
+              <Button size="sm">Dashboard</Button>
             </Link>
           </SignedIn>
           <SignedOut>
             {/* Adjusted Button Styles */}
              <SignInButton mode="modal">
-               <Button variant="ghost" size="sm" className="text-[#A7BEBE] hover:text-white hover:bg-white/5 rounded-full px-5 py-1.5 text-sm">
-                 Sign in
-               </Button>
+               <Button variant="ghost" size="sm">Sign in</Button>
              </SignInButton>
              {/* Try Free uses same blue accent */}
              <SignInButton mode="modal">
-              <Button size="sm" className="bg-blue-500 text-white hover:bg-blue-600 font-semibold rounded-full px-5 py-1.5 shadow-md text-sm">
-                 Try Free
-               </Button>
+              <Button size="sm">Try Free</Button>
              </SignInButton>
           </SignedOut>
         </div>

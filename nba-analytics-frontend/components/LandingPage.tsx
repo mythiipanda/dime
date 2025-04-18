@@ -11,7 +11,7 @@ import { HeroSection } from '@/components/landing/HeroSection';
 
 export default function LandingPage() {
   return (
-    <div className="flex flex-col min-h-screen bg-[#000E0F] text-white overflow-x-hidden">
+    <div className="flex flex-col min-h-screen bg-background text-foreground overflow-x-hidden">
       {/* Background decorative elements */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-[40rem] left-1/4 -z-10 transform-gpu blur-3xl animate-[spin_80s_linear_infinite]" aria-hidden="true">

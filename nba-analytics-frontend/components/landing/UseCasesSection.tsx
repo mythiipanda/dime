@@ -15,22 +15,22 @@ export function UseCasesSection() {
   ];
 
   return (
-    <section id="usecases" className="py-32 relative overflow-hidden text-white bg-[#000E0F]">
+    <section id="usecases" className="py-32 relative overflow-hidden bg-background text-foreground">
       <div className="container mx-auto max-w-7xl px-4">
-        <h2 className="text-4xl md:text-5xl font-bold text-white text-center mb-16">
-          Transform Your <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#99FFCC] to-[#33FF99]">Analysis Workflow</span>
+        <h2 className="text-4xl md:text-5xl font-bold text-foreground text-center mb-16">
+          Transform Your <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary">Analysis Workflow</span>
         </h2>
         
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8">
           {useCases.map((uc) => (
             <div key={uc.title} className="group relative">
-              <div className="absolute -inset-px bg-gradient-to-br from-[#99FFCC]/20 to-[#33FF99]/20 rounded-xl blur-lg opacity-0 group-hover:opacity-70 transition duration-300"></div>
-              <Card className="relative h-full bg-[#0F1A1B]/70 backdrop-blur-sm rounded-xl border border-white/10 p-6 shadow-lg hover:border-white/20 transition-all duration-300 flex flex-col">
-                <div className="p-3 bg-[#1A1C1F]/50 border border-white/10 rounded-lg mb-5 inline-flex items-center justify-center w-12 h-12">
+              <div className="absolute -inset-px bg-gradient-to-br from-primary/20 to-secondary/20 rounded-xl blur-lg opacity-0 group-hover:opacity-70 transition duration-300"></div>
+              <Card className="relative h-full p-6 flex flex-col transition-all duration-300 shadow-lg hover:shadow-xl">
+                <div className="p-3 bg-muted/20 rounded-lg mb-5 inline-flex items-center justify-center w-12 h-12">
                   {uc.icon}
                 </div>
-                <h3 className="text-xl font-semibold text-white mb-3">{uc.title}</h3>
-                <p className="text-[#A7BEBE] leading-relaxed flex-grow">{uc.description}</p>
+                <h3 className="text-xl font-semibold text-foreground mb-3">{uc.title}</h3>
+                <p className="text-muted-foreground leading-relaxed flex-grow">{uc.description}</p>
               </Card>
             </div>
           ))}
