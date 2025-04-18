@@ -7,7 +7,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Menu, Settings, CircleDot } from 'lucide-react';
 import { ModeToggle } from '@/components/mode-toggle';
 import LandingPage from '@/components/LandingPage';
-import { SignedIn, SignedOut, UserButton, SignInButton } from "@clerk/nextjs";
+import { SignedIn, SignedOut, UserButton, SignInButton, RedirectToSignIn } from "@clerk/nextjs";
 
 interface LayoutClientProps {
   children: React.ReactNode;
@@ -41,21 +41,24 @@ export default function LayoutClient({ children }: LayoutClientProps) {
             </div>
             {/* User Profile */}
             <div className="space-y-4">
-              <SignedIn>
-                <div className="flex items-center gap-3 rounded-lg border bg-card px-4 py-3">
-                  <UserButton afterSignOutUrl="/" />
-                  {/* Add settings/profile link if needed later */}
-                  <ModeToggle />
-                </div>
-              </SignedIn>
               <SignedOut>
                 <div className="flex items-center gap-3 rounded-lg border bg-card px-4 py-3">
                   <SignInButton mode="modal">
                     <Button variant="outline" className="w-full">Sign In</Button>
                   </SignInButton>
-                  <ModeToggle />
                 </div>
               </SignedOut>
+              <SignedIn>
+                <div className="flex items-center rounded-lg border bg-card px-4 py-3">
+                  <UserButton afterSignOutUrl="/" />
+                  <div className="ml-auto flex items-center gap-2">
+                    <ModeToggle />
+                    <Button variant="ghost" size="icon">
+                      <Settings className="h-5 w-5 text-muted-foreground" />
+                    </Button>
+                  </div>
+                </div>
+              </SignedIn>
             </div>
           </div>
         </aside>
@@ -85,14 +88,18 @@ export default function LayoutClient({ children }: LayoutClientProps) {
               <SignedIn>
                 <UserButton afterSignOutUrl="/" />
               </SignedIn>
-              <ModeToggle />
             </div>
           </div>
         </header>
       )}
       <main className={isLanding ? 'flex-auto' : 'flex-1 overflow-y-auto lg:pl-72'}>
         <div className={isLanding ? 'w-full' : 'max-w-7xl mx-auto min-h-screen px-6 py-8 lg:px-8 lg:py-12'}>
-          {children}
+          <SignedIn>
+            {children}
+          </SignedIn>
+          <SignedOut>
+            <RedirectToSignIn />
+          </SignedOut>
         </div>
       </main>
     </div>

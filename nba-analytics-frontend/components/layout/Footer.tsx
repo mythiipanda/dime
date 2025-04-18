@@ -2,23 +2,24 @@ import Link from 'next/link';
 
 export function Footer() {
   return (
-    <footer className="bg-gray-900 py-6 border-t border-gray-800">
-      <div className="mx-auto max-w-7xl px-6 flex flex-col md:flex-row items-center justify-between">
-        <div className="flex items-center">
-          <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-400 font-bold mr-2 text-sm">Dime</span>
-          <span className="text-xs text-gray-400">
-            {new Date().getFullYear()} All rights reserved.
+    <footer className="py-8 border-t border-white/10 mt-20">
+      <div className="container mx-auto max-w-7xl px-4 flex flex-col md:flex-row items-center justify-between">
+        <div className="flex items-center mb-4 md:mb-0">
+          <div className="w-7 h-7 flex items-center justify-center bg-gradient-to-br from-[#99FFCC]/80 to-[#33FF99]/80 rounded-md shadow-sm mr-2">
+            <span className='text-black font-bold text-base'>D</span>
+          </div>
+          <span className="text-sm text-[#A7BEBE]">
+            &copy; {new Date().getFullYear()} Dime. All rights reserved.
           </span>
         </div>
-        <div className="flex space-x-4 mt-3 md:mt-0">
-          {/* Add actual links if needed */}
-          <Link href="/terms" className="text-xs text-gray-400 hover:text-blue-400">
+        <div className="flex space-x-6">
+          <Link href="/terms" className="text-xs text-[#A7BEBE] hover:text-white transition-colors">
             Terms
           </Link>
-          <Link href="/privacy" className="text-xs text-gray-400 hover:text-blue-400">
+          <Link href="/privacy" className="text-xs text-[#A7BEBE] hover:text-white transition-colors">
             Privacy
           </Link>
-          <Link href="#" className="text-xs text-gray-400 hover:text-blue-400">
+          <Link href="#" className="text-xs text-[#A7BEBE] hover:text-white transition-colors">
             Contact
           </Link>
         </div>
