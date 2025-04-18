@@ -18,12 +18,12 @@ import datetime
 from nba_api.stats.library.parameters import (
     SeasonTypeAllStar, PerModeDetailed, PerMode36, LeagueID, PerMode48
 )
-from config import CURRENT_SEASON
-from api_tools.utils import format_response
+from backend.config import CURRENT_SEASON
+from backend.api_tools.utils import format_response
 
 
-# Import logic functions from the specific api_tools modules
-from api_tools.player_tools import (
+# Import logic functions from the specific backend.api_tools modules
+from backend.api_tools.player_tools import (
     fetch_player_info_logic,
     fetch_player_gamelog_logic,
     fetch_player_career_stats_logic,
@@ -33,35 +33,39 @@ from api_tools.player_tools import (
     fetch_player_hustle_stats_logic,
     fetch_player_profile_logic
 )
-from api_tools.team_tools import (
+from backend.api_tools.team_tools import (
     fetch_team_info_and_roster_logic,
     fetch_team_lineups_logic,
     # fetch_team_stats_logic, # Logic exists but no corresponding tool wrapper defined
 )
-from api_tools.game_tools import (
+from backend.api_tools.game_tools import (
     fetch_boxscore_traditional_logic,
     fetch_playbyplay_logic,
     fetch_league_games_logic # Used by find_games
 )
-from api_tools.league_tools import (
+from backend.api_tools.league_tools import (
     fetch_league_standings_logic,
     fetch_scoreboard_logic,
     fetch_draft_history_logic,
     fetch_league_leaders_logic
 )
-from api_tools.player_tracking import (
+from backend.api_tools.player_tracking import (
     fetch_player_clutch_stats_logic,
     fetch_player_passing_stats_logic,
     fetch_player_shots_tracking_logic,
     fetch_player_rebounding_stats_logic
 )
-from api_tools.team_tracking import (
+from backend.api_tools.team_tracking import (
     fetch_team_passing_stats_logic,
     fetch_team_shooting_stats_logic,
     fetch_team_rebounding_stats_logic
 )
-from api_tools.scoreboard.scoreboard_tools import fetch_scoreboard_data_logic
-
+from backend.api_tools.scoreboard.scoreboard_tools import fetch_scoreboard_data_logic
+# New logic imports for live odds and player insights
+from backend.api_tools.odds_tools import fetch_odds_data_logic
+from backend.api_tools.analyze import analyze_player_stats_logic
+from backend.api_tools.trending_tools import fetch_top_performers_logic  # Trending tools
+from backend.api_tools.trending_team_tools import fetch_top_teams_logic  # Trending team tools
 
 logger = logging.getLogger(__name__)
 
@@ -569,3 +573,40 @@ def get_player_profile(player_name: str, per_mode: str = PerModeDetailed.per_gam
          logger.warning(f"Invalid per_mode '{per_mode}' in tool wrapper. Logic function should handle default.")
          # Let the logic function handle the default value assignment
     return fetch_player_profile_logic(player_name=player_name, per_mode=per_mode)
+
+@tool
+def get_top_performers(category: str = "PTS", season: str = CURRENT_SEASON, season_type: str = SeasonTypeAllStar.regular, top_n: int = 5) -> str:
+    """
+    Fetch top n performers for a stat category in a season.
+    Returns JSON string with top performers.
+    """
+    logger.debug(f"Tool 'get_top_performers' called for category '{category}', season '{season}', type '{season_type}', top_n {top_n}")
+    return fetch_top_performers_logic(category, season, season_type, top_n)
+
+@tool
+def get_top_teams(season: str = CURRENT_SEASON, season_type: str = SeasonTypeAllStar.regular, top_n: int = 5) -> str:
+    """
+    Fetch top performing teams by win percentage for a season.
+    Returns JSON string with top teams.
+    """
+    logger.debug(f"Tool 'get_top_teams' called for season '{season}', season_type '{season_type}', top_n {top_n}")
+    return fetch_top_teams_logic(season, season_type, top_n)
+
+
+@tool
+def get_player_insights(player_name: str, season: str = CURRENT_SEASON, season_type: str = SeasonTypeAllStar.regular) -> str:
+    """
+    Provides analysis and insights for a player's statistics over their career.
+    Returns: str: JSON string containing analysis and insights or {'error': ...}.
+    """
+    logger.debug(f"Tool 'get_player_insights' called for '{player_name}', season '{season}', season_type '{season_type}'")
+    return analyze_player_stats_logic(player_name, season, season_type)
+
+@tool
+def get_live_odds() -> str:
+    """
+    Fetches live betting odds for NBA games. Returns JSON string.
+    """
+    logger.debug("Tool 'get_live_odds' called")
+    result = fetch_odds_data_logic()
+    return format_response(data=result)

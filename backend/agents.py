@@ -19,6 +19,8 @@ from .tools import (
     get_player_defense_stats,
     get_player_hustle_stats,
     get_player_profile,
+    get_player_insights,
+    get_live_odds,
     get_team_info_and_roster,
     get_team_passing_stats,
     get_team_shooting_stats,
@@ -31,7 +33,6 @@ from .tools import (
     get_draft_history,
     get_league_leaders,
 )
-from function_declarations import all_function_declarations
 import datetime
 
 # Load environment variables
@@ -40,7 +41,6 @@ load_dotenv()
 # Initialize Model with Declarations
 model = Gemini(
     id=AGENT_MODEL_ID,
-    function_declarations=all_function_declarations
 )
 
 # Get current date
@@ -201,6 +201,8 @@ nba_agent = Agent(
         get_player_defense_stats,
         get_player_hustle_stats,
         get_player_profile,
+        get_player_insights,
+        get_live_odds,
         
         # Team Stats
         get_team_info_and_roster,

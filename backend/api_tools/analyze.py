@@ -3,18 +3,20 @@ import json
 import logging
 from nba_api.stats.endpoints import playerdashboardbyyearoveryear
 from nba_api.stats.library.parameters import SeasonTypeAllStar, PerModeDetailed
+from backend.config import CURRENT_SEASON
 
 from .player_tools import _find_player_id
 from .utils import handle_api_error
 
 logger = logging.getLogger(__name__)
 
-def analyze_player_stats_logic(player_name: str, season_type: str = SeasonTypeAllStar.regular) -> str:
+def analyze_player_stats_logic(player_name: str, season: str = CURRENT_SEASON, season_type: str = SeasonTypeAllStar.regular) -> str:
     """
     Analyze a player's statistics over their career.
     
     Args:
         player_name (str): The name of the player to analyze
+        season (str): The season to analyze
         season_type (str): The type of season to analyze (Regular Season, Playoffs, etc.)
         
     Returns:
@@ -31,8 +33,9 @@ def analyze_player_stats_logic(player_name: str, season_type: str = SeasonTypeAl
         # Get player's year-over-year stats
         player_stats = playerdashboardbyyearoveryear.PlayerDashboardByYearOverYear(
             player_id=player_id,
-            per_mode_detailed=PerModeDetailed.per_game,
-            season_type_all_star=season_type
+            season=season,
+            season_type_playoffs=season_type,
+            per_mode_detailed=PerModeDetailed.per_game
         )
         
         # Get the normalized stats
@@ -49,6 +52,7 @@ def analyze_player_stats_logic(player_name: str, season_type: str = SeasonTypeAl
         response = {
             "player_name": player_actual_name,
             "player_id": player_id,
+            "season": season,
             "season_type": season_type,
             "career_stats": career_stats
         }

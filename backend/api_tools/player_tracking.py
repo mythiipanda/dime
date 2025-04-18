@@ -426,7 +426,7 @@ def fetch_player_clutch_stats_logic(
                 plus_minus=plus_minus,
                 pace_adjust=pace_adjust,
                 rank=rank,
-                shot_clock_range=shot_clock_range,
+                shot_clock_range_nullable=shot_clock_range,
                 game_segment_nullable=game_segment,
                 period=period,
                 last_n_games=last_n_games,
@@ -449,38 +449,39 @@ def fetch_player_clutch_stats_logic(
         # Get all clutch time period stats
         clutch_data = clutch_endpoint.get_dict()
         results = clutch_data.get('resultSets', [])
-        processed_data = {}
+        
+        # Target the specific clutch dataset
+        clutch_dataset_name = 'Last5Min5PointPlayerDashboard' 
+        clutch_stats = None
+
         for result_set in results:
             name = result_set.get('name')
             headers = result_set.get('headers')
             row_set = result_set.get('rowSet')
-            if name and headers and row_set:
-                # Process only the specific clutch timeframes if needed, or overall
-                # Example: Process 'OverallPlayerDashboard'
-                if name == 'OverallPlayerDashboard' and len(row_set) > 0:
-                    processed_data[name] = [dict(zip(headers, row)) for row in row_set]
-                    # You might want to return just this specific part
-                    # return format_response(data=processed_data[name][0]) # Return the first row if only one player's overall expected
-        if not processed_data:
-            logger.warning(f"No relevant clutch data sets found for {player_actual_name} in season {season}")
-            # Return empty success or a specific message
-            return format_response(data={})
+            
+            # Check if this is the target clutch dataset
+            if name == clutch_dataset_name and headers and row_set:
+                # Process the clutch dataset
+                if len(row_set) > 0:
+                    # Assuming the first row contains the relevant aggregated stats
+                    clutch_stats = dict(zip(headers, row_set[0])) 
+                    break # Found the dataset, no need to continue loop
 
-        # Return all processed datasets or just the overall one
-        # Example returning just the first row of Overall data if found
-        overall_data = processed_data.get('OverallPlayerDashboard')
-        if overall_data and len(overall_data) > 0:
-            return format_response(data=overall_data[0])
-        else:
-            logger.warning(f"OverallPlayerDashboard data not found for {player_actual_name} in season {season}")
-            return format_response(data={}) # Or return an error
+        if clutch_stats is None:
+            logger.warning(f"'{clutch_dataset_name}' data not found for {player_actual_name} in season {season} with specified filters.")
+            # Return empty success or a specific message
+            return format_response(data={}, message=f"No clutch stats ({clutch_dataset_name}) found for the player with the specified parameters.")
+
+        # Return the extracted clutch stats
+        return format_response(data=clutch_stats)
 
     except Exception as e:
+        # Keep existing exception handling
         api_error = e # Store the original exception
-        logger.error(f"nba_api playerdashboardbyclutch failed for ID {player_id}, Season {season}: {e}")
+        logger.error(f"nba_api playerdashboardbyclutch failed for ID {player_id}, Season {season}: {e}", exc_info=True)
         # Use suggested error constant name
         return format_response(error=Errors.PLAYER_CAREER_STATS_API.format(name=player_actual_name, season=season, error=str(api_error)))
     except Exception as e:
-        logger.critical(f"Unexpected error in fetch_player_clutch_stats_logic for '{player_actual_name}', Season {season}: {e}")
+        logger.critical(f"Unexpected error in fetch_player_clutch_stats_logic for '{player_actual_name}', Season {season}: {e}", exc_info=True)
         # Use suggested error constant name
         return format_response(error=Errors.PLAYER_CAREER_STATS_UNEXPECTED.format(name=player_actual_name, season=season, error=str(e)))

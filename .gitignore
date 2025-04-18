@@ -5,3 +5,4 @@ nba-analytics-backend/backend_app.log
 .cursorrules/
 .env.local
 .cursor/
+.windsurfrules/
