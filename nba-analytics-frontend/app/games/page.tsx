@@ -125,81 +125,20 @@ export default function GamesPage() {
 
   // Effect for handling data fetching (HTTP or WebSocket) based on date
   useEffect(() => {
-    let isMounted = true; // Flag to prevent state updates on unmounted component
-    setError(null);
-    setIsLoading(true);
-    setIsConnected(false); // Reset connection status on date change
-    setScoreboardData(null); // Clear previous data
+    let isMounted = true; // Flag for async operations
 
-    // Clean up previous WebSocket connection if it exists
-    if (ws.current) {
-        console.log("Closing previous WebSocket connection due to date change.");
-        ws.current.close();
-        ws.current = null;
-    }
-
-    if (viewingToday) {
-      // --- WebSocket Logic for Today ---
-      console.log("Setting up WebSocket for today's scores.");
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}/api/v1/live/scoreboard/ws`;
-      
-      console.log(`Attempting to connect WebSocket: ${wsUrl}`);
-      const currentWs = new WebSocket(wsUrl);
-      ws.current = currentWs; // Assign to ref
-
-      currentWs.onopen = () => {
-        if (!isMounted) return;
-        console.log("WebSocket connected");
-        setIsConnected(true);
-        setError(null); 
-        // Keep loading until first message arrives
-      };
-
-      currentWs.onclose = () => {
-        if (!isMounted) return;
-        console.log("WebSocket disconnected");
-        setIsConnected(false);
-        // Only show loading/error if we never got data initially
-        if (!scoreboardData) {
-           setIsLoading(true); 
-           setError("WebSocket disconnected. Please refresh or check back."); 
-        }
-      };
-
-      currentWs.onerror = (event) => {
-        if (!isMounted) return;
-        console.error("WebSocket error:", event);
-        setError("WebSocket connection error.");
-        setIsLoading(false);
-        setIsConnected(false);
-        ws.current = null; // Clear ref on error
-      };
-
-      currentWs.onmessage = (event) => {
-         if (!isMounted) return;
-         try {
-           const data: ScoreboardData = JSON.parse(event.data);
-           // Log the received data structure for inspection
-           console.log("Received data via WebSocket:", JSON.stringify(data, null, 2));
-           
-           if (data && data.games && Array.isArray(data.games)) {
-             setScoreboardData(data);
-    setError(null);
-             if (isLoading) {
-                setIsLoading(false); 
-             }
-             console.log("Scoreboard state updated via WebSocket");
-           } else {
-             console.warn("Received invalid data format from WebSocket:", event.data);
-           }
-         } catch (e) {
-           console.error("Failed to parse WebSocket message:", e);
-         }
-      };
-
-    } else {
+    if (!viewingToday) {
       // --- HTTP Fetch Logic for Past/Future Dates ---
+      setError(null);
+      setIsLoading(true);
+      setScoreboardData(null); // Clear previous data
+      
+      // Ensure any lingering WS connection ref is cleared if switching from WS to HTTP
+      if (ws.current) {
+          ws.current = null;
+          setIsConnected(false);
+      }
+      
       console.log(`Fetching scores via HTTP for non-today date: ${urlDate}`);
       getScoreboardDataHttp(urlDate)
         .then(data => {
@@ -215,18 +154,115 @@ export default function GamesPage() {
             setIsLoading(false);
           }
         });
-    }
+      
+      // Cleanup for HTTP fetch (only need isMounted flag)
+      return () => {
+        isMounted = false;
+      };
 
-    // Cleanup function
-    return () => {
-      isMounted = false;
-      if (ws.current) {
-        console.log("Closing WebSocket connection on cleanup.");
-        ws.current.close();
-        ws.current = null;
+    } else {
+      // --- WebSocket Logic for Today ---
+      console.log("Running WebSocket useEffect setup...");
+      setError(null);
+      // Set loading true ONLY if we don't have existing data (avoids flicker on HMR)
+      if (!scoreboardData) {
+          setIsLoading(true);
       }
-    };
-  // Rerun effect when the date changes
+      setIsConnected(false); // Reset connection status during setup
+      // Don't clear scoreboardData immediately, let the first message update it
+      
+      // Create a new WebSocket instance *within* this effect run.
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/api/v1/live/scoreboard/ws`;
+      console.log(`Creating WebSocket instance for: ${wsUrl}`);
+      const socket = new WebSocket(wsUrl);
+      let connectionEstablished = false; // Track if onopen has fired
+
+      // --- Attach Handlers to the specific 'socket' instance ---
+      socket.onopen = () => {
+        if (!isMounted) return; // Check if component is still mounted
+        console.log("WebSocket connected (onopen fired)");
+        connectionEstablished = true;
+        setIsConnected(true);
+        setError(null); 
+        // We can set loading to false here, as connection is ready
+        setIsLoading(false); 
+        // Assign to ref *after* successful open
+        ws.current = socket; 
+      };
+
+      socket.onclose = () => {
+        if (!isMounted) return;
+        console.log(`WebSocket disconnected (onclose fired) - Was connection established? ${connectionEstablished}`);
+        setIsConnected(false);
+        // Show error only if we were connected or never loaded data
+        if (connectionEstablished || !scoreboardData) {
+            setError("Live connection lost. Please refresh.");
+            setIsLoading(false); // Ensure loading is stopped
+        }
+        // Clear the ref if it points to this closed socket
+        if (ws.current === socket) {
+             ws.current = null;
+        }
+      };
+
+      socket.onerror = (event) => {
+        if (!isMounted) return;
+        console.error("WebSocket error (onerror fired):", event);
+        setError("WebSocket connection error.");
+        setIsLoading(false);
+        setIsConnected(false);
+        if (ws.current === socket) {
+            ws.current = null; // Clear ref on error too
+        }
+      };
+
+      socket.onmessage = (event) => {
+         if (!isMounted) return;
+         console.log("WebSocket message received (onmessage fired)");
+         try {
+           const data = JSON.parse(event.data);
+           console.log("Parsed WebSocket data:", JSON.stringify(data, null, 2));
+           
+           // --- Check if it's actual scoreboard data --- 
+           if (data && data.games && Array.isArray(data.games)) {
+             // It looks like scoreboard data, process it
+             const scoreboardUpdate = data as ScoreboardData; 
+             setScoreboardData(scoreboardUpdate);
+             setError(null); // Clear error on successful data
+             // Ensure loading is false once data arrives
+             if (isLoading) {
+                setIsLoading(false); 
+             }
+             console.log("Scoreboard state updated via WebSocket message");
+           } else {
+             // It's not scoreboard data (e.g., our old test message, or something else)
+             // Log it but don't treat it as an error or try to update scoreboard state
+             console.warn("Received non-scoreboard data format from WebSocket:", data);
+           }
+         } catch (e) {
+           console.error("Failed to parse WebSocket message:", e);
+         }
+      };
+
+      // --- Cleanup Function for WebSocket ---
+      // This cleanup function belongs to the specific 'socket' instance created above.
+      return () => {
+        isMounted = false; // Mark as unmounted
+        console.log("WebSocket useEffect cleanup: Attempting to close socket instance.");
+        // Close the specific socket instance created in this effect run.
+        socket.close();
+        // Check if the main ref points to this specific socket before nulling
+        // Prevents the cleanup of the first run from nulling the ref set by the second run in Strict Mode
+        if (ws.current === socket) {
+          console.log("WebSocket useEffect cleanup: Clearing main ws.current ref.");
+          ws.current = null;
+        }
+        // Optionally reset connection state? Depends on desired behavior on quick switches.
+        // setIsConnected(false);
+      };
+    }
+  // Rerun effect when the date changes (viewingToday dependency handles the switch between WS/HTTP)
   }, [urlDate, viewingToday]); 
 
   // Function to fetch Play-by-Play data
@@ -242,16 +278,23 @@ export default function GamesPage() {
     }
 
     try {
-      const response = await fetch(`/api/v1/games/playbyplay`, { 
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ 
-          target: "playbyplay", 
-          params: { game_id: gameId }
-        }),
-        cache: 'no-store', 
+      // Construct URL with gameId in path
+      let apiUrl = `/api/v1/games/playbyplay/${gameId}`;
+
+      // Add period filters as query parameters if needed
+      const periodNum = periodFilter !== "all" ? parseInt(periodFilter.replace("q", "")) : 0;
+      if (periodNum > 0) {
+          // Assuming API expects start and end period for a single quarter filter
+          apiUrl += `?start_period=${periodNum}&end_period=${periodNum}`;
+      }
+      // else: no query parameters needed for "all" periods (API defaults to 0)
+
+      console.log(`Requesting PBP from: ${apiUrl}`);
+
+      // Use GET method, remove headers/body
+      const response = await fetch(apiUrl, { 
+        method: 'GET',
+        cache: 'no-store', // Keep cache policy if needed for live updates
       });
       
       // Log raw response text first
@@ -279,16 +322,22 @@ export default function GamesPage() {
       // Now parse the successful response
       const data = JSON.parse(rawResponseText);
 
-      if (data.result && data.result.periods) {
-        const newData = data.result as PbpData;
+      // Check for expected structure directly (no 'result' wrapper)
+      if (data.game_id && data.periods) {
+        const newData = data as PbpData; // Assign directly
 
         if (isPollingUpdate && pbpData) {
           console.log("Merging polled PBP data...");
+          // Create a new object for the merged data, copying necessary fields
+          // We assume fields like game_id, has_video, source don't change during polling
           const mergedData: PbpData = {
-            ...newData, 
-            periods: [], 
+            game_id: newData.game_id,       // from newData
+            has_video: newData.has_video,   // from newData
+            source: newData.source,       // from newData
+            filtered_periods: newData.filtered_periods, // from newData (or pbpData if needed)
+            periods: [], // Start with empty periods for merging
           };
-
+          
           const existingPeriodsMap = new Map(pbpData.periods.map(p => [p.period, p]));
           const existingEventNums = new Set<number>();
           pbpData.periods.forEach(p => p.plays.forEach(play => existingEventNums.add(play.event_num)));
@@ -321,16 +370,16 @@ export default function GamesPage() {
 
         } else {
           // --- Initial load or no previous data --- 
-          setPbpData(newData);
+          setPbpData(newData); // Use the directly parsed data
         }
 
         // Clear error only on successful fetch (initial or polling)
         setPbpError(null); 
-        if (!isPollingUpdate) console.log("PBP data fetched successfully:", data.result);
+        if (!isPollingUpdate) console.log("PBP data fetched successfully:", newData); // Log newData
       } else {
         console.error("Invalid PBP data structure received:", data);
         // Keep previous data on polling error to avoid clearing the view
-        if (!isPollingUpdate) setPbpError("Received invalid PBP data structure.");
+        if (!isPollingUpdate) setPbpError("Received invalid PBP data structure (missing game_id or periods).");
       }
     } catch (err: unknown) {
       console.error("Failed to load PBP data:", err);
