@@ -233,8 +233,8 @@ def fetch_league_leaders_logic(
             stat_category_abbreviation=stat_category,
             season_type_all_star=season_type,
             per_mode48=per_mode,
-            league_id_nullable=league_id,
-            scope_nullable=scope, # Corrected parameter name back to scope_nullable
+            league_id=league_id,
+            scope=scope,
             timeout=DEFAULT_TIMEOUT
         )
         

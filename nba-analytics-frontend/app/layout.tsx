@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { GeistSans } from "geist/font/sans";
 import { ThemeProvider } from "@/components/theme-provider";
-import LayoutClient from '@/components/LayoutClient';
 import { ClerkProvider } from '@clerk/nextjs'
 import "./globals.css";
 import { cn } from '@/lib/utils'
@@ -38,7 +37,7 @@ export default function RootLayout({ children, }: { children: React.ReactNode; }
             enableSystem
             disableTransitionOnChange
           >
-            <LayoutClient>{children}</LayoutClient>
+            {children}
           </ThemeProvider>
         </body>
       </html>

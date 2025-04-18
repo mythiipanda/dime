@@ -9,7 +9,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { TeamStanding, getClinchIndicators, formatStreak } from "@/lib/api/teams";
+import { TeamStanding } from "@/lib/api/teams";
+import { getClinchIndicators, formatStreak } from "@/lib/utils/teams";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";

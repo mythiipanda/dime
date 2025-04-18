@@ -1,4 +1,5 @@
 import { API_BASE_URL } from '@/lib/config';
+import { fetchFromAPI } from './fetch'; // Import the fetch wrapper
 
 // Interface for a single team's standing data
 export interface TeamStanding {
@@ -60,90 +61,54 @@ export interface TeamsByConference {
 }
 
 /**
- * Fetches league standings from the API and parses them.
+ * Fetches league standings from the API.
+ * Uses fetchFromAPI wrapper.
+ * Handles potential double-encoded JSON from the backend.
  * @param {string} season - The season to fetch standings for (e.g., "2024-25")
  * @returns {Promise<StandingsResponse>} A promise that resolves to the parsed standings data.
  */
 export async function getLeagueStandings(season?: string): Promise<StandingsResponse> {
-  let response: Response | null = null;
+  const endpoint = '/standings';
+  const params = new URLSearchParams();
+  if (season) {
+    params.append('season', season);
+  }
+  const urlWithParams = `${endpoint}?${params.toString()}`;
+
   try {
-    // Add season as a query parameter if provided
-    const url = new URL(`${API_BASE_URL}/standings`);
-    if (season) {
-      url.searchParams.append('season', season);
-    }
-    
-    console.log('Fetching standings from:', url.toString());
-    response = await fetch(url.toString());
+    const rawData = await fetchFromAPI<Record<string, unknown> | string>(urlWithParams, { 
+      method: 'GET',
+    });
 
-    if (!response.ok) {
-       const errorBody = await response.text().catch(() => 'Could not read error body');
-       console.error('Server', `HTTP error! status: ${response.status}, statusText: ${response.statusText}, body: ${errorBody}`);
-       throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    // --- Get RAW text ---
-    const rawText = await response.text();
-
-    // --- Attempt initial parse ---
-    let parsedData: Record<string, unknown>;
-    try {
-        if (!rawText || rawText.trim() === '') {
-             console.error('Server', 'Received empty response body.');
-             throw new Error('Invalid response format: empty body');
-        }
-        parsedData = JSON.parse(rawText); // First parse
-        console.log('Server', `Fetched standings for season: ${season || 'default'}`);
-
-    } catch (parseError: unknown) {
-        console.error('Server', 'Failed initial JSON parse:', parseError);
-        console.error('Server', 'Raw text that failed initial parse:', rawText.substring(0, 500) + '...');
-        throw new Error(`Failed initial JSON parse: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
-    }
-
-    // --- Check for double encoding and perform second parse if needed ---
     let data: Record<string, unknown>;
-    if (typeof parsedData === 'string') {
-        console.log('Server', 'Detected string after first parse, attempting second parse...');
-        try {
-            data = JSON.parse(parsedData);
-        } catch (secondParseError: unknown) {
-             console.error('Server', 'Failed second JSON parse:', secondParseError);
-             console.error('Server', 'String content that failed second parse:', (parsedData as string).substring(0, 500) + '...');
-             throw new Error(`Failed second JSON parse (double encoding issue?): ${secondParseError instanceof Error ? secondParseError.message : String(secondParseError)}`);
-        }
+    // TODO: Remove this double-parsing if API can be fixed to consistently return JSON.
+    if (typeof rawData === 'string') {
+      console.log('Server', 'Detected string response, attempting second parse...');
+      try {
+        data = JSON.parse(rawData);
+      } catch (secondParseError: unknown) {
+         console.error('Server', 'Failed second JSON parse:', secondParseError);
+         throw new Error(`Failed second JSON parse (double encoding?): ${secondParseError instanceof Error ? secondParseError.message : String(secondParseError)}`);
+      }
+    } else if (rawData && typeof rawData === 'object') {
+       data = rawData;
     } else {
-        data = parsedData;
+        console.error('Server', 'Unexpected data type received from fetchFromAPI:', typeof rawData);
+        throw new Error('Invalid response format received from API helper');
     }
 
-    // --- Validation ---
-    if (!data || typeof data !== 'object' || !('standings' in data) || !Array.isArray(data.standings)) {
-        console.error('Server', 'Invalid data structure received:', data);
-        throw new Error('Invalid response format');
+    if (!data || !('standings' in data) || !Array.isArray(data.standings)) {
+      console.error('Server', 'Invalid standings data structure received:', data);
+      throw new Error('Invalid standings response format');
     }
 
-    // --- Data Mapping ---
     const mappedStandings: TeamStanding[] = data.standings.map((standing: Record<string, unknown>): TeamStanding => {
         if (!standing || typeof standing !== 'object') {
             console.warn('Server', 'Mapping warning: Invalid item in standings array:', standing);
             return {
-                TeamID: 0,
-                TeamName: 'Invalid Data',
-                Conference: '',
-                PlayoffRank: 0,
-                WinPct: 0,
-                GB: 0,
-                L10: '',
-                STRK: '',
-                WINS: 0,
-                LOSSES: 0,
-                HOME: '',
-                ROAD: '',
-                Division: '',
-                ClinchIndicator: '',
-                DivisionRank: 0,
-                ConferenceRecord: '',
-                DivisionRecord: ''
+                TeamID: 0, TeamName: 'Invalid Data', Conference: '', PlayoffRank: 0, WinPct: 0,
+                GB: 0, L10: '', STRK: '', WINS: 0, LOSSES: 0, HOME: '', ROAD: '', Division: '',
+                ClinchIndicator: '', DivisionRank: 0, ConferenceRecord: '', DivisionRecord: ''
             };
         }
         return {
@@ -170,87 +135,9 @@ export async function getLeagueStandings(season?: string): Promise<StandingsResp
     return { standings: mappedStandings };
 
   } catch (error: unknown) {
-      console.error('Server', `Error fetching standings for season ${season}:`, error instanceof Error ? error.message : String(error));
-      throw error;
+    console.error(`Server: Error fetching standings for season ${season}:`, error instanceof Error ? error.message : String(error));
+    throw error;
   }
-}
-
-export function formatRecord(wins: number, losses: number): string {
-  return `${wins}-${losses}`;
-}
-
-export function formatWinPct(pct: number): string {
-  // Ensure pct is a number before calling toFixed
-  const numPct = Number(pct);
-  if (isNaN(numPct)) {
-    return 'N/A';
-  }
-  return (numPct * 100).toFixed(1);
-}
-
-
-export function getGamesBehind(gb: number): string {
-  const numGb = Number(gb);
-  if (isNaN(numGb) || numGb === 0) return '-';
-  return numGb.toFixed(1);
-}
-
-export function getRecordColor(wins: number, losses: number): string {
-  const totalGames = wins + losses;
-  if (totalGames === 0) return 'text-gray-500'; // Handle division by zero
-
-  const winPct = wins / totalGames;
-  if (winPct >= 0.6) return 'text-green-500';
-  if (winPct <= 0.4) return 'text-red-500';
-  return 'text-yellow-500';
-}
-
-export function formatStreak(streak: string): string {
-  return String(streak || '').trim(); // Ensure it's a string before trimming
-}
-
-export function getClinchIndicators(indicator?: string): string[] {
-  if (!indicator || typeof indicator !== 'string') return [];
-
-  // Normalize: Trim whitespace, replace common prefixes, then split by '-', trim parts.
-  const parts = indicator
-    .trim()
-    .replace(/^[\s*-]+/, '') // Remove leading space/hyphen/asterisk
-    .split('-')
-    .map(s => s.trim().toLowerCase()) // Trim each part and make lowercase
-    .filter(i => i); // Remove empty strings
-
-  if (parts.length === 0) return [];
-
-  return parts.map(i => {
-    switch(i) {
-      // Playoff/Conference/League Status
-      case 'x': return 'Clinched Playoff Spot';
-      case 'y': return 'Clinched Division Title'; // Most common meaning for y
-      case 'z': return 'Clinched Conference Best Record';
-      case '*': return 'Clinched Conference Best Record'; // Or potentially 'Clinched' generally
-      case 'w': return 'Clinched Conference/Division';
-      case 'p': return 'Clinched Play-In Spot';
-      case 'pi': return 'Clinched Play-In Spot';
-      case 'e': return 'Clinched Conference/Division';
-      case 'o': return 'Eliminated from Contention';
-
-      // Division Titles
-      case 'a': // Fall-through
-      case 'atl': return 'Clinched Atlantic Division';
-      case 'c': // Fall-through - also used in your example, likely for Central Division
-      case 'cen': return 'Clinched Central Division';
-      case 'se': return 'Clinched Southeast Division';
-      case 'nw': return 'Clinched Northwest Division';
-      case 'p': // Fall-through - careful, 'p' also means play-in, context matters!
-      case 'pac': return 'Clinched Pacific Division';
-      case 'sw': return 'Clinched Southwest Division';
-
-      default:
-          console.warn(`Unknown clinch indicator part: '${i}' in full indicator '${indicator}'`);
-          return `Unknown (${i})`; // Return something indicating unknown status
-    }
-  }).filter((value, index, self) => self.indexOf(value) === index); // Remove duplicates if any arise
 }
 
 export async function getTeamsByConference(season?: string): Promise<TeamsByConference> {
