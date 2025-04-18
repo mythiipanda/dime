@@ -124,15 +124,33 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
   const hasIntermediateContent = intermediateSteps.thinking.length > 0 || intermediateSteps.tools.length > 0
   const showThinkingProcess = !isUser && (isThinking || hasIntermediateContent)
 
-  const copyToClipboard = async (text: string) => {
+  const copyToClipboard = async (text: string | object) => {
+    let textToCopy: string;
+    if (typeof text === 'string') {
+      textToCopy = text;
+    } else {
+      try {
+        textToCopy = JSON.stringify(text, null, 2);
+      } catch {
+        textToCopy = "[Could not copy object]";
+      }
+    }
     try {
-      await navigator.clipboard.writeText(text)
+      await navigator.clipboard.writeText(textToCopy)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch (err) {
       console.error('Failed to copy text: ', err)
     }
   }
+
+  // Prepare content for ReactMarkdown, ensuring it's a string
+  const markdownContent = typeof message.content === 'string' 
+    ? message.content 
+    : (message.content && typeof message.content === 'object')
+      // Format object as JSON code block
+      ? `\`\`\`json\n${JSON.stringify(message.content, null, 2)}\n\`\`\`` 
+      : ''; // Default to empty string if null/undefined/etc.
 
   const components: Components = {
     code(props) {
@@ -258,7 +276,7 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
             "shadow-sm transition-colors hover:border-border"
           )}>
             <ReactMarkdown components={components}>
-              {message.content}
+              {markdownContent}
             </ReactMarkdown>
           </div>
         )}
@@ -385,7 +403,7 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
               </div>
 
               <ReactMarkdown components={components}>
-                {message.content}
+                {markdownContent}
               </ReactMarkdown>
 
               {/* Sources Section */}
