@@ -3,13 +3,15 @@ import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 import re # For parsing live clock
-from nba_api.stats.endpoints import boxscoretraditionalv2, playbyplay, shotchartdetail, leaguegamefinder
+from nba_api.stats.endpoints import boxscoretraditionalv2, playbyplay, shotchartdetail, leaguegamefinder, BoxScoreAdvancedV3, BoxScoreTraditionalV3
 # Live PBP endpoint
 from nba_api.live.nba.endpoints import PlayByPlay as LivePlayByPlay
 # Endpoint to check game status (if needed)
 from nba_api.live.nba.endpoints import scoreboard
 from backend.config import DEFAULT_TIMEOUT, Errors
 from backend.api_tools.utils import _process_dataframe, format_response
+# Import relevant parameters
+from nba_api.stats.library.parameters import EndPeriod, EndRange, RangeType, StartPeriod, StartRange
 
 logger = logging.getLogger(__name__)
 
@@ -20,95 +22,163 @@ def _format_game_leader(leader_data: Dict) -> Dict:
         "stats": f"{leader_data.get('points', 0)} PTS, {leader_data.get('rebounds', 0)} REB, {leader_data.get('assists', 0)} AST"
     }
 
-def fetch_boxscore_traditional_logic(game_id: str, start_period: int = 0, end_period: int = 0) -> str:
+def fetch_boxscore_traditional_logic(
+    game_id: str, 
+    start_period: int = StartPeriod.default, # Use defaults from parameters library
+    end_period: int = EndPeriod.default, 
+    start_range: int = StartRange.default, 
+    end_range: int = EndRange.default,
+    range_type: int = RangeType.default
+) -> str:
     """
-    Fetches detailed box score data for a specific game, optionally filtered by period.
+    Fetches detailed traditional box score data using BoxScoreTraditionalV3.
+    Allows filtering by period and/or time range within periods.
     
     Args:
         game_id: NBA game ID
-        start_period (int, optional): Starting period filter (0 for all).
-        end_period (int, optional): Ending period filter (0 for all).
+        start_period: Start period filter (0 for default/all).
+        end_period: End period filter (0 for default/all).
+        start_range: Start range filter (0 for default/all).
+        end_range: End range filter (0 for default/all).
+        range_type: Range type filter (0 for default/all).
         
     Returns:
         JSON string containing box score statistics in an organized format.
     """
-    logger.info(f"Executing fetch_boxscore_traditional_logic for game ID: {game_id}, Start: {start_period}, End: {end_period}")
+    logger.info(f"Executing fetch_boxscore_traditional_logic (V3) for game ID: {game_id}, StartPeriod: {start_period}, EndPeriod: {end_period}, StartRange: {start_range}, EndRange: {end_range}")
     
     if not game_id:
         return format_response(error=Errors.GAME_ID_EMPTY)
     
     try:
-        # Get boxscore data
-        boxscore = boxscoretraditionalv2.BoxScoreTraditionalV2(
+        # Use BoxScoreTraditionalV3 with period/range parameters
+        boxscore = BoxScoreTraditionalV3(
             game_id=game_id,
             start_period=start_period,
             end_period=end_period,
-            timeout=DEFAULT_TIMEOUT # Assuming DEFAULT_TIMEOUT is defined
+            start_range=start_range,
+            end_range=end_range,
+            range_type=range_type,
+            timeout=DEFAULT_TIMEOUT
         )
+        logger.debug(f"BoxScoreTraditionalV3 API call successful for {game_id}")
         
-        # Process player stats using apply
+        # --- Process V3 Data --- 
+        
+        # Process player stats (lambda function should be mostly correct based on docs)
         player_stats_raw = boxscore.player_stats.get_data_frame()
+        logger.debug(f"Processing V3 player stats dataframe for {game_id}")
         player_stats = player_stats_raw.apply(
             lambda row: {
-                "player_id": row.get("PLAYER_ID"), "name": row.get("PLAYER_NAME"), "team": row.get("TEAM_ABBREVIATION"),
-                "position": row.get("START_POSITION", ""), "minutes": row.get("MIN", "0"), "points": row.get("PTS", 0),
-                "rebounds": {"offensive": row.get("OREB", 0), "defensive": row.get("DREB", 0), "total": row.get("REB", 0)},
-                "assists": row.get("AST", 0), "steals": row.get("STL", 0), "blocks": row.get("BLK", 0),
-                "turnovers": row.get("TO", 0), "fouls": row.get("PF", 0),
+                "player_id": row.get("personId"),
+                "name": f'{row.get("firstName", "")} {row.get("familyName", "")}',
+                "team": row.get("teamTricode"), 
+                "position": row.get("position", ""), 
+                "comment": row.get("comment", ""), # Add comment if available
+                "jerseyNum": row.get("jerseyNum", ""), # Add jersey number
+                "minutes": row.get("minutes", "0"), 
+                "points": row.get("points", 0),
+                "rebounds": {"offensive": row.get("reboundsOffensive", 0), "defensive": row.get("reboundsDefensive", 0), "total": row.get("reboundsTotal", 0)},
+                "assists": row.get("assists", 0), 
+                "steals": row.get("steals", 0), 
+                "blocks": row.get("blocks", 0),
+                "turnovers": row.get("turnovers", 0), 
+                "fouls": row.get("foulsPersonal", 0),
                 "shooting": {
-                    "fg": f"{row.get('FGM', 0)}-{row.get('FGA', 0)}", "fg_pct": row.get("FG_PCT", 0.0),
-                    "fg3": f"{row.get('FG3M', 0)}-{row.get('FG3A', 0)}", "fg3_pct": row.get("FG3_PCT", 0.0),
-                    "ft": f"{row.get('FTM', 0)}-{row.get('FTA', 0)}", "ft_pct": row.get("FT_PCT", 0.0)
+                    "fg": f'{row.get("fieldGoalsMade", 0)}-{row.get("fieldGoalsAttempted", 0)}', 
+                    "fg_pct": row.get("fieldGoalsPercentage", 0.0),
+                    "fg3": f'{row.get("threePointersMade", 0)}-{row.get("threePointersAttempted", 0)}', 
+                    "fg3_pct": row.get("threePointersPercentage", 0.0),
+                    "ft": f'{row.get("freeThrowsMade", 0)}-{row.get("freeThrowsAttempted", 0)}', 
+                    "ft_pct": row.get("freeThrowsPercentage", 0.0)
                 },
-                "plus_minus": row.get("PLUS_MINUS", 0)
+                "plus_minus": row.get("plusMinusPoints", 0)
             }, axis=1
         ).tolist() if not player_stats_raw.empty else []
+        logger.debug(f"V3 Player stats processing complete for {game_id}")
 
-        # Process team stats using apply
+        # Process team stats (lambda function should be mostly correct based on docs)
         team_stats_raw = boxscore.team_stats.get_data_frame()
+        logger.debug(f"Processing V3 team stats dataframe for {game_id}")
         team_stats = team_stats_raw.apply(
             lambda row: {
-                "team_id": row.get("TEAM_ID"), "name": f"{row.get('TEAM_CITY', '')} {row.get('TEAM_NAME', '')}",
-                "abbreviation": row.get("TEAM_ABBREVIATION"), "points": row.get("PTS", 0),
-                "rebounds": {"offensive": row.get("OREB", 0), "defensive": row.get("DREB", 0), "total": row.get("REB", 0)},
-                "assists": row.get("AST", 0), "steals": row.get("STL", 0), "blocks": row.get("BLK", 0),
-                "turnovers": row.get("TO", 0), "fouls": row.get("PF", 0),
+                "team_id": row.get("teamId"), 
+                "name": f'{row.get("teamCity", "")} {row.get("teamName", "")}',
+                "abbreviation": row.get("teamTricode"), 
+                "minutes": row.get("minutes", "0"), # Add minutes for team
+                "points": row.get("points", 0),
+                "rebounds": {"offensive": row.get("reboundsOffensive", 0), "defensive": row.get("reboundsDefensive", 0), "total": row.get("reboundsTotal", 0)},
+                "assists": row.get("assists", 0), 
+                "steals": row.get("steals", 0), 
+                "blocks": row.get("blocks", 0),
+                "turnovers": row.get("turnovers", 0), 
+                "fouls": row.get("foulsPersonal", 0),
                 "shooting": {
-                    "fg": f"{row.get('FGM', 0)}-{row.get('FGA', 0)}", "fg_pct": round(row.get("FG_PCT", 0.0), 3),
-                    "fg3": f"{row.get('FG3M', 0)}-{row.get('FG3A', 0)}", "fg3_pct": round(row.get("FG3_PCT", 0.0), 3),
-                    "ft": f"{row.get('FTM', 0)}-{row.get('FTA', 0)}", "ft_pct": round(row.get("FT_PCT", 0.0), 3)
+                    "fg": f'{row.get("fieldGoalsMade", 0)}-{row.get("fieldGoalsAttempted", 0)}', 
+                    "fg_pct": round(row.get("fieldGoalsPercentage", 0.0), 3),
+                    "fg3": f'{row.get("threePointersMade", 0)}-{row.get("threePointersAttempted", 0)}', 
+                    "fg3_pct": round(row.get("threePointersPercentage", 0.0), 3),
+                    "ft": f'{row.get("freeThrowsMade", 0)}-{row.get("freeThrowsAttempted", 0)}', 
+                    "ft_pct": round(row.get("freeThrowsPercentage", 0.0), 3)
                 },
-                "plus_minus": row.get("PLUS_MINUS", 0)
+                 "plus_minus": row.get("plusMinusPoints", 0)
             }, axis=1
         ).tolist() if not team_stats_raw.empty else []
+        logger.debug(f"V3 Team stats processing complete for {game_id}")
 
-        # Process starters/bench stats using apply
+        # Re-introduce processing for starters/bench stats
         starters_bench_raw = boxscore.team_starter_bench_stats.get_data_frame()
+        logger.debug(f"Processing V3 team_starter_bench_stats dataframe for {game_id}")
         starters_bench = starters_bench_raw.apply(
             lambda row: {
-                "team_id": row.get("TEAM_ID"), "team_abbreviation": row.get("TEAM_ABBREVIATION"),
-                "group": row.get("STARTERS_BENCH"), "minutes": row.get("MIN", "0"),
-                "points": row.get("PTS", 0), "rebounds": row.get("REB", 0), "assists": row.get("AST", 0)
+                # Using V3 column names from docs
+                "team_id": row.get("teamId"), 
+                "team_abbreviation": row.get("teamTricode"), # Use Tricode for consistency
+                "group": row.get("startersBench"), # Key V3 column
+                "minutes": row.get("minutes", "0"),
+                "points": row.get("points", 0),
+                "rebounds": {"offensive": row.get("reboundsOffensive", 0), "defensive": row.get("reboundsDefensive", 0), "total": row.get("reboundsTotal", 0)},
+                "assists": row.get("assists", 0), 
+                "steals": row.get("steals", 0), 
+                "blocks": row.get("blocks", 0),
+                "turnovers": row.get("turnovers", 0), 
+                "fouls": row.get("foulsPersonal", 0),
+                 "shooting": {
+                    "fg": f'{row.get("fieldGoalsMade", 0)}-{row.get("fieldGoalsAttempted", 0)}', 
+                    "fg_pct": round(row.get("fieldGoalsPercentage", 0.0), 3),
+                    "fg3": f'{row.get("threePointersMade", 0)}-{row.get("threePointersAttempted", 0)}', 
+                    "fg3_pct": round(row.get("threePointersPercentage", 0.0), 3),
+                    "ft": f'{row.get("freeThrowsMade", 0)}-{row.get("freeThrowsAttempted", 0)}', 
+                    "ft_pct": round(row.get("freeThrowsPercentage", 0.0), 3)
+                }
             }, axis=1
         ).tolist() if not starters_bench_raw.empty else []
+        logger.debug(f"V3 Starters/Bench stats processing complete for {game_id}")
         
-        # Combine all results
+        # Combine V3 results, including starters/bench and updated params
         result = {
             "game_id": game_id,
-            "parameters": {
+            "parameters": { 
                 "start_period": start_period,
-                "end_period": end_period
+                "end_period": end_period,
+                "start_range": start_range,
+                "end_range": end_range,
+                "range_type": range_type,
+                "note": "Using BoxScoreTraditionalV3"
             },
             "teams": team_stats,
             "players": player_stats,
-            "starters_bench": starters_bench
+            "starters_bench": starters_bench # Re-added
         }
         
-        logger.info(f"fetch_boxscore_traditional_logic completed for game {game_id}")
+        logger.info(f"fetch_boxscore_traditional_logic (V3) completed for game {game_id}")
+        # Log the result dict before formatting
+        logger.debug(f"Result dictionary before formatting for {game_id}: {json.dumps(result, default=str)[:1000]}...")
+        # Original return call was correct
         return format_response(result)
         
     except Exception as e:
-        logger.error(f"Error fetching boxscore for game {game_id}: {str(e)}", exc_info=True)
+        logger.error(f"Error fetching boxscore (V3) for game {game_id}: {str(e)}", exc_info=True)
         return format_response(error=Errors.BOXSCORE_API.format(game_id=game_id, error=str(e)))
 
 # Historical PBP endpoint
@@ -432,3 +502,132 @@ def fetch_league_games_logic(
     except Exception as e:
         logger.error(f"Error fetching league games: {str(e)}", exc_info=True)
         return format_response(error=Errors.LEAGUE_GAMES_API.format(error=str(e)))
+
+# Advanced Box Score V3 Logic
+def fetch_boxscore_advanced_logic(game_id: str, end_period: int = 0, end_range: int = 0, start_period: int = 0, start_range: int = 0) -> str:
+    """
+    Fetches advanced box score data using BoxScoreAdvancedV3 for a specific game.
+
+    Args:
+        game_id (str): The 10-digit ID of the game.
+        end_period (int): End period filter (default 0).
+        end_range (int): End range filter (default 0).
+        start_period (int): Start period filter (default 0).
+        start_range (int): Start range filter (default 0).
+
+    Returns:
+        str: JSON string containing advanced player and team stats or an error message.
+    """
+    logger.info(f"Executing fetch_boxscore_advanced_logic (V3) for game ID: {game_id}")
+    if not game_id:
+        return format_response(error=Errors.GAME_ID_EMPTY)
+
+    try:
+        # Use BoxScoreAdvancedV3 exclusively
+        boxscore_adv = BoxScoreAdvancedV3(
+            game_id=game_id,
+            end_period=end_period,
+            end_range=end_range,
+            start_period=start_period,
+            start_range=start_range,
+            timeout=DEFAULT_TIMEOUT
+        )
+        logger.debug(f"BoxScoreAdvancedV3 API call successful for {game_id}")
+        
+        # Process player stats
+        player_stats_df = boxscore_adv.player_stats.get_data_frame()
+        logger.debug(f"Processing player stats dataframe for {game_id}")
+        player_stats = _process_dataframe(player_stats_df)
+        logger.debug(f"Player stats processing complete for {game_id}")
+        
+        # Process team stats
+        team_stats_df = boxscore_adv.team_stats.get_data_frame()
+        logger.debug(f"Processing team stats dataframe for {game_id}")
+        team_stats = _process_dataframe(team_stats_df)
+        logger.debug(f"Team stats processing complete for {game_id}")
+
+        result = {
+            "game_id": game_id,
+            "parameters": {
+                 "start_period": start_period,
+                 "end_period": end_period,
+                 "start_range": start_range,
+                 "end_range": end_range
+            },
+            "player_stats": player_stats,
+            "team_stats": team_stats
+        }
+        logger.info(f"Successfully fetched advanced box score V3 for game {game_id}")
+        formatted_response = format_response(data=result)
+        logger.debug(f"Formatted response for {game_id}: {formatted_response[:500]}...") # Log beginning of response
+        return formatted_response
+
+    # Catch specific IndexError which might indicate unavailable data for the game ID
+    except IndexError as ie:
+        logger.warning(f"IndexError during BoxScoreAdvancedV3 processing for game {game_id}: {ie}. Data likely unavailable.", exc_info=True)
+        # Return a more specific error message
+        error_msg = Errors.DATA_NOT_FOUND + f" (Advanced box score data might be unavailable for game {game_id})"
+        error_response = format_response(error=error_msg)
+        logger.error(f"Formatted specific error response for {game_id}: {error_response}")
+        return error_response
+    # Keep catching other potential exceptions
+    except Exception as e:
+        # Log the error *before* formatting the response
+        logger.error(f"Error during fetch_boxscore_advanced_logic for game {game_id}: {str(e)}", exc_info=True)
+        # Format the error response using the message from config.py
+        error_response = format_response(error=Errors.BOXSCORE_ADVANCED_API.format(game_id=game_id, error=str(e)))
+        logger.error(f"Formatted error response for {game_id}: {error_response}")
+        return error_response
+
+# Four Factors Box Score Logic
+def fetch_boxscore_four_factors_logic(game_id: str, start_period: int = 0, end_period: int = 0) -> str:
+    """Fetches box score four factors V3 data for a specific game."""
+    # This likely needs updating to use BoxScoreFourFactorsV3 as well if it exists
+    # Placeholder: Assuming it still uses V2 or needs refactoring
+    logger.warning("BoxScoreFourFactorsV3 not yet implemented, using placeholder logic.")
+    return format_response(error="Four Factors V3 endpoint not implemented yet.")
+
+# Usage Box Score Logic
+def fetch_boxscore_usage_logic(game_id: str) -> str:
+    """Fetches box score usage stats V3 data for a specific game."""
+    logger.info(f"Executing fetch_boxscore_usage_logic for game {game_id}")
+    try:
+        from nba_api.stats.endpoints.boxscoreusagev3 import BoxScoreUsageV3
+        usage = BoxScoreUsageV3(game_id=game_id, timeout=DEFAULT_TIMEOUT)
+        df = usage.player_stats.get_data_frame()
+        result = {"game_id": game_id, "usage_stats": df.to_dict('records') if not df.empty else []}
+        return format_response(result)
+    except Exception as e:
+        logger.error(f"Error fetching usage stats for {game_id}: {e}", exc_info=True)
+        return format_response(error=Errors.BOXSCORE_API.format(game_id=game_id, error=str(e)))
+
+# Defensive Box Score Logic
+def fetch_boxscore_defensive_logic(game_id: str) -> str:
+    """Fetches box score defensive stats V2 data for a specific game."""
+    logger.info(f"Executing fetch_boxscore_defensive_logic for game {game_id}")
+    try:
+        from nba_api.stats.endpoints.boxscoredefensivev2 import BoxScoreDefensiveV2
+        dfend = BoxScoreDefensiveV2(game_id=game_id, timeout=DEFAULT_TIMEOUT)
+        df = dfend.player_stats.get_data_frame()
+        result = {"game_id": game_id, "defensive_stats": df.to_dict('records') if not df.empty else []}
+        return format_response(result)
+    except Exception as e:
+        logger.error(f"Error fetching defensive stats for {game_id}: {e}", exc_info=True)
+        return format_response(error=Errors.BOXSCORE_API.format(game_id=game_id, error=str(e)))
+
+# Win Probability Logic
+def fetch_win_probability_logic(game_id: str, run_type: str = "0") -> str:
+    """Fetches win probability play-by-play data for a specific game."""
+    logger.info(f"Executing fetch_win_probability_logic for game {game_id}")
+    try:
+        from nba_api.stats.endpoints.winprobabilitypbp import WinProbabilityPBP
+        wp = WinProbabilityPBP(game_id=game_id, run_type=run_type, timeout=DEFAULT_TIMEOUT)
+        info_df = wp.game_info.get_data_frame()
+        prob_df = wp.win_prob_p_bp.get_data_frame()
+        info = info_df.iloc[0].to_dict() if not info_df.empty else {}
+        probs = prob_df.to_dict('records') if not prob_df.empty else []
+        result = {"game_id": game_id, "game_info": info, "win_probability": probs}
+        return format_response(result)
+    except Exception as e:
+        logger.error(f"Error fetching win probability for {game_id}: {e}", exc_info=True)
+        return format_response(error=Errors.PBP_API.format(game_id=game_id, error=str(e)))

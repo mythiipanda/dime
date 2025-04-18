@@ -12,6 +12,8 @@ from .tools import (
     get_player_career_stats,
     get_player_awards,
     get_player_aggregate_stats,
+    get_player_profile,
+    # Player Tracking/Advanced
     get_player_clutch_stats,
     get_player_passing_stats,
     get_player_rebounding_stats,
@@ -19,15 +21,15 @@ from .tools import (
     get_player_shotchart,
     get_player_defense_stats,
     get_player_hustle_stats,
-    get_player_profile,
-    get_player_insights,
-    get_live_odds,
+    # Team Info/Stats
     get_team_info_and_roster,
     get_team_stats,
     get_team_lineups,
+    # Team Tracking
     get_team_passing_stats,
     get_team_shooting_stats,
     get_team_rebounding_stats,
+    # Game/League
     find_games,
     get_boxscore_traditional,
     get_play_by_play,
@@ -36,7 +38,17 @@ from .tools import (
     get_draft_history,
     get_league_leaders,
     get_game_shotchart,
+    # Analytics Extensions
+    get_boxscore_advanced,
+    get_boxscore_four_factors,
+    get_boxscore_usage,
+    get_boxscore_defensive,
+    get_win_probability,
+    # Live
     get_live_boxscore,
+    get_live_odds,
+    # Misc
+    get_player_insights,
 )
 import datetime
 
@@ -223,6 +235,11 @@ nba_agent = Agent(
         get_draft_history,
         get_league_leaders,
         get_game_shotchart,
+        get_boxscore_advanced,
+        get_boxscore_four_factors,
+        get_boxscore_usage,
+        get_boxscore_defensive,
+        get_win_probability,
         # Live
         get_live_boxscore,
         get_live_odds,

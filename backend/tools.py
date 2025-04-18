@@ -16,7 +16,7 @@ import datetime
 
 # Import only the necessary constants for default values, use standard types in hints
 from nba_api.stats.library.parameters import (
-    SeasonTypeAllStar, PerModeDetailed, PerMode36, LeagueID, PerMode48, Scope, MeasureTypeDetailedDefense
+    SeasonTypeAllStar, PerModeDetailed, PerMode36, LeagueID, PerMode48, Scope, MeasureTypeDetailedDefense, RunType
 )
 from backend.config import CURRENT_SEASON
 from backend.api_tools.utils import format_response
@@ -43,7 +43,12 @@ from backend.api_tools.game_tools import (
     fetch_boxscore_traditional_logic,
     fetch_playbyplay_logic,
     fetch_league_games_logic, # Used by find_games
-    fetch_shotchart_logic
+    fetch_shotchart_logic,
+    fetch_boxscore_advanced_logic,
+    fetch_boxscore_four_factors_logic,
+    fetch_boxscore_usage_logic,
+    fetch_boxscore_defensive_logic,
+    fetch_win_probability_logic
 )
 from backend.api_tools.league_tools import (
     fetch_league_standings_logic,
@@ -71,6 +76,13 @@ from backend.api_tools.trending_team_tools import fetch_top_teams_logic  # Trend
 
 logger = logging.getLogger(__name__)
 
+# Helper function to generate cache key
+def generate_cache_key(func_name: str, *args, **kwargs) -> str:
+    key_parts = [func_name]
+    key_parts.extend(map(str, args))
+    key_parts.extend(f"{k}={v}" for k, v in sorted(kwargs.items()))
+    return "_".join(key_parts)
+
 # --- Agno Tool Functions (Wrappers for Logic) ---
 
 # Player Tools
@@ -81,8 +93,16 @@ def get_player_info(player_name: str) -> str:
     Args: player_name (str): Full name of the player.
     Returns: str: JSON string containing player info/stats or {'error': ...}.
     """
-    logger.debug(f"Tool 'get_player_info' called for '{player_name}'")
-    return fetch_player_info_logic(player_name)
+    cache_key = generate_cache_key("get_player_info", player_name)
+    cached_result = get_cached_data(cache_key)
+    if cached_result:
+        logger.debug(f"Cache hit for '{cache_key}'")
+        return cached_result
+
+    logger.debug(f"Cache miss for '{cache_key}'. Tool 'get_player_info' called for '{player_name}'")
+    result = fetch_player_info_logic(player_name)
+    cache_data(cache_key, result) # Add result to cache
+    return result
 
 @tool
 def get_player_gamelog(player_name: str, season: str, season_type: str = SeasonTypeAllStar.regular) -> str:
@@ -94,11 +114,20 @@ def get_player_gamelog(player_name: str, season: str, season_type: str = SeasonT
         season_type (str): 'Regular Season', 'Playoffs', etc. Defaults to Regular Season.
     Returns: str: JSON string containing game log data or {'error': ...}.
     """
-    logger.debug(f"Tool 'get_player_gamelog' called for '{player_name}', season '{season}', type '{season_type}'")
+    cache_key = generate_cache_key("get_player_gamelog", player_name, season, season_type=season_type)
+    cached_result = get_cached_data(cache_key)
+    if cached_result:
+        logger.debug(f"Cache hit for '{cache_key}'")
+        return cached_result
+
+    logger.debug(f"Cache miss for '{cache_key}'. Tool 'get_player_gamelog' called for '{player_name}', season '{season}', type '{season_type}'")
     valid_season_types = [st for st in dir(SeasonTypeAllStar) if not st.startswith('_') and isinstance(getattr(SeasonTypeAllStar, st), str)]
     if season_type not in valid_season_types:
         logger.warning(f"Invalid season_type '{season_type}' in tool wrapper. Logic function should handle default.")
-    return fetch_player_gamelog_logic(player_name, season, season_type)
+
+    result = fetch_player_gamelog_logic(player_name, season, season_type)
+    cache_data(cache_key, result)
+    return result
 
 @tool
 def get_player_career_stats(player_name: str, per_mode36: str = PerMode36.per_game) -> str:
@@ -109,11 +138,20 @@ def get_player_career_stats(player_name: str, per_mode36: str = PerMode36.per_ga
         per_mode36 (str): Stat mode ('PerGame', 'Totals', 'Per36', etc.). Defaults to 'PerGame'.
     Returns: str: JSON string containing career stats data or {'error': ...}.
     """
-    logger.debug(f"Tool 'get_player_career_stats' called for '{player_name}', per_mode36 '{per_mode36}'")
+    cache_key = generate_cache_key("get_player_career_stats", player_name, per_mode36=per_mode36)
+    cached_result = get_cached_data(cache_key)
+    if cached_result:
+        logger.debug(f"Cache hit for '{cache_key}'")
+        return cached_result
+
+    logger.debug(f"Cache miss for '{cache_key}'. Tool 'get_player_career_stats' called for '{player_name}', per_mode36 '{per_mode36}'")
     valid_per_modes = [getattr(PerMode36, attr) for attr in dir(PerMode36) if not attr.startswith('_') and isinstance(getattr(PerMode36, attr), str)]
     if per_mode36 not in valid_per_modes:
          logger.warning(f"Invalid per_mode36 '{per_mode36}' in tool wrapper. Logic function should handle default.")
-    return fetch_player_career_stats_logic(player_name, per_mode36)
+
+    result = fetch_player_career_stats_logic(player_name, per_mode36)
+    cache_data(cache_key, result)
+    return result
 
 @tool
 def get_player_awards(player_name: str) -> str:
@@ -122,8 +160,16 @@ def get_player_awards(player_name: str) -> str:
     Args: player_name (str): Full name of the player.
     Returns: str: JSON string containing a list of awards or {'error': ...}.
     """
-    logger.debug(f"Tool 'get_player_awards' called for '{player_name}'")
-    return fetch_player_awards_logic(player_name)
+    cache_key = generate_cache_key("get_player_awards", player_name)
+    cached_result = get_cached_data(cache_key)
+    if cached_result:
+        logger.debug(f"Cache hit for '{cache_key}'")
+        return cached_result
+
+    logger.debug(f"Cache miss for '{cache_key}'. Tool 'get_player_awards' called for '{player_name}'")
+    result = fetch_player_awards_logic(player_name)
+    cache_data(cache_key, result)
+    return result
 
 @tool
 def get_player_shotchart(
@@ -145,12 +191,20 @@ def get_player_shotchart(
             - Shooting percentages by zone
             - League average comparisons
     """
-    logger.debug(f"Tool get_player_shotchart called for {player_name}, season {season}")
-    return fetch_player_shotchart_logic(
+    cache_key = generate_cache_key("get_player_shotchart", player_name, season=season, season_type=season_type)
+    cached_result = get_cached_data(cache_key)
+    if cached_result:
+        logger.debug(f"Cache hit for '{cache_key}'")
+        return cached_result
+
+    logger.debug(f"Cache miss for '{cache_key}'. Tool get_player_shotchart called for {player_name}, season {season}")
+    result = fetch_player_shotchart_logic(
         player_name=player_name,
         season=season,
         season_type=season_type
     )
+    cache_data(cache_key, result)
+    return result
 
 @tool
 def get_player_defense_stats(
@@ -174,13 +228,21 @@ def get_player_defense_stats(
             - Blocks and steals
             - Defensive impact metrics
     """
-    logger.debug(f"Tool get_player_defense_stats called for {player_name}, season {season}")
-    return fetch_player_defense_logic(
+    cache_key = generate_cache_key("get_player_defense_stats", player_name, season=season, season_type=season_type, per_mode=per_mode)
+    cached_result = get_cached_data(cache_key)
+    if cached_result:
+        logger.debug(f"Cache hit for '{cache_key}'")
+        return cached_result
+
+    logger.debug(f"Cache miss for '{cache_key}'. Tool get_player_defense_stats called for {player_name}, season {season}")
+    result = fetch_player_defense_logic(
         player_name=player_name,
         season=season,
         season_type=season_type,
         per_mode=per_mode
     )
+    cache_data(cache_key, result)
+    return result
 
 # Player Tracking Tools
 @tool
@@ -197,13 +259,21 @@ def get_player_clutch_stats(
         season_type (str): 'Regular Season', 'Playoffs', etc. Defaults to Regular Season.
     Returns: str: JSON string containing clutch stats or {'error': ...}.
     """
-    logger.debug(f"Tool 'get_player_clutch_stats' called for '{player_name}', season '{season}', type '{season_type}'")
-    result = fetch_player_clutch_stats_logic(
+    cache_key = generate_cache_key("get_player_clutch_stats", player_name, season, season_type=season_type)
+    cached_result = get_cached_data(cache_key)
+    if cached_result:
+        logger.debug(f"Cache hit for '{cache_key}'")
+        return cached_result
+
+    logger.debug(f"Cache miss for '{cache_key}'. Tool 'get_player_clutch_stats' called for '{player_name}', season '{season}', type '{season_type}'")
+    result_dict = fetch_player_clutch_stats_logic(
         player_name=player_name,
         season=season,
         season_type=season_type
     )
-    return json.dumps(result, default=str)
+    result_str = json.dumps(result_dict, default=str)
+    cache_data(cache_key, result_str)
+    return result_str
 
 @tool
 def get_player_passing_stats(
@@ -219,12 +289,20 @@ def get_player_passing_stats(
         season_type (str): 'Regular Season', 'Playoffs', etc. Defaults to Regular Season
     Returns: str: JSON string containing player passing statistics
     """
-    logger.debug(f"Tool get_player_passing_stats called for {player_name}, season {season}")
-    return fetch_player_passing_stats_logic(
+    cache_key = generate_cache_key("get_player_passing_stats", player_name, season, season_type=season_type)
+    cached_result = get_cached_data(cache_key)
+    if cached_result:
+        logger.debug(f"Cache hit for '{cache_key}'")
+        return cached_result
+
+    logger.debug(f"Cache miss for '{cache_key}'. Tool get_player_passing_stats called for {player_name}, season {season}")
+    result = fetch_player_passing_stats_logic(
         player_name=player_name,
         season=season,
         season_type=season_type
     )
+    cache_data(cache_key, result)
+    return result
 
 @tool
 def get_player_rebounding_stats(
@@ -240,12 +318,20 @@ def get_player_rebounding_stats(
         season_type (str): 'Regular Season', 'Playoffs', etc. Defaults to Regular Season
     Returns: str: JSON string containing player rebounding statistics
     """
-    logger.debug(f"Tool get_player_rebounding_stats called for {player_name}, season {season}")
-    return fetch_player_rebounding_stats_logic(
+    cache_key = generate_cache_key("get_player_rebounding_stats", player_name, season, season_type=season_type)
+    cached_result = get_cached_data(cache_key)
+    if cached_result:
+        logger.debug(f"Cache hit for '{cache_key}'")
+        return cached_result
+
+    logger.debug(f"Cache miss for '{cache_key}'. Tool get_player_rebounding_stats called for {player_name}, season {season}")
+    result = fetch_player_rebounding_stats_logic(
         player_name=player_name,
         season=season,
         season_type=season_type
     )
+    cache_data(cache_key, result)
+    return result
 
 @tool
 def get_player_shots_tracking(player_id: str) -> str:
@@ -255,8 +341,17 @@ def get_player_shots_tracking(player_id: str) -> str:
         player_id (str): The NBA player ID.
     Returns: str: JSON string containing shot tracking stats or {'error': ...}.
     """
-    logger.debug(f"Tool 'get_player_shots_tracking' called for player_id '{player_id}'")
-    return fetch_player_shots_tracking_logic(player_id=player_id)
+    # Note: This assumes shot tracking for a player_id is relatively stable, maybe refresh seasonally?
+    cache_key = generate_cache_key("get_player_shots_tracking", player_id)
+    cached_result = get_cached_data(cache_key)
+    if cached_result:
+        logger.debug(f"Cache hit for '{cache_key}'")
+        return cached_result
+
+    logger.debug(f"Cache miss for '{cache_key}'. Tool 'get_player_shots_tracking' called for player_id '{player_id}'")
+    result = fetch_player_shots_tracking_logic(player_id=player_id)
+    cache_data(cache_key, result)
+    return result
 
 
 # Team Tools
@@ -269,8 +364,16 @@ def get_team_info_and_roster(team_identifier: str, season: str = CURRENT_SEASON)
         season (str): Season identifier (e.g., "2023-24"). Defaults to current.
     Returns: str: JSON string containing team data or {'error': ...}.
     """
-    logger.debug(f"Tool 'get_team_info_and_roster' called for '{team_identifier}', season '{season}'")
-    return fetch_team_info_and_roster_logic(team_identifier, season)
+    cache_key = generate_cache_key("get_team_info_and_roster", team_identifier, season=season)
+    cached_result = get_cached_data(cache_key)
+    if cached_result:
+        logger.debug(f"Cache hit for '{cache_key}'")
+        return cached_result
+
+    logger.debug(f"Cache miss for '{cache_key}'. Tool 'get_team_info_and_roster' called for '{team_identifier}', season '{season}'")
+    result = fetch_team_info_and_roster_logic(team_identifier, season)
+    cache_data(cache_key, result)
+    return result
 
 @tool
 def get_team_stats(
@@ -301,8 +404,14 @@ def get_team_stats(
     Returns:
         str: JSON string containing team statistics or error message.
     """
-    logger.debug(f"Tool 'get_team_stats' called for '{team_identifier}', season '{season}'")
-    return fetch_team_stats_logic(
+    cache_key = generate_cache_key("get_team_stats", team_identifier, season=season, season_type=season_type, per_mode=per_mode, measure_type=measure_type, opponent_team_id=opponent_team_id, date_from=date_from, date_to=date_to, league_id=league_id)
+    cached_result = get_cached_data(cache_key)
+    if cached_result:
+        logger.debug(f"Cache hit for '{cache_key}'")
+        return cached_result
+
+    logger.debug(f"Cache miss for '{cache_key}'. Tool 'get_team_stats' called for '{team_identifier}', season '{season}'")
+    result = fetch_team_stats_logic(
         team_identifier=team_identifier,
         season=season,
         season_type=season_type,
@@ -313,6 +422,8 @@ def get_team_stats(
         date_to=date_to,
         league_id=league_id
     )
+    cache_data(cache_key, result)
+    return result
 
 # Team Tracking Tools
 @tool
@@ -332,13 +443,21 @@ def get_team_passing_stats(
     Returns:
         String JSON with passing statistics for the team
     """
-    logger.debug(f"Tool get_team_passing_stats called for {team_identifier}, season {season}")
-    return fetch_team_passing_stats_logic(
+    cache_key = generate_cache_key("get_team_passing_stats", team_identifier, season, season_type=season_type, per_mode=per_mode)
+    cached_result = get_cached_data(cache_key)
+    if cached_result:
+        logger.debug(f"Cache hit for '{cache_key}'")
+        return cached_result
+
+    logger.debug(f"Cache miss for '{cache_key}'. Tool get_team_passing_stats called for {team_identifier}, season {season}")
+    result = fetch_team_passing_stats_logic(
         team_identifier=team_identifier,
         season=season,
         season_type=season_type,
         per_mode=per_mode
     )
+    cache_data(cache_key, result)
+    return result
 
 @tool
 def get_team_shooting_stats(
@@ -357,13 +476,21 @@ def get_team_shooting_stats(
     Returns:
         String JSON with shooting statistics for the team
     """
-    logger.debug(f"Tool get_team_shooting_stats called for {team_identifier}, season {season}")
-    return fetch_team_shooting_stats_logic(
+    cache_key = generate_cache_key("get_team_shooting_stats", team_identifier, season, season_type=season_type, per_mode=per_mode)
+    cached_result = get_cached_data(cache_key)
+    if cached_result:
+        logger.debug(f"Cache hit for '{cache_key}'")
+        return cached_result
+
+    logger.debug(f"Cache miss for '{cache_key}'. Tool get_team_shooting_stats called for {team_identifier}, season {season}")
+    result = fetch_team_shooting_stats_logic(
         team_identifier=team_identifier,
         season=season,
         season_type=season_type,
         per_mode=per_mode
     )
+    cache_data(cache_key, result)
+    return result
 
 @tool
 @tool
@@ -405,8 +532,14 @@ def get_team_lineups(
             - Advanced metrics (Off/Def Rating, Pace, TS%)
             - Player combinations
     """
-    logger.debug(f"Tool get_team_lineups called for season {season}")
-    return fetch_team_lineups_logic(
+    cache_key = generate_cache_key("get_team_lineups", team_id=team_id, season=season, season_type=season_type, per_mode=per_mode, month=month, date_from=date_from, date_to=date_to, opponent_team_id=opponent_team_id, vs_conference=vs_conference, vs_division=vs_division, game_segment=game_segment, period=period, last_n_games=last_n_games)
+    cached_result = get_cached_data(cache_key)
+    if cached_result:
+        logger.debug(f"Cache hit for '{cache_key}'")
+        return cached_result
+
+    logger.debug(f"Cache miss for '{cache_key}'. Tool get_team_lineups called for season {season}")
+    result = fetch_team_lineups_logic(
         team_id=team_id,
         season=season,
         season_type=season_type,
@@ -421,6 +554,8 @@ def get_team_lineups(
         period=period,
         last_n_games=last_n_games
     )
+    cache_data(cache_key, result)
+    return result
 
 def get_team_rebounding_stats(
     team_identifier: str,
@@ -438,13 +573,21 @@ def get_team_rebounding_stats(
     Returns:
         String JSON with rebounding statistics for the team
     """
-    logger.debug(f"Tool get_team_rebounding_stats called for {team_identifier}, season {season}")
-    return fetch_team_rebounding_stats_logic(
+    cache_key = generate_cache_key("get_team_rebounding_stats", team_identifier, season, season_type=season_type, per_mode=per_mode)
+    cached_result = get_cached_data(cache_key)
+    if cached_result:
+        logger.debug(f"Cache hit for '{cache_key}'")
+        return cached_result
+
+    logger.debug(f"Cache miss for '{cache_key}'. Tool get_team_rebounding_stats called for {team_identifier}, season {season}")
+    result = fetch_team_rebounding_stats_logic(
         team_identifier=team_identifier,
         season=season,
         season_type=season_type,
         per_mode=per_mode
     )
+    cache_data(cache_key, result)
+    return result
 
 
 # Game/League Tools
@@ -476,7 +619,14 @@ def find_games(
     Returns:
         str: JSON string containing a list of found games or {'error': ...}.
     """
-    logger.debug(f"Tool 'find_games' called with params: player_or_team={player_or_team}, player_id={player_id}, team_id={team_id}, date_from={date_from}, date_to={date_to}")
+    # Cache find_games results
+    cache_key = generate_cache_key("find_games", player_or_team=player_or_team, player_id=player_id, team_id=team_id, season=season, season_type=season_type, league_id=league_id, date_from=date_from, date_to=date_to)
+    cached_result = get_cached_data(cache_key)
+    if cached_result:
+        logger.debug(f"Cache hit for '{cache_key}'")
+        return cached_result
+
+    logger.debug(f"Cache miss for '{cache_key}'. Tool 'find_games' called with params: player_or_team={player_or_team}, player_id={player_id}, team_id={team_id}, date_from={date_from}, date_to={date_to}")
     if player_or_team == 'P' and player_id is None:
         return format_response(error="player_id is required when player_or_team='P'.")
     if player_or_team == 'T' and team_id is None:
@@ -492,6 +642,7 @@ def find_games(
         date_from_nullable=date_from,
         date_to_nullable=date_to
     )
+    cache_data(cache_key, result)
     return result
 
 @tool
@@ -501,9 +652,68 @@ def get_boxscore_traditional(game_id: str) -> str:
     Args: game_id (str): The 10-digit ID of the game.
     Returns: str: JSON string containing player and team stats or {'error': ...}.
     """
-    logger.debug(f"Tool 'get_boxscore_traditional' called for game_id '{game_id}'")
-    result = fetch_boxscore_traditional_logic(game_id)
-    return json.dumps(result, default=str)
+    cache_key = generate_cache_key("get_boxscore_traditional", game_id)
+    cached_result = get_cached_data(cache_key)
+    if cached_result:
+        logger.debug(f"Cache hit for '{cache_key}'. Returning cached result.")
+        logger.debug(f"Cached result content for '{cache_key}': {cached_result}")
+        return cached_result
+
+    logger.debug(f"Cache miss for '{cache_key}'. Tool 'get_boxscore_traditional' called for game_id '{game_id}'")
+    # Log the exact parameters being passed to the logic function
+    logger.info(f"--> EXACT PARAMS for fetch_boxscore_traditional_logic: game_id='{game_id}'")
+    result_dict = fetch_boxscore_traditional_logic(game_id)
+    # result_dict might be a string here if the logic function returns formatted JSON directly
+    # Let's log what we get back from the logic function
+    logger.debug(f"Raw result from fetch_boxscore_traditional_logic for {game_id} (type {type(result_dict)}): {str(result_dict)[:500]}...")
+    
+    # Ensure we handle potential errors returned as dicts from the logic layer if it changes
+    if isinstance(result_dict, dict) and 'error' in result_dict:
+        logger.warning(f"Logic function returned error dict for {game_id}: {result_dict['error']}")
+        # Convert error dict to JSON string for return
+        result_str = json.dumps(result_dict)
+    elif isinstance(result_dict, str):
+         # If logic returns JSON string directly (as assumed previously)
+         result_str = result_dict
+         # Optionally parse to check for error before caching (like in advanced)
+         try:
+             parsed_data = json.loads(result_str)
+             if isinstance(parsed_data, dict) and 'error' in parsed_data:
+                 logger.warning(f"Logic function returned error JSON for {game_id}: {parsed_data['error']}")
+                 # Don't cache errors
+                 cache_data(cache_key, result_str) # Cache anyway? Or skip caching errors?
+                                                  # Let's skip caching errors here for consistency
+                 logger.debug(f"Tool 'get_boxscore_traditional' returning error string to agent framework (len={len(result_str)}): {result_str[:500]}...")
+                 return result_str # Return error string
+         except json.JSONDecodeError:
+             logger.error(f"Logic function returned non-JSON string for {game_id}: {result_str[:500]}...")
+             # Handle non-JSON string case if necessary, maybe return as error? 
+             # For now, proceed assuming it *should* be JSON if not error dict
+             pass # Fall through to caching attempt
+             
+    else: # Should ideally be JSON string or error dict, but handle unexpected types
+        logger.warning(f"Unexpected type returned by logic function for {game_id}: {type(result_dict)}. Attempting dump.")
+        try:
+            result_str = json.dumps(result_dict, default=str)
+        except Exception as dump_err:
+            logger.error(f"Failed to dump unexpected result type to JSON for {game_id}: {dump_err}")
+            result_str = format_response(error=f"Internal error processing boxscore for {game_id}")
+
+    # Log the final string being returned *after* potential conversion/error checks
+    logger.debug(f"Tool 'get_boxscore_traditional' returning string to agent framework (len={len(result_str)}): {result_str[:500]}...")
+    
+    # Refined Caching Check: Only cache if it's likely valid data
+    try:
+        parsed_for_cache = json.loads(result_str)
+        if not (isinstance(parsed_for_cache, dict) and 'error' in parsed_for_cache):
+            logger.debug(f"Caching successful result for {cache_key}")
+            cache_data(cache_key, result_str)
+        else:
+            logger.warning(f"Result for {cache_key} is an error, not caching: {result_str[:500]}...")
+    except json.JSONDecodeError:
+        logger.error(f"Final result string for {cache_key} is not valid JSON, not caching: {result_str[:500]}...")
+        
+    return result_str
 
 @tool
 def get_league_standings(season: str = CURRENT_SEASON, season_type: str = SeasonTypeAllStar.regular, league_id: str = LeagueID.nba) -> str:
@@ -524,8 +734,17 @@ def get_league_standings(season: str = CURRENT_SEASON, season_type: str = Season
             - ConferenceRecord, DivisionRecord
             - Or {'standings': []} if no data, or {'error': ...} if an error occurs.
     """
-    logger.debug(f"Tool 'get_league_standings' called for season '{season}', type '{season_type}', league '{league_id}'")
-    return fetch_league_standings_logic(season=season, season_type=season_type, league_id=league_id)
+    # Cache standings based on parameters. Assumes cache has some eviction/TTL or manual clearing.
+    cache_key = generate_cache_key("get_league_standings", season=season, season_type=season_type, league_id=league_id)
+    cached_result = get_cached_data(cache_key)
+    if cached_result:
+        logger.debug(f"Cache hit for '{cache_key}'")
+        return cached_result
+
+    logger.debug(f"Cache miss for '{cache_key}'. Tool 'get_league_standings' called for season '{season}', type '{season_type}', league '{league_id}'")
+    result = fetch_league_standings_logic(season=season, season_type=season_type, league_id=league_id)
+    cache_data(cache_key, result)
+    return result
 
 @tool
 def get_scoreboard(game_date: Optional[str] = None, league_id: str = LeagueID.nba, day_offset: int = 0) -> str:
@@ -549,10 +768,19 @@ def get_scoreboard(game_date: Optional[str] = None, league_id: str = LeagueID.nb
             - Or {'error': ...} if an error occurs.
     """
     # Use today's date if None is provided
-    final_game_date = game_date or datetime.today().strftime('%Y-%m-%d')
+    # Recalculate final_game_date here as it's used in the cache key and logic call
+    final_game_date = game_date or datetime.date.today().strftime('%Y-%m-%d') # Use date instead of datetime
+
+    cache_key = generate_cache_key("get_scoreboard", game_date=final_game_date, league_id=league_id, day_offset=day_offset)
+    cached_result = get_cached_data(cache_key)
+    if cached_result:
+        logger.debug(f"Cache hit for '{cache_key}'")
+        return cached_result
     
-    logger.debug(f"Tool 'get_scoreboard' called for date '{final_game_date}', league '{league_id}', offset '{day_offset}'")
-    return fetch_scoreboard_logic(game_date=final_game_date, league_id=league_id, day_offset=day_offset)
+    logger.debug(f"Cache miss for '{cache_key}'. Tool 'get_scoreboard' called for date '{final_game_date}', league '{league_id}', offset '{day_offset}'")
+    result = fetch_scoreboard_logic(game_date=final_game_date, league_id=league_id, day_offset=day_offset)
+    cache_data(cache_key, result)
+    return result
 
 @tool
 def get_play_by_play(
@@ -584,9 +812,51 @@ def get_play_by_play(
             - has_video (bool, historical only)
             - Or {'error': ...} if an error occurs.
     """
+    # Only cache if the game is likely finished (logic determines source)
+    # Let's cache based on game_id and periods for historical results.
+    # We need the logic function to return an indicator if it used historical data.
+    # For now, we'll call the logic first and cache only if source is 'historical'.
+
     logger.debug(f"Tool 'get_play_by_play' called for game_id '{game_id}', periods '{start_period}'-'{end_period}'")
-    # Pass the period filters to the logic function
-    return fetch_playbyplay_logic(game_id=game_id, start_period=start_period, end_period=end_period)
+
+    # Generate potential cache key first
+    cache_key = generate_cache_key("get_play_by_play", game_id, start_period=start_period, end_period=end_period)
+    
+    # Check cache *only* if we assume this call *might* be for historical data
+    # A better approach might be to check game status first, but let's proceed simply
+    cached_result = get_cached_data(cache_key)
+    if cached_result:
+         try:
+             cached_data = json.loads(cached_result)
+             # Check if the cached data confirms it was historical
+             if cached_data.get("source") == "historical":
+                 logger.debug(f"Cache hit for historical play-by-play '{cache_key}'")
+                 return cached_result
+             else:
+                 logger.debug(f"Cache hit for '{cache_key}', but was not historical. Fetching fresh.")
+         except json.JSONDecodeError:
+             logger.warning(f"Could not parse cached JSON for '{cache_key}'. Fetching fresh.")
+             # Proceed to fetch fresh data
+
+    # Cache miss or non-historical cache hit
+    logger.debug(f"Fetching play-by-play for '{game_id}' (potential cache miss or live data needed)")
+    result_str = fetch_playbyplay_logic(game_id=game_id, start_period=start_period, end_period=end_period)
+
+    # Cache the result ONLY if the source was historical
+    try:
+        result_data = json.loads(result_str)
+        if result_data.get("source") == "historical":
+            logger.debug(f"Caching historical play-by-play result for '{cache_key}'")
+            cache_data(cache_key, result_str)
+        else:
+            logger.debug(f"Not caching non-historical play-by-play for game '{game_id}'")
+    except json.JSONDecodeError:
+        logger.error(f"Could not parse play-by-play result JSON for game '{game_id}'. Not caching.")
+    except Exception as e:
+         logger.error(f"Error processing play-by-play result for caching: {e}")
+
+    return result_str
+
 
 @tool
 def get_draft_history(
@@ -614,17 +884,25 @@ def get_draft_history(
                 - TEAM_ID, TEAM_CITY, TEAM_NAME, ORGANIZATION, ORGANIZATION_TYPE
             - Or {'draft_picks': []} if no data, or {'error': ...} if an error occurs.
     """
+    cache_key = generate_cache_key("get_draft_history", season_year=season_year, league_id=league_id, round_num=round_num, team_id=team_id, overall_pick=overall_pick)
+    cached_result = get_cached_data(cache_key)
+    if cached_result:
+        logger.debug(f"Cache hit for '{cache_key}'")
+        return cached_result
+
     logger.debug(
-        f"Tool 'get_draft_history' called for Year: {season_year}, League: {league_id}, "
+        f"Cache miss for '{cache_key}'. Tool 'get_draft_history' called for Year: {season_year}, League: {league_id}, "
         f"Round: {round_num}, Team: {team_id}, Pick: {overall_pick}"
     )
-    return fetch_draft_history_logic(
+    result = fetch_draft_history_logic(
         season_year=season_year,
         league_id=league_id,
         round_num=round_num,
         team_id=team_id,
         overall_pick=overall_pick
     )
+    cache_data(cache_key, result)
+    return result
 
 @tool
 def get_league_leaders(
@@ -643,7 +921,7 @@ def get_league_leaders(
                              See nba_api.stats.library.parameters.StatCategoryAbbreviation for options.
         season (str): Season identifier (e.g., "2023-24"). Defaults to current season.
         season_type (str): Season type ('Regular Season', 'Playoffs'). Defaults to Regular Season.
-        per_mode (str): Stat mode ('PerGame', 'Totals', 'Per48', 'Per36', etc.). Defaults to PerGame.
+        per_mode (str): Stat mode ('PerGame', 'Totals', etc.). Defaults to PerGame.
                         See nba_api.stats.library.parameters.PerMode48 for options.
         league_id (str, optional): League ID ('00'=NBA, '10'=WNBA, '20'=G-League). Defaults to '00'.
         scope (str, optional): Scope of players ('All Players', 'Rookies'). Defaults to 'All Players'.
@@ -656,11 +934,17 @@ def get_league_leaders(
                 - PlayerID, RANK, PLAYER, TEAM_ID, TEAM, GP, MIN, FGM, FGA, FG_PCT, ... (stats vary by category)
             - Or {'leaders': []} if no data, or {'error': ...} if an error occurs.
     """
+    cache_key = generate_cache_key("get_league_leaders", stat_category, season=season, season_type=season_type, per_mode=per_mode, league_id=league_id, scope=scope)
+    cached_result = get_cached_data(cache_key)
+    if cached_result:
+        logger.debug(f"Cache hit for '{cache_key}'")
+        return cached_result
+
     logger.debug(
-        f"Tool 'get_league_leaders' called for Cat: {stat_category}, Season: {season}, Type: {season_type}, "
+        f"Cache miss for '{cache_key}'. Tool 'get_league_leaders' called for Cat: {stat_category}, Season: {season}, Type: {season_type}, "
         f"Mode: {per_mode}, League: {league_id}, Scope: {scope}"
     )
-    return fetch_league_leaders_logic(
+    result = fetch_league_leaders_logic(
         season=season,
         stat_category=stat_category,
         season_type=season_type,
@@ -668,6 +952,8 @@ def get_league_leaders(
         league_id=league_id,
         scope=scope
     )
+    cache_data(cache_key, result)
+    return result
 
 @tool
 def get_player_hustle_stats(
@@ -707,11 +993,17 @@ def get_player_hustle_stats(
                 - box_out_stats (dict): box_outs (total/off/def).
             - Or {'hustle_stats': []} if no data matches filters, or {'error': ...} if an error occurs.
     """
+    cache_key = generate_cache_key("get_player_hustle_stats", season=season, season_type=season_type, per_mode=per_mode, player_name=player_name, team_id=team_id, league_id=league_id, date_from=date_from, date_to=date_to)
+    cached_result = get_cached_data(cache_key)
+    if cached_result:
+        logger.debug(f"Cache hit for '{cache_key}'")
+        return cached_result
+
     logger.debug(
-        f"Tool 'get_player_hustle_stats' called for Season: {season}, Type: {season_type}, Mode: {per_mode}, "
+        f"Cache miss for '{cache_key}'. Tool 'get_player_hustle_stats' called for Season: {season}, Type: {season_type}, Mode: {per_mode}, "
         f"Player: {player_name}, Team: {team_id}, League: {league_id}"
     )
-    return fetch_player_hustle_stats_logic(
+    result = fetch_player_hustle_stats_logic(
         season=season,
         season_type=season_type,
         per_mode=per_mode,
@@ -721,6 +1013,8 @@ def get_player_hustle_stats(
         date_from=date_from,
         date_to=date_to
     )
+    cache_data(cache_key, result)
+    return result
 
 @tool
 def get_player_profile(player_name: str, per_mode: str = PerModeDetailed.per_game) -> str:
@@ -755,8 +1049,17 @@ def get_player_profile(player_name: str, per_mode: str = PerModeDetailed.per_gam
                 - college (list[dict])
             - Or {'error': ...} if an error occurs.
     """
-    logger.debug(f"Tool get_player_profile called for {player_name}, per_mode {per_mode}")
-    return fetch_player_profile_logic(player_name, per_mode)
+    # Player profile combines info, career, season stats - good candidate for caching
+    cache_key = generate_cache_key("get_player_profile", player_name, per_mode=per_mode)
+    cached_result = get_cached_data(cache_key)
+    if cached_result:
+        logger.debug(f"Cache hit for '{cache_key}'")
+        return cached_result
+
+    logger.debug(f"Cache miss for '{cache_key}'. Tool get_player_profile called for {player_name}, per_mode {per_mode}")
+    result = fetch_player_profile_logic(player_name, per_mode)
+    cache_data(cache_key, result)
+    return result
 
 @tool
 def get_player_aggregate_stats(player_name: str, season: str = CURRENT_SEASON, season_type: str = SeasonTypeAllStar.regular) -> str:
@@ -783,12 +1086,21 @@ def get_player_aggregate_stats(player_name: str, season: str = CURRENT_SEASON, s
             - awards (list[dict])
             - Or {"error": ...} if any of the underlying data fetches fail.
     """
-    logger.debug(f"Tool \"get_player_aggregate_stats\" called for {player_name}, season {season}, type {season_type}")
+    # Caching aggregate stats based on player, season, and type
+    cache_key = generate_cache_key("get_player_aggregate_stats", player_name, season=season, season_type=season_type)
+    cached_result = get_cached_data(cache_key)
+    if cached_result:
+        logger.debug(f"Cache hit for '{cache_key}'")
+        return cached_result
+
+    logger.debug(f"Cache miss for '{cache_key}'. Tool \"get_player_aggregate_stats\" called for {player_name}, season {season}, type {season_type}")
     
     # Need to import fetch_player_stats_logic from player_tools
     from backend.api_tools.player_tools import fetch_player_stats_logic
     
-    return fetch_player_stats_logic(player_name=player_name, season=season, season_type=season_type)
+    result = fetch_player_stats_logic(player_name=player_name, season=season, season_type=season_type)
+    cache_data(cache_key, result)
+    return result
 
 @tool
 def get_top_performers(category: str = "PTS", season: str = CURRENT_SEASON, season_type: str = SeasonTypeAllStar.regular, per_mode: str = PerMode48.per_game, top_n: int = 5) -> str:
@@ -809,9 +1121,17 @@ def get_top_performers(category: str = "PTS", season: str = CURRENT_SEASON, seas
             - PlayerID, RANK, PLAYER, TEAM_ID, TEAM, GP, MIN, and the specified stat category value.
             - Or {'error': ...} if league leaders data cannot be fetched or processed.
     """
-    logger.debug(f"Tool 'get_top_performers' called for Cat: {category}, Season: {season}, Type: {season_type}, Mode: {per_mode}, Top: {top_n}")
+    # Cache top performers based on all parameters
+    cache_key = generate_cache_key("get_top_performers", category=category, season=season, season_type=season_type, per_mode=per_mode, top_n=top_n)
+    cached_result = get_cached_data(cache_key)
+    if cached_result:
+        logger.debug(f"Cache hit for '{cache_key}'")
+        return cached_result
+
+    logger.debug(f"Cache miss for '{cache_key}'. Tool 'get_top_performers' called for Cat: {category}, Season: {season}, Type: {season_type}, Mode: {per_mode}, Top: {top_n}")
     try:
         # Call get_league_leaders to get the full list
+        # Note: get_league_leaders is now cached itself, so this call might hit the cache
         leaders_json = get_league_leaders(
             stat_category=category,
             season=season,
@@ -824,13 +1144,16 @@ def get_top_performers(category: str = "PTS", season: str = CURRENT_SEASON, seas
         
         if "error" in leaders_data:
             logger.error(f"Error fetching league leaders for top performers: {leaders_data['error']}")
-            return leaders_json # Return the original error JSON
+            # Don't cache errors
+            return leaders_json # Return the original error
             
         leaders_list = leaders_data.get("leaders", [])
         
         if not leaders_list:
             logger.warning(f"No league leaders found for category '{category}' in {season}")
-            return json.dumps({"top_performers": []}) # Return empty list
+            result_str = json.dumps({"top_performers": []}) # Return empty list
+            cache_data(cache_key, result_str) # Cache the empty result
+            return result_str
             
         # Sort by rank (already done by API, but double-check just in case)
         # leaders_list.sort(key=lambda x: x.get('RANK', 999))
@@ -838,7 +1161,9 @@ def get_top_performers(category: str = "PTS", season: str = CURRENT_SEASON, seas
         # Get the top N
         top_performers_list = leaders_list[:top_n]
         
-        return json.dumps({"top_performers": top_performers_list})
+        result_str = json.dumps({"top_performers": top_performers_list})
+        cache_data(cache_key, result_str) # Cache the successful result
+        return result_str
         
     except json.JSONDecodeError as json_err:
         logger.error(f"Failed to parse league leaders JSON: {json_err}")
@@ -863,9 +1188,16 @@ def get_top_teams(season: str = CURRENT_SEASON, season_type: str = SeasonTypeAll
             - TeamID, TeamName, Conference, PlayoffRank, WinPct, GB, L10, STRK, WINS, LOSSES, etc.
             - Or {'error': ...} if standings data cannot be fetched or processed.
     """
-    logger.debug(f"Tool 'get_top_teams' called for Season: {season}, Type: {season_type}, League: {league_id}, Top: {top_n}")
+    # Cache top teams based on parameters
+    cache_key = generate_cache_key("get_top_teams", season=season, season_type=season_type, league_id=league_id, top_n=top_n)
+    cached_result = get_cached_data(cache_key)
+    if cached_result:
+        logger.debug(f"Cache hit for '{cache_key}'")
+        return cached_result
+
+    logger.debug(f"Cache miss for '{cache_key}'. Tool 'get_top_teams' called for Season: {season}, Type: {season_type}, League: {league_id}, Top: {top_n}")
     try:
-        # Call get_league_standings
+        # Call get_league_standings (which is now cached)
         standings_json = get_league_standings(
             season=season, 
             season_type=season_type,
@@ -876,13 +1208,16 @@ def get_top_teams(season: str = CURRENT_SEASON, season_type: str = SeasonTypeAll
         
         if "error" in standings_data:
             logger.error(f"Error fetching league standings for top teams: {standings_data['error']}")
+            # Don't cache errors from dependencies
             return standings_json # Return original error
             
         standings_list = standings_data.get("standings", [])
         
         if not standings_list:
             logger.warning(f"No standings data found for {season}, type {season_type}")
-            return json.dumps({"top_teams": []})
+            result_str = json.dumps({"top_teams": []})
+            cache_data(cache_key, result_str) # Cache empty result
+            return result_str
             
         # Standings are already sorted by Conference, then PlayoffRank in the logic function
         # We just need to take the top N from each conference
@@ -895,7 +1230,9 @@ def get_top_teams(season: str = CURRENT_SEASON, season_type: str = SeasonTypeAll
         # Optional: Re-sort overall if desired, though per-conference top N is common
         # top_teams_list.sort(key=lambda x: x.get('PlayoffRank', 99))
 
-        return json.dumps({"top_teams": top_teams_list})
+        result_str = json.dumps({"top_teams": top_teams_list})
+        cache_data(cache_key, result_str) # Cache successful result
+        return result_str
 
     except json.JSONDecodeError as json_err:
         logger.error(f"Failed to parse league standings JSON: {json_err}")
@@ -926,17 +1263,26 @@ def get_player_insights(player_name: str, season: str = CURRENT_SEASON, season_t
               for the player in the specified period (GP, W, L, W_PCT, MIN, FGM, FGA, ..., PLUS_MINUS).
             - Or {'error': ...} if an error occurs.
     """
+    # Cache player dashboard stats based on parameters
+    cache_key = generate_cache_key("get_player_insights", player_name, season=season, season_type=season_type, per_mode=per_mode, league_id=league_id)
+    cached_result = get_cached_data(cache_key)
+    if cached_result:
+        logger.debug(f"Cache hit for '{cache_key}'")
+        return cached_result
+
     logger.debug(
-        f"Tool 'get_player_insights' called for Player: {player_name}, Season: {season}, Type: {season_type}, "
+        f"Cache miss for '{cache_key}'. Tool 'get_player_insights' called for Player: {player_name}, Season: {season}, Type: {season_type}, "
         f"Mode: {per_mode}, League: {league_id}"
     )
-    return analyze_player_stats_logic(
+    result = analyze_player_stats_logic(
         player_name=player_name, 
         season=season, 
         season_type=season_type,
         per_mode=per_mode,
         league_id=league_id
     )
+    cache_data(cache_key, result)
+    return result
 
 @tool
 def get_live_odds() -> str:
@@ -954,7 +1300,8 @@ def get_live_odds() -> str:
                     - provider, type (e.g., moneyline, spread, total), value, odds, etc.
             - Or {'error': ...} if fetching odds fails.
     """
-    logger.debug("Tool 'get_live_odds' called")
+    # DO NOT CACHE LIVE ODDS
+    logger.debug("Tool 'get_live_odds' called - Not Caching Live Data")
     # Logic function returns a dict, format_response converts to JSON string
     return format_response(fetch_odds_data_logic())
 
@@ -973,7 +1320,8 @@ def get_live_boxscore(game_id: str) -> str:
             - awayTeam (dict): Detailed stats for away team players.
             - Or {"error": ...} if the game is not live or an error occurs.
     """
-    logger.debug(f"Tool \"get_live_boxscore\" called for game {game_id}")
+    # DO NOT CACHE LIVE BOXSCORE
+    logger.debug(f"Tool \"get_live_boxscore\" called for game {game_id} - Not Caching Live Data")
 
     # Import the logic function
     from backend.api_tools.live_game_tools import fetch_live_boxscore_logic
@@ -1009,7 +1357,14 @@ def get_game_shotchart(
             - league_averages (list[dict]): League average shooting percentages by zone for comparison.
             - Or {"error": ...} if an error occurs.
     """
-    logger.debug(f"Tool \"get_game_shotchart\" called for game \"{game_id}\", team \"{team_id}\", player \"{player_id}\"")
+    # Cache game shot charts based on game_id and filters (although filters aren't implemented yet)
+    cache_key = generate_cache_key("get_game_shotchart", game_id, team_id=team_id, player_id=player_id, season=season, season_type=season_type)
+    cached_result = get_cached_data(cache_key)
+    if cached_result:
+        logger.debug(f"Cache hit for '{cache_key}'")
+        return cached_result
+
+    logger.debug(f"Cache miss for '{cache_key}'. Tool \"get_game_shotchart\" called for game \"{game_id}\", team \"{team_id}\", player \"{player_id}\"")
     
     # The logic function fetch_shotchart_logic currently only takes game_id.
     # TODO: Enhance fetch_shotchart_logic in game_tools.py to accept team_id, player_id, season, season_type
@@ -1018,4 +1373,89 @@ def get_game_shotchart(
         logger.warning("Team, player, season, or type filters for get_game_shotchart are not yet implemented in the underlying logic function.")
 
     # Logic function should be imported at the top now.
-    return fetch_shotchart_logic(game_id=game_id)
+    result = fetch_shotchart_logic(game_id=game_id)
+    cache_data(cache_key, result)
+    return result
+
+# --- Game Analytics Extensions ---
+@tool
+def get_boxscore_advanced(game_id: str, end_period: int = 0, end_range: int = 0, start_period: int = 0, start_range: int = 0) -> str:
+    """
+    Fetches advanced box score V3 data for a specific game.
+    """
+    cache_key = generate_cache_key("get_boxscore_advanced", game_id, end_period, end_range, start_period, start_range)
+    cached_result = get_cached_data(cache_key)
+    if cached_result:
+        logger.debug(f"Cache hit for '{cache_key}'")
+        return cached_result
+    log_limit = 500
+    logger.debug(f"Cache miss for '{cache_key}'. Tool 'get_boxscore_advanced' called for game_id '{game_id}'")
+    # Calls the logic function, which returns a JSON string (either data or error)
+    result = fetch_boxscore_advanced_logic(game_id, end_period, end_range, start_period, start_range)
+    try:
+        # Attempt to parse the result JSON
+        result_data = json.loads(result)
+        # Only cache if it doesn't contain a top-level 'error' key
+        if not (isinstance(result_data, dict) and 'error' in result_data):
+            logger.debug(f"Caching successful result for {cache_key}")
+            cache_data(cache_key, result) 
+        else:
+            logger.warning(f"Result for {cache_key} is an error, not caching: {result}")
+    except json.JSONDecodeError:
+        # If the result isn't valid JSON, definitely don't cache it
+        logger.error(f"Result for {cache_key} is not valid JSON, not caching: {result[:log_limit]}...")
+        
+    # Return the result regardless of whether it was cached
+    return result
+
+@tool
+def get_boxscore_four_factors(game_id: str, start_period: int = 0, end_period: int = 0) -> str:
+    """Fetches box score four factors V3 data for a specific game."""
+    cache_key = generate_cache_key("get_boxscore_four_factors", game_id, start_period, end_period)
+    cached_result = get_cached_data(cache_key)
+    if cached_result:
+        logger.debug(f"Cache hit for '{cache_key}'")
+        return cached_result
+    logger.debug(f"Cache miss for '{cache_key}'. Tool 'get_boxscore_four_factors' called for game_id '{game_id}'")
+    result = fetch_boxscore_four_factors_logic(game_id, start_period, end_period)
+    cache_data(cache_key, result)
+    return result
+
+@tool
+def get_boxscore_usage(game_id: str) -> str:
+    """Fetches box score usage stats V3 data for a specific game."""
+    cache_key = generate_cache_key("get_boxscore_usage", game_id)
+    cached_result = get_cached_data(cache_key)
+    if cached_result:
+        logger.debug(f"Cache hit for '{cache_key}'")
+        return cached_result
+    logger.debug(f"Cache miss for '{cache_key}'. Tool 'get_boxscore_usage' called for game_id '{game_id}'")
+    result = fetch_boxscore_usage_logic(game_id)
+    cache_data(cache_key, result)
+    return result
+
+@tool
+def get_boxscore_defensive(game_id: str) -> str:
+    """Fetches box score defensive stats V2 data for a specific game."""
+    cache_key = generate_cache_key("get_boxscore_defensive", game_id)
+    cached_result = get_cached_data(cache_key)
+    if cached_result:
+        logger.debug(f"Cache hit for '{cache_key}'")
+        return cached_result
+    logger.debug(f"Cache miss for '{cache_key}'. Tool 'get_boxscore_defensive' called for game_id '{game_id}'")
+    result = fetch_boxscore_defensive_logic(game_id)
+    cache_data(cache_key, result)
+    return result
+
+@tool
+def get_win_probability(game_id: str, run_type: str = RunType.default) -> str:
+    """Fetches win probability play-by-play data for a specific game."""
+    cache_key = generate_cache_key("get_win_probability", game_id, run_type)
+    cached_result = get_cached_data(cache_key)
+    if cached_result:
+        logger.debug(f"Cache hit for '{cache_key}'")
+        return cached_result
+    logger.debug(f"Cache miss for '{cache_key}'. Tool 'get_win_probability' called for game_id '{game_id}'")
+    result = fetch_win_probability_logic(game_id, run_type)
+    cache_data(cache_key, result)
+    return result

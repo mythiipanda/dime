@@ -100,9 +100,15 @@ async def ask_agent_keepalive_sse(request: Request, prompt: str):
                 chunk_dict = recursive_asdict(chunk)
                 message_data = format_message_data(chunk_dict)
                 
-                logger.debug(f"Sending SSE chunk: {json.dumps(message_data)}")
+                # Format the final SSE message string
+                sse_message_string = format_sse(json.dumps(message_data))
+                
+                # Log the string *before* yielding it (limit length for readability)
+                log_limit = 1000 # Log first 1000 chars
+                logger.debug(f"Yielding SSE string (len={len(sse_message_string)}): {sse_message_string[:log_limit]}{'...' if len(sse_message_string) > log_limit else ''}")
+                
                 # Send the chunk immediately and ensure it's flushed
-                yield format_sse(json.dumps(message_data))
+                yield sse_message_string
                 await asyncio.sleep(0)  # Allow other tasks to run and ensure streaming
 
                 # Only send final event for RunCompleted

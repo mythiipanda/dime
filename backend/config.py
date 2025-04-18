@@ -76,6 +76,11 @@ class Errors:
     INVALID_GAME_ID_FORMAT = "Invalid game ID format: '{game_id}'. Expected 10 digits."
     GAME_NOT_FOUND = "Game with ID '{game_id}' not found."
     BOXSCORE_API = "API error fetching boxscore for game {game_id}: {error}"
+    BOXSCORE_ADVANCED_API = "API error fetching advanced boxscore for game {game_id}: {error}"
+    BOXSCORE_FOURFACTORS_API = "API error fetching four factors boxscore for game {game_id}: {error}"
+    BOXSCORE_USAGE_API = "API error fetching usage boxscore for game {game_id}: {error}"
+    BOXSCORE_DEFENSIVE_API = "API error fetching defensive boxscore for game {game_id}: {error}"
+    WINPROBABILITY_API = "API error fetching win probability for game {game_id}: {error}"
     PLAYBYPLAY_API = "API error fetching play-by-play for game {game_id}: {error}"
     SHOTCHART_API = "API error fetching shot chart for game {game_id}: {error}"
     GAME_UNEXPECTED = "Unexpected error fetching data for game {game_id}: {error}"
@@ -106,7 +111,7 @@ OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
 # Agent-related configs
-AGENT_MODEL_ID = "gemini-2.5-flash-preview-04-17"
+AGENT_MODEL_ID = "gemini-2.0-flash"
 STORAGE_DB_FILE = os.getenv("STORAGE_DB_FILE", "agno_storage.db")
 AGENT_DEBUG_MODE = os.getenv("AGENT_DEBUG_MODE", "false").lower() == "true"
 
