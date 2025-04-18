@@ -20,24 +20,31 @@ def _format_game_leader(leader_data: Dict) -> Dict:
         "stats": f"{leader_data.get('points', 0)} PTS, {leader_data.get('rebounds', 0)} REB, {leader_data.get('assists', 0)} AST"
     }
 
-def fetch_boxscore_traditional_logic(game_id: str) -> str:
+def fetch_boxscore_traditional_logic(game_id: str, start_period: int = 0, end_period: int = 0) -> str:
     """
-    Fetches detailed box score data for a specific game.
+    Fetches detailed box score data for a specific game, optionally filtered by period.
     
     Args:
         game_id: NBA game ID
+        start_period (int, optional): Starting period filter (0 for all).
+        end_period (int, optional): Ending period filter (0 for all).
         
     Returns:
-        JSON string containing box score statistics in an organized format
+        JSON string containing box score statistics in an organized format.
     """
-    logger.info(f"Executing fetch_boxscore_traditional_logic for game ID: {game_id}")
+    logger.info(f"Executing fetch_boxscore_traditional_logic for game ID: {game_id}, Start: {start_period}, End: {end_period}")
     
     if not game_id:
         return format_response(error=Errors.GAME_ID_EMPTY)
     
     try:
         # Get boxscore data
-        boxscore = boxscoretraditionalv2.BoxScoreTraditionalV2(game_id=game_id)
+        boxscore = boxscoretraditionalv2.BoxScoreTraditionalV2(
+            game_id=game_id,
+            start_period=start_period,
+            end_period=end_period,
+            timeout=DEFAULT_TIMEOUT # Assuming DEFAULT_TIMEOUT is defined
+        )
         
         # Process player stats using apply
         player_stats_raw = boxscore.player_stats.get_data_frame()
@@ -88,6 +95,10 @@ def fetch_boxscore_traditional_logic(game_id: str) -> str:
         # Combine all results
         result = {
             "game_id": game_id,
+            "parameters": {
+                "start_period": start_period,
+                "end_period": end_period
+            },
             "teams": team_stats,
             "players": player_stats,
             "starters_bench": starters_bench
@@ -211,39 +222,42 @@ def _fetch_live_playbyplay_logic(game_id: str) -> Dict[str, Any]:
         raise e
 
 # Main Play-by-Play Logic Function
-def fetch_playbyplay_logic(game_id: str) -> Dict[str, Any]:
+def fetch_playbyplay_logic(game_id: str, start_period: int = 0, end_period: int = 0) -> str:
     """
     Fetches play-by-play data, trying the live endpoint first and falling back to historical.
+    Period filtering only applies if historical data is used.
     Args:
         game_id: NBA game ID
+        start_period (int, optional): Starting period filter (0 for all). Applies only to historical fallback.
+        end_period (int, optional): Ending period filter (0 for all). Applies only to historical fallback.
     Returns:
-        Dictionary containing organized play-by-play information.
+        JSON string containing play-by-play data or error message.
     """
+    logger.info(f"Executing fetch_playbyplay_logic for game ID: {game_id}, StartPeriod: {start_period}, EndPeriod: {end_period}")
     if not game_id:
-        return {"error": Errors.GAME_ID_EMPTY}
-    
-    try:
-        # Attempt to fetch live data first
-        logger.info(f"Attempting to fetch LIVE play-by-play for game {game_id}")
-        live_pbp_data = _fetch_live_playbyplay_logic(game_id)
-        # If live data indicates game is active (has periods/actions), return it
-        if live_pbp_data and live_pbp_data.get("periods"): 
-            return live_pbp_data
-        # If live_pbp_data is None or has no periods, it might have failed or game not live
-        # Error was already logged in _fetch_live_playbyplay_logic if it failed
+        return format_response(error=Errors.GAME_ID_EMPTY)
 
-    except Exception as live_err:
-        # Log the error from the live attempt but continue to historical
-        logger.warning(f"Live play-by-play fetch failed for game {game_id} (Error: {live_err}). Will attempt historical fetch.")
-        
-    # Fallback to historical data if live attempt fails or returns no actions
     try:
-        logger.info(f"Fetching HISTORICAL play-by-play for game {game_id}")
-        historical_pbp_data = _fetch_historical_playbyplay_logic(game_id)
-        return historical_pbp_data
-    except Exception as historical_err:
-        logger.error(f"Both live and historical play-by-play fetches failed for game {game_id}: Live Error ({live_err}), Historical Error ({historical_err})", exc_info=True)
-        return {"error": Errors.PLAYBYPLAY_API.format(game_id=game_id, error=str(historical_err))}
+        # Try live endpoint first
+        logger.debug(f"Attempting live PBP fetch for game {game_id}")
+        result = _fetch_live_playbyplay_logic(game_id)
+        logger.info(f"Live PBP fetch successful for game {game_id}")
+        result["parameters"] = {"start_period": 0, "end_period": 0, "note": "Period filter NA for live data"}
+        return format_response(data=result)
+    except ValueError as live_error: # Specific error raised if not live
+        logger.warning(f"Live PBP fetch failed for game {game_id} ({live_error}), attempting historical.")
+        try:
+            # Fallback to historical endpoint, passing period filters
+            result = _fetch_historical_playbyplay_logic(game_id, start_period, end_period)
+            logger.info(f"Historical PBP fetch successful for game {game_id}")
+            result["parameters"] = {"start_period": start_period, "end_period": end_period}
+            return format_response(data=result)
+        except Exception as hist_error:
+            logger.error(f"Historical PBP fetch also failed for game {game_id}: {hist_error}", exc_info=True)
+            return format_response(error=Errors.PBP_API.format(game_id=game_id, error=str(hist_error)))
+    except Exception as e:
+        logger.error(f"Unexpected error fetching PBP for game {game_id}: {e}", exc_info=True)
+        return format_response(error=Errors.PBP_API.format(game_id=game_id, error=str(e)))
 
 # Helper Functions (Keep original ones for historical endpoint)
 def _determine_play_team(row):

@@ -214,13 +214,18 @@ def fetch_league_leaders_logic(
     season: str,
     stat_category: str = "PTS",
     season_type: str = SeasonTypeAllStar.regular,
-    per_mode: str = PerMode36.per_game
+    per_mode: str = PerMode48.per_game,
+    league_id: str = LeagueID.nba,
+    scope: str = Scope.s # Keep the correct default value
 ) -> str:
     """
     Fetches league leaders for a specific statistical category.
     Returns JSON string with leaders data.
     """
-    logger.info(f"Executing fetch_league_leaders_logic for season: {season}, category: {stat_category}")
+    logger.info(
+        f"Executing fetch_league_leaders_logic for season: {season}, category: {stat_category}, "
+        f"type: {season_type}, per_mode: {per_mode}, league: {league_id}, scope: {scope}"
+    )
     
     try:
         leaders = leagueleaders.LeagueLeaders(
@@ -228,6 +233,8 @@ def fetch_league_leaders_logic(
             stat_category_abbreviation=stat_category,
             season_type_all_star=season_type,
             per_mode48=per_mode,
+            league_id_nullable=league_id,
+            scope_nullable=scope, # Corrected parameter name back to scope_nullable
             timeout=DEFAULT_TIMEOUT
         )
         

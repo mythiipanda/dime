@@ -77,7 +77,8 @@ class ShootingStats(TypedDict):
 def fetch_player_rebounding_stats_logic(
     player_name: str,
     season: str,
-    season_type: str = SeasonTypeAllStar.regular
+    season_type: str = SeasonTypeAllStar.regular,
+    per_mode: str = "PerGame"
 ) -> str:
     """
     Fetch detailed player rebounding statistics.
@@ -86,6 +87,7 @@ def fetch_player_rebounding_stats_logic(
         player_name (str): Player's name
         season (str): Season in YYYY-YY format
         season_type (str): Season type (regular/playoffs)
+        per_mode (str): One of: Totals, PerGame, MinutesPer, Per48, Per40, Per36, PerMinute, PerPossession, PerPlay, Per100Possessions, Per100Plays
         
     Returns:
         str: JSON string containing:
@@ -93,10 +95,16 @@ def fetch_player_rebounding_stats_logic(
             "overall": {total rebounding stats},
             "by_shot_type": [2FG vs 3FG breakdowns],
             "by_contest": [contested vs uncontested],
-            "by_distance": [distance ranges]
+            "by_shot_distance": [distance ranges],
+            "by_rebound_distance": [distance ranges],
+            "parameters": {
+                "season": season,
+                "season_type": season_type,
+                "per_mode": per_mode
+            }
         }
     """
-    logger.info(f"Executing fetch_player_rebounding_stats_logic for player: {player_name}")
+    logger.info(f"Executing fetch_player_rebounding_stats_logic for player: {player_name}, PerMode: {per_mode}")
     
     if not all([player_name, season]):
         return format_response(error=Errors.MISSING_REQUIRED_PARAMS)
@@ -125,6 +133,7 @@ def fetch_player_rebounding_stats_logic(
             team_id=team_id,
             season=season,
             season_type_all_star=season_type,
+            per_mode_simple=per_mode,
             timeout=DEFAULT_TIMEOUT
         )
         
@@ -149,7 +158,12 @@ def fetch_player_rebounding_stats_logic(
             "by_shot_type": shot_type,
             "by_contest": contested,
             "by_shot_distance": distances,
-            "by_rebound_distance": reb_dist
+            "by_rebound_distance": reb_dist,
+            "parameters": {
+                "season": season,
+                "season_type": season_type,
+                "per_mode": per_mode
+            }
         }
         
         return format_response(result)
@@ -161,7 +175,8 @@ def fetch_player_rebounding_stats_logic(
 def fetch_player_passing_stats_logic(
     player_name: str,
     season: str,
-    season_type: str = SeasonTypeAllStar.regular
+    season_type: str = SeasonTypeAllStar.regular,
+    per_mode: str = "PerGame"
 ) -> str:
     """
     Fetch detailed player passing statistics.
@@ -170,15 +185,21 @@ def fetch_player_passing_stats_logic(
         player_name (str): Player's name
         season (str): Season in YYYY-YY format
         season_type (str): Season type (regular/playoffs)
+        per_mode (str): One of: Totals, PerGame, MinutesPer, Per48, Per40, Per36, PerMinute, PerPossession, PerPlay, Per100Possessions, Per100Plays
         
     Returns:
         str: JSON string containing:
         {
             "passes_made": [pass details by recipient],
-            "passes_received": [pass details by passer]
+            "passes_received": [pass details by passer],
+            "parameters": {
+                "season": season,
+                "season_type": season_type,
+                "per_mode": per_mode
+            }
         }
     """
-    logger.info(f"Executing fetch_player_passing_stats_logic for player: {player_name}")
+    logger.info(f"Executing fetch_player_passing_stats_logic for player: {player_name}, PerMode: {per_mode}")
     
     if not all([player_name, season]):
         return format_response(error=Errors.MISSING_REQUIRED_PARAMS)
@@ -207,6 +228,7 @@ def fetch_player_passing_stats_logic(
             team_id=team_id,
             season=season,
             season_type_all_star=season_type,
+            per_mode_simple=per_mode,
             timeout=DEFAULT_TIMEOUT
         )
         
@@ -249,7 +271,12 @@ def fetch_player_passing_stats_logic(
         
         result = {
             "passes_made": processed_made,
-            "passes_received": processed_received
+            "passes_received": processed_received,
+            "parameters": {
+                "season": season,
+                "season_type": season_type,
+                "per_mode": per_mode
+            }
         }
         
         return format_response(result)
@@ -258,86 +285,96 @@ def fetch_player_passing_stats_logic(
         logger.error(f"Error fetching passing stats: {str(e)}", exc_info=True)
         return format_response(error=Errors.PLAYER_PASSING_STATS_UNEXPECTED.format(name=player_name, error=str(e)))
 
-def fetch_player_shots_tracking_logic(player_id: str) -> str:
+def fetch_player_shots_tracking_logic(
+    player_id: str, 
+    season: str = CURRENT_SEASON,
+    season_type: str = SeasonTypeAllStar.regular,
+    opponent_team_id: int = 0,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None
+) -> str:
     """
-    Fetch player shots tracking statistics.
-    
+    Fetch detailed player shooting stats using player ID, with optional filters.
     Args:
-        player_id (str): The NBA player ID
-        
+        player_id (str): Player's ID.
+        season (str): Season identifier (e.g., "2023-24"). Defaults to current season.
+        season_type (str): Type of season (e.g., "Regular Season", "Playoffs"). Defaults to "Regular Season".
+        opponent_team_id (int, optional): Filter by opponent team ID. Defaults to 0 (all opponents).
+        date_from (str, optional): Start date filter (YYYY-MM-DD). Defaults to None.
+        date_to (str, optional): End date filter (YYYY-MM-DD). Defaults to None.
     Returns:
-        str: JSON string containing player shots tracking statistics
+        str: JSON string containing shooting stats by various splits.
     """
-    logger.info(f"Fetching shots tracking stats for player: {player_id}")
+    logger.info(
+        f"Executing fetch_player_shots_tracking_logic for player ID: {player_id}, Season: {season}, "
+        f"Type: {season_type}, Opponent: {opponent_team_id}, From: {date_from}, To: {date_to}"
+    )
     
     if not player_id:
-        return format_response(error=Errors.PLAYER_ID_EMPTY)
-    if not player_id.isdigit():
-        return format_response(error=Errors.INVALID_PLAYER_ID_FORMAT.format(player_id=player_id))
+        return format_response(error=Errors.MISSING_REQUIRED_PARAMS)
         
     try:
-        # Get player info to get team ID
+        # Team ID is required by the endpoint, fetch it first
         player_info = commonplayerinfo.CommonPlayerInfo(
             player_id=player_id,
             timeout=DEFAULT_TIMEOUT
         )
         info_df = _process_dataframe(player_info.common_player_info.get_data_frame(), single_row=True)
-        if not info_df:
-            return format_response(error=Errors.DATA_PROCESSING_ERROR)
-            
-        team_id = info_df.get("TEAM_ID")
-        if not team_id:
+        if not info_df or "TEAM_ID" not in info_df:
+            logger.error(f"Could not retrieve team ID for player ID {player_id}")
             return format_response(error=Errors.TEAM_ID_NOT_FOUND)
-        
-        shot_stats = playerdashptshots.PlayerDashPtShots(
+        team_id = info_df.get("TEAM_ID")
+        player_actual_name = info_df.get("DISPLAY_FIRST_LAST", f"Player_{player_id}")
+
+        # Fetch shooting stats
+        shooting_stats = playerdashptshots.PlayerDashPtShots(
             player_id=player_id,
             team_id=team_id,
+            season=season,
+            season_type_all_star=season_type,
+            opponent_team_id=opponent_team_id,
+            date_from_nullable=date_from,
+            date_to_nullable=date_to,
+            # Add other relevant parameters here if needed
             timeout=DEFAULT_TIMEOUT
         )
         
-        overall = _process_dataframe(shot_stats.overall.get_data_frame(), single_row=True)
-        general = _process_dataframe(shot_stats.general_shooting.get_data_frame(), single_row=False)
-        shot_clock = _process_dataframe(shot_stats.shot_clock_shooting.get_data_frame(), single_row=False)
-        dribbles = _process_dataframe(shot_stats.dribble_shooting.get_data_frame(), single_row=False)
-        defender = _process_dataframe(shot_stats.closest_defender_shooting.get_data_frame(), single_row=False)
-        touch_time = _process_dataframe(shot_stats.touch_time_shooting.get_data_frame(), single_row=False)
-        
-        if not all([overall, general, shot_clock, dribbles, defender, touch_time]):
-            return format_response(error=Errors.DATA_PROCESSING_ERROR)
-            
+        # Process different shooting splits
+        general = _process_dataframe(shooting_stats.general_shooting.get_data_frame(), single_row=False)
+        shot_clock = _process_dataframe(shooting_stats.shot_clock_shooting.get_data_frame(), single_row=False)
+        dribbles = _process_dataframe(shooting_stats.dribble_shooting.get_data_frame(), single_row=False)
+        touch_time = _process_dataframe(shooting_stats.touch_time_shooting.get_data_frame(), single_row=False)
+        defender_dist = _process_dataframe(shooting_stats.closest_defender_shooting.get_data_frame(), single_row=False)
+        defender_dist_10ft = _process_dataframe(shooting_stats.closest_defender_10ft_plus_shooting.get_data_frame(), single_row=False)
+
+        if not general: # Check if at least general stats are available
+             logger.warning(f"No general shooting stats found for player {player_id} with given filters.")
+             # Allow returning partial data if other splits exist
+
         result = {
             "player_id": player_id,
+            "player_name": player_actual_name,
             "team_id": team_id,
-            "overall": {
-                "fgm": overall.get("FGM", 0),
-                "fga": overall.get("FGA", 0),
-                "fg_pct": overall.get("FG_PCT", 0),
-                "fg3m": overall.get("FG3M", 0),
-                "fg3a": overall.get("FG3A", 0),
-                "fg3_pct": overall.get("FG3_PCT", 0),
-                "efg_pct": overall.get("EFG_PCT", 0)
+            "parameters": {
+                "season": season,
+                "season_type": season_type,
+                "opponent_team_id": opponent_team_id,
+                "date_from": date_from,
+                "date_to": date_to
             },
-            "general": {
-                type_data["SHOT_TYPE"].lower().replace(" ", "_"): {
-                    "frequency": type_data.get("FGA_FREQUENCY", 0),
-                    "fgm": type_data.get("FGM", 0),
-                    "fga": type_data.get("FGA", 0),
-                    "fg_pct": type_data.get("FG_PCT", 0),
-                    "efg_pct": type_data.get("EFG_PCT", 0)
-                }
-                for type_data in general
-            },
-            "by_shot_clock": shot_clock,
-            "by_dribbles": dribbles,
-            "by_defender_distance": defender,
-            "by_touch_time": touch_time
+            "general_shooting": general or [],
+            "by_shot_clock": shot_clock or [],
+            "by_dribble_count": dribbles or [],
+            "by_touch_time": touch_time or [],
+            "by_defender_distance": defender_dist or [],
+            "by_defender_distance_10ft_plus": defender_dist_10ft or []
         }
         
         return format_response(result)
         
     except Exception as e:
-        logger.error(f"Error fetching shooting stats: {str(e)}", exc_info=True)
-        return format_response(error=Errors.PLAYER_SHOOTING_STATS_UNEXPECTED.format(player_id=player_id, error=str(e)))
+        logger.error(f"Error fetching shots tracking stats for player ID {player_id}: {str(e)}", exc_info=True)
+        return format_response(error=Errors.PLAYER_SHOT_TRACKING_UNEXPECTED.format(player_id=player_id, error=str(e)))
 
 def fetch_player_clutch_stats_logic(
     player_name: str, 

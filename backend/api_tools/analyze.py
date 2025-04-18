@@ -2,7 +2,7 @@ from typing import Dict, Any, List
 import json
 import logging
 from nba_api.stats.endpoints import playerdashboardbyyearoveryear
-from nba_api.stats.library.parameters import SeasonTypeAllStar, PerModeDetailed
+from nba_api.stats.library.parameters import SeasonTypeAllStar, PerModeDetailed, LeagueID
 from backend.config import CURRENT_SEASON
 
 from .player_tools import _find_player_id
@@ -10,18 +10,23 @@ from .utils import handle_api_error
 
 logger = logging.getLogger(__name__)
 
-def analyze_player_stats_logic(player_name: str, season: str = CURRENT_SEASON, season_type: str = SeasonTypeAllStar.regular) -> str:
+def analyze_player_stats_logic(player_name: str, season: str = CURRENT_SEASON, season_type: str = SeasonTypeAllStar.regular, per_mode: str = PerModeDetailed.per_game, league_id: str = LeagueID.nba) -> str:
     """
-    Analyze a player's statistics over their career.
+    Fetches player overall dashboard stats for a given season/type.
+    NOTE: Despite the name, this currently returns overall stats, not year-over-year analysis.
+    The PlayerDashboardByYearOverYear endpoint *does* contain YOY data that could be processed further.
     
     Args:
-        player_name (str): The name of the player to analyze
-        season (str): The season to analyze
-        season_type (str): The type of season to analyze (Regular Season, Playoffs, etc.)
+        player_name (str): The name of the player to analyze.
+        season (str): The season to analyze.
+        season_type (str): The type of season to analyze (Regular Season, Playoffs, etc.).
+        per_mode (str): Stat mode ('PerGame', 'Totals', etc.).
+        league_id (str): League ID.
         
     Returns:
-        str: JSON string containing the analysis results
+        str: JSON string containing the overall player dashboard stats for the specified period.
     """
+    logger.info(f"Executing analyze_player_stats_logic for: {player_name}, Season: {season}, Type: {season_type}, Mode: {per_mode}, League: {league_id}")
     try:
         # Find the player
         player_id, player_actual_name = _find_player_id(player_name)
@@ -31,11 +36,13 @@ def analyze_player_stats_logic(player_name: str, season: str = CURRENT_SEASON, s
             return handle_api_error("InvalidPlayer", error_msg)
 
         # Get player's year-over-year stats
-        player_stats = playerdashboardbyyearoveryear.PlayerDashboardByYearOverYear(
+        player_stats = playerdashboardbyyear.PlayerDashboardByYearOverYear(
             player_id=player_id,
             season=season,
             season_type_playoffs=season_type,
-            per_mode_detailed=PerModeDetailed.per_game
+            per_mode_detailed=per_mode,
+            league_id_nullable=league_id,
+            timeout=DEFAULT_TIMEOUT
         )
         
         # Get the normalized stats
@@ -54,7 +61,9 @@ def analyze_player_stats_logic(player_name: str, season: str = CURRENT_SEASON, s
             "player_id": player_id,
             "season": season,
             "season_type": season_type,
-            "career_stats": career_stats
+            "per_mode": per_mode,
+            "league_id": league_id,
+            "overall_dashboard_stats": career_stats
         }
         
         return json.dumps(response)

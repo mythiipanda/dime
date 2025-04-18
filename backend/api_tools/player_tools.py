@@ -372,10 +372,16 @@ def fetch_player_defense_logic(
     player_name: str,
     season: str = CURRENT_SEASON,
     season_type: str = SeasonTypeAllStar.regular,
-    per_mode: str = PerModeDetailed.per_game
+    per_mode: str = PerModeDetailed.per_game,
+    opponent_team_id: int = 0,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None
 ) -> str:
     """Fetches detailed defensive statistics for a player."""
-    logger.info(f"Executing fetch_player_defense_logic for: '{player_name}', Season: {season}")
+    logger.info(
+        f"Executing fetch_player_defense_logic for: '{player_name}', Season: {season}, Type: {season_type}, "
+        f"Opponent: {opponent_team_id}, From: {date_from}, To: {date_to}"
+    )
     
     if not player_name or not player_name.strip():
         return format_response(error=Errors.PLAYER_NAME_EMPTY)
@@ -391,9 +397,12 @@ def fetch_player_defense_logic(
         try:
             defense_endpoint = playerdashptshotdefend.PlayerDashPtShotDefend(
                 player_id=player_id,
-                team_id=0,  # 0 for all teams
+                team_id=0,  # 0 for player-centric view
                 season=season,
                 season_type_all_star=season_type,
+                opponent_team_id=opponent_team_id,
+                date_from_nullable=date_from,
+                date_to_nullable=date_to,
                 timeout=DEFAULT_TIMEOUT
             )
             logger.debug(f"playerdashptshotdefend API call successful for ID: {player_id}")
@@ -426,9 +435,14 @@ def fetch_player_defense_logic(
             defensive_summary = {
                 "player_name": player_actual_name,
                 "player_id": player_id,
-                "season": season,
-                "season_type": season_type,
-                "per_mode": per_mode,
+                "parameters": {
+                    "season": season,
+                    "season_type": season_type,
+                    "per_mode_requested": per_mode,
+                    "opponent_team_id": opponent_team_id,
+                    "date_from": date_from,
+                    "date_to": date_to
+                },
                 "summary": {
                     "games_played": overall_stats.get("GP", 0),
                     "overall_defense": {
@@ -455,39 +469,79 @@ def fetch_player_defense_logic(
 def fetch_player_hustle_stats_logic(
     season: str = CURRENT_SEASON,
     season_type: str = SeasonTypeAllStar.regular,
-    per_mode: str = PerModeDetailed.per_game
+    per_mode: str = PerModeDetailed.per_game,
+    player_name: Optional[str] = None,
+    team_id: Optional[int] = None,
+    league_id: str = LeagueID.nba,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None
 ) -> str:
-    """Fetches hustle stats (deflections, loose balls, etc.) for all players."""
-    logger.info(f"Executing fetch_player_hustle_stats_logic for season {season}")
+    """Fetches hustle stats (deflections, loose balls, etc.) filtered by season, type, mode, and optionally player or team."""
+    logger.info(
+        f"Executing fetch_player_hustle_stats_logic for season {season}, type {season_type}, per_mode {per_mode}, "
+        f"player '{player_name}', team '{team_id}', league '{league_id}', from '{date_from}', to '{date_to}'"
+    )
     
     if not season or not _validate_season_format(season):
         return format_response(error=Errors.INVALID_SEASON_FORMAT.format(season=season))
 
-    # Validate season_type
+    # Input Validation (existing + new)
     valid_season_types = [getattr(SeasonTypeAllStar, attr) for attr in dir(SeasonTypeAllStar) if not attr.startswith('_') and isinstance(getattr(SeasonTypeAllStar, attr), str)]
     if season_type not in valid_season_types:
-        logger.error(f"Invalid season_type '{season_type}' provided.")
-        return format_response(error=f"Invalid season_type: '{season_type}'. Valid options: {valid_season_types}")
+        logger.error(f"Invalid season_type '{season_type}'.")
+        return format_response(error=f"Invalid season_type: '{season_type}'. Valid: {valid_season_types}")
 
-    # Validate per_mode
     valid_per_modes = [getattr(PerModeDetailed, attr) for attr in dir(PerModeDetailed) if not attr.startswith('_') and isinstance(getattr(PerModeDetailed, attr), str)]
     if per_mode not in valid_per_modes:
-        logger.error(f"Invalid per_mode '{per_mode}' provided.")
-        return format_response(error=f"Invalid per_mode: '{per_mode}'. Valid options: {valid_per_modes}")
+        logger.error(f"Invalid per_mode '{per_mode}'.")
+        return format_response(error=f"Invalid per_mode: '{per_mode}'. Valid: {valid_per_modes}")
+
+    player_id_to_pass = None
+    player_or_team_abbr = 'T' # Default to Team if no player name
+    if player_name:
+        player_id_result, _ = _find_player_id(player_name)
+        if player_id_result is None:
+            return format_response(error=Errors.PLAYER_NOT_FOUND.format(name=player_name))
+        player_id_to_pass = player_id_result
+        player_or_team_abbr = 'P'
+    elif team_id:
+         player_or_team_abbr = 'T'
+    # If neither player_name nor team_id is given, we fetch league-wide (player_or_team_abbr stays 'T'? API default seems league-wide)
+    # Let's explicitly set player_id/team_id to 0 for league-wide fetch if needed, check API defaults
+    if not player_name and not team_id:
+         player_or_team_abbr = None # Let API default handle league-wide
+         # Explicitly set IDs to 0 or None? Let's try None first.
+         team_id_to_pass = None
+    else:
+         team_id_to_pass = team_id
 
     try:
-        logger.debug(f"Fetching hustle stats for season {season}")
+        logger.debug(f"Fetching hustle stats for season {season} with filters.")
         hustle = leaguehustlestatsplayer.LeagueHustleStatsPlayer(
             season=season,
             season_type_all_star=season_type,
             per_mode_time=per_mode,
+            league_id=league_id,
+            date_from_nullable=date_from,
+            date_to_nullable=date_to,
+            player_or_team_abbreviation_nullable=player_or_team_abbr,
+            player_id_nullable=player_id_to_pass,
+            team_id_nullable=team_id_to_pass,
             timeout=DEFAULT_TIMEOUT
         )
         
         hustle_df = hustle.get_data_frames()[0]
         if hustle_df.empty:
-            logger.error(f"No hustle stats found for season {season}")
-            return format_response(error=f"No hustle stats available for season {season}")
+            logger.warning(f"No hustle stats found for the specified filters (season {season}, player '{player_name}', team '{team_id}')")
+            # Return empty list instead of error if simply no data matches filters
+            return format_response({
+                "parameters": { # Include parameters in the response
+                     "season": season, "season_type": season_type, "per_mode": per_mode,
+                     "player_name": player_name, "team_id": team_id, "league_id": league_id,
+                     "date_from": date_from, "date_to": date_to
+                 },
+                "hustle_stats": []
+            })
         
         # Process hustle stats using list comprehension
         hustle_stats = [
@@ -517,9 +571,11 @@ def fetch_player_hustle_stats_logic(
         ] if not hustle_df.empty else []
         
         result = {
-            "season": season,
-            "season_type": season_type,
-            "per_mode": per_mode,
+            "parameters": {
+                 "season": season, "season_type": season_type, "per_mode": per_mode,
+                 "player_name": player_name, "team_id": team_id, "league_id": league_id,
+                 "date_from": date_from, "date_to": date_to
+             },
             "hustle_stats": hustle_stats
         }
         

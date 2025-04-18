@@ -11,6 +11,7 @@ from .tools import (
     get_player_gamelog,
     get_player_career_stats,
     get_player_awards,
+    get_player_aggregate_stats,
     get_player_clutch_stats,
     get_player_passing_stats,
     get_player_rebounding_stats,
@@ -22,16 +23,20 @@ from .tools import (
     get_player_insights,
     get_live_odds,
     get_team_info_and_roster,
+    get_team_stats,
+    get_team_lineups,
     get_team_passing_stats,
     get_team_shooting_stats,
     get_team_rebounding_stats,
     find_games,
     get_boxscore_traditional,
-    get_playbyplay,
+    get_play_by_play,
     get_league_standings,
     get_scoreboard,
     get_draft_history,
     get_league_leaders,
+    get_game_shotchart,
+    get_live_boxscore,
 )
 import datetime
 
@@ -131,7 +136,7 @@ You are an expert NBA data analyst and retrieval specialist with deep knowledge 
    - Tracking: get_team_passing_stats, get_team_shooting_stats, get_team_rebounding_stats
 
 3. Game & League Data:
-   - Game Analysis: find_games, get_boxscore_traditional, get_playbyplay
+   - Game Analysis: find_games, get_boxscore_traditional, get_play_by_play
    - League Info: get_league_standings, get_scoreboard, get_league_leaders, get_draft_history
    - Game Finding: find_games (Note: Searches for ONE team/player at a time)
 
@@ -186,40 +191,43 @@ nba_agent = Agent(
     model=model,
     tools=[
         ThinkingTools(),
-        # Player Basic Stats
+        # Player Basic/Career
         get_player_info,
         get_player_gamelog,
         get_player_career_stats,
         get_player_awards,
+        get_player_aggregate_stats,
+        get_player_profile,
+        # Player Tracking/Advanced
         get_player_clutch_stats,
-        
-        # Player Tracking Stats
-        get_player_shots_tracking,
-        get_player_rebounding_stats,
         get_player_passing_stats,
+        get_player_rebounding_stats,
+        get_player_shots_tracking,
         get_player_shotchart,
         get_player_defense_stats,
         get_player_hustle_stats,
-        get_player_profile,
-        get_player_insights,
-        get_live_odds,
-        
-        # Team Stats
+        # Team Info/Stats
         get_team_info_and_roster,
+        get_team_stats,
+        get_team_lineups,
+        # Team Tracking
         get_team_passing_stats,
         get_team_shooting_stats,
         get_team_rebounding_stats,
-        
-        # Game Stats
+        # Game/League
         find_games,
         get_boxscore_traditional,
-        get_playbyplay,
-        
-        # League Stats
+        get_play_by_play,
         get_league_standings,
         get_scoreboard,
-        get_league_leaders,
         get_draft_history,
+        get_league_leaders,
+        get_game_shotchart,
+        # Live
+        get_live_boxscore,
+        get_live_odds,
+        # Misc
+        get_player_insights,
     ],
     add_history_to_messages=True,
     num_history_responses=10,
@@ -229,6 +237,8 @@ nba_agent = Agent(
     stream_intermediate_steps=True,
     resolve_context=True,
     reasoning=True,
+    exponential_backoff=True,
+    delay_between_retries=2
 )
 
 # Note: The example usage block with asyncio is removed as it's not needed for the agent definition itself.

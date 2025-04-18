@@ -181,7 +181,10 @@ def fetch_team_rebounding_stats_logic(
     team_identifier: str,
     season: str,
     season_type: str = SeasonTypeAllStar.regular,
-    per_mode: str = PerModeDetailed.per_game
+    per_mode: str = PerModeDetailed.per_game,
+    opponent_team_id: int = 0,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None
 ) -> str:
     """
     Fetch team rebounding stats from NBA API.
@@ -191,11 +194,17 @@ def fetch_team_rebounding_stats_logic(
         season (str): Season in YYYY-YY format
         season_type (str): Type of season (regular, playoffs, etc.)
         per_mode (str): Per mode type (per game, per minute, etc.)
+        opponent_team_id (int, optional): Filter by opponent team ID.
+        date_from (str, optional): Start date filter.
+        date_to (str, optional): End date filter.
         
     Returns:
         str: JSON string containing team rebounding stats
     """
-    logger.info(f"Executing fetch_team_rebounding_stats_logic for: {team_identifier}, Season: {season}")
+    logger.info(
+        f"Executing fetch_team_rebounding_stats_logic for: {team_identifier}, Season: {season}, Type: {season_type}, "
+        f"PerMode: {per_mode}, Opp: {opponent_team_id}, From: {date_from}, To: {date_to}"
+    )
     
     # Validate parameters
     validation_error = _validate_team_tracking_params(team_identifier, season)
@@ -213,6 +222,9 @@ def fetch_team_rebounding_stats_logic(
             season=season,
             season_type_all_star=season_type,
             per_mode_simple=per_mode,
+            opponent_team_id=opponent_team_id,
+            date_from_nullable=date_from,
+            date_to_nullable=date_to,
             timeout=DEFAULT_TIMEOUT
         )
 
@@ -238,11 +250,15 @@ def fetch_team_rebounding_stats_logic(
             season,
             season_type,
             {
+                "per_mode": per_mode,
+                "opponent_team_id": opponent_team_id,
+                "date_from": date_from,
+                "date_to": date_to,
                 "overall": processed_overall,
-                "by_shot_type": shot_type,
-                "by_contest": contested,
-                "by_shot_distance": distances,
-                "by_rebound_distance": reb_dist
+                "by_shot_type": shot_type or [],
+                "by_contest": contested or [],
+                "by_shot_distance": distances or [],
+                "by_rebound_distance": reb_dist or []
             }
         )
         
@@ -256,7 +272,10 @@ def fetch_team_shooting_stats_logic(
     team_identifier: str,
     season: str,
     season_type: str = SeasonTypeAllStar.regular,
-    per_mode: str = PerModeDetailed.per_game
+    per_mode: str = PerModeDetailed.per_game,
+    opponent_team_id: int = 0,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None
 ) -> str:
     """
     Fetch team shooting stats from NBA API.
@@ -266,12 +285,18 @@ def fetch_team_shooting_stats_logic(
         season (str): Season in YYYY-YY format
         season_type (str): Type of season (regular, playoffs, etc.)
         per_mode (str): Per mode type (per game, per minute, etc.)
+        opponent_team_id (int, optional): Filter by opponent team ID.
+        date_from (str, optional): Start date filter.
+        date_to (str, optional): End date filter.
         
     Returns:
         str: JSON string containing team shooting stats
     """
-    logger.info(f"Executing fetch_team_shooting_stats_logic for: {team_identifier}, Season: {season}")
-
+    logger.info(
+        f"Executing fetch_team_shooting_stats_logic for: {team_identifier}, Season: {season}, Type: {season_type}, "
+        f"PerMode: {per_mode}, Opp: {opponent_team_id}, From: {date_from}, To: {date_to}"
+    )
+    
     # Validate parameters
     validation_error = _validate_team_tracking_params(team_identifier, season)
     if validation_error:
@@ -288,6 +313,9 @@ def fetch_team_shooting_stats_logic(
             season=season,
             season_type_all_star=season_type,
             per_mode_simple=per_mode,
+            opponent_team_id=opponent_team_id,
+            date_from_nullable=date_from,
+            date_to_nullable=date_to,
             timeout=DEFAULT_TIMEOUT
         )
 
@@ -323,10 +351,14 @@ def fetch_team_shooting_stats_logic(
             season,
             season_type,
             {
+                "per_mode": per_mode,
+                "opponent_team_id": opponent_team_id,
+                "date_from": date_from,
+                "date_to": date_to,
                 "overall": processed_overall,
                 "general_shooting": processed_general,
                 "by_shot_clock": shot_clock,
-                "by_dribbles": dribbles,
+                "by_dribble": dribbles,
                 "by_defender_distance": defender,
                 "by_touch_time": touch_time
             }

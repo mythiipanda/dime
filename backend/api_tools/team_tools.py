@@ -74,12 +74,12 @@ def _find_team_id(team_identifier: str) -> Tuple[Optional[int], Optional[str]]:
 
 # Removed unused find_team_by_name function
 
-def fetch_team_info_and_roster_logic(team_identifier: str, season: str = CURRENT_SEASON) -> str:
+def fetch_team_info_and_roster_logic(team_identifier: str, season: str = CURRENT_SEASON, season_type: str = SeasonTypeAllStar.regular, league_id: str = LeagueID.nba) -> str:
     """
     Fetches team info, ranks, roster, and coaches.
     Returns JSON string with essential information.
     """
-    logger.info(f"Executing fetch_team_info_and_roster_logic for: '{team_identifier}', Season: {season}")
+    logger.info(f"Executing fetch_team_info_and_roster_logic for: '{team_identifier}', Season: {season}, Type: {season_type}, League: {league_id}")
     if not team_identifier or not team_identifier.strip():
         return format_response(error=Errors.TEAM_IDENTIFIER_EMPTY)
     if not season or not _validate_season_format(season):
@@ -98,7 +98,8 @@ def fetch_team_info_and_roster_logic(team_identifier: str, season: str = CURRENT
             team_info_endpoint = teaminfocommon.TeamInfoCommon(
                 team_id=team_id,
                 season_nullable=season,
-                league_id=LeagueID.nba,
+                league_id_nullable=league_id,
+                season_type_nullable=season_type,
                 timeout=DEFAULT_TIMEOUT
             )
             logger.debug(f"teaminfocommon API call successful for ID: {team_id}")
@@ -116,6 +117,7 @@ def fetch_team_info_and_roster_logic(team_identifier: str, season: str = CURRENT
             roster_endpoint = commonteamroster.CommonTeamRoster(
                 team_id=team_id,
                 season=season,
+                league_id_nullable=league_id,
                 timeout=DEFAULT_TIMEOUT
             )
             logger.debug(f"commonteamroster API call successful for ID: {team_id}")
@@ -161,6 +163,8 @@ def fetch_team_info_and_roster_logic(team_identifier: str, season: str = CURRENT
             "team_id": team_id,
             "team_name": team_name,
             "season": season,
+            "season_type": season_type,
+            "league_id": league_id,
             "info": compact_team_info,
             "ranks": compact_team_ranks,
             "roster": compact_roster,
@@ -177,18 +181,38 @@ def fetch_team_info_and_roster_logic(team_identifier: str, season: str = CURRENT
         logger.critical(error_msg, exc_info=True)
         return format_response(error=error_msg)
 
-def fetch_team_stats_logic(team_identifier: str, season: str = CURRENT_SEASON) -> str:
+def fetch_team_stats_logic(
+    team_identifier: str, 
+    season: str = CURRENT_SEASON, 
+    season_type: str = SeasonTypeAllStar.regular, 
+    per_mode: str = PerModeDetailed.per_game, 
+    measure_type: str = MeasureTypeDetailedDefense.base, 
+    opponent_team_id: int = 0, 
+    date_from: Optional[str] = None, 
+    date_to: Optional[str] = None,
+    league_id: str = LeagueID.nba
+) -> str:
     """
-    Fetches comprehensive team statistics.
+    Fetches comprehensive team statistics (current season dashboard and year-by-year).
     
     Args:
-        team_identifier (str): Team name, abbreviation, or ID
-        season (str): NBA season in format 'YYYY-YY'
+        team_identifier (str): Team name, abbreviation, or ID.
+        season (str): NBA season in format 'YYYY-YY' for current stats.
+        season_type (str): Season type (Regular Season, Playoffs, etc.).
+        per_mode (str): Per mode for stats (PerGame, Totals, etc.).
+        measure_type (str): Measure type for dashboard stats (Base, Advanced, etc.).
+        opponent_team_id (int, optional): Filter by opponent team ID for dashboard stats.
+        date_from (str, optional): Start date filter for dashboard stats.
+        date_to (str, optional): End date filter for dashboard stats.
+        league_id (str): League ID for historical stats (NBA, WNBA, G-League).
         
     Returns:
-        str: JSON string containing team statistics or error message
+        str: JSON string containing team statistics or error message.
     """
-    logger.info(f"Executing fetch_team_stats_logic for: '{team_identifier}', Season: {season}")
+    logger.info(
+        f"Executing fetch_team_stats_logic for: '{team_identifier}', Season: {season}, Type: {season_type}, "
+        f"PerMode: {per_mode}, Measure: {measure_type}, Opp: {opponent_team_id}, League: {league_id}"
+    )
     
     if not team_identifier or not team_identifier.strip():
         return format_response(error=Errors.TEAM_IDENTIFIER_EMPTY)
@@ -200,11 +224,17 @@ def fetch_team_stats_logic(team_identifier: str, season: str = CURRENT_SEASON) -
         if team_id is None:
             return format_response(error=Errors.TEAM_NOT_FOUND.format(identifier=team_identifier))
 
-        logger.debug(f"Fetching team dashboard stats for Team ID: {team_id}, Season: {season}")
+        logger.debug(f"Fetching team dashboard stats for Team ID: {team_id}, Season: {season}, Filters applied.")
         try:
             dashboard = teamdashboardbygeneralsplits.TeamDashboardByGeneralSplits(
                 team_id=team_id,
                 season=season,
+                season_type_all_star=season_type,
+                per_mode_detailed=per_mode,
+                measure_type_detailed_defense=measure_type,
+                opponent_team_id=opponent_team_id,
+                date_from_nullable=date_from,
+                date_to_nullable=date_to,
                 timeout=DEFAULT_TIMEOUT
             )
             
@@ -220,7 +250,9 @@ def fetch_team_stats_logic(team_identifier: str, season: str = CURRENT_SEASON) -
             try:
                 yearly_stats = teamyearbyyearstats.TeamYearByYearStats(
                     team_id=team_id,
-                    per_mode_simple="PerGame",
+                    league_id_nullable=league_id,
+                    season_type_all_star=season_type,
+                    per_mode_simple=per_mode,
                     timeout=DEFAULT_TIMEOUT
                 )
                 historical_df = yearly_stats.get_data_frames()[0]
@@ -235,9 +267,18 @@ def fetch_team_stats_logic(team_identifier: str, season: str = CURRENT_SEASON) -
             result = {
                 "team_id": team_id,
                 "team_name": team_name,
-                "season": season,
+                "parameters": {
+                    "season": season,
+                    "season_type": season_type,
+                    "per_mode": per_mode,
+                    "measure_type": measure_type,
+                    "opponent_team_id": opponent_team_id,
+                    "date_from": date_from,
+                    "date_to": date_to,
+                    "league_id": league_id
+                },
                 "current_stats": compact_stats,
-                "historical_stats": historical_stats
+                "historical_stats": historical_stats or []
             }
             
             logger.info(f"fetch_team_stats_logic completed for Team ID: {team_id}, Season: {season}")
