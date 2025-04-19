@@ -98,7 +98,7 @@ def fetch_team_info_and_roster_logic(team_identifier: str, season: str = CURRENT
             team_info_endpoint = teaminfocommon.TeamInfoCommon(
                 team_id=team_id,
                 season_nullable=season,
-                league_id_nullable=league_id,
+                league_id=league_id,
                 season_type_nullable=season_type,
                 timeout=DEFAULT_TIMEOUT
             )
