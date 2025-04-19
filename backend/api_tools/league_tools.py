@@ -35,7 +35,7 @@ def get_cached_standings(season: str, season_type: str, timestamp: str) -> pd.Da
 
 def fetch_league_standings_logic(
     season: Optional[str] = None,
-    season_type: str = SeasonTypeAllStar.regular
+    season_type: str = SeasonTypeAllStar.regular,
 ) -> str:
     """
     Fetches league standings for a specific season and season type.
