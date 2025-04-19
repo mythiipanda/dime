@@ -15,7 +15,8 @@ async def get_league_leaders(
     season: Optional[str] = Query(None, description="Season YYYY-YY format"),
     stat_category: str = Query("PTS", description="Stat category abbreviation"),
     season_type: str = Query(SeasonTypeAllStar.regular, description="Season type"),
-    per_mode: str = Query(PerMode36.per_game, description="Per mode (e.g. per game/per 36 mins)")
+    per_mode: str = Query(PerMode36.per_game, description="Per mode (e.g. per game/per 36 mins)"),
+    league_id: str = Query("2024-25", description="League ID")
 ):
     """
     Retrieve top league leaders based on stat category.
@@ -29,7 +30,8 @@ async def get_league_leaders(
             season=season_val,
             stat_category=stat_category,
             season_type=season_type,
-            per_mode=per_mode
+            per_mode=per_mode,
+            league_id=league_id
         )
         data = json.loads(json_str)
         if "error" in data:
