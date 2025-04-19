@@ -4,14 +4,14 @@ import { TrendingUp, BarChart2, Activity, UserCheck, Trophy, DollarSign, Users, 
 
 export function UseCasesSection() {
   const useCases = [
-    { icon: <RadioTower className="h-6 w-6 text-[#99FFCC]" />, title: 'Live Game Tracking', description: 'Follow games in real-time with live scores, play-by-play, and win probability updates.' },
-    { icon: <BarChart2 className="h-6 w-6 text-[#99FFCC]" />, title: 'Advanced Player Analysis', description: 'Go beyond box scores with shot charts, advanced splits, and career performance trends.' },
-    { icon: <UserCheck className="h-6 w-6 text-[#99FFCC]" />, title: 'Player Comparison Engine', description: 'Compare players head-to-head across seasons, game types, or specific situations.' },
-    { icon: <TrendingUp className="h-6 w-6 text-[#99FFCC]" />, title: 'Team Performance Insights', description: 'Analyze team stats, trends, roster composition, and passing dynamics.' },
-    { icon: <Trophy className="h-6 w-6 text-[#99FFCC]" />, title: 'League Leaders & Standings', description: 'Track top performers and monitor playoff races with up-to-date league data.' },
-    { icon: <Star className="h-6 w-6 text-[#99FFCC]" />, title: 'AI-Powered Scouting', description: 'Leverage AI to analyze draft prospects, identify player archetypes, and generate reports.' },
-    { icon: <Activity className="h-6 w-6 text-[#99FFCC]" />, title: 'Hustle & Tracking Stats', description: 'Measure player impact beyond traditional stats with hustle and detailed tracking data.' },
-    { icon: <BookOpen className="h-6 w-6 text-[#99FFCC]" />, title: 'AI Research Assistant', description: 'Ask natural language questions to get instant answers, charts, and data tables.' }
+    { icon: <RadioTower className="h-6 w-6 text-primary" />, title: 'Live Game Tracking', description: 'Follow games in real-time with live scores, play-by-play, and win probability updates.' },
+    { icon: <BarChart2 className="h-6 w-6 text-primary" />, title: 'Advanced Player Analysis', description: 'Go beyond box scores with shot charts, advanced splits, and career performance trends.' },
+    { icon: <UserCheck className="h-6 w-6 text-primary" />, title: 'Player Comparison Engine', description: 'Compare players head-to-head across seasons, game types, or specific situations.' },
+    { icon: <TrendingUp className="h-6 w-6 text-primary" />, title: 'Team Performance Insights', description: 'Analyze team stats, trends, roster composition, and passing dynamics.' },
+    { icon: <Trophy className="h-6 w-6 text-primary" />, title: 'League Leaders & Standings', description: 'Track top performers and monitor playoff races with up-to-date league data.' },
+    { icon: <Star className="h-6 w-6 text-primary" />, title: 'AI-Powered Scouting', description: 'Leverage AI to analyze draft prospects, identify player archetypes, and generate reports.' },
+    { icon: <Activity className="h-6 w-6 text-primary" />, title: 'Hustle & Tracking Stats', description: 'Measure player impact beyond traditional stats with hustle and detailed tracking data.' },
+    { icon: <BookOpen className="h-6 w-6 text-primary" />, title: 'AI Research Assistant', description: 'Ask natural language questions to get instant answers, charts, and data tables.' }
   ];
 
   return (

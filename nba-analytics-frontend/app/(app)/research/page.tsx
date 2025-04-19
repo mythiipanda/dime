@@ -348,7 +348,7 @@ export default function ResearchPage() {
                         </PopoverContent>
                       </Popover>
                     </div>
-                  </div>
+      </div>
 
                   {/* Report Section Selection */}
                   <Collapsible className="border rounded-md p-4">
@@ -376,7 +376,7 @@ export default function ResearchPage() {
 
                 {/* --- Action Button --- */}
                 <div className="text-center">
-                  <Button
+            <Button 
                     onClick={handleSubmit}
                     disabled={state.isLoading || !state.topic.trim()}
                     size="lg"
@@ -384,17 +384,17 @@ export default function ResearchPage() {
                   >
                     {state.isLoading ? (
                       <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                         Researching...
                       </>
-                    ) : (
+              ) : (
                       'Run Research'
-                    )}
-                  </Button>
+              )}
+            </Button>
                 </div>
-              </CardContent>
-            </Card>
-          
+        </CardContent>
+      </Card>
+
             {/* --- Output Section --- */}
             <div className="mt-6 space-y-6">
               {/* Error Display */}
@@ -415,9 +415,9 @@ export default function ResearchPage() {
                   </h2>
                   <ResearchReportViewer reportContent={state.reportContent} />
                   <div ref={reportEndRef} />
-                </div>
-              )}
-
+          </div>
+        )}
+        
               {/* Follow-up Suggestions */}
               {state.followUpSuggestions.length > 0 && (
                 <div>
@@ -431,12 +431,12 @@ export default function ResearchPage() {
                         >
                           {suggestion}
                         </button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
+                          </li>
+                        ))}
+                      </ul>
+           </div>
+        )}
+      </div>
         </TabsContent>
 
         {/* Stat Comparison Tab Content */}
@@ -470,7 +470,7 @@ export default function ResearchPage() {
         </TabsContent>
 
       </Tabs>
-      
+
     </div>
   );
 } 

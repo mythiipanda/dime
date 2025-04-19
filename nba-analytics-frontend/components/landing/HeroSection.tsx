@@ -59,17 +59,17 @@ export function HeroSection() {
     <section className="relative py-24 md:py-32 lg:py-40 px-4 overflow-hidden">
       {/* Background elements from Figma (Nodes 11:3543, 11:3586) */}
       <div className="absolute inset-0 -z-10 overflow-hidden">
-        {/* Glowing Lines Example */}
+        {/* Glowing Lines Example - Use primary/secondary or neutrals */}
         <div className="absolute top-1/4 left-1/4 w-96 h-96">
-          <div className="absolute inset-0 rounded-full border border-[#99FFCC]/10 animate-[spin_20s_linear_infinite]"></div>
-          <div className="absolute inset-10 rounded-full border border-[#99FFCC]/5 opacity-50 animate-[spin_25s_linear_infinite_reverse]"></div>
+          <div className="absolute inset-0 rounded-full border border-primary/10 animate-[spin_20s_linear_infinite]"></div>
+          <div className="absolute inset-10 rounded-full border border-primary/5 opacity-50 animate-[spin_25s_linear_infinite_reverse]"></div>
         </div>
-        {/* Abstract Ellipses */}
+        {/* Abstract Ellipses - Use primary/secondary or neutrals */}
         <div className="absolute top-0 left-0 w-[50rem] h-[50rem] -translate-x-1/2 -translate-y-1/2">
-          <div className="absolute inset-0 bg-[#002B2E]/50 rounded-full opacity-30 blur-3xl"></div>
+          <div className="absolute inset-0 bg-primary/10 rounded-full opacity-30 blur-3xl"></div>
         </div>
         <div className="absolute bottom-0 right-0 w-[40rem] h-[40rem] translate-x-1/2 translate-y-1/2">
-          <div className="absolute inset-0 bg-[#98FCCF]/30 rounded-full opacity-20 blur-3xl"></div>
+          <div className="absolute inset-0 bg-secondary/10 rounded-full opacity-20 blur-3xl"></div>
         </div>
       </div>
       

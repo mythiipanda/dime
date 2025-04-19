@@ -12,15 +12,15 @@ export function VisionSection() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-16 gap-y-12 items-center">
           {/* Chat Mockup - Apply new styling */}
           <div className="group relative">
-            {/* Glow effect */}
-            <div className="absolute -inset-1 bg-gradient-to-br from-[#99FFCC]/20 to-[#33FF99]/20 rounded-xl blur-xl opacity-70 group-hover:opacity-100 transition duration-300"></div>
+            {/* Glow effect - Use primary/secondary */}
+            <div className="absolute -inset-1 bg-gradient-to-br from-primary/20 to-secondary/20 rounded-xl blur-xl opacity-70 group-hover:opacity-100 transition duration-300"></div>
             {/* Card styling */}
             <div className="relative h-[32rem] bg-card backdrop-blur-sm rounded-xl border border-border shadow p-4 flex flex-col overflow-hidden">
-              {/* Window Controls - Adjusted colors */}
+              {/* Window Controls - Use neutral/standard colors */}
               <div className="flex items-center mb-4 border-b border-border pb-2">
                 <div className="w-3 h-3 bg-red-500 rounded-full mr-1.5"></div>
                 <div className="w-3 h-3 bg-yellow-500 rounded-full mr-1.5"></div>
-                <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                <div className="w-3 h-3 bg-gray-500 rounded-full"></div>
                 <span className="ml-auto text-xs font-medium text-muted-foreground">AI Assistant</span>
               </div>
               
@@ -78,23 +78,23 @@ export function VisionSection() {
               Leverage our AI assistant trained on comprehensive NBA data. Ask complex questions in natural language and get instant stats, comparisons, visualizations, and analysis.
             </p>
             
-            {/* Feature list - Updated text */}
+            {/* Feature list - Use primary or neutral for checkmark */}
             <ul className="mb-10 space-y-4 text-left max-w-md mx-auto md:mx-0">
               <li className="flex items-start">
-                 <div className="flex-shrink-0 w-5 h-5 flex items-center justify-center bg-[#1A1C1F]/50 border border-border rounded-full mr-3 mt-1">
-                   <Check className="h-3 w-3 text-[#99FFCC]" />
+                 <div className="flex-shrink-0 w-5 h-5 flex items-center justify-center bg-muted/50 border border-border rounded-full mr-3 mt-1">
+                   <Check className="h-3 w-3 text-primary" />
                  </div>
                 <span className="text-muted-foreground">Complex query understanding</span>
               </li>
               <li className="flex items-start">
-                <div className="flex-shrink-0 w-5 h-5 flex items-center justify-center bg-[#1A1C1F]/50 border border-border rounded-full mr-3 mt-1">
-                  <Check className="h-3 w-3 text-[#99FFCC]" />
+                <div className="flex-shrink-0 w-5 h-5 flex items-center justify-center bg-muted/50 border border-border rounded-full mr-3 mt-1">
+                  <Check className="h-3 w-3 text-primary" />
                 </div>
                 <span className="text-muted-foreground">Access to historical & live data</span>
               </li>
               <li className="flex items-start">
-                <div className="flex-shrink-0 w-5 h-5 flex items-center justify-center bg-[#1A1C1F]/50 border border-border rounded-full mr-3 mt-1">
-                  <Check className="h-3 w-3 text-[#99FFCC]" />
+                <div className="flex-shrink-0 w-5 h-5 flex items-center justify-center bg-muted/50 border border-border rounded-full mr-3 mt-1">
+                  <Check className="h-3 w-3 text-primary" />
                 </div>
                 <span className="text-muted-foreground">On-demand charts & tables</span>
               </li>
