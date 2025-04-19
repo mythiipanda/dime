@@ -521,11 +521,9 @@ def fetch_player_hustle_stats_logic(
             season=season,
             season_type_all_star=season_type,
             per_mode_time=per_mode,
-            league_id=league_id,
+            league_id_nullable=league_id,
             date_from_nullable=date_from,
             date_to_nullable=date_to,
-            player_or_team_abbreviation_nullable=player_or_team_abbr,
-            player_id_nullable=player_id_to_pass,
             team_id_nullable=team_id_to_pass,
             timeout=DEFAULT_TIMEOUT
         )
