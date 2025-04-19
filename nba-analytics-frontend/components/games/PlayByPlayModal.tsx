@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { PbpData, Play } from "@/app/(app)/games/types"; // Adjust path as needed
-import { API_BASE_URL } from "@/lib/config";
 import { 
   Dialog, 
   DialogContent, 
@@ -15,8 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { Terminal, XCircle, Target, AlertTriangle, Timer, ArrowLeftRight, Info, Loader2 } from "lucide-react"; // Import necessary icons
-import { cn } from "@/lib/utils";
+import { Terminal, XCircle, Target, AlertTriangle, Info, Loader2 } from "lucide-react"; // Import necessary icons
 
 interface PlayByPlayModalProps {
   gameId: string | null;

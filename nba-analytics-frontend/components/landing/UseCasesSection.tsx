@@ -1,6 +1,6 @@
 import React from 'react';
 import { Card } from '@/components/ui/card';
-import { TrendingUp, BarChart2, Activity, UserCheck, Trophy, DollarSign, Users, Calendar, Star, BookOpen, RadioTower } from 'lucide-react';
+import { TrendingUp, BarChart2, Activity, UserCheck, Trophy, Star, BookOpen, RadioTower } from 'lucide-react';
 
 export function UseCasesSection() {
   const useCases = [

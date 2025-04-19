@@ -3,7 +3,7 @@
 import React from 'react';
 import { Button } from '@/components/ui/button'; // Assuming Button component exists
 import Link from 'next/link';
-import { ArrowRight, ChevronDown } from 'lucide-react'; // Import icons potentially used
+import { ChevronDown } from 'lucide-react'; // Import icons potentially used
 
 // Updated MockupComponent to match light-mode theme
 const MockupComponent = () => {

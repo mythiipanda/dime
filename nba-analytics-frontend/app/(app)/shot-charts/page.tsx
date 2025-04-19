@@ -90,7 +90,7 @@ export default function ShotChartChatPage() {
                        Ask about Shot Charts
                      </h3>
                      <p className="text-sm text-muted-foreground">
-                       Enter a player and season (e.g., "LeBron James 2023-24 shot chart") below. {/* Escaped quotes */}
+                       Enter a player and season (e.g., &quot;LeBron James 2023-24 shot chart&quot;) below.
                      </p>
                    </div>
                  </div>

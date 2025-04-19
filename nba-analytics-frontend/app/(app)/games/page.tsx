@@ -1,7 +1,7 @@
 // Keep only necessary imports for Server Component
 import { Metadata } from 'next';
-import { format, parseISO, addDays, subDays, isToday } from 'date-fns';
-import { ScoreboardData, Game, Team } from "./types"; // Import types
+import { format, parseISO, isToday } from 'date-fns';
+import { ScoreboardData } from "./types"; // Import types
 // Import the new client component that will be created
 import GamesClientPage from "./GamesClientPage";
 import { API_BASE_URL } from "@/lib/config"; // Keep for fetch
@@ -50,54 +50,50 @@ export const metadata: Metadata = {
 
 // --- Page Props Interface ---
 interface GamesPageProps {
-  searchParams: { [key: string]: string | string[] | undefined };
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }
 
 // --- Server Component Definition ---
 export default async function GamesServerPage({ searchParams }: GamesPageProps) {
+  const params = await searchParams;
 
   // Determine the target date from search params or default to today
   let targetDate: Date;
   // Ensure searchParams is accessed safely within the async context
-  const dateParam = searchParams?.date; // Use optional chaining
+  const dateParam = params?.date; // Use optional chaining
 
   if (typeof dateParam === 'string' && /\d{4}-\d{2}-\d{2}/.test(dateParam)) {
      try {
-       targetDate = parseISO(dateParam + 'T12:00:00Z'); // Use parseISO for robustness, add time/zone context
+        targetDate = parseISO(dateParam);
      } catch {
-       console.warn("Invalid date parameter, defaulting to today.");
-       targetDate = new Date();
+        targetDate = new Date();
      }
   } else {
-    targetDate = new Date();
+     targetDate = new Date();
   }
+
   
-  const gameDateString = formatDateUrl(targetDate);
-  const isDateToday = isToday(targetDate);
+  const isViewingToday = isToday(targetDate);
+  const formattedDate = formatDateUrl(targetDate);
 
-  console.log(`[Server Page] Rendering for date: ${gameDateString}, Is today: ${isDateToday}`);
-
-  // Fetch initial data ON THE SERVER if it's NOT today
-  // If it IS today, the client component will handle WebSocket connection
-  let initialData: ScoreboardData | null = null;
+  // Fetch scoreboard data on the server for SSR (not for today)
+  let initialScoreboardData: ScoreboardData | null = null;
   let serverFetchError: string | null = null;
-
-  if (!isDateToday) {
-    console.log("[Server Page] Fetching initial data for past/future date...");
-    const { data, error } = await getScoreboardDataServer(gameDateString);
-    initialData = data;
+  if (!isViewingToday) {
+    const { data, error } = await getScoreboardDataServer(formattedDate);
+    initialScoreboardData = data;
     serverFetchError = error;
-    } else {
+  } else {
      console.log("[Server Page] Date is today, client will handle WebSocket.");
      // Provide an empty structure for today so client knows the date
-     initialData = { gameDate: gameDateString, games: [] };
+     initialScoreboardData = { gameDate: formattedDate, games: [] };
   }
 
   // Render the Client Component, passing the initial data and date info
   return (
     <GamesClientPage
       targetDateISO={targetDate.toISOString()} // Pass date as ISO string
-      initialScoreboardData={initialData} // Can be null on error or empty for today
+      initialScoreboardData={initialScoreboardData} // Can be null on error or empty for today
       serverFetchError={serverFetchError} // Pass potential server fetch error
     />
   );

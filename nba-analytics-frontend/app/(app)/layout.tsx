@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { SidebarNav } from '@/components/layout/SidebarNav';
 import { Button } from '@/components/ui/button';
-import { Menu, Settings, PanelLeftClose, PanelRightOpen, Users } from 'lucide-react';
+import { Menu, PanelLeftClose, PanelRightOpen, Users } from 'lucide-react';
 import { ModeToggle } from '@/components/mode-toggle';
 import { SignedIn, SignedOut, UserButton, SignInButton, RedirectToSignIn, useUser } from "@clerk/nextjs";
 import { Logo } from '@/components/layout/Logo'; // Adjusted path

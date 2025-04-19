@@ -1,8 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useState, useEffect, useCallback } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useState, useEffect } from "react";
 import { Suggestion } from "@/app/(app)/players/types"; // Corrected path using alias
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";

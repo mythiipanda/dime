@@ -37,7 +37,7 @@ export async function fetchFromAPI<T>(
       try {
         const errorData: APIError = await response.json();
         errorDetail = errorData.detail || errorDetail;
-      } catch (jsonError) {
+      } catch {
         // If response is not JSON, use status text
         console.warn(`[fetchFromAPI] Non-JSON error response for ${url}: ${response.status}`);
       }

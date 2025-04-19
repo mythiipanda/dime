@@ -2,12 +2,14 @@
 
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import type { Components } from 'react-markdown';
 import { Button } from '@/components/ui/button';
-import { Lightbulb, Copy, Check, Brain, ChevronDown, ChevronUp, Loader2, CheckCircle2, XCircle } from 'lucide-react';
+import { Copy, Check } from 'lucide-react';
+
 import { cn } from '@/lib/utils';
 import { useState, useEffect } from 'react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
+
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import StatCard from '@/components/research/StatCard';
 import ChartRenderer from '@/components/research/ChartRenderer';
@@ -92,10 +94,10 @@ export default function ResearchReportViewer({
      while ((match = chartRegex.exec(reportContent)) !== null) {
          try {
              const jsonData = JSON.parse(match[1]);
-             const data = jsonData.data?.map((d: any) => ({ 
+             const data = jsonData.data?.map((d: { label?: string; value?: number }) => ({
                  label: String(d.label ?? ''),
                  value: parseFloat(String(d.value ?? 0))
-             })).filter((d: any) => d.label && !isNaN(d.value)) || [];
+             })).filter((d: { label: string; value: number }) => d.label && !isNaN(d.value)) || [];
 
              if (data.length > 0 && (jsonData.type === 'bar' || jsonData.type === 'line')) {
                  extractedCharts.push({
@@ -154,35 +156,38 @@ export default function ResearchReportViewer({
     }
   };
 
-  const components: any = {
-     h1: ({ node, ...props }: { node: any, [key: string]: any }) => <h1 className="text-2xl font-bold mb-4 text-primary border-b pb-2 border-border" {...props} />,
-     h2: ({ node, ...props }: { node: any, [key: string]: any }) => <h2 className="text-xl font-semibold mt-8 mb-4 text-foreground border-b pb-2 border-border" {...props} />,
-     h3: ({ node, ...props }: { node: any, [key: string]: any }) => <h3 className="text-lg font-semibold mt-6 mb-3 text-foreground/90" {...props} />,
-     p: ({ node, ...props }: { node: any, [key: string]: any }) => <p className="mb-4 leading-relaxed text-foreground/80" {...props} />,
-     ul: ({ node, ...props }: { node: any, [key: string]: any }) => <ul className="list-disc pl-6 mb-4 space-y-1 text-foreground/80" {...props} />,
-     ol: ({ node, ...props }: { node: any, [key: string]: any }) => <ol className="list-decimal pl-6 mb-4 space-y-1 text-foreground/80" {...props} />,
-     li: ({ node, ...props }: { node: any, [key: string]: any }) => <li className="mb-1" {...props} />,
-     code: ({ node, inline, className, children, ...props }: { node: any, inline: any, className: any, children: any, [key: string]: any }) => {
-       const match = /language-(\w+)/.exec(className || '')
-       return !inline && match ? (
-         <pre className="bg-muted/50 p-3 rounded-md overflow-x-auto my-4 scrollbar-thin scrollbar-thumb-muted scrollbar-track-transparent">
-           <code className={cn(className, 'text-sm font-mono text-foreground')} {...props}>
-             {String(children).replace(/\n$/, '')}
-           </code>
-         </pre>
-       ) : (
-         <code className={cn(className, 'bg-muted/50 px-1 py-0.5 rounded text-sm font-mono text-foreground')} {...props}>
-           {children}
-         </code>
-       )
-     },
-     a: ({ node, ...props }: { node: any, [key: string]: any }) => <a className="text-primary hover:underline" target="_blank" rel="noopener noreferrer" {...props} />,
-     table: ({ node, ...props }: { node: any, [key: string]: any }) => <div className="my-6 w-full overflow-y-auto"><Table className="w-full" {...props} /></div>,
-     thead: ({ node, ...props }: { node: any, [key: string]: any }) => <TableHeader {...props} />,
-     tbody: ({ node, ...props }: { node: any, [key: string]: any }) => <TableBody {...props} />,
-     tr: ({ node, ...props }: { node: any, [key: string]: any }) => <TableRow {...props} />,
-     th: ({ node, ...props }: { node: any, [key: string]: any }) => <TableHead className="font-semibold" {...props} />,
-     td: ({ node, ...props }: { node: any, [key: string]: any }) => <TableCell {...props} />,
+
+
+const components: Components = {
+     h1: (props: React.HTMLAttributes<HTMLHeadingElement>) => <h1 className="text-2xl font-bold mb-4 text-primary border-b pb-2 border-border" {...props} />,
+     h2: (props: React.HTMLAttributes<HTMLHeadingElement>) => <h2 className="text-xl font-semibold mt-8 mb-4 text-foreground border-b pb-2 border-border" {...props} />,
+     h3: (props: React.HTMLAttributes<HTMLHeadingElement>) => <h3 className="text-lg font-semibold mt-6 mb-3 text-foreground/90" {...props} />,
+     p: (props: React.HTMLAttributes<HTMLParagraphElement>) => <p className="mb-4 leading-relaxed text-foreground/80" {...props} />,
+     ul: (props: React.HTMLAttributes<HTMLUListElement>) => <ul className="list-disc pl-6 mb-4 space-y-1 text-foreground/80" {...props} />,
+     ol: (props: React.HTMLAttributes<HTMLOListElement>) => <ol className="list-decimal pl-6 mb-4 space-y-1 text-foreground/80" {...props} />,
+     li: (props: React.HTMLAttributes<HTMLLIElement>) => <li className="mb-1" {...props} />,
+     code: (props: React.HTMLAttributes<HTMLElement> & {inline?: boolean}) => {
+      const {inline, className, children} = props as React.HTMLAttributes<HTMLElement> & {inline?: boolean};
+      const match = /language-(\w+)/.exec(className || '')
+      return !inline && match ? (
+        <pre className="bg-muted/50 p-3 rounded-md overflow-x-auto my-4 scrollbar-thin scrollbar-thumb-muted scrollbar-track-transparent">
+          <code className={cn(typeof className === 'string' ? className : '', 'text-sm font-mono text-foreground')} {...props}>
+            {String(children).replace(/\n$/, '')}
+          </code>
+        </pre>
+      ) : (
+        <code className={cn(typeof className === 'string' ? className : '', 'bg-muted/50 px-1 py-0.5 rounded text-sm font-mono text-foreground')} {...props}>
+          {children}
+        </code>
+      )
+    },
+     a: (props) => <a className="text-primary hover:underline" target="_blank" rel="noopener noreferrer" {...props} />,
+     table: (props) => <div className="my-6 w-full overflow-y-auto"><Table className="w-full" {...props} /></div>,
+     thead: (props) => <TableHeader {...props} />,
+     tbody: (props) => <TableBody {...props} />,
+     tr: (props) => <TableRow {...props} />,
+     th: (props) => <TableHead className="font-semibold" {...props} />,
+     td: (props) => <TableCell {...props} />,
   };
 
   return (

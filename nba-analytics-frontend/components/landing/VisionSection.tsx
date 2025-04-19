@@ -29,7 +29,7 @@ export function VisionSection() {
                 {/* User message */}
                 <div className="flex justify-end">
                   <p className="bg-gradient-to-r from-primary/80 to-secondary/80 text-foreground font-medium rounded-xl py-2.5 px-4 max-w-[80%] text-sm shadow-md">
-                    Compare LeBron James and Michael Jordan's career playoff stats.
+                    Compare LeBron James and Michael Jordan&apos;s career playoff stats.
                   </p>
                 </div>
                 
@@ -43,7 +43,7 @@ export function VisionSection() {
                 {/* User message */}
                 <div className="flex justify-end">
                   <p className="bg-gradient-to-r from-primary/80 to-secondary/80 text-foreground font-medium rounded-xl py-2.5 px-4 max-w-[80%] text-sm shadow-md">
-                    Show me Steph Curry's shot chart from the 2022 finals.
+                    Show me Steph Curry&apos;s shot chart from the 2022 finals.
                   </p>
                 </div>
                 

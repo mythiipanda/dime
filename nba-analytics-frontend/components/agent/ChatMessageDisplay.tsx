@@ -90,7 +90,7 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
                       return [...prev, newSource];
                     });
                   }
-                } catch (e) {
+                } catch {
                   // If not JSON, add as plain text source
                   setSources(prev => {
                     const newSource: Source = {

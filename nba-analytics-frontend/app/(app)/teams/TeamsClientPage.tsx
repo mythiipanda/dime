@@ -1,9 +1,9 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { TeamStanding } from "@/lib/api/teams"; // Correct path from original file
-import { TeamTable, TeamTableSkeleton } from "@/components/teams/TeamTable"; // Assuming this path is correct
+import { TeamTable } from "@/components/teams/TeamTable"; // Assuming this path is correct
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"; // Using shadcn Select
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"; // Import RadioGroup
 import { Label } from "@/components/ui/label"; // Import Label

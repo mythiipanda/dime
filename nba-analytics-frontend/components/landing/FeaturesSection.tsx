@@ -1,5 +1,5 @@
 import { Card } from '@/components/ui/card';
-import { PieChart, MapPin, Activity, Bell, ArrowRight, BarChartHorizontal } from 'lucide-react';
+import { PieChart, MapPin, Activity, ArrowRight, BarChartHorizontal } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 

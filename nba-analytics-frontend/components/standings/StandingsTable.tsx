@@ -9,7 +9,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { TeamStanding } from "@/lib/api/teams"
-import { formatWinPct, getGamesBehind, getRecordColor, formatStreak, getClinchIndicators } from "@/lib/api/teams"
+import { formatWinPct, getGamesBehind, getRecordColor, formatStreak, getClinchIndicators } from "@/lib/utils/teams"
 import { Trophy, Star } from "lucide-react"
 import { motion } from "framer-motion"
 import { STAGGER_CHILD } from "@/lib/animations"
@@ -95,22 +95,22 @@ export function StandingsTable({
                       </Tooltip>
                     </TooltipProvider>
                   )}
-                  <span>{`${team.TeamCity} ${team.TeamName}`}</span>
+                  <span>{team.TeamName}</span>
                 </div>
               </TableCell>
               <TableCell className="text-center">{team.WINS}</TableCell>
               <TableCell className="text-center">{team.LOSSES}</TableCell>
               <TableCell className={`text-center ${getRecordColor(team.WINS, team.LOSSES)}`}>
-                {formatWinPct(team.WinPCT)}%
+                {formatWinPct(team.WinPct)}%
               </TableCell>
               <TableCell className="text-center text-muted-foreground">
-                {getGamesBehind(team.ConferenceGamesBack)}
+                {getGamesBehind(team.GB)}
               </TableCell>
               <TableCell className="text-center">
                 {team.L10}
               </TableCell>
-              <TableCell className={`text-center ${team.CurrentStreak > 0 ? 'text-green-500' : 'text-red-500'}`}>
-                {formatStreak(team.strCurrentStreak)}
+              <TableCell className={`text-center ${team.STRK.startsWith('W') ? 'text-green-500' : 'text-red-500'}`}>
+                {formatStreak(team.STRK)}
               </TableCell>
               <TableCell className="text-center hidden md:table-cell">
                 {team.ConferenceRecord}

@@ -1,33 +1,24 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { SendHorizonal, Loader2, Sparkles, Search, ChevronsUpDown, Lightbulb, Terminal, BotMessageSquare } from 'lucide-react';
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Separator } from '@/components/ui/separator';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Label } from '@/components/ui/label';
-import ResearchReportViewer from '@/components/research/ResearchReportViewer';
-import { Checkbox } from "@/components/ui/checkbox";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-
-// Import the mock components
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Card, CardContent } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
+import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Button } from '@/components/ui/button';
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
+import { Loader2, Terminal, BotMessageSquare, Lightbulb } from 'lucide-react';
+import ResearchReportViewer from '@/components/research/ResearchReportViewer';
 import SimulationSetup from '@/components/research/SimulationSetup';
 import CustomAgentConfigurator from '@/components/research/CustomAgentConfigurator';
 import DraftBoardViewer from '@/components/research/DraftBoardViewer';
-// Import new mock components
 import StatComparisonTool from '@/components/research/StatComparisonTool';
 import GameAnalysisViewer from '@/components/research/GameAnalysisViewer';
 import PlayerScoutingReportGenerator from '@/components/research/PlayerScoutingReportGenerator';
-
-// Placeholder for the eventual report viewer component
-// import ResearchReportViewer from '@/components/research/ResearchReportViewer';
 
 // Define available sections/analysis types
 const availableSections = [
@@ -47,26 +38,22 @@ const availableSections = [
     { id: 'insights', label: 'Player Insights' }, // If applicable
 ];
 
-type ResearchType = 'player-deep-dive' | 'team-analysis' | 'player-comparison' | '';
-
-// Simplified research state
 interface ResearchState {
   topic: string; 
-  // Remove: researchType, playerA, playerB, teamName, gameID
   isLoading: boolean;
   error: string | null;
   reportContent: string | null; // SSE stream content
   followUpSuggestions: string[];
   selectedSections: string[]; // Keep section selection
-  // New state for prompt suggestions
   promptSuggestions: string[];
   isSuggesting: boolean; // Loading state for suggestions
 }
 
+
+
 export default function ResearchPage() {
   const [state, setState] = useState<ResearchState>({
     topic: '',
-    // Remove initial state for researchType, playerA, etc.
     isLoading: false,
     error: null,
     reportContent: null,
@@ -90,20 +77,9 @@ export default function ResearchPage() {
     };
   }, []);
 
-  // Handler for checkbox changes
-  const handleSectionChange = (sectionId: string, checked: boolean) => {
-    setState(prev => {
-      const newSelectedSections = checked
-        ? [...prev.selectedSections, sectionId]
-        : prev.selectedSections.filter(id => id !== sectionId);
-      return { ...prev, selectedSections: newSelectedSections };
-    });
-  };
-
-  // --- Fetch Prompt Suggestions (Updated) --- 
-  const fetchPromptSuggestions = async () => {
-    let promptToSend = state.topic; // Default to the full topic
-
+  // --- Fetch Prompt Suggestions ---
+  const handleFetchPromptSuggestions = async () => {
+    let promptToSend = state.topic;
     // Check for selected text in the textarea
     const textarea = topicTextareaRef.current;
     if (textarea && textarea.selectionStart !== textarea.selectionEnd) {
@@ -111,45 +87,42 @@ export default function ResearchPage() {
       console.log("Detected selected text, sending snippet for suggestions:", promptToSend);
     } else {
       console.log("No text selected, sending full topic for suggestions:", promptToSend);
-      // Optionally handle empty topic case specifically here if needed
       if (!promptToSend) {
-         console.log("Topic is empty, backend will provide generic suggestions.");
-         // No need to set promptToSend to empty string, backend handles it.
+        console.log("Topic is empty, backend will provide generic suggestions.");
       }
     }
-
-    setState(prev => ({ ...prev, isSuggesting: true, promptSuggestions: [], error: null }));
-
+    setState((prev: ResearchState) => ({ ...prev, isSuggesting: true, promptSuggestions: [], error: null }));
     try {
       const response = await fetch('/api/v1/research/prompt-suggestions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ current_prompt: promptToSend }), // Send either full topic or selected snippet
+        body: JSON.stringify({ current_prompt: promptToSend }),
       });
-
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-
       const suggestions: string[] = await response.json();
-      setState(prev => ({ ...prev, promptSuggestions: suggestions, isSuggesting: false }));
-
+      setState((prev: ResearchState) => ({ ...prev, promptSuggestions: suggestions, isSuggesting: false }));
     } catch (error) {
       console.error('Failed to fetch prompt suggestions:', error);
-      setState(prev => ({
-        ...prev,
-        error: 'Failed to fetch prompt suggestions.',
-        isSuggesting: false,
-        promptSuggestions: [],
-      }));
+      setState((prev: ResearchState) => ({ ...prev, error: 'Failed to fetch prompt suggestions.', isSuggesting: false, promptSuggestions: [] }));
     }
   };
 
+  // Handler for checkbox changes
+  const handleSectionChange = (sectionId: string, checked: boolean) => {
+    setState((prev: ResearchState) => {
+      const newSelectedSections = checked
+        ? [...prev.selectedSections, sectionId]
+        : prev.selectedSections.filter(id => id !== sectionId);
+      return { ...prev, selectedSections: newSelectedSections };
+    });
+  };
+
   // --- Rename: Use Prompt Suggestion --- 
-  const usePromptSuggestion = (suggestion: string) => {
+  const handlePromptSuggestion = (suggestion: string) => {
     console.log("Using suggestion:", suggestion);
-    // Simply update the main topic input
-    setState(prev => ({ 
+    setState((prev: ResearchState) => ({ 
       ...prev, 
       topic: suggestion, 
       promptSuggestions: [], // Close popover
@@ -163,7 +136,7 @@ export default function ResearchPage() {
       eventSourceRef.current.close(); // Close previous connection if any
     }
 
-    setState(prev => ({
+    setState((prev: ResearchState) => ({
       ...prev,
       isLoading: true,
       error: null,
@@ -193,12 +166,12 @@ export default function ResearchPage() {
 
           if (data.event === 'suggestions') {
             // Handle final follow-up suggestions
-            setState(prev => ({ ...prev, followUpSuggestions: data.suggestions || [] }));
+            setState((prev: ResearchState) => ({ ...prev, followUpSuggestions: data.suggestions || [] }));
             console.log("Follow-up suggestions received:", data.suggestions);
           } else if (data.event === 'error') {
              // Handle errors from the stream
              console.error("SSE Error:", data.content);
-             setState(prev => ({ ...prev, error: data.content || 'An unknown error occurred during research.', isLoading: false }));
+             setState((prev: ResearchState) => ({ ...prev, error: data.content || 'An unknown error occurred during research.', isLoading: false }));
              eventSource.close();
              eventSourceRef.current = null;
           } else {
@@ -206,7 +179,7 @@ export default function ResearchPage() {
             // Ensure content exists and is a string before appending
             const contentChunk = data.content;
             if (typeof contentChunk === 'string') {
-              setState(prev => ({ ...prev, reportContent: (prev.reportContent || '') + contentChunk }));
+              setState((prev: ResearchState) => ({ ...prev, reportContent: (prev.reportContent || '') + contentChunk }));
             } else if (contentChunk) {
               // If content is not a string but exists, log it - might need specific handling
               // console.log("Received non-string content chunk:", contentChunk);
@@ -219,7 +192,7 @@ export default function ResearchPage() {
         } catch (e) {
           console.error('Error parsing SSE message:', e, 'Raw data:', event.data);
           // Optionally set an error state here
-          setState(prev => ({ ...prev, error: 'Error processing research update.', isLoading: false }));
+          setState((prev: ResearchState) => ({ ...prev, error: 'Error processing research update.', isLoading: false }));
           eventSource.close();
           eventSourceRef.current = null;
         }
@@ -227,7 +200,7 @@ export default function ResearchPage() {
 
       eventSource.onerror = (error) => {
         console.error('EventSource failed:', error);
-        setState(prev => ({
+        setState((prev: ResearchState) => ({
           ...prev,
           error: 'Connection to research service failed.',
           isLoading: false,
@@ -250,10 +223,8 @@ export default function ResearchPage() {
       if (err instanceof Error) {
         errorMessage = err.message;
       }
-      setState(prev => ({ ...prev, error: errorMessage, isLoading: false }));
+      setState((prev: ResearchState) => ({ ...prev, error: errorMessage, isLoading: false }));
     }
-  //}, [state.topic, state.researchType, state.playerA, state.playerB, state.teamName, state.gameID, state.selectedSections]);
-  // Update dependencies
   }, [state.topic, state.selectedSections]);
 
    // Effect to scroll to the bottom of the report
@@ -315,7 +286,7 @@ export default function ResearchPage() {
                         id="research-topic"
                         placeholder="Enter your research topic..."
                         value={state.topic}
-                        onChange={(e) => setState({ ...state, topic: e.target.value, error: null })}
+                        onChange={(e) => setState((prev: ResearchState) => ({ ...prev, topic: e.target.value, error: null }))}
                         className="min-h-[100px] text-base p-3 pr-12 w-full"
                         rows={4}
                       />
@@ -323,7 +294,7 @@ export default function ResearchPage() {
                         <PopoverTrigger asChild>
                           <Button
                             variant="ghost" size="icon"
-                            onClick={fetchPromptSuggestions}
+                            onClick={handleFetchPromptSuggestions}
                             disabled={state.isSuggesting || state.isLoading}
                             className="absolute top-2 right-2 h-8 w-8"
                             aria-label="Suggest prompt improvements"
@@ -338,7 +309,7 @@ export default function ResearchPage() {
                               <CommandEmpty>{state.isSuggesting ? "Loading suggestions..." : "No suggestions found."}</CommandEmpty>
                               <CommandGroup heading="Prompt Suggestions">
                                 {state.promptSuggestions.map((suggestion, index) => (
-                                  <CommandItem key={index} onSelect={() => usePromptSuggestion(suggestion)} className="cursor-pointer">
+                                  <CommandItem key={index} onSelect={() => handlePromptSuggestion(suggestion)} className="cursor-pointer">
                                     {suggestion}
                                   </CommandItem>
                                 ))}
@@ -426,7 +397,7 @@ export default function ResearchPage() {
                     {state.followUpSuggestions.map((suggestion, index) => (
                       <li key={index} className="text-muted-foreground">
                         <button
-                          onClick={() => setState(prev => ({...prev, topic: suggestion, reportContent: null, followUpSuggestions: [] }))}
+                          onClick={() => setState((prev: ResearchState) => ({...prev, topic: suggestion, reportContent: null, followUpSuggestions: [] }))}
                           className="text-left hover:text-primary underline transition-colors duration-200"
                         >
                           {suggestion}

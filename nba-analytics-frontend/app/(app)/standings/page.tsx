@@ -7,7 +7,6 @@ import { TableSkeleton } from "@/components/ui/loading-state"
 import { motion } from "framer-motion"
 import { FADE_IN } from "@/lib/animations"
 import { Metadata } from "next"
-import { TeamStanding } from "@/lib/api/teams"
 
 export const metadata: Metadata = {
   title: "NBA Standings | NBA Analytics",

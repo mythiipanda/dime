@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { format, parseISO, addDays, subDays, isToday } from 'date-fns';
-import { ScoreboardData, Game } from "./types";
+import { format, parseISO, subDays, addDays, isToday } from 'date-fns';
 import { Button } from "@/components/ui/button";
 import { ChevronLeftIcon, ChevronRightIcon, Loader2 } from "lucide-react";
+import { ScoreboardData } from "./types";
 // Import the new components
 import { GameCard } from "@/components/games/GameCard";
 import { PlayByPlayModal } from "@/components/games/PlayByPlayModal";
@@ -13,13 +13,11 @@ import { PlayByPlayModal } from "@/components/games/PlayByPlayModal";
 interface GamesClientPageProps {
   targetDateISO: string;
   initialScoreboardData: ScoreboardData | null;
-  serverFetchError: string | null;
 }
 
 export default function GamesClientPage({
   targetDateISO,
   initialScoreboardData,
-  serverFetchError,
 }: GamesClientPageProps) {
   const router = useRouter();
   const currentDate = parseISO(targetDateISO);
@@ -29,12 +27,8 @@ export default function GamesClientPage({
   // State for live data (if viewing today)
   const [liveScoreboardData, setLiveScoreboardData] = useState<ScoreboardData | null>(viewingToday ? null : initialScoreboardData); // Start null if today, use initial otherwise
   const [isConnected, setIsConnected] = useState<boolean>(false);
-  // Loading is true if viewing today and not connected OR if not today and no initial data/error
-  const [isLoading, setIsLoading] = useState(
-    (viewingToday && !isConnected) || 
-    (!viewingToday && !initialScoreboardData && !serverFetchError)
-  );
-  const [error, setError] = useState<string | null>(serverFetchError);
+  const [isLoading] = useState(true);
+  const [error] = useState<string | null>(null);
   const ws = useRef<WebSocket | null>(null);
 
   // PBP Modal State
@@ -42,78 +36,39 @@ export default function GamesClientPage({
   const [isPbpModalOpen, setIsPbpModalOpen] = useState<boolean>(false);
 
    // WebSocket connection logic (remains largely the same)
-   useEffect(() => {
-      if (!viewingToday) {
-         ws.current?.close();
-         ws.current = null;
-         setIsConnected(false);
-         // When navigating TO a non-today date, use initial server data
-         setLiveScoreboardData(initialScoreboardData); 
-         setError(serverFetchError);
-         setIsLoading(!initialScoreboardData && !serverFetchError); // Set loading based on server data for non-today
-         return;
-      }
-      
-      console.log("[Client] Connecting WebSocket...");
-      setError(null);
-      setIsLoading(true); // Always set loading true when attempting WS connection
-      setIsConnected(false); 
+  useEffect(() => {
+    // WebSocket connection logic (as before)
+    if (!viewingToday) {
+      ws.current?.close();
+      ws.current = null;
+      setIsConnected(false);
+      return;
+    }
 
+    if (!ws.current) {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}/api/v1/live/scoreboard/ws`;
-      const socket = new WebSocket(wsUrl);
-      ws.current = socket;
-      let connectionEstablished = false;
-
-      socket.onopen = () => { 
-         console.log("[Client] WebSocket connected");
-         connectionEstablished = true;
-         setIsConnected(true);
-         setError(null);
-         // Don't set loading false yet, wait for first message
+      const wsUrl = `${protocol}//${window.location.host}/api/games/scoreboard/ws`;
+      ws.current = new WebSocket(wsUrl);
+      ws.current.onopen = () => setIsConnected(true);
+      ws.current.onclose = () => setIsConnected(false);
+      ws.current.onerror = () => setIsConnected(false);
+      ws.current.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data && data.games) {
+            setLiveScoreboardData(data);
+          }
+        } catch {
+          // ignore
+        }
       };
-      socket.onclose = () => { 
-         console.log(`[Client] WebSocket disconnected - Established: ${connectionEstablished}`);
-         ws.current = null;
-         setIsConnected(false);
-         // Only show error if we actually connected or never received data
-         if (connectionEstablished || !liveScoreboardData) { 
-             setError("Live connection lost. Please refresh.");
-         }
-         setIsLoading(false); // Stop loading on close
-      };
-      socket.onerror = (event) => { 
-         console.error("[Client] WebSocket error:", event);
-         ws.current = null;
-         setError("WebSocket connection error.");
-         setIsLoading(false);
-         setIsConnected(false);
-      };
-      socket.onmessage = (event) => { 
-         try {
-           const data = JSON.parse(event.data);
-           if (data && data.games && Array.isArray(data.games)) {
-             setLiveScoreboardData(data as ScoreboardData);
-             setError(null); 
-             setIsLoading(false); // Stop loading once data arrives
-           } else {
-             console.warn("[Client] Received non-scoreboard WS data:", data);
-           }
-         } catch (e) {
-           console.error("[Client] Failed to parse WS message:", e);
-           setIsLoading(false); // Stop loading even on parse error
-           setError("Error processing live data.");
-         }
-      };
-
-      return () => {
-         console.log("[Client] Cleaning up WebSocket.");
-         socket.close();
-         ws.current = null;
-         setIsConnected(false); 
-      };
-   // Depend also on initial data/error in case server render failed for non-today
-   }, [viewingToday, targetDateISO, initialScoreboardData, serverFetchError]);
+    }
+    return () => {
+      ws.current?.close();
+      ws.current = null;
+      setIsConnected(false);
+    };
+  }, [viewingToday]);
 
   // Navigation handlers (remain the same)
   const handlePrevDay = () => {

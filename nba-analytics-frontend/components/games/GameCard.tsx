@@ -2,7 +2,7 @@
 
 import { Game } from "@/app/(app)/games/types"; // Adjust path as needed
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { format, parseISO, isToday } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 
 interface GameCardProps {
   game: Game;

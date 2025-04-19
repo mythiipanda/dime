@@ -19,7 +19,7 @@ export default async function TeamsStandingsPage({ searchParams }: TeamsPageProp
 
   let easternStandings: TeamStanding[] = [];
   let westernStandings: TeamStanding[] = [];
-  let fetchError: string | null = null;
+  
 
   console.log("Fetching standings for season (Server Component):", season);
   try {

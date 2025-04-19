@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useMemo } from "react";
-import { PlayerData, CareerOrSeasonStat } from "@/app/players/types"; // Import from new types file
+import { PlayerData, CareerOrSeasonStat } from "@/app/(app)/players/types"; // Import from new types file
 import {
   Card, CardContent, CardHeader, CardTitle,
 } from "@/components/ui/card";
@@ -48,11 +48,20 @@ interface PlayerProfileCardProps {
 
 export function PlayerProfileCard({ playerData, headshotUrl }: PlayerProfileCardProps) {
   const info = playerData.player_info;
-  const careerRegular = playerData.career_totals_regular_season;
-  const seasonRegular = playerData.season_totals_regular_season;
-  const careerPost = playerData.career_totals_post_season;
-  const seasonPost = playerData.season_totals_post_season;
-  const careerHighs = playerData.career_highs;
+  const careerRegular = useMemo(() => playerData?.career_totals_regular_season, [playerData]);
+  const seasonRegular = useMemo(() => playerData?.season_totals_regular_season, [playerData]);
+  const seasonPost = useMemo(() => playerData?.season_totals_post_season, [playerData]);
+  const careerPost = useMemo(() => playerData?.career_totals_post_season, [playerData]);
+
+  const sortedRegularSeasons = useMemo(() => {
+    if (!seasonRegular) return [];
+    return seasonRegular.slice().sort((a: CareerOrSeasonStat, b: CareerOrSeasonStat) => (b.SEASON_ID ?? '').localeCompare(a.SEASON_ID ?? ''));
+  }, [seasonRegular]);
+
+  const sortedPostSeasons = useMemo(() => {
+    if (!seasonPost) return [];
+    return seasonPost.slice().sort((a: CareerOrSeasonStat, b: CareerOrSeasonStat) => (b.SEASON_ID ?? '').localeCompare(a.SEASON_ID ?? ''));
+  }, [seasonPost]);
 
   if (!info) {
       console.error("PlayerProfileCard rendering without player_info.");
@@ -63,14 +72,7 @@ export function PlayerProfileCard({ playerData, headshotUrl }: PlayerProfileCard
               </Alert>;
   }
 
-  // Sort seasons descending for display
-  const sortedRegularSeasons = useMemo(() => {
-      return seasonRegular?.slice().sort((a, b) => (b.SEASON_ID ?? '').localeCompare(a.SEASON_ID ?? '')) || [];
-    }, [seasonRegular]);
 
-  const sortedPostSeasons = useMemo(() => {
-      return seasonPost?.slice().sort((a, b) => (b.SEASON_ID ?? '').localeCompare(a.SEASON_ID ?? '')) || [];
-    }, [seasonPost]);
 
   const renderSeasonTable = (seasons: CareerOrSeasonStat[], title: string) => {
     if (!seasons || seasons.length === 0) {
@@ -131,7 +133,7 @@ export function PlayerProfileCard({ playerData, headshotUrl }: PlayerProfileCard
             <AvatarImage src={headshotUrl} alt={info.DISPLAY_FIRST_LAST} className="object-cover"/>
           ) : (
             <AvatarFallback className="text-4xl">
-                {info.DISPLAY_FIRST_LAST?.split(' ').map(n => n[0]).join('')}
+                {info.DISPLAY_FIRST_LAST?.split(' ').map((n: string) => n[0]).join('')}
             </AvatarFallback>
           )}
         </Avatar>

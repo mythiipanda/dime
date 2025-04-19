@@ -1,4 +1,3 @@
-import { API_BASE_URL } from '@/lib/config';
 import { fetchFromAPI } from './fetch'; // Import the fetch wrapper
 
 // Interface for a single team's standing data

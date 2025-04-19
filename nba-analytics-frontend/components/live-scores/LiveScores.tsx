@@ -78,7 +78,6 @@ const LiveScores: React.FC = () => {
         } else {
            console.warn("Received invalid data format from WebSocket:", event.data);
         }
-       
       } catch (e) {
         console.error("Failed to parse WebSocket message:", e);
       }
@@ -88,7 +87,7 @@ const LiveScores: React.FC = () => {
       console.log("Closing WebSocket connection");
       ws.current?.close();
     };
-  }, [scores === null]);
+  }, [loading, scores]);
 
   if (loading && !isConnected && !error) {
      return <div className={styles.loading}>Connecting to live scores...</div>;

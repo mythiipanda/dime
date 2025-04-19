@@ -2,7 +2,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TeamsHeader } from "@/components/teams/TeamsHeader";
 import { TeamTableSkeleton } from "@/components/teams/TeamTable";
 
-const DEFAULT_SKELETON_COUNT = 8;
+
 
 export default function TeamsLoading() {
   return (

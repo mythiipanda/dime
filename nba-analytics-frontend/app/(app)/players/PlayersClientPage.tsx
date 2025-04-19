@@ -4,7 +4,7 @@ import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { PlayerData } from "./types";
 import { PlayerProfileCard } from "@/components/players/PlayerProfileCard";
-import { Skeleton } from "@/components/ui/skeleton";
+
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Search } from "lucide-react";
 import { ExclamationTriangleIcon } from '@radix-ui/react-icons';
