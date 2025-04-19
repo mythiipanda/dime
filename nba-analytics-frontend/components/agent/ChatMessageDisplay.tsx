@@ -47,7 +47,7 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
         setIntermediateSteps(prev => {
           if (!message.content || 
               message.content === "Starting to process your request..." ||
-              message.content.includes("Final Answer:")) {
+              (typeof message.content === 'string' && message.content.includes("Final Answer:"))) {
             return prev;
           }
 

@@ -1,11 +1,13 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { TeamStanding } from "@/lib/api/teams"; // Correct path from original file
 import { TeamTable, TeamTableSkeleton } from "@/components/teams/TeamTable"; // Assuming this path is correct
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"; // Using shadcn Select
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"; // Import RadioGroup
+import { Label } from "@/components/ui/label"; // Import Label
+import { cn } from "@/lib/utils"; // Import cn
 
 interface TeamsClientPageProps {
   initialEasternStandings: TeamStanding[];
@@ -23,6 +25,7 @@ export default function TeamsClientPage({
 }: TeamsClientPageProps) {
   const router = useRouter();
   const searchParams = useSearchParams(); // Keep using this to potentially read other params if needed
+  const [selectedConference, setSelectedConference] = useState('eastern'); // Add state
 
   const handleSeasonChange = (newSeason: string) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -33,42 +36,62 @@ export default function TeamsClientPage({
   };
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="flex flex-col sm:flex-row items-center justify-between mb-8 gap-4">
+    <div className="container mx-auto px-4 py-8 space-y-6"> {/* Add spacing */}
+      {/* Combined Header/Controls Area */}
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
         <h1 className="text-3xl font-bold text-center sm:text-left">NBA Standings</h1>
-        <div className="flex items-center gap-2">
-          <label htmlFor="season-select" className="text-sm font-medium whitespace-nowrap">Select Season:</label>
-          <Select
-            value={currentSeason}
-            onValueChange={handleSeasonChange}
+        {/* Controls Wrapper */}
+        <div className="flex flex-wrap items-center justify-center sm:justify-end gap-4">
+          {/* Season Selector */}
+          <div className="flex items-center gap-2">
+            <Label htmlFor="season-select" className="text-sm font-medium">Season:</Label>
+            <Select value={currentSeason} onValueChange={handleSeasonChange}>
+              <SelectTrigger id="season-select" className="w-[180px]">
+                <SelectValue placeholder="Select Season" />
+              </SelectTrigger>
+              <SelectContent>
+                {availableSeasons.map((season) => (
+                  <SelectItem key={season} value={season}>{season}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {/* Conference Selector (Radio Group styled as Tabs) */}
+          <RadioGroup 
+            defaultValue="eastern" 
+            value={selectedConference} // Control value with state
+            onValueChange={setSelectedConference} // Update state on change
+            className="flex items-center gap-1 rounded-md bg-muted p-1"
           >
-            <SelectTrigger id="season-select" className="w-[180px]">
-              <SelectValue placeholder="Select Season" />
-            </SelectTrigger>
-            <SelectContent>
-              {availableSeasons.map((season) => (
-                <SelectItem key={season} value={season}>
-                  {season}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+             <RadioGroupItem value="eastern" id="r-east" className="sr-only" />
+             <Label 
+               htmlFor="r-east" 
+               className={cn(
+                 "inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 cursor-pointer",
+                 selectedConference === 'eastern' ? "bg-background text-foreground shadow-sm" : "hover:bg-muted/80"
+               )}
+             >Eastern</Label>
+             <RadioGroupItem value="western" id="r-west" className="sr-only" />
+             <Label 
+               htmlFor="r-west" 
+               className={cn(
+                  "inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 cursor-pointer",
+                 selectedConference === 'western' ? "bg-background text-foreground shadow-sm" : "hover:bg-muted/80"
+               )}
+              >Western</Label>
+          </RadioGroup>
         </div>
       </div>
 
-
-      <Tabs defaultValue="eastern" className="w-full">
-        <TabsList className="grid w-full grid-cols-2 mb-6">
-          <TabsTrigger value="eastern">Eastern Conference</TabsTrigger>
-          <TabsTrigger value="western">Western Conference</TabsTrigger>
-        </TabsList>
-        <TabsContent value="eastern">
+      {/* Conditionally Rendered Content Area */}
+      <div className="mt-4"> {/* Add some margin */}
+        {selectedConference === 'eastern' && (
           <TeamTable title="Eastern Conference" teams={initialEasternStandings} />
-        </TabsContent>
-        <TabsContent value="western">
+        )}
+        {selectedConference === 'western' && (
           <TeamTable title="Western Conference" teams={initialWesternStandings} />
-        </TabsContent>
-      </Tabs>
+        )}
+      </div>
     </div>
   );
 } 

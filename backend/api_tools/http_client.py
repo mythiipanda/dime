@@ -6,7 +6,7 @@ from urllib3.util.retry import Retry
 import logging
 from nba_api.stats.library.http import NBAStatsHTTP
 from nba_api.stats.library.parameters import SeasonAll, SeasonTypeAllStar
-from ..config import DEFAULT_TIMEOUT  # Changed to relative import
+from backend.config import DEFAULT_TIMEOUT  # Changed to absolute import
 from typing import Optional
 
 logger = logging.getLogger(__name__)

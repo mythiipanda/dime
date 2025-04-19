@@ -40,6 +40,7 @@ from backend.routes.standings import router as standings_router
 from backend.routes.live_game import router as live_game_router
 from backend.routes.scoreboard import router as scoreboard_router
 from backend.routes.odds import router as odds_router
+from backend.routes.research import router as research_router
 
 app = FastAPI(
     title="NBA Analytics API",
@@ -86,6 +87,7 @@ app.include_router(standings_router, prefix=API_PREFIX, tags=["Standings"])
 app.include_router(live_game_router, prefix=API_PREFIX + "/live", tags=["live"]) # Register live game router
 app.include_router(scoreboard_router, prefix=API_PREFIX + "/scoreboard", tags=["Scoreboard"]) # Include scoreboard router
 app.include_router(odds_router, prefix=API_PREFIX, tags=["Odds"])
+app.include_router(research_router, prefix=API_PREFIX + "/research", tags=["Research"])
 
 @app.get("/")
 async def root():

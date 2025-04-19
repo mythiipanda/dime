@@ -14,20 +14,48 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-def recursive_asdict(obj):
-    if is_dataclass(obj):
+# --- Revised recursive_asdict with depth limit ---
+MAX_RECURSION_DEPTH = 20 # Limit recursion depth
+
+def recursive_asdict(obj, _depth=0): 
+    if _depth > MAX_RECURSION_DEPTH:
+        # Return placeholder if max depth is exceeded
+        return f"<Max Recursion Depth Exceeded ({MAX_RECURSION_DEPTH})>"
+
+    # Handle basic types and None first
+    if obj is None or isinstance(obj, (str, int, float, bool)):
+        return obj
+    # Handle dataclasses
+    elif is_dataclass(obj):
         result = {}
         for key, value in obj.__dict__.items():
-            result[key] = recursive_asdict(value)
+            result[key] = recursive_asdict(value, _depth + 1) # Increment depth
         return result
+    # Handle lists
     elif isinstance(obj, list):
-        return [recursive_asdict(item) for item in obj]
-    elif isinstance(obj, dict):
-        return {key: recursive_asdict(value) for key, value in obj.items()}
+        return [recursive_asdict(item, _depth + 1) for item in obj] # Increment depth
+    # Handle dictionaries (including mappingproxy if it occurs again)
+    elif isinstance(obj, dict) or type(obj).__name__ == 'mappingproxy':
+        # Ensure it's a mutable dict for processing
+        current_dict = dict(obj) 
+        return {key: recursive_asdict(value, _depth + 1) for key, value in current_dict.items()} # Increment depth
+    # Handle other objects with __dict__
     elif hasattr(obj, "__dict__"):
-        return recursive_asdict(vars(obj))
+        try:
+            # Explicitly convert vars(obj) to dict before recursion
+            obj_dict = dict(vars(obj))
+            return recursive_asdict(obj_dict, _depth + 1) # Increment depth
+        except Exception as e:
+             # Catch errors during vars() or dict() conversion
+             logger.warning(f"Could not serialize object part using vars(): {e}")
+             return f"<Object of type {type(obj).__name__} partially unserializable>"
+    # Handle other non-serializable types gracefully
     else:
-        return obj
+        try:
+            # Attempt string conversion as a fallback
+            return str(obj) 
+        except Exception:
+            return f"<Unserializable Type: {type(obj).__name__}>"
 
 def format_sse(data: str, event: str | None = None) -> str:
     msg = f"data: {data}\n\n"

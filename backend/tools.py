@@ -16,7 +16,8 @@ import datetime
 
 # Import only the necessary constants for default values, use standard types in hints
 from nba_api.stats.library.parameters import (
-    SeasonTypeAllStar, PerModeDetailed, PerMode36, LeagueID, PerMode48, Scope, MeasureTypeDetailedDefense, RunType
+    SeasonTypeAllStar, PerModeDetailed, PerMode36, LeagueID, PerMode48, Scope, MeasureTypeDetailedDefense, RunType,
+    PerModeSimple, PlayerOrTeamAbbreviation
 )
 from backend.config import CURRENT_SEASON
 from backend.api_tools.utils import format_response
@@ -73,6 +74,8 @@ from backend.api_tools.odds_tools import fetch_odds_data_logic
 from backend.api_tools.analyze import analyze_player_stats_logic
 from backend.api_tools.trending_tools import fetch_top_performers_logic  # Trending tools
 from backend.api_tools.trending_team_tools import fetch_top_teams_logic  # Trending team tools
+from backend.api_tools.matchup_tools import fetch_league_season_matchups_logic, fetch_matchups_rollup_logic
+from backend.api_tools.synergy_tools import fetch_synergy_play_types_logic
 
 logger = logging.getLogger(__name__)
 
@@ -723,7 +726,6 @@ def get_league_standings(season: str = CURRENT_SEASON, season_type: str = Season
     Args:
         season (str): Season identifier (e.g., "2023-24"). Defaults to current season.
         season_type (str): Season type ('Regular Season', 'Playoffs'). Defaults to Regular Season.
-        league_id (str): League ID ('00'=NBA, '10'=WNBA, '20'=G-League). Defaults to '00'.
 
     Returns:
         str: JSON string containing a list of teams in the standings, sorted by conference/rank, each with:
@@ -735,14 +737,14 @@ def get_league_standings(season: str = CURRENT_SEASON, season_type: str = Season
             - Or {'standings': []} if no data, or {'error': ...} if an error occurs.
     """
     # Cache standings based on parameters. Assumes cache has some eviction/TTL or manual clearing.
-    cache_key = generate_cache_key("get_league_standings", season=season, season_type=season_type, league_id=league_id)
+    cache_key = generate_cache_key("get_league_standings", season=season, season_type=season_type)
     cached_result = get_cached_data(cache_key)
     if cached_result:
         logger.debug(f"Cache hit for '{cache_key}'")
         return cached_result
 
     logger.debug(f"Cache miss for '{cache_key}'. Tool 'get_league_standings' called for season '{season}', type '{season_type}', league '{league_id}'")
-    result = fetch_league_standings_logic(season=season, season_type=season_type, league_id=league_id)
+    result = fetch_league_standings_logic(season=season, season_type=season_type)
     cache_data(cache_key, result)
     return result
 
@@ -1376,6 +1378,47 @@ def get_game_shotchart(
     result = fetch_shotchart_logic(game_id=game_id)
     cache_data(cache_key, result)
     return result
+
+# --- Matchup Tools ---
+def get_season_matchups(def_player_id: str, off_player_id: str, season: str = CURRENT_SEASON, season_type: str = SeasonTypeAllStar.regular) -> str:
+    """
+    Fetches season matchups between two players.
+    """
+    return fetch_league_season_matchups_logic(def_player_id, off_player_id, season, season_type)
+
+def get_matchups_rollup(def_player_id: str, season: str = CURRENT_SEASON, season_type: str = SeasonTypeAllStar.regular) -> str:
+    """
+    Fetches matchup rollup for a defensive player across opponents.
+    """
+    return fetch_matchups_rollup_logic(def_player_id, season, season_type)
+
+# --- Synergy Play Types ---
+def get_synergy_play_types(
+    league_id: str = LeagueID.nba,
+    per_mode: str = PerModeSimple.default,
+    player_or_team_abbreviation: str = PlayerOrTeamAbbreviation.default,
+    season_type: str = SeasonTypeAllStar.regular,
+    season: str = CURRENT_SEASON,
+    play_type: Optional[str] = None,
+    type_grouping: Optional[str] = None
+) -> str:
+    """
+    Fetch synergy play types stats for team or player.
+    """
+    return fetch_synergy_play_types_logic(league_id, per_mode, player_or_team_abbreviation, season_type, season, play_type, type_grouping)
+
+# --- Analyze Player Stats ---
+def get_player_analysis(
+    player_name: str,
+    season: str = CURRENT_SEASON,
+    season_type: str = SeasonTypeAllStar.regular,
+    per_mode: str = PerModeDetailed.per_game,
+    league_id: str = LeagueID.nba
+) -> str:
+    """
+    Analyzes player stats year-over-year.
+    """
+    return analyze_player_stats_logic(player_name, season, season_type, per_mode, league_id)
 
 # --- Game Analytics Extensions ---
 @tool

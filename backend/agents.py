@@ -4,6 +4,8 @@ from agno.agent import Agent
 from agno.models.google import Gemini
 from agno.tools.thinking import ThinkingTools
 from config import AGENT_MODEL_ID, STORAGE_DB_FILE, AGENT_DEBUG_MODE, CURRENT_SEASON
+from textwrap import dedent
+from backend.models.research import ResearchReportModel
 
 # Import all tool functions from the consolidated tools module
 from .tools import (
@@ -44,6 +46,11 @@ from .tools import (
     get_boxscore_usage,
     get_boxscore_defensive,
     get_win_probability,
+    # Extended Analytics Tools
+    get_season_matchups,
+    get_matchups_rollup,
+    get_synergy_play_types,
+    get_player_analysis,
     # Live
     get_live_boxscore,
     get_live_odds,
@@ -62,11 +69,12 @@ model = Gemini(
 
 # Get current date
 current_date = datetime.date.today().strftime("%Y-%m-%d")
+current_season = CURRENT_SEASON # Make current season available for prompts
 
 # Construct the context string
 context_header = f"""# Current Context
 - Today's Date: {current_date}
-- Default NBA Season: {CURRENT_SEASON}
+- Default NBA Season: {current_season}
 
 """
 
@@ -196,56 +204,64 @@ Remember: Always think step by step, plan your tool usage carefully, and provide
 # Prepend the context to the base system message
 NBA_AGENT_SYSTEM_MESSAGE = context_header + _NBA_AGENT_SYSTEM_MESSAGE_BASE
 
-# Define the enhanced agent
+# Define the list of tools to be used by both agents
+nba_tools = [
+    ThinkingTools(),
+    # Player Basic/Career
+    get_player_info,
+    get_player_gamelog,
+    get_player_career_stats,
+    get_player_awards,
+    get_player_aggregate_stats,
+    get_player_profile,
+    # Player Tracking/Advanced
+    get_player_clutch_stats,
+    get_player_passing_stats,
+    get_player_rebounding_stats,
+    get_player_shots_tracking,
+    get_player_shotchart,
+    get_player_defense_stats,
+    get_player_hustle_stats,
+    # Team Info/Stats
+    get_team_info_and_roster,
+    get_team_stats,
+    get_team_lineups,
+    # Team Tracking
+    get_team_passing_stats,
+    get_team_shooting_stats,
+    get_team_rebounding_stats,
+    # Game/League
+    find_games,
+    get_boxscore_traditional,
+    get_play_by_play,
+    get_league_standings,
+    get_scoreboard,
+    get_draft_history,
+    get_league_leaders,
+    get_game_shotchart,
+    get_boxscore_advanced,
+    get_boxscore_four_factors,
+    get_boxscore_usage,
+    get_boxscore_defensive,
+    get_win_probability,
+    # Extended Analytics Tools
+    get_season_matchups,
+    get_matchups_rollup,
+    get_synergy_play_types,
+    get_player_analysis,
+    # Live
+    get_live_boxscore,
+    get_live_odds,
+    # Misc
+    get_player_insights,
+]
+
+# Define the enhanced agent (for conversational chat)
 nba_agent = Agent(
     name="NBAAgent",
     system_message=NBA_AGENT_SYSTEM_MESSAGE,
     model=model,
-    tools=[
-        ThinkingTools(),
-        # Player Basic/Career
-        get_player_info,
-        get_player_gamelog,
-        get_player_career_stats,
-        get_player_awards,
-        get_player_aggregate_stats,
-        get_player_profile,
-        # Player Tracking/Advanced
-        get_player_clutch_stats,
-        get_player_passing_stats,
-        get_player_rebounding_stats,
-        get_player_shots_tracking,
-        get_player_shotchart,
-        get_player_defense_stats,
-        get_player_hustle_stats,
-        # Team Info/Stats
-        get_team_info_and_roster,
-        get_team_stats,
-        get_team_lineups,
-        # Team Tracking
-        get_team_passing_stats,
-        get_team_shooting_stats,
-        get_team_rebounding_stats,
-        # Game/League
-        find_games,
-        get_boxscore_traditional,
-        get_play_by_play,
-        get_league_standings,
-        get_scoreboard,
-        get_draft_history,
-        get_league_leaders,
-        get_game_shotchart,
-        get_boxscore_advanced,
-        get_boxscore_four_factors,
-        get_boxscore_usage,
-        get_boxscore_defensive,
-        get_win_probability,
-        # Live
-        get_live_boxscore,
-        get_live_odds,
-        # Misc
-        get_player_insights,
-    ],
+    tools=nba_tools,
     add_history_to_messages=True,
     num_history_responses=10,
     debug_mode=AGENT_DEBUG_MODE,
@@ -257,6 +273,62 @@ nba_agent = Agent(
     exponential_backoff=True,
     delay_between_retries=2
 )
+
+# NBA Research Agent - Focused on detailed reports
+nba_research_agent = Agent(
+    name="NBAResearchAgent",
+    model=model,
+    tools=nba_tools,
+    stream=True,
+    stream_intermediate_steps=True,
+    description=dedent(f"""\
+        You are a meticulous NBA Research Analyst AI. Your expertise is in gathering 
+        comprehensive data using available tools and synthesizing it into clear, 
+        well-structured research reports. You focus on accuracy and presenting 
+        data-driven insights based on the user's research topic.
+        Today's date is {current_date}. The current NBA season is {CURRENT_SEASON}."""),
+    instructions=dedent("""\
+        1.  **Analyze the Request:** Understand the core question or topic the user wants researched.
+        2.  **Plan Data Collection:** Briefly outline the key data points needed and the primary tools you intend to use. (You don't need to show this plan explicitly unless the synthesis requires it).
+        3.  **Execute Systematically:** Use the available tools to gather the necessary NBA data. Be thorough. Call multiple tools if needed to get a complete picture.
+        4.  **Synthesize Findings:** Structure the gathered information into a coherent report using the 'Expected Output' Markdown format. Focus on presenting the data and key insights derived directly from it. Embed Stat Cards and Charts using the specified comment formats where appropriate.
+        5.  **Cite Sources:** In the 'Data Sources' section, list the primary tools used for the report.
+        """),
+    expected_output=dedent(f"""\
+        A professional NBA research report in markdown format:
+
+        # Research Report: {{Concise Title Reflecting the Research Topic}}
+
+        ## 1. Research Topic Summary
+        {{Briefly restate the user's research request or topic.}}
+
+        ## 2. Key Findings & Data
+        {{Present the main data points and findings gathered from the tool calls. Use subheadings (e.g., ### Player Stats, ### Team Comparison) and bullet points for qualitative info. **USE MARKDOWN TABLES TO PRESENT LISTS OF STATISTICS (e.g., player stats, team stats, game box scores) for better readability.** 
+        **For important individual stats (like PPG, RPG, Win %, Offensive Rating), present them using the Stat Card format: `<!-- STAT_CARD_DATA {{"label": "Statistic Name", "value": "Statistic Value", "unit": "(Optional Unit)"}} -->` on its own line before or after discussing the related data.**
+        **Where appropriate (e.g., comparing multiple players/teams on a stat, showing a trend over time), generate data suitable for a chart and embed it using the Chart format: `<!-- CHART_DATA {{"type": "bar/line", "title": "Chart Title", "data": [{{"label": "X-axis Label", "value": Y-axis Value}}]}} -->` on its own line.** Integrate data smoothly.}}
+
+        ## 3. Analysis & Insights
+        {{Analyze the gathered data. Compare statistics, identify trends, explain the significance of key metrics discovered. Provide context for the findings.}}
+
+        ## 4. Conclusion
+        {{Summarize the main conclusions drawn from the analysis.}}
+
+        ## 5. Data Sources Used
+        {{List the primary `tool_name`s called to generate this report (e.g., - get_player_career_stats, - get_team_stats).}}
+
+        ---
+        Report Generated: {current_date}
+        """),
+    markdown=True,
+    show_tool_calls=True,
+    debug_mode=AGENT_DEBUG_MODE,
+    resolve_context=True,
+    reasoning=True,
+    exponential_backoff=True,
+    delay_between_retries=2
+)
+
+# Define Tasks
 
 # Note: The example usage block with asyncio is removed as it's not needed for the agent definition itself.
 # The test_agent.py script will handle running the agent.
