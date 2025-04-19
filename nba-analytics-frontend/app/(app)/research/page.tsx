@@ -1,328 +1,476 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { SendHorizonal, Loader2, Sparkles, Search, ChevronsUpDown } from 'lucide-react';
+import { SendHorizonal, Loader2, Sparkles, Search, ChevronsUpDown, Lightbulb, Terminal, BotMessageSquare } from 'lucide-react';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import ResearchReportViewer from '@/components/research/ResearchReportViewer';
+import { Checkbox } from "@/components/ui/checkbox";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Textarea } from '@/components/ui/textarea';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+
+// Import the mock components
+import SimulationSetup from '@/components/research/SimulationSetup';
+import CustomAgentConfigurator from '@/components/research/CustomAgentConfigurator';
+import DraftBoardViewer from '@/components/research/DraftBoardViewer';
+// Import new mock components
+import StatComparisonTool from '@/components/research/StatComparisonTool';
+import GameAnalysisViewer from '@/components/research/GameAnalysisViewer';
+import PlayerScoutingReportGenerator from '@/components/research/PlayerScoutingReportGenerator';
 
 // Placeholder for the eventual report viewer component
 // import ResearchReportViewer from '@/components/research/ResearchReportViewer';
 
+// Define available sections/analysis types
+const availableSections = [
+    { id: 'basic', label: 'Basic Info' },
+    { id: 'career_stats', label: 'Career Stats' },
+    { id: 'current_stats', label: 'Current Season Stats' },
+    { id: 'gamelog', label: 'Game Logs (Current Season)' },
+    { id: 'awards', label: 'Awards' },
+    { id: 'profile', label: 'Player Profile (Highs/Totals)' },
+    { id: 'hustle', label: 'Hustle Stats' },
+    { id: 'defense', label: 'Defensive Stats' },
+    { id: 'shooting', label: 'Shooting (Shotchart)' },
+    { id: 'passing', label: 'Passing Stats' },
+    { id: 'rebounding', label: 'Rebounding Stats' },
+    { id: 'clutch', label: 'Clutch Stats' },
+    { id: 'analysis', label: 'YOY Analysis' }, // If applicable
+    { id: 'insights', label: 'Player Insights' }, // If applicable
+];
+
 type ResearchType = 'player-deep-dive' | 'team-analysis' | 'player-comparison' | '';
 
-export default function ResearchPage() {
-  // State for structured input
-  const [researchType, setResearchType] = useState<ResearchType>('');
-  const [playerA, setPlayerA] = useState<string>('');
-  const [playerB, setPlayerB] = useState<string>('');
-  const [teamName, setTeamName] = useState<string>('');
-  // const [topic, setTopic] = useState<string>(''); // Keep if needed for other types or fallback
-  
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
-  // Separate state for accumulating report and final suggestions
-  const [currentReportContent, setCurrentReportContent] = useState<string>('');
-  const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [intermediateSteps, setIntermediateSteps] = useState<any[]>([]);
+// Simplified research state
+interface ResearchState {
+  topic: string; 
+  // Remove: researchType, playerA, playerB, teamName, gameID
+  isLoading: boolean;
+  error: string | null;
+  reportContent: string | null; // SSE stream content
+  followUpSuggestions: string[];
+  selectedSections: string[]; // Keep section selection
+  // New state for prompt suggestions
+  promptSuggestions: string[];
+  isSuggesting: boolean; // Loading state for suggestions
+}
 
-  // Ref to manage the fetch controller
-  const abortControllerRef = useRef<AbortController | null>(null);
+export default function ResearchPage() {
+  const [state, setState] = useState<ResearchState>({
+    topic: '',
+    // Remove initial state for researchType, playerA, etc.
+    isLoading: false,
+    error: null,
+    reportContent: null,
+    followUpSuggestions: [],
+    selectedSections: availableSections.map(s => s.id), // Default to all sections
+    promptSuggestions: [],
+    isSuggesting: false,
+  });
+
+  const eventSourceRef = useRef<EventSource | null>(null);
+  const reportEndRef = useRef<HTMLDivElement | null>(null); // For scrolling
+  const topicTextareaRef = useRef<HTMLTextAreaElement | null>(null); // Ref for the textarea
 
   // Cleanup function
   useEffect(() => {
     return () => {
-      abortControllerRef.current?.abort(); // Abort fetch on unmount
+      if (eventSourceRef.current) {
+        console.log("Closing EventSource connection on unmount.");
+        eventSourceRef.current.close();
+      }
     };
   }, []);
 
-  const handleResearchSubmit = async (event?: React.FormEvent<HTMLFormElement>, researchTopic: string = '') => {
-    event?.preventDefault();
-    
-    // Construct prompt based on research type
-    let constructedTopic = '';
-    let isValid = false;
-    switch (researchType) {
-        case 'player-deep-dive':
-            if (playerA) {
-                constructedTopic = `Generate a deep dive research report on player: ${playerA}. Include their basic info, current season stats (if applicable), career overview, strengths, and weaknesses.`;
-                isValid = true;
-            }
-            break;
-        case 'team-analysis':
-            if (teamName) {
-                constructedTopic = `Provide a detailed analysis of the ${teamName} for the current season. Include roster overview, key stats (offensive/defensive ratings, pace), recent performance trends, and overall outlook.`;
-                isValid = true;
-            }
-            break;
-        case 'player-comparison':
-            if (playerA && playerB) {
-                constructedTopic = `Compare and contrast players ${playerA} and ${playerB}. Focus on their statistical output (scoring, playmaking, rebounding, efficiency), playstyles, and impact on their respective teams.`;
-                isValid = true;
-            }
-            break;
-        default:
-            setError("Please select a research type and fill in the required fields.");
-            return;
+  // Handler for checkbox changes
+  const handleSectionChange = (sectionId: string, checked: boolean) => {
+    setState(prev => {
+      const newSelectedSections = checked
+        ? [...prev.selectedSections, sectionId]
+        : prev.selectedSections.filter(id => id !== sectionId);
+      return { ...prev, selectedSections: newSelectedSections };
+    });
+  };
+
+  // --- Fetch Prompt Suggestions (Updated) --- 
+  const fetchPromptSuggestions = async () => {
+    let promptToSend = state.topic; // Default to the full topic
+
+    // Check for selected text in the textarea
+    const textarea = topicTextareaRef.current;
+    if (textarea && textarea.selectionStart !== textarea.selectionEnd) {
+      promptToSend = textarea.value.substring(textarea.selectionStart, textarea.selectionEnd);
+      console.log("Detected selected text, sending snippet for suggestions:", promptToSend);
+    } else {
+      console.log("No text selected, sending full topic for suggestions:", promptToSend);
+      // Optionally handle empty topic case specifically here if needed
+      if (!promptToSend) {
+         console.log("Topic is empty, backend will provide generic suggestions.");
+         // No need to set promptToSend to empty string, backend handles it.
+      }
     }
 
-    if (!isValid || isLoading) {
-        if (!isValid) setError("Please fill in all required fields for the selected research type.");
-        return;
-    } 
-
-    // Abort previous request if any
-    abortControllerRef.current?.abort();
-    abortControllerRef.current = new AbortController();
-
-    setIsLoading(true);
-    setError(null);
-    setCurrentReportContent(''); 
-    setSuggestions([]);
-    setIntermediateSteps([]); 
-
-    console.log(`Starting research type: "${researchType}" with topic: "${constructedTopic}"`);
+    setState(prev => ({ ...prev, isSuggesting: true, promptSuggestions: [], error: null }));
 
     try {
-      const response = await fetch('/api/v1/research', { 
+      const response = await fetch('/api/v1/research/prompt-suggestions', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'text/event-stream', 
-        },
-        body: JSON.stringify({ topic: constructedTopic }), // Send the constructed topic
-        signal: abortControllerRef.current.signal, 
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ current_prompt: promptToSend }), // Send either full topic or selected snippet
       });
 
       if (!response.ok) {
-        throw new Error(`API Error: ${response.status} ${response.statusText}`);
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      if (!response.body) {
-        throw new Error('Response body is null');
-      }
+      const suggestions: string[] = await response.json();
+      setState(prev => ({ ...prev, promptSuggestions: suggestions, isSuggesting: false }));
 
-      // Process the stream
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-          console.log('Stream finished.');
-          break; // Exit loop when stream is done
-        }
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n\n');
-        buffer = lines.pop() || ''; // Keep the last (potentially incomplete) message in buffer
-
-        for (const line of lines) {
-          if (!line.trim()) continue;
-
-          let event = 'message'; // Default event type
-          let data = '';
-          const eventMatch = line.match(/^event: (.*)$/m);
-          if (eventMatch) {
-            event = eventMatch[1].trim();
-          }
-          const dataMatch = line.match(/^data: (.*)$/m);
-          if (dataMatch) {
-            data = dataMatch[1].trim();
-          }
-
-          if (!data) continue;
-
-          try {
-            const parsedData = JSON.parse(data);
-            console.log('Received SSE Event:', event, 'Data:', parsedData);
-
-            if (event === 'message') {
-              const messageEvent = parsedData.event; 
-              const messageContent = parsedData.content;
-
-              // Revert: Append to report content if it's a response chunk
-              if (messageEvent === 'RunResponse' && typeof messageContent === 'string') {
-                setCurrentReportContent((prev) => prev + messageContent);
-              }
-              
-              // Store intermediate steps 
-              if (messageEvent !== 'RunResponse' && messageEvent !== 'RunCompleted') { 
-                setIntermediateSteps(prev => [...prev, parsedData]);
-              }
-
-            // Revert: Handle suggestions event
-            } else if (event === 'suggestions') {
-              if (parsedData.suggestions && Array.isArray(parsedData.suggestions)) {
-                 setSuggestions(parsedData.suggestions);
-                 console.log("Received suggestions:", parsedData.suggestions);
-              } 
-            } else if (event === 'error') {
-              setError(parsedData.content || 'An error occurred in the stream.');
-              abortControllerRef.current?.abort(); 
-              break; 
-            }
-          } catch (parseError) {
-            console.error('Failed to parse SSE data:', data, parseError);
-            // Handle non-JSON data or parse errors if necessary
-          }
-        }
-         if (error) break; // Exit outer loop if an error event was received
-      }
-
-    } catch (err) {
-      if (err instanceof DOMException && err.name === 'AbortError') {
-         console.log('Research request aborted.');
-      } else {
-         console.error('Research request failed:', err);
-         setError(err instanceof Error ? err.message : 'An unknown error occurred during fetch.');
-      }
-    } finally {
-      setIsLoading(false);
-      abortControllerRef.current = null; // Clear the controller
+    } catch (error) {
+      console.error('Failed to fetch prompt suggestions:', error);
+      setState(prev => ({
+        ...prev,
+        error: 'Failed to fetch prompt suggestions.',
+        isSuggesting: false,
+        promptSuggestions: [],
+      }));
     }
   };
 
-  // Restore suggestion handler
-  const handleSuggestionClick = (suggestion: string) => {
-     handleResearchSubmit(undefined, suggestion); // Trigger research with the suggestion
+  // --- Rename: Use Prompt Suggestion --- 
+  const usePromptSuggestion = (suggestion: string) => {
+    console.log("Using suggestion:", suggestion);
+    // Simply update the main topic input
+    setState(prev => ({ 
+      ...prev, 
+      topic: suggestion, 
+      promptSuggestions: [], // Close popover
+      isSuggesting: false, // Ensure loading state is off
+    }));
   };
 
-  const renderInputFields = () => {
-      switch (researchType) {
-          case 'player-deep-dive':
-              return (
-                  <div className="space-y-2">
-                      <Label htmlFor="playerA">Player Name</Label>
-                      <Input id="playerA" placeholder="e.g., LeBron James" value={playerA} onChange={e => setPlayerA(e.target.value)} disabled={isLoading} />
-                  </div>
-              );
-          case 'team-analysis':
-              return (
-                  <div className="space-y-2">
-                      <Label htmlFor="teamName">Team Name / Abbreviation</Label>
-                      <Input id="teamName" placeholder="e.g., Lakers or LAL" value={teamName} onChange={e => setTeamName(e.target.value)} disabled={isLoading} />
-                  </div>
-              );
-          case 'player-comparison':
-              return (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                          <Label htmlFor="playerA">Player A</Label>
-                          <Input id="playerA" placeholder="e.g., Stephen Curry" value={playerA} onChange={e => setPlayerA(e.target.value)} disabled={isLoading} />
-                      </div>
-                      <div className="space-y-2">
-                          <Label htmlFor="playerB">Player B</Label>
-                          <Input id="playerB" placeholder="e.g., Damian Lillard" value={playerB} onChange={e => setPlayerB(e.target.value)} disabled={isLoading} />
-                      </div>
-                  </div>
-              );
-          default:
-              return <p className="text-sm text-muted-foreground">Select a research type to begin.</p>;
+  // Main submit handler (simplified)
+  const handleSubmit = useCallback(async () => {
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close(); // Close previous connection if any
+    }
+
+    setState(prev => ({
+      ...prev,
+      isLoading: true,
+      error: null,
+      reportContent: '', // Reset report content
+      followUpSuggestions: [],
+    }));
+
+    // Reset scroll position (optional)
+    // window.scrollTo(0, 0);
+
+    const requestBody = {
+      topic: state.topic, // Only send topic
+      selected_sections: state.selectedSections,
+    };
+
+    console.log('Starting research with:', requestBody);
+
+    try {
+      // Connect to the SSE endpoint
+      const eventSource = new EventSource(`/api/v1/research/?topic=${encodeURIComponent(state.topic)}&selected_sections=${encodeURIComponent(JSON.stringify(state.selectedSections))}`);
+      eventSourceRef.current = eventSource;
+
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          // console.log('SSE message received:', data); // Debug log
+
+          if (data.event === 'suggestions') {
+            // Handle final follow-up suggestions
+            setState(prev => ({ ...prev, followUpSuggestions: data.suggestions || [] }));
+            console.log("Follow-up suggestions received:", data.suggestions);
+          } else if (data.event === 'error') {
+             // Handle errors from the stream
+             console.error("SSE Error:", data.content);
+             setState(prev => ({ ...prev, error: data.content || 'An unknown error occurred during research.', isLoading: false }));
+             eventSource.close();
+             eventSourceRef.current = null;
+          } else {
+            // Append content chunks to reportContent
+            // Ensure content exists and is a string before appending
+            const contentChunk = data.content;
+            if (typeof contentChunk === 'string') {
+              setState(prev => ({ ...prev, reportContent: (prev.reportContent || '') + contentChunk }));
+            } else if (contentChunk) {
+              // If content is not a string but exists, log it - might need specific handling
+              // console.log("Received non-string content chunk:", contentChunk);
+            }
+            // Add specific handling for Stat Cards or Charts if needed based on data.event or data.type
+            // Example:
+            // if (data.type === 'stat_card') { /* update state with stat card data */ }
+            // if (data.type === 'chart') { /* update state with chart data */ }
+          }
+        } catch (e) {
+          console.error('Error parsing SSE message:', e, 'Raw data:', event.data);
+          // Optionally set an error state here
+          setState(prev => ({ ...prev, error: 'Error processing research update.', isLoading: false }));
+          eventSource.close();
+          eventSourceRef.current = null;
+        }
+      };
+
+      eventSource.onerror = (error) => {
+        console.error('EventSource failed:', error);
+        setState(prev => ({
+          ...prev,
+          error: 'Connection to research service failed.',
+          isLoading: false,
+        }));
+        eventSource.close();
+        eventSourceRef.current = null;
+      };
+
+      eventSource.onopen = () => {
+          console.log("SSE connection opened.");
+      };
+
+      // The stream will automatically close when done, or handle explicitly if needed
+      // We might need a specific 'end' event from the backend to set isLoading = false reliably
+      // For now, assume error or suggestions marks the end
+
+    } catch (err) {
+      console.error('Failed to initiate research:', err);
+      let errorMessage = 'An unknown error occurred.';
+      if (err instanceof Error) {
+        errorMessage = err.message;
       }
-  };
+      setState(prev => ({ ...prev, error: errorMessage, isLoading: false }));
+    }
+  //}, [state.topic, state.researchType, state.playerA, state.playerB, state.teamName, state.gameID, state.selectedSections]);
+  // Update dependencies
+  }, [state.topic, state.selectedSections]);
+
+   // Effect to scroll to the bottom of the report
+   useEffect(() => {
+    if (state.reportContent) {
+      reportEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [state.reportContent]);
+
+  // Cleanup EventSource on unmount
+  useEffect(() => {
+    return () => {
+      if (eventSourceRef.current) {
+        console.log("Closing EventSource connection on unmount.");
+        eventSourceRef.current.close();
+      }
+    };
+  }, []);
+
+  // Constants for sections defined outside the component render
+  const reportSections = [
+    { id: 'executive_summary', label: 'Executive Summary' },
+    { id: 'key_stat_cards', label: 'Key Stat Cards' },
+    { id: 'comparative_analysis', label: 'Comparative Analysis (if applicable)' },
+    { id: 'historical_context', label: 'Historical Context/Trends' },
+    { id: 'visualizations', label: 'Visualizations (Charts/Graphs)' },
+    { id: 'strengths_weaknesses', label: 'Strengths & Weaknesses' },
+    { id: 'potential_impact', label: 'Potential Impact/Outlook' },
+    { id: 'data_sources', label: 'Data Sources & Methodology' },
+  ];
 
   return (
-    <div className="flex flex-col h-full p-4 md:p-6 space-y-4 bg-background text-foreground"> {/* Use theme variables */}
-      {/* Header */}
-      <div className="flex items-center space-x-3 mb-2">
-        <Sparkles className="w-6 h-6 text-primary" /> {/* Use theme variable */} 
-        <h1 className="text-2xl font-semibold tracking-tight">
-          NBA Research Lab
-        </h1>
-      </div>
+    <div className="container mx-auto p-4 md:p-8 max-w-5xl">
+      <h1 className="text-3xl font-bold mb-6 text-center">NBA Research Lab</h1>
 
-      {/* Input Area - Revised Structure */}
-      <Card className="sticky top-0 z-10 border-border bg-card shadow-sm"> {/* Use theme variables */}
-         <CardContent className="pt-6">
-            <form onSubmit={handleResearchSubmit} className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
-                    {/* Research Type Selector */}
-                    <div className="space-y-2 md:col-span-1">
-                        <Label htmlFor="researchType">Research Type</Label>
-                        <Select value={researchType} onValueChange={(value: ResearchType) => setResearchType(value)} disabled={isLoading}>
-                            <SelectTrigger id="researchType">
-                                <SelectValue placeholder="Select type..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="player-deep-dive">Player Deep Dive</SelectItem>
-                                <SelectItem value="team-analysis">Team Analysis</SelectItem>
-                                <SelectItem value="player-comparison">Player Comparison</SelectItem>
-                                {/* Add more types later */}
-                            </SelectContent>
-                        </Select>
-                    </div>
+      <Tabs defaultValue="research" className="w-full">
+        <TabsList className="grid w-full grid-cols-7 mb-6">
+          <TabsTrigger value="research">Research</TabsTrigger>
+          <TabsTrigger value="comparison">Comparison</TabsTrigger>
+          <TabsTrigger value="game-analysis">Game Analysis</TabsTrigger>
+          <TabsTrigger value="scouting">Scouting</TabsTrigger>
+          <TabsTrigger value="simulation">Simulation</TabsTrigger>
+          <TabsTrigger value="custom-agents">Custom Agents</TabsTrigger>
+          <TabsTrigger value="draft-board">Draft Board</TabsTrigger>
+        </TabsList>
 
-                    {/* Dynamic Input Fields */} 
-                    <div className="md:col-span-2">
-                        {renderInputFields()}
+        {/* Research Tab Content */}
+        <TabsContent value="research">
+            <Card>
+              <CardContent className="pt-6 space-y-6">
+                {/* --- Input Section --- */}
+                <div className="space-y-4">
+                  {/* Topic Input */}
+                  <div>
+                    <Label htmlFor="research-topic" className="text-lg font-semibold mb-2 block">Research Topic / Question</Label>
+                    <div className="relative">
+                      <Textarea
+                        ref={topicTextareaRef}
+                        id="research-topic"
+                        placeholder="Enter your research topic..."
+                        value={state.topic}
+                        onChange={(e) => setState({ ...state, topic: e.target.value, error: null })}
+                        className="min-h-[100px] text-base p-3 pr-12 w-full"
+                        rows={4}
+                      />
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="ghost" size="icon"
+                            onClick={fetchPromptSuggestions}
+                            disabled={state.isSuggesting || state.isLoading}
+                            className="absolute top-2 right-2 h-8 w-8"
+                            aria-label="Suggest prompt improvements"
+                          >
+                            <Lightbulb className={`h-5 w-5 ${state.isSuggesting ? 'animate-pulse text-yellow-500' : ''}`} />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[400px] p-0">
+                          <Command>
+                            <CommandInput placeholder="Filter suggestions..." />
+                            <CommandList>
+                              <CommandEmpty>{state.isSuggesting ? "Loading suggestions..." : "No suggestions found."}</CommandEmpty>
+                              <CommandGroup heading="Prompt Suggestions">
+                                {state.promptSuggestions.map((suggestion, index) => (
+                                  <CommandItem key={index} onSelect={() => usePromptSuggestion(suggestion)} className="cursor-pointer">
+                                    {suggestion}
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
                     </div>
+                  </div>
+
+                  {/* Report Section Selection */}
+                  <Collapsible className="border rounded-md p-4">
+                    <CollapsibleTrigger asChild>
+                      <Button variant="outline" className="w-full justify-between">
+                        <span>Customize Report Sections ({state.selectedSections.length} selected)</span>
+                      </Button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {reportSections.map((section) => (
+                        <div key={section.id} className="flex items-center space-x-2">
+                          <Checkbox
+                            id={section.id}
+                            checked={state.selectedSections.includes(section.id)}
+                            onCheckedChange={(checked) => handleSectionChange(section.id, !!checked)}
+                          />
+                          <Label htmlFor={section.id} className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                            {section.label}
+                          </Label>
+                        </div>
+                      ))}
+                    </CollapsibleContent>
+                  </Collapsible>
                 </div>
 
-                {/* Submit Button */} 
-                <div className="flex justify-end pt-2">
-                     <Button 
-                         type="submit" 
-                         disabled={isLoading || !researchType} // Disable if no type selected or loading
-                         className="min-w-[120px] group"
-                     >
-                         {isLoading ? (
-                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                         ) : (
-                             <Search className="mr-2 h-4 w-4 transition-transform group-hover:scale-110" />
-                         )}
-                         <span>{isLoading ? 'Researching...' : 'Generate Report'}</span>
-                     </Button>
-                 </div>
-            </form>
-         </CardContent>
-      </Card>
+                {/* --- Action Button --- */}
+                <div className="text-center">
+                  <Button
+                    onClick={handleSubmit}
+                    disabled={state.isLoading || !state.topic.trim()}
+                    size="lg"
+                    className="w-full md:w-auto"
+                  >
+                    {state.isLoading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Researching...
+                      </>
+                    ) : (
+                      'Run Research'
+                    )}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          
+            {/* --- Output Section --- */}
+            <div className="mt-6 space-y-6">
+              {/* Error Display */}
+              {state.error && (
+                <Alert variant="destructive">
+                  <Terminal className="h-4 w-4" />
+                  <AlertTitle>Error</AlertTitle>
+                  <AlertDescription>{state.error}</AlertDescription>
+                </Alert>
+              )}
 
-      {/* Report Display Area */}
-      <div className="flex-grow overflow-y-auto space-y-4 pr-2 scrollbar-thin scrollbar-thumb-muted scrollbar-track-transparent"> {/* Adjusted scrollbar */}
-        {/* Loading Indicator */}
-        {isLoading && !currentReportContent && ( // Revert condition
-          <div className="flex items-center justify-center h-60 text-muted-foreground">
-            <Loader2 className="mr-3 h-6 w-6 animate-spin text-primary" />
-            <span>Generating research report...</span>
-          </div>
-        )}
+              {/* Report Viewer */}
+              {state.reportContent !== null && (
+                <div className="border rounded-lg p-4 md:p-6 bg-card text-card-foreground shadow-sm">
+                  <h2 className="text-2xl font-semibold mb-4 flex items-center">
+                    <BotMessageSquare className="mr-2 h-6 w-6" />
+                    Research Report
+                  </h2>
+                  <ResearchReportViewer reportContent={state.reportContent} />
+                  <div ref={reportEndRef} />
+                </div>
+              )}
+
+              {/* Follow-up Suggestions */}
+              {state.followUpSuggestions.length > 0 && (
+                <div>
+                  <h3 className="text-xl font-semibold mb-3">Follow-up Suggestions:</h3>
+                  <ul className="list-disc pl-5 space-y-2">
+                    {state.followUpSuggestions.map((suggestion, index) => (
+                      <li key={index} className="text-muted-foreground">
+                        <button
+                          onClick={() => setState(prev => ({...prev, topic: suggestion, reportContent: null, followUpSuggestions: [] }))}
+                          className="text-left hover:text-primary underline transition-colors duration-200"
+                        >
+                          {suggestion}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+        </TabsContent>
+
+        {/* Stat Comparison Tab Content */}
+        <TabsContent value="comparison">
+           <StatComparisonTool />
+        </TabsContent>
+
+        {/* Game Analysis Tab Content */}
+        <TabsContent value="game-analysis">
+            <GameAnalysisViewer />
+        </TabsContent>
         
-        {error && (
-         <Card className="border-red-500/50 bg-red-900/20 m-4">
-           <CardHeader>
-             <CardTitle className="text-red-400">Error</CardTitle>
-           </CardHeader>
-           <CardContent className="text-red-300">
-             <p>Failed to generate report: {error}</p>
-           </CardContent>
-         </Card>
-      )}
+        {/* Player Scouting Tab Content */}
+        <TabsContent value="scouting">
+            <PlayerScoutingReportGenerator />
+        </TabsContent>
 
-        {/* Pass props back to viewer */} 
-        {(currentReportContent || suggestions.length > 0 || isLoading || error) && !(!isLoading && !currentReportContent && error && suggestions.length === 0 ) && (
-            <ResearchReportViewer 
-                reportContent={currentReportContent} // Pass text content 
-                suggestions={suggestions}          // Pass suggestions array
-                onSuggestionClick={handleSuggestionClick} // Pass handler
-                intermediateSteps={intermediateSteps} // Keep passing this
-                isLoading={isLoading}
-            />
-        )}
+        {/* Simulation Tab Content */}
+        <TabsContent value="simulation">
+          <SimulationSetup />
+        </TabsContent>
 
-        {/* Initial state message */} 
-        {!isLoading && !currentReportContent && !error && suggestions.length === 0 && (
-           <div className="flex items-center justify-center h-60 text-muted-foreground">
-             <span>Select a research type and enter details to begin.</span>
-           </div>
-        )}
-      </div>
+        {/* Custom Agents Tab Content */}
+        <TabsContent value="custom-agents">
+          <CustomAgentConfigurator />
+        </TabsContent>
 
+        {/* Draft Board Tab Content */}
+        <TabsContent value="draft-board">
+          <DraftBoardViewer />
+        </TabsContent>
+
+      </Tabs>
+      
     </div>
   );
 } 

@@ -1,7 +1,7 @@
 # backend/workflows/research.py
 import json
 from textwrap import dedent
-from typing import Dict, AsyncIterator, Optional
+from typing import Dict, AsyncIterator, Optional, List
 import logging
 
 from agno.agent import Agent
@@ -73,8 +73,9 @@ report_writer_agent = Agent(
            **- For time-series (e.g., stats over seasons):** `<!-- CHART_DATA {"type": "line", "title": "Your Chart Title", "data": [{"label": "SEASON_YEAR", "value": STAT_VALUE}, ...]} -->` 
            **- For comparisons (e.g., multiple players):** `<!-- CHART_DATA {"type": "bar", "title": "Your Chart Title", "data": [{"label": "CATEGORY_NAME", "value": STAT_VALUE}, ...]} -->`
            **- Replace `SEASON_YEAR`, `STAT_VALUE`, `CATEGORY_NAME`, etc. with the actual data. Ensure keys are exactly "label" and "value" in the data array.**
-        8. Ensure the final report adheres strictly to the expected format.
-        9. List the tools that were *likely* used to gather the data (provided in the input or inferred) in the 'Data Sources Used' section.
+        8. **For any data best presented as a table (e.g., lists of stats, comparisons), enclose the raw Markdown table within a `TABLE_DATA` comment like this:** `<!-- TABLE_DATA {"title": "Optional Table Title", "markdown": "YOUR MARKDOWN TABLE HERE"} -->`
+        9. Ensure the final report adheres strictly to the expected format.
+        10. List the tools that were *likely* used to gather the data (provided in the input or inferred) in the 'Data Sources Used' section.
         """),
     expected_output=dedent(f"""
         A professional NBA research report in markdown format:
@@ -116,14 +117,47 @@ class ResearchWorkflow(Workflow):
     data_gatherer: Agent = data_gathering_agent
     report_writer: Agent = report_writer_agent
 
-    async def arun(self, topic: str) -> AsyncIterator[RunEvent]:
-        """Orchestrates the research process: gather data, then write report."""
+    async def arun(self, topic: str, selected_sections: Optional[List[str]] = None) -> AsyncIterator[RunEvent]:
+        """Orchestrates the research process based on selected sections."""
+        
+        # Construct instructions for data gatherer based on selected sections
+        section_mapping = { # Map section ID to a descriptive phrase for the prompt
+            'basic': 'basic player information (team, position, draft info)',
+            'career_stats': 'career statistics (totals and per-season)',
+            'current_stats': 'current season aggregate statistics',
+            'gamelog': 'current season game logs',
+            'awards': 'player awards and accolades',
+            'profile': 'player profile details (career/season highs)',
+            'hustle': 'hustle statistics (deflections, loose balls, etc.)',
+            'defense': 'detailed defensive statistics',
+            'shooting': 'shot chart details and shooting splits',
+            'passing': 'detailed passing statistics',
+            'rebounding': 'detailed rebounding statistics',
+            'clutch': 'clutch time statistics',
+            'analysis': 'year-over-year analysis (if applicable data is found)',
+            'insights': 'general player insights or dashboards'
+        }
+        
+        # Use default sections if none provided or list is empty
+        if not selected_sections:
+            selected_sections = ['basic', 'career_stats', 'current_stats'] # Default sections
+            logger.warning(f"No sections selected or list empty, using defaults: {selected_sections}")
+        
+        requested_data_desc = ", ".join([section_mapping.get(s_id, s_id) for s_id in selected_sections])
+        
+        gatherer_instructions = dedent(f"""
+            1. Analyze the user's research topic: '{topic}'
+            2. The user wants data specifically for these aspects: **{requested_data_desc}**.
+            3. Plan the sequence of tool calls *only* needed to gather the information for the requested aspects. Do not call tools for unrequested data.
+            4. Execute the planned tool calls methodically.
+            5. Output the raw or slightly summarized results from the tool calls.
+            """)
         
         # Step 1: Gather Data (Stream intermediate steps)
-        logger.info(f"Workflow Step 1: Gathering data for topic: {topic}")
+        logger.info(f"Workflow Step 1: Gathering data for topic: {topic}, Aspects: {requested_data_desc}")
         gathered_data_content = ""
-        # Await the agent call to get the async iterator
-        data_gatherer_iterator = await self.data_gatherer.arun(topic, stream=True, stream_intermediate_steps=True)
+        # Pass the tailored instructions to the data gatherer
+        data_gatherer_iterator = await self.data_gatherer.arun(topic, instructions=gatherer_instructions, stream=True, stream_intermediate_steps=True)
         async for event in data_gatherer_iterator:
             yield event 
             if isinstance(event, RunResponse) and isinstance(event.content, str):

@@ -27,27 +27,27 @@ interface ParsedChart {
   data: { label: string; value: number }[];
 }
 
+// Define type for parsed tables
+interface ParsedTable {
+  id: string; // Unique ID
+  title?: string;
+  markdown: string;
+}
+
+// Simplify props
 interface ResearchReportViewerProps {
   reportContent: string;
-  suggestions: string[];
-  intermediateSteps?: any[];
-  onSuggestionClick: (suggestion: string) => void;
-  isLoading: boolean;
 }
 
 export default function ResearchReportViewer({ 
   reportContent,
-  suggestions,
-  intermediateSteps = [],
-  onSuggestionClick,
-  isLoading
 }: ResearchReportViewerProps) {
   const [copied, setCopied] = useState(false);
-  const [isThinkingExpanded, setIsThinkingExpanded] = useState(false);
   
   // State for parsed elements
   const [parsedStatCards, setParsedStatCards] = useState<ParsedStatCard[]>([]);
   const [parsedCharts, setParsedCharts] = useState<ParsedChart[]>([]);
+  const [parsedTables, setParsedTables] = useState<ParsedTable[]>([]);
   const [narrativeContent, setNarrativeContent] = useState<string>('');
 
   // Effect to parse content when reportContent changes
@@ -55,6 +55,7 @@ export default function ResearchReportViewer({
      if (!reportContent) {
          setParsedStatCards([]);
          setParsedCharts([]);
+         setParsedTables([]);
          setNarrativeContent('');
          return;
      }
@@ -62,12 +63,15 @@ export default function ResearchReportViewer({
      // Regex to match any character including newlines: [\s\S]
      const statCardRegex = /<!--\s*STAT_CARD_DATA\s*({[\s\S]*?})\s*-->/g; 
      const chartRegex = /<!--\s*CHART_DATA\s*({[\s\S]*?})\s*-->/g;
+     const tableRegex = /<!--\s*TABLE_DATA\s*({[\s\S]*?})\s*-->/g;
+
      const extractedStats: ParsedStatCard[] = [];
      const extractedCharts: ParsedChart[] = [];
+     const extractedTables: ParsedTable[] = [];
      let remainingContent = reportContent;
+     let match;
 
      // Extract Stat Cards
-     let match;
      while ((match = statCardRegex.exec(reportContent)) !== null) {
          try {
              const jsonData = JSON.parse(match[1]);
@@ -88,29 +92,51 @@ export default function ResearchReportViewer({
      while ((match = chartRegex.exec(reportContent)) !== null) {
          try {
              const jsonData = JSON.parse(match[1]);
-             // Basic validation/formatting
-             const formattedData = jsonData.data?.map((d: any) => ({ 
-                  label: String(d.label),
-                  value: parseFloat(String(d.value)) 
-              })).filter((d: any) => !isNaN(d.value)) || [];
+             const data = jsonData.data?.map((d: any) => ({ 
+                 label: String(d.label ?? ''),
+                 value: parseFloat(String(d.value ?? 0))
+             })).filter((d: any) => d.label && !isNaN(d.value)) || [];
 
-             if (formattedData.length > 0) {
+             if (data.length > 0 && (jsonData.type === 'bar' || jsonData.type === 'line')) {
                  extractedCharts.push({
                      id: `chart-${extractedCharts.length}`,
-                     type: jsonData.type === 'line' ? 'line' : 'bar',
+                     type: jsonData.type,
                      title: jsonData.title || 'Chart',
-                     data: formattedData
+                     data: data
                  });
                  // Remove the comment from the main content
                  remainingContent = remainingContent.replace(match[0], '');
+             } else {
+                 console.warn("Skipping chart due to invalid data or type:", jsonData);
              }
          } catch (e) {
              console.error("Failed to parse Chart JSON from comment:", match[1], e);
          }
      }
 
+     // Extract Tables
+     while ((match = tableRegex.exec(reportContent)) !== null) {
+         try {
+             const jsonData = JSON.parse(match[1]);
+             if (jsonData.markdown && typeof jsonData.markdown === 'string') {
+                 extractedTables.push({
+                     id: `table-${extractedTables.length}`,
+                     title: jsonData.title,
+                     markdown: jsonData.markdown
+                 });
+                 // Remove the comment from the main content
+                 remainingContent = remainingContent.replace(match[0], '');
+             } else {
+                  console.warn("Skipping table comment due to missing/invalid markdown:", jsonData);
+             }
+         } catch (e) {
+             console.error("Failed to parse Table JSON from comment:", match[1], e);
+         }
+     }
+
      setParsedStatCards(extractedStats);
      setParsedCharts(extractedCharts);
+     setParsedTables(extractedTables);
      // Clean up potentially empty lines left by removed comments
      setNarrativeContent(remainingContent.replace(/^\s*\n/gm, '').trim()); 
 
@@ -159,138 +185,70 @@ export default function ResearchReportViewer({
      td: ({ node, ...props }: { node: any, [key: string]: any }) => <TableCell {...props} />,
   };
 
-  const hasIntermediateContent = intermediateSteps && intermediateSteps.length > 0;
-
-  if (isLoading && !reportContent) {
-     return (
-        <div className="border bg-card text-card-foreground rounded-lg p-6 flex items-center justify-center h-60">
-            <Loader2 className="mr-3 h-6 w-6 animate-spin text-primary" />
-            <span className="text-muted-foreground">Generating report...</span>
-        </div>
-     );
-  }
-  
-  if (!isLoading && !reportContent) {
-     return (
-        <div className="border bg-card text-card-foreground rounded-lg p-6 flex items-center justify-center h-60">
-            <span className="text-muted-foreground">Report content will appear here.</span>
-        </div>
-     );
-  }
-
   return (
-    <div className="border bg-card text-card-foreground rounded-lg shadow-lg p-4 md:p-6 relative space-y-6"> 
-      {hasIntermediateContent && (
-         <Collapsible 
-           open={isThinkingExpanded} 
-           onOpenChange={setIsThinkingExpanded} 
-           className="border border-border rounded-md p-3 bg-muted/50"
-         >
-             <div className="flex items-center justify-between mb-2"> 
-               <div className="flex items-center gap-2"> 
-                 <Brain className="h-4 w-4 text-muted-foreground" /> 
-                 <span className="text-sm font-medium text-muted-foreground">Thinking Process</span> 
-               </div> 
-               <CollapsibleTrigger asChild> 
-                 <Button variant="ghost" size="sm" className="p-1 h-6 w-6"> 
-                   {isThinkingExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />} 
-                   <span className="sr-only">Toggle Thinking Process</span>
-                 </Button> 
-               </CollapsibleTrigger> 
-            </div> 
-            <CollapsibleContent className="space-y-3 pt-2 border-t border-border/50"> 
-               {intermediateSteps.map((step: any, index: number) => (
-                 <div key={index} className="text-xs text-muted-foreground flex items-center gap-2">
-                    {step.event === "ToolCallStarted" && <Loader2 className="h-3 w-3 animate-spin" />}
-                    {step.event === "ToolCallCompleted" && <CheckCircle2 className="h-3 w-3 text-green-600" />}
-                    {step.event === "Error" && <XCircle className="h-3 w-3 text-red-600" />}
-                    <span>{step.event}:</span>
-                    {step.tool_name && <span className="font-mono text-primary/80">{step.tool_name}</span>}
-                 </div>
-               ))}
-            </CollapsibleContent> 
-         </Collapsible>
-      )}
+    <div className="prose prose-zinc dark:prose-invert max-w-none break-words relative group">
+      {/* Add Copy button positioned relative to this container */}
+        <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="absolute top-0 right-0 mt-1 mr-1 h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10"
+                  onClick={() => copyToClipboard(fullReportTextForCopy)}
+                >
+                  {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{copied ? 'Copied!' : 'Copy report'}</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
 
-      {/* Stat Cards Section (NEW) */}
+      {/* Render Stat Cards */} 
       {parsedStatCards.length > 0 && (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 not-prose"> 
-              {parsedStatCards.map((card) => (
-                  <StatCard key={card.id} label={card.label} value={card.value} unit={card.unit} />
-              ))}
-          </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mb-6">
+          {parsedStatCards.map((card) => (
+            <StatCard key={card.id} label={card.label} value={card.value} unit={card.unit} />
+          ))}
+        </div>
       )}
 
-      {/* Charts Section (NEW) */}
+      {/* Render Charts */} 
       {parsedCharts.length > 0 && (
-          <div className="space-y-6 not-prose"> 
-              {parsedCharts.map((chart) => (
-                  <ChartRenderer key={chart.id} type={chart.type} title={chart.title} data={chart.data} />
-              ))}
-          </div>
-      )}
-
-      {/* Narrative Content Section (NEW) */}
-      {narrativeContent && (
-          <div className='relative pt-6 border-t border-border/50'> 
-             {/* Copy Button - Now correctly placed without duplication */}
-             {fullReportTextForCopy && (
-                 <div className="absolute top-4 right-[-8px]"> {/* Adjust position */} 
-                     <TooltipProvider> 
-                       <Tooltip> 
-                         <TooltipTrigger asChild> 
-                           <Button 
-                             variant="ghost" 
-                             size="icon" 
-                             className="h-7 w-7 text-muted-foreground hover:text-foreground hover:bg-muted" 
-                             onClick={() => copyToClipboard(fullReportTextForCopy)}
-                           > 
-                             {copied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />} 
-                           </Button> 
-                         </TooltipTrigger> 
-                         <TooltipContent> 
-                           <p className="text-xs">{copied ? 'Copied!' : 'Copy Full Report'}</p> 
-                         </TooltipContent> 
-                       </Tooltip> 
-                     </TooltipProvider> 
-                 </div> 
-             )} 
-             {/* Render Narrative Markdown */}
-             <div className="prose prose-sm md:prose-base prose-neutral dark:prose-invert max-w-none text-card-foreground">
-                 <ReactMarkdown components={components} remarkPlugins={[remarkGfm]}>
-                     {narrativeContent}
-                 </ReactMarkdown>
-             </div>
-          </div>
-      )}
-
-      {suggestions.length > 0 && !isLoading && (
-         <div className="mt-8 pt-6 border-t border-border">
-            <h3 className="flex items-center text-lg font-semibold mb-4 text-foreground">
-               <Lightbulb className="w-5 h-5 mr-2 text-yellow-500" />
-               Suggested Next Steps
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-               {suggestions.map((s: any, i: number) => ( 
-                  <Button
-                     key={i}
-                     variant="outline"
-                     size="sm"
-                     className={cn(
-                        "text-left justify-start h-auto whitespace-normal",
-                        "border-border text-muted-foreground", 
-                        "hover:bg-accent hover:text-accent-foreground", 
-                        "transition-all duration-150 transform hover:scale-[1.02]"
-                     )}
-                     onClick={() => onSuggestionClick && onSuggestionClick(s)}
-                     disabled={isLoading}
-                  >
-                     {s}
-                  </Button>
-               ))}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+          {parsedCharts.map((chart) => (
+            <div key={chart.id} className="border rounded-lg p-4 shadow-sm">
+              <h4 className="text-md font-semibold mb-2 text-center">{chart.title}</h4>
+              <ChartRenderer type={chart.type} data={chart.data} title={chart.title} />
             </div>
-         </div>
+          ))}
+        </div>
       )}
+
+      {/* Render Narrative Content */} 
+      {narrativeContent && (
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={components}
+          >
+            {narrativeContent}
+          </ReactMarkdown>
+      )}
+
+      {/* Render Tables using ReactMarkdown's table handling */} 
+      {parsedTables.map((table) => (
+         <div key={table.id} className="mt-6 mb-6">
+            {table.title && <h3 className="text-lg font-semibold mb-2 text-foreground/90">{table.title}</h3>}
+            <ReactMarkdown
+               remarkPlugins={[remarkGfm]}
+               components={components}
+            >
+               {table.markdown}
+            </ReactMarkdown>
+         </div>
+      ))}
     </div>
   );
 } 

@@ -1,9 +1,9 @@
 from typing import Dict, Any, List
 import json
 import logging
-from nba_api.stats.endpoints import playerdashboardbyyearoveryear
+import nba_api.stats.endpoints.playerdashboardbyyearoveryear as playerdashboardbyyear
 from nba_api.stats.library.parameters import SeasonTypeAllStar, PerModeDetailed, LeagueID
-from backend.config import CURRENT_SEASON
+from backend.config import CURRENT_SEASON, DEFAULT_TIMEOUT
 
 from .player_tools import _find_player_id
 from .utils import handle_api_error

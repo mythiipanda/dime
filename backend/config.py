@@ -111,7 +111,8 @@ OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
 # Agent-related configs
-AGENT_MODEL_ID = "gemini-2.0-flash"
+AGENT_MODEL_ID = "gemini-2.0-flash" # Model for main agents/workflow
+SUGGESTION_MODEL_ID = "gemini-2.0-flash-lite" # Separate model ID for suggestions
 STORAGE_DB_FILE = os.getenv("STORAGE_DB_FILE", "agno_storage.db")
 AGENT_DEBUG_MODE = os.getenv("AGENT_DEBUG_MODE", "false").lower() == "true"
 
