@@ -1385,6 +1385,7 @@ def get_synergy_play_types(
 ) -> str:
     """
     Fetch synergy play types stats for team or player.
+    player_or_team_abbreviation: 'T' for team, 'P' for player. Does not mean specific player/team.
     """
     return str(fetch_synergy_play_types_logic(league_id, per_mode, player_or_team_abbreviation, season_type, season, play_type, type_grouping))
 
