@@ -1,16 +1,18 @@
-from fastapi import APIRouter, Query, HTTPException, status
+from fastapi import APIRouter, Query, HTTPException, status, WebSocket, WebSocketDisconnect
 import logging
 from typing import Any, Dict, Optional
 from datetime import date
-import json # Import json
+import json
+import asyncio
+from starlette.websockets import WebSocketState
 
 # Import the unified logic function
 from backend.api_tools.scoreboard.scoreboard_tools import fetch_scoreboard_data_logic
-from backend.api_tools.utils import validate_date_format # For validation if needed here
-# Import cache utilities and key generator
+from backend.api_tools.utils import validate_date_format
 from backend.utils.cache import cache_data, get_cached_data
+
 try:
-    from backend.tools import generate_cache_key 
+    from backend.tools import generate_cache_key
 except ImportError:
     # Fallback definition
     def generate_cache_key(func_name: str, *args, **kwargs) -> str:
@@ -20,9 +22,63 @@ except ImportError:
         return "_".join(key_parts)
     logging.warning("Could not import generate_cache_key from backend.tools, using fallback definition.")
 
-
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+@router.websocket("/ws")
+async def scoreboard_websocket(websocket: WebSocket):
+    """WebSocket endpoint for real-time scoreboard updates."""
+    logger.info(f"New WebSocket connection from {websocket.client}")
+    
+    try:
+        await websocket.accept()
+        logger.info(f"WebSocket connection accepted from {websocket.client}")
+
+        while True:
+            try:
+                # Check connection state before proceeding
+                if websocket.client_state != WebSocketState.CONNECTED:
+                    logger.warning(f"Client {websocket.client} no longer connected, stopping updates")
+                    break
+
+                # Fetch latest scoreboard data
+                data = fetch_scoreboard_data_logic()
+                if isinstance(data, dict) and not data.get('error'):
+                    logger.debug(f"Sending scoreboard update to {websocket.client}")
+                    await websocket.send_json(data)
+                else:
+                    logger.warning(f"Invalid data received from scoreboard logic: {data}")
+                
+                # Wait for 30 seconds before next update
+                await asyncio.sleep(30)
+                
+            except WebSocketDisconnect:
+                logger.info(f"WebSocket client {websocket.client} disconnected normally")
+                break
+            except asyncio.CancelledError:
+                logger.info(f"WebSocket connection cancelled for {websocket.client}")
+                break
+            except Exception as e:
+                logger.error(f"Error during scoreboard update for {websocket.client}: {str(e)}", exc_info=True)
+                try:
+                    if websocket.client_state == WebSocketState.CONNECTED:
+                        await websocket.close(code=1011)  # Internal server error
+                except Exception:
+                    pass  # Ignore errors during error handling
+                break
+
+    except Exception as e:
+        logger.error(f"Failed to establish WebSocket connection: {str(e)}", exc_info=True)
+        if websocket.client_state != WebSocketState.DISCONNECTED:
+            await websocket.close(code=1011)  # Internal server error
+    finally:
+        # Only attempt to close if we're still connected and haven't sent a close message
+        try:
+            if websocket.client_state == WebSocketState.CONNECTED:
+                await websocket.close(code=1000)  # Normal closure
+        except RuntimeError:
+            # Ignore runtime error if connection is already closed
+            pass
 
 @router.get("/", 
             summary="Get Scoreboard by Date", 

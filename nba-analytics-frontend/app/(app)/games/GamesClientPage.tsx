@@ -27,9 +27,21 @@ export default function GamesClientPage({
   // State for live data (if viewing today)
   const [liveScoreboardData, setLiveScoreboardData] = useState<ScoreboardData | null>(viewingToday ? null : initialScoreboardData); // Start null if today, use initial otherwise
   const [isConnected, setIsConnected] = useState<boolean>(false);
-  const [isLoading] = useState(true);
-  const [error] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true); // Make isLoading stateful
+  const [error, setError] = useState<string | null>(null); // Make error stateful
   const ws = useRef<WebSocket | null>(null);
+
+  // Effect to manage isLoading state based on data availability
+  useEffect(() => {
+    if (viewingToday) {
+      // For today, loading is complete when live data is received or error occurs
+      setIsLoading(!liveScoreboardData && !error);
+    } else {
+      // For past dates, loading is complete when initial data is available or error occurs
+      setIsLoading(!initialScoreboardData && !error);
+    }
+    console.log(`[GamesClientPage] isLoading: ${isLoading}, viewingToday: ${viewingToday}, liveData: ${!!liveScoreboardData}, initialData: ${!!initialScoreboardData}, error: ${!!error}`); // Log loading state changes
+  }, [isLoading, viewingToday, liveScoreboardData, initialScoreboardData, error]); // Add dependencies
 
   // PBP Modal State
   const [selectedGameId, setSelectedGameId] = useState<string | null>(null);
@@ -47,24 +59,42 @@ export default function GamesClientPage({
 
     if (!ws.current) {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}/api/games/scoreboard/ws`;
+      const wsUrl = `${protocol}//${window.location.host}/api/v1/scoreboard/ws`;
       ws.current = new WebSocket(wsUrl);
-      ws.current.onopen = () => setIsConnected(true);
-      ws.current.onclose = () => setIsConnected(false);
-      ws.current.onerror = () => setIsConnected(false);
+      ws.current.onopen = () => {
+        console.log("[WebSocket] Connection established");
+        setIsConnected(true);
+      };
+      ws.current.onclose = (event) => {
+        console.log(`[WebSocket] Connection closed: ${event.code} - ${event.reason}`);
+        setIsConnected(false);
+      };
+      ws.current.onerror = (error) => {
+        console.error("[WebSocket] Error:", error);
+        setIsConnected(false);
+      };
       ws.current.onmessage = (event) => {
+        console.log("[WebSocket] Message received:", event.data); // Log raw data
         try {
           const data = JSON.parse(event.data);
+          console.log("[WebSocket] Parsed data:", data); // Log parsed data
           if (data && data.games) {
+            console.log("[WebSocket] Setting live scoreboard data:", data.games.length, "games"); // Log data being set
             setLiveScoreboardData(data);
+          } else {
+            console.warn("[WebSocket] Received data without 'games' property or invalid format:", data); // Warn if data is unexpected
           }
-        } catch {
-          // ignore
+        } catch (parseError) {
+          console.error("[WebSocket] Failed to parse message data:", parseError, "Raw data:", event.data); // Log parsing errors
         }
       };
     }
     return () => {
-      ws.current?.close();
+      // Only close if the WebSocket is open or connecting
+      if (ws.current && (ws.current.readyState === WebSocket.OPEN || ws.current.readyState === WebSocket.CONNECTING)) {
+        console.log("[WebSocket] Cleaning up: Closing connection");
+        ws.current.close();
+      }
       ws.current = null;
       setIsConnected(false);
     };
@@ -97,8 +127,13 @@ export default function GamesClientPage({
      return "Loading Games...";
    };
 
-  // Determine current data source
-  const currentScoreboardData = viewingToday ? liveScoreboardData : initialScoreboardData;
+ // Determine current data source
+ const currentScoreboardData = viewingToday ? liveScoreboardData : initialScoreboardData;
+
+ // Log data source changes
+ useEffect(() => {
+   console.log(`[GamesClientPage] Data source updated. Viewing today: ${viewingToday}. Data available: ${!!currentScoreboardData}. Games count: ${currentScoreboardData?.games?.length}`);
+ }, [currentScoreboardData, viewingToday]);
 
   return (
     <div className="space-y-6">

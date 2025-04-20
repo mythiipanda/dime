@@ -269,7 +269,7 @@ nba_agent = Agent(
     resolve_context=True,
     reasoning=True,
     exponential_backoff=True,
-    delay_between_retries=2
+    delay_between_retries=30
 )
 
 # NBA Research Agent - Focused on detailed reports
