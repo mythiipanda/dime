@@ -1386,7 +1386,7 @@ def get_synergy_play_types(
     """
     Fetch synergy play types stats for team or player.
     """
-    return fetch_synergy_play_types_logic(league_id, per_mode, player_or_team_abbreviation, season_type, season, play_type, type_grouping)
+    return str(fetch_synergy_play_types_logic(league_id, per_mode, player_or_team_abbreviation, season_type, season, play_type, type_grouping))
 
 # --- Analyze Player Stats ---
 @tool
