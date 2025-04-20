@@ -52,7 +52,6 @@ from .tools import (
     get_synergy_play_types,
     get_player_analysis,
     # Live
-    get_live_boxscore,
     get_live_odds,
     # Misc
     get_player_insights,
@@ -250,7 +249,6 @@ nba_tools = [
     get_synergy_play_types,
     get_player_analysis,
     # Live
-    get_live_boxscore,
     get_live_odds,
     # Misc
     get_player_insights,

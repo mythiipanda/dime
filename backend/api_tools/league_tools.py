@@ -237,7 +237,8 @@ def fetch_league_leaders_logic(
     season_type: str = SeasonTypeAllStar.regular,
     per_mode: str = PerMode48.per_game,
     league_id: str = LeagueID.nba,
-    scope: str = Scope.s # Keep the correct default value
+    scope: str = Scope.s,
+    top_n: int = 10
 ) -> str:
     """
     Fetches league leaders for a specific statistical category.
@@ -258,7 +259,6 @@ def fetch_league_leaders_logic(
             scope=scope,
             timeout=DEFAULT_TIMEOUT
         )
-        
         leaders_df = leaders.league_leaders.get_data_frame()
         if leaders_df.empty:
             return format_response({
@@ -268,6 +268,10 @@ def fetch_league_leaders_logic(
                 "leaders": []
             })
         
+        # Apply top_n filter if specified
+        if top_n > 0:
+            leaders_df = leaders_df.head(top_n)
+            
         leaders_list = _process_dataframe(leaders_df, single_row=False)
         
         result = {
@@ -282,6 +286,3 @@ def fetch_league_leaders_logic(
     except Exception as e:
         logger.error(f"Error in fetch_league_leaders_logic: {str(e)}", exc_info=True)
         return format_response(error=Errors.LEAGUE_LEADERS_UNEXPECTED.format(error=str(e)))
-
-# Removed unused fetch_league_lineups_logic function
-# Removed unused fetch_league_hustle_stats_logic function

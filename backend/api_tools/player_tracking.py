@@ -366,7 +366,7 @@ def fetch_player_shots_tracking_logic(
         dribbles_df = shooting_stats.dribble_shooting.get_data_frame()
         touch_time_df = shooting_stats.touch_time_shooting.get_data_frame()
         defender_dist_df = shooting_stats.closest_defender_shooting.get_data_frame()
-        defender_dist_10ft_df = shooting_stats.closest_defender_10ft_plus_shooting.get_data_frame()
+        defender_dist_10ft_df = shooting_stats.closest_defender10ft_plus_shooting.get_data_frame() # Corrected typo
 
         # Select essential columns for shooting splits
         split_cols = [
@@ -417,7 +417,7 @@ def fetch_player_shots_tracking_logic(
         
     except Exception as e:
         logger.error(f"Error fetching shots tracking stats for player ID {player_id}: {str(e)}", exc_info=True)
-        return format_response(error=Errors.PLAYER_SHOT_TRACKING_UNEXPECTED.format(player_id=player_id, error=str(e)))
+        return format_response(error=Errors.PLAYER_SHOTS_TRACKING_UNEXPECTED.format(player_id=player_id, error=str(e)))
 
 def fetch_player_clutch_stats_logic(
     player_name: str, 

@@ -613,12 +613,92 @@ def fetch_boxscore_advanced_logic(game_id: str, end_period: int = 0, end_range: 
         return error_response
 
 # Four Factors Box Score Logic
-def fetch_boxscore_four_factors_logic(game_id: str, start_period: int = 0, end_period: int = 0) -> str:
-    """Fetches box score four factors V3 data for a specific game."""
-    # This likely needs updating to use BoxScoreFourFactorsV3 as well if it exists
-    # Placeholder: Assuming it still uses V2 or needs refactoring
-    logger.warning("BoxScoreFourFactorsV3 not yet implemented, using placeholder logic.")
-    return format_response(error="Four Factors V3 endpoint not implemented yet.")
+def fetch_boxscore_four_factors_logic(
+    game_id: str,
+    start_period: int = 0,
+    end_period: int = 0
+) -> str:
+    """
+    Fetches box score four factors (V3) for a specific game.
+
+    The Four Factors are:
+    1. Effective Field Goal Percentage (eFG%)
+    2. Turnover Rate
+    3. Offensive Rebounding Rate
+    4. Free Throw Rate
+
+    Args:
+        game_id (str): The 10-digit ID of the game
+        start_period (int): Starting period filter (0 for all)
+        end_period (int): Ending period filter (0 for all)
+
+    Returns:
+        str: JSON string containing:
+            - game_id (str)
+            - parameters (dict): The period filters used
+            - player_stats (list[dict]): Individual player four factors:
+                - personId, firstName, familyName, teamTricode, position
+                - minutes
+                - effectiveFieldGoalPercentage, freeThrowAttemptRate
+                - teamTurnoverPercentage, offensiveReboundPercentage
+                - oppEffectiveFieldGoalPercentage, oppFreeThrowAttemptRate
+                - oppTeamTurnoverPercentage, oppOffensiveReboundPercentage
+            - team_stats (list[dict]): Team level four factors with same stats
+            Or {'error': ...} if an error occurs
+    """
+    logger.info(f"Executing fetch_boxscore_four_factors_logic for game ID: {game_id}")
+
+    if not game_id:
+        return format_response(error=Errors.GAME_ID_EMPTY)
+
+    try:
+        from nba_api.stats.endpoints.boxscorefourfactorsv3 import BoxScoreFourFactorsV3
+
+        boxscore = BoxScoreFourFactorsV3(
+            game_id=game_id,
+            start_period=start_period,
+            end_period=end_period,
+            timeout=DEFAULT_TIMEOUT
+        )
+        
+        # Process player stats
+        player_stats_df = boxscore.player_stats.get_data_frame()
+        player_cols = [
+            'personId', 'firstName', 'familyName', 'teamTricode', 'position', 'minutes',
+            'effectiveFieldGoalPercentage', 'freeThrowAttemptRate', 'teamTurnoverPercentage',
+            'offensiveReboundPercentage', 'oppEffectiveFieldGoalPercentage',
+            'oppFreeThrowAttemptRate', 'oppTeamTurnoverPercentage', 'oppOffensiveReboundPercentage'
+        ]
+        available_player_cols = [col for col in player_cols if col in player_stats_df.columns]
+        player_stats = _process_dataframe(player_stats_df.loc[:, available_player_cols] if not player_stats_df.empty else player_stats_df)
+
+        # Process team stats
+        team_stats_df = boxscore.team_stats.get_data_frame()
+        team_cols = [
+            'teamId', 'teamCity', 'teamName', 'teamTricode', 'minutes',
+            'effectiveFieldGoalPercentage', 'freeThrowAttemptRate', 'teamTurnoverPercentage',
+            'offensiveReboundPercentage', 'oppEffectiveFieldGoalPercentage',
+            'oppFreeThrowAttemptRate', 'oppTeamTurnoverPercentage', 'oppOffensiveReboundPercentage'
+        ]
+        available_team_cols = [col for col in team_cols if col in team_stats_df.columns]
+        team_stats = _process_dataframe(team_stats_df.loc[:, available_team_cols] if not team_stats_df.empty else team_stats_df)
+
+        result = {
+            "game_id": game_id,
+            "parameters": {
+                "start_period": start_period,
+                "end_period": end_period
+            },
+            "player_stats": player_stats,
+            "team_stats": team_stats
+        }
+
+        logger.info(f"Successfully fetched four factors box score for game {game_id}")
+        return format_response(result)
+
+    except Exception as e:
+        logger.error(f"Error in fetch_boxscore_four_factors_logic for game {game_id}: {str(e)}", exc_info=True)
+        return format_response(error=Errors.BOXSCORE_API.format(game_id=game_id, error=str(e)))
 
 # Usage Box Score Logic
 def fetch_boxscore_usage_logic(game_id: str) -> str:

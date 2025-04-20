@@ -912,7 +912,8 @@ def get_league_leaders(
     season_type: str = SeasonTypeAllStar.regular,
     per_mode: str = PerMode48.per_game,
     league_id: str = LeagueID.nba,
-    scope: str = Scope.s
+    scope: str = Scope.s,
+    top_n: int = 10
 ) -> str:
     """
     Fetches league leaders for a specific statistical category, season, and type.
@@ -935,7 +936,7 @@ def get_league_leaders(
                 - PlayerID, RANK, PLAYER, TEAM_ID, TEAM, GP, MIN, FGM, FGA, FG_PCT, ... (stats vary by category)
             - Or {'leaders': []} if no data, or {'error': ...} if an error occurs.
     """
-    cache_key = generate_cache_key("get_league_leaders", stat_category, season=season, season_type=season_type, per_mode=per_mode, league_id=league_id, scope=scope)
+    cache_key = generate_cache_key("get_league_leaders", stat_category, season=season, season_type=season_type, per_mode=per_mode, league_id=league_id, scope=scope, top_n=top_n)
     cached_result = get_cached_data(cache_key)
     if cached_result:
         logger.debug(f"Cache hit for '{cache_key}'")
@@ -943,7 +944,7 @@ def get_league_leaders(
 
     logger.debug(
         f"Cache miss for '{cache_key}'. Tool 'get_league_leaders' called for Cat: {stat_category}, Season: {season}, Type: {season_type}, "
-        f"Mode: {per_mode}, League: {league_id}, Scope: {scope}"
+        f"Mode: {per_mode}, League: {league_id}, Scope: {scope}, TopN: {top_n}"
     )
     result = fetch_league_leaders_logic(
         season=season,
@@ -951,7 +952,8 @@ def get_league_leaders(
         season_type=season_type,
         per_mode=per_mode,
         league_id=league_id,
-        scope=scope
+        scope=scope,
+        top_n=top_n
     )
     cache_data(cache_key, result)
     return result
@@ -1307,29 +1309,6 @@ def get_live_odds() -> str:
     return format_response(fetch_odds_data_logic())
 
 @tool
-def get_live_boxscore(game_id: str) -> str:
-    """
-    Fetches live box score data for an ongoing game.
-
-    Args:
-        game_id (str): The 10-digit ID of the game.
-
-    Returns:
-        str: JSON string containing live box score data:
-            - game (dict): Game details (gameId, gameStatus, period, clock, homeTeam, awayTeam).
-            - homeTeam (dict): Detailed stats for home team players.
-            - awayTeam (dict): Detailed stats for away team players.
-            - Or {"error": ...} if the game is not live or an error occurs.
-    """
-    # DO NOT CACHE LIVE BOXSCORE
-    logger.debug(f"Tool \"get_live_boxscore\" called for game {game_id} - Not Caching Live Data")
-
-    # Import the logic function
-    from backend.api_tools.live_game_tools import fetch_live_boxscore_logic
-
-    return fetch_live_boxscore_logic(game_id=game_id)
-
-@tool
 def get_game_shotchart(
     game_id: str, 
     team_id: Optional[int] = None, 
@@ -1379,12 +1358,14 @@ def get_game_shotchart(
     return result
 
 # --- Matchup Tools ---
+@tool
 def get_season_matchups(def_player_id: str, off_player_id: str, season: str = CURRENT_SEASON, season_type: str = SeasonTypeAllStar.regular) -> str:
     """
     Fetches season matchups between two players.
     """
     return fetch_league_season_matchups_logic(def_player_id, off_player_id, season, season_type)
 
+@tool
 def get_matchups_rollup(def_player_id: str, season: str = CURRENT_SEASON, season_type: str = SeasonTypeAllStar.regular) -> str:
     """
     Fetches matchup rollup for a defensive player across opponents.
@@ -1392,6 +1373,7 @@ def get_matchups_rollup(def_player_id: str, season: str = CURRENT_SEASON, season
     return fetch_matchups_rollup_logic(def_player_id, season, season_type)
 
 # --- Synergy Play Types ---
+@tool
 def get_synergy_play_types(
     league_id: str = LeagueID.nba,
     per_mode: str = PerModeSimple.default,
@@ -1407,6 +1389,7 @@ def get_synergy_play_types(
     return fetch_synergy_play_types_logic(league_id, per_mode, player_or_team_abbreviation, season_type, season, play_type, type_grouping)
 
 # --- Analyze Player Stats ---
+@tool
 def get_player_analysis(
     player_name: str,
     season: str = CURRENT_SEASON,
