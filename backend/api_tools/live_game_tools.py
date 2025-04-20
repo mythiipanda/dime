@@ -1,11 +1,16 @@
-from typing import Dict, List, Optional, TypedDict, Any
+from typing import Dict, List, Optional, TypedDict, Any, Tuple
 from nba_api.live.nba.endpoints import scoreboard
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 import logging
-from config import DEFAULT_TIMEOUT, Errors
+from backend.config import DEFAULT_TIMEOUT, Errors
 
 logger = logging.getLogger(__name__)
+
+# In-memory cache for scoreboard data
+_scoreboard_cache: Dict[str, Tuple[str, datetime]] = {}
+# Cache TTL in seconds (10 seconds for live games)
+CACHE_TTL = 10
 
 class GameLeader(TypedDict):
     """Type definition for game leader statistics."""
@@ -56,7 +61,7 @@ def _format_game_leader(leader_data: Dict) -> GameLeader:
         "stats": f"{leader_data.get('points', 0)} PTS, {leader_data.get('rebounds', 0)} REB, {leader_data.get('assists', 0)} AST"
     }
 
-def fetch_league_scoreboard_logic() -> str:
+def fetch_league_scoreboard_logic(bypass_cache: bool = False) -> str:
     """
     Fetches live scoreboard data for current NBA games and formats it 
     to match the frontend's ScoreboardData interface.
@@ -96,8 +101,17 @@ def fetch_league_scoreboard_logic() -> str:
     """
     logger.info("Executing fetch_league_scoreboard_logic to fetch and format for frontend")
     
+    # Check cache first
+    current_date = datetime.now().strftime("%Y-%m-%d")
+    if not bypass_cache and current_date in _scoreboard_cache:
+        cached_data, cache_time = _scoreboard_cache[current_date]
+        # Only use cache if within TTL
+        if datetime.now() - cache_time < timedelta(seconds=CACHE_TTL):
+            logger.info("Returning cached scoreboard data")
+            return cached_data
+    
     try:
-        board = scoreboard.ScoreBoard()
+        board = scoreboard.ScoreBoard(timeout=DEFAULT_TIMEOUT)
         raw_data = board.get_dict()
         
         scoreboard_outer = raw_data.get('scoreboard', {})
@@ -106,31 +120,43 @@ def fetch_league_scoreboard_logic() -> str:
         
         formatted_games: List[Dict[str, Any]] = []
         for game in raw_games:
-            home_team_raw = game.get("homeTeam", {})
-            away_team_raw = game.get("awayTeam", {})
+            # Only extract homeTeam and awayTeam once
+            home_team = game.get("homeTeam", {})
+            away_team = game.get("awayTeam", {})
             
-            # Transform raw game data to match frontend Game interface
+            # Get game status fields only if game is live
+            is_live = game.get("gameStatus", 0) == 2
+            game_status_fields = {
+                "period": game.get("period"),
+                "gameClock": game.get("gameClock")
+            } if is_live else {
+                "period": None,
+                "gameClock": None
+            }
+            
             formatted_game = {
                 "gameId": game.get("gameId"),
-                "gameStatus": game.get("gameStatus", 0), # Default to 0 if missing?
+                "gameStatus": game.get("gameStatus", 0),
                 "gameStatusText": game.get("gameStatusText", ""),
-                "period": game.get("period"), # Will be None if not applicable
-                "gameClock": game.get("gameClock"), # Will be None if not applicable
+                **game_status_fields,
                 "homeTeam": {
-                    "teamId": home_team_raw.get("teamId"),
-                    "teamTricode": home_team_raw.get("teamTricode", "N/A"),
-                    "score": home_team_raw.get("score", 0),
-                    "wins": home_team_raw.get("wins"),
-                    "losses": home_team_raw.get("losses")
-                },
+                    "teamId": home_team.get("teamId"),
+                    "teamTricode": home_team.get("teamTricode", "N/A"),
+                    "score": home_team.get("score", 0)
+                    # Only include record for completed games
+                } | ({
+                    "wins": home_team.get("wins"),
+                    "losses": home_team.get("losses")
+                } if game.get("gameStatus", 0) == 3 else {}),
                 "awayTeam": {
-                    "teamId": away_team_raw.get("teamId"),
-                    "teamTricode": away_team_raw.get("teamTricode", "N/A"),
-                    "score": away_team_raw.get("score", 0),
-                    "wins": away_team_raw.get("wins"),
-                    "losses": away_team_raw.get("losses")
-                },
-                 # Use gameTimeUTC as gameEt, ensure it exists
+                    "teamId": away_team.get("teamId"),
+                    "teamTricode": away_team.get("teamTricode", "N/A"),
+                    "score": away_team.get("score", 0)
+                    # Only include record for completed games
+                } | ({
+                    "wins": away_team.get("wins"),
+                    "losses": away_team.get("losses")
+                } if game.get("gameStatus", 0) == 3 else {}),
                 "gameEt": game.get("gameTimeUTC", "")
             }
             formatted_games.append(formatted_game)
@@ -142,15 +168,17 @@ def fetch_league_scoreboard_logic() -> str:
         }
         
         logger.info(f"fetch_league_scoreboard_logic formatted {len(formatted_games)} games for frontend")
-        # Return as a JSON string
-        return json.dumps(result)
+        # Format result as JSON string
+        json_result = json.dumps(result)
+        
+        # Update cache
+        _scoreboard_cache[current_date] = (json_result, datetime.now())
+        
+        return json_result
         
     except Exception as e:
         logger.error(f"Error fetching/formatting scoreboard data: {str(e)}", exc_info=True)
-        # Return an error structure (could be simpler)
-        error_result = {
-            "gameDate": datetime.now().strftime("%Y-%m-%d"),
-            "games": [],
+        # Simplified error result - no need to include empty games array
+        return json.dumps({
             "error": Errors.SCOREBOARD_API.format(error=str(e))
-        }
-        return json.dumps(error_result)
+        })

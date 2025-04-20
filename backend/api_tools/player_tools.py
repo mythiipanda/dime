@@ -95,7 +95,27 @@ def fetch_player_gamelog_logic(player_name: str, season: str, season_type: str =
             logger.error(f"nba_api playergamelog failed for ID {player_id}, Season {season}: {api_error}", exc_info=True)
             return format_response(error=Errors.PLAYER_GAMELOG_API.format(name=player_actual_name, season=season, error=str(api_error)))
 
-        gamelog_list = _process_dataframe(gamelog_endpoint.get_data_frames()[0], single_row=False)
+        gamelog_df = gamelog_endpoint.get_data_frames()[0]
+
+        if gamelog_df.empty:
+             logger.warning(f"No gamelog data found for {player_actual_name} ({season}).")
+             return format_response({
+                 "player_name": player_actual_name,
+                 "player_id": player_id,
+                 "season": season,
+                 "season_type": season_type,
+                 "gamelog": []
+             })
+
+        # Select essential columns for gamelog
+        gamelog_cols = [
+            'GAME_ID', 'GAME_DATE', 'MATCHUP', 'WL', 'MIN', 'FGM', 'FGA', 'FG_PCT',
+            'FG3M', 'FG3A', 'FG3_PCT', 'FTM', 'FTA', 'FT_PCT', 'OREB', 'DREB',
+            'REB', 'AST', 'STL', 'BLK', 'TOV', 'PF', 'PTS', 'PLUS_MINUS'
+        ]
+        # Ensure all essential columns exist in the DataFrame before selecting
+        available_gamelog_cols = [col for col in gamelog_cols if col in gamelog_df.columns]
+        gamelog_list = _process_dataframe(gamelog_df.loc[:, available_gamelog_cols], single_row=False)
 
         if gamelog_list is None:
             logger.error(f"DataFrame processing failed for gamelog of {player_actual_name} ({season}).")
@@ -138,8 +158,22 @@ def fetch_player_career_stats_logic(player_name: str, per_mode36: str = PerMode3
             logger.error(f"nba_api playercareerstats failed for ID {player_id}: {api_error}", exc_info=True)
             return format_response(error=Errors.PLAYER_CAREER_STATS_API.format(name=player_actual_name, error=str(api_error)))
 
-        season_totals = _process_dataframe(career_endpoint.season_totals_regular_season.get_data_frame(), single_row=False)
-        career_totals = _process_dataframe(career_endpoint.career_totals_regular_season.get_data_frame(), single_row=True)
+        season_totals_df = career_endpoint.season_totals_regular_season.get_data_frame()
+        career_totals_df = career_endpoint.career_totals_regular_season.get_data_frame()
+
+        # Select essential columns for season totals
+        season_totals_cols = [
+            'SEASON_ID', 'TEAM_ID', 'TEAM_ABBREVIATION', 'PLAYER_AGE', 'GP', 'GS',
+            'MIN', 'FGM', 'FGA', 'FG_PCT', 'FG3M', 'FG3A', 'FG3_PCT', 'FTM',
+            'FTA', 'FT_PCT', 'OREB', 'DREB', 'REB', 'AST', 'STL', 'BLK', 'TOV',
+            'PF', 'PTS'
+        ]
+        # Ensure all essential columns exist in the DataFrame before selecting
+        available_season_totals_cols = [col for col in season_totals_cols if col in season_totals_df.columns]
+        season_totals = _process_dataframe(season_totals_df.loc[:, available_season_totals_cols] if not season_totals_df.empty else season_totals_df, single_row=False)
+
+        career_totals = _process_dataframe(career_totals_df, single_row=True)
+
 
         if season_totals is None or career_totals is None:
             logger.error(f"DataFrame processing failed for career stats of {player_actual_name}.")
@@ -345,7 +379,7 @@ def fetch_player_shotchart_logic(
                         "distance": shot.get("SHOT_DISTANCE"),
                         "zone": shot.get("SHOT_ZONE_BASIC")
                     }
-                    for shot in shots_data  # Include all shots
+                    for shot in shots_data  # Include all shots for visualization
                 ]
             }
             
@@ -358,7 +392,18 @@ def fetch_player_shotchart_logic(
                 logger.error(f"Failed to create shot chart visualization: {viz_error}")
                 shot_summary["visualization_error"] = str(viz_error)
             
-            return format_response(shot_summary)
+            # Prepare the response, excluding the full shot_locations list
+            response_summary = {
+                "player_name": shot_summary.get("player_name"),
+                "player_id": shot_summary.get("player_id"),
+                "season": shot_summary.get("season"),
+                "season_type": shot_summary.get("season_type"),
+                "overall_stats": shot_summary.get("overall_stats", {}),
+                "zone_breakdown": shot_summary.get("zone_breakdown", {}),
+                "visualization_path": shot_summary.get("visualization_path"),
+                "visualization_error": shot_summary.get("visualization_error") # Include error if visualization failed
+            }
+            return format_response(response_summary)
             
         except Exception as api_error:
             logger.error(f"nba_api shotchartdetail failed for ID {player_id}: {api_error}")
@@ -540,7 +585,26 @@ def fetch_player_hustle_stats_logic(
                  },
                 "hustle_stats": []
             })
-        
+
+        # If a player name is provided, filter the dataframe for that player's ID
+        if player_id_to_pass:
+            hustle_df = hustle_df[hustle_df['PLAYER_ID'] == int(player_id_to_pass)]
+            if hustle_df.empty:
+                 logger.warning(f"No hustle stats found for player ID {player_id_to_pass} with the specified filters.")
+                 return format_response({
+                     "parameters": { # Include parameters in the response
+                          "season": season, "season_type": season_type, "per_mode": per_mode,
+                          "player_name": player_name, "team_id": team_id, "league_id": league_id,
+                          "date_from": date_from, "date_to": date_to
+                      },
+                     "hustle_stats": []
+                 })
+
+        # Limit the number of players returned if no specific player or team is requested
+        if player_name is None and team_id is None:
+             logger.info(f"Limiting league-wide hustle stats to the top 200 players.")
+             hustle_df = hustle_df.head(200) # Limit to the first 200 rows
+
         # Process hustle stats using list comprehension
         hustle_stats = [
             {
@@ -567,7 +631,7 @@ def fetch_player_hustle_stats_logic(
                 }
             } for _, row in hustle_df.iterrows()
         ] if not hustle_df.empty else []
-        
+
         result = {
             "parameters": {
                  "season": season, "season_type": season_type, "per_mode": per_mode,
@@ -576,7 +640,7 @@ def fetch_player_hustle_stats_logic(
              },
             "hustle_stats": hustle_stats
         }
-        
+
         logger.info(f"Successfully fetched hustle stats for {len(hustle_stats)} players")
         return format_response(result)
         
@@ -653,17 +717,9 @@ def fetch_player_profile_logic(player_name: str, per_mode: str = PerModeDetailed
             "next_game": next_game or {},
             "career_totals": {
                 "regular_season": career_totals_regular_season or {},
-                "post_season": career_totals_post_season or {},
-                "all_star": career_totals_allstar_season or {},
-                "preseason": career_totals_preseason or {},
-                "college": career_totals_college_season or {}
             },
             "season_totals": {
                 "regular_season": season_totals_regular_season or [],
-                "post_season": season_totals_post_season or [],
-                "all_star": season_totals_allstar_season or [],
-                "preseason": season_totals_preseason or [],
-                "college": season_totals_college_season or []
             }
         })
     except Exception as e:

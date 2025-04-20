@@ -84,7 +84,7 @@ class Errors:
     LEAGUE_LEADERS_UNEXPECTED = "Unexpected error processing league leaders request for {stat}, season {season}: {error}"
     
     # General validation errors
-    INVALID_SEASON_FORMAT = "Invalid season format: {season}. Expected YYYY-YY."
+    INVALID_SEASON_FORMAT = "Invalid season format: {season}. Expected YYYY-YY or YYYY."
     INVALID_PLAYER_OR_TEAM = "Invalid player_or_team value. Must be 'P' for Player or 'T' for Team."
     MISSING_PLAYER_ID = "player_id is required when player_or_team='P'."
     MISSING_TEAM_ID = "team_id is required when player_or_team='T'."
@@ -104,3 +104,7 @@ class Errors:
     INVALID_RANK = "Invalid rank parameter. Must be 'Y' or 'N'"
     INVALID_SHOT_CLOCK_RANGE = "Invalid shot clock range. Must be one of: 24-22, 22-18 Very Early, 18-15 Early, 15-7 Average, 7-4 Late, 4-0 Very Late, ShotClock Off"
     INVALID_GAME_SEGMENT = "Invalid game segment. Must be one of: First Half, Overtime, Second Half"
+
+# Synergy stats-related errors
+    INVALID_PLAY_TYPE = "Invalid play type provided: {play_type}. Must be one of: Cut, Handoff, Isolation, Misc, OffScreen, Postup, PRBallHandler, PRRollman, OffRebound, Spotup, Transition"
+    INVALID_TYPE_GROUPING = "Invalid type grouping provided: {type_grouping}. Must be one of: offensive, defensive"

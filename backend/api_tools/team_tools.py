@@ -477,6 +477,11 @@ def fetch_team_lineups_logic(
         if lineups_df.empty:
             logger.error(f"No lineup stats found for given parameters")
             return format_response(error="No lineup statistics available for the specified filters")
+
+        # If no specific team is requested, limit the number of lineups returned
+        if team_id is None:
+             logger.info(f"Limiting league-wide lineup stats to the top 200 lineups.")
+             lineups_df = lineups_df.head(200) # Limit to the first 200 rows
         
         # Process lineup statistics
         lineup_stats = []

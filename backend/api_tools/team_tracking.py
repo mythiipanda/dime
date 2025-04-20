@@ -1,5 +1,6 @@
 import logging
 import json
+import pandas as pd
 from typing import Dict, List, Optional, TypedDict, Union
 
 from nba_api.stats.endpoints import (
@@ -228,21 +229,35 @@ def fetch_team_rebounding_stats_logic(
             timeout=DEFAULT_TIMEOUT
         )
 
-        overall = _process_dataframe(reb_stats.overall_rebounding.get_data_frame(), single_row=True)
-        shot_type = _process_dataframe(reb_stats.shot_type_rebounding.get_data_frame(), single_row=False)
-        contested = _process_dataframe(reb_stats.num_contested_rebounding.get_data_frame(), single_row=False)
-        distances = _process_dataframe(reb_stats.shot_distance_rebounding.get_data_frame(), single_row=False)
-        reb_dist = _process_dataframe(reb_stats.reb_distance_rebounding.get_data_frame(), single_row=False)
+        overall_df = reb_stats.overall_rebounding.get_data_frame()
+        shot_type_df = reb_stats.shot_type_rebounding.get_data_frame()
+        contested_df = reb_stats.num_contested_rebounding.get_data_frame()
+        distances_df = reb_stats.shot_distance_rebounding.get_data_frame()
+        reb_dist_df = reb_stats.reb_distance_rebounding.get_data_frame()
 
-        if not all([overall, shot_type, contested, distances, reb_dist]):
-            return format_response(error=Errors.DATA_PROCESSING_ERROR)
+        overall = _process_dataframe(overall_df, single_row=True)
 
-        processed_overall = {
-            "total": overall.get("REB", 0), "contested": overall.get("C_REB", 0),
-            "uncontested": overall.get("UC_REB", 0), "offensive": overall.get("OREB", 0),
-            "defensive": overall.get("DREB", 0), "frequency": overall.get("REB_FREQUENCY", 0),
-            "pct_contested": overall.get("C_REB_PCT", 0)
-        } if overall else {}
+        # Select essential columns for team rebounding splits
+        split_cols = [
+            'TEAM_ID', 'TEAM_NAME', 'TEAM_ABBREVIATION', 'GP', 'MIN',
+            'REB', 'OREB', 'DREB', 'C_REB', 'UC_REB', 'REB_PCT', 'C_REB_PCT',
+            'UC_REB_PCT', 'REB_FREQUENCY', 'REB_DISTANCE' # Common rebounding stats
+        ]
+
+        # Specific columns for each split
+        shot_type_cols = split_cols + ['SHOT_TYPE']
+        contested_cols = split_cols + ['CONTEST_TYPE']
+        shot_distance_cols = split_cols + ['SHOT_DISTANCE_RANGE']
+        reb_distance_cols = split_cols + ['REB_DISTANCE_RANGE']
+
+        shot_type = _process_dataframe(shot_type_df.loc[:, [col for col in shot_type_cols if col in shot_type_df.columns]] if not shot_type_df.empty else shot_type_df, single_row=False)
+        contested = _process_dataframe(contested_df.loc[:, [col for col in contested_cols if col in contested_df.columns]] if not contested_df.empty else contested_df, single_row=False)
+        distances = _process_dataframe(distances_df.loc[:, [col for col in shot_distance_cols if col in distances_df.columns]] if not distances_df.empty else distances_df, single_row=False)
+        reb_dist = _process_dataframe(reb_dist_df.loc[:, [col for col in reb_distance_cols if col in reb_dist_df.columns]] if not reb_dist_df.empty else reb_dist_df, single_row=False)
+
+        if not overall: # Check if at least overall stats are available
+             logger.warning(f"No overall rebounding stats found for team {team_name} with given filters.")
+             # Allow returning partial data if other splits exist
 
         result = _create_team_tracking_result(
             team_id,
@@ -254,14 +269,19 @@ def fetch_team_rebounding_stats_logic(
                 "opponent_team_id": opponent_team_id,
                 "date_from": date_from,
                 "date_to": date_to,
-                "overall": processed_overall,
+                "overall": {
+                    "total": overall.get("REB", 0), "contested": overall.get("C_REB", 0),
+                    "uncontested": overall.get("UC_REB", 0), "offensive": overall.get("OREB", 0),
+                    "defensive": overall.get("DREB", 0), "frequency": overall.get("REB_FREQUENCY", 0),
+                    "pct_contested": overall.get("C_REB_PCT", 0)
+                } if overall else {}, # Ensure overall is an empty dict if None
                 "by_shot_type": shot_type or [],
                 "by_contest": contested or [],
                 "by_shot_distance": distances or [],
                 "by_rebound_distance": reb_dist or []
             }
         )
-        
+
         return format_response(result)
 
     except Exception as e:
@@ -319,31 +339,43 @@ def fetch_team_shooting_stats_logic(
             timeout=DEFAULT_TIMEOUT
         )
 
-        overall = _process_dataframe(shot_stats.overall.get_data_frame(), single_row=True)
-        general = _process_dataframe(shot_stats.general_shooting.get_data_frame(), single_row=False)
-        shot_clock = _process_dataframe(shot_stats.shot_clock_shooting.get_data_frame(), single_row=False)
-        dribbles = _process_dataframe(shot_stats.dribble_shooting.get_data_frame(), single_row=False)
-        defender = _process_dataframe(shot_stats.closest_defender_shooting.get_data_frame(), single_row=False)
-        touch_time = _process_dataframe(shot_stats.touch_time_shooting.get_data_frame(), single_row=False)
+        # Use general_shooting as overall stats
+        general_df = shot_stats.general_shooting.get_data_frame()
+        shot_clock_df = shot_stats.shot_clock_shooting.get_data_frame()
+        dribbles_df = shot_stats.dribble_shooting.get_data_frame()
+        defender_df = shot_stats.closest_defender_shooting.get_data_frame()
+        touch_time_df = shot_stats.touch_time_shooting.get_data_frame()
 
-        if not all([overall, general, shot_clock, dribbles, defender, touch_time]):
-            return format_response(error=Errors.DATA_PROCESSING_ERROR)
+        # Get overall stats from general_shooting (first row contains overall)
+        overall = _process_dataframe(general_df.head(1) if not general_df.empty else general_df, single_row=True)
+        # Process remaining general shooting stats (excluding first row)
+        general = _process_dataframe(general_df.iloc[1:] if len(general_df) > 1 else general_df, single_row=False)
 
-        processed_overall = {
-            "fga_frequency": overall.get("FGA_FREQUENCY", 0), "fgm": overall.get("FGM", 0),
-            "fga": overall.get("FGA", 0), "fg_pct": overall.get("FG_PCT", 0),
-            "efg_pct": overall.get("EFG_PCT", 0), "fg2_pct": overall.get("FG2_PCT", 0),
-            "fg3_pct": overall.get("FG3_PCT", 0)
-        } if overall else {}
-        
-        # Use dictionary comprehension for general shooting stats
-        processed_general = {
-            data.get("SHOT_TYPE", "unknown").lower().replace(" ", "_"): {
-                "fga_frequency": data.get("FGA_FREQUENCY", 0), "fgm": data.get("FGM", 0),
-                "fga": data.get("FGA", 0), "fg_pct": data.get("FG_PCT", 0),
-                "efg_pct": data.get("EFG_PCT", 0)
-            } for data in general
-        } if general else {}
+        # Select essential columns for team shooting splits
+        split_cols = [
+            'TEAM_ID', 'TEAM_NAME', 'TEAM_ABBREVIATION', 'GP', 'MIN',
+            'FGM', 'FGA', 'FG_PCT', 'FG3M', 'FG3A', 'FG3_PCT', 'EFG_PCT' # Common shooting stats
+        ]
+
+        # Specific columns for each split
+        general_cols = split_cols + ['SHOT_TYPE']
+        shot_clock_cols = split_cols + ['SHOT_CLOCK_RANGE']
+        dribbles_cols = split_cols + ['DRIBBLE_RANGE']
+        touch_time_cols = split_cols + ['TOUCH_TIME_RANGE']
+        defender_cols = split_cols + ['CLOSE_DEF_DIST_RANGE']
+
+        # Process each split with selected columns
+        general = _process_dataframe(general_df.loc[1:, [col for col in general_cols if col in general_df.columns]] if len(general_df) > 1 else pd.DataFrame(), single_row=False)
+        shot_clock = _process_dataframe(shot_clock_df.loc[:, [col for col in shot_clock_cols if col in shot_clock_df.columns]] if not shot_clock_df.empty else shot_clock_df, single_row=False)
+        shot_clock = _process_dataframe(shot_clock_df.loc[:, [col for col in shot_clock_cols if col in shot_clock_df.columns]] if not shot_clock_df.empty else shot_clock_df, single_row=False)
+        dribbles = _process_dataframe(dribbles_df.loc[:, [col for col in dribbles_cols if col in dribbles_df.columns]] if not dribbles_df.empty else dribbles_df, single_row=False)
+        defender = _process_dataframe(defender_df.loc[:, [col for col in defender_cols if col in defender_df.columns]] if not defender_df.empty else defender_df, single_row=False)
+        touch_time = _process_dataframe(touch_time_df.loc[:, [col for col in touch_time_cols if col in touch_time_df.columns]] if not touch_time_df.empty else touch_time_df, single_row=False)
+
+
+        if not overall: # Check if at least overall stats are available
+             logger.warning(f"No overall shooting stats found for team {team_name} with given filters.")
+             # Allow returning partial data if other splits exist
 
         result = _create_team_tracking_result(
             team_id,
@@ -355,12 +387,17 @@ def fetch_team_shooting_stats_logic(
                 "opponent_team_id": opponent_team_id,
                 "date_from": date_from,
                 "date_to": date_to,
-                "overall": processed_overall,
-                "general_shooting": processed_general,
-                "by_shot_clock": shot_clock,
-                "by_dribble": dribbles,
-                "by_defender_distance": defender,
-                "by_touch_time": touch_time
+                "overall": {
+                    "fga_frequency": overall.get("FGA_FREQUENCY", 0), "fgm": overall.get("FGM", 0),
+                    "fga": overall.get("FGA", 0), "fg_pct": overall.get("FG_PCT", 0),
+                    "efg_pct": overall.get("EFG_PCT", 0), "fg2_pct": overall.get("FG2_PCT", 0),
+                    "fg3_pct": overall.get("FG3_PCT", 0)
+                } if overall else {}, # Ensure overall is an empty dict if None
+                "general_shooting": general or [],
+                "by_shot_clock": shot_clock or [],
+                "by_dribble": dribbles or [],
+                "by_defender_distance": defender or [],
+                "by_touch_time": touch_time or []
             }
         )
 

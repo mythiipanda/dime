@@ -11,7 +11,7 @@ from nba_api.stats.library.parameters import LeagueID, SeasonType, PerMode48, Sc
 from datetime import datetime # Import datetime for default date
 
 from backend.api_tools.utils import _process_dataframe, format_response
-from backend.config import DEFAULT_TIMEOUT, Errors, CURRENT_SEASON
+from ..config import DEFAULT_TIMEOUT, Errors, CURRENT_SEASON
 
 logger = logging.getLogger(__name__)
 
@@ -134,9 +134,30 @@ def fetch_scoreboard_logic(
             logger.error(f"nba_api scoreboardv2 failed for Date {game_date}: {api_error}", exc_info=True)
             return format_response(error=Errors.SCOREBOARD_API.format(date=game_date, error=str(api_error)))
 
-        # Extract key dataframes, simplify output
-        game_header = _process_dataframe(scoreboard_endpoint.game_header.get_data_frame(), single_row=False)
-        line_score = _process_dataframe(scoreboard_endpoint.line_score.get_data_frame(), single_row=False)
+        # Extract key dataframes, select essential columns, and simplify output
+        game_header_df = scoreboard_endpoint.game_header.get_data_frame()
+        line_score_df = scoreboard_endpoint.line_score.get_data_frame()
+
+        # Select essential columns for game_header that exist in the dataframe
+        game_header_cols = [
+            'GAME_ID', 'GAME_DATE_EST', 'GAME_SEQUENCE', 'GAME_STATUS_ID',
+            'GAME_STATUS_TEXT', 'GAME_CODE', 'HOME_TEAM_ID', 'VISITOR_TEAM_ID',
+            'SEASON', 'LIVE_PC_TIME', 'NATL_TV_BROADCASTER_ABBREVIATION',
+            'LIVE_PERIOD', 'LIVE_PERIOD_TIME_BPT'
+        ]
+        available_game_header_cols = [col for col in game_header_cols if col in game_header_df.columns]
+        game_header = _process_dataframe(game_header_df.loc[:, available_game_header_cols] if not game_header_df.empty else game_header_df, single_row=False)
+
+        # Select essential columns for line_score that exist in the dataframe
+        line_score_cols = [
+            'GAME_ID', 'TEAM_ID', 'TEAM_ABBREVIATION', 'TEAM_CITY_NAME', 'TEAM_NAME',
+            'PTS_QTR1', 'PTS_QTR2', 'PTS_QTR3', 'PTS_QTR4',
+            'PTS_OT1', 'PTS_OT2', 'PTS_OT3', 'PTS_OT4', 'PTS_OT5',
+            'PTS_OT6', 'PTS_OT7', 'PTS_OT8', 'PTS_OT9', 'PTS_OT10', 'PTS'
+        ]
+        available_line_score_cols = [col for col in line_score_cols if col in line_score_df.columns]
+        line_score = _process_dataframe(line_score_df.loc[:, available_line_score_cols] if not line_score_df.empty else line_score_df, single_row=False)
+
         # Optional: Add more dataframes if needed (e.g., series_standings, last_meeting)
         # east_conf_standings = _process_dataframe(scoreboard_endpoint.east_conf_standings_by_day.get_data_frame(), single_row=False)
         # west_conf_standings = _process_dataframe(scoreboard_endpoint.west_conf_standings_by_day.get_data_frame(), single_row=False)

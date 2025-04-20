@@ -7,8 +7,8 @@ from nba_api.stats.static import players, teams
 from nba_api.stats.library.parameters import SeasonTypeAllStar, LeagueIDNullable
 from fuzzywuzzy import fuzz
 
-from config import DEFAULT_PLAYER_SEARCH_LIMIT, MIN_PLAYER_SEARCH_LENGTH, DEFAULT_TIMEOUT, MAX_SEARCH_RESULTS, Errors
-from api_tools.utils import _process_dataframe, format_response
+from ..config import DEFAULT_PLAYER_SEARCH_LIMIT, MIN_PLAYER_SEARCH_LENGTH, DEFAULT_TIMEOUT, MAX_SEARCH_RESULTS, Errors
+from .utils import _process_dataframe, format_response
 
 logger = logging.getLogger(__name__)
 
@@ -224,12 +224,20 @@ def search_games_logic(
                  else:
                      logger.warning("Could not get abbreviations for matchup filtering.")
 
+            # Select essential columns for game search results
+            essential_cols = [
+                'GAME_ID', 'GAME_DATE_EST', 'MATCHUP', 'WL', 'PTS', 'FG_PCT',
+                'FT_PCT', 'FG3_PCT', 'AST', 'REB', 'TOV', 'STL', 'BLK'
+            ]
+            # Ensure all essential columns exist in the DataFrame before selecting
+            available_cols = [col for col in essential_cols if col in games_df.columns]
+            games_df_selected = games_df.loc[:, available_cols]
 
-            games_list = _process_dataframe(games_df, single_row=False)
+            games_list = _process_dataframe(games_df_selected, single_row=False)
 
         # Sort by date and limit results
         if games_list:
-            games_list.sort(key=lambda x: x.get("GAME_DATE", ""), reverse=True)
+            games_list.sort(key=lambda x: x.get("GAME_DATE_EST", ""), reverse=True) # Use GAME_DATE_EST for sorting
             games_list = games_list[:limit]
 
         result = {

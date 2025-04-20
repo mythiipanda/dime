@@ -85,6 +85,13 @@ class Errors:
     SHOTCHART_API = "API error fetching shot chart for game {game_id}: {error}"
     GAME_UNEXPECTED = "Unexpected error fetching data for game {game_id}: {error}"
 
+    # Synergy Errors
+    SYNERGY_API = "API error fetching synergy play types: {error}"
+    SYNERGY_PROCESSING = "Failed to process synergy play types data."
+    SYNERGY_UNEXPECTED = "Unexpected error fetching synergy play types: {error}"
+    INVALID_PLAY_TYPE = "Invalid play type: '{play_type}'."
+    INVALID_TYPE_GROUPING = "Invalid type grouping: '{type_grouping}'."
+
     # League Errors
     LEAGUE_STANDINGS_API = "API error fetching league standings for season {season}: {error}"
     LEAGUE_STANDINGS_PROCESSING = "Failed to process league standings for season {season}."
@@ -97,6 +104,20 @@ class Errors:
     LEAGUE_LEADERS_UNEXPECTED = "Unexpected error fetching league leaders for {stat} (Season: {season}): {error}"
     LEAGUE_GAMES_API = "API error fetching league games: {error}"
     LEAGUE_GAMES_UNEXPECTED = "Unexpected error fetching league games: {error}"
+
+    # Synergy Stats Errors
+    INVALID_PLAYER_TEAM = "Invalid player_or_team value: {value}. Must be one of: {valid_values}"
+    SYNERGY_API = "Error fetching synergy play types data: {error}"
+
+    # Trending Stats Errors
+    INVALID_TOP_N = "Invalid top_n parameter: must be a positive integer, got {value}"
+
+    # Matchup Errors
+    MISSING_PLAYER_ID = "Player ID cannot be empty"
+    MISSING_SEASON = "Season cannot be empty"
+    INVALID_PLAYER_ID = "Invalid player ID format: '{id}'"
+    MATCHUPS_API = "Error fetching matchup data: {error}"
+    MATCHUPS_ROLLUP_API = "Error fetching matchup rollup data: {error}"
 
 # Load environment variables
 dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
@@ -154,9 +175,4 @@ CORS_ALLOWED_ORIGINS = [
 if not GOOGLE_API_KEY:
     print("Warning: GOOGLE_API_KEY not found in environment variables. AI features may not work.")
 
-# Player Profile Errors (New)
-PLAYER_PROFILE_API = "API error fetching player profile for {name}: {error}"
-PLAYER_PROFILE_PROCESSING = "Failed to process essential profile data for {name}"
-PLAYER_PROFILE_UNEXPECTED = "Unexpected error fetching player profile for {name}: {error}"
-
-# Team Errors
+# Validation for environment variables

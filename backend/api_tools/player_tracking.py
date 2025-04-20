@@ -137,15 +137,36 @@ def fetch_player_rebounding_stats_logic(
             timeout=DEFAULT_TIMEOUT
         )
         
-        overall = _process_dataframe(reb_stats.overall_rebounding.get_data_frame(), single_row=True)
-        shot_type = _process_dataframe(reb_stats.shot_type_rebounding.get_data_frame(), single_row=False)
-        contested = _process_dataframe(reb_stats.num_contested_rebounding.get_data_frame(), single_row=False)
-        distances = _process_dataframe(reb_stats.shot_distance_rebounding.get_data_frame(), single_row=False)
-        reb_dist = _process_dataframe(reb_stats.reb_distance_rebounding.get_data_frame(), single_row=False)
-        
-        if not all([overall, shot_type, contested, distances, reb_dist]):
-            return format_response(error=Errors.DATA_PROCESSING_ERROR)
-            
+        overall_df = reb_stats.overall_rebounding.get_data_frame()
+        shot_type_df = reb_stats.shot_type_rebounding.get_data_frame()
+        contested_df = reb_stats.num_contested_rebounding.get_data_frame()
+        distances_df = reb_stats.shot_distance_rebounding.get_data_frame()
+        reb_dist_df = reb_stats.reb_distance_rebounding.get_data_frame()
+
+        overall = _process_dataframe(overall_df, single_row=True)
+
+        # Select essential columns for rebounding splits
+        split_cols = [
+            'PLAYER_ID', 'PLAYER_NAME', 'TEAM_ID', 'TEAM_ABBREVIATION', 'GP', 'MIN',
+            'REB', 'OREB', 'DREB', 'C_REB', 'UC_REB', 'REB_PCT', 'C_REB_PCT',
+            'UC_REB_PCT', 'REB_FREQUENCY', 'REB_DISTANCE' # Common rebounding stats
+        ]
+
+        # Specific columns for each split
+        shot_type_cols = split_cols + ['SHOT_TYPE']
+        contested_cols = split_cols + ['CONTEST_TYPE']
+        shot_distance_cols = split_cols + ['SHOT_DISTANCE_RANGE']
+        reb_distance_cols = split_cols + ['REB_DISTANCE_RANGE']
+
+        shot_type = _process_dataframe(shot_type_df.loc[:, [col for col in shot_type_cols if col in shot_type_df.columns]] if not shot_type_df.empty else shot_type_df, single_row=False)
+        contested = _process_dataframe(contested_df.loc[:, [col for col in contested_cols if col in contested_df.columns]] if not contested_df.empty else contested_df, single_row=False)
+        distances = _process_dataframe(distances_df.loc[:, [col for col in shot_distance_cols if col in distances_df.columns]] if not distances_df.empty else distances_df, single_row=False)
+        reb_dist = _process_dataframe(reb_dist_df.loc[:, [col for col in reb_distance_cols if col in reb_dist_df.columns]] if not reb_dist_df.empty else reb_dist_df, single_row=False)
+
+        if not overall: # Check if at least overall stats are available
+             logger.warning(f"No overall rebounding stats found for player {player_name} with given filters.")
+             # Allow returning partial data if other splits exist
+
         result = {
             "overall": {
                 "total": overall.get("REB", 0),
@@ -154,18 +175,18 @@ def fetch_player_rebounding_stats_logic(
                 "contested": overall.get("C_REB", 0),
                 "uncontested": overall.get("UC_REB", 0),
                 "contested_pct": overall.get("C_REB_PCT", 0)
-            },
-            "by_shot_type": shot_type,
-            "by_contest": contested,
-            "by_shot_distance": distances,
-            "by_rebound_distance": reb_dist,
+            } if overall else {}, # Ensure overall is an empty dict if None
+            "by_shot_type": shot_type or [],
+            "by_contest": contested or [],
+            "by_shot_distance": distances or [],
+            "by_rebound_distance": reb_dist or [],
             "parameters": {
                 "season": season,
                 "season_type": season_type,
                 "per_mode": per_mode
             }
         }
-        
+
         return format_response(result)
         
     except Exception as e:
@@ -340,12 +361,34 @@ def fetch_player_shots_tracking_logic(
         )
         
         # Process different shooting splits
-        general = _process_dataframe(shooting_stats.general_shooting.get_data_frame(), single_row=False)
-        shot_clock = _process_dataframe(shooting_stats.shot_clock_shooting.get_data_frame(), single_row=False)
-        dribbles = _process_dataframe(shooting_stats.dribble_shooting.get_data_frame(), single_row=False)
-        touch_time = _process_dataframe(shooting_stats.touch_time_shooting.get_data_frame(), single_row=False)
-        defender_dist = _process_dataframe(shooting_stats.closest_defender_shooting.get_data_frame(), single_row=False)
-        defender_dist_10ft = _process_dataframe(shooting_stats.closest_defender_10ft_plus_shooting.get_data_frame(), single_row=False)
+        general_df = shooting_stats.general_shooting.get_data_frame()
+        shot_clock_df = shooting_stats.shot_clock_shooting.get_data_frame()
+        dribbles_df = shooting_stats.dribble_shooting.get_data_frame()
+        touch_time_df = shooting_stats.touch_time_shooting.get_data_frame()
+        defender_dist_df = shooting_stats.closest_defender_shooting.get_data_frame()
+        defender_dist_10ft_df = shooting_stats.closest_defender_10ft_plus_shooting.get_data_frame()
+
+        # Select essential columns for shooting splits
+        split_cols = [
+            'PLAYER_ID', 'PLAYER_NAME', 'TEAM_ID', 'TEAM_ABBREVIATION', 'GP', 'MIN',
+            'FGM', 'FGA', 'FG_PCT', 'FG3M', 'FG3A', 'FG3_PCT', 'EFG_PCT' # Common shooting stats
+        ]
+
+        # Specific columns for each split
+        general_cols = split_cols # General shooting doesn't add specific identifier columns
+        shot_clock_cols = split_cols + ['SHOT_CLOCK_RANGE']
+        dribbles_cols = split_cols + ['DRIBBLE_RANGE']
+        touch_time_cols = split_cols + ['TOUCH_TIME_RANGE']
+        defender_dist_cols = split_cols + ['CLOSE_DEF_DIST_RANGE']
+        defender_dist_10ft_cols = split_cols + ['CLOSE_DEF_DIST_RANGE'] # Same identifier column
+
+        general = _process_dataframe(general_df.loc[:, [col for col in general_cols if col in general_df.columns]] if not general_df.empty else general_df, single_row=False)
+        shot_clock = _process_dataframe(shot_clock_df.loc[:, [col for col in shot_clock_cols if col in shot_clock_df.columns]] if not shot_clock_df.empty else shot_clock_df, single_row=False)
+        dribbles = _process_dataframe(dribbles_df.loc[:, [col for col in dribbles_cols if col in dribbles_df.columns]] if not dribbles_df.empty else dribbles_df, single_row=False)
+        touch_time = _process_dataframe(touch_time_df.loc[:, [col for col in touch_time_cols if col in touch_time_df.columns]] if not touch_time_df.empty else touch_time_df, single_row=False)
+        defender_dist = _process_dataframe(defender_dist_df.loc[:, [col for col in defender_dist_cols if col in defender_dist_df.columns]] if not defender_dist_df.empty else defender_dist_df, single_row=False)
+        defender_dist_10ft = _process_dataframe(defender_dist_10ft_df.loc[:, [col for col in defender_dist_10ft_cols if col in defender_dist_10ft_df.columns]] if not defender_dist_10ft_df.empty else defender_dist_10ft_df, single_row=False)
+
 
         if not general: # Check if at least general stats are available
              logger.warning(f"No general shooting stats found for player {player_id} with given filters.")

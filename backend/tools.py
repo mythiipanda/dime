@@ -496,7 +496,6 @@ def get_team_shooting_stats(
     return result
 
 @tool
-@tool
 def get_team_lineups(
     team_id: Optional[int] = None,
     season: str = CURRENT_SEASON,

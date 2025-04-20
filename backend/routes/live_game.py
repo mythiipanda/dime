@@ -39,8 +39,7 @@ async def websocket_scoreboard_endpoint(websocket: WebSocket):
     """Provides live scoreboard updates via WebSocket."""
     await websocket.accept()
     logger.info(f"WebSocket connection accepted for scoreboard from {websocket.client.host}:{websocket.client.port}")
-    
-    await asyncio.sleep(0.1) # Keep delay
+    await asyncio.sleep(0.1)  # Give browser time to finish handshake
     
     try:
         # --- Remove initial simple message --- 
@@ -56,27 +55,54 @@ async def websocket_scoreboard_endpoint(websocket: WebSocket):
         # --- End removed initial message --- 
         
         # --- Restore the update loop --- 
-        while True:
-            try:
-                scoreboard_data_str = fetch_league_scoreboard_logic()
-                
-                logger.debug(f"Attempting to send data to {websocket.client.host}:{websocket.client.port} (length: {len(scoreboard_data_str)}): {scoreboard_data_str[:500]}...")
-                
+        last_ping = asyncio.get_event_loop().time()
+        stop_event = asyncio.Event()
+
+        async def send_scoreboard():
+            while not stop_event.is_set():
                 try:
+                    scoreboard_data_str = fetch_league_scoreboard_logic()
+                    logger.debug(f"Attempting to send data to {websocket.client.host}:{websocket.client.port} (length: {len(scoreboard_data_str)}): {scoreboard_data_str[:500]}...")
                     await websocket.send_text(scoreboard_data_str)
                     logger.debug(f"Successfully sent scoreboard update to {websocket.client.host}:{websocket.client.port}")
                 except Exception as send_error:
                     logger.error(f"*** Error DURING send_text to {websocket.client.host}:{websocket.client.port}: {send_error}", exc_info=True)
-                    break 
-                
+                    stop_event.set()
+                    break
                 await asyncio.sleep(3)
-                
-            except (WebSocketDisconnect, RuntimeError) as e:
-                logger.info(f"Client {websocket.client.host}:{websocket.client.port} disconnected ({type(e).__name__}). Stopping updates for this client.")
-                break 
-            except Exception as e:
-                logger.error(f"Error during WebSocket update loop for {websocket.client.host}:{websocket.client.port}: {str(e)}", exc_info=True)
-                await asyncio.sleep(10)
+
+        async def ping_watcher():
+            nonlocal last_ping
+            while not stop_event.is_set():
+                await asyncio.sleep(5)
+                if asyncio.get_event_loop().time() - last_ping > 40:
+                    logger.info(f"No ping or message from client {websocket.client.host}:{websocket.client.port} in 40s, closing connection.")
+                    stop_event.set()
+                    logger.info(f"Closing WebSocket for scoreboard from {websocket.client.host}:{websocket.client.port}")
+                    await websocket.close()
+                    break
+
+        scoreboard_task = asyncio.create_task(send_scoreboard())
+        ping_task = asyncio.create_task(ping_watcher())
+        try:
+            while not stop_event.is_set():
+                try:
+                    msg = await websocket.receive_text()
+                    if msg.strip() == '{"type": "ping"}':
+                        last_ping = asyncio.get_event_loop().time()
+                        continue
+                    # Optionally handle other message types here
+                except WebSocketDisconnect:
+                    logger.info(f"Client {websocket.client.host}:{websocket.client.port} disconnected (WebSocketDisconnect). Stopping updates for this client.")
+                    stop_event.set()
+                    break
+                except Exception as e:
+                    logger.error(f"Error during WebSocket receive for {websocket.client.host}:{websocket.client.port}: {str(e)}", exc_info=True)
+                    stop_event.set()
+                    break
+        finally:
+            scoreboard_task.cancel()
+            ping_task.cancel()
         # --- End restored loop --- 
         
         # --- Remove keep alive loop --- 

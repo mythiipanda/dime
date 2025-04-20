@@ -199,13 +199,12 @@ def _fetch_historical_playbyplay_logic(game_id: str, start_period: int = 0, end_
                 if period not in periods: periods[period] = []
                 play = {
                     "event_num": row.get("EVENTNUM"),
-                    "clock": row.get("PCTIMESTRING", ""), 
+                    "clock": row.get("PCTIMESTRING", ""),
                     "score": row.get("SCORE"),
-                    "margin": row.get("SCOREMARGIN"), 
                     "team": _determine_play_team(row),
                     "home_description": row.get("HOMEDESCRIPTION"),
                     "away_description": row.get("VISITORDESCRIPTION"),
-                    "neutral_description": row.get("NEUTRALDESCRIPTION"), 
+                    "neutral_description": row.get("NEUTRALDESCRIPTION"),
                     "event_type": _get_event_type(row.get("EVENTMSGTYPE"))
                 }
                 if (start_period == 0 and end_period == 0) or (start_period <= period <= end_period):
@@ -264,13 +263,10 @@ def _fetch_live_playbyplay_logic(game_id: str) -> Dict[str, Any]:
 
             play = {
                 "event_num": action.get("actionNumber"),
-                "clock": clock_formatted, 
+                "clock": clock_formatted,
                 "score": score_str,
-                "margin": None, # Live endpoint doesn't provide margin
-                "team": team_str, 
-                "home_description": None, # Live endpoint has one description
-                "away_description": None,
-                "neutral_description": action.get("description"), 
+                "team": team_str,
+                "neutral_description": action.get("description"),
                 # Live mapping needs refinement based on actionType/subType values
                 "event_type": f"{action.get('actionType', '').upper()}_{action.get('subType', '').upper()}"
             }
@@ -481,19 +477,38 @@ def fetch_league_games_logic(
         )
         
         games_df = game_finder.league_game_finder_results.get_data_frame()
-        
+
+        if games_df.empty:
+            logger.warning("No league games found for the specified filters.")
+            return format_response({"games": []})
+
+        # Select essential columns for game results
+        essential_cols = [
+            'GAME_ID', 'GAME_DATE_EST', 'MATCHUP', 'WL', 'PTS', 'FG_PCT',
+            'FT_PCT', 'FG3_PCT', 'AST', 'REB', 'TOV', 'STL', 'BLK'
+        ]
+        # Ensure all essential columns exist in the DataFrame before selecting
+        available_cols = [col for col in essential_cols if col in games_df.columns]
+        games_df_selected = games_df.loc[:, available_cols]
+
+        # If no specific filters are applied, limit the number of games returned
+        if all(param is None for param in [player_id_nullable, team_id_nullable, season_nullable, season_type_nullable, date_from_nullable, date_to_nullable]):
+             logger.info(f"Limiting league-wide game list to the top 200 games.")
+             games_df_selected = games_df_selected.head(200) # Limit to the first 200 rows
+
         # Convert dataframe to list of dicts
-        games_list = games_df.to_dict(orient='records') if not games_df.empty else []
-        
-        # Format dates for better readability if needed
+        games_list = games_df_selected.to_dict(orient='records')
+
+        # Format dates for better readability if needed (using GAME_DATE_EST which is already datetime-like)
         for game in games_list:
-            if 'GAME_DATE' in game and isinstance(game['GAME_DATE'], str):
+            if 'GAME_DATE_EST' in game and isinstance(game['GAME_DATE_EST'], str):
                 try:
                     # Attempt to parse and reformat date
-                    parsed_date = datetime.strptime(game['GAME_DATE'], '%Y-%m-%dT%H:%M:%S')
+                    # Assuming GAME_DATE_EST is in a format like 'YYYY-MM-DDTHH:MM:SS'
+                    parsed_date = datetime.fromisoformat(game['GAME_DATE_EST'].replace('Z', '+00:00')) # Handle potential 'Z' timezone
                     game['GAME_DATE_FORMATTED'] = parsed_date.strftime('%Y-%m-%d')
                 except ValueError:
-                    game['GAME_DATE_FORMATTED'] = game['GAME_DATE'] # Keep original if parsing fails
+                    game['GAME_DATE_FORMATTED'] = game['GAME_DATE_EST'] # Keep original if parsing fails
 
         result = {"games": games_list}
         logger.info(f"fetch_league_games_logic found {len(games_list)} games.")
@@ -537,13 +552,31 @@ def fetch_boxscore_advanced_logic(game_id: str, end_period: int = 0, end_range: 
         # Process player stats
         player_stats_df = boxscore_adv.player_stats.get_data_frame()
         logger.debug(f"Processing player stats dataframe for {game_id}")
-        player_stats = _process_dataframe(player_stats_df)
+        # Select essential columns for advanced player stats
+        player_advanced_cols = [
+            'personId', 'firstName', 'familyName', 'teamTricode', 'minutes',
+            'efficiency', 'assistPercentage', 'assistRatio', 'assistToTurnover',
+            'defensiveRating', 'effectiveFieldGoalPercentage', 'netRating',
+            'offensiveRating', 'pace', 'playerEfficiencyRating', 'possessions',
+            'trueShootingPercentage', 'turnoverRatio', 'usagePercentage'
+        ]
+        available_player_advanced_cols = [col for col in player_advanced_cols if col in player_stats_df.columns]
+        player_stats = _process_dataframe(player_stats_df.loc[:, available_player_advanced_cols] if not player_stats_df.empty else player_stats_df)
         logger.debug(f"Player stats processing complete for {game_id}")
         
         # Process team stats
         team_stats_df = boxscore_adv.team_stats.get_data_frame()
         logger.debug(f"Processing team stats dataframe for {game_id}")
-        team_stats = _process_dataframe(team_stats_df)
+        # Select essential columns for advanced team stats
+        team_advanced_cols = [
+            'teamId', 'teamCity', 'teamName', 'teamTricode', 'minutes',
+            'efficiency', 'assistPercentage', 'assistRatio', 'assistToTurnover',
+            'defensiveRating', 'effectiveFieldGoalPercentage', 'netRating',
+            'offensiveRating', 'pace', 'playerEfficiencyRating', 'possessions',
+            'trueShootingPercentage', 'turnoverRatio', 'usagePercentage'
+        ]
+        available_team_advanced_cols = [col for col in team_advanced_cols if col in team_stats_df.columns]
+        team_stats = _process_dataframe(team_stats_df.loc[:, available_team_advanced_cols] if not team_stats_df.empty else team_stats_df)
         logger.debug(f"Team stats processing complete for {game_id}")
 
         result = {
@@ -595,7 +628,21 @@ def fetch_boxscore_usage_logic(game_id: str) -> str:
         from nba_api.stats.endpoints.boxscoreusagev3 import BoxScoreUsageV3
         usage = BoxScoreUsageV3(game_id=game_id, timeout=DEFAULT_TIMEOUT)
         df = usage.player_stats.get_data_frame()
-        result = {"game_id": game_id, "usage_stats": df.to_dict('records') if not df.empty else []}
+
+        if df.empty:
+            logger.warning(f"No usage stats found for game {game_id}.")
+            return format_response({"game_id": game_id, "usage_stats": []})
+
+        # Select essential columns for usage stats
+        usage_cols = [
+            'personId', 'firstName', 'familyName', 'teamTricode', 'minutes',
+            'usagePercentage', 'teamPlayPercentage', 'playerPlayPercentage',
+            'playerFoulOutPercentage'
+        ]
+        available_usage_cols = [col for col in usage_cols if col in df.columns]
+        usage_stats = df.loc[:, available_usage_cols].to_dict('records')
+
+        result = {"game_id": game_id, "usage_stats": usage_stats}
         return format_response(result)
     except Exception as e:
         logger.error(f"Error fetching usage stats for {game_id}: {e}", exc_info=True)
@@ -609,7 +656,24 @@ def fetch_boxscore_defensive_logic(game_id: str) -> str:
         from nba_api.stats.endpoints.boxscoredefensivev2 import BoxScoreDefensiveV2
         dfend = BoxScoreDefensiveV2(game_id=game_id, timeout=DEFAULT_TIMEOUT)
         df = dfend.player_stats.get_data_frame()
-        result = {"game_id": game_id, "defensive_stats": df.to_dict('records') if not df.empty else []}
+
+        if df.empty:
+            logger.warning(f"No defensive stats found for game {game_id}.")
+            return format_response({"game_id": game_id, "defensive_stats": []})
+
+        # Select essential columns for defensive stats
+        defensive_cols = [
+            'personId', 'firstName', 'familyName', 'teamTricode', 'minutes',
+            'dreb', 'stl', 'blk', 'contestedShots', 'contestedShots2pt',
+            'contestedShots3pt', 'deflections', 'chargesDrawn', 'screenAssists',
+            'screenAssistPoints', 'looseBallsRecovered', 'looseBallsRecoveredOffensive',
+            'looseBallsRecoveredDefensive', 'boxOuts', 'boxOutsOffensive',
+            'boxOutsDefensive'
+        ]
+        available_defensive_cols = [col for col in defensive_cols if col in df.columns]
+        defensive_stats = df.loc[:, available_defensive_cols].to_dict('records')
+
+        result = {"game_id": game_id, "defensive_stats": defensive_stats}
         return format_response(result)
     except Exception as e:
         logger.error(f"Error fetching defensive stats for {game_id}: {e}", exc_info=True)
