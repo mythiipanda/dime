@@ -1,127 +1,68 @@
-"use client"
+"use client";
 
-// components/agent/InitialChatScreen.tsx
-// Removed unused Card components
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { 
-  BarChart3Icon, 
-  CalendarIcon, 
-  TrendingUpIcon,
-  UserIcon,
-  UsersIcon,
-  StarIcon,
-  TrophyIcon
-} from "lucide-react"
+import { Button } from "@/components/ui/button";
+import { Logo } from "@/components/layout/Logo";
+import { ZapIcon, AlertTriangleIcon, MessageSquareTextIcon } from "lucide-react"; // Example icons
+import { cn } from "@/lib/utils";
 
-const EXAMPLE_PROMPTS = [
-  {
-    category: "Player Analysis",
-    icon: <UserIcon className="h-4 w-4" />,
-    prompts: [
-      "Show me LeBron James's stats for this season",
-      "Compare Stephen Curry and Luka Doncic's shooting percentages",
-      "Who has the most triple-doubles this season?"
-    ]
-  },
-  {
-    category: "Team Performance",
-    icon: <UsersIcon className="h-4 w-4" />,
-    prompts: [
-      "Compare the Lakers and Celtics this season",
-      "Which team has the best defensive rating?",
-      "Show me the Nuggets' last 10 games"
-    ]
-  },
-  {
-    category: "Game Analysis",
-    icon: <BarChart3Icon className="h-4 w-4" />,
-    prompts: [
-      "What are the predictions for tonight's games?",
-      "Show me the box score from last night's Bucks game",
-      "What was the highest scoring game this season?"
-    ]
-  },
-  {
-    category: "League Leaders",
-    icon: <TrophyIcon className="h-4 w-4" />,
-    prompts: [
-      "Who are the top 5 scorers this season?",
-      "Show me the MVP race standings",
-      "Which team has the best record in the East?"
-    ]
-  }
-]
+const SIMPLE_EXAMPLE_PROMPTS = [
+  { text: "Compare LeBron James and Michael Jordan's career playoff stats.", icon: <MessageSquareTextIcon className="h-4 w-4 mr-2 shrink-0" /> },
+  { text: "What are the key strengths of the Denver Nuggets this season?", icon: <MessageSquareTextIcon className="h-4 w-4 mr-2 shrink-0" /> },
+  { text: "Generate a scouting report for Victor Wembanyama.", icon: <MessageSquareTextIcon className="h-4 w-4 mr-2 shrink-0" /> },
+  { text: "Which teams have the highest offensive rating in the last 10 games?", icon: <MessageSquareTextIcon className="h-4 w-4 mr-2 shrink-0" /> }
+];
 
 interface InitialChatScreenProps {
-  onExampleClick: (prompt: string) => void
+  onExampleClick: (prompt: string) => void;
 }
 
 export function InitialChatScreen({ onExampleClick }: InitialChatScreenProps) {
   return (
-    <div className="space-y-6">
-      {/* Welcome Section */}
-      <div className="text-center space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Welcome to Dime</h1> {/* Typography: font-semibold (Size 1) */}
-        <p className="text-muted-foreground">
-          Your AI-powered NBA research companion. Ask questions about players, teams, and games to get instant insights.
-        </p>
+    <div className={cn(
+      "flex flex-col items-center justify-center text-center space-y-6 sm:space-y-8 py-8 h-full",
+      "animate-in fade-in-0 duration-500"
+    )}>
+      <div className="animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-100">
+        <Logo iconSize={10} textSize="xl" /> {/* Removed iconOnly, textSize changed to "xl" */}
+        {/* <h1 className="text-4xl font-bold tracking-tight mt-2">Dime Assistant</h1> */}
       </div>
 
-      {/* Example Categories */}
-      <div className="grid gap-4 md:grid-cols-2">
-        {EXAMPLE_PROMPTS.map((category) => (
-          <Card key={category.category}>
-            <CardHeader className="space-y-1">
-              <CardTitle className="text-xl flex items-center gap-2"> {/* Typography: text-xl (Size 2) */}
-                {category.icon}
-                {category.category}
-              </CardTitle>
-              <CardDescription>
-                Click any example to start analyzing
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {category.prompts.map((prompt) => (
-                <Button
-                  key={prompt}
-                  variant="ghost"
-                  className="w-full justify-start text-sm"
-                  onClick={() => onExampleClick(prompt)}
-                >
-                  <StarIcon className="mr-2 h-3 w-3" />
-                  {prompt}
-                </Button>
-              ))}
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      <p className="text-base sm:text-lg text-muted-foreground max-w-md md:max-w-lg animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-200">
+        Your AI-powered NBA analytics companion. Ask me anything about players, teams, games, and stats.
+      </p>
 
-      {/* Features Section */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <div className="flex items-center gap-2 p-4 rounded-md border bg-card"> {/* Spacing: rounded-md */}
-          <TrendingUpIcon className="h-8 w-8 text-primary" />
-          <div>
-            <h3 className="font-semibold">Real-time Stats</h3>
-            <p className="text-sm text-muted-foreground">Up-to-date NBA statistics and analysis</p>
-          </div>
+      <div className="w-full max-w-lg md:max-w-xl space-y-3 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-300">
+        {/* <h2 className="text-sm font-medium text-muted-foreground">Try an example:</h2> */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {SIMPLE_EXAMPLE_PROMPTS.map((promptItem, index) => (
+            <Button
+              key={index}
+              variant="outline"
+              className={cn(
+                "text-left justify-start h-auto py-2.5 px-3.5 text-sm font-normal leading-snug whitespace-normal", // Added whitespace-normal
+                "hover:bg-accent/70 dark:hover:bg-accent/50 transition-all hover:scale-[1.02] active:scale-[0.98]",
+                "animate-in fade-in-0 zoom-in-95 duration-300"
+              )}
+              style={{ animationDelay: `${300 + index * 75}ms` }}
+              onClick={() => onExampleClick(promptItem.text)}
+            >
+              {/* {promptItem.icon} */}
+              <span>{promptItem.text}</span>
+            </Button>
+          ))}
         </div>
-        <div className="flex items-center gap-2 p-4 rounded-md border bg-card"> {/* Spacing: rounded-md */}
-          <BarChart3Icon className="h-8 w-8 text-primary" />
-          <div>
-            <h3 className="font-semibold">Deep Analysis</h3>
-            <p className="text-sm text-muted-foreground">Advanced metrics and comparisons</p>
-          </div>
+      </div>
+      
+      <div className="pt-4 sm:pt-6 space-y-3 text-xs text-muted-foreground max-w-md md:max-w-lg animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-400">
+        <div className="flex items-center justify-center gap-1.5">
+          <ZapIcon className="h-3.5 w-3.5 text-sky-500 shrink-0" /> 
+          <span>Capabilities: Real-time stats, player comparisons, game analysis.</span>
         </div>
-        <div className="flex items-center gap-2 p-4 rounded-md border bg-card"> {/* Spacing: rounded-md */}
-          <CalendarIcon className="h-8 w-8 text-primary" />
-          <div>
-            <h3 className="font-semibold">Game Insights</h3>
-            <p className="text-sm text-muted-foreground">Predictions and historical data</p>
-          </div>
+        <div className="flex items-center justify-center gap-1.5">
+          <AlertTriangleIcon className="h-3.5 w-3.5 text-amber-500 shrink-0" /> 
+          <span>Limitations: May occasionally produce inaccuracies. Verify critical info.</span>
         </div>
       </div>
     </div>
-  )
+  );
 }

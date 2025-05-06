@@ -13,12 +13,12 @@ function ScrollArea({
   return (
     <ScrollAreaPrimitive.Root
       data-slot="scroll-area"
-      className={cn("relative", className)}
+      className={cn("relative animate-in fade-in-0 duration-300", className)} // Added entrance animation
       {...props}
     >
       <ScrollAreaPrimitive.Viewport
         data-slot="scroll-area-viewport"
-        className="focus-visible:ring-ring/50 size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:outline-1"
+        className="size-full rounded-[inherit]" /* Removed focus styles and transition */
       >
         {children}
       </ScrollAreaPrimitive.Viewport>
@@ -38,7 +38,7 @@ function ScrollBar({
       data-slot="scroll-area-scrollbar"
       orientation={orientation}
       className={cn(
-        "flex touch-none p-px transition-colors select-none",
+        "flex touch-none p-px transition-colors duration-150 ease-in-out select-none data-[orientation=vertical]:hover:bg-muted/50 data-[orientation=horizontal]:hover:bg-muted/50", // Added hover effect to track
         orientation === "vertical" &&
           "h-full w-2 border-l border-l-transparent", /* Spacing: w-2 (8px) */
         orientation === "horizontal" &&
@@ -49,7 +49,7 @@ function ScrollBar({
     >
       <ScrollAreaPrimitive.ScrollAreaThumb
         data-slot="scroll-area-thumb"
-        className="bg-border relative flex-1 rounded-full"
+        className="bg-muted relative flex-1 rounded-full transition-colors duration-150 ease-in-out hover:bg-primary/60 data-[state=visible]:bg-primary/50" // Added transitions and hover/active state for thumb
       />
     </ScrollAreaPrimitive.ScrollAreaScrollbar>
   )

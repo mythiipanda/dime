@@ -2,6 +2,8 @@
 
 import { Game } from "@/app/(app)/games/types"; // Adjust path as needed
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"; // Import Avatar
+import { cn } from "@/lib/utils"; // Import cn utility
 import { format, parseISO } from 'date-fns';
 
 interface GameCardProps {
@@ -21,9 +23,9 @@ export function GameCard({ game, viewingToday, onClick }: GameCardProps) {
   // from the original page.tsx loop.
 
   return (
-    <Card 
-      key={game.gameId} 
-      className="cursor-pointer hover:shadow-lg transition-shadow duration-200"
+    <Card
+      key={game.gameId}
+      className="cursor-pointer hover:shadow-lg" /* Removed duration-200, base Card has transition-all */
       onClick={handleCardClick}
     >
       <CardHeader className={`flex flex-row items-center justify-between space-y-0 pb-2 ${game.gameStatus === 2 && viewingToday ? 'bg-green-50 dark:bg-green-900/20' : ''}`}>
@@ -31,12 +33,13 @@ export function GameCard({ game, viewingToday, onClick }: GameCardProps) {
           {game.awayTeam?.teamTricode || 'N/A'} @ {game.homeTeam?.teamTricode || 'N/A'}
         </CardTitle>
         <span 
-          className={`whitespace-nowrap px-2 py-0.5 rounded text-xs font-semibold ${
-            game.gameStatus === 1 ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' : 
-            (game.gameStatus === 2 && viewingToday) ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 animate-pulse' : 
-            game.gameStatus === 2 ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' : 
-            'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
-          }`}
+          className={cn(
+            "whitespace-nowrap px-2 py-0.5 rounded-full text-xs font-semibold", /* Changed rounded to rounded-full */
+            game.gameStatus === 1 && "bg-accent text-accent-foreground", // Scheduled
+            game.gameStatus === 2 && viewingToday && "bg-primary text-primary-foreground animate-pulse", // Live
+            game.gameStatus === 2 && !viewingToday && "bg-muted text-muted-foreground", // Final
+            game.gameStatus >= 3 && "bg-muted text-muted-foreground" // Final / Other
+          )}
         >
           {game.gameStatusText}
         </span>
@@ -45,7 +48,9 @@ export function GameCard({ game, viewingToday, onClick }: GameCardProps) {
         {/* Away Team */}
         <div className="flex justify-between items-center mb-2">
           <div className="flex items-center gap-2">
-            <div className="w-6 h-6 bg-muted rounded-full flex items-center justify-center text-xs">{game.awayTeam?.teamTricode || '?'}</div>
+            <Avatar className="h-6 w-6 text-xs">
+              <AvatarFallback>{game.awayTeam?.teamTricode ? game.awayTeam.teamTricode.substring(0,2) : 'AWY'}</AvatarFallback>
+            </Avatar>
             <span className="font-semibold">{game.awayTeam?.teamTricode || 'N/A'}</span>
             {game.awayTeam?.wins !== undefined && game.awayTeam?.losses !== undefined && (
                 <span className="text-xs text-muted-foreground">({game.awayTeam.wins}-{game.awayTeam.losses})</span>
@@ -56,7 +61,9 @@ export function GameCard({ game, viewingToday, onClick }: GameCardProps) {
         {/* Home Team */}
         <div className="flex justify-between items-center">
            <div className="flex items-center gap-2">
-            <div className="w-6 h-6 bg-muted rounded-full flex items-center justify-center text-xs">{game.homeTeam?.teamTricode || '?'}</div>
+            <Avatar className="h-6 w-6 text-xs">
+              <AvatarFallback>{game.homeTeam?.teamTricode ? game.homeTeam.teamTricode.substring(0,2) : 'HME'}</AvatarFallback>
+            </Avatar>
             <span className="font-semibold">{game.homeTeam?.teamTricode || 'N/A'}</span>
              {game.homeTeam?.wins !== undefined && game.homeTeam?.losses !== undefined && (
                 <span className="text-xs text-muted-foreground">({game.homeTeam.wins}-{game.homeTeam.losses})</span>

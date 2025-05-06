@@ -1,12 +1,16 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { BarChart3Icon, LineChart, PieChart, TrendingUpIcon } from "lucide-react";
+import { cn } from "@/lib/utils"; // Import cn
 
 export function TeamStatsTab() {
   // TODO: Replace hardcoded values with fetched data props
   return (
     <div className="space-y-4">
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
+        <Card className={cn(
+            "transition-all duration-300 hover:scale-[1.02] hover:shadow-md",
+            "animate-in fade-in-0 slide-in-from-bottom-4 duration-500"
+          )} style={{ animationDelay: `${0 * 100}ms` }}>
           <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
             <CardTitle className="text-sm font-medium">Offensive Rating</CardTitle>
             <BarChart3Icon className="w-4 h-4 text-muted-foreground" />
@@ -17,7 +21,10 @@ export function TeamStatsTab() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className={cn(
+            "transition-all duration-300 hover:scale-[1.02] hover:shadow-md",
+            "animate-in fade-in-0 slide-in-from-bottom-4 duration-500"
+          )} style={{ animationDelay: `${1 * 100}ms` }}>
           <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
             <CardTitle className="text-sm font-medium">Defensive Rating</CardTitle>
             <LineChart className="w-4 h-4 text-muted-foreground" />
@@ -28,7 +35,10 @@ export function TeamStatsTab() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className={cn(
+            "transition-all duration-300 hover:scale-[1.02] hover:shadow-md",
+            "animate-in fade-in-0 slide-in-from-bottom-4 duration-500"
+          )} style={{ animationDelay: `${2 * 100}ms` }}>
           <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
             <CardTitle className="text-sm font-medium">Pace</CardTitle>
             <TrendingUpIcon className="w-4 h-4 text-muted-foreground" />
@@ -39,7 +49,10 @@ export function TeamStatsTab() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className={cn(
+            "transition-all duration-300 hover:scale-[1.02] hover:shadow-md",
+            "animate-in fade-in-0 slide-in-from-bottom-4 duration-500"
+          )} style={{ animationDelay: `${3 * 100}ms` }}>
           <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
             <CardTitle className="text-sm font-medium">Net Rating</CardTitle>
             <PieChart className="w-4 h-4 text-muted-foreground" />
@@ -52,7 +65,10 @@ export function TeamStatsTab() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <Card className="col-span-1">
+        <Card className={cn(
+            "col-span-1 transition-all duration-300 hover:scale-[1.02] hover:shadow-md",
+            "animate-in fade-in-0 slide-in-from-bottom-4 duration-500"
+          )} style={{ animationDelay: `${0 * 100 + 400}ms` }}> {/* Continue stagger from previous row */}
           <CardHeader>
             <CardTitle>Team Performance Comparison</CardTitle>
             <CardDescription>
@@ -67,7 +83,10 @@ export function TeamStatsTab() {
           </CardContent>
         </Card>
 
-        <Card className="col-span-1">
+        <Card className={cn(
+            "col-span-1 transition-all duration-300 hover:scale-[1.02] hover:shadow-md",
+            "animate-in fade-in-0 slide-in-from-bottom-4 duration-500"
+          )} style={{ animationDelay: `${1 * 100 + 400}ms` }}> {/* Continue stagger */}
           <CardHeader>
             <CardTitle>League Rankings</CardTitle>
             <CardDescription>

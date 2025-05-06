@@ -4,7 +4,8 @@ import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { PlayerData } from "./types";
 import { PlayerProfileCard } from "@/components/players/PlayerProfileCard";
-
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"; // Added Card components
+import { Button } from "@/components/ui/button"; // Added Button
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Search } from "lucide-react";
 import { ExclamationTriangleIcon } from '@radix-ui/react-icons';
@@ -72,10 +73,31 @@ export default function PlayersClientPage({
       )}
 
       {!playerData && !fetchError && (
-        <div className="text-center py-10 text-muted-foreground">
-          <Search className="mx-auto h-12 w-12 mb-4" />
-          <p>Search for an NBA player to view their detailed profile and statistics.</p>
-        </div>
+        <Card className="mt-6 text-center max-w-2xl mx-auto animate-in fade-in-0 slide-in-from-bottom-4 duration-500">
+          <CardHeader>
+            <Search className="mx-auto h-10 w-10 text-muted-foreground mb-3" />
+            <CardTitle className="text-2xl">Find Your Player</CardTitle>
+            <CardDescription>
+              Search for an NBA player to view their detailed profile, career stats, and season performance.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="pb-6">
+            <p className="text-sm text-muted-foreground mb-3">Or try an example:</p>
+            <div className="flex flex-wrap justify-center gap-2">
+              {["LeBron James", "Stephen Curry", "Nikola Jokic", "Victor Wembanyama"].map(name => (
+                <Button
+                  key={name}
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleSearchSubmit(name)}
+                  className="transition-all hover:scale-105 hover:bg-accent/50"
+                >
+                  {name}
+                </Button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       )}
     </div>
   );

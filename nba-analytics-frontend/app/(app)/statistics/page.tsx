@@ -5,6 +5,7 @@ import { TeamStatsTab } from "@/components/statistics/TeamStatsTab";
 import { PlayerStatsTab } from "@/components/statistics/PlayerStatsTab";
 import { GameStatsTab } from "@/components/statistics/GameStatsTab";
 import { AdvancedStatsTab } from "@/components/statistics/AdvancedStatsTab";
+import { cn } from "@/lib/utils"; // Import cn
 
 export default function StatisticsPage() {
   return (
@@ -31,19 +32,19 @@ export default function StatisticsPage() {
           <TabsTrigger value="advanced">Advanced Metrics</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="team">
+        <TabsContent value="team" className={cn("animate-in fade-in-0 slide-in-from-top-2 duration-300")}>
           <TeamStatsTab />
         </TabsContent>
 
-        <TabsContent value="player">
+        <TabsContent value="player" className={cn("animate-in fade-in-0 slide-in-from-top-2 duration-300")}>
           <PlayerStatsTab />
         </TabsContent>
 
-        <TabsContent value="game">
+        <TabsContent value="game" className={cn("animate-in fade-in-0 slide-in-from-top-2 duration-300")}>
           <GameStatsTab />
         </TabsContent>
 
-        <TabsContent value="advanced">
+        <TabsContent value="advanced" className={cn("animate-in fade-in-0 slide-in-from-top-2 duration-300")}>
           <AdvancedStatsTab />
         </TabsContent>
       </Tabs>

@@ -4,11 +4,12 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { format, parseISO, subDays, addDays, isToday } from 'date-fns';
 import { Button } from "@/components/ui/button";
-import { ChevronLeftIcon, ChevronRightIcon, Loader2 } from "lucide-react";
+import { ChevronLeftIcon, ChevronRightIcon, Loader2, AlertCircleIcon, CalendarOffIcon } from "lucide-react"; // Added AlertCircleIcon, CalendarOffIcon
 import { ScoreboardData } from "./types";
-// Import the new components
 import { GameCard } from "@/components/games/GameCard";
 import { PlayByPlayModal } from "@/components/games/PlayByPlayModal";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"; // Added Alert components
+import { cn } from "@/lib/utils"; // Added cn
 
 interface GamesClientPageProps {
   targetDateISO: string;
@@ -71,6 +72,7 @@ export default function GamesClientPage({
       };
       ws.current.onerror = (error) => {
         console.error("[WebSocket] Error:", error);
+        setError("WebSocket connection error. Please try refreshing the page.");
         setIsConnected(false);
       };
       ws.current.onmessage = (event) => {
@@ -163,31 +165,39 @@ export default function GamesClientPage({
 
       {/* Error State */}
       {error && !isLoading && (
-        <div className="text-center text-red-600 dark:text-red-400 pt-10">
-          <p>Error: {error}</p>
-           {/* Optionally add a refresh button for WS errors? */}
-        </div>
+        <Alert variant="destructive" className="my-4">
+          <AlertCircleIcon className="h-4 w-4" />
+          <AlertTitle>Error Loading Games</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
 
       {/* Game Cards Display */}
       {!isLoading && !error && currentScoreboardData && (
         <>
           {currentScoreboardData.games.length === 0 ? (
-            <p className="text-center text-muted-foreground pt-10">
-              {viewingToday && isConnected ? "Waiting for live games data..." : 
-               viewingToday && !isConnected ? "Connecting to live feed..." : // Show connecting if WS hasn't opened yet
-               "No games scheduled for this date."}
-            </p>
+            <div className="text-center text-muted-foreground py-12 flex flex-col items-center justify-center">
+              <CalendarOffIcon className="h-12 w-12 mb-4 text-muted-foreground/70" />
+              <p className="text-lg">
+                {viewingToday && isConnected ? "Waiting for live games data..." :
+                 viewingToday && !isConnected ? "Connecting to live feed..." :
+                 "No games scheduled for this date."}
+              </p>
+            </div>
           ) : (
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {/* Use GameCard component */}
-              {currentScoreboardData.games.filter(game => !!game?.gameId).map((game) => (
-                <GameCard 
-                  key={game.gameId} 
-                  game={game} 
-                  viewingToday={viewingToday} 
-                  onClick={handleOpenPbp} 
-                />
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"> {/* Adjusted grid for potentially more cards */}
+              {currentScoreboardData.games.filter(game => !!game?.gameId).map((game, index) => ( // Added index
+                <div
+                  key={game.gameId}
+                  className={cn("animate-in fade-in-0 slide-in-from-bottom-4 duration-500")}
+                  style={{ animationDelay: `${index * 75}ms` }}
+                >
+                  <GameCard
+                    game={game}
+                    viewingToday={viewingToday}
+                    onClick={handleOpenPbp}
+                  />
+                </div>
               ))}
             </div>
           )}

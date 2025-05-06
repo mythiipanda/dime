@@ -16,21 +16,28 @@ export async function fetchFromAPI<T>(
   options: FetchOptions = {}
 ): Promise<T> {
   const url = `${API_BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
-  const { cache = 'no-store', ...restOptions } = options; // Default cache to no-store
+  // Allow Next.js default fetch caching / revalidation by not defaulting to 'no-store'
+  // Only apply cache option if explicitly provided
+  const { cache: explicitCacheOption, ...restOptions } = options;
   
   const headers = {
     'Content-Type': 'application/json',
     ...restOptions.headers,
   };
 
-  console.debug(`[fetchFromAPI] Fetching: ${url}`, { cache, method: restOptions.method || 'GET' });
+  const fetchConfig: RequestInit = {
+    ...restOptions,
+    headers,
+  };
+
+  if (explicitCacheOption !== undefined) {
+    fetchConfig.cache = explicitCacheOption;
+  }
+
+  console.debug(`[fetchFromAPI] Fetching: ${url}`, { cache: fetchConfig.cache, method: restOptions.method || 'GET' });
 
   try {
-    const response = await fetch(url, {
-      ...restOptions,
-      headers,
-      cache, // Use the specified or default cache option
-    });
+    const response = await fetch(url, fetchConfig);
 
     if (!response.ok) {
       let errorDetail = `API Error: ${response.status} ${response.statusText}`;

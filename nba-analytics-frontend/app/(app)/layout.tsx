@@ -20,7 +20,7 @@ interface AppLayoutProps {
 
 // This component now serves as the layout for the (app) group
 export default function AppLayout({ children }: AppLayoutProps) {
-  const [isCollapsed, setIsCollapsed] = useState(false); // State for collapse
+  const [isCollapsed, setIsCollapsed] = useState(true); // Default to collapsed
   const toggleSidebar = () => setIsCollapsed(!isCollapsed);
   // Get user data
   const { user, isSignedIn } = useUser(); 
@@ -30,33 +30,32 @@ export default function AppLayout({ children }: AppLayoutProps) {
       {/* Desktop Sidebar */}
       <aside
         className={cn(
-          "fixed hidden h-screen border-r bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/75 transition-all duration-300 ease-in-out lg:flex flex-col justify-between",
-          // Use w-60 for expanded, w-20 for collapsed. Adjust padding.
-          isCollapsed ? "w-20 px-2 py-4" : "w-60 px-4 py-6" 
+          "fixed hidden top-0 left-0 border-r bg-muted transition-all duration-300 ease-in-out lg:flex flex-col justify-between overflow-y-auto", // Removed h-screen, added top-0 left-0, overflow-y-auto
+          "bottom-0", // Sidebar is now full height
+          isCollapsed ? "w-20 px-2 py-4" : "w-60 px-4 py-6"
         )}
       >
         <div className={cn("space-y-6", isCollapsed && "flex flex-col items-center")}>
           <Logo
-            // Keep logo padding consistent or adjust as needed
-            className={cn(isCollapsed ? "px-0" : "px-2")} 
+            className={cn(isCollapsed ? "px-0" : "px-2")}
             iconSize={isCollapsed ? 6 : 6}
-            // Pass undefined when collapsed to let Logo handle hiding text
-            textSize={isCollapsed ? undefined : "xl"} 
-            hideText={isCollapsed} // Explicitly tell Logo to hide text
+            textSize={isCollapsed ? undefined : "xl"}
+            hideText={isCollapsed}
           />
           <SidebarNav isCollapsed={isCollapsed} />
         </div>
 
-        {/* Bottom Section: User Profile & Collapse Toggle */}
-        <div className={cn("mt-auto space-y-2")}>
+        {/* Bottom Section: User Profile & Collapse Toggle - Simplified */}
+        <div className={cn("mt-auto space-y-3 border-t border-border pt-3", isCollapsed ? "px-0" : "px-0")}> {/* Added border-t, adjusted padding */}
           {/* Signed Out State */}
           <SignedOut>
-            <div className={cn("flex items-center rounded-lg border bg-card", isCollapsed ? "justify-center p-2" : "gap-2 px-3 py-2")}>
+            <div className={cn("flex", isCollapsed ? "justify-center" : "px-2")}>
               <SignInButton mode="modal">
-                <Button 
-                  variant={isCollapsed ? "ghost" : "outline"} 
-                  size={isCollapsed ? "icon" : "default"} 
+                <Button
+                  variant="outline" // Consistent variant
+                  size={isCollapsed ? "icon" : "sm"}
                   className={cn(!isCollapsed && "w-full")}
+                  title="Sign In"
                 >
                   {isCollapsed ? <Users className="h-5 w-5" /> : "Sign In"}
                 </Button>
@@ -66,52 +65,37 @@ export default function AppLayout({ children }: AppLayoutProps) {
           {/* Signed In State */}
           <SignedIn>
             <div className={cn(
-              "flex items-center rounded-lg border bg-card", 
-              // Keep vertical layout for collapsed state
-              isCollapsed ? "flex-col gap-2 p-2" : "gap-2 px-3 py-2" 
+              "flex items-center",
+              isCollapsed ? "flex-col gap-3 justify-center" : "gap-2 px-2 justify-between" // Adjusted for better spacing
             )}>
-              {/* Expanded view: Button, Name, Toggle */}
-              {!isCollapsed && (
-                <>
-                  <UserButton afterSignOutUrl="/" />
-                  {/* Display username/name if available */}
-                  {isSignedIn && user && (
-                    <span className="text-sm font-medium truncate ml-1">
-                      {/* Prioritize fullName, then combine first/last, then fallback */}
-                      {user.fullName || `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username || "User"}
-                    </span>
-                  )}
-                  <div className={cn("flex items-center ml-auto gap-1")}>
-                    <ModeToggle />
-                  </div>
-                </>
+              <UserButton afterSignOutUrl="/" />
+              {!isCollapsed && isSignedIn && user && (
+                <span className="text-sm font-medium truncate flex-1 text-center"> {/* Centered name when expanded */}
+                  {user.fullName || `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username || "User"}
+                </span>
               )}
-              {/* Collapsed view: Button, Toggle */}
-              {isCollapsed && (
-                <>
-                  <UserButton afterSignOutUrl="/" />
-                  <ModeToggle />
-                </>
-              )}
+              <ModeToggle />
             </div>
           </SignedIn>
           
-          {/* Collapse Toggle Button - Moved inside footer */}
-          <Button 
-              onClick={toggleSidebar}
-              variant="ghost" 
-              size="icon" 
-              className={cn("w-full flex justify-center text-muted-foreground hover:text-foreground", isCollapsed ? "h-8" : "h-8")}
-              title={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
-            >
-              {isCollapsed ? <PanelRightOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
-              <span className="sr-only">{isCollapsed ? "Expand" : "Collapse"}</span>
-            </Button>
+          {/* Collapse Toggle Button */}
+          <div className={cn(isCollapsed ? "flex justify-center" : "px-2")}>
+            <Button
+                onClick={toggleSidebar}
+                variant="ghost"
+                size="icon"
+                className={cn("w-full flex justify-center text-muted-foreground hover:text-foreground", isCollapsed ? "h-9" : "h-9")} // Standardized height
+                title={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+              >
+                {isCollapsed ? <PanelRightOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
+                <span className="sr-only">{isCollapsed ? "Expand" : "Collapse"}</span>
+              </Button>
+          </div>
         </div>
       </aside>
 
-      {/* Mobile Header - Reverted to previous known good state, potentially needs Sheet fixes if used*/}
-      <header className="fixed top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/75 lg:hidden px-4 sm:px-6">
+      {/* Mobile Header - Using solid muted background to match desktop sidebar change */}
+      <header className="fixed top-0 z-40 w-full border-b bg-muted lg:hidden px-4 sm:px-6"> {/* Changed to bg-muted, z-40 to be below desktop sidebar if it ever overlaps during transitions (though unlikely here) */}
         <div className="flex h-16 items-center gap-4">
           <Sheet>
             <SheetTrigger asChild>
@@ -154,7 +138,10 @@ export default function AppLayout({ children }: AppLayoutProps) {
           isCollapsed ? "lg:pl-20" : "lg:pl-60" // Adjust left padding based on collapse state
         )}
       >
-        <div className='max-w-7xl mx-auto min-h-screen px-4 sm:px-6 py-8 lg:px-8 lg:py-12'>
+        <div className={cn(
+          'max-w-7xl mx-auto px-4 sm:px-6 py-8 lg:px-8 lg:py-12 flex-1 flex flex-col',
+          'animate-in fade-in-0 slide-in-from-bottom-4 duration-500' // Page content entrance animation
+        )}> {/* Removed min-h-screen, added flex-1 flex flex-col to help content grow */}
           <SignedIn>
             {children}
           </SignedIn>

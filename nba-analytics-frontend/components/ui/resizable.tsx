@@ -39,14 +39,18 @@ function ResizableHandle({
     <ResizablePrimitive.PanelResizeHandle
       data-slot="resizable-handle"
       className={cn(
-        "bg-border focus-visible:ring-ring relative flex w-px items-center justify-center after:absolute after:inset-y-0 after:left-1/2 after:w-1 after:-translate-x-1/2 focus-visible:ring-1 focus-visible:ring-offset-1 focus-visible:outline-hidden data-[panel-group-direction=vertical]:h-px data-[panel-group-direction=vertical]:w-full data-[panel-group-direction=vertical]:after:left-0 data-[panel-group-direction=vertical]:after:h-1 data-[panel-group-direction=vertical]:after:w-full data-[panel-group-direction=vertical]:after:-translate-y-1/2 data-[panel-group-direction=vertical]:after:translate-x-0 [&[data-panel-group-direction=vertical]>div]:rotate-90",
+        "bg-border focus-visible:ring-ring relative flex w-px items-center justify-center after:absolute after:inset-y-0 after:left-1/2 after:w-1 after:-translate-x-1/2 focus-visible:ring-1 focus-visible:ring-offset-1 focus-visible:outline-none data-[panel-group-direction=vertical]:h-px data-[panel-group-direction=vertical]:w-full data-[panel-group-direction=vertical]:after:left-0 data-[panel-group-direction=vertical]:after:h-1 data-[panel-group-direction=vertical]:after:w-full data-[panel-group-direction=vertical]:after:-translate-y-1/2 data-[panel-group-direction=vertical]:after:translate-x-0 [&[data-panel-group-direction=vertical]>div]:rotate-90",
+        "transition-colors duration-200 ease-in-out hover:bg-primary/20 data-[resize-handle-state=drag]:bg-primary/30", // Added transitions and hover/drag states
         className
       )}
       {...props}
     >
       {withHandle && (
-        <div className="bg-border z-10 flex h-4 w-3 items-center justify-center rounded-xs border">
-          <GripVerticalIcon className="size-2" /> {/* Spacing: size-2 (8px) */}
+        <div className={cn(
+          "bg-muted z-10 flex h-4 w-3 items-center justify-center rounded-xs border border-border",
+          "transition-colors duration-200 ease-in-out group-hover:bg-accent group-data-[resize-handle-state=drag]:bg-primary/20 group-data-[resize-handle-state=drag]:border-primary/50" // Added transitions for inner grip
+        )}>
+          <GripVerticalIcon className="size-2 transition-colors duration-200 ease-in-out group-data-[resize-handle-state=drag]:text-primary-foreground" /> {/* Spacing: size-2 (8px) */}
         </div>
       )}
     </ResizablePrimitive.PanelResizeHandle>

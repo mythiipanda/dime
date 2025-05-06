@@ -1,6 +1,7 @@
 import React from 'react';
 import { Card } from '@/components/ui/card';
 import { TrendingUp, BarChart2, Activity, UserCheck, Trophy, Star, BookOpen, RadioTower } from 'lucide-react';
+import { cn } from '@/lib/utils'; // Import cn
 
 export function UseCasesSection() {
   const useCases = [
@@ -17,15 +18,18 @@ export function UseCasesSection() {
   return (
     <section id="usecases" className="py-32 relative overflow-hidden bg-background text-foreground">
       <div className="container mx-auto max-w-7xl px-4">
-        <h2 className="text-4xl md:text-5xl font-bold text-foreground text-center mb-16">
+        <h2 className="text-4xl md:text-5xl font-bold text-foreground text-center mb-16 tracking-tight"> {/* Added tracking-tight */}
           Transform Your <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary">Analysis Workflow</span>
         </h2>
         
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-8">
-          {useCases.map((uc) => (
+          {useCases.map((uc, index) => ( // Added index for animation delay
             <div key={uc.title} className="group relative">
-              <div className="absolute -inset-px bg-gradient-to-br from-primary/20 to-secondary/20 rounded-xl blur-lg opacity-0 group-hover:opacity-70 transition duration-300"></div>
-              <Card className="relative h-full p-6 flex flex-col transition-all duration-300 shadow-lg hover:shadow-xl">
+              <div className="absolute -inset-px bg-gradient-to-br from-primary/30 to-secondary/30 rounded-xl blur-lg opacity-0 group-hover:opacity-70 transition-opacity duration-300"></div> {/* Changed transition to transition-opacity */}
+              <Card className={cn(
+                "relative h-full p-6 flex flex-col transition-all duration-300 shadow-lg hover:shadow-xl group-hover:scale-105",
+                "animate-in fade-in-0 slide-in-from-bottom-4 duration-500"
+              )} style={{ animationDelay: `${index * 100}ms` }}>
                 <div className="p-3 bg-muted/20 rounded-lg mb-5 inline-flex items-center justify-center w-12 h-12">
                   {uc.icon}
                 </div>

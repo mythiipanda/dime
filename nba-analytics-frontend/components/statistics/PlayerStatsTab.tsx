@@ -1,9 +1,13 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { cn } from "@/lib/utils"; // Import cn
 
 export function PlayerStatsTab() {
   return (
     <div className="space-y-4">
-      <Card>
+      <Card className={cn(
+        "transition-all duration-300 hover:scale-[1.02] hover:shadow-md",
+        "animate-in fade-in-0 slide-in-from-bottom-4 duration-500" // Entrance animation
+      )}>
         <CardHeader>
           <CardTitle>Player Statistics Dashboard</CardTitle>
           <CardDescription>

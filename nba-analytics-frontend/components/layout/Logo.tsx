@@ -6,15 +6,16 @@ interface LogoProps {
   iconSize?: number;
   textSize?: 'sm' | 'md' | 'lg' | 'xl';
   hideText?: boolean;
+  href?: string; // Add href prop
 }
 
-export function Logo({ className, iconSize = 6, textSize = 'xl', hideText = false }: LogoProps) {
+export function Logo({ className, iconSize = 6, textSize = 'xl', hideText = false, href = "/dashboard" }: LogoProps) { // Add href to props and default
   const iconClass = `h-${iconSize} w-${iconSize}`;
   const titleSizeClass = `text-${textSize}`;
   const subtitleSizeClass = textSize === 'xl' ? 'text-sm' : 'text-xs'; // Adjust subtitle size based on title
 
   return (
-    <Link href="/dashboard" className={`flex items-center gap-2 ${className}`}>
+    <Link href={href} className={`flex items-center gap-2 ${className}`}>
       <div className="rounded-lg bg-primary p-2">
         <CircleDot className={`${iconClass} text-primary-foreground`} />
       </div>

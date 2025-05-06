@@ -22,8 +22,8 @@ export function ErrorBoundaryHandler({ error, reset }: ErrorBoundaryProps) {
   }
 
   return (
-    <div className="flex h-[50vh] items-center justify-center px-4">
-      <Alert variant="destructive" className="max-w-2xl">
+    <div className="flex h-[50vh] items-center justify-center px-4 animate-in fade-in-0 duration-500">
+      <Alert variant="destructive" className="max-w-2xl"> {/* Alert already has its own entrance animation */}
         <AlertCircle className="h-6 w-6" />
         <AlertTitle className="text-lg font-semibold">
           Something went wrong

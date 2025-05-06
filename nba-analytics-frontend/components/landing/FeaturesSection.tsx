@@ -2,6 +2,7 @@ import { Card } from '@/components/ui/card';
 import { PieChart, MapPin, Activity, ArrowRight, BarChartHorizontal } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils'; // Import cn
 
 export function FeaturesSection() {
   const features = [
@@ -38,7 +39,7 @@ export function FeaturesSection() {
             Uncover Insights with <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary">Powerful Tools</span>
           </h2>
           <p className="text-lg leading-7 text-muted-foreground max-w-2xl mx-auto mb-10">From live game data to deep statistical comparisons, Dime provides the tools you need for comprehensive NBA analysis.</p>
-          <Link href="/dashboard">
+          <Link href="/dashboard" className="group"> {/* Added group class for icon hover */}
             <Button>
               Explore Features <ArrowRight className="h-5 w-5 ml-2 transition-transform group-hover:translate-x-1" />
             </Button>
@@ -48,8 +49,11 @@ export function FeaturesSection() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 relative z-10">
           {features.map((feature, index) => (
             <div key={index} className="group relative">
-              <div className="absolute -inset-px bg-gradient-to-br from-primary/30 to-secondary/30 rounded-xl blur-lg opacity-0 group-hover:opacity-70 transition duration-300"></div>
-              <Card className="relative h-full p-6 flex flex-col transition-all duration-300 shadow-lg hover:shadow-xl">
+              <div className="absolute -inset-px bg-gradient-to-br from-primary/30 to-secondary/30 rounded-xl blur-lg opacity-0 group-hover:opacity-70 transition-opacity duration-300"></div> {/* Changed transition to transition-opacity */}
+              <Card className={cn(
+                "relative h-full p-6 flex flex-col transition-all duration-300 shadow-lg hover:shadow-xl group-hover:scale-105",
+                "animate-in fade-in-0 slide-in-from-bottom-4 duration-500"
+              )} style={{ animationDelay: `${index * 100}ms` }}>
                 <div className="p-3 bg-muted/20 rounded-lg mb-5 inline-flex items-center justify-center w-12 h-12">
                   {feature.icon}
                 </div>

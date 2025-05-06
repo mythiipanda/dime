@@ -1,13 +1,12 @@
 "use client";
 
-import { useState } from "react";
+// import { useState } from "react"; // No longer needed for selectedConference
 import { useRouter, useSearchParams } from "next/navigation";
-import { TeamStanding } from "@/lib/api/teams"; // Correct path from original file
-import { TeamTable } from "@/components/teams/TeamTable"; // Assuming this path is correct
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"; // Using shadcn Select
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"; // Import RadioGroup
-import { Label } from "@/components/ui/label"; // Import Label
-import { cn } from "@/lib/utils"; // Import cn
+import { TeamStanding } from "@/lib/api/teams";
+import { TeamTable } from "@/components/teams/TeamTable";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"; // Import Tabs components
 
 interface TeamsClientPageProps {
   initialEasternStandings: TeamStanding[];
@@ -24,8 +23,8 @@ export default function TeamsClientPage({
   currentSeason,
 }: TeamsClientPageProps) {
   const router = useRouter();
-  const searchParams = useSearchParams(); // Keep using this to potentially read other params if needed
-  const [selectedConference, setSelectedConference] = useState('eastern'); // Add state
+  const searchParams = useSearchParams();
+  // const [selectedConference, setSelectedConference] = useState('eastern'); // Removed state
 
   const handleSeasonChange = (newSeason: string) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -56,42 +55,25 @@ export default function TeamsClientPage({
               </SelectContent>
             </Select>
           </div>
-          {/* Conference Selector (Radio Group styled as Tabs) */}
-          <RadioGroup 
-            defaultValue="eastern" 
-            value={selectedConference} // Control value with state
-            onValueChange={setSelectedConference} // Update state on change
-            className="flex items-center gap-1 rounded-md bg-muted p-1"
-          >
-             <RadioGroupItem value="eastern" id="r-east" className="sr-only" />
-             <Label 
-               htmlFor="r-east" 
-               className={cn(
-                 "inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 cursor-pointer",
-                 selectedConference === 'eastern' ? "bg-background text-foreground shadow-sm" : "hover:bg-muted/80"
-               )}
-             >Eastern</Label>
-             <RadioGroupItem value="western" id="r-west" className="sr-only" />
-             <Label 
-               htmlFor="r-west" 
-               className={cn(
-                  "inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 cursor-pointer",
-                 selectedConference === 'western' ? "bg-background text-foreground shadow-sm" : "hover:bg-muted/80"
-               )}
-              >Western</Label>
-          </RadioGroup>
+          {/* Conference Selector Removed */}
         </div>
       </div>
 
-      {/* Conditionally Rendered Content Area */}
-      <div className="mt-4"> {/* Add some margin */}
-        {selectedConference === 'eastern' && (
+      {/* Conference Tabs */}
+      <Tabs defaultValue="eastern" className="w-full mt-6 animate-in fade-in-0 duration-300">
+        <div className="flex justify-center mb-4">
+          <TabsList className="grid w-full max-w-md grid-cols-2">
+            <TabsTrigger value="eastern">Eastern Conference</TabsTrigger>
+            <TabsTrigger value="western">Western Conference</TabsTrigger>
+          </TabsList>
+        </div>
+        <TabsContent value="eastern">
           <TeamTable title="Eastern Conference" teams={initialEasternStandings} />
-        )}
-        {selectedConference === 'western' && (
+        </TabsContent>
+        <TabsContent value="western">
           <TeamTable title="Western Conference" teams={initialWesternStandings} />
-        )}
-      </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
-} 
+}

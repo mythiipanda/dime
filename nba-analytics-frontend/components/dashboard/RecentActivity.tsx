@@ -6,6 +6,7 @@ import {
   TrendingUp,
   Table,
 } from "lucide-react";
+import { cn } from "@/lib/utils"; // Import cn
 
 interface RecentActivityProps {
   isLoading: boolean;
@@ -29,7 +30,10 @@ export function RecentActivity({ isLoading }: RecentActivityProps) {
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
       {/* Recent Queries Card */}
-      <Card className="col-span-2">
+      <Card className={cn(
+        "col-span-2 transition-all duration-300 hover:scale-[1.02] hover:shadow-lg",
+        !isLoading && "animate-in fade-in-0 slide-in-from-bottom-4 duration-500"
+      )} style={{ animationDelay: !isLoading ? `0ms` : undefined }}>
         <CardHeader>
           <CardTitle>Recent Queries</CardTitle>
           <CardDescription>Your latest NBA analytics questions</CardDescription>
@@ -40,7 +44,10 @@ export function RecentActivity({ isLoading }: RecentActivityProps) {
       </Card>
 
       {/* Quick Actions Card */}
-      <Card>
+      <Card className={cn(
+        "transition-all duration-300 hover:scale-[1.02] hover:shadow-lg",
+        !isLoading && "animate-in fade-in-0 slide-in-from-bottom-4 duration-500"
+      )} style={{ animationDelay: !isLoading ? `100ms` : undefined }}>
         <CardHeader>
           <CardTitle>Quick Actions</CardTitle>
           <CardDescription>Common analytics tasks</CardDescription>

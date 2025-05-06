@@ -6,7 +6,8 @@ import { FeaturesSection } from '@/components/landing/FeaturesSection';
 import { VisionSection } from '@/components/landing/VisionSection';
 import { UseCasesSection } from '@/components/landing/UseCasesSection';
 import { PricingSection } from '@/components/landing/PricingSection';
-import { Footer } from '@/components/layout/Footer';
+import { TestimonialsSection } from '@/components/landing/TestimonialsSection'; // Import Testimonials
+// import { Footer } from '@/components/layout/Footer'; // Removed Footer import
 import { HeroSection } from '@/components/landing/HeroSection';
 
 export default function LandingPage() {
@@ -36,10 +37,11 @@ export default function LandingPage() {
         <VisionSection />
         <UseCasesSection />
         <PricingSection />
+        <TestimonialsSection /> {/* Add Testimonials Section */}
       </main>
       {/* <p className='p-10 text-center'>Main Content Placeholder</p> */}
 
-      <Footer />
+      {/* <Footer /> */} {/* Removed Footer rendering */}
     </div>
   );
 }

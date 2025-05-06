@@ -51,7 +51,8 @@ export function PromptInputForm({
     <form
       onSubmit={handleSubmit}
       className={cn(
-        'relative flex w-full items-center gap-2',
+        'relative flex w-full items-end gap-2 rounded-xl border bg-card p-2 shadow-sm', // Input bar container
+        'focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background transition-shadow',
         className
       )}
     >
@@ -60,46 +61,50 @@ export function PromptInputForm({
         value={prompt}
         onChange={(e) => setPrompt(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="Ask about NBA players, teams, games, or stats..."
+        placeholder="Send a message..." // More generic placeholder
         className={cn(
-          "flex-1 resize-none rounded-xl border bg-background px-4 py-3",
-          "min-h-[48px] max-h-[200px] text-base leading-relaxed",
-          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-          "disabled:cursor-not-allowed disabled:opacity-50"
+          "flex-1 resize-none appearance-none bg-transparent px-2 py-2.5 text-base leading-relaxed", // Adjusted padding, bg-transparent
+          "min-h-[24px] max-h-[160px]", // Adjusted min/max height for textarea within bar
+          "focus:outline-none focus-visible:ring-0 focus-visible:border-transparent border-0", // Remove internal border/ring
+          "disabled:cursor-not-allowed disabled:opacity-50 placeholder:text-muted-foreground/80"
         )}
         disabled={isLoading}
         rows={1}
       />
-      {isLoading && onStop ? (
-        <Button
-          type="button"
-          variant="outline"
-          size="icon"
-          onClick={onStop}
-          className={cn(
-            "h-12 w-12 shrink-0 rounded-xl",
-            "border-2 border-red-500 hover:bg-red-500/10",
-            "transition-colors duration-200"
-          )}
-        >
-          <StopCircleIcon className="h-5 w-5 text-red-500" />
-          <span className="sr-only">Stop generating</span>
-        </Button>
-      ) : (
-        <Button
-          type="submit"
-          disabled={!prompt.trim() || isLoading}
-          className={cn(
-            "h-12 w-12 shrink-0 rounded-xl",
-            "bg-primary hover:bg-primary/90",
-            "transition-colors duration-200"
-          )}
-          size="icon"
-        >
-          <SendIcon className="h-5 w-5" />
-          <span className="sr-only">Send message</span>
-        </Button>
-      )}
+      <div className="flex items-center gap-2 self-end"> {/* Button container */}
+        {isLoading && onStop ? (
+          <Button
+            type="button"
+            variant="ghost" // Changed to ghost for a less intrusive stop button
+            size="icon"
+            onClick={onStop}
+            className={cn(
+              "h-9 w-9 shrink-0 rounded-lg text-red-500 hover:bg-red-500/10 hover:text-red-600",
+              "transition-colors duration-200"
+            )}
+            title="Stop generating"
+          >
+            <StopCircleIcon className="h-5 w-5" />
+            <span className="sr-only">Stop generating</span>
+          </Button>
+        ) : (
+          <Button
+            type="submit"
+            disabled={!prompt.trim() || isLoading}
+            className={cn(
+              "h-9 w-9 shrink-0 rounded-lg", // Adjusted size and rounding
+              "bg-primary text-primary-foreground hover:bg-primary/90",
+              "disabled:bg-primary/50",
+              "transition-all duration-200 active:scale-95"
+            )}
+            size="icon"
+            title="Send message"
+          >
+            <SendIcon className="h-4 w-4" />
+            <span className="sr-only">Send message</span>
+          </Button>
+        )}
+      </div>
     </form>
   );
 }

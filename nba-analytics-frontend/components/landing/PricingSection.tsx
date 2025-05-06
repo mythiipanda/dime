@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Check } from 'lucide-react';
+import { cn } from '@/lib/utils'; // Import cn
 
 export function PricingSection() {
   const plans = [
@@ -59,11 +60,15 @@ export function PricingSection() {
       
       {/* Pricing Cards Container - Updated Card styling */}
       <div className="container mx-auto max-w-4xl px-4 grid grid-cols-1 md:grid-cols-3 gap-8 items-start relative z-10">
-        {plans.map((plan) => (
+        {plans.map((plan, index) => ( // Added index for animation delay
           <div key={plan.name} className={`relative group ${plan.featured ? 'md:-mt-4 md:mb-4' : ''}`}>
             {/* Glow effect */}
-            <div className={`absolute -inset-px rounded-2xl blur-lg opacity-0 group-hover:opacity-70 transition duration-300 ${plan.featured ? 'bg-gradient-to-br from-primary/40 to-secondary/40' : 'bg-gradient-to-br from-primary/20 to-secondary/20'}`}></div>
-            <Card className={`relative h-full p-8 flex flex-col transition-all duration-300 shadow-md hover:shadow-lg ${plan.featured ? 'border border-primary/50' : ''}`}>  
+            <div className={`absolute -inset-px rounded-2xl blur-lg opacity-0 group-hover:opacity-70 transition-opacity duration-300 ${plan.featured ? 'bg-gradient-to-br from-primary/40 to-secondary/40' : 'bg-gradient-to-br from-primary/20 to-secondary/20'}`}></div> {/* Changed transition to transition-opacity */}
+            <Card className={cn(
+              `relative h-full p-8 flex flex-col transition-all duration-300 shadow-md hover:shadow-lg group-hover:scale-105`,
+              plan.featured ? 'border border-primary/50' : '',
+              "animate-in fade-in-0 slide-in-from-bottom-4 duration-500"
+            )} style={{ animationDelay: `${index * 100}ms` }}>
               {plan.featured && (
                 <div className="absolute top-0 inset-x-0 flex justify-center -translate-y-1/2">
                   <div className="bg-gradient-to-r from-primary to-secondary text-foreground text-xs font-bold px-5 py-1 rounded-full shadow-lg">

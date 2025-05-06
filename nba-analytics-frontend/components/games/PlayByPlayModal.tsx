@@ -135,9 +135,10 @@ export function PlayByPlayModal({ gameId, isOpen, onOpenChange }: PlayByPlayModa
      // Simplified icon logic
      const desc = getPlayDescription(play).toUpperCase();
      if (desc.startsWith('MISS')) return <XCircle className="h-4 w-4 mr-1 text-muted-foreground" />;
-     if (play.event_type.includes('PT') || play.event_type.includes('FREE')) return <Target className="h-4 w-4 mr-1 text-orange-500" />;
-     if (play.event_type.includes('FOUL')) return <AlertTriangle className="h-4 w-4 mr-1 text-red-500" />;
-     return <Info className="h-4 w-4 mr-1 text-gray-500" />;
+     // Using Tailwind semantic colors or theme colors where appropriate
+     if (play.event_type.includes('PT') || play.event_type.includes('FREE')) return <Target className="h-4 w-4 mr-1 text-yellow-600 dark:text-yellow-500" />; // Using yellow for "target/score" like events
+     if (play.event_type.includes('FOUL')) return <AlertTriangle className="h-4 w-4 mr-1 text-destructive" />; // Using destructive theme color
+     return <Info className="h-4 w-4 mr-1 text-muted-foreground" />; // Default to muted
    }
 
    // Filtered plays based on state
@@ -204,7 +205,7 @@ export function PlayByPlayModal({ gameId, isOpen, onOpenChange }: PlayByPlayModa
                )}
 
             {/* PBP List Area - Make this scrollable */}
-            <div className="flex-grow overflow-y-auto pr-2 space-y-2 text-sm"> 
+            <div className="flex-grow overflow-y-auto pr-2 space-y-2 text-sm scrollbar-thin scrollbar-thumb-muted-foreground/50 hover:scrollbar-thumb-muted-foreground/80 scrollbar-track-transparent scrollbar-thumb-rounded-full">
                {/* Header Row */}
                <div className="flex items-center font-semibold text-muted-foreground px-2 py-1 sticky top-0 bg-background z-10 border-b">
                  <div className="w-16 shrink-0">Time</div>
@@ -222,7 +223,7 @@ export function PlayByPlayModal({ gameId, isOpen, onOpenChange }: PlayByPlayModa
                      <div className="w-16 shrink-0 font-mono pt-0.5">{play.clock}</div>
                      <div className="w-20 shrink-0 font-medium pt-0.5 whitespace-nowrap">{play.score || "-"}</div>
                      <div className="w-32 shrink-0">
-                       <span className="flex items-center text-xs bg-secondary px-2 py-1 rounded">
+                       <span className="flex items-center text-xs bg-secondary px-2 py-1 rounded-md"> {/* Changed rounded to rounded-md */}
                          {getEventTypeIcon(play)}
                          {formatEventType(play.event_type)}
                        </span>

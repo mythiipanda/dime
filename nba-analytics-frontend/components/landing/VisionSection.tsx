@@ -70,7 +70,7 @@ export function VisionSection() {
               <span>AI Research Assistant</span>
             </div>
             
-            <h2 className="text-4xl font-bold text-foreground mb-6">
+            <h2 className="text-4xl md:text-5xl font-bold text-foreground mb-6 tracking-tight"> {/* Added tracking-tight and md:text-5xl */}
               Ask Anything, Get <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary">Instant Answers</span>
             </h2>
             
@@ -81,22 +81,16 @@ export function VisionSection() {
             {/* Feature list - Use primary or neutral for checkmark */}
             <ul className="mb-10 space-y-4 text-left max-w-md mx-auto md:mx-0">
               <li className="flex items-start">
-                 <div className="flex-shrink-0 w-5 h-5 flex items-center justify-center bg-muted/50 border border-border rounded-full mr-3 mt-1">
-                   <Check className="h-3 w-3 text-primary" />
-                 </div>
-                <span className="text-muted-foreground">Complex query understanding</span>
+                 <Check className="flex-shrink-0 h-5 w-5 text-primary mr-3 mt-0.5" /> {/* Simplified checkmark */}
+                 <span className="text-muted-foreground">Complex query understanding</span>
               </li>
               <li className="flex items-start">
-                <div className="flex-shrink-0 w-5 h-5 flex items-center justify-center bg-muted/50 border border-border rounded-full mr-3 mt-1">
-                  <Check className="h-3 w-3 text-primary" />
-                </div>
-                <span className="text-muted-foreground">Access to historical & live data</span>
+                 <Check className="flex-shrink-0 h-5 w-5 text-primary mr-3 mt-0.5" /> {/* Simplified checkmark */}
+                 <span className="text-muted-foreground">Access to historical & live data</span>
               </li>
               <li className="flex items-start">
-                <div className="flex-shrink-0 w-5 h-5 flex items-center justify-center bg-muted/50 border border-border rounded-full mr-3 mt-1">
-                  <Check className="h-3 w-3 text-primary" />
-                </div>
-                <span className="text-muted-foreground">On-demand charts & tables</span>
+                 <Check className="flex-shrink-0 h-5 w-5 text-primary mr-3 mt-0.5" /> {/* Simplified checkmark */}
+                 <span className="text-muted-foreground">On-demand charts & tables</span>
               </li>
             </ul>
             

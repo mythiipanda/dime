@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import { GeistSans } from "geist/font/sans";
 import { ThemeProvider } from "@/components/theme-provider";
-import { ClerkProvider } from '@clerk/nextjs'
+import { ClerkProvider } from '@clerk/nextjs';
+// import { Footer } from "@/components/layout/Footer"; // Footer will be moved to specific pages
 import "./globals.css";
-import { cn } from '@/lib/utils'
+import { cn } from '@/lib/utils';
 
 export const metadata: Metadata = {
   title: {
@@ -37,7 +38,10 @@ export default function RootLayout({ children, }: { children: React.ReactNode; }
             enableSystem
             disableTransitionOnChange
           >
-            {children}
+            <div className="flex flex-col min-h-screen"> {/* Ensure footer sticks to bottom */}
+              <main className="flex-grow">{children}</main>
+              {/* <Footer /> */} {/* Footer removed from root layout */}
+            </div>
           </ThemeProvider>
         </body>
       </html>

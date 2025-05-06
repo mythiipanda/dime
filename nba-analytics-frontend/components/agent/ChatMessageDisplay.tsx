@@ -249,31 +249,32 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
     >
       <div className="flex h-8 w-8 shrink-0 select-none items-center justify-center">
         <Avatar className={cn(
-          "h-8 w-8 ring-2 transition-colors",
-          isUser 
-            ? "bg-background ring-border" 
-            : "bg-background ring-border"
+          "h-8 w-8 ring-1", // Simplified ring
+          isUser
+            ? "bg-primary/10 ring-primary/30"
+            : "bg-muted ring-border"
         )}>
-          <AvatarFallback>
+          <AvatarFallback className={cn(isUser ? "text-primary" : "text-muted-foreground")}>
             {isUser ? (
-              <UserIcon className="h-4 w-4 text-white" />
+              <UserIcon className="h-4 w-4" />
             ) : (
-              <BotIcon className="h-4 w-4 text-white" />
+              <BotIcon className="h-4 w-4" />
             )}
           </AvatarFallback>
         </Avatar>
       </div>
 
+      {/* Message content wrapper */}
       <div className={cn(
-        "flex-1 space-y-4",
-        isUser && "items-end"
+        "flex-1 space-y-3", // Reduced space-y
+        isUser ? "flex flex-col items-end" : "flex flex-col items-start" // Ensure content aligns with avatar
       )}>
         {/* User Message */}
         {isUser && (
           <div className={cn(
-            "prose prose-neutral dark:prose-invert max-w-none",
-            "rounded-lg border bg-background p-4",
-            "shadow-sm transition-colors hover:border-border"
+            "prose prose-sm sm:prose-base dark:prose-invert max-w-xl lg:max-w-2xl xl:max-w-3xl", // Responsive max-width
+            "rounded-xl bg-primary text-primary-foreground p-3 sm:p-4", // ChatGPT-like user bubble
+            "shadow-md"
           )}>
             <ReactMarkdown components={components}>
               {markdownContent}
@@ -283,164 +284,139 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
 
         {/* Assistant Response */}
         {!isUser && (
-          <>
-            {/* Intermediate Updates Box */}
+          <div className={cn( // Main AI message bubble/container
+            "w-full max-w-xl lg:max-w-2xl xl:max-w-3xl rounded-xl bg-muted dark:bg-muted/60 p-3 sm:p-4 shadow-md space-y-3"
+          )}>
+            {/* Intermediate Updates Box (Thinking Process) */}
             {showThinkingProcess && (
-              <Card className={cn(
-                "rounded-lg border bg-background p-4 mb-4",
-                "shadow-sm transition-colors hover:border-border"
-              )}>
-                <Collapsible
-                  open={isThinkingExpanded}
-                  onOpenChange={setIsThinkingExpanded}
-                >
-                  <div className="flex items-center gap-3 mb-3">
+              <Collapsible
+                open={isThinkingExpanded}
+                onOpenChange={setIsThinkingExpanded}
+                className="border-b border-border/30 pb-2 mb-2 last:border-b-0 last:pb-0 last:mb-0"
+              >
+                <div className="flex items-center justify-between gap-3 mb-1">
+                  <div className="flex items-center gap-2">
+                    <Brain className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-xs font-medium text-muted-foreground">Thinking Process</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {isThinking && !isComplete && ( // Show loader only if actively thinking and not yet complete
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                        <span className="text-xs text-muted-foreground">Processing...</span>
+                      </>
+                    )}
                     <CollapsibleTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="p-0 h-auto"
-                      >
-                        {isThinkingExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                      <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground">
+                        {isThinkingExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
                       </Button>
                     </CollapsibleTrigger>
-                    <div className="flex items-center gap-2">
-                      <Brain className="h-4 w-4" />
-                      <span className="text-sm font-medium">Thinking Process</span>
-                    </div>
-                    {isThinking && (
-                      <div className="flex items-center gap-2 ml-auto">
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        <span className="text-sm text-muted-foreground">Processing...</span>
-                      </div>
-                    )}
-                  </div>
-
-                  <CollapsibleContent>
-                    <div className="space-y-4">
-                      {/* Thinking Steps */}
-                      {intermediateSteps.thinking.length > 0 && (
-                        <div className="space-y-2">
-                          <div className="text-sm font-medium">Reasoning Steps:</div>
-                          {intermediateSteps.thinking.map((thought, index) => (
-                            <div
-                              key={index}
-                              className="text-sm text-muted-foreground pl-4 border-l-2"
-                            >
-                              {thought}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Tool Calls */}
-                      {intermediateSteps.tools.length > 0 && (
-                        <div className="space-y-2">
-                          <div className="text-sm font-medium">Data Collection:</div>
-                          {intermediateSteps.tools.map((tool, index) => (
-                            <div
-                              key={index}
-                              className="flex items-center gap-2 text-sm"
-                            >
-                              {tool.status === "started" && (
-                                <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
-                              )}
-                              {tool.status === "completed" && (
-                                <CheckCircle2 className="h-3 w-3 text-green-500" />
-                              )}
-                              {tool.status === "error" && (
-                                <XCircle className="h-3 w-3 text-red-500" />
-                              )}
-                              <span className="font-mono text-xs">
-                                {tool.tool_name}
-                              </span>
-                              {tool.status === "completed" && tool.content && (
-                                <Badge variant="secondary" className="ml-2">
-                                  <Link className="h-3 w-3 mr-1" />
-                                  Source
-                                </Badge>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </CollapsibleContent>
-                </Collapsible>
-              </Card>
-            )}
-
-            {/* Main Response */}
-            <div className={cn(
-              "prose prose-neutral dark:prose-invert max-w-none",
-              "rounded-lg border bg-background p-4",
-              "shadow-sm transition-colors hover:border-border",
-              "relative"
-            )}>
-              {/* Copy Button */}
-              <div className="absolute top-2 right-2">
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6"
-                        onClick={() => copyToClipboard(message.content)}
-                      >
-                        {copied ? (
-                          <Check className="h-3 w-3" />
-                        ) : (
-                          <Copy className="h-3 w-3" />
-                        )}
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p className="text-xs">{copied ? 'Copied!' : 'Copy response'}</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              </div>
-
-              <ReactMarkdown components={components}>
-                {markdownContent}
-              </ReactMarkdown>
-
-              {/* Sources Section */}
-              {sources.length > 0 && isComplete && (
-                <div className="mt-6 pt-6 border-t">
-                  <div className="flex items-center gap-2 mb-4">
-                    <BookOpen className="h-4 w-4" />
-                    <span className="text-sm font-medium">Sources</span>
-                  </div>
-                  <div className="space-y-4">
-                    {sources.map((source, index) => (
-                      <Card key={index} className="p-3">
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="text-sm font-medium">{source.title}</span>
-                          {source.url && (
-                            <a
-                              href={source.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-xs text-blue-500 hover:underline"
-                            >
-                              <Link className="h-3 w-3 inline" />
-                            </a>
-                          )}
-                        </div>
-                        {source.content && (
-                          <pre className="text-xs overflow-x-auto p-2 bg-muted rounded-md">
-                            {source.content}
-                          </pre>
-                        )}
-                      </Card>
-                    ))}
                   </div>
                 </div>
-              )}
-            </div>
-          </>
+                <CollapsibleContent className="prose prose-xs dark:prose-invert max-w-none text-muted-foreground/90">
+                  <div className="space-y-2 text-xs">
+                    {intermediateSteps.thinking.length > 0 && (
+                      <div className="space-y-1">
+                        <div className="font-medium text-foreground/70">Reasoning:</div>
+                        {intermediateSteps.thinking.map((thought, index) => (
+                          <p key={index} className="pl-2 border-l-2 border-border/50 py-0.5 my-0.5">{thought}</p>
+                        ))}
+                      </div>
+                    )}
+                    {intermediateSteps.tools.length > 0 && (
+                      <div className="space-y-1">
+                        <div className="font-medium text-foreground/70">Actions:</div>
+                        {intermediateSteps.tools.map((tool, index) => (
+                          <div key={index} className="flex items-center gap-1.5 pl-2 border-l-2 border-border/50 py-0.5 my-0.5">
+                            {tool.status === "started" && <Loader2 className="h-3 w-3 animate-spin" />}
+                            {tool.status === "completed" && <CheckCircle2 className="h-3 w-3 text-green-600 dark:text-green-500" />}
+                            {tool.status === "error" && <XCircle className="h-3 w-3 text-red-600 dark:text-red-500" />}
+                            <span className="font-mono text-xs">{tool.tool_name}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {intermediateSteps.thinking.length === 0 && intermediateSteps.tools.length === 0 && (
+                      <p className="italic">No detailed steps to show yet...</p>
+                    )}
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
+            )}
+
+            {/* Main Response Content */}
+            {/* Show if:
+                1. There's markdownContent AND (it's not just "Final Answer:" while thinking OR it's complete)
+                2. OR if it's complete and there's any markdownContent (even if empty string, to allow sources to show in an empty bubble)
+            */}
+            { (markdownContent && !(isThinking && markdownContent.includes("Final Answer:"))) || (isComplete && typeof markdownContent === 'string') ? (
+              <div className="prose prose-sm sm:prose-base dark:prose-invert max-w-none relative">
+                {/* Copy Button for main response - show only when complete and content exists */}
+                {isComplete && markdownContent && (
+                  <div className="absolute top-0 right-0 z-10">
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                            onClick={() => copyToClipboard(markdownContent)}
+                          >
+                            {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="text-xs">{copied ? 'Copied!' : 'Copy response'}</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                )}
+                <ReactMarkdown components={components}>
+                  {markdownContent.replace(/^Final Answer:\s*/i, "").trim()}
+                </ReactMarkdown>
+              </div>
+            ) : (isThinking && !hasIntermediateContent && !markdownContent) ? (
+              <div className="prose prose-sm sm:prose-base dark:prose-invert max-w-none text-muted-foreground italic">
+                Processing...
+              </div>
+            ) : null }
+
+            {/* Sources Section - shown inside the main bubble when complete */}
+            {sources.length > 0 && isComplete && (
+              <div className="mt-3 pt-3 border-t border-border/30">
+                <div className="flex items-center gap-2 mb-2">
+                  <BookOpen className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-xs font-medium text-muted-foreground">Sources</span>
+                </div>
+                <div className="space-y-2">
+                  {sources.map((source, index) => (
+                    <Card key={index} className="p-2 bg-background/50 dark:bg-muted/30 text-xs shadow-none border-border/50">
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <span className="font-medium truncate">{source.title}</span>
+                        {source.url && (
+                          <a
+                            href={source.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary/80 hover:text-primary hover:underline text-xs"
+                          >
+                            <Link className="h-3 w-3 inline" /> Visit
+                          </a>
+                        )}
+                      </div>
+                      {source.content && (
+                        <pre className="text-xs overflow-x-auto p-1.5 bg-black/5 dark:bg-black/20 rounded-sm font-mono">
+                          {source.content}
+                        </pre>
+                      )}
+                    </Card>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>

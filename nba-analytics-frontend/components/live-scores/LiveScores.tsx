@@ -1,10 +1,12 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import styles from './LiveScores.module.css';
-
-// Import our frontend API base for scoreboard
-// Fetch live scoreboard via Next.js API route
+// Removed: import styles from './LiveScores.module.css';
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { AlertCircle, Loader2 } from "lucide-react"; // Added AlertCircle and Loader2
+import { cn } from "@/lib/utils"; // Added cn
 
 // Define our scoreboard shape
 interface Team {
@@ -90,45 +92,93 @@ const LiveScores: React.FC = () => {
   }, [loading, scores]);
 
   if (loading && !isConnected && !error) {
-     return <div className={styles.loading}>Connecting to live scores...</div>;
+    return (
+      <div className="flex flex-col items-center justify-center p-6 bg-card text-card-foreground rounded-lg shadow-sm border min-h-[200px]">
+        <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
+        <p className="text-muted-foreground">Connecting to live scores...</p>
+      </div>
+    );
   }
   
   if (loading && isConnected && !scores && !error){
-     return <div className={styles.loading}>Waiting for initial scores...</div>;
+    return (
+      <div className="flex flex-col items-center justify-center p-6 bg-card text-card-foreground rounded-lg shadow-sm border min-h-[200px]">
+        <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
+        <p className="text-muted-foreground">Waiting for initial scores...</p>
+      </div>
+    );
   }
 
   if (error) {
-    return <div className={styles.error}>{error}</div>;
+    return (
+      <Alert variant="destructive" className="my-4">
+        <AlertCircle className="h-4 w-4" />
+        <AlertTitle>Connection Error</AlertTitle>
+        <AlertDescription>{error}</AlertDescription>
+      </Alert>
+    );
   }
 
   if (!scores || scores.games.length === 0) {
     if (!isConnected && !error) {
-       return <div className={styles.noGames}>Connecting...</div>;
+      return (
+        <div className="flex flex-col items-center justify-center p-6 bg-card text-card-foreground rounded-lg shadow-sm border min-h-[200px]">
+          <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
+          <p className="text-muted-foreground">Connecting...</p>
+        </div>
+      );
     }
-    return <div className={styles.noGames}>No live games currently or waiting for data.</div>;
+    return (
+      <div className="p-6 bg-card text-card-foreground rounded-lg shadow-sm border min-h-[200px] flex items-center justify-center">
+        <p className="text-muted-foreground text-center">No live games currently or waiting for data.</p>
+      </div>
+    );
   }
 
   return (
-    <div className={styles.liveScoresContainer}>
-      <h2>Live NBA Scores - {new Date(scores.gameDate).toLocaleDateString()}</h2>
-      <div className={styles.gamesGrid}>
+    <div className="p-4 md:p-6 bg-background rounded-lg">
+      <h2 className="text-2xl font-semibold text-center mb-6 text-foreground">
+        Live NBA Scores - {new Date(scores.gameDate).toLocaleDateString()}
+      </h2>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {scores.games.map((game) => (
-          <div key={game.gameId} className={styles.gameCard}>
-            <div className={styles.gameStatus}>
-              <span>{game.gameStatusText}</span>
-              {game.gameStatus === 2 && game.period && game.gameClock && (
-                <span> - Q{game.period} {game.gameClock}</span>
-              )}
-            </div>
-            <div className={styles.teamInfo}>
-              <span className={styles.teamName}>{game.awayTeam.teamTricode}</span>
-              <span className={styles.score}>{game.awayTeam.score}</span>
-            </div>
-            <div className={styles.teamInfo}>
-              <span className={styles.teamName}>{game.homeTeam.teamTricode}</span>
-              <span className={styles.score}>{game.homeTeam.score}</span>
-            </div>
-          </div>
+          <Card key={game.gameId} className="transition-all hover:shadow-md flex flex-col">
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 pt-4 px-4">
+              <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                {game.awayTeam.teamTricode} @ {game.homeTeam.teamTricode}
+              </CardTitle>
+              <Badge
+                variant={game.gameStatus === 2 ? "default" : "outline"}
+                className={cn(
+                  "text-xs px-2 py-0.5",
+                  game.gameStatus === 2 && "animate-pulse"
+                )}
+              >
+                {game.gameStatusText}
+              </Badge>
+            </CardHeader>
+            <CardContent className="pt-2 pb-4 px-4 flex-grow flex flex-col justify-between">
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <span className="text-sm font-medium text-foreground">{game.awayTeam.teamTricode}</span>
+                  <span className="text-lg font-bold text-foreground">{game.awayTeam.score ?? '-'}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-foreground">{game.homeTeam.teamTricode}</span>
+                  <span className="text-lg font-bold text-foreground">{game.homeTeam.score ?? '-'}</span>
+                </div>
+              </div>
+              <div className="mt-3 text-center text-xs text-muted-foreground">
+                {game.gameStatus === 2 && game.period && game.gameClock ? (
+                  `Q${game.period} ${game.gameClock}`
+                ) : game.gameStatus !== 2 ? (
+                  new Date(game.gameEt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZoneName: 'short' })
+                ) : (
+                  <span>&nbsp;</span> // Placeholder for consistent height if no clock/time
+                )}
+              </div>
+            </CardContent>
+          </Card>
         ))}
       </div>
     </div>

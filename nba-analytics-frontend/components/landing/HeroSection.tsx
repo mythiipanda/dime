@@ -3,22 +3,25 @@
 import React from 'react';
 import { Button } from '@/components/ui/button'; // Assuming Button component exists
 import Link from 'next/link';
-import { ChevronDown } from 'lucide-react'; // Import icons potentially used
+import { ArrowRightIcon } from 'lucide-react'; // Changed ChevronDown to ArrowRightIcon
 
 // Updated MockupComponent to match light-mode theme
 const MockupComponent = () => {
   return (
     <div className="relative mt-12 lg:mt-0 lg:col-span-5">
       {/* Main Frame */}
-      <div className="bg-card/60 border border-border rounded-lg p-3 shadow-lg backdrop-blur-sm">
-        {/* Window Controls */}
-        <div className="flex items-center space-x-1.5 mb-3 pb-2 border-b border-border">
-          <div className="w-2.5 h-2.5 rounded-full bg-destructive"></div>
-          <div className="w-2.5 h-2.5 rounded-full bg-primary"></div>
-          <div className="w-2.5 h-2.5 rounded-full bg-secondary"></div>
+      <div className="bg-card/60 border border-border rounded-lg shadow-lg backdrop-blur-sm"> {/* Removed p-3 for custom padding below */}
+        {/* Window Controls - macOS style */}
+        <div className="flex items-center space-x-1.5 p-3 border-b border-border"> {/* Added p-3 here */}
+          <div className="w-3 h-3 rounded-full bg-red-500"></div> {/* macOS red */}
+          <div className="w-3 h-3 rounded-full bg-yellow-400"></div> {/* macOS yellow */}
+          <div className="w-3 h-3 rounded-full bg-green-500"></div> {/* macOS green */}
+          {/* Mock URL Bar (Optional) */}
+          <div className="ml-2 flex-grow h-5 bg-muted/30 rounded-sm"></div>
         </div>
-        {/* Mock Dashboard Content */}
-        <div className="h-64 space-y-3 overflow-hidden">
+        {/* Mock Dashboard Content - Added padding to content area */}
+        <div className="p-3"> {/* Added p-3 here */}
+        <div className="h-60 space-y-3 overflow-hidden"> {/* Adjusted height slightly */}
           {/* Mini Chart Example */}
           <div className="flex items-end space-x-1 h-16">
             <div className="w-4 bg-primary/50 rounded-t-sm h-[40%]"></div>
@@ -45,8 +48,9 @@ const MockupComponent = () => {
             <div className="h-2 w-full bg-muted-foreground/20 rounded-sm"></div>
             <div className="h-2 w-5/6 bg-muted-foreground/20 rounded-sm"></div>
           </div>
-        </div>
-      </div>
+        </div> {/* This closes the h-60 div */}
+        </div> {/* This closes the p-3 div that wraps the content */}
+      </div> {/* This closes the main frame bg-card/60 div */}
       {/* Decorative elements */}
       <div className="absolute -top-10 -left-10 w-72 h-72 bg-primary/5 rounded-full blur-3xl -z-10"></div>
       <div className="absolute -bottom-10 -right-10 w-72 h-72 bg-secondary/10 rounded-full blur-3xl -z-10"></div>
@@ -77,26 +81,26 @@ export function HeroSection() {
         {/* Text Content - Updated for future goals */}
         <div className="lg:col-span-7 text-center lg:text-left">
           {/* Updated Heading */} 
-          <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight text-foreground mb-6">
+          <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight text-foreground mb-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
             Unlock Deeper NBA Insights.
             <span className="block text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary">
               Powered by AI.
             </span>
           </h1>
-          {/* Updated Paragraph */} 
-          <p className="text-lg md:text-xl text-muted-foreground mb-10 max-w-2xl mx-auto lg:mx-0">
+          {/* Updated Paragraph */}
+          <p className="text-lg md:text-xl text-muted-foreground mb-10 max-w-2xl mx-auto lg:mx-0 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-200">
             Access real-time data, advanced visualizations, player comparisons, and AI-driven analysis to make smarter decisions, faster.
           </p>
           
-          {/* Button Container remains the same */}
-          <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
+          {/* Button Container - animate this too */}
+          <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start animate-in fade-in slide-in-from-bottom-4 duration-700 delay-300">
             <Button 
               asChild
               size="lg"
             >
-              <Link href="/dashboard">
+              <Link href="/dashboard" className="group"> {/* Added group class for icon hover */}
                 Get Started For Free
-                <ChevronDown className="ml-2 h-5 w-5 text-white/80 group-hover:translate-y-0.5 transition-transform" />
+                <ArrowRightIcon className="ml-2 h-5 w-5 opacity-80 group-hover:translate-x-1 transition-transform duration-200 ease-in-out" />
               </Link>
             </Button>
           </div>

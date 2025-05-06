@@ -81,15 +81,16 @@ export function SidebarNav({ isCollapsed }: SidebarNavProps) {
                     <Link
                       href={item.href}
                       className={cn(
-                        "flex items-center gap-3 rounded-lg text-sm font-regular transition-all hover:bg-accent hover:text-foreground",
-                        isCollapsed ? "justify-center p-2 h-9 w-9" : "px-4 py-2",
+                        "group flex items-center gap-3 rounded-md text-sm font-medium transition-colors duration-150 ease-in-out", // Changed to rounded-md, adjusted transition
+                        isCollapsed ? "justify-center p-2 h-9 w-9" : "px-3 py-2", // Adjusted padding for expanded
                         isActive
-                          ? "bg-accent text-accent-foreground hover:text-accent-foreground"
-                          : "text-muted-foreground hover:bg-muted"
+                          ? "text-primary bg-primary/10 border-l-4 border-primary" // Active: left border, subtle bg, primary text
+                          : "text-muted-foreground hover:bg-accent hover:text-accent-foreground", // Inactive: hover to accent
+                        isCollapsed && isActive && "border-l-0 border-t-4 border-primary rounded-b-md rounded-t-none" // Collapsed active: top border
                       )}
                     >
-                      <Icon className={cn("h-5 w-5", isCollapsed && "mx-auto")} />
-                      <span className={cn("whitespace-nowrap", isCollapsed && "sr-only")}>
+                      <Icon className={cn("h-5 w-5", isActive ? "text-primary" : "group-hover:text-accent-foreground")} /> {/* Icon color change on active/hover */}
+                      <span className={cn("whitespace-nowrap", isCollapsed && "sr-only", isActive ? "font-semibold" : "font-medium")}> {/* Bolder text for active */}
                         {item.label}
                       </span>
                     </Link>

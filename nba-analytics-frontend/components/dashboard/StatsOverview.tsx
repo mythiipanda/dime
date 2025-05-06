@@ -5,6 +5,7 @@ import {
   Trophy,
   BarChart2,
 } from "lucide-react";
+import { cn } from "@/lib/utils"; // Import cn
 
 // Define a type for the stat items for better structure and potential reuse
 type StatItem = {
@@ -44,12 +45,19 @@ const statItems: StatItem[] = [
 export function StatsOverview() {
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-      {statItems.map((item) => {
+      {statItems.map((item, index) => { // Added index for animation delay
         const IconComponent = item.icon;
         return (
-          <Card key={item.title}>
+          <Card
+            key={item.title}
+            className={cn(
+              "transition-all duration-300 hover:scale-[1.03] hover:shadow-md", // Added hover effects
+              "animate-in fade-in-0 slide-in-from-bottom-4 duration-500" // Added entrance animation
+            )}
+            style={{ animationDelay: `${index * 100}ms` }}
+          >
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-regular">{item.title}</CardTitle>
+              <CardTitle className="text-sm font-medium">{item.title}</CardTitle> {/* Changed font-regular to font-medium */}
               <IconComponent className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>

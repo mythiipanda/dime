@@ -4,13 +4,19 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 const alertVariants = cva(
-  "relative w-full rounded-md border px-4 py-3 text-sm grid has-[>svg]:grid-cols-[calc(var(--spacing)*4)_1fr] grid-cols-[0_1fr] has-[>svg]:gap-x-3 gap-y-1 items-start [&>svg]:size-4 [&>svg]:translate-y-1 [&>svg]:text-current", /* Spacing: rounded-md, gap-y-1, translate-y-1 */
+  "relative w-full rounded-md border px-4 py-3 text-sm flex items-start gap-x-3 [&>svg]:size-4 [&>svg]:translate-y-px [&>svg]:text-current animate-in fade-in-0 slide-in-from-top-2 duration-300", /* Spacing: rounded-md, translate-y-px for better icon alignment, Added slide-in */
   {
     variants: {
       variant: {
         default: "bg-card text-card-foreground",
         destructive:
-          "text-destructive bg-card [&>svg]:text-current *:data-[slot=alert-description]:text-destructive/90",
+          "text-destructive border-destructive/50 dark:border-destructive bg-card [&>svg]:text-destructive *:data-[slot=alert-description]:text-destructive/90",
+        info:
+          "text-sky-700 border-sky-500/50 dark:text-sky-300 dark:border-sky-500 bg-card [&>svg]:text-sky-600 dark:[&>svg]:text-sky-400 *:data-[slot=alert-description]:text-sky-700/90 dark:*:data-[slot=alert-description]:text-sky-300/90",
+        success:
+          "text-emerald-700 border-emerald-500/50 dark:text-emerald-300 dark:border-emerald-500 bg-card [&>svg]:text-emerald-600 dark:[&>svg]:text-emerald-400 *:data-[slot=alert-description]:text-emerald-700/90 dark:*:data-[slot=alert-description]:text-emerald-300/90",
+        warning:
+          "text-amber-700 border-amber-500/50 dark:text-amber-300 dark:border-amber-500 bg-card [&>svg]:text-amber-600 dark:[&>svg]:text-amber-400 *:data-[slot=alert-description]:text-amber-700/90 dark:*:data-[slot=alert-description]:text-amber-300/90",
       },
     },
     defaultVariants: {
@@ -39,7 +45,7 @@ function AlertTitle({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="alert-title"
       className={cn(
-        "col-start-2 line-clamp-1 min-h-4 font-semibold tracking-tight", /* Typography: font-semibold */
+        "line-clamp-1 font-semibold tracking-tight", /* Typography: font-semibold, removed col-start-2 */
         className
       )}
       {...props}
@@ -55,7 +61,7 @@ function AlertDescription({
     <div
       data-slot="alert-description"
       className={cn(
-        "text-muted-foreground col-start-2 grid justify-items-start gap-1 text-sm [&_p]:leading-relaxed",
+        "text-muted-foreground grid justify-items-start gap-1 text-sm [&_p]:leading-relaxed", /* removed col-start-2 */
         className
       )}
       {...props}

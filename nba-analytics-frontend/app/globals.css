@@ -44,7 +44,7 @@
 }
 
 :root {
-  --radius: 0.625rem;
+  --radius: 0.5rem; /* Aura example: 8px radius */
   --background: oklch(1 0 0);
   --foreground: oklch(0.129 0.042 264.695);
   --card: oklch(1 0 0);
@@ -119,4 +119,16 @@
   body {
     @apply bg-background text-foreground;
   }
+  h1 {
+    @apply text-4xl font-bold tracking-tight sm:text-5xl lg:text-6xl; /* Aura H1: 40-48px+, using responsive scaling */
+  }
+  h2 {
+    @apply text-3xl font-bold tracking-tight sm:text-4xl; /* Aura H2: 28-32px+, using responsive scaling */
+  }
+  h3 {
+    @apply text-2xl font-semibold tracking-tight sm:text-3xl; /* Aura H3: 20-24px+, using responsive scaling */
+  }
+  /* Tailwind's text-base (1rem) for body matches Aura's Body Text (16px) */
+  /* Tailwind's text-sm (0.875rem) for small text matches Aura's Small Text (14px) */
+  /* Tailwind's text-xs (0.75rem) for micro/caption matches Aura's Micro/Caption (12px) */
 }

@@ -56,6 +56,7 @@ function ChartContainer({
         data-chart={chartId}
         className={cn(
           "[&_.recharts-cartesian-axis-tick_text]:fill-muted-foreground [&_.recharts-cartesian-grid_line[stroke='#ccc']]:stroke-border/50 [&_.recharts-curve.recharts-tooltip-cursor]:stroke-border [&_.recharts-polar-grid_[stroke='#ccc']]:stroke-border [&_.recharts-radial-bar-background-sector]:fill-muted [&_.recharts-rectangle.recharts-tooltip-cursor]:fill-muted [&_.recharts-reference-line_[stroke='#ccc']]:stroke-border flex aspect-video justify-center text-sm [&_.recharts-dot[stroke='#fff']]:stroke-transparent [&_.recharts-layer]:outline-hidden [&_.recharts-sector]:outline-hidden [&_.recharts-sector[stroke='#fff']]:stroke-transparent [&_.recharts-surface]:outline-hidden", /* Typography: text-sm */
+          "animate-in fade-in-0 zoom-in-95 duration-500", // Added entrance animation
           className
         )}
         {...props}
@@ -174,6 +175,7 @@ function ChartTooltipContent({
     <div
       className={cn(
         "border-border/50 bg-background grid min-w-[8rem] items-start gap-2 rounded-md border px-2 py-2 text-sm shadow-xl", /* Spacing: gap-2, rounded-md, px-2, py-2. Typography: text-sm */
+        "animate-in fade-in-0 zoom-in-95 duration-150", // Added entrance animation for tooltip
         className
       )}
     >
@@ -272,6 +274,7 @@ function ChartLegendContent({
       className={cn(
         "flex items-center justify-center gap-4",
         verticalAlign === "top" ? "pb-3" : "pt-3",
+        "animate-in fade-in-0 duration-300", // Added entrance animation for legend
         className
       )}
     >

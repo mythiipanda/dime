@@ -22,9 +22,11 @@ interface TeamTableProps {
 
 export function TeamTable({ title, teams }: TeamTableProps) {
   return (
-    <div>
-      <h2 className="text-xl font-semibold mb-4">{title}</h2>
-      <div className="overflow-x-auto">
+    <div className={cn(
+      "animate-in fade-in-0 slide-in-from-bottom-5 duration-500" // Entrance animation for the whole table section
+    )}>
+      <h2 className="text-xl font-semibold mb-4 animate-in fade-in-0 slide-in-from-bottom-2 duration-500 delay-100">{title}</h2>
+      <div className="overflow-x-auto rounded-md border animate-in fade-in-0 zoom-in-95 duration-500 delay-200"> {/* Added rounded-md border and entrance animation */}
         <Table>
           <TableHeader>
             <TableRow className="border-b hover:bg-transparent">
@@ -41,10 +43,17 @@ export function TeamTable({ title, teams }: TeamTableProps) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {teams.map((team) => {
+            {teams.map((team, rowIndex) => { // Added rowIndex for staggered animation
               const clinchBadges = getClinchIndicators(team.ClinchIndicator);
               return (
-                <TableRow key={team.TeamID} className="border-b border-border/50 hover:bg-muted/50 transition-colors">
+                <TableRow
+                  key={team.TeamID}
+                  className={cn(
+                    "border-b border-border/50 hover:bg-muted/60 transition-all duration-200 hover:shadow-sm", // Enhanced hover
+                    "animate-in fade-in-0 slide-in-from-bottom-3 duration-300" // Base row animation
+                  )}
+                  style={{ animationDelay: `${rowIndex * 50}ms` }} // Staggered delay
+                >
                   <TableCell className="font-medium text-center py-3 px-2">{team.PlayoffRank}</TableCell>
                   <TableCell className="py-3 px-4">
                     <div className="font-medium">{team.TeamName}</div>
@@ -52,7 +61,15 @@ export function TeamTable({ title, teams }: TeamTableProps) {
                     {clinchBadges.length > 0 && (
                       <div className="mt-1 flex flex-wrap gap-1">
                         {clinchBadges.map((badgeText, index) => (
-                          <Badge key={index} variant="secondary" className="text-xs font-normal">
+                          <Badge
+                            key={index}
+                            variant="secondary"
+                            className={cn(
+                              "text-xs font-normal",
+                              "animate-in fade-in-0 zoom-in-90 duration-300" // Badge entrance
+                            )}
+                            style={{ animationDelay: `${(rowIndex * 50) + (index * 30) + 200}ms` }} // Staggered badge delay
+                          >
                             {badgeText}
                           </Badge>
                         ))}

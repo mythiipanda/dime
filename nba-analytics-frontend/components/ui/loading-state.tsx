@@ -13,7 +13,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card"
 
 export function TableSkeleton() {
   return (
-    <div className="rounded-md border">
+    <div className="rounded-md border animate-in fade-in-0 duration-300">
       <Table>
         <TableHeader>
           <TableRow>
@@ -54,7 +54,7 @@ export function TableSkeleton() {
 
 export function CardSkeleton() {
   return (
-    <Card>
+    <Card className="animate-in fade-in-0 duration-300">
       <CardHeader>
         <Skeleton className="h-6 w-[180px]" />
       </CardHeader>
