@@ -23,7 +23,7 @@ export function LandingNavbar() {
     <header className={`fixed top-3 left-1/2 transform -translate-x-1/2 w-[calc(100%-2rem)] sm:w-[calc(100%-2.5rem)] max-w-5xl xl:max-w-6xl z-50 px-3 sm:px-4 py-1.5 sm:py-2 transition-all duration-300 ease-in-out ${ 
       scrolled 
         ? 'bg-black/70 backdrop-blur-xl border border-white/15 rounded-full shadow-2xl shadow-blue-500/25'
-        : 'bg-transparent border-transparent rounded-full'
+        : 'bg-black/10 backdrop-blur-sm border border-white/5 rounded-full'
     }`}>
       <div className="container mx-auto max-w-7xl px-1 sm:px-2 h-10 flex items-center justify-between">
         <Logo href="/" iconSize={5} textSize="lg" />
