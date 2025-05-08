@@ -51,7 +51,7 @@ export function LandingNavbar() {
           <SignedIn>
             <UserButton afterSignOutUrl="/" />
             <Link href="/dashboard">
-              <Button size="sm" variant="outline" className="border-white/20 text-gray-200 hover:bg-white/10 hover:text-white rounded-md px-3">Dashboard</Button>
+              <Button size="sm" className="bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white font-semibold shadow-md hover:shadow-lg hover:shadow-cyan-500/30 transition-all duration-300 rounded-md px-4">Dashboard</Button>
             </Link>
           </SignedIn>
         </div>
