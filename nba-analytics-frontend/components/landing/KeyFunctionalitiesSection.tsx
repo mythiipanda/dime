@@ -75,7 +75,7 @@ const FunctionalityDetail: React.FC<FunctionalityProps> = ({
           {description}
         </p>
         {ctaLink && ctaText && (
-          <Button asChild variant="outline" className="border-cyan-400/50 text-cyan-400 hover:bg-cyan-400/10 hover:border-cyan-400/80 group">
+          <Button asChild size="lg" className="bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white font-semibold shadow-md hover:shadow-lg hover:shadow-cyan-500/30 transition-all duration-300 rounded-md group">
             <Link href={ctaLink}>
               {ctaText}
               <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />

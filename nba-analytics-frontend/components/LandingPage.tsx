@@ -8,6 +8,7 @@ import { KeyFunctionalitiesSection } from '@/components/landing/KeyFunctionaliti
 import { CollaborativeAiSection } from '@/components/landing/CollaborativeAiSection';
 import { TestimonialsSection } from '@/components/landing/TestimonialsSection';
 import { PricingSection } from '@/components/landing/PricingSection';
+import { LandingFooter } from '@/components/landing/LandingFooter';
 
 export default function LandingPage() {
   return (
@@ -26,7 +27,7 @@ export default function LandingPage() {
         {/* Placeholder for Final CTA if needed as a separate section */}
       </main>
 
-      {/* <LandingFooter /> Removed Footer rendering */}
+      <LandingFooter />
     </div>
   );
 }
