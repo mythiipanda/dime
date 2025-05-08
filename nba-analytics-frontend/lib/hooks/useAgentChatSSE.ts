@@ -39,56 +39,57 @@ export function useAgentChatSSE({
   const eventSourceRef = useRef<EventSource | null>(null);
 
   const submitPrompt = useCallback((prompt: string) => {
-    if (!prompt.trim() || state.isLoading) return;
+    setState(prev => {
+      if (!prompt.trim() || prev.isLoading) return prev;
 
-    setState(prev => ({
-      ...prev,
-      isLoading: true,
-      error: null,
-      chatHistory: [
-        ...prev.chatHistory,
-        { role: 'user', content: prompt }
-      ]
-    }));
+      // Close existing connection if any
+      if (eventSourceRef.current) {
+        console.log('[SSE] Closing existing connection before new prompt');
+        eventSourceRef.current.close();
+        eventSourceRef.current = null; // Clear the ref immediately
+      }
+      
+      console.log(`[SSE] Connecting to ${apiUrl}...`);
+      const eventSource = new EventSource(`${apiUrl}?prompt=${encodeURIComponent(prompt)}`);
+      eventSourceRef.current = eventSource;
 
-    console.log(`[SSE] Connecting to ${apiUrl}...`);
-
-    if (eventSourceRef.current) {
-      console.log('[SSE] Closing existing connection');
-      eventSourceRef.current.close();
-    }
-
-    const eventSource = new EventSource(`${apiUrl}?prompt=${encodeURIComponent(prompt)}`);
-    eventSourceRef.current = eventSource;
-
-    eventSource.onmessage = (event) => {
-      // console.debug('[SSE] Received message:', event.data);
-      try {
-        const data = JSON.parse(event.data);
-        // console.debug('[SSE] Parsed data:', data);
-        setState(prev => {
-          const updatedHistory = [...prev.chatHistory];
-          if (updatedHistory.length > 0) {
-            const lastMessage = updatedHistory[updatedHistory.length - 1];
-            if (lastMessage.role === 'assistant') {
-              if (data.event === "RunResponse") {
-                if (data.content) {
+      eventSource.onmessage = (event) => {
+        // console.debug('[SSE] Received message:', event.data);
+        try {
+          const data = JSON.parse(event.data);
+          // console.debug('[SSE] Parsed data:', data);
+          setState(innerPrev => { // Use innerPrev to avoid conflict with outer prev
+            const updatedHistory = [...innerPrev.chatHistory];
+            if (updatedHistory.length > 0) {
+              const lastMessage = updatedHistory[updatedHistory.length - 1];
+              if (lastMessage.role === 'assistant') {
+                if (data.event === "RunResponse") {
+                  if (data.content) {
+                    updatedHistory[updatedHistory.length - 1] = {
+                      ...lastMessage,
+                      content: lastMessage.content + data.content,
+                      event: data.event,
+                      status: data.status,
+                      toolCalls: data.toolCalls
+                    };
+                  }
+                } else if (data.content) { // Handle other events that might replace content
                   updatedHistory[updatedHistory.length - 1] = {
                     ...lastMessage,
-                    content: lastMessage.content + data.content,
+                    content: data.content,
                     event: data.event,
                     status: data.status,
                     toolCalls: data.toolCalls
                   };
                 }
-              } else if (data.content) { // Handle other events that might replace content
-                updatedHistory[updatedHistory.length - 1] = {
-                  ...lastMessage,
-                  content: data.content,
+              } else {
+                updatedHistory.push({
+                  role: 'assistant',
+                  content: data.content || '',
                   event: data.event,
                   status: data.status,
                   toolCalls: data.toolCalls
-                };
+                });
               }
             } else {
               updatedHistory.push({
@@ -99,56 +100,83 @@ export function useAgentChatSSE({
                 toolCalls: data.toolCalls
               });
             }
-          } else {
-            updatedHistory.push({
-              role: 'assistant',
-              content: data.content || '',
-              event: data.event,
-              status: data.status,
-              toolCalls: data.toolCalls
-            });
-          }
 
-          const newState = {
-            ...prev,
-            chatHistory: updatedHistory,
-            isLoading: data.status !== 'complete' && data.event !== 'final'
-          };
-          return newState;
-        });
-      } catch (e) {
-        console.error('[SSE] Failed to parse data:', e);
-      }
-    };
+            const newState = {
+              ...innerPrev,
+              chatHistory: updatedHistory,
+              isLoading: data.status !== 'complete' && data.event !== 'final'
+            };
+            return newState;
+          });
+        } catch (e) {
+          console.error('[SSE] Failed to parse data:', e);
+        }
+      };
 
-    eventSource.addEventListener('final', (event: MessageEvent) => {
-      console.log('[SSE] Received final event.');
-      try {
-        const data = JSON.parse(event.data);
-        setState(prev => {
-          const finalHistory = [...prev.chatHistory, data.message];
-          const finalState = {
-            ...prev,
-            chatHistory: finalHistory,
-            isLoading: false
-          };
-          return finalState;
-        });
-      } catch (e) {
-        console.error('[SSE] Failed to parse final data:', e);
-        setState(prev => ({ ...prev, error: "Failed to parse final event.", isLoading: false }));
-      }
-      eventSource.close();
-      eventSourceRef.current = null;
+      eventSource.addEventListener('final', (event: MessageEvent) => {
+        console.log('[SSE] Received final event.');
+        try {
+          // We might still parse data if the final event contains useful metadata, but we won't use it for message content.
+          // const data = JSON.parse(event.data);
+          // console.log('[SSE] Final event data:', data); 
+
+          setState(innerPrev => {
+            let finalHistory = [...innerPrev.chatHistory];
+            
+            // Ensure the *last* message is marked complete, if it's an assistant message
+            if (finalHistory.length > 0) {
+              const lastMessageIndex = finalHistory.length - 1;
+              const lastMessage = finalHistory[lastMessageIndex];
+              if (lastMessage.role === 'assistant' && lastMessage.status !== 'complete') {
+                finalHistory[lastMessageIndex] = {
+                  ...lastMessage,
+                  status: 'complete' 
+                };
+              }
+            }
+            
+            // Do NOT add a new message from the final event data
+            const finalState = {
+              ...innerPrev,
+              chatHistory: finalHistory, // Use the potentially updated history (last message status)
+              isLoading: false
+            };
+            return finalState;
+          });
+        } catch (e) {
+          console.error('[SSE] Error processing final event (state update only):', e);
+          // Still ensure loading is set to false on error
+          setState(innerPrev => ({ ...innerPrev, isLoading: false }));
+        }
+        // Close connection AFTER state update attempt
+        if (eventSourceRef.current) {
+            console.log('[SSE] Closing connection after final event processing.');
+            eventSourceRef.current.close();
+            eventSourceRef.current = null;
+        }
+      });
+
+      eventSource.onerror = (error) => {
+        console.error('[SSE] Connection error:', error);
+        setState(innerPrev => ({ ...innerPrev, error: "Connection error. Please try again.", isLoading: false }));
+        if (eventSourceRef.current) {
+            eventSourceRef.current.close();
+            eventSourceRef.current = null;
+        }
+      };
+
+      // Return new state for the initial prompt submission
+      return {
+        ...prev,
+        isLoading: true,
+        error: null,
+        chatHistory: [
+          ...prev.chatHistory,
+          { role: 'user', content: prompt }
+        ]
+      };
     });
-
-    eventSource.onerror = (error) => {
-      console.error('[SSE] Connection error:', error);
-      setState(prev => ({ ...prev, error: "Connection error. Please try again.", isLoading: false }));
-      eventSource.close();
-      eventSourceRef.current = null;
-    };
-  }, [state.isLoading, apiUrl]);
+  }, [apiUrl]); // Only apiUrl is a true dependency now
 
   const closeConnection = useCallback(() => {
     if (eventSourceRef.current) {

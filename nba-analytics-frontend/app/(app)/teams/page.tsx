@@ -2,6 +2,9 @@ import { getLeagueStandings, TeamStanding } from "@/lib/api/teams";
 import TeamsClientPage from "./TeamsClientPage";
 import { Metadata } from 'next';
 
+// Force dynamic rendering for this page
+export const dynamic = 'force-dynamic';
+
 // Add metadata for the page
 export const metadata: Metadata = {
   title: 'NBA Team Standings',

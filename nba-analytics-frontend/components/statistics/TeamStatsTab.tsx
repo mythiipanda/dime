@@ -15,8 +15,10 @@ export function TeamStatsTab() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card className={cn(
             "transition-all duration-300 hover:scale-[1.02] hover:shadow-md",
-            "animate-in fade-in-0 slide-in-from-bottom-4 duration-500"
-          )} style={{ animationDelay: `${0 * STAT_CARD_STAGGER_DELAY_MS}ms` }}>
+            // "animate-in fade-in-0 slide-in-from-bottom-4 duration-500" // Animation disabled
+          )}
+          // style={{ animationDelay: `${0 * STAT_CARD_STAGGER_DELAY_MS}ms` }} // Animation disabled
+          >
           <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
             <CardTitle className="text-sm font-medium">Offensive Rating</CardTitle>
             <BarChart3Icon className="w-4 h-4 text-muted-foreground" />
@@ -29,8 +31,10 @@ export function TeamStatsTab() {
 
         <Card className={cn(
             "transition-all duration-300 hover:scale-[1.02] hover:shadow-md",
-            "animate-in fade-in-0 slide-in-from-bottom-4 duration-500"
-          )} style={{ animationDelay: `${1 * STAT_CARD_STAGGER_DELAY_MS}ms` }}>
+            // "animate-in fade-in-0 slide-in-from-bottom-4 duration-500" // Animation disabled
+          )}
+          // style={{ animationDelay: `${1 * STAT_CARD_STAGGER_DELAY_MS}ms` }} // Animation disabled
+          >
           <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
             <CardTitle className="text-sm font-medium">Defensive Rating</CardTitle>
             <LineChart className="w-4 h-4 text-muted-foreground" />
@@ -43,8 +47,10 @@ export function TeamStatsTab() {
 
         <Card className={cn(
             "transition-all duration-300 hover:scale-[1.02] hover:shadow-md",
-            "animate-in fade-in-0 slide-in-from-bottom-4 duration-500"
-          )} style={{ animationDelay: `${2 * STAT_CARD_STAGGER_DELAY_MS}ms` }}>
+            // "animate-in fade-in-0 slide-in-from-bottom-4 duration-500" // Animation disabled
+          )}
+          // style={{ animationDelay: `${2 * STAT_CARD_STAGGER_DELAY_MS}ms` }} // Animation disabled
+          >
           <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
             <CardTitle className="text-sm font-medium">Pace</CardTitle>
             <TrendingUpIcon className="w-4 h-4 text-muted-foreground" />
@@ -57,8 +63,10 @@ export function TeamStatsTab() {
 
         <Card className={cn(
             "transition-all duration-300 hover:scale-[1.02] hover:shadow-md",
-            "animate-in fade-in-0 slide-in-from-bottom-4 duration-500"
-          )} style={{ animationDelay: `${3 * STAT_CARD_STAGGER_DELAY_MS}ms` }}>
+            // "animate-in fade-in-0 slide-in-from-bottom-4 duration-500" // Animation disabled
+          )}
+          // style={{ animationDelay: `${3 * STAT_CARD_STAGGER_DELAY_MS}ms` }} // Animation disabled
+          >
           <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
             <CardTitle className="text-sm font-medium">Net Rating</CardTitle>
             <PieChart className="w-4 h-4 text-muted-foreground" />
@@ -73,8 +81,10 @@ export function TeamStatsTab() {
       <div className="grid gap-4 md:grid-cols-2">
         <Card className={cn(
             "col-span-1 transition-all duration-300 hover:scale-[1.02] hover:shadow-md",
-            "animate-in fade-in-0 slide-in-from-bottom-4 duration-500"
-          )} style={{ animationDelay: `${0 * STAT_CARD_STAGGER_DELAY_MS + CHART_ROW_BASE_DELAY_MS}ms` }}>
+            // "animate-in fade-in-0 slide-in-from-bottom-4 duration-500" // Animation disabled
+          )}
+          // style={{ animationDelay: `${0 * STAT_CARD_STAGGER_DELAY_MS + CHART_ROW_BASE_DELAY_MS}ms` }} // Animation disabled
+          >
           <CardHeader>
             <CardTitle>Team Performance Comparison</CardTitle>
             <CardDescription>
@@ -91,8 +101,10 @@ export function TeamStatsTab() {
 
         <Card className={cn(
             "col-span-1 transition-all duration-300 hover:scale-[1.02] hover:shadow-md",
-            "animate-in fade-in-0 slide-in-from-bottom-4 duration-500"
-          )} style={{ animationDelay: `${1 * STAT_CARD_STAGGER_DELAY_MS + CHART_ROW_BASE_DELAY_MS}ms` }}>
+            // "animate-in fade-in-0 slide-in-from-bottom-4 duration-500" // Animation disabled
+          )}
+          // style={{ animationDelay: `${1 * STAT_CARD_STAGGER_DELAY_MS + CHART_ROW_BASE_DELAY_MS}ms` }} // Animation disabled
+          >
           <CardHeader>
             <CardTitle>League Rankings</CardTitle>
             <CardDescription>

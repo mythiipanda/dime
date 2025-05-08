@@ -1,99 +1,172 @@
 "use client";
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { format, parseISO, subDays, addDays, isToday } from 'date-fns';
 import { Button } from "@/components/ui/button";
-import { ChevronLeftIcon, ChevronRightIcon, Loader2, AlertCircleIcon, CalendarOffIcon } from "lucide-react"; // Added AlertCircleIcon, CalendarOffIcon
-import { ScoreboardData } from "./types";
-import { GameCard } from "@/components/games/GameCard";
+import { ChevronLeftIcon, ChevronRightIcon, Loader2, AlertCircleIcon, CalendarOffIcon } from "lucide-react";
+import { ScoreboardData, Game } from "./types";
 import { PlayByPlayModal } from "@/components/games/PlayByPlayModal";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"; // Added Alert components
-import { cn } from "@/lib/utils"; // Added cn
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { cn } from "@/lib/utils";
+import { API_BASE_URL } from '@/lib/config';
+import { GameCard } from "@/components/games/GameCard";
 
 // Constants
 const GAME_CARD_STAGGER_DELAY_MS = 75;
 
 interface GamesClientPageProps {
-  targetDateISO: string;
-  initialScoreboardData: ScoreboardData | null;
-  serverFetchError: string | null; // Add serverFetchError prop
+  searchParams: { [key: string]: string | string[] | undefined };
+  // These props are no longer used as client handles fetching/state
+  initialScoreboardData: ScoreboardData | null; 
+  serverFetchError: string | null; 
 }
 
-export default function GamesClientPage({
-  targetDateISO,
-  initialScoreboardData,
-  serverFetchError, // Receive serverFetchError
-}: GamesClientPageProps) {
+export default function GamesClientPage({ searchParams }: GamesClientPageProps) {
   const router = useRouter();
-  const currentDate = parseISO(targetDateISO);
-  const viewingToday = isToday(currentDate);
-  const displayDate = format(currentDate, 'PPPP');
 
-  // State for live data (if viewing today)
-  const [liveScoreboardData, setLiveScoreboardData] = useState<ScoreboardData | null>(viewingToday ? null : initialScoreboardData); // Start null if today, use initial otherwise
+  // --- State Management ---
+  const [scoreboardData, setScoreboardData] = useState<ScoreboardData | null>(null);
   const [isConnected, setIsConnected] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(serverFetchError); // Initialize internal error with server error
-  const [isLoading, setIsLoading] = useState(!error && !initialScoreboardData); // Initial loading state based on props
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const ws = useRef<WebSocket | null>(null);
-
-  // Effect to derive loading state (more robustly handles initial load vs live updates)
-  useEffect(() => {
-    if (viewingToday) {
-        // Today: Loading = not connected AND no data yet AND no error
-        setIsLoading(!isConnected && !liveScoreboardData && !error);
-    } else {
-        // Past Date: Loading = no initial data AND no error
-        setIsLoading(!initialScoreboardData && !error);
-    }
-  }, [viewingToday, isConnected, liveScoreboardData, initialScoreboardData, error]);
+  const scoreCache = useRef<Record<string, ScoreboardData>>({}); // Client-side cache
 
   // PBP Modal State
   const [selectedGameId, setSelectedGameId] = useState<string | null>(null);
   const [isPbpModalOpen, setIsPbpModalOpen] = useState<boolean>(false);
 
-   // WebSocket connection logic
+  // --- Date Logic (Client-Side) ---
+  const dateParam = searchParams?.date;
+  let targetDate: Date;
+  if (typeof dateParam === 'string' && /\d{4}-\d{2}-\d{2}/.test(dateParam)) {
+    try { targetDate = parseISO(dateParam); } catch { targetDate = new Date(); }
+  } else {
+    targetDate = new Date();
+  }
+  const currentDate = targetDate;
+  const viewingToday = isToday(currentDate);
+  const displayDate = format(currentDate, 'PPPP');
+  const formattedDateUrl = format(currentDate, 'yyyy-MM-dd');
+
+  // --- Data Fetching Logic (Client-Side for non-today) ---
+  const fetchInitialData = useCallback(async (dateToFetch: string) => {
+    // Check client cache first
+    if (scoreCache.current[dateToFetch]) {
+      console.log(`[Client Cache] Cache hit for ${dateToFetch}`);
+      setScoreboardData(scoreCache.current[dateToFetch]);
+      setIsLoading(false);
+      setError(null);
+      return; // Exit if cache hit
+    }
+
+    // Not in cache, fetch from backend
+    setIsLoading(true);
+    setError(null);
+    // setScoreboardData(null); // << Avoid clearing data for smoother transition
+    try {
+      const apiUrl = `${API_BASE_URL}/scoreboard/?game_date=${dateToFetch}`;
+      console.log(`[Client Fetch] Cache miss. Fetching initial data for ${dateToFetch}`);
+      const res = await fetch(apiUrl);
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ detail: `HTTP error! status: ${res.status}` }));
+        throw new Error(errorData.detail || `Failed to fetch scoreboard: ${res.statusText}`);
+      }
+      const data: ScoreboardData = await res.json();
+      if (data && typeof data === 'object' && Array.isArray(data.games)) {
+        setScoreboardData(data);
+        scoreCache.current[dateToFetch] = data; // Store in client cache
+      } else {
+        console.warn("[Client Fetch] Invalid data structure received:", data);
+        // Set to empty games on invalid structure, keep error state null for now?
+        setScoreboardData({ gameDate: dateToFetch, games: [] }); 
+        // throw new Error("Received invalid data structure from server."); // Maybe don't throw, just show empty
+      }
+    } catch (err: unknown) {
+      console.error("[Client Fetch] Error fetching initial scoreboard:", err);
+      const errorMessage = err instanceof Error ? err.message : "Could not load games.";
+      setError(errorMessage);
+      // Set empty games on fetch error
+      setScoreboardData({ gameDate: dateToFetch, games: [] }); 
+    } finally {
+      setIsLoading(false);
+    }
+  }, [API_BASE_URL]); // Dependency: API_BASE_URL
+
+  // --- Effects ---
+
+  // Effect to handle initial data load or WebSocket setup based on date
+  useEffect(() => {
+    setError(null); 
+    if (viewingToday) {
+      console.log("[Effect] Viewing today. Will attempt WebSocket connection.");
+      setIsLoading(true); 
+      setScoreboardData(null); 
+      // WS connection handled by the next effect
+    } else {
+      console.log(`[Effect] Viewing past/future date (${formattedDateUrl}). Fetching initial data.`);
+      fetchInitialData(formattedDateUrl);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewingToday, formattedDateUrl, fetchInitialData]); // Rerun when date changes
+
+  // WebSocket connection logic
   useEffect(() => {
     if (!viewingToday) {
-      // Ensure WS is closed if navigating away from today
       if (ws.current) {
-        console.log("[WebSocket] Navigated off today, closing connection.");
-        ws.current.close();
+        console.log("[WebSocket Effect] Navigated off today, closing connection.");
+        ws.current.close(1000, "Navigated off today");
         ws.current = null;
         setIsConnected(false);
       }
-      return;
+      return; 
     }
 
     if (!ws.current) {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}/api/v1/scoreboard/ws`;
-      console.log("[WebSocket] Attempting to connect to:", wsUrl);
-      ws.current = new WebSocket(wsUrl);
-      
-      ws.current.onopen = () => {
+      const wsBaseUrl = API_BASE_URL.replace(/^http(s?):/, 'ws:'); 
+      const wsUrl = `${wsBaseUrl}/scoreboard/ws`; 
+
+      console.log("[WebSocket Effect] Attempting to connect to:", wsUrl);
+      const socket = new WebSocket(wsUrl);
+      ws.current = socket;
+
+      socket.onopen = () => {
         console.log("[WebSocket] Connection established");
         setIsConnected(true);
-        setError(null); // Clear previous errors on successful connect
+        setError(null); 
+        setIsLoading(false); 
       };
-      ws.current.onclose = (event) => {
+
+      socket.onclose = (event) => {
         console.log(`[WebSocket] Connection closed: ${event.code} - ${event.reason}`);
-        setIsConnected(false);
-        // Avoid setting error if closed cleanly or already errored
-        if (event.code !== 1000 && event.code !== 1005 && !error) {
-             setError("WebSocket connection closed unexpectedly. Try refreshing.");
+        if (ws.current === socket) { 
+            ws.current = null;
+            setIsConnected(false);
+            if (viewingToday && event.code !== 1000 && event.code !== 1005) { 
+                 setError("WebSocket connection lost.");
+                 setIsLoading(false); 
+            }
         }
       };
-      ws.current.onerror = (ev) => {
+
+      socket.onerror = (ev) => {
         console.error("[WebSocket] Error:", ev);
-        setError("WebSocket connection error. Please try refreshing the page.");
-        setIsConnected(false);
+        if (ws.current === socket) {
+            setError("WebSocket connection error.");
+            setIsConnected(false);
+            setIsLoading(false); 
+            ws.current = null; 
+        }
       };
-      ws.current.onmessage = (event) => {
+
+      socket.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          if (data && data.games) {
-            setLiveScoreboardData(data);
+          if (data && typeof data === 'object' && Array.isArray(data.games)) {
+            setScoreboardData(data); 
+            setError(null); 
+            setIsLoading(false); 
           } else {
             console.warn("[WebSocket] Received invalid data structure:", data);
           }
@@ -105,18 +178,14 @@ export default function GamesClientPage({
     
     // Cleanup function
     return () => {
-      if (ws.current && (ws.current.readyState === WebSocket.OPEN || ws.current.readyState === WebSocket.CONNECTING)) {
-        console.log("[WebSocket] Component unmount: Closing connection");
-        ws.current.close(1000, "Client navigating away"); // Close cleanly
+      if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+        console.log("[WebSocket Effect Cleanup] Closing connection");
+        ws.current.close(1000, "Client cleanup"); 
       }
-      ws.current = null; // Ensure ref is cleared
-      setIsConnected(false); // Ensure connected state is false
     };
-  // Rerun only if viewingToday changes (e.g., navigating between today and past dates)
-  // eslint-disable-next-line react-hooks/exhaustive-deps 
-  }, [viewingToday]); // Dependency array refined
+  }, [viewingToday, API_BASE_URL]); 
 
-  // Navigation handlers (remain the same)
+  // --- Event Handlers ---
   const handlePrevDay = () => {
     const prevDate = subDays(currentDate, 1);
     router.push(`/games?date=${format(prevDate, 'yyyy-MM-dd')}`);
@@ -125,33 +194,20 @@ export default function GamesClientPage({
     const nextDate = addDays(currentDate, 1);
     router.push(`/games?date=${format(nextDate, 'yyyy-MM-dd')}`);
   };
-
-  // PBP Modal handler (remains the same)
   const handleOpenPbp = (gameId: string) => {
     setSelectedGameId(gameId);
     setIsPbpModalOpen(true);
   };
   
-  // Loading message render function (remains the same)
+  // --- Render Logic ---
   const renderLoadingMessage = () => {
-     if (viewingToday) {
-       if (!isConnected && !error) return "Connecting to live scores...";
-       if (isConnected && !liveScoreboardData && !error) return "Waiting for live scores...";
-     }
-     return "Loading Games..."; // Fallback for past dates or initial WS connection
+     if (viewingToday && !isConnected && !error) return "Connecting to live scores...";
+     return "Loading Games..."; 
    };
-
- // Determine current data source
- const currentScoreboardData = viewingToday ? liveScoreboardData : initialScoreboardData;
-
- // Log data source changes
- useEffect(() => {
-   console.log(`[GamesClientPage] Data source updated. Viewing today: ${viewingToday}. Data available: ${!!currentScoreboardData}. Games count: ${currentScoreboardData?.games?.length}`);
- }, [currentScoreboardData, viewingToday]);
 
   return (
     <div className="space-y-6">
-      {/* Date Navigation Header (remains the same) */}
+      {/* Date Navigation Header */}
       <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-center sm:text-left">NBA Games</h1>
          <div className="flex items-center gap-2">
@@ -185,9 +241,9 @@ export default function GamesClientPage({
       )}
 
       {/* Game Cards Display */}
-      {!isLoading && !error && currentScoreboardData && (
+      {!isLoading && !error && scoreboardData && (
         <>
-          {currentScoreboardData.games.length === 0 ? (
+          {scoreboardData.games.length === 0 ? (
             <div className="text-center text-muted-foreground py-12 flex flex-col items-center justify-center">
               <CalendarOffIcon className="h-12 w-12 mb-4 text-muted-foreground/70" />
               <p className="text-lg">
@@ -197,8 +253,8 @@ export default function GamesClientPage({
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"> {/* Adjusted grid for potentially more cards */}
-              {currentScoreboardData.games.filter(game => !!game?.gameId).map((game, index) => ( // Added index
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {scoreboardData.games.filter(game => !!game?.gameId).map((game: Game, index: number) => ( 
                 <div
                   key={game.gameId}
                   className={cn("animate-in fade-in-0 slide-in-from-bottom-4 duration-500")}
@@ -225,4 +281,4 @@ export default function GamesClientPage({
 
     </div>
   );
-} 
+}

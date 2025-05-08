@@ -30,9 +30,9 @@ export function DashboardTabs({}: DashboardTabsProps) {
             key={cardItem.title}
             className={cn(
               "transition-all duration-300 hover:scale-[1.02] hover:shadow-lg",
-              "animate-in fade-in-0 slide-in-from-bottom-4 duration-500"
+              // "animate-in fade-in-0 slide-in-from-bottom-4 duration-500" // Entrance animation disabled
             )}
-            style={{ animationDelay: `${index * 100}ms` }}
+            // style={{ animationDelay: `${index * 100}ms` }} // Animation delay disabled
           >
             <CardHeader>
               <CardTitle>{cardItem.title}</CardTitle>
@@ -56,9 +56,9 @@ export function DashboardTabs({}: DashboardTabsProps) {
             key={cardItem.title}
             className={cn(
               "transition-all duration-300 hover:scale-[1.02] hover:shadow-lg",
-              "animate-in fade-in-0 slide-in-from-bottom-4 duration-500"
+              // "animate-in fade-in-0 slide-in-from-bottom-4 duration-500" // Entrance animation disabled
             )}
-            style={{ animationDelay: `${index * 100}ms` }}
+            // style={{ animationDelay: `${index * 100}ms` }} // Animation delay disabled
           >
             <CardHeader>
               <CardTitle>{cardItem.title}</CardTitle>
@@ -76,8 +76,9 @@ export function DashboardTabs({}: DashboardTabsProps) {
         <Card
             className={cn(
               "transition-all duration-300 hover:scale-[1.02] hover:shadow-lg",
-              "animate-in fade-in-0 slide-in-from-bottom-4 duration-500"
+              // "animate-in fade-in-0 slide-in-from-bottom-4 duration-500" // Entrance animation disabled
             )}
+            // No animationDelay here as it's a single card
         >
           <CardHeader>
             <CardTitle>Your Tracked Items</CardTitle>

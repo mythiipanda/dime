@@ -74,7 +74,8 @@ export default function AiAssistantPage() {
   };
 
   return (
-    <div className="h-full flex flex-col animate-in fade-in-0 duration-300">
+    // <div className="h-full flex flex-col animate-in fade-in-0 duration-300">
+    <div className="h-full flex flex-col"> {/* Overall page animation temporarily disabled */}
       <main className="flex-1 flex flex-col overflow-hidden">
         {renderChatArea()}
       </main>

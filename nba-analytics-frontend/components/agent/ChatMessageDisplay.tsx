@@ -39,12 +39,19 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
     tools: ToolCall[]
   }>({ thinking: [], tools: [] })
   
+  // Determine classes for the main message container, excluding animation for testing
+  const messageContainerClasses = cn(
+    "group relative flex gap-6 py-6",
+    isUser ? "flex-row-reverse" : "flex-row"
+  )
+
   useEffect(() => {
     if (isUser) return; // Only process for assistant messages
 
     // Process thinking steps
     if (message.content && (message.status === "thinking" || message.event === "RunResponse")) {
-      setIntermediateSteps(prev => {
+      // Temporarily disable setIntermediateSteps for testing refresh issue
+      /* setIntermediateSteps(prev => { 
         if (!message.content || message.content === "Starting to process your request...") {
           return prev;
         }
@@ -73,12 +80,13 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
           ...prev,
           thinking: uniqueThoughts.filter(t => t.trim() !== "") // Ensure no empty thoughts
         };
-      });
+      }); */
     }
     
     // Process tool calls and extract sources
     if (message.toolCalls?.length) {
-      setIntermediateSteps(prev => {
+      // Temporarily disable setIntermediateSteps and setSources for testing refresh issue
+      /* setIntermediateSteps(prev => {
         const existingToolsMap = new Map(prev.tools.map(tool => [tool.tool_name + tool.status, tool])); // Key by name + status for updates
         const newSources: Source[] = [];
 
@@ -128,7 +136,12 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
           ...prev,
           tools: sortedTools
         };
-      });
+      }); */
+      /* setSources(prevSrc => { 
+        // ... (original logic for newSources) ...
+        if (newSources.length > 0) return [...prevSrc, ...newSources]; 
+        return prevSrc; 
+      }); */
     }
   }, [message.content, message.toolCalls, isUser, message.event, message.status]);
 
@@ -260,13 +273,7 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
   };
 
   return (
-    <div
-      className={cn(
-        "group relative flex gap-6 py-6",
-        isUser ? "flex-row-reverse" : "flex-row",
-        isLatest && "animate-in fade-in slide-in-from-bottom-2 duration-300"
-      )}
-    >
+    <div className={messageContainerClasses}>
       <div className="flex h-8 w-8 shrink-0 select-none items-center justify-center">
         <Avatar className={cn(
           "h-8 w-8 ring-1",
@@ -295,7 +302,7 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
             "shadow-md"
           )}>
             <ReactMarkdown components={components}>
-              {finalMarkdownContent} {/* Use cleaned markdown for user too, though unlikely to have "Final Answer:" */}
+              {finalMarkdownContent || ''}
             </ReactMarkdown>
           </div>
         )}
@@ -384,7 +391,7 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
                   </div>
                 )}
                 <ReactMarkdown components={components}>
-                  {finalMarkdownContent}
+                  {finalMarkdownContent || ''}
                 </ReactMarkdown>
               </div>
             )}

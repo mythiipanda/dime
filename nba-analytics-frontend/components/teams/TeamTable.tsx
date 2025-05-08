@@ -27,9 +27,9 @@ const BADGE_GROUP_OFFSET_DELAY_MS = 200;
 
 export function TeamTable({ title, teams }: TeamTableProps) {
   return (
-    <div className="animate-in fade-in-0 slide-in-from-bottom-5 duration-500">
-      <h2 className="text-xl font-semibold mb-4 animate-in fade-in-0 slide-in-from-bottom-2 duration-500 delay-100">{title}</h2>
-      <div className="overflow-x-auto rounded-md border animate-in fade-in-0 zoom-in-95 duration-500 delay-200">
+    <div>
+      <h2 className="text-xl font-semibold mb-4">{title}</h2>
+      <div className="overflow-x-auto rounded-md border">
         <Table>
           <TableHeader>
             <TableRow className="border-b hover:bg-transparent">
@@ -60,9 +60,7 @@ export function TeamTable({ title, teams }: TeamTableProps) {
                     key={team.TeamID}
                     className={cn(
                       "border-b border-border/50 hover:bg-muted/60 transition-all duration-200 hover:shadow-sm",
-                      "animate-in fade-in-0 slide-in-from-bottom-3 duration-300" // Row entrance animation
                     )}
-                    style={{ animationDelay: `${rowIndex * ROW_ANIMATION_BASE_DELAY_MS}ms` }}
                   >
                     <TableCell className="font-medium text-center py-3 px-2">{team.PlayoffRank}</TableCell>
                     <TableCell className="py-3 px-4">
@@ -75,9 +73,7 @@ export function TeamTable({ title, teams }: TeamTableProps) {
                               variant="secondary"
                               className={cn(
                                 "text-xs font-normal",
-                                "animate-in fade-in-0 zoom-in-90 duration-300" // Badge entrance animation
                               )}
-                              style={{ animationDelay: `${(rowIndex * ROW_ANIMATION_BASE_DELAY_MS) + (badgeIndex * BADGE_ANIMATION_BASE_DELAY_MS) + BADGE_GROUP_OFFSET_DELAY_MS}ms` }}
                             >
                               {badgeText}
                             </Badge>

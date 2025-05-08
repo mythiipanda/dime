@@ -14,30 +14,30 @@ export default function DashboardPage() {
   return (
     <div className={cn(
       "flex flex-col space-y-6 flex-1",
-      "animate-in fade-in-0 duration-500" // Overall page entrance
+      // "animate-in fade-in-0 duration-500" // Overall page entrance - Temporarily Disabled
     )}>
       {/* Header spanning full width */}
-      <div className="animate-in fade-in-0 slide-in-from-top-3 duration-500 delay-100">
+      <div> {/* Animations Temporarily Disabled */}
         <DashboardHeader />
       </div>
 
       {/* Main content area for Tabs - spans full width */}
-      <div className="animate-in fade-in-0 slide-in-from-bottom-3 duration-500 delay-200">
+      <div> {/* Animations Temporarily Disabled */}
         <DashboardTabs />
       </div>
       
       {/* Stats Overview - spans full width */}
-      <div className="animate-in fade-in-0 slide-in-from-bottom-3 duration-500 delay-300">
+      <div> {/* Animations Temporarily Disabled */}
         <StatsOverview />
       </div>
 
       {/* Pro Tip Alert - spans full width */}
-      <div className="animate-in fade-in-0 slide-in-from-bottom-3 duration-500 delay-350">
+      <div> {/* Animations Temporarily Disabled */}
         <ProTipAlert />
       </div>
       
       {/* Recent Activity and API Usage - in a grid below other content */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-in fade-in-0 slide-in-from-bottom-3 duration-500 delay-400">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6"> {/* Animations Temporarily Disabled on parent, specific animation classes were on the children's wrappers if any */}
         <RecentActivity />
         <ApiUsageAlert />
       </div>

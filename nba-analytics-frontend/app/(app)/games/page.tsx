@@ -1,3 +1,4 @@
+export const dynamic = 'force-dynamic'; // Force dynamic rendering to try and resolve searchParams issue
 // Imports for Server Component
 import { Metadata } from 'next';
 import { format, parseISO, isToday } from 'date-fns';
@@ -42,46 +43,25 @@ export const metadata: Metadata = {
 };
 
 interface GamesPageProps {
-  searchParams: { [key: string]: string | string[] | undefined }; // Simpler type for searchParams
+  searchParams: { [key: string]: string | string[] | undefined };
 }
 
 export default async function GamesServerPage({ searchParams }: GamesPageProps) {
-  // Determine the target date from search params or default to today
-  let targetDate: Date;
-  const dateParam = searchParams?.date;
+  console.log("[Server Page] Received raw searchParams:", searchParams); 
 
-  if (typeof dateParam === 'string' && /\d{4}-\d{2}-\d{2}/.test(dateParam)) {
-     try {
-        targetDate = parseISO(dateParam);
-     } catch {
-        targetDate = new Date(); // Default to today on parse error
-     }
-  } else {
-     targetDate = new Date(); // Default to today if param missing/invalid
-  }
+  // Extract only the 'date' searchParam that the client needs.
+  // Default to undefined if not a string, client will handle it.
+  const dateQueryParam = typeof searchParams.date === 'string' ? searchParams.date : undefined;
 
-  const isViewingToday = isToday(targetDate);
-  const formattedDate = formatDateUrl(targetDate);
+  console.log("[Server Page] Extracted dateQueryParam for client:", dateQueryParam);
+  console.log("[Server Page] Passing sanitized searchParams to client.");
 
-  let initialScoreboardData: ScoreboardData | null = null;
-  let serverFetchError: string | null = null;
-
-  // Fetch data server-side ONLY if not viewing today's games
-  if (!isViewingToday) {
-    console.log(`[Server Page] Fetching data for date: ${formattedDate}`);
-    const { data, error } = await getScoreboardDataServer(formattedDate);
-    initialScoreboardData = data;
-    serverFetchError = error;
-  } else {
-     console.log("[Server Page] Date is today, client will handle WebSocket.");
-     initialScoreboardData = { gameDate: formattedDate, games: [] }; // Provide date structure for client
-  }
-
+  // Pass a new, sanitized searchParams object containing only the date (or undefined)
   return (
     <GamesClientPage
-      targetDateISO={targetDate.toISOString()}
-      initialScoreboardData={initialScoreboardData}
-      serverFetchError={serverFetchError}
+      searchParams={{ date: dateQueryParam }} // Pass only the 'date' property
+      initialScoreboardData={null}
+      serverFetchError={null}
     />
   );
 }

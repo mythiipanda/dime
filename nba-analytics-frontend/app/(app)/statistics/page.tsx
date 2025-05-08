@@ -32,19 +32,19 @@ export default function StatisticsPage() {
           <TabsTrigger value="advanced">Advanced Metrics</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="team" className={cn("animate-in fade-in-0 slide-in-from-top-2 duration-300")}>
+        <TabsContent value="team">
           <TeamStatsTab />
         </TabsContent>
 
-        <TabsContent value="player" className={cn("animate-in fade-in-0 slide-in-from-top-2 duration-300")}>
+        <TabsContent value="player">
           <PlayerStatsTab />
         </TabsContent>
 
-        <TabsContent value="game" className={cn("animate-in fade-in-0 slide-in-from-top-2 duration-300")}>
+        <TabsContent value="game">
           <GameStatsTab />
         </TabsContent>
 
-        <TabsContent value="advanced" className={cn("animate-in fade-in-0 slide-in-from-top-2 duration-300")}>
+        <TabsContent value="advanced">
           <AdvancedStatsTab />
         </TabsContent>
       </Tabs>

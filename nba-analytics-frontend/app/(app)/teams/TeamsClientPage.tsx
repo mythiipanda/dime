@@ -74,11 +74,12 @@ export default function TeamsClientPage({
       )}
 
       {/* Conference Tabs */}
-      <Tabs defaultValue="eastern" className="w-full mt-2 animate-in fade-in-0 duration-300"> {/* Reduced mt if error is not present */}
-        <div className="flex justify-center mb-4">
-          <TabsList className="grid w-full max-w-md grid-cols-2">
-            <TabsTrigger value="eastern">Eastern Conference</TabsTrigger>
-            <TabsTrigger value="western">Western Conference</TabsTrigger>
+      <Tabs defaultValue="eastern" className="w-full mt-2"> {/* Removed animation from Tabs for focusing on centering */}
+        <div className="flex justify-center mb-4"> {/* Parent for centering */}
+          {/* Changed TabsList to be inline-grid for shrink-wrapping and centering */}
+          <TabsList className="inline-grid grid-cols-2 gap-2 p-1 rounded-lg bg-muted"> {/* Added common shadcn styling for TabsList too */}
+            <TabsTrigger value="eastern" className="data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm px-3 py-1.5">Eastern Conference</TabsTrigger>
+            <TabsTrigger value="western" className="data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm px-3 py-1.5">Western Conference</TabsTrigger>
           </TabsList>
         </div>
         <TabsContent value="eastern">

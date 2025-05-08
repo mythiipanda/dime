@@ -24,17 +24,20 @@ export function InitialChatScreen({ onExampleClick }: InitialChatScreenProps) {
   return (
     <div className={cn(
       "flex flex-col items-center justify-center text-center space-y-6 sm:space-y-8 py-8 h-full",
-      "animate-in fade-in-0 duration-500"
+      // "animate-in fade-in-0 duration-500" // Animation disabled
     )}>
-      <div className="animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-100">
+      {/* <div className="animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-100"> */}
+      <div> {/* Animation disabled */}
         <Logo iconSize={10} textSize="xl" />
       </div>
 
-      <p className="text-base sm:text-lg text-muted-foreground max-w-md md:max-w-lg animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-200">
+      {/* <p className="text-base sm:text-lg text-muted-foreground max-w-md md:max-w-lg animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-200"> */}
+      <p className="text-base sm:text-lg text-muted-foreground max-w-md md:max-w-lg"> {/* Animation disabled */}
         Your AI-powered NBA analytics companion. Ask me anything about players, teams, games, and stats.
       </p>
 
-      <div className="w-full max-w-lg md:max-w-xl space-y-3 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-300">
+      {/* <div className="w-full max-w-lg md:max-w-xl space-y-3 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-300"> */}
+      <div className="w-full max-w-lg md:max-w-xl space-y-3"> {/* Animation disabled */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {SIMPLE_EXAMPLE_PROMPTS.map((promptItem, index) => (
             <Button
@@ -43,9 +46,9 @@ export function InitialChatScreen({ onExampleClick }: InitialChatScreenProps) {
               className={cn(
                 "text-left justify-start h-auto py-2.5 px-3.5 text-sm font-normal leading-snug whitespace-normal",
                 "hover:bg-accent/70 dark:hover:bg-accent/50 transition-all hover:scale-[1.02] active:scale-[0.98]",
-                "animate-in fade-in-0 zoom-in-95 duration-300"
+                // "animate-in fade-in-0 zoom-in-95 duration-300" // Animation disabled
               )}
-              style={{ animationDelay: `${INITIAL_SCREEN_BASE_DELAY_MS + index * PROMPT_BUTTON_STAGGER_DELAY_MS}ms` }}
+              // style={{ animationDelay: `${INITIAL_SCREEN_BASE_DELAY_MS + index * PROMPT_BUTTON_STAGGER_DELAY_MS}ms` }} // Animation disabled
               onClick={() => onExampleClick(promptItem.text)}
             >
               {promptItem.icon}
@@ -55,7 +58,8 @@ export function InitialChatScreen({ onExampleClick }: InitialChatScreenProps) {
         </div>
       </div>
       
-      <div className="pt-4 sm:pt-6 space-y-3 text-xs text-muted-foreground max-w-md md:max-w-lg animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-400">
+      {/* <div className="pt-4 sm:pt-6 space-y-3 text-xs text-muted-foreground max-w-md md:max-w-lg animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-400"> */}
+      <div className="pt-4 sm:pt-6 space-y-3 text-xs text-muted-foreground max-w-md md:max-w-lg"> {/* Animation disabled */}
         <div className="flex items-center justify-center gap-1.5">
           <ZapIcon className="h-3.5 w-3.5 text-sky-500 shrink-0" /> 
           <span>Capabilities: Real-time stats, player comparisons, game analysis.</span>
