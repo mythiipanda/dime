@@ -20,13 +20,16 @@ interface TeamTableProps {
   teams: TeamStanding[];
 }
 
+// Animation delay constants
+const ROW_ANIMATION_BASE_DELAY_MS = 50;
+const BADGE_ANIMATION_BASE_DELAY_MS = 30;
+const BADGE_GROUP_OFFSET_DELAY_MS = 200;
+
 export function TeamTable({ title, teams }: TeamTableProps) {
   return (
-    <div className={cn(
-      "animate-in fade-in-0 slide-in-from-bottom-5 duration-500" // Entrance animation for the whole table section
-    )}>
+    <div className="animate-in fade-in-0 slide-in-from-bottom-5 duration-500">
       <h2 className="text-xl font-semibold mb-4 animate-in fade-in-0 slide-in-from-bottom-2 duration-500 delay-100">{title}</h2>
-      <div className="overflow-x-auto rounded-md border animate-in fade-in-0 zoom-in-95 duration-500 delay-200"> {/* Added rounded-md border and entrance animation */}
+      <div className="overflow-x-auto rounded-md border animate-in fade-in-0 zoom-in-95 duration-500 delay-200">
         <Table>
           <TableHeader>
             <TableRow className="border-b hover:bg-transparent">
@@ -43,58 +46,65 @@ export function TeamTable({ title, teams }: TeamTableProps) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {teams.map((team, rowIndex) => { // Added rowIndex for staggered animation
-              const clinchBadges = getClinchIndicators(team.ClinchIndicator);
-              return (
-                <TableRow
-                  key={team.TeamID}
-                  className={cn(
-                    "border-b border-border/50 hover:bg-muted/60 transition-all duration-200 hover:shadow-sm", // Enhanced hover
-                    "animate-in fade-in-0 slide-in-from-bottom-3 duration-300" // Base row animation
-                  )}
-                  style={{ animationDelay: `${rowIndex * 50}ms` }} // Staggered delay
-                >
-                  <TableCell className="font-medium text-center py-3 px-2">{team.PlayoffRank}</TableCell>
-                  <TableCell className="py-3 px-4">
-                    <div className="font-medium">{team.TeamName}</div>
-                    {/* Display clinch indicators as badges */}
-                    {clinchBadges.length > 0 && (
-                      <div className="mt-1 flex flex-wrap gap-1">
-                        {clinchBadges.map((badgeText, index) => (
-                          <Badge
-                            key={index}
-                            variant="secondary"
-                            className={cn(
-                              "text-xs font-normal",
-                              "animate-in fade-in-0 zoom-in-90 duration-300" // Badge entrance
-                            )}
-                            style={{ animationDelay: `${(rowIndex * 50) + (index * 30) + 200}ms` }} // Staggered badge delay
-                          >
-                            {badgeText}
-                          </Badge>
-                        ))}
-                      </div>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right py-3 px-4">{team.WINS}</TableCell>
-                  <TableCell className="text-right py-3 px-4">{team.LOSSES}</TableCell>
-                  <TableCell className="text-right py-3 px-4">{team.WinPct.toFixed(3)}</TableCell>
-                  <TableCell className="text-right py-3 px-4">{team.GB === 0 ? '-' : team.GB.toFixed(1)}</TableCell>
-                  <TableCell className="text-center whitespace-nowrap py-3 px-4">{team.HOME}</TableCell>
-                  <TableCell className="text-center whitespace-nowrap py-3 px-4">{team.ROAD}</TableCell>
-                  <TableCell className="text-center whitespace-nowrap py-3 px-4">{team.L10}</TableCell>
-                  <TableCell 
+            {teams.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={10} className="text-center text-muted-foreground py-10">
+                  No team data available.
+                </TableCell>
+              </TableRow>
+            ) : (
+              teams.map((team, rowIndex) => {
+                const clinchBadges = getClinchIndicators(team.ClinchIndicator);
+                return (
+                  <TableRow
+                    key={team.TeamID}
                     className={cn(
-                      "text-center whitespace-nowrap py-3 px-4",
-                      team.STRK?.startsWith('W') ? "text-green-600 dark:text-green-400" : "",
-                      team.STRK?.startsWith('L') ? "text-red-600 dark:text-red-400" : ""
+                      "border-b border-border/50 hover:bg-muted/60 transition-all duration-200 hover:shadow-sm",
+                      "animate-in fade-in-0 slide-in-from-bottom-3 duration-300" // Row entrance animation
                     )}
+                    style={{ animationDelay: `${rowIndex * ROW_ANIMATION_BASE_DELAY_MS}ms` }}
                   >
-                    {formatStreak(team.STRK)}
-                  </TableCell>
-                </TableRow>
-              );
-            })}
+                    <TableCell className="font-medium text-center py-3 px-2">{team.PlayoffRank}</TableCell>
+                    <TableCell className="py-3 px-4">
+                      <div className="font-medium">{team.TeamName}</div>
+                      {clinchBadges.length > 0 && (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {clinchBadges.map((badgeText, badgeIndex) => (
+                            <Badge
+                              key={badgeIndex}
+                              variant="secondary"
+                              className={cn(
+                                "text-xs font-normal",
+                                "animate-in fade-in-0 zoom-in-90 duration-300" // Badge entrance animation
+                              )}
+                              style={{ animationDelay: `${(rowIndex * ROW_ANIMATION_BASE_DELAY_MS) + (badgeIndex * BADGE_ANIMATION_BASE_DELAY_MS) + BADGE_GROUP_OFFSET_DELAY_MS}ms` }}
+                            >
+                              {badgeText}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right py-3 px-4">{team.WINS}</TableCell>
+                    <TableCell className="text-right py-3 px-4">{team.LOSSES}</TableCell>
+                    <TableCell className="text-right py-3 px-4">{team.WinPct.toFixed(3)}</TableCell>
+                    <TableCell className="text-right py-3 px-4">{team.GB === 0 ? '-' : team.GB.toFixed(1)}</TableCell>
+                    <TableCell className="text-center whitespace-nowrap py-3 px-4">{team.HOME}</TableCell>
+                    <TableCell className="text-center whitespace-nowrap py-3 px-4">{team.ROAD}</TableCell>
+                    <TableCell className="text-center whitespace-nowrap py-3 px-4">{team.L10}</TableCell>
+                    <TableCell 
+                      className={cn(
+                        "text-center whitespace-nowrap py-3 px-4",
+                        team.STRK?.startsWith('W') ? "text-green-600 dark:text-green-400" : "",
+                        team.STRK?.startsWith('L') ? "text-red-600 dark:text-red-400" : ""
+                      )}
+                    >
+                      {formatStreak(team.STRK)}
+                    </TableCell>
+                  </TableRow>
+                );
+              })
+            )}
           </TableBody>
         </Table>
       </div>
@@ -109,7 +119,6 @@ interface TeamTableSkeletonProps {
 
 const DEFAULT_SKELETON_ROW_COUNT = 10;
 
-// Basic Skeleton component for the table
 export function TeamTableSkeleton({ conference, rowCount = DEFAULT_SKELETON_ROW_COUNT }: TeamTableSkeletonProps) {
   return (
     <div>

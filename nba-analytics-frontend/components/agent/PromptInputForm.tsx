@@ -22,28 +22,27 @@ export function PromptInputForm({
   const [prompt, setPrompt] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // Auto-resize textarea height based on content
   useEffect(() => {
     if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+      textareaRef.current.style.height = 'auto'; // Reset height to shrink if needed
+      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`; // Set to scroll height
     }
   }, [prompt]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (prompt.trim() && !isLoading) {
-      onSubmit(prompt.trim());
-      setPrompt('');
-      if (textareaRef.current) {
-        textareaRef.current.style.height = 'auto';
-      }
+    const trimmedPrompt = prompt.trim();
+    if (trimmedPrompt && !isLoading) {
+      onSubmit(trimmedPrompt);
+      setPrompt(''); // Clear prompt, which will trigger useEffect for resize
     }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !isLoading) { // Also check !isLoading here
       e.preventDefault();
-      handleSubmit(e);
+      handleSubmit(e); // handleSubmit already contains the trim and isLoading check
     }
   };
 

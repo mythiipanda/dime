@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { PbpData, Play } from "@/app/(app)/games/types"; // Adjust path as needed
 import { 
   Dialog, 
@@ -15,6 +15,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Terminal, XCircle, Target, AlertTriangle, Info, Loader2 } from "lucide-react"; // Import necessary icons
+import { cn } from "@/lib/utils"; // Import cn
 
 interface PlayByPlayModalProps {
   gameId: string | null;
@@ -31,7 +32,7 @@ export function PlayByPlayModal({ gameId, isOpen, onOpenChange }: PlayByPlayModa
   const [periodFilter, setPeriodFilter] = useState<string>("all");
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null); // Ref for polling interval
 
-  // TODO: Move PBP fetching logic here (fetchPbpData)
+  // Fetch Play-by-Play data
   const fetchPbpData = useCallback(async (currentGameId: string | null, isPollingUpdate = false) => {
      if (!currentGameId) return;
      if (!isPollingUpdate) {
@@ -40,6 +41,8 @@ export function PlayByPlayModal({ gameId, isOpen, onOpenChange }: PlayByPlayModa
          setError(null);
          setPbpData(null);
      } else {
+         // Avoid flicker during polling unless error occurs
+         // setIsLoading(true); 
          console.log(`[PBP Modal] Polling PBP for gameId: ${currentGameId}`);
      }
  
@@ -49,13 +52,12 @@ export function PlayByPlayModal({ gameId, isOpen, onOpenChange }: PlayByPlayModa
        if (periodNum > 0) {
            apiUrl += `?start_period=${periodNum}&end_period=${periodNum}`;
        }
-       console.log(`[PBP Modal] Requesting PBP from: ${apiUrl}`);
+       // console.log(`[PBP Modal] Requesting PBP from: ${apiUrl}`); // Optional: reduce logging
  
        const response = await fetch(apiUrl, { method: 'GET', cache: 'no-store' });
        const rawResponseText = await response.text();
  
        if (!response.ok) {
-         // ... (error handling logic from original page.tsx) ...
          let errorDetail = `HTTP error! status: ${response.status}`;
          try {
            const errorData = JSON.parse(rawResponseText);
@@ -67,28 +69,32 @@ export function PlayByPlayModal({ gameId, isOpen, onOpenChange }: PlayByPlayModa
        const data = JSON.parse(rawResponseText);
        if (data.game_id && data.periods) {
          const newData = data as PbpData;
-         // TODO: Implement merge logic for polling updates if needed
+         // TODO: Consider merging logic for polling updates if UI flicker/state loss is an issue
          setPbpData(newData);
-         setError(null); 
-         if (!isPollingUpdate) console.log("[PBP Modal] PBP fetched successfully:", newData);
+         if (error) setError(null); // Clear error on successful fetch (initial or poll)
+         // if (!isPollingUpdate) console.log("[PBP Modal] PBP fetched successfully:", newData); // Optional: reduce logging
        } else {
          throw new Error("Invalid PBP data structure");
        }
      } catch (err: unknown) {
        console.error("[PBP Modal] Failed PBP fetch:", err);
        const message = err instanceof Error ? err.message : "Could not load play-by-play.";
-       if (!isPollingUpdate) setError(message);
+       // Only set error on initial load or if polling fails when there wasn't already an error
+       if (!isPollingUpdate || !error) {
+         setError(message);
+       } 
      } finally {
+        // Only stop initial loading indicator
         if (!isPollingUpdate) setIsLoading(false);
      }
-   }, [periodFilter]); // Depend on periodFilter
+   }, [periodFilter, error]); // Add error to dependency array to clear it on success
 
   // Effect to fetch data when gameId or isOpen changes
   useEffect(() => {
     if (isOpen && gameId) {
       fetchPbpData(gameId, false); // Initial fetch
     } else {
-      // Clear data when modal closes or gameId is null
+      // Clear state when modal closes or gameId is null
       setPbpData(null);
       setError(null);
       setIsLoading(false);
@@ -96,53 +102,51 @@ export function PlayByPlayModal({ gameId, isOpen, onOpenChange }: PlayByPlayModa
     }
   }, [isOpen, gameId, fetchPbpData]);
 
-  // TODO: Move PBP polling logic here
+  // Effect for live polling
   useEffect(() => {
-     // Clear existing interval on dependency change
      if (pollingIntervalRef.current) {
        clearInterval(pollingIntervalRef.current);
        pollingIntervalRef.current = null;
      }
  
-     if (isOpen && gameId && pbpData?.source === 'live') {
+     // Start polling only if modal is open, game is live, and no current error
+     if (isOpen && gameId && pbpData?.source === 'live' && !error) {
        console.log(`[PBP Modal] Starting polling for live game: ${gameId}`);
        pollingIntervalRef.current = setInterval(() => {
          fetchPbpData(gameId, true); // Polling update
        }, LIVE_UPDATE_INTERVAL);
      }
  
-     // Cleanup: clear interval when component unmounts or dependencies change
+     // Cleanup interval
      return () => {
        if (pollingIntervalRef.current) {
-         console.log(`[PBP Modal] Stopping polling for game: ${gameId}`);
+         // console.log(`[PBP Modal] Stopping polling for game: ${gameId}`); // Optional: reduce logging
          clearInterval(pollingIntervalRef.current);
          pollingIntervalRef.current = null;
        }
      };
-   }, [isOpen, gameId, pbpData?.source, fetchPbpData]); // Re-run when these change
+   // Re-run when these change, including error state to stop polling on error
+   }, [isOpen, gameId, pbpData?.source, fetchPbpData, error]);
 
-  // TODO: Move PBP helper functions (getPlayDescription, etc.) here or to utils
+  // Helper functions for rendering play details
   const getPlayDescription = (play: Play): string => {
        return play.home_description || play.away_description || play.neutral_description || "(Description unavailable)";
    }
    
    const formatEventType = (eventType: string): string => {
-      // Basic formatting, can be enhanced
      return eventType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
    }
  
    const getEventTypeIcon = (play: Play): React.ReactNode => {
-     // Simplified icon logic
      const desc = getPlayDescription(play).toUpperCase();
      if (desc.startsWith('MISS')) return <XCircle className="h-4 w-4 mr-1 text-muted-foreground" />;
-     // Using Tailwind semantic colors or theme colors where appropriate
-     if (play.event_type.includes('PT') || play.event_type.includes('FREE')) return <Target className="h-4 w-4 mr-1 text-yellow-600 dark:text-yellow-500" />; // Using yellow for "target/score" like events
-     if (play.event_type.includes('FOUL')) return <AlertTriangle className="h-4 w-4 mr-1 text-destructive" />; // Using destructive theme color
-     return <Info className="h-4 w-4 mr-1 text-muted-foreground" />; // Default to muted
+     if (play.event_type.includes('PT') || play.event_type.includes('FREE')) return <Target className="h-4 w-4 mr-1 text-yellow-600 dark:text-yellow-500" />;
+     if (play.event_type.includes('FOUL')) return <AlertTriangle className="h-4 w-4 mr-1 text-destructive" />;
+     return <Info className="h-4 w-4 mr-1 text-muted-foreground" />;
    }
 
-   // Filtered plays based on state
-   const filteredPlays = useCallback((): Play[] => {
+   // Memoized filtered plays list
+   const filteredPlaysList = useMemo((): Play[] => {
      if (!pbpData || !pbpData.periods) return [];
      let combinedPlays: Play[] = [];
      if (periodFilter === "all") {
@@ -151,8 +155,9 @@ export function PlayByPlayModal({ gameId, isOpen, onOpenChange }: PlayByPlayModa
        const periodNumber = parseInt(periodFilter.replace("q", ""));
        combinedPlays = pbpData.periods.find(p => p.period === periodNumber)?.plays || [];
      }
-     return combinedPlays.sort((a, b) => a.event_num - b.event_num);
-   }, [pbpData, periodFilter]);
+     // Sort plays by event number ascending (earliest first)
+     return combinedPlays.sort((a, b) => a.event_num - b.event_num); 
+   }, [pbpData, periodFilter]); // Use useMemo instead of useCallback for derived data
 
   if (!isOpen) {
     return null;
@@ -165,7 +170,8 @@ export function PlayByPlayModal({ gameId, isOpen, onOpenChange }: PlayByPlayModa
           <DialogTitle>Play-by-Play</DialogTitle>
           <DialogDescription>
             {pbpData?.game_id ? `Game ID: ${pbpData.game_id} - Source: ${pbpData.source}` : (gameId || 'Loading...')}
-            {isLoading && pbpData?.source === 'live' && " (Updating...)"}
+            {/* Show updating indicator only during polling, not initial load */}
+            {!isLoading && pbpData?.source === 'live' && " (Live)"} 
           </DialogDescription>
         </DialogHeader>
         
@@ -181,10 +187,9 @@ export function PlayByPlayModal({ gameId, isOpen, onOpenChange }: PlayByPlayModa
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         ) : pbpData ? (
-          <div className="flex-grow overflow-hidden flex flex-col"> {/* Allow vertical flex growth */}
-             {/* Period Filter */}
-              {pbpData.periods && pbpData.periods.length > 0 && (
-                <div className="mb-4 flex items-center gap-2 flex-shrink-0"> {/* Prevent filter from shrinking */}
+          <div className="flex-grow overflow-hidden flex flex-col">
+             {pbpData.periods && pbpData.periods.length > 0 && (
+                <div className="mb-4 flex items-center gap-2 flex-shrink-0">
                    <Label htmlFor="period-filter" className="whitespace-nowrap">Filter Period:</Label>
                    <Select value={periodFilter} onValueChange={setPeriodFilter}>
                       <SelectTrigger id="period-filter" className="w-[180px]">
@@ -204,26 +209,23 @@ export function PlayByPlayModal({ gameId, isOpen, onOpenChange }: PlayByPlayModa
                  </div>
                )}
 
-            {/* PBP List Area - Make this scrollable */}
             <div className="flex-grow overflow-y-auto pr-2 space-y-2 text-sm scrollbar-thin scrollbar-thumb-muted-foreground/50 hover:scrollbar-thumb-muted-foreground/80 scrollbar-track-transparent scrollbar-thumb-rounded-full">
-               {/* Header Row */}
                <div className="flex items-center font-semibold text-muted-foreground px-2 py-1 sticky top-0 bg-background z-10 border-b">
                  <div className="w-16 shrink-0">Time</div>
                  <div className="w-20 shrink-0">Score</div>
                  <div className="w-32 shrink-0">Action</div>
                  <div className="flex-grow min-w-0">Description</div>
                </div>
-               {/* Play List */} 
-               {filteredPlays().length > 0 ? (
-                 filteredPlays().map((play: Play, index: number) => (
+               {filteredPlaysList.length > 0 ? (
+                 filteredPlaysList.map((play: Play, index: number) => (
                    <div 
                      key={play.event_num} 
-                     className={`flex items-start gap-2 px-2 py-1.5 rounded-md ${index % 2 === 0 ? "bg-muted/30" : ""}`}
+                     className={cn("flex items-start gap-2 px-2 py-1.5 rounded-md", index % 2 === 0 ? "bg-muted/30" : "")}
                    >
                      <div className="w-16 shrink-0 font-mono pt-0.5">{play.clock}</div>
                      <div className="w-20 shrink-0 font-medium pt-0.5 whitespace-nowrap">{play.score || "-"}</div>
                      <div className="w-32 shrink-0">
-                       <span className="flex items-center text-xs bg-secondary px-2 py-1 rounded-md"> {/* Changed rounded to rounded-md */}
+                       <span className="flex items-center text-xs bg-secondary px-2 py-1 rounded-md">
                          {getEventTypeIcon(play)}
                          {formatEventType(play.event_type)}
                        </span>
@@ -240,7 +242,7 @@ export function PlayByPlayModal({ gameId, isOpen, onOpenChange }: PlayByPlayModa
           <p className="text-center py-10 text-muted-foreground">No Play-by-Play data available.</p>
         )}
 
-        <DialogFooter className="mt-4 flex-shrink-0"> {/* Prevent footer shrinking */}
+        <DialogFooter className="mt-4 flex-shrink-0">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Close
           </Button>

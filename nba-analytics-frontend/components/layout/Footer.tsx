@@ -1,6 +1,6 @@
 import Link from 'next/link';
-import { Logo } from '@/components/layout/Logo'; // Import Logo
-import { TwitterIcon, YoutubeIcon, LinkedinIcon } from 'lucide-react'; // Import social icons
+import { Logo } from '@/components/layout/Logo';
+import { TwitterIcon, YoutubeIcon, LinkedinIcon } from 'lucide-react';
 
 export function Footer() {
   return (
@@ -19,7 +19,7 @@ export function Footer() {
           <Link href="/privacy" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
             Privacy
           </Link>
-          <Link href="/contact" className="text-xs text-muted-foreground hover:text-foreground transition-colors"> {/* Changed href to /contact */}
+          <Link href="/contact" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
             Contact
           </Link>
           <div className="flex items-center space-x-4">

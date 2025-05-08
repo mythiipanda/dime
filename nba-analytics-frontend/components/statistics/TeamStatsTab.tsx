@@ -1,6 +1,12 @@
+"use client"; // Added 'use client'
+
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { BarChart3Icon, LineChart, PieChart, TrendingUpIcon } from "lucide-react";
 import { cn } from "@/lib/utils"; // Import cn
+
+// Animation delay constants
+const STAT_CARD_STAGGER_DELAY_MS = 100;
+const CHART_ROW_BASE_DELAY_MS = 400;
 
 export function TeamStatsTab() {
   // TODO: Replace hardcoded values with fetched data props
@@ -10,7 +16,7 @@ export function TeamStatsTab() {
         <Card className={cn(
             "transition-all duration-300 hover:scale-[1.02] hover:shadow-md",
             "animate-in fade-in-0 slide-in-from-bottom-4 duration-500"
-          )} style={{ animationDelay: `${0 * 100}ms` }}>
+          )} style={{ animationDelay: `${0 * STAT_CARD_STAGGER_DELAY_MS}ms` }}>
           <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
             <CardTitle className="text-sm font-medium">Offensive Rating</CardTitle>
             <BarChart3Icon className="w-4 h-4 text-muted-foreground" />
@@ -24,7 +30,7 @@ export function TeamStatsTab() {
         <Card className={cn(
             "transition-all duration-300 hover:scale-[1.02] hover:shadow-md",
             "animate-in fade-in-0 slide-in-from-bottom-4 duration-500"
-          )} style={{ animationDelay: `${1 * 100}ms` }}>
+          )} style={{ animationDelay: `${1 * STAT_CARD_STAGGER_DELAY_MS}ms` }}>
           <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
             <CardTitle className="text-sm font-medium">Defensive Rating</CardTitle>
             <LineChart className="w-4 h-4 text-muted-foreground" />
@@ -38,7 +44,7 @@ export function TeamStatsTab() {
         <Card className={cn(
             "transition-all duration-300 hover:scale-[1.02] hover:shadow-md",
             "animate-in fade-in-0 slide-in-from-bottom-4 duration-500"
-          )} style={{ animationDelay: `${2 * 100}ms` }}>
+          )} style={{ animationDelay: `${2 * STAT_CARD_STAGGER_DELAY_MS}ms` }}>
           <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
             <CardTitle className="text-sm font-medium">Pace</CardTitle>
             <TrendingUpIcon className="w-4 h-4 text-muted-foreground" />
@@ -52,7 +58,7 @@ export function TeamStatsTab() {
         <Card className={cn(
             "transition-all duration-300 hover:scale-[1.02] hover:shadow-md",
             "animate-in fade-in-0 slide-in-from-bottom-4 duration-500"
-          )} style={{ animationDelay: `${3 * 100}ms` }}>
+          )} style={{ animationDelay: `${3 * STAT_CARD_STAGGER_DELAY_MS}ms` }}>
           <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
             <CardTitle className="text-sm font-medium">Net Rating</CardTitle>
             <PieChart className="w-4 h-4 text-muted-foreground" />
@@ -68,7 +74,7 @@ export function TeamStatsTab() {
         <Card className={cn(
             "col-span-1 transition-all duration-300 hover:scale-[1.02] hover:shadow-md",
             "animate-in fade-in-0 slide-in-from-bottom-4 duration-500"
-          )} style={{ animationDelay: `${0 * 100 + 400}ms` }}> {/* Continue stagger from previous row */}
+          )} style={{ animationDelay: `${0 * STAT_CARD_STAGGER_DELAY_MS + CHART_ROW_BASE_DELAY_MS}ms` }}>
           <CardHeader>
             <CardTitle>Team Performance Comparison</CardTitle>
             <CardDescription>
@@ -86,7 +92,7 @@ export function TeamStatsTab() {
         <Card className={cn(
             "col-span-1 transition-all duration-300 hover:scale-[1.02] hover:shadow-md",
             "animate-in fade-in-0 slide-in-from-bottom-4 duration-500"
-          )} style={{ animationDelay: `${1 * 100 + 400}ms` }}> {/* Continue stagger */}
+          )} style={{ animationDelay: `${1 * STAT_CARD_STAGGER_DELAY_MS + CHART_ROW_BASE_DELAY_MS}ms` }}>
           <CardHeader>
             <CardTitle>League Rankings</CardTitle>
             <CardDescription>

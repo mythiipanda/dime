@@ -11,14 +11,19 @@ import { PlayByPlayModal } from "@/components/games/PlayByPlayModal";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"; // Added Alert components
 import { cn } from "@/lib/utils"; // Added cn
 
+// Constants
+const GAME_CARD_STAGGER_DELAY_MS = 75;
+
 interface GamesClientPageProps {
   targetDateISO: string;
   initialScoreboardData: ScoreboardData | null;
+  serverFetchError: string | null; // Add serverFetchError prop
 }
 
 export default function GamesClientPage({
   targetDateISO,
   initialScoreboardData,
+  serverFetchError, // Receive serverFetchError
 }: GamesClientPageProps) {
   const router = useRouter();
   const currentDate = parseISO(targetDateISO);
@@ -28,79 +33,88 @@ export default function GamesClientPage({
   // State for live data (if viewing today)
   const [liveScoreboardData, setLiveScoreboardData] = useState<ScoreboardData | null>(viewingToday ? null : initialScoreboardData); // Start null if today, use initial otherwise
   const [isConnected, setIsConnected] = useState<boolean>(false);
-  const [isLoading, setIsLoading] = useState(true); // Make isLoading stateful
-  const [error, setError] = useState<string | null>(null); // Make error stateful
+  const [error, setError] = useState<string | null>(serverFetchError); // Initialize internal error with server error
+  const [isLoading, setIsLoading] = useState(!error && !initialScoreboardData); // Initial loading state based on props
   const ws = useRef<WebSocket | null>(null);
 
-  // Effect to manage isLoading state based on data availability
+  // Effect to derive loading state (more robustly handles initial load vs live updates)
   useEffect(() => {
     if (viewingToday) {
-      // For today, loading is complete when live data is received or error occurs
-      setIsLoading(!liveScoreboardData && !error);
+        // Today: Loading = not connected AND no data yet AND no error
+        setIsLoading(!isConnected && !liveScoreboardData && !error);
     } else {
-      // For past dates, loading is complete when initial data is available or error occurs
-      setIsLoading(!initialScoreboardData && !error);
+        // Past Date: Loading = no initial data AND no error
+        setIsLoading(!initialScoreboardData && !error);
     }
-    console.log(`[GamesClientPage] isLoading: ${isLoading}, viewingToday: ${viewingToday}, liveData: ${!!liveScoreboardData}, initialData: ${!!initialScoreboardData}, error: ${!!error}`); // Log loading state changes
-  }, [isLoading, viewingToday, liveScoreboardData, initialScoreboardData, error]); // Add dependencies
+  }, [viewingToday, isConnected, liveScoreboardData, initialScoreboardData, error]);
 
   // PBP Modal State
   const [selectedGameId, setSelectedGameId] = useState<string | null>(null);
   const [isPbpModalOpen, setIsPbpModalOpen] = useState<boolean>(false);
 
-   // WebSocket connection logic (remains largely the same)
+   // WebSocket connection logic
   useEffect(() => {
-    // WebSocket connection logic (as before)
     if (!viewingToday) {
-      ws.current?.close();
-      ws.current = null;
-      setIsConnected(false);
+      // Ensure WS is closed if navigating away from today
+      if (ws.current) {
+        console.log("[WebSocket] Navigated off today, closing connection.");
+        ws.current.close();
+        ws.current = null;
+        setIsConnected(false);
+      }
       return;
     }
 
     if (!ws.current) {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsUrl = `${protocol}//${window.location.host}/api/v1/scoreboard/ws`;
+      console.log("[WebSocket] Attempting to connect to:", wsUrl);
       ws.current = new WebSocket(wsUrl);
+      
       ws.current.onopen = () => {
         console.log("[WebSocket] Connection established");
         setIsConnected(true);
+        setError(null); // Clear previous errors on successful connect
       };
       ws.current.onclose = (event) => {
         console.log(`[WebSocket] Connection closed: ${event.code} - ${event.reason}`);
         setIsConnected(false);
+        // Avoid setting error if closed cleanly or already errored
+        if (event.code !== 1000 && event.code !== 1005 && !error) {
+             setError("WebSocket connection closed unexpectedly. Try refreshing.");
+        }
       };
-      ws.current.onerror = (error) => {
-        console.error("[WebSocket] Error:", error);
+      ws.current.onerror = (ev) => {
+        console.error("[WebSocket] Error:", ev);
         setError("WebSocket connection error. Please try refreshing the page.");
         setIsConnected(false);
       };
       ws.current.onmessage = (event) => {
-        console.log("[WebSocket] Message received:", event.data); // Log raw data
         try {
           const data = JSON.parse(event.data);
-          console.log("[WebSocket] Parsed data:", data); // Log parsed data
           if (data && data.games) {
-            console.log("[WebSocket] Setting live scoreboard data:", data.games.length, "games"); // Log data being set
             setLiveScoreboardData(data);
           } else {
-            console.warn("[WebSocket] Received data without 'games' property or invalid format:", data); // Warn if data is unexpected
+            console.warn("[WebSocket] Received invalid data structure:", data);
           }
         } catch (parseError) {
-          console.error("[WebSocket] Failed to parse message data:", parseError, "Raw data:", event.data); // Log parsing errors
+          console.error("[WebSocket] Failed to parse message data:", parseError, "Raw:", event.data);
         }
       };
     }
+    
+    // Cleanup function
     return () => {
-      // Only close if the WebSocket is open or connecting
       if (ws.current && (ws.current.readyState === WebSocket.OPEN || ws.current.readyState === WebSocket.CONNECTING)) {
-        console.log("[WebSocket] Cleaning up: Closing connection");
-        ws.current.close();
+        console.log("[WebSocket] Component unmount: Closing connection");
+        ws.current.close(1000, "Client navigating away"); // Close cleanly
       }
-      ws.current = null;
-      setIsConnected(false);
+      ws.current = null; // Ensure ref is cleared
+      setIsConnected(false); // Ensure connected state is false
     };
-  }, [viewingToday]);
+  // Rerun only if viewingToday changes (e.g., navigating between today and past dates)
+  // eslint-disable-next-line react-hooks/exhaustive-deps 
+  }, [viewingToday]); // Dependency array refined
 
   // Navigation handlers (remain the same)
   const handlePrevDay = () => {
@@ -119,14 +133,12 @@ export default function GamesClientPage({
   };
   
   // Loading message render function (remains the same)
-  const renderLoading = () => {
+  const renderLoadingMessage = () => {
      if (viewingToday) {
        if (!isConnected && !error) return "Connecting to live scores...";
-       // If connected but no data yet (first message pending)
-       if (isConnected && !liveScoreboardData && !error) return "Waiting for live scores..."; 
+       if (isConnected && !liveScoreboardData && !error) return "Waiting for live scores...";
      }
-     // Fallback for non-today initial load or WS connecting phase
-     return "Loading Games...";
+     return "Loading Games..."; // Fallback for past dates or initial WS connection
    };
 
  // Determine current data source
@@ -159,12 +171,12 @@ export default function GamesClientPage({
       {isLoading && (
         <div className="flex justify-center items-center pt-10">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-          <span className="ml-2 text-muted-foreground">{renderLoading()}</span>
+          <span className="ml-2 text-muted-foreground">{renderLoadingMessage()}</span>
         </div>
       )}
 
       {/* Error State */}
-      {error && !isLoading && (
+      {!isLoading && error && (
         <Alert variant="destructive" className="my-4">
           <AlertCircleIcon className="h-4 w-4" />
           <AlertTitle>Error Loading Games</AlertTitle>
@@ -190,7 +202,7 @@ export default function GamesClientPage({
                 <div
                   key={game.gameId}
                   className={cn("animate-in fade-in-0 slide-in-from-bottom-4 duration-500")}
-                  style={{ animationDelay: `${index * 75}ms` }}
+                  style={{ animationDelay: `${index * GAME_CARD_STAGGER_DELAY_MS}ms` }}
                 >
                   <GameCard
                     game={game}

@@ -1,20 +1,17 @@
-// Keep only necessary imports for Server Component
+// Imports for Server Component
 import { Metadata } from 'next';
 import { format, parseISO, isToday } from 'date-fns';
-import { ScoreboardData } from "./types"; // Import types
-// Import the new client component that will be created
+import { ScoreboardData } from "./types";
 import GamesClientPage from "./GamesClientPage";
-import { API_BASE_URL } from "@/lib/config"; // Keep for fetch
+import { API_BASE_URL } from "@/lib/config";
 
-// Server-side fetch function (moved from original client component)
+// Server-side fetch function
 async function getScoreboardDataServer(gameDate: string): Promise<{ data: ScoreboardData | null, error: string | null }> {
-  // Use absolute URL for server-side fetch if API is external or handle internal routes
   const apiUrl = `${API_BASE_URL}/scoreboard/?game_date=${gameDate}`;
   console.log("[Server] Fetching scoreboard via HTTP:", apiUrl);
   try {
     const res = await fetch(apiUrl, { 
-      cache: 'no-store', // Or implement caching strategy (e.g., revalidate)
-      // next: { revalidate: 60 } // Example: Revalidate every 60 seconds
+      cache: 'no-store', // Consider caching strategy
     });
 
   if (!res.ok) {
@@ -23,12 +20,10 @@ async function getScoreboardDataServer(gameDate: string): Promise<{ data: Scoreb
       return { data: null, error: errorData.message || `Failed to fetch scoreboard: ${res.statusText}` };
     }
     const rawData = await res.json();
-    // Basic validation
     if (!rawData || !rawData.games) {
        console.warn("[Server] Invalid scoreboard data structure received");
        return { data: { gameDate: gameDate, games: [] }, error: null }; // Return empty games array
     }
-    // Ensure games is always an array
     rawData.games = Array.isArray(rawData.games) ? rawData.games : [];
     return { data: rawData as ScoreboardData, error: null };
 
@@ -39,62 +34,54 @@ async function getScoreboardDataServer(gameDate: string): Promise<{ data: Scoreb
   }
 }
 
-// Helper to format date remains useful
 const formatDateUrl = (date: Date): string => format(date, 'yyyy-MM-dd');
 
-// --- Metadata --- (Can remain the same)
 export const metadata: Metadata = {
   title: 'NBA Games Scoreboard',
   description: 'View live and past NBA game scores and schedules.',
 };
 
-// --- Page Props Interface ---
 interface GamesPageProps {
-  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+  searchParams: { [key: string]: string | string[] | undefined }; // Simpler type for searchParams
 }
 
-// --- Server Component Definition ---
 export default async function GamesServerPage({ searchParams }: GamesPageProps) {
-  const params = await searchParams;
-
   // Determine the target date from search params or default to today
   let targetDate: Date;
-  // Ensure searchParams is accessed safely within the async context
-  const dateParam = params?.date; // Use optional chaining
+  const dateParam = searchParams?.date;
 
   if (typeof dateParam === 'string' && /\d{4}-\d{2}-\d{2}/.test(dateParam)) {
      try {
         targetDate = parseISO(dateParam);
      } catch {
-        targetDate = new Date();
+        targetDate = new Date(); // Default to today on parse error
      }
   } else {
-     targetDate = new Date();
+     targetDate = new Date(); // Default to today if param missing/invalid
   }
 
-  
   const isViewingToday = isToday(targetDate);
   const formattedDate = formatDateUrl(targetDate);
 
-  // Fetch scoreboard data on the server for SSR (not for today)
   let initialScoreboardData: ScoreboardData | null = null;
   let serverFetchError: string | null = null;
+
+  // Fetch data server-side ONLY if not viewing today's games
   if (!isViewingToday) {
+    console.log(`[Server Page] Fetching data for date: ${formattedDate}`);
     const { data, error } = await getScoreboardDataServer(formattedDate);
     initialScoreboardData = data;
     serverFetchError = error;
   } else {
      console.log("[Server Page] Date is today, client will handle WebSocket.");
-     // Provide an empty structure for today so client knows the date
-     initialScoreboardData = { gameDate: formattedDate, games: [] };
+     initialScoreboardData = { gameDate: formattedDate, games: [] }; // Provide date structure for client
   }
 
-  // Render the Client Component, passing the initial data and date info
   return (
     <GamesClientPage
-      targetDateISO={targetDate.toISOString()} // Pass date as ISO string
-      initialScoreboardData={initialScoreboardData} // Can be null on error or empty for today
-      serverFetchError={serverFetchError} // Pass potential server fetch error
+      targetDateISO={targetDate.toISOString()}
+      initialScoreboardData={initialScoreboardData}
+      serverFetchError={serverFetchError}
     />
   );
 }

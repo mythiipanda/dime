@@ -33,7 +33,7 @@ interface StatBoxProps {
 function StatBox({ label, value, decimals = 1, suffix = '' }: StatBoxProps) {
     const formattedValue = formatStat(value, decimals);
     return (
-        <div className="p-2 rounded-md border bg-muted/50"> {/* Changed rounded to rounded-md */}
+        <div className="p-2 rounded-md border bg-muted/50">
             <p className="text-xs text-muted-foreground uppercase tracking-wider">{label}</p>
             <p className="text-xl font-semibold">{formattedValue}{formattedValue !== '-' ? suffix : ''}</p>
         </div>

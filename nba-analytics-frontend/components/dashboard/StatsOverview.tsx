@@ -1,3 +1,5 @@
+"use client"; // Added 'use client'
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Users,
@@ -6,6 +8,9 @@ import {
   BarChart2,
 } from "lucide-react";
 import { cn } from "@/lib/utils"; // Import cn
+
+// Animation delay constant
+const STAT_CARD_STAGGER_DELAY_MS = 100;
 
 // Define a type for the stat items for better structure and potential reuse
 type StatItem = {
@@ -45,7 +50,7 @@ const statItems: StatItem[] = [
 export function StatsOverview() {
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-      {statItems.map((item, index) => { // Added index for animation delay
+      {statItems.map((item, index) => {
         const IconComponent = item.icon;
         return (
           <Card
@@ -54,7 +59,7 @@ export function StatsOverview() {
               "transition-all duration-300 hover:scale-[1.03] hover:shadow-md", // Added hover effects
               "animate-in fade-in-0 slide-in-from-bottom-4 duration-500" // Added entrance animation
             )}
-            style={{ animationDelay: `${index * 100}ms` }}
+            style={{ animationDelay: `${index * STAT_CARD_STAGGER_DELAY_MS}ms` }}
           >
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">{item.title}</CardTitle> {/* Changed font-regular to font-medium */}

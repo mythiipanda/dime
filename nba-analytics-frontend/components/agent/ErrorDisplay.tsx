@@ -8,7 +8,7 @@ interface ErrorDisplayProps {
 
 export function ErrorDisplay({ error }: ErrorDisplayProps) {
   if (!error) {
-    return null; // Don't render if no error
+    return null;
   }
 
   return (

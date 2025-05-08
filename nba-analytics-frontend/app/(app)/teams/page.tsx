@@ -19,6 +19,7 @@ export default async function TeamsStandingsPage({ searchParams }: TeamsPageProp
 
   let easternStandings: TeamStanding[] = [];
   let westernStandings: TeamStanding[] = [];
+  let fetchError: string | null = null; // Declare fetchError
   
 
   console.log("Fetching standings for season (Server Component):", season);
@@ -36,8 +37,6 @@ export default async function TeamsStandingsPage({ searchParams }: TeamsPageProp
 
   } catch (error) {
     console.error("Error fetching standings in Server Component:", error);
-    // Set an error message to potentially display to the user
-    // The actual error boundary (error.tsx) should handle fatal errors
     fetchError = "Failed to load team standings. Please check connection or try again later.";
     // Optionally, you could return a specific error UI here instead of rendering the client page
     // For now, we'll pass empty arrays and let the client page potentially show a message if needed,
@@ -50,7 +49,7 @@ export default async function TeamsStandingsPage({ searchParams }: TeamsPageProp
       initialEasternStandings={easternStandings}
       initialWesternStandings={westernStandings}
       currentSeason={season}
-      // Optionally pass fetchError if the client needs to display it
+      fetchError={fetchError} // Pass fetchError to client component
     />
   );
 }

@@ -2,8 +2,12 @@
 
 import { Button } from "@/components/ui/button";
 import { Logo } from "@/components/layout/Logo";
-import { ZapIcon, AlertTriangleIcon, MessageSquareTextIcon } from "lucide-react"; // Example icons
+import { ZapIcon, AlertTriangleIcon, MessageSquareTextIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+// Animation delay constants
+const INITIAL_SCREEN_BASE_DELAY_MS = 300;
+const PROMPT_BUTTON_STAGGER_DELAY_MS = 75;
 
 const SIMPLE_EXAMPLE_PROMPTS = [
   { text: "Compare LeBron James and Michael Jordan's career playoff stats.", icon: <MessageSquareTextIcon className="h-4 w-4 mr-2 shrink-0" /> },
@@ -23,8 +27,7 @@ export function InitialChatScreen({ onExampleClick }: InitialChatScreenProps) {
       "animate-in fade-in-0 duration-500"
     )}>
       <div className="animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-100">
-        <Logo iconSize={10} textSize="xl" /> {/* Removed iconOnly, textSize changed to "xl" */}
-        {/* <h1 className="text-4xl font-bold tracking-tight mt-2">Dime Assistant</h1> */}
+        <Logo iconSize={10} textSize="xl" />
       </div>
 
       <p className="text-base sm:text-lg text-muted-foreground max-w-md md:max-w-lg animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-200">
@@ -32,21 +35,20 @@ export function InitialChatScreen({ onExampleClick }: InitialChatScreenProps) {
       </p>
 
       <div className="w-full max-w-lg md:max-w-xl space-y-3 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-300">
-        {/* <h2 className="text-sm font-medium text-muted-foreground">Try an example:</h2> */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {SIMPLE_EXAMPLE_PROMPTS.map((promptItem, index) => (
             <Button
               key={index}
               variant="outline"
               className={cn(
-                "text-left justify-start h-auto py-2.5 px-3.5 text-sm font-normal leading-snug whitespace-normal", // Added whitespace-normal
+                "text-left justify-start h-auto py-2.5 px-3.5 text-sm font-normal leading-snug whitespace-normal",
                 "hover:bg-accent/70 dark:hover:bg-accent/50 transition-all hover:scale-[1.02] active:scale-[0.98]",
                 "animate-in fade-in-0 zoom-in-95 duration-300"
               )}
-              style={{ animationDelay: `${300 + index * 75}ms` }}
+              style={{ animationDelay: `${INITIAL_SCREEN_BASE_DELAY_MS + index * PROMPT_BUTTON_STAGGER_DELAY_MS}ms` }}
               onClick={() => onExampleClick(promptItem.text)}
             >
-              {/* {promptItem.icon} */}
+              {promptItem.icon}
               <span>{promptItem.text}</span>
             </Button>
           ))}

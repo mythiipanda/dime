@@ -9,7 +9,7 @@ import { ApiUsageAlert } from "@/components/dashboard/ApiUsageAlert";
 import { cn } from "@/lib/utils";
 
 export default function DashboardPage() {
-  const isLoading = false; // This state would ideally come from data fetching logic
+  // isLoading placeholder removed; child components should manage their own loading if data-dependent.
 
   return (
     <div className={cn(
@@ -23,7 +23,7 @@ export default function DashboardPage() {
 
       {/* Main content area for Tabs - spans full width */}
       <div className="animate-in fade-in-0 slide-in-from-bottom-3 duration-500 delay-200">
-        <DashboardTabs isLoading={isLoading} />
+        <DashboardTabs />
       </div>
       
       {/* Stats Overview - spans full width */}
@@ -38,7 +38,7 @@ export default function DashboardPage() {
       
       {/* Recent Activity and API Usage - in a grid below other content */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-in fade-in-0 slide-in-from-bottom-3 duration-500 delay-400">
-        <RecentActivity isLoading={isLoading} />
+        <RecentActivity />
         <ApiUsageAlert />
       </div>
     </div>

@@ -20,9 +20,11 @@ import StatComparisonTool from '@/components/research/StatComparisonTool';
 import GameAnalysisViewer from '@/components/research/GameAnalysisViewer';
 import PlayerScoutingReportGenerator from '@/components/research/PlayerScoutingReportGenerator';
 
-// Define available sections/analysis types
-const availableSections = [
-    { id: 'basic', label: 'Basic Info' },
+// This defines the sections available for the user to customize in the report.
+// It's also used to initialize the default selected sections.
+const reportSections = [
+    { id: 'executive_summary', label: 'Executive Summary' },
+    { id: 'key_stat_cards', label: 'Key Stat Cards' },
     { id: 'career_stats', label: 'Career Stats' },
     { id: 'current_stats', label: 'Current Season Stats' },
     { id: 'gamelog', label: 'Game Logs (Current Season)' },
@@ -36,20 +38,24 @@ const availableSections = [
     { id: 'clutch', label: 'Clutch Stats' },
     { id: 'analysis', label: 'YOY Analysis' }, // If applicable
     { id: 'insights', label: 'Player Insights' }, // If applicable
+    { id: 'comparative_analysis', label: 'Comparative Analysis (if applicable)' },
+    { id: 'historical_context', label: 'Historical Context/Trends' },
+    { id: 'visualizations', label: 'Visualizations (Charts/Graphs)' },
+    { id: 'strengths_weaknesses', label: 'Strengths & Weaknesses' },
+    { id: 'potential_impact', label: 'Potential Impact/Outlook' },
+    { id: 'data_sources', label: 'Data Sources & Methodology' },
 ];
 
 interface ResearchState {
   topic: string; 
   isLoading: boolean;
   error: string | null;
-  reportContent: string | null; // SSE stream content
+  reportContent: string | null;
   followUpSuggestions: string[];
-  selectedSections: string[]; // Keep section selection
+  selectedSections: string[];
   promptSuggestions: string[];
-  isSuggesting: boolean; // Loading state for suggestions
+  isSuggesting: boolean;
 }
-
-
 
 export default function ResearchPage() {
   const [state, setState] = useState<ResearchState>({
@@ -58,60 +64,52 @@ export default function ResearchPage() {
     error: null,
     reportContent: null,
     followUpSuggestions: [],
-    selectedSections: availableSections.map(s => s.id), // Default to all sections
+    selectedSections: reportSections.map(s => s.id), // Initialize with all reportSections
     promptSuggestions: [],
     isSuggesting: false,
   });
 
   const eventSourceRef = useRef<EventSource | null>(null);
-  const reportEndRef = useRef<HTMLDivElement | null>(null); // For scrolling
-  const topicTextareaRef = useRef<HTMLTextAreaElement | null>(null); // Ref for the textarea
+  const reportEndRef = useRef<HTMLDivElement | null>(null);
+  const topicTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
-  // Cleanup function
+  // Cleanup EventSource on unmount - ONE cleanup effect is sufficient
   useEffect(() => {
     return () => {
       if (eventSourceRef.current) {
         console.log("Closing EventSource connection on unmount.");
         eventSourceRef.current.close();
+        eventSourceRef.current = null; // Explicitly nullify after closing
       }
     };
-  }, []);
+  }, []); // Empty dependency array means this runs once on mount and cleanup on unmount
 
   // --- Fetch Prompt Suggestions ---
   const handleFetchPromptSuggestions = async () => {
     let promptToSend = state.topic;
-    // Check for selected text in the textarea
     const textarea = topicTextareaRef.current;
     if (textarea && textarea.selectionStart !== textarea.selectionEnd) {
       promptToSend = textarea.value.substring(textarea.selectionStart, textarea.selectionEnd);
-      console.log("Detected selected text, sending snippet for suggestions:", promptToSend);
-    } else {
-      console.log("No text selected, sending full topic for suggestions:", promptToSend);
-      if (!promptToSend) {
-        console.log("Topic is empty, backend will provide generic suggestions.");
-      }
-    }
-    setState((prev: ResearchState) => ({ ...prev, isSuggesting: true, promptSuggestions: [], error: null }));
+    } 
+    setState((prev) => ({ ...prev, isSuggesting: true, promptSuggestions: [], error: null }));
     try {
       const response = await fetch('/api/v1/research/prompt-suggestions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ current_prompt: promptToSend }),
       });
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const suggestions: string[] = await response.json();
-      setState((prev: ResearchState) => ({ ...prev, promptSuggestions: suggestions, isSuggesting: false }));
+      setState((prev) => ({ ...prev, promptSuggestions: suggestions, isSuggesting: false }));
     } catch (error) {
       console.error('Failed to fetch prompt suggestions:', error);
-      setState((prev: ResearchState) => ({ ...prev, error: 'Failed to fetch prompt suggestions.', isSuggesting: false, promptSuggestions: [] }));
+      setState((prev) => ({ ...prev, error: 'Failed to fetch prompt suggestions.', isSuggesting: false, promptSuggestions: [] }));
     }
   };
 
   // Handler for checkbox changes
   const handleSectionChange = (sectionId: string, checked: boolean) => {
-    setState((prev: ResearchState) => {
+    setState((prev) => {
       const newSelectedSections = checked
         ? [...prev.selectedSections, sectionId]
         : prev.selectedSections.filter(id => id !== sectionId);
@@ -119,142 +117,103 @@ export default function ResearchPage() {
     });
   };
 
-  // --- Rename: Use Prompt Suggestion --- 
   const handlePromptSuggestion = (suggestion: string) => {
-    console.log("Using suggestion:", suggestion);
-    setState((prev: ResearchState) => ({ 
+    setState((prev) => ({ 
       ...prev, 
       topic: suggestion, 
-      promptSuggestions: [], // Close popover
-      isSuggesting: false, // Ensure loading state is off
+      promptSuggestions: [],
+      // isSuggesting: false, // isSuggesting should be false after suggestions are loaded
     }));
   };
 
-  // Main submit handler (simplified)
+  // Main submit handler
   const handleSubmit = useCallback(async () => {
     if (eventSourceRef.current) {
-      eventSourceRef.current.close(); // Close previous connection if any
+      console.log("Closing previous EventSource connection.");
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
     }
 
-    setState((prev: ResearchState) => ({
+    setState((prev) => ({
       ...prev,
       isLoading: true,
       error: null,
-      reportContent: '', // Reset report content
+      reportContent: '',
       followUpSuggestions: [],
     }));
 
-    // Reset scroll position (optional)
-    // window.scrollTo(0, 0);
-
     const requestBody = {
-      topic: state.topic, // Only send topic
+      topic: state.topic,
       selected_sections: state.selectedSections,
     };
-
-    console.log('Starting research with:', requestBody);
+    console.log('Starting research with:', requestBody); // Keep for debugging
 
     try {
-      // Connect to the SSE endpoint
-      const eventSource = new EventSource(`/api/v1/research/?topic=${encodeURIComponent(state.topic)}&selected_sections=${encodeURIComponent(JSON.stringify(state.selectedSections))}`);
+      // Note: SSE GET request parameters must be URL encoded.
+      const queryParams = new URLSearchParams({
+        topic: state.topic,
+        selected_sections: JSON.stringify(state.selectedSections),
+      });
+      const eventSource = new EventSource(`/api/v1/research/?${queryParams.toString()}`);
       eventSourceRef.current = eventSource;
+
+      eventSource.onopen = () => {
+          console.log("SSE connection opened.");
+          // Clear error on successful (re)connection if one existed from previous attempt
+          if(state.error) setState(prev => ({...prev, error: null})); 
+      };
 
       eventSource.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          // console.log('SSE message received:', data); // Debug log
-
           if (data.event === 'suggestions') {
-            // Handle final follow-up suggestions
-            setState((prev: ResearchState) => ({ ...prev, followUpSuggestions: data.suggestions || [] }));
+            setState((prev) => ({ ...prev, followUpSuggestions: data.suggestions || [], isLoading: false })); // Stop loading on suggestions
             console.log("Follow-up suggestions received:", data.suggestions);
+            if (eventSourceRef.current) eventSourceRef.current.close(); // Close after final suggestions
           } else if (data.event === 'error') {
-             // Handle errors from the stream
              console.error("SSE Error:", data.content);
-             setState((prev: ResearchState) => ({ ...prev, error: data.content || 'An unknown error occurred during research.', isLoading: false }));
-             eventSource.close();
-             eventSourceRef.current = null;
-          } else {
-            // Append content chunks to reportContent
-            // Ensure content exists and is a string before appending
+             setState((prev) => ({ ...prev, error: data.content || 'An unknown error occurred during research.', isLoading: false }));
+             if (eventSourceRef.current) eventSourceRef.current.close();
+          } else if (data.event === 'final_content_end') { // Assume backend sends this event
+             console.log("SSE stream indicated end of content.");
+             setState((prev) => ({ ...prev, isLoading: false }));
+             if (eventSourceRef.current) eventSourceRef.current.close();
+          }else {
             const contentChunk = data.content;
             if (typeof contentChunk === 'string') {
-              setState((prev: ResearchState) => ({ ...prev, reportContent: (prev.reportContent || '') + contentChunk }));
-            } else if (contentChunk) {
-              // If content is not a string but exists, log it - might need specific handling
-              // console.log("Received non-string content chunk:", contentChunk);
-            }
-            // Add specific handling for Stat Cards or Charts if needed based on data.event or data.type
-            // Example:
-            // if (data.type === 'stat_card') { /* update state with stat card data */ }
-            // if (data.type === 'chart') { /* update state with chart data */ }
+              setState((prev) => ({ ...prev, reportContent: (prev.reportContent || '') + contentChunk }));
+            } 
+            // Add specific handling for Stat Cards or Charts based on data.type/data.event if implemented
           }
         } catch (e) {
           console.error('Error parsing SSE message:', e, 'Raw data:', event.data);
-          // Optionally set an error state here
-          setState((prev: ResearchState) => ({ ...prev, error: 'Error processing research update.', isLoading: false }));
-          eventSource.close();
-          eventSourceRef.current = null;
+          setState((prev) => ({ ...prev, error: 'Error processing research update.', isLoading: false }));
+          if (eventSourceRef.current) eventSourceRef.current.close();
         }
       };
 
-      eventSource.onerror = (error) => {
-        console.error('EventSource failed:', error);
-        setState((prev: ResearchState) => ({
+      eventSource.onerror = (errorEvent) => {
+        console.error('EventSource failed:', errorEvent);
+        setState((prev) => ({
           ...prev,
-          error: 'Connection to research service failed.',
+          error: 'Connection to research service failed. Please try again.',
           isLoading: false,
         }));
-        eventSource.close();
-        eventSourceRef.current = null;
+        if (eventSourceRef.current) eventSourceRef.current.close();
       };
-
-      eventSource.onopen = () => {
-          console.log("SSE connection opened.");
-      };
-
-      // The stream will automatically close when done, or handle explicitly if needed
-      // We might need a specific 'end' event from the backend to set isLoading = false reliably
-      // For now, assume error or suggestions marks the end
 
     } catch (err) {
-      console.error('Failed to initiate research:', err);
-      let errorMessage = 'An unknown error occurred.';
-      if (err instanceof Error) {
-        errorMessage = err.message;
-      }
-      setState((prev: ResearchState) => ({ ...prev, error: errorMessage, isLoading: false }));
+      console.error('Failed to initiate research (setup error):', err);
+      setState((prev) => ({ ...prev, error: err instanceof Error ? err.message : 'Failed to start research.', isLoading: false }));
     }
-  }, [state.topic, state.selectedSections]);
+  }, [state.topic, state.selectedSections, state.error]); // Added state.error to dependencies of handleSubmit for onopen error clearing
 
    // Effect to scroll to the bottom of the report
    useEffect(() => {
-    if (state.reportContent) {
-      reportEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (state.reportContent && reportEndRef.current) {
+      reportEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [state.reportContent]);
-
-  // Cleanup EventSource on unmount
-  useEffect(() => {
-    return () => {
-      if (eventSourceRef.current) {
-        console.log("Closing EventSource connection on unmount.");
-        eventSourceRef.current.close();
-      }
-    };
-  }, []);
-
-  // Constants for sections defined outside the component render
-  const reportSections = [
-    { id: 'executive_summary', label: 'Executive Summary' },
-    { id: 'key_stat_cards', label: 'Key Stat Cards' },
-    { id: 'comparative_analysis', label: 'Comparative Analysis (if applicable)' },
-    { id: 'historical_context', label: 'Historical Context/Trends' },
-    { id: 'visualizations', label: 'Visualizations (Charts/Graphs)' },
-    { id: 'strengths_weaknesses', label: 'Strengths & Weaknesses' },
-    { id: 'potential_impact', label: 'Potential Impact/Outlook' },
-    { id: 'data_sources', label: 'Data Sources & Methodology' },
-  ];
 
   return (
     <div className="container mx-auto p-4 md:p-8 max-w-5xl">
@@ -271,13 +230,11 @@ export default function ResearchPage() {
           <TabsTrigger value="draft-board">Draft Board</TabsTrigger>
         </TabsList>
 
-        {/* Research Tab Content */}
         <TabsContent value="research">
             <Card>
               <CardContent className="pt-6 space-y-6">
-                {/* --- Input Section --- */}
+                {/* Input Section */}
                 <div className="space-y-4">
-                  {/* Topic Input */}
                   <div>
                     <Label htmlFor="research-topic" className="text-lg font-semibold mb-2 block">Research Topic / Question</Label>
                     <div className="relative">
@@ -286,7 +243,7 @@ export default function ResearchPage() {
                         id="research-topic"
                         placeholder="Enter your research topic..."
                         value={state.topic}
-                        onChange={(e) => setState((prev: ResearchState) => ({ ...prev, topic: e.target.value, error: null }))}
+                        onChange={(e) => setState((prev) => ({ ...prev, topic: e.target.value, error: null }))}
                         className="min-h-[100px] text-base p-3 pr-12 w-full"
                         rows={4}
                       />
@@ -319,9 +276,8 @@ export default function ResearchPage() {
                         </PopoverContent>
                       </Popover>
                     </div>
-      </div>
+                  </div>
 
-                  {/* Report Section Selection */}
                   <Collapsible className="border rounded-md p-4">
                     <CollapsibleTrigger asChild>
                       <Button variant="outline" className="w-full justify-between">
@@ -345,30 +301,28 @@ export default function ResearchPage() {
                   </Collapsible>
                 </div>
 
-                {/* --- Action Button --- */}
+                {/* Action Button */}
                 <div className="text-center">
-            <Button 
+                  <Button 
                     onClick={handleSubmit}
                     disabled={state.isLoading || !state.topic.trim()}
                     size="lg"
                     className="w-full md:w-auto"
                   >
-                    {state.isLoading ? (
-                      <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Researching...
-                      </>
-              ) : (
+                    {state.isLoading && !state.reportContent ? (
+                      <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Researching...</>
+                    ) : state.isLoading && state.reportContent ? (
+                      <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Receiving Report...</>
+                    ) : (
                       'Run Research'
-              )}
-            </Button>
+                    )}
+                  </Button>
                 </div>
-        </CardContent>
-      </Card>
+              </CardContent>
+            </Card>
 
-            {/* --- Output Section --- */}
+            {/* Output Section */}
             <div className="mt-6 space-y-6">
-              {/* Error Display */}
               {state.error && (
                 <Alert variant="destructive">
                   <Terminal className="h-4 w-4" />
@@ -377,7 +331,6 @@ export default function ResearchPage() {
                 </Alert>
               )}
 
-              {/* Report Viewer */}
               {state.reportContent !== null && (
                 <div className="border rounded-lg p-4 md:p-6 bg-card text-card-foreground shadow-sm">
                   <h2 className="text-2xl font-semibold mb-4 flex items-center">
@@ -386,62 +339,42 @@ export default function ResearchPage() {
                   </h2>
                   <ResearchReportViewer reportContent={state.reportContent} />
                   <div ref={reportEndRef} />
-          </div>
-        )}
-        
-              {/* Follow-up Suggestions */}
-              {state.followUpSuggestions.length > 0 && (
+                </div>
+              )}
+              
+              {!state.isLoading && state.followUpSuggestions.length > 0 && (
                 <div>
                   <h3 className="text-xl font-semibold mb-3">Follow-up Suggestions:</h3>
                   <ul className="list-disc pl-5 space-y-2">
                     {state.followUpSuggestions.map((suggestion, index) => (
                       <li key={index} className="text-muted-foreground">
                         <button
-                          onClick={() => setState((prev: ResearchState) => ({...prev, topic: suggestion, reportContent: null, followUpSuggestions: [] }))}
+                          onClick={() => {
+                            setState((prev) => ({...prev, topic: suggestion, reportContent: null, followUpSuggestions: [], error: null}));
+                            // Optionally, trigger handleSubmit directly or let user click Run Research
+                            // handleSubmit(); // If auto-submit is desired
+                          }}
                           className="text-left hover:text-primary underline transition-colors duration-200"
                         >
                           {suggestion}
                         </button>
-                          </li>
-                        ))}
-                      </ul>
-           </div>
-        )}
-      </div>
-        </TabsContent>
-
-        {/* Stat Comparison Tab Content */}
-        <TabsContent value="comparison">
-           <StatComparisonTool />
-        </TabsContent>
-
-        {/* Game Analysis Tab Content */}
-        <TabsContent value="game-analysis">
-            <GameAnalysisViewer />
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
         </TabsContent>
         
-        {/* Player Scouting Tab Content */}
-        <TabsContent value="scouting">
-            <PlayerScoutingReportGenerator />
-        </TabsContent>
-
-        {/* Simulation Tab Content */}
-        <TabsContent value="simulation">
-          <SimulationSetup />
-        </TabsContent>
-
-        {/* Custom Agents Tab Content */}
-        <TabsContent value="custom-agents">
-          <CustomAgentConfigurator />
-        </TabsContent>
-
-        {/* Draft Board Tab Content */}
-        <TabsContent value="draft-board">
-          <DraftBoardViewer />
-        </TabsContent>
+        {/* Other TabsContent for StatComparisonTool, GameAnalysisViewer etc. */}
+        <TabsContent value="comparison"><StatComparisonTool /></TabsContent>
+        <TabsContent value="game-analysis"><GameAnalysisViewer /></TabsContent>
+        <TabsContent value="scouting"><PlayerScoutingReportGenerator /></TabsContent>
+        <TabsContent value="simulation"><SimulationSetup /></TabsContent>
+        <TabsContent value="custom-agents"><CustomAgentConfigurator /></TabsContent>
+        <TabsContent value="draft-board"><DraftBoardViewer /></TabsContent>
 
       </Tabs>
-
     </div>
   );
 } 

@@ -1,3 +1,5 @@
+"use client"; // Added 'use client'
+
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { cn } from "@/lib/utils"; // Import cn
 

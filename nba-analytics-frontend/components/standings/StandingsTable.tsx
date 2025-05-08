@@ -17,13 +17,10 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 
 interface StandingsTableProps {
   teams: TeamStanding[]
-  conference: "Eastern" | "Western"
 }
 
 export function StandingsTable({ 
   teams, 
-  /* eslint-disable-next-line @typescript-eslint/no-unused-vars */
-  conference: _conference 
 }: StandingsTableProps) {
   return (
     <div className="rounded-md border">

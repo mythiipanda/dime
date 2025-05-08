@@ -30,17 +30,17 @@ export default function RootLayout({ children, }: { children: React.ReactNode; }
   return (
     <ClerkProvider>
       <html lang="en" suppressHydrationWarning>
-        <head />
+        {/* <head /> - Removed empty head tag */}
         <body className={cn('min-h-screen bg-background font-sans antialiased', GeistSans.className)}>
           <ThemeProvider
             attribute="class"
-            defaultTheme="system"
+            defaultTheme="dark"
             enableSystem
             disableTransitionOnChange
           >
-            <div className="flex flex-col min-h-screen"> {/* Ensure footer sticks to bottom */}
+            <div className="flex flex-col min-h-screen"> {/* Footer stickiness container */}
               <main className="flex-grow">{children}</main>
-              {/* <Footer /> */} {/* Footer removed from root layout */}
+              {/* Footer removed from root - applied per-page or in specific layouts */}
             </div>
           </ThemeProvider>
         </body>

@@ -1,110 +1,125 @@
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Check } from 'lucide-react';
-import { cn } from '@/lib/utils'; // Import cn
+import { cn } from '@/lib/utils';
 
 export function PricingSection() {
   const plans = [
     {
-      name: "Hobbyist",
-      price: "$9",
-      freq: "/mo",
+      name: "Analyst",
+      price: "$15",
+      freq: "/month",
+      description: "For individuals automating basic NBA data analysis.",
       features: [
-        "Basic Stats Access",
-        "Limited AI Queries",
-        "Community Support",
+        "Core stats access & visualization",
+        "Delegate basic player/team lookups",
+        "Standard AI analysis models",
+        "Community forum support",
       ],
-      buttonText: "Get Started",
-      buttonVariant: "secondary", // Use a secondary style for non-featured
+      buttonText: "Start Analyzing",
+      buttonVariant: "outline",
       featured: false,
+      animationDelay: "100ms",
     },
     {
-      name: "Pro",
-      price: "$29",
-      freq: "/mo",
+      name: "Pro Analyst",
+      price: "$35",
+      freq: "/month",
+      description: "For power users automating advanced analysis & scouting.",
       features: [
-        "Full Stats Access",
-        "Advanced AI Queries",
-        "Player Comparisons",
-        "Trend Detection",
-        "Priority Support",
+        "All Analyst features",
+        "Delegate advanced scouting tasks",
+        "Interactive shot chart generation & analysis",
+        "AI game predictions & basic simulations",
+        "Player comparison engine",
+        "Priority email support",
       ],
-      buttonText: "Choose Pro",
-      buttonVariant: "primary", // Primary style for featured
+      buttonText: "Activate Pro Agent",
+      buttonVariant: "default",
       featured: true,
+      animationDelay: "200ms",
     },
     {
-      name: "Enterprise",
+      name: "Team / Enterprise",
       price: "Custom",
       freq: "",
+      description: "For teams, media ops, and organizations needing scaled AI.",
       features: [
-        "API Access",
-        "Custom Models",
-        "Dedicated Support",
+        "All Pro Analyst features",
+        "High-volume autonomous agent tasks",
+        "Advanced trade & draft simulations",
+        "Custom AI model integration/tuning",
+        "API access & dedicated support",
       ],
-      buttonText: "Contact Us",
-      buttonVariant: "secondary", // Secondary style
+      buttonText: "Contact Sales",
+      buttonVariant: "outline",
       featured: false,
+      animationDelay: "300ms",
     },
   ];
 
   return (
-    <section id="pricing" className="py-32 relative overflow-hidden bg-background text-foreground">
-      {/* Section Title - Updated styling */}
-      <div className="container mx-auto max-w-7xl px-4 text-center mb-16 relative z-10">
-        <h2 className="text-4xl md:text-5xl font-bold tracking-tight text-foreground mb-4">
-          Flexible <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary">Pricing</span>
+    <section id="pricing" className="py-16 md:py-24 bg-gradient-to-b from-blue-950/80 to-gray-950">
+      <div className="container mx-auto max-w-7xl px-4 text-center mb-12 md:mb-16 animate-in fade-in-0 slide-in-from-bottom-4 duration-500">
+        <h2 className="text-3xl md:text-4xl font-bold tracking-tight text-white mb-3">
+          Flexible Plans for Every Analyst
         </h2>
-        <p className="text-lg leading-8 text-muted-foreground max-w-2xl mx-auto">Choose the plan that scales with your analysis needs.</p>
+        <p className="text-lg leading-8 text-gray-300 max-w-2xl mx-auto">
+          Scale your analytical power. Choose the Dime AI agent configuration that fits your needs, from individual insights to enterprise-level operations.
+        </p>
       </div>
       
-      {/* Pricing Cards Container - Updated Card styling */}
-      <div className="container mx-auto max-w-4xl px-4 grid grid-cols-1 md:grid-cols-3 gap-8 items-start relative z-10">
-        {plans.map((plan, index) => ( // Added index for animation delay
-          <div key={plan.name} className={`relative group ${plan.featured ? 'md:-mt-4 md:mb-4' : ''}`}>
-            {/* Glow effect */}
-            <div className={`absolute -inset-px rounded-2xl blur-lg opacity-0 group-hover:opacity-70 transition-opacity duration-300 ${plan.featured ? 'bg-gradient-to-br from-primary/40 to-secondary/40' : 'bg-gradient-to-br from-primary/20 to-secondary/20'}`}></div> {/* Changed transition to transition-opacity */}
-            <Card className={cn(
-              `relative h-full p-8 flex flex-col transition-all duration-300 shadow-md hover:shadow-lg group-hover:scale-105`,
-              plan.featured ? 'border border-primary/50' : '',
-              "animate-in fade-in-0 slide-in-from-bottom-4 duration-500"
-            )} style={{ animationDelay: `${index * 100}ms` }}>
-              {plan.featured && (
-                <div className="absolute top-0 inset-x-0 flex justify-center -translate-y-1/2">
-                  <div className="bg-gradient-to-r from-primary to-secondary text-foreground text-xs font-bold px-5 py-1 rounded-full shadow-lg">
-                    Most Popular
-                  </div>
-                </div>
-              )}
-              
-              <div className={`mb-6 ${plan.featured ? 'pt-4' : ''}`}>
-                <h3 className="text-xl font-medium text-foreground mb-2">{plan.name}</h3>
-                <div className="flex items-baseline text-foreground">
-                  <span className="text-5xl font-bold tracking-tight">{plan.price}</span>
-                  {plan.freq && <span className="ml-1 text-xl font-semibold text-muted-foreground">{plan.freq}</span>}
-                </div>
+      <div className="container mx-auto max-w-5xl px-4 grid grid-cols-1 md:grid-cols-3 gap-8 items-stretch">
+        {plans.map((plan) => (
+          <Card key={plan.name} className={cn(
+            `relative flex flex-col p-6 rounded-xl shadow-xl hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1`,
+            plan.featured 
+              ? 'bg-gradient-to-br from-gray-800 via-gray-900 to-blue-900/70 border-2 border-cyan-400/70'
+              : 'bg-gray-800/60 backdrop-blur-md border border-white/10',
+            "animate-in fade-in-0 slide-in-from-bottom-5 duration-500"
+          )} style={{ animationDelay: plan.animationDelay }}>
+            {plan.featured && (
+              <div className="absolute top-0 -translate-y-1/2 left-1/2 -translate-x-1/2">
+                <span className="bg-gradient-to-r from-blue-500 to-cyan-500 text-white text-xs font-semibold px-4 py-1 rounded-full shadow-md">
+                  Most Popular
+                </span>
               </div>
-              
-              <div className="mt-2 mb-8 border-t border-muted-foreground/10 pt-6 flex-grow">
-                <ul className="space-y-4">
-                  {plan.features.map((feature) => (
-                    <li key={feature} className="flex">
-                      <Check className="flex-shrink-0 h-5 w-5 text-primary" />
-                      <span className="ml-3 text-muted-foreground text-sm">{feature}</span>
-                    </li>
-                  ))}
-                </ul>
+            )}
+            
+            <CardHeader className="pt-2 pb-6 text-center">
+              <CardTitle className="text-xl font-semibold text-gray-100 mb-1">{plan.name}</CardTitle>
+              <div className="flex items-baseline justify-center text-white">
+                <span className="text-4xl font-extrabold tracking-tight">{plan.price}</span>
+                {plan.freq && <span className="ml-1 text-xl font-medium text-gray-400">{plan.freq}</span>}
               </div>
-              
-              <div className="mt-auto">
-                 {plan.buttonVariant === 'primary' ? (
-                   <Button className="w-full">{plan.buttonText}</Button>
-                 ) : (
-                   <Button variant="outline" className="w-full">{plan.buttonText}</Button>
+              <CardDescription className="mt-2 text-sm text-gray-400 min-h-[40px]">{plan.description}</CardDescription>
+            </CardHeader>
+            
+            <div className="flex-grow mb-8 border-t border-white/10 pt-6">
+              <ul className="space-y-3">
+                {plan.features.map((feature) => (
+                  <li key={feature} className="flex items-start">
+                    <Check className="flex-shrink-0 h-5 w-5 text-cyan-400 mt-0.5" />
+                    <span className="ml-3 text-gray-300 text-sm">{feature}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            
+            <div className="mt-auto">
+               <Button 
+                 className={cn(
+                    "w-full font-semibold py-3 text-base shadow hover:shadow-md transition-all",
+                    plan.featured 
+                      ? 'bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white' 
+                      : 'bg-gray-700/60 hover:bg-gray-600/80 text-gray-200 border border-white/20'
                  )}
-              </div>
-            </Card>
-          </div>
+                 variant={plan.featured ? 'default' : 'outline'}
+                >
+                 {plan.buttonText}
+               </Button>
+            </div>
+          </Card>
         ))}
       </div>
     </section>

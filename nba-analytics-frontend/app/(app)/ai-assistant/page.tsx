@@ -40,76 +40,56 @@ export default function AiAssistantPage() {
     submitPrompt(prompt);
   };
 
-  const handleExamplePromptClick = (prompt: string) => {
-     handlePromptSubmit(prompt);
-  };
-
   const handleStop = () => {
     closeConnection();
   };
 
-  return (
-    // Use h-full to take height from parent (AppLayout's main content area)
-    <div className="h-full flex flex-col animate-in fade-in-0 duration-300">
-      <main className="flex-1 flex flex-col overflow-hidden"> {/* Added overflow-hidden for children like ScrollArea */}
-        {chatHistory.length === 0 && !isLoading && !error ? (
-          // Initial screen: keep centered, input at bottom
-          <div className="flex-1 flex flex-col">
-            <div className="flex-1 flex items-center justify-center p-4 sm:p-6">
-              <div className="w-full max-w-3xl"> {/* Adjusted max-width for initial screen content */}
-                <InitialChatScreen
-                  onExampleClick={handleExamplePromptClick}
-                />
-              </div>
-            </div>
-            {/* Input form for initial screen */}
-            <div className="border-t bg-background/95 p-3 sm:p-4">
-              <div className="max-w-3xl mx-auto"> {/* Consistent max-width */}
-                <PromptInputForm
-                  onSubmit={handlePromptSubmit}
-                  onStop={handleStop}
-                  isLoading={isLoading}
-                />
-                 <p className="mt-2 text-xs text-center text-muted-foreground opacity-75">
-                  AI may produce inaccurate information. Verify important details.
-                </p>
-              </div>
-            </div>
+  const renderChatArea = () => {
+    if (chatHistory.length === 0 && !isLoading && !error) {
+      return (
+        <div className="flex-1 flex flex-col items-center justify-center p-4 sm:p-6">
+          <div className="w-full max-w-3xl">
+            <InitialChatScreen
+              onExampleClick={handlePromptSubmit}
+            />
           </div>
-        ) : (
-          // Active chat view: integrated messages and input
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <ScrollArea className="flex-1 p-4 sm:p-6" ref={scrollAreaRef}>
-              <div className="space-y-6 max-w-3xl mx-auto"> {/* Consistent max-width */}
-                {chatHistory.map((msg, index) => (
-                  <ChatMessageDisplay
-                    key={index}
-                    message={msg}
-                    isLatest={index === chatHistory.length - 1}
-                  />
-                ))}
-                {error && <ErrorDisplay error={error} />}
-              </div>
-              {/* Spacer for scroll to bottom, can be adjusted or removed if auto-scroll is perfect */}
-              {/* <div className="h-8" />  */}
-            </ScrollArea>
+        </div>
+      );
+    } else {
+      return (
+        <ScrollArea className="flex-1 p-4 sm:p-6" ref={scrollAreaRef}>
+          <div className="space-y-6 max-w-3xl mx-auto">
+            {chatHistory.map((msg, index) => (
+              <ChatMessageDisplay
+                key={index}
+                message={msg}
+                isLatest={index === chatHistory.length - 1}
+              />
+            ))}
+            {error && <ErrorDisplay error={error} />}
+          </div>
+        </ScrollArea>
+      );
+    }
+  };
 
-            {/* Input form for active chat */}
-            <div className="border-t bg-background/95 p-3 sm:p-4">
-              <div className="max-w-3xl mx-auto space-y-2"> {/* Consistent max-width */}
-                <PromptInputForm
-                  onSubmit={handlePromptSubmit}
-                  onStop={handleStop}
-                  isLoading={isLoading}
-                />
-                <p className="text-xs text-center text-muted-foreground opacity-75 transition-opacity hover:opacity-100">
-                  AI may produce inaccurate information. Verify important details.
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
+  return (
+    <div className="h-full flex flex-col animate-in fade-in-0 duration-300">
+      <main className="flex-1 flex flex-col overflow-hidden">
+        {renderChatArea()}
       </main>
+      <div className="border-t bg-background/95 p-3 sm:p-4 sticky bottom-0">
+        <div className="max-w-3xl mx-auto space-y-2">
+          <PromptInputForm
+            onSubmit={handlePromptSubmit}
+            onStop={handleStop}
+            isLoading={isLoading}
+          />
+          <p className="text-xs text-center text-muted-foreground opacity-75 transition-opacity hover:opacity-100">
+            AI may produce inaccurate information. Verify important details.
+          </p>
+        </div>
+      </div>
     </div>
   );
 }

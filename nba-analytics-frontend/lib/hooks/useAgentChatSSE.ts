@@ -2,7 +2,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 
 interface UseAgentChatSSEProps {
-  apiUrl: string; // Use this prop
+  apiUrl: string;
 }
 
 // Define ChatMessage interface
@@ -22,19 +22,18 @@ export interface ChatMessage {
 interface AgentChatSSEState {
   isLoading: boolean;
   error: string | null;
-  chatHistory: ChatMessage[]; // Manages chat history
-  resultData: null; // Removed since we're not using structured results
-  // chatText is removed as progress array and chatHistory handle status/content
+  chatHistory: ChatMessage[];
+  // resultData was here, removed as it's not actively used per previous comments.
 }
 
 export function useAgentChatSSE({ 
-  apiUrl // Use the passed apiUrl
+  apiUrl
 }: UseAgentChatSSEProps) {
   const [state, setState] = useState<AgentChatSSEState>({
     isLoading: false,
     error: null,
     chatHistory: [],
-    resultData: null
+    // resultData: null // Removed from initial state
   });
 
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -63,10 +62,10 @@ export function useAgentChatSSE({
     eventSourceRef.current = eventSource;
 
     eventSource.onmessage = (event) => {
-      // console.debug('[SSE] Received message:', event.data); // Optional: Keep for debugging
+      // console.debug('[SSE] Received message:', event.data);
       try {
         const data = JSON.parse(event.data);
-        // console.debug('[SSE] Parsed data:', data); // Optional: Keep for debugging
+        // console.debug('[SSE] Parsed data:', data);
         setState(prev => {
           const updatedHistory = [...prev.chatHistory];
           if (updatedHistory.length > 0) {
@@ -82,7 +81,7 @@ export function useAgentChatSSE({
                     toolCalls: data.toolCalls
                   };
                 }
-              } else if (data.content) {
+              } else if (data.content) { // Handle other events that might replace content
                 updatedHistory[updatedHistory.length - 1] = {
                   ...lastMessage,
                   content: data.content,
@@ -127,29 +126,7 @@ export function useAgentChatSSE({
       try {
         const data = JSON.parse(event.data);
         setState(prev => {
-          let finalHistory = [...prev.chatHistory];
-          if (finalHistory.length > 0 && finalHistory[finalHistory.length - 1].role === 'assistant') {
-            finalHistory = [
-              ...finalHistory.slice(0, -1),
-              {
-                role: 'assistant',
-                content: data.content,
-                status: 'complete',
-                event: 'final'
-              }
-            ];
-          } else {
-            finalHistory = [
-              ...finalHistory,
-              {
-                role: 'assistant',
-                content: data.content,
-                status: 'complete',
-                event: 'final'
-              }
-            ];
-          }
-          
+          const finalHistory = [...prev.chatHistory, data.message];
           const finalState = {
             ...prev,
             chatHistory: finalHistory,
@@ -180,10 +157,10 @@ export function useAgentChatSSE({
       eventSourceRef.current = null;
       setState(prev => {
         const updatedHistory = [...prev.chatHistory];
-        if (updatedHistory.length > 0 && updatedHistory[updatedHistory.length - 1].role === 'assistant') {
+        if (updatedHistory.length > 0 && updatedHistory[updatedHistory.length - 1].role === 'assistant' && updatedHistory[updatedHistory.length - 1].status !== 'complete') {
           updatedHistory[updatedHistory.length - 1] = {
             ...updatedHistory[updatedHistory.length - 1],
-            status: 'complete',
+            status: 'complete', // Mark as complete
             content: updatedHistory[updatedHistory.length - 1].content + "\n\n[Generation stopped by user]"
           };
         }
@@ -200,7 +177,7 @@ export function useAgentChatSSE({
     isLoading: state.isLoading,
     error: state.error,
     chatHistory: state.chatHistory,
-    resultData: state.resultData,
+    // resultData: state.resultData, // Removed from returned object
     submitPrompt,
     closeConnection
   };

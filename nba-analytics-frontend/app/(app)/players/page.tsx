@@ -1,11 +1,11 @@
 import { Metadata } from 'next';
-import { PlayerData } from "./types"; // Suggestion type might be unused here
+import { PlayerData } from "./types"; // Use this imported type
 import { API_BASE_URL } from "@/lib/config";
 import PlayersClientPage from "./PlayersClientPage";
 
 // --- Server-Side Data Fetching ---
 
-// Function to fetch player profile data (mimics client-side logic but on server)
+// Update function signature to use imported PlayerData type
 async function fetchPlayerData(playerName: string): Promise<{ data: PlayerData | null, error: string | null }> {
   console.log(`Fetching server-side profile for: ${playerName}`);
   const profileUrl = `${API_BASE_URL}/players/profile?player_name=${encodeURIComponent(playerName)}`;
@@ -19,14 +19,16 @@ async function fetchPlayerData(playerName: string): Promise<{ data: PlayerData |
     }
 
     const rawData = await profileResponse.json();
+    // Basic validation - ensure player_info exists
     if (!rawData || !rawData.player_info) {
         console.error("Server Validation Failed - Missing player_info.");
         return { data: null, error: "Incomplete profile data received."};
     }
 
-    // Map rawData to PlayerData structure
+    // Map rawData to imported PlayerData structure
+    // Explicitly type mappedData with the imported PlayerData type
     const mappedData: PlayerData = {
-        player_info: rawData.player_info,
+        player_info: rawData.player_info, // Assumes rawData.player_info matches PlayerInfo type
         career_totals_regular_season: rawData.career_totals?.regular_season ?? null,
         season_totals_regular_season: rawData.season_totals?.regular_season ?? null,
         career_totals_post_season: rawData.career_totals?.post_season ?? null,

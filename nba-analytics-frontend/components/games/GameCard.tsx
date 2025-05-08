@@ -8,7 +8,7 @@ import { format, parseISO } from 'date-fns';
 
 interface GameCardProps {
   game: Game;
-  viewingToday: boolean; // Need to know if we should show live indicator/pulse
+  viewingToday: boolean; // Used for live indicator/pulse
   onClick: (gameId: string) => void;
 }
 
@@ -25,7 +25,7 @@ export function GameCard({ game, viewingToday, onClick }: GameCardProps) {
   return (
     <Card
       key={game.gameId}
-      className="cursor-pointer hover:shadow-lg" /* Removed duration-200, base Card has transition-all */
+      className="cursor-pointer hover:shadow-lg transition-shadow duration-200"
       onClick={handleCardClick}
     >
       <CardHeader className={`flex flex-row items-center justify-between space-y-0 pb-2 ${game.gameStatus === 2 && viewingToday ? 'bg-green-50 dark:bg-green-900/20' : ''}`}>
@@ -34,10 +34,10 @@ export function GameCard({ game, viewingToday, onClick }: GameCardProps) {
         </CardTitle>
         <span 
           className={cn(
-            "whitespace-nowrap px-2 py-0.5 rounded-full text-xs font-semibold", /* Changed rounded to rounded-full */
+            "whitespace-nowrap px-2 py-0.5 rounded-full text-xs font-semibold",
             game.gameStatus === 1 && "bg-accent text-accent-foreground", // Scheduled
             game.gameStatus === 2 && viewingToday && "bg-primary text-primary-foreground animate-pulse", // Live
-            game.gameStatus === 2 && !viewingToday && "bg-muted text-muted-foreground", // Final
+            game.gameStatus === 2 && !viewingToday && "bg-muted text-muted-foreground", // Final (on past date)
             game.gameStatus >= 3 && "bg-muted text-muted-foreground" // Final / Other
           )}
         >
@@ -71,20 +71,22 @@ export function GameCard({ game, viewingToday, onClick }: GameCardProps) {
           </div>
            <div className="text-xl font-bold">{game.gameStatus === 1 ? '-' : (game.homeTeam?.score ?? '-')}</div>
         </div>
-        {/* Game Time / Clock */}
+        {/* Game Time / Clock Info */}
         {game.gameStatus === 1 && game.gameEt && (
            <div className="text-center text-xs text-muted-foreground mt-2">
              {(() => {
                 try {
+                  // Format start time
                   return format(parseISO(game.gameEt), 'p zzz'); 
                 } catch { 
-                  return game.gameEt;
+                  return game.gameEt; // Fallback to raw string if parse fails
                 }
               })()}
            </div>
          )}
           {game.gameStatus === 2 && game.gameClock && (
              <div className="text-center text-xs text-muted-foreground mt-2">
+               {/* Display live clock */}
                {game.period && `Q${game.period} `}{game.gameClock}
              </div>
          )}

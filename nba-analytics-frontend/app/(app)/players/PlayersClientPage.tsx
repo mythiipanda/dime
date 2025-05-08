@@ -4,8 +4,8 @@ import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { PlayerData } from "./types";
 import { PlayerProfileCard } from "@/components/players/PlayerProfileCard";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"; // Added Card components
-import { Button } from "@/components/ui/button"; // Added Button
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Search } from "lucide-react";
 import { ExclamationTriangleIcon } from '@radix-ui/react-icons';

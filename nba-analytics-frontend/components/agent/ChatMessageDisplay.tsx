@@ -11,7 +11,6 @@ import { Button } from "@/components/ui/button"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { ChatMessage as SSEChatMessage } from "@/lib/hooks/useAgentChatSSE"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { Badge } from "@/components/ui/badge"
 
 interface ToolCall {
   tool_name: string
@@ -40,89 +39,103 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
     tools: ToolCall[]
   }>({ thinking: [], tools: [] })
   
-  // Update intermediate steps and sources when message changes
   useEffect(() => {
-    if (!isUser && message.content) {
-      if (message.status === "thinking" || message.event === "RunResponse") {
-        setIntermediateSteps(prev => {
-          if (!message.content || 
-              message.content === "Starting to process your request..." ||
-              (typeof message.content === 'string' && message.content.includes("Final Answer:"))) {
-            return prev;
-          }
+    if (isUser) return; // Only process for assistant messages
 
-          const thoughts: string[] = Array.from(new Set([...prev.thinking, message.content]));
-          
-          const uniqueThoughts = thoughts.filter(thought => 
-            !thoughts.some(other => 
-              other !== thought && 
-              other.includes(thought) && 
-              other.length > thought.length
-            ) && !thought.includes("Final Answer:")
-          );
+    // Process thinking steps
+    if (message.content && (message.status === "thinking" || message.event === "RunResponse")) {
+      setIntermediateSteps(prev => {
+        if (!message.content || message.content === "Starting to process your request...") {
+          return prev;
+        }
 
-          return {
-            ...prev,
-            thinking: uniqueThoughts
-          };
-        });
-      }
-      
-      if (message.toolCalls?.length) {
-        setIntermediateSteps(prev => {
-          const existingTools = new Map(prev.tools.map(tool => [tool.tool_name, tool]));
-          
-          message.toolCalls?.forEach(newTool => {
-            const existing = existingTools.get(newTool.tool_name);
-            if (!existing || existing.status !== newTool.status) {
-              existingTools.set(newTool.tool_name, newTool);
-              
-              // Extract sources from tool calls
-              if (newTool.content) {
-                try {
-                  const content = JSON.parse(newTool.content);
-                  if (content) {
-                    setSources(prev => {
-                      const newSource: Source = {
-                        title: `${newTool.tool_name} Result`,
-                        content: JSON.stringify(content, null, 2)
-                      };
-                      return [...prev, newSource];
-                    });
-                  }
-                } catch {
-                  // If not JSON, add as plain text source
-                  setSources(prev => {
-                    const newSource: Source = {
-                      title: `${newTool.tool_name} Result`,
-                      content: newTool.content
-                    };
-                    return [...prev, newSource];
-                  });
-                }
+        // Filter out "Final Answer:" before deduplication and further filtering
+        const currentThought = message.content.includes("Final Answer:") ? null : message.content;
+        if (!currentThought) return prev;
+
+        const potentialNewThoughts = Array.from(new Set([...prev.thinking, currentThought]));
+        
+        const uniqueThoughts = potentialNewThoughts.filter(thought => 
+          !potentialNewThoughts.some(other => 
+            other !== thought && 
+            other.includes(thought) && 
+            other.length > thought.length
+          )
+        );
+
+        // Avoid updating if a more complete thought already exists or if it's a substring of an existing one
+        if (uniqueThoughts.some(existingThought => existingThought.includes(currentThought) && existingThought.length > currentThought.length)) {
+            // This logic might need further refinement if partial updates are still desired but should be handled carefully
+            return prev; 
+        }
+
+        return {
+          ...prev,
+          thinking: uniqueThoughts.filter(t => t.trim() !== "") // Ensure no empty thoughts
+        };
+      });
+    }
+    
+    // Process tool calls and extract sources
+    if (message.toolCalls?.length) {
+      setIntermediateSteps(prev => {
+        const existingToolsMap = new Map(prev.tools.map(tool => [tool.tool_name + tool.status, tool])); // Key by name + status for updates
+        const newSources: Source[] = [];
+
+        message.toolCalls?.forEach(newTool => {
+          const toolKey = newTool.tool_name + newTool.status;
+          // Only add/update if the tool call is new or its status has changed meaningfully
+          if (!existingToolsMap.has(toolKey)) {
+             existingToolsMap.set(toolKey, newTool); // Add new or updated status tool
+
+            if (newTool.content) {
+              try {
+                // Attempt to parse as JSON for structured sources
+                const parsedContent = JSON.parse(newTool.content);
+                newSources.push({
+                  title: `${newTool.tool_name} Result (JSON)`,
+                  content: JSON.stringify(parsedContent, null, 2)
+                });
+              } catch {
+                // If not JSON, add as plain text source
+                newSources.push({
+                  title: `${newTool.tool_name} Result (Text)`,
+                  content: newTool.content
+                });
               }
             }
+          } else {
+            // If tool with same name and status exists, update its content if different (rare case)
+            const existingTool = existingToolsMap.get(toolKey);
+            if (existingTool && existingTool.content !== newTool.content) {
+                existingToolsMap.set(toolKey, newTool);
+                 // Optionally re-process sources for this updated tool if needed (complex, depends on requirements)
+            }
+          }
+        });
+        
+        if (newSources.length > 0) {
+            setSources(prevSrc => [...prevSrc, ...newSources]);
+        }
+
+        const sortedTools = Array.from(existingToolsMap.values())
+          .sort((a, b) => {
+            const statusOrder = { started: 0, completed: 1, error: 2 };
+            return (statusOrder[a.status] || 3) - (statusOrder[b.status] || 3);
           });
 
-          const sortedTools = Array.from(existingTools.values())
-            .sort((a, b) => {
-              const statusOrder = { started: 0, completed: 1, error: 2 };
-              return (statusOrder[a.status] || 0) - (statusOrder[b.status] || 0);
-            });
-
-          return {
-            ...prev,
-            tools: sortedTools
-          };
-        });
-      }
+        return {
+          ...prev,
+          tools: sortedTools
+        };
+      });
     }
   }, [message.content, message.toolCalls, isUser, message.event, message.status]);
 
-  const isThinking = message.status === "thinking" || message.event === "RunResponse"
-  const isComplete = message.status === "complete"
-  const hasIntermediateContent = intermediateSteps.thinking.length > 0 || intermediateSteps.tools.length > 0
-  const showThinkingProcess = !isUser && (isThinking || hasIntermediateContent)
+  const isThinkingPhase = message.status === "thinking" || message.event === "RunResponse";
+  const isProcessingComplete = message.status === "complete";
+  const hasMeaningfulIntermediateContent = intermediateSteps.thinking.length > 0 || intermediateSteps.tools.length > 0;
+  const showThinkingProcessCollapsible = !isUser && (isThinkingPhase || hasMeaningfulIntermediateContent);
 
   const copyToClipboard = async (text: string | object) => {
     let textToCopy: string;
@@ -144,14 +157,21 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
     }
   }
 
-  // Prepare content for ReactMarkdown, ensuring it's a string
-  const markdownContent = typeof message.content === 'string' 
+  const rawMarkdownContent = typeof message.content === 'string' 
     ? message.content 
     : (message.content && typeof message.content === 'object')
-      // Format object as JSON code block
       ? `\`\`\`json\n${JSON.stringify(message.content, null, 2)}\n\`\`\`` 
-      : ''; // Default to empty string if null/undefined/etc.
+      : '';
 
+  const finalMarkdownContent = rawMarkdownContent.replace(/^Final Answer:\s*/i, "").trim();
+
+  // Conditions for rendering main response content
+  const hasDisplayableMarkdown = finalMarkdownContent.length > 0;
+  const shouldShowMainContent = isProcessingComplete ? hasDisplayableMarkdown || sources.length > 0 : // If complete, show if markdown OR sources exist
+                                 (hasDisplayableMarkdown && !rawMarkdownContent.toLowerCase().startsWith("final answer:")); // If thinking, show if markdown exists AND it's not just "Final Answer:"
+
+  const shouldShowProcessingPlaceholder = isThinkingPhase && !hasMeaningfulIntermediateContent && !hasDisplayableMarkdown;
+  
   const components: Components = {
     code(props) {
       const { className, children, ...rest } = props;
@@ -249,7 +269,7 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
     >
       <div className="flex h-8 w-8 shrink-0 select-none items-center justify-center">
         <Avatar className={cn(
-          "h-8 w-8 ring-1", // Simplified ring
+          "h-8 w-8 ring-1",
           isUser
             ? "bg-primary/10 ring-primary/30"
             : "bg-muted ring-border"
@@ -264,31 +284,27 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
         </Avatar>
       </div>
 
-      {/* Message content wrapper */}
       <div className={cn(
-        "flex-1 space-y-3", // Reduced space-y
-        isUser ? "flex flex-col items-end" : "flex flex-col items-start" // Ensure content aligns with avatar
+        "flex-1 space-y-3",
+        isUser ? "flex flex-col items-end" : "flex flex-col items-start"
       )}>
-        {/* User Message */}
         {isUser && (
           <div className={cn(
-            "prose prose-sm sm:prose-base dark:prose-invert max-w-xl lg:max-w-2xl xl:max-w-3xl", // Responsive max-width
-            "rounded-xl bg-primary text-primary-foreground p-3 sm:p-4", // ChatGPT-like user bubble
+            "prose prose-sm sm:prose-base dark:prose-invert max-w-xl lg:max-w-2xl xl:max-w-3xl",
+            "rounded-xl bg-primary text-primary-foreground p-3 sm:p-4",
             "shadow-md"
           )}>
             <ReactMarkdown components={components}>
-              {markdownContent}
+              {finalMarkdownContent} {/* Use cleaned markdown for user too, though unlikely to have "Final Answer:" */}
             </ReactMarkdown>
           </div>
         )}
 
-        {/* Assistant Response */}
         {!isUser && (
-          <div className={cn( // Main AI message bubble/container
+          <div className={cn(
             "w-full max-w-xl lg:max-w-2xl xl:max-w-3xl rounded-xl bg-muted dark:bg-muted/60 p-3 sm:p-4 shadow-md space-y-3"
           )}>
-            {/* Intermediate Updates Box (Thinking Process) */}
-            {showThinkingProcess && (
+            {showThinkingProcessCollapsible && (
               <Collapsible
                 open={isThinkingExpanded}
                 onOpenChange={setIsThinkingExpanded}
@@ -300,7 +316,7 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
                     <span className="text-xs font-medium text-muted-foreground">Thinking Process</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    {isThinking && !isComplete && ( // Show loader only if actively thinking and not yet complete
+                    {isThinkingPhase && !isProcessingComplete && (
                       <>
                         <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
                         <span className="text-xs text-muted-foreground">Processing...</span>
@@ -344,15 +360,9 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
               </Collapsible>
             )}
 
-            {/* Main Response Content */}
-            {/* Show if:
-                1. There's markdownContent AND (it's not just "Final Answer:" while thinking OR it's complete)
-                2. OR if it's complete and there's any markdownContent (even if empty string, to allow sources to show in an empty bubble)
-            */}
-            { (markdownContent && !(isThinking && markdownContent.includes("Final Answer:"))) || (isComplete && typeof markdownContent === 'string') ? (
+            {shouldShowMainContent && (
               <div className="prose prose-sm sm:prose-base dark:prose-invert max-w-none relative">
-                {/* Copy Button for main response - show only when complete and content exists */}
-                {isComplete && markdownContent && (
+                {isProcessingComplete && finalMarkdownContent && (
                   <div className="absolute top-0 right-0 z-10">
                     <TooltipProvider>
                       <Tooltip>
@@ -361,7 +371,7 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
                             variant="ghost"
                             size="icon"
                             className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                            onClick={() => copyToClipboard(markdownContent)}
+                            onClick={() => copyToClipboard(finalMarkdownContent)}
                           >
                             {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
                           </Button>
@@ -374,17 +384,17 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
                   </div>
                 )}
                 <ReactMarkdown components={components}>
-                  {markdownContent.replace(/^Final Answer:\s*/i, "").trim()}
+                  {finalMarkdownContent}
                 </ReactMarkdown>
               </div>
-            ) : (isThinking && !hasIntermediateContent && !markdownContent) ? (
+            )}
+            {shouldShowProcessingPlaceholder && (
               <div className="prose prose-sm sm:prose-base dark:prose-invert max-w-none text-muted-foreground italic">
                 Processing...
               </div>
-            ) : null }
+            )}
 
-            {/* Sources Section - shown inside the main bubble when complete */}
-            {sources.length > 0 && isComplete && (
+            {sources.length > 0 && isProcessingComplete && (
               <div className="mt-3 pt-3 border-t border-border/30">
                 <div className="flex items-center gap-2 mb-2">
                   <BookOpen className="h-3.5 w-3.5 text-muted-foreground" />

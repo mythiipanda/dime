@@ -30,8 +30,8 @@ export default function AppLayout({ children }: AppLayoutProps) {
       {/* Desktop Sidebar */}
       <aside
         className={cn(
-          "fixed hidden top-0 left-0 border-r bg-muted transition-all duration-300 ease-in-out lg:flex flex-col justify-between overflow-y-auto", // Removed h-screen, added top-0 left-0, overflow-y-auto
-          "bottom-0", // Sidebar is now full height
+          "fixed hidden top-0 left-0 bottom-0 border-r transition-all duration-300 ease-in-out lg:flex flex-col justify-between overflow-y-auto",
+          "bg-muted dark:bg-gray-950/70 dark:backdrop-blur-md border-border dark:border-white/10", // Use bg-muted for light, dark overrides
           isCollapsed ? "w-20 px-2 py-4" : "w-60 px-4 py-6"
         )}
       >
@@ -94,8 +94,11 @@ export default function AppLayout({ children }: AppLayoutProps) {
         </div>
       </aside>
 
-      {/* Mobile Header - Using solid muted background to match desktop sidebar change */}
-      <header className="fixed top-0 z-40 w-full border-b bg-muted lg:hidden px-4 sm:px-6"> {/* Changed to bg-muted, z-40 to be below desktop sidebar if it ever overlaps during transitions (though unlikely here) */}
+      {/* Mobile Header */}
+      <header className={cn(
+        "fixed top-0 z-30 w-full border-b lg:hidden px-4 sm:px-6",
+        "bg-muted dark:bg-gray-950/70 dark:backdrop-blur-md border-border dark:border-white/10" // Light/Dark styles inside cn
+      )}>
         <div className="flex h-16 items-center gap-4">
           <Sheet>
             <SheetTrigger asChild>
@@ -130,18 +133,17 @@ export default function AppLayout({ children }: AppLayoutProps) {
       </header>
 
       {/* Main Content Area */}
-      {/* Ensure children are always rendered, protected by Clerk components */}
       <main
         className={cn(
           'flex-1 overflow-y-auto transition-all duration-300 ease-in-out',
-          'pt-16 lg:pt-0', // Keep top padding for mobile header
-          isCollapsed ? "lg:pl-20" : "lg:pl-60" // Adjust left padding based on collapse state
+          'pt-16 lg:pt-0', 
+          isCollapsed ? "lg:pl-20" : "lg:pl-60"
         )}
       >
         <div className={cn(
-          'max-w-7xl mx-auto px-4 sm:px-6 py-8 lg:px-8 lg:py-12 flex-1 flex flex-col',
-          'animate-in fade-in-0 slide-in-from-bottom-4 duration-500' // Page content entrance animation
-        )}> {/* Removed min-h-screen, added flex-1 flex flex-col to help content grow */}
+          'max-w-full mx-auto px-4 sm:px-6 py-8 lg:px-8 lg:py-12 flex-1 flex flex-col', // max-w-full to allow content to use gradient
+          'animate-in fade-in-0 slide-in-from-bottom-4 duration-500'
+        )}> 
           <SignedIn>
             {children}
           </SignedIn>

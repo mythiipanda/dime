@@ -8,7 +8,7 @@ function Table({ className, ...props }: React.ComponentProps<"table">) {
   return (
     <div
       data-slot="table-container"
-      className="relative w-full overflow-x-auto animate-in fade-in-0 duration-300" // Added entrance animation
+      className="relative w-full overflow-x-auto animate-in fade-in-0 duration-300"
     >
       <table
         data-slot="table"
@@ -23,7 +23,7 @@ function TableHeader({ className, ...props }: React.ComponentProps<"thead">) {
   return (
     <thead
       data-slot="table-header"
-      className={cn("[&_tr]:border-b", className)}
+      className={cn("[&_tr]:border-b [&_tr]:border-border dark:[&_tr]:border-white/15", className)}
       {...props}
     />
   )
@@ -44,7 +44,7 @@ function TableFooter({ className, ...props }: React.ComponentProps<"tfoot">) {
     <tfoot
       data-slot="table-footer"
       className={cn(
-        "bg-muted/50 border-t font-semibold [&>tr]:last:border-b-0", /* Typography: font-semibold */
+        "border-t border-border dark:border-white/15 bg-muted dark:bg-white/5 font-semibold text-foreground [&>tr]:last:border-b-0",
         className
       )}
       {...props}
@@ -57,7 +57,7 @@ function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
     <tr
       data-slot="table-row"
       className={cn(
-        "hover:bg-muted/50 data-[state=selected]:bg-muted border-b transition-colors hover:shadow-sm", // Added hover:shadow-sm
+        "border-b border-border dark:border-white/10 transition-colors hover:bg-muted/50 dark:hover:bg-white/5 data-[state=selected]:bg-primary/10 dark:data-[state=selected]:bg-blue-600/20",
         className
       )}
       {...props}
@@ -70,7 +70,8 @@ function TableHead({ className, ...props }: React.ComponentProps<"th">) {
     <th
       data-slot="table-head"
       className={cn(
-        "text-foreground h-10 px-2 text-left align-middle font-semibold [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-1", /* Typography: font-semibold. Spacing: translate-y-1. Removed whitespace-nowrap */
+        "h-12 px-4 py-3 text-left align-middle font-semibold text-foreground [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-0.5",
+        "dark:text-foreground dark:bg-white/5",
         className
       )}
       {...props}
@@ -83,7 +84,8 @@ function TableCell({ className, ...props }: React.ComponentProps<"td">) {
     <td
       data-slot="table-cell"
       className={cn(
-        "p-2 align-middle [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-1", /* Spacing: translate-y-1. Removed whitespace-nowrap */
+        "px-4 py-3 align-middle text-foreground [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-0.5",
+        "dark:text-gray-300",
         className
       )}
       {...props}
@@ -98,7 +100,7 @@ function TableCaption({
   return (
     <caption
       data-slot="table-caption"
-      className={cn("text-muted-foreground mt-4 text-sm", className)}
+      className={cn("mt-4 p-2 text-sm text-muted-foreground text-center", className)}
       {...props}
     />
   )
