@@ -1,148 +1,218 @@
 import logging
-from fastapi import APIRouter, HTTPException, Query
+import asyncio
+from fastapi import APIRouter, HTTPException, Query, Path # Added Path
 from typing import Optional, List, Dict, Any
 import json
+
 from backend.api_tools.player_tools import (
     get_player_headshot_url,
     fetch_player_stats_logic,
     fetch_player_profile_logic,
 )
-from backend.api_tools.search import find_players_by_name_fragment
-from backend.utils.cache import cache_data, get_cached_data
+from backend.api_tools.search import find_players_by_name_fragment # Assuming this is the correct import
+from backend.config import Errors
+import backend.api_tools.utils as api_utils # For validation helpers
 
-try:
-    from backend.tools import generate_cache_key 
-except ImportError:
-    def generate_cache_key(func_name: str, *args, **kwargs) -> str:
-        key_parts = [func_name]
-        key_parts.extend(map(str, args))
-        key_parts.extend(f"{k}={v}" for k, v in sorted(kwargs.items()))
-        return "_".join(key_parts)
-    logging.warning("Could not import generate_cache_key from backend.tools, using fallback definition.")
-
-router = APIRouter()
+router = APIRouter(
+    prefix="/player", # Add prefix for all player routes
+    tags=["Players"]  # Tag for OpenAPI documentation
+)
 logger = logging.getLogger(__name__)
 
-@router.get("/player/{player_id}/headshot")
-async def get_player_headshot_by_id(player_id: int):
-    cache_key = generate_cache_key("get_player_headshot_by_id", player_id)
-    cached_result = get_cached_data(cache_key)
-    if cached_result:
-        logger.debug(f"Cache hit for headshot endpoint: {cache_key}")
-        try:
-            return json.loads(cached_result) 
-        except json.JSONDecodeError:
-             logger.warning(f"Failed to parse cached JSON for {cache_key}. Fetching fresh.")
-             # Fall through to fetch fresh data
-
-    logger.info(f"Cache miss for headshot endpoint. Received GET /player/{player_id}/headshot request.")
-    if player_id <= 0:
-        raise HTTPException(status_code=400, detail="Invalid player_id provided.")
+async def _handle_player_route_logic_call(logic_function: callable, *args, **kwargs) -> Dict[str, Any]:
+    """Helper to call player-related logic, parse JSON, and handle errors for player routes."""
     try:
-        headshot_url = get_player_headshot_url(player_id)
-        result = {"player_id": player_id, "headshot_url": headshot_url}
-        cache_data(cache_key, json.dumps(result)) 
-        return result
-    except Exception as e:
-        logger.exception(f"Unexpected error fetching headshot for player ID {player_id}")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
-
-@router.get("/search", response_model=List[Dict[str, Any]])
-async def search_players_by_name(
-    q: Optional[str] = Query(None, description="Search query for player name"), 
-    limit: int = Query(10, description="Maximum number of results to return")
-):
-    if not q or len(q) < 2:
-        return []
-
-    cache_key = generate_cache_key("search_players_by_name", q=q, limit=limit)
-    cached_result = get_cached_data(cache_key)
-    if cached_result:
-        logger.debug(f"Cache hit for search endpoint: {cache_key}")
-        try:
-            return json.loads(cached_result)
-        except json.JSONDecodeError:
-             logger.warning(f"Failed to parse cached JSON for {cache_key}. Fetching fresh.")
-             # Fall through
-
-    logger.info(f"Cache miss for search endpoint. Received GET /search request with query: '{q}', limit: {limit}")
-    try:
-        results = find_players_by_name_fragment(q, limit=limit)
-        logger.info(f"Returning {len(results)} players for search query '{q}'")
-        cache_data(cache_key, json.dumps(results))
-        return results
-    except Exception as e:
-        logger.exception(f"Unexpected error during player search for query '{q}'")
-        raise HTTPException(status_code=500, detail=f"Internal server error during player search: {str(e)}")
-
-@router.get("/stats")
-async def fetch_player_stats_endpoint(player_name: str, season: Optional[str] = None) -> Dict[str, Any]:
-    cache_key = generate_cache_key("fetch_player_stats_endpoint", player_name, season=season)
-    cached_result = get_cached_data(cache_key)
-    if cached_result:
-        logger.debug(f"Cache hit for stats endpoint: {cache_key}")
-        try:
-            return json.loads(cached_result)
-        except json.JSONDecodeError:
-             logger.warning(f"Failed to parse cached JSON for {cache_key}. Fetching fresh.")
-             # Fall through
-
-    logger.info(f"Cache miss for stats endpoint. Received GET /stats request for player: '{player_name}', season: {season}")
-    try:
-        result_json_string = fetch_player_stats_logic(player_name, season) if season else fetch_player_stats_logic(player_name)
-        
-        try:
-            result_data = json.loads(result_json_string)
-        except json.JSONDecodeError:
-             logger.error(f"Failed to parse JSON from fetch_player_stats_logic for {player_name}, season {season}. Response: {result_json_string}")
-             raise HTTPException(status_code=500, detail="Internal server error: Invalid data format from service.")
+        result_json_string = await asyncio.to_thread(logic_function, *args, **kwargs)
+        result_data = json.loads(result_json_string)
 
         if isinstance(result_data, dict) and 'error' in result_data:
-             logger.error(f"Error from fetch_player_stats_logic: {result_data['error']}")
-             status_code = 404 if "not found" in result_data['error'].lower() else 500
-             raise HTTPException(status_code=status_code, detail=result_data['error'])
-
-        cache_data(cache_key, result_json_string) 
+            error_detail = result_data['error']
+            logger.error(f"Error from {logic_function.__name__}: {error_detail}")
+            status_code = 404 if "not found" in error_detail.lower() or "invalid player" in error_detail.lower() else \
+                          400 if "invalid" in error_detail.lower() else 500
+            raise HTTPException(status_code=status_code, detail=error_detail)
         return result_data
-        
     except HTTPException as http_exc:
         raise http_exc
+    except json.JSONDecodeError as json_err:
+        func_name = logic_function.__name__
+        logger.error(f"Failed to parse JSON response from {func_name} for args {args}: {json_err}", exc_info=True)
+        raise HTTPException(status_code=500, detail=Errors.JSON_PROCESSING_ERROR)
     except Exception as e:
-        logger.error(f"Error fetching player stats endpoint: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        func_name = logic_function.__name__
+        log_args = args[:1] # Log first arg (usually player identifier)
+        logger.critical(f"Unexpected error in API route calling {func_name} with args {log_args}: {str(e)}", exc_info=True)
+        error_msg_template = getattr(Errors, 'UNEXPECTED_ERROR', "An unexpected server error occurred: {error}")
+        detail_msg = error_msg_template.format(error=f"processing player data via {func_name}")
+        raise HTTPException(status_code=500, detail=detail_msg)
 
-@router.get("/profile")
-async def fetch_player_profile_endpoint(player_name: str) -> Dict[str, Any]:
-    cache_key = generate_cache_key("fetch_player_profile_endpoint", player_name)
-    cached_result = get_cached_data(cache_key)
-    if cached_result:
-        logger.debug(f"Cache hit for profile endpoint: {cache_key}")
-        try:
-            return json.loads(cached_result)
-        except json.JSONDecodeError:
-             logger.warning(f"Failed to parse cached JSON for {cache_key}. Fetching fresh.")
-             # Fall through
 
-    logger.info(f"Cache miss for profile endpoint. Received GET /profile request for player: '{player_name}'")
+@router.get(
+    "/{player_id}/headshot",
+    summary="Get Player Headshot URL",
+    description="Retrieves the URL for a player's official NBA headshot image based on their player ID.",
+    response_model=Dict[str, Any]
+)
+async def get_player_headshot_by_id_endpoint( # Renamed for clarity
+    player_id: int = Path(..., description="The unique 7-to-10 digit ID of the NBA player.", gt=0) # Added gt=0 validation
+) -> Dict[str, Any]:
+    """
+    Endpoint to get a player's headshot URL by their ID.
+
+    Path Parameters:
+    - **player_id** (int, required): The unique ID of the player. Must be a positive integer.
+
+    Successful Response (200 OK):
+    ```json
+    {
+        "player_id": 2544,
+        "headshot_url": "https://ak-static.cms.nba.com/wp-content/uploads/headshots/nba/latest/260x190/2544.png"
+    }
+    ```
+
+    Error Responses:
+    - 400 Bad Request: If `player_id` is invalid (e.g., not a positive integer).
+    - 500 Internal Server Error: For unexpected errors.
+    """
+    logger.info(f"Received GET /player/{player_id}/headshot request.")
+    # player_id validation (gt=0) is handled by FastAPI Path now.
     try:
-        result_json_string = fetch_player_profile_logic(player_name)
-        
-        try:
-            result_data = json.loads(result_json_string)
-        except json.JSONDecodeError as json_err:
-            logger.error(f"Failed to parse JSON response from fetch_player_profile_logic: {json_err}. Response: {result_json_string}")
-            raise HTTPException(status_code=500, detail="Internal server error: Invalid data format from service.")
-        
-        if isinstance(result_data, dict) and 'error' in result_data:
-            logger.error(f"Error fetching player profile from logic: {result_data['error']}")
-            status_code = 404 if "not found" in result_data['error'].lower() else 500
-            raise HTTPException(status_code=status_code, detail=result_data['error'])
-            
-        cache_data(cache_key, result_json_string)
-        return result_data
-        
-    except HTTPException as http_exc:
-         raise http_exc
+        # get_player_headshot_url is simple and synchronous.
+        # Using to_thread for consistency, though for such a quick, non-blocking call,
+        # direct invocation might also be acceptable in an async route if it's truly trivial.
+        headshot_url_str = await asyncio.to_thread(get_player_headshot_url, player_id)
+        result = {"player_id": player_id, "headshot_url": headshot_url_str}
+        return result
+    except ValueError as ve: # Catch specific ValueError from get_player_headshot_url if player_id is invalid
+        logger.warning(f"Invalid player_id for headshot: {player_id}. Error: {ve}")
+        raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
-        logger.error(f"Error fetching player profile endpoint: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        logger.critical(f"Unexpected error fetching headshot for player ID {player_id}: {str(e)}", exc_info=True)
+        error_msg = Errors.UNEXPECTED_ERROR.format(error=f"fetching headshot for player ID {player_id}")
+        raise HTTPException(status_code=500, detail=error_msg)
+
+@router.get(
+    "/search",
+    summary="Search for Players by Name Fragment",
+    description="Searches for NBA players whose full names contain the provided query string. "
+                "Returns a list of matching players with basic information.",
+    response_model=List[Dict[str, Any]]
+)
+async def search_players_by_name_endpoint( # Renamed for clarity
+    q: str = Query(..., description="Search query string for player name. Minimum 2 characters.", min_length=2),
+    limit: int = Query(10, description="Maximum number of search results to return.", ge=1, le=50) # Added ge/le validation
+) -> List[Dict[str, Any]]:
+    """
+    Endpoint to search for players by a name fragment.
+    Uses `find_players_by_name_fragment` from `search.py`.
+
+    Query Parameters:
+    - **q** (str, required): The search query for the player's name. Minimum length is 2 characters.
+    - **limit** (int, optional): Maximum number of results to return. Default: 10. Min: 1, Max: 50.
+
+    Successful Response (200 OK):
+    Returns a list of player objects. Each object contains:
+    ```json
+    [
+        {
+            "id": 2544,
+            "full_name": "LeBron James",
+            "first_name": "LeBron",
+            "last_name": "James",
+            "is_active": true
+        },
+        ...
+    ]
+    ```
+    Returns an empty list if no players match or the query is too short.
+
+    Error Responses:
+    - 400 Bad Request: If query parameters are invalid (e.g., `q` too short, `limit` out of range - handled by FastAPI).
+    - 500 Internal Server Error: For unexpected errors during the search.
+    """
+    # q and limit validation is handled by FastAPI Query parameters (min_length, ge, le)
+    logger.info(f"Received GET /player/search request with query: '{q}', limit: {limit}")
+    try:
+        # Assuming find_players_by_name_fragment returns a list of dicts directly, not a JSON string
+        results_list = await asyncio.to_thread(find_players_by_name_fragment, q, limit=limit)
+        logger.info(f"Returning {len(results_list)} players for search query '{q}'")
+        return results_list
+    except Exception as e:
+        logger.critical(f"Unexpected error during player search for query '{q}': {str(e)}", exc_info=True)
+        error_msg = Errors.UNEXPECTED_ERROR.format(error=f"searching for player '{q}'")
+        raise HTTPException(status_code=500, detail=error_msg)
+
+@router.get(
+    "/stats",
+    summary="Get Aggregated Player Statistics",
+    description="Fetches a comprehensive set of aggregated statistics for a player, "
+                "including player info, headline stats, career totals, season game logs, and awards.",
+    response_model=Dict[str, Any]
+)
+async def fetch_player_stats_endpoint(
+    player_name: str = Query(..., description="Full name of the player (e.g., 'LeBron James')."),
+    season: Optional[str] = Query(None, description="NBA season in YYYY-YY format (e.g., '2023-24') for game logs. Defaults to current season in logic.", regex=r"^\d{4}-\d{2}$")
+) -> Dict[str, Any]:
+    """
+    Endpoint to get aggregated player statistics.
+    Uses `fetch_player_stats_logic`.
+
+    Query Parameters:
+    - **player_name** (str, required): Full name of the player.
+    - **season** (str, optional): Season for game logs (YYYY-YY). Defaults to current season in the logic layer.
+
+    Successful Response (200 OK):
+    Returns a dictionary with aggregated player stats.
+    Refer to `fetch_player_stats_logic` in `player_tools.py` for detailed structure.
+    Includes `info`, `headline_stats`, `career_stats`, `season_gamelog`, `awards`.
+
+    Error Responses:
+    - 400 Bad Request: If `player_name` is missing or `season` format is invalid.
+    - 404 Not Found: If the player is not found.
+    - 500 Internal Server Error: For other processing issues.
+    """
+    logger.info(f"Received GET /player/stats request for player: '{player_name}', season: {season}")
+    if season and not api_utils._validate_season_format(season): # Use imported util
+        raise HTTPException(status_code=400, detail=Errors.INVALID_SEASON_FORMAT.format(season=season))
+    
+    # The logic function fetch_player_stats_logic takes season as optional and defaults to CURRENT_SEASON if None.
+    return await _handle_player_route_logic_call(fetch_player_stats_logic, player_name, season)
+
+@router.get(
+    "/profile",
+    summary="Get Player Profile",
+    description="Fetches a comprehensive player profile including biographical info, career/season highs, "
+                "next game details, and career/season totals.",
+    response_model=Dict[str, Any]
+)
+async def fetch_player_profile_endpoint(
+    player_name: str = Query(..., description="Full name of the player (e.g., 'Stephen Curry')."),
+    per_mode: Optional[str] = Query(None, description="Statistical mode for career/season totals (e.g., 'PerGame', 'Totals'). Defaults to 'PerGame' in logic.")
+) -> Dict[str, Any]:
+    """
+    Endpoint to get a player's profile.
+    Uses `fetch_player_profile_logic`.
+
+    Query Parameters:
+    - **player_name** (str, required): Full name of the player.
+    - **per_mode** (str, optional): Statistical mode for totals. Defaults to 'PerGame' in logic layer.
+
+    Successful Response (200 OK):
+    Returns a dictionary with the player's profile.
+    Refer to `fetch_player_profile_logic` in `player_tools.py` for detailed structure.
+    Includes `player_info`, `career_highs`, `season_highs`, `next_game`, `career_totals`, `season_totals`.
+
+    Error Responses:
+    - 400 Bad Request: If `player_name` is missing or `per_mode` is invalid.
+    - 404 Not Found: If the player is not found.
+    - 500 Internal Server Error: For other processing issues.
+    """
+    logger.info(f"Received GET /player/profile request for player: '{player_name}', per_mode: {per_mode}")
+    # per_mode validation will be handled by the logic function if it's critical.
+    # If per_mode is None, fetch_player_profile_logic will use its default.
+    return await _handle_player_route_logic_call(fetch_player_profile_logic, player_name, per_mode)
+
+# Note: Endpoints for individual player tracking stats (clutch, passing, rebounding, shots_tracking)
+# are expected to be in `backend/routes/player_tracking.py`.
+# Endpoints for player awards, gamelog, career stats (if not covered by /stats or /profile)
+# could also be added here if more granularity is needed beyond the aggregated endpoints.

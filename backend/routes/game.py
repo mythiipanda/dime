@@ -1,228 +1,223 @@
 import logging
-from fastapi import APIRouter, HTTPException, Query
+import asyncio
+from fastapi import APIRouter, HTTPException, Query, Path # Added Path
 from typing import Dict, Any, Optional
-from backend.api_tools.game_tools import (
-    fetch_boxscore_traditional_logic as fetch_game_boxscore_logic,
-    fetch_playbyplay_logic as fetch_game_playbyplay_logic,
-    fetch_shotchart_logic as fetch_game_shotchart_logic,
-)
-from backend.api_tools.league_tools import fetch_scoreboard_logic # Import correct scoreboard logic
 import json
-from backend.utils.cache import cache_data, get_cached_data
-try:
-    from backend.tools import generate_cache_key 
-except ImportError:
-    # Fallback definition
-    def generate_cache_key(func_name: str, *args, **kwargs) -> str:
-        key_parts = [func_name]
-        key_parts.extend(map(str, args))
-        key_parts.extend(f"{k}={v}" for k, v in sorted(kwargs.items()))
-        return "_".join(key_parts)
-    logging.warning("Could not import generate_cache_key from backend.tools, using fallback definition.")
 
-router = APIRouter()
+from backend.api_tools.game_tools import (
+    fetch_boxscore_traditional_logic, # Aliased as fetch_game_boxscore_logic in original endpoint
+    fetch_playbyplay_logic,           # Aliased as fetch_game_playbyplay_logic
+    fetch_shotchart_logic,            # Aliased as fetch_game_shotchart_logic
+    fetch_boxscore_advanced_logic,
+    fetch_boxscore_four_factors_logic,
+    fetch_boxscore_usage_logic,
+    fetch_boxscore_defensive_logic,
+    fetch_win_probability_logic
+    # fetch_league_games_logic is used by /find endpoint, which might be in a different route file (e.g., league.py or search.py)
+)
+import backend.api_tools.utils as api_utils
+from backend.config import Errors # Removed DEFAULT_TIMEOUT, CURRENT_SEASON as not directly used
+
+router = APIRouter(
+    prefix="/game", # Add prefix for all routes in this file
+    tags=["Games"]  # Tag for OpenAPI documentation
+)
 logger = logging.getLogger(__name__)
 
-@router.get("/boxscore/{game_id}")
-async def get_game_boxscore(game_id: str) -> Dict[str, Any]:
-    """
-    Get game boxscore. Caches results based on game_id.
-    """
-    cache_key = generate_cache_key("get_game_boxscore_endpoint", game_id)
-    cached_result = get_cached_data(cache_key)
-    if cached_result:
-        logger.debug(f"Cache hit for boxscore endpoint: {cache_key}")
-        try:
-            return json.loads(cached_result)
-        except json.JSONDecodeError:
-             logger.warning(f"Failed to parse cached JSON for {cache_key}. Fetching fresh.")
-             # Fall through
-
-    logger.info(f"Cache miss for boxscore endpoint. Received GET /boxscore/{game_id} request.")
-    if not game_id or len(game_id) != 10: # Basic validation for game_id format
-         raise HTTPException(status_code=400, detail="Valid 10-digit game_id path parameter is required")
-         
+async def _handle_logic_call(logic_function: callable, *args, **kwargs) -> Dict[str, Any]:
+    """Helper to call logic function, parse JSON, and handle errors."""
     try:
-        # Assuming logic returns dict, needs dump to JSON string for caching
-        result_dict = fetch_game_boxscore_logic(game_id)
+        result_json_string = await asyncio.to_thread(logic_function, *args, **kwargs)
+        result_data = json.loads(result_json_string)
 
-        # Check for errors returned by the logic function
-        if isinstance(result_dict, dict) and 'error' in result_dict:
-            logger.error(f"Error from fetch_game_boxscore_logic: {result_dict['error']}")
-            # Use 404 if game not found, otherwise 500
-            status_code = 404 if "not found" in result_dict['error'].lower() else 500
-            raise HTTPException(status_code=status_code, detail=result_dict['error'])
-        
-        # Convert dict to JSON string for caching
-        result_json_string = json.dumps(result_dict, default=str) 
-        cache_data(cache_key, result_json_string)
-        return result_dict # Return the original dictionary
-
+        if isinstance(result_data, dict) and 'error' in result_data:
+            error_detail = result_data['error']
+            logger.error(f"Error from {logic_function.__name__}: {error_detail}")
+            status_code = 404 if "not found" in error_detail.lower() or "invalid id" in error_detail.lower() else \
+                          400 if "invalid" in error_detail.lower() else 500
+            raise HTTPException(status_code=status_code, detail=error_detail)
+        return result_data
     except HTTPException as http_exc:
-        raise http_exc
+        raise http_exc # Re-raise if it's already an HTTPException
+    except json.JSONDecodeError as json_err:
+        logger.error(f"Failed to parse JSON response from {logic_function.__name__} for args {args}: {json_err}", exc_info=True)
+        raise HTTPException(status_code=500, detail=Errors.JSON_PROCESSING_ERROR)
     except Exception as e:
-        logger.error(f"Error getting game boxscore endpoint for {game_id}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        # Log the specific function and arguments for better debugging
+        func_name = logic_function.__name__
+        log_args = args[:2] # Log first few args to avoid overly long log lines
+        logger.critical(f"Unexpected error in API route calling {func_name} with args {log_args}: {str(e)}", exc_info=True)
+        error_msg_template = getattr(Errors, 'UNEXPECTED_ERROR', "An unexpected server error occurred: {error}")
+        detail_msg = error_msg_template.format(error=f"processing game data via {func_name}")
+        raise HTTPException(status_code=500, detail=detail_msg)
 
-@router.get("/playbyplay/{game_id}")
+
+@router.get(
+    "/boxscore/traditional/{game_id}",
+    summary="Get Traditional Box Score for a Game",
+    description="Fetches the traditional box score (points, rebounds, assists, etc.) for a specified NBA game ID. "
+                "Data includes player stats, team stats, and starter/bench splits.",
+    response_model=Dict[str, Any] # Explicitly define response model for OpenAPI
+)
+async def get_game_boxscore_traditional(
+    game_id: str = Path(..., description="The 10-digit ID of the NBA game (e.g., '0022300161').", regex=r"^\d{10}$")
+) -> Dict[str, Any]:
+    """
+    Endpoint to get the traditional box score for a game.
+    Uses `fetch_boxscore_traditional_logic`.
+
+    Path Parameters:
+    - **game_id** (str, required): The 10-digit ID of the game.
+
+    Successful Response (200 OK):
+    Returns a dictionary containing traditional box score data.
+    Refer to `fetch_boxscore_traditional_logic` in `game_tools.py` for detailed structure.
+    Includes `teams`, `players`, and `starters_bench` statistics.
+
+    Error Responses:
+    - 400 Bad Request: If `game_id` is invalid.
+    - 404 Not Found: If game data is not found.
+    - 500 Internal Server Error: For other processing issues.
+    """
+    logger.info(f"Received GET /game/boxscore/traditional/{game_id} request.")
+    # game_id format is validated by regex in Path parameter
+    return await _handle_logic_call(fetch_boxscore_traditional_logic, game_id)
+
+@router.get(
+    "/playbyplay/{game_id}",
+    summary="Get Play-by-Play Data for a Game",
+    description="Fetches play-by-play data for a specified NBA game ID. "
+                "Attempts to retrieve live data first; if unavailable, falls back to historical data. "
+                "Period filtering applies only to historical data.",
+    response_model=Dict[str, Any]
+)
 async def get_game_playbyplay(
-    game_id: str, 
-    start_period: int = Query(0, description="Optional start period filter (1-based)"),
-    end_period: int = Query(0, description="Optional end period filter (1-based)")
+    game_id: str = Path(..., description="The 10-digit ID of the NBA game.", regex=r"^\d{10}$"),
+    start_period: int = Query(0, description="Filter Play-by-Play starting from this period (1-4, 5+ for OT, 0 for all). Only applies to historical data fallback.", ge=0),
+    end_period: int = Query(0, description="Filter Play-by-Play ending at this period (1-4, 5+ for OT, 0 for all). Only applies to historical data fallback.", ge=0)
 ) -> Dict[str, Any]:
     """
-    Get game play-by-play data. Caches results only if data is historical (game finished).
+    Endpoint to get Play-by-Play data for a game.
+    Uses `fetch_playbyplay_logic`.
+
+    Path Parameters:
+    - **game_id** (str, required): The 10-digit ID of the game.
+
+    Query Parameters:
+    - **start_period** (int, optional): Starting period for filtering (0 for all). Default: 0.
+    - **end_period** (int, optional): Ending period for filtering (0 for all). Default: 0.
+
+    Successful Response (200 OK):
+    Returns a dictionary containing play-by-play data.
+    Refer to `fetch_playbyplay_logic` in `game_tools.py` for detailed structure.
+    Includes `source` (live/historical) and `periods` with plays.
+
+    Error Responses:
+    - 400 Bad Request: If `game_id` is invalid.
+    - 404 Not Found: If game data is not found.
+    - 500 Internal Server Error: For other processing issues.
     """
-    cache_key = generate_cache_key("get_game_playbyplay_endpoint", game_id, start_period=start_period, end_period=end_period)
-    cached_result = get_cached_data(cache_key)
-    if cached_result:
-        # Only return cached if it was confirmed historical previously
-        try:
-            cached_data = json.loads(cached_result)
-            if cached_data.get("source") == "historical":
-                 logger.debug(f"Cache hit for historical PBP endpoint: {cache_key}")
-                 return cached_data
-            else:
-                 logger.debug(f"Cache hit for PBP {cache_key}, but wasn't historical. Fetching fresh.")
-        except json.JSONDecodeError:
-            logger.warning(f"Failed to parse cached PBP JSON for {cache_key}. Fetching fresh.")
-            # Fall through
-            
-    logger.info(f"Cache miss or non-historical hit for PBP endpoint. Received GET /playbyplay/{game_id} request.")
-    if not game_id or len(game_id) != 10:
-         raise HTTPException(status_code=400, detail="Valid 10-digit game_id path parameter is required")
+    logger.info(f"Received GET /game/playbyplay/{game_id} request with start_period={start_period}, end_period={end_period}.")
+    return await _handle_logic_call(fetch_playbyplay_logic, game_id, start_period, end_period)
 
-    try:
-        # Logic function returns a JSON string
-        result_json_string = fetch_game_playbyplay_logic(game_id=game_id, start_period=start_period, end_period=end_period)
-        
-        # Parse and validate
-        try:
-            result_data = json.loads(result_json_string)
-        except json.JSONDecodeError:
-            logger.error(f"Failed to parse JSON from fetch_game_playbyplay_logic for {game_id}. Response: {result_json_string}")
-            raise HTTPException(status_code=500, detail="Internal server error: Invalid data format from PBP service.")
-
-        # Check for errors from logic
-        if isinstance(result_data, dict) and "error" in result_data:
-             logger.error(f"Play-by-play logic failed for game {game_id}: {result_data['error']}")
-             status_code = 404 if "not found" in result_data['error'].lower() else 500
-             raise HTTPException(status_code=status_code, detail=result_data['error'])
-
-        # Cache ONLY if the source was historical
-        if result_data.get("source") == "historical":
-            logger.debug(f"Caching historical PBP result for {cache_key}")
-            cache_data(cache_key, result_json_string)
-        else:
-            logger.debug(f"Not caching non-historical PBP for game {game_id}")
-            
-        return result_data # Return the parsed dictionary
-            
-    except HTTPException as http_exc:
-        raise http_exc
-    except Exception as e:
-        logger.error(f"Error getting PBP endpoint for {game_id}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
-
-@router.get("/shotchart/{game_id}")
+@router.get(
+    "/shotchart/{game_id}",
+    summary="Get Shot Chart Data for a Game",
+    description="Fetches shot chart data for all players in a specified NBA game ID, "
+                "including shot locations, outcomes, and league averages for zones.",
+    response_model=Dict[str, Any]
+)
 async def get_game_shotchart(
-    game_id: str,
-    team_id: Optional[int] = Query(None, description="Optional team ID filter"), # Add query params
-    player_id: Optional[int] = Query(None, description="Optional player ID filter") # Add query params
+    game_id: str = Path(..., description="The 10-digit ID of the NBA game.", regex=r"^\d{10}$")
 ) -> Dict[str, Any]:
     """
-    Get game shot chart data. Caches results based on game_id and optional filters.
-    Note: team_id and player_id filters are not yet implemented in the underlying logic.
+    Endpoint to get shot chart data for a game.
+    Uses `fetch_shotchart_logic`.
+
+    Path Parameters:
+    - **game_id** (str, required): The 10-digit ID of the game.
+
+    Successful Response (200 OK):
+    Returns a dictionary containing shot chart data.
+    Refer to `fetch_shotchart_logic` in `game_tools.py` for detailed structure.
+    Includes `teams` with player shots and `league_averages`.
+
+    Error Responses:
+    - 400 Bad Request: If `game_id` is invalid.
+    - 404 Not Found: If game data is not found.
+    - 500 Internal Server Error: For other processing issues.
     """
-    cache_key = generate_cache_key("get_game_shotchart_endpoint", game_id, team_id=team_id, player_id=player_id)
-    cached_result = get_cached_data(cache_key)
-    if cached_result:
-        logger.debug(f"Cache hit for shotchart endpoint: {cache_key}")
-        try:
-            return json.loads(cached_result)
-        except json.JSONDecodeError:
-            logger.warning(f"Failed to parse cached JSON for {cache_key}. Fetching fresh.")
-            # Fall through
-            
-    logger.info(f"Cache miss for shotchart endpoint. Received GET /shotchart/{game_id} request.")
-    if not game_id or len(game_id) != 10:
-         raise HTTPException(status_code=400, detail="Valid 10-digit game_id path parameter is required")
+    logger.info(f"Received GET /game/shotchart/{game_id} request.")
+    return await _handle_logic_call(fetch_shotchart_logic, game_id)
 
-    # Log warning if filters are used but not implemented yet
-    if team_id or player_id:
-        logger.warning(f"Team/Player filters provided for {game_id} shotchart, but not yet implemented in logic.")
-        
-    try:
-        # Assuming logic returns JSON string
-        # TODO: Update logic function to accept team_id/player_id when implemented
-        result_json_string = fetch_game_shotchart_logic(game_id)
-        
-        # Validate and parse
-        try:
-            result_data = json.loads(result_json_string)
-        except json.JSONDecodeError:
-            logger.error(f"Failed to parse JSON from fetch_game_shotchart_logic for {game_id}. Response: {result_json_string}")
-            raise HTTPException(status_code=500, detail="Internal server error: Invalid data format from shotchart service.")
-
-        if isinstance(result_data, dict) and 'error' in result_data:
-            logger.error(f"Error from fetch_game_shotchart_logic: {result_data['error']}")
-            status_code = 404 if "not found" in result_data['error'].lower() else 500
-            raise HTTPException(status_code=status_code, detail=result_data['error'])
-
-        cache_data(cache_key, result_json_string)
-        return result_data
-
-    except HTTPException as http_exc:
-        raise http_exc
-    except Exception as e:
-        logger.error(f"Error getting game shot chart endpoint for {game_id}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
-
-@router.get("/league/scoreboard")
-async def get_league_scoreboard(
-    game_date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format. Defaults to today."),
-    day_offset: int = Query(0, description="Day offset from game_date. Defaults to 0.")
+@router.get(
+    "/boxscore/advanced/{game_id}",
+    summary="Get Advanced Box Score for a Game",
+    description="Fetches advanced box score statistics (e.g., Offensive/Defensive Rating, Pace, PIE) for a specified NBA game ID.",
+    response_model=Dict[str, Any]
+)
+async def get_advanced_boxscore(
+    game_id: str = Path(..., description="The 10-digit ID of the NBA game.", regex=r"^\d{10}$")
 ) -> Dict[str, Any]:
-    """
-    Get league scoreboard for a specific date. Caches results based on date and offset.
-    """
-    # Note: The underlying logic function `fetch_scoreboard_logic` handles the default game_date if None
-    # We need the actual date used for the cache key.
-    import datetime
-    final_game_date = game_date or datetime.date.today().strftime('%Y-%m-%d')
-    
-    cache_key = generate_cache_key("get_league_scoreboard_endpoint", game_date=final_game_date, day_offset=day_offset)
-    cached_result = get_cached_data(cache_key)
-    if cached_result:
-        logger.debug(f"Cache hit for scoreboard endpoint: {cache_key}")
-        try:
-            return json.loads(cached_result)
-        except json.JSONDecodeError:
-            logger.warning(f"Failed to parse cached JSON for {cache_key}. Fetching fresh.")
-            # Fall through
-            
-    logger.info(f"Cache miss for scoreboard endpoint. Received GET /league/scoreboard request for date {game_date}, offset {day_offset}.")
-    try:
-        # Assuming logic returns JSON string
-        result_json_string = fetch_scoreboard_logic(game_date=game_date, day_offset=day_offset)
-        
-        # Validate and parse
-        try:
-            result_data = json.loads(result_json_string)
-        except json.JSONDecodeError:
-            logger.error(f"Failed to parse JSON from fetch_scoreboard_logic for date {game_date}, offset {day_offset}. Response: {result_json_string}")
-            raise HTTPException(status_code=500, detail="Internal server error: Invalid data format from scoreboard service.")
+    """Endpoint to get advanced box score data. Uses `fetch_boxscore_advanced_logic`."""
+    logger.info(f"Received GET /game/boxscore/advanced/{game_id}")
+    return await _handle_logic_call(fetch_boxscore_advanced_logic, game_id)
 
-        if isinstance(result_data, dict) and 'error' in result_data:
-            logger.error(f"Error from fetch_scoreboard_logic: {result_data['error']}")
-            # Scoreboard errors are less likely to be 404s
-            raise HTTPException(status_code=500, detail=result_data['error'])
+@router.get(
+    "/boxscore/fourfactors/{game_id}",
+    summary="Get Four Factors Box Score for a Game",
+    description="Fetches Four Factors box score statistics (Effective FG%, Turnover Rate, Rebound Rate, Free Throw Rate) for a specified NBA game ID.",
+    response_model=Dict[str, Any]
+)
+async def get_four_factors_boxscore(
+    game_id: str = Path(..., description="The 10-digit ID of the NBA game.", regex=r"^\d{10}$")
+) -> Dict[str, Any]:
+    """Endpoint to get Four Factors box score data. Uses `fetch_boxscore_four_factors_logic`."""
+    logger.info(f"Received GET /game/boxscore/fourfactors/{game_id}")
+    return await _handle_logic_call(fetch_boxscore_four_factors_logic, game_id)
 
-        cache_data(cache_key, result_json_string)
-        return result_data
+@router.get(
+    "/boxscore/usage/{game_id}",
+    summary="Get Usage Statistics Box Score for a Game",
+    description="Fetches usage statistics (e.g., USG%, %FGA, %AST) for all players in a specified NBA game ID.",
+    response_model=Dict[str, Any]
+)
+async def get_usage_boxscore(
+    game_id: str = Path(..., description="The 10-digit ID of the NBA game.", regex=r"^\d{10}$")
+) -> Dict[str, Any]:
+    """Endpoint to get usage box score data. Uses `fetch_boxscore_usage_logic`."""
+    logger.info(f"Received GET /game/boxscore/usage/{game_id}")
+    return await _handle_logic_call(fetch_boxscore_usage_logic, game_id)
 
-    except HTTPException as http_exc:
-        raise http_exc
-    except Exception as e:
-        logger.error(f"Error getting league scoreboard endpoint: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+@router.get(
+    "/boxscore/defensive/{game_id}",
+    summary="Get Defensive Box Score for a Game",
+    description="Fetches defensive statistics (e.g., opponent shooting percentages when player is defending) for a specified NBA game ID.",
+    response_model=Dict[str, Any]
+)
+async def get_defensive_boxscore(
+    game_id: str = Path(..., description="The 10-digit ID of the NBA game.", regex=r"^\d{10}$")
+) -> Dict[str, Any]:
+    """Endpoint to get defensive box score data. Uses `fetch_boxscore_defensive_logic`."""
+    logger.info(f"Received GET /game/boxscore/defensive/{game_id}")
+    return await _handle_logic_call(fetch_boxscore_defensive_logic, game_id)
+
+@router.get(
+    "/winprobability/{game_id}",
+    summary="Get Win Probability Data for a Game",
+    description="Fetches win probability data points throughout a specified NBA game ID, showing how win likelihood changed with each play.",
+    response_model=Dict[str, Any]
+)
+async def get_win_probability(
+    game_id: str = Path(..., description="The 10-digit ID of the NBA game.", regex=r"^\d{10}$")
+) -> Dict[str, Any]:
+    """Endpoint to get win probability data. Uses `fetch_win_probability_logic`."""
+    logger.info(f"Received GET /game/winprobability/{game_id}")
+    # fetch_win_probability_logic takes an optional run_type, defaulting to "0".
+    # If this needs to be exposed, add a Query parameter.
+    return await _handle_logic_call(fetch_win_probability_logic, game_id)
+
+# Note: The /find endpoint (LeagueGameFinder) is typically more of a league/search utility.
+# If it's intended to be part of game-specific routes, it can be added here.
+# Otherwise, it might belong in a separate `league.py` or `search.py` router.
+# For now, assuming it's handled elsewhere or will be added if requested.

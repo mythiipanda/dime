@@ -67,7 +67,7 @@ export interface TeamsByConference {
  * @returns {Promise<StandingsResponse>} A promise that resolves to the parsed standings data.
  */
 export async function getLeagueStandings(season?: string): Promise<StandingsResponse> {
-  const endpoint = '/standings';
+  const endpoint = '/league/standings'; // Corrected: Added /league prefix
   const params = new URLSearchParams();
   if (season) {
     params.append('season', season);

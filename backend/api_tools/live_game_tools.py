@@ -3,182 +3,155 @@ from nba_api.live.nba.endpoints import scoreboard
 from datetime import datetime, timedelta
 import json
 import logging
+from functools import lru_cache # Added
+
 from backend.config import DEFAULT_TIMEOUT, Errors
+from backend.api_tools.utils import format_response # Keep format_response
 
 logger = logging.getLogger(__name__)
 
-# In-memory cache for scoreboard data
-_scoreboard_cache: Dict[str, Tuple[str, datetime]] = {}
-# Cache TTL in seconds (10 seconds for live games)
-CACHE_TTL = 10
+CACHE_TTL_SECONDS = 10 # Keep short TTL for live data, but lru_cache might invalidate less frequently based on timestamp
 
+# --- TypedDicts (Keep for documentation) ---
 class GameLeader(TypedDict):
-    """Type definition for game leader statistics."""
     name: str
     stats: str
 
 class TeamInfo(TypedDict):
-    """Type definition for team information in game response."""
-    id: str
+    id: int # Changed to int based on typical API usage
     code: str
     name: str
     score: int
-    record: str
+    record: str # e.g., "10-5"
 
 class GameStatus(TypedDict):
-    """Type definition for game status information."""
-    clock: str
+    clock: Optional[str] # Can be None if not started/finished
     period: int
-    state: str
+    state: str # e.g., "Halftime", "Q1", "Final"
 
 class GameInfo(TypedDict):
-    """Type definition for individual game information."""
     game_id: str
-    start_time: str
+    start_time: str # ISO format UTC
     status: GameStatus
     home_team: TeamInfo
     away_team: TeamInfo
-    leaders: Dict[str, GameLeader]
+    # leaders: Dict[str, GameLeader] # Leaders might not be consistently available or needed for frontend
 
 class ScoreboardResponse(TypedDict):
-    """Type definition for the scoreboard response."""
-    meta: Dict[str, str]
+    meta: Dict[str, Any] # Keep meta if needed
     date: str
     games: List[GameInfo]
 
-def _format_game_leader(leader_data: Dict) -> GameLeader:
+# --- Caching Function ---
+@lru_cache(maxsize=2) # Cache only the latest scoreboard
+def get_cached_scoreboard_data(
+    cache_key: str, # Simple string key, e.g., "live_scoreboard"
+    timestamp: str    # Timestamp for TTL invalidation
+) -> Dict[str, Any]: # Return the raw dictionary
     """
-    Helper function to format game leader data.
-    
-    Args:
-        leader_data: Raw leader statistics from the API
-        
-    Returns:
-        GameLeader: Formatted leader information
+    Cached wrapper for fetching live scoreboard data.
+    Uses timestamp for time-based cache invalidation (approx 1 hour).
+    Returns the raw dictionary result from the API call or raises an exception.
     """
-    return {
-        "name": leader_data.get("name", ""),
-        "stats": f"{leader_data.get('points', 0)} PTS, {leader_data.get('rebounds', 0)} REB, {leader_data.get('assists', 0)} AST"
-    }
-
-def fetch_league_scoreboard_logic(bypass_cache: bool = False) -> str:
-    """
-    Fetches live scoreboard data for current NBA games and formats it 
-    to match the frontend's ScoreboardData interface.
-    
-    Returns:
-        str: JSON string containing current game information matching the frontend structure.
-        {
-            "gameDate": "YYYY-MM-DD",
-            "games": [
-                {
-                    "gameId": str,
-                    "gameStatus": int,      // 1 = Scheduled, 2 = In Progress, 3 = Final
-                    "gameStatusText": str,  // e.g., "Q1 0:35.3", "Final", "7:00 PM ET"
-                    "period": int,         // Current period (if live)
-                    "gameClock": str,      // Current clock (if live)
-                    "homeTeam": {
-                        "teamId": int,
-                        "teamTricode": str,
-                        "score": int,
-                        "wins": int,      // Optional
-                        "losses": int     // Optional
-                    },
-                    "awayTeam": {
-                        "teamId": int,
-                        "teamTricode": str,
-                        "score": int,
-                        "wins": int,      // Optional
-                        "losses": int     // Optional
-                    },
-                    "gameEt": str          // Game start time (ISO format or similar)
-                }
-            ]
-        }
-        
-    Raises:
-        Catches exceptions and returns an error JSON string.
-    """
-    logger.info("Executing fetch_league_scoreboard_logic to fetch and format for frontend")
-    
-    # Check cache first
-    current_date = datetime.now().strftime("%Y-%m-%d")
-    if not bypass_cache and current_date in _scoreboard_cache:
-        cached_data, cache_time = _scoreboard_cache[current_date]
-        # Only use cache if within TTL
-        if datetime.now() - cache_time < timedelta(seconds=CACHE_TTL):
-            logger.info("Returning cached scoreboard data")
-            return cached_data
-    
+    logger.info(f"Cache miss or expiry for live scoreboard - fetching new data")
     try:
         board = scoreboard.ScoreBoard(timeout=DEFAULT_TIMEOUT)
-        raw_data = board.get_dict()
-        
+        # Return the raw dictionary, processing happens in main logic
+        return board.get_dict()
+    except Exception as e:
+        logger.error(f"ScoreBoard API call failed: {e}", exc_info=True)
+        raise e # Re-raise to be handled by the main logic function
+
+# --- Main Logic Function ---
+def fetch_league_scoreboard_logic(bypass_cache: bool = False) -> str: # Return JSON string
+    """
+    Fetches live scoreboard data for current NBA games and formats it.
+
+    Args:
+        bypass_cache (bool): If True, ignores cached data. Defaults to False.
+
+    Returns:
+        str: JSON string containing current game information or an error message.
+             Structure includes 'gameDate' and a 'games' list. See implementation for game details.
+    """
+    logger.info("Executing fetch_league_scoreboard_logic to fetch and format live data")
+
+    cache_key = "live_scoreboard"
+    # Use hourly timestamp for cache invalidation via lru_cache
+    # Note: Actual data might be stale for up to an hour due to this,
+    # despite the short intended TTL. Consider a different caching strategy if needed.
+    cache_timestamp = datetime.now().replace(minute=0, second=0, microsecond=0).isoformat()
+
+    try:
+        if bypass_cache:
+            logger.info("Bypassing cache, fetching fresh scoreboard data.")
+            board = scoreboard.ScoreBoard(timeout=DEFAULT_TIMEOUT)
+            raw_data = board.get_dict()
+        else:
+            raw_data = get_cached_scoreboard_data(cache_key=cache_key, timestamp=cache_timestamp)
+
         scoreboard_outer = raw_data.get('scoreboard', {})
         raw_games = scoreboard_outer.get('games', [])
         game_date = scoreboard_outer.get('gameDate', datetime.now().strftime("%Y-%m-%d"))
-        
+
         formatted_games: List[Dict[str, Any]] = []
         for game in raw_games:
-            # Only extract homeTeam and awayTeam once
             home_team = game.get("homeTeam", {})
             away_team = game.get("awayTeam", {})
-            
-            # Get game status fields only if game is live
-            is_live = game.get("gameStatus", 0) == 2
-            game_status_fields = {
-                "period": game.get("period"),
-                "gameClock": game.get("gameClock")
-            } if is_live else {
-                "period": None,
-                "gameClock": None
-            }
-            
+
+            # Determine game status text and state more robustly
+            game_status_text = game.get("gameStatusText", "Status Unknown")
+            game_status_code = game.get("gameStatus", 0) # 1: Scheduled, 2: In Progress, 3: Final
+
+            # Format game clock and period only if game is live
+            game_clock = None
+            current_period = 0
+            if game_status_code == 2: # In Progress
+                game_clock = game.get("gameClock")
+                current_period = game.get("period", 0)
+                # Refine status text for live games
+                if game_clock:
+                    game_status_text = f"Q{current_period} {game_clock}"
+                elif game_status_text == "Halftime":
+                     pass # Keep Halftime text
+                else: # Default live status if clock missing
+                     game_status_text = f"Q{current_period} In Progress"
+
+
             formatted_game = {
                 "gameId": game.get("gameId"),
-                "gameStatus": game.get("gameStatus", 0),
-                "gameStatusText": game.get("gameStatusText", ""),
-                **game_status_fields,
+                "gameStatus": game_status_code,
+                "gameStatusText": game_status_text,
+                "period": current_period,
+                "gameClock": game_clock,
                 "homeTeam": {
                     "teamId": home_team.get("teamId"),
                     "teamTricode": home_team.get("teamTricode", "N/A"),
-                    "score": home_team.get("score", 0)
-                    # Only include record for completed games
-                } | ({
-                    "wins": home_team.get("wins"),
+                    "score": home_team.get("score", 0),
+                    "wins": home_team.get("wins"), # Include wins/losses if available
                     "losses": home_team.get("losses")
-                } if game.get("gameStatus", 0) == 3 else {}),
+                },
                 "awayTeam": {
                     "teamId": away_team.get("teamId"),
                     "teamTricode": away_team.get("teamTricode", "N/A"),
-                    "score": away_team.get("score", 0)
-                    # Only include record for completed games
-                } | ({
+                    "score": away_team.get("score", 0),
                     "wins": away_team.get("wins"),
                     "losses": away_team.get("losses")
-                } if game.get("gameStatus", 0) == 3 else {}),
-                "gameEt": game.get("gameTimeUTC", "")
+                },
+                "gameEt": game.get("gameTimeUTC", "") # Game start time UTC
             }
             formatted_games.append(formatted_game)
-        
-        # Create final structure matching ScoreboardData
+
         result: Dict[str, Any] = {
             "gameDate": game_date,
             "games": formatted_games
         }
-        
-        logger.info(f"fetch_league_scoreboard_logic formatted {len(formatted_games)} games for frontend")
-        # Format result as JSON string
-        json_result = json.dumps(result)
-        
-        # Update cache
-        _scoreboard_cache[current_date] = (json_result, datetime.now())
-        
-        return json_result
-        
+
+        logger.info(f"fetch_league_scoreboard_logic formatted {len(formatted_games)} games")
+        return format_response(result) # Use format_response
+
     except Exception as e:
         logger.error(f"Error fetching/formatting scoreboard data: {str(e)}", exc_info=True)
-        # Simplified error result - no need to include empty games array
-        return json.dumps({
-            "error": Errors.SCOREBOARD_API.format(error=str(e))
-        })
+        # Use specific error constant
+        error_msg = Errors.LEAGUE_SCOREBOARD_UNEXPECTED.format(game_date=datetime.now().strftime('%Y-%m-%d'), error=str(e)) if hasattr(Errors, 'LEAGUE_SCOREBOARD_UNEXPECTED') else f"Unexpected error fetching scoreboard: {e}"
+        return format_response(error=error_msg)

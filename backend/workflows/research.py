@@ -1,190 +1,196 @@
-# backend/workflows/research.py
 import json
 from textwrap import dedent
-from typing import Dict, AsyncIterator, Optional, List
+from typing import Dict, AsyncIterator, Optional, List, Any
 import logging
+import hashlib 
 
 from agno.agent import Agent
-from agno.models.google import Gemini # Assuming Gemini model
-from agno.storage.workflow.sqlite import SqliteWorkflowStorage
-from agno.workflow import RunEvent, RunResponse, Workflow
+from agno.storage.sqlite import SqliteStorage 
+from agno.workflow import RunEvent, RunResponse, Workflow 
 
-# Import agent tools and configurations (adjust path if needed)
-from backend.agents import nba_tools, model, CURRENT_SEASON, AGENT_DEBUG_MODE, current_date
+from backend.agents import nba_tools, model as default_model, current_date 
+from backend.config import Errors, CURRENT_SEASON, AGENT_DEBUG_MODE
 
-# --- Initialize logger ---
 logger = logging.getLogger(__name__)
 
-# Define the Data Gathering Agent Configuration
-# (Focuses on tool use, less on strict output format)
-# Note: We might not need 'expected_output' here if its raw output is processed by the next agent.
+# --- Agent Definitions ---
 data_gathering_agent = Agent(
     name="NBADataGatherer",
-    model=model,
+    model=default_model, # Uses the model instance from agents.py
     tools=nba_tools,
     description=dedent(f"""
         You are an efficient NBA data retrieval specialist. 
         Your goal is to use the available tools to gather all relevant 
-        statistics and information based on the research topic provided. 
-        Focus on comprehensive data collection.
+        statistics and information based on the research topic and specific aspects requested. 
+        Focus on comprehensive and accurate data collection for ONLY the requested aspects.
         Current context: Date {current_date}, Season {CURRENT_SEASON}.
         """),
-    instructions=dedent("""
-        1. Analyze the user's research topic to understand the core entities (players, teams, games) and data points required.
-        2. Plan the sequence of tool calls needed to gather the necessary information.
-        3. Execute the tool calls methodically. Call multiple tools if needed for a complete picture (e.g., get player info first, then stats).
-        4. Output the raw or slightly summarized results from the tool calls.
-        """),
-    # No strict 'expected_output' needed here, maybe just basic markdown or JSON aggregation?
-    markdown=True, # Keep markdown for readability of potential summaries
-    show_tool_calls=True, # Show tool calls for debugging
+    markdown=True,
+    show_tool_calls=True,
     debug_mode=AGENT_DEBUG_MODE,
-    stream=True, # Enable streaming for intermediate steps
+    stream=True,
     stream_intermediate_steps=True,
     resolve_context=True,
     reasoning=True,
     exponential_backoff=True,
-    delay_between_retries=2
+    delay_between_retries=3
 )
 
-# Define the Report Writing Agent Configuration
-# (Takes gathered data, synthesizes, and formats the final report)
 report_writer_agent = Agent(
     name="NBAReportWriter",
-    model=model,
-    # This agent likely doesn't need direct tool access if it gets all data from the previous step
-    # tools=[], 
+    model=default_model, # Uses the model instance from agents.py
     description=dedent(f"""
         You are a meticulous NBA Research Analyst and writer. Your expertise is in 
         synthesizing gathered data into clear, well-structured research reports. 
         You focus on accuracy, insightful analysis, and presenting data-driven insights 
-        based on the provided information and the original research topic.
+        based *only* on the provided information and the original research topic.
         Today's date is {current_date}. The current NBA season is {CURRENT_SEASON}.
         """),
     instructions=dedent("""
-        1. Review the provided data dump and the original research topic.
-        2. Synthesize the key findings and statistics.
-        3. Analyze the synthesized data (e.g., season totals, comparisons if available) to identify trends or points suitable for visualization (like year-over-year point averages).
-        4. Structure the information into a coherent report using the 'Expected Output' Markdown format.
-        5. Write clear analysis and insights based *only* on the provided data.
-        6. Embed key statistics as Stat Cards using `<!-- STAT_CARD_DATA {...} -->`.
-        7. **If chartable data was identified in step 3 (like PPG over multiple seasons), generate appropriate `CHART_DATA` comments.** 
-           **- CRITICAL FORMATTING:** Use the exact JSON structure below:
-           **- For time-series (e.g., stats over seasons):** `<!-- CHART_DATA {"type": "line", "title": "Your Chart Title", "data": [{"label": "SEASON_YEAR", "value": STAT_VALUE}, ...]} -->` 
-           **- For comparisons (e.g., multiple players):** `<!-- CHART_DATA {"type": "bar", "title": "Your Chart Title", "data": [{"label": "CATEGORY_NAME", "value": STAT_VALUE}, ...]} -->`
-           **- Replace `SEASON_YEAR`, `STAT_VALUE`, `CATEGORY_NAME`, etc. with the actual data. Ensure keys are exactly "label" and "value" in the data array.**
-        8. **For any data best presented as a table (e.g., lists of stats, comparisons), enclose the raw Markdown table within a `TABLE_DATA` comment like this:** `<!-- TABLE_DATA {"title": "Optional Table Title", "markdown": "YOUR MARKDOWN TABLE HERE"} -->`
-        9. Ensure the final report adheres strictly to the expected format.
-        10. List the tools that were *likely* used to gather the data (provided in the input or inferred) in the 'Data Sources Used' section.
+        1.  Review the provided "Original Topic" and "Gathered Data" dump carefully.
+        2.  Synthesize the key findings and statistics relevant to the original topic from the "Gathered Data".
+        3.  Analyze the synthesized data to identify trends, comparisons, or key data points suitable for emphasis.
+        4.  Structure the information into a coherent report using the 'Expected Output' Markdown format provided below.
+        5.  Write clear analysis and insights based *strictly* on the "Gathered Data". Do not infer or use external knowledge.
+        6.  Embed key individual statistics as Stat Cards using the exact format: `<!-- STAT_CARD_DATA {{"label": "Statistic Name", "value": "Statistic Value", "unit": "(Optional Unit)"}} -->` on its own line.
+        7.  If the "Gathered Data" contains clear time-series data (e.g., stats over multiple seasons for one player/team) or comparative data for a few entities on the same metric, embed this as Chart data using the exact format:
+            - Time-series (line chart): `<!-- CHART_DATA {{"type": "line", "title": "Chart Title", "data": [{{"label": "SEASON_OR_DATE", "value": NUMERIC_STAT_VALUE}}, ...]}} -->`
+            - Comparison (bar chart): `<!-- CHART_DATA {{"type": "bar", "title": "Chart Title", "data": [{{"label": "ENTITY_NAME", "value": NUMERIC_STAT_VALUE}}, ...]}} -->`
+            Ensure "label" and "value" keys are used in the data array.
+        8.  For tabular data (e.g., lists of player stats, game logs, multiple data points for comparison), present it as a Markdown table. Then, enclose the entire Markdown table within a `TABLE_DATA` comment: `<!-- TABLE_DATA {"title": "Optional Table Title", "markdown": "YOUR COMPLETE MARKDOWN TABLE HERE"} -->`. The markdown table itself should be well-formatted.
+        9.  Ensure the final report adheres strictly to the expected output format, including all specified sections.
+        10. In the 'Data Sources Used' section, list the primary `tool_name`s that were likely used to gather the data (this information might be part of the "Gathered Data" input or inferred from it).
         """),
     expected_output=dedent(f"""
-        A professional NBA research report in markdown format:
-
         # Research Report: {{Concise Title Reflecting the Research Topic}}
 
         ## 1. Research Topic Summary
         {{Briefly restate the user's original research request or topic.}}
 
         ## 2. Key Findings & Data
-        {{Present the main data points and findings synthesized from the input data. Use subheadings and tables. Embed Stat Cards and Charts using comments as instructed.}}
+        {{Present the main data points and findings synthesized from the input data. Use subheadings. Embed Stat Cards, Charts, and Markdown Tables (wrapped in TABLE_DATA comments) as instructed.}}
 
         ## 3. Analysis & Insights
-        {{Analyze the synthesized data. Compare statistics, identify trends. Provide context.}}
+        {{Analyze the synthesized data. Compare statistics, identify trends. Provide context. Base this *only* on the provided "Gathered Data".}}
 
         ## 4. Conclusion
-        {{Summarize the main conclusions.}} 
+        {{Summarize the main conclusions drawn from the analysis.}}
 
         ## 5. Data Sources Used
-        {{List the primary tool_names used by the data gathering step (e.g., - get_player_career_stats).}}
+        {{List the primary tool_names that appear to have been used to generate the input data (e.g., - get_player_career_stats).}}
 
         ---
         Report Generated: {current_date}
         """),
     markdown=True,
-    show_tool_calls=False, # Doesn't call tools directly
+    show_tool_calls=False,
     debug_mode=AGENT_DEBUG_MODE,
-    stream=True, # Stream the final report generation
-    stream_intermediate_steps=False, # Less relevant if not calling tools
-    resolve_context=False, # Gets context via input
-    reasoning=True, # Needs reasoning for synthesis
+    stream=True,
+    stream_intermediate_steps=False,
+    resolve_context=False, # Report writer primarily synthesizes, less context resolution needed
+    reasoning=True,
     exponential_backoff=True,
-    delay_between_retries=2
+    delay_between_retries=3
 )
 
-
-# Define the Research Workflow
+# --- Research Workflow Definition ---
 class ResearchWorkflow(Workflow):
     data_gatherer: Agent = data_gathering_agent
     report_writer: Agent = report_writer_agent
 
+    def __init__(self, session_id: Optional[str] = None, storage: Optional[SqliteStorage] = None, **kwargs): 
+        super().__init__(session_id=session_id, storage=storage, **kwargs)
+        # self.session_state is initialized by the Workflow base class
+        logger.info(f"ResearchWorkflow initialized. Session ID: {self.session_id}, Storage: {'Configured' if self.storage else 'None'}, Base SessionState: {'Available' if hasattr(self, 'session_state') and self.session_state is not None else 'Unavailable or Not Configured'}")
+
+    def _generate_cache_key(self, topic: str, selected_sections: List[str]) -> str:
+        key_string = f"{topic.lower().strip()}_{'_'.join(sorted(s.lower().strip() for s in selected_sections))}"
+        return hashlib.md5(key_string.encode()).hexdigest()
+
     async def arun(self, topic: str, selected_sections: Optional[List[str]] = None) -> AsyncIterator[RunEvent]:
-        """Orchestrates the research process based on selected sections."""
-        
-        # Construct instructions for data gatherer based on selected sections
-        section_mapping = { # Map section ID to a descriptive phrase for the prompt
-            'basic': 'basic player information (team, position, draft info)',
-            'career_stats': 'career statistics (totals and per-season)',
-            'current_stats': 'current season aggregate statistics',
-            'gamelog': 'current season game logs',
-            'awards': 'player awards and accolades',
-            'profile': 'player profile details (career/season highs)',
-            'hustle': 'hustle statistics (deflections, loose balls, etc.)',
-            'defense': 'detailed defensive statistics',
-            'shooting': 'shot chart details and shooting splits',
-            'passing': 'detailed passing statistics',
-            'rebounding': 'detailed rebounding statistics',
-            'clutch': 'clutch time statistics',
-            'analysis': 'year-over-year analysis (if applicable data is found)',
-            'insights': 'general player insights or dashboards'
-        }
-        
-        # Use default sections if none provided or list is empty
         if not selected_sections:
-            selected_sections = ['basic', 'career_stats', 'current_stats'] # Default sections
-            logger.warning(f"No sections selected or list empty, using defaults: {selected_sections}")
+            selected_sections = ['basic', 'career_stats', 'current_stats']
         
-        requested_data_desc = ", ".join([section_mapping.get(s_id, s_id) for s_id in selected_sections])
-        
-        gatherer_instructions = dedent(f"""
-            1. Analyze the user's research topic: '{topic}'
-            2. The user wants data specifically for these aspects: **{requested_data_desc}**.
-            3. Plan the sequence of tool calls *only* needed to gather the information for the requested aspects. Do not call tools for unrequested data.
-            4. Execute the planned tool calls methodically.
-            5. Output the raw or slightly summarized results from the tool calls.
-            """)
-        
-        # Step 1: Gather Data (Stream intermediate steps)
-        logger.info(f"Workflow Step 1: Gathering data for topic: {topic}, Aspects: {requested_data_desc}")
+        cache_key_base = self._generate_cache_key(topic, selected_sections)
+        gathered_data_cache_key = f"research_gathered_data_{cache_key_base}"
+        final_report_cache_key = f"research_final_report_{cache_key_base}"
+
+        if self.session_state and self.session_state.get(final_report_cache_key):
+            logger.info(f"Cache hit for final report: {final_report_cache_key} (Session ID: {self.session_id})")
+            cached_report_content = self.session_state[final_report_cache_key]
+            yield RunResponse(content=cached_report_content, event=RunEvent.workflow_completed)
+            return
+
         gathered_data_content = ""
-        # Pass the tailored instructions to the data gatherer
-        data_gatherer_iterator = await self.data_gatherer.arun(topic, instructions=gatherer_instructions, stream=True, stream_intermediate_steps=True)
-        async for event in data_gatherer_iterator:
-            yield event 
-            if isinstance(event, RunResponse) and isinstance(event.content, str):
-                gathered_data_content += event.content
+        if self.session_state and self.session_state.get(gathered_data_cache_key):
+            logger.info(f"Cache hit for gathered data: {gathered_data_cache_key} (Session ID: {self.session_id})")
+            gathered_data_content = self.session_state[gathered_data_cache_key]
+            yield RunEvent(event_type="CacheHit", data={"step": "DataGathering", "message": "Loaded gathered data from cache."})
+        else:
+            logger.info(f"Workflow Step 1: Gathering data for topic: '{topic}', Sections: {selected_sections} (Session ID: {self.session_id})")
+            section_mapping = {
+                'basic': 'basic player information (team, position, draft info)', 'career_stats': 'career statistics (totals and per-season)',
+                'current_stats': 'current season aggregate statistics', 'gamelog': 'current season game logs',
+                'awards': 'player awards and accolades', 'profile': 'player profile details (career/season highs)',
+                'hustle': 'hustle statistics', 'defense': 'detailed defensive statistics',
+                'shooting': 'shot chart details and shooting splits', 'passing': 'detailed passing statistics',
+                'rebounding': 'detailed rebounding statistics', 'clutch': 'clutch time statistics',
+                'analysis': 'year-over-year analysis', 'insights': 'general player insights or dashboards'
+            }
+            requested_data_desc = ", ".join([section_mapping.get(s_id, s_id) for s_id in selected_sections])
+            gatherer_instructions = dedent(f"""
+                1. Analyze the user's research topic: '{topic}'
+                2. The user wants data specifically for these aspects: **{requested_data_desc}**.
+                3. Plan and execute tool calls *only* for these requested aspects.
+                4. Output the raw or slightly summarized JSON results from each successful tool call. If a tool fails, note the error.
+                """)
+            
+            temp_gathered_data_parts = []
+            has_gatherer_error = False
+            async for event in await self.data_gatherer.arun(topic, instructions=gatherer_instructions, stream=True, stream_intermediate_steps=True):
+                yield event
+                if isinstance(event, RunResponse) and event.content:
+                    if isinstance(event.content, str):
+                        temp_gathered_data_parts.append(event.content)
+                    if event.event == RunEvent.agent_error or (isinstance(event.content, dict) and event.content.get("error")):
+                        has_gatherer_error = True
+                        logger.error(f"Data gatherer agent reported an error: {event.content}")
+                        break
+                elif event.event == RunEvent.agent_error:
+                    has_gatherer_error = True
+                    logger.error(f"Data gatherer agent error event: {event.data}")
+                    break
+            
+            if has_gatherer_error:
+                error_message = Errors.PROCESSING_ERROR.format(error="Data gathering phase failed.")
+                yield RunEvent(event_type="Error", data={"type": "error", "content": error_message, "step": "DataGathering"})
+                return
+
+            gathered_data_content = "\n\n---\n\n".join(temp_gathered_data_parts)
+            
+            if not gathered_data_content.strip():
+                logger.warning("Data gathering step produced no content.")
+                yield RunEvent(event_type="Error", data={"type": "error", "content": "Data gathering failed to produce results.", "step": "DataGathering"})
+                return
+            
+            if self.session_state: 
+                self.session_state[gathered_data_cache_key] = gathered_data_content
+                logger.info(f"Cached gathered data under key: {gathered_data_cache_key} (Session ID: {self.session_id})")
         
-        logger.info(f"Workflow Step 1 Completed. Gathered data length: {len(gathered_data_content)}")
-        if not gathered_data_content:
-             logger.warning("Data gathering step produced no content.")
-             yield RunEvent(event="error", data={"type": "error", "content": "Data gathering failed to produce results."})
-             return
+        logger.info(f"Workflow Step 1 Completed. Gathered data length: {len(gathered_data_content)} (Session ID: {self.session_id})")
 
-        # Step 2: Write Report (Stream final report chunks)
-        logger.info("Workflow Step 2: Writing report based on gathered data.")
-        writer_input = f"Original Topic: {topic}\n\nGathered Data:\n---\n{gathered_data_content}\n---"
+        logger.info(f"Workflow Step 2: Writing report based on gathered data (Session ID: {self.session_id}).")
+        writer_input_content = f"Original Research Topic: {topic}\n\nSelected Aspects for Report: {', '.join(selected_sections)}\n\nGathered Data Dump:\n===\n{gathered_data_content}\n==="
+        
+        final_report_parts = []
+        async for event in await self.report_writer.arun(writer_input_content, stream=True, stream_intermediate_steps=False):
+            yield event
+            if isinstance(event, RunResponse) and isinstance(event.content, str):
+                final_report_parts.append(event.content)
+        
+        final_report_str = "".join(final_report_parts)
+        if self.session_state and final_report_str.strip(): 
+            self.session_state[final_report_cache_key] = final_report_str
+            logger.info(f"Cached final report under key: {final_report_cache_key} (Session ID: {self.session_id})")
 
-        # Await the agent call to get the async iterator
-        report_writer_iterator = await self.report_writer.arun(writer_input, stream=True, stream_intermediate_steps=False)
-        async for event in report_writer_iterator:
-             yield event
-
-        logger.info("Workflow Step 2 Completed. Report writing stream finished.")
-
-# Example (Optional, for direct testing)
-# if __name__ == "__main__":
-#     import asyncio
-#     workflow = ResearchWorkflow()
-#     async def main():
-#         async for event in workflow.arun("Deep dive on LeBron James career stats"):
-#             print(event)
-#     asyncio.run(main()) 
+        logger.info(f"Workflow Step 2 Completed. Report writing stream finished (Session ID: {self.session_id}).")

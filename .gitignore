@@ -6,3 +6,30 @@ nba-analytics-backend/backend_app.log
 .env.local
 .cursor/
 .windsurfrules/
+.roo/
+
+# Backend specific
+backend/output/
+backend/chunk.json
+backend/chunk.txt
+backend/test_chart_generation.py
+backend/smoke_test_agent_tools.py
+backend/__pycache__/
+backend/api_tools/__pycache__/
+backend/routes/__pycache__/
+backend/smoke_tests/__pycache__/
+backend/tests/__pycache__/
+backend/utils/__pycache__/
+backend/models/__pycache__/
+backend/workflows/__pycache__/
+
+# General Python
+*.pyc
+*~
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# VS Code
+.vscode/

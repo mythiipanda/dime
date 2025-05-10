@@ -1,123 +1,178 @@
 import os
 import sys
 import logging
-import json
-from typing import Optional, Dict, Any
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 import uvicorn
 
-# Add the parent directory to the Python path
+# --- Python Path Setup ---
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
-sys.path.append(parent_dir)
+if parent_dir not in sys.path:
+    sys.path.append(parent_dir)
+if current_dir not in sys.path:
+    sys.path.append(current_dir)
 
-# Configure root logger
-root_logger = logging.getLogger()
-root_logger.setLevel(logging.INFO)
+# --- Logging Configuration ---
+# Import and apply centralized logging configuration
+try:
+    from backend.logging_config import setup_logging
+    from backend.config import AGENT_DEBUG_MODE # For setting log level
+    
+    # Determine log level based on debug mode
+    log_level = logging.DEBUG if AGENT_DEBUG_MODE else logging.INFO
+    setup_logging(level=log_level)
+    logger = logging.getLogger(__name__) # Logger for this main module
+    logger.info(f"Logging configured with level: {logging.getLevelName(log_level)}")
 
-# Create console handler
-console_handler = logging.StreamHandler()
-console_handler.setLevel(logging.INFO)
+except ImportError as e:
+    # Fallback to basicConfig if logging_config is missing or fails, though this shouldn't happen
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    logger = logging.getLogger(__name__)
+    logger.error(f"Failed to import or apply logging_config, falling back to basicConfig. Error: {e}", exc_info=True)
+    sys.exit(1) # Exit if critical config like logging fails
 
-# Create formatter
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-console_handler.setFormatter(formatter)
+# --- Import Configuration and Routers ---
+try:
+    from backend.config import CORS_ALLOWED_ORIGINS, Errors
+    from backend.routes.player import router as player_router
+    from backend.routes.analyze import router as analyze_router
+    from backend.routes.sse import router as sse_router
+    from backend.routes.team import router as team_router
+    from backend.routes.game import router as game_router
+    from backend.routes.player_tracking import router as player_tracking_router
+    from backend.routes.team_tracking import router as team_tracking_router
+    from backend.routes.standings import router as standings_router
+    from backend.routes.live_game import router as live_game_router
+    from backend.routes.scoreboard import router as scoreboard_router
+    from backend.routes.odds import router as odds_router
+    from backend.routes.research import router as research_router
+    from backend.routes.search import router as search_router
+    from backend.routes.leaders import router as leaders_router
+    # from backend.routes.charts import router as charts_router # Example
+except ImportError as e:
+    logger.critical(f"Failed to import application modules (config/routers). Error: {e}", exc_info=True)
+    sys.exit(1)
 
-# Add console handler to root logger
-root_logger.addHandler(console_handler)
 
-from backend.config import CORS_ALLOWED_ORIGINS
-from backend.routes.player import router as player_router
-from backend.routes.analyze import router as analyze_router
-from backend.routes.sse import router as sse_router
-from backend.routes.team import router as team_router
-from backend.routes.game import router as game_router
-from backend.routes.player_tracking import router as player_tracking_router
-from backend.routes.team_tracking import router as team_tracking_router
-from backend.routes.standings import router as standings_router
-from backend.routes.live_game import router as live_game_router
-from backend.routes.scoreboard import router as scoreboard_router
-from backend.routes.odds import router as odds_router
-from backend.routes.research import router as research_router
-
+# --- FastAPI Application Initialization ---
 app = FastAPI(
-    title="NBA Analytics API",
-    description="API for fetching NBA player, team, game stats, and interacting with an AI agent.",
-    version="0.1.0",
+    title="Dime NBA Analytics API",
+    description="API for fetching comprehensive NBA player, team, and game statistics, "
+                "live scores, odds, and interacting with an AI-powered analytics agent.",
+    version="0.2.1", # Incremented version
+    openapi_url="/api/v1/openapi.json",
+    docs_url="/api/v1/docs",
+    redoc_url="/api/v1/redoc"
 )
 
-# Configure CORS
-# Simplified origins list for testing WebSocket CORS issues
-origins = [
-    "http://localhost:3000",  
-    "http://127.0.0.1:3000",
-    # Add any other essential origins if needed, e.g., from FRONTEND_URL if deployed
-]
-# Ensure FRONTEND_URL is added if it's different and required
-# frontend_url = os.environ.get("FRONTEND_URL")
-# if frontend_url and frontend_url not in origins:
-#     origins.append(frontend_url)
+# --- CORS Middleware Configuration ---
+if not CORS_ALLOWED_ORIGINS:
+    logger.warning("CORS_ALLOWED_ORIGINS is not set or empty in config. Defaulting to restrictive CORS.")
+    effective_cors_origins = []
+else:
+    effective_cors_origins = CORS_ALLOWED_ORIGINS
 
 app.add_middleware(
     CORSMiddleware,
-    # Use the simplified list directly
-    allow_origins=origins, 
+    allow_origins=effective_cors_origins,
     allow_credentials=True,
-    allow_methods=["*"], 
-    allow_headers=["*"], 
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
+logger.info(f"CORS middleware configured with origins: {effective_cors_origins}")
 
-# Include routers
-API_PREFIX = "/api/v1"
+# --- API Router Inclusion ---
+API_V1_PREFIX = "/api/v1"
 
-# Add legacy alias for ask endpoint under /api
-app.include_router(sse_router, prefix="/api", tags=["sse_legacy"])
-# Mount SSE router under versioned API prefix
-app.include_router(sse_router, prefix=API_PREFIX, tags=["sse"])  # Mount SSE router under /api/v1 prefix
-app.include_router(player_router, prefix=API_PREFIX + "/players", tags=["Players"])
-# app.include_router(analyze_router, prefix="/api/analyze", tags=["analyze"]) # Removed analyze router
-app.include_router(team_router, prefix=API_PREFIX + "/teams", tags=["Teams"])
-app.include_router(game_router, prefix=API_PREFIX + "/games", tags=["Games"])
-app.include_router(player_tracking_router, prefix=API_PREFIX + "/player/tracking", tags=["player_tracking"])
-app.include_router(team_tracking_router, prefix=API_PREFIX + "/team/tracking", tags=["team_tracking"])
-# Standings endpoint under versioned API prefix
-app.include_router(standings_router, prefix=API_PREFIX, tags=["Standings"])
-app.include_router(live_game_router, prefix=API_PREFIX + "/live", tags=["live"]) # Register live game router
-app.include_router(scoreboard_router, prefix=API_PREFIX + "/scoreboard", tags=["Scoreboard"]) # Include scoreboard router
-app.include_router(odds_router, prefix=API_PREFIX, tags=["Odds"])
-app.include_router(research_router, prefix=API_PREFIX + "/research", tags=["Research"])
+app.include_router(sse_router, prefix=API_V1_PREFIX)
+app.include_router(player_router, prefix=API_V1_PREFIX)
+app.include_router(player_tracking_router, prefix=API_V1_PREFIX)
+app.include_router(analyze_router, prefix=API_V1_PREFIX + "/analyze") # analyze_router has internal /player
+app.include_router(team_router, prefix=API_V1_PREFIX)
+app.include_router(team_tracking_router, prefix=API_V1_PREFIX)
+app.include_router(game_router, prefix=API_V1_PREFIX)
+app.include_router(standings_router, prefix=API_V1_PREFIX)
+app.include_router(leaders_router, prefix=API_V1_PREFIX)
+app.include_router(live_game_router, prefix=API_V1_PREFIX)
+app.include_router(scoreboard_router, prefix=API_V1_PREFIX)
+app.include_router(odds_router, prefix=API_V1_PREFIX)
+app.include_router(search_router, prefix=API_V1_PREFIX)
+app.include_router(research_router, prefix=API_V1_PREFIX)
+# app.include_router(charts_router, prefix=API_V1_PREFIX) # Example
 
-@app.get("/")
-async def root():
-    return {"message": "Welcome to the NBA Stats API"}
+logger.info("All API routers included under /api/v1 prefix.")
 
-@app.get("/health", tags=["Health"])
+# --- Basic Endpoints ---
+@app.get("/", include_in_schema=False)
+async def root_redirect_to_docs():
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url=app.docs_url) # Use app.docs_url
+
+@app.get("/health", tags=["Health Check"], summary="API Health Status")
 async def health_check():
-    root_logger.info("Health check endpoint called.")
-    return {"status": "healthy"}
+    logger.info("Health check endpoint called successfully.")
+    return {"status": "healthy", "message": "NBA Analytics API is up and running!"}
 
-# Add more global exception handlers if needed
+# --- Global Exception Handler ---
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    logger.error(f"HTTPException caught: Status Code: {exc.status_code}, Detail: {exc.detail} for URL: {request.url.path}")
+    from fastapi.responses import JSONResponse # Local import
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+    )
+
 @app.exception_handler(Exception)
-async def generic_exception_handler(request, exc):
-    root_logger.error(f"Unhandled exception: {exc}", exc_info=True)
-    return HTTPException(status_code=500, detail="Internal server error")
+async def generic_unhandled_exception_handler(request: Request, exc: Exception):
+    logger.critical(f"Unhandled generic exception: {type(exc).__name__} - {exc} for URL: {request.url.path}", exc_info=True)
+    from fastapi.responses import JSONResponse # Local import
+    from fastapi import status as http_status # Local import for status codes
+    
+    error_content = Errors.UNEXPECTED_ERROR.format(error="An internal server error occurred.") \
+        if hasattr(Errors, 'UNEXPECTED_ERROR') and '{error}' in Errors.UNEXPECTED_ERROR \
+        else "An internal server error occurred."
+        
+    return JSONResponse(
+        status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"detail": error_content},
+    )
 
-# --- Add Route Printing Here ---
+# --- Startup/Shutdown Events ---
+@app.on_event("startup")
+async def startup_event():
+    logger.info("NBA Analytics API starting up...")
+    # Example: Initialize database connections, load ML models, etc.
+    # from backend.config import STORAGE_DB_FILE # Moved import inside if needed
+    # if not os.path.exists(STORAGE_DB_FILE) and "agno_storage.db" in STORAGE_DB_FILE:
+    #     logger.info(f"Workflow storage DB file {STORAGE_DB_FILE} not found. It will be created on first use by Agno.")
+    pass
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    logger.info("NBA Analytics API shutting down...")
+    pass
+
+# --- Uvicorn Runner ---
 if __name__ == "__main__":
-    # Print registered routes for debugging
-    print("--- Registered Routes ---")
+    logger.info("--- Registered Routes ---")
     for route in app.routes:
         if hasattr(route, "path"):
-            print(f"Path: {route.path}, Name: {getattr(route, 'name', 'N/A')}, Methods: {getattr(route, 'methods', 'N/A')}")
-        elif hasattr(route, "routes") and isinstance(route.routes, list):
-             # Handle mounted routers/apps
-             print(f"Mounted Router/App at: {route.path}")
-             for sub_route in route.routes:
-                 if hasattr(sub_route, "path"):
-                    print(f"  Path: {sub_route.path}, Name: {getattr(sub_route, 'name', 'N/A')}, Methods: {getattr(sub_route, 'methods', 'N/A')}")
-    print("-----------------------")
+            methods = getattr(route, 'methods', None)
+            name = getattr(route, 'name', 'N/A')
+            logger.info(f"Path: {route.path}, Name: {name}, Methods: {methods}")
+    logger.info("-----------------------")
     
-    root_logger.info("Starting NBA Analytics API server...")
-    uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
+    host = os.getenv("HOST", "0.0.0.0")
+    port = int(os.getenv("PORT", 8000))
+    reload_app = os.getenv("RELOAD_APP", "true").lower() == "true" # Changed env var name for clarity
+    
+    logger.info(f"Starting NBA Analytics API server with Uvicorn on {host}:{port} (Reload: {reload_app})...")
+    uvicorn.run(
+        "main:app",
+        host=host, 
+        port=port, 
+        reload=reload_app,
+        log_level=logging.getLevelName(logger.getEffectiveLevel()).lower()
+    )

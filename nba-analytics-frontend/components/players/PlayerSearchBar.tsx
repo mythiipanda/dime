@@ -49,7 +49,7 @@ export function PlayerSearchBar({ initialValue = "", onSearchSubmit }: PlayerSea
     debounceTimer.current = setTimeout(async () => {
       console.log(`[SearchBar] Debounced suggestion search for: ${trimmedSearch}`);
       try {
-        const suggestionsUrl = `${API_BASE_URL}/players/search?q=${encodeURIComponent(trimmedSearch)}&limit=${SUGGESTION_LIMIT}`;
+        const suggestionsUrl = `${API_BASE_URL}/player/search?q=${encodeURIComponent(trimmedSearch)}&limit=${SUGGESTION_LIMIT}`; // Corrected: /player instead of /players
         const response = await fetch(suggestionsUrl);
         if (!response.ok) {
           throw new Error(`Failed to fetch suggestions (${response.status})`);

@@ -4,7 +4,7 @@ import logging
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from rich.pretty import pprint
-from teams import nba_analysis_team
+from backend.teams import nba_analysis_team # Corrected import
 from dataclasses import asdict, is_dataclass
 from agno.agent import RunResponse
 from typing import Iterator, Dict, Any
@@ -63,44 +63,112 @@ def format_sse(data: str, event: str | None = None) -> str:
         msg = f"event: {event}\n{msg}"
     return msg
 
+# Markers from agents.py (ensure these are consistent if changed there)
+STAT_CARD_MARKER = "STAT_CARD_JSON::"
+CHART_DATA_MARKER = "CHART_DATA_JSON::"
+TABLE_DATA_MARKER = "TABLE_DATA_JSON::"
+
 def format_message_data(chunk_dict: Dict[Any, Any]) -> Dict[str, Any]:
     event_type = chunk_dict.get("event")
-    content = chunk_dict.get("content")
+    content = chunk_dict.get("content", "") # Ensure content is a string
     tools = chunk_dict.get("tools", [])
     
     message_data = {
         "role": "assistant",
-        "content": content or "",
+        "content": content, # Initial content
         "event": event_type,
-        "status": "thinking",
-        "toolCalls": []
+        "status": "thinking", # Default status
+        "toolCalls": [],
+        "dataType": None, # For rich data
+        "dataPayload": None # For rich data
     }
 
-    # Handle different event types
+    # Check for rich data markers in content
+    if isinstance(content, str):
+        # Handle agent outputting ```json\nMARKER::\n{...}\n```
+        cleaned_content_for_json_parsing = content # Assume no JSON yet
+        potential_json_payload_str = None
+
+        if "```json" in content and STAT_CARD_MARKER in content:
+            message_data["dataType"] = "STAT_CARD"
+            # Extract content after MARKER::, assuming it's wrapped in ```json ... ```
+            # This expects MARKER:: to be *inside* the json block if agent does that, or after ```json
+            if STAT_CARD_MARKER in content:
+                payload_start_index = content.find(STAT_CARD_MARKER) + len(STAT_CARD_MARKER)
+                potential_json_payload_str = content[payload_start_index:].strip()
+                # Remove the ```json and marker from the displayed content for this chunk
+                message_data["content"] = content[:content.find(STAT_CARD_MARKER)].replace("```json", "").strip()
+
+
+        elif "```json" in content and CHART_DATA_MARKER in content:
+            message_data["dataType"] = "CHART_DATA"
+            if CHART_DATA_MARKER in content:
+                payload_start_index = content.find(CHART_DATA_MARKER) + len(CHART_DATA_MARKER)
+                potential_json_payload_str = content[payload_start_index:].strip()
+                message_data["content"] = content[:content.find(CHART_DATA_MARKER)].replace("```json", "").strip()
+
+        elif "```json" in content and TABLE_DATA_MARKER in content:
+            message_data["dataType"] = "TABLE_DATA"
+            if TABLE_DATA_MARKER in content:
+                payload_start_index = content.find(TABLE_DATA_MARKER) + len(TABLE_DATA_MARKER)
+                potential_json_payload_str = content[payload_start_index:].strip()
+                # Example: content might be "```json\nTABLE_DATA_JSON::\n{\n  \"title\": \""
+                # We want message_data["content"] to be "" for this chunk,
+                # and the frontend will accumulate `potential_json_payload_str`
+                # Strip initial ```json and marker for the first chunk
+                # For subsequent chunks, content will just be part of JSON
+                if content.strip().startswith("```json"): # If it's the start of the block
+                     message_data["content"] = "" # Don't show the marker line itself as narrative
+                else: # It's a continuation of JSON content
+                     message_data["content"] = potential_json_payload_str # Pass through the JSON part
+                
+                # The actual parsing of potential_json_payload_str will now be deferred to the frontend hook,
+                # which will accumulate it. For now, sse.py just signals the type.
+                # We set dataPayload to the raw string part that *might* be JSON.
+                # The frontend will be responsible for accumulating and parsing the full JSON.
+                # This is a simplification; a more robust solution would involve sse.py managing accumulation state.
+                if message_data["content"] == "": # If we cleared content because marker was found
+                    message_data["dataPayload"] = potential_json_payload_str # Send the first part of JSON
+                else: # If it's a continuation, this content is part of the JSON
+                    message_data["dataPayload"] = content # Send this chunk of JSON
+                
+                # logger.info(f"Signaling {message_data['dataType']} with initial payload part: {potential_json_payload_str}")
+
+
+    # Handle different event types (after potential dataType processing)
     if event_type == "RunStarted":
         message_data["status"] = "thinking"
-        message_data["content"] = "Starting to process your request..."
+        # Only set default content if no rich data was parsed for this initial event
+        if not message_data["dataType"]:
+            message_data["content"] = "Starting to process your request..."
     elif event_type == "RunResponse":
-        # Don't modify the content for RunResponse events
         message_data["status"] = "thinking"
+        # Content is already set from chunk_dict or cleared if rich data marker was found
     elif event_type == "ToolCallStarted":
         for tool in tools:
             message_data["toolCalls"].append({
                 "tool_name": tool.get("tool_name", "Unknown Tool"),
                 "status": "started"
             })
+        # Optionally, set content to indicate tool call if no other content/rich data
+        if not message_data["content"] and not message_data["dataType"]:
+             message_data["content"] = f"Calling tool: {tools[0].get('tool_name', 'Unknown Tool')}..." if tools else "Calling a tool..."
     elif event_type == "ToolCallCompleted":
         for tool in tools:
             message_data["toolCalls"].append({
                 "tool_name": tool.get("tool_name", "Unknown Tool"),
                 "status": "completed",
-                "content": tool.get("content", "")
+                "content": tool.get("content", "") # Tool's direct output if any
             })
+        if not message_data["content"] and not message_data["dataType"]:
+            message_data["content"] = f"Tool {tools[0].get('tool_name', 'Unknown Tool')} completed." if tools else "Tool completed."
     elif event_type == "RunCompleted":
         message_data["status"] = "complete"
+        # Final content is already set from the last RunResponse or rich data chunk
     elif event_type == "Error":
         message_data["status"] = "error"
-        message_data["content"] = content or "An error occurred"
+        if not message_data["dataType"]: # Don't overwrite if error itself was in a rich data payload
+            message_data["content"] = content or "An error occurred" # Use original content if it was an error message
 
     # Calculate progress
     if event_type in ["RunStarted", "ToolCallStarted", "ToolCallCompleted", "RunCompleted"]:

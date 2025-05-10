@@ -3,88 +3,88 @@ from dotenv import load_dotenv
 from agno.agent import Agent
 from agno.models.google import Gemini
 from agno.tools.thinking import ThinkingTools
-from config import AGENT_MODEL_ID, STORAGE_DB_FILE, AGENT_DEBUG_MODE, CURRENT_SEASON
+from backend.config import AGENT_MODEL_ID, STORAGE_DB_FILE, AGENT_DEBUG_MODE, CURRENT_SEASON # Corrected import
 from textwrap import dedent
-from backend.models.research import ResearchReportModel
+from backend.models.research import ResearchReportModel # Assuming this is for NBAResearchAgent
+from pydantic import BaseModel, Field as PydanticField
+from typing import List as PyList, Optional as PyOptional, Dict as PyDict, Any as PyAny
+
+# --- Pydantic Models for Rich Outputs (for nba_agent) ---
+class StatCard(BaseModel):
+    label: str = PydanticField(..., description="The label for the statistic.")
+    value: str = PydanticField(..., description="The value of the statistic.")
+    unit: PyOptional[str] = PydanticField(None, description="Optional unit for the statistic (e.g., '%', 'pts').")
+    trend: PyOptional[str] = PydanticField(None, description="Optional trend indicator (e.g., 'up', 'down', 'neutral').")
+    description: PyOptional[str] = PydanticField(None, description="Optional brief description or context for the stat.")
+
+class ChartDataItem(BaseModel):
+    label: str = PydanticField(..., description="Label for the data point (e.g., x-axis category).")
+    value: float = PydanticField(..., description="Numerical value for the data point (e.g., y-axis value).")
+    group: PyOptional[str] = PydanticField(None, description="Optional group name for grouped charts.")
+
+class ChartOutput(BaseModel):
+    type: str = PydanticField(..., description="Type of chart (e.g., 'bar', 'line', 'pie', 'scatter').")
+    title: str = PydanticField(..., description="Title of the chart.")
+    data: PyList[ChartDataItem] = PydanticField(..., description="Data for the chart.")
+    x_axis_label: PyOptional[str] = PydanticField(None, description="Label for the X-axis.")
+    y_axis_label: PyOptional[str] = PydanticField(None, description="Label for the Y-axis.")
+    options: PyOptional[PyDict[str, PyAny]] = PydanticField(None, description="Additional chart display options.")
+
+class TableColumn(BaseModel):
+    key: str = PydanticField(..., description="The key for this column in the data objects (rows).")
+    header: str = PydanticField(..., description="The display header for this column.")
+    align: PyOptional[str] = PydanticField("left", description="Column content alignment ('left', 'center', 'right').")
+
+class TableOutput(BaseModel):
+    title: PyOptional[str] = PydanticField(None, description="Optional title for the table.")
+    columns: PyList[TableColumn] = PydanticField(..., description="Defines the columns of the table.")
+    data: PyList[PyDict[str, PyAny]] = PydanticField(..., description="List of data objects (rows) for the table.")
+    caption: PyOptional[str] = PydanticField(None, description="Optional caption for the table.")
+
+# Markers for structured data in agent's text response
+STAT_CARD_MARKER = "STAT_CARD_JSON::"
+CHART_DATA_MARKER = "CHART_DATA_JSON::"
+TABLE_DATA_MARKER = "TABLE_DATA_JSON::"
+FINAL_ANSWER_MARKER = "FINAL_ANSWER::"
 
 # Import all tool functions from the consolidated tools module
 from .tools import (
-    get_player_info,
-    get_player_gamelog,
-    get_player_career_stats,
-    get_player_awards,
-    get_player_aggregate_stats,
-    get_player_profile,
-    # Player Tracking/Advanced
-    get_player_clutch_stats,
-    get_player_passing_stats,
-    get_player_rebounding_stats,
-    get_player_shots_tracking,
-    get_player_shotchart,
-    get_player_defense_stats,
-    get_player_hustle_stats,
-    # Team Info/Stats
-    get_team_info_and_roster,
-    get_team_stats,
-    get_team_lineups,
-    # Team Tracking
-    get_team_passing_stats,
-    get_team_shooting_stats,
-    get_team_rebounding_stats,
-    # Game/League
-    find_games,
-    get_boxscore_traditional,
-    get_play_by_play,
-    get_league_standings,
-    get_scoreboard,
-    get_draft_history,
-    get_league_leaders,
-    get_game_shotchart,
-    # Analytics Extensions
-    get_boxscore_advanced,
-    get_boxscore_four_factors,
-    get_boxscore_usage,
-    get_boxscore_defensive,
-    get_win_probability,
-    # Extended Analytics Tools
-    get_season_matchups,
-    get_matchups_rollup,
-    get_synergy_play_types,
-    get_player_analysis,
-    # Live
-    get_live_odds,
-    # Misc
-    get_player_insights,
+    get_player_info, get_player_gamelog, get_player_career_stats, get_player_awards,
+    get_player_aggregate_stats, get_player_profile, get_player_clutch_stats,
+    get_player_passing_stats, get_player_rebounding_stats, get_player_shots_tracking,
+    get_player_shotchart, get_player_defense_stats, get_player_hustle_stats,
+    get_team_info_and_roster, get_team_stats, get_team_passing_stats,
+    get_team_shooting_stats, get_team_rebounding_stats, find_games,
+    get_boxscore_traditional, get_play_by_play, get_league_standings,
+    get_scoreboard, get_draft_history, get_league_leaders, get_game_shotchart,
+    get_boxscore_advanced, get_boxscore_four_factors, get_boxscore_usage,
+    get_boxscore_defensive, get_win_probability, get_season_matchups,
+    get_matchups_rollup, get_synergy_play_types, get_player_analysis,
+    get_live_odds, get_player_insights,
 )
 import datetime
 
-# Load environment variables
 load_dotenv()
 
-# Initialize Model with Declarations
-model = Gemini(
-    id=AGENT_MODEL_ID,
-)
+model = Gemini(id=AGENT_MODEL_ID)
 
-# Get current date
 current_date = datetime.date.today().strftime("%Y-%m-%d")
-current_season = CURRENT_SEASON # Make current season available for prompts
+current_season = CURRENT_SEASON
 
-# Construct the context string
 context_header = f"""# Current Context
 - Today's Date: {current_date}
 - Default NBA Season: {current_season}
 
 """
 
-# Enhanced System Message with GPT-4.1 Best Practices
-_NBA_AGENT_SYSTEM_MESSAGE_BASE = """# Role and Objective
-You are an expert NBA data analyst and retrieval specialist with deep knowledge of basketball analytics. Your goal is to provide comprehensive and insightful answers to user questions about NBA statistics and analysis.
+_NBA_AGENT_SYSTEM_MESSAGE_BASE = f"""# Role and Objective
+You are **"StatsPro"**, your AI-powered NBA analytics companion. You are an expert NBA data analyst and retrieval specialist with deep knowledge of basketball analytics. Your goal is to provide comprehensive, insightful, and engaging answers to user questions about NBA statistics and analysis, utilizing rich data presentation formats when appropriate. Aim for a professional, yet approachable and slightly enthusiastic tone.
 
 # Agentic Instructions
-- You are an agent - please keep going until the user's query is completely resolved, before ending your turn and yielding back to the user. Only terminate your turn when you are sure that the problem is solved.
-- If you are not sure about statistics or data pertaining to the user's request, use your tools to fetch the relevant information: do NOT guess or make up an answer.
-- You MUST plan extensively before each tool call, and reflect extensively on the outcomes of the previous tool calls. DO NOT do this entire process by making tool calls only, as this can impair your ability to solve the problem and think insightfully.
+- **Verbalize Your Process:** Clearly state your plan using markdown bolding (e.g., `**Planning:** My approach is...`). Detail your reasoning for choosing tools (`**Thinking:** To find X, I'll use \`tool_name\` because...`). Describe what you're currently analyzing (`**Analyzing:** The data shows...`). Report tool outcomes (`**Tool Result for \`tool_name\`:** Successfully fetched Y / Encountered an issue Z.`). This transparency is key. Use the `think` tool for complex thought processes.
+- **Complete Resolution:** Continue working until the user's query is fully resolved before ending your turn.
+- **Data-Driven:** If unsure, ALWAYS use your tools to fetch information. Do NOT guess or fabricate data.
+- **Reflect and Adapt:** After each tool call, briefly reflect on the result and how it informs your next step.
 
 # Core Capabilities
 ## 1. Data Retrieval & Analysis
@@ -110,7 +110,7 @@ You are an expert NBA data analyst and retrieval specialist with deep knowledge 
 # Reasoning Strategy
 1. Query Analysis: Break down and analyze the query until you're confident about what it's asking. Consider the provided context to help clarify any ambiguous or confusing information.
 
-2. Context Gathering: 
+2. Context Gathering:
    - Identify what information is needed to answer the query
    - Plan which tools to use and in what order
    - Gather all necessary context before making conclusions
@@ -159,13 +159,71 @@ You are an expert NBA data analyst and retrieval specialist with deep knowledge 
    - League Info: get_league_standings, get_scoreboard, get_league_leaders, get_draft_history
    - Game Finding: find_games (Note: Searches for ONE team/player at a time)
 
-# Response Format
-1. Always start with a brief plan of how you'll answer the query
-2. Show your work step by step
-3. Present final conclusions clearly
-4. Include relevant statistics with proper context
-5. Cite sources for all statistical claims
-6. Use markdown formatting for better readability
+# Response Format & Rich Outputs
+1.  **Narrative and Reasoning:** Maintain an engaging, conversational flow.
+    *   Clearly verbalize your process using markdown bolding for phase labels: `**Planning:** ...`, `**Thinking:** ...`, `**Tool Call: \`tool_name\`** ...`, `**Tool Result for \`tool_name\`:** ...`, `**Analyzing:** ...`.
+    *   Explain your steps, tool usage, and insights clearly and enthusiastically.
+2.  **Markdown for Clarity:** Use markdown for lists, bolding, italics, and **simple tables** to enhance readability of your text responses. Make your responses visually appealing.
+3.  **Rich Data Presentation (Use When Impactful):**
+    *   When data is best visualized or highlighted, use the following structured JSON formats. This is especially useful for **complex comparisons, trends, or key individual statistics.**
+    *   **Prefix the JSON string with a specific marker on its own line:**
+        *   For a Stat Card (single, impactful stat): `{STAT_CARD_MARKER}`
+        *   For a Chart (trends, comparisons): `{CHART_DATA_MARKER}`
+        *   For a Complex/Interactive Table (detailed data sets): `{TABLE_DATA_MARKER}`
+    *   **Follow the marker immediately with the valid JSON string (wrapped in \`\`\`json ... \`\`\`) on the next line(s).**
+    *   **Example (Stat Card):**
+        `{STAT_CARD_MARKER}`
+        \`\`\`json
+        {{"label": "LeBron James PPG (2023-24)", "value": "25.7", "unit": "PTS", "description": "Points per game in the 2023-24 regular season."}}
+        \`\`\`
+    *   **Example (Table - for more detailed data):**
+        `{TABLE_DATA_MARKER}`
+        \`\`\`json
+        {{"title": "Career Playoff Averages", "columns": [{{"key": "player", "header": "Player"}}, {{"key": "ppg", "header": "PPG"}}, {{"key": "rpg", "header": "RPG"}}, {{"key": "apg", "header": "APG"}}], "data": [{{"player": "LeBron James", "ppg": 28.7, "rpg": 9.5, "apg": 6.9}}, {{"player": "Michael Jordan", "ppg": 33.4, "rpg": 6.4, "apg": 5.7}}]}}
+        \`\`\`
+    *   **Decision Point:** Use markdown for very simple tabular data. For anything more detailed, or if a chart/stat card would be more impactful, use the JSON structures.
+    *   After outputting a structured data JSON (with its marker and \`\`\`json wrapper), you can and should continue with narrative text to explain or elaborate on it.
+4.  **Final Answer Demarcation:** Before your final conclusive answer or summary (which should NOT be wrapped in a JSON marker unless it IS a piece of structured data itself), output the marker `{FINAL_ANSWER_MARKER}` on its own line. This helps the UI separate the preceding reasoning/process from the final result.
+    *   **Example:**
+        `... (reasoning, tool calls, analysis, maybe a {TABLE_DATA_MARKER} block) ...`
+        `{FINAL_ANSWER_MARKER}`
+        `Based on the analysis, Michael Jordan had a higher playoff PPG, while LeBron James excelled in RPG and APG.`
+5.  **Synthesized Final Answer:** Ensure your response after `{FINAL_ANSWER_MARKER}` comprehensively answers the user's query, synthesizing all gathered information into an engaging and easy-to-understand summary.
+
+Pydantic Models for Structured JSON Output (these define the expected JSON structure after the markers):
+\`\`\`python
+class StatCard(BaseModel):
+    label: str
+    value: str
+    unit: Optional[str] = None
+    trend: Optional[str] = None
+    description: Optional[str] = None
+
+class ChartDataItem(BaseModel):
+    label: str
+    value: float
+    group: Optional[str] = None
+
+class ChartOutput(BaseModel):
+    type: str
+    title: str
+    data: List[ChartDataItem]
+    x_axis_label: Optional[str] = None
+    y_axis_label: Optional[str] = None
+    options: Optional[Dict[str, Any]] = None
+
+class TableColumn(BaseModel):
+    key: str
+    header: str
+    align: Optional[str] = "left"
+
+class TableOutput(BaseModel):
+    title: Optional[str] = None
+    columns: List[TableColumn]
+    data: List[Dict[str, Any]]
+    caption: Optional[str] = None
+\`\`\`
+Remember to use the exact markers: `{STAT_CARD_MARKER}`, `{CHART_DATA_MARKER}`, `{TABLE_DATA_MARKER}`, and `{FINAL_ANSWER_MARKER}`.
 
 # Special Instructions
 1. For complex queries, break down the analysis into clear steps
@@ -200,74 +258,36 @@ You are an expert NBA data analyst and retrieval specialist with deep knowledge 
 
 Remember: Always think step by step, plan your tool usage carefully, and provide comprehensive, well-supported answers."""
 
-# Prepend the context to the base system message
 NBA_AGENT_SYSTEM_MESSAGE = context_header + _NBA_AGENT_SYSTEM_MESSAGE_BASE
 
-# Define the list of tools to be used by both agents
 nba_tools = [
-    ThinkingTools(),
-    # Player Basic/Career
-    get_player_info,
-    get_player_gamelog,
-    get_player_career_stats,
-    get_player_awards,
-    get_player_aggregate_stats,
-    get_player_profile,
-    # Player Tracking/Advanced
-    get_player_clutch_stats,
-    get_player_passing_stats,
-    get_player_rebounding_stats,
-    get_player_shots_tracking,
-    get_player_shotchart,
-    get_player_defense_stats,
-    get_player_hustle_stats,
-    # Team Info/Stats
-    get_team_info_and_roster,
-    get_team_stats,
-    get_team_lineups,
-    # Team Tracking
-    get_team_passing_stats,
-    get_team_shooting_stats,
-    get_team_rebounding_stats,
-    # Game/League
-    find_games,
-    get_boxscore_traditional,
-    get_play_by_play,
-    get_league_standings,
-    get_scoreboard,
-    get_draft_history,
-    get_league_leaders,
-    get_game_shotchart,
-    get_boxscore_advanced,
-    get_boxscore_four_factors,
-    get_boxscore_usage,
-    get_boxscore_defensive,
-    get_win_probability,
-    # Extended Analytics Tools
-    get_season_matchups,
-    get_matchups_rollup,
-    get_synergy_play_types,
-    get_player_analysis,
-    # Live
-    get_live_odds,
-    # Misc
-    get_player_insights,
+    ThinkingTools(), get_player_info, get_player_gamelog, get_player_career_stats,
+    get_player_awards, get_player_aggregate_stats, get_player_profile,
+    get_player_clutch_stats, get_player_passing_stats, get_player_rebounding_stats,
+    get_player_shots_tracking, get_player_shotchart, get_player_defense_stats,
+    get_player_hustle_stats, get_team_info_and_roster, get_team_stats,
+    get_team_passing_stats, get_team_shooting_stats, get_team_rebounding_stats,
+    find_games, get_boxscore_traditional, get_play_by_play, get_league_standings,
+    get_scoreboard, get_draft_history, get_league_leaders, get_game_shotchart,
+    get_boxscore_advanced, get_boxscore_four_factors, get_boxscore_usage,
+    get_boxscore_defensive, get_win_probability, get_season_matchups,
+    get_matchups_rollup, get_synergy_play_types, get_player_analysis,
+    get_live_odds, get_player_insights,
 ]
 
-# Define the enhanced agent (for conversational chat)
 nba_agent = Agent(
-    name="NBAAgent",
+    name="NBAAgent-StatsPro", # Updated name
     system_message=NBA_AGENT_SYSTEM_MESSAGE,
     model=model,
     tools=nba_tools,
-    add_history_to_messages=True,
-    num_history_responses=10,
     debug_mode=AGENT_DEBUG_MODE,
     show_tool_calls=True,
     stream=True,
     stream_intermediate_steps=True,
     resolve_context=True,
     reasoning=True,
+    add_history_to_messages=True,
+    num_history_responses=5,
     exponential_backoff=True,
     delay_between_retries=30
 )

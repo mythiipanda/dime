@@ -8,7 +8,7 @@ import PlayersClientPage from "./PlayersClientPage";
 // Update function signature to use imported PlayerData type
 async function fetchPlayerData(playerName: string): Promise<{ data: PlayerData | null, error: string | null }> {
   console.log(`Fetching server-side profile for: ${playerName}`);
-  const profileUrl = `${API_BASE_URL}/players/profile?player_name=${encodeURIComponent(playerName)}`;
+  const profileUrl = `${API_BASE_URL}/player/profile?player_name=${encodeURIComponent(playerName)}`; // Corrected: /player instead of /players
   try {
     const profileResponse = await fetch(profileUrl, { cache: 'no-store' }); // Consider caching strategy
 
@@ -45,7 +45,7 @@ async function fetchPlayerData(playerName: string): Promise<{ data: PlayerData |
 
 // Function to fetch headshot URL
 async function fetchHeadshotUrl(playerId: number): Promise<string | null> {
-    const headshotUrlPath = `${API_BASE_URL}/players/player/${playerId}/headshot`;
+    const headshotUrlPath = `${API_BASE_URL}/player/${playerId}/headshot`; // Corrected: /player instead of /players/player
     console.log(`Fetching server-side headshot from: ${headshotUrlPath}`);
     try {
         const headshotResponse = await fetch(headshotUrlPath, { cache: 'no-store' }); // Consider caching
