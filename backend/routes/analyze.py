@@ -6,7 +6,7 @@ from typing import Dict, Any # Removed Optional as it's handled by Pydantic mode
 # Use the correctly defined PlayerAnalysisRequest from schemas.py
 from backend.schemas import PlayerAnalysisRequest # Changed from AnalyzeRequest
 from backend.api_tools.analyze import analyze_player_stats_logic
-from backend.config import Errors
+from backend.core.errors import Errors # Changed
 
 # Router for player analysis related endpoints
 # No prefix here, as it's applied in main.py (e.g., /api/v1/analyze)

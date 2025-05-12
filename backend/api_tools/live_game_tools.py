@@ -1,12 +1,12 @@
-from typing import Dict, List, Optional, TypedDict, Any, Tuple
+from typing import Dict, List, Optional, TypedDict, Any
 from nba_api.live.nba.endpoints import scoreboard
-from datetime import datetime, timedelta
-import json
+from datetime import datetime
 import logging
-from functools import lru_cache # Added
+from functools import lru_cache
 
-from backend.config import DEFAULT_TIMEOUT, Errors
-from backend.api_tools.utils import format_response # Keep format_response
+from backend.config import settings
+from backend.core.errors import Errors
+from backend.api_tools.utils import format_response
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ def get_cached_scoreboard_data(
     """
     logger.info(f"Cache miss or expiry for live scoreboard - fetching new data")
     try:
-        board = scoreboard.ScoreBoard(timeout=DEFAULT_TIMEOUT)
+        board = scoreboard.ScoreBoard(timeout=settings.DEFAULT_TIMEOUT_SECONDS) # Changed
         # Return the raw dictionary, processing happens in main logic
         return board.get_dict()
     except Exception as e:
@@ -65,27 +65,30 @@ def get_cached_scoreboard_data(
 # --- Main Logic Function ---
 def fetch_league_scoreboard_logic(bypass_cache: bool = False) -> str: # Return JSON string
     """
-    Fetches live scoreboard data for current NBA games and formats it.
+    Fetches live scoreboard data for current NBA games and formats it using nba_api's live ScoreBoard endpoint.
 
     Args:
-        bypass_cache (bool): If True, ignores cached data. Defaults to False.
+        bypass_cache (bool): If True, ignores cached data and fetches fresh data. Defaults to False.
 
     Returns:
-        str: JSON string containing current game information or an error message.
-             Structure includes 'gameDate' and a 'games' list. See implementation for game details.
+        str: JSON-formatted string containing current game information or an error message.
+            Structure includes 'gameDate' and a 'games' list, where each game contains IDs, status, teams, scores, and start time.
+
+    Notes:
+        - Uses a short TTL cache for live data, but can be bypassed for real-time updates.
+        - Returns an error if the API call fails or data cannot be processed.
+        - Each game includes home/away team info, scores, status, and clock/period if live.
     """
     logger.info("Executing fetch_league_scoreboard_logic to fetch and format live data")
 
     cache_key = "live_scoreboard"
-    # Use hourly timestamp for cache invalidation via lru_cache
-    # Note: Actual data might be stale for up to an hour due to this,
-    # despite the short intended TTL. Consider a different caching strategy if needed.
-    cache_timestamp = datetime.now().replace(minute=0, second=0, microsecond=0).isoformat()
+    # Create timestamp buckets based on CACHE_TTL_SECONDS for more frequent invalidation
+    cache_timestamp = str(int(datetime.now().timestamp() // CACHE_TTL_SECONDS))
 
     try:
         if bypass_cache:
             logger.info("Bypassing cache, fetching fresh scoreboard data.")
-            board = scoreboard.ScoreBoard(timeout=DEFAULT_TIMEOUT)
+            board = scoreboard.ScoreBoard(timeout=settings.DEFAULT_TIMEOUT_SECONDS) # Changed
             raw_data = board.get_dict()
         else:
             raw_data = get_cached_scoreboard_data(cache_key=cache_key, timestamp=cache_timestamp)
@@ -148,10 +151,9 @@ def fetch_league_scoreboard_logic(bypass_cache: bool = False) -> str: # Return J
         }
 
         logger.info(f"fetch_league_scoreboard_logic formatted {len(formatted_games)} games")
-        return format_response(result) # Use format_response
+        return format_response(result)
 
     except Exception as e:
         logger.error(f"Error fetching/formatting scoreboard data: {str(e)}", exc_info=True)
-        # Use specific error constant
         error_msg = Errors.LEAGUE_SCOREBOARD_UNEXPECTED.format(game_date=datetime.now().strftime('%Y-%m-%d'), error=str(e)) if hasattr(Errors, 'LEAGUE_SCOREBOARD_UNEXPECTED') else f"Unexpected error fetching scoreboard: {e}"
         return format_response(error=error_msg)

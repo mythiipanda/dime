@@ -1,19 +1,22 @@
 import logging
 import json
-# import re # Not used
-# import time # Not used directly by lru_cache for time expiry, timestamp trick is used
-from datetime import datetime #, timedelta # timedelta not used
-from typing import Dict, Any, List, Tuple, Optional
+from datetime import datetime
+from typing import Any, Tuple
 from functools import lru_cache
 
-from nba_api.stats.library.parameters import SeasonTypeAllStar, LeagueID # Added LeagueID for clarity
-from backend.api_tools.league_tools import fetch_league_standings_logic
-from backend.config import CURRENT_SEASON, Errors
-from backend.api_tools.utils import format_response, _validate_season_format
-
+from nba_api.stats.library.parameters import SeasonTypeAllStar, LeagueID
+from backend.api_tools.league_standings import fetch_league_standings_logic
+from backend.config import settings
+from backend.core.errors import Errors
+from backend.api_tools.utils import format_response
+from backend.utils.validation import _validate_season_format
 logger = logging.getLogger(__name__)
 
 CACHE_TTL_SECONDS_TRENDING_TEAMS = 3600 * 4 # Cache standings for trending teams for 4 hours
+
+# Module-level constants for validation
+_TRENDING_TEAMS_VALID_SEASON_TYPES = {getattr(SeasonTypeAllStar, attr) for attr in dir(SeasonTypeAllStar) if not attr.startswith('_') and isinstance(getattr(SeasonTypeAllStar, attr), str)}
+_TRENDING_TEAMS_VALID_LEAGUE_IDS = {getattr(LeagueID, attr) for attr in dir(LeagueID) if not attr.startswith('_') and isinstance(getattr(LeagueID, attr), str)}
 
 @lru_cache(maxsize=16) # Cache a few common season/type combinations
 def get_cached_standings_for_trending_teams( # Renamed for clarity
@@ -44,9 +47,10 @@ def get_cached_standings_for_trending_teams( # Renamed for clarity
         # Prepare arguments specifically for fetch_league_standings_logic
         standings_logic_args = {
             "season": kwargs.get("season"),
-            "season_type": kwargs.get("season_type")
+            "season_type": kwargs.get("season_type"),
+            "league_id": kwargs.get("league_id") # Ensure league_id is passed through
         }
-        # Filter out None values in case some expected args are not in kwargs, though 'season' and 'season_type' should be.
+        # Filter out None values to rely on defaults in fetch_league_standings_logic if not provided
         standings_logic_args = {k: v for k, v in standings_logic_args.items() if v is not None}
         
         return fetch_league_standings_logic(**standings_logic_args)
@@ -56,7 +60,7 @@ def get_cached_standings_for_trending_teams( # Renamed for clarity
 
 @lru_cache(maxsize=64) # Cache the final processed list of top teams
 def fetch_top_teams_logic(
-    season: str = CURRENT_SEASON,
+    season: str = settings.CURRENT_NBA_SEASON, # Changed
     season_type: str = SeasonTypeAllStar.regular,
     league_id: str = LeagueID.nba, # Added league_id parameter
     top_n: int = 5,
@@ -109,13 +113,11 @@ def fetch_top_teams_logic(
         error_msg = Errors.INVALID_TOP_N.format(value=top_n)
         return format_response(error=error_msg)
 
-    VALID_SEASON_TYPES = {getattr(SeasonTypeAllStar, attr) for attr in dir(SeasonTypeAllStar) if not attr.startswith('_') and isinstance(getattr(SeasonTypeAllStar, attr), str)}
-    if season_type not in VALID_SEASON_TYPES:
-        return format_response(error=Errors.INVALID_SEASON_TYPE.format(value=season_type, options=", ".join(VALID_SEASON_TYPES)))
+    if season_type not in _TRENDING_TEAMS_VALID_SEASON_TYPES:
+        return format_response(error=Errors.INVALID_SEASON_TYPE.format(value=season_type, options=", ".join(list(_TRENDING_TEAMS_VALID_SEASON_TYPES)[:5])))
     
-    VALID_LEAGUE_IDS = {getattr(LeagueID, attr) for attr in dir(LeagueID) if not attr.startswith('_') and isinstance(getattr(LeagueID, attr), str)}
-    if league_id not in VALID_LEAGUE_IDS:
-        return format_response(error=Errors.INVALID_LEAGUE_ID.format(value=league_id, options=", ".join(VALID_LEAGUE_IDS)))
+    if league_id not in _TRENDING_TEAMS_VALID_LEAGUE_IDS:
+        return format_response(error=Errors.INVALID_LEAGUE_ID.format(value=league_id, options=", ".join(list(_TRENDING_TEAMS_VALID_LEAGUE_IDS)[:3])))
 
 
     cache_key_for_standings = (season, season_type, league_id) # Key for fetching standings

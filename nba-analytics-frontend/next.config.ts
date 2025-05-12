@@ -5,9 +5,9 @@ const nextConfig: NextConfig = {
   async rewrites() {
     return [
       {
-        source: '/api/:path*',
-        // Proxy to local backend running on port 8000
-        destination: 'http://localhost:8000/:path*',
+        source: '/api/:path*', // Matches any request starting with /api/
+        // Proxy to local backend running on port 8000, preserving the /api part of the path
+        destination: 'http://localhost:8000/api/:path*',
       },
     ]
   },

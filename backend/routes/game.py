@@ -4,19 +4,23 @@ from fastapi import APIRouter, HTTPException, Query, Path # Added Path
 from typing import Dict, Any, Optional
 import json
 
-from backend.api_tools.game_tools import (
-    fetch_boxscore_traditional_logic, # Aliased as fetch_game_boxscore_logic in original endpoint
-    fetch_playbyplay_logic,           # Aliased as fetch_game_playbyplay_logic
-    fetch_shotchart_logic,            # Aliased as fetch_game_shotchart_logic
+# Updated imports for modularized game logic
+from backend.api_tools.game_boxscores import (
+    fetch_boxscore_traditional_logic,
     fetch_boxscore_advanced_logic,
     fetch_boxscore_four_factors_logic,
     fetch_boxscore_usage_logic,
-    fetch_boxscore_defensive_logic,
-    fetch_win_probability_logic
-    # fetch_league_games_logic is used by /find endpoint, which might be in a different route file (e.g., league.py or search.py)
+    fetch_boxscore_defensive_logic
 )
+from backend.api_tools.game_playbyplay import fetch_playbyplay_logic
+from backend.api_tools.game_visuals_analytics import (
+    fetch_shotchart_logic,
+    fetch_win_probability_logic
+)
+# fetch_league_games_logic is now in game_finder.py and likely used by a different route or tool.
+
 import backend.api_tools.utils as api_utils
-from backend.config import Errors # Removed DEFAULT_TIMEOUT, CURRENT_SEASON as not directly used
+from backend.core.errors import Errors
 
 router = APIRouter(
     prefix="/game", # Add prefix for all routes in this file
@@ -38,14 +42,13 @@ async def _handle_logic_call(logic_function: callable, *args, **kwargs) -> Dict[
             raise HTTPException(status_code=status_code, detail=error_detail)
         return result_data
     except HTTPException as http_exc:
-        raise http_exc # Re-raise if it's already an HTTPException
+        raise http_exc
     except json.JSONDecodeError as json_err:
         logger.error(f"Failed to parse JSON response from {logic_function.__name__} for args {args}: {json_err}", exc_info=True)
         raise HTTPException(status_code=500, detail=Errors.JSON_PROCESSING_ERROR)
     except Exception as e:
-        # Log the specific function and arguments for better debugging
         func_name = logic_function.__name__
-        log_args = args[:2] # Log first few args to avoid overly long log lines
+        log_args = args[:2]
         logger.critical(f"Unexpected error in API route calling {func_name} with args {log_args}: {str(e)}", exc_info=True)
         error_msg_template = getattr(Errors, 'UNEXPECTED_ERROR', "An unexpected server error occurred: {error}")
         detail_msg = error_msg_template.format(error=f"processing game data via {func_name}")
@@ -57,7 +60,7 @@ async def _handle_logic_call(logic_function: callable, *args, **kwargs) -> Dict[
     summary="Get Traditional Box Score for a Game",
     description="Fetches the traditional box score (points, rebounds, assists, etc.) for a specified NBA game ID. "
                 "Data includes player stats, team stats, and starter/bench splits.",
-    response_model=Dict[str, Any] # Explicitly define response model for OpenAPI
+    response_model=Dict[str, Any]
 )
 async def get_game_boxscore_traditional(
     game_id: str = Path(..., description="The 10-digit ID of the NBA game (e.g., '0022300161').", regex=r"^\d{10}$")
@@ -80,7 +83,6 @@ async def get_game_boxscore_traditional(
     - 500 Internal Server Error: For other processing issues.
     """
     logger.info(f"Received GET /game/boxscore/traditional/{game_id} request.")
-    # game_id format is validated by regex in Path parameter
     return await _handle_logic_call(fetch_boxscore_traditional_logic, game_id)
 
 @router.get(
@@ -214,10 +216,4 @@ async def get_win_probability(
     """Endpoint to get win probability data. Uses `fetch_win_probability_logic`."""
     logger.info(f"Received GET /game/winprobability/{game_id}")
     # fetch_win_probability_logic takes an optional run_type, defaulting to "0".
-    # If this needs to be exposed, add a Query parameter.
     return await _handle_logic_call(fetch_win_probability_logic, game_id)
-
-# Note: The /find endpoint (LeagueGameFinder) is typically more of a league/search utility.
-# If it's intended to be part of game-specific routes, it can be added here.
-# Otherwise, it might belong in a separate `league.py` or `search.py` router.
-# For now, assuming it's handled elsewhere or will be added if requested.

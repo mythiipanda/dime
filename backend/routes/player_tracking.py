@@ -1,17 +1,17 @@
 import logging
 import asyncio
 from fastapi import APIRouter, HTTPException, Query, Path
-from typing import Dict, Any, Optional, List 
+from typing import Dict, Any, Optional
 import json
-import re # Import re for escaping regex patterns
+import re
 
-from backend.api_tools.player_tracking import (
-    fetch_player_clutch_stats_logic,
-    fetch_player_shots_tracking_logic,
-    fetch_player_rebounding_stats_logic,
-    fetch_player_passing_stats_logic
-)
-from backend.config import Errors, CURRENT_SEASON
+from backend.api_tools.player_clutch import fetch_player_clutch_stats_logic
+from backend.api_tools.player_shooting_tracking import fetch_player_shots_tracking_logic
+from backend.api_tools.player_rebounding import fetch_player_rebounding_stats_logic
+from backend.api_tools.player_passing import fetch_player_passing_stats_logic
+
+from backend.core.errors import Errors
+from backend.config import settings
 
 router = APIRouter(
     prefix="/player", 
@@ -19,9 +19,7 @@ router = APIRouter(
 )
 logger = logging.getLogger(__name__)
 
-# Define the season regex pattern dynamically and safely
-# This pattern allows either "YYYY-YY" format or the exact CURRENT_SEASON string
-season_regex_pattern = r"(^\d{4}-\d{2}$)|(^" + re.escape(CURRENT_SEASON) + r"$)"
+season_regex_pattern = r"(^\d{4}-\d{2}$)|(^" + re.escape(settings.CURRENT_NBA_SEASON) + r"$)"
 
 async def _handle_tracking_logic_call(
     logic_function: callable,
@@ -70,7 +68,7 @@ async def _handle_tracking_logic_call(
 )
 async def get_all_player_tracking_stats(
     player_name: str = Path(..., description="Full name of the player (e.g., 'LeBron James')."),
-    season: Optional[str] = Query(None, description=f"NBA season in YYYY-YY format (e.g., '2023-24'). Defaults to {CURRENT_SEASON} in logic if not provided.", regex=r"^\d{4}-\d{2}$"), # Standard season format for this combined endpoint
+    season: Optional[str] = Query(None, description=f"NBA season in YYYY-YY format (e.g., '2023-24'). Defaults to {settings.CURRENT_NBA_SEASON} in logic if not provided.", regex=r"^\d{4}-\d{2}$"), # Changed
     season_type: Optional[str] = Query(None, description="Type of season (e.g., 'Regular Season', 'Playoffs'). Defaults to 'Regular Season' in logic."),
     measure_type_clutch: Optional[str] = Query(None, description="Measure type for clutch stats (e.g., 'Base', 'Advanced')."),
     per_mode_clutch: Optional[str] = Query(None, description="Per mode for clutch stats (e.g., 'Totals', 'PerGame')."),
@@ -126,7 +124,7 @@ async def get_all_player_tracking_stats(
 )
 async def get_player_clutch_stats_endpoint(
     player_name: str = Path(..., description="Full name of the player."),
-    season: Optional[str] = Query(None, description=f"Season (YYYY-YY or '{CURRENT_SEASON}'). Defaults to {CURRENT_SEASON} in logic.", regex=season_regex_pattern, example="2023-24"),
+    season: Optional[str] = Query(None, description=f"Season (YYYY-YY or '{settings.CURRENT_NBA_SEASON}'). Defaults to {settings.CURRENT_NBA_SEASON} in logic.", regex=season_regex_pattern, example="2023-24"), # Changed
     season_type: Optional[str] = Query(None, description="Season type (e.g., 'Regular Season', 'Playoffs'). Logic default: 'Regular Season'."),
     measure_type: Optional[str] = Query(None, description="Measure type (e.g., 'Base', 'Advanced'). Logic default: 'Base'."),
     per_mode: Optional[str] = Query(None, description="Per mode (e.g., 'Totals', 'PerGame'). Logic default: 'Totals'."),
@@ -155,11 +153,11 @@ async def get_player_clutch_stats_endpoint(
 )
 async def get_player_shots_tracking_endpoint(
     player_name: str = Path(..., description="Full name of the player."),
-    season: Optional[str] = Query(None, description=f"Season (YYYY-YY or '{CURRENT_SEASON}'). Defaults to {CURRENT_SEASON} in logic.", regex=season_regex_pattern, example="2023-24"),
+    season: Optional[str] = Query(None, description=f"Season (YYYY-YY or '{settings.CURRENT_NBA_SEASON}'). Defaults to {settings.CURRENT_NBA_SEASON} in logic.", regex=season_regex_pattern, example="2023-24"), # Changed
     season_type: Optional[str] = Query(None, description="Season type. Logic default: 'Regular Season'."),
     opponent_team_id: Optional[int] = Query(0, description="Filter by opponent team ID. Default: 0 (all).", ge=0),
-    date_from: Optional[str] = Query(None, description="Start date (YYYY-MM-DD).", pattern=r"^\d{4}-\d{2}-\d{2}$"), # Corrected regex
-    date_to: Optional[str] = Query(None, description="End date (YYYY-MM-DD).", pattern=r"^\d{4}-\d{2}-\d{2}$") # Corrected regex
+    date_from: Optional[str] = Query(None, description="Start date (YYYY-MM-DD).", pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    date_to: Optional[str] = Query(None, description="End date (YYYY-MM-DD).", pattern=r"^\d{4}-\d{2}-\d{2}$")
 ) -> Dict[str, Any]:
     logger.info(f"Received GET /player/{player_name}/tracking/shots, Season: {season}")
     shots_kwargs = {
@@ -176,7 +174,7 @@ async def get_player_shots_tracking_endpoint(
 )
 async def get_player_rebounding_stats_endpoint(
     player_name: str = Path(..., description="Full name of the player."),
-    season: Optional[str] = Query(None, description=f"Season (YYYY-YY or '{CURRENT_SEASON}'). Defaults to {CURRENT_SEASON} in logic.", regex=season_regex_pattern, example="2023-24"),
+    season: Optional[str] = Query(None, description=f"Season (YYYY-YY or '{settings.CURRENT_NBA_SEASON}'). Defaults to {settings.CURRENT_NBA_SEASON} in logic.", regex=season_regex_pattern, example="2023-24"), # Changed
     season_type: Optional[str] = Query(None, description="Season type. Logic default: 'Regular Season'."),
     per_mode: Optional[str] = Query(None, description="Per mode (e.g., 'PerGame', 'Totals'). Logic default: 'PerGame'.")
 ) -> Dict[str, Any]:
@@ -192,7 +190,7 @@ async def get_player_rebounding_stats_endpoint(
 )
 async def get_player_passing_stats_endpoint(
     player_name: str = Path(..., description="Full name of the player."),
-    season: Optional[str] = Query(None, description=f"Season (YYYY-YY or '{CURRENT_SEASON}'). Defaults to {CURRENT_SEASON} in logic.", regex=season_regex_pattern, example="2023-24"),
+    season: Optional[str] = Query(None, description=f"Season (YYYY-YY or '{settings.CURRENT_NBA_SEASON}'). Defaults to {settings.CURRENT_NBA_SEASON} in logic.", regex=season_regex_pattern, example="2023-24"), # Changed
     season_type: Optional[str] = Query(None, description="Season type. Logic default: 'Regular Season'."),
     per_mode: Optional[str] = Query(None, description="Per mode (e.g., 'PerGame', 'Totals'). Logic default: 'PerGame'.")
 ) -> Dict[str, Any]:

@@ -1,25 +1,29 @@
 import json
 import logging
-# from datetime import datetime, timedelta # timedelta not used, datetime used for timestamp
 from datetime import datetime
 import pandas as pd
-from typing import Dict, List, Optional, Tuple, Any, Type # Added Type for endpoint_class
+from typing import Dict, Tuple, Any, Type
 from functools import lru_cache
 
 from nba_api.stats.endpoints import LeagueSeasonMatchups, MatchupsRollup
 from nba_api.stats.library.parameters import SeasonTypeAllStar
-from backend.config import CURRENT_SEASON, DEFAULT_TIMEOUT, Errors
-from backend.api_tools.utils import format_response, _process_dataframe, _validate_season_format, find_player_id_or_error, PlayerNotFoundError # Added find_player_id_or_error, PlayerNotFoundError
-
+from backend.config import settings
+from backend.core.errors import Errors
+from backend.api_tools.utils import format_response, _process_dataframe, find_player_id_or_error, PlayerNotFoundError # _validate_season_format moved
+from backend.utils.validation import _validate_season_format
 logger = logging.getLogger(__name__)
 
 CACHE_TTL_SECONDS_MATCHUPS = 3600 * 6 # Cache matchup data for 6 hours
 
+# Module-level constant for valid season types
+# LeagueSeasonMatchups endpoint uses season_type_playoffs which accepts Regular Season, Pre Season, Playoffs
+_MATCHUP_VALID_SEASON_TYPES = {SeasonTypeAllStar.regular, SeasonTypeAllStar.preseason, SeasonTypeAllStar.playoffs}
+
 @lru_cache(maxsize=128)
-def get_cached_matchups_data( # Renamed for clarity
+def get_cached_matchups_data(
     cache_key: Tuple,
     timestamp: str,
-    endpoint_class: Type[Any], # Specify it's a type (e.g., LeagueSeasonMatchups)
+    endpoint_class: Type[Any],
     **kwargs: Any
 ) -> Dict[str, Any]:
     """
@@ -42,7 +46,7 @@ def get_cached_matchups_data( # Renamed for clarity
     """
     logger.info(f"Cache miss/expiry for {endpoint_class.__name__} - fetching new data. Key components: {kwargs}")
     try:
-        endpoint_instance = endpoint_class(**kwargs, timeout=DEFAULT_TIMEOUT)
+        endpoint_instance = endpoint_class(**kwargs, timeout=settings.DEFAULT_TIMEOUT_SECONDS) # Changed
         return endpoint_instance.get_dict()
     except Exception as e:
         logger.error(f"{endpoint_class.__name__} API call failed: {e}", exc_info=True)
@@ -52,55 +56,28 @@ def get_cached_matchups_data( # Renamed for clarity
 def fetch_league_season_matchups_logic(
     def_player_identifier: str, # Can be name or ID string
     off_player_identifier: str, # Can be name or ID string
-    season: str = CURRENT_SEASON,
+    season: str = settings.CURRENT_NBA_SEASON, # Changed
     season_type: str = SeasonTypeAllStar.regular,
-    # per_mode is not a direct param for LeagueSeasonMatchups, but could be for future processing
     bypass_cache: bool = False
 ) -> str:
     """
-    Fetches season matchup statistics between two specific players (one defensive, one offensive).
+    Fetches season matchup statistics between two specific players (one defensive, one offensive) using nba_api's LeagueSeasonMatchups endpoint.
     Player identifiers can be names or IDs; they will be resolved to IDs.
 
     Args:
         def_player_identifier (str): The name or ID of the defensive player.
         off_player_identifier (str): The name or ID of the offensive player.
-        season (str, optional): The NBA season identifier in YYYY-YY format (e.g., "2023-24").
-                                Defaults to `CURRENT_SEASON`.
-        season_type (str, optional): The type of season. Valid values from `SeasonTypeAllStar`
-                                     (e.g., "Regular Season", "Playoffs"). Defaults to "Regular Season".
-        bypass_cache (bool, optional): If True, ignores cached data and fetches fresh data.
-                                       Defaults to False.
+        season (str, optional): The NBA season identifier in YYYY-YY format (e.g., "2023-24"). Defaults to CURRENT_SEASON.
+        season_type (str, optional): The type of season. Valid values from SeasonTypeAllStar (e.g., "Regular Season", "Playoffs"). Defaults to "Regular Season".
+        bypass_cache (bool, optional): If True, ignores cached data and fetches fresh data. Defaults to False.
 
     Returns:
-        str: JSON string with matchup data.
-             Expected dictionary structure passed to format_response:
-             {
-                 "def_player_id": int,
-                 "def_player_name": str,
-                 "off_player_id": int,
-                 "off_player_name": str,
-                 "parameters": {"season": str, "season_type": str},
-                 "matchups": [ // List of matchup stats, usually one entry per game or aggregated
-                     {
-                         "SEASON_ID": str,
-                         "DEF_PLAYER_ID": int, "DEF_PLAYER_NAME": str,
-                         "OFF_PLAYER_ID": int, "OFF_PLAYER_NAME": str,
-                         "GP": int, // Games played in this matchup
-                         "MATCHUP_MIN": Optional[str], // Time in M:S format
-                         "PLAYER_PTS": Optional[int], // Points scored by offensive player when guarded by defensive player
-                         "TEAM_PTS": Optional[int], // Points scored by offensive player's team during matchup
-                         "MATCHUP_AST": Optional[int], "MATCHUP_TOV": Optional[int],
-                         "MATCHUP_BLK": Optional[int], "MATCHUP_STL": Optional[int],
-                         "MATCHUP_FGM": Optional[int], "MATCHUP_FGA": Optional[int], "MATCHUP_FG_PCT": Optional[float],
-                         "MATCHUP_FG3M": Optional[int], "MATCHUP_FG3A": Optional[int], "MATCHUP_FG3_PCT": Optional[float],
-                         "MATCHUP_FTM": Optional[int], "MATCHUP_FTA": Optional[int], "MATCHUP_FT_PCT": Optional[float],
-                         "HELP_BLK": Optional[int], "HELP_FGM": Optional[int], "HELP_FGA": Optional[int], "HELP_FG_PCT": Optional[float],
-                         ... // Other fields from LeagueSeasonMatchups endpoint
-                     }, ...
-                 ]
-             }
-             Returns {"matchups": []} if no data is found.
-             Or an {'error': 'Error message'} object if a critical issue occurs.
+        str: JSON-formatted string with matchup data or an error message. Structure includes player IDs/names, parameters, and a list of matchup stats.
+
+    Notes:
+        - Returns an error for missing/invalid player identifiers or season format.
+        - Returns an empty list if no matchup data is found.
+        - Each matchup includes detailed stats for the defensive vs offensive player pairing.
     """
     logger.info(f"Fetching season matchups: Def '{def_player_identifier}' vs Off '{off_player_identifier}' for {season}, Type: {season_type}")
 
@@ -109,9 +86,8 @@ def fetch_league_season_matchups_logic(
     if not season or not _validate_season_format(season):
         return format_response(error=Errors.INVALID_SEASON_FORMAT.format(season=season))
 
-    VALID_SEASON_TYPES = {getattr(SeasonTypeAllStar, attr) for attr in dir(SeasonTypeAllStar) if not attr.startswith('_') and isinstance(getattr(SeasonTypeAllStar, attr), str)}
-    if season_type not in VALID_SEASON_TYPES:
-        return format_response(error=Errors.INVALID_SEASON_TYPE.format(value=season_type, options=", ".join(VALID_SEASON_TYPES)))
+    if season_type not in _MATCHUP_VALID_SEASON_TYPES: # Use module-level constant
+        return format_response(error=Errors.INVALID_SEASON_TYPE.format(value=season_type, options=", ".join(list(_MATCHUP_VALID_SEASON_TYPES)[:5]))) # Show some options
 
     try:
         def_player_id_resolved, def_player_name_resolved = find_player_id_or_error(def_player_identifier)
@@ -128,15 +104,16 @@ def fetch_league_season_matchups_logic(
         "def_player_id_nullable": str(def_player_id_resolved), # API expects string IDs
         "off_player_id_nullable": str(off_player_id_resolved),
         "season": season,
-        "season_type_playoffs": season_type # API endpoint uses this parameter name
+        "season_type_playoffs": season_type
     }
 
     try:
         response_dict_matchups: Dict[str, Any]
-        # Don't cache heavily for current season as data might change frequently
-        if bypass_cache or season == CURRENT_SEASON:
+        endpoint_instance = None # Initialize to None
+
+        if bypass_cache or season == settings.CURRENT_NBA_SEASON:
             logger.info(f"Fetching fresh season matchup data (Bypass: {bypass_cache}, Season: {season})")
-            endpoint_instance = LeagueSeasonMatchups(**api_params_matchups, timeout=DEFAULT_TIMEOUT)
+            endpoint_instance = LeagueSeasonMatchups(**api_params_matchups, timeout=settings.DEFAULT_TIMEOUT_SECONDS)
             response_dict_matchups = endpoint_instance.get_dict()
         else:
             response_dict_matchups = get_cached_matchups_data(
@@ -144,26 +121,36 @@ def fetch_league_season_matchups_logic(
                 endpoint_class=LeagueSeasonMatchups, **api_params_matchups
             )
 
-        result_set_data = None
-        if 'resultSets' in response_dict_matchups and isinstance(response_dict_matchups['resultSets'], list):
-            # The endpoint should have one primary result set for matchups.
-            # If the name is known (e.g., 'SeasonMatchups'), use it. Otherwise, assume the first.
-            for rs_item in response_dict_matchups['resultSets']:
-                if rs_item.get('name') == 'SeasonMatchups': # Adjust if API name differs
-                    result_set_data = rs_item
-                    break
-            if not result_set_data and len(response_dict_matchups['resultSets']) > 0:
-                result_set_data = response_dict_matchups['resultSets'][0] # Fallback
+        matchups_df = pd.DataFrame()
+        # Try direct attribute access if endpoint_instance was created (i.e., not from cache that returns dict)
+        if endpoint_instance and hasattr(endpoint_instance, 'season_matchups') and hasattr(endpoint_instance.season_matchups, 'get_data_frame'):
+            matchups_df = endpoint_instance.season_matchups.get_data_frame()
+            logger.debug(f"Successfully accessed 'season_matchups' dataset directly for Def {def_player_name_resolved} vs Off {off_player_name_resolved}.")
+        else: # Fallback to parsing resultSets from response_dict_matchups (either from live get_dict() or cached dict)
+            logger.warning("Attempting fallback to 'resultSets' for LeagueSeasonMatchups. Direct attribute access preferred if endpoint_instance was used.")
+            result_set_data_fallback = None
+            # response_dict_matchups will always be populated here, either from live call or cache
+            if 'resultSets' in response_dict_matchups and isinstance(response_dict_matchups['resultSets'], list):
+                for rs_item in response_dict_matchups['resultSets']:
+                    if rs_item.get('name') == 'SeasonMatchups':
+                        result_set_data_fallback = rs_item
+                        break
+                if not result_set_data_fallback and len(response_dict_matchups['resultSets']) > 0:
+                    logger.warning("Dataset 'SeasonMatchups' not found by name, using first result set as fallback.")
+                    result_set_data_fallback = response_dict_matchups['resultSets'][0]
+            
+            if result_set_data_fallback and result_set_data_fallback.get('rowSet') and result_set_data_fallback.get('headers'):
+                matchups_df = pd.DataFrame(result_set_data_fallback['rowSet'], columns=result_set_data_fallback['headers'])
 
-        if not result_set_data or not result_set_data.get('rowSet'):
-            logger.warning(f"No matchup data found for Def {def_player_name_resolved} vs Off {off_player_name_resolved} in {season}.")
+        if matchups_df.empty:
+            logger.warning(f"No matchup data found (or DataFrame is empty) for Def {def_player_name_resolved} vs Off {off_player_name_resolved} in {season}.")
             return format_response({
                 "def_player_id": def_player_id_resolved, "def_player_name": def_player_name_resolved,
                 "off_player_id": off_player_id_resolved, "off_player_name": off_player_name_resolved,
                 "parameters": {"season": season, "season_type": season_type}, "matchups": []
             })
 
-        matchups_list = _process_dataframe(pd.DataFrame(result_set_data['rowSet'], columns=result_set_data['headers']), single_row=False)
+        matchups_list = _process_dataframe(matchups_df, single_row=False)
         if matchups_list is None:
             logger.error(f"DataFrame processing failed for season matchups Def {def_player_name_resolved} vs Off {off_player_name_resolved} ({season}).")
             return format_response(error=Errors.MATCHUPS_PROCESSING)
@@ -184,10 +171,9 @@ def fetch_league_season_matchups_logic(
 
 @lru_cache(maxsize=128)
 def fetch_matchups_rollup_logic(
-    def_player_identifier: str, # Can be name or ID string
-    season: str = CURRENT_SEASON,
+    def_player_identifier: str,
+    season: str = settings.CURRENT_NBA_SEASON,
     season_type: str = SeasonTypeAllStar.regular,
-    # per_mode is not a direct param for MatchupsRollup, but could be for future processing
     bypass_cache: bool = False
 ) -> str:
     """
@@ -229,9 +215,8 @@ def fetch_matchups_rollup_logic(
     if not season or not _validate_season_format(season):
         return format_response(error=Errors.INVALID_SEASON_FORMAT.format(season=season))
 
-    VALID_SEASON_TYPES = {getattr(SeasonTypeAllStar, attr) for attr in dir(SeasonTypeAllStar) if not attr.startswith('_') and isinstance(getattr(SeasonTypeAllStar, attr), str)}
-    if season_type not in VALID_SEASON_TYPES:
-        return format_response(error=Errors.INVALID_SEASON_TYPE.format(value=season_type, options=", ".join(VALID_SEASON_TYPES)))
+    if season_type not in _MATCHUP_VALID_SEASON_TYPES: # Use module-level constant
+        return format_response(error=Errors.INVALID_SEASON_TYPE.format(value=season_type, options=", ".join(list(_MATCHUP_VALID_SEASON_TYPES)[:5]))) # Show some options
 
     try:
         def_player_id_resolved, def_player_name_resolved = find_player_id_or_error(def_player_identifier)
@@ -246,40 +231,52 @@ def fetch_matchups_rollup_logic(
     api_params_rollup = {
         "def_player_id_nullable": str(def_player_id_resolved),
         "season": season,
-        "season_type_playoffs": season_type # API endpoint uses this parameter name
-        # off_player_id_nullable is not used for rollup
+        "season_type_playoffs": season_type
     }
 
     try:
         response_dict_rollup: Dict[str, Any]
-        if bypass_cache or season == CURRENT_SEASON:
+        endpoint_instance_rollup = None # Initialize to None
+
+        if bypass_cache or season == settings.CURRENT_NBA_SEASON:
             logger.info(f"Fetching fresh matchup rollup data (Bypass: {bypass_cache}, Season: {season})")
-            endpoint_instance = MatchupsRollup(**api_params_rollup, timeout=DEFAULT_TIMEOUT)
-            response_dict_rollup = endpoint_instance.get_dict()
+            endpoint_instance_rollup = MatchupsRollup(**api_params_rollup, timeout=settings.DEFAULT_TIMEOUT_SECONDS)
+            response_dict_rollup = endpoint_instance_rollup.get_dict()
         else:
             response_dict_rollup = get_cached_matchups_data(
                 cache_key=cache_key_rollup, timestamp=timestamp_bucket,
                 endpoint_class=MatchupsRollup, **api_params_rollup
             )
         
-        result_set_data = None
-        if 'resultSets' in response_dict_rollup and isinstance(response_dict_rollup['resultSets'], list):
-            for rs_item in response_dict_rollup['resultSets']:
-                if rs_item.get('name') == 'MatchupsRollup': # Adjust if API name differs
-                    result_set_data = rs_item
-                    break
-            if not result_set_data and len(response_dict_rollup['resultSets']) > 0:
-                result_set_data = response_dict_rollup['resultSets'][0]
+        rollup_df = pd.DataFrame()
+        # Try direct attribute access if endpoint_instance_rollup was created
+        if endpoint_instance_rollup and hasattr(endpoint_instance_rollup, 'matchups_rollup') and hasattr(endpoint_instance_rollup.matchups_rollup, 'get_data_frame'):
+            rollup_df = endpoint_instance_rollup.matchups_rollup.get_data_frame()
+            logger.debug(f"Successfully accessed 'matchups_rollup' dataset directly for Def Player {def_player_name_resolved}.")
+        else: # Fallback to parsing resultSets from response_dict_rollup
+            logger.warning("Attempting fallback to 'resultSets' for MatchupsRollup. Direct attribute access preferred if endpoint_instance_rollup was used.")
+            result_set_data_fallback = None
+            if 'resultSets' in response_dict_rollup and isinstance(response_dict_rollup['resultSets'], list):
+                for rs_item in response_dict_rollup['resultSets']:
+                    if rs_item.get('name') == 'MatchupsRollup':
+                        result_set_data_fallback = rs_item
+                        break
+                if not result_set_data_fallback and len(response_dict_rollup['resultSets']) > 0:
+                    logger.warning("Dataset 'MatchupsRollup' not found by name, using first result set as fallback.")
+                    result_set_data_fallback = response_dict_rollup['resultSets'][0]
+            
+            if result_set_data_fallback and result_set_data_fallback.get('rowSet') and result_set_data_fallback.get('headers'):
+                rollup_df = pd.DataFrame(result_set_data_fallback['rowSet'], columns=result_set_data_fallback['headers'])
 
-        if not result_set_data or not result_set_data.get('rowSet'):
-            logger.warning(f"No matchup rollup data found for Def Player {def_player_name_resolved} in {season}.")
+        if rollup_df.empty:
+            logger.warning(f"No matchup rollup data found (or DataFrame is empty) for Def Player {def_player_name_resolved} in {season}.")
             return format_response({
                 "def_player_id": def_player_id_resolved, "def_player_name": def_player_name_resolved,
                 "parameters": {"season": season, "season_type": season_type}, "rollup": []
             })
 
-        rollup_list = _process_dataframe(pd.DataFrame(result_set_data['rowSet'], columns=result_set_data['headers']), single_row=False)
-        if rollup_list is None:
+        rollup_list = _process_dataframe(rollup_df, single_row=False)
+        if rollup_list is None: # This check is now safe
             logger.error(f"DataFrame processing failed for matchup rollup Def {def_player_name_resolved} ({season}).")
             return format_response(error=Errors.MATCHUPS_ROLLUP_PROCESSING)
 

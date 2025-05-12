@@ -3,21 +3,15 @@ from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, st
 import logging
 import json
 from typing import Dict, Any 
-# Ensure this import points to the correct logic function for live scoreboard data.
-from backend.api_tools.live_game_tools import fetch_league_scoreboard_logic # Corrected import
-from backend.config import Errors
-from starlette.websockets import WebSocketState # Added for explicit state checking
+from backend.api_tools.live_game_tools import fetch_league_scoreboard_logic
+from backend.core.errors import Errors
+from starlette.websockets import WebSocketState
 
 logger = logging.getLogger(__name__)
 router = APIRouter(
     prefix="/live",
     tags=["Live Games"]
 )
-
-# Note on Redundancy:
-# The functionality in this file, particularly the GET /scoreboard and the /scoreboard/ws WebSocket,
-# significantly overlaps with endpoints in `backend/routes/scoreboard.py`.
-# Consideration should be given to consolidating these into a single, authoritative scoreboard route.
 
 async def _handle_live_game_logic_call(
     logic_function: callable, 
@@ -58,7 +52,6 @@ async def _handle_live_game_logic_call(
 )
 async def get_current_live_scoreboard_endpoint() -> Dict[str, Any]:
     logger.info("Request received for GET /live/scoreboard (current live data)")
-    # Corrected function call
     return await _handle_live_game_logic_call(fetch_league_scoreboard_logic, "live scoreboard")
 
 @router.websocket("/scoreboard/ws")
@@ -78,7 +71,6 @@ async def live_scoreboard_websocket_endpoint(websocket: WebSocket):
                     stop_event.set()
                     break
                 
-                # Corrected function call
                 scoreboard_json_str = await asyncio.to_thread(fetch_league_scoreboard_logic)
                 try:
                     temp_data = json.loads(scoreboard_json_str)

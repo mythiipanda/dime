@@ -1,12 +1,11 @@
 import logging
 import asyncio
 import json
-from typing import Dict, Any, Optional # Added Optional
-from fastapi import APIRouter, HTTPException, Query, status # Added Query, status
+from typing import Dict, Any
+from fastapi import APIRouter, HTTPException, status
 
 from backend.api_tools.odds_tools import fetch_odds_data_logic
-from backend.config import Errors
-import backend.api_tools.utils as api_utils # For validation if params are added
+from backend.core.errors import Errors
 
 logger = logging.getLogger(__name__)
 router = APIRouter(
@@ -22,7 +21,6 @@ async def _handle_odds_route_logic_call(
 ) -> Dict[str, Any]:
     """Helper to call odds-related logic, parse JSON, and handle errors."""
     try:
-        # Filter out None kwargs so logic functions can use their defaults
         filtered_kwargs = {k: v for k, v in kwargs.items() if v is not None}
         
         result_json_string = await asyncio.to_thread(logic_function, *args, **filtered_kwargs)
@@ -31,7 +29,6 @@ async def _handle_odds_route_logic_call(
         if isinstance(result_data, dict) and 'error' in result_data:
             error_detail = result_data['error']
             logger.error(f"Error from {logic_function.__name__} with args {args}, kwargs {filtered_kwargs}: {error_detail}")
-            # Odds data often comes from external APIs, so 502 is a common error if upstream fails
             status_code_to_raise = status.HTTP_502_BAD_GATEWAY if "external api" in error_detail.lower() or "provider error" in error_detail.lower() else \
                                    status.HTTP_400_BAD_REQUEST if "invalid parameter" in error_detail.lower() else \
                                    status.HTTP_500_INTERNAL_SERVER_ERROR # Default
@@ -51,20 +48,14 @@ async def _handle_odds_route_logic_call(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=detail_msg)
 
 @router.get(
-    "/live", # Changed path to be more descriptive
+    "/live",
     summary="Get Live Betting Odds for NBA Games",
     description="Fetches live betting odds for upcoming or in-progress NBA games from configured odds providers. "
                 "The specific games and markets returned depend on the provider and data availability.",
-    response_model=Dict[str, Any] # Or potentially List[Dict[str, Any]] if it's a list of games with odds
+    response_model=Dict[str, Any]
 )
-async def get_live_betting_odds_endpoint( # Renamed for clarity
-    # Currently, fetch_odds_data_logic in odds_tools.py takes no arguments.
-    # If it were to be enhanced, query parameters could be added here:
-    # game_date: Optional[str] = Query(None, description="Specific date (YYYY-MM-DD) to fetch odds for. Defaults to current/upcoming games if None.", regex=r"^\d{4}-\d{2}-\d{2}$"),
-    # league_id: Optional[str] = Query(LeagueID.nba, description="League ID (e.g., '00' for NBA)."),
-    # odds_format: Optional[str] = Query("american", description="Odds format ('american' or 'decimal')."),
-    # market_types: Optional[List[str]] = Query(None, description="Specific market types (e.g., 'h2h', 'spreads', 'totals').")
-) -> Dict[str, Any]: # Assuming the logic returns a Dict, adjust if it's a List
+async def get_live_betting_odds_endpoint(
+) -> Dict[str, Any]:
     """
     Endpoint to retrieve live betting odds for NBA games.
     Uses `fetch_odds_data_logic` from `odds_tools.py`.
@@ -117,13 +108,10 @@ async def get_live_betting_odds_endpoint( # Renamed for clarity
     """
     logger.info("Request received for GET /odds/live")
     
-    # Prepare kwargs for the logic call, if any parameters were added
     odds_kwargs = {
-        # "game_date": game_date, # Example if added
-        # "league_id": league_id, # Example if added
     }
 
     return await _handle_odds_route_logic_call(
         fetch_odds_data_logic, "live betting odds",
-        **odds_kwargs # Pass any collected query params
+        **odds_kwargs
     )

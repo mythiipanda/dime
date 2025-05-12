@@ -4,14 +4,13 @@ from fastapi import APIRouter, HTTPException, Query, Path # Added Path
 from typing import Optional, List, Dict, Any
 import json
 
-from backend.api_tools.player_tools import (
-    get_player_headshot_url,
-    fetch_player_stats_logic,
-    fetch_player_profile_logic,
-)
-from backend.api_tools.search import find_players_by_name_fragment # Assuming this is the correct import
-from backend.config import Errors
-import backend.api_tools.utils as api_utils # For validation helpers
+from backend.api_tools.player_common_info import get_player_headshot_url
+from backend.api_tools.player_aggregate_stats import fetch_player_stats_logic
+from backend.api_tools.player_dashboard_stats import fetch_player_profile_logic
+
+from backend.api_tools.search import find_players_by_name_fragment
+from backend.core.errors import Errors
+from backend.utils.validation import _validate_season_format
 
 router = APIRouter(
     prefix="/player", # Add prefix for all player routes
@@ -75,11 +74,7 @@ async def get_player_headshot_by_id_endpoint( # Renamed for clarity
     - 500 Internal Server Error: For unexpected errors.
     """
     logger.info(f"Received GET /player/{player_id}/headshot request.")
-    # player_id validation (gt=0) is handled by FastAPI Path now.
     try:
-        # get_player_headshot_url is simple and synchronous.
-        # Using to_thread for consistency, though for such a quick, non-blocking call,
-        # direct invocation might also be acceptable in an async route if it's truly trivial.
         headshot_url_str = await asyncio.to_thread(get_player_headshot_url, player_id)
         result = {"player_id": player_id, "headshot_url": headshot_url_str}
         return result
@@ -98,9 +93,9 @@ async def get_player_headshot_by_id_endpoint( # Renamed for clarity
                 "Returns a list of matching players with basic information.",
     response_model=List[Dict[str, Any]]
 )
-async def search_players_by_name_endpoint( # Renamed for clarity
+async def search_players_by_name_endpoint(
     q: str = Query(..., description="Search query string for player name. Minimum 2 characters.", min_length=2),
-    limit: int = Query(10, description="Maximum number of search results to return.", ge=1, le=50) # Added ge/le validation
+    limit: int = Query(10, description="Maximum number of search results to return.", ge=1, le=50)
 ) -> List[Dict[str, Any]]:
     """
     Endpoint to search for players by a name fragment.
@@ -130,10 +125,8 @@ async def search_players_by_name_endpoint( # Renamed for clarity
     - 400 Bad Request: If query parameters are invalid (e.g., `q` too short, `limit` out of range - handled by FastAPI).
     - 500 Internal Server Error: For unexpected errors during the search.
     """
-    # q and limit validation is handled by FastAPI Query parameters (min_length, ge, le)
     logger.info(f"Received GET /player/search request with query: '{q}', limit: {limit}")
     try:
-        # Assuming find_players_by_name_fragment returns a list of dicts directly, not a JSON string
         results_list = await asyncio.to_thread(find_players_by_name_fragment, q, limit=limit)
         logger.info(f"Returning {len(results_list)} players for search query '{q}'")
         return results_list
@@ -172,10 +165,8 @@ async def fetch_player_stats_endpoint(
     - 500 Internal Server Error: For other processing issues.
     """
     logger.info(f"Received GET /player/stats request for player: '{player_name}', season: {season}")
-    if season and not api_utils._validate_season_format(season): # Use imported util
+    if season and not _validate_season_format(season): # Use directly imported util
         raise HTTPException(status_code=400, detail=Errors.INVALID_SEASON_FORMAT.format(season=season))
-    
-    # The logic function fetch_player_stats_logic takes season as optional and defaults to CURRENT_SEASON if None.
     return await _handle_player_route_logic_call(fetch_player_stats_logic, player_name, season)
 
 @router.get(
@@ -208,11 +199,4 @@ async def fetch_player_profile_endpoint(
     - 500 Internal Server Error: For other processing issues.
     """
     logger.info(f"Received GET /player/profile request for player: '{player_name}', per_mode: {per_mode}")
-    # per_mode validation will be handled by the logic function if it's critical.
-    # If per_mode is None, fetch_player_profile_logic will use its default.
     return await _handle_player_route_logic_call(fetch_player_profile_logic, player_name, per_mode)
-
-# Note: Endpoints for individual player tracking stats (clutch, passing, rebounding, shots_tracking)
-# are expected to be in `backend/routes/player_tracking.py`.
-# Endpoints for player awards, gamelog, career stats (if not covered by /stats or /profile)
-# could also be added here if more granularity is needed beyond the aggregated endpoints.

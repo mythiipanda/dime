@@ -2,14 +2,12 @@ from fastapi import APIRouter, HTTPException, Query, status
 from typing import Optional, Dict, Any
 import json
 import asyncio
-from datetime import date # For default date if needed, though logic layer handles it
-
-# Use SeasonTypeAllStar as it's more comprehensive and used by the logic layer
 from nba_api.stats.library.parameters import SeasonTypeAllStar, LeagueID
-from backend.api_tools.league_tools import fetch_league_standings_logic
+from backend.api_tools.league_standings import fetch_league_standings_logic
 import logging
-from backend.config import Errors, CURRENT_SEASON # Added CURRENT_SEASON
-import backend.api_tools.utils as api_utils # For validation
+from backend.core.errors import Errors
+from backend.config import settings
+from backend.utils.validation import validate_date_format, validate_season_format
 
 logger = logging.getLogger(__name__)
 router = APIRouter(
@@ -57,11 +55,11 @@ async def _handle_league_route_logic_call(
     summary="Get League Standings",
     description="Fetches NBA league standings. Can be filtered by season, season type, league, and a specific date. "
                 "If `date` is provided, `season` and `season_type` are ignored by the underlying API for V2 standings.",
-    response_model=Dict[str, Any] # Explicitly define for OpenAPI
+    response_model=Dict[str, Any]
 )
-async def get_league_standings_endpoint( # Renamed for clarity
+async def get_league_standings_endpoint(
     league_id: Optional[str] = Query(LeagueID.nba, description="League ID (e.g., '00' for NBA, '10' for WNBA, '20' for G-League). Defaults to NBA."),
-    season: Optional[str] = Query(None, description=f"Season in YYYY-YY format (e.g., '2023-24'). Defaults to {CURRENT_SEASON} in logic if date is not set.", regex=r"^\d{4}-\d{2}$"), 
+    season: Optional[str] = Query(None, description=f"Season in YYYY-YY format (e.g., '2023-24'). Defaults to {settings.CURRENT_NBA_SEASON} in logic if date is not set.", regex=r"^\d{4}-\d{2}$"), # Changed
     season_type: Optional[str] = Query(SeasonTypeAllStar.regular, description="Season type (e.g., 'Regular Season', 'Playoffs'). Defaults to Regular Season."),
     date: Optional[str] = Query(None, description="Specific date for standings in YYYY-MM-DD format. If provided, season/season_type might be ignored by API. Defaults to None.", regex=r"^\d{4}-\d{2}-\d{2}$")
 ) -> Dict[str, Any]:
@@ -113,31 +111,20 @@ async def get_league_standings_endpoint( # Renamed for clarity
     logger.info(f"Received GET /league/standings request. League: {league_id}, Season: {season}, Type: {season_type}, Date: {date}")
 
     # Validate date format if provided
-    if date and not api_utils.validate_date_format(date):
+    if date and not validate_date_format(date):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=Errors.INVALID_DATE_FORMAT.format(date=date)
         )
-    # Validate season format if provided (and date is not, as date might override season)
-    if season and not date and not api_utils.validate_season_format(season):
+    if season and not date and not validate_season_format(season):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=Errors.INVALID_SEASON_FORMAT.format(season=season)
         )
-    
-    # season_type validation against SeasonTypeAllStar values can be added here if desired,
-    # or rely on the logic layer. FastAPI's enum support in Query can also handle this.
-    # For now, assuming logic layer handles strict validation of season_type content.
-
-    # fetch_league_standings_logic does not accept league_id as a direct parameter.
-    # The nba_api endpoint leaguestandingsv3 defaults to NBA ('00') and doesn't take league_id in constructor.
-    # The league_id query parameter on this route is kept for potential future use with other logic
-    # functions that might be added to this router and *do* use league_id.
     standings_kwargs_for_logic = {
         "season": season,
         "season_type": season_type,
         "date": date
-        # league_id is intentionally omitted here for fetch_league_standings_logic
     }
     
     return await _handle_league_route_logic_call(

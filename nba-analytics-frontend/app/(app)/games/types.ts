@@ -34,6 +34,7 @@ export interface Play {
   home_description?: string | null;
   away_description?: string | null;
   neutral_description?: string | null;
+  description?: string | null;
   event_type: string;
 }
 

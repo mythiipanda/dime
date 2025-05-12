@@ -1,19 +1,16 @@
 import logging
-import time # Not actively used, consider removing if no specific timing logic is planned
-import json
-from typing import Any, Dict, List, Tuple # Added List
+from typing import Any, Dict
 from functools import lru_cache
 from datetime import datetime
 
 from nba_api.live.nba.library.http import NBALiveHTTP
-from backend.config import DEFAULT_TIMEOUT, Errors
+from backend.config import settings
+from backend.core.errors import Errors
 from backend.api_tools.utils import format_response
 
 logger = logging.getLogger(__name__)
 
-# CACHE_TTL_SECONDS is descriptive but not directly used by lru_cache for time expiry.
-# The timestamp trick in get_cached_odds_data handles hourly invalidation.
-CACHE_TTL_SECONDS_ODDS = 3600 # Odds might change, but hourly cache for the raw pull is reasonable.
+CACHE_TTL_SECONDS_ODDS = 3600
 
 @lru_cache(maxsize=2) # Cache for "todays_odds" key, invalidated by timestamp
 def get_cached_odds_data(
@@ -43,9 +40,8 @@ def get_cached_odds_data(
             parameters={}, # This endpoint typically doesn't require parameters
             proxy=None, # Add proxy configuration if needed globally
             headers=None, # Add custom headers if needed
-            timeout=DEFAULT_TIMEOUT
+            timeout=settings.DEFAULT_TIMEOUT_SECONDS
         )
-        # The NBALiveHTTP().send_api_request().get_dict() returns the parsed JSON dictionary
         return response.get_dict()
     except Exception as e:
         logger.error(f"NBALiveHTTP odds request failed: {e}", exc_info=True)
@@ -101,7 +97,6 @@ def fetch_odds_data_logic(bypass_cache: bool = False) -> str:
     logger.info(f"Executing fetch_odds_data_logic with bypass_cache={bypass_cache}")
 
     cache_key_odds = "todays_live_odds_data"
-    # Hourly timestamp for cache invalidation
     cache_invalidation_timestamp = datetime.now().replace(minute=0, second=0, microsecond=0).isoformat()
 
     try:
@@ -110,15 +105,11 @@ def fetch_odds_data_logic(bypass_cache: bool = False) -> str:
             logger.info("Bypassing cache, fetching fresh live odds data.")
             http_client_direct = NBALiveHTTP()
             api_response = http_client_direct.send_api_request(
-                endpoint="odds/odds_todaysGames.json", parameters={}, timeout=DEFAULT_TIMEOUT
+                endpoint="odds/odds_todaysGames.json", parameters={}, timeout=settings.DEFAULT_TIMEOUT_SECONDS # Changed
             )
             raw_response_dict = api_response.get_dict()
         else:
             raw_response_dict = get_cached_odds_data(cache_key=cache_key_odds, timestamp=cache_invalidation_timestamp)
-
-        # The API response structure is typically {"games": [...]} directly or nested under a key.
-        # Based on NBALiveHTTP, get_dict() should give the main content.
-        # If "games" is not top-level, adjust access (e.g., raw_response_dict.get('some_key', {}).get('games', []))
         games_data_list = raw_response_dict.get("games", [])
         
         if not isinstance(games_data_list, list): # Basic type check

@@ -17,10 +17,10 @@ if current_dir not in sys.path:
 # Import and apply centralized logging configuration
 try:
     from backend.logging_config import setup_logging
-    from backend.config import AGENT_DEBUG_MODE # For setting log level
+    from backend.config import settings # Changed
     
     # Determine log level based on debug mode
-    log_level = logging.DEBUG if AGENT_DEBUG_MODE else logging.INFO
+    log_level = logging.DEBUG if settings.AGENT_DEBUG_MODE else logging.INFO # Changed
     setup_logging(level=log_level)
     logger = logging.getLogger(__name__) # Logger for this main module
     logger.info(f"Logging configured with level: {logging.getLevelName(log_level)}")
@@ -34,7 +34,8 @@ except ImportError as e:
 
 # --- Import Configuration and Routers ---
 try:
-    from backend.config import CORS_ALLOWED_ORIGINS, Errors
+    from backend.config import settings # Changed (CORS_ALLOWED_ORIGINS will be settings.CORS_ALLOWED_ORIGINS)
+    from backend.core.errors import Errors # Changed
     from backend.routes.player import router as player_router
     from backend.routes.analyze import router as analyze_router
     from backend.routes.sse import router as sse_router
@@ -46,7 +47,6 @@ try:
     from backend.routes.live_game import router as live_game_router
     from backend.routes.scoreboard import router as scoreboard_router
     from backend.routes.odds import router as odds_router
-    from backend.routes.research import router as research_router
     from backend.routes.search import router as search_router
     from backend.routes.leaders import router as leaders_router
     # from backend.routes.charts import router as charts_router # Example
@@ -66,12 +66,13 @@ app = FastAPI(
     redoc_url="/api/v1/redoc"
 )
 
+
 # --- CORS Middleware Configuration ---
-if not CORS_ALLOWED_ORIGINS:
-    logger.warning("CORS_ALLOWED_ORIGINS is not set or empty in config. Defaulting to restrictive CORS.")
+if not settings.CORS_ALLOWED_ORIGINS: # Changed
+    logger.warning("settings.CORS_ALLOWED_ORIGINS is not set or empty in config. Defaulting to restrictive CORS.") # Changed
     effective_cors_origins = []
 else:
-    effective_cors_origins = CORS_ALLOWED_ORIGINS
+    effective_cors_origins = settings.CORS_ALLOWED_ORIGINS # Changed
 
 app.add_middleware(
     CORSMiddleware,
@@ -81,7 +82,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 logger.info(f"CORS middleware configured with origins: {effective_cors_origins}")
-
 # --- API Router Inclusion ---
 API_V1_PREFIX = "/api/v1"
 
@@ -98,7 +98,6 @@ app.include_router(live_game_router, prefix=API_V1_PREFIX)
 app.include_router(scoreboard_router, prefix=API_V1_PREFIX)
 app.include_router(odds_router, prefix=API_V1_PREFIX)
 app.include_router(search_router, prefix=API_V1_PREFIX)
-app.include_router(research_router, prefix=API_V1_PREFIX)
 # app.include_router(charts_router, prefix=API_V1_PREFIX) # Example
 
 logger.info("All API routers included under /api/v1 prefix.")
@@ -127,8 +126,8 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 @app.exception_handler(Exception)
 async def generic_unhandled_exception_handler(request: Request, exc: Exception):
     logger.critical(f"Unhandled generic exception: {type(exc).__name__} - {exc} for URL: {request.url.path}", exc_info=True)
-    from fastapi.responses import JSONResponse # Local import
-    from fastapi import status as http_status # Local import for status codes
+    from fastapi.responses import JSONResponse
+    from fastapi import status as http_status
     
     error_content = Errors.UNEXPECTED_ERROR.format(error="An internal server error occurred.") \
         if hasattr(Errors, 'UNEXPECTED_ERROR') and '{error}' in Errors.UNEXPECTED_ERROR \
@@ -143,10 +142,6 @@ async def generic_unhandled_exception_handler(request: Request, exc: Exception):
 @app.on_event("startup")
 async def startup_event():
     logger.info("NBA Analytics API starting up...")
-    # Example: Initialize database connections, load ML models, etc.
-    # from backend.config import STORAGE_DB_FILE # Moved import inside if needed
-    # if not os.path.exists(STORAGE_DB_FILE) and "agno_storage.db" in STORAGE_DB_FILE:
-    #     logger.info(f"Workflow storage DB file {STORAGE_DB_FILE} not found. It will be created on first use by Agno.")
     pass
 
 @app.on_event("shutdown")

@@ -16,7 +16,12 @@ export function GameCard({ game, viewingToday, onClick }: GameCardProps) {
   if (!game || !game.gameId) return null; // Basic validation
 
   const handleCardClick = () => {
-    onClick(game.gameId);
+    if (game.gameStatus === 1) {
+      // Game is scheduled, don't open PBP
+      alert("Play-by-play is not available for games that have not yet started."); // Or use a proper UI notification
+      return;
+    }
+    onClick(game.gameId); // For live or completed games
   };
 
   // TODO: Move rendering logic for a single game card here

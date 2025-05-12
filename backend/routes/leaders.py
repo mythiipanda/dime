@@ -1,7 +1,7 @@
 import logging
 import json
 import asyncio
-from typing import Optional, Dict, Any # Added Dict, Any
+from typing import Optional, Dict, Any
 from fastapi import APIRouter, Query, HTTPException, status
 
 from nba_api.stats.library.parameters import (
@@ -9,11 +9,12 @@ from nba_api.stats.library.parameters import (
     PerMode48, 
     LeagueID, 
     Scope,
-    StatCategoryAbbreviation # Added for validation
+    StatCategoryAbbreviation
 )
-from backend.api_tools.league_tools import fetch_league_leaders_logic
-from backend.api_tools.utils import validate_season_format
-from backend.config import CURRENT_SEASON, Errors
+from backend.api_tools.league_leaders_data import fetch_league_leaders_logic
+from backend.utils.validation import validate_season_format
+from backend.core.errors import Errors
+from backend.config import settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter(
@@ -21,7 +22,6 @@ router = APIRouter(
     tags=["League"]    # Consistent tag
 )
 
-# Using the same helper as in standings.py for consistency
 async def _handle_league_route_logic_call(
     logic_function: callable, 
     endpoint_name: str,
@@ -62,11 +62,11 @@ async def _handle_league_route_logic_call(
     summary="Get League Leaders by Statistical Category",
     description="Fetches a list of top NBA players based on a specified statistical category, season, and other criteria. "
                 "Data is sourced from the NBA's official stats API.",
-    response_model=Dict[str, Any] # Explicitly define for OpenAPI
+    response_model=Dict[str, Any]
 )
-async def get_league_leaders_endpoint( # Renamed for clarity
+async def get_league_leaders_endpoint(
     stat_category: str = Query(StatCategoryAbbreviation.pts, description="The statistical category to rank leaders by (e.g., 'PTS', 'REB', 'AST'). See `nba_api.stats.library.parameters.StatCategoryAbbreviation` for all valid options."),
-    season: Optional[str] = Query(None, description=f"NBA season in YYYY-YY format (e.g., '2023-24'). Defaults to {CURRENT_SEASON} in logic if not provided.", regex=r"^\d{4}-\d{2}$"),
+    season: Optional[str] = Query(None, description=f"NBA season in YYYY-YY format (e.g., '2023-24'). Defaults to {settings.CURRENT_NBA_SEASON} in logic if not provided.", regex=r"^\d{4}-\d{2}$"), # Changed
     season_type: str = Query(SeasonTypeAllStar.regular, description="Type of season (e.g., 'Regular Season', 'Playoffs'). See `nba_api.stats.library.parameters.SeasonTypeAllStar`."),
     per_mode: str = Query(PerMode48.per_game, description="Statistical mode (e.g., 'PerGame', 'Totals', 'Per36'). See `nba_api.stats.library.parameters.PerMode48`."),
     league_id: str = Query(LeagueID.nba, description="League ID. See `nba_api.stats.library.parameters.LeagueID` (e.g., '00' for NBA)."),
@@ -120,12 +120,11 @@ async def get_league_leaders_endpoint( # Renamed for clarity
     """
     logger.info(f"Received GET /league/leaders request. Category: {stat_category}, Season: {season}, Type: {season_type}, PerMode: {per_mode}, League: {league_id}, Scope: {scope}, TopN: {top_n}")
 
-    season_to_use = season or CURRENT_SEASON
+    season_to_use = season or settings.CURRENT_NBA_SEASON # Changed
     if not validate_season_format(season_to_use):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=Errors.INVALID_SEASON_FORMAT.format(season=season_to_use))
 
     # Validate enum-like string parameters
-    # These could also be handled by FastAPI using Python Enums in Query if defined
     VALID_STAT_CATEGORIES = {getattr(StatCategoryAbbreviation, attr) for attr in dir(StatCategoryAbbreviation) if not attr.startswith('_')}
     if stat_category not in VALID_STAT_CATEGORIES:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=Errors.INVALID_STAT_CATEGORY.format(value=stat_category, options=", ".join(list(VALID_STAT_CATEGORIES)[:5]))) # Show some options
@@ -139,7 +138,7 @@ async def get_league_leaders_endpoint( # Renamed for clarity
 
 
     leaders_kwargs = {
-        "season": season_to_use, # Use determined season
+        "season": season_to_use,
         "stat_category": stat_category,
         "season_type": season_type,
         "per_mode": per_mode,

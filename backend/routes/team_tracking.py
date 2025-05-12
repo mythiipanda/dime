@@ -1,16 +1,15 @@
 import logging
 import asyncio
 from fastapi import APIRouter, HTTPException, Query, Path
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 import json
 
-from backend.api_tools.team_tracking import (
-    fetch_team_passing_stats_logic,
-    fetch_team_rebounding_stats_logic,
-    fetch_team_shooting_stats_logic
-)
-from backend.config import Errors, CURRENT_SEASON
-# import backend.api_tools.utils as api_utils # Not directly used in the remaining endpoint
+from backend.api_tools.team_passing_tracking import fetch_team_passing_stats_logic
+from backend.api_tools.team_rebounding_tracking import fetch_team_rebounding_stats_logic
+from backend.api_tools.team_shooting_tracking import fetch_team_shooting_stats_logic
+
+from backend.core.errors import Errors
+from backend.config import settings
 
 router = APIRouter(
     prefix="/team", 
@@ -63,7 +62,7 @@ async def _handle_team_tracking_logic_call(
 )
 async def get_all_team_tracking_stats_endpoint(
     team_identifier: str = Path(..., description="Team name (e.g., 'Boston Celtics'), abbreviation (e.g., 'BOS'), or ID (e.g., '1610612738')."),
-    season: Optional[str] = Query(None, description=f"NBA season in YYYY-YY format (e.g., '2023-24'). Defaults to {CURRENT_SEASON} in logic.", regex=r"^\d{4}-\d{2}$"),
+    season: Optional[str] = Query(None, description=f"NBA season in YYYY-YY format (e.g., '2023-24'). Defaults to {settings.CURRENT_NBA_SEASON} in logic.", regex=r"^\d{4}-\d{2}$"), # Changed
     season_type: Optional[str] = Query(None, description="Type of season (e.g., 'Regular Season', 'Playoffs'). Defaults to 'Regular Season' in logic."),
     per_mode: Optional[str] = Query(None, description="Per mode for all tracking types (e.g., 'PerGame', 'Totals'). Logic functions use their own defaults if not specified here."),
     opponent_team_id: Optional[int] = Query(0, description="Filter by opponent team ID for applicable tracking types (rebounding, shooting). Default 0 (all).", ge=0),
@@ -130,7 +129,3 @@ async def get_all_team_tracking_stats_endpoint(
         logger.critical(f"Unexpected error in combined team tracking stats for {team_identifier}: {str(e)}", exc_info=True)
         error_msg = Errors.UNEXPECTED_ERROR.format(error=f"fetching combined tracking stats for team '{team_identifier}'")
         raise HTTPException(status_code=500, detail=error_msg)
-
-# Deprecated individual tracking endpoints have been removed.
-# The functionality is covered by the /team/{team_identifier}/tracking/* endpoints in backend/routes/team.py
-# or by the combined /team/{team_identifier}/tracking/stats_all endpoint above.

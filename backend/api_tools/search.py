@@ -1,33 +1,29 @@
 import logging
-import json
-from typing import List, Dict, Optional, Any
-import pandas as pd
-from functools import lru_cache # Added for caching
-from nba_api.stats.static import players, teams # Keep teams for search_teams_logic
+from typing import List, Dict, Optional
+from functools import lru_cache
+from nba_api.stats.static import players, teams
 from nba_api.stats.endpoints import leaguegamefinder
-from nba_api.stats.library.parameters import SeasonTypeAllStar # Removed unused LeagueIDNullable
-from nba_api.stats.library.parameters import SeasonTypeAllStar, LeagueID # Added LeagueID
-# Removed unused fuzzywuzzy
+from nba_api.stats.library.parameters import SeasonTypeAllStar, LeagueID
 
-from backend.config import ( # Use backend.config
+from backend.config import settings
+from backend.core.constants import (
     DEFAULT_PLAYER_SEARCH_LIMIT,
     MIN_PLAYER_SEARCH_LENGTH,
-    DEFAULT_TIMEOUT,
-    MAX_SEARCH_RESULTS,
-    Errors
+    MAX_SEARCH_RESULTS
 )
-from backend.api_tools.utils import ( # Use backend.api_tools.utils
+from backend.core.errors import Errors
+from backend.api_tools.utils import (
     _process_dataframe,
     format_response,
-    _validate_season_format, # Added
-    find_team_id_or_error,   # Added
-    TeamNotFoundError        # Added
+    find_team_id_or_error,
+    TeamNotFoundError
 )
+from backend.utils.validation import _validate_season_format
 
 logger = logging.getLogger(__name__)
 
-# Cache for player list to avoid repeated calls to get_players()
 _player_list_cache = None
+_team_list_cache = None # Cache for teams
 
 def _get_cached_player_list() -> List[Dict]:
     """Gets the full player list, caching it after the first call."""
@@ -35,17 +31,33 @@ def _get_cached_player_list() -> List[Dict]:
     if _player_list_cache is None:
         logger.info("Fetching and caching full player list...")
         try:
-            # Ensure players are fetched if cache is empty or on error
             _player_list_cache = players.get_players()
-            if not _player_list_cache: # Handle case where get_players returns empty
+            if not _player_list_cache:
                  logger.warning("players.get_players() returned an empty list.")
                  _player_list_cache = []
             else:
                  logger.info(f"Successfully cached {len(_player_list_cache)} players.")
         except Exception as e:
             logger.error(f"Failed to fetch and cache player list: {e}", exc_info=True)
-            _player_list_cache = [] # Set to empty list on error
+            _player_list_cache = []
     return _player_list_cache
+
+def _get_cached_team_list() -> List[Dict]:
+    """Gets the full team list, caching it after the first call."""
+    global _team_list_cache
+    if _team_list_cache is None:
+        logger.info("Fetching and caching full team list...")
+        try:
+            _team_list_cache = teams.get_teams()
+            if not _team_list_cache:
+                 logger.warning("teams.get_teams() returned an empty list.")
+                 _team_list_cache = []
+            else:
+                 logger.info(f"Successfully cached {len(_team_list_cache)} teams.")
+        except Exception as e:
+            logger.error(f"Failed to fetch and cache team list: {e}", exc_info=True)
+            _team_list_cache = []
+    return _team_list_cache
 
 @lru_cache(maxsize=512) # Cache player name fragments
 def find_players_by_name_fragment(name_fragment: str, limit: int = DEFAULT_PLAYER_SEARCH_LIMIT) -> List[Dict]:
@@ -103,7 +115,6 @@ def search_players_logic(query: str, limit: int = MAX_SEARCH_RESULTS) -> str:
     if not query:
         return format_response(error=Errors.EMPTY_SEARCH_QUERY)
     if len(query) < MIN_PLAYER_SEARCH_LENGTH:
-        # Ensure min_length is accessible or hardcode if necessary
         min_len = getattr(Errors, 'MIN_PLAYER_SEARCH_LENGTH', MIN_PLAYER_SEARCH_LENGTH) # Use constant from config if available
         return format_response(error=Errors.SEARCH_QUERY_TOO_SHORT.format(min_length=min_len) if hasattr(Errors, 'SEARCH_QUERY_TOO_SHORT') else f"Search query must be at least {min_len} characters long.")
 
@@ -136,9 +147,9 @@ def search_teams_logic(query: str, limit: int = MAX_SEARCH_RESULTS) -> str:
         return format_response(error=Errors.EMPTY_SEARCH_QUERY)
 
     try:
-        all_teams = teams.get_teams() # Consider caching this like players if performance is an issue
+        all_teams = _get_cached_team_list() # Use cached team list
         if not all_teams:
-            logger.warning("teams.get_teams() returned empty list.")
+            logger.warning("_get_cached_team_list() returned empty list.")
             return format_response({"teams": []})
 
         query_lower = query.lower()
@@ -159,8 +170,6 @@ def search_teams_logic(query: str, limit: int = MAX_SEARCH_RESULTS) -> str:
         logger.error(f"Error in search_teams_logic: {str(e)}", exc_info=True)
         error_msg = Errors.TEAM_SEARCH_UNEXPECTED.format(error=str(e)) if hasattr(Errors, 'TEAM_SEARCH_UNEXPECTED') else f"Unexpected error searching for teams: {e}"
         return format_response(error=error_msg)
-
-# Removed internal _find_team_id_by_name helper (use utils.find_team_id_or_error)
 
 @lru_cache(maxsize=128) # Caches game search results
 def search_games_logic(
@@ -234,7 +243,7 @@ def search_games_logic(
 
     try:
         # Default to current season if not provided before API call
-        effective_season = season or CURRENT_SEASON
+        effective_season = season or settings.CURRENT_NBA_SEASON # Changed
         
         game_finder = leaguegamefinder.LeagueGameFinder(
             team_id_nullable=team1_id,
@@ -242,7 +251,7 @@ def search_games_logic(
             season_nullable=effective_season, # Use effective_season
             season_type_nullable=season_type,
             league_id_nullable=LeagueID.nba,
-            timeout=DEFAULT_TIMEOUT
+            timeout=settings.DEFAULT_TIMEOUT_SECONDS # Changed
         )
         logger.debug("leaguegamefinder API call successful.")
 

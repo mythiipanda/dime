@@ -1,39 +1,35 @@
-import json
 import logging
-# import time # Not directly used for lru_cache time-based expiry
-# import re # Not used
-from typing import Optional, Dict, Any, List, Tuple, Type # Added Type
+from typing import Optional, Dict, Any, Tuple, Type
 from functools import lru_cache
 from datetime import datetime
 import pandas as pd
 
-from nba_api.stats.endpoints.synergyplaytypes import SynergyPlayTypes # Corrected import path
+from nba_api.stats.endpoints.synergyplaytypes import SynergyPlayTypes
 from nba_api.stats.library.parameters import (
     LeagueID,
     PerModeSimple,
     PlayerOrTeamAbbreviation,
     SeasonTypeAllStar
-    # PlayTypeNullable, TypeGroupingNullable are not actual enum classes in nba_api,
-    # they are just type hints for string parameters.
 )
-from backend.config import CURRENT_SEASON, DEFAULT_TIMEOUT, Errors
-from backend.api_tools.utils import format_response, _validate_season_format, _process_dataframe
-
+from backend.config import settings
+from backend.core.errors import Errors
+from backend.api_tools.utils import format_response, _process_dataframe
+from backend.utils.validation import _validate_season_format
 logger = logging.getLogger(__name__)
 
 VALID_PLAY_TYPES = {
-    "Cut", "Handoff", "Isolation", "Misc", "OffScreen", "PostUp", # Corrected "Postup" to "PostUp" if API expects that
-    "PRBallHandler", "PRRollman", "OffRebound", "SpotUp", "Transition" # Corrected "Spotup" to "SpotUp"
+    "Cut", "Handoff", "Isolation", "Misc", "OffScreen", "PostUp",
+    "PRBallHandler", "PRRollman", "OffRebound", "SpotUp", "Transition"
 }
 VALID_TYPE_GROUPINGS = {"offensive", "defensive"}
-CACHE_TTL_SECONDS_SYNERGY = 3600 * 4 # Cache Synergy data for 4 hours
+CACHE_TTL_SECONDS_SYNERGY = 3600 * 4
 
 @lru_cache(maxsize=128)
 def get_cached_synergy_data(
-    cache_key: Tuple,
-    timestamp: str,
-    endpoint_class: Type[SynergyPlayTypes], # More specific type
-    **kwargs: Any
+    cache_key: Tuple, # Explicit cache_key for lru_cache
+    timestamp: str,   # Explicit timestamp for lru_cache and logging
+    endpoint_class: Type[SynergyPlayTypes],
+    **api_kwargs: Any # Renamed to distinguish from cache params
 ) -> Dict[str, Any]:
     """
     Cached wrapper for the SynergyPlayTypes NBA API endpoint.
@@ -45,7 +41,7 @@ def get_cached_synergy_data(
         timestamp (str): An ISO format timestamp string, typically for the current cache validity window,
                          used to manage cache invalidation.
         endpoint_class (Type[SynergyPlayTypes]): The `SynergyPlayTypes` endpoint class from `nba_api.stats.endpoints`.
-        **kwargs: Keyword arguments to be passed directly to the `SynergyPlayTypes` constructor.
+        **api_kwargs: Keyword arguments to be passed directly to the `SynergyPlayTypes` constructor.
 
     Returns:
         Dict[str, Any]: The raw dictionary response from the NBA API endpoint's `get_dict()` method.
@@ -53,9 +49,9 @@ def get_cached_synergy_data(
     Raises:
         Exception: If the API call fails, to be handled by the caller.
     """
-    logger.info(f"Cache miss/expiry for Synergy data - fetching new data. Key components: {kwargs}")
+    logger.info(f"Cache miss/expiry for Synergy data - fetching new data. Timestamp: {timestamp}, Key components: {api_kwargs}")
     try:
-        synergy_stats_endpoint = endpoint_class(**kwargs, timeout=DEFAULT_TIMEOUT)
+        synergy_stats_endpoint = endpoint_class(**api_kwargs, timeout=settings.DEFAULT_TIMEOUT_SECONDS)
         return synergy_stats_endpoint.get_dict()
     except Exception as e:
         logger.error(f"{endpoint_class.__name__} API call failed: {e}", exc_info=True)
@@ -65,11 +61,11 @@ def get_cached_synergy_data(
 def fetch_synergy_play_types_logic(
     league_id: str = LeagueID.nba,
     per_mode: str = PerModeSimple.per_game,
-    player_or_team: str = PlayerOrTeamAbbreviation.team, # Corrected constant name
+    player_or_team: str = PlayerOrTeamAbbreviation.team,
     season_type: str = SeasonTypeAllStar.regular,
-    season: str = CURRENT_SEASON,
-    play_type_nullable: Optional[str] = None, # Renamed for clarity, API uses play_type_nullable
-    type_grouping_nullable: Optional[str] = None, # Renamed for clarity
+    season: str = settings.CURRENT_NBA_SEASON,
+    play_type_nullable: Optional[str] = None,
+    type_grouping_nullable: Optional[str] = None,
     bypass_cache: bool = False
 ) -> str:
     """
@@ -133,7 +129,7 @@ def fetch_synergy_play_types_logic(
     
     VALID_PLAYER_TEAM = {getattr(PlayerOrTeamAbbreviation, attr) for attr in dir(PlayerOrTeamAbbreviation) if not attr.startswith('_') and isinstance(getattr(PlayerOrTeamAbbreviation, attr), str)}
     if player_or_team not in VALID_PLAYER_TEAM:
-        return format_response(error=Errors.INVALID_PLAYER_TEAM.format(value=player_or_team, valid_values=", ".join(VALID_PLAYER_TEAM)))
+        return format_response(error=Errors.INVALID_PLAYER_OR_TEAM_ABBREVIATION.format(value=player_or_team, valid_values=", ".join(VALID_PLAYER_TEAM)))
     VALID_LEAGUE_IDS = {getattr(LeagueID, attr) for attr in dir(LeagueID) if not attr.startswith('_') and isinstance(getattr(LeagueID, attr), str)}
     if league_id not in VALID_LEAGUE_IDS:
         return format_response(error=Errors.INVALID_LEAGUE_ID.format(value=league_id, options=", ".join(VALID_LEAGUE_IDS)))
@@ -158,7 +154,7 @@ def fetch_synergy_play_types_logic(
         response_dict_synergy: Dict[str, Any]
         if bypass_cache:
             logger.info(f"Bypassing cache, fetching fresh Synergy data with params: {api_params_synergy}")
-            synergy_endpoint = SynergyPlayTypes(**api_params_synergy, timeout=DEFAULT_TIMEOUT)
+            synergy_endpoint = SynergyPlayTypes(**api_params_synergy, timeout=settings.DEFAULT_TIMEOUT_SECONDS) # Changed
             response_dict_synergy = synergy_endpoint.get_dict()
         else:
             response_dict_synergy = get_cached_synergy_data(
@@ -177,18 +173,15 @@ def fetch_synergy_play_types_logic(
         error_msg = Errors.SYNERGY_UNEXPECTED.format(error=str(e))
         return format_response(error=error_msg)
 
-    # This block will only be reached if the try/except above for get_cached_synergy_data passes
     try:
         result_set_data = None
-        # The NBA API for Synergy often returns a list of resultSets, find the one named 'SynergyPlayType'.
-        # If not found, it might be the first one, or the data might be missing/malformed.
         if 'resultSets' in response_dict_synergy and isinstance(response_dict_synergy['resultSets'], list):
             for rs_item in response_dict_synergy['resultSets']:
-                if isinstance(rs_item, dict) and rs_item.get('name') == 'SynergyPlayType': # Name used by nba_api library
+                if isinstance(rs_item, dict) and rs_item.get('name') == 'SynergyPlayType':
                     result_set_data = rs_item
                     break
             if not result_set_data and len(response_dict_synergy['resultSets']) > 0 and isinstance(response_dict_synergy['resultSets'][0], dict) :
-                 result_set_data = response_dict_synergy['resultSets'][0] # Fallback to the first result set if named one not found
+                 result_set_data = response_dict_synergy['resultSets'][0]
 
         if not result_set_data or 'headers' not in result_set_data or 'rowSet' not in result_set_data:
             logger.warning(f"Could not find expected 'SynergyPlayType' data structure in API response for params: {api_params_synergy}. Response: {str(response_dict_synergy)[:500]}")
@@ -201,11 +194,11 @@ def fetch_synergy_play_types_logic(
         synergy_df = pd.DataFrame(result_set_data['rowSet'], columns=result_set_data['headers'])
         processed_synergy_data = _process_dataframe(synergy_df, single_row=False)
 
-        if processed_synergy_data is None: # Error during _process_dataframe
-            if synergy_df.empty: # API returned no rows
+        if processed_synergy_data is None:
+            if synergy_df.empty:
                  logger.warning(f"No Synergy play type data rows returned by API for params: {api_params_synergy}")
                  return format_response({"parameters": api_params_synergy, "synergy_stats": []})
-            else: # Processing failed on non-empty data
+            else:
                 logger.error(f"DataFrame processing failed for Synergy stats with params: {api_params_synergy}")
                 return format_response(error=Errors.SYNERGY_PROCESSING)
         

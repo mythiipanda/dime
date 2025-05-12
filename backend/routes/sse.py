@@ -4,7 +4,7 @@ import logging
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from rich.pretty import pprint
-from backend.teams import nba_analysis_team # Corrected import
+from backend.teams import nba_analysis_team
 from dataclasses import asdict, is_dataclass
 from agno.agent import RunResponse
 from typing import Iterator, Dict, Any
@@ -63,14 +63,13 @@ def format_sse(data: str, event: str | None = None) -> str:
         msg = f"event: {event}\n{msg}"
     return msg
 
-# Markers from agents.py (ensure these are consistent if changed there)
 STAT_CARD_MARKER = "STAT_CARD_JSON::"
 CHART_DATA_MARKER = "CHART_DATA_JSON::"
 TABLE_DATA_MARKER = "TABLE_DATA_JSON::"
 
 def format_message_data(chunk_dict: Dict[Any, Any]) -> Dict[str, Any]:
     event_type = chunk_dict.get("event")
-    content = chunk_dict.get("content", "") # Ensure content is a string
+    content = chunk_dict.get("content", "")
     tools = chunk_dict.get("tools", [])
     
     message_data = {
@@ -119,7 +118,7 @@ def format_message_data(chunk_dict: Dict[Any, Any]) -> Dict[str, Any]:
                 # For subsequent chunks, content will just be part of JSON
                 if content.strip().startswith("```json"): # If it's the start of the block
                      message_data["content"] = "" # Don't show the marker line itself as narrative
-                else: # It's a continuation of JSON content
+                else:
                      message_data["content"] = potential_json_payload_str # Pass through the JSON part
                 
                 # The actual parsing of potential_json_payload_str will now be deferred to the frontend hook,

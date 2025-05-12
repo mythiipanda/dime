@@ -4,5 +4,4 @@ Temporarily keeping this file to avoid breaking imports.Testing single agent.
 
 from backend.agents import nba_agent
 
-# For backwards compatibility, point to the single agent
 nba_analysis_team = nba_agent

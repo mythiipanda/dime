@@ -1,16 +1,17 @@
 from fastapi import APIRouter, HTTPException, Body, status # Added Body, status
 import logging
 import asyncio
-import json # For parsing JSON strings from logic functions
-from typing import Dict, Any, List # Added List for response model
+import json
+from typing import Any
 
-from backend.schemas import SearchRequest # Corrected import
-from backend.api_tools.search import ( # Corrected import
+from backend.schemas import SearchRequest
+from backend.api_tools.search import (
     search_players_logic, 
     search_teams_logic, 
     search_games_logic
 )
-from backend.config import SUPPORTED_SEARCH_TARGETS, Errors # Corrected import
+from backend.core.constants import SUPPORTED_SEARCH_TARGETS
+from backend.core.errors import Errors
 
 logger = logging.getLogger(__name__)
 router = APIRouter(
@@ -23,17 +24,15 @@ async def _handle_search_logic_call(
     endpoint_name: str,
     *args, 
     **kwargs
-) -> Any: # Can return Dict or List
+) -> Any:
     """Helper to call search logic, parse JSON, and handle errors."""
     try:
         # Filter out None kwargs so logic functions can use their defaults
         filtered_kwargs = {k: v for k, v in kwargs.items() if v is not None}
         
         result_json_string = await asyncio.to_thread(logic_function, *args, **filtered_kwargs)
-        # Assuming logic functions consistently return JSON strings
         result_data = json.loads(result_json_string)
 
-        # Check for error key in the parsed data (if it's a dict)
         if isinstance(result_data, dict) and 'error' in result_data:
             error_detail = result_data['error']
             logger.error(f"Error from {logic_function.__name__} for args {args}, kwargs {filtered_kwargs}: {error_detail}")
@@ -41,9 +40,7 @@ async def _handle_search_logic_call(
             status_code_to_raise = status.HTTP_404_NOT_FOUND if "not found" in error_detail.lower() else \
                                    status.HTTP_400_BAD_REQUEST if "invalid" in error_detail.lower() else \
                                    status.HTTP_500_INTERNAL_SERVER_ERROR
-            raise HTTPException(status_code=status_code_to_raise, detail=error_detail)
-        
-        # If no error key, or if result_data is a list (e.g., list of players/teams), return as is
+            raise HTTPException(status_code=status_code_to_raise, detail=error_detail)        
         return result_data
     except HTTPException as http_exc:
         raise http_exc
@@ -59,18 +56,14 @@ async def _handle_search_logic_call(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=detail_msg)
 
 @router.post(
-    "/", # Changed to root of /search prefix
+    "/",
     summary="Perform a Search",
     description="Searches for players, teams, or games based on the provided query string and target type. "
                 "The structure of the results depends on the search target.",
-    # response_model cannot be easily defined here as it varies by target.
-    # The actual return type will be List[Dict[str, Any]] for players/teams,
-    # or Dict[str, Any] for games (which itself contains a list of games).
-    # OpenAPI will infer from the return type annotation.
 )
-async def perform_search_endpoint( # Renamed for clarity
+async def perform_search_endpoint(
     request: SearchRequest = Body(...)
-) -> Any: # Return type is dynamic based on target
+) -> Any:
     """
     Search for players, teams, or games.
 
@@ -130,12 +123,7 @@ async def perform_search_endpoint( # Renamed for clarity
 
     if not request.query or len(request.query.strip()) < getattr(request, 'min_query_length', 2): # Assuming min_query_length might be in SearchRequest
         logger.warning(f"Search query too short: '{request.query}' for target {request.target}")
-        # For short queries, often better to return empty results than a 400,
-        # unless specific business logic dictates otherwise.
-        # The logic functions themselves might handle this by returning empty.
-        # If we want to enforce it here:
-        # raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=Errors.QUERY_TOO_SHORT)
-        pass # Let logic layer handle short queries (likely return no results)
+        pass
 
 
     if request.target == "players":
@@ -149,7 +137,6 @@ async def perform_search_endpoint( # Renamed for clarity
             request.query, limit=request.limit
         )
     elif request.target == "games":
-        # Game search might have more specific parameters like season, season_type
         return await _handle_search_logic_call(
             search_games_logic, "game search",
             request.query, 
@@ -158,7 +145,5 @@ async def perform_search_endpoint( # Renamed for clarity
             limit=request.limit
         )
     else:
-        # This case should be caught by the SUPPORTED_SEARCH_TARGETS check,
-        # but as a fallback:
         logger.error(f"Reached unexpected else block for search target: {request.target}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error: Search target processing failed.")

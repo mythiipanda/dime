@@ -1,23 +1,17 @@
 from pydantic import BaseModel, Field, validator
 from typing import Dict, Any, Optional, List, Union
 from enum import Enum
-import datetime # Added for date validation in FetchRequestParamsFindGames
+import datetime
 
-# Assuming these are defined in your config.py or imported appropriately
-from backend.config import (
-    CURRENT_SEASON, 
-    MIN_PLAYER_SEARCH_LENGTH, 
+from backend.config import settings
+from backend.core.constants import (
+    MIN_PLAYER_SEARCH_LENGTH,
     MAX_SEARCH_RESULTS,
-    SUPPORTED_SEARCH_TARGETS, 
-    SUPPORTED_FETCH_TARGETS_FOR_ROUTE
 )
-# Import from nba_api.stats.library.parameters for default values and potential Enum mapping
 from nba_api.stats.library.parameters import (
     SeasonTypeAllStar, 
     PerModeDetailed, 
     LeagueID,
-    PerModeSimple, 
-    PerMode36 
 )
 
 # --- Enums for Request Validation and OpenAPI Documentation ---
@@ -33,26 +27,18 @@ class FetchTargetEnum(str, Enum):
     team_info = "team_info"
     player_career_stats = "player_career_stats"
     find_games = "find_games"
-    # Add other targets from SUPPORTED_FETCH_TARGETS_FOR_ROUTE if they are implemented in routes/fetch.py
 
 class SeasonTypeEnum(str, Enum):
-    regular_season = SeasonTypeAllStar.regular # Reverted to .regular
+    regular_season = SeasonTypeAllStar.regular
     playoffs = SeasonTypeAllStar.playoffs     
-    pre_season = SeasonTypeAllStar.preseason      # Corrected from .pre_season
-    all_star = SeasonTypeAllStar.all_star     
-    # Add other relevant season types if needed (e.g., .play_in)
-    # play_in = SeasonTypeAllStar.play_in # Example if nba_api supports it and it's needed
+    pre_season = SeasonTypeAllStar.preseason
+    all_star = SeasonTypeAllStar.all_star
 
 class PerModeEnum(str, Enum):
-    # Using values from PerModeDetailed as a base, can be expanded
     per_game = PerModeDetailed.per_game 
     totals = PerModeDetailed.totals     
-    per_36 = PerModeDetailed.per_36 # PerModeDetailed.per_36 is "Per36Minutes"
-                                    # PerMode36.per_36 is "Per36" - ensure consistency with tools
+    per_36 = PerModeDetailed.per_36
     per_minute = PerModeDetailed.per_minute 
-    # Consider adding other PerMode options like PerModeSimple.per_game if tools use different sets
-    # For example, if a tool specifically uses PerModeSimple:
-    # per_game_simple = PerModeSimple.per_game 
 
 class LeagueIDEnum(str, Enum):
     nba = LeagueID.nba 
@@ -65,8 +51,8 @@ class PlayerAnalysisRequest(BaseModel):
     """Request schema for the /player/analyze endpoint."""
     player_name: str = Field(..., description="Full name of the player to analyze (e.g., 'LeBron James').")
     season: Optional[str] = Field(
-        default=None, 
-        description=f"NBA season in YYYY-YY format (e.g., '2023-24'). Defaults to {CURRENT_SEASON} in the logic layer if not provided.",
+        default=None,
+        description=f"NBA season in YYYY-YY format (e.g., '2023-24'). Defaults to {settings.CURRENT_NBA_SEASON} in the logic layer if not provided.", # Changed
         pattern=r"^\d{4}-\d{2}$"
     )
     season_type: Optional[SeasonTypeEnum] = Field(
@@ -152,14 +138,3 @@ class SearchRequest(BaseModel):
         default=None, 
         description="For 'games' target: Type of season."
     )
-
-# --- Research Route Schemas ---
-class ResearchStreamQueryRequest(BaseModel):
-    topic: str = Field(..., description="The main topic for the research workflow.")
-    selected_sections_json: Optional[str] = Field(None, alias="selected_sections", description="A URL-encoded JSON string representing a list of specific section names to focus on (e.g., '[\"Player Analysis\", \"Team Comparison\"]'. Optional.")
-
-class PromptSuggestionRequest(BaseModel):
-    current_prompt: str = Field(..., description="The user's current research prompt to get suggestions for.")
-
-class PromptSuggestionResponse(BaseModel):
-    suggestions: List[str]

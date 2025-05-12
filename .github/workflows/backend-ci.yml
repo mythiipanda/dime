@@ -1,0 +1,30 @@
+name: Backend CI/CD
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          cd backend
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Run pytest
+        run: |
+          cd backend
+          pytest smoke_tests --maxfail=3 --disable-warnings -v
+      - name: Deploy (placeholder)
+        if: success()
+        run: echo "Deploy step goes here (e.g., Docker build/push, SSH, or cloud deploy)" 

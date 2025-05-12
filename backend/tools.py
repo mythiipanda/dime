@@ -10,54 +10,58 @@ from nba_api.stats.library.parameters import (
     PerModeSimple, PlayerOrTeamAbbreviation
     # MeasureTypeDetailedDefense removed as it's not directly used for default in get_team_stats wrapper
 )
-from backend.config import CURRENT_SEASON
+from backend.config import settings # Changed
 from backend.api_tools.utils import format_response
 
 
 # Import logic functions from the specific backend.api_tools modules
-from backend.api_tools.player_tools import (
-    fetch_player_info_logic,
-    fetch_player_gamelog_logic,
-    fetch_player_career_stats_logic,
-    fetch_player_awards_logic,
-    fetch_player_shotchart_logic,
-    fetch_player_defense_logic,
-    fetch_player_hustle_stats_logic,
-    fetch_player_profile_logic,
-    fetch_player_stats_logic
-)
-from backend.api_tools.team_tools import (
-    fetch_team_info_and_roster_logic,
-    fetch_team_stats_logic,
-)
-from backend.api_tools.game_tools import (
+# Player tools - modularized
+from backend.api_tools.player_common_info import fetch_player_info_logic
+from backend.api_tools.player_gamelogs import fetch_player_gamelog_logic
+from backend.api_tools.player_career_data import fetch_player_career_stats_logic, fetch_player_awards_logic
+from backend.api_tools.player_dashboard_stats import fetch_player_profile_logic, fetch_player_defense_logic, fetch_player_hustle_stats_logic
+from backend.api_tools.player_shot_charts import fetch_player_shotchart_logic
+from backend.api_tools.player_aggregate_stats import fetch_player_stats_logic
+# Note: get_player_headshot_url is not directly wrapped as an agent tool here, but used by routes.
+
+# Team tools - modularized
+from backend.api_tools.team_info_roster import fetch_team_info_and_roster_logic
+from backend.api_tools.team_general_stats import fetch_team_stats_logic
+# fetch_team_passing_stats_logic from the original team_tools.py is now in team_passing_analytics.py
+# The get_team_passing_stats tool below uses the version from team_tracking.py
+
+# Game tools - modularized
+from backend.api_tools.game_boxscores import (
     fetch_boxscore_traditional_logic,
-    fetch_playbyplay_logic,
-    fetch_league_games_logic,
-    fetch_shotchart_logic, # Renamed in wrapper to get_game_shotchart
     fetch_boxscore_advanced_logic,
     fetch_boxscore_four_factors_logic,
     fetch_boxscore_usage_logic,
-    fetch_boxscore_defensive_logic,
+    fetch_boxscore_defensive_logic
+)
+from backend.api_tools.game_playbyplay import fetch_playbyplay_logic
+from backend.api_tools.game_visuals_analytics import (
+    fetch_shotchart_logic, # This is game-specific shotchart
     fetch_win_probability_logic
 )
-from backend.api_tools.league_tools import (
-    fetch_league_standings_logic,
-    fetch_draft_history_logic,
-    fetch_league_leaders_logic
-)
-from backend.api_tools.player_tracking import (
-    fetch_player_clutch_stats_logic,
-    fetch_player_passing_stats_logic,
-    fetch_player_shots_tracking_logic,
-    fetch_player_rebounding_stats_logic
-)
-from backend.api_tools.team_tracking import (
-    fetch_team_passing_stats_logic,
-    fetch_team_shooting_stats_logic,
-    fetch_team_rebounding_stats_logic
-)
-from backend.api_tools.scoreboard.scoreboard_tools import fetch_scoreboard_data_logic
+from backend.api_tools.game_finder import fetch_league_games_logic
+
+# League tools - modularized
+from backend.api_tools.league_standings import fetch_league_standings_logic
+from backend.api_tools.league_draft import fetch_draft_history_logic
+from backend.api_tools.league_leaders_data import fetch_league_leaders_logic
+
+# Player Tracking tools - modularized
+from backend.api_tools.player_clutch import fetch_player_clutch_stats_logic
+from backend.api_tools.player_passing import fetch_player_passing_stats_logic
+from backend.api_tools.player_shooting_tracking import fetch_player_shots_tracking_logic
+from backend.api_tools.player_rebounding import fetch_player_rebounding_stats_logic
+
+# Team Tracking tools - modularized
+from backend.api_tools.team_passing_tracking import fetch_team_passing_stats_logic
+from backend.api_tools.team_shooting_tracking import fetch_team_shooting_stats_logic
+from backend.api_tools.team_rebounding_tracking import fetch_team_rebounding_stats_logic
+
+from backend.api_tools.scoreboard_tools import fetch_scoreboard_data_logic # Updated import path
 from backend.api_tools.odds_tools import fetch_odds_data_logic
 from backend.api_tools.analyze import analyze_player_stats_logic
 from backend.api_tools.trending_tools import fetch_top_performers_logic
@@ -195,7 +199,7 @@ def get_player_awards(player_name: str) -> str:
 @tool
 def get_player_shotchart(
     player_name: str,
-    season: str = CURRENT_SEASON,
+    season: str = settings.CURRENT_NBA_SEASON, # Changed
     season_type: str = SeasonTypeAllStar.regular
 ) -> str:
     """
@@ -241,7 +245,7 @@ def get_player_shotchart(
 @tool
 def get_player_defense_stats(
     player_name: str,
-    season: str = CURRENT_SEASON,
+    season: str = settings.CURRENT_NBA_SEASON, # Changed
     season_type: str = SeasonTypeAllStar.regular,
     per_mode: str = PerModeDetailed.per_game
 ) -> str:
@@ -288,7 +292,7 @@ def get_player_defense_stats(
 @tool
 def get_player_clutch_stats(
     player_name: str,
-    season: str = CURRENT_SEASON,
+    season: str = settings.CURRENT_NBA_SEASON, # Changed
     season_type: str = SeasonTypeAllStar.regular,
     measure_type: str = "Base",
     per_mode: str = "Totals"
@@ -332,7 +336,7 @@ def get_player_clutch_stats(
 @tool
 def get_player_passing_stats(
     player_name: str,
-    season: str = CURRENT_SEASON,
+    season: str = settings.CURRENT_NBA_SEASON, # Changed
     season_type: str = SeasonTypeAllStar.regular,
     per_mode: str = PerModeSimple.per_game
 ) -> str:
@@ -375,7 +379,7 @@ def get_player_passing_stats(
 @tool
 def get_player_rebounding_stats(
     player_name: str,
-    season: str = CURRENT_SEASON,
+    season: str = settings.CURRENT_NBA_SEASON, # Changed
     season_type: str = SeasonTypeAllStar.regular,
     per_mode: str = PerModeSimple.per_game
 ) -> str:
@@ -415,7 +419,7 @@ def get_player_rebounding_stats(
     return result
 
 @tool
-def get_player_shots_tracking(player_name: str, season: str = CURRENT_SEASON, season_type: str = SeasonTypeAllStar.regular) -> str:
+def get_player_shots_tracking(player_name: str, season: str = settings.CURRENT_NBA_SEASON, season_type: str = SeasonTypeAllStar.regular) -> str: # Changed
     """
     Fetches detailed player shooting statistics, categorized by various factors like shot clock, dribbles, and defender distance.
 
@@ -449,7 +453,7 @@ def get_player_shots_tracking(player_name: str, season: str = CURRENT_SEASON, se
 
 # Team Tools
 @tool
-def get_team_info_and_roster(team_identifier: str, season: str = CURRENT_SEASON) -> str:
+def get_team_info_and_roster(team_identifier: str, season: str = settings.CURRENT_NBA_SEASON) -> str: # Changed
     """
     Fetches comprehensive team information including basic details, conference/division ranks,
     historical performance, current season roster, and coaching staff.
@@ -480,7 +484,7 @@ def get_team_info_and_roster(team_identifier: str, season: str = CURRENT_SEASON)
 @tool
 def get_team_stats(
     team_identifier: str,
-    season: str = CURRENT_SEASON,
+    season: str = settings.CURRENT_NBA_SEASON, # Changed
     season_type: str = SeasonTypeAllStar.regular,
     per_mode: str = PerModeDetailed.per_game,
     measure_type: str = "Base", # Defaulting to "Base" as it's a common one.
@@ -543,7 +547,7 @@ def get_team_stats(
 @tool
 def get_team_passing_stats(
     team_identifier: str,
-    season: str = CURRENT_SEASON,
+    season: str = settings.CURRENT_NBA_SEASON, # Changed
     season_type: str = SeasonTypeAllStar.regular,
     per_mode: str = PerModeSimple.per_game
 ) -> str:
@@ -589,7 +593,7 @@ def get_team_passing_stats(
 @tool
 def get_team_shooting_stats(
     team_identifier: str,
-    season: str = CURRENT_SEASON,
+    season: str = settings.CURRENT_NBA_SEASON, # Changed
     season_type: str = SeasonTypeAllStar.regular,
     per_mode: str = PerModeSimple.per_game
 ) -> str:
@@ -635,7 +639,7 @@ def get_team_shooting_stats(
 @tool
 def get_team_rebounding_stats(
     team_identifier: str,
-    season: str = CURRENT_SEASON,
+    season: str = settings.CURRENT_NBA_SEASON, # Changed
     season_type: str = SeasonTypeAllStar.regular,
     per_mode: str = PerModeSimple.per_game
 ) -> str:
@@ -762,7 +766,7 @@ def get_boxscore_traditional(game_id: str, start_period: int = 0, end_period: in
     return result
 
 @tool
-def get_league_standings(season: str = CURRENT_SEASON, season_type: str = SeasonTypeAllStar.regular) -> str:
+def get_league_standings(season: str = settings.CURRENT_NBA_SEASON, season_type: str = SeasonTypeAllStar.regular) -> str: # Changed
     """
     Fetches league standings (conference, division) for a specific season and type.
     Note: The `league_id` parameter is available in the underlying logic but defaults to NBA ("00") and is not exposed in this simplified tool wrapper.
@@ -903,7 +907,7 @@ def get_draft_history(
 @tool
 def get_league_leaders(
     stat_category: str,
-    season: str = CURRENT_SEASON,
+    season: str = settings.CURRENT_NBA_SEASON, # Changed
     season_type: str = SeasonTypeAllStar.regular,
     per_mode: str = PerMode48.per_game,
     league_id: str = LeagueID.nba,
@@ -956,7 +960,7 @@ def get_league_leaders(
 
 @tool
 def get_player_hustle_stats(
-    season: str = CURRENT_SEASON,
+    season: str = settings.CURRENT_NBA_SEASON, # Changed
     season_type: str = SeasonTypeAllStar.regular,
     per_mode: str = PerModeDetailed.per_game,
     player_name: Optional[str] = None,
@@ -1040,7 +1044,7 @@ def get_player_profile(player_name: str, per_mode: str = PerModeDetailed.per_gam
     return result
 
 @tool
-def get_player_aggregate_stats(player_name: str, season: str = CURRENT_SEASON, season_type: str = SeasonTypeAllStar.regular) -> str:
+def get_player_aggregate_stats(player_name: str, season: str = settings.CURRENT_NBA_SEASON, season_type: str = SeasonTypeAllStar.regular) -> str: # Changed
     """
     Fetches an aggregated set of player statistics for a specific season, including various dashboard views.
     This tool provides a broad overview of a player's performance.
@@ -1068,7 +1072,7 @@ def get_player_aggregate_stats(player_name: str, season: str = CURRENT_SEASON, s
     return result
 
 @tool
-def get_top_performers(category: str = "PTS", season: str = CURRENT_SEASON, season_type: str = SeasonTypeAllStar.regular, per_mode: str = PerMode48.per_game, top_n: int = 5) -> str:
+def get_top_performers(category: str = "PTS", season: str = settings.CURRENT_NBA_SEASON, season_type: str = SeasonTypeAllStar.regular, per_mode: str = PerMode48.per_game, top_n: int = 5) -> str: # Changed
     """
     Gets the top N players for a specific statistical category in a given season and season type.
 
@@ -1099,7 +1103,7 @@ def get_top_performers(category: str = "PTS", season: str = CURRENT_SEASON, seas
     return result
 
 @tool
-def get_top_teams(season: str = CURRENT_SEASON, season_type: str = SeasonTypeAllStar.regular, top_n: int = 5) -> str:
+def get_top_teams(season: str = settings.CURRENT_NBA_SEASON, season_type: str = SeasonTypeAllStar.regular, top_n: int = 5) -> str: # Changed
     """
     Gets the top N teams based on league standings for a given season and season type.
 
@@ -1125,7 +1129,7 @@ def get_top_teams(season: str = CURRENT_SEASON, season_type: str = SeasonTypeAll
     return result
 
 @tool
-def get_player_insights(player_name: str, season: str = CURRENT_SEASON, season_type: str = SeasonTypeAllStar.regular, per_mode: str = PerModeDetailed.per_game, league_id: str = LeagueID.nba) -> str:
+def get_player_insights(player_name: str, season: str = settings.CURRENT_NBA_SEASON, season_type: str = SeasonTypeAllStar.regular, per_mode: str = PerModeDetailed.per_game, league_id: str = LeagueID.nba) -> str: # Changed
     """
     Fetches overall player dashboard statistics for a given season, type, and mode, providing insights into performance.
     This is a wrapper around `analyze_player_stats_logic`.
@@ -1218,7 +1222,7 @@ def get_game_shotchart(game_id: str) -> str:
 
 # --- Matchup Tools ---
 @tool
-def get_season_matchups(def_player_id: str, off_player_id: str, season: str = CURRENT_SEASON, season_type: str = SeasonTypeAllStar.regular) -> str:
+def get_season_matchups(def_player_id: str, off_player_id: str, season: str = settings.CURRENT_NBA_SEASON, season_type: str = SeasonTypeAllStar.regular) -> str: # Changed
     """
     Fetches head-to-head matchup statistics between a defensive player and an offensive player for a specific season.
 
@@ -1241,7 +1245,7 @@ def get_season_matchups(def_player_id: str, off_player_id: str, season: str = CU
     return fetch_league_season_matchups_logic(def_player_id, off_player_id, season, season_type)
 
 @tool
-def get_matchups_rollup(def_player_id: str, season: str = CURRENT_SEASON, season_type: str = SeasonTypeAllStar.regular) -> str:
+def get_matchups_rollup(def_player_id: str, season: str = settings.CURRENT_NBA_SEASON, season_type: str = SeasonTypeAllStar.regular) -> str: # Changed
     """
     Fetches a rollup of matchup statistics for a defensive player against all opponents in a specific season,
     categorized by the position of the offensive player.
@@ -1272,7 +1276,7 @@ def get_synergy_play_types(
     per_mode: str = PerModeSimple.per_game,
     player_or_team_abbreviation: str = PlayerOrTeamAbbreviation.team,
     season_type: str = SeasonTypeAllStar.regular,
-    season: str = CURRENT_SEASON,
+    season: str = settings.CURRENT_NBA_SEASON, # Changed
     play_type: Optional[str] = None,
     type_grouping: Optional[str] = None
 ) -> str:
@@ -1317,7 +1321,7 @@ def get_synergy_play_types(
 @tool
 def get_player_analysis(
     player_name: str,
-    season: str = CURRENT_SEASON,
+    season: str = settings.CURRENT_NBA_SEASON, # Changed
     season_type: str = SeasonTypeAllStar.regular,
     per_mode: str = PerModeDetailed.per_game,
     league_id: str = LeagueID.nba

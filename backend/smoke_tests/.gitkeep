@@ -1,0 +1,2 @@
+# This file is to ensure the smoke_tests directory is tracked by git.
+# You can place ad-hoc test scripts for backend logic functions here.

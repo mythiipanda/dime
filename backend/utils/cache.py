@@ -11,7 +11,7 @@ _cache: Dict[str, Dict[str, Any]] = {}
 CACHE_ENABLED = True # Set back to True to enable caching
 
 def cache_data(key: str, data: Any, ttl: int = 3600):
-    """Stores data in the in-memory cache with a time-to-live (TTL). (DISABLED)"""
+    """Stores data in the in-memory cache with a time-to-live (TTL)."""
     if not CACHE_ENABLED:
         logger.debug(f"Caching disabled. Skipping cache_data for key '{key}'")
         return
@@ -21,7 +21,7 @@ def cache_data(key: str, data: Any, ttl: int = 3600):
     logger.debug(f"Cached data for key '{key}' with TTL {ttl}s.")
 
 def get_cached_data(key: str) -> Optional[Any]:
-    """Retrieves data from the in-memory cache if it exists and hasn't expired. (DISABLED)"""
+    """Retrieves data from the in-memory cache if it exists and hasn't expired."""
     if not CACHE_ENABLED:
         logger.debug(f"Caching disabled. Skipping get_cached_data for key '{key}'")
         return None

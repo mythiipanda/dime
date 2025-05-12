@@ -1,14 +1,14 @@
 from fastapi import APIRouter, Query, HTTPException, status, WebSocket, WebSocketDisconnect
 import logging
 from typing import Any, Dict, Optional
-from datetime import date, timedelta # Added timedelta for potential future use
+from datetime import date
 import json
 import asyncio
-from starlette.websockets import WebSocketState # For checking connection state
+from starlette.websockets import WebSocketState
 
-from backend.api_tools.scoreboard.scoreboard_tools import fetch_scoreboard_data_logic
-from backend.api_tools.utils import validate_date_format
-from backend.config import Errors # Import Errors for consistent error messages
+from backend.api_tools.scoreboard_tools import fetch_scoreboard_data_logic
+from backend.utils.validation import validate_date_format
+from backend.core.errors import Errors
 
 logger = logging.getLogger(__name__)
 router = APIRouter(
@@ -16,22 +16,8 @@ router = APIRouter(
     tags=["Scoreboard"]    # Tag for OpenAPI documentation
 )
 
-# WebSocket Connection Manager (Optional, but good for managing multiple connections if needed)
-# class ConnectionManager:
-#     def __init__(self):
-#         self.active_connections: list[WebSocket] = []
-#     async def connect(self, websocket: WebSocket):
-#         await websocket.accept()
-#         self.active_connections.append(websocket)
-#     def disconnect(self, websocket: WebSocket):
-#         self.active_connections.remove(websocket)
-#     async def broadcast(self, message: str): # Or send_json for dicts
-#         for connection in self.active_connections:
-#             await connection.send_text(message)
-# manager = ConnectionManager() # Instantiate if using the manager
-
 @router.websocket("/ws")
-async def scoreboard_websocket_endpoint(websocket: WebSocket): # Renamed for clarity
+async def scoreboard_websocket_endpoint(websocket: WebSocket):
     """
     WebSocket endpoint for real-time NBA scoreboard updates.
 
@@ -60,11 +46,9 @@ async def scoreboard_websocket_endpoint(websocket: WebSocket): # Renamed for cla
     logger.info(f"New WebSocket connection request from {websocket.client}")
     await websocket.accept()
     logger.info(f"WebSocket connection accepted for {websocket.client}")
-    # await manager.connect(websocket) # If using ConnectionManager
-
     try:
         while True:
-            if websocket.application_state != WebSocketState.CONNECTED: # Use application_state
+            if websocket.application_state != WebSocketState.CONNECTED:
                 logger.warning(f"WebSocket {websocket.client} no longer connected (application_state). Stopping updates.")
                 break
             
@@ -85,7 +69,7 @@ async def scoreboard_websocket_endpoint(websocket: WebSocket): # Renamed for cla
                 
                 except json.JSONDecodeError:
                     logger.error(f"Failed to decode JSON from scoreboard logic for WebSocket {websocket.client}. Response: {data_json_string[:200]}...")
-                except Exception as send_err: # Catch errors during send_json or processing
+                except Exception as send_err:
                     logger.error(f"Error processing/sending scoreboard data to WebSocket {websocket.client}: {send_err}", exc_info=True)
                     # Decide if to break or continue based on error type
                     if not (websocket.application_state == WebSocketState.CONNECTED): break # Break if disconnected during send
@@ -112,12 +96,10 @@ async def scoreboard_websocket_endpoint(websocket: WebSocket): # Renamed for cla
             await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
     finally:
         logger.info(f"Closing WebSocket connection for {websocket.client}")
-        # manager.disconnect(websocket) # If using ConnectionManager
-        # Ensure close is called if not already disconnected, but handle potential errors if already closed
         if websocket.application_state != WebSocketState.DISCONNECTED:
             try:
                 await websocket.close(code=status.WS_1000_NORMAL_CLOSURE)
-            except RuntimeError as rt_err: # e.g. "Cannot call 'send' once a close message has been sent."
+            except RuntimeError as rt_err:
                  logger.debug(f"RuntimeError during final WebSocket close for {websocket.client} (likely already closing/closed): {rt_err}")
             except Exception as final_close_err:
                  logger.warning(f"Error during final WebSocket close for {websocket.client}: {final_close_err}")
@@ -128,14 +110,14 @@ async def scoreboard_websocket_endpoint(websocket: WebSocket): # Renamed for cla
     summary="Get Scoreboard by Date", 
     description="Fetches NBA scoreboard data (list of games, status, scores) for a specific date. "
                 "If no date is provided, it defaults to the current day's scoreboard.",
-    response_model=Dict[str, Any] # Explicitly define for OpenAPI
+    response_model=Dict[str, Any]
 )
-async def get_scoreboard_by_date_endpoint( # Renamed for clarity
+async def get_scoreboard_by_date_endpoint(
     game_date: Optional[str] = Query(
         default=None, 
         description="The date for which to fetch the scoreboard, in YYYY-MM-DD format. "
                     "If not provided, defaults to the current date.",
-        regex=r"^\d{4}-\d{2}-\d{2}$" # Add regex for basic format validation by FastAPI
+        regex=r"^\d{4}-\d{2}-\d{2}$"
     )
 ) -> Dict[str, Any]:
     """
@@ -172,9 +154,7 @@ async def get_scoreboard_by_date_endpoint( # Renamed for clarity
     effective_game_date_str = game_date or date.today().strftime('%Y-%m-%d')
     logger.info(f"Received GET /scoreboard/ request for date: {effective_game_date_str}.")
 
-    # FastAPI Query with regex handles basic format validation.
-    # validate_date_format can be an additional check if needed, or relied upon in logic layer.
-    if game_date and not validate_date_format(game_date): # Double check, though regex should catch it
+    if game_date and not validate_date_format(game_date):
          raise HTTPException(
              status_code=status.HTTP_400_BAD_REQUEST, 
              detail=Errors.INVALID_DATE_FORMAT.format(date=game_date)
@@ -189,10 +169,7 @@ async def get_scoreboard_by_date_endpoint( # Renamed for clarity
             logger.error(f"Error from fetch_scoreboard_data_logic for date {effective_game_date_str}: {error_detail}")
             # Map common errors from logic to appropriate HTTP status codes
             status_code_to_raise = status.HTTP_500_INTERNAL_SERVER_ERROR # Default
-            if "not found" in error_detail.lower(): # Though scoreboard usually returns empty list not error for no games
-                # If logic explicitly returns "not found" for a valid date with no games,
-                # it might be better to return 200 OK with empty games list.
-                # Assuming error means a more significant issue.
+            if "not found" in error_detail.lower():
                 status_code_to_raise = status.HTTP_404_NOT_FOUND
             elif "invalid date" in error_detail.lower() or "invalid format" in error_detail.lower():
                 status_code_to_raise = status.HTTP_400_BAD_REQUEST

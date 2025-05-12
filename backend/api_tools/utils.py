@@ -1,16 +1,14 @@
 import logging
 import json
-import re
-import time 
-from typing import Optional, Union, List, Dict, Any, Callable, Tuple 
+import time
+from typing import Optional, Union, List, Dict, Any, Callable, Tuple
 import pandas as pd
+import numpy as np # Added numpy import
+from datetime import datetime, date # Ensure date and datetime are imported from datetime
 from requests.exceptions import ReadTimeout, ConnectionError
 
-from backend.config import Errors 
-import datetime 
-
-from nba_api.stats.static import players
-from nba_api.stats.static import teams
+from backend.core.errors import Errors
+from nba_api.stats.static import players, teams
 logger = logging.getLogger(__name__)
 
 def retry_on_timeout(func: Callable[[], Any], max_retries: int = 3, initial_delay: float = 1.0, max_delay: float = 8.0) -> Any:
@@ -42,57 +40,6 @@ def retry_on_timeout(func: Callable[[], Any], max_retries: int = 3, initial_dela
     return None
 
 
-def _validate_season_format(season: str) -> bool:
-    """
-    Validates that the season string is in the "YYYY-YY" format (e.g., "2023-24").
-    """
-    if not season or not isinstance(season, str):
-        return False
-    
-    match = re.fullmatch(r"(\d{4})-(\d{2})", season)
-    if not match:
-        return False
-
-    try:
-        start_year_str, end_year_short_str = match.groups()
-        start_year = int(start_year_str)
-        end_year_short = int(end_year_short_str)
-
-        if start_year < 1940 or start_year > datetime.datetime.now().year + 1: 
-            return False
-        
-        expected_end_year_short = (start_year + 1) % 100
-        
-        return end_year_short == expected_end_year_short
-    except ValueError: 
-        return False
-
-def validate_season_format(season: str) -> bool:
-    """
-    Public interface to validate that the season string is in the "YYYY-YY" format.
-    """
-    return _validate_season_format(season)
-
-def validate_game_id_format(game_id: str) -> bool:
-    """
-    Validates that an NBA game ID string consists of exactly 10 digits.
-    """
-    if not game_id or not isinstance(game_id, str):
-        return False
-    return bool(re.fullmatch(r"^\d{10}$", game_id))
-
-def validate_date_format(date_string: str) -> bool:
-    """
-    Validates that a date string is in the "YYYY-MM-DD" format.
-    """
-    if not date_string or not isinstance(date_string, str):
-        return False
-    try:
-        datetime.datetime.strptime(date_string, '%Y-%m-%d')
-        return True
-    except ValueError:
-        return False
-
 def format_response(data: Optional[Dict[str, Any]] = None, error: Optional[str] = None) -> str:
     """
     Formats the API response as a JSON string.
@@ -104,31 +51,6 @@ def format_response(data: Optional[Dict[str, Any]] = None, error: Optional[str] 
     else:
         return json.dumps({})
 
-def handle_api_error(error_type: str, message: Optional[str] = None, details: Optional[Dict[str, Any]] = None) -> str:
-    """
-    (Potentially Legacy) Handles API errors and returns a formatted JSON error response string.
-    """
-    error_messages: Dict[str, str] = {
-        "InvalidGameId": "Invalid game ID format.",
-        "InvalidSeason": "Invalid season format.",
-        "InvalidPlayer": "Player not found.",
-        "InvalidTeam": "Team not found.",
-        "Timeout": "The request to the NBA API timed out.",
-        "Unknown": "An unexpected error occurred while communicating with the NBA API.",
-        "EmptyGameId": "Game ID cannot be empty.",
-        "MissingTeamId": "Team ID is missing in the response data from the NBA API.",
-        "NoDataFound": "No data found for the specified criteria from the NBA API.",
-        "APIError": "An error occurred while fetching data from the NBA API."
-    }
-
-    error_msg_text = message or error_messages.get(error_type, error_messages["Unknown"])
-    response_dict: Dict[str, Any] = {"error": error_msg_text}
-
-    if details:
-        response_dict["details"] = details
-
-    return json.dumps(response_dict)
-
 def _process_dataframe(df: Optional[pd.DataFrame], single_row: bool = True) -> Optional[Union[Dict[str, Any], List[Dict[str, Any]]]]:
     """
     Processes a pandas DataFrame into a dictionary or list of dictionaries.
@@ -136,17 +58,73 @@ def _process_dataframe(df: Optional[pd.DataFrame], single_row: bool = True) -> O
     if df is None or df.empty:
         return {} if single_row else []
 
+    df_copy = df.copy() # Work on a copy to avoid modifying the original DataFrame
+
+    # Step 1: Convert all pandas/numpy NaNs/NaTs to Python None
     try:
-        df_processed = df.where(pd.notnull(df), None)
-        if single_row:
-            if len(df_processed) > 0:
-                return df_processed.iloc[0].to_dict()
-            else:
-                return {} 
-        else:
-            return df_processed.to_dict(orient='records')
+        df_copy = df_copy.where(pd.notnull(df_copy), None)
     except Exception as e:
-        logger.error(f"Error processing DataFrame: {str(e)}", exc_info=True)
+        logger.warning(f"Utils: _process_dataframe - Error during df.where(pd.notnull(df), None): {e}. Proceeding with original df_copy.")
+        # If .where fails, df_copy remains the original copy; pd.isna() will handle NaNs later.
+
+    # The aggressive astype(str) was causing numbers to become strings permanently.
+    # Rely on the .where() for null normalization and the loop below for type conversion.
+
+    try:
+        if single_row:
+            if len(df_copy) > 0:
+                row_dict = {}
+                for col_name, value in df_copy.iloc[0].items():
+                    try:
+                        if pd.isna(value):
+                            row_dict[col_name] = None
+                        elif isinstance(value, np.integer):
+                            row_dict[col_name] = int(value)
+                        elif isinstance(value, np.floating):
+                            row_dict[col_name] = float(value)
+                        elif isinstance(value, np.bool_):
+                            row_dict[col_name] = bool(value)
+                        elif isinstance(value, (datetime, date, pd.Timestamp)):
+                            row_dict[col_name] = value.isoformat()
+                        elif isinstance(value, (int, float, bool, str)):
+                            row_dict[col_name] = value
+                        else:
+                            logger.debug(f"Utils: _process_dataframe (single_row) - Fallback to str for col '{col_name}', type '{type(value)}', value: '{str(value)[:100]}'")
+                            row_dict[col_name] = str(value)
+                    except Exception as val_e:
+                        logger.error(f"Utils: _process_dataframe (single_row) - Error converting value for col '{col_name}', type '{type(value)}', value: '{str(value)[:100]}'. Error: {val_e}", exc_info=True)
+                        row_dict[col_name] = None
+                return row_dict
+            else:
+                return {}
+        else: # For single_row == False
+            records = []
+            for index, row_series in df_copy.iterrows(): # Iterate over the pre-processed df_copy
+                record = {}
+                for col_name, value in row_series.items():
+                    try:
+                        if pd.isna(value): # Handle NaN/NaT here
+                            record[col_name] = None
+                        elif isinstance(value, np.integer):
+                            record[col_name] = int(value)
+                        elif isinstance(value, np.floating):
+                            record[col_name] = float(value)
+                        elif isinstance(value, np.bool_):
+                            record[col_name] = bool(value)
+                        elif isinstance(value, (datetime, date, pd.Timestamp)):
+                            record[col_name] = value.isoformat()
+                        elif isinstance(value, (int, float, bool, str)):
+                            record[col_name] = value
+                        else:
+                            logger.debug(f"Utils: _process_dataframe (multi_row) - Fallback to str for col '{col_name}', type '{type(value)}', value: '{str(value)[:100]}'")
+                            record[col_name] = str(value)
+                    except Exception as val_e:
+                        logger.error(f"Utils: _process_dataframe (multi_row) - Error converting value for col '{col_name}', type '{type(value)}', value: '{str(value)[:100]}'. Error: {val_e}", exc_info=True)
+                        record[col_name] = None
+                records.append(record)
+            return records
+    except Exception as e:
+        logger.error(f"Error processing DataFrame (outer logic): {str(e)}", exc_info=True)
         return None 
 
 # --- Custom Exceptions ---
@@ -155,7 +133,6 @@ class PlayerNotFoundError(Exception):
     """Custom exception raised when a player cannot be found by the lookup utilities."""
     def __init__(self, player_identifier: str):
         self.player_identifier = player_identifier
-        # Corrected .format key from 'name' to 'identifier'
         message = Errors.PLAYER_NOT_FOUND.format(identifier=player_identifier) if hasattr(Errors, 'PLAYER_NOT_FOUND') else f"Player '{player_identifier}' not found."
         super().__init__(message)
 

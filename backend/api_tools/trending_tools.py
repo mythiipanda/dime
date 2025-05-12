@@ -1,24 +1,31 @@
 import logging
 import json
-# import time # Not actively used, consider removing
-from typing import Dict, Any, Optional, Tuple, List
+from typing import Any, Tuple
 from functools import lru_cache
 from datetime import datetime
 
-from nba_api.stats.library.parameters import SeasonTypeAllStar, StatCategoryAbbreviation, PerMode48, Scope, LeagueID # Added PerMode48, Scope, LeagueID for fetch_league_leaders_logic params
-from backend.config import CURRENT_SEASON, Errors, DEFAULT_TIMEOUT # Removed MIN_PLAYER_SEARCH_LENGTH as it's not used here
-from backend.api_tools.league_tools import fetch_league_leaders_logic # This is the core dependency
-from backend.api_tools.utils import format_response, _validate_season_format
-
+from nba_api.stats.library.parameters import SeasonTypeAllStar, StatCategoryAbbreviation, PerMode48, Scope, LeagueID
+from backend.core.errors import Errors
+from backend.api_tools.league_leaders_data import fetch_league_leaders_logic
+from backend.api_tools.utils import format_response
+from backend.utils.validation import _validate_season_format
+from backend.config import settings
 logger = logging.getLogger(__name__)
 
-CACHE_TTL_SECONDS_TRENDING = 14400 # 4 hours for trending data, as it's based on league leaders
+CACHE_TTL_SECONDS_TRENDING = 14400 # 4 hours
+
+# Module-level constants for validation sets
+_TRENDING_VALID_STAT_CATEGORIES = {getattr(StatCategoryAbbreviation, attr) for attr in dir(StatCategoryAbbreviation) if not attr.startswith('_') and isinstance(getattr(StatCategoryAbbreviation, attr), str)}
+_TRENDING_VALID_SEASON_TYPES = {getattr(SeasonTypeAllStar, attr) for attr in dir(SeasonTypeAllStar) if not attr.startswith('_') and isinstance(getattr(SeasonTypeAllStar, attr), str)}
+_TRENDING_VALID_PER_MODES = {getattr(PerMode48, attr) for attr in dir(PerMode48) if not attr.startswith('_') and isinstance(getattr(PerMode48, attr), str)}
+_TRENDING_VALID_SCOPES = {getattr(Scope, attr) for attr in dir(Scope) if not attr.startswith('_') and isinstance(getattr(Scope, attr), str)}
+_TRENDING_VALID_LEAGUE_IDS = {getattr(LeagueID, attr) for attr in dir(LeagueID) if not attr.startswith('_') and isinstance(getattr(LeagueID, attr), str)}
 
 @lru_cache(maxsize=64)
-def get_cached_league_leaders_for_trending( # Renamed for clarity
+def get_cached_league_leaders_for_trending(
     cache_key: Tuple,
     timestamp: str,
-    **kwargs: Any # Parameters for fetch_league_leaders_logic
+    **kwargs: Any # These are the params for fetch_league_leaders_logic
 ) -> str:
     """
     Cached wrapper specifically for `fetch_league_leaders_logic` when called by `fetch_top_performers_logic`.
@@ -26,7 +33,7 @@ def get_cached_league_leaders_for_trending( # Renamed for clarity
 
     Args:
         cache_key (Tuple): A tuple representing the parameters passed to `fetch_league_leaders_logic`,
-                           used for `lru_cache` keying (e.g., (category, season, season_type, per_mode, scope, league_id, top_n_internal)).
+                           used for `lru_cache` keying.
         timestamp (str): An ISO format timestamp string, typically for the current 4-hour block,
                          used to manage cache invalidation.
         **kwargs: Keyword arguments to be passed directly to `fetch_league_leaders_logic`.
@@ -48,7 +55,7 @@ def get_cached_league_leaders_for_trending( # Renamed for clarity
 @lru_cache(maxsize=128) # Caches the final processed result of top performers
 def fetch_top_performers_logic(
     category: str = StatCategoryAbbreviation.pts,
-    season: str = CURRENT_SEASON,
+    season: str = settings.CURRENT_NBA_SEASON, # Changed
     season_type: str = SeasonTypeAllStar.regular,
     per_mode: str = PerMode48.per_game, # Added per_mode for consistency with league_leaders
     scope: str = Scope.s,             # Added scope
@@ -111,26 +118,17 @@ def fetch_top_performers_logic(
         error_msg = Errors.INVALID_TOP_N.format(value=top_n)
         return format_response(error=error_msg)
 
-    VALID_STAT_CATEGORIES = {getattr(StatCategoryAbbreviation, attr) for attr in dir(StatCategoryAbbreviation) if not attr.startswith('_') and isinstance(getattr(StatCategoryAbbreviation, attr), str)}
-    if category not in VALID_STAT_CATEGORIES:
-        return format_response(error=Errors.INVALID_STAT_CATEGORY.format(value=category, options=", ".join(VALID_STAT_CATEGORIES)))
-    VALID_SEASON_TYPES = {getattr(SeasonTypeAllStar, attr) for attr in dir(SeasonTypeAllStar) if not attr.startswith('_') and isinstance(getattr(SeasonTypeAllStar, attr), str)}
-    if season_type not in VALID_SEASON_TYPES:
-        return format_response(error=Errors.INVALID_SEASON_TYPE.format(value=season_type, options=", ".join(VALID_SEASON_TYPES)))
-    VALID_PER_MODES = {getattr(PerMode48, attr) for attr in dir(PerMode48) if not attr.startswith('_') and isinstance(getattr(PerMode48, attr), str)}
-    if per_mode not in VALID_PER_MODES:
-        return format_response(error=Errors.INVALID_PER_MODE.format(value=per_mode, options=", ".join(VALID_PER_MODES)))
-    VALID_SCOPES = {getattr(Scope, attr) for attr in dir(Scope) if not attr.startswith('_') and isinstance(getattr(Scope, attr), str)}
-    if scope not in VALID_SCOPES:
-        return format_response(error=Errors.INVALID_SCOPE.format(value=scope, options=", ".join(VALID_SCOPES)))
-    VALID_LEAGUE_IDS = {getattr(LeagueID, attr) for attr in dir(LeagueID) if not attr.startswith('_') and isinstance(getattr(LeagueID, attr), str)}
-    if league_id not in VALID_LEAGUE_IDS:
-        return format_response(error=Errors.INVALID_LEAGUE_ID.format(value=league_id, options=", ".join(VALID_LEAGUE_IDS)))
+    if category not in _TRENDING_VALID_STAT_CATEGORIES:
+        return format_response(error=Errors.INVALID_STAT_CATEGORY.format(value=category, options=", ".join(list(_TRENDING_VALID_STAT_CATEGORIES)[:7]))) # Show some options
+    if season_type not in _TRENDING_VALID_SEASON_TYPES:
+        return format_response(error=Errors.INVALID_SEASON_TYPE.format(value=season_type, options=", ".join(list(_TRENDING_VALID_SEASON_TYPES)[:5])))
+    if per_mode not in _TRENDING_VALID_PER_MODES:
+        return format_response(error=Errors.INVALID_PER_MODE.format(value=per_mode, options=", ".join(list(_TRENDING_VALID_PER_MODES)[:5])))
+    if scope not in _TRENDING_VALID_SCOPES:
+        return format_response(error=Errors.INVALID_SCOPE.format(value=scope, options=", ".join(list(_TRENDING_VALID_SCOPES)[:5])))
+    if league_id not in _TRENDING_VALID_LEAGUE_IDS:
+        return format_response(error=Errors.INVALID_LEAGUE_ID.format(value=league_id, options=", ".join(list(_TRENDING_VALID_LEAGUE_IDS)[:3])))
 
-
-    # fetch_league_leaders_logic might return more than top_n, so we fetch a reasonable amount (e.g., top_n or a bit more if top_n is small)
-    # and then slice. Let's fetch up to top_n (or a default like 25 if top_n is very large, though API limits exist).
-    # The underlying fetch_league_leaders_logic already has a top_n param.
     internal_top_n_fetch = top_n # We want exactly top_n from the leaders list.
 
     cache_key_params = (category, season, season_type, per_mode, scope, league_id, internal_top_n_fetch) # Key for the cached call
@@ -164,8 +162,6 @@ def fetch_top_performers_logic(
             return leaders_json_str # Propagate the error JSON string
 
         leaders_list = data.get("leaders", [])
-        # The underlying fetch_league_leaders_logic should have already sliced by its top_n,
-        # so this list should contain at most `internal_top_n_fetch` (which is `top_n`) items.
         
         result_payload = {
             "season": season, "stat_category": category, "season_type": season_type,

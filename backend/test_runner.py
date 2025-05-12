@@ -2,7 +2,7 @@ import time
 import json
 import logging
 from typing import List, Dict, Any
-from .teams import nba_analysis_team # Use relative import
+from .teams import nba_analysis_team
 import random
 from agno.utils.pprint import pprint_run_response
 from agno.agent import Agent, RunResponse

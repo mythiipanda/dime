@@ -47,7 +47,7 @@ export function PlayByPlayModal({ gameId, isOpen, onOpenChange }: PlayByPlayModa
      }
  
      try {
-       let apiUrl = `/api/v1/games/playbyplay/${currentGameId}`;
+       let apiUrl = `/api/v1/game/playbyplay/${currentGameId}`; // Corrected to include /v1 for backend routing
        const periodNum = periodFilter !== "all" ? parseInt(periodFilter.replace("q", "")) : 0;
        if (periodNum > 0) {
            apiUrl += `?start_period=${periodNum}&end_period=${periodNum}`;
@@ -130,7 +130,7 @@ export function PlayByPlayModal({ gameId, isOpen, onOpenChange }: PlayByPlayModa
 
   // Helper functions for rendering play details
   const getPlayDescription = (play: Play): string => {
-       return play.home_description || play.away_description || play.neutral_description || "(Description unavailable)";
+       return play.description || play.home_description || play.away_description || play.neutral_description || "(Description unavailable)";
    }
    
    const formatEventType = (eventType: string): string => {
