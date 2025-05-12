@@ -12,19 +12,25 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-      - name: Set up Python
-        uses: actions/setup-python@v4
+
+      - name: Set up Miniconda
+        uses: conda-incubator/setup-miniconda@v3
         with:
-          python-version: '3.12'
-      - name: Install dependencies
-        run: |
-          cd backend
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          auto-update-conda: true
+          python-version: 3.12
+          environment-file: backend/environment.yml
+          activate-environment: nba-agent-env  # Change if your env name is different
+          auto-activate-base: false
+
+      - name: Show conda info
+        run: conda info
+
       - name: Run pytest
+        shell: bash -l {0}
         run: |
-          cd backend
-          pytest smoke_tests --maxfail=3 --disable-warnings -v
+          conda activate nba-agent-env
+          pytest backend/smoke_tests --maxfail=3 --disable-warnings -v
+
       - name: Deploy (placeholder)
         if: success()
         run: echo "Deploy step goes here (e.g., Docker build/push, SSH, or cloud deploy)" 
