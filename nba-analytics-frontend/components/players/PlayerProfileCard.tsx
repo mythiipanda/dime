@@ -13,6 +13,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ExclamationTriangleIcon } from '@radix-ui/react-icons';
 
@@ -44,9 +45,10 @@ function StatBox({ label, value, decimals = 1, suffix = '' }: StatBoxProps) {
 interface PlayerProfileCardProps {
   playerData: PlayerData;
   headshotUrl: string | null;
+  onLoadAdvancedMetrics?: () => void;
 }
 
-export function PlayerProfileCard({ playerData, headshotUrl }: PlayerProfileCardProps) {
+export function PlayerProfileCard({ playerData, headshotUrl, onLoadAdvancedMetrics }: PlayerProfileCardProps) {
   const info = playerData.player_info;
   const careerRegular = useMemo(() => playerData?.career_totals_regular_season, [playerData]);
   const seasonRegular = useMemo(() => playerData?.season_totals_regular_season, [playerData]);
@@ -157,9 +159,11 @@ export function PlayerProfileCard({ playerData, headshotUrl }: PlayerProfileCard
 
       <CardContent className="pt-6 space-y-6">
          <Tabs defaultValue="regular" className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
+            <TabsList className="grid w-full grid-cols-4">
                 <TabsTrigger value="regular">Regular Season</TabsTrigger>
                 <TabsTrigger value="postseason">Postseason</TabsTrigger>
+                <TabsTrigger value="advanced">Advanced</TabsTrigger>
+                <TabsTrigger value="analysis">Analysis</TabsTrigger>
             </TabsList>
 
             {/* Regular Season Content */}
@@ -209,9 +213,340 @@ export function PlayerProfileCard({ playerData, headshotUrl }: PlayerProfileCard
                 {/* Per-Season Postseason Stats Table */}
                  {renderSeasonTable(sortedPostSeasons, "Postseason Stats")}
             </TabsContent>
+
+            {/* Advanced Metrics Content */}
+            <TabsContent value="advanced" className="space-y-4 pt-4">
+                {playerData.advanced_metrics ? (
+                    <div>
+                        <h3 className="text-lg font-semibold mb-2">Advanced Metrics</h3>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                            <div className="p-4 rounded-lg border bg-card shadow-sm">
+                                <h4 className="text-md font-medium mb-2">RAPTOR Rating</h4>
+                                <div className="grid grid-cols-3 gap-2">
+                                    <StatBox
+                                        label="TOTAL"
+                                        value={
+                                            playerData.advanced_metrics?.RAPTOR_TOTAL !== undefined ? playerData.advanced_metrics.RAPTOR_TOTAL :
+                                            playerData.advanced_metrics?.RAPTOR !== undefined ? playerData.advanced_metrics.RAPTOR :
+                                            null
+                                        }
+                                    />
+                                    <StatBox
+                                        label="OFF"
+                                        value={
+                                            playerData.advanced_metrics?.RAPTOR_OFFENSE !== undefined ? playerData.advanced_metrics.RAPTOR_OFFENSE :
+                                            playerData.advanced_metrics?.RAPTOR_OFF !== undefined ? playerData.advanced_metrics.RAPTOR_OFF :
+                                            null
+                                        }
+                                    />
+                                    <StatBox
+                                        label="DEF"
+                                        value={
+                                            playerData.advanced_metrics?.RAPTOR_DEFENSE !== undefined ? playerData.advanced_metrics.RAPTOR_DEFENSE :
+                                            playerData.advanced_metrics?.RAPTOR_DEF !== undefined ? playerData.advanced_metrics.RAPTOR_DEF :
+                                            null
+                                        }
+                                    />
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-2">Source: NBA Analytics (RAPTOR-style)</p>
+                            </div>
+
+                            <div className="p-4 rounded-lg border bg-card shadow-sm">
+                                <h4 className="text-md font-medium mb-2">ELO Rating</h4>
+                                <div className="grid grid-cols-3 gap-2">
+                                    <StatBox label="TOTAL" value={playerData.advanced_metrics.ELO_RATING} decimals={0} />
+                                    <StatBox label="CURRENT" value={playerData.advanced_metrics.ELO_CURRENT} decimals={0} />
+                                    <StatBox label="LEGACY" value={playerData.advanced_metrics.ELO_HISTORICAL} decimals={0} />
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-2">Source: NBA Analytics (1500 = Average)</p>
+                                <p className="text-xs text-muted-foreground">Factors in career achievements & longevity</p>
+                            </div>
+
+                            <div className="p-4 rounded-lg border bg-card shadow-sm">
+                                <h4 className="text-md font-medium mb-2">Wins Above Replacement</h4>
+                                <div className="grid grid-cols-1 gap-2">
+                                    <StatBox
+                                        label="WAR"
+                                        value={
+                                            playerData.advanced_metrics?.WAR !== undefined ? playerData.advanced_metrics.WAR :
+                                            playerData.advanced_metrics?.PLAYER_VALUE !== undefined ? playerData.advanced_metrics.PLAYER_VALUE :
+                                            null
+                                        }
+                                    />
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-2">Source: NBA Analytics (RAPTOR-style)</p>
+                            </div>
+
+                            <div className="p-4 rounded-lg border bg-card shadow-sm">
+                                <h4 className="text-md font-medium mb-2">Efficiency</h4>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <StatBox label="ORTG" value={playerData.advanced_metrics.ORTG} decimals={1} />
+                                    <StatBox label="DRTG" value={playerData.advanced_metrics.DRTG} decimals={1} />
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-2">Source: NBA Stats</p>
+                            </div>
+                        </div>
+
+                        <div className="mt-6">
+                            <h3 className="text-lg font-semibold mb-2">Traditional Advanced Metrics</h3>
+                            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3 text-center">
+                                <StatBox label="PER" value={playerData.advanced_metrics.PER} />
+                                <StatBox label="TS%" value={playerData.advanced_metrics.TS_PCT} suffix="%" />
+                                <StatBox label="USG%" value={playerData.advanced_metrics.USG_PCT} suffix="%" />
+                                <StatBox label="PIE" value={playerData.advanced_metrics.PIE ? playerData.advanced_metrics.PIE * 100 : null} suffix="%" />
+                                <StatBox label="VORP" value={playerData.advanced_metrics.VORP} />
+                                <StatBox label="WS" value={playerData.advanced_metrics.WS} />
+                                <StatBox label="NET RTG" value={playerData.advanced_metrics.NETRTG} />
+                                <StatBox label="AST%" value={playerData.advanced_metrics.AST_PCT} suffix="%" />
+                                <StatBox label="REB%" value={playerData.advanced_metrics.REB_PCT} suffix="%" />
+                            </div>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="flex flex-col items-center justify-center py-12">
+                        <p className="text-muted-foreground text-center mb-4">Advanced metrics not loaded yet.</p>
+                        {onLoadAdvancedMetrics && (
+                            <Button
+                                onClick={onLoadAdvancedMetrics}
+                                className="mb-4"
+                            >
+                                Load Advanced Metrics
+                            </Button>
+                        )}
+                        <p className="text-sm text-muted-foreground mt-2">Data sources: NBA Stats, NBA Analytics</p>
+                    </div>
+                )}
+            </TabsContent>
+
+            {/* Player Analysis Content */}
+            <TabsContent value="analysis" className="space-y-4 pt-4">
+                {playerData.skill_grades ? (
+                    <div>
+                        <h3 className="text-lg font-semibold mb-2">Skill Assessment</h3>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                            <div className="p-3 rounded-lg border bg-card">
+                                <p className="text-sm font-medium">Perimeter Shooting</p>
+                                <div className="flex items-center mt-1">
+                                    <div className={`text-lg font-bold w-8 h-8 rounded-full flex items-center justify-center
+                                        ${playerData.skill_grades?.perimeter_shooting?.startsWith('A+') ? 'bg-green-200 text-green-800' :
+                                          playerData.skill_grades?.perimeter_shooting?.startsWith('A') ? 'bg-green-100 text-green-700' :
+                                          playerData.skill_grades?.perimeter_shooting?.startsWith('B') ? 'bg-green-50 text-green-600' :
+                                          playerData.skill_grades?.perimeter_shooting?.startsWith('C') ? 'bg-yellow-50 text-yellow-600' :
+                                          playerData.skill_grades?.perimeter_shooting?.startsWith('D') ? 'bg-orange-50 text-orange-600' :
+                                          'bg-red-50 text-red-600'}`}>
+                                        {playerData.skill_grades?.perimeter_shooting || 'C'}
+                                    </div>
+                                    <div className="ml-2 flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                                        <div className={`h-full ${
+                                            playerData.skill_grades?.perimeter_shooting?.startsWith('A+') ? 'bg-green-600 w-[95%]' :
+                                            playerData.skill_grades?.perimeter_shooting?.startsWith('A-') ? 'bg-green-500 w-[85%]' :
+                                            playerData.skill_grades?.perimeter_shooting?.startsWith('A') ? 'bg-green-500 w-[90%]' :
+                                            playerData.skill_grades?.perimeter_shooting?.startsWith('B+') ? 'bg-green-400 w-[80%]' :
+                                            playerData.skill_grades?.perimeter_shooting?.startsWith('B-') ? 'bg-green-400 w-[70%]' :
+                                            playerData.skill_grades?.perimeter_shooting?.startsWith('B') ? 'bg-green-400 w-[75%]' :
+                                            playerData.skill_grades?.perimeter_shooting?.startsWith('C+') ? 'bg-yellow-400 w-[65%]' :
+                                            playerData.skill_grades?.perimeter_shooting?.startsWith('C-') ? 'bg-yellow-400 w-[55%]' :
+                                            playerData.skill_grades?.perimeter_shooting?.startsWith('C') ? 'bg-yellow-400 w-[60%]' :
+                                            playerData.skill_grades?.perimeter_shooting?.startsWith('D+') ? 'bg-orange-400 w-[50%]' :
+                                            playerData.skill_grades?.perimeter_shooting?.startsWith('D-') ? 'bg-orange-400 w-[30%]' :
+                                            playerData.skill_grades?.perimeter_shooting?.startsWith('D') ? 'bg-orange-400 w-[40%]' :
+                                            'bg-red-400 w-[20%]'
+                                        }`}></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="p-3 rounded-lg border bg-card">
+                                <p className="text-sm font-medium">Interior Scoring</p>
+                                <div className="flex items-center mt-1">
+                                    <div className={`text-lg font-bold w-8 h-8 rounded-full flex items-center justify-center
+                                        ${playerData.skill_grades?.interior_scoring?.startsWith('A+') ? 'bg-green-200 text-green-800' :
+                                          playerData.skill_grades?.interior_scoring?.startsWith('A') ? 'bg-green-100 text-green-700' :
+                                          playerData.skill_grades?.interior_scoring?.startsWith('B') ? 'bg-green-50 text-green-600' :
+                                          playerData.skill_grades?.interior_scoring?.startsWith('C') ? 'bg-yellow-50 text-yellow-600' :
+                                          playerData.skill_grades?.interior_scoring?.startsWith('D') ? 'bg-orange-50 text-orange-600' :
+                                          'bg-red-50 text-red-600'}`}>
+                                        {playerData.skill_grades?.interior_scoring || 'C'}
+                                    </div>
+                                    <div className="ml-2 flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                                        <div className={`h-full ${
+                                            playerData.skill_grades?.interior_scoring?.startsWith('A+') ? 'bg-green-600 w-[95%]' :
+                                            playerData.skill_grades?.interior_scoring?.startsWith('A-') ? 'bg-green-500 w-[85%]' :
+                                            playerData.skill_grades?.interior_scoring?.startsWith('A') ? 'bg-green-500 w-[90%]' :
+                                            playerData.skill_grades?.interior_scoring?.startsWith('B+') ? 'bg-green-400 w-[80%]' :
+                                            playerData.skill_grades?.interior_scoring?.startsWith('B-') ? 'bg-green-400 w-[70%]' :
+                                            playerData.skill_grades?.interior_scoring?.startsWith('B') ? 'bg-green-400 w-[75%]' :
+                                            playerData.skill_grades?.interior_scoring?.startsWith('C+') ? 'bg-yellow-400 w-[65%]' :
+                                            playerData.skill_grades?.interior_scoring?.startsWith('C-') ? 'bg-yellow-400 w-[55%]' :
+                                            playerData.skill_grades?.interior_scoring?.startsWith('C') ? 'bg-yellow-400 w-[60%]' :
+                                            playerData.skill_grades?.interior_scoring?.startsWith('D+') ? 'bg-orange-400 w-[50%]' :
+                                            playerData.skill_grades?.interior_scoring?.startsWith('D-') ? 'bg-orange-400 w-[30%]' :
+                                            playerData.skill_grades?.interior_scoring?.startsWith('D') ? 'bg-orange-400 w-[40%]' :
+                                            'bg-red-400 w-[20%]'
+                                        }`}></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="p-3 rounded-lg border bg-card">
+                                <p className="text-sm font-medium">Playmaking</p>
+                                <div className="flex items-center mt-1">
+                                    <div className={`text-lg font-bold w-8 h-8 rounded-full flex items-center justify-center
+                                        ${playerData.skill_grades?.playmaking?.startsWith('A+') ? 'bg-green-200 text-green-800' :
+                                          playerData.skill_grades?.playmaking?.startsWith('A') ? 'bg-green-100 text-green-700' :
+                                          playerData.skill_grades?.playmaking?.startsWith('B') ? 'bg-green-50 text-green-600' :
+                                          playerData.skill_grades?.playmaking?.startsWith('C') ? 'bg-yellow-50 text-yellow-600' :
+                                          playerData.skill_grades?.playmaking?.startsWith('D') ? 'bg-orange-50 text-orange-600' :
+                                          'bg-red-50 text-red-600'}`}>
+                                        {playerData.skill_grades?.playmaking || 'C'}
+                                    </div>
+                                    <div className="ml-2 flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                                        <div className={`h-full ${
+                                            playerData.skill_grades?.playmaking?.startsWith('A+') ? 'bg-green-600 w-[95%]' :
+                                            playerData.skill_grades?.playmaking?.startsWith('A-') ? 'bg-green-500 w-[85%]' :
+                                            playerData.skill_grades?.playmaking?.startsWith('A') ? 'bg-green-500 w-[90%]' :
+                                            playerData.skill_grades?.playmaking?.startsWith('B+') ? 'bg-green-400 w-[80%]' :
+                                            playerData.skill_grades?.playmaking?.startsWith('B-') ? 'bg-green-400 w-[70%]' :
+                                            playerData.skill_grades?.playmaking?.startsWith('B') ? 'bg-green-400 w-[75%]' :
+                                            playerData.skill_grades?.playmaking?.startsWith('C+') ? 'bg-yellow-400 w-[65%]' :
+                                            playerData.skill_grades?.playmaking?.startsWith('C-') ? 'bg-yellow-400 w-[55%]' :
+                                            playerData.skill_grades?.playmaking?.startsWith('C') ? 'bg-yellow-400 w-[60%]' :
+                                            playerData.skill_grades?.playmaking?.startsWith('D+') ? 'bg-orange-400 w-[50%]' :
+                                            playerData.skill_grades?.playmaking?.startsWith('D-') ? 'bg-orange-400 w-[30%]' :
+                                            playerData.skill_grades?.playmaking?.startsWith('D') ? 'bg-orange-400 w-[40%]' :
+                                            'bg-red-400 w-[20%]'
+                                        }`}></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="p-3 rounded-lg border bg-card">
+                                <p className="text-sm font-medium">Perimeter Defense</p>
+                                <div className="flex items-center mt-1">
+                                    <div className={`text-lg font-bold w-8 h-8 rounded-full flex items-center justify-center
+                                        ${playerData.skill_grades?.perimeter_defense?.startsWith('A+') ? 'bg-green-200 text-green-800' :
+                                          playerData.skill_grades?.perimeter_defense?.startsWith('A') ? 'bg-green-100 text-green-700' :
+                                          playerData.skill_grades?.perimeter_defense?.startsWith('B') ? 'bg-green-50 text-green-600' :
+                                          playerData.skill_grades?.perimeter_defense?.startsWith('C') ? 'bg-yellow-50 text-yellow-600' :
+                                          playerData.skill_grades?.perimeter_defense?.startsWith('D') ? 'bg-orange-50 text-orange-600' :
+                                          'bg-red-50 text-red-600'}`}>
+                                        {playerData.skill_grades?.perimeter_defense || 'C'}
+                                    </div>
+                                    <div className="ml-2 flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                                        <div className={`h-full ${
+                                            playerData.skill_grades?.perimeter_defense?.startsWith('A+') ? 'bg-green-600 w-[95%]' :
+                                            playerData.skill_grades?.perimeter_defense?.startsWith('A-') ? 'bg-green-500 w-[85%]' :
+                                            playerData.skill_grades?.perimeter_defense?.startsWith('A') ? 'bg-green-500 w-[90%]' :
+                                            playerData.skill_grades?.perimeter_defense?.startsWith('B+') ? 'bg-green-400 w-[80%]' :
+                                            playerData.skill_grades?.perimeter_defense?.startsWith('B-') ? 'bg-green-400 w-[70%]' :
+                                            playerData.skill_grades?.perimeter_defense?.startsWith('B') ? 'bg-green-400 w-[75%]' :
+                                            playerData.skill_grades?.perimeter_defense?.startsWith('C+') ? 'bg-yellow-400 w-[65%]' :
+                                            playerData.skill_grades?.perimeter_defense?.startsWith('C-') ? 'bg-yellow-400 w-[55%]' :
+                                            playerData.skill_grades?.perimeter_defense?.startsWith('C') ? 'bg-yellow-400 w-[60%]' :
+                                            playerData.skill_grades?.perimeter_defense?.startsWith('D+') ? 'bg-orange-400 w-[50%]' :
+                                            playerData.skill_grades?.perimeter_defense?.startsWith('D-') ? 'bg-orange-400 w-[30%]' :
+                                            playerData.skill_grades?.perimeter_defense?.startsWith('D') ? 'bg-orange-400 w-[40%]' :
+                                            'bg-red-400 w-[20%]'
+                                        }`}></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="p-3 rounded-lg border bg-card">
+                                <p className="text-sm font-medium">Interior Defense</p>
+                                <div className="flex items-center mt-1">
+                                    <div className={`text-lg font-bold w-8 h-8 rounded-full flex items-center justify-center
+                                        ${playerData.skill_grades?.interior_defense?.startsWith('A+') ? 'bg-green-200 text-green-800' :
+                                          playerData.skill_grades?.interior_defense?.startsWith('A') ? 'bg-green-100 text-green-700' :
+                                          playerData.skill_grades?.interior_defense?.startsWith('B') ? 'bg-green-50 text-green-600' :
+                                          playerData.skill_grades?.interior_defense?.startsWith('C') ? 'bg-yellow-50 text-yellow-600' :
+                                          playerData.skill_grades?.interior_defense?.startsWith('D') ? 'bg-orange-50 text-orange-600' :
+                                          'bg-red-50 text-red-600'}`}>
+                                        {playerData.skill_grades?.interior_defense || 'C'}
+                                    </div>
+                                    <div className="ml-2 flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                                        <div className={`h-full ${
+                                            playerData.skill_grades?.interior_defense?.startsWith('A+') ? 'bg-green-600 w-[95%]' :
+                                            playerData.skill_grades?.interior_defense?.startsWith('A-') ? 'bg-green-500 w-[85%]' :
+                                            playerData.skill_grades?.interior_defense?.startsWith('A') ? 'bg-green-500 w-[90%]' :
+                                            playerData.skill_grades?.interior_defense?.startsWith('B+') ? 'bg-green-400 w-[80%]' :
+                                            playerData.skill_grades?.interior_defense?.startsWith('B-') ? 'bg-green-400 w-[70%]' :
+                                            playerData.skill_grades?.interior_defense?.startsWith('B') ? 'bg-green-400 w-[75%]' :
+                                            playerData.skill_grades?.interior_defense?.startsWith('C+') ? 'bg-yellow-400 w-[65%]' :
+                                            playerData.skill_grades?.interior_defense?.startsWith('C-') ? 'bg-yellow-400 w-[55%]' :
+                                            playerData.skill_grades?.interior_defense?.startsWith('C') ? 'bg-yellow-400 w-[60%]' :
+                                            playerData.skill_grades?.interior_defense?.startsWith('D+') ? 'bg-orange-400 w-[50%]' :
+                                            playerData.skill_grades?.interior_defense?.startsWith('D-') ? 'bg-orange-400 w-[30%]' :
+                                            playerData.skill_grades?.interior_defense?.startsWith('D') ? 'bg-orange-400 w-[40%]' :
+                                            'bg-red-400 w-[20%]'
+                                        }`}></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="p-3 rounded-lg border bg-card">
+                                <p className="text-sm font-medium">Rebounding</p>
+                                <div className="flex items-center mt-1">
+                                    <div className={`text-lg font-bold w-8 h-8 rounded-full flex items-center justify-center
+                                        ${playerData.skill_grades?.rebounding?.startsWith('A+') ? 'bg-green-200 text-green-800' :
+                                          playerData.skill_grades?.rebounding?.startsWith('A') ? 'bg-green-100 text-green-700' :
+                                          playerData.skill_grades?.rebounding?.startsWith('B') ? 'bg-green-50 text-green-600' :
+                                          playerData.skill_grades?.rebounding?.startsWith('C') ? 'bg-yellow-50 text-yellow-600' :
+                                          playerData.skill_grades?.rebounding?.startsWith('D') ? 'bg-orange-50 text-orange-600' :
+                                          'bg-red-50 text-red-600'}`}>
+                                        {playerData.skill_grades?.rebounding || 'C'}
+                                    </div>
+                                    <div className="ml-2 flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                                        <div className={`h-full ${
+                                            playerData.skill_grades?.rebounding?.startsWith('A+') ? 'bg-green-600 w-[95%]' :
+                                            playerData.skill_grades?.rebounding?.startsWith('A-') ? 'bg-green-500 w-[85%]' :
+                                            playerData.skill_grades?.rebounding?.startsWith('A') ? 'bg-green-500 w-[90%]' :
+                                            playerData.skill_grades?.rebounding?.startsWith('B+') ? 'bg-green-400 w-[80%]' :
+                                            playerData.skill_grades?.rebounding?.startsWith('B-') ? 'bg-green-400 w-[70%]' :
+                                            playerData.skill_grades?.rebounding?.startsWith('B') ? 'bg-green-400 w-[75%]' :
+                                            playerData.skill_grades?.rebounding?.startsWith('C+') ? 'bg-yellow-400 w-[65%]' :
+                                            playerData.skill_grades?.rebounding?.startsWith('C-') ? 'bg-yellow-400 w-[55%]' :
+                                            playerData.skill_grades?.rebounding?.startsWith('C') ? 'bg-yellow-400 w-[60%]' :
+                                            playerData.skill_grades?.rebounding?.startsWith('D+') ? 'bg-orange-400 w-[50%]' :
+                                            playerData.skill_grades?.rebounding?.startsWith('D-') ? 'bg-orange-400 w-[30%]' :
+                                            playerData.skill_grades?.rebounding?.startsWith('D') ? 'bg-orange-400 w-[40%]' :
+                                            'bg-red-400 w-[20%]'
+                                        }`}></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {playerData.similar_players && playerData.similar_players.length > 0 && (
+                            <div className="mt-6">
+                                <h3 className="text-lg font-semibold mb-2">Similar Players</h3>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                                    {playerData.similar_players.map((player, index) => (
+                                        <div key={player.player_id} className="p-3 rounded-lg border bg-card flex items-center">
+                                            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold">
+                                                {index + 1}
+                                            </div>
+                                            <div className="ml-3">
+                                                <p className="font-medium">{player.player_name}</p>
+                                                <p className="text-sm text-muted-foreground">
+                                                    Similarity: {(player.similarity_score * 100).toFixed(1)}%
+                                                </p>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                ) : (
+                    <div className="flex flex-col items-center justify-center py-12">
+                        <p className="text-muted-foreground text-center">Player analysis not available.</p>
+                    </div>
+                )}
+            </TabsContent>
          </Tabs>
 
       </CardContent>
     </Card>
   );
-} 
+}

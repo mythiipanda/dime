@@ -7,7 +7,7 @@ import numpy as np # Added numpy import
 from datetime import datetime, date # Ensure date and datetime are imported from datetime
 from requests.exceptions import ReadTimeout, ConnectionError
 
-from backend.core.errors import Errors
+from core.errors import Errors
 from nba_api.stats.static import players, teams
 logger = logging.getLogger(__name__)
 
@@ -16,7 +16,7 @@ def retry_on_timeout(func: Callable[[], Any], max_retries: int = 3, initial_dela
     Retries a function call with exponential backoff if a `ReadTimeout` or `ConnectionError` occurs.
     """
     delay = initial_delay
-    last_exception: Optional[Exception] = None 
+    last_exception: Optional[Exception] = None
 
     for attempt in range(max_retries):
         try:
@@ -29,12 +29,12 @@ def retry_on_timeout(func: Callable[[], Any], max_retries: int = 3, initial_dela
                 delay = min(delay * 2, max_delay)
             else:
                 logger.error(f"All {max_retries} attempts failed. Last error: {type(e).__name__}: {str(e)}")
-                raise 
-        except Exception as e: 
+                raise
+        except Exception as e:
             logger.error(f"Function call failed with non-retryable error: {type(e).__name__}: {str(e)}", exc_info=True)
-            raise 
+            raise
 
-    if last_exception: 
+    if last_exception:
         raise last_exception
     logger.error("retry_on_timeout completed all retries without returning or raising a final exception. This indicates an issue with the retried function.")
     return None
@@ -125,7 +125,7 @@ def _process_dataframe(df: Optional[pd.DataFrame], single_row: bool = True) -> O
             return records
     except Exception as e:
         logger.error(f"Error processing DataFrame (outer logic): {str(e)}", exc_info=True)
-        return None 
+        return None
 
 # --- Custom Exceptions ---
 
@@ -145,6 +145,25 @@ class TeamNotFoundError(Exception):
 
 # --- Lookup Helpers ---
 
+def get_player_id_from_name(player_name: str) -> Union[int, Dict[str, str]]:
+    """
+    Gets a player's ID from their name.
+
+    Args:
+        player_name (str): The name of the player to look up.
+
+    Returns:
+        Union[int, Dict[str, str]]: The player's ID if found, or an error dictionary if not found.
+    """
+    try:
+        player_id, _ = find_player_id_or_error(player_name)
+        return player_id
+    except PlayerNotFoundError:
+        return {"error": f"Player '{player_name}' not found."}
+    except Exception as e:
+        logger.error(f"Error in get_player_id_from_name for {player_name}: {str(e)}", exc_info=True)
+        return {"error": f"Failed to get player ID for {player_name}: {str(e)}"}
+
 def find_player_id_or_error(player_name: str) -> Tuple[int, str]:
     """
     Finds a player's unique ID and their canonical full name.
@@ -156,7 +175,7 @@ def find_player_id_or_error(player_name: str) -> Tuple[int, str]:
 
     try:
         logger.debug(f"Searching for player ID for: '{player_name}'")
-        
+
         # Attempt to treat as ID first if it's all digits
         if player_name.isdigit():
             player_id_int = int(player_name)
@@ -178,7 +197,7 @@ def find_player_id_or_error(player_name: str) -> Tuple[int, str]:
         else:
             logger.warning(f"Player not found for identifier: '{player_name}' using nba_api.stats.static.players (tried as ID if applicable, then as name)")
             raise PlayerNotFoundError(player_name)
-            
+
     except PlayerNotFoundError:
         raise
     except Exception as e:
@@ -189,7 +208,7 @@ def find_team_id_or_error(team_identifier: str) -> Tuple[int, str]:
     """
     Finds a team's unique ID and its canonical full name.
     """
-    if not team_identifier or not str(team_identifier).strip(): 
+    if not team_identifier or not str(team_identifier).strip():
         error_msg = Errors.TEAM_IDENTIFIER_EMPTY if hasattr(Errors, 'TEAM_IDENTIFIER_EMPTY') else "Team identifier cannot be empty."
         logger.error(error_msg)
         raise ValueError(error_msg)
@@ -205,7 +224,7 @@ def find_team_id_or_error(team_identifier: str) -> Tuple[int, str]:
                 if team_dict_static['id'] == team_id_int_input:
                     logger.info(f"Found team by ID: {team_dict_static['full_name']} (ID: {team_dict_static['id']})")
                     return team_dict_static['id'], team_dict_static['full_name']
-        
+
         team_info_by_abbr_static = teams.find_team_by_abbreviation(identifier_str_cleaned.upper())
         if team_info_by_abbr_static:
             logger.info(f"Found team by abbreviation: {team_info_by_abbr_static['full_name']} (ID: {team_info_by_abbr_static['id']})")
@@ -223,12 +242,12 @@ def find_team_id_or_error(team_identifier: str) -> Tuple[int, str]:
             if team_item['nickname'].lower() == identifier_lower_case:
                 logger.info(f"Found team by nickname: {team_item['full_name']} (ID: {team_item['id']})")
                 return team_item['id'], team_item['full_name']
-        
+
         logger.warning(f"Team not found for identifier: '{identifier_str_cleaned}'")
         raise TeamNotFoundError(identifier_str_cleaned)
 
-    except TeamNotFoundError: 
+    except TeamNotFoundError:
         raise
-    except Exception as e: 
+    except Exception as e:
         logger.error(f"Unexpected error finding team ID for '{identifier_str_cleaned}': {e}", exc_info=True)
         raise Exception(f"An unexpected error occurred while searching for team '{identifier_str_cleaned}'.") from e

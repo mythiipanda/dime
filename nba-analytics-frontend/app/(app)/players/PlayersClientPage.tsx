@@ -1,13 +1,14 @@
 "use client";
 
 import * as React from "react";
+import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { PlayerData } from "./types";
+import { PlayerData, AdvancedMetrics, SkillGrades } from "./types";
 import { PlayerProfileCard } from "@/components/players/PlayerProfileCard";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Search } from "lucide-react";
+import { Search, Loader2 } from "lucide-react";
 import { ExclamationTriangleIcon } from '@radix-ui/react-icons';
 import { PlayerSearchBar } from "@/components/players/PlayerSearchBar";
 
@@ -27,15 +28,79 @@ export default function PlayersClientPage({
   const router = useRouter();
   const currentSearchParams = useSearchParams();
 
-  const playerData = initialPlayerData;
-  const headshotUrl = initialHeadshotUrl;
-  const fetchError = serverFetchError;
+  const [playerData, setPlayerData] = useState<PlayerData | null>(initialPlayerData);
+  const [headshotUrl, setHeadshotUrl] = useState<string | null>(initialHeadshotUrl);
+  const [fetchError, setFetchError] = useState<string | null>(serverFetchError);
+  const [isLoadingAdvanced, setIsLoadingAdvanced] = useState<boolean>(false);
+
   const noPlayerFoundError = fetchError?.toLowerCase().includes("not found") ? fetchError : null;
   const generalFetchError = fetchError && !noPlayerFoundError ? fetchError : null;
+
+  // Fetch advanced metrics only when explicitly requested
+  const fetchAdvancedMetrics = async () => {
+    if (playerData?.player_info?.DISPLAY_FIRST_LAST && !playerData.advanced_metrics) {
+      try {
+        setIsLoadingAdvanced(true);
+        const playerName = playerData.player_info.DISPLAY_FIRST_LAST;
+        console.log(`Fetching advanced metrics for ${playerName}`);
+
+        const response = await fetch(`/api/v1/analyze/player/${encodeURIComponent(playerName)}/advanced`);
+
+        if (!response.ok) {
+          console.error(`Error fetching advanced metrics: ${response.statusText}`);
+          return;
+        }
+
+        const data = await response.json();
+
+        // Update player data with advanced metrics
+        setPlayerData(prevData => {
+          if (!prevData) return null;
+          return {
+            ...prevData,
+            advanced_metrics: data.advanced_metrics || null,
+            skill_grades: data.skill_grades || null,
+            similar_players: data.similar_players || null
+          };
+        });
+      } catch (error) {
+        console.error("Error fetching advanced metrics:", error);
+      } finally {
+        setIsLoadingAdvanced(false);
+      }
+    }
+  };
+
+  // Listen for URL parameter changes and reload the page
+  useEffect(() => {
+    const query = currentSearchParams.get('query');
+    if (query && query !== initialSearchTerm) {
+      console.log(`URL parameter changed from "${initialSearchTerm}" to "${query}". Reloading page...`);
+      // Force a hard reload of the page with the new query parameter
+      window.location.href = `/players?query=${encodeURIComponent(query)}`;
+    }
+  }, [currentSearchParams, initialSearchTerm]);
+
+  // Load advanced metrics when player data changes, but only if they were previously loaded
+  useEffect(() => {
+    // Only auto-fetch if this is the initial load with player data
+    if (initialPlayerData?.player_info?.DISPLAY_FIRST_LAST &&
+        initialPlayerData === playerData) {
+      fetchAdvancedMetrics();
+    }
+  }, [initialPlayerData?.player_info?.DISPLAY_FIRST_LAST]);
 
   const handleSearchSubmit = (term: string) => {
     const trimmedSearch = term.trim();
     if (trimmedSearch) {
+      // If the search term is the same as the current one, force a reload
+      if (trimmedSearch === initialSearchTerm) {
+        console.log("Search term is the same as current. Forcing reload...");
+        window.location.href = `/players?query=${encodeURIComponent(trimmedSearch)}`;
+        return;
+      }
+
+      // Otherwise, use client-side navigation
       const params = new URLSearchParams(currentSearchParams.toString());
       params.set("query", trimmedSearch);
       router.push(`/players?${params.toString()}`);
@@ -69,7 +134,19 @@ export default function PlayersClientPage({
       )}
 
       {playerData && !fetchError && (
-        <PlayerProfileCard playerData={playerData} headshotUrl={headshotUrl} />
+        <>
+          {isLoadingAdvanced && (
+            <div className="flex items-center justify-center gap-2 py-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>Loading advanced metrics...</span>
+            </div>
+          )}
+          <PlayerProfileCard
+            playerData={playerData}
+            headshotUrl={headshotUrl}
+            onLoadAdvancedMetrics={fetchAdvancedMetrics}
+          />
+        </>
       )}
 
       {!playerData && !fetchError && (
@@ -89,7 +166,10 @@ export default function PlayersClientPage({
                   key={name}
                   variant="outline"
                   size="sm"
-                  onClick={() => handleSearchSubmit(name)}
+                  onClick={() => {
+                    // Always force a reload for example buttons
+                    window.location.href = `/players?query=${encodeURIComponent(name)}`;
+                  }}
                   className="transition-all hover:scale-105 hover:bg-accent/50"
                 >
                   {name}

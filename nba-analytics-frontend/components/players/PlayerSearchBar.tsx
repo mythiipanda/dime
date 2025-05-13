@@ -85,7 +85,14 @@ export function PlayerSearchBar({ initialValue = "", onSearchSubmit }: PlayerSea
     setSuggestions([]);
     setIsFetchingSuggestions(false);
     setIsFocused(false);
-    onSearchSubmit(suggestion.full_name);
+
+    // For players page, use direct navigation to ensure server-side data fetching
+    if (window.location.pathname === '/players') {
+      window.location.href = `/players?query=${encodeURIComponent(suggestion.full_name)}`;
+    } else {
+      // For other pages, use the provided callback
+      onSearchSubmit(suggestion.full_name);
+    }
   };
 
   const handleFormSubmit = (event?: React.FormEvent<HTMLFormElement>) => {
@@ -96,7 +103,14 @@ export function PlayerSearchBar({ initialValue = "", onSearchSubmit }: PlayerSea
       setSuggestions([]);
       setIsFetchingSuggestions(false);
       setIsFocused(false);
-      onSearchSubmit(trimmedSearch);
+
+      // For players page, use direct navigation to ensure server-side data fetching
+      if (window.location.pathname === '/players') {
+        window.location.href = `/players?query=${encodeURIComponent(trimmedSearch)}`;
+      } else {
+        // For other pages, use the provided callback
+        onSearchSubmit(trimmedSearch);
+      }
     }
   };
 
@@ -111,7 +125,7 @@ export function PlayerSearchBar({ initialValue = "", onSearchSubmit }: PlayerSea
             value={searchTerm}
             onChange={handleSearchTermChange}
             onFocus={() => setIsFocused(true)}
-            onBlur={() => setTimeout(() => setIsFocused(false), BLUR_TIMEOUT_MS)} 
+            onBlur={() => setTimeout(() => setIsFocused(false), BLUR_TIMEOUT_MS)}
             className="pr-10 w-full"
             aria-label="Search players"
             autoComplete="off"
@@ -154,4 +168,4 @@ export function PlayerSearchBar({ initialValue = "", onSearchSubmit }: PlayerSea
       )}
     </div>
   );
-} 
+}
