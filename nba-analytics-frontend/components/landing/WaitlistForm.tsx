@@ -15,8 +15,8 @@ export function WaitlistForm({ className }: { className?: string }) {
     setError('');
     setSubmitted(false);
 
-    if (!email || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) {
-      setError('Please enter a valid email address.');
+    if (!email || !/.+@.+\..+/.test(email)) {
+        setError('Please enter a valid email address.');
       return;
     }
 
