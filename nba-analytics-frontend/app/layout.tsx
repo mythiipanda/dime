@@ -5,6 +5,7 @@ import { ClerkProvider } from '@clerk/nextjs';
 // import { Footer } from "@/components/layout/Footer"; // Footer will be moved to specific pages
 import "./globals.css";
 import { cn } from '@/lib/utils';
+import { Toaster } from "@/components/ui/sonner";
 
 export const metadata: Metadata = {
   title: {
@@ -40,6 +41,7 @@ export default function RootLayout({ children, }: { children: React.ReactNode; }
           >
             <div className="flex flex-col min-h-screen"> {/* Footer stickiness container */}
               <main className="flex-grow">{children}</main>
+              <Toaster />
               {/* Footer removed from root - applied per-page or in specific layouts */}
             </div>
           </ThemeProvider>

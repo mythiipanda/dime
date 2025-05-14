@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ExclamationTriangleIcon } from '@radix-ui/react-icons';
+import { ShotChartTab } from "@/components/players/ShotChartTab";
 
 // --- Helper Function to format numbers ---
 const formatStat = (value: number | null | undefined, decimals: number = 1): string => {
@@ -159,11 +160,12 @@ export function PlayerProfileCard({ playerData, headshotUrl, onLoadAdvancedMetri
 
       <CardContent className="pt-6 space-y-6">
          <Tabs defaultValue="regular" className="w-full">
-            <TabsList className="grid w-full grid-cols-4">
+            <TabsList className="grid w-full grid-cols-5">
                 <TabsTrigger value="regular">Regular Season</TabsTrigger>
                 <TabsTrigger value="postseason">Postseason</TabsTrigger>
                 <TabsTrigger value="advanced">Advanced</TabsTrigger>
                 <TabsTrigger value="analysis">Analysis</TabsTrigger>
+                <TabsTrigger value="shotchart">Shot Charts</TabsTrigger>
             </TabsList>
 
             {/* Regular Season Content */}
@@ -543,6 +545,11 @@ export function PlayerProfileCard({ playerData, headshotUrl, onLoadAdvancedMetri
                         <p className="text-muted-foreground text-center">Player analysis not available.</p>
                     </div>
                 )}
+            </TabsContent>
+
+            {/* Shot Charts Content */}
+            <TabsContent value="shotchart" className="space-y-4 pt-4">
+                <ShotChartTab playerName={info.DISPLAY_FIRST_LAST} />
             </TabsContent>
          </Tabs>
 

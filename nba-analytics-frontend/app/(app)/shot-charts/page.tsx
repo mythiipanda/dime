@@ -242,6 +242,8 @@ export default function ShotChartsPage() {
               shots={shotData}
               zones={zoneData}
               className="mt-4"
+              season={selectedSeason}
+              seasonType={selectedSeasonType}
             />
           )}
         </CardContent>

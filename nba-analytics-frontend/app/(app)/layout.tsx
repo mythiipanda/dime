@@ -11,6 +11,7 @@ import {
   SheetContent,
   SheetTrigger,
 } from "@/components/ui/sheet";
+
 import { cn } from "@/lib/utils"; // Import cn for conditional classes
 
 // Define props for the layout
@@ -23,7 +24,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
   const [isCollapsed, setIsCollapsed] = useState(true); // Default to collapsed
   const toggleSidebar = () => setIsCollapsed(!isCollapsed);
   // Get user data
-  const { user, isSignedIn } = useUser(); 
+  const { user, isSignedIn } = useUser();
 
   return (
     <div className={cn("relative flex min-h-screen")}>
@@ -77,7 +78,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
               <ModeToggle />
             </div>
           </SignedIn>
-          
+
           {/* Collapse Toggle Button */}
           <div className={cn(isCollapsed ? "flex justify-center" : "px-2")}>
             <Button
@@ -108,8 +109,8 @@ export default function AppLayout({ children }: AppLayoutProps) {
               </Button>
             </SheetTrigger>
             <SheetContent side="left" className="w-72 p-6">
-               {/* Add VisuallyHidden Title if needed again for Sheet 
-               <VisuallyHidden><DialogTitle>Navigation Menu</DialogTitle></VisuallyHidden> 
+               {/* Add VisuallyHidden Title if needed again for Sheet
+               <VisuallyHidden><DialogTitle>Navigation Menu</DialogTitle></VisuallyHidden>
                */}
               <Logo className="mb-6 px-2" iconSize={6} textSize="xl" />
               <SidebarNav isCollapsed={false} />
@@ -136,14 +137,14 @@ export default function AppLayout({ children }: AppLayoutProps) {
       <main
         className={cn(
           'flex-1 overflow-y-auto transition-all duration-300 ease-in-out',
-          'pt-16 lg:pt-0', 
+          'pt-16 lg:pt-0',
           isCollapsed ? "lg:pl-20" : "lg:pl-60"
         )}
       >
         <div className={cn(
           'max-w-full mx-auto px-4 sm:px-6 py-8 lg:px-8 lg:py-12 flex-1 flex flex-col', // max-w-full to allow content to use gradient
           'animate-in fade-in-0 slide-in-from-bottom-4 duration-500'
-        )}> 
+        )}>
           <SignedIn>
             {children}
           </SignedIn>
@@ -151,8 +152,9 @@ export default function AppLayout({ children }: AppLayoutProps) {
             {/* Redirect if not signed in */}
             <RedirectToSignIn />
           </SignedOut>
+
         </div>
       </main>
     </div>
   );
-} 
+}

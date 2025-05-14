@@ -11,8 +11,9 @@ import {
   CalendarIcon,
   HomeIcon,
   ActivityIcon,
-  LineChartIcon,
   BookOpenIcon,
+  GitCompareIcon,
+  TargetIcon,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -106,7 +107,8 @@ const navSections: NavSection[] = [
   {
     title: "Tools",
     items: [
-      { href: '/shot-charts', label: 'Shot Charts', icon: LineChartIcon },
+      { href: '/shot-charts', label: 'Shot Charts', icon: TargetIcon },
+      { href: '/player-comparison', label: 'Player Comparison', icon: GitCompareIcon },
       { href: '/chat', label: 'Chat', icon: ActivityIcon }, // Note: '/chat' might conflict with '/ai-assistant'
     ]
   }
