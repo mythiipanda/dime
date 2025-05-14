@@ -87,6 +87,7 @@ class Errors:
     TEAM_REBOUNDING_UNEXPECTED = "Unexpected error fetching rebounding stats for team {identifier} (Season: {season}): {error}"
     TEAM_SEARCH_UNEXPECTED = "Unexpected error searching for teams: {error}"
     TEAM_IDENTIFIER_OR_ID_REQUIRED = "Either team_identifier or team_id must be provided."
+    INVALID_TEAM_IDENTIFIER = "Invalid team identifier: '{identifier}'. Must be a valid team name, abbreviation, or ID." # Added
 
     # Game Errors
     GAME_ID_EMPTY = "Game ID cannot be empty."
@@ -95,9 +96,10 @@ class Errors:
     BOXSCORE_API = "API error fetching boxscore for game {game_id}: {error}"
     BOXSCORE_TRADITIONAL_API = "API error fetching traditional boxscore for game {game_id}: {error}"
     BOXSCORE_ADVANCED_API = "API error fetching advanced boxscore for game {game_id}: {error}"
-    BOXSCORE_FOURFACTORS_API = "API error fetching four factors boxscore for game {game_id}: {error}"
-    BOXSCORE_USAGE_API = "API error fetching usage boxscore for game {game_id}: {error}"
-    BOXSCORE_DEFENSIVE_API = "API error fetching defensive boxscore for game {game_id}: {error}"
+    BOXSCORE_FOURFACTORS_API = "Error fetching BoxScoreFourFactorsV3 for game {game_id}: {error}"
+    BOXSCORE_USAGE_API = "Error fetching BoxScoreUsageV3 for game {game_id}: {error}"
+    BOXSCORE_DEFENSIVE_API = "Error fetching BoxScoreDefensiveV2 for game {game_id}: {error}"
+    BOXSCORE_SUMMARY_API = "Error fetching BoxScoreSummaryV2 for game {game_id}: {error}"
     WINPROBABILITY_API = "API error fetching win probability for game {game_id}: {error}"
     PLAYBYPLAY_API = "API error fetching play-by-play for game {game_id}: {error}"
     SHOTCHART_API = "API error fetching shot chart for game {game_id}: {error}"
@@ -167,6 +169,7 @@ class Errors:
     INVALID_DIVISION = "Invalid vs_division: '{value}'. Valid options: {options}"
     INVALID_SEASON_SEGMENT = "Invalid season_segment: '{value}'. Valid options: {options}"
     INVALID_RUN_TYPE = "Invalid RunType: '{value}'. Valid options: {options}"
+    INVALID_PARAMETER_FORMAT = "Invalid format for parameter '{param_name}': '{param_value}'. Expected format: {expected_format}" # Added
 
     # League Player On Details Errors
     LEAGUE_PLAYER_ON_DETAILS_PROCESSING = "Processing failed for league player on details (TeamID: {team_id}, Season: {season})."

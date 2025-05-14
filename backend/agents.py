@@ -57,7 +57,8 @@ from .tools import (
     get_boxscore_traditional, get_play_by_play, get_league_standings,
     get_scoreboard, get_draft_history, get_league_leaders, get_game_shotchart,
     get_boxscore_advanced, get_boxscore_four_factors, get_boxscore_usage,
-    get_boxscore_defensive, get_win_probability, get_season_matchups,
+    get_boxscore_defensive, get_boxscore_summary,
+    get_win_probability, get_season_matchups,
     get_matchups_rollup, get_synergy_play_types, get_player_analysis,
     get_live_odds, get_player_insights, get_league_player_on_details,
     get_player_estimated_metrics, # Added
@@ -155,7 +156,7 @@ You are **"StatsPro"**, your AI-powered NBA analytics companion. You are an expe
    - Tracking: get_team_passing_stats, get_team_shooting_stats, get_team_rebounding_stats
 
 3. Game & League Data:
-   - Game Analysis: find_games, get_boxscore_traditional, get_play_by_play
+   - Game Analysis: find_games, get_boxscore_traditional, get_boxscore_summary, get_play_by_play
    - League Info: get_league_standings, get_scoreboard, get_league_leaders, get_draft_history
    - Game Finding: find_games (Note: Searches for ONE team/player at a time)
 
@@ -270,17 +271,36 @@ nba_tools = [
     find_games, get_boxscore_traditional, get_play_by_play, get_league_standings,
     get_scoreboard, get_draft_history, get_league_leaders, get_game_shotchart,
     get_boxscore_advanced, get_boxscore_four_factors, get_boxscore_usage,
-    get_boxscore_defensive, get_win_probability, get_season_matchups,
+    get_boxscore_defensive, get_boxscore_summary,
+    get_win_probability, get_season_matchups,
     get_matchups_rollup, get_synergy_play_types, get_player_analysis,
     get_live_odds, get_player_insights, get_league_player_on_details,
     get_player_estimated_metrics, # Added
 ]
 
 nba_agent = Agent(
-    name="NBAAgent-StatsPro", # Updated name
-    system_message=NBA_AGENT_SYSTEM_MESSAGE,
+    id="nba-stats-pro-v2",
+    name="StatsPro",
+    description="AI-Powered NBA Analytics Companion for expert data retrieval and analysis.",
     model=model,
-    tools=nba_tools,
+    system_message=(_NBA_AGENT_SYSTEM_MESSAGE_BASE),
+    tools=[
+        ThinkingTools.think,
+        get_player_info, get_player_gamelog, get_player_career_stats, get_player_awards,
+        get_player_aggregate_stats, get_player_profile, get_player_clutch_stats,
+        get_player_passing_stats, get_player_rebounding_stats, get_player_shots_tracking,
+        get_player_shotchart, get_player_defense_stats, get_player_hustle_stats,
+        get_team_info_and_roster, get_team_stats, get_team_passing_stats,
+        get_team_shooting_stats, get_team_rebounding_stats, find_games,
+        get_boxscore_traditional, get_play_by_play, get_league_standings,
+        get_scoreboard, get_draft_history, get_league_leaders, get_game_shotchart,
+        get_boxscore_advanced, get_boxscore_four_factors, get_boxscore_usage, 
+        get_boxscore_defensive, get_boxscore_summary, # Added
+        get_win_probability, get_season_matchups, 
+        get_matchups_rollup, get_synergy_play_types, get_player_analysis, get_live_odds,
+        get_player_insights, get_league_player_on_details, get_player_estimated_metrics,
+    ],
+    # Default context for the agent (can be overridden at runtime)
     debug_mode=settings.AGENT_DEBUG_MODE, # Changed
     show_tool_calls=True,
     stream=True,

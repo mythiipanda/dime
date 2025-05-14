@@ -5,7 +5,8 @@ from nba_api.stats.endpoints import (
     BoxScoreTraditionalV3,
     BoxScoreFourFactorsV3,
     BoxScoreUsageV3,
-    BoxScoreDefensiveV2
+    BoxScoreDefensiveV2,
+    BoxScoreSummaryV2
 )
 from backend.config import settings
 from backend.core.errors import Errors
@@ -181,4 +182,26 @@ def fetch_boxscore_defensive_logic(game_id: str) -> str:
         error_constants={"api": Errors.BOXSCORE_DEFENSIVE_API, "processing": Errors.PROCESSING_ERROR},
         endpoint_name_for_logging="BoxScoreDefensiveV2"
         # No additional constructor kwargs beyond game_id for BoxScoreDefensiveV2
+    )
+
+@lru_cache(maxsize=128)
+def fetch_boxscore_summary_logic(game_id: str) -> str:
+    """Fetches the summary box score for a given game_id using BoxScoreSummaryV2."""
+    return _fetch_boxscore_data_generic(
+        game_id=game_id,
+        endpoint_class=BoxScoreSummaryV2,
+        dataset_mapping={
+            "available_video": "available_video",
+            "game_info": "game_info",
+            "game_summary": "game_summary",
+            "inactive_players": "inactive_players",
+            "last_meeting": "last_meeting",
+            "line_score": "line_score",
+            "officials": "officials",
+            "other_stats": "other_stats",
+            "season_series": "season_series"
+        },
+        error_constants={"api": Errors.BOXSCORE_SUMMARY_API, "processing": Errors.PROCESSING_ERROR},
+        endpoint_name_for_logging="BoxScoreSummaryV2"
+        # No additional constructor kwargs beyond game_id for BoxScoreSummaryV2
     )

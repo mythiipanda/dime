@@ -36,7 +36,8 @@ from backend.api_tools.game_boxscores import (
     fetch_boxscore_advanced_logic,
     fetch_boxscore_four_factors_logic,
     fetch_boxscore_usage_logic,
-    fetch_boxscore_defensive_logic
+    fetch_boxscore_defensive_logic,
+    fetch_boxscore_summary_logic # Added
 )
 from backend.api_tools.game_playbyplay import fetch_playbyplay_logic
 from backend.api_tools.game_visuals_analytics import (
@@ -1443,6 +1444,36 @@ def get_boxscore_defensive(game_id: str) -> str:
     """
     logger.debug(f"Tool 'get_boxscore_defensive' called for game_id '{game_id}'")
     result = fetch_boxscore_defensive_logic(game_id)
+    return result
+
+@tool
+def get_boxscore_summary(game_id: str) -> str:
+    """
+    Fetches a summary of a game, including game info, line scores, officials, inactive players,
+    last meeting details, season series status, and other miscellaneous team stats for a specific game ID.
+
+    Args:
+        game_id (str): The 10-digit unique identifier for the game (e.g., "0022300704").
+
+    Returns:
+        str: JSON string containing various summary datasets for the game.
+             Expected structure:
+             {
+                 "game_id": str,
+                 "available_video": [ { ... } ], // Info about video availability for the game
+                 "game_info": [ { "GAME_DATE": str, "ATTENDANCE": int, "GAME_TIME": str } ], // Basic game metadata
+                 "game_summary": [ { "GAME_DATE_EST": str, "GAME_STATUS_TEXT": str, "HOME_TEAM_ID": int, ... } ], // Overall game summary
+                 "inactive_players": [ { "PLAYER_ID": int, "FIRST_NAME": str, ... } ], // List of inactive players for both teams
+                 "last_meeting": [ { "LAST_GAME_ID": str, "LAST_GAME_HOME_TEAM_POINTS": int, ... } ], // Details of the last game between the two teams
+                 "line_score": [ { "TEAM_ABBREVIATION": str, "TEAM_CITY_NAME": str, "PTS_QTR1": int, ..., "PTS": int } ], // Line scores per team
+                 "officials": [ { "OFFICIAL_ID": int, "FIRST_NAME": str, "LAST_NAME": str, ... } ], // List of game officials
+                 "other_stats": [ { "TEAM_ABBREVIATION": str, "PTS_PAINT": int, "LARGEST_LEAD": int, ... } ], // Misc team stats like points in paint, lead changes
+                 "season_series": [ { "HOME_TEAM_WINS": int, "HOME_TEAM_LOSSES": int, "SERIES_LEADER": str } ] // Status of the season series between the teams
+             }
+             Or an {'error': 'Error message'} object if an issue occurs.
+    """
+    logger.debug(f"Tool 'get_boxscore_summary' called for game_id '{game_id}'")
+    result = fetch_boxscore_summary_logic(game_id=game_id)
     return result
 
 @tool

@@ -20,7 +20,8 @@ from backend.api_tools.game_boxscores import (
     fetch_boxscore_advanced_logic,
     fetch_boxscore_four_factors_logic,
     fetch_boxscore_usage_logic,
-    fetch_boxscore_defensive_logic
+    fetch_boxscore_defensive_logic,
+    fetch_boxscore_summary_logic
 )
 # from backend.config import settings # Not directly needed by logic function signatures
 
@@ -102,6 +103,19 @@ boxscore_tests = [
     ("Defensive Box Score", fetch_boxscore_defensive_logic, {"primary_player_key": "player_defensive_stats", "primary_team_key": "team_defensive_stats"}),
 ]
 
+# Expected datasets for BoxScoreSummaryV2
+BOXSCORE_SUMMARY_EXPECTED_DATASETS = {
+    "available_video": "list",
+    "game_info": "list", # Usually a list with one dict
+    "game_summary": "list", # Usually a list with one dict
+    "inactive_players": "list",
+    "last_meeting": "list", # Usually a list with one dict
+    "line_score": "list", # List of dicts (one per team)
+    "officials": "list",
+    "other_stats": "list", # List of dicts (one per team)
+    "season_series": "list" # Usually a list with one dict
+}
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("description, logic_func, keys_map", boxscore_tests)
 async def test_valid_game_boxscores(description, logic_func, keys_map):
@@ -172,6 +186,73 @@ async def test_traditional_boxscore_with_period_filters():
         start_period=0, 
         end_period=0
     )
+
+@pytest.mark.asyncio
+async def test_boxscore_summary_valid_game():
+    description = "BoxScoreSummaryV2 - Valid Game"
+    game_id = VALID_GAME_ID
+    logger.info(f"--- Testing {description} (GameID: {game_id}) ---")
+    
+    result_json = await asyncio.to_thread(fetch_boxscore_summary_logic, game_id=game_id)
+    
+    try:
+        result_data = json.loads(result_json)
+        assert "error" not in result_data, f"Unexpected API error for {description}: {result_data.get('error')}"
+        assert result_data.get("game_id") == game_id, f"Game ID mismatch in response for {description}"
+
+        for key, expected_type_str in BOXSCORE_SUMMARY_EXPECTED_DATASETS.items():
+            assert key in result_data, f"Expected dataset key '{key}' not found in BoxScoreSummaryV2 response for {description}"
+            if expected_type_str == "list":
+                assert isinstance(result_data[key], list), f"Dataset '{key}' should be a list for {description}"
+                # Potentially check if list is not empty for some keys if game is valid, e.g., game_summary, line_score
+                if key in ["game_summary", "line_score", "game_info", "other_stats"]:
+                     assert len(result_data[key]) > 0, f"Dataset '{key}' should not be empty for a valid game in {description}"
+                     if result_data[key]: # Ensure it's not empty before trying to access [0]
+                        assert isinstance(result_data[key][0], dict), f"First element of dataset '{key}' should be a dict for {description}"
+        
+        logger.info(f"SUCCESS: {description} - Fetched and basic structure verified.")
+
+    except json.JSONDecodeError:
+        logger.error(f"JSONDecodeError for {description}: Could not decode JSON response: {result_json}")
+        assert False, f"JSONDecodeError for {description}"
+    logger.info("-" * 70)
+
+@pytest.mark.asyncio
+async def test_boxscore_summary_invalid_game_id():
+    description = "BoxScoreSummaryV2 - Invalid Game ID"
+    game_id = INVALID_GAME_ID
+    logger.info(f"--- Testing {description} (GameID: {game_id}) ---")
+    
+    result_json = await asyncio.to_thread(fetch_boxscore_summary_logic, game_id=game_id)
+    
+    try:
+        result_data = json.loads(result_json)
+        assert "error" in result_data, f"Expected an API error for {description}, but got: {result_data}"
+        logger.info(f"SUCCESS (expected API error): {description} - Error: {result_data.get('error')}")
+    except json.JSONDecodeError:
+        logger.error(f"JSONDecodeError for {description}: Could not decode JSON response: {result_json}")
+        assert False, f"JSONDecodeError for {description}"
+    logger.info("-" * 70)
+
+@pytest.mark.asyncio
+async def test_boxscore_summary_malformed_game_id():
+    description = "BoxScoreSummaryV2 - Malformed Game ID"
+    game_id = MALFORMED_GAME_ID
+    logger.info(f"--- Testing {description} (GameID: {game_id}) ---")
+    
+    result_json = await asyncio.to_thread(fetch_boxscore_summary_logic, game_id=game_id)
+    
+    try:
+        result_data = json.loads(result_json)
+        assert "error" in result_data, f"Expected an API error for {description}, but got: {result_data}"
+        # Specifically check for invalid format error if possible, or a generic error
+        error_msg = result_data.get("error", "").lower()
+        assert "invalid game id format" in error_msg or "malformed" in error_msg or "game_id" in error_msg # more robust check
+        logger.info(f"SUCCESS (expected API error for malformed ID): {description} - Error: {result_data.get('error')}")
+    except json.JSONDecodeError:
+        logger.error(f"JSONDecodeError for {description}: Could not decode JSON response: {result_json}")
+        assert False, f"JSONDecodeError for {description}"
+    logger.info("-" * 70)
 
 if __name__ == "__main__":
     asyncio.run(main())
