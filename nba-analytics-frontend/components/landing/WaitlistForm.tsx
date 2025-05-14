@@ -15,42 +15,42 @@ export function WaitlistForm({ className }: { className?: string }) {
     setError('');
     setSubmitted(false);
 
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    if (!email || !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) {
       setError('Please enter a valid email address.');
       return;
     }
 
-    // Placeholder for actual API call
-    console.log('Waitlist submission:', email);
-    // try {
-    //   // const response = await fetch('/api/waitlist', {
-    //   //   method: 'POST',
-    //   //   headers: { 'Content-Type': 'application/json' },
-    //   //   body: JSON.stringify({ email }),
-    //   // });
-    //   // if (!response.ok) {
-    //   //   throw new Error('Submission failed.');
-    //   // }
-    //   // const data = await response.json();
-    //   // console.log('Success:', data);
-    //   setSubmitted(true);
-    //   setEmail(''); 
-    // } catch (err) {
-    //   setError(err instanceof Error ? err.message : 'An unknown error occurred.');
-    // }
+    try {
+      const response = await fetch('/api/waitlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
 
-    // Simulate successful submission for now
-    setTimeout(() => {
-      setSubmitted(true);
-      setEmail('');
-    }, 500);
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || result.message || 'Submission failed.');
+      }
+      
+      if (result.message && result.message.includes('already on the waitlist')) {
+        setSubmitted(true); 
+        setError(''); 
+      } else {
+        setSubmitted(true);
+      }
+      setEmail(''); 
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An unknown error occurred.');
+      setSubmitted(false); 
+    }
   };
 
   if (submitted) {
     return (
       <div className={`text-center p-4 rounded-lg bg-green-500/10 border border-green-500/30 text-green-300 ${className}`}>
         <p className="font-semibold">Thanks for joining!</p>
-        <p className="text-sm">We'll keep you updated on Dime.</p>
+        <p className="text-sm">We\'ll keep you updated on Dime.</p>
       </div>
     );
   }
