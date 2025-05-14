@@ -72,5 +72,19 @@ def _validate_league_id(league_id: str, valid_ids: Optional[list[str]] = None) -
         return False
     return league_id in valid_ids
 
+def validate_team_id(team_id: int) -> bool:
+    """
+    Validates that an NBA team ID is a positive integer.
+    Actual NBA team IDs are large positive integers (e.g., 1610612749).
+    The value 0 is often used as a default for 'all teams' in opponent_team_id parameters,
+    but this validator is for actual team IDs.
+    """
+    if not isinstance(team_id, int):
+        return False
+    # Team IDs are positive integers. Allow 0 only if it's explicitly handled elsewhere as "all teams".
+    # Given the calling context (checks for not None and not 0 before calling), 
+    # we expect actual team IDs here.
+    return team_id > 0 
+
 # Need to import re for _validate_season_format and validate_game_id_format
 import re

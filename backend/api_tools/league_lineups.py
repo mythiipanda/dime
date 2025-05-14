@@ -106,9 +106,9 @@ def fetch_league_dash_lineups_logic(
     if date_to_nullable and not validate_date_format(date_to_nullable):
         return format_response(error=Errors.INVALID_DATE_FORMAT.format(date=date_to_nullable))
     if team_id_nullable is not None and not validate_team_id(team_id_nullable):
-         return format_response(error=Errors.INVALID_TEAM_ID.format(team_id=team_id_nullable))
+         return format_response(error=Errors.INVALID_TEAM_ID_VALUE.format(team_id=team_id_nullable))
     if opponent_team_id != 0 and not validate_team_id(opponent_team_id):
-         return format_response(error=Errors.INVALID_TEAM_ID.format(team_id=opponent_team_id))
+         return format_response(error=Errors.INVALID_TEAM_ID_VALUE.format(team_id=opponent_team_id))
 
     # Input type validation for enums can be added if necessary, but nba_api often handles string versions.
 

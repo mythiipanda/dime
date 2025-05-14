@@ -88,6 +88,7 @@ class Errors:
     TEAM_SEARCH_UNEXPECTED = "Unexpected error searching for teams: {error}"
     TEAM_IDENTIFIER_OR_ID_REQUIRED = "Either team_identifier or team_id must be provided."
     INVALID_TEAM_IDENTIFIER = "Invalid team identifier: '{identifier}'. Must be a valid team name, abbreviation, or ID." # Added
+    INVALID_TEAM_ID_VALUE = "Invalid Team ID: '{team_id}'. Team ID must be a valid positive integer."
 
     # Game Errors
     GAME_ID_EMPTY = "Game ID cannot be empty."
@@ -169,7 +170,8 @@ class Errors:
     INVALID_DIVISION = "Invalid vs_division: '{value}'. Valid options: {options}"
     INVALID_SEASON_SEGMENT = "Invalid season_segment: '{value}'. Valid options: {options}"
     INVALID_RUN_TYPE = "Invalid RunType: '{value}'. Valid options: {options}"
-    INVALID_PARAMETER_FORMAT = "Invalid format for parameter '{param_name}': '{param_value}'. Expected format: {expected_format}" # Added
+    INVALID_PARAMETER_FORMAT = "Invalid format for parameter '{param_name}': '{param_value}'. Expected format: {expected_format}"
+    INVALID_CONTEXT_MEASURE = "Invalid context_measure: '{value}'. Valid options: {options}" # Added
 
     # League Player On Details Errors
     LEAGUE_PLAYER_ON_DETAILS_PROCESSING = "Processing failed for league player on details (TeamID: {team_id}, Season: {season})."
@@ -185,3 +187,12 @@ class Errors:
 
     # Advanced Player Stats (PlayerEstimatedMetrics, TeamEstimatedMetrics, TeamPlayerOnOffDetails)
     PLAYER_ESTIMATED_METRICS_API = "API error fetching player estimated metrics (Season: {season}, Type: {season_type}): {error}"
+
+    PLAYER_SHOT_CHART_API = "Error fetching shot chart data for player {player_id} in season {season}: {error}"
+    PLAYER_SHOT_CHART_NO_DATA = "No shot chart data found for player {player_id} in season {season}."
+    TEAM_SHOT_CHART_API = "Error fetching shot chart data for game {game_id}: {error}"
+    TEAM_SHOT_CHART_NO_DATA = "No shot chart data found for game {game_id}."
+    COMMON_ALL_PLAYERS_API_ERROR = "Error fetching data from CommonAllPlayers endpoint: {error}"
+    COMMON_PLAYOFF_SERIES_API_ERROR = "Error fetching data from CommonPlayoffSeries endpoint: {error}"
+    COMMON_TEAM_YEARS_API_ERROR = "Error fetching data from CommonTeamYears endpoint: {error}"
+    LEAGUE_DASH_LINEUPS_API_ERROR = "Error fetching data from LeagueDashLineups endpoint: {error}"
