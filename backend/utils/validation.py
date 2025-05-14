@@ -61,5 +61,16 @@ def validate_game_id_format(game_id: str) -> bool:
         return False
     return bool(re.fullmatch(r"^\d{10}$", game_id))
 
+def _validate_league_id(league_id: str, valid_ids: Optional[list[str]] = None) -> bool:
+    """
+    Validates that the league_id is one of the known valid IDs.
+    Default valid_ids are for NBA, WNBA, G-League.
+    """
+    if valid_ids is None:
+        valid_ids = ["00", "10", "20"] # Common NBA API League IDs
+    if not league_id or not isinstance(league_id, str):
+        return False
+    return league_id in valid_ids
+
 # Need to import re for _validate_season_format and validate_game_id_format
 import re
