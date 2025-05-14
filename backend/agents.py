@@ -59,7 +59,8 @@ from .tools import (
     get_boxscore_advanced, get_boxscore_four_factors, get_boxscore_usage,
     get_boxscore_defensive, get_win_probability, get_season_matchups,
     get_matchups_rollup, get_synergy_play_types, get_player_analysis,
-    get_live_odds, get_player_insights,
+    get_live_odds, get_player_insights, get_league_player_on_details,
+    get_player_estimated_metrics, # Added
 )
 import datetime
 
@@ -271,7 +272,8 @@ nba_tools = [
     get_boxscore_advanced, get_boxscore_four_factors, get_boxscore_usage,
     get_boxscore_defensive, get_win_probability, get_season_matchups,
     get_matchups_rollup, get_synergy_play_types, get_player_analysis,
-    get_live_odds, get_player_insights,
+    get_live_odds, get_player_insights, get_league_player_on_details,
+    get_player_estimated_metrics, # Added
 ]
 
 nba_agent = Agent(

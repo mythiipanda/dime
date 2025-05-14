@@ -29,12 +29,4 @@ def test_get_team_info_for_tracking():
     assert err is not None and tid is None and tname is None
     # Invalid: bad identifier
     err, tid, tname = _get_team_info_for_tracking("NotARealTeamName12345", None)
-    assert err is not None and tid is None and tname is None
-
-def main():
-    test_validate_team_tracking_params()
-    test_get_team_info_for_tracking()
-    print("All team_tracking_utils tests completed.")
-
-if __name__ == "__main__":
-    main() 
+    assert err is not None and tid is None and tname is None 

@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"  # e.g., development, staging, production
     CURRENT_NBA_SEASON: str = get_default_nba_season() # Default, can be overridden by env var
     DEFAULT_TIMEOUT_SECONDS: int = 30
+    DEFAULT_LRU_CACHE_SIZE: int = 128 # Default size for LRU caches
     HEADSHOT_BASE_URL: str = "https://ak-static.cms.nba.com/wp-content/uploads/headshots/nba/latest/260x190"
 
     # --- CORS Configuration ---

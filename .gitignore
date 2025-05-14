@@ -22,6 +22,7 @@ backend/tests/__pycache__/
 backend/utils/__pycache__/
 backend/models/__pycache__/
 backend/workflows/__pycache__/
+backend/cache/
 
 # General Python
 *.pyc

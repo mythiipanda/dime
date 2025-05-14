@@ -10,8 +10,8 @@ import pandas as pd
 import numpy as np
 from nba_api.stats.endpoints import playerestimatedmetrics, leaguedashplayerstats, playerawards, playercareerstats
 from nba_api.stats.static import players
-from config import settings
-from api_tools.utils import retry_on_timeout, format_response, get_player_id_from_name
+from backend.config import settings
+from backend.api_tools.utils import retry_on_timeout, format_response, get_player_id_from_name
 import os
 
 # Import our RAPTOR metrics implementation

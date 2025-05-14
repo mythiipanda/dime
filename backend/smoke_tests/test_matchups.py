@@ -4,134 +4,107 @@ import os
 import asyncio
 import json
 import logging
+from typing import Callable, Any # Added for type hints
+import pytest # Import pytest
 
 # Add the project root to sys.path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 from backend.api_tools.matchup_tools import fetch_league_season_matchups_logic, fetch_matchups_rollup_logic
 from nba_api.stats.library.parameters import SeasonTypeAllStar
 from backend.config import settings
 
-async def run_season_matchups_test(test_name_suffix: str, **kwargs):
-    def_player = kwargs.get("def_player_identifier", "N/A")
-    off_player = kwargs.get("off_player_identifier", "N/A")
-    season = kwargs.get("season", "N/A")
-    test_name = f"Season Matchups (Def: {def_player} vs Off: {off_player}, Season: {season}{test_name_suffix})"
+async def run_test_with_assertions(
+    logic_function: Callable,
+    description: str,
+    expected_data_key: str, # 'matchups' or 'rollup'
+    expect_api_error: bool = False,
+    expect_empty_results_no_error: bool = False,
+    **kwargs: Any
+):
+    test_name = description
     logger.info(f"--- Testing {test_name} ---")
     
-    result_json = await asyncio.to_thread(fetch_league_season_matchups_logic, **kwargs)
+    result_json = await asyncio.to_thread(logic_function, **kwargs)
     
     try:
         result_data = json.loads(result_json)
-        # print(json.dumps(result_data, indent=2)) # Uncomment for full output
+        # logger.debug(json.dumps(result_data, indent=2))
         
-        if "error" not in result_data:
-            if "matchups" in result_data and isinstance(result_data["matchups"], list):
-                logger.info(f"SUCCESS: {test_name} - Fetched season matchups. Count: {len(result_data['matchups'])}")
-                if result_data["matchups"]:
-                    logger.info(f"  Sample Matchup Data: {json.dumps(result_data['matchups'][0], indent=2)}")
-            elif "matchups" in result_data and not result_data["matchups"]:
-                 logger.info(f"SUCCESS (No Data): {test_name} - No specific matchup data found (empty list returned).")
-            else:
-                logger.warning(f"WARNING: {test_name} - Data structure not as expected.")
-                print(json.dumps(result_data, indent=2))
-        elif "error" in result_data:
-            logger.error(f"ERROR for {test_name}: {result_data['error']}")
+        if expect_api_error:
+            assert "error" in result_data, f"Expected an API error for {test_name}, but got: {result_data}"
+            logger.info(f"SUCCESS (expected API error): {test_name} - Error: {result_data.get('error')}")
+        elif expect_empty_results_no_error:
+            assert "error" not in result_data, f"Expected no error for empty results for {test_name}, but got error: {result_data.get('error')}"
+            assert expected_data_key in result_data, f"Expected key '{expected_data_key}' for empty results for {test_name}"
+            assert isinstance(result_data[expected_data_key], list), f"Expected list for key '{expected_data_key}' for empty results for {test_name}"
+            assert not result_data[expected_data_key], f"Expected empty list for key '{expected_data_key}' for empty results for {test_name}, but got {len(result_data[expected_data_key])} items."
+            logger.info(f"SUCCESS (expected empty results): {test_name} - Found 0 {expected_data_key}, as expected.")
         else:
-            logger.warning(f"WARNING: Unexpected response structure for {test_name}.")
+            assert "error" not in result_data, f"Unexpected API error for {test_name}: {result_data.get('error')}"
+            assert expected_data_key in result_data, f"Expected key '{expected_data_key}' not found for {test_name}"
+            assert isinstance(result_data[expected_data_key], list), f"Key '{expected_data_key}' should be a list for {test_name}"
             
+            if result_data[expected_data_key]:
+                logger.info(f"SUCCESS: {test_name} - Fetched {expected_data_key}. Count: {len(result_data[expected_data_key])}")
+                # logger.info(f"  Sample Data: {json.dumps(result_data[expected_data_key][0], indent=2)}") # Can be verbose
+            else:
+                logger.info(f"SUCCESS (No Data): {test_name} - No {expected_data_key} data found (empty list returned for valid params).")
+
     except json.JSONDecodeError:
-        logger.error(f"Error: Could not decode JSON response for {test_name}: {result_json}")
+        logger.error(f"JSONDecodeError for {test_name}: Could not decode JSON response: {result_json}")
+        assert False, f"JSONDecodeError for {test_name}"
     logger.info("-" * 70)
 
-async def run_matchups_rollup_test(test_name_suffix: str, **kwargs):
-    def_player = kwargs.get("def_player_identifier", "N/A")
-    season = kwargs.get("season", "N/A")
-    test_name = f"Matchups Rollup (Def: {def_player}, Season: {season}{test_name_suffix})"
-    logger.info(f"--- Testing {test_name} ---")
-    
-    result_json = await asyncio.to_thread(fetch_matchups_rollup_logic, **kwargs)
-    
-    try:
-        result_data = json.loads(result_json)
-        # print(json.dumps(result_data, indent=2)) # Uncomment for full output
-        
-        if "error" not in result_data:
-            if "rollup" in result_data and isinstance(result_data["rollup"], list):
-                logger.info(f"SUCCESS: {test_name} - Fetched matchups rollup. Count: {len(result_data['rollup'])}")
-                if result_data["rollup"]:
-                    logger.info(f"  Sample Rollup Data: {json.dumps(result_data['rollup'][0], indent=2)}")
-            elif "rollup" in result_data and not result_data["rollup"]:
-                 logger.info(f"SUCCESS (No Data): {test_name} - No rollup data found (empty list returned).")
-            else:
-                logger.warning(f"WARNING: {test_name} - Data structure not as expected.")
-                print(json.dumps(result_data, indent=2))
-        elif "error" in result_data:
-            logger.error(f"ERROR for {test_name}: {result_data['error']}")
-        else:
-            logger.warning(f"WARNING: Unexpected response structure for {test_name}.")
-            
-    except json.JSONDecodeError:
-        logger.error(f"Error: Could not decode JSON response for {test_name}: {result_json}")
-    logger.info("-" * 70)
+CURRENT_SEASON = settings.CURRENT_NBA_SEASON
+PAST_SEASON = "2022-23"
 
-async def main():
-    current_season = settings.CURRENT_NBA_SEASON
-    past_season = "2022-23" 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "description, def_player_identifier, off_player_identifier, season, season_type, expect_api_error, expect_empty_results_no_error",
+    [
+        ("LeBron vs Butler, Current Season", "LeBron James", "Jimmy Butler", CURRENT_SEASON, SeasonTypeAllStar.regular, False, False),
+        (f"PlayerID 203999 vs 201939, {PAST_SEASON} Playoffs", "203999", "201939", PAST_SEASON, SeasonTypeAllStar.playoffs, False, False),
+        ("Invalid Def Player vs Curry, Past Season", "Invalid Def Player XYZ", "Stephen Curry", PAST_SEASON, SeasonTypeAllStar.regular, True, False), # Player not found error
+        ("LeBron vs Butler, Invalid Season Format", "LeBron James", "Jimmy Butler", "2023", SeasonTypeAllStar.regular, True, False), # Season format error
+    ]
+)
+async def test_season_matchups_scenarios(description, def_player_identifier, off_player_identifier, season, season_type, expect_api_error, expect_empty_results_no_error):
+    await run_test_with_assertions(
+        fetch_league_season_matchups_logic,
+        description=description,
+        expected_data_key="matchups",
+        expect_api_error=expect_api_error,
+        expect_empty_results_no_error=expect_empty_results_no_error,
+        def_player_identifier=def_player_identifier,
+        off_player_identifier=off_player_identifier,
+        season=season,
+        season_type=season_type
+    )
 
-    # --- Tests for fetch_league_season_matchups_logic ---
-    # Test 1: Valid player names, current season
-    await run_season_matchups_test(" - LeBron vs Butler, Current Season", 
-                                   def_player_identifier="LeBron James", 
-                                   off_player_identifier="Jimmy Butler",
-                                   season=current_season)
-                                   
-    # Test 2: Valid player IDs, past season, Playoffs
-    await run_season_matchups_test(f" - PlayerID 203999 vs 201939, {past_season} Playoffs", 
-                                   def_player_identifier="203999", # Jokic
-                                   off_player_identifier="201939", # Curry
-                                   season=past_season,
-                                   season_type=SeasonTypeAllStar.playoffs)
-
-    # Test 3: Invalid defensive player name
-    await run_season_matchups_test(" - Invalid Def Player", 
-                                   def_player_identifier="Invalid Def Player XYZ", 
-                                   off_player_identifier="Stephen Curry",
-                                   season=past_season)
-
-    # Test 4: Invalid season format
-    await run_season_matchups_test(" - Invalid Season", 
-                                   def_player_identifier="LeBron James", 
-                                   off_player_identifier="Jimmy Butler",
-                                   season="2023")
-
-    # --- Tests for fetch_matchups_rollup_logic ---
-    # Test 5: Valid player name, current season
-    await run_matchups_rollup_test(" - Gobert, Current Season", 
-                                   def_player_identifier="Rudy Gobert",
-                                   season=current_season)
-
-    # Test 6: Valid player ID, past season, Playoffs
-    await run_matchups_rollup_test(f" - PlayerID 201939, {past_season} Playoffs", 
-                                   def_player_identifier="201939", # Curry
-                                   season=past_season,
-                                   season_type=SeasonTypeAllStar.playoffs)
-
-    # Test 7: Invalid player name for rollup
-    await run_matchups_rollup_test(" - Invalid Player Rollup", 
-                                   def_player_identifier="Invalid Player XYZ",
-                                   season=past_season)
-    
-    # Test 8: Invalid season type for rollup
-    await run_matchups_rollup_test(" - Invalid Season Type Rollup", 
-                                   def_player_identifier="Rudy Gobert",
-                                   season=past_season,
-                                   season_type="All-Star Game") # Invalid for this endpoint
-
-if __name__ == "__main__":
-    asyncio.run(main())
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "description, def_player_identifier, season, season_type, expect_api_error, expect_empty_results_no_error",
+    [
+        ("Gobert Rollup, Current Season", "Rudy Gobert", CURRENT_SEASON, SeasonTypeAllStar.regular, False, False),
+        (f"PlayerID 201939 Rollup, {PAST_SEASON} Playoffs", "201939", PAST_SEASON, SeasonTypeAllStar.playoffs, False, False),
+        ("Invalid Player Rollup, Past Season", "Invalid Player XYZ", PAST_SEASON, SeasonTypeAllStar.regular, True, False), # Player not found error
+        ("Gobert Rollup, Invalid Season Type (All-Star)", "Rudy Gobert", PAST_SEASON, SeasonTypeAllStar.all_star, True, False), # Endpoint may not support All-Star
+    ]
+)
+async def test_matchups_rollup_scenarios(description, def_player_identifier, season, season_type, expect_api_error, expect_empty_results_no_error):
+    await run_test_with_assertions(
+        fetch_matchups_rollup_logic,
+        description=description,
+        expected_data_key="rollup",
+        expect_api_error=expect_api_error,
+        expect_empty_results_no_error=expect_empty_results_no_error,
+        def_player_identifier=def_player_identifier,
+        season=season,
+        season_type=season_type
+    )

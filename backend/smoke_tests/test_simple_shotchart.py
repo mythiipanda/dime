@@ -138,18 +138,6 @@ def test_shot_chart():
     """Test creating a sample shot chart."""
     logger.info("Testing shot chart creation...")
     
-    try:
-        filepath = create_sample_shot_chart()
-        if os.path.exists(filepath):
-            logger.info("Shot chart test passed!")
-            return True
-        else:
-            logger.error("Shot chart file was not created")
-            return False
-    except Exception as e:
-        logger.error(f"Error creating shot chart: {str(e)}")
-        return False
-
-if __name__ == "__main__":
-    success = test_shot_chart()
-    sys.exit(0 if success else 1)
+    filepath = create_sample_shot_chart()
+    assert os.path.exists(filepath), f"Shot chart file was not created at {filepath}"
+    logger.info("Shot chart test passed!")

@@ -69,6 +69,9 @@ from backend.api_tools.trending_team_tools import fetch_top_teams_logic
 from backend.api_tools.matchup_tools import fetch_league_season_matchups_logic, fetch_matchups_rollup_logic
 from backend.api_tools.synergy_tools import fetch_synergy_play_types_logic
 
+from backend.api_tools.league_player_on_details import fetch_league_player_on_details_logic # Added
+from backend.api_tools.player_estimated_metrics import fetch_player_estimated_metrics_logic # Added
+
 logger = logging.getLogger(__name__)
 
 # --- Agno Tool Functions (Wrappers for Logic) ---
@@ -1136,7 +1139,7 @@ def get_player_insights(player_name: str, season: str = settings.CURRENT_NBA_SEA
 
     Args:
         player_name (str): The full name of the player (e.g., "Stephen Curry").
-        season (str, optional): The NBA season identifier in YYYY-YY format. Defaults to current season.
+        season (str, optional): The primary NBA season for analysis in YYYY-YY format. Defaults to current season.
         season_type (str, optional): Type of season ("Regular Season", "Playoffs"). Defaults to "Regular Season".
         per_mode (str, optional): Statistical mode ("PerGame", "Totals", etc.). Defaults to "PerGame".
         league_id (str, optional): League ID ("00" for NBA). Defaults to "00".
@@ -1466,3 +1469,129 @@ def get_win_probability(game_id: str, run_type: str = RunType.default) -> str:
     logger.debug(f"Tool 'get_win_probability' called for game_id '{game_id}'")
     result = fetch_win_probability_logic(game_id, run_type)
     return result
+
+@tool
+def get_league_player_on_details(
+    season: str = settings.CURRENT_NBA_SEASON,
+    season_type: str = SeasonTypeAllStar.regular,
+    measure_type: str = "Base", # Defaulting to Base as per MeasureTypeDetailedDefense
+    per_mode: str = PerModeDetailed.totals,
+    team_id: int = 0, # TeamID is required by the endpoint; 0 might mean league-wide or error.
+    last_n_games: int = 0,
+    month: int = 0,
+    opponent_team_id: int = 0,
+    pace_adjust: str = "N",
+    plus_minus: str = "N",
+    rank: str = "N",
+    period: int = 0,
+    vs_division_nullable: Optional[str] = None,
+    vs_conference_nullable: Optional[str] = None,
+    season_segment_nullable: Optional[str] = None,
+    outcome_nullable: Optional[str] = None,
+    location_nullable: Optional[str] = None,
+    league_id_nullable: Optional[str] = LeagueID.nba,
+    game_segment_nullable: Optional[str] = None,
+    date_to_nullable: Optional[str] = None,
+    date_from_nullable: Optional[str] = None
+) -> str:
+    """
+    Fetches league-wide player on/off court details.
+    This endpoint provides statistics for players based on whether they are on or off the court,
+    often used to analyze a player's impact on their team's performance.
+
+    Args:
+        season (str, optional): NBA season in YYYY-YY format. Defaults to current season.
+        season_type (str, optional): Type of season (e.g., "Regular Season"). Defaults to "Regular Season".
+        measure_type (str, optional): Statistical measure type (e.g., "Base", "Advanced"). Defaults to "Base".
+        per_mode (str, optional): Statistical period (e.g., "Totals", "PerGame"). Defaults to "Totals".
+        team_id (int, optional): Filter by a specific team ID. Defaults to 0 (often league-wide, but API behavior might vary).
+        last_n_games (int, optional): Filter for the last N games. Defaults to 0 (all games).
+        month (int, optional): Filter by month (1-12). Defaults to 0 (all months).
+        opponent_team_id (int, optional): Filter by opponent team ID. Defaults to 0 (all opponents).
+        pace_adjust (str, optional): Pace adjust ("Y" or "N"). Defaults to "N".
+        plus_minus (str, optional): Plus/Minus ("Y" or "N"). Defaults to "N".
+        rank (str, optional): Rank ("Y" or "N"). Defaults to "N".
+        period (int, optional): Filter by period (1-4, or 0 for all). Defaults to 0.
+        vs_division_nullable (str, optional): Filter by opponent's division.
+        vs_conference_nullable (str, optional): Filter by opponent's conference.
+        season_segment_nullable (str, optional): Filter by season segment (e.g., "Pre All-Star").
+        outcome_nullable (str, optional): Filter by game outcome ("W" or "L").
+        location_nullable (str, optional): Filter by game location ("Home" or "Road").
+        league_id_nullable (str, optional): League ID. Defaults to NBA ("00").
+        game_segment_nullable (str, optional): Filter by game segment (e.g., "First Half").
+        date_to_nullable (str, optional): End date for filtering (YYYY-MM-DD).
+        date_from_nullable (str, optional): Start date for filtering (YYYY-MM-DD).
+
+    Returns:
+        str: JSON string containing league player on/off details.
+             Expected structure:
+             {
+                 "parameters": { ... all input parameters ... },
+                 "league_player_on_details": [
+                     {
+                         "GROUP_SET": str (e.g., "On/Off Court"), "TEAM_ID": int, "TEAM_ABBREVIATION": str,
+                         "VS_PLAYER_ID": int, "VS_PLAYER_NAME": str, "COURT_STATUS": str ("On" or "Off"),
+                         "GP": int, "W": int, "L": int, "MIN": float, "PTS": float, "PLUS_MINUS": float, ...
+                     }, ...
+                 ]
+             }
+             Or an {'error': 'Error message'} object if an issue occurs.
+    """
+    logger.debug(f"Tool 'get_league_player_on_details' called for Season: {season}, TeamID: {team_id}, Measure: {measure_type}")
+    return fetch_league_player_on_details_logic(
+        season=season,
+        season_type=season_type,
+        measure_type=measure_type,
+        per_mode=per_mode,
+        team_id=team_id,
+        last_n_games=last_n_games,
+        month=month,
+        opponent_team_id=opponent_team_id,
+        pace_adjust=pace_adjust,
+        plus_minus=plus_minus,
+        rank=rank,
+        period=period,
+        vs_division_nullable=vs_division_nullable,
+        vs_conference_nullable=vs_conference_nullable,
+        season_segment_nullable=season_segment_nullable,
+        outcome_nullable=outcome_nullable,
+        location_nullable=location_nullable,
+        league_id_nullable=league_id_nullable,
+        game_segment_nullable=game_segment_nullable,
+        date_to_nullable=date_to_nullable,
+        date_from_nullable=date_from_nullable
+    )
+
+@tool
+def get_player_estimated_metrics(
+    season: str = settings.CURRENT_NBA_SEASON,
+    season_type: str = SeasonTypeAllStar.regular,
+    league_id: str = LeagueID.nba
+) -> str:
+    """
+    Fetches player estimated metrics (E_OFF_RATING, E_DEF_RATING, E_NET_RATING, etc.)
+    for a given season and season type.
+
+    Args:
+        season (str, optional): NBA season in 'YYYY-YY' format. Defaults to current season.
+        season_type (str, optional): Season type (e.g., "Regular Season", "Playoffs"). Defaults to "Regular Season".
+        league_id (str, optional): League ID (e.g., "00" for NBA). Defaults to "00".
+
+    Returns:
+        str: JSON string containing player estimated metrics.
+             Expected structure:
+             {
+                 "parameters": {"season": str, "season_type": str, "league_id": str},
+                 "player_estimated_metrics": [
+                     {"PLAYER_ID": int, "PLAYER_NAME": str, "GP": int, "MIN": float,
+                      "E_OFF_RATING": float, "E_DEF_RATING": float, "E_NET_RATING": float, ...}, ...
+                 ]
+             }
+             Or an {'error': 'Error message'} object if an issue occurs.
+    """
+    logger.debug(f"Tool 'get_player_estimated_metrics' called for Season: {season}, Type: {season_type}, League: {league_id}")
+    return fetch_player_estimated_metrics_logic(
+        season=season,
+        season_type=season_type,
+        league_id=league_id
+    )

@@ -3,6 +3,7 @@ import json
 from typing import Dict, List, Optional, Any, Tuple
 from datetime import date, datetime
 from functools import lru_cache
+from requests.exceptions import ReadTimeout, ConnectionError
 
 from nba_api.live.nba.endpoints import ScoreBoard as LiveScoreBoard
 from nba_api.stats.endpoints import scoreboardv2
@@ -10,7 +11,7 @@ from nba_api.stats.library.parameters import LeagueID
 
 from backend.config import settings
 from backend.core.errors import Errors
-from backend.api_tools.utils import format_response, _process_dataframe
+from backend.api_tools.utils import format_response, _process_dataframe, retry_on_timeout
 from backend.utils.validation import validate_date_format
 logger = logging.getLogger(__name__)
 
@@ -198,11 +199,26 @@ def fetch_scoreboard_data_logic(game_date: Optional[str] = None, league_id: str 
             processed_static_data: Dict[str, List[Dict[str, Any]]]
             if bypass_cache or force_static_fetch_for_today:
                 logger.info(f"Fetching fresh static scoreboard data for {date_for_static_fetch} (Bypass: {bypass_cache}, StaleLive: {force_static_fetch_for_today}).")
-                static_endpoint = scoreboardv2.ScoreboardV2(**api_params_static, timeout=settings.DEFAULT_TIMEOUT_SECONDS) # Changed
-                game_header_list = _process_dataframe(static_endpoint.game_header.get_data_frame(), single_row=False)
-                line_score_list = _process_dataframe(static_endpoint.line_score.get_data_frame(), single_row=False)
-                processed_static_data = {"game_header": game_header_list or [], "line_score": line_score_list or []}
+                
+                def fetch_static_scoreboard():
+                    # Use a slightly longer timeout for this specific potentially problematic call
+                    endpoint = scoreboardv2.ScoreboardV2(**api_params_static, timeout=settings.DEFAULT_TIMEOUT_SECONDS + 15) # Increased timeout to 45s
+                    return endpoint
+
+                try:
+                    static_endpoint_instance = retry_on_timeout(fetch_static_scoreboard)
+                    game_header_list = _process_dataframe(static_endpoint_instance.game_header.get_data_frame(), single_row=False)
+                    line_score_list = _process_dataframe(static_endpoint_instance.line_score.get_data_frame(), single_row=False)
+                    processed_static_data = {"game_header": game_header_list or [], "line_score": line_score_list or []}
+                except (ReadTimeout, ConnectionError) as e: # Catch errors from retry_on_timeout if all retries fail
+                    logger.error(f"Failed to fetch static scoreboard for {date_for_static_fetch} after retries: {e}", exc_info=True)
+                    return format_response(error=Errors.NBA_API_TIMEOUT.format(endpoint_name=f"ScoreboardV2 for {date_for_static_fetch}", details=str(e)))
+                except Exception as e: # Catch other unexpected errors
+                    logger.error(f"Unexpected error fetching/processing static scoreboard for {date_for_static_fetch}: {e}", exc_info=True)
+                    return format_response(error=Errors.NBA_API_GENERAL_ERROR.format(endpoint_name=f"ScoreboardV2 for {date_for_static_fetch}", details=str(e)))
+
             else:
+                # This is the cached path
                 processed_static_data = get_cached_static_scoreboard_data(cache_key=static_cache_key, timestamp=cache_ts_static, **api_params_static)
 
             game_headers_map = {
@@ -250,7 +266,16 @@ def fetch_scoreboard_data_logic(game_date: Optional[str] = None, league_id: str 
         final_result = {"gameDate": effective_date_str, "games": formatted_games_list}
         return format_response(final_result)
 
+    except ReadTimeout as e:
+        logger.error(f"Global ReadTimeout in fetch_scoreboard_data_logic for {effective_date_str}: {e}", exc_info=True)
+        return format_response(error=Errors.NBA_API_TIMEOUT.format(endpoint_name=f"Scoreboard for {effective_date_str}", details=str(e)))
+    except ConnectionError as e:
+        logger.error(f"Global ConnectionError in fetch_scoreboard_data_logic for {effective_date_str}: {e}", exc_info=True)
+        return format_response(error=Errors.NBA_API_CONNECTION_ERROR.format(endpoint_name=f"Scoreboard for {effective_date_str}", details=str(e)))
     except Exception as e:
-        logger.error(f"Error fetching/formatting scoreboard data for {effective_date_str}: {str(e)}", exc_info=True)
-        error_msg = Errors.LEAGUE_SCOREBOARD_UNEXPECTED.format(game_date=effective_date_str, error=str(e))
-        return format_response(error=error_msg)
+        logger.error(f"Unexpected error fetching/formatting scoreboard data for {effective_date_str}: {e}", exc_info=True)
+        # Ensure a generic error is returned to the client
+        return format_response(error=Errors.UNEXPECTED_ERROR_SCOREBOARD.format(date=effective_date_str, error_details=str(e)))
+
+    # This final return should only be reached if no critical errors occurred that warranted an early error response.
+    return format_response(data=final_result)

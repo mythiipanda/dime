@@ -4,13 +4,15 @@ import os
 import asyncio
 import json
 import logging
+from typing import Callable, Any, List, Dict # Added for type hints
+import pytest # Import pytest
 
 # Add the project root to sys.path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s') # Adjusted format
 logger = logging.getLogger(__name__)
 
 from backend.api_tools.game_boxscores import (
@@ -29,63 +31,147 @@ from backend.api_tools.game_boxscores import (
 VALID_GAME_ID = "0042300225" # DAL vs OKC, 2024-05-11 (Playoffs)
 # Fallback if the above game is too old or data is sparse
 FALLBACK_GAME_ID = "0022300001" # DEN vs LAL, 2023-10-24 (Opening Night)
+INVALID_GAME_ID = "0000000000"
+MALFORMED_GAME_ID = "123"
 
-async def run_boxscore_test(test_name: str, logic_function: callable, game_id: str, **kwargs):
-    logger.info(f"--- Testing {test_name} for Game ID: {game_id} ---")
+# Enhanced helper with assertions and dynamic key checking
+async def run_boxscore_test_with_assertions(
+    description: str,
+    logic_function: Callable,
+    game_id: str,
+    expected_keys_map: Dict[str, str], # e.g., {"player_stats_key": "players", "team_stats_key": "teams"}
+    expect_api_error: bool = False,
+    expect_empty_results_no_error: bool = False, # If API returns empty lists for valid but no-data scenarios
+    **kwargs: Any # For additional params like start_period, end_period
+):
+    test_name = f"{description} (GameID: {game_id}, Params: {kwargs})"
+    logger.info(f"--- Testing {test_name} ---")
     
-    # Add game_id to kwargs for the logic function
     all_kwargs = {"game_id": game_id, **kwargs}
     result_json = await asyncio.to_thread(logic_function, **all_kwargs)
     
     try:
         result_data = json.loads(result_json)
-        # print(json.dumps(result_data, indent=2)) # Uncomment for full output
         
-        if "error" not in result_data:
-            # Check for common dataset keys based on function name
-            if "traditional" in test_name.lower() and ("players" in result_data and "teams" in result_data and "starters_bench" in result_data):
-                logger.info(f"SUCCESS: {test_name} - Fetched. Players: {len(result_data['players'])}, Teams: {len(result_data['teams'])}")
-            elif ("advanced" in test_name.lower() or "four_factors" in test_name.lower()) and ("player_stats" in result_data and "team_stats" in result_data):
-                logger.info(f"SUCCESS: {test_name} - Fetched. PlayerStats: {len(result_data['player_stats'])}, TeamStats: {len(result_data['team_stats'])}")
-            elif "usage" in test_name.lower() and ("player_usage_stats" in result_data and "team_usage_stats" in result_data):
-                logger.info(f"SUCCESS: {test_name} - Fetched. PlayerUsage: {len(result_data['player_usage_stats'])}, TeamUsage: {len(result_data['team_usage_stats'])}")
-            elif "defensive" in test_name.lower() and ("player_defensive_stats" in result_data and "team_defensive_stats" in result_data):
-                 logger.info(f"SUCCESS: {test_name} - Fetched. PlayerDefensive: {len(result_data['player_defensive_stats'])}, TeamDefensive: {len(result_data['team_defensive_stats'])}")
-            else:
-                logger.warning(f"SUCCESS but data structure keys not fully verified for {test_name}. Check output.")
-                print(json.dumps(result_data, indent=2))
-
-        elif "error" in result_data:
-            logger.error(f"ERROR for {test_name}: {result_data['error']}")
+        if expect_api_error:
+            assert "error" in result_data, f"Expected an API error for {test_name}, but got: {result_data}"
+            logger.info(f"SUCCESS (expected API error): {test_name} - Error: {result_data.get('error')}")
+        elif expect_empty_results_no_error:
+            assert "error" not in result_data, f"Expected no error for empty results for {test_name}, but got error: {result_data.get('error')}"
+            for key_desc, data_key in expected_keys_map.items():
+                assert data_key in result_data, f"Expected key '{data_key}' ({key_desc}) for empty results for {test_name}"
+                assert isinstance(result_data[data_key], list), f"Expected list for '{data_key}' ({key_desc}) for {test_name}"
+                assert not result_data[data_key], f"Expected empty list for '{data_key}' ({key_desc}) for {test_name}, but got {len(result_data[data_key])} items."
+            logger.info(f"SUCCESS (expected empty results): {test_name} - All expected keys found with empty lists.")
         else:
-            logger.warning(f"WARNING: Unexpected response structure for {test_name}.")
+            assert "error" not in result_data, f"Unexpected API error for {test_name}: {result_data.get('error')}"
             
+            primary_player_key = expected_keys_map.get("primary_player_key")
+            primary_team_key = expected_keys_map.get("primary_team_key")
+
+            assert primary_player_key in result_data, f"Expected primary player key '{primary_player_key}' not found for {test_name}"
+            assert isinstance(result_data[primary_player_key], list), f"Key '{primary_player_key}' should be a list for {test_name}"
+            
+            assert primary_team_key in result_data, f"Expected primary team key '{primary_team_key}' not found for {test_name}"
+            assert isinstance(result_data[primary_team_key], list), f"Key '{primary_team_key}' should be a list for {test_name}"
+
+            # Additional specific keys for traditional
+            if logic_function == fetch_boxscore_traditional_logic:
+                starters_bench_key = expected_keys_map.get("starters_bench_key")
+                assert starters_bench_key in result_data, f"Expected key '{starters_bench_key}' for traditional boxscore for {test_name}"
+                assert isinstance(result_data[starters_bench_key], list), f"Key '{starters_bench_key}' should be a list for {test_name}"
+                logger.info(f"SUCCESS: {test_name} - Fetched. Players: {len(result_data[primary_player_key])}, Teams: {len(result_data[primary_team_key])}, Starters/Bench: {len(result_data[starters_bench_key])}")
+            else:
+                logger.info(f"SUCCESS: {test_name} - Fetched. {primary_player_key}: {len(result_data[primary_player_key])}, {primary_team_key}: {len(result_data[primary_team_key])}")
+
+            # Optional: Log sample data if needed, but keep smoke tests fast
+            # if result_data[primary_player_key]:
+            #     logger.debug(f"  Sample Player Stat ({primary_player_key}): {result_data[primary_player_key][0]}")
+
     except json.JSONDecodeError:
-        logger.error(f"Error: Could not decode JSON response for {test_name}: {result_json}")
+        logger.error(f"JSONDecodeError for {test_name}: Could not decode JSON response: {result_json}")
+        assert False, f"JSONDecodeError for {test_name}"
     logger.info("-" * 70)
 
-async def main():
-    game_id_to_test = VALID_GAME_ID
+# Define test scenarios
+boxscore_tests = [
+    ("Traditional Box Score", fetch_boxscore_traditional_logic, {"primary_player_key": "players", "primary_team_key": "teams", "starters_bench_key": "starters_bench"}),
+    ("Advanced Box Score", fetch_boxscore_advanced_logic, {"primary_player_key": "player_stats", "primary_team_key": "team_stats"}),
+    ("Four Factors Box Score", fetch_boxscore_four_factors_logic, {"primary_player_key": "player_stats", "primary_team_key": "team_stats"}),
+    ("Usage Box Score", fetch_boxscore_usage_logic, {"primary_player_key": "player_usage_stats", "primary_team_key": "team_usage_stats"}),
+    ("Defensive Box Score", fetch_boxscore_defensive_logic, {"primary_player_key": "player_defensive_stats", "primary_team_key": "team_defensive_stats"}),
+]
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("description, logic_func, keys_map", boxscore_tests)
+async def test_valid_game_boxscores(description, logic_func, keys_map):
+    await run_boxscore_test_with_assertions(
+        description=f"{description} - Valid Game",
+        logic_function=logic_func,
+        game_id=VALID_GAME_ID,
+        expected_keys_map=keys_map,
+        expect_api_error=False,
+        expect_empty_results_no_error=False
+    )
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("description, logic_func, keys_map", boxscore_tests)
+async def test_invalid_game_id_boxscores(description, logic_func, keys_map):
+    await run_boxscore_test_with_assertions(
+        description=f"{description} - Invalid Game ID",
+        logic_function=logic_func,
+        game_id=INVALID_GAME_ID, # Non-existent game ID
+        expected_keys_map=keys_map,
+        expect_api_error=True, # Expecting an error as game won't be found
+        expect_empty_results_no_error=False
+    )
     
-    logger.info(f"Using Game ID: {game_id_to_test} for box score tests.")
-    # If you suspect VALID_GAME_ID might not have data for all box types,
-    # you can uncomment the line below to use a known older game as a fallback for some tests.
-    # game_id_to_test = FALLBACK_GAME_ID 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("description, logic_func, keys_map", boxscore_tests)
+async def test_malformed_game_id_boxscores(description, logic_func, keys_map):
+    await run_boxscore_test_with_assertions(
+        description=f"{description} - Malformed Game ID",
+        logic_function=logic_func,
+        game_id=MALFORMED_GAME_ID, # Malformed game ID
+        expected_keys_map=keys_map,
+        expect_api_error=True, # Expecting an error due to format
+        expect_empty_results_no_error=False
+    )
 
-    await run_boxscore_test("Traditional Box Score", fetch_boxscore_traditional_logic, game_id_to_test)
-    await run_boxscore_test("Advanced Box Score", fetch_boxscore_advanced_logic, game_id_to_test)
-    await run_boxscore_test("Four Factors Box Score", fetch_boxscore_four_factors_logic, game_id_to_test)
-    await run_boxscore_test("Usage Box Score", fetch_boxscore_usage_logic, game_id_to_test)
-    await run_boxscore_test("Defensive Box Score", fetch_boxscore_defensive_logic, game_id_to_test)
-
-    # Example with specific period filters for traditional (optional to test)
-    # await run_boxscore_test(
-    #     "Traditional Box Score (Q1 only)", 
-    #     fetch_boxscore_traditional_logic, 
-    #     game_id_to_test,
-    #     start_period=1,
-    #     end_period=1
-    # )
+# Example for testing with period filters (Traditional Box Score only for this example)
+@pytest.mark.asyncio
+async def test_traditional_boxscore_with_period_filters():
+    description, logic_func, keys_map = boxscore_tests[0] # Get Traditional
+    await run_boxscore_test_with_assertions(
+        description=f"{description} - Valid Game, Q1 only",
+        logic_function=logic_func,
+        game_id=VALID_GAME_ID,
+        expected_keys_map=keys_map,
+        expect_api_error=False,
+        expect_empty_results_no_error=False,
+        start_period=1,
+        end_period=1
+    )
+    await run_boxscore_test_with_assertions(
+        description=f"{description} - Valid Game, Q4 only (may have fewer players if blowout)",
+        logic_function=logic_func,
+        game_id=VALID_GAME_ID,
+        expected_keys_map=keys_map,
+        expect_api_error=False,
+        expect_empty_results_no_error=False, # Still expect data, even if sparse
+        start_period=4,
+        end_period=4
+    )
+    await run_boxscore_test_with_assertions(
+        description=f"{description} - Valid Game, Full Game (Periods 0-0)",
+        logic_function=logic_func,
+        game_id=VALID_GAME_ID,
+        expected_keys_map=keys_map,
+        expect_api_error=False, # Corrected: Period 0 means full game, no error
+        expect_empty_results_no_error=False,
+        start_period=0, 
+        end_period=0
+    )
 
 if __name__ == "__main__":
     asyncio.run(main())

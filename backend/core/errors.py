@@ -167,3 +167,18 @@ class Errors:
     INVALID_DIVISION = "Invalid vs_division: '{value}'. Valid options: {options}"
     INVALID_SEASON_SEGMENT = "Invalid season_segment: '{value}'. Valid options: {options}"
     INVALID_RUN_TYPE = "Invalid RunType: '{value}'. Valid options: {options}"
+
+    # League Player On Details Errors
+    LEAGUE_PLAYER_ON_DETAILS_PROCESSING = "Processing failed for league player on details (TeamID: {team_id}, Season: {season})."
+    LEAGUE_PLAYER_ON_DETAILS_UNEXPECTED = "Unexpected error fetching league player on details for TeamID {team_id}, Season {season}: {error}"
+
+    # Specific NBA API interaction errors
+    NBA_API_TIMEOUT = "NBA API request to endpoint '{endpoint_name}' timed out. Details: {details}"
+    NBA_API_CONNECTION_ERROR = "NBA API request to endpoint '{endpoint_name}' failed due to a connection error. Details: {details}"
+    NBA_API_GENERAL_ERROR = "NBA API request to endpoint '{endpoint_name}' failed with an unexpected error. Details: {details}"
+
+    # Scoreboard specific
+    UNEXPECTED_ERROR_SCOREBOARD = "Unexpected error fetching/formatting scoreboard data for date {date}: {error_details}"
+
+    # Advanced Player Stats (PlayerEstimatedMetrics, TeamEstimatedMetrics, TeamPlayerOnOffDetails)
+    PLAYER_ESTIMATED_METRICS_API = "API error fetching player estimated metrics (Season: {season}, Type: {season_type}): {error}"

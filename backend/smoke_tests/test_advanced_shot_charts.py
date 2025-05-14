@@ -8,13 +8,14 @@ import logging
 import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend for testing
 
-# Add the parent directory to the path so we can import from the backend package
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# Ensure the project root is in the Python path
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
-# Import directly from the module
-sys.path.insert(0, os.path.abspath(os.path.dirname(os.path.dirname(__file__))))
-from api_tools.advanced_shot_charts import process_shot_data_for_visualization
-from config import settings
+# Now that project_root is in sys.path, use absolute imports from backend
+from backend.api_tools.advanced_shot_charts import process_shot_data_for_visualization
+from backend.config import settings
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -36,14 +37,8 @@ def test_process_shot_data():
         output_format="file"
     )
 
-    if "error" in result:
-        logger.error(f"Error processing shot data: {result['error']}")
-        return False
-
-    if "file_path" not in result:
-        logger.error("No file path returned")
-        return False
-
+    assert "error" not in result, f"Error processing shot data for scatter chart: {result.get('error')}"
+    assert "file_path" in result, "No file path returned for scatter chart"
     logger.info(f"Scatter chart created at: {result['file_path']}")
 
     # Test heatmap chart
@@ -55,14 +50,8 @@ def test_process_shot_data():
         output_format="file"
     )
 
-    if "error" in result:
-        logger.error(f"Error processing shot data: {result['error']}")
-        return False
-
-    if "file_path" not in result:
-        logger.error("No file path returned")
-        return False
-
+    assert "error" not in result, f"Error processing shot data for heatmap chart: {result.get('error')}"
+    assert "file_path" in result, "No file path returned for heatmap chart"
     logger.info(f"Heatmap chart created at: {result['file_path']}")
 
     # Test hexbin chart
@@ -74,14 +63,8 @@ def test_process_shot_data():
         output_format="file"
     )
 
-    if "error" in result:
-        logger.error(f"Error processing shot data: {result['error']}")
-        return False
-
-    if "file_path" not in result:
-        logger.error("No file path returned")
-        return False
-
+    assert "error" not in result, f"Error processing shot data for hexbin chart: {result.get('error')}"
+    assert "file_path" in result, "No file path returned for hexbin chart"
     logger.info(f"Hexbin chart created at: {result['file_path']}")
 
     # Test animated chart
@@ -93,14 +76,8 @@ def test_process_shot_data():
         output_format="file"
     )
 
-    if "error" in result:
-        logger.error(f"Error processing shot data: {result['error']}")
-        return False
-
-    if "file_path" not in result:
-        logger.error("No file path returned")
-        return False
-
+    assert "error" not in result, f"Error processing shot data for animated chart: {result.get('error')}"
+    assert "file_path" in result, "No file path returned for animated chart"
     logger.info(f"Animated chart created at: {result['file_path']}")
 
     # Test frequency chart
@@ -112,14 +89,8 @@ def test_process_shot_data():
         output_format="file"
     )
 
-    if "error" in result:
-        logger.error(f"Error processing shot data: {result['error']}")
-        return False
-
-    if "file_path" not in result:
-        logger.error("No file path returned")
-        return False
-
+    assert "error" not in result, f"Error processing shot data for frequency chart: {result.get('error')}"
+    assert "file_path" in result, "No file path returned for frequency chart"
     logger.info(f"Frequency chart created at: {result['file_path']}")
 
     # Test distance chart
@@ -131,18 +102,11 @@ def test_process_shot_data():
         output_format="file"
     )
 
-    if "error" in result:
-        logger.error(f"Error processing shot data: {result['error']}")
-        return False
-
-    if "file_path" not in result:
-        logger.error("No file path returned")
-        return False
-
+    assert "error" not in result, f"Error processing shot data for distance chart: {result.get('error')}"
+    assert "file_path" in result, "No file path returned for distance chart"
     logger.info(f"Distance chart created at: {result['file_path']}")
 
-    logger.info("All tests passed!")
-    return True
+    logger.info("process_shot_data tests passed!")
 
 def test_base64_output():
     """Test the base64 output format."""
@@ -161,21 +125,7 @@ def test_base64_output():
         output_format="base64"
     )
 
-    if "error" in result:
-        logger.error(f"Error processing shot data: {result['error']}")
-        return False
-
-    if "image_data" not in result:
-        logger.error("No image data returned")
-        return False
-
-    if not result["image_data"].startswith("data:image/png;base64,"):
-        logger.error("Invalid image data format")
-        return False
-
+    assert "error" not in result, f"Error processing shot data for base64 scatter chart: {result.get('error')}"
+    assert "image_data" in result, "No image data returned for base64 scatter chart"
+    assert result["image_data"].startswith("data:image/png;base64,"), f"Invalid image data format for base64 scatter chart. Got: {result['image_data'][:100]}..." # Log part of the data if it fails
     logger.info("Base64 output test passed!")
-    return True
-
-if __name__ == "__main__":
-    success = test_process_shot_data() and test_base64_output()
-    sys.exit(0 if success else 1)

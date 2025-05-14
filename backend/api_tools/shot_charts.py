@@ -9,7 +9,9 @@ import pandas as pd
 import numpy as np
 from nba_api.stats.endpoints import shotchartdetail
 from nba_api.stats.static import players, teams
-from api_tools.utils import retry_on_timeout, format_response, get_player_id_from_name
+from backend.api_tools.utils import retry_on_timeout, format_response, get_player_id_from_name
+from backend.config import settings
+from backend.core.errors import Errors
 
 logger = logging.getLogger(__name__)
 

@@ -5,19 +5,24 @@ Smoke test for the advanced metrics API.
 import json
 import os
 import sys
+import logging
 
-# Add the parent directory to sys.path
-current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(current_dir)
-sys.path.insert(0, parent_dir)
+# Add the project root directory to sys.path to allow for absolute backend imports
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
-from api_tools.advanced_metrics import fetch_player_advanced_analysis_logic
+from backend.api_tools.advanced_metrics import fetch_player_advanced_analysis_logic
+
+# Setup logger
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def test_advanced_metrics():
     """Test the advanced metrics API with a known player."""
     player_name = "LeBron James"
 
-    print(f"Testing advanced metrics for {player_name}...")
+    logger.info(f"Testing advanced metrics for {player_name}...")
 
     # Call the API
     result_json = fetch_player_advanced_analysis_logic(player_name)
@@ -25,28 +30,33 @@ def test_advanced_metrics():
     # Parse the result
     result = json.loads(result_json)
 
-    # Check if there's an error
-    if 'error' in result:
-        print(f"Error: {result['error']}")
-        return
+    # Check for errors and basic structure
+    assert 'error' not in result, f"API returned an error: {result.get('error')}"
+    
+    logger.info(f"Player: {result.get('player_name')} (ID: {result.get('player_id')})")
 
-    # Print basic info
-    print(f"Player: {result['player_name']} (ID: {result['player_id']})")
+    assert 'player_name' in result, "Response missing 'player_name'"
+    assert 'player_id' in result, "Response missing 'player_id'"
+    assert 'advanced_metrics' in result, "Response missing 'advanced_metrics'"
+    assert isinstance(result['advanced_metrics'], dict), "'advanced_metrics' should be a dictionary"
+    assert 'skill_grades' in result, "Response missing 'skill_grades'"
+    assert isinstance(result['skill_grades'], dict), "'skill_grades' should be a dictionary"
+    assert 'similar_players' in result, "Response missing 'similar_players'"
+    assert isinstance(result['similar_players'], list), "'similar_players' should be a list"
 
-    # Print advanced metrics
-    print("\nAdvanced Metrics:")
-    for metric, value in result['advanced_metrics'].items():
-        print(f"{metric}: {value}")
+    # Log advanced metrics
+    logger.info("\nAdvanced Metrics:")
+    for metric, value in result.get('advanced_metrics', {}).items():
+        logger.info(f"{metric}: {value}")
 
-    # Print skill grades
-    print("\nSkill Grades:")
-    for skill, grade in result['skill_grades'].items():
-        print(f"{skill}: {grade}")
+    # Log skill grades
+    logger.info("\nSkill Grades:")
+    for skill, grade in result.get('skill_grades', {}).items():
+        logger.info(f"{skill}: {grade}")
 
-    # Print similar players
-    print("\nSimilar Players:")
-    for player in result['similar_players']:
-        print(f"{player['player_name']} (ID: {player['player_id']}): {player['similarity_score'] * 100:.1f}% similarity")
+    # Log similar players
+    logger.info("\nSimilar Players:")
+    for player_data in result.get('similar_players', []):
+        logger.info(f"{player_data.get('player_name')} (ID: {player_data.get('player_id')}): {player_data.get('similarity_score', 0) * 100:.1f}% similarity")
 
-if __name__ == "__main__":
-    test_advanced_metrics()
+    logger.info(f"Advanced metrics test for {player_name} passed.")

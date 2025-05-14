@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import sys
+import pytest # Import pytest for the marker
 
 # Ensure the project root is in the Python path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -16,6 +17,7 @@ from nba_api.stats.library.parameters import SeasonTypeAllStar
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+@pytest.mark.asyncio # Add the pytest-asyncio marker
 async def test_shot_charts():
     logger.info("--- Testing Player Shot Charts ---")
     
@@ -60,7 +62,5 @@ async def test_shot_charts():
 
         except Exception as e:
             logger.error(f"Unhandled exception for {case['description']}: {e}", exc_info=True)
+            assert False, f"Unhandled exception for {case['description']}: {e}" # Fail test on unhandled exception
         logger.info("----------------------------------------------------------------------")
-
-if __name__ == "__main__":
-    asyncio.run(test_shot_charts())

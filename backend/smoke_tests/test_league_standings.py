@@ -4,77 +4,92 @@ import os
 import asyncio
 import json
 import logging
-from typing import Optional
+from typing import Optional, Callable, Any # Added for type hints
+import pytest # Import pytest
 
 # Add the project root to sys.path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s') # Changed level to DEBUG and added logger name
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s') # Adjusted format
 logger = logging.getLogger(__name__)
 
 from backend.api_tools.league_standings import fetch_league_standings_logic
 from nba_api.stats.library.parameters import SeasonTypeAllStar 
 from backend.config import settings # For settings.CURRENT_NBA_SEASON
 
-async def run_standings_test(test_name_suffix: str, season: Optional[str] = None, season_type: Optional[str] = None):
-    effective_season = season if season is not None else settings.CURRENT_NBA_SEASON
-    effective_season_type = season_type if season_type is not None else SeasonTypeAllStar.regular
-    
-    test_name = f"League Standings ({effective_season} {effective_season_type}{test_name_suffix})"
+async def run_standings_test_with_assertions(
+    description: str,
+    expect_api_error: bool = False,
+    expect_empty_results_no_error: bool = False,
+    **kwargs: Any # season, season_type passed here
+):
+    test_name = description
     logger.info(f"--- Testing {test_name} ---")
     
-    params = {}
-    if season is not None: # Only pass if not using default from logic function
-        params['season'] = season
-    if season_type is not None: # Only pass if not using default from logic function
-        params['season_type'] = season_type
+    # fetch_league_standings_logic uses its own defaults if season/season_type are None
+    # So, we only pass them if they are explicitly provided for the test case.
+    # The helper no longer needs to manage defaults for these, the API function does.
 
-    result_json = await asyncio.to_thread(fetch_league_standings_logic, **params)
+    result_json = await asyncio.to_thread(fetch_league_standings_logic, **kwargs)
     
     try:
         result_data = json.loads(result_json)
-        # print(json.dumps(result_data, indent=2)) # Uncomment for full output
-        
-        if "error" not in result_data:
-            if "standings" in result_data and isinstance(result_data["standings"], list):
-                logger.info(f"SUCCESS: {test_name} - Fetched standings. Teams found: {len(result_data['standings'])}")
-                if result_data["standings"]:
-                    sample_team = result_data["standings"][0]
-                    logger.info(f"  Sample Team: {sample_team.get('TeamCity')} {sample_team.get('TeamName')}, Rank: {sample_team.get('PlayoffRank')}, GB: {sample_team.get('GB')}")
-            elif "standings" in result_data and not result_data["standings"]:
-                 logger.info(f"SUCCESS: {test_name} - No standings data found (empty list returned as expected for these params).")
-            else:
-                logger.warning(f"WARNING: {test_name} - Data structure not as expected.")
-                print(json.dumps(result_data, indent=2))
-        elif "error" in result_data:
-            logger.error(f"ERROR for {test_name}: {result_data['error']}")
+        expected_data_key = "standings"
+
+        if expect_api_error:
+            assert "error" in result_data, f"Expected an API error for {test_name}, but got: {result_data}"
+            logger.info(f"SUCCESS (expected API error): {test_name} - Error: {result_data.get('error')}")
+        elif expect_empty_results_no_error:
+            assert "error" not in result_data, f"Expected no error for empty results for {test_name}, but got error: {result_data.get('error')}"
+            assert expected_data_key in result_data, f"Expected key '{expected_data_key}' for empty results for {test_name}"
+            assert isinstance(result_data[expected_data_key], list), f"Expected list for key '{expected_data_key}' for empty results for {test_name}"
+            assert not result_data[expected_data_key], f"Expected empty list for '{expected_data_key}' for {test_name}, got {len(result_data[expected_data_key])} items."
+            logger.info(f"SUCCESS (expected empty results): {test_name} - Found 0 {expected_data_key}, as expected.")
         else:
-            logger.warning(f"WARNING: Unexpected response structure for {test_name}.")
+            assert "error" not in result_data, f"Unexpected API error for {test_name}: {result_data.get('error')}"
+            assert expected_data_key in result_data, f"Expected key '{expected_data_key}' not found for {test_name}"
+            assert isinstance(result_data[expected_data_key], list), f"Key '{expected_data_key}' should be a list for {test_name}"
             
+            if result_data[expected_data_key]:
+                logger.info(f"SUCCESS: {test_name} - Fetched {expected_data_key}. Teams found: {len(result_data[expected_data_key])}")
+                # sample_team = result_data[expected_data_key][0]
+                # logger.info(f"  Sample Team: {sample_team.get('TeamCity')} {sample_team.get('TeamName')}, Rank: {sample_team.get('PlayoffRank')}, GB: {sample_team.get('GB')}")
+            else:
+                # This is for cases where API returns empty list for valid params, e.g. playoffs if no playoff standings data for that season
+                logger.info(f"SUCCESS (No Data): {test_name} - No {expected_data_key} data found (empty list returned for valid params).")
+
     except json.JSONDecodeError:
-        logger.error(f"Error: Could not decode JSON response for {test_name}: {result_json}")
+        logger.error(f"JSONDecodeError for {test_name}: Could not decode JSON response: {result_json}")
+        assert False, f"JSONDecodeError for {test_name}"
     logger.info("-" * 70)
 
-async def main():
-    # Test 1: Current season (or default from settings), regular season (default)
-    await run_standings_test(" - Default Season/Type")
+# Test Cases
+PAST_SEASON_22_23 = "2022-23"
 
-    # Test 2: Specific past season, regular season
-    await run_standings_test(" - 2022-23 Regular", season="2022-23", season_type=SeasonTypeAllStar.regular)
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "description, season, season_type, expect_api_error, expect_empty_results_no_error",
+    [
+        ("Default Season/Type Standings", None, None, False, False),
+        (f"{PAST_SEASON_22_23} Regular Season Standings", PAST_SEASON_22_23, SeasonTypeAllStar.regular, False, False),
+        # For playoffs, the API returns an error as it's not a supported season_type for this endpoint.
+        (f"{PAST_SEASON_22_23} Playoffs Standings", PAST_SEASON_22_23, SeasonTypeAllStar.playoffs, True, False), 
+        ("Invalid Season Format Standings", "2023", SeasonTypeAllStar.regular, True, False),
+        ("Invalid Season Type Standings", PAST_SEASON_22_23, "InvalidSeasonType", True, False),
+    ]
+)
+async def test_standings_scenarios(description, season, season_type, expect_api_error, expect_empty_results_no_error):
+    kwargs = {}
+    if season is not None:
+        kwargs['season'] = season
+    if season_type is not None:
+        kwargs['season_type'] = season_type
 
-    # Test 3: Specific past season, playoffs
-    # Note: Playoff standings might be empty if that season's playoffs didn't have specific standings data via this endpoint
-    # or if it's structured differently. The API might just return regular season standings for "Playoffs" type.
-    await run_standings_test(" - 2022-23 Playoffs", season="2022-23", season_type=SeasonTypeAllStar.playoffs)
-
-    # Test 4: Invalid season format
-    await run_standings_test(" - Invalid Season Format", season="2023", season_type=SeasonTypeAllStar.regular)
-    
-    # Test 5: Invalid season type
-    await run_standings_test(" - Invalid Season Type", season="2022-23", season_type="InvalidType")
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+    await run_standings_test_with_assertions(
+        description=description,
+        expect_api_error=expect_api_error,
+        expect_empty_results_no_error=expect_empty_results_no_error,
+        **kwargs
+    )

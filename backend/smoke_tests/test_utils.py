@@ -50,37 +50,36 @@ def test_process_dataframe():
 
 def test_find_player_id_or_error():
     logger.info("Testing find_player_id_or_error...")
-    try:
-        pid, name = find_player_id_or_error("LeBron James")
-        assert isinstance(pid, int) and "LeBron" in name
-        logger.info(f"  PASS: find_player_id_or_error for LeBron James: {pid}, {name}")
-    except Exception as e:
-        logger.error(f"  FAIL: find_player_id_or_error for LeBron James: {e}")
-    with pytest.raises(Exception):
+    
+    # Test successful case
+    pid, name = find_player_id_or_error("LeBron James")
+    assert isinstance(pid, int), f"Player ID for LeBron James should be an int, got {pid}"
+    assert "LeBron" in name, f"Player name for LeBron James should contain 'LeBron', got {name}"
+    logger.info(f"  PASS: find_player_id_or_error for LeBron James: {pid}, {name}")
+
+    # Test empty input
+    with pytest.raises(Exception): # Or a more specific custom exception if defined
         find_player_id_or_error("")
+    
+    # Test non-existent player
     with pytest.raises(PlayerNotFoundError):
         find_player_id_or_error("NotARealPlayerName12345")
+    logger.info("  PASS: find_player_id_or_error for error cases")
 
 def test_find_team_id_or_error():
     logger.info("Testing find_team_id_or_error...")
-    try:
-        tid, tname = find_team_id_or_error("LAL")
-        assert isinstance(tid, int) and ("Lakers" in tname or "LAL" in tname)
-        logger.info(f"  PASS: find_team_id_or_error for LAL: {tid}, {tname}")
-    except Exception as e:
-        logger.error(f"  FAIL: find_team_id_or_error for LAL: {e}")
-    with pytest.raises(Exception):
+
+    # Test successful case
+    tid, tname = find_team_id_or_error("LAL")
+    assert isinstance(tid, int), f"Team ID for LAL should be an int, got {tid}"
+    assert "Lakers" in tname or "LAL" in tname, f"Team name for LAL should contain 'Lakers' or 'LAL', got {tname}"
+    logger.info(f"  PASS: find_team_id_or_error for LAL: {tid}, {tname}")
+
+    # Test empty input
+    with pytest.raises(Exception): # Or a more specific custom exception if defined
         find_team_id_or_error("")
+        
+    # Test non-existent team
     with pytest.raises(TeamNotFoundError):
         find_team_id_or_error("NotARealTeamName12345")
-
-def main():
-    test_retry_on_timeout()
-    test_format_response()
-    test_process_dataframe()
-    test_find_player_id_or_error()
-    test_find_team_id_or_error()
-    logger.info("All utils tests completed.")
-
-if __name__ == "__main__":
-    main() 
+    logger.info("  PASS: find_team_id_or_error for error cases") 

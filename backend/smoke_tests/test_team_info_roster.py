@@ -4,7 +4,8 @@ import os
 import asyncio
 import json
 import logging
-from typing import Optional
+from typing import Optional, Dict, Any
+import pytest
 
 # Add the project root to sys.path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -18,59 +19,81 @@ from backend.api_tools.team_info_roster import fetch_team_info_and_roster_logic
 from nba_api.stats.library.parameters import LeagueID, SeasonTypeAllStar
 from backend.config import settings
 
-async def run_team_info_test(test_name_suffix: str, team_identifier: str, **kwargs):
-    test_name = f"Team Info & Roster ({team_identifier}{test_name_suffix})"
+# Test Constants
+TEAM_ID_LAKERS = "1610612747"
+TEAM_ABBREV_BOS = "BOS"
+TEAM_NAME_WARRIORS = "Golden State Warriors"
+TEAM_ABBREV_LAL = "LAL"
+INVALID_TEAM_IDENTIFIER = "INVALID_TEAM_XYZ"
+INVALID_SEASON_FORMAT = "2023"
+INVALID_SEASON_TYPE = "InvalidType"
+
+SEASON_2022_23 = "2022-23"
+SEASON_2021_22 = "2021-22"
+CURRENT_SEASON = settings.CURRENT_NBA_SEASON
+
+async def run_team_info_test_with_assertions(
+    description: str, 
+    expect_api_error: bool = False, 
+    **kwargs: Any
+):
+    test_name = f"Team Info & Roster - {description}"
     logger.info(f"--- Testing {test_name} ---")
     
-    params = {"team_identifier": team_identifier, **kwargs}
+    # team_identifier is a required positional arg for the logic function
+    # Other kwargs like season, season_type are optional
+    result_json_str = await asyncio.to_thread(fetch_team_info_and_roster_logic, **kwargs)
+    result_data = json.loads(result_json_str)
+    # logger.debug(f"Full API Response for {test_name}: {json.dumps(result_data, indent=2)}")
 
-    result_json = await asyncio.to_thread(fetch_team_info_and_roster_logic, **params)
-    
-    try:
-        result_data = json.loads(result_json)
-        # print(json.dumps(result_data, indent=2)) # Uncomment for full output
+    if expect_api_error:
+        assert "error" in result_data, f"Expected API error for '{description}', but 'error' key missing. Response: {result_data}"
+        # Check that primary data keys are not present or are empty if the API includes them on error
+        assert "team_id" not in result_data or not result_data["team_id"], f"Expected no 'team_id' on API error for '{description}'"
+        assert "info" not in result_data or not result_data["info"], f"Expected no 'info' on API error for '{description}'"
+        assert "roster" not in result_data or not result_data["roster"], f"Expected no 'roster' on API error for '{description}'"
+        assert "coaches" not in result_data or not result_data["coaches"], f"Expected no 'coaches' on API error for '{description}'"
+        logger.info(f"SUCCESS (expected API error for '{description}'): {result_data.get('error')}")
+    else: # Expect successful data
+        assert "error" not in result_data, f"Expected successful data for '{description}', but got error: {result_data.get('error')}"
+        assert "team_id" in result_data and isinstance(result_data["team_id"], int), \
+            f"'team_id' key missing or not an int for '{description}'. Response: {result_data}"
+        assert "info" in result_data and isinstance(result_data["info"], dict), \
+            f"'info' key missing or not a dict for '{description}'. Response: {result_data}"
+        assert "roster" in result_data and isinstance(result_data["roster"], list), \
+            f"'roster' key missing or not a list for '{description}'. Response: {result_data}"
+        assert "coaches" in result_data and isinstance(result_data["coaches"], list), \
+            f"'coaches' key missing or not a list for '{description}'. Response: {result_data}"
+
+        assert result_data["info"].get("TEAM_ABBREVIATION") or result_data["info"].get("TEAM_NAME"), \
+             f"Team abbreviation or name missing in info for '{description}'"
+
+        if result_data["roster"]:
+            assert "PLAYER" in result_data["roster"][0], f"'PLAYER' key (not PLAYER_NAME) missing in roster item for '{description}'. Roster item keys: {result_data['roster'][0].keys() if result_data['roster'][0] else 'empty item'}"
+        # else: # Roster can be empty for some seasons/teams
+            # logger.info(f"Roster is empty for '{description}', which might be valid.")
         
-        if "error" not in result_data:
-            if result_data.get("team_id") and "info" in result_data and "roster" in result_data:
-                logger.info(f"SUCCESS: {test_name} - Fetched data for Team ID: {result_data['team_id']} ({result_data.get('team_name')}).")
-                logger.info(f"  Info keys: {list(result_data['info'].keys()) if result_data['info'] else 'No info'}")
-                logger.info(f"  Roster size: {len(result_data['roster'])}")
-                logger.info(f"  Coaches count: {len(result_data['coaches'])}")
-                if result_data.get("partial_errors"):
-                    logger.warning(f"  Partial errors reported: {result_data['partial_errors']}")
-            else:
-                logger.warning(f"WARNING: {test_name} - Data structure not as expected.")
-                print(json.dumps(result_data, indent=2))
-        elif "error" in result_data:
-            logger.error(f"ERROR for {test_name}: {result_data['error']}")
-        else:
-            logger.warning(f"WARNING: Unexpected response structure for {test_name}.")
-            
-    except json.JSONDecodeError:
-        logger.error(f"Error: Could not decode JSON response for {test_name}: {result_json}")
-    logger.info("-" * 70)
+        logger.info(f"SUCCESS for '{description}': Fetched data for Team ID {result_data['team_id']} ({result_data['info'].get('TEAM_NAME')}). Roster size: {len(result_data['roster'])}")
 
-async def main():
-    # Test 1: Valid team identifier (e.g., Lakers ID) for current season (default)
-    await run_team_info_test(" - Lakers, Current Season", team_identifier="1610612747")
-
-    # Test 2: Valid team abbreviation for a past season
-    await run_team_info_test(" - BOS, 2022-23", team_identifier="BOS", season="2022-23")
-    
-    # Test 3: Valid team name for a past season, playoffs
-    await run_team_info_test(" - Golden State Warriors, 2021-22 Playoffs", 
-                             team_identifier="Golden State Warriors", 
-                             season="2021-22", 
-                             season_type=SeasonTypeAllStar.playoffs)
-
-    # Test 4: Invalid team identifier
-    await run_team_info_test(" - Invalid Team", team_identifier="INVALID_TEAM_XYZ")
-
-    # Test 5: Valid team, invalid season format
-    await run_team_info_test(" - Lakers, Invalid Season", team_identifier="LAL", season="2023")
-    
-    # Test 6: Valid team, invalid season type
-    await run_team_info_test(" - Lakers, Invalid Season Type", team_identifier="LAL", season_type="InvalidType")
-
-if __name__ == "__main__":
-    asyncio.run(main())
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "description_suffix, params, expect_error",
+    [
+        ("Lakers, Current Season", {"team_identifier": TEAM_ID_LAKERS, "season": CURRENT_SEASON}, False),
+        ("BOS, 2022-23", {"team_identifier": TEAM_ABBREV_BOS, "season": SEASON_2022_23}, False),
+        (
+            "Golden State Warriors, 2021-22 Playoffs", 
+            {"team_identifier": TEAM_NAME_WARRIORS, "season": SEASON_2021_22, "season_type": SeasonTypeAllStar.playoffs},
+            False
+        ),
+        ("Invalid Team Identifier", {"team_identifier": INVALID_TEAM_IDENTIFIER, "season": CURRENT_SEASON}, True),
+        ("Lakers, Invalid Season Format", {"team_identifier": TEAM_ABBREV_LAL, "season": INVALID_SEASON_FORMAT}, True),
+        ("Lakers, Invalid Season Type", {"team_identifier": TEAM_ABBREV_LAL, "season": CURRENT_SEASON, "season_type": INVALID_SEASON_TYPE}, True),
+    ]
+)
+async def test_team_info_scenarios(description_suffix: str, params: Dict[str, Any], expect_error: bool):
+    await run_team_info_test_with_assertions(
+        description=description_suffix,
+        expect_api_error=expect_error,
+        **params
+    )

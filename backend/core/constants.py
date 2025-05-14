@@ -27,3 +27,8 @@ SUPPORTED_SEARCH_TARGETS = [
 # DEFAULT_LEAGUE_ID = "00" # NBA
 # SEASON_TYPE_REGULAR = "Regular Season"
 # SEASON_TYPE_PLAYOFFS = "Playoffs"
+
+# --- Team IDs (Examples, can be expanded or moved to a more dynamic source if many are needed) ---
+TEAM_ID_LAKERS = 1610612747
+TEAM_ID_CELTICS = 1610612738
+TEAM_ID_WARRIORS = 1610612744
