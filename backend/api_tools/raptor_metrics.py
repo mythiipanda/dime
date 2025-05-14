@@ -995,7 +995,6 @@ def get_league_stats_for_percentiles() -> Dict[str, List[float]]:
                 season_type_all_star='Regular Season',
                 measure_type_detailed_defense='Base',
                 per_mode_detailed='PerGame',
-                min_games=10  # Only include players with at least 10 games
             )
 
         basic_stats = retry_on_timeout(fetch_basic_stats)
@@ -1008,7 +1007,6 @@ def get_league_stats_for_percentiles() -> Dict[str, List[float]]:
                 season_type_all_star='Regular Season',
                 measure_type_detailed_defense='Advanced',
                 per_mode_detailed='PerGame',
-                min_games=10  # Only include players with at least 10 games
             )
 
         advanced_stats = retry_on_timeout(fetch_advanced_stats)
