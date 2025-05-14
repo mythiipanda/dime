@@ -99,7 +99,7 @@ def fetch_player_advanced_analysis_logic(player_name: str, season: Optional[str]
         if not season:
             # In a real implementation, you would determine the current season
             # For now, we'll use a hardcoded value
-            season = "2023-24"
+            season = settings.CURRENT_NBA_SEASON
 
         # Use RAPTOR metrics if available
         if RAPTOR_AVAILABLE:

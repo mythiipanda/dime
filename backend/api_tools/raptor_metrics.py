@@ -14,7 +14,7 @@ from nba_api.stats.endpoints import playercareerstats, commonplayerinfo, playera
 from nba_api.stats.endpoints import leaguedashplayerstats, playerdashboardbyyearoveryear
 from nba_api.stats.static import players
 from .utils import retry_on_timeout
-
+from config import settings
 logger = logging.getLogger(__name__)
 
 # Path to cache directory for historical player data
@@ -991,7 +991,7 @@ def get_league_stats_for_percentiles() -> Dict[str, List[float]]:
         # Fetch basic stats
         def fetch_basic_stats():
             return leaguedashplayerstats.LeagueDashPlayerStats(
-                season="2023-24",  # Current season
+                season=settings.CURRENT_NBA_SEASON,
                 season_type_all_star='Regular Season',
                 measure_type_detailed_defense='Base',
                 per_mode_detailed='PerGame',
