@@ -30,22 +30,14 @@ export function LandingNavbar() {
       
         <nav className="hidden md:flex items-center space-x-2 lg:space-x-3 xl:space-x-4">
           <Link href="#features" className={navLinkClasses}>Features</Link>
-          <Link href="#insights" className={navLinkClasses}>Insights</Link> 
+          <Link href="#insights" className={navLinkClasses}>How it Works</Link> 
           <Link href="#ai-collaboration" className={navLinkClasses}>AI Agent</Link>
-          <Link href="#testimonials" className={navLinkClasses}>Reviews</Link>
-          <Link href="#pricing" className={navLinkClasses}>Pricing</Link>
         </nav>
       
         <div className="hidden md:flex items-center space-x-2">
           <SignedOut>
              <SignInButton mode="modal">
                <Button variant="ghost" size="sm" className="text-sm font-medium text-gray-300 hover:text-white hover:bg-white/10 rounded-md px-3">Sign In</Button>
-             </SignInButton>
-             <SignInButton mode="modal">
-              <Button size="sm" className="bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white font-semibold shadow-md hover:shadow-lg hover:shadow-cyan-500/30 transition-all duration-300 rounded-md px-4">
-                Get Started
-                <Sparkles className="ml-1.5 h-3.5 w-3.5" />
-              </Button>
              </SignInButton>
           </SignedOut>
           <SignedIn>
@@ -74,24 +66,14 @@ export function LandingNavbar() {
               </div>
               <nav className="flex flex-col space-y-3 mb-auto">
                 <SheetClose asChild><Link href="#features" className={mobileNavLinkClasses}>Features</Link></SheetClose>
-                <SheetClose asChild><Link href="#insights" className={mobileNavLinkClasses}>Insights</Link></SheetClose>
+                <SheetClose asChild><Link href="#insights" className={mobileNavLinkClasses}>How it Works</Link></SheetClose>
                 <SheetClose asChild><Link href="#ai-collaboration" className={mobileNavLinkClasses}>AI Agent</Link></SheetClose>
-                <SheetClose asChild><Link href="#testimonials" className={mobileNavLinkClasses}>Reviews</Link></SheetClose>
-                <SheetClose asChild><Link href="#pricing" className={mobileNavLinkClasses}>Pricing</Link></SheetClose>
               </nav>
               <div className="mt-auto space-y-3 pt-4 border-t border-white/10">
                 <SignedOut>
                   <SheetClose asChild>
                     <SignInButton mode="modal">
                       <Button variant="outline" className="w-full text-gray-200 border-white/30 hover:bg-white/20">Sign In</Button>
-                    </SignInButton>
-                  </SheetClose>
-                  <SheetClose asChild>
-                    <SignInButton mode="modal">
-                      <Button className="w-full bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white font-semibold">
-                          Get Started
-                          <Sparkles className="ml-1.5 h-4 w-4" />
-                      </Button>
                     </SignInButton>
                   </SheetClose>
                 </SignedOut>

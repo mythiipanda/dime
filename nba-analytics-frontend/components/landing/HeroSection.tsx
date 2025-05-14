@@ -1,9 +1,10 @@
 "use client";
 
 import React from 'react';
-import { Button } from '@/components/ui/button'; // Assuming Button component exists
-import Link from 'next/link';
-import { ArrowRightIcon } from 'lucide-react'; // Changed ChevronDown to ArrowRightIcon
+// import { Button } from '@/components/ui/button'; // Button not directly used here anymore
+// import Link from 'next/link'; // Link not directly used here anymore
+// import { ArrowRightIcon } from 'lucide-react'; // Not used directly
+import { WaitlistForm } from '@/components/landing/WaitlistForm'; // Import the new form
 
 // Updated MockupComponent to match light-mode theme
 const MockupComponent = () => {
@@ -80,32 +81,19 @@ export function HeroSection() {
         {/* Text Content - ensure light text */}
         <div className="lg:col-span-7 text-center lg:text-left">
           <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight text-white mb-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
-            Dime: Your Autonomous
-            {/* Adjusted gradient for better visibility on dark */}
+            Smarter Sports Decisions.
             <span className="block text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-400 mt-1 md:mt-2">
-              NBA Analyst Agent.
+              Instantly.
             </span>
           </h1>
           <p className="text-lg md:text-xl text-gray-300 mb-10 max-w-2xl mx-auto lg:mx-0 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-200">
-            Delegate scouting, draft prep, trade simulations, and game strategy analysis to Dime. Get autonomous insights and data-driven recommendations to manage your team operations effectively.
+            Dime is your AI agent for automated sports analytics—drafts, film, trades, and more. Get early access to the future of sports intelligence.
           </p>
           
-          <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start animate-in fade-in slide-in-from-bottom-4 duration-700 delay-300">
-            <Button 
-              asChild
-              size="lg"
-              // Using bright gradient for dark theme CTA
-              className="bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white font-semibold shadow-lg hover:shadow-cyan-500/30 transition-all duration-300 transform hover:scale-105"
-            >
-              <Link href="/dashboard" className="group">
-                Activate Your Dime Agent
-                <ArrowRightIcon className="ml-2 h-5 w-5 opacity-80 group-hover:translate-x-1 transition-transform duration-200 ease-in-out" />
-              </Link>
-            </Button>
+          <div className="flex flex-col items-center lg:items-start animate-in fade-in slide-in-from-bottom-4 duration-700 delay-300">
+            <WaitlistForm className="mx-auto lg:mx-0" />
           </div>
-          <p className="text-xs text-gray-400 mt-4 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-350">
-            Level up your NBA operations. Free trial available.
-          </p>
+          {/* Removed "Free trial available" text */}
         </div>
         
         <MockupComponent />
