@@ -196,3 +196,4 @@ class Errors:
     COMMON_PLAYOFF_SERIES_API_ERROR = "Error fetching data from CommonPlayoffSeries endpoint: {error}"
     COMMON_TEAM_YEARS_API_ERROR = "Error fetching data from CommonTeamYears endpoint: {error}"
     LEAGUE_DASH_LINEUPS_API_ERROR = "Error fetching data from LeagueDashLineups endpoint: {error}"
+    LEAGUE_DASH_OPP_PT_SHOT_API_ERROR = "Error fetching data from LeagueDashOppPtShot endpoint: {error}"
