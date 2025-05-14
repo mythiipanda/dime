@@ -61,7 +61,8 @@ from .tools import (
     get_win_probability, get_season_matchups,
     get_matchups_rollup, get_synergy_play_types, get_player_analysis,
     get_live_odds, get_player_insights, get_league_player_on_details,
-    get_player_estimated_metrics, # Added
+    get_player_estimated_metrics, get_common_all_players, get_common_playoff_series,
+    get_common_team_years,
 )
 import datetime
 
@@ -275,12 +276,11 @@ nba_tools = [
     get_win_probability, get_season_matchups,
     get_matchups_rollup, get_synergy_play_types, get_player_analysis,
     get_live_odds, get_player_insights, get_league_player_on_details,
-    get_player_estimated_metrics, # Added
+    get_player_estimated_metrics, get_common_all_players, get_common_playoff_series,
+    get_common_team_years,
 ]
 
 nba_agent = Agent(
-    id="nba-stats-pro-v2",
-    name="StatsPro",
     description="AI-Powered NBA Analytics Companion for expert data retrieval and analysis.",
     model=model,
     system_message=(_NBA_AGENT_SYSTEM_MESSAGE_BASE),
@@ -295,10 +295,11 @@ nba_agent = Agent(
         get_boxscore_traditional, get_play_by_play, get_league_standings,
         get_scoreboard, get_draft_history, get_league_leaders, get_game_shotchart,
         get_boxscore_advanced, get_boxscore_four_factors, get_boxscore_usage, 
-        get_boxscore_defensive, get_boxscore_summary, # Added
+        get_boxscore_defensive, get_boxscore_summary,
         get_win_probability, get_season_matchups, 
         get_matchups_rollup, get_synergy_play_types, get_player_analysis, get_live_odds,
         get_player_insights, get_league_player_on_details, get_player_estimated_metrics,
+        get_common_all_players, get_common_playoff_series, get_common_team_years,
     ],
     # Default context for the agent (can be overridden at runtime)
     debug_mode=settings.AGENT_DEBUG_MODE, # Changed

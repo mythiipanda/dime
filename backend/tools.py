@@ -7,11 +7,11 @@ from agno.tools import tool
 # Import only the necessary constants for default values, use standard types in hints
 from nba_api.stats.library.parameters import (
     SeasonTypeAllStar, PerModeDetailed, PerMode36, LeagueID, PerMode48, Scope, RunType,
-    PerModeSimple, PlayerOrTeamAbbreviation
-    # MeasureTypeDetailedDefense removed as it's not directly used for default in get_team_stats wrapper
+    PerModeSimple, PlayerOrTeamAbbreviation, ContextMeasureDetailed # Added ContextMeasureDetailed
 )
 from backend.config import settings # Changed
 from backend.api_tools.utils import format_response
+import datetime # Added for get_scoreboard default date
 
 
 # Import logic functions from the specific backend.api_tools modules
@@ -70,8 +70,12 @@ from backend.api_tools.trending_team_tools import fetch_top_teams_logic
 from backend.api_tools.matchup_tools import fetch_league_season_matchups_logic, fetch_matchups_rollup_logic
 from backend.api_tools.synergy_tools import fetch_synergy_play_types_logic
 
-from backend.api_tools.league_player_on_details import fetch_league_player_on_details_logic # Added
-from backend.api_tools.player_estimated_metrics import fetch_player_estimated_metrics_logic # Added
+from backend.api_tools.league_player_on_details import fetch_league_player_on_details_logic
+from backend.api_tools.player_estimated_metrics import fetch_player_estimated_metrics_logic
+from backend.api_tools.player_listings import fetch_common_all_players_logic # Added
+from backend.api_tools.playoff_series import fetch_common_playoff_series_logic # Added
+from backend.api_tools.team_history import fetch_common_team_years_logic # Added
+
 
 logger = logging.getLogger(__name__)
 
@@ -1626,3 +1630,91 @@ def get_player_estimated_metrics(
         season_type=season_type,
         league_id=league_id
     )
+
+@tool
+def get_common_all_players(
+    season: str,
+    league_id: str = LeagueID.nba,
+    is_only_current_season: int = 1
+) -> str:
+    """
+    Fetches a list of all players for a given league and season. Can be filtered to show
+    only players active in that specific season or all players historically associated with it.
+
+    Args:
+        season (str): The NBA season identifier in YYYY-YY format (e.g., "2023-24").
+        league_id (str, optional): The league ID. Valid: "00" (NBA), "10" (WNBA), "20" (G-League).
+                                   Defaults to "00" (NBA).
+        is_only_current_season (int, optional): Flag to filter for only the current season's active players (1)
+                                                 or all players historically associated with that season context (0).
+                                                 Defaults to 1.
+
+    Returns:
+        str: JSON string containing a list of players or an error message.
+             Expected structure:
+             {
+                 "parameters": {"season": str, "league_id": str, "is_only_current_season": int},
+                 "players": [
+                     {
+                         "PERSON_ID": int, "DISPLAY_LAST_COMMA_FIRST": str, "DISPLAY_FIRST_LAST": str,
+                         "ROSTERSTATUS": int (0 or 1), "FROM_YEAR": int, "TO_YEAR": int,
+                         "PLAYERCODE": str, "TEAM_ID": int, "TEAM_CITY": str, "TEAM_NAME": str,
+                         "TEAM_ABBREVIATION": str, "TEAM_CODE": str, "GAMES_PLAYED_FLAG": str ("Y" or "N"),
+                         "OTHERLEAGUE_EXPERIENCE_CH": str
+                     }, ...
+                 ]
+             }
+    """
+    logger.debug(
+        f"Tool 'get_common_all_players' called for Season: {season}, LeagueID: {league_id}, "
+        f"IsOnlyCurrentSeason: {is_only_current_season}"
+    )
+    return fetch_common_all_players_logic(
+        season=season,
+        league_id=league_id,
+        is_only_current_season=is_only_current_season
+    )
+
+@tool
+def get_common_playoff_series(
+    season: str,
+    league_id: str = LeagueID.nba,
+    series_id: Optional[str] = None
+) -> str:
+    """
+    Fetches information about playoff series for a given league and season.
+    Can optionally be filtered by a specific SeriesID (though API behavior for this is inconsistent).
+    It is generally recommended to fetch all series for a season and filter client-side if needed.
+
+    Args:
+        season (str): The NBA season identifier in YYYY-YY format (e.g., "2022-23").
+        league_id (str, optional): The league ID. Valid: "00" (NBA), "10" (WNBA), "20" (G-League).
+                                   Defaults to "00" (NBA).
+        series_id (Optional[str], optional): A specific SeriesID to filter for. Due to API inconsistencies,
+                                           providing this might lead to errors or empty results from the API.
+                                           Defaults to None (fetch all series for the season).
+
+    Returns:
+        str: JSON string containing a list of playoff series game details or an error message.
+    """
+    return fetch_common_playoff_series_logic(
+        season=season,
+        league_id=league_id,
+        series_id=series_id
+    )
+
+@tool
+def get_common_team_years(league_id: str = LeagueID.nba) -> str:
+    """
+    Fetches a list of all team years for a given league, indicating the range of seasons each team existed.
+
+    Args:
+        league_id (str, optional): The league ID. Valid: "00" (NBA), "10" (WNBA), "20" (G-League).
+                                   Defaults to "00" (NBA).
+
+    Returns:
+        str: JSON string containing a list of team year details or an error message.
+    """
+    return fetch_common_team_years_logic(league_id=league_id)
+
+# Potentially more tools after this one, or end of file.
