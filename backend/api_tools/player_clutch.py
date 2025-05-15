@@ -16,11 +16,10 @@ from backend.api_tools.utils import (
 )
 from backend.utils.validation import _validate_season_format, validate_date_format
 
-
 logger = logging.getLogger(__name__)
 
 # Module-level constants for validation sets
-_VALID_CLUTCH_SEASON_TYPES = {SeasonTypeAllStar.regular, SeasonTypeAllStar.playoffs, SeasonTypeAllStar.preseason} # Endpoint only supports these
+_VALID_CLUTCH_SEASON_TYPES = {SeasonTypeAllStar.regular, SeasonTypeAllStar.playoffs, SeasonTypeAllStar.preseason}
 _VALID_CLUTCH_PER_MODES = {getattr(PerModeDetailed, attr) for attr in dir(PerModeDetailed) if not attr.startswith('_') and isinstance(getattr(PerModeDetailed, attr), str)}
 _VALID_CLUTCH_MEASURE_TYPES = {getattr(MeasureTypeDetailed, attr) for attr in dir(MeasureTypeDetailed) if not attr.startswith('_') and isinstance(getattr(MeasureTypeDetailed, attr), str)}
 _VALID_Y_N_CLUTCH = {"Y", "N", ""}
@@ -35,9 +34,6 @@ def fetch_player_clutch_stats_logic(
     plus_minus: str = "N",
     pace_adjust: str = "N",
     rank: str = "N",
-    clutch_time_nullable: Optional[str] = None,
-    ahead_behind_nullable: Optional[str] = None,
-    point_diff_nullable: Optional[int] = None,
     shot_clock_range_nullable: Optional[str] = None,
     game_segment_nullable: Optional[str] = None,
     period: int = 0,
@@ -78,9 +74,6 @@ def fetch_player_clutch_stats_logic(
             plus_minus=plus_minus,
             pace_adjust=pace_adjust,
             rank=rank,
-            clutch_time_nullable=clutch_time_nullable, # Pass to API
-            ahead_behind_nullable=ahead_behind_nullable, # Pass to API
-            point_diff_nullable=point_diff_nullable, # Already being passed, ensure it's correct
             shot_clock_range_nullable=shot_clock_range_nullable,
             game_segment_nullable=game_segment_nullable,
             period=period, last_n_games=last_n_games, month=month,
@@ -94,35 +87,45 @@ def fetch_player_clutch_stats_logic(
             timeout=settings.DEFAULT_TIMEOUT_SECONDS
         )
         logger.debug(f"playerdashboardbyclutch API call successful for ID: {player_id}, Season: {season}")
-        
-        # Primarily use overall_player_dashboard as it's the documented general one
-        clutch_df = clutch_endpoint.overall_player_dashboard.get_data_frame()
 
-        clutch_stats_list = _process_dataframe(clutch_df, single_row=False)
+        # Collect all relevant clutch dashboards
+        dashboards = [
+            "overall_player_dashboard",
+            "last5_min5_point_player_dashboard",
+            "last3_min5_point_player_dashboard",
+            "last1_min5_point_player_dashboard",
+            "last5_min_plus_minus5_point_player_dashboard",
+            "last3_min_plus_minus5_point_player_dashboard",
+            "last1_min_plus_minus5_point_player_dashboard",
+            "last10_sec3_point_player_dashboard",
+            "last30_sec3_point_player_dashboard",
+            "last10_sec3_point2_player_dashboard",
+            "last30_sec3_point2_player_dashboard"
+        ]
 
-        # Check for processing errors first
-        if clutch_stats_list is None:
-            logger.error(f"DataFrame processing failed for clutch stats of {player_actual_name} (Season: {season}). _process_dataframe returned None.")
-            error_msg = Errors.PLAYER_CLUTCH_PROCESSING.format(identifier=player_actual_name, season=season)
-            return format_response(error=error_msg)
+        clutch_data = {}
+        for dash in dashboards:
+            df = getattr(clutch_endpoint, dash, None)
+            if df is not None:
+                clutch_data[dash] = _process_dataframe(df.get_data_frame(), single_row=False)
+            else:
+                clutch_data[dash] = []
 
-        # If no processing error, check if the original DF was empty (genuinely no data)
-        if clutch_df.empty:
-            logger.warning(f"No clutch stats data found for {player_actual_name} in season {season} with specified filters (original DF was empty).")
+        # If all dashboards are empty, treat as no data
+        if all(not v for v in clutch_data.values()):
+            logger.warning(f"No clutch stats data found for {player_actual_name} in season {season} with specified filters (all dashboards empty).")
             return format_response({
                 "player_name": player_actual_name, "player_id": player_id,
                 "parameters": {
                     "season": season, "season_type": season_type, "measure_type": measure_type, "per_mode": per_mode,
                     "plus_minus": plus_minus, "pace_adjust": pace_adjust, "rank": rank,
-                    "clutch_time_nullable": clutch_time_nullable, "ahead_behind_nullable": ahead_behind_nullable,
-                    "point_diff_nullable": point_diff_nullable, "shot_clock_range_nullable": shot_clock_range_nullable,
                     "game_segment_nullable": game_segment_nullable, "period": period, "last_n_games": last_n_games,
                     "month": month, "opponent_team_id": opponent_team_id, "location_nullable": location_nullable,
                     "outcome_nullable": outcome_nullable, "vs_conference_nullable": vs_conference_nullable,
                     "vs_division_nullable": vs_division_nullable, "season_segment_nullable": season_segment_nullable,
-                    "date_from_nullable": date_from_nullable, "date_to_nullable": date_to_nullable
+                    "date_from_nullable": date_from_nullable, "date_to_nullable": date_to_nullable, "shot_clock_range_nullable": shot_clock_range_nullable
                 },
-                "clutch_stats": []
+                "clutch_dashboards": clutch_data
             })
 
         # If we reach here, data is valid and processed
@@ -131,15 +134,13 @@ def fetch_player_clutch_stats_logic(
             "parameters": {
                 "season": season, "season_type": season_type, "measure_type": measure_type, "per_mode": per_mode,
                 "plus_minus": plus_minus, "pace_adjust": pace_adjust, "rank": rank,
-                "clutch_time_nullable": clutch_time_nullable, "ahead_behind_nullable": ahead_behind_nullable,
-                "point_diff_nullable": point_diff_nullable, "shot_clock_range_nullable": shot_clock_range_nullable,
                 "game_segment_nullable": game_segment_nullable, "period": period, "last_n_games": last_n_games,
                 "month": month, "opponent_team_id": opponent_team_id, "location_nullable": location_nullable,
                 "outcome_nullable": outcome_nullable, "vs_conference_nullable": vs_conference_nullable,
                 "vs_division_nullable": vs_division_nullable, "season_segment_nullable": season_segment_nullable,
-                "date_from_nullable": date_from_nullable, "date_to_nullable": date_to_nullable
+                "date_from_nullable": date_from_nullable, "date_to_nullable": date_to_nullable, "shot_clock_range_nullable": shot_clock_range_nullable
             },
-            "clutch_stats": clutch_stats_list or []
+            "clutch_dashboards": clutch_data
         }
         logger.info(f"Successfully fetched clutch stats for {player_actual_name}")
         return format_response(data=result)
