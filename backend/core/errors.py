@@ -116,6 +116,7 @@ class Errors:
     SYNERGY_UNEXPECTED = "Unexpected error fetching synergy play types: {error}"
     INVALID_PLAY_TYPE = "Invalid play type: '{play_type}'. Valid options: {options}"
     INVALID_TYPE_GROUPING = "Invalid type grouping: '{type_grouping}'. Valid options: {options}"
+    SYNERGY_PLAY_TYPE_REQUIRED = "A specific play_type is required to fetch Synergy data. Valid options: {options}. General queries without a play type are not supported by the NBA API."
 
     # League Errors
     LEAGUE_STANDINGS_API = "API error fetching league standings for Season {season} (Type: {season_type}): {error}" # Added season_type, removed date
