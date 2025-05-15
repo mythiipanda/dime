@@ -20,7 +20,7 @@ FINAL_ANSWER_MARKER = "FINAL_ANSWER::"
 from backend.tool_kits.player_tools import (
     get_player_info, get_player_gamelog, get_player_career_stats, get_player_awards,
     get_player_aggregate_stats, get_player_profile, get_player_estimated_metrics,
-    get_player_analysis, get_player_insights
+    get_player_analysis, get_player_insights, get_player_dashboard_by_team_performance
 )
 from backend.tool_kits.team_tools import (
     get_team_info_and_roster,
@@ -255,7 +255,7 @@ nba_tools = [
     # Player Tools
     get_player_info, get_player_gamelog, get_player_career_stats, get_player_awards,
     get_player_aggregate_stats, get_player_profile, get_player_estimated_metrics,
-    get_player_analysis, get_player_insights,
+    get_player_analysis, get_player_insights, get_player_dashboard_by_team_performance,
     # Team Tools
     get_team_info_and_roster, get_team_stats,
     # Tracking Tools
