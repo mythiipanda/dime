@@ -54,7 +54,7 @@ def fetch_league_games_logic(
     logger.info(f"Executing fetch_league_games_logic with P/T: {player_or_team_abbreviation}, TeamID: {team_id_nullable}, PlayerID: {player_id_nullable}, Season: {season_nullable}, League: {league_id_nullable}")
 
     if player_or_team_abbreviation not in ['P', 'T']:
-        return format_response(error=Errors.INVALID_PLAYER_TEAM_ABBREVIATION.format(value=player_or_team_abbreviation))
+        return format_response(error=Errors.INVALID_PLAYER_OR_TEAM_ABBREVIATION.format(value=player_or_team_abbreviation))
     if player_or_team_abbreviation == 'P' and player_id_nullable is None:
         return format_response(error=Errors.PLAYER_ID_REQUIRED) # Corrected error attribute
 
