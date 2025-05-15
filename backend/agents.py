@@ -3,42 +3,12 @@ from dotenv import load_dotenv
 from agno.agent import Agent
 from agno.models.google import Gemini
 from agno.tools.thinking import ThinkingTools
+from agno.tools import Toolkit
 from backend.config import settings
-from textwrap import dedent
-from pydantic import BaseModel, Field as PydanticField
-from typing import List as PyList, Optional as PyOptional, Dict as PyDict, Any as PyAny
+from typing import List, Optional, Dict, Any
+from backend.core.schemas import StatCard, ChartDataItem, ChartOutput, TableColumn, TableOutput
 
 # --- Pydantic Models for Rich Outputs (for nba_agent) ---
-class StatCard(BaseModel):
-    label: str = PydanticField(..., description="The label for the statistic.")
-    value: str = PydanticField(..., description="The value of the statistic.")
-    unit: PyOptional[str] = PydanticField(None, description="Optional unit for the statistic (e.g., '%', 'pts').")
-    trend: PyOptional[str] = PydanticField(None, description="Optional trend indicator (e.g., 'up', 'down', 'neutral').")
-    description: PyOptional[str] = PydanticField(None, description="Optional brief description or context for the stat.")
-
-class ChartDataItem(BaseModel):
-    label: str = PydanticField(..., description="Label for the data point (e.g., x-axis category).")
-    value: float = PydanticField(..., description="Numerical value for the data point (e.g., y-axis value).")
-    group: PyOptional[str] = PydanticField(None, description="Optional group name for grouped charts.")
-
-class ChartOutput(BaseModel):
-    type: str = PydanticField(..., description="Type of chart (e.g., 'bar', 'line', 'pie', 'scatter').")
-    title: str = PydanticField(..., description="Title of the chart.")
-    data: PyList[ChartDataItem] = PydanticField(..., description="Data for the chart.")
-    x_axis_label: PyOptional[str] = PydanticField(None, description="Label for the X-axis.")
-    y_axis_label: PyOptional[str] = PydanticField(None, description="Label for the Y-axis.")
-    options: PyOptional[PyDict[str, PyAny]] = PydanticField(None, description="Additional chart display options.")
-
-class TableColumn(BaseModel):
-    key: str = PydanticField(..., description="The key for this column in the data objects (rows).")
-    header: str = PydanticField(..., description="The display header for this column.")
-    align: PyOptional[str] = PydanticField("left", description="Column content alignment ('left', 'center', 'right').")
-
-class TableOutput(BaseModel):
-    title: PyOptional[str] = PydanticField(None, description="Optional title for the table.")
-    columns: PyList[TableColumn] = PydanticField(..., description="Defines the columns of the table.")
-    data: PyList[PyDict[str, PyAny]] = PydanticField(..., description="List of data objects (rows) for the table.")
-    caption: PyOptional[str] = PydanticField(None, description="Optional caption for the table.")
 
 # Markers for structured data in agent's text response
 STAT_CARD_MARKER = "STAT_CARD_JSON::"
@@ -46,32 +16,48 @@ CHART_DATA_MARKER = "CHART_DATA_JSON::"
 TABLE_DATA_MARKER = "TABLE_DATA_JSON::"
 FINAL_ANSWER_MARKER = "FINAL_ANSWER::"
 
-# Import all tool functions from the consolidated tools module
-from .tools import (
+# Import tools from their new locations
+from backend.tool_kits.player_tools import (
     get_player_info, get_player_gamelog, get_player_career_stats, get_player_awards,
-    get_player_aggregate_stats, get_player_profile, get_player_clutch_stats,
-    get_player_passing_stats, get_player_rebounding_stats, get_player_shots_tracking,
-    get_player_shotchart, get_player_defense_stats, get_player_hustle_stats,
-    get_team_info_and_roster, get_team_stats, get_team_passing_stats,
-    get_team_shooting_stats, get_team_rebounding_stats, find_games,
-    get_boxscore_traditional, get_play_by_play, get_league_standings,
-    get_scoreboard, get_draft_history, get_league_leaders, get_game_shotchart,
-    get_boxscore_advanced, get_boxscore_four_factors, get_boxscore_usage,
-    get_boxscore_defensive, get_boxscore_summary,
-    get_win_probability, get_season_matchups,
-    get_matchups_rollup, get_synergy_play_types, get_player_analysis,
-    get_live_odds, get_player_insights, get_league_player_on_details,
-    get_player_estimated_metrics, get_common_all_players, get_common_playoff_series,
-    get_common_team_years,
+    get_player_aggregate_stats, get_player_profile, get_player_estimated_metrics,
+    get_player_analysis, get_player_insights
 )
+from backend.tool_kits.team_tools import (
+    get_team_info_and_roster,
+    get_team_stats
+)
+from backend.tool_kits.tracking_tools import (
+    get_player_clutch_stats, get_player_passing_stats, get_player_rebounding_stats, 
+    get_player_shots_tracking, get_player_shotchart, get_player_defense_stats, 
+    get_player_hustle_stats,
+    get_team_passing_stats, get_team_shooting_stats, get_team_rebounding_stats,
+)
+from backend.tool_kits.game_tools import (
+    find_games, get_boxscore_traditional, get_play_by_play, get_game_shotchart,
+    get_boxscore_advanced, get_boxscore_four_factors, get_boxscore_usage,
+    get_boxscore_defensive, get_boxscore_summary, get_win_probability
+)
+from backend.tool_kits.league_tools import (
+    get_league_standings, get_scoreboard, get_draft_history, get_league_leaders,
+    get_synergy_play_types, get_league_player_on_details, get_common_all_players,
+    get_common_playoff_series, get_common_team_years, get_league_dash_lineups,
+    get_top_performers, get_top_teams
+)
+from backend.tool_kits.misc_tools import (
+    get_season_matchups, get_matchups_rollup, get_live_odds
+)
+# Placeholder for other tool imports as they are moved -- THIS SHOULD BE EMPTY NOW
+# from backend.tools import (
+#     # All tools should be moved
+# )
 import datetime
 
 load_dotenv()
 
-model = Gemini(id=settings.AGENT_MODEL_ID) # Changed
+model = Gemini(id=settings.AGENT_MODEL_ID)
 
 current_date = datetime.date.today().strftime("%Y-%m-%d")
-current_season = settings.CURRENT_NBA_SEASON # Changed
+current_season = settings.CURRENT_NBA_SEASON
 
 context_header = f"""# Current Context
 - Today's Date: {current_date}
@@ -262,47 +248,41 @@ Remember: Always think step by step, plan your tool usage carefully, and provide
 
 NBA_AGENT_SYSTEM_MESSAGE = context_header + _NBA_AGENT_SYSTEM_MESSAGE_BASE
 
+# Reconstruct nba_tools as a flat list, similar to the older working version
+# Includes all individual tools imported from tool_kits and ThinkingTools
 nba_tools = [
-    ThinkingTools(), get_player_info, get_player_gamelog, get_player_career_stats,
-    get_player_awards, get_player_aggregate_stats, get_player_profile,
-    get_player_clutch_stats, get_player_passing_stats, get_player_rebounding_stats,
-    get_player_shots_tracking, get_player_shotchart, get_player_defense_stats,
-    get_player_hustle_stats, get_team_info_and_roster, get_team_stats,
+    ThinkingTools(),
+    # Player Tools
+    get_player_info, get_player_gamelog, get_player_career_stats, get_player_awards,
+    get_player_aggregate_stats, get_player_profile, get_player_estimated_metrics,
+    get_player_analysis, get_player_insights,
+    # Team Tools
+    get_team_info_and_roster, get_team_stats,
+    # Tracking Tools
+    get_player_clutch_stats, get_player_passing_stats, get_player_rebounding_stats, 
+    get_player_shots_tracking, get_player_shotchart, get_player_defense_stats, 
+    get_player_hustle_stats,
     get_team_passing_stats, get_team_shooting_stats, get_team_rebounding_stats,
-    find_games, get_boxscore_traditional, get_play_by_play, get_league_standings,
-    get_scoreboard, get_draft_history, get_league_leaders, get_game_shotchart,
+    # Game Tools
+    find_games, get_boxscore_traditional, get_play_by_play, get_game_shotchart,
     get_boxscore_advanced, get_boxscore_four_factors, get_boxscore_usage,
-    get_boxscore_defensive, get_boxscore_summary,
-    get_win_probability, get_season_matchups,
-    get_matchups_rollup, get_synergy_play_types, get_player_analysis,
-    get_live_odds, get_player_insights, get_league_player_on_details,
-    get_player_estimated_metrics, get_common_all_players, get_common_playoff_series,
-    get_common_team_years,
+    get_boxscore_defensive, get_boxscore_summary, get_win_probability,
+    # League Tools
+    get_league_standings, get_scoreboard, get_draft_history, get_league_leaders,
+    get_synergy_play_types, get_league_player_on_details, get_common_all_players,
+    get_common_playoff_series, get_common_team_years, get_league_dash_lineups,
+    get_top_performers, get_top_teams,
+    # Misc Tools
+    get_season_matchups, get_matchups_rollup, get_live_odds
 ]
 
 nba_agent = Agent(
-    description="AI-Powered NBA Analytics Companion for expert data retrieval and analysis.",
+    # description="AI-Powered NBA Analytics Companion for expert data retrieval and analysis.", # REMOVED for this test
     model=model,
-    system_message=(_NBA_AGENT_SYSTEM_MESSAGE_BASE),
-    tools=[
-        ThinkingTools.think,
-        get_player_info, get_player_gamelog, get_player_career_stats, get_player_awards,
-        get_player_aggregate_stats, get_player_profile, get_player_clutch_stats,
-        get_player_passing_stats, get_player_rebounding_stats, get_player_shots_tracking,
-        get_player_shotchart, get_player_defense_stats, get_player_hustle_stats,
-        get_team_info_and_roster, get_team_stats, get_team_passing_stats,
-        get_team_shooting_stats, get_team_rebounding_stats, find_games,
-        get_boxscore_traditional, get_play_by_play, get_league_standings,
-        get_scoreboard, get_draft_history, get_league_leaders, get_game_shotchart,
-        get_boxscore_advanced, get_boxscore_four_factors, get_boxscore_usage, 
-        get_boxscore_defensive, get_boxscore_summary,
-        get_win_probability, get_season_matchups, 
-        get_matchups_rollup, get_synergy_play_types, get_player_analysis, get_live_odds,
-        get_player_insights, get_league_player_on_details, get_player_estimated_metrics,
-        get_common_all_players, get_common_playoff_series, get_common_team_years,
-    ],
-    # Default context for the agent (can be overridden at runtime)
-    debug_mode=settings.AGENT_DEBUG_MODE, # Changed
+    system_message=NBA_AGENT_SYSTEM_MESSAGE, # REVERTED to use system_message directly
+    # instructions=NBA_AGENT_SYSTEM_MESSAGE, # REMOVED for this test
+    tools=nba_tools, # Use the new flat list of tools
+    debug_mode=settings.AGENT_DEBUG_MODE,
     show_tool_calls=True,
     stream=True,
     stream_intermediate_steps=True,
