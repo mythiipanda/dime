@@ -99,17 +99,22 @@ async def run_synergy_test_with_assertions(
         (
             "Invalid PlayType",
             {"player_or_team": PlayerOrTeamAbbreviation.team, "season": SYNERGY_VALIDATION_SEASON, "play_type_nullable": "InvalidPlay"},
-            True, False 
+            True, False
+        ),
+        (
+            "Missing PlayType",
+            {"player_or_team": PlayerOrTeamAbbreviation.team, "season": SYNERGY_TEST_SEASON, "type_grouping_nullable": "offensive"},
+            True, False # Should return SYNERGY_PLAY_TYPE_REQUIRED error
         ),
         (
             "Invalid TypeGrouping",
             {"player_or_team": PlayerOrTeamAbbreviation.team, "season": SYNERGY_VALIDATION_SEASON, "type_grouping_nullable": "InvalidGroup"},
-            True, False 
+            True, False
         ),
         (
             "Invalid PlayerOrTeam Value",
             {"player_or_team": "X", "season": SYNERGY_VALIDATION_SEASON}, # "X" is not a valid PlayerOrTeamAbbreviation
-            True, False 
+            True, False
         ),
         (
             "Potentially Empty - WNBA League, PRRollman", # Synergy might not have WNBA PRRollman data

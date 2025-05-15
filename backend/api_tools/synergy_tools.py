@@ -70,8 +70,12 @@ def fetch_synergy_play_types_logic(
 ) -> str:
     """
     Fetches Synergy Sports play type statistics for all players or all teams in a league.
-    Can be filtered by specific play type (e.g., "Isolation", "Transition") or type grouping ("offensive", "defensive").
-    Note: This NBA API endpoint often returns empty data for many general queries or specific filter combinations.
+    A specific play_type is REQUIRED - the NBA API will return empty data for general queries.
+    Valid play types include: "Cut", "Handoff", "Isolation", "Misc", "OffScreen", "PostUp",
+    "PRBallHandler", "PRRollman", "OffRebound", "SpotUp", "Transition".
+
+    The type_grouping parameter ("offensive" or "defensive") helps filter the context of the play types.
+    Note: Certain combinations of parameters may still return empty data based on data availability.
 
     Args:
         league_id (str, optional): The league ID. Valid values from `LeagueID`. Defaults to "00" (NBA).
@@ -122,7 +126,9 @@ def fetch_synergy_play_types_logic(
 
     if not _validate_season_format(season):
         return format_response(error=Errors.INVALID_SEASON_FORMAT.format(season=season))
-    if play_type_nullable is not None and play_type_nullable not in VALID_PLAY_TYPES:
+    if play_type_nullable is None:
+        return format_response(error=Errors.SYNERGY_PLAY_TYPE_REQUIRED.format(options=", ".join(VALID_PLAY_TYPES)))
+    if play_type_nullable not in VALID_PLAY_TYPES:
         return format_response(error=Errors.INVALID_PLAY_TYPE.format(play_type=play_type_nullable, options=", ".join(VALID_PLAY_TYPES)))
     if type_grouping_nullable is not None and type_grouping_nullable not in VALID_TYPE_GROUPINGS:
         return format_response(error=Errors.INVALID_TYPE_GROUPING.format(type_grouping=type_grouping_nullable, options=", ".join(VALID_TYPE_GROUPINGS)))
