@@ -66,16 +66,25 @@ def fetch_synergy_play_types_logic(
     season: str = settings.CURRENT_NBA_SEASON,
     play_type_nullable: Optional[str] = None,
     type_grouping_nullable: Optional[str] = None,
+    player_id_nullable: Optional[int] = None,
+    team_id_nullable: Optional[int] = None,
     bypass_cache: bool = False
 ) -> str:
     """
-    Fetches Synergy Sports play type statistics for all players or all teams in a league.
+    Fetches Synergy Sports play type statistics for all players or all teams in a league,
+    with optional filtering for specific players or teams.
+
     A specific play_type is REQUIRED - the NBA API will return empty data for general queries.
     Valid play types include: "Cut", "Handoff", "Isolation", "Misc", "OffScreen", "PostUp",
     "PRBallHandler", "PRRollman", "OffRebound", "SpotUp", "Transition".
 
     The type_grouping parameter ("offensive" or "defensive") helps filter the context of the play types.
+    It is highly recommended to provide a `type_grouping_nullable` (e.g., "offensive" or "defensive"),
+    as omitting it or providing `None` may lead to empty results from the API for many play types.
     Note: Certain combinations of parameters may still return empty data based on data availability.
+
+    If player_id_nullable is provided, player_or_team must be 'P' and results will be filtered for that player.
+    If team_id_nullable is provided, player_or_team must be 'T' and results will be filtered for that team.
 
     Args:
         league_id (str, optional): The league ID. Valid values from `LeagueID`. Defaults to "00" (NBA).
@@ -202,14 +211,37 @@ def fetch_synergy_play_types_logic(
 
         if processed_synergy_data is None:
             if synergy_df.empty:
-                 logger.warning(f"No Synergy play type data rows returned by API for params: {api_params_synergy}")
-                 return format_response({"parameters": api_params_synergy, "synergy_stats": []})
+                logger.warning(f"No Synergy play type data rows returned by API for params: {api_params_synergy}")
+                return format_response({"parameters": api_params_synergy, "synergy_stats": []})
             else:
                 logger.error(f"DataFrame processing failed for Synergy stats with params: {api_params_synergy}")
                 return format_response(error=Errors.SYNERGY_PROCESSING)
+
+        # Filter by player_id or team_id if provided
+        if processed_synergy_data:
+            filtered_data = processed_synergy_data
+            if player_id_nullable is not None and player_or_team == PlayerOrTeamAbbreviation.player:
+                filtered_data = [entry for entry in filtered_data if entry.get("PLAYER_ID") == player_id_nullable]
+                if not filtered_data:
+                    logger.warning(f"No Synergy data found for player_id: {player_id_nullable}")
+                    return format_response({"parameters": api_params_synergy, "synergy_stats": []})
+            elif team_id_nullable is not None and player_or_team == PlayerOrTeamAbbreviation.team:
+                filtered_data = [entry for entry in filtered_data if entry.get("TEAM_ID") == team_id_nullable]
+                if not filtered_data:
+                    logger.warning(f"No Synergy data found for team_id: {team_id_nullable}")
+                    return format_response({"parameters": api_params_synergy, "synergy_stats": []})
+
+            processed_synergy_data = filtered_data
         
         logger.info(f"Successfully fetched and processed Synergy play type stats. Found {len(processed_synergy_data)} entries.")
-        return format_response({"parameters": api_params_synergy, "synergy_stats": processed_synergy_data or []})
+        return format_response({
+            "parameters": {
+                **api_params_synergy,
+                "player_id_nullable": player_id_nullable,
+                "team_id_nullable": team_id_nullable
+            },
+            "synergy_stats": processed_synergy_data or []
+        })
 
     except Exception as e: # Catch errors during result_set_data processing and DataFrame creation
         logger.error(f"Error processing Synergy play type result sets: {e}", exc_info=True)

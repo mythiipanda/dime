@@ -110,16 +110,61 @@ def get_synergy_play_types(
     player_or_team_abbreviation: str = PlayerOrTeamAbbreviation.team,
     season_type: str = SeasonTypeAllStar.regular,
     season: str = settings.CURRENT_NBA_SEASON,
-    play_type: Optional[str] = None,
-    type_grouping: Optional[str] = None
+    play_type: Optional[str] = None, # This is made required by the logic function
+    type_grouping: Optional[str] = "offensive", # Default to "offensive" if not specified
+    player_id: Optional[int] = None,
+    team_id: Optional[int] = None
 ) -> str:
     """
-    Fetches Synergy Sports play type statistics.
-    Args: league_id, per_mode, player_or_team_abbreviation, season_type, season, play_type, type_grouping.
-    Returns: JSON string with Synergy play type statistics.
+    Fetches Synergy Sports play type statistics with optional player/team filtering.
+    A specific 'play_type' (e.g., "Isolation", "Transition") is REQUIRED.
+    The 'type_grouping' (context: "offensive" or "defensive") defaults to "offensive" if not provided.
+    The results include 'POSS_PCT', which represents the frequency (percentage) of possessions for that play type,
+    not a raw count of possessions. For example, a POSS_PCT of 0.1 means 10% of the player's/team's
+    possessions in the given context were of this play type.
+
+    Args:
+        league_id: League ID (default: NBA "00").
+        per_mode: Statistical mode ("PerGame", "Totals", etc.).
+        player_or_team_abbreviation: "P" for players or "T" for teams.
+        season_type: Season phase ("Regular Season", "Playoffs", etc.).
+        season: Season in YYYY-YY format (e.g., "2023-24").
+        play_type: Specific play type (e.g., "Isolation", "PostUp"). This is REQUIRED.
+        type_grouping: Context filter ("offensive" or "defensive"). Defaults to "offensive".
+        player_id: Optional player ID to filter results (used only if player_or_team_abbreviation="P").
+        team_id: Optional team ID to filter results (used only if player_or_team_abbreviation="T").
+
+    Returns:
+        JSON string with Synergy play type statistics. Key fields include PLAY_TYPE, PPP (Points Per Possession),
+        and POSS_PCT (Frequency/Percentage of Possessions).
     """
-    logger.debug(f"Tool 'get_synergy_play_types' called for League: {league_id}, Mode: {per_mode}, P/T: {player_or_team_abbreviation}, Season: {season}")
-    return fetch_synergy_play_types_logic(league_id, per_mode, player_or_team_abbreviation, season_type, season, play_type, type_grouping)
+    effective_type_grouping = type_grouping if type_grouping in ["offensive", "defensive"] else "offensive"
+    
+    logger.debug(
+        f"Tool 'get_synergy_play_types' called for League: {league_id}, Mode: {per_mode}, "
+        f"P/T: {player_or_team_abbreviation}, Season: {season}, PlayType: {play_type}, "
+        f"TypeGrouping: {effective_type_grouping}, PlayerID: {player_id}, TeamID: {team_id}"
+    )
+
+    # Validate player_id and team_id match the player_or_team_abbreviation mode
+    if player_id is not None and player_or_team_abbreviation != PlayerOrTeamAbbreviation.player:
+        logger.warning("player_id provided but player_or_team_abbreviation is not 'P'. player_id will be ignored.")
+        player_id = None # Effectively ignored by logic if mode doesn't match, but good to be explicit
+    if team_id is not None and player_or_team_abbreviation != PlayerOrTeamAbbreviation.team:
+        logger.warning("team_id provided but player_or_team_abbreviation is not 'T'. team_id will be ignored.")
+        team_id = None # ""
+
+    return fetch_synergy_play_types_logic(
+        league_id=league_id,
+        per_mode=per_mode,
+        player_or_team=player_or_team_abbreviation,
+        season_type=season_type,
+        season=season,
+        play_type_nullable=play_type,
+        type_grouping_nullable=effective_type_grouping,
+        player_id_nullable=player_id,
+        team_id_nullable=team_id
+    )
 
 @tool
 def get_league_player_on_details(

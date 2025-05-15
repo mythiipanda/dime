@@ -24,6 +24,8 @@ from backend.config import settings # For settings.CURRENT_NBA_SEASON
 # Test Constants
 SYNERGY_TEST_SEASON = "2023-24" # Based on original test's working example
 SYNERGY_VALIDATION_SEASON = "2022-23"
+LAKERS_TEAM_ID = 1610612747
+LEBRON_PLAYER_ID = 2544
 
 async def run_synergy_test_with_assertions(
     description: str, 
@@ -120,6 +122,32 @@ async def run_synergy_test_with_assertions(
             "Potentially Empty - WNBA League, PRRollman", # Synergy might not have WNBA PRRollman data
             {"league_id": LeagueID.wnba, "player_or_team": PlayerOrTeamAbbreviation.player, "season": SYNERGY_TEST_SEASON, "play_type_nullable": "PRRollman", "per_mode": PerModeSimple.totals, "type_grouping_nullable": "offensive"},
             False, True # Expecting no error, but an empty list
+        ),
+        # New tests for player/team ID filtering
+        (
+            "Player Specific (LeBron, Isolation)",
+            {"player_or_team": PlayerOrTeamAbbreviation.player, "season": SYNERGY_TEST_SEASON, "play_type_nullable": "Isolation", "type_grouping_nullable": "offensive", "player_id_nullable": LEBRON_PLAYER_ID},
+            False, False # Expect data for LeBron
+        ),
+        (
+            "Team Specific (Lakers, Transition)",
+            {"player_or_team": PlayerOrTeamAbbreviation.team, "season": SYNERGY_TEST_SEASON, "play_type_nullable": "Transition", "type_grouping_nullable": "offensive", "team_id_nullable": LAKERS_TEAM_ID},
+            False, False # Expect data for Lakers
+        ),
+        (
+            "Team Specific PostUp (Known API issue - expect empty/graceful handling)",
+            {"player_or_team": PlayerOrTeamAbbreviation.team, "season": SYNERGY_TEST_SEASON, "play_type_nullable": "PostUp", "type_grouping_nullable": "offensive", "team_id_nullable": LAKERS_TEAM_ID},
+            False, True # Expect empty list due to graceful KeyError handling for 'resultSet'
+        ),
+        (
+            "Player ID with Team Mode (should ignore player_id and return all team data for playtype)",
+            {"player_or_team": PlayerOrTeamAbbreviation.team, "season": SYNERGY_TEST_SEASON, "play_type_nullable": "Isolation", "type_grouping_nullable": "offensive", "player_id_nullable": LEBRON_PLAYER_ID},
+            False, False # Expects data for all teams, player_id is ignored by tool wrapper
+        ),
+        (
+            "Team ID with Player Mode (should ignore team_id and return all player data for playtype)",
+            {"player_or_team": PlayerOrTeamAbbreviation.player, "season": SYNERGY_TEST_SEASON, "play_type_nullable": "Isolation", "type_grouping_nullable": "offensive", "team_id_nullable": LAKERS_TEAM_ID},
+            False, False # Expects data for all players, team_id is ignored by tool wrapper
         )
     ]
 )
