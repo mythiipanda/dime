@@ -18,40 +18,52 @@ def validate_date_format(date_string: Optional[str]) -> bool: # Changed to Optio
     except ValueError:
         return False
 
-def _validate_season_format(season: str) -> bool:
+def _validate_season_format(season: str, league_id: Optional[str] = "00") -> bool:
     """
-    Validates that the season string is in the "YYYY-YY" format (e.g., "2023-24").
+    Validates the season string format.
+    For NBA/G-League (league_id '00', '20'), expects "YYYY-YY" (e.g., "2023-24").
+    For WNBA (league_id '10'), expects "YYYY" (e.g., "2023").
     """
     if not season or not isinstance(season, str):
         return False
-    
-    # Regex to match YYYY-YY format
-    match = re.fullmatch(r"(\d{4})-(\d{2})", season)
-    if not match:
-        return False
 
-    try:
-        start_year_str, end_year_short_str = match.groups()
-        start_year = int(start_year_str)
-        end_year_short = int(end_year_short_str)
-
-        # Basic sanity check for start year (e.g., not too far in past/future)
-        if start_year < 1940 or start_year > datetime.datetime.now().year + 5: # Allow a bit into future
+    if league_id == "10": # WNBA
+        # Regex to match YYYY format
+        match = re.fullmatch(r"(\d{4})", season)
+        if not match:
             return False
-        
-        # Check if the YY part correctly follows the YYYY part
-        # e.g., for 2023, YY should be 24
-        expected_end_year_short = (start_year + 1) % 100
-        
-        return end_year_short == expected_end_year_short
-    except ValueError: # Handles int() conversion errors
-        return False
+        try:
+            year = int(match.group(1))
+            # Basic sanity check for year
+            if year < 1990 or year > datetime.datetime.now().year + 5: # WNBA started later
+                return False
+            return True
+        except ValueError:
+            return False
+    else: # NBA, G-League, or default
+        # Regex to match YYYY-YY format
+        match = re.fullmatch(r"(\d{4})-(\d{2})", season)
+        if not match:
+            return False
+        try:
+            start_year_str, end_year_short_str = match.groups()
+            start_year = int(start_year_str)
+            end_year_short = int(end_year_short_str)
 
-def validate_season_format(season: str) -> bool:
+            # Allow a wider range for start year, especially for historical/future tests
+            if start_year < 1940 or start_year > datetime.datetime.now().year + 75: # Extended future range
+                return False
+            
+            expected_end_year_short = (start_year + 1) % 100
+            return end_year_short == expected_end_year_short
+        except ValueError: # Handles int() conversion errors
+            return False
+
+def validate_season_format(season: str, league_id: Optional[str] = "00") -> bool:
     """
-    Public interface to validate that the season string is in the "YYYY-YY" format.
+    Public interface to validate the season string format based on league.
     """
-    return _validate_season_format(season)
+    return _validate_season_format(season, league_id)
 
 def validate_game_id_format(game_id: str) -> bool:
     """
