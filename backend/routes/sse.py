@@ -4,7 +4,7 @@ import logging
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from rich.pretty import pprint
-from backend.agents import nba_workflow
+from backend.agents import nba_agent
 from dataclasses import asdict, is_dataclass
 from agno.agent import RunResponse
 from typing import AsyncIterator, Dict, Any
@@ -220,12 +220,12 @@ def format_message_data(chunk_dict: Dict[Any, Any]) -> Dict[str, Any]:
 @router.get("/ask")
 async def ask_agent_keepalive_sse(request: Request, prompt: str):
     logger.info(f"Received GET /ask request with prompt: '{prompt}'")
-    workflow_instance = nba_workflow
+    workflow_instance = nba_agent
 
     async def keepalive_sse_generator():
         try:
             logger.info(f"Starting streaming NBA analysis workflow for prompt: {prompt}")
-            async for chunk in workflow_instance.arun(prompt):
+            async for chunk in await workflow_instance.arun(prompt):
                 chunk_dict = recursive_asdict(chunk)
                 message_data = format_message_data(chunk_dict)
 
@@ -292,7 +292,7 @@ async def ask_agent_keepalive_sse(request: Request, prompt: str):
 @router.get("/test_stream")
 async def test_agent_stream(request: Request, prompt: str):
     logger.info(f"Received GET /test_streaming request with prompt: '{prompt}'")
-    run_stream: AsyncIterator[RunResponse] = await nba_workflow.arun(prompt)
+    run_stream: AsyncIterator[RunResponse] = await nba_agent.arun(prompt)
     async for chunk in run_stream:
         pprint(dataclass_to_dict(chunk, exclude={"messages"}))
         print("---" * 20)

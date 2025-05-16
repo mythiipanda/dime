@@ -31,12 +31,14 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: Optional[str] = None  # If None and GOOGLE_API_KEY is set, will default to GOOGLE_API_KEY
 
     # --- Agent & AI Model Configuration ---
-    AGENT_MODEL_ID: str = "gemini-2.0-flash"
+    AGENT_MODEL_ID: str = "gemini-2.0-flash-lite"
     SUGGESTION_MODEL_ID: str = "gemini-2.0-flash-lite"
     AGENT_DEBUG_MODE: bool = False
 
     # --- Database & Storage ---
     STORAGE_DB_FILE: str = "agno_storage.db"  # Path relative to backend root or absolute path
+    CHROMA_DB_NBA_AGENT: str = "./chroma_db_nba_agent_kb"  # Default path for the KB ChromaDB
+    KB_COLLECTION_NAME: str = "nba_analyzer_global_kb" # Default collection name for the main KB
 
     # --- Application Behavior ---
     LOG_LEVEL: str = "INFO"  # Valid levels: DEBUG, INFO, WARNING, ERROR, CRITICAL
