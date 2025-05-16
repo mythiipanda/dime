@@ -12,8 +12,10 @@ import ToolCallItem from './ToolCallItem'; // Changed to default import
 // Ensure these types are correctly imported or defined in a shared location
 export interface ToolCall {
   tool_name: string;
+  args?: any;
   status: "started" | "completed" | "error";
   content?: string; 
+  isError?: boolean;
 }
 
 // Assuming SSEChatMessage is defined elsewhere, e.g., in a types file or imported from the hook
@@ -22,7 +24,7 @@ export interface ToolCall {
 // If the above import path is not correct, ensure SSEChatMessage is defined appropriately.
 // For the purpose of this component, we only need status and event from message.
 interface MinimalSSEChatMessage {
-    status?: 'thinking' | 'complete' | 'error' | 'idle' | 'streaming'; // Made status optional
+    status?: 'thinking' | 'tool_calling' | 'complete' | 'error';
     event?: string; 
 }
 
@@ -30,8 +32,9 @@ interface MinimalSSEChatMessage {
 export interface AgentProcessCollapsibleProps {
   reasoningNarrative: string;
   toolCalls: ToolCall[] | undefined;
-  messageStatus?: MinimalSSEChatMessage['status']; // Made messageStatus optional
+  messageStatus?: MinimalSSEChatMessage['status'];
   messageEvent: MinimalSSEChatMessage['event'];   
+  agentDisplayName?: string;
   isThinkingExpanded: boolean;
   onThinkingToggle: (isOpen: boolean) => void;
   expandedToolContent: { [key: number]: boolean };
@@ -46,6 +49,7 @@ export const AgentProcessCollapsible: React.FC<AgentProcessCollapsibleProps> = (
   toolCalls,
   messageStatus,
   messageEvent,
+  agentDisplayName,
   isThinkingExpanded,
   onThinkingToggle,
   expandedToolContent,
@@ -59,15 +63,15 @@ export const AgentProcessCollapsible: React.FC<AgentProcessCollapsibleProps> = (
       <CollapsibleTrigger className="flex items-center justify-between w-full group/trigger py-1 hover:bg-muted/50 dark:hover:bg-muted/30 rounded-md px-1.5 -mx-1.5 transition-colors">
         <div className="flex items-center gap-2">
           <Brain className="h-4 w-4 text-muted-foreground group-hover/trigger:text-primary transition-colors" />
-          <span className="text-xs font-medium text-muted-foreground group-hover/trigger:text-primary transition-colors">Agent Process</span>
+          <span className="text-xs font-medium text-muted-foreground group-hover/trigger:text-primary transition-colors">
+            {agentDisplayName ? `${agentDisplayName} Process` : "Agent Process"}
+          </span>
         </div>
         <div className="flex items-center gap-2">
-          {messageStatus === 'thinking' && messageEvent !== "RunCompleted" && ( // Assuming RunCompleted is a valid event string
+          {(messageStatus === 'thinking' || messageStatus === 'tool_calling') && messageEvent !== "RunCompleted" && (
             <>
               <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-              {messageEvent === "ReasoningStarted" ? ( // Assuming ReasoningStarted is a valid event string
-                <span className="text-xs text-muted-foreground">Initiating...</span>
-              ) : toolCalls && toolCalls.some(tc => tc.status === 'started') ? (
+              {messageStatus === 'tool_calling' || (toolCalls && toolCalls.some(tc => tc.status === 'started')) ? (
                 <span className="text-xs text-muted-foreground">Using Tools...</span>
               ) : (
                 <span className="text-xs text-muted-foreground">Thinking...</span>
@@ -94,7 +98,7 @@ export const AgentProcessCollapsible: React.FC<AgentProcessCollapsibleProps> = (
               <div className="text-xs font-medium text-muted-foreground mb-1">Tool Activity:</div>
               {toolCalls.map((tool, index) => (
                 <ToolCallItem 
-                  key={`${tool.tool_name}-${index}-${tool.status}`} // Ensure key is unique enough
+                  key={`${tool.tool_name}-${index}-${tool.status}`}
                   tool={tool} 
                   isExpanded={expandedToolContent[index] || false} 
                   onToggleExpand={() => onToolContentToggle(index)} 

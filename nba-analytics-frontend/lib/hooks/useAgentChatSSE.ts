@@ -8,8 +8,10 @@ interface UseAgentChatSSEProps {
 // Define the ToolCallItem interface based on ChatMessage's toolCalls
 interface ToolCallItem {
   tool_name: string;
+  args?: any; // Added: arguments for the tool call
   status: 'started' | 'completed' | 'error';
-  content?: string;
+  content?: string; // Summarized output or error message
+  isError?: boolean; // Added: flag for error
 }
 
 // Define ChatMessage interface
@@ -17,8 +19,9 @@ export interface ChatMessage {
   id?: string; // Optional unique ID for each message for React keys
   role: 'user' | 'assistant';
   content: string;
+  agentName?: string; // Added: Name of the agent processing
   event?: string;
-  status?: 'thinking' | 'error' | 'complete';
+  status?: 'thinking' | 'tool_calling' | 'error' | 'complete'; // Added 'tool_calling'
   progress?: number;
   toolCalls?: ToolCallItem[];
   dataType?: 'STAT_CARD' | 'CHART_DATA' | 'TABLE_DATA' | string;
@@ -124,17 +127,35 @@ export function useAgentChatSSE({
           
           let targetMessage = { ...updatedHistory[lastMessageIndex] };
 
+          // Update agentName if provided
+          if (data.agentName) {
+            targetMessage.agentName = data.agentName;
+          }
 
-          // 1. Merge ToolCalls
+          // 1. Merge ToolCalls - enhanced
           if (data.toolCalls && Array.isArray(data.toolCalls)) {
             let mergedToolCalls: ToolCallItem[] = targetMessage.toolCalls ? [...targetMessage.toolCalls] : [];
-            data.toolCalls.forEach((newTc: ToolCallItem) => {
+            data.toolCalls.forEach((newTc: Partial<ToolCallItem>) => { // Use Partial for incoming
               if (newTc && newTc.tool_name) {
-                const existingTcIndex = mergedToolCalls.findIndex(tc => tc.tool_name === newTc.tool_name);
+                const existingTcIndex = mergedToolCalls.findIndex(tc => tc.tool_name === newTc.tool_name && tc.status !== 'completed'); // Match only active or just started
                 if (existingTcIndex !== -1) {
-                  mergedToolCalls[existingTcIndex] = { ...mergedToolCalls[existingTcIndex], ...newTc };
-                } else {
-                  mergedToolCalls.push(newTc);
+                  // Update existing tool call
+                  mergedToolCalls[existingTcIndex] = { 
+                    ...mergedToolCalls[existingTcIndex], 
+                    ...newTc,
+                    status: newTc.status || mergedToolCalls[existingTcIndex].status, // Ensure status is updated
+                  };
+                } else if (newTc.status === 'started') { // Only add new if it's a 'started' event for a new tool
+                  mergedToolCalls.push(newTc as ToolCallItem); // Cast to full ToolCallItem
+                } else if (newTc.status === 'completed') {
+                  // If a 'completed' event comes for a tool not in 'started' state (e.g. if UI missed start)
+                  // Add it directly. This is a fallback.
+                  const completedTcIndex = mergedToolCalls.findIndex(tc => tc.tool_name === newTc.tool_name);
+                  if (completedTcIndex !== -1) {
+                     mergedToolCalls[completedTcIndex] = { ...mergedToolCalls[completedTcIndex], ...newTc as ToolCallItem };
+                  } else {
+                     mergedToolCalls.push(newTc as ToolCallItem);
+                  }
                 }
               } else {
                 console.warn("[SSE] Received tool call without a name:", newTc);
@@ -144,6 +165,32 @@ export function useAgentChatSSE({
           }
 
           // 2. Handle Content, DataType, and DataPayload (JSON Streaming)
+          // Preserve existing content logic, but ensure new event-driven content from sse.py is handled.
+          
+          let newContentSegment = "";
+          if (data.event === "RunStarted" && data.content) {
+            // For "Starting process with [AgentName]..."
+            newContentSegment = data.content + "\n"; // Add newline
+          } else if (data.event === "ToolCallStarted" && data.content && !data.dataType) {
+            // For "[AgentName] is calling tool(s): ..."
+            // This content is useful for the thinking process display.
+            // Avoid directly appending to main visible content if it's just a tool call announcement,
+            // unless there's no other narrative content being built.
+             if (!targetMessage.content?.includes(data.content)) { // Avoid duplicates
+                newContentSegment = data.content + "\n";
+             }
+          } else if (data.event === "ToolCallCompleted" && data.content && !data.dataType) {
+            // For "Tool(s) ... completed." - also good for thinking process
+            // Append if we are not yet in the final answer phase
+            if (!targetMessage.content?.includes(data.content)) { // Avoid duplicates
+                newContentSegment = data.content + "\n";
+            }
+          } else if (data.event === "RunResponse" && data.content) {
+            // This is the main narrative content from the agent
+            newContentSegment = data.content;
+          }
+
+
           if (data.dataType) { 
             currentActiveDataTypeRef.current = data.dataType;
             currentJsonBufferRef.current = ""; 
@@ -152,54 +199,25 @@ export function useAgentChatSSE({
             }
             targetMessage.dataType = currentActiveDataTypeRef.current === null ? undefined : currentActiveDataTypeRef.current;
             targetMessage.dataPayload = null; 
-            // Use content from this chunk if provided (e.g., "Here's the table:")
-            // If this chunk also has content, it's likely a lead-in to the JSON.
-            // If not, preserve existing content or set to empty if it's a new message.
-            targetMessage.content = data.content !== undefined ? data.content : (targetMessage.content || "");
+            // If there's also a content field in this dataType chunk, it's a lead-in.
+            targetMessage.content = data.content !== undefined ? (targetMessage.content || "") + data.content : (targetMessage.content || "");
           
           } else if (currentActiveDataTypeRef.current && typeof data.dataPayload === 'string') {
             currentJsonBufferRef.current += data.dataPayload;
-            // If this chunk also has content AND it's different from the payload, it's likely narrative.
+            // If this chunk also has content AND it's different from the payload, append it.
             if (data.content && data.content !== data.dataPayload) {
-                 targetMessage.content += data.content;
+                 targetMessage.content += data.content; // Append narrative mixed with JSON stream
              }
-          } else if (data.event === "RunResponse" && data.content) {
-             // Append narrative content if no active JSON streaming for this message
-             if (!currentActiveDataTypeRef.current) { 
-               targetMessage.content += data.content;
-             }
-          } else if (data.content && !currentActiveDataTypeRef.current && data.event !== "RunResponse") {
-            // For other events like ToolCallStarted/Completed with their own content from sse.py
-            if (!targetMessage.content) { // Only set if main content is empty
-              targetMessage.content = data.content;
-            }
+          } else if (newContentSegment) { // General content from RunStarted, ToolCall (if no dataType), RunResponse
+             // Append new segments if not actively streaming a specific data type (like JSON for a chart)
+             // The ChatMessageDisplay component will handle separating reasoning from final answer using FINAL_ANSWER_MARKER
+             targetMessage.content = (targetMessage.content || "") + newContentSegment;
           }
+          // If content was just an announcement like "Tool X completed" and we have rich data, prioritize rich data display
+          // The announcements are still good for the "thinking process" part of the UI.
           
-          // Attempt to parse JSON
-          if (targetMessage.dataType === currentActiveDataTypeRef.current && 
-              currentActiveDataTypeRef.current && 
-              currentJsonBufferRef.current.trim().endsWith("```")) {
-            let jsonToParse = currentJsonBufferRef.current.trim();
-            jsonToParse = jsonToParse.slice(0, -3).trim(); 
-            
-            try {
-              const parsedPayload = JSON.parse(jsonToParse);
-              targetMessage.dataPayload = parsedPayload; 
-              console.log(`[SSE] Successfully parsed ${currentActiveDataTypeRef.current}:`, parsedPayload);
-              currentActiveDataTypeRef.current = null; 
-              currentJsonBufferRef.current = "";    
-            } catch (e) {
-               console.warn(`[SSE] Failed to parse accumulated ${targetMessage.dataType} JSON:`, e, "Buffer:", jsonToParse);
-               if (currentJsonBufferRef.current.length > 15000 && !jsonToParse.trim().startsWith("{") && !jsonToParse.trim().startsWith("[")) { 
-                   console.error("[SSE] JSON buffer too long and doesn't look like JSON, clearing activeDataType.");
-                   currentActiveDataTypeRef.current = null; currentJsonBufferRef.current = ""; 
-                   targetMessage.dataType = undefined; 
-               }
-            }
-          }
-
           targetMessage.event = data.event || targetMessage.event;
-          targetMessage.status = data.status || targetMessage.status;
+          targetMessage.status = data.status || targetMessage.status; // status like 'tool_calling'
           targetMessage.progress = data.progress !== undefined ? data.progress : targetMessage.progress;
           
           updatedHistory[lastMessageIndex] = targetMessage;
@@ -219,31 +237,29 @@ export function useAgentChatSSE({
     eventSource.addEventListener('final', (event: MessageEvent) => {
       console.log('[SSE] Received final event.');
       try {
+        // The 'final' event from sse.py should now contain the complete last message state
+        const finalData = JSON.parse(event.data) as ChatMessage;
+
         setState(prevState => {
           const finalHistory = [...prevState.chatHistory];
           const lastMessageIndex = finalHistory.length - 1;
 
           if (lastMessageIndex >=0 && finalHistory[lastMessageIndex].role === 'assistant') {
-            let targetMessage = { ...finalHistory[lastMessageIndex] };
-            targetMessage.status = 'complete';
-            targetMessage.progress = 100;
-
-            // Final attempt to parse any remaining buffer content
-            if (currentActiveDataTypeRef.current && currentJsonBufferRef.current.trim()) {
-                let jsonToParse = currentJsonBufferRef.current.trim();
-                if (jsonToParse.endsWith("```")) {
-                    jsonToParse = jsonToParse.slice(0, -3).trim();
-                }
-                 try {
-                    const parsedPayload = JSON.parse(jsonToParse);
-                    targetMessage.dataPayload = parsedPayload;
-                    console.log(`[SSE] Final parse attempt for ${currentActiveDataTypeRef.current}:`, parsedPayload);
-                } catch (e) {
-                    console.warn(`[SSE] Final parse attempt failed for ${currentActiveDataTypeRef.current}:`, e, "Buffer:", jsonToParse);
-                    targetMessage.content += `\n[Unparsed data: ${currentJsonBufferRef.current}]`;
-                }
-            }
-            finalHistory[lastMessageIndex] = targetMessage;
+            // Overwrite the last assistant message with the complete data from 'final' event
+            finalHistory[lastMessageIndex] = {
+              ...finalHistory[lastMessageIndex], // Keep ID
+              ...finalData, // Apply all fields from the final server event
+              status: 'complete',
+              progress: 100,
+            };
+          } else {
+            // If for some reason there's no assistant message, add this one.
+            finalHistory.push({
+                id: `assistant-${Date.now()}`, 
+                ...finalData, 
+                status: 'complete', 
+                progress: 100
+            });
           }
           
           currentJsonBufferRef.current = ""; // Clear refs on final

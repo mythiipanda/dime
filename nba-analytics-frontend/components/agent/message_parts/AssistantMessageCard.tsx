@@ -12,8 +12,9 @@ interface MinimalSSEChatMessage {
   id?: string; // Changed to string | undefined
   role: 'assistant';
   content: string;
+  agentName?: string; // Added to match ChatMessage
   toolCalls?: ToolCall[]; // Uses ToolCall from AgentProcessCollapsible import
-  status?: 'thinking' | 'complete' | 'error'; // Aligned with hook's ChatMessage.status (removed streaming, idle)
+  status?: 'thinking' | 'tool_calling' | 'complete' | 'error'; // Added 'tool_calling'
   event?: string;
   error?: string;
   dataType?: string; // Added from hook's ChatMessage
@@ -22,6 +23,7 @@ interface MinimalSSEChatMessage {
 
 export interface AssistantMessageCardProps {
   message: MinimalSSEChatMessage;
+  agentDisplayName?: string; // Added to receive the processed agent name
   reasoningNarrative: string;
   finalAnswerForDisplay: string;
   isThinkingExpanded: boolean;
@@ -38,6 +40,7 @@ export interface AssistantMessageCardProps {
 
 export const AssistantMessageCard: React.FC<AssistantMessageCardProps> = ({
   message,
+  agentDisplayName,
   reasoningNarrative,
   finalAnswerForDisplay,
   isThinkingExpanded,
@@ -53,17 +56,20 @@ export const AssistantMessageCard: React.FC<AssistantMessageCardProps> = ({
 }) => {
   return (
     <Card className="rounded-xl bg-card text-card-foreground p-3 shadow-md break-words w-full">
+      {/* Optionally display agentDisplayName if needed here, e.g., as a small badge or prefix */}
+      {/* Example: {agentDisplayName && <p className="text-xs text-muted-foreground mb-1">Agent: {agentDisplayName}</p>} */}
       {showThinkingProcessCollapsible && (
         <AgentProcessCollapsible 
           reasoningNarrative={reasoningNarrative}
           toolCalls={message.toolCalls}
           messageStatus={message.status}
           messageEvent={message.event}
+          agentDisplayName={agentDisplayName}
           isThinkingExpanded={isThinkingExpanded}
           onThinkingToggle={onThinkingToggle}
           expandedToolContent={expandedToolContent}
           onToolContentToggle={onToolContentToggle}
-          markdownComponents={markdownComponents} // Pass down markdown components
+          markdownComponents={markdownComponents}
           hasReasoningToShow={hasReasoningToShow}
           hasToolsToShow={hasToolsToShow}
         />

@@ -3,7 +3,7 @@
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { cn } from "@/lib/utils"
-import { UserIcon, BotIcon, Loader2, CheckCircle2, XCircle, ChevronDown, ChevronUp, Brain, Copy, Check, Link, BookOpen } from "lucide-react"
+import { UserIcon, BotIcon, Loader2, CheckCircle2, XCircle, ChevronDown, ChevronUp, Brain, Copy, Check, Link, BookOpen, TerminalSquare, AlertCircle } from "lucide-react"
 import ReactMarkdown, { Components } from 'react-markdown'
 import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
@@ -18,8 +18,10 @@ import { AssistantMessageCard } from './message_parts/AssistantMessageCard';
 
 export interface ToolCall {
   tool_name: string
+  args?: any
   status: "started" | "completed" | "error"
   content?: string
+  isError?: boolean
 }
 
 export interface Source {
@@ -99,13 +101,12 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
   const [isCodeCopied, setIsCodeCopied] = useState(false);
 
   useEffect(() => {
-    if (isLatest && message.role === 'assistant' && message.status === 'thinking' && !message.content?.includes(FINAL_ANSWER_MARKER)) {
-      setIsThinkingExpanded(true);
-    }
-    if (isLatest && message.role === 'assistant' && message.status === 'complete'){
+    if (isLatest && message.role === 'assistant') {
+      if (message.status === 'thinking' || message.status === 'tool_calling' || message.status === 'complete') {
         setIsThinkingExpanded(true);
+      }
     }
-  }, [isLatest, message.status, message.content, message.role]);
+  }, [isLatest, message.status, message.role]);
 
   const handleCopyToClipboard = useCallback(async (text: string, type: 'user' | 'finalAnswer' | 'code') => {
     let setCopiedFunction;
@@ -135,6 +136,7 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
   let reasoningNarrative = "";
   let finalAnswerForDisplay = "";
   const fullContent = message.content || "";
+  const agentDisplayName = message.agentName ? (message.agentName.includes('-') ? message.agentName.split('-')[0] : message.agentName) : "Assistant";
 
   if (message.role === 'assistant') {
     const markerIndex = fullContent.indexOf(FINAL_ANSWER_MARKER);
@@ -156,12 +158,12 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
   const hasToolsToShow = !!(message.role === 'assistant' && message.toolCalls && message.toolCalls.length > 0);
   const showThinkingProcessCollapsible = 
     message.role === 'assistant' && 
-    (message.status === 'thinking' || hasReasoningToShow || hasToolsToShow);
+    (message.status === 'thinking' || message.status === 'tool_calling' || hasReasoningToShow || hasToolsToShow);
 
   return (
     <div className={cn("flex items-start gap-3 py-4", message.role === 'user' ? "justify-end" : "justify-start")}>
       {message.role === 'assistant' && (
-        <Avatar className="h-8 w-8 border shadow-sm">
+        <Avatar className="h-8 w-8 border shadow-sm shrink-0">
           <AvatarFallback className="bg-primary/10 text-primary">
             <BotIcon className="h-5 w-5" />
           </AvatarFallback>
@@ -177,6 +179,7 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
         ) : (
           <AssistantMessageCard
             message={message as SSEChatMessage & { role: 'assistant' }}
+            agentDisplayName={agentDisplayName}
             reasoningNarrative={reasoningNarrative}
             finalAnswerForDisplay={finalAnswerForDisplay}
             isThinkingExpanded={isThinkingExpanded}
