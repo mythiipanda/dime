@@ -38,6 +38,7 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
   const [isThinkingExpanded, setIsThinkingExpanded] = useState(isLatest && !isUser) // Auto-expand latest assistant message
   const [copied, setCopied] = useState(false)
   const [sources, setSources] = useState<Source[]>([])
+  const [expandedToolContent, setExpandedToolContent] = useState<{ [key: number]: boolean }>({}); // State for tool content expansion
   
   const [reasoningNarrative, setReasoningNarrative] = useState<string>("")
   const [finalAnswerForDisplay, setFinalAnswerForDisplay] = useState<string>("")
@@ -213,11 +214,31 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
                                 {tool.status === "error" && <span className="text-[10px] text-red-600 dark:text-red-400">Error</span>}
                               </div>
                             </div>
-                            {tool.content && typeof tool.content === 'string' && tool.content.trim() && (
-                              <pre className="mt-1.5 text-[10px] text-muted-foreground/80 bg-muted/30 dark:bg-black/20 p-1.5 rounded font-mono max-w-full overflow-x-auto whitespace-pre-wrap break-all">
-                                {tool.content}
-                              </pre>
-                            )}
+                            {tool.content && typeof tool.content === 'string' && tool.content.trim() && (() => {
+                              const toolContentKey = index; // Use index as key for expansion state
+                              const isExpanded = expandedToolContent[toolContentKey] || false;
+                              const lines = tool.content.split('\n');
+                              const MAX_LINES = 10;
+                              const isTruncated = lines.length > MAX_LINES;
+                              const displayedContent = isExpanded || !isTruncated ? tool.content : lines.slice(0, MAX_LINES).join('\n');
+
+                              return (
+                                <div className="mt-1.5">
+                                  <pre className="text-[10px] text-muted-foreground/80 bg-muted/30 dark:bg-black/20 p-1.5 rounded font-mono max-w-full overflow-x-auto whitespace-pre-wrap break-all">
+                                    {displayedContent}
+                                  </pre>
+                                  {isTruncated && (
+                                    <Button 
+                                      variant="link"
+                                      className="text-xs h-auto p-0 mt-1 text-primary hover:text-primary/80"
+                                      onClick={() => setExpandedToolContent(prev => ({...prev, [toolContentKey]: !isExpanded}))}
+                                    >
+                                      {isExpanded ? "Show less" : "Show more..."}
+                                    </Button>
+                                  )}
+                                </div>
+                              );
+                            })()}
                           </Card>
                         ))}
                       </div>

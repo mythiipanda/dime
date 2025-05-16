@@ -74,12 +74,11 @@ export default function AiAssistantPage() {
   };
 
   return (
-    // <div className="h-full flex flex-col animate-in fade-in-0 duration-300">
-    <div className="h-full flex flex-col"> {/* Overall page animation temporarily disabled */}
+    <div className="h-full flex flex-col bg-background">
       <main className="flex-1 flex flex-col overflow-hidden">
         {renderChatArea()}
       </main>
-      <div className="border-t bg-background/95 p-3 sm:p-4 sticky bottom-0">
+      <div className="bg-background p-2 sm:p-3 sticky bottom-0 shadow-[0_-2px_10px_-3px_rgba(0,0,0,0.07),0_-1px_3px_-2px_rgba(0,0,0,0.04)]">
         <div className="max-w-3xl mx-auto space-y-2">
           <PromptInputForm
             onSubmit={handlePromptSubmit}

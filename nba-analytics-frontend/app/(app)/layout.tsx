@@ -136,13 +136,13 @@ export default function AppLayout({ children }: AppLayoutProps) {
       {/* Main Content Area */}
       <main
         className={cn(
-          'flex-1 overflow-y-auto transition-all duration-300 ease-in-out',
+          'flex-1 flex flex-col overflow-hidden transition-all duration-300 ease-in-out',
           'pt-16 lg:pt-0',
           isCollapsed ? "lg:pl-20" : "lg:pl-60"
         )}
       >
         <div className={cn(
-          'max-w-full mx-auto px-4 sm:px-6 py-8 lg:px-8 lg:py-12 flex-1 flex flex-col', // max-w-full to allow content to use gradient
+          'max-w-full mx-auto px-4 sm:px-6 py-8 lg:px-8 lg:py-12 flex-1 overflow-y-auto',
           'animate-in fade-in-0 slide-in-from-bottom-4 duration-500'
         )}>
           <SignedIn>

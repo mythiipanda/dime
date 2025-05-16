@@ -3,7 +3,7 @@
 // components/agent/PromptInputForm.tsx
 import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { SendIcon, StopCircleIcon } from 'lucide-react';
+import { SendIcon, Loader2Icon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface PromptInputFormProps {
@@ -25,6 +25,7 @@ export function PromptInputForm({
   // Auto-resize textarea height based on content
   useEffect(() => {
     if (textareaRef.current) {
+      textareaRef.current.style.transition = 'height 0.15s ease-out';
       textareaRef.current.style.height = 'auto'; // Reset height to shrink if needed
       textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`; // Set to scroll height
     }
@@ -40,9 +41,9 @@ export function PromptInputForm({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey && !isLoading) { // Also check !isLoading here
+    if (e.key === 'Enter' && !e.shiftKey && !isLoading) {
       e.preventDefault();
-      handleSubmit(e); // handleSubmit already contains the trim and isLoading check
+      handleSubmit(e);
     }
   };
 
@@ -50,7 +51,7 @@ export function PromptInputForm({
     <form
       onSubmit={handleSubmit}
       className={cn(
-        'relative flex w-full items-end gap-2 rounded-xl border bg-card p-2 shadow-sm', // Input bar container
+        'relative flex w-full items-end gap-2 rounded-xl border bg-card p-3 shadow-md',
         'focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background transition-shadow',
         className
       )}
@@ -60,30 +61,30 @@ export function PromptInputForm({
         value={prompt}
         onChange={(e) => setPrompt(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="Send a message..." // More generic placeholder
+        placeholder="Ask Dime about stats, players, or game analysis... or type '/' for commands."
         className={cn(
-          "flex-1 resize-none appearance-none bg-transparent px-2 py-2.5 text-base leading-relaxed", // Adjusted padding, bg-transparent
-          "min-h-[24px] max-h-[160px]", // Adjusted min/max height for textarea within bar
-          "focus:outline-none focus-visible:ring-0 focus-visible:border-transparent border-0", // Remove internal border/ring
-          "disabled:cursor-not-allowed disabled:opacity-50 placeholder:text-muted-foreground/80"
+          "flex-1 resize-none appearance-none bg-transparent px-3 py-2 text-base leading-relaxed",
+          "min-h-[40px] max-h-[150px]",
+          "focus:outline-none focus-visible:ring-0 focus-visible:border-transparent border-0",
+          "disabled:cursor-not-allowed disabled:opacity-60 placeholder:text-muted-foreground/70"
         )}
         disabled={isLoading}
         rows={1}
       />
-      <div className="flex items-center gap-2 self-end"> {/* Button container */}
+      <div className="flex items-center gap-2 self-end">
         {isLoading && onStop ? (
           <Button
             type="button"
-            variant="ghost" // Changed to ghost for a less intrusive stop button
+            variant="outline"
             size="icon"
             onClick={onStop}
             className={cn(
-              "h-9 w-9 shrink-0 rounded-lg text-red-500 hover:bg-red-500/10 hover:text-red-600",
+              "h-9 w-9 shrink-0 rounded-lg text-muted-foreground hover:bg-muted/60",
               "transition-colors duration-200"
             )}
             title="Stop generating"
           >
-            <StopCircleIcon className="h-5 w-5" />
+            <Loader2Icon className="h-5 w-5 animate-spin" />
             <span className="sr-only">Stop generating</span>
           </Button>
         ) : (
@@ -91,10 +92,10 @@ export function PromptInputForm({
             type="submit"
             disabled={!prompt.trim() || isLoading}
             className={cn(
-              "h-9 w-9 shrink-0 rounded-lg", // Adjusted size and rounding
-              "bg-primary text-primary-foreground hover:bg-primary/90",
-              "disabled:bg-primary/50",
-              "transition-all duration-200 active:scale-95"
+              "h-9 w-9 shrink-0 rounded-lg",
+              "bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95",
+              "disabled:bg-muted disabled:text-muted-foreground/80 disabled:cursor-not-allowed",
+              "transition-all duration-200 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             )}
             size="icon"
             title="Send message"
