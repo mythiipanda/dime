@@ -8,17 +8,38 @@ import { FinalAnswerDisplay, FinalAnswerDisplayProps } from './FinalAnswerDispla
 
 // Minimal SSEChatMessage type needed for this component
 // Actual import: import { ChatMessage as SSEChatMessage } from "@/lib/hooks/useAgentChatSSE";
+interface MessageMetadata {
+  agent_id?: string;
+  session_id?: string;
+  run_id?: string;
+  model?: string;
+  timestamp?: number;
+}
+
+interface ReasoningData {
+  thinking?: string;
+  content?: string;
+  patterns?: {
+    thinking?: string;
+    planning?: string;
+    analyzing?: string;
+    [key: string]: string | undefined;
+  };
+}
+
 interface MinimalSSEChatMessage {
-  id?: string; // Changed to string | undefined
+  id?: string;
   role: 'assistant';
   content: string;
-  agentName?: string; // Added to match ChatMessage
-  toolCalls?: ToolCall[]; // Uses ToolCall from AgentProcessCollapsible import
-  status?: 'thinking' | 'tool_calling' | 'complete' | 'error'; // Added 'tool_calling'
+  agentName?: string;
+  toolCalls?: ToolCall[];
+  status?: 'thinking' | 'tool_calling' | 'complete' | 'error';
   event?: string;
   error?: string;
-  dataType?: string; // Added from hook's ChatMessage
-  dataPayload?: any; // Added from hook's ChatMessage
+  dataType?: string;
+  dataPayload?: any;
+  metadata?: MessageMetadata;
+  reasoning?: ReasoningData;
 }
 
 export interface AssistantMessageCardProps {
@@ -54,12 +75,28 @@ export const AssistantMessageCard: React.FC<AssistantMessageCardProps> = ({
   onCopyFinalAnswer,
   isFinalAnswerCopied,
 }) => {
+  // Get model name for display if available
+  const modelName = message.metadata?.model || "";
+
   return (
     <Card className="rounded-xl bg-card text-card-foreground p-3 shadow-md break-words w-full">
-      {/* Optionally display agentDisplayName if needed here, e.g., as a small badge or prefix */}
-      {/* Example: {agentDisplayName && <p className="text-xs text-muted-foreground mb-1">Agent: {agentDisplayName}</p>} */}
+      {/* Display agent name and model if available */}
+      <div className="flex items-center justify-between mb-2">
+        {agentDisplayName && (
+          <p className="text-xs text-muted-foreground">
+            <span className="font-semibold">{agentDisplayName}</span>
+            {modelName && <span className="ml-1 opacity-70">({modelName})</span>}
+          </p>
+        )}
+        {message.metadata?.timestamp && (
+          <p className="text-xs text-muted-foreground">
+            {new Date(message.metadata.timestamp * 1000).toLocaleTimeString()}
+          </p>
+        )}
+      </div>
+
       {showThinkingProcessCollapsible && (
-        <AgentProcessCollapsible 
+        <AgentProcessCollapsible
           reasoningNarrative={reasoningNarrative}
           toolCalls={message.toolCalls}
           messageStatus={message.status}
@@ -74,13 +111,13 @@ export const AssistantMessageCard: React.FC<AssistantMessageCardProps> = ({
           hasToolsToShow={hasToolsToShow}
         />
       )}
-      
+
       {(message.status === 'complete') && finalAnswerForDisplay && (
-        <FinalAnswerDisplay 
-          content={finalAnswerForDisplay} 
-          onCopy={onCopyFinalAnswer} 
-          copied={isFinalAnswerCopied} 
-          markdownComponents={markdownComponents} 
+        <FinalAnswerDisplay
+          content={finalAnswerForDisplay}
+          onCopy={onCopyFinalAnswer}
+          copied={isFinalAnswerCopied}
+          markdownComponents={markdownComponents}
         />
       )}
 
@@ -99,7 +136,7 @@ export const AssistantMessageCard: React.FC<AssistantMessageCardProps> = ({
           <p className="mt-1 font-mono text-xs whitespace-pre-wrap">{message.error}</p>
         </div>
       )}
-      
+
       {/* Fallback for content if no final answer yet and not purely thinking/tool use, or for simpler messages */}
       {!finalAnswerForDisplay && message.content && !showThinkingProcessCollapsible && message.status !== 'error' && (
          <div className="prose prose-sm dark:prose-invert max-w-full break-words">
@@ -108,4 +145,4 @@ export const AssistantMessageCard: React.FC<AssistantMessageCardProps> = ({
       )}
     </Card>
   );
-}; 
+};

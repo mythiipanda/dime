@@ -21,12 +21,26 @@ export interface ToolCall {
   args?: any
   status: "started" | "completed" | "error"
   content?: string
+  error?: string
   isError?: boolean
 }
 
 export interface Source {
   title: string
   url?: string
+  content?: string
+}
+
+export interface MessageMetadata {
+  agent_id?: string
+  session_id?: string
+  run_id?: string
+  model?: string
+  timestamp?: number
+}
+
+export interface ReasoningData {
+  thinking?: string
   content?: string
 }
 
@@ -64,8 +78,8 @@ const createMarkdownComponentsConfig = (onCopy: (text: string) => Promise<void>,
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <button 
-                      className="opacity-0 group-hover:opacity-100 h-5 w-5 p-0 flex items-center justify-center rounded hover:bg-muted/50 transition-opacity" 
+                    <button
+                      className="opacity-0 group-hover:opacity-100 h-5 w-5 p-0 flex items-center justify-center rounded hover:bg-muted/50 transition-opacity"
                       onClick={() => onCopy(codeText)}
                     >
                       {currentlyCopied ? <Check className="h-2.5 w-2.5 text-green-500" /> : <Copy className="h-2.5 w-2.5 text-muted-foreground" />}
@@ -100,13 +114,180 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
   const [expandedToolContent, setExpandedToolContent] = useState<{ [key: number]: boolean }>({});
   const [isCodeCopied, setIsCodeCopied] = useState(false);
 
+  // Extract content for display
+  let reasoningNarrative = "";
+  let finalAnswerForDisplay = "";
+  const fullContent = message.content || "";
+
+  // Get agent name from metadata or fallback to message.agentName
+  let agentDisplayName = "Assistant";
+  if (message.metadata?.agent_id) {
+    const agentIdParts = message.metadata.agent_id.split('-');
+    agentDisplayName = agentIdParts[0] || "Assistant";
+  } else if (message.agentName) {
+    agentDisplayName = message.agentName.includes('-') ?
+      message.agentName.split('-')[0] : message.agentName;
+  }
+
+  // Extract reasoning data if available
+  const thinkingProcess = message.reasoning?.thinking || "";
+  const reasoningContent = message.reasoning?.content || "";
+
+  // Extract thinking patterns from content
+  const extractThinkingPatterns = (content: string): { thinking: string, planning: string, analyzing: string } => {
+    const patterns = {
+      thinking: /\*\*Thinking:\*\*(.*?)(?=\*\*|$)/gi,
+      planning: /\*\*Planning:\*\*(.*?)(?=\*\*|$)/gi,
+      analyzing: /\*\*Analyzing:\*\*(.*?)(?=\*\*|$)/gi,
+    };
+
+    const extracted = {
+      thinking: "",
+      planning: "",
+      analyzing: ""
+    };
+
+    // Extract each pattern
+    for (const [key, pattern] of Object.entries(patterns)) {
+      const matches = [...content.matchAll(pattern)];
+      if (matches.length > 0) {
+        extracted[key as keyof typeof extracted] = matches.map(m => m[1].trim()).join("\n\n");
+      }
+    }
+
+    return extracted;
+  };
+
+  if (message.role === 'assistant') {
+    // Check for final answer marker
+    const markerIndex = fullContent.indexOf(FINAL_ANSWER_MARKER);
+
+    if (markerIndex !== -1) {
+      // Split content at the marker
+      reasoningNarrative = fullContent.substring(0, markerIndex).trim();
+      finalAnswerForDisplay = fullContent.substring(markerIndex + FINAL_ANSWER_MARKER.length).trim();
+    } else if (message.status === 'complete' && !message.dataType) {
+      // If complete and no data type, treat all content as final answer
+      finalAnswerForDisplay = fullContent.trim();
+      reasoningNarrative = "";
+    } else if (message.status === 'thinking' || message.status === 'tool_calling') {
+      // If thinking or calling tools, treat all content as reasoning
+      reasoningNarrative = fullContent.trim();
+      finalAnswerForDisplay = "";
+    } else {
+      // Default case - treat as reasoning
+      reasoningNarrative = fullContent.trim();
+    }
+
+    // Extract thinking patterns from content
+    const extractedPatterns = extractThinkingPatterns(fullContent);
+
+    // Build enhanced reasoning narrative
+    let enhancedReasoning = reasoningNarrative;
+
+    // If we have explicit reasoning data from the message metadata, add it
+    if (thinkingProcess || reasoningContent || message.reasoning?.patterns) {
+      if (enhancedReasoning) {
+        enhancedReasoning += "\n\n";
+      }
+
+      if (thinkingProcess) {
+        enhancedReasoning += `**Thinking Process:**\n${thinkingProcess}\n\n`;
+      }
+
+      if (reasoningContent) {
+        enhancedReasoning += `**Reasoning:**\n${reasoningContent}\n\n`;
+      }
+
+      // Add patterns from the reasoning data if available
+      if (message.reasoning?.patterns) {
+        const patterns = message.reasoning.patterns;
+
+        if (patterns.thinking && !enhancedReasoning.includes(patterns.thinking)) {
+          enhancedReasoning += `\n\n**Thinking:**\n${patterns.thinking}\n\n`;
+        }
+
+        if (patterns.planning && !enhancedReasoning.includes(patterns.planning)) {
+          enhancedReasoning += `\n\n**Planning:**\n${patterns.planning}\n\n`;
+        }
+
+        if (patterns.analyzing && !enhancedReasoning.includes(patterns.analyzing)) {
+          enhancedReasoning += `\n\n**Analyzing:**\n${patterns.analyzing}\n\n`;
+        }
+      }
+    }
+
+    // Add extracted thinking patterns if they're not already in the reasoning
+    if (extractedPatterns.thinking && !enhancedReasoning.includes(extractedPatterns.thinking)) {
+      enhancedReasoning += `\n\n**Thinking:**\n${extractedPatterns.thinking}\n\n`;
+    }
+
+    if (extractedPatterns.planning && !enhancedReasoning.includes(extractedPatterns.planning)) {
+      enhancedReasoning += `\n\n**Planning:**\n${extractedPatterns.planning}\n\n`;
+    }
+
+    if (extractedPatterns.analyzing && !enhancedReasoning.includes(extractedPatterns.analyzing)) {
+      enhancedReasoning += `\n\n**Analyzing:**\n${extractedPatterns.analyzing}\n\n`;
+    }
+
+    // Update the reasoning narrative with the enhanced version
+    reasoningNarrative = enhancedReasoning.trim();
+  }
+
+  // Track if the final event has been received
+  const [finalEventReceived, setFinalEventReceived] = useState(false);
+
+  // When the event changes to "RunCompleted" or "final", mark that the final event has been received
+  useEffect(() => {
+    if (message.event === "RunCompleted" || message.event === "final") {
+      console.log(`ChatMessageDisplay: Received ${message.event} event`);
+      setFinalEventReceived(true);
+    }
+  }, [message.event]);
+
+  // Also check for the "complete" status with 100% progress as a fallback
+  useEffect(() => {
+    if (message.status === "complete" && message.progress === 100) {
+      console.log("ChatMessageDisplay: Detected complete status with 100% progress");
+      // Add a small delay to ensure all content is processed
+      const timer = setTimeout(() => {
+        setFinalEventReceived(true);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [message.status, message.progress]);
+
+  // Log when final event is received for debugging
+  useEffect(() => {
+    if (finalEventReceived) {
+      console.log("ChatMessageDisplay: Final event received, content should be complete");
+    }
+  }, [finalEventReceived]);
+
   useEffect(() => {
     if (isLatest && message.role === 'assistant') {
-      if (message.status === 'thinking' || message.status === 'tool_calling' || message.status === 'complete') {
+      // Auto-expand thinking process while in progress
+      if (message.status === 'thinking' || message.status === 'tool_calling') {
         setIsThinkingExpanded(true);
       }
     }
   }, [isLatest, message.status, message.role]);
+
+  // Separate effect for handling auto-collapse to avoid conflicts
+  useEffect(() => {
+    if (isLatest && message.role === 'assistant') {
+      // Auto-collapse thinking process ONLY when final event is received AND has final answer
+      if (finalEventReceived && finalAnswerForDisplay) {
+        console.log("ChatMessageDisplay: Auto-collapsing thinking process");
+        // Add a small delay to allow the user to see the final thinking state
+        const collapseTimer = setTimeout(() => {
+          setIsThinkingExpanded(false);
+        }, 1500); // 1.5 second delay
+
+        return () => clearTimeout(collapseTimer);
+      }
+    }
+  }, [isLatest, message.role, finalAnswerForDisplay, finalEventReceived]);
 
   const handleCopyToClipboard = useCallback(async (text: string, type: 'user' | 'finalAnswer' | 'code') => {
     let setCopiedFunction;
@@ -122,7 +303,7 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
 
   const sharedMarkdownComponents = createMarkdownComponentsConfig(
     (text) => handleCopyToClipboard(text, 'code'),
-    () => isCodeCopied 
+    () => isCodeCopied
   );
 
   const toggleThinkingProcess = (isOpen: boolean) => {
@@ -132,32 +313,11 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
   const toggleToolContent = (index: number) => {
     setExpandedToolContent(prev => ({ ...prev, [index]: !prev[index] }));
   };
-  
-  let reasoningNarrative = "";
-  let finalAnswerForDisplay = "";
-  const fullContent = message.content || "";
-  const agentDisplayName = message.agentName ? (message.agentName.includes('-') ? message.agentName.split('-')[0] : message.agentName) : "Assistant";
-
-  if (message.role === 'assistant') {
-    const markerIndex = fullContent.indexOf(FINAL_ANSWER_MARKER);
-    if (markerIndex !== -1) {
-      reasoningNarrative = fullContent.substring(0, markerIndex).trim();
-      finalAnswerForDisplay = fullContent.substring(markerIndex + FINAL_ANSWER_MARKER.length).trim();
-    } else if (message.status === 'complete' && !message.dataType) {
-      finalAnswerForDisplay = fullContent.trim();
-      reasoningNarrative = "";
-    } else if (message.status === 'thinking') {
-      reasoningNarrative = fullContent.trim();
-      finalAnswerForDisplay = "";
-    } else {
-        reasoningNarrative = fullContent.trim(); 
-    }
-  }
 
   const hasReasoningToShow = !!reasoningNarrative.trim();
   const hasToolsToShow = !!(message.role === 'assistant' && message.toolCalls && message.toolCalls.length > 0);
-  const showThinkingProcessCollapsible = 
-    message.role === 'assistant' && 
+  const showThinkingProcessCollapsible =
+    message.role === 'assistant' &&
     (message.status === 'thinking' || message.status === 'tool_calling' || hasReasoningToShow || hasToolsToShow);
 
   return (
@@ -170,11 +330,11 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
         </Avatar>
       )}
 
-      <div className={cn("flex flex-col gap-1.5 w-full", message.role === 'user' ? "max-w-[70%]" : "max-w-[calc(100%-44px)]")}> 
+      <div className={cn("flex flex-col gap-1.5 w-full", message.role === 'user' ? "max-w-[70%]" : "max-w-[calc(100%-44px)]")}>
         {message.role === 'user' ? (
-          <UserMessageCard 
-            content={message.content || ""} 
-            markdownComponents={sharedMarkdownComponents} 
+          <UserMessageCard
+            content={message.content || ""}
+            markdownComponents={sharedMarkdownComponents}
           />
         ) : (
           <AssistantMessageCard

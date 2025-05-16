@@ -32,54 +32,67 @@ const ToolCallItem: React.FC<ToolCallItemProps> = ({ tool, isExpanded, onToggleE
     tempDisplayedContent = tempDisplayedContent.substring(0, MAX_TOOL_CONTENT_CHARS) + "...";
     charTruncated = true;
   }
-  
+
   const isTruncated = lineTruncated || charTruncated;
   const displayedContent = isExpanded || !isTruncated ? content : tempDisplayedContent;
 
   return (
     <Card className={cn(
-      "p-2 bg-background dark:bg-neutral-700/50 shadow-sm border-border/50",
-      isError && "border-red-500/50 dark:border-red-400/40 bg-red-500/5 dark:bg-red-900/10"
+      "p-2 shadow-sm border-2 border-l-4",
+      status === "started" ? "bg-blue-50 dark:bg-blue-950/30 border-blue-300 dark:border-blue-800" :
+      isError ? "bg-red-50 dark:bg-red-950/30 border-red-300 dark:border-red-800" :
+      "bg-green-50 dark:bg-green-950/30 border-green-300 dark:border-green-800"
     )}>
       <div className="flex items-center gap-2">
-        {status === "started" && <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-500" />}
-        {status === "completed" && !isError && <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />}
-        {(status === "error" || isError) && <AlertCircle className="h-3.5 w-3.5 text-red-500" />}
+        {status === "started" && <Loader2 className="h-4 w-4 animate-spin text-blue-600 dark:text-blue-400" />}
+        {status === "completed" && !isError && <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />}
+        {(status === "error" || isError) && <AlertCircle className="h-4 w-4 text-red-600 dark:text-red-400" />}
         <div className="flex flex-col">
-          <span className="font-mono text-[11px] font-semibold text-foreground">{tool_name}</span>
-          {status === "started" && <span className="text-[10px] text-blue-600 dark:text-blue-400">Running...</span>}
-          {status === "completed" && !isError && <span className="text-[10px] text-green-600 dark:text-green-400">Completed</span>}
-          {(status === "error" || isError) && <span className="text-[10px] text-red-600 dark:text-red-400">Error</span>}
+          <span className="font-mono text-xs font-bold text-foreground">{tool_name}</span>
+          {status === "started" && <span className="text-[11px] font-medium text-blue-700 dark:text-blue-400">Running...</span>}
+          {status === "completed" && !isError && <span className="text-[11px] font-medium text-green-700 dark:text-green-400">Completed</span>}
+          {(status === "error" || isError) && <span className="text-[11px] font-medium text-red-700 dark:text-red-400">Error</span>}
         </div>
       </div>
 
       {isExpanded && args && Object.keys(args).length > 0 && (
-        <div className="mt-1.5 pt-1.5 border-t border-border/30">
-          <div className="flex items-center gap-1 mb-0.5">
-            <TerminalSquare className="h-3 w-3 text-muted-foreground" />
-            <span className="text-[10px] font-medium text-muted-foreground">Arguments:</span>
+        <div className="mt-2 pt-2 border-t border-border/30">
+          <div className="flex items-center gap-1.5 mb-1">
+            <TerminalSquare className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+            <span className="text-[11px] font-semibold text-blue-700 dark:text-blue-400">Arguments:</span>
           </div>
-          <pre className="text-[10px] text-muted-foreground/80 bg-muted/30 dark:bg-black/20 p-1.5 rounded font-mono max-w-full overflow-x-auto whitespace-pre-wrap break-all">
+          <pre className="text-[11px] text-blue-800 dark:text-blue-300 bg-blue-100 dark:bg-blue-950/40 p-2 rounded font-mono max-w-full overflow-x-auto whitespace-pre-wrap break-all">
             {JSON.stringify(args, null, 2)}
           </pre>
         </div>
       )}
 
       {content && typeof content === 'string' && content.trim() && (
-        <div className="mt-1.5 pt-1.5 border-t border-border/30">
-          <div className="flex items-center gap-1 mb-0.5">
-            {isError ? <AlertCircle className="h-3 w-3 text-red-500" /> : <CheckCircle2 className="h-3 w-3 text-green-500" />}
-            <span className={cn("text-[10px] font-medium", isError ? "text-red-500" : "text-muted-foreground")}>
+        <div className="mt-2 pt-2 border-t border-border/30">
+          <div className="flex items-center gap-1.5 mb-1">
+            {isError ?
+              <AlertCircle className="h-3.5 w-3.5 text-red-600 dark:text-red-400" /> :
+              <CheckCircle2 className="h-3.5 w-3.5 text-green-600 dark:text-green-400" />
+            }
+            <span className={cn(
+              "text-[11px] font-semibold",
+              isError ? "text-red-700 dark:text-red-400" : "text-green-700 dark:text-green-400"
+            )}>
               {isError ? "Error Details:" : "Output:"}
             </span>
           </div>
-          <pre className="text-[10px] text-muted-foreground/80 bg-muted/30 dark:bg-black/20 p-1.5 rounded font-mono max-w-full overflow-x-auto whitespace-pre-wrap break-all">
+          <pre className={cn(
+            "text-[11px] p-2 rounded font-mono max-w-full overflow-x-auto whitespace-pre-wrap break-all",
+            isError ?
+              "bg-red-100 dark:bg-red-950/40 text-red-800 dark:text-red-300" :
+              "bg-green-100 dark:bg-green-950/40 text-green-800 dark:text-green-300"
+          )}>
             {displayedContent}
           </pre>
           {isTruncated && (
-            <Button 
+            <Button
               variant="link"
-              className="text-xs h-auto p-0 mt-1 text-primary hover:text-primary/80"
+              className="text-xs h-auto p-0 mt-1.5 font-medium"
               onClick={onToggleExpand}
             >
               {isExpanded ? "Show less" : "Show more..."}
@@ -91,4 +104,4 @@ const ToolCallItem: React.FC<ToolCallItemProps> = ({ tool, isExpanded, onToggleE
   );
 };
 
-export default ToolCallItem; 
+export default ToolCallItem;
