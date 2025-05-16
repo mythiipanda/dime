@@ -10,10 +10,10 @@ const INITIAL_SCREEN_BASE_DELAY_MS = 300;
 const PROMPT_BUTTON_STAGGER_DELAY_MS = 75;
 
 const SIMPLE_EXAMPLE_PROMPTS = [
-  { text: "Identify the player with the most triple-doubles this season. Then, for that player, show their average stats in the games where they achieved a triple-double.", icon: <MessageSquareTextIcon className="h-4 w-4 mr-2 shrink-0" /> },
-  { text: "Find a recent game where a team won by more than 10 points. Provide a summary of the key player performances and the advanced box score for that game.", icon: <MessageSquareTextIcon className="h-4 w-4 mr-2 shrink-0" /> },
+  { text: "Analyze Cade Cunningham and compare his growth with last season.", icon: <MessageSquareTextIcon className="h-4 w-4 mr-2 shrink-0" /> },
+  { text: "Provide in an depth summary with advanced statistics of last game.", icon: <MessageSquareTextIcon className="h-4 w-4 mr-2 shrink-0" /> },
   { text: "Generate a detailed offensive and defensive report for Victor Wembanyama.", icon: <MessageSquareTextIcon className="h-4 w-4 mr-2 shrink-0" /> },
-  { text: "Who were the top 5 picks in the 2011 NBA Draft, and what have their career outcomes been generally?", icon: <MessageSquareTextIcon className="h-4 w-4 mr-2 shrink-0" /> }
+  { text: "Analyze the New York Knicks this season.", icon: <MessageSquareTextIcon className="h-4 w-4 mr-2 shrink-0" /> }
 ];
 
 interface InitialChatScreenProps {
