@@ -1,10 +1,16 @@
 import os
+from textwrap import dedent
+from typing import Iterator, AsyncIterator
 from dotenv import load_dotenv
-from agno.agent import Agent
+from agno.agent import Agent, RunResponse
+from agno.run.response import RunEvent
+from agno.workflow import Workflow
 from agno.models.google import Gemini
+from agno.storage.sqlite import SqliteStorage
 from agno.tools.thinking import ThinkingTools
 from agno.tools.crawl4ai import Crawl4aiTools
 from agno.tools.youtube import YouTubeTools
+from agno.utils.log import logger
 from backend.config import settings
 from typing import List, Optional, Dict, Any
 
@@ -173,12 +179,196 @@ nba_tools = [
     get_season_matchups, get_matchups_rollup, get_live_odds
 ]
 
+
+class NBAAnalysisWorkflow(Workflow):
+    """Advanced workflow for generating professional NBA analysis with strategic insights."""
+
+    description: str = dedent("""\
+    An intelligent NBA analysis system that produces comprehensive statistical research and
+    strategic insights. This workflow orchestrates multiple AI agents to analyze game data,
+    evaluate player/team performance, and create detailed analytical reports. The system
+    excels at combining quantitative analysis with deep basketball knowledge to deliver
+    actionable insights.
+    """)
+
+    # Data Collection and Analysis Agent
+    data_analyst: Agent = Agent(
+        name="Data Analyst",
+        model=model,
+        tools=nba_tools,
+        description=dedent("""\
+        You are Dime-1, an elite NBA Data Scientist specializing in:
+        - Statistical analysis and metrics
+        - Pattern recognition
+        - Trend identification
+        - Data validation
+        - Historical context\
+        """),
+        instructions=dedent("""\
+        1. Data Collection & Analysis 📊
+           - Gather relevant statistics
+           - Calculate key metrics
+           - Identify patterns
+           - Validate findings
+           - Support with data
+        2. Insights Development 📈
+           - Draw key conclusions
+           - Note limitations
+           - Highlight trends
+           - Link statistics\
+        """),
+    )
+
+    # Performance Analysis Agent
+    performance_analyst: Agent = Agent(
+        name="Performance Analyst",
+        model=model,
+        tools=nba_tools,
+        description=dedent("""\
+        You are Dime-2, an elite NBA Performance Analyst specializing in:
+        - Strategy evaluation
+        - Team dynamics
+        - Player impact
+        - Game patterns
+        - Success factors\
+        """),
+        instructions=dedent("""\
+        1. Performance Review 🏀
+           - Analyze efficiency
+           - Study patterns
+           - Evaluate impact
+           - Assess dynamics
+        2. Strategic Insights 📋
+           - Identify trends
+           - Explain factors
+           - Project outcomes
+           - Support findings\
+        """),
+    )
+
+    # Final Analysis and Synthesis Agent
+    insights_lead: Agent = Agent(
+        name="Strategic Insights Lead",
+        model=model,
+        tools=nba_tools,
+        description=dedent("""\
+        You are Dime-3, an elite NBA Strategic Analyst specializing in:
+        - Insight synthesis
+        - Recommendations
+        - Trend analysis
+        - Action planning
+        - Clear reporting\
+        """),
+        instructions=dedent("""\
+        1. Synthesis & Analysis 🔍
+           - Connect findings
+           - Draw conclusions
+           - Project impacts
+           - Form recommendations
+        2. Clear Communication 📝
+           - Structure clearly
+           - Support with data
+           - Highlight actions
+           - Address implications\
+        """),
+    )
+
+    async def arun(self, query: str) -> AsyncIterator[RunResponse]:
+        """Execute the NBA analysis workflow with error handling and structured prompts."""
+        
+        logger.info(f"Starting NBA analysis for query: {query}")
+        
+        try:
+            # Step 1: Statistical Analysis
+            yield RunResponse(run_id=self.run_id, content="🔍 Starting statistical analysis...")
+            data_response = await self.data_analyst.arun(
+                dedent(f"""\
+                Analyze NBA statistics with proper error handling:
+                Query: {query}
+                
+                Instructions:
+                1. Get player/team estimated metrics first
+                2. Validate data before reporting
+                3. Handle missing data gracefully
+                4. Provide context for all stats
+                5. Note any limitations in the analysis
+                """),
+                stream=True,
+                stream_intermediate_steps=True,
+            )
+            async for chunk in data_response:
+                yield chunk
+
+            # Step 2: Performance Analysis
+            yield RunResponse(run_id=self.run_id, content="📊 Analyzing performance implications...")
+            performance_response = await self.performance_analyst.arun(
+                dedent(f"""\
+                Evaluate performance based on statistical findings:
+                Query: {query}
+                
+                Instructions:
+                1. Focus on key performance indicators
+                2. Compare relevant metrics
+                3. Consider contextual factors
+                4. Highlight significant patterns
+                5. Support findings with data
+                
+                Remember to handle missing data and validation errors gracefully.
+                """),
+                stream=True,
+                stream_intermediate_steps=True,
+            )
+            async for chunk in performance_response:
+                yield chunk
+
+            # Step 3: Strategic Insights
+            yield RunResponse(run_id=self.run_id, content="💡 Generating strategic insights...")
+            insights_stream = await self.insights_lead.arun(
+                dedent(f"""\
+                Synthesize findings into strategic insights:
+                Query: {query}
+                
+                Requirements:
+                1. Connect statistical findings with performance analysis
+                2. Support conclusions with specific data
+                3. Address any data limitations
+                4. Provide clear, actionable insights
+                5. Structure response with proper markdown
+                """),
+                stream=True,
+                stream_intermediate_steps=True,
+            )
+            async for chunk in insights_stream:
+                yield chunk
+
+        except Exception as e:
+            error_msg = f"Error during analysis: {str(e)}"
+            logger.error(error_msg)
+            yield RunResponse(
+                run_id=self.run_id,
+                content=f"⚠️ {error_msg}\nPlease try refining your query or check the data availability.",
+                event=RunEvent.error
+            )
+
+# Initialize workflow and single agent
+nba_workflow = NBAAnalysisWorkflow(
+    session_id="nba-analysis",
+    storage=SqliteStorage(
+        table_name="nba_analysis_workflows",
+        db_file="tmp/agno_workflows.db",
+    ),
+)
+
 nba_agent = Agent(
-    # description="AI-Powered NBA Analytics Companion for expert data retrieval and analysis.", # REMOVED for this test
+    name="NBA Analytics Expert",
+    description="Elite NBA Analytics Specialist providing comprehensive statistical analysis and insights",
     model=model,
-    system_message=NBA_AGENT_SYSTEM_MESSAGE, # REVERTED to use system_message directly
-    # instructions=NBA_AGENT_SYSTEM_MESSAGE, # REMOVED for this test
-    tools=nba_tools, # Use the new flat list of tools
+    tools=nba_tools,
+    system_message=NBA_AGENT_SYSTEM_MESSAGE,
+    storage=SqliteStorage(
+        table_name="nba_agent_sessions",
+        db_file="tmp/nba_agent.db"
+    ),
     debug_mode=settings.AGENT_DEBUG_MODE,
     show_tool_calls=True,
     stream=True,
@@ -187,6 +377,7 @@ nba_agent = Agent(
     reasoning=True,
     add_history_to_messages=True,
     num_history_responses=5,
+    markdown=True,
     exponential_backoff=True,
     delay_between_retries=30
 )

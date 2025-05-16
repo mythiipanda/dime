@@ -4,10 +4,10 @@ import logging
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from rich.pretty import pprint
-from backend.teams import nba_analysis_team
+from backend.agents import nba_workflow
 from dataclasses import asdict, is_dataclass
 from agno.agent import RunResponse
-from typing import Iterator, Dict, Any
+from typing import AsyncIterator, Dict, Any
 from agno.utils.common import dataclass_to_dict
 
 logger = logging.getLogger(__name__)
@@ -82,58 +82,6 @@ def format_message_data(chunk_dict: Dict[Any, Any]) -> Dict[str, Any]:
         "dataPayload": None # For rich data
     }
 
-    # Check for rich data markers in content
-    if isinstance(content, str):
-        # Handle agent outputting ```json\nMARKER::\n{...}\n```
-        cleaned_content_for_json_parsing = content # Assume no JSON yet
-        potential_json_payload_str = None
-
-        if "```json" in content and STAT_CARD_MARKER in content:
-            message_data["dataType"] = "STAT_CARD"
-            # Extract content after MARKER::, assuming it's wrapped in ```json ... ```
-            # This expects MARKER:: to be *inside* the json block if agent does that, or after ```json
-            if STAT_CARD_MARKER in content:
-                payload_start_index = content.find(STAT_CARD_MARKER) + len(STAT_CARD_MARKER)
-                potential_json_payload_str = content[payload_start_index:].strip()
-                # Remove the ```json and marker from the displayed content for this chunk
-                message_data["content"] = content[:content.find(STAT_CARD_MARKER)].replace("```json", "").strip()
-
-
-        elif "```json" in content and CHART_DATA_MARKER in content:
-            message_data["dataType"] = "CHART_DATA"
-            if CHART_DATA_MARKER in content:
-                payload_start_index = content.find(CHART_DATA_MARKER) + len(CHART_DATA_MARKER)
-                potential_json_payload_str = content[payload_start_index:].strip()
-                message_data["content"] = content[:content.find(CHART_DATA_MARKER)].replace("```json", "").strip()
-
-        elif "```json" in content and TABLE_DATA_MARKER in content:
-            message_data["dataType"] = "TABLE_DATA"
-            if TABLE_DATA_MARKER in content:
-                payload_start_index = content.find(TABLE_DATA_MARKER) + len(TABLE_DATA_MARKER)
-                potential_json_payload_str = content[payload_start_index:].strip()
-                # Example: content might be "```json\nTABLE_DATA_JSON::\n{\n  \"title\": \""
-                # We want message_data["content"] to be "" for this chunk,
-                # and the frontend will accumulate `potential_json_payload_str`
-                # Strip initial ```json and marker for the first chunk
-                # For subsequent chunks, content will just be part of JSON
-                if content.strip().startswith("```json"): # If it's the start of the block
-                     message_data["content"] = "" # Don't show the marker line itself as narrative
-                else:
-                     message_data["content"] = potential_json_payload_str # Pass through the JSON part
-                
-                # The actual parsing of potential_json_payload_str will now be deferred to the frontend hook,
-                # which will accumulate it. For now, sse.py just signals the type.
-                # We set dataPayload to the raw string part that *might* be JSON.
-                # The frontend will be responsible for accumulating and parsing the full JSON.
-                # This is a simplification; a more robust solution would involve sse.py managing accumulation state.
-                if message_data["content"] == "": # If we cleared content because marker was found
-                    message_data["dataPayload"] = potential_json_payload_str # Send the first part of JSON
-                else: # If it's a continuation, this content is part of the JSON
-                    message_data["dataPayload"] = content # Send this chunk of JSON
-                
-                # logger.info(f"Signaling {message_data['dataType']} with initial payload part: {potential_json_payload_str}")
-
-
     # Handle different event types (after potential dataType processing)
     if event_type == "RunStarted":
         message_data["status"] = "thinking"
@@ -184,14 +132,12 @@ def format_message_data(chunk_dict: Dict[Any, Any]) -> Dict[str, Any]:
 @router.get("/ask")
 async def ask_agent_keepalive_sse(request: Request, prompt: str):
     logger.info(f"Received GET /ask request with prompt: '{prompt}'")
-    agent_instance = nba_analysis_team
+    workflow_instance = nba_workflow
 
     async def keepalive_sse_generator():
         try:
-            logger.info(f"Starting streaming NBA agent for prompt: {prompt}")
-            run_stream = await agent_instance.arun(prompt, stream=True, stream_intermediate_steps=True)
-            
-            async for chunk in run_stream:
+            logger.info(f"Starting streaming NBA analysis workflow for prompt: {prompt}")
+            async for chunk in workflow_instance.arun(prompt):
                 chunk_dict = recursive_asdict(chunk)
                 message_data = format_message_data(chunk_dict)
                 
@@ -249,11 +195,7 @@ async def ask_agent_keepalive_sse(request: Request, prompt: str):
 @router.get("/test_stream")
 async def test_agent_stream(request: Request, prompt: str):
     logger.info(f"Received GET /test_streaming request with prompt: '{prompt}'")
-    run_stream: Iterator[RunResponse] = await nba_analysis_team.arun(
-        prompt,
-        stream=True,
-        stream_intermediate_steps=True,
-    )
+    run_stream: AsyncIterator[RunResponse] = await nba_workflow.arun(prompt)
     async for chunk in run_stream:
         pprint(dataclass_to_dict(chunk, exclude={"messages"}))
         print("---" * 20)
