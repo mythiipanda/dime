@@ -23,7 +23,7 @@ interface InitialChatScreenProps {
 export function InitialChatScreen({ onExampleClick }: InitialChatScreenProps) {
   return (
     <div className={cn(
-      "flex flex-col items-center justify-center text-center space-y-6 sm:space-y-8 py-8 h-full",
+      "flex flex-col items-center justify-center text-center space-y-6 sm:space-y-8",
       // "animate-in fade-in-0 duration-500" // Animation disabled
     )}>
       {/* <div className="animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-100"> */}
