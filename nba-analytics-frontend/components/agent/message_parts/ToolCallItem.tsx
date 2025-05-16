@@ -1,0 +1,71 @@
+"use client";
+
+import React from 'react';
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { ToolCall } from "../ChatMessageDisplay"; // Assuming ToolCall interface is exported from ChatMessageDisplay or a shared types file
+
+interface ToolCallItemProps {
+  tool: ToolCall;
+  isExpanded: boolean;
+  onToggleExpand: () => void;
+}
+
+const ToolCallItem: React.FC<ToolCallItemProps> = ({ tool, isExpanded, onToggleExpand }) => {
+  const { content, tool_name, status } = tool;
+  const lines = content?.split('\n') || [];
+  const MAX_LINES = 10;
+  const MAX_TOOL_CONTENT_CHARS = 500;
+
+  let tempDisplayedContent = content || "";
+  let lineTruncated = false;
+  let charTruncated = false;
+
+  if (lines.length > MAX_LINES) {
+    tempDisplayedContent = lines.slice(0, MAX_LINES).join('\n');
+    lineTruncated = true;
+  }
+
+  if (tempDisplayedContent.length > MAX_TOOL_CONTENT_CHARS) {
+    tempDisplayedContent = tempDisplayedContent.substring(0, MAX_TOOL_CONTENT_CHARS) + "...";
+    charTruncated = true;
+  }
+  
+  const isTruncated = lineTruncated || charTruncated;
+  const displayedContent = isExpanded || !isTruncated ? content : tempDisplayedContent;
+
+  return (
+    <Card className="p-2 bg-background dark:bg-neutral-700/50 shadow-sm border-border/50">
+      <div className="flex items-center gap-2">
+        {status === "started" && <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-500" />}
+        {status === "completed" && <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />}
+        {status === "error" && <XCircle className="h-3.5 w-3.5 text-red-500" />}
+        <div className="flex flex-col">
+          <span className="font-mono text-[11px] font-semibold text-foreground">{tool_name}</span>
+          {status === "started" && <span className="text-[10px] text-blue-600 dark:text-blue-400">Running...</span>}
+          {status === "completed" && <span className="text-[10px] text-green-600 dark:text-green-400">Completed</span>}
+          {status === "error" && <span className="text-[10px] text-red-600 dark:text-red-400">Error</span>}
+        </div>
+      </div>
+      {content && typeof content === 'string' && content.trim() && (
+        <div className="mt-1.5">
+          <pre className="text-[10px] text-muted-foreground/80 bg-muted/30 dark:bg-black/20 p-1.5 rounded font-mono max-w-full overflow-x-auto whitespace-pre-wrap break-all">
+            {displayedContent}
+          </pre>
+          {isTruncated && (
+            <Button 
+              variant="link"
+              className="text-xs h-auto p-0 mt-1 text-primary hover:text-primary/80"
+              onClick={onToggleExpand}
+            >
+              {isExpanded ? "Show less" : "Show more..."}
+            </Button>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+};
+
+export default ToolCallItem; 
