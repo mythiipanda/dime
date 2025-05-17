@@ -1,3 +1,7 @@
+"""
+Handles fetching common player information, including biographical data,
+headline statistics, available seasons, and headshot URLs.
+"""
 import logging
 from functools import lru_cache
 
@@ -8,8 +12,26 @@ from backend.api_tools.utils import _process_dataframe, format_response, find_pl
 
 logger = logging.getLogger(__name__)
 
-@lru_cache(maxsize=256)
+PLAYER_INFO_CACHE_SIZE = 256
+
+@lru_cache(maxsize=PLAYER_INFO_CACHE_SIZE)
 def fetch_player_info_logic(player_name: str) -> str:
+    """
+    Fetches common player information, headline stats, and available seasons for a given player.
+
+    Args:
+        player_name (str): The name or ID of the player.
+
+    Returns:
+        str: A JSON string containing player information, headline stats, and available seasons,
+             or an error message if the player is not found or an issue occurs.
+             Successful response structure:
+             {
+                 "player_info": { ... common player info ... },
+                 "headline_stats": { ... headline stats ... },
+                 "available_seasons": [ ... list of available seasons ... ]
+             }
+    """
     logger.info(f"Executing fetch_player_info_logic for: '{player_name}'")
     try:
         player_id, player_actual_name = find_player_id_or_error(player_name)
@@ -50,6 +72,18 @@ def fetch_player_info_logic(player_name: str) -> str:
         return format_response(error=error_msg)
 
 def get_player_headshot_url(player_id: int) -> str:
+    """
+    Constructs the URL for a player's headshot image.
+
+    Args:
+        player_id (int): The unique ID of the player.
+
+    Returns:
+        str: The URL string for the player's headshot.
+
+    Raises:
+        ValueError: If the player_id is not a positive integer.
+    """
     if not isinstance(player_id, int) or player_id <= 0:
         logger.error(f"Invalid player_id for headshot URL: {player_id}")
         raise ValueError(f"Invalid player ID provided for headshot: {player_id}")

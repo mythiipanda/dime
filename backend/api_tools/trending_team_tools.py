@@ -1,7 +1,11 @@
+"""
+Provides logic to fetch and determine top-performing (trending) teams
+based on league standings data.
+"""
 import logging
 import json
 from datetime import datetime
-from typing import Any, Tuple
+from typing import Any, Tuple, List, Dict, Optional, Set
 from functools import lru_cache
 
 from nba_api.stats.library.parameters import SeasonTypeAllStar, LeagueID
@@ -10,169 +14,130 @@ from backend.config import settings
 from backend.core.errors import Errors
 from backend.api_tools.utils import format_response
 from backend.utils.validation import _validate_season_format
+
 logger = logging.getLogger(__name__)
 
-CACHE_TTL_SECONDS_TRENDING_TEAMS = 3600 * 4 # Cache standings for trending teams for 4 hours
+# --- Module-Level Constants ---
+CACHE_TTL_SECONDS_TRENDING_TEAMS = 3600 * 4  # Cache standings for trending teams for 4 hours
+TRENDING_TEAMS_RAW_STANDINGS_CACHE_SIZE = 16
+TOP_TEAMS_PROCESSED_CACHE_SIZE = 64
+DEFAULT_TOP_N_TEAMS = 5
 
-# Module-level constants for validation
-_TRENDING_TEAMS_VALID_SEASON_TYPES = {getattr(SeasonTypeAllStar, attr) for attr in dir(SeasonTypeAllStar) if not attr.startswith('_') and isinstance(getattr(SeasonTypeAllStar, attr), str)}
-_TRENDING_TEAMS_VALID_LEAGUE_IDS = {getattr(LeagueID, attr) for attr in dir(LeagueID) if not attr.startswith('_') and isinstance(getattr(LeagueID, attr), str)}
+_TRENDING_TEAMS_VALID_SEASON_TYPES: Set[str] = {getattr(SeasonTypeAllStar, attr) for attr in dir(SeasonTypeAllStar) if not attr.startswith('_') and isinstance(getattr(SeasonTypeAllStar, attr), str)}
+_TRENDING_TEAMS_VALID_LEAGUE_IDS: Set[str] = {getattr(LeagueID, attr) for attr in dir(LeagueID) if not attr.startswith('_') and isinstance(getattr(LeagueID, attr), str)}
 
-@lru_cache(maxsize=16) # Cache a few common season/type combinations
-def get_cached_standings_for_trending_teams( # Renamed for clarity
+_ESSENTIAL_TEAM_FIELDS_FOR_TRENDING = [
+    "TeamID", "TeamName", "Conference", "PlayoffRank", "WinPct",
+    "WINS", "LOSSES", "Record", "LeagueRank"
+]
+
+# --- Helper Functions ---
+@lru_cache(maxsize=TRENDING_TEAMS_RAW_STANDINGS_CACHE_SIZE)
+def get_cached_standings_for_trending_teams(
     cache_key: Tuple, # e.g., (season, season_type, league_id)
-    timestamp: str,   # Timestamp for TTL invalidation (e.g., hourly bucket)
-    **kwargs: Any      # Parameters for fetch_league_standings_logic
+    timestamp_bucket: str,
+    **kwargs: Any # Parameters for fetch_league_standings_logic
 ) -> str:
-    """
-    Cached wrapper for `fetch_league_standings_logic`, used by `fetch_top_teams_logic`.
-    Uses a timestamp for time-based cache invalidation.
-
-    Args:
-        cache_key (Tuple): A tuple representing the core parameters for fetching standings
-                           (e.g., (season, season_type, league_id)), used for `lru_cache` keying.
-        timestamp (str): An ISO format timestamp string, typically for the current cache validity window (e.g., every 4 hours),
-                         used to manage cache invalidation.
-        **kwargs: Keyword arguments to be passed directly to `fetch_league_standings_logic`
-                  (e.g., `season`, `season_type`, `league_id`).
-
-    Returns:
-        str: The JSON string result from `fetch_league_standings_logic`.
-
-    Raises:
-        Exception: If `fetch_league_standings_logic` fails, to be handled by the caller.
-    """
-    logger.info(f"Cache miss/expiry for standings (trending_teams) - fetching new data. Key components: {kwargs.get('season')}, {kwargs.get('season_type')}, League: {kwargs.get('league_id')}")
+    """Cached wrapper for `fetch_league_standings_logic`."""
+    logger.info(f"Cache miss/expiry for standings (trending_teams, ts: {timestamp_bucket}) - fetching. Params: {kwargs}")
     try:
-        # Prepare arguments specifically for fetch_league_standings_logic
-        standings_logic_args = {
-            "season": kwargs.get("season"),
-            "season_type": kwargs.get("season_type"),
-            "league_id": kwargs.get("league_id") # Ensure league_id is passed through
-        }
-        # Filter out None values to rely on defaults in fetch_league_standings_logic if not provided
-        standings_logic_args = {k: v for k, v in standings_logic_args.items() if v is not None}
-        
+        standings_logic_args = {k: v for k, v in kwargs.items() if v is not None}
         return fetch_league_standings_logic(**standings_logic_args)
     except Exception as e:
-        logger.error(f"fetch_league_standings_logic failed within get_cached_standings_for_trending_teams (Season: {kwargs.get('season')}, Type: {kwargs.get('season_type')}): {e}", exc_info=True)
-        raise e
+        logger.error(f"fetch_league_standings_logic failed within cache wrapper: {e}", exc_info=True)
+        raise
 
-@lru_cache(maxsize=64) # Cache the final processed list of top teams
+def _validate_trending_teams_params(
+    season: str, season_type: str, league_id: str, top_n: int
+) -> Optional[str]:
+    """Validates parameters for fetch_top_teams_logic."""
+    if not _validate_season_format(season):
+        return Errors.INVALID_SEASON_FORMAT.format(season=season)
+    if not isinstance(top_n, int) or top_n < 1:
+        return Errors.INVALID_TOP_N.format(value=top_n)
+    if season_type not in _TRENDING_TEAMS_VALID_SEASON_TYPES:
+        return Errors.INVALID_SEASON_TYPE.format(value=season_type, options=", ".join(list(_TRENDING_TEAMS_VALID_SEASON_TYPES)[:5]))
+    if league_id not in _TRENDING_TEAMS_VALID_LEAGUE_IDS:
+        return Errors.INVALID_LEAGUE_ID.format(value=league_id, options=", ".join(list(_TRENDING_TEAMS_VALID_LEAGUE_IDS)[:3]))
+    return None
+
+def _extract_and_format_top_teams(
+    standings_list: List[Dict[str, Any]], top_n: int
+) -> List[Dict[str, Any]]:
+    """Sorts standings by WinPct and extracts essential fields for the top N teams."""
+    if not standings_list:
+        return []
+    try:
+        # Handle potential None or non-floatable WinPct values during sort
+        standings_sorted_list = sorted(
+            standings_list,
+            key=lambda x: float(x.get("WinPct", 0.0) or 0.0), # Default to 0.0 if None or empty
+            reverse=True
+        )
+    except (ValueError, TypeError) as sort_err:
+        logger.warning(f"Error sorting standings by WinPct: {sort_err}. Proceeding with unsorted top N from original list.")
+        standings_sorted_list = standings_list # Fallback
+
+    top_teams_formatted = []
+    for team_data in standings_sorted_list[:top_n]:
+        top_team_info = {field: team_data.get(field) for field in _ESSENTIAL_TEAM_FIELDS_FOR_TRENDING if field in team_data}
+        top_teams_formatted.append(top_team_info)
+    return top_teams_formatted
+
+# --- Main Logic Function ---
+@lru_cache(maxsize=TOP_TEAMS_PROCESSED_CACHE_SIZE)
 def fetch_top_teams_logic(
-    season: str = settings.CURRENT_NBA_SEASON, # Changed
+    season: str = settings.CURRENT_NBA_SEASON,
     season_type: str = SeasonTypeAllStar.regular,
-    league_id: str = LeagueID.nba, # Added league_id parameter
-    top_n: int = 5,
+    league_id: str = LeagueID.nba,
+    top_n: int = DEFAULT_TOP_N_TEAMS,
     bypass_cache: bool = False
 ) -> str:
     """
-    Fetches the top N performing teams based on win percentage for a given season, season type, and league.
-    It utilizes cached league standings data.
-
-    Args:
-        season (str, optional): The NBA season identifier in YYYY-YY format (e.g., "2023-24").
-                                Defaults to `CURRENT_SEASON`.
-        season_type (str, optional): The type of season. Valid values from `SeasonTypeAllStar`
-                                     (e.g., "Regular Season", "Playoffs"). Defaults to "Regular Season".
-        league_id (str, optional): The league ID. Valid values from `LeagueID` (e.g., "00" for NBA).
-                                   Defaults to "00" (NBA).
-        top_n (int, optional): The number of top teams to return. Must be a positive integer. Defaults to 5.
-        bypass_cache (bool, optional): If True, ignores cached standings data and fetches fresh data.
-                                       Defaults to False.
-
-    Returns:
-        str: JSON string with top teams data.
-             Expected dictionary structure passed to format_response:
-             {
-                 "season": str,
-                 "season_type": str,
-                 "league_id": str,
-                 "requested_top_n": int,
-                 "top_teams": [ // List of team objects, sorted by WinPct descending
-                     {
-                         "TeamID": int,
-                         "TeamName": str,
-                         "Conference": Optional[str],
-                         "PlayoffRank": Optional[int],
-                         "WinPct": Optional[float],
-                         "WINS": Optional[int],
-                         "LOSSES": Optional[int]
-                         // Other fields from standings like Record, L10 might be included if essential_fields is expanded
-                     }, ...
-                 ]
-             }
-             Returns {"top_teams": []} if no standings data is available or no teams are found.
-             Or an {'error': 'Error message'} object if a critical issue occurs.
+    Fetches the top N performing teams based on win percentage.
+    Utilizes cached league standings data.
     """
     logger.info(f"Executing fetch_top_teams_logic for season: {season}, type: {season_type}, league: {league_id}, top_n: {top_n}")
 
-    if not _validate_season_format(season):
-        return format_response(error=Errors.INVALID_SEASON_FORMAT.format(season=season))
-    if not isinstance(top_n, int) or top_n < 1:
-        error_msg = Errors.INVALID_TOP_N.format(value=top_n)
-        return format_response(error=error_msg)
+    param_error = _validate_trending_teams_params(season, season_type, league_id, top_n)
+    if param_error:
+        return format_response(error=param_error)
 
-    if season_type not in _TRENDING_TEAMS_VALID_SEASON_TYPES:
-        return format_response(error=Errors.INVALID_SEASON_TYPE.format(value=season_type, options=", ".join(list(_TRENDING_TEAMS_VALID_SEASON_TYPES)[:5])))
-    
-    if league_id not in _TRENDING_TEAMS_VALID_LEAGUE_IDS:
-        return format_response(error=Errors.INVALID_LEAGUE_ID.format(value=league_id, options=", ".join(list(_TRENDING_TEAMS_VALID_LEAGUE_IDS)[:3])))
-
-
-    cache_key_for_standings = (season, season_type, league_id) # Key for fetching standings
-    current_time_epoch = int(datetime.now().timestamp())
-    timestamp_bucket_for_standings = str(current_time_epoch // CACHE_TTL_SECONDS_TRENDING_TEAMS)
+    cache_key_for_standings = (season, season_type, league_id)
+    timestamp_bucket = str(int(datetime.now().timestamp() // CACHE_TTL_SECONDS_TRENDING_TEAMS))
+    standings_params = {"season": season, "season_type": season_type, "league_id": league_id}
 
     try:
-        standings_params = {"season": season, "season_type": season_type, "league_id": league_id} # league_id for fetch_league_standings_logic
-        
         standings_json_str: str
         if bypass_cache:
-            logger.info(f"Bypassing cache, fetching fresh standings data for {season}, type {season_type}, league {league_id}")
+            logger.info(f"Bypassing cache, fetching fresh standings for trending teams: {standings_params}")
             standings_json_str = fetch_league_standings_logic(**standings_params)
         else:
             standings_json_str = get_cached_standings_for_trending_teams(
                 cache_key=cache_key_for_standings,
-                timestamp=timestamp_bucket_for_standings,
+                timestamp_bucket=timestamp_bucket, # Corrected arg name
                 **standings_params
             )
         
         try:
-            standings_data = json.loads(standings_json_str)
+            standings_data_response = json.loads(standings_json_str)
         except json.JSONDecodeError as json_err:
             logger.error(f"Failed to decode JSON from standings logic: {json_err}. Response (first 500): {standings_json_str[:500]}")
-            error_msg = Errors.PROCESSING_ERROR.format(error="invalid JSON format from standings data")
-            return format_response(error=error_msg)
+            return format_response(error=Errors.PROCESSING_ERROR.format(error="invalid JSON from standings"))
 
-        if isinstance(standings_data, dict) and "error" in standings_data:
-            logger.error(f"Error received from fetch_league_standings_logic: {standings_data['error']}")
+        if isinstance(standings_data_response, dict) and "error" in standings_data_response:
+            logger.error(f"Error received from upstream standings fetch: {standings_data_response['error']}")
             return standings_json_str # Propagate the error JSON
 
-        standings_list = standings_data.get("standings", [])
+        standings_list = standings_data_response.get("standings", [])
         if not standings_list:
-            logger.warning(f"No standings data available to determine top teams for {season}, type {season_type}, league {league_id}.")
+            logger.warning(f"No standings data available for {season}, type {season_type}, league {league_id}.")
             return format_response({
                 "season": season, "season_type": season_type, "league_id": league_id,
                 "requested_top_n": top_n, "top_teams": []
             })
 
-        try:
-            standings_sorted_list = sorted(
-                standings_list,
-                key=lambda x: float(x.get("WinPct", 0.0) or 0.0), # Handle None or empty string for WinPct
-                reverse=True
-            )
-        except (ValueError, TypeError) as sort_err:
-            logger.warning(f"Error sorting standings by WinPct: {sort_err}. Proceeding with unsorted top N from original list.")
-            standings_sorted_list = standings_list # Fallback to original list
-
-        top_teams_list = []
-        # Define essential fields to extract for each top team
-        essential_fields = ["TeamID", "TeamName", "Conference", "PlayoffRank", "WinPct", "WINS", "LOSSES", "Record", "LeagueRank"]
-        for team_data in standings_sorted_list[:top_n]:
-            top_team_info = {field: team_data.get(field) for field in essential_fields if field in team_data}
-            top_teams_list.append(top_team_info)
+        top_teams_list = _extract_and_format_top_teams(standings_list, top_n)
 
         result_payload = {
             "season": season, "season_type": season_type, "league_id": league_id,
@@ -183,5 +148,4 @@ def fetch_top_teams_logic(
 
     except Exception as e:
         logger.error(f"Unexpected error in fetch_top_teams_logic: {e}", exc_info=True)
-        error_msg = Errors.TRENDING_TEAMS_UNEXPECTED.format(error=str(e))
-        return format_response(error=error_msg)
+        return format_response(error=Errors.TRENDING_TEAMS_UNEXPECTED.format(error=str(e)))

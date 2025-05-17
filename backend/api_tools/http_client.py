@@ -10,18 +10,24 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+# Constants for HTTP client configuration
+DEFAULT_MAX_RETRIES = 3
+DEFAULT_BACKOFF_FACTOR = 1
+RETRY_STATUS_CODES = [500, 502, 503, 504]
+DEFAULT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+
 def configure_nba_api_client(timeout: Optional[int] = None):
     """Configure the NBA API client with custom settings for better reliability.
     
     Args:
-        timeout (Optional[int]): Timeout in seconds for API requests. Defaults to DEFAULT_TIMEOUT.
+        timeout (Optional[int]): Timeout in seconds for API requests. Defaults to settings.DEFAULT_TIMEOUT_SECONDS.
     """
     try:
         session = requests.Session()
         retries = Retry(
-            total=3,  # number of retries
-            backoff_factor=1,  # wait 1, 2, 4 seconds between retries
-            status_forcelist=[500, 502, 503, 504],  # retry only on server errors
+            total=DEFAULT_MAX_RETRIES,
+            backoff_factor=DEFAULT_BACKOFF_FACTOR,
+            status_forcelist=RETRY_STATUS_CODES,
         )
         
         # Mount the retry adapter to both HTTP and HTTPS requests
@@ -34,9 +40,9 @@ def configure_nba_api_client(timeout: Optional[int] = None):
         
         # Configure the session
         nba_session.session = session
-        nba_session.timeout = timeout or settings.DEFAULT_TIMEOUT_SECONDS  # Changed
+        nba_session.timeout = timeout or settings.DEFAULT_TIMEOUT_SECONDS
         nba_session.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            'User-Agent': DEFAULT_USER_AGENT
         }
         
         logger.info(f"NBA API client configured successfully with timeout {nba_session.timeout}s")

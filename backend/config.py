@@ -1,3 +1,8 @@
+"""
+Manages application configuration settings using Pydantic's BaseSettings.
+Loads settings from environment variables and a .env file located in the backend directory.
+Provides a centralized `settings` object for use throughout the application.
+"""
 import os
 import datetime
 import logging
@@ -12,11 +17,13 @@ logger = logging.getLogger(__name__)
 def get_default_nba_season() -> str:
     """
     Calculates the current NBA season string (e.g., "2023-24").
-    The NBA season typically starts in October.
+    The NBA season typically starts in October and concludes mid-year.
     """
-    now = datetime.datetime.now()
+    now = datetime.datetime.now(datetime.timezone.utc) # Use timezone-aware now
     current_year = now.year
-    if now.month >= 10:  # Season starts in October
+    # If current month is October or later, the season started this year.
+    # Otherwise, the current season started last year.
+    if now.month >= 10:
         return f"{current_year}-{str(current_year + 1)[-2:]}"
     else:
         return f"{current_year - 1}-{str(current_year)[-2:]}"
@@ -24,6 +31,7 @@ def get_default_nba_season() -> str:
 class Settings(BaseSettings):
     """
     Application settings loaded from environment variables and .env file.
+    Defines the schema for all configurable parameters.
     """
     # --- Secrets & API Keys ---
     GOOGLE_API_KEY: Optional[str] = None
@@ -31,8 +39,8 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: Optional[str] = None  # If None and GOOGLE_API_KEY is set, will default to GOOGLE_API_KEY
 
     # --- Agent & AI Model Configuration ---
-    AGENT_MODEL_ID: str = "gemini-2.0-flash-lite"
-    SUGGESTION_MODEL_ID: str = "gemini-2.0-flash-lite"
+    AGENT_MODEL_ID: str = "gemini-1.5-flash-latest" # Updated default
+    SUGGESTION_MODEL_ID: str = "gemini-1.5-flash-latest" # Updated default
     AGENT_DEBUG_MODE: bool = False
 
     # --- Database & Storage ---
@@ -61,7 +69,7 @@ class Settings(BaseSettings):
 
     # Pydantic settings configuration
     model_config = SettingsConfigDict(
-        env_file=os.path.join(os.path.dirname(__file__), '.env'), # Load .env from backend directory
+        env_file=os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'), # More robust path to .env
         env_file_encoding='utf-8',
         extra='ignore',  # Ignore extra fields from environment variables
         case_sensitive=False # Environment variable names are case-insensitive
@@ -72,21 +80,24 @@ settings = Settings()
 
 # Post-processing: Default GEMINI_API_KEY to GOOGLE_API_KEY if GOOGLE_API_KEY is set and GEMINI_API_KEY is not
 if settings.GOOGLE_API_KEY and not settings.GEMINI_API_KEY:
-    settings.GEMINI_API_KEY = settings.GOOGLE_API_KEY
+    settings.GEMINI_API_KEY = settings.GOOGLE_API_KEY # Directly assign to the instance
     logger.info("GEMINI_API_KEY was not set, defaulting to GOOGLE_API_KEY.")
 
-# Log some important configurations
+# Log some important configurations at startup
 logger.info(f"Application Environment: {settings.ENVIRONMENT}")
 logger.info(f"Log Level: {settings.LOG_LEVEL}")
-logger.info(f"Current NBA Season (from settings): {settings.CURRENT_NBA_SEASON}")
+logger.info(f"Current NBA Season (determined): {settings.CURRENT_NBA_SEASON}") # Log the determined value
 logger.info(f"Agent Model ID: {settings.AGENT_MODEL_ID}")
 logger.info(f"CORS Allowed Origins: {settings.CORS_ALLOWED_ORIGINS}")
 
-if not settings.GEMINI_API_KEY and not settings.OPENAI_API_KEY and not settings.GOOGLE_API_KEY:
+# Enhanced API key logging/warnings
+if not settings.GEMINI_API_KEY and not settings.OPENAI_API_KEY: # Simplified check if GOOGLE_API_KEY is only for Gemini fallback
     logger.warning(
-        "No API key found for Gemini, OpenAI, or Google. AI-related features may not function correctly."
+        "Neither GEMINI_API_KEY nor OPENAI_API_KEY is configured. "
+        "AI-related features may not function correctly."
     )
-elif not settings.GEMINI_API_KEY: # Check specifically for Gemini if it's the primary
+elif not settings.GEMINI_API_KEY: # Specific warning if Gemini is intended primary but missing
      logger.warning(
-        "GEMINI_API_KEY is not configured. AI features relying on Gemini may not work."
+        "GEMINI_API_KEY is not configured. AI features relying on Gemini may not work, "
+        "even if GOOGLE_API_KEY (used as fallback) or OPENAI_API_KEY is set."
     )

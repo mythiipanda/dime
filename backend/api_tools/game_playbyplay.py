@@ -1,3 +1,8 @@
+"""
+Handles fetching and processing game play-by-play (PBP) data.
+It attempts to fetch live PBP data first and falls back to historical PBP data (PlayByPlayV3)
+if live data is unavailable or if specific period filters are applied.
+"""
 import json
 import logging
 from typing import Dict, Any, Optional, List
@@ -6,7 +11,7 @@ import re
 import pandas as pd
 from functools import lru_cache
 
-from nba_api.stats.endpoints import playbyplayv3 # Changed to V3
+from nba_api.stats.endpoints import playbyplayv3
 from nba_api.live.nba.endpoints import PlayByPlay as LivePlayByPlay
 from backend.config import settings
 from backend.core.errors import Errors
@@ -18,16 +23,34 @@ from backend.utils.validation import validate_game_id_format
 
 logger = logging.getLogger(__name__)
 
+# --- Module-Level Constants ---
+GAME_PBP_CACHE_SIZE = 64
+
 # --- Helper Functions ---
+# Note: Previous helper functions like _get_event_type and _determine_team_from_tricode
+# were removed as PlayByPlayV3 provides richer data directly (actionType, subType, teamTricode).
 
-# _get_event_type is no longer needed as V3 provides actionType and subType
-# _determine_team_from_tricode was unused and has been removed.
-
-# --- Play-by-Play Functions ---
+# --- Play-by-Play Logic Functions ---
 
 def _fetch_historical_playbyplay_logic(game_id: str, start_period: int = 0, end_period: int = 0) -> Dict[str, Any]:
+    """
+    Fetches historical play-by-play data using PlayByPlayV3.
+
+    Args:
+        game_id (str): The ID of the game.
+        start_period (int, optional): The starting period to fetch. Defaults to 0 (all).
+        end_period (int, optional): The ending period to fetch. Defaults to 0 (all).
+
+    Returns:
+        Dict[str, Any]: A dictionary containing formatted PBP data or an error structure.
+                        Includes 'periods' list, 'has_video' flag, and 'source'.
+    
+    Raises:
+        ValueError: If DataFrame processing fails for non-empty data.
+        Exception: For NBA API call failures.
+    """
     logger.info(f"Executing _fetch_historical_playbyplay_logic (V3) for game ID: {game_id}, periods {start_period}-{end_period}")
-    pbp_endpoint = playbyplayv3.PlayByPlayV3( # Using V3
+    pbp_endpoint = playbyplayv3.PlayByPlayV3(
         game_id=game_id, start_period=start_period, end_period=end_period, timeout=settings.DEFAULT_TIMEOUT_SECONDS
     )
     pbp_df = pbp_endpoint.play_by_play.get_data_frame() # V3 uses camelCase
@@ -85,6 +108,20 @@ def _fetch_historical_playbyplay_logic(game_id: str, start_period: int = 0, end_
     }
 
 def _fetch_live_playbyplay_logic(game_id: str) -> Dict[str, Any]:
+    """
+    Fetches live play-by-play data.
+
+    Args:
+        game_id (str): The ID of the game.
+
+    Returns:
+        Dict[str, Any]: A dictionary containing formatted live PBP data.
+                        Includes 'periods' list and 'source'. 'has_video' is False for live.
+    
+    Raises:
+        ValueError: If no live actions are found (game not live or recently concluded).
+        Exception: For NBA API call failures or unexpected data structure.
+    """
     logger.info(f"Executing _fetch_live_playbyplay_logic for game ID: {game_id}")
     live_pbp_endpoint = LivePlayByPlay(game_id=game_id)
     live_data_dict = live_pbp_endpoint.get_dict()
@@ -133,8 +170,23 @@ def _fetch_live_playbyplay_logic(game_id: str) -> Dict[str, Any]:
         "periods": periods_list_final
     }
 
-@lru_cache(maxsize=64)
+# --- Main Public Function ---
+@lru_cache(maxsize=GAME_PBP_CACHE_SIZE)
 def fetch_playbyplay_logic(game_id: str, start_period: int = 0, end_period: int = 0) -> str:
+    """
+    Fetches play-by-play data for a game. Attempts live data first if no period filters
+    are applied, otherwise falls back to or directly uses historical data (PlayByPlayV3).
+
+    Args:
+        game_id (str): The ID of the game.
+        start_period (int, optional): The starting period filter. Defaults to 0 (no filter).
+        end_period (int, optional): The ending period filter. Defaults to 0 (no filter).
+
+    Returns:
+        str: A JSON string containing the play-by-play data or an error message.
+             The response includes a 'source' field ("live" or "historical_v3")
+             and a 'periods' list, each containing plays for that period.
+    """
     logger.info(f"Executing fetch_playbyplay_logic for game ID: {game_id}, StartPeriod: {start_period}, EndPeriod: {end_period}")
     if not game_id:
         return format_response(error=Errors.GAME_ID_EMPTY)

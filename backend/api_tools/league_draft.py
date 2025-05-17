@@ -1,20 +1,27 @@
+"""
+Handles fetching NBA draft history data using the drafthistory endpoint.
+Allows filtering by various parameters like season year, league, team, round, and pick.
+"""
 import logging
-import json
-from typing import Optional, Dict, Any, List
+import json # Not explicitly used, but format_response returns JSON string. Good to keep for context.
+from typing import Optional, Dict, Any, List, Set
 from functools import lru_cache
 
 from nba_api.stats.endpoints import drafthistory
 from nba_api.stats.library.parameters import LeagueID
-from backend.api_tools.utils import _process_dataframe, format_response # _validate_season_format not needed here
+from backend.api_tools.utils import _process_dataframe, format_response
 from backend.config import settings
 from backend.core.errors import Errors
 
 logger = logging.getLogger(__name__)
 
-# Module-level constant for validation
-_VALID_DRAFT_LEAGUE_IDS = {getattr(LeagueID, attr) for attr in dir(LeagueID) if not attr.startswith('_') and isinstance(getattr(LeagueID, attr), str)}
+# --- Module-Level Constants ---
+LEAGUE_DRAFT_CACHE_SIZE = 32
 
-@lru_cache(maxsize=32)
+_VALID_DRAFT_LEAGUE_IDS: Set[str] = {getattr(LeagueID, attr) for attr in dir(LeagueID) if not attr.startswith('_') and isinstance(getattr(LeagueID, attr), str)}
+
+# --- Logic Function ---
+@lru_cache(maxsize=LEAGUE_DRAFT_CACHE_SIZE)
 def fetch_draft_history_logic(
     season_year_nullable: Optional[str] = None,
     league_id_nullable: str = LeagueID.nba,

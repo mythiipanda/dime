@@ -1,56 +1,70 @@
+"""
+Provides search functionalities for players, teams, and games within the NBA data.
+Utilizes cached static lists for players and teams, and LeagueGameFinder for games.
+"""
 import logging
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 from functools import lru_cache
 from nba_api.stats.static import players, teams
 from nba_api.stats.endpoints import leaguegamefinder
 from nba_api.stats.library.parameters import SeasonTypeAllStar, LeagueID
+import pandas as pd # Added for DataFrame operations in game search
 
 from backend.config import settings
 from backend.core.constants import (
     DEFAULT_PLAYER_SEARCH_LIMIT,
     MIN_PLAYER_SEARCH_LENGTH,
-    MAX_SEARCH_RESULTS
+    MAX_SEARCH_RESULTS # Used as default limit for all searches
 )
 from backend.core.errors import Errors
 from backend.api_tools.utils import (
     _process_dataframe,
     format_response,
-    find_team_id_or_error,
+    find_team_id_or_error, # Used in game search
     TeamNotFoundError
 )
 from backend.utils.validation import _validate_season_format
 
 logger = logging.getLogger(__name__)
 
-_player_list_cache = None
-_team_list_cache = None # Cache for teams
+# --- Module-Level Constants ---
+PLAYER_NAME_FRAGMENT_CACHE_SIZE = 512
+PLAYER_SEARCH_CACHE_SIZE = 256
+TEAM_SEARCH_CACHE_SIZE = 128
+GAME_SEARCH_CACHE_SIZE = 128
+GAME_SEARCH_DELIMITERS = [" vs ", " at ", " vs. "]
 
+# --- Global Caches for Static Data ---
+_player_list_cache: Optional[List[Dict]] = None
+_team_list_cache: Optional[List[Dict]] = None
+
+# --- Helper Functions for Static Data Caching ---
 def _get_cached_player_list() -> List[Dict]:
-    """Gets the full player list, caching it after the first call."""
+    """Gets the full player list, caching it in memory after the first call."""
     global _player_list_cache
     if _player_list_cache is None:
-        logger.info("Fetching and caching full player list...")
+        logger.info("Fetching and caching full player list from nba_api.stats.static...")
         try:
             _player_list_cache = players.get_players()
-            if not _player_list_cache:
-                 logger.warning("players.get_players() returned an empty list.")
-                 _player_list_cache = []
+            if not _player_list_cache: # Should not happen with nba_api, but good check
+                 logger.warning("players.get_players() returned an empty or invalid list.")
+                 _player_list_cache = [] # Ensure it's an empty list on failure
             else:
                  logger.info(f"Successfully cached {len(_player_list_cache)} players.")
         except Exception as e:
             logger.error(f"Failed to fetch and cache player list: {e}", exc_info=True)
-            _player_list_cache = []
+            _player_list_cache = [] # Ensure it's an empty list on failure
     return _player_list_cache
 
 def _get_cached_team_list() -> List[Dict]:
-    """Gets the full team list, caching it after the first call."""
+    """Gets the full team list, caching it in memory after the first call."""
     global _team_list_cache
     if _team_list_cache is None:
-        logger.info("Fetching and caching full team list...")
+        logger.info("Fetching and caching full team list from nba_api.stats.static...")
         try:
             _team_list_cache = teams.get_teams()
-            if not _team_list_cache:
-                 logger.warning("teams.get_teams() returned an empty list.")
+            if not _team_list_cache: # Should not happen
+                 logger.warning("teams.get_teams() returned an empty or invalid list.")
                  _team_list_cache = []
             else:
                  logger.info(f"Successfully cached {len(_team_list_cache)} teams.")
@@ -59,234 +73,189 @@ def _get_cached_team_list() -> List[Dict]:
             _team_list_cache = []
     return _team_list_cache
 
-@lru_cache(maxsize=512) # Cache player name fragments
+# --- Player Search Logic ---
+@lru_cache(maxsize=PLAYER_NAME_FRAGMENT_CACHE_SIZE)
 def find_players_by_name_fragment(name_fragment: str, limit: int = DEFAULT_PLAYER_SEARCH_LIMIT) -> List[Dict]:
     """
     Finds players whose full name contains the given fragment (case-insensitive).
-
-    Args:
-        name_fragment (str): The partial name to search for.
-        limit (int): The maximum number of results to return.
-
-    Returns:
-        List[Dict]: A list of matching players [{'id': player_id, 'full_name': player_name, 'is_active': bool}, ...].
+    Uses the in-memory cached full player list.
     """
     if not name_fragment or len(name_fragment) < MIN_PLAYER_SEARCH_LENGTH:
         return []
-
     all_players = _get_cached_player_list()
-    if not all_players:
-        return []
+    if not all_players: return []
 
     name_fragment_lower = name_fragment.lower()
     matching_players = []
-
     try:
         for player in all_players:
             if name_fragment_lower in player['full_name'].lower():
                 matching_players.append({
                     'id': player['id'],
                     'full_name': player['full_name'],
-                    'is_active': player.get('is_active', False)
+                    'is_active': player.get('is_active', False) # is_active might not always be present
                 })
-                if len(matching_players) >= limit:
-                    break
+                if len(matching_players) >= limit: break
     except Exception as e:
         logger.error(f"Error filtering player list for fragment '{name_fragment}': {e}", exc_info=True)
-        return []
-
-    logger.info(f"Found {len(matching_players)} players matching fragment '{name_fragment}' (limit {limit}).")
+        return [] # Return empty on error during filtering
+    logger.debug(f"Found {len(matching_players)} players for fragment '{name_fragment}' (limit {limit}).")
     return matching_players
 
-@lru_cache(maxsize=256) # Caches the JSON string result
+@lru_cache(maxsize=PLAYER_SEARCH_CACHE_SIZE)
 def search_players_logic(query: str, limit: int = MAX_SEARCH_RESULTS) -> str:
     """
-    Search for players by name fragment.
-
-    Args:
-        query (str): The player name fragment to search for.
-        limit (int): Maximum number of results. Defaults to MAX_SEARCH_RESULTS.
-
-    Returns:
-        JSON string with a list of matching players or an error message.
+    Public API to search for players by name fragment.
     """
-    logger.info(f"Executing search_players_logic with query: '{query}'")
-
-    if not query:
-        return format_response(error=Errors.EMPTY_SEARCH_QUERY)
+    logger.info(f"Executing search_players_logic with query: '{query}', limit: {limit}")
+    if not query: return format_response(error=Errors.EMPTY_SEARCH_QUERY)
     if len(query) < MIN_PLAYER_SEARCH_LENGTH:
-        min_len = getattr(Errors, 'MIN_PLAYER_SEARCH_LENGTH', MIN_PLAYER_SEARCH_LENGTH) # Use constant from config if available
-        return format_response(error=Errors.SEARCH_QUERY_TOO_SHORT.format(min_length=min_len) if hasattr(Errors, 'SEARCH_QUERY_TOO_SHORT') else f"Search query must be at least {min_len} characters long.")
+        return format_response(error=Errors.SEARCH_QUERY_TOO_SHORT.format(min_length=MIN_PLAYER_SEARCH_LENGTH))
 
     try:
-        # Use the helper function which utilizes the cache
         matching_players = find_players_by_name_fragment(query, limit)
-        result = {"players": matching_players}
-        return format_response(result)
+        return format_response({"players": matching_players})
+    except Exception as e: # Should be rare as find_players_by_name_fragment handles its errors
+        logger.error(f"Unexpected error in search_players_logic: {str(e)}", exc_info=True)
+        return format_response(error=Errors.PLAYER_SEARCH_UNEXPECTED.format(error=str(e)))
 
-    except Exception as e:
-        logger.error(f"Error in search_players_logic: {str(e)}", exc_info=True)
-        error_msg = Errors.PLAYER_SEARCH_UNEXPECTED.format(error=str(e)) if hasattr(Errors, 'PLAYER_SEARCH_UNEXPECTED') else f"Unexpected error searching for players: {e}"
-        return format_response(error=error_msg)
-
-@lru_cache(maxsize=128) # Caches team search results
+# --- Team Search Logic ---
+@lru_cache(maxsize=TEAM_SEARCH_CACHE_SIZE)
 def search_teams_logic(query: str, limit: int = MAX_SEARCH_RESULTS) -> str:
     """
-    Search for teams by name, city, nickname, or abbreviation.
-
-    Args:
-        query (str): The search term.
-        limit (int): Maximum number of results. Defaults to MAX_SEARCH_RESULTS.
-
-    Returns:
-        JSON string with a list of matching teams or an error message.
+    Public API to search for teams by name, city, nickname, or abbreviation.
     """
-    logger.info(f"Executing search_teams_logic with query: '{query}'")
-
-    if not query:
-        return format_response(error=Errors.EMPTY_SEARCH_QUERY)
+    logger.info(f"Executing search_teams_logic with query: '{query}', limit: {limit}")
+    if not query: return format_response(error=Errors.EMPTY_SEARCH_QUERY)
 
     try:
-        all_teams = _get_cached_team_list() # Use cached team list
+        all_teams = _get_cached_team_list()
         if not all_teams:
-            logger.warning("_get_cached_team_list() returned empty list.")
+            logger.warning("Team list cache is empty, cannot search teams.")
             return format_response({"teams": []})
 
         query_lower = query.lower()
         filtered_teams = [
             team for team in all_teams
-            if query_lower in team['full_name'].lower() or
-               query_lower in team['city'].lower() or
-               query_lower in team['nickname'].lower() or
-               query_lower in team['abbreviation'].lower()
-        ]
-
-        # Limit results
-        filtered_teams = filtered_teams[:limit]
-        result = {"teams": filtered_teams}
-        return format_response(result)
-
+            if query_lower in team.get('full_name', '').lower() or
+               query_lower in team.get('city', '').lower() or
+               query_lower in team.get('nickname', '').lower() or
+               query_lower in team.get('abbreviation', '').lower()
+        ][:limit] # Apply limit after filtering
+        return format_response({"teams": filtered_teams})
     except Exception as e:
         logger.error(f"Error in search_teams_logic: {str(e)}", exc_info=True)
-        error_msg = Errors.TEAM_SEARCH_UNEXPECTED.format(error=str(e)) if hasattr(Errors, 'TEAM_SEARCH_UNEXPECTED') else f"Unexpected error searching for teams: {e}"
-        return format_response(error=error_msg)
+        return format_response(error=Errors.TEAM_SEARCH_UNEXPECTED.format(error=str(e)))
 
-@lru_cache(maxsize=128) # Caches game search results
-def search_games_logic(
-    query: str,
-    season: str,
-    season_type: str = SeasonTypeAllStar.regular,
-    limit: int = MAX_SEARCH_RESULTS
-) -> str:
-    """
-    Search for games based on a query, attempting to find head-to-head matchups
-    (e.g., "TeamA vs TeamB") or games involving a single team.
-
-    Args:
-        query (str): Search query (e.g., "LAL vs BOS", "Lakers").
-        season (str): Season in YYYY-YY format.
-        season_type (str): Season type (e.g., Regular Season). Defaults to Regular Season.
-        limit (int): Maximum number of games to return. Defaults to MAX_SEARCH_RESULTS.
-
-    Returns:
-        JSON string with matching games or an error message.
-    """
-    logger.info(f"Executing search_games_logic with query: '{query}', season: {season}")
-
-    if not query:
-        return format_response(error=Errors.EMPTY_SEARCH_QUERY)
-    if not season or not _validate_season_format(season):
-        # Use the specific constant if available
-        error_msg = Errors.INVALID_SEASON if hasattr(Errors, 'INVALID_SEASON') else Errors.INVALID_SEASON_FORMAT.format(season=season)
-        return format_response(error=error_msg)
-
-    VALID_SEASON_TYPES = [getattr(SeasonTypeAllStar, attr) for attr in dir(SeasonTypeAllStar) if not attr.startswith('_') and isinstance(getattr(SeasonTypeAllStar, attr), str)]
-    if season_type not in VALID_SEASON_TYPES:
-        return format_response(error=Errors.INVALID_SEASON_TYPE.format(value=season_type, options=", ".join(VALID_SEASON_TYPES)))
-
+# --- Game Search Logic ---
+def _parse_game_search_query(query: str) -> Tuple[Optional[int], Optional[str], Optional[int], Optional[str]]:
+    """Parses a game search query to identify one or two teams."""
     team1_id: Optional[int] = None
-    team2_id: Optional[int] = None
     team1_name: Optional[str] = None
+    team2_id: Optional[int] = None
     team2_name: Optional[str] = None
+    
     query_parts: List[str] = []
-
-    # Attempt to parse query for two teams
-    delimiters = [" vs ", " at ", " vs. "]
-    for delim in delimiters:
+    for delim in GAME_SEARCH_DELIMITERS:
         if delim in query.lower():
             parts = query.lower().split(delim)
             if len(parts) == 2:
                 query_parts = [parts[0].strip(), parts[1].strip()]
                 break
-
-    try:
-        if len(query_parts) == 2:
-            try:
-                team1_id, team1_name = find_team_id_or_error(query_parts[0])
-            except TeamNotFoundError:
-                logger.warning(f"First team identifier '{query_parts[0]}' not found.")
-            try:
-                team2_id, team2_name = find_team_id_or_error(query_parts[1])
-            except TeamNotFoundError:
-                logger.warning(f"Second team identifier '{query_parts[1]}' not found.")
-            logger.info(f"Parsed query into two teams: '{team1_name or query_parts[0]}' (ID: {team1_id}) and '{team2_name or query_parts[1]}' (ID: {team2_id})")
-            # Proceed even if one team wasn't found, LeagueGameFinder might handle it
-        else:
-            # If not a clear matchup, try finding a single team ID
-            team1_id, team1_name = find_team_id_or_error(query)
-            logger.info(f"Searching for single team: '{team1_name}' (ID: {team1_id})")
-
-    except (TeamNotFoundError, ValueError) as e:
-         # This happens if the single team search fails
-         logger.warning(f"Could not find any team IDs for query '{query}': {e}")
-         return format_response({"games": []}) # Return empty list if no team identified
-
-    try:
-        # Default to current season if not provided before API call
-        effective_season = season or settings.CURRENT_NBA_SEASON # Changed
+    
+    if len(query_parts) == 2:
+        try: team1_id, team1_name = find_team_id_or_error(query_parts[0])
+        except TeamNotFoundError: logger.warning(f"Game search: First team '{query_parts[0]}' not found.")
+        try: team2_id, team2_name = find_team_id_or_error(query_parts[1])
+        except TeamNotFoundError: logger.warning(f"Game search: Second team '{query_parts[1]}' not found.")
+        logger.info(f"Parsed game query into two teams: '{team1_name or query_parts[0]}' (ID: {team1_id}) and '{team2_name or query_parts[1]}' (ID: {team2_id})")
+    else:
+        try: team1_id, team1_name = find_team_id_or_error(query)
+        except TeamNotFoundError: logger.warning(f"Game search: Single team query '{query}' did not match any team.")
+        logger.info(f"Parsed game query for single team: '{team1_name}' (ID: {team1_id})")
         
+    return team1_id, team1_name, team2_id, team2_name
+
+def _filter_for_head_to_head(games_df: pd.DataFrame, team1_id: Optional[int], team2_id: Optional[int]) -> pd.DataFrame:
+    """Filters DataFrame for games explicitly between team1 and team2 if both IDs are valid."""
+    if games_df.empty or not (team1_id and team2_id):
+        return games_df
+
+    team1_info = teams.find_team_name_by_id(team1_id) # nba_api.stats.static.teams
+    team2_info = teams.find_team_name_by_id(team2_id)
+
+    if team1_info and team2_info:
+        team1_abbr = team1_info['abbreviation']
+        team2_abbr = team2_info['abbreviation']
+        # Ensure MATCHUP column exists and filter
+        if 'MATCHUP' in games_df.columns:
+            return games_df[
+                games_df['MATCHUP'].str.contains(team1_abbr, case=False, na=False) &
+                games_df['MATCHUP'].str.contains(team2_abbr, case=False, na=False)
+            ]
+        else:
+            logger.warning("'MATCHUP' column not found in game finder results for head-to-head filtering.")
+    else:
+        logger.warning("Could not retrieve team abbreviations for head-to-head game filtering.")
+    return games_df # Return original if filtering can't be applied
+
+@lru_cache(maxsize=GAME_SEARCH_CACHE_SIZE)
+def search_games_logic(
+    query: str,
+    season: str, # Made season non-optional as LeagueGameFinder requires it or player/team ID
+    season_type: str = SeasonTypeAllStar.regular,
+    limit: int = MAX_SEARCH_RESULTS
+) -> str:
+    """
+    Searches for games based on a query (e.g., "TeamA vs TeamB", "Lakers").
+    """
+    logger.info(f"Executing search_games_logic with query: '{query}', season: {season}, type: {season_type}, limit: {limit}")
+
+    if not query: return format_response(error=Errors.EMPTY_SEARCH_QUERY)
+    if not _validate_season_format(season): # Season is now mandatory
+        return format_response(error=Errors.INVALID_SEASON_FORMAT.format(season=season))
+
+    valid_season_types = [getattr(SeasonTypeAllStar, attr) for attr in dir(SeasonTypeAllStar) if not attr.startswith('_') and isinstance(getattr(SeasonTypeAllStar, attr), str)]
+    if season_type not in valid_season_types:
+        return format_response(error=Errors.INVALID_SEASON_TYPE.format(value=season_type, options=", ".join(valid_season_types)))
+
+    team1_id, _, team2_id, _ = _parse_game_search_query(query)
+    
+    # If no team could be identified from the query, it's unlikely LeagueGameFinder will succeed well.
+    if not team1_id and not team2_id:
+        logger.warning(f"No valid teams identified from game search query: '{query}'. Returning empty.")
+        return format_response({"games": []})
+
+    try:
         game_finder = leaguegamefinder.LeagueGameFinder(
             team_id_nullable=team1_id,
-            vs_team_id_nullable=team2_id if team1_id else None, # Only use vs_team if team1 is set
-            season_nullable=effective_season, # Use effective_season
+            vs_team_id_nullable=team2_id if team1_id else None,
+            season_nullable=season,
             season_type_nullable=season_type,
-            league_id_nullable=LeagueID.nba,
-            timeout=settings.DEFAULT_TIMEOUT_SECONDS # Changed
+            league_id_nullable=LeagueID.nba, # Default to NBA
+            timeout=settings.DEFAULT_TIMEOUT_SECONDS
         )
-        logger.debug("leaguegamefinder API call successful.")
-
+        logger.debug("LeagueGameFinder API call successful.")
         games_df = game_finder.league_game_finder_results.get_data_frame()
-        games_list = []
-        if not games_df.empty:
-            # If we searched for two teams AND found both, ensure both are in the matchup string
-            if team1_id and team2_id:
-                 team1_info = teams.find_team_name_by_id(team1_id)
-                 team2_info = teams.find_team_name_by_id(team2_id)
-                 if team1_info and team2_info:
-                     team1_abbr = team1_info['abbreviation']
-                     team2_abbr = team2_info['abbreviation']
-                     games_df = games_df[
-                         games_df['MATCHUP'].str.contains(team1_abbr) &
-                         games_df['MATCHUP'].str.contains(team2_abbr)
-                     ]
-                 else:
-                     logger.warning("Could not get abbreviations for matchup filtering.")
 
-            games_list = _process_dataframe(games_df, single_row=False) # Process after potential filtering
+        if games_df.empty:
+            return format_response({"games": []})
 
-        if games_list is None: # Check processing result
-             logger.error("Failed to process game finder results.")
-             return format_response(error=Errors.PROCESSING_ERROR.format(error="game search results"))
+        # If both team IDs were found from a "vs" query, perform stricter filtering
+        if team1_id and team2_id and any(d in query.lower() for d in GAME_SEARCH_DELIMITERS):
+            games_df = _filter_for_head_to_head(games_df, team1_id, team2_id)
 
-        # Sort by date and limit results
-        if games_list:
-            games_list.sort(key=lambda x: x.get("GAME_DATE", ""), reverse=True) # Use GAME_DATE
+        games_list = _process_dataframe(games_df, single_row=False)
+        if games_list is None:
+            logger.error("Failed to process game finder results after potential filtering.")
+            return format_response(error=Errors.PROCESSING_ERROR.format(error="game search results"))
+
+        if games_list: # Sort and limit only if list is not empty
+            games_list.sort(key=lambda x: x.get("GAME_DATE", ""), reverse=True)
             games_list = games_list[:limit]
 
-        result = {"games": games_list}
-        return format_response(result)
+        return format_response({"games": games_list})
 
     except Exception as e:
-        logger.error(f"Error in search_games_logic during API call or processing: {str(e)}", exc_info=True)
-        error_msg = Errors.GAME_SEARCH_UNEXPECTED.format(error=str(e)) if hasattr(Errors, 'GAME_SEARCH_UNEXPECTED') else f"Unexpected error searching for games: {e}"
-        return format_response(error=error_msg)
+        logger.error(f"Error in search_games_logic API call/processing: {str(e)}", exc_info=True)
+        return format_response(error=Errors.GAME_SEARCH_UNEXPECTED.format(error=str(e)))

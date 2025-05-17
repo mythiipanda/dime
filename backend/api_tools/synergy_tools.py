@@ -1,5 +1,8 @@
+"""
+Handles fetching and processing Synergy Sports play type statistics.
+"""
 import logging
-from typing import Optional, Dict, Any, Tuple, Type
+from typing import Optional, Dict, Any, Tuple, Type, List, Set
 from functools import lru_cache
 from datetime import datetime
 import pandas as pd
@@ -15,235 +18,200 @@ from backend.config import settings
 from backend.core.errors import Errors
 from backend.api_tools.utils import format_response, _process_dataframe
 from backend.utils.validation import _validate_season_format
+
 logger = logging.getLogger(__name__)
 
-VALID_PLAY_TYPES = {
+# --- Module-Level Constants ---
+SYNERGY_DATA_CACHE_SIZE = 128
+CACHE_TTL_SECONDS_SYNERGY = 3600 * 4  # 4 hours
+
+VALID_PLAY_TYPES: Set[str] = {
     "Cut", "Handoff", "Isolation", "Misc", "OffScreen", "PostUp",
     "PRBallHandler", "PRRollman", "OffRebound", "SpotUp", "Transition"
 }
-VALID_TYPE_GROUPINGS = {"offensive", "defensive"}
-CACHE_TTL_SECONDS_SYNERGY = 3600 * 4
+VALID_TYPE_GROUPINGS: Set[str] = {"offensive", "defensive"}
 
-@lru_cache(maxsize=128)
+# Validation sets for API parameters, constructed once
+_SYNERGY_VALID_PLAYER_TEAM_ABBR: Set[str] = {getattr(PlayerOrTeamAbbreviation, attr) for attr in dir(PlayerOrTeamAbbreviation) if not attr.startswith('_') and isinstance(getattr(PlayerOrTeamAbbreviation, attr), str)}
+_SYNERGY_VALID_LEAGUE_IDS: Set[str] = {getattr(LeagueID, attr) for attr in dir(LeagueID) if not attr.startswith('_') and isinstance(getattr(LeagueID, attr), str)}
+_SYNERGY_VALID_PER_MODES: Set[str] = {getattr(PerModeSimple, attr) for attr in dir(PerModeSimple) if not attr.startswith('_') and isinstance(getattr(PerModeSimple, attr), str)}
+_SYNERGY_VALID_SEASON_TYPES: Set[str] = {getattr(SeasonTypeAllStar, attr) for attr in dir(SeasonTypeAllStar) if not attr.startswith('_') and isinstance(getattr(SeasonTypeAllStar, attr), str)}
+
+
+# --- Helper Functions ---
+@lru_cache(maxsize=SYNERGY_DATA_CACHE_SIZE)
 def get_cached_synergy_data(
-    cache_key: Tuple, # Explicit cache_key for lru_cache
-    timestamp: str,   # Explicit timestamp for lru_cache and logging
+    cache_key: Tuple,
+    timestamp_bucket: str,
     endpoint_class: Type[SynergyPlayTypes],
-    **api_kwargs: Any # Renamed to distinguish from cache params
+    api_kwargs: Dict[str, Any]
 ) -> Dict[str, Any]:
-    """
-    Cached wrapper for the SynergyPlayTypes NBA API endpoint.
-    Uses a timestamp for time-based cache invalidation.
-
-    Args:
-        cache_key (Tuple): A tuple representing the core parameters for the API call,
-                           used for `lru_cache` keying.
-        timestamp (str): An ISO format timestamp string, typically for the current cache validity window,
-                         used to manage cache invalidation.
-        endpoint_class (Type[SynergyPlayTypes]): The `SynergyPlayTypes` endpoint class from `nba_api.stats.endpoints`.
-        **api_kwargs: Keyword arguments to be passed directly to the `SynergyPlayTypes` constructor.
-
-    Returns:
-        Dict[str, Any]: The raw dictionary response from the NBA API endpoint's `get_dict()` method.
-
-    Raises:
-        Exception: If the API call fails, to be handled by the caller.
-    """
-    logger.info(f"Cache miss/expiry for Synergy data - fetching new data. Timestamp: {timestamp}, Key components: {api_kwargs}")
+    """Cached wrapper for the SynergyPlayTypes NBA API endpoint."""
+    logger.info(f"Cache miss/expiry for Synergy data (ts: {timestamp_bucket}) - fetching. Params: {api_kwargs}")
     try:
         synergy_stats_endpoint = endpoint_class(**api_kwargs, timeout=settings.DEFAULT_TIMEOUT_SECONDS)
         return synergy_stats_endpoint.get_dict()
     except Exception as e:
         logger.error(f"{endpoint_class.__name__} API call failed: {e}", exc_info=True)
-        raise e
+        raise
 
-@lru_cache(maxsize=128)
+def _validate_synergy_params(
+    season: str, play_type_nullable: Optional[str], type_grouping_nullable: Optional[str],
+    player_or_team: str, league_id: str, per_mode: str, season_type: str
+) -> Optional[str]:
+    """Validates parameters for fetch_synergy_play_types_logic."""
+    if not _validate_season_format(season):
+        return Errors.INVALID_SEASON_FORMAT.format(season=season)
+    if play_type_nullable is None: # This is a required field for the API to return meaningful data
+        return Errors.SYNERGY_PLAY_TYPE_REQUIRED.format(options=", ".join(VALID_PLAY_TYPES))
+    if play_type_nullable not in VALID_PLAY_TYPES:
+        return Errors.INVALID_PLAY_TYPE.format(play_type=play_type_nullable, options=", ".join(VALID_PLAY_TYPES))
+    if type_grouping_nullable is not None and type_grouping_nullable not in VALID_TYPE_GROUPINGS:
+        return Errors.INVALID_TYPE_GROUPING.format(type_grouping=type_grouping_nullable, options=", ".join(VALID_TYPE_GROUPINGS))
+    if player_or_team not in _SYNERGY_VALID_PLAYER_TEAM_ABBR:
+        return Errors.INVALID_PLAYER_OR_TEAM_ABBREVIATION.format(value=player_or_team, valid_values=", ".join(_SYNERGY_VALID_PLAYER_TEAM_ABBR))
+    if league_id not in _SYNERGY_VALID_LEAGUE_IDS:
+        return Errors.INVALID_LEAGUE_ID.format(value=league_id, options=", ".join(list(_SYNERGY_VALID_LEAGUE_IDS)[:5])) # Show some options
+    if per_mode not in _SYNERGY_VALID_PER_MODES:
+        return Errors.INVALID_PER_MODE.format(value=per_mode, options=", ".join(list(_SYNERGY_VALID_PER_MODES)[:5]))
+    if season_type not in _SYNERGY_VALID_SEASON_TYPES:
+        return Errors.INVALID_SEASON_TYPE.format(value=season_type, options=", ".join(list(_SYNERGY_VALID_SEASON_TYPES)[:5]))
+    return None
+
+def _extract_synergy_dataframe(response_dict: Dict[str, Any], api_params_logging: Dict[str, Any]) -> pd.DataFrame:
+    """Extracts the SynergyPlayType DataFrame from the raw API response."""
+    result_set_data = None
+    if 'resultSets' in response_dict and isinstance(response_dict['resultSets'], list):
+        for rs_item in response_dict['resultSets']:
+            if isinstance(rs_item, dict) and rs_item.get('name') == 'SynergyPlayType':
+                result_set_data = rs_item
+                break
+        # Fallback: if not found by name and only one result set exists, assume it's the one.
+        if not result_set_data and len(response_dict['resultSets']) == 1 and isinstance(response_dict['resultSets'][0], dict):
+            logger.warning(f"SynergyPlayType dataset not found by name, using first available result set for params: {api_params_logging}")
+            result_set_data = response_dict['resultSets'][0]
+
+    if not result_set_data or 'headers' not in result_set_data or 'rowSet' not in result_set_data:
+        logger.warning(f"Could not find expected 'SynergyPlayType' data structure in API response for params: {api_params_logging}. Response (first 500 chars): {str(response_dict)[:500]}")
+        return pd.DataFrame() # Return empty DataFrame
+
+    return pd.DataFrame(result_set_data['rowSet'], columns=result_set_data['headers'])
+
+def _apply_synergy_id_filters(
+    data_list: List[Dict[str, Any]],
+    player_or_team: str,
+    player_id: Optional[int],
+    team_id: Optional[int]
+) -> List[Dict[str, Any]]:
+    """Applies post-fetch filtering by player_id or team_id if provided."""
+    if not data_list:
+        return []
+    
+    filtered_list = data_list
+    if player_id is not None and player_or_team == PlayerOrTeamAbbreviation.player:
+        filtered_list = [entry for entry in data_list if entry.get("PLAYER_ID") == player_id]
+        if not filtered_list: logger.warning(f"No Synergy data after filtering for player_id: {player_id}")
+    elif team_id is not None and player_or_team == PlayerOrTeamAbbreviation.team:
+        filtered_list = [entry for entry in data_list if entry.get("TEAM_ID") == team_id]
+        if not filtered_list: logger.warning(f"No Synergy data after filtering for team_id: {team_id}")
+    return filtered_list
+
+# --- Main Logic Function ---
+@lru_cache(maxsize=SYNERGY_DATA_CACHE_SIZE)
 def fetch_synergy_play_types_logic(
     league_id: str = LeagueID.nba,
     per_mode: str = PerModeSimple.per_game,
     player_or_team: str = PlayerOrTeamAbbreviation.team,
     season_type: str = SeasonTypeAllStar.regular,
     season: str = settings.CURRENT_NBA_SEASON,
-    play_type_nullable: Optional[str] = None,
+    play_type_nullable: Optional[str] = None, # Made explicit that it can be None, but validation enforces it
     type_grouping_nullable: Optional[str] = None,
-    player_id_nullable: Optional[int] = None,
-    team_id_nullable: Optional[int] = None,
+    player_id_nullable: Optional[int] = None, # For post-fetch filtering
+    team_id_nullable: Optional[int] = None,   # For post-fetch filtering
     bypass_cache: bool = False
 ) -> str:
     """
-    Fetches Synergy Sports play type statistics for all players or all teams in a league,
-    with optional filtering for specific players or teams.
-
-    A specific play_type is REQUIRED - the NBA API will return empty data for general queries.
-    Valid play types include: "Cut", "Handoff", "Isolation", "Misc", "OffScreen", "PostUp",
-    "PRBallHandler", "PRRollman", "OffRebound", "SpotUp", "Transition".
-
-    The type_grouping parameter ("offensive" or "defensive") helps filter the context of the play types.
-    It is highly recommended to provide a `type_grouping_nullable` (e.g., "offensive" or "defensive"),
-    as omitting it or providing `None` may lead to empty results from the API for many play types.
-    Note: Certain combinations of parameters may still return empty data based on data availability.
-
-    If player_id_nullable is provided, player_or_team must be 'P' and results will be filtered for that player.
-    If team_id_nullable is provided, player_or_team must be 'T' and results will be filtered for that team.
-
-    Args:
-        league_id (str, optional): The league ID. Valid values from `LeagueID`. Defaults to "00" (NBA).
-        per_mode (str, optional): The statistical mode. Valid values from `PerModeSimple` (e.g., "PerGame", "Totals").
-                                  Defaults to "PerGame".
-        player_or_team (str, optional): Fetch stats for 'P' (all Players) or 'T' (all Teams).
-                                        Valid values from `PlayerOrTeamAbbreviation`. Defaults to "T" (Team).
-                                        This does NOT filter for a specific player/team ID.
-        season_type (str, optional): The type of season. Valid values from `SeasonTypeAllStar`.
-                                     Defaults to "Regular Season".
-        season (str, optional): The NBA season identifier in YYYY-YY format (e.g., "2023-24").
-                                Defaults to `CURRENT_SEASON`.
-        play_type_nullable (str, optional): Specific play type to filter for.
-                                            Valid values: "Cut", "Handoff", "Isolation", "Misc", "OffScreen",
-                                            "PostUp", "PRBallHandler", "PRRollman", "OffRebound", "SpotUp", "Transition".
-                                            Defaults to None (all play types).
-        type_grouping_nullable (str, optional): Broad grouping of play types. Valid: "offensive", "defensive".
-                                                Defaults to None.
-        bypass_cache (bool, optional): If True, ignores cached data and fetches fresh data. Defaults to False.
-
-    Returns:
-        str: JSON string containing Synergy play type statistics.
-             Expected dictionary structure passed to format_response:
-             {
-                 "parameters": {
-                     "league_id": str, "per_mode": str, "player_or_team": str, "season_type": str,
-                     "season": str, "play_type": Optional[str], "type_grouping": Optional[str]
-                 },
-                 "synergy_stats": [
-                     {
-                         // Common fields:
-                         "SEASON_ID": str, "PLAYER_ID": Optional[int], "PLAYER_NAME": Optional[str],
-                         "TEAM_ID": Optional[int], "TEAM_ABBREVIATION": Optional[str], "TEAM_NAME": Optional[str],
-                         "PLAY_TYPE": str, "GP": Optional[int], "POSS_PCT": Optional[float], // Frequency
-                         "PPP": Optional[float], // Points Per Possession
-                         "FG_PCT": Optional[float], "EFG_PCT": Optional[float], "FT_FREQ": Optional[float],
-                         "SF_FREQ": Optional[float], "AND_ONE_FREQ": Optional[float], "TOV_FREQ": Optional[float],
-                         "SCORE_FREQ": Optional[float], "PERCENTILE": Optional[float],
-                         "POSS": Optional[float], "PTS": Optional[float], "FGM": Optional[float], "FGA": Optional[float],
-                         // ... other fields from SynergyPlayTypes endpoint
-                     }, ...
-                 ]
-             }
-             Often returns {"synergy_stats": []} due to external API behavior or no matching data.
-             Or an {'error': 'Error message'} object if a critical issue occurs.
+    Fetches Synergy Sports play type statistics.
+    A specific `play_type_nullable` is REQUIRED for meaningful data.
+    `type_grouping_nullable` ("offensive" or "defensive") is also highly recommended.
+    Optional `player_id_nullable` or `team_id_nullable` can be used for post-fetch filtering.
     """
-    logger.info(f"Executing fetch_synergy_play_types_logic for season: {season}, type: {player_or_team}, play_type: {play_type_nullable}, grouping: {type_grouping_nullable}")
+    logger.info(f"Executing fetch_synergy_play_types_logic for S: {season}, P/T: {player_or_team}, PlayType: {play_type_nullable}, Grouping: {type_grouping_nullable}, PlayerID: {player_id_nullable}, TeamID: {team_id_nullable}")
 
-    if not _validate_season_format(season):
-        return format_response(error=Errors.INVALID_SEASON_FORMAT.format(season=season))
-    if play_type_nullable is None:
-        return format_response(error=Errors.SYNERGY_PLAY_TYPE_REQUIRED.format(options=", ".join(VALID_PLAY_TYPES)))
-    if play_type_nullable not in VALID_PLAY_TYPES:
-        return format_response(error=Errors.INVALID_PLAY_TYPE.format(play_type=play_type_nullable, options=", ".join(VALID_PLAY_TYPES)))
-    if type_grouping_nullable is not None and type_grouping_nullable not in VALID_TYPE_GROUPINGS:
-        return format_response(error=Errors.INVALID_TYPE_GROUPING.format(type_grouping=type_grouping_nullable, options=", ".join(VALID_TYPE_GROUPINGS)))
-    
-    VALID_PLAYER_TEAM = {getattr(PlayerOrTeamAbbreviation, attr) for attr in dir(PlayerOrTeamAbbreviation) if not attr.startswith('_') and isinstance(getattr(PlayerOrTeamAbbreviation, attr), str)}
-    if player_or_team not in VALID_PLAYER_TEAM:
-        return format_response(error=Errors.INVALID_PLAYER_OR_TEAM_ABBREVIATION.format(value=player_or_team, valid_values=", ".join(VALID_PLAYER_TEAM)))
-    VALID_LEAGUE_IDS = {getattr(LeagueID, attr) for attr in dir(LeagueID) if not attr.startswith('_') and isinstance(getattr(LeagueID, attr), str)}
-    if league_id not in VALID_LEAGUE_IDS:
-        return format_response(error=Errors.INVALID_LEAGUE_ID.format(value=league_id, options=", ".join(VALID_LEAGUE_IDS)))
-    VALID_PER_MODES = {getattr(PerModeSimple, attr) for attr in dir(PerModeSimple) if not attr.startswith('_') and isinstance(getattr(PerModeSimple, attr), str)}
-    if per_mode not in VALID_PER_MODES:
-        return format_response(error=Errors.INVALID_PER_MODE.format(value=per_mode, options=", ".join(VALID_PER_MODES)))
-    VALID_SEASON_TYPES = {getattr(SeasonTypeAllStar, attr) for attr in dir(SeasonTypeAllStar) if not attr.startswith('_') and isinstance(getattr(SeasonTypeAllStar, attr), str)}
-    if season_type not in VALID_SEASON_TYPES:
-        return format_response(error=Errors.INVALID_SEASON_TYPE.format(value=season_type, options=", ".join(VALID_SEASON_TYPES)))
+    validation_error = _validate_synergy_params(
+        season, play_type_nullable, type_grouping_nullable, player_or_team,
+        league_id, per_mode, season_type
+    )
+    if validation_error:
+        return format_response(error=validation_error)
 
-    api_params_synergy = {
+    # API parameters do not include player_id_nullable or team_id_nullable directly for SynergyPlayTypes
+    # These are used for post-filtering if player_or_team is general ('P' or 'T')
+    api_params_for_call = {
         "league_id": league_id, "per_mode_simple": per_mode,
         "player_or_team_abbreviation": player_or_team,
         "season_type_all_star": season_type, "season": season,
         "play_type_nullable": play_type_nullable, "type_grouping_nullable": type_grouping_nullable
     }
-    cache_key_synergy = tuple(sorted(api_params_synergy.items())) # Consistent key from dict
-    current_time_epoch = int(datetime.now().timestamp())
-    timestamp_bucket = str(current_time_epoch // CACHE_TTL_SECONDS_SYNERGY)
+    # Create a cache key that includes all parameters that define the API request
+    cache_key_tuple = tuple(sorted(api_params_for_call.items()))
+    timestamp_bucket = str(int(datetime.now().timestamp() // CACHE_TTL_SECONDS_SYNERGY))
 
     try:
-        response_dict_synergy: Dict[str, Any]
+        response_dict: Dict[str, Any]
         if bypass_cache:
-            logger.info(f"Bypassing cache, fetching fresh Synergy data with params: {api_params_synergy}")
-            synergy_endpoint = SynergyPlayTypes(**api_params_synergy, timeout=settings.DEFAULT_TIMEOUT_SECONDS) # Changed
-            response_dict_synergy = synergy_endpoint.get_dict()
+            logger.info(f"Bypassing cache, fetching fresh Synergy data with params: {api_params_for_call}")
+            synergy_endpoint = SynergyPlayTypes(**api_params_for_call, timeout=settings.DEFAULT_TIMEOUT_SECONDS)
+            response_dict = synergy_endpoint.get_dict()
         else:
-            response_dict_synergy = get_cached_synergy_data(
-                cache_key=cache_key_synergy, timestamp=timestamp_bucket,
-                endpoint_class=SynergyPlayTypes, **api_params_synergy
+            response_dict = get_cached_synergy_data(
+                cache_key=cache_key_tuple, timestamp_bucket=timestamp_bucket,
+                endpoint_class=SynergyPlayTypes, api_kwargs=api_params_for_call
             )
-    except KeyError as ke:
-        logger.warning(f"KeyError ('{str(ke)}') encountered fetching Synergy data, likely due to unexpected API response format for params: {api_params_synergy}. Returning empty.")
+    except KeyError as ke: # Handles cases where API response might be malformed
+        logger.warning(f"KeyError ('{str(ke)}') fetching Synergy data, params: {api_params_for_call}. Returning empty with message.")
         return format_response({
-            "parameters": api_params_synergy,
+            "parameters": {**api_params_for_call, "player_id_nullable": player_id_nullable, "team_id_nullable": team_id_nullable},
             "synergy_stats": [],
-            "message": f"Could not retrieve Synergy data due to an API response format issue (KeyError: {str(ke)})."
+            "message": f"Could not retrieve Synergy data due to API response format issue (KeyError: {str(ke)})."
         })
-    except Exception as e: # Catch other potential errors from get_cached_synergy_data or initial setup
-        logger.error(f"Error fetching or processing Synergy play types before result set processing: {e}", exc_info=True)
-        error_msg = Errors.SYNERGY_UNEXPECTED.format(error=str(e))
-        return format_response(error=error_msg)
+    except Exception as e:
+        logger.error(f"Error fetching Synergy play types (pre-df): {e}", exc_info=True)
+        return format_response(error=Errors.SYNERGY_UNEXPECTED.format(error=str(e)))
 
     try:
-        result_set_data = None
-        if 'resultSets' in response_dict_synergy and isinstance(response_dict_synergy['resultSets'], list):
-            for rs_item in response_dict_synergy['resultSets']:
-                if isinstance(rs_item, dict) and rs_item.get('name') == 'SynergyPlayType':
-                    result_set_data = rs_item
-                    break
-            if not result_set_data and len(response_dict_synergy['resultSets']) > 0 and isinstance(response_dict_synergy['resultSets'][0], dict) :
-                 result_set_data = response_dict_synergy['resultSets'][0]
+        synergy_df = _extract_synergy_dataframe(response_dict, api_params_for_call)
+        processed_data = _process_dataframe(synergy_df, single_row=False)
 
-        if not result_set_data or 'headers' not in result_set_data or 'rowSet' not in result_set_data:
-            logger.warning(f"Could not find expected 'SynergyPlayType' data structure in API response for params: {api_params_synergy}. Response: {str(response_dict_synergy)[:500]}")
-            return format_response({
-                "parameters": api_params_synergy,
+        if processed_data is None:
+            # _process_dataframe returns None on its internal error, or if df was empty and it decided so.
+            # If synergy_df was empty, _extract_synergy_dataframe already logged it.
+            if not synergy_df.empty: # Log only if df was not empty but processing failed
+                 logger.error(f"DataFrame processing failed for Synergy stats with params: {api_params_for_call}")
+            return format_response(error=Errors.SYNERGY_PROCESSING) if not synergy_df.empty else format_response({
+                "parameters": {**api_params_for_call, "player_id_nullable": player_id_nullable, "team_id_nullable": team_id_nullable},
                 "synergy_stats": [],
-                "message": "No Synergy play type data found or response format was unexpected."
+                "message": "No Synergy play type data rows returned by API or processing failed."
             })
 
-        synergy_df = pd.DataFrame(result_set_data['rowSet'], columns=result_set_data['headers'])
-        processed_synergy_data = _process_dataframe(synergy_df, single_row=False)
-
-        if processed_synergy_data is None:
-            if synergy_df.empty:
-                logger.warning(f"No Synergy play type data rows returned by API for params: {api_params_synergy}")
-                return format_response({"parameters": api_params_synergy, "synergy_stats": []})
-            else:
-                logger.error(f"DataFrame processing failed for Synergy stats with params: {api_params_synergy}")
-                return format_response(error=Errors.SYNERGY_PROCESSING)
-
-        # Filter by player_id or team_id if provided
-        if processed_synergy_data:
-            filtered_data = processed_synergy_data
-            if player_id_nullable is not None and player_or_team == PlayerOrTeamAbbreviation.player:
-                filtered_data = [entry for entry in filtered_data if entry.get("PLAYER_ID") == player_id_nullable]
-                if not filtered_data:
-                    logger.warning(f"No Synergy data found for player_id: {player_id_nullable}")
-                    return format_response({"parameters": api_params_synergy, "synergy_stats": []})
-            elif team_id_nullable is not None and player_or_team == PlayerOrTeamAbbreviation.team:
-                filtered_data = [entry for entry in filtered_data if entry.get("TEAM_ID") == team_id_nullable]
-                if not filtered_data:
-                    logger.warning(f"No Synergy data found for team_id: {team_id_nullable}")
-                    return format_response({"parameters": api_params_synergy, "synergy_stats": []})
-
-            processed_synergy_data = filtered_data
+        # Apply post-fetch filtering
+        final_data = _apply_synergy_id_filters(processed_data, player_or_team, player_id_nullable, team_id_nullable)
         
-        logger.info(f"Successfully fetched and processed Synergy play type stats. Found {len(processed_synergy_data)} entries.")
+        if not final_data and (player_id_nullable or team_id_nullable):
+            # Log if filtering resulted in empty but original data was present
+            logger.warning(f"Synergy data became empty after ID filtering. PlayerID: {player_id_nullable}, TeamID: {team_id_nullable}")
+            # Return empty stats but include parameters for context
+            return format_response({
+                "parameters": {**api_params_for_call, "player_id_nullable": player_id_nullable, "team_id_nullable": team_id_nullable},
+                "synergy_stats": []
+            })
+
+        logger.info(f"Successfully fetched Synergy stats. Found {len(final_data)} entries after all filters.")
         return format_response({
-            "parameters": {
-                **api_params_synergy,
-                "player_id_nullable": player_id_nullable,
-                "team_id_nullable": team_id_nullable
-            },
-            "synergy_stats": processed_synergy_data or []
+            "parameters": {**api_params_for_call, "player_id_nullable": player_id_nullable, "team_id_nullable": team_id_nullable},
+            "synergy_stats": final_data
         })
 
-    except Exception as e: # Catch errors during result_set_data processing and DataFrame creation
-        logger.error(f"Error processing Synergy play type result sets: {e}", exc_info=True)
-        error_msg = Errors.SYNERGY_PROCESSING # More specific error if it's in this block
-        return format_response(error=error_msg)
+    except Exception as e:
+        logger.error(f"Error processing Synergy result sets or applying filters: {e}", exc_info=True)
+        return format_response(error=Errors.SYNERGY_PROCESSING)

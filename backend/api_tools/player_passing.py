@@ -1,5 +1,10 @@
+"""
+Handles fetching and processing player passing statistics, including passes made and received.
+Requires an initial lookup for the player's current team_id via commonplayerinfo.
+"""
 import logging
 from functools import lru_cache
+from typing import Set
 
 from nba_api.stats.endpoints import commonplayerinfo, playerdashptpass
 from nba_api.stats.library.parameters import SeasonTypeAllStar, PerModeSimple
@@ -16,17 +21,41 @@ from backend.utils.validation import _validate_season_format
 
 logger = logging.getLogger(__name__)
 
-# Module-level constants for validation sets
-_VALID_PASSING_SEASON_TYPES = {getattr(SeasonTypeAllStar, attr) for attr in dir(SeasonTypeAllStar) if not attr.startswith('_') and isinstance(getattr(SeasonTypeAllStar, attr), str)}
-_VALID_PASSING_PER_MODES = {getattr(PerModeSimple, attr) for attr in dir(PerModeSimple) if not attr.startswith('_') and isinstance(getattr(PerModeSimple, attr), str)}
+# --- Module-Level Constants ---
+PLAYER_PASSING_CACHE_SIZE = 256
 
-@lru_cache(maxsize=256)
+_VALID_PASSING_SEASON_TYPES: Set[str] = {getattr(SeasonTypeAllStar, attr) for attr in dir(SeasonTypeAllStar) if not attr.startswith('_') and isinstance(getattr(SeasonTypeAllStar, attr), str)}
+_VALID_PASSING_PER_MODES: Set[str] = {getattr(PerModeSimple, attr) for attr in dir(PerModeSimple) if not attr.startswith('_') and isinstance(getattr(PerModeSimple, attr), str)}
+
+@lru_cache(maxsize=PLAYER_PASSING_CACHE_SIZE)
 def fetch_player_passing_stats_logic(
     player_name: str,
     season: str = settings.CURRENT_NBA_SEASON,
     season_type: str = SeasonTypeAllStar.regular,
     per_mode: str = PerModeSimple.per_game
 ) -> str:
+    """
+    Fetches player passing statistics (passes made and received) for a given season.
+    This function first determines the player's team_id for the given season via commonplayerinfo,
+    then uses that team_id to fetch passing stats from playerdashptpass.
+
+    Args:
+        player_name (str): The name or ID of the player.
+        season (str, optional): NBA season in YYYY-YY format. Defaults to current season.
+        season_type (str, optional): Type of season. Defaults to Regular Season.
+        per_mode (str, optional): Statistical mode (PerModeSimple). Defaults to PerGame.
+
+    Returns:
+        str: A JSON string containing player passing stats or an error message.
+             Successful response structure:
+             {
+                 "player_name": "Player Name",
+                 "player_id": 12345,
+                 "parameters": {"season": "YYYY-YY", "season_type": "Season Type", "per_mode": "PerModeValue"},
+                 "passes_made": [ { ... stats ... } ],
+                 "passes_received": [ { ... stats ... } ]
+             }
+    """
     logger.info(f"Executing fetch_player_passing_stats_logic for player: {player_name}, Season: {season}, PerMode: {per_mode}")
 
     if not player_name or not player_name.strip():

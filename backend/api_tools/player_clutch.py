@@ -1,5 +1,9 @@
+"""
+Handles fetching and processing player clutch performance statistics
+from the PlayerDashboardByClutch endpoint.
+"""
 import logging
-from typing import Optional
+from typing import Optional, Dict, Any, Set
 from functools import lru_cache
 
 from nba_api.stats.endpoints import playerdashboardbyclutch
@@ -18,13 +22,45 @@ from backend.utils.validation import _validate_season_format, validate_date_form
 
 logger = logging.getLogger(__name__)
 
-# Module-level constants for validation sets
-_VALID_CLUTCH_SEASON_TYPES = {SeasonTypeAllStar.regular, SeasonTypeAllStar.playoffs, SeasonTypeAllStar.preseason}
-_VALID_CLUTCH_PER_MODES = {getattr(PerModeDetailed, attr) for attr in dir(PerModeDetailed) if not attr.startswith('_') and isinstance(getattr(PerModeDetailed, attr), str)}
-_VALID_CLUTCH_MEASURE_TYPES = {getattr(MeasureTypeDetailed, attr) for attr in dir(MeasureTypeDetailed) if not attr.startswith('_') and isinstance(getattr(MeasureTypeDetailed, attr), str)}
-_VALID_Y_N_CLUTCH = {"Y", "N", ""}
+# --- Module-Level Constants ---
+PLAYER_CLUTCH_CACHE_SIZE = 64
 
-@lru_cache(maxsize=64)
+_VALID_CLUTCH_SEASON_TYPES: Set[str] = {SeasonTypeAllStar.regular, SeasonTypeAllStar.playoffs, SeasonTypeAllStar.preseason}
+_VALID_CLUTCH_PER_MODES: Set[str] = {getattr(PerModeDetailed, attr) for attr in dir(PerModeDetailed) if not attr.startswith('_') and isinstance(getattr(PerModeDetailed, attr), str)}
+_VALID_CLUTCH_MEASURE_TYPES: Set[str] = {getattr(MeasureTypeDetailed, attr) for attr in dir(MeasureTypeDetailed) if not attr.startswith('_') and isinstance(getattr(MeasureTypeDetailed, attr), str)}
+_VALID_Y_N_CLUTCH: Set[str] = {"Y", "N", ""} # Used for plus_minus, pace_adjust, rank
+
+# --- Helper for Parameter Validation ---
+def _validate_clutch_params(
+    player_name: str, season: str, season_type: str, measure_type: str, per_mode: str,
+    plus_minus: str, pace_adjust: str, rank: str,
+    date_from_nullable: Optional[str], date_to_nullable: Optional[str]
+) -> Optional[str]:
+    """Validates parameters for fetch_player_clutch_stats_logic."""
+    if not player_name or not player_name.strip():
+        return Errors.PLAYER_NAME_EMPTY
+    if not season or not _validate_season_format(season):
+        return Errors.INVALID_SEASON_FORMAT.format(season=season)
+    if date_from_nullable and not validate_date_format(date_from_nullable):
+        return Errors.INVALID_DATE_FORMAT.format(date=date_from_nullable)
+    if date_to_nullable and not validate_date_format(date_to_nullable):
+        return Errors.INVALID_DATE_FORMAT.format(date=date_to_nullable)
+    if season_type not in _VALID_CLUTCH_SEASON_TYPES:
+        return Errors.INVALID_SEASON_TYPE.format(value=season_type, options=", ".join(list(_VALID_CLUTCH_SEASON_TYPES)[:5]))
+    if per_mode not in _VALID_CLUTCH_PER_MODES:
+        return Errors.INVALID_PER_MODE.format(value=per_mode, options=", ".join(list(_VALID_CLUTCH_PER_MODES)[:5]))
+    if measure_type not in _VALID_CLUTCH_MEASURE_TYPES:
+        return Errors.INVALID_MEASURE_TYPE.format(value=measure_type, options=", ".join(list(_VALID_CLUTCH_MEASURE_TYPES)[:5]))
+    if plus_minus not in _VALID_Y_N_CLUTCH:
+        return Errors.INVALID_PLUS_MINUS.format(value=plus_minus)
+    if pace_adjust not in _VALID_Y_N_CLUTCH:
+        return Errors.INVALID_PACE_ADJUST.format(value=pace_adjust)
+    if rank not in _VALID_Y_N_CLUTCH:
+        return Errors.INVALID_RANK.format(value=rank)
+    return None
+
+# --- Main Logic Function ---
+@lru_cache(maxsize=PLAYER_CLUTCH_CACHE_SIZE)
 def fetch_player_clutch_stats_logic(
     player_name: str,
     season: str = settings.CURRENT_NBA_SEASON,
@@ -48,21 +84,44 @@ def fetch_player_clutch_stats_logic(
     date_from_nullable: Optional[str] = None,
     date_to_nullable: Optional[str] = None
 ) -> str:
+    """
+    Fetches player clutch performance statistics across various clutch scenarios.
+
+    Args:
+        player_name (str): Name or ID of the player.
+        season (str, optional): Season in YYYY-YY format. Defaults to current.
+        season_type (str, optional): Type of season. Defaults to Regular Season.
+        measure_type (str, optional): Type of stats (Base, Advanced, etc.). Defaults to Base.
+        per_mode (str, optional): Statistical mode (Totals, PerGame, etc.). Defaults to Totals.
+        plus_minus (str, optional): Flag for plus-minus stats ("Y" or "N"). Defaults to "N".
+        pace_adjust (str, optional): Flag for pace adjustment ("Y" or "N"). Defaults to "N".
+        rank (str, optional): Flag for ranking ("Y" or "N"). Defaults to "N".
+        shot_clock_range_nullable (Optional[str], optional): Filter by shot clock range.
+        game_segment_nullable (Optional[str], optional): Filter by game segment.
+        period (int, optional): Filter by period. Defaults to 0 (all).
+        last_n_games (int, optional): Filter by last N games. Defaults to 0 (all).
+        month (int, optional): Filter by month. Defaults to 0 (all).
+        opponent_team_id (int, optional): Filter by opponent team ID. Defaults to 0 (all).
+        location_nullable (Optional[str], optional): Filter by location (Home/Road).
+        outcome_nullable (Optional[str], optional): Filter by game outcome (W/L).
+        vs_conference_nullable (Optional[str], optional): Filter by opponent conference.
+        vs_division_nullable (Optional[str], optional): Filter by opponent division.
+        season_segment_nullable (Optional[str], optional): Filter by season segment.
+        date_from_nullable (Optional[str], optional): Start date filter (YYYY-MM-DD).
+        date_to_nullable (Optional[str], optional): End date filter (YYYY-MM-DD).
+
+    Returns:
+        str: JSON string with clutch stats dashboards or an error message.
+    """
     logger.info(f"Executing fetch_player_clutch_stats_logic for: '{player_name}', Season: {season}, Measure: {measure_type}")
 
-    if not player_name or not player_name.strip(): return format_response(error=Errors.PLAYER_NAME_EMPTY)
-    if not season or not _validate_season_format(season): return format_response(error=Errors.INVALID_SEASON_FORMAT.format(season=season))
-    if date_from_nullable and not validate_date_format(date_from_nullable): return format_response(error=Errors.INVALID_DATE_FORMAT.format(date=date_from_nullable))
-    if date_to_nullable and not validate_date_format(date_to_nullable): return format_response(error=Errors.INVALID_DATE_FORMAT.format(date=date_to_nullable))
-
-    if season_type not in _VALID_CLUTCH_SEASON_TYPES: return format_response(error=Errors.INVALID_SEASON_TYPE.format(value=season_type, options=", ".join(list(_VALID_CLUTCH_SEASON_TYPES)[:5])))
-    if per_mode not in _VALID_CLUTCH_PER_MODES: return format_response(error=Errors.INVALID_PER_MODE.format(value=per_mode, options=", ".join(list(_VALID_CLUTCH_PER_MODES)[:5])))
-    if measure_type not in _VALID_CLUTCH_MEASURE_TYPES:
-        return format_response(error=Errors.INVALID_MEASURE_TYPE.format(value=measure_type, options=", ".join(list(_VALID_CLUTCH_MEASURE_TYPES)[:5])))
-
-    if plus_minus not in _VALID_Y_N_CLUTCH: return format_response(error=Errors.INVALID_PLUS_MINUS.format(value=plus_minus))
-    if pace_adjust not in _VALID_Y_N_CLUTCH: return format_response(error=Errors.INVALID_PACE_ADJUST.format(value=pace_adjust))
-    if rank not in _VALID_Y_N_CLUTCH: return format_response(error=Errors.INVALID_RANK.format(value=rank))
+    validation_error = _validate_clutch_params(
+        player_name, season, season_type, measure_type, per_mode,
+        plus_minus, pace_adjust, rank, date_from_nullable, date_to_nullable
+    )
+    if validation_error:
+        logger.warning(f"Parameter validation failed for clutch stats: {validation_error}")
+        return format_response(error=validation_error)
 
     try:
         player_id, player_actual_name = find_player_id_or_error(player_name)

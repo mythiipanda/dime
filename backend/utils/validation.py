@@ -1,16 +1,24 @@
+"""
+Utility functions for validating various data formats and values
+used within the NBA analytics backend application.
+"""
 import datetime
-from typing import Optional
+import re # Moved from bottom of file
+from typing import Optional, List # Added List
 
-def validate_date_format(date_string: Optional[str]) -> bool: # Changed to Optional[str] to match usage
+# --- Module-Level Constants ---
+_DEFAULT_VALID_LEAGUE_IDS: List[str] = ["00", "10", "20"] # Common NBA API League IDs: NBA, WNBA, G-League
+
+# --- Validation Functions ---
+def validate_date_format(date_string: Optional[str]) -> bool:
     """
     Validates that a date string is in the "YYYY-MM-DD" format.
-    Returns True if valid or if date_string is None, False otherwise.
+    Returns True if the string is a valid date in this format, or if date_string is None.
+    Returns False otherwise (e.g., empty string, incorrect format, invalid date).
     """
     if date_string is None:
-        return True # Or False, depending on desired strictness for None. Assuming None is acceptable if optional.
-                    # For now, let's keep it strict: if it's called, it should be a string.
-                    # Reverting to original type hint for consistency with source.
-    if not date_string or not isinstance(date_string, str):
+        return True # Assuming None is acceptable for optional date fields
+    if not isinstance(date_string, str) or not date_string: # Check for empty string explicitly
         return False
     try:
         datetime.datetime.strptime(date_string, '%Y-%m-%d')
@@ -73,13 +81,13 @@ def validate_game_id_format(game_id: str) -> bool:
         return False
     return bool(re.fullmatch(r"^\d{10}$", game_id))
 
-def _validate_league_id(league_id: str, valid_ids: Optional[list[str]] = None) -> bool:
+def _validate_league_id(league_id: str, valid_ids: Optional[List[str]] = None) -> bool: # Changed list to List
     """
     Validates that the league_id is one of the known valid IDs.
-    Default valid_ids are for NBA, WNBA, G-League.
+    Uses a default list if `valid_ids` is not provided.
     """
     if valid_ids is None:
-        valid_ids = ["00", "10", "20"] # Common NBA API League IDs
+        valid_ids = _DEFAULT_VALID_LEAGUE_IDS # Use module-level constant
     if not league_id or not isinstance(league_id, str):
         return False
     return league_id in valid_ids
@@ -98,5 +106,4 @@ def validate_team_id(team_id: int) -> bool:
     # we expect actual team IDs here.
     return team_id > 0 
 
-# Need to import re for _validate_season_format and validate_game_id_format
-import re
+# `import re` moved to the top of the file.

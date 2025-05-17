@@ -1,3 +1,6 @@
+"""
+Handles fetching and processing player game logs for a specific season and season type.
+"""
 import logging
 from functools import lru_cache
 import pandas as pd
@@ -16,8 +19,30 @@ from backend.utils.validation import _validate_season_format
 
 logger = logging.getLogger(__name__)
 
-@lru_cache(maxsize=256)
+PLAYER_GAMELOG_CACHE_SIZE = 256
+
+@lru_cache(maxsize=PLAYER_GAMELOG_CACHE_SIZE)
 def fetch_player_gamelog_logic(player_name: str, season: str, season_type: str = SeasonTypeAllStar.regular) -> str:
+    """
+    Fetches player game logs for a specified player, season, and season type.
+
+    Args:
+        player_name (str): The name or ID of the player.
+        season (str): The NBA season in YYYY-YY format (e.g., "2023-24").
+        season_type (str, optional): The type of season (e.g., "Regular Season", "Playoffs").
+                                     Defaults to "Regular Season".
+
+    Returns:
+        str: A JSON string containing a list of game logs, or an error message if an issue occurs.
+             Successful response structure:
+             {
+                 "player_name": "Player Name",
+                 "player_id": 12345,
+                 "season": "YYYY-YY",
+                 "season_type": "Season Type",
+                 "gamelog": [ { ... game log data ... }, ... ]
+             }
+    """
     logger.info(f"Executing fetch_player_gamelog_logic for: '{player_name}', Season: {season}, Type: {season_type}")
 
     if not season or not _validate_season_format(season):
@@ -55,7 +80,7 @@ def fetch_player_gamelog_logic(player_name: str, season: str, season_type: str =
             'GAME_ID', 'GAME_DATE', 'MATCHUP', 'WL', 'MIN', 'FGM', 'FGA', 'FG_PCT',
             'FG3M', 'FG3A', 'FG3_PCT', 'FTM', 'FTA', 'FT_PCT', 'OREB', 'DREB',
             'REB', 'AST', 'STL', 'BLK', 'TOV', 'PF', 'PTS', 'PLUS_MINUS',
-            'VIDEO_AVAILABLE' # Added VIDEO_AVAILABLE
+            'VIDEO_AVAILABLE'
         ]
         available_gamelog_cols = [col for col in gamelog_cols if col in gamelog_df.columns]
         gamelog_list = _process_dataframe(gamelog_df.loc[:, available_gamelog_cols] if available_gamelog_cols else pd.DataFrame(), single_row=False)

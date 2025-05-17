@@ -1,9 +1,13 @@
-from fastapi import APIRouter, HTTPException, Body, status # Added Body, status
+"""
+Provides a generic FastAPI route for fetching various types of NBA data.
+This router acts as a dispatcher to specific data fetching logic functions
+based on the 'target' specified in the request.
+"""
+from fastapi import APIRouter, HTTPException, Body, status
 import json
 import logging
 import asyncio
-from typing import Dict, Any # For response type hint
-
+from typing import Dict, Any
 
 from backend.schemas import FetchRequest
 from backend.api_tools.player_common_info import fetch_player_info_logic
@@ -14,17 +18,19 @@ from backend.api_tools.game_finder import fetch_league_games_logic
 from nba_api.stats.library.parameters import PerMode36, SeasonTypeAllStar
 from backend.core.constants import SUPPORTED_FETCH_TARGETS
 from backend.core.errors import Errors
+
 logger = logging.getLogger(__name__)
+
 router = APIRouter(
-    prefix="/fetch", # Add prefix for this generic fetch route
-    tags=["Generic Fetch"] # Tag for OpenAPI documentation
+    prefix="/fetch",
+    tags=["Generic Fetch"]
 )
 
 async def _handle_fetch_logic_call(
-    logic_function: callable, 
+    logic_function: callable,
     endpoint_name: str, # For logging/error context
-    *args, 
-    **kwargs
+    *args: Any, # Explicitly type *args
+    **kwargs: Any # Explicitly type **kwargs
 ) -> Dict[str, Any]:
     """Helper to call underlying logic, parse JSON, and handle errors for /fetch routes."""
     try:

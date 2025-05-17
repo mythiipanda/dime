@@ -1,5 +1,11 @@
+"""
+Handles fetching and processing player rebounding statistics,
+categorized by overall, shot type, contest level, shot distance, and rebound distance.
+Requires an initial lookup for the player's current team_id via commonplayerinfo.
+"""
 import logging
 from functools import lru_cache
+from typing import Set
 
 from nba_api.stats.endpoints import commonplayerinfo, playerdashptreb
 from nba_api.stats.library.parameters import SeasonTypeAllStar, PerModeSimple
@@ -16,17 +22,44 @@ from backend.utils.validation import _validate_season_format
 
 logger = logging.getLogger(__name__)
 
-# Module-level constants for validation sets
-_VALID_REB_SEASON_TYPES = {getattr(SeasonTypeAllStar, attr) for attr in dir(SeasonTypeAllStar) if not attr.startswith('_') and isinstance(getattr(SeasonTypeAllStar, attr), str)}
-_VALID_REB_PER_MODES = {getattr(PerModeSimple, attr) for attr in dir(PerModeSimple) if not attr.startswith('_') and isinstance(getattr(PerModeSimple, attr), str)}
+# --- Module-Level Constants ---
+PLAYER_REBOUNDING_CACHE_SIZE = 256
 
-@lru_cache(maxsize=256)
+_VALID_REB_SEASON_TYPES: Set[str] = {getattr(SeasonTypeAllStar, attr) for attr in dir(SeasonTypeAllStar) if not attr.startswith('_') and isinstance(getattr(SeasonTypeAllStar, attr), str)}
+_VALID_REB_PER_MODES: Set[str] = {getattr(PerModeSimple, attr) for attr in dir(PerModeSimple) if not attr.startswith('_') and isinstance(getattr(PerModeSimple, attr), str)}
+
+@lru_cache(maxsize=PLAYER_REBOUNDING_CACHE_SIZE)
 def fetch_player_rebounding_stats_logic(
     player_name: str,
     season: str = settings.CURRENT_NBA_SEASON,
     season_type: str = SeasonTypeAllStar.regular,
     per_mode: str = PerModeSimple.per_game
 ) -> str:
+    """
+    Fetches player rebounding statistics, broken down by various categories.
+    This function first determines the player's team_id for the given season,
+    then uses that to fetch detailed rebounding stats.
+
+    Args:
+        player_name (str): The name or ID of the player.
+        season (str, optional): NBA season in YYYY-YY format. Defaults to current season.
+        season_type (str, optional): Type of season. Defaults to Regular Season.
+        per_mode (str, optional): Statistical mode (PerModeSimple). Defaults to PerGame.
+
+    Returns:
+        str: A JSON string containing player rebounding stats or an error message.
+             Successful response structure:
+             {
+                 "player_name": "Player Name",
+                 "player_id": 12345,
+                 "parameters": {"season": "YYYY-YY", ...},
+                 "overall": { ... overall rebounding stats ... },
+                 "by_shot_type": [ { ... stats ... } ],
+                 "by_contest": [ { ... stats ... } ],
+                 "by_shot_distance": [ { ... stats ... } ],
+                 "by_rebound_distance": [ { ... stats ... } ]
+             }
+    """
     logger.info(f"Executing fetch_player_rebounding_stats_logic for player: {player_name}, Season: {season}, PerMode: {per_mode}")
 
     if not player_name or not player_name.strip():

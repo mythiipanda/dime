@@ -1,3 +1,8 @@
+"""
+Handles fetching and processing various types of game box score data
+(Traditional, Advanced, Four Factors, Usage, Defensive, Summary)
+using a generic helper function.
+"""
 import logging
 from functools import lru_cache
 from nba_api.stats.endpoints import (
@@ -16,13 +21,17 @@ from backend.api_tools.utils import (
     format_response
 )
 from backend.utils.validation import validate_game_id_format
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Type # Import Type for better hinting if possible, though Any works
+
 logger = logging.getLogger(__name__)
 
+# --- Module-Level Constants ---
+GAME_BOXSCORE_CACHE_SIZE = 128
 
+# --- Generic Helper Function ---
 def _fetch_boxscore_data_generic(
     game_id: str,
-    endpoint_class: Any, # Type[Endpoint] but Endpoint is not directly imported
+    endpoint_class: Type[Any], # Using Type[Any] as a placeholder for specific endpoint types
     dataset_mapping: Dict[str, str], # e.g., {"players": "player_stats", "teams": "team_stats"}
     error_constants: Dict[str, str], # e.g., {"api": Errors.BOXSCORE_API, "processing": Errors.PROCESSING_ERROR}
     endpoint_name_for_logging: str,
@@ -95,7 +104,9 @@ def _fetch_boxscore_data_generic(
         return format_response(error=error_msg)
 
 
-@lru_cache(maxsize=128)
+# --- Public Fetch Logic Functions ---
+
+@lru_cache(maxsize=GAME_BOXSCORE_CACHE_SIZE)
 def fetch_boxscore_traditional_logic(
     game_id: str,
     start_period: int = StartPeriod.default,
@@ -104,6 +115,7 @@ def fetch_boxscore_traditional_logic(
     end_range: int = EndRange.default,
     range_type: int = RangeType.default
 ) -> str:
+    """Fetches Traditional Box Score data (V3) for a given game_id."""
     return _fetch_boxscore_data_generic(
         game_id=game_id,
         endpoint_class=BoxScoreTraditionalV3,
@@ -124,7 +136,7 @@ def fetch_boxscore_traditional_logic(
         start_range=start_range, end_range=end_range, range_type=range_type
     )
 
-@lru_cache(maxsize=128)
+@lru_cache(maxsize=GAME_BOXSCORE_CACHE_SIZE)
 def fetch_boxscore_advanced_logic(
     game_id: str,
     start_period: int = StartPeriod.default,
@@ -132,6 +144,7 @@ def fetch_boxscore_advanced_logic(
     start_range: int = StartRange.default,
     end_range: int = EndRange.default
 ) -> str:
+    """Fetches Advanced Box Score data (V3) for a given game_id."""
     return _fetch_boxscore_data_generic(
         game_id=game_id,
         endpoint_class=BoxScoreAdvancedV3,
@@ -146,12 +159,13 @@ def fetch_boxscore_advanced_logic(
         start_range=start_range, end_range=end_range
     )
 
-@lru_cache(maxsize=128)
+@lru_cache(maxsize=GAME_BOXSCORE_CACHE_SIZE)
 def fetch_boxscore_four_factors_logic(
     game_id: str,
     start_period: int = StartPeriod.default,
     end_period: int = EndPeriod.default
 ) -> str:
+    """Fetches Four Factors Box Score data (V3) for a given game_id."""
     return _fetch_boxscore_data_generic(
         game_id=game_id,
         endpoint_class=BoxScoreFourFactorsV3,
@@ -162,8 +176,9 @@ def fetch_boxscore_four_factors_logic(
         start_period=start_period, end_period=end_period
     )
 
-@lru_cache(maxsize=128)
+@lru_cache(maxsize=GAME_BOXSCORE_CACHE_SIZE)
 def fetch_boxscore_usage_logic(game_id: str) -> str:
+    """Fetches Usage Box Score data (V3) for a given game_id."""
     return _fetch_boxscore_data_generic(
         game_id=game_id,
         endpoint_class=BoxScoreUsageV3,
@@ -173,8 +188,9 @@ def fetch_boxscore_usage_logic(game_id: str) -> str:
         # No additional constructor kwargs beyond game_id for BoxScoreUsageV3 apart from defaults
     )
 
-@lru_cache(maxsize=128)
+@lru_cache(maxsize=GAME_BOXSCORE_CACHE_SIZE)
 def fetch_boxscore_defensive_logic(game_id: str) -> str:
+    """Fetches Defensive Box Score data (V2) for a given game_id."""
     return _fetch_boxscore_data_generic(
         game_id=game_id,
         endpoint_class=BoxScoreDefensiveV2,
@@ -184,9 +200,9 @@ def fetch_boxscore_defensive_logic(game_id: str) -> str:
         # No additional constructor kwargs beyond game_id for BoxScoreDefensiveV2
     )
 
-@lru_cache(maxsize=128)
+@lru_cache(maxsize=GAME_BOXSCORE_CACHE_SIZE)
 def fetch_boxscore_summary_logic(game_id: str) -> str:
-    """Fetches the summary box score for a given game_id using BoxScoreSummaryV2."""
+    """Fetches the comprehensive summary box score (V2) for a given game_id."""
     return _fetch_boxscore_data_generic(
         game_id=game_id,
         endpoint_class=BoxScoreSummaryV2,

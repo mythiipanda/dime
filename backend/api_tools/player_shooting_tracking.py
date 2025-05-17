@@ -1,9 +1,14 @@
+"""
+Handles fetching and processing player shooting tracking statistics,
+categorized by general, shot clock, dribbles, touch time, and defender distance.
+Requires an initial lookup for the player's current team_id via commonplayerinfo.
+"""
 import logging
-from typing import Optional
+from typing import Optional, Set
 from functools import lru_cache
 
 from nba_api.stats.endpoints import commonplayerinfo, playerdashptshots
-from nba_api.stats.library.parameters import SeasonTypeAllStar, PerModeSimple # Added PerModeSimple
+from nba_api.stats.library.parameters import SeasonTypeAllStar, PerModeSimple
 
 from backend.config import settings
 from backend.core.errors import Errors
@@ -15,23 +20,45 @@ from backend.api_tools.utils import (
 )
 from backend.utils.validation import _validate_season_format, validate_date_format
 
-
 logger = logging.getLogger(__name__)
 
-# Module-level constant for validation sets
-_VALID_SHOOTING_TRACKING_SEASON_TYPES = {getattr(SeasonTypeAllStar, attr) for attr in dir(SeasonTypeAllStar) if not attr.startswith('_') and isinstance(getattr(SeasonTypeAllStar, attr), str)}
-_VALID_SHOOTING_TRACKING_PER_MODES = {getattr(PerModeSimple, attr) for attr in dir(PerModeSimple) if not attr.startswith('_') and isinstance(getattr(PerModeSimple, attr), str)}
+# --- Module-Level Constants ---
+PLAYER_SHOOTING_TRACKING_CACHE_SIZE = 128
+NBA_API_DEFAULT_OPPONENT_TEAM_ID = 0 # Standard value for no specific opponent filter
 
-@lru_cache(maxsize=128)
+_VALID_SHOOTING_TRACKING_SEASON_TYPES: Set[str] = {getattr(SeasonTypeAllStar, attr) for attr in dir(SeasonTypeAllStar) if not attr.startswith('_') and isinstance(getattr(SeasonTypeAllStar, attr), str)}
+_VALID_SHOOTING_TRACKING_PER_MODES: Set[str] = {getattr(PerModeSimple, attr) for attr in dir(PerModeSimple) if not attr.startswith('_') and isinstance(getattr(PerModeSimple, attr), str)}
+
+@lru_cache(maxsize=PLAYER_SHOOTING_TRACKING_CACHE_SIZE)
 def fetch_player_shots_tracking_logic(
     player_name: str,
     season: str = settings.CURRENT_NBA_SEASON,
     season_type: str = SeasonTypeAllStar.regular,
-    per_mode: str = PerModeSimple.totals, # Added per_mode
-    opponent_team_id: int = 0,
+    per_mode: str = PerModeSimple.totals,
+    opponent_team_id: int = NBA_API_DEFAULT_OPPONENT_TEAM_ID,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None
 ) -> str:
+    """
+    Fetches player shooting tracking statistics, broken down by various categories.
+    This function first determines the player's team_id for the given season,
+    then uses that to fetch detailed shooting stats.
+
+    Args:
+        player_name (str): The name or ID of the player.
+        season (str, optional): NBA season in YYYY-YY format. Defaults to current season.
+        season_type (str, optional): Type of season. Defaults to Regular Season.
+        per_mode (str, optional): Statistical mode (PerModeSimple). Defaults to Totals.
+        opponent_team_id (int, optional): Filter by opponent team ID. Defaults to 0 (all).
+        date_from (Optional[str], optional): Start date filter (YYYY-MM-DD).
+        date_to (Optional[str], optional): End date filter (YYYY-MM-DD).
+
+    Returns:
+        str: A JSON string containing player shooting tracking stats or an error message.
+             Successful response structure includes keys like: "general_shooting",
+             "by_shot_clock", "by_dribble_count", "by_touch_time",
+             "by_defender_distance", "by_defender_distance_10ft_plus".
+    """
     logger.info(f"Executing fetch_player_shots_tracking_logic for player name: {player_name}, Season: {season}, PerMode: {per_mode}")
 
     if not player_name or not player_name.strip():
@@ -63,7 +90,7 @@ def fetch_player_shots_tracking_logic(
         logger.debug(f"Fetching playerdashptshots for Player ID: {player_id_int}, Team ID: {team_id}, Season: {season}")
         shooting_stats_endpoint = playerdashptshots.PlayerDashPtShots(
             player_id=player_id_int, team_id=team_id, season=season,
-            season_type_all_star=season_type, per_mode_simple=per_mode, # Pass per_mode
+            season_type_all_star=season_type, per_mode_simple=per_mode,
             opponent_team_id=opponent_team_id,
             date_from_nullable=date_from, date_to_nullable=date_to,
             timeout=settings.DEFAULT_TIMEOUT_SECONDS

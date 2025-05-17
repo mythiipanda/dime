@@ -2,23 +2,29 @@ import logging
 import asyncio
 import json
 from fastapi import APIRouter, HTTPException, Body, Query
-from typing import Dict, Any, Optional, List # Added Optional and List for query parameters
-# Use the correctly defined PlayerAnalysisRequest from schemas.py
-from backend.schemas import PlayerAnalysisRequest # Changed from AnalyzeRequest
+from typing import Dict, Any, Optional, List
+from backend.schemas import PlayerAnalysisRequest
 from backend.api_tools.analyze import analyze_player_stats_logic
 from backend.api_tools.advanced_metrics import fetch_player_advanced_analysis_logic
 from backend.api_tools.shot_charts import fetch_player_shot_chart
-from backend.core.errors import Errors # Changed
+from backend.api_tools.advanced_shot_charts import process_shot_data_for_visualization # Moved from local import
+from backend.api_tools.player_comparison import compare_player_shots as compare_shots # Moved from local import
+from backend.api_tools.visualization_cache import VisualizationCache # Moved from local import
+from backend.core.errors import Errors
+from backend.config import settings # Already at top, but ensure it's used if needed locally
+
+# --- Module-Level Constants ---
+MIN_PLAYERS_FOR_COMPARISON = 2
+MAX_PLAYERS_FOR_COMPARISON = 4
 
 # Router for player analysis related endpoints
-# No prefix here, as it's applied in main.py (e.g., /api/v1/analyze)
 router = APIRouter(
-    tags=["Analysis", "Players"] # Grouped under Analysis, also relevant to Players
+    tags=["Analysis", "Players"]
 )
 logger = logging.getLogger(__name__)
 
 @router.post(
-    "/player", # This will be mounted under /api/v1/analyze, resulting in /api/v1/analyze/player
+    "/player",
     response_model=Dict[str, Any],
     summary="Analyze Player Statistics",
     description="Fetches and returns overall dashboard statistics for a specified player and season. "
@@ -26,7 +32,7 @@ logger = logging.getLogger(__name__)
                 "focusing on the 'OverallPlayerDashboard' data for the given season."
 )
 async def analyze_player_stats_endpoint(
-    request: PlayerAnalysisRequest = Body(...) # Use the correct Pydantic model
+    request: PlayerAnalysisRequest = Body(...)
 ) -> Dict[str, Any]:
     """
     Analyzes player statistics based on the provided player name and season.
@@ -321,19 +327,18 @@ async def get_player_advanced_shotchart(
     - **404 Not Found**: If player is not found or no shot data exists.
     - **500 Internal Server Error**: For server-side errors.
     """
-    from backend.api_tools.advanced_shot_charts import process_shot_data_for_visualization
-    from backend.config import settings
+    # process_shot_data_for_visualization and settings are now imported at the top
 
     logger.info(f"Received GET /analyze/player/{player_name}/advanced-shotchart request with season={season}, "
                 f"season_type={season_type}, chart_type={chart_type}, output_format={output_format}, use_cache={use_cache}")
 
     try:
         # Use the current season if not specified
-        effective_season = season if season else settings.CURRENT_NBA_SEASON
+        effective_season = season if season else settings.CURRENT_NBA_SEASON # settings is imported at top
 
         # Process the shot data and create visualization
         result = await asyncio.to_thread(
-            process_shot_data_for_visualization,
+            process_shot_data_for_visualization, # Now imported at top
             player_name=player_name,
             season=effective_season,
             season_type=season_type,
@@ -394,9 +399,7 @@ async def compare_player_shots(
     - **404 Not Found**: If players are not found or no shot data exists.
     - **500 Internal Server Error**: For server-side errors.
     """
-    from backend.api_tools.player_comparison import compare_player_shots as compare_shots
-    from backend.api_tools.visualization_cache import VisualizationCache
-    from backend.config import settings
+    # compare_shots, VisualizationCache, and settings are now imported at the top
 
     logger.info(f"Received GET /analyze/players/compare-shots request with player_names={player_names}, "
                 f"season={season}, season_type={season_type}, chart_type={chart_type}, "
@@ -404,14 +407,14 @@ async def compare_player_shots(
 
     try:
         # Validate parameters
-        if len(player_names) < 2:
-            raise HTTPException(status_code=400, detail="At least two players are required for comparison")
+        if len(player_names) < MIN_PLAYERS_FOR_COMPARISON: # Use constant
+            raise HTTPException(status_code=400, detail=f"At least {MIN_PLAYERS_FOR_COMPARISON} players are required for comparison")
 
-        if len(player_names) > 4:
-            raise HTTPException(status_code=400, detail="Maximum of 4 players can be compared at once")
+        if len(player_names) > MAX_PLAYERS_FOR_COMPARISON: # Use constant
+            raise HTTPException(status_code=400, detail=f"Maximum of {MAX_PLAYERS_FOR_COMPARISON} players can be compared at once")
 
         # Use the current season if not specified
-        effective_season = season if season else settings.CURRENT_NBA_SEASON
+        effective_season = season if season else settings.CURRENT_NBA_SEASON # settings is imported at top
 
         # Check cache first if enabled
         if use_cache:

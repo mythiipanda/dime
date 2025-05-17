@@ -1,3 +1,7 @@
+"""
+Handles fetching live betting odds for today's NBA games using NBALiveHTTP.
+Includes caching logic for the raw API response.
+"""
 import logging
 from typing import Any, Dict
 from functools import lru_cache
@@ -10,47 +14,51 @@ from backend.api_tools.utils import format_response
 
 logger = logging.getLogger(__name__)
 
-CACHE_TTL_SECONDS_ODDS = 3600
+# --- Module-Level Constants ---
+CACHE_TTL_SECONDS_ODDS = 3600  # 1 hour
+ODDS_RAW_CACHE_SIZE = 2
+ODDS_ENDPOINT_PATH = "odds/odds_todaysGames.json"
 
-@lru_cache(maxsize=2) # Cache for "todays_odds" key, invalidated by timestamp
+# --- Caching Function for Raw Data ---
+@lru_cache(maxsize=ODDS_RAW_CACHE_SIZE)
 def get_cached_odds_data(
-    cache_key: str,
-    timestamp: str # ISO format timestamp string for the current hour
+    cache_key: str, # Static part of the key, e.g., "todays_live_odds"
+    timestamp_bucket: str # Timestamp bucket for time-based invalidation
 ) -> Dict[str, Any]:
     """
     Cached wrapper for fetching live odds data using `NBALiveHTTP`.
-    The `timestamp` (typically current hour) is part of the cache key to ensure periodic updates.
+    The `timestamp_bucket` ensures periodic cache invalidation.
 
     Args:
-        cache_key (str): A static string part of the cache key (e.g., "todays_live_odds").
-        timestamp (str): An ISO format timestamp string, typically for the current hour,
-                         used to manage cache invalidation.
+        cache_key: A static string for the cache key.
+        timestamp_bucket: A string derived from the current time, bucketed by CACHE_TTL_SECONDS_ODDS.
 
     Returns:
-        Dict[str, Any]: The raw dictionary response from the "odds/odds_todaysGames.json" endpoint.
+        The raw dictionary response from the odds endpoint.
 
     Raises:
-        Exception: If the API call fails, to be caught by the caller (`fetch_odds_data_logic`).
+        Exception: If the API call fails, to be handled by the caller.
     """
-    logger.info(f"Cache miss or expiry for odds data - fetching new data (Key: {cache_key}, Timestamp: {timestamp})")
+    logger.info(f"Cache miss or expiry for odds data - fetching new data (Key: {cache_key}, Timestamp Bucket: {timestamp_bucket})")
     try:
-        http_client = NBALiveHTTP() # Corrected variable name
+        http_client = NBALiveHTTP()
         response = http_client.send_api_request(
-            endpoint="odds/odds_todaysGames.json",
+            endpoint=ODDS_ENDPOINT_PATH,
             parameters={}, # This endpoint typically doesn't require parameters
-            proxy=None, # Add proxy configuration if needed globally
-            headers=None, # Add custom headers if needed
+            proxy=None,
+            headers=None,
             timeout=settings.DEFAULT_TIMEOUT_SECONDS
         )
         return response.get_dict()
     except Exception as e:
         logger.error(f"NBALiveHTTP odds request failed: {e}", exc_info=True)
-        raise e # Re-raise to be handled by the calling function
+        raise # Re-raise to be handled by the calling function
 
+# --- Main Logic Function ---
 def fetch_odds_data_logic(bypass_cache: bool = False) -> str:
     """
-    Fetches live betting odds for today's NBA games using the NBALiveHTTP client, with caching.
-    The odds data includes various markets (e.g., moneyline, spread, total) from different bookmakers.
+    Fetches live betting odds for today's NBA games.
+    The odds data includes various markets from different bookmakers.
 
     Args:
         bypass_cache (bool, optional): If True, ignores any cached data and fetches fresh data from the API.
@@ -97,7 +105,7 @@ def fetch_odds_data_logic(bypass_cache: bool = False) -> str:
     logger.info(f"Executing fetch_odds_data_logic with bypass_cache={bypass_cache}")
 
     cache_key_odds = "todays_live_odds_data"
-    cache_invalidation_timestamp = datetime.now().replace(minute=0, second=0, microsecond=0).isoformat()
+    cache_invalidation_timestamp_bucket = str(int(datetime.now().timestamp() // CACHE_TTL_SECONDS_ODDS))
 
     try:
         raw_response_dict: Dict[str, Any]
@@ -105,14 +113,15 @@ def fetch_odds_data_logic(bypass_cache: bool = False) -> str:
             logger.info("Bypassing cache, fetching fresh live odds data.")
             http_client_direct = NBALiveHTTP()
             api_response = http_client_direct.send_api_request(
-                endpoint="odds/odds_todaysGames.json", parameters={}, timeout=settings.DEFAULT_TIMEOUT_SECONDS # Changed
+                endpoint=ODDS_ENDPOINT_PATH, parameters={}, timeout=settings.DEFAULT_TIMEOUT_SECONDS
             )
             raw_response_dict = api_response.get_dict()
         else:
-            raw_response_dict = get_cached_odds_data(cache_key=cache_key_odds, timestamp=cache_invalidation_timestamp)
+            raw_response_dict = get_cached_odds_data(cache_key=cache_key_odds, timestamp_bucket=cache_invalidation_timestamp_bucket)
+        
         games_data_list = raw_response_dict.get("games", [])
         
-        if not isinstance(games_data_list, list): # Basic type check
+        if not isinstance(games_data_list, list):
             logger.error(f"Fetched odds data 'games' field is not a list: {type(games_data_list)}")
             games_data_list = [] # Default to empty list to prevent further errors
 

@@ -1,3 +1,7 @@
+"""
+Handles aggregating various player statistics from different sources,
+including common info, career stats, game logs for a specific season, and awards.
+"""
 import logging
 import json
 from functools import lru_cache
@@ -17,12 +21,32 @@ from backend.api_tools.player_gamelogs import fetch_player_gamelog_logic
 
 logger = logging.getLogger(__name__)
 
-@lru_cache(maxsize=128)
+PLAYER_AGGREGATE_STATS_CACHE_SIZE = 128
+
+@lru_cache(maxsize=PLAYER_AGGREGATE_STATS_CACHE_SIZE)
 def fetch_player_stats_logic(player_name: str, season: Optional[str] = None, season_type: str = SeasonTypeAllStar.regular) -> str:
+    """
+    Aggregates various player statistics including common info, career stats,
+    game logs for a specified season, and awards history.
+
+    Args:
+        player_name (str): The name or ID of the player.
+        season (Optional[str], optional): The season for which to fetch game logs (YYYY-YY format).
+                                         Defaults to the current NBA season if None.
+        season_type (str, optional): The type of season for game logs (e.g., "Regular Season").
+                                     Defaults to "Regular Season".
+
+    Returns:
+        str: A JSON string containing the aggregated player statistics, or an error message.
+             Successful response structure includes keys like:
+             "player_name", "player_id", "season_requested_for_gamelog",
+             "season_type_requested_for_gamelog", "info", "headline_stats",
+             "available_seasons", "career_stats", "season_gamelog", "awards".
+    """
     effective_season = season if season is not None else settings.CURRENT_NBA_SEASON
     logger.info(f"Executing fetch_player_stats_logic for: '{player_name}', Season for Gamelog: {effective_season}, Type: {season_type}")
 
-    if not _validate_season_format(effective_season): # Validate the season that will be used
+    if not _validate_season_format(effective_season):
         error_msg = Errors.INVALID_SEASON_FORMAT.format(season=effective_season)
         return format_response(error=error_msg)
     

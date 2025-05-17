@@ -1,29 +1,40 @@
+"""
+Handles fetching game-level visual and analytical data, specifically
+game-wide shot charts and win probability play-by-play.
+"""
 import logging
 from functools import lru_cache
 import pandas as pd
+from typing import Set # For type hinting _VALID_WP_RUN_TYPES
 
 from nba_api.stats.endpoints import (
     shotchartdetail,
     WinProbabilityPBP
 )
-from nba_api.stats.library.parameters import RunType # Added import for RunType
+from nba_api.stats.library.parameters import RunType
 from backend.config import settings
 from backend.core.errors import Errors
 from backend.api_tools.utils import (
     _process_dataframe,
     format_response
 )
-from backend.utils.validation import validate_game_id_format # Import from new location
+from backend.utils.validation import validate_game_id_format
 
 logger = logging.getLogger(__name__)
 
-# Module-level constant for RunType validation
-_VALID_WP_RUN_TYPES = {"each play", "each second", "each poss"} # Explicitly list known valid string values
+# --- Module-Level Constants ---
+GAME_SHOTCHART_CACHE_SIZE = 64
+GAME_WIN_PROB_CACHE_SIZE = 64
+SHOTCHART_CONTEXT_MEASURE_GAME = "FGA"
 
-@lru_cache(maxsize=64)
+_VALID_WP_RUN_TYPES: Set[str] = {"each play", "each second", "each poss"}
+
+# --- Logic Functions ---
+@lru_cache(maxsize=GAME_SHOTCHART_CACHE_SIZE)
 def fetch_shotchart_logic(game_id: str) -> str:
     """
-    Fetches shot chart data for all players in a specific NBA game using the nba_api's ShotChartDetail endpoint.
+    Fetches shot chart data for all players in a specific NBA game.
+    Data is sourced from the nba_api's ShotChartDetail endpoint.
 
     Args:
         game_id (str): NBA game ID (10-digit string).
@@ -45,8 +56,8 @@ def fetch_shotchart_logic(game_id: str) -> str:
 
     try:
         shotchart_endpoint = shotchartdetail.ShotChartDetail(
-            game_id_nullable=game_id, team_id=0, player_id=0,
-            context_measure_simple="FGA", season_nullable=None,
+            game_id_nullable=game_id, team_id=0, player_id=0, # team_id=0 and player_id=0 for game-wide chart
+            context_measure_simple=SHOTCHART_CONTEXT_MEASURE_GAME, season_nullable=None, # Season not needed for game-specific chart
             timeout=settings.DEFAULT_TIMEOUT_SECONDS
         )
         logger.debug(f"shotchartdetail API call successful for game {game_id}")
@@ -101,10 +112,11 @@ def fetch_shotchart_logic(game_id: str) -> str:
         error_msg = Errors.SHOTCHART_API.format(game_id=game_id, error=str(e))
         return format_response(error=error_msg)
 
-@lru_cache(maxsize=64)
+@lru_cache(maxsize=GAME_WIN_PROB_CACHE_SIZE)
 def fetch_win_probability_logic(game_id: str, run_type: str = RunType.default) -> str:
     """
-    Fetches win probability data for a specific NBA game using the nba_api's WinProbabilityPBP endpoint.
+    Fetches win probability data for a specific NBA game.
+    Data is sourced from the nba_api's WinProbabilityPBP endpoint.
 
     Args:
         game_id (str): NBA game ID (10-digit string).

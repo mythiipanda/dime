@@ -1,73 +1,89 @@
+"""
+Handles Server-Sent Events (SSE) for streaming responses from the AI agent.
+This module includes utilities for formatting SSE messages, recursively converting
+complex objects to dictionaries for JSON serialization, and the main SSE route.
+"""
 import asyncio
 import json
 import logging
+import re # For thinking pattern extraction
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
-from rich.pretty import pprint
+from rich.pretty import pprint # For test_agent_stream
 from backend.agents import nba_agent
-from dataclasses import asdict, is_dataclass
-from agno.agent import RunResponse
-from typing import AsyncIterator, Dict, Any
-from agno.utils.common import dataclass_to_dict
+from dataclasses import is_dataclass # No need for asdict if using custom recursive one
+from agno.agent import RunResponse # For type hinting in test_agent_stream
+from typing import AsyncIterator, Dict, Any, Optional # Added Optional
+from agno.utils.common import dataclass_to_dict # For test_agent_stream
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# --- Revised recursive_asdict with depth limit ---
-MAX_RECURSION_DEPTH = 20 # Limit recursion depth
-
-def recursive_asdict(obj, _depth=0):
-    if _depth > MAX_RECURSION_DEPTH:
-        # Return placeholder if max depth is exceeded
-        return f"<Max Recursion Depth Exceeded ({MAX_RECURSION_DEPTH})>"
-
-    # Handle basic types and None first
-    if obj is None or isinstance(obj, (str, int, float, bool)):
-        return obj
-    # Handle dataclasses
-    elif is_dataclass(obj):
-        result = {}
-        for key, value in obj.__dict__.items():
-            result[key] = recursive_asdict(value, _depth + 1) # Increment depth
-        return result
-    # Handle lists
-    elif isinstance(obj, list):
-        return [recursive_asdict(item, _depth + 1) for item in obj] # Increment depth
-    # Handle dictionaries (including mappingproxy if it occurs again)
-    elif isinstance(obj, dict) or type(obj).__name__ == 'mappingproxy':
-        # Ensure it's a mutable dict for processing
-        current_dict = dict(obj)
-        return {key: recursive_asdict(value, _depth + 1) for key, value in current_dict.items()} # Increment depth
-    # Handle other objects with __dict__
-    elif hasattr(obj, "__dict__"):
-        try:
-            # Explicitly convert vars(obj) to dict before recursion
-            obj_dict = dict(vars(obj))
-            return recursive_asdict(obj_dict, _depth + 1) # Increment depth
-        except Exception as e:
-             # Catch errors during vars() or dict() conversion
-             logger.warning(f"Could not serialize object part using vars(): {e}")
-             return f"<Object of type {type(obj).__name__} partially unserializable>"
-    # Handle other non-serializable types gracefully
-    else:
-        try:
-            # Attempt string conversion as a fallback
-            return str(obj)
-        except Exception:
-            return f"<Unserializable Type: {type(obj).__name__}>"
-
-def format_sse(data: str, event: str | None = None) -> str:
-    msg = f"data: {data}\n\n"
-    if event is not None:
-        msg = f"event: {event}\n{msg}"
-    return msg
+# --- Constants ---
+MAX_RECURSION_DEPTH = 20  # Limit recursion depth for object serialization
+SSE_LOG_TRUNCATE_LIMIT = 1000 # Max characters to log for an SSE message
 
 STAT_CARD_MARKER = "STAT_CARD_JSON::"
 CHART_DATA_MARKER = "CHART_DATA_JSON::"
 TABLE_DATA_MARKER = "TABLE_DATA_JSON::"
 
-def format_message_data(chunk_dict: Dict[Any, Any]) -> Dict[str, Any]:
+# --- Helper Functions ---
+def recursive_asdict(obj: Any, _depth: int = 0) -> Any:
+    """
+    Recursively converts an object (especially dataclasses and nested structures)
+    into a dictionary suitable for JSON serialization, with a depth limit.
+    Handles basic types, lists, dicts, dataclasses, and other objects with __dict__.
+    Provides fallbacks for unserializable types.
+    """
+    if _depth > MAX_RECURSION_DEPTH:
+        return f"<Max Recursion Depth Exceeded ({MAX_RECURSION_DEPTH})>"
+
+    if obj is None or isinstance(obj, (str, int, float, bool)):
+        return obj
+    elif is_dataclass(obj):
+        result = {}
+        # Iterate through fields defined in __init__ or __slots__ if available,
+        # otherwise fallback to __dict__ but be mindful of potential issues.
+        # For simplicity, __dict__ is used here as in the original.
+        for key, value in obj.__dict__.items():
+            result[key] = recursive_asdict(value, _depth + 1)
+        return result
+    elif isinstance(obj, list):
+        return [recursive_asdict(item, _depth + 1) for item in obj]
+    elif isinstance(obj, dict) or type(obj).__name__ == 'mappingproxy':
+        current_dict = dict(obj) # Ensure mutable dict
+        return {key: recursive_asdict(value, _depth + 1) for key, value in current_dict.items()}
+    elif hasattr(obj, "__dict__"): # For general objects
+        try:
+            obj_dict = dict(vars(obj))
+            return recursive_asdict(obj_dict, _depth + 1)
+        except Exception as e:
+            logger.warning(f"Could not serialize object part using vars() for {type(obj).__name__}: {e}")
+            return f"<Object of type {type(obj).__name__} partially unserializable>"
+    else: # Fallback for other types
+        try:
+            return str(obj)
+        except Exception:
+            return f"<Unserializable Type: {type(obj).__name__}>"
+
+def format_sse(data: str, event: Optional[str] = None) -> str:
+    """Formats data into an SSE message string."""
+    msg = f"data: {data}\n\n"
+    if event is not None:
+        msg = f"event: {event}\n{msg}"
+    return msg
+
+def format_message_data(chunk_dict: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Transforms a raw agent chunk dictionary into a structured message dictionary
+    suitable for sending to the frontend via SSE.
+
+    This function extracts relevant information like event type, content, tool calls,
+    and metadata. It also formats tool calls for better display, calculates
+    a simple progress indicator, and attempts to extract structured data
+    (stat cards, charts, tables) if markers are present in the content.
+    """
     event_type = chunk_dict.get("event")
     content = chunk_dict.get("content", "")
     tools = chunk_dict.get("tools", [])
@@ -180,21 +196,20 @@ def format_message_data(chunk_dict: Dict[Any, Any]) -> Dict[str, Any]:
     # Extract thinking patterns from content
     thinking_patterns = {}
     if isinstance(content, str):
-        # Look for patterns like **Thinking:** or **Planning:** or **Analyzing:**
-        import re
+        # Look for patterns like **Thinking:** or **Planning:** or **Analyzing:** in string content
+        # The 're' import is now at the top of the file.
         patterns = {
             "thinking": r"\*\*Thinking:\*\*(.*?)(?=\*\*|$)",
             "planning": r"\*\*Planning:\*\*(.*?)(?=\*\*|$)",
             "analyzing": r"\*\*Analyzing:\*\*(.*?)(?=\*\*|$)"
         }
-
-        for pattern_type, pattern in patterns.items():
-            matches = re.findall(pattern, content, re.DOTALL | re.IGNORECASE)
+        for pattern_type, pattern_regex in patterns.items(): # Renamed pattern to pattern_regex
+            matches = re.findall(pattern_regex, content, re.DOTALL | re.IGNORECASE)
             if matches:
                 thinking_patterns[pattern_type] = "\n".join([match.strip() for match in matches])
 
     # Add thinking/reasoning if available
-    if thinking or reasoning_content or thinking_patterns:
+    if thinking or reasoning_content or thinking_patterns: # Check if any thinking data exists
         message_data["reasoning"] = {
             "thinking": thinking,
             "content": reasoning_content,
@@ -217,80 +232,71 @@ def format_message_data(chunk_dict: Dict[Any, Any]) -> Dict[str, Any]:
 
     return message_data
 
+# --- SSE Route ---
 @router.get("/ask")
-async def ask_agent_keepalive_sse(request: Request, prompt: str):
+async def ask_agent_keepalive_sse(request: Request, prompt: str) -> StreamingResponse:
+    """
+    Handles requests to the AI agent and streams responses back using SSE.
+    It processes agent run chunks, formats them, and sends them to the client.
+    Includes keep-alive messages and a final event upon completion.
+    """
     logger.info(f"Received GET /ask request with prompt: '{prompt}'")
-    workflow_instance = nba_agent
+    workflow_instance = nba_agent # Assuming nba_agent is correctly initialized elsewhere
 
-    async def keepalive_sse_generator():
+    async def keepalive_sse_generator() -> AsyncIterator[str]:
+        """Generates SSE messages from the agent's run stream."""
         try:
             logger.info(f"Starting streaming NBA analysis workflow for prompt: {prompt}")
-            async for chunk in await workflow_instance.arun(prompt):
+            async for chunk in await workflow_instance.arun(prompt): # Ensure arun is awaited if it's an async gen
                 chunk_dict = recursive_asdict(chunk)
                 message_data = format_message_data(chunk_dict)
-
-                # Format the final SSE message string
                 sse_message_string = format_sse(json.dumps(message_data))
 
-                # Log the string *before* yielding it (limit length for readability)
-                log_limit = 1000 # Log first 1000 chars
-                logger.debug(f"Yielding SSE string (len={len(sse_message_string)}): {sse_message_string[:log_limit]}{'...' if len(sse_message_string) > log_limit else ''}")
+                log_msg_preview = sse_message_string[:SSE_LOG_TRUNCATE_LIMIT]
+                if len(sse_message_string) > SSE_LOG_TRUNCATE_LIMIT:
+                    log_msg_preview += "..."
+                logger.debug(f"Yielding SSE string (len={len(sse_message_string)}): {log_msg_preview}")
 
-                # Send the chunk immediately and ensure it's flushed
                 yield sse_message_string
-                await asyncio.sleep(0)  # Allow other tasks to run and ensure streaming
+                await asyncio.sleep(0.01) # Small sleep to ensure flushing and allow other tasks
 
-                # Only send final event for RunCompleted
                 if chunk_dict.get("event") == "RunCompleted":
-                    logger.info("Detected RunCompleted event, sending final event")
-                    # Use the same content as the last message but ensure we mark it as complete
-                    final_data = {
+                    logger.info("Detected RunCompleted event, preparing final SSE event.")
+                    final_event_data = {
                         "role": "assistant",
-                        "content": message_data["content"],
-                        "event": "final",  # Explicitly mark as final event
+                        "content": message_data.get("content", "Analysis complete."), # Use existing content or default
+                        "event": "final",
                         "status": "complete",
                         "progress": 100,
-                        # Include any reasoning data from the original message
                         "reasoning": message_data.get("reasoning"),
-                        # Include metadata
                         "metadata": message_data.get("metadata")
                     }
-                    # Send as both a regular message and a final event to ensure proper handling
-                    yield format_sse(json.dumps(final_data))
-                    # Then send with the special 'final' event type
-                    yield format_sse(json.dumps(final_data), event="final")
-                    await asyncio.sleep(0)  # Ensure final message is sent
+                    yield format_sse(json.dumps(final_event_data), event="final") # Send with 'final' event type
+                    await asyncio.sleep(0.01) # Ensure final message is sent
+                    logger.info("Final SSE event sent.")
+                    break # Explicitly break after RunCompleted and final event
 
         except Exception as e:
-            logger.exception("Error during SSE generation")
-            error_data = {
-                "role": "assistant",
-                "content": f"Error: {str(e)}",
-                "status": "error",
-                "progress": 0
+            logger.exception("Error during SSE generation for /ask endpoint.")
+            error_content = {
+                "role": "assistant", "content": f"An error occurred: {str(e)}",
+                "status": "error", "progress": 0, "event": "error"
             }
-            yield format_sse(json.dumps(error_data))
+            yield format_sse(json.dumps(error_content), event="error")
         finally:
-            logger.info("END keepalive_sse_generator.")
+            logger.info("SSE generator for /ask finished.")
 
-    # Set up streaming response with appropriate headers
     headers = {
         "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache, no-transform",
+        "Cache-Control": "no-cache, no-transform", # Important for SSE
         "Connection": "keep-alive",
-        "X-Accel-Buffering": "no",
-        "Transfer-Encoding": "chunked"
+        "X-Accel-Buffering": "no", # Useful for Nginx
+        # "Transfer-Encoding": "chunked" # Not typically set manually for StreamingResponse
     }
-
-    # Return a streaming response with a larger chunk size and immediate flushing
-    return StreamingResponse(
-        keepalive_sse_generator(),
-        headers=headers,
-        media_type="text/event-stream"
-    )
+    return StreamingResponse(keepalive_sse_generator(), headers=headers, media_type="text/event-stream")
 
 @router.get("/test_stream")
-async def test_agent_stream(request: Request, prompt: str):
+async def test_agent_stream(request: Request, prompt: str) -> None: # Returns None as it prints
     logger.info(f"Received GET /test_streaming request with prompt: '{prompt}'")
     run_stream: AsyncIterator[RunResponse] = await nba_agent.arun(prompt)
     async for chunk in run_stream:

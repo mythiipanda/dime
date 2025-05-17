@@ -3,15 +3,21 @@ import json
 import time
 from typing import Optional, Union, List, Dict, Any, Callable, Tuple
 import pandas as pd
-import numpy as np # Added numpy import
-from datetime import datetime, date # Ensure date and datetime are imported from datetime
+import numpy as np
+from datetime import datetime, date
 from requests.exceptions import ReadTimeout, ConnectionError
 
 from backend.core.errors import Errors
 from nba_api.stats.static import players, teams
 logger = logging.getLogger(__name__)
 
-def retry_on_timeout(func: Callable[[], Any], max_retries: int = 3, initial_delay: float = 1.0, max_delay: float = 8.0) -> Any:
+# Constants
+DEFAULT_RETRY_ATTEMPTS = 3
+DEFAULT_RETRY_INITIAL_DELAY = 1.0
+DEFAULT_RETRY_MAX_DELAY = 8.0
+MAX_LOG_VALUE_LENGTH = 100
+
+def retry_on_timeout(func: Callable[[], Any], max_retries: int = DEFAULT_RETRY_ATTEMPTS, initial_delay: float = DEFAULT_RETRY_INITIAL_DELAY, max_delay: float = DEFAULT_RETRY_MAX_DELAY) -> Any:
     """
     Retries a function call with exponential backoff if a `ReadTimeout` or `ConnectionError` occurs.
     """
@@ -36,7 +42,11 @@ def retry_on_timeout(func: Callable[[], Any], max_retries: int = 3, initial_dela
 
     if last_exception:
         raise last_exception
-    logger.error("retry_on_timeout completed all retries without returning or raising a final exception. This indicates an issue with the retried function.")
+    # This part of the code should ideally not be reached if the loop always returns or raises.
+    # Adding a more specific error message or ensuring all paths lead to a return/raise.
+    logger.error("retry_on_timeout completed all retries without returning or raising a final exception. This indicates an issue with the retried function or retry logic itself.")
+    # Depending on expected behavior, could raise a generic error here or return a specific sentinel value.
+    # For now, returning None as per original, but this path is problematic.
     return None
 
 
@@ -47,84 +57,78 @@ def format_response(data: Optional[Dict[str, Any]] = None, error: Optional[str] 
     if error:
         return json.dumps({"error": error})
     elif data is not None:
+        # Using default=str for any non-serializable types (like datetime objects not handled by _convert_value_for_json)
         return json.dumps(data, default=str)
     else:
+        # Return an empty JSON object if no data and no error
         return json.dumps({})
+
+def _convert_value_for_json(value: Any, col_name: str, context_for_log: str) -> Any:
+    """
+    Converts a single DataFrame cell value to a JSON-serializable native Python type.
+    Handles NaN/NaT, numpy types, and datetime objects.
+    """
+    try:
+        if pd.isna(value):
+            return None
+        elif isinstance(value, np.integer):
+            return int(value)
+        elif isinstance(value, np.floating):
+            # Check for NaN again for float types, as pd.isna might miss some np.nan if not pre-converted
+            return None if np.isnan(value) else float(value)
+        elif isinstance(value, np.bool_):
+            return bool(value)
+        elif isinstance(value, (datetime, date, pd.Timestamp)):
+            return value.isoformat()
+        elif isinstance(value, (int, float, bool, str)):
+            return value
+        else:
+            # Fallback for other types, log and convert to string
+            logger.debug(f"Utils: _convert_value_for_json ({context_for_log}) - Fallback to str for col '{col_name}', type '{type(value)}', value: '{str(value)[:MAX_LOG_VALUE_LENGTH]}'")
+            return str(value)
+    except Exception as val_e:
+        logger.error(f"Utils: _convert_value_for_json ({context_for_log}) - Error converting value for col '{col_name}', type '{type(value)}', value: '{str(value)[:MAX_LOG_VALUE_LENGTH]}'. Error: {val_e}", exc_info=True)
+        return None # Return None on conversion error to prevent breaking JSON serialization
 
 def _process_dataframe(df: Optional[pd.DataFrame], single_row: bool = True) -> Optional[Union[Dict[str, Any], List[Dict[str, Any]]]]:
     """
-    Processes a pandas DataFrame into a dictionary or list of dictionaries.
+    Processes a pandas DataFrame into a dictionary or list of dictionaries,
+    with robust handling of data types for JSON serialization.
     """
     if df is None or df.empty:
         return {} if single_row else []
 
-    df_copy = df.copy() # Work on a copy to avoid modifying the original DataFrame
+    # No need to use df.copy() if we iterate and build new dicts/lists
+    # df_copy = df.copy() # Work on a copy to avoid modifying the original DataFrame
 
     # Step 1: Convert all pandas/numpy NaNs/NaTs to Python None
-    try:
-        df_copy = df_copy.where(pd.notnull(df_copy), None)
-    except Exception as e:
-        logger.warning(f"Utils: _process_dataframe - Error during df.where(pd.notnull(df), None): {e}. Proceeding with original df_copy.")
-        # If .where fails, df_copy remains the original copy; pd.isna() will handle NaNs later.
-
-    # The aggressive astype(str) was causing numbers to become strings permanently.
-    # Rely on the .where() for null normalization and the loop below for type conversion.
+    # This is now handled more granularly by _convert_value_for_json using pd.isna and np.isnan
+    # try:
+    #     df_copy = df_copy.where(pd.notnull(df_copy), None)
+    # except Exception as e:
+    #     logger.warning(f"Utils: _process_dataframe - Error during df.where(pd.notnull(df), None): {e}. Proceeding with original df_copy.")
 
     try:
         if single_row:
-            if len(df_copy) > 0:
+            if len(df) > 0: # Use original df length
                 row_dict = {}
-                for col_name, value in df_copy.iloc[0].items():
-                    try:
-                        if pd.isna(value):
-                            row_dict[col_name] = None
-                        elif isinstance(value, np.integer):
-                            row_dict[col_name] = int(value)
-                        elif isinstance(value, np.floating):
-                            row_dict[col_name] = float(value)
-                        elif isinstance(value, np.bool_):
-                            row_dict[col_name] = bool(value)
-                        elif isinstance(value, (datetime, date, pd.Timestamp)):
-                            row_dict[col_name] = value.isoformat()
-                        elif isinstance(value, (int, float, bool, str)):
-                            row_dict[col_name] = value
-                        else:
-                            logger.debug(f"Utils: _process_dataframe (single_row) - Fallback to str for col '{col_name}', type '{type(value)}', value: '{str(value)[:100]}'")
-                            row_dict[col_name] = str(value)
-                    except Exception as val_e:
-                        logger.error(f"Utils: _process_dataframe (single_row) - Error converting value for col '{col_name}', type '{type(value)}', value: '{str(value)[:100]}'. Error: {val_e}", exc_info=True)
-                        row_dict[col_name] = None
+                # Use df.iloc[0] directly from the original DataFrame
+                for col_name, value in df.iloc[0].items():
+                    row_dict[col_name] = _convert_value_for_json(value, col_name, "single_row")
                 return row_dict
             else:
                 return {}
         else: # For single_row == False
             records = []
-            for index, row_series in df_copy.iterrows(): # Iterate over the pre-processed df_copy
+            # Iterate directly over the original DataFrame
+            for _, row_series in df.iterrows():
                 record = {}
                 for col_name, value in row_series.items():
-                    try:
-                        if pd.isna(value): # Handle NaN/NaT here
-                            record[col_name] = None
-                        elif isinstance(value, np.integer):
-                            record[col_name] = int(value)
-                        elif isinstance(value, np.floating):
-                            record[col_name] = float(value)
-                        elif isinstance(value, np.bool_):
-                            record[col_name] = bool(value)
-                        elif isinstance(value, (datetime, date, pd.Timestamp)):
-                            record[col_name] = value.isoformat()
-                        elif isinstance(value, (int, float, bool, str)):
-                            record[col_name] = value
-                        else:
-                            logger.debug(f"Utils: _process_dataframe (multi_row) - Fallback to str for col '{col_name}', type '{type(value)}', value: '{str(value)[:100]}'")
-                            record[col_name] = str(value)
-                    except Exception as val_e:
-                        logger.error(f"Utils: _process_dataframe (multi_row) - Error converting value for col '{col_name}', type '{type(value)}', value: '{str(value)[:100]}'. Error: {val_e}", exc_info=True)
-                        record[col_name] = None
+                    record[col_name] = _convert_value_for_json(value, col_name, "multi_row")
                 records.append(record)
             return records
     except Exception as e:
-        logger.error(f"Error processing DataFrame (outer logic): {str(e)}", exc_info=True)
+        logger.error(f"Error processing DataFrame (outer logic in _process_dataframe): {str(e)}", exc_info=True)
         return None
 
 # --- Custom Exceptions ---

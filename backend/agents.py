@@ -1,7 +1,14 @@
+"""
+Defines and configures the AI agents and workflows for the NBA analytics backend.
+This includes the primary `nba_agent` and a multi-agent `NBAAnalysisWorkflow`,
+their system messages, tool registrations, and initialization using the Agno framework.
+"""
 import os
+import datetime # Moved from line 50 to top
 from textwrap import dedent
-from typing import Iterator, AsyncIterator
+from typing import Iterator, AsyncIterator, List, Optional, Dict, Any # Consolidated typing imports
 from dotenv import load_dotenv
+
 from agno.agent import Agent, RunResponse
 from agno.run.response import RunEvent
 from agno.workflow import Workflow
@@ -11,11 +18,16 @@ from agno.tools.thinking import ThinkingTools
 from agno.tools.crawl4ai import Crawl4aiTools
 from agno.tools.youtube import YouTubeTools
 from agno.utils.log import logger
-from backend.config import settings
-from typing import List, Optional, Dict, Any
 
-# --- Pydantic Models for Rich Outputs (for nba_agent) ---
-FINAL_ANSWER_MARKER = "FINAL_ANSWER::"
+from backend.config import settings
+
+# --- Agent Configuration Constants & Markers ---
+FINAL_ANSWER_MARKER: str = "FINAL_ANSWER::" # Marker for the agent's final synthesized answer.
+# The comment below was: "# --- Pydantic Models for Rich Outputs (for nba_agent) ---"
+# It's being rephrased as no Pydantic models are defined here for rich output,
+# but markers like FINAL_ANSWER_MARKER relate to structured/final output.
+# Other rich output markers (STAT_CARD, CHART_DATA, TABLE_DATA) are defined in sse.py.
+
 # Import tools from their new locations
 from backend.tool_kits.player_tools import (
     get_player_info, get_player_gamelog, get_player_career_stats, get_player_awards,
@@ -27,8 +39,8 @@ from backend.tool_kits.team_tools import (
     get_team_stats
 )
 from backend.tool_kits.tracking_tools import (
-    get_player_clutch_stats, get_player_passing_stats, get_player_rebounding_stats, 
-    get_player_shots_tracking, get_player_shotchart, get_player_defense_stats, 
+    get_player_clutch_stats, get_player_passing_stats, get_player_rebounding_stats,
+    get_player_shots_tracking, get_player_shotchart, get_player_defense_stats,
     get_player_hustle_stats,
     get_team_passing_stats, get_team_shooting_stats, get_team_rebounding_stats,
 )
@@ -46,8 +58,6 @@ from backend.tool_kits.league_tools import (
 from backend.tool_kits.misc_tools import (
     get_season_matchups, get_matchups_rollup, get_live_odds
 )
-
-import datetime
 
 load_dotenv()
 

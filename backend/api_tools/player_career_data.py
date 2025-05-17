@@ -1,3 +1,6 @@
+"""
+Handles fetching and processing player career statistics and awards information.
+"""
 import logging
 from functools import lru_cache
 import pandas as pd
@@ -15,12 +18,38 @@ from backend.api_tools.utils import (
 
 logger = logging.getLogger(__name__)
 
+# Cache sizes
+PLAYER_CAREER_STATS_CACHE_SIZE = 256
+PLAYER_AWARDS_CACHE_SIZE = 256
+
 # Module-level constant for valid PerMode values for career stats
 _VALID_PER_MODES_CAREER = {getattr(PerModeDetailed, attr) for attr in dir(PerModeDetailed) if not attr.startswith('_') and isinstance(getattr(PerModeDetailed, attr), str)}
 _VALID_PER_MODES_CAREER.update({getattr(PerMode36, attr) for attr in dir(PerMode36) if not attr.startswith('_') and isinstance(getattr(PerMode36, attr), str)})
 
-@lru_cache(maxsize=256)
+@lru_cache(maxsize=PLAYER_CAREER_STATS_CACHE_SIZE)
 def fetch_player_career_stats_logic(player_name: str, per_mode: str = PerModeDetailed.per_game) -> str:
+    """
+    Fetches player career statistics including regular season and postseason totals.
+
+    Args:
+        player_name (str): The name or ID of the player.
+        per_mode (str, optional): The statistical mode (e.g., "PerGame", "Totals", "Per36").
+                                  Defaults to "PerGame".
+
+    Returns:
+        str: A JSON string containing player career statistics, or an error message.
+             Successful response structure:
+             {
+                 "player_name": "Player Name",
+                 "player_id": 12345,
+                 "per_mode_requested": "PerModeValue",
+                 "data_retrieved_mode": "PerModeValue",
+                 "season_totals_regular_season": [ { ... stats ... } ],
+                 "career_totals_regular_season": { ... stats ... },
+                 "season_totals_post_season": [ { ... stats ... } ],
+                 "career_totals_post_season": { ... stats ... }
+             }
+    """
     logger.info(f"Executing fetch_player_career_stats_logic for: '{player_name}', Requested PerMode: {per_mode}")
 
     if per_mode not in _VALID_PER_MODES_CAREER:
@@ -84,8 +113,23 @@ def fetch_player_career_stats_logic(player_name: str, per_mode: str = PerModeDet
         error_msg = Errors.PLAYER_CAREER_STATS_UNEXPECTED.format(identifier=player_name, error=str(e))
         return format_response(error=error_msg)
 
-@lru_cache(maxsize=256)
+@lru_cache(maxsize=PLAYER_AWARDS_CACHE_SIZE)
 def fetch_player_awards_logic(player_name: str) -> str:
+    """
+    Fetches a list of awards received by the player.
+
+    Args:
+        player_name (str): The name or ID of the player.
+
+    Returns:
+        str: A JSON string containing a list of player awards, or an error message.
+             Successful response structure:
+             {
+                 "player_name": "Player Name",
+                 "player_id": 12345,
+                 "awards": [ { ... award details ... }, ... ]
+             }
+    """
     logger.info(f"Executing fetch_player_awards_logic for: '{player_name}'")
     try:
         player_id, player_actual_name = find_player_id_or_error(player_name)
