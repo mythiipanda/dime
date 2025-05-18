@@ -2,9 +2,12 @@
 This module provides a toolkit of game-related functions exposed as agent tools.
 These tools wrap specific logic functions from `backend.api_tools` to fetch
 various NBA game statistics and information.
+Supports both JSON and DataFrame outputs with CSV caching.
 """
 import logging
-from typing import Optional
+import json
+import os
+from typing import Optional, Dict, Any
 from agno.tools import tool
 from nba_api.stats.library.parameters import LeagueID, RunType, SeasonTypeAllStar # Added SeasonTypeAllStar
 
@@ -68,7 +71,15 @@ def find_games(
     return result
 
 @tool
-def get_boxscore_traditional(game_id: str, start_period: int = 0, end_period: int = 0, start_range: int = 0, end_range: int = 0, range_type: int = 0) -> str:
+def get_boxscore_traditional(
+    game_id: str,
+    start_period: int = 0,
+    end_period: int = 0,
+    start_range: int = 0,
+    end_range: int = 0,
+    range_type: int = 0,
+    as_dataframe: bool = False
+) -> str:
     """
     Fetches the traditional box score (BoxScoreTraditionalV3) for a specific game.
 
@@ -79,15 +90,65 @@ def get_boxscore_traditional(game_id: str, start_period: int = 0, end_period: in
         start_range (int, optional): Start of the range for range-based queries. Defaults to 0.
         end_range (int, optional): End of the range for range-based queries. Defaults to 0.
         range_type (int, optional): Type of range. Defaults to 0.
-
+        as_dataframe (bool, optional): If True, returns a pandas DataFrame representation of the data
+            and saves it to CSV files in the cache directory. Defaults to False.
 
     Returns:
-        str: JSON string with traditional box score data.
+        str: JSON string with traditional box score data. If as_dataframe=True, the JSON response
+             will include additional information about the DataFrames and CSV files.
     """
-    logger.debug(f"Tool 'get_boxscore_traditional' called for game_id '{game_id}', periods {start_period}-{end_period}")
-    # Note: fetch_boxscore_traditional_logic in api_tools was updated to include start_range, end_range, range_type
-    result = fetch_boxscore_traditional_logic(game_id, start_period=start_period, end_period=end_period, start_range=start_range, end_range=end_range, range_type=range_type)
-    return result
+    logger.debug(f"Tool 'get_boxscore_traditional' called for game_id '{game_id}', periods {start_period}-{end_period}, as_dataframe={as_dataframe}")
+
+    if as_dataframe:
+        # Get both JSON response and DataFrames
+        json_response, dataframes = fetch_boxscore_traditional_logic(
+            game_id,
+            start_period=start_period,
+            end_period=end_period,
+            start_range=start_range,
+            end_range=end_range,
+            range_type=range_type,
+            return_dataframe=True
+        )
+
+        # Parse the original JSON response
+        data = json.loads(json_response)
+
+        # Add DataFrame info
+        df_info = {
+            "message": "Box score data has been converted to DataFrames and saved as CSV files",
+            "dataframes": {}
+        }
+
+        for key, df in dataframes.items():
+            if not df.empty:
+                df_info["dataframes"][key] = {
+                    "shape": df.shape,
+                    "columns": df.columns.tolist(),
+                    "csv_path": f"backend/cache/boxscores/{game_id}_traditional_{key}.csv",
+                    "sample_data": df.head(3).to_dict(orient="records") if not df.empty else []
+                }
+
+        # Add DataFrame info to the response
+        if "error" in data:
+            # If there was an error, keep it and add DataFrame info
+            data["dataframe_info"] = df_info
+        else:
+            # If successful, add DataFrame info
+            data["dataframe_info"] = df_info
+
+        # Return the enhanced JSON response
+        return json.dumps(data)
+    else:
+        # Return the standard JSON response
+        return fetch_boxscore_traditional_logic(
+            game_id,
+            start_period=start_period,
+            end_period=end_period,
+            start_range=start_range,
+            end_range=end_range,
+            range_type=range_type
+        )
 
 @tool
 def get_play_by_play(
@@ -126,7 +187,14 @@ def get_game_shotchart(game_id: str) -> str:
     return result
 
 @tool
-def get_boxscore_advanced(game_id: str, start_period: int = 0, end_period: int = 0, start_range: int = 0, end_range: int = 0) -> str:
+def get_boxscore_advanced(
+    game_id: str,
+    start_period: int = 0,
+    end_period: int = 0,
+    start_range: int = 0,
+    end_range: int = 0,
+    as_dataframe: bool = False
+) -> str:
     """
     Fetches advanced box score data (BoxScoreAdvancedV3) for a game.
 
@@ -136,16 +204,71 @@ def get_boxscore_advanced(game_id: str, start_period: int = 0, end_period: int =
         end_period (int, optional): Ending period number (0 for full game). Defaults to 0.
         start_range (int, optional): Start of the range for range-based queries. Defaults to 0.
         end_range (int, optional): End of the range for range-based queries. Defaults to 0.
+        as_dataframe (bool, optional): If True, returns a pandas DataFrame representation of the data
+            and saves it to CSV files in the cache directory. Defaults to False.
 
     Returns:
-        str: JSON string with advanced box score data.
+        str: JSON string with advanced box score data. If as_dataframe=True, the JSON response
+             will include additional information about the DataFrames and CSV files.
     """
-    logger.debug(f"Tool 'get_boxscore_advanced' called for game_id '{game_id}'")
-    result = fetch_boxscore_advanced_logic(game_id, start_period=start_period, end_period=end_period, start_range=start_range, end_range=end_range)
-    return result
+    logger.debug(f"Tool 'get_boxscore_advanced' called for game_id '{game_id}', as_dataframe={as_dataframe}")
+
+    if as_dataframe:
+        # Get both JSON response and DataFrames
+        json_response, dataframes = fetch_boxscore_advanced_logic(
+            game_id,
+            start_period=start_period,
+            end_period=end_period,
+            start_range=start_range,
+            end_range=end_range,
+            return_dataframe=True
+        )
+
+        # Parse the original JSON response
+        data = json.loads(json_response)
+
+        # Add DataFrame info
+        df_info = {
+            "message": "Advanced box score data has been converted to DataFrames and saved as CSV files",
+            "dataframes": {}
+        }
+
+        for key, df in dataframes.items():
+            if not df.empty:
+                df_info["dataframes"][key] = {
+                    "shape": df.shape,
+                    "columns": df.columns.tolist(),
+                    "csv_path": f"backend/cache/boxscores/{game_id}_advanced_{key}.csv",
+                    "sample_data": df.head(3).to_dict(orient="records") if not df.empty else []
+                }
+
+        # Add DataFrame info to the response
+        if "error" in data:
+            # If there was an error, keep it and add DataFrame info
+            data["dataframe_info"] = df_info
+        else:
+            # If successful, add DataFrame info
+            data["dataframe_info"] = df_info
+
+        # Return the enhanced JSON response
+        return json.dumps(data)
+    else:
+        # Return the standard JSON response
+        return fetch_boxscore_advanced_logic(
+            game_id,
+            start_period=start_period,
+            end_period=end_period,
+            start_range=start_range,
+            end_range=end_range
+        )
 
 @tool
-def get_boxscore_four_factors(game_id: str, start_period: int = 0, end_period: int = 0) -> str:
+def get_boxscore_four_factors(
+    game_id: str,
+    start_period: int = 0,
+    end_period: int = 0,
+    as_dataframe: bool = False
+) -> str:
     """
     Fetches box score Four Factors (BoxScoreFourFactorsV3) for a game.
 
@@ -153,59 +276,234 @@ def get_boxscore_four_factors(game_id: str, start_period: int = 0, end_period: i
         game_id (str): The ID of the game.
         start_period (int, optional): Starting period number (0 for full game). Defaults to 0.
         end_period (int, optional): Ending period number (0 for full game). Defaults to 0.
+        as_dataframe (bool, optional): If True, returns a pandas DataFrame representation of the data
+            and saves it to CSV files in the cache directory. Defaults to False.
 
     Returns:
-        str: JSON string with Four Factors box score data.
+        str: JSON string with Four Factors box score data. If as_dataframe=True, the JSON response
+             will include additional information about the DataFrames and CSV files.
     """
-    logger.debug(f"Tool 'get_boxscore_four_factors' called for game_id '{game_id}', periods {start_period}-{end_period}")
-    result = fetch_boxscore_four_factors_logic(game_id, start_period=start_period, end_period=end_period)
-    return result
+    logger.debug(f"Tool 'get_boxscore_four_factors' called for game_id '{game_id}', periods {start_period}-{end_period}, as_dataframe={as_dataframe}")
+
+    if as_dataframe:
+        # Get both JSON response and DataFrames
+        json_response, dataframes = fetch_boxscore_four_factors_logic(
+            game_id,
+            start_period=start_period,
+            end_period=end_period,
+            return_dataframe=True
+        )
+
+        # Parse the original JSON response
+        data = json.loads(json_response)
+
+        # Add DataFrame info
+        df_info = {
+            "message": "Four Factors box score data has been converted to DataFrames and saved as CSV files",
+            "dataframes": {}
+        }
+
+        for key, df in dataframes.items():
+            if not df.empty:
+                df_info["dataframes"][key] = {
+                    "shape": df.shape,
+                    "columns": df.columns.tolist(),
+                    "csv_path": f"backend/cache/boxscores/{game_id}_four_factors_{key}.csv",
+                    "sample_data": df.head(3).to_dict(orient="records") if not df.empty else []
+                }
+
+        # Add DataFrame info to the response
+        if "error" in data:
+            # If there was an error, keep it and add DataFrame info
+            data["dataframe_info"] = df_info
+        else:
+            # If successful, add DataFrame info
+            data["dataframe_info"] = df_info
+
+        # Return the enhanced JSON response
+        return json.dumps(data)
+    else:
+        # Return the standard JSON response
+        return fetch_boxscore_four_factors_logic(
+            game_id,
+            start_period=start_period,
+            end_period=end_period
+        )
 
 @tool
-def get_boxscore_usage(game_id: str) -> str:
+def get_boxscore_usage(
+    game_id: str,
+    as_dataframe: bool = False
+) -> str:
     """
     Fetches box score usage statistics (BoxScoreUsageV3) for a game.
 
     Args:
         game_id (str): The ID of the game.
+        as_dataframe (bool, optional): If True, returns a pandas DataFrame representation of the data
+            and saves it to CSV files in the cache directory. Defaults to False.
 
     Returns:
-        str: JSON string with usage statistics for players and teams.
+        str: JSON string with usage statistics for players and teams. If as_dataframe=True, the JSON response
+             will include additional information about the DataFrames and CSV files.
     """
-    logger.debug(f"Tool 'get_boxscore_usage' called for game_id '{game_id}'")
-    result = fetch_boxscore_usage_logic(game_id)
-    return result
+    logger.debug(f"Tool 'get_boxscore_usage' called for game_id '{game_id}', as_dataframe={as_dataframe}")
+
+    if as_dataframe:
+        # Get both JSON response and DataFrames
+        json_response, dataframes = fetch_boxscore_usage_logic(
+            game_id,
+            return_dataframe=True
+        )
+
+        # Parse the original JSON response
+        data = json.loads(json_response)
+
+        # Add DataFrame info
+        df_info = {
+            "message": "Usage box score data has been converted to DataFrames and saved as CSV files",
+            "dataframes": {}
+        }
+
+        for key, df in dataframes.items():
+            if not df.empty:
+                df_info["dataframes"][key] = {
+                    "shape": df.shape,
+                    "columns": df.columns.tolist(),
+                    "csv_path": f"backend/cache/boxscores/{game_id}_usage_{key}.csv",
+                    "sample_data": df.head(3).to_dict(orient="records") if not df.empty else []
+                }
+
+        # Add DataFrame info to the response
+        if "error" in data:
+            # If there was an error, keep it and add DataFrame info
+            data["dataframe_info"] = df_info
+        else:
+            # If successful, add DataFrame info
+            data["dataframe_info"] = df_info
+
+        # Return the enhanced JSON response
+        return json.dumps(data)
+    else:
+        # Return the standard JSON response
+        return fetch_boxscore_usage_logic(game_id)
 
 @tool
-def get_boxscore_defensive(game_id: str) -> str:
+def get_boxscore_defensive(
+    game_id: str,
+    as_dataframe: bool = False
+) -> str:
     """
     Fetches box score defensive statistics (BoxScoreDefensiveV2) for a game.
 
     Args:
         game_id (str): The ID of the game.
+        as_dataframe (bool, optional): If True, returns a pandas DataFrame representation of the data
+            and saves it to CSV files in the cache directory. Defaults to False.
 
     Returns:
-        str: JSON string with defensive statistics for players and teams.
+        str: JSON string with defensive statistics for players and teams. If as_dataframe=True, the JSON response
+             will include additional information about the DataFrames and CSV files.
     """
-    logger.debug(f"Tool 'get_boxscore_defensive' called for game_id '{game_id}'")
-    result = fetch_boxscore_defensive_logic(game_id)
-    return result
+    logger.debug(f"Tool 'get_boxscore_defensive' called for game_id '{game_id}', as_dataframe={as_dataframe}")
+
+    if as_dataframe:
+        # Get both JSON response and DataFrames
+        json_response, dataframes = fetch_boxscore_defensive_logic(
+            game_id,
+            return_dataframe=True
+        )
+
+        # Parse the original JSON response
+        data = json.loads(json_response)
+
+        # Add DataFrame info
+        df_info = {
+            "message": "Defensive box score data has been converted to DataFrames and saved as CSV files",
+            "dataframes": {}
+        }
+
+        for key, df in dataframes.items():
+            if not df.empty:
+                df_info["dataframes"][key] = {
+                    "shape": df.shape,
+                    "columns": df.columns.tolist(),
+                    "csv_path": f"backend/cache/boxscores/{game_id}_defensive_{key}.csv",
+                    "sample_data": df.head(3).to_dict(orient="records") if not df.empty else []
+                }
+
+        # Add DataFrame info to the response
+        if "error" in data:
+            # If there was an error, keep it and add DataFrame info
+            data["dataframe_info"] = df_info
+        else:
+            # If successful, add DataFrame info
+            data["dataframe_info"] = df_info
+
+        # Return the enhanced JSON response
+        return json.dumps(data)
+    else:
+        # Return the standard JSON response
+        return fetch_boxscore_defensive_logic(game_id)
 
 @tool
-def get_boxscore_summary(game_id: str) -> str:
+def get_boxscore_summary(
+    game_id: str,
+    as_dataframe: bool = False
+) -> str:
     """
     Fetches a comprehensive summary of a game (BoxScoreSummaryV2), including line scores,
     officials, inactive players, etc.
 
     Args:
         game_id (str): The ID of the game.
+        as_dataframe (bool, optional): If True, returns a pandas DataFrame representation of the data
+            and saves it to CSV files in the cache directory. Defaults to False.
 
     Returns:
-        str: JSON string with game summary datasets.
+        str: JSON string with game summary datasets. If as_dataframe=True, the JSON response
+             will include additional information about the DataFrames and CSV files.
     """
-    logger.debug(f"Tool 'get_boxscore_summary' called for game_id '{game_id}'")
-    result = fetch_boxscore_summary_logic(game_id=game_id)
-    return result
+    logger.debug(f"Tool 'get_boxscore_summary' called for game_id '{game_id}', as_dataframe={as_dataframe}")
+
+    if as_dataframe:
+        # Get both JSON response and DataFrames
+        json_response, dataframes = fetch_boxscore_summary_logic(
+            game_id,
+            return_dataframe=True
+        )
+
+        # Parse the original JSON response
+        data = json.loads(json_response)
+
+        # Add DataFrame info
+        df_info = {
+            "message": "Summary box score data has been converted to DataFrames and saved as CSV files",
+            "dataframes": {}
+        }
+
+        for key, df in dataframes.items():
+            if not df.empty:
+                df_info["dataframes"][key] = {
+                    "shape": df.shape,
+                    "columns": df.columns.tolist(),
+                    "csv_path": f"backend/cache/boxscores/{game_id}_summary_{key}.csv",
+                    "sample_data": df.head(3).to_dict(orient="records") if not df.empty else []
+                }
+
+        # Add DataFrame info to the response
+        if "error" in data:
+            # If there was an error, keep it and add DataFrame info
+            data["dataframe_info"] = df_info
+        else:
+            # If successful, add DataFrame info
+            data["dataframe_info"] = df_info
+
+        # Return the enhanced JSON response
+        return json.dumps(data)
+    else:
+        # Return the standard JSON response
+        return fetch_boxscore_summary_logic(game_id)
 
 @tool
 def get_win_probability(game_id: str, run_type: str = RunType.default) -> str:
