@@ -78,7 +78,7 @@ def get_matchups_rollup(
     )
 
 @tool
-def get_live_odds(bypass_cache: bool = False) -> str: # Added bypass_cache to match underlying logic
+def get_live_odds(bypass_cache: bool = False, as_dataframe: bool = False) -> str:
     """
     Fetches live betting odds for today's NBA games.
     This data is typically cached for a short period by the underlying logic.
@@ -86,9 +86,39 @@ def get_live_odds(bypass_cache: bool = False) -> str: # Added bypass_cache to ma
     Args:
         bypass_cache (bool, optional): If True, attempts to fetch fresh data, bypassing the short-term cache.
             Defaults to False.
+        as_dataframe (bool, optional): If True, returns a pandas DataFrame representation of the odds data
+            and saves it to a CSV file in the cache directory. The DataFrame is flattened to make it more
+            usable for analysis. Defaults to False.
 
     Returns:
         str: JSON string with live odds data for current games, including spread, total, and moneyline if available.
+             If as_dataframe=True, the JSON response will include a message indicating that the data has been
+             saved as a DataFrame and the path to the CSV file.
     """
-    logger.debug(f"Tool 'get_live_odds' called. Bypass cache: {bypass_cache}")
-    return fetch_odds_data_logic(bypass_cache=bypass_cache)
+    logger.debug(f"Tool 'get_live_odds' called. Bypass cache: {bypass_cache}, as_dataframe: {as_dataframe}")
+
+    if as_dataframe:
+        json_response, df = fetch_odds_data_logic(bypass_cache=bypass_cache, return_dataframe=True)
+        # Return a modified JSON response that includes information about the DataFrame
+        df_info = {
+            "message": "Odds data has been converted to a DataFrame and saved as CSV",
+            "dataframe_shape": df.shape,
+            "dataframe_columns": df.columns.tolist(),
+            "csv_path": "backend/cache/odds_data.csv",
+            "sample_data": df.head(5).to_dict(orient="records") if not df.empty else []
+        }
+        # Parse the original JSON response
+        import json
+        original_data = json.loads(json_response)
+        # Add DataFrame info
+        if "error" in original_data:
+            # If there was an error, keep it and add DataFrame info
+            original_data["dataframe_info"] = df_info
+        else:
+            # If successful, add DataFrame info
+            original_data["dataframe_info"] = df_info
+        # Return the enhanced JSON response
+        return json.dumps(original_data)
+    else:
+        # Return the standard JSON response
+        return fetch_odds_data_logic(bypass_cache=bypass_cache)
