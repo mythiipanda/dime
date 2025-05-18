@@ -58,37 +58,152 @@ def get_player_gamelog(player_name: str, season: str, season_type: str = SeasonT
     return result
 
 @tool
-def get_player_career_stats(player_name: str, per_mode: str = PerMode36.per_game) -> str:
+def get_player_career_stats(
+    player_name: str,
+    per_mode: str = PerMode36.per_game,
+    as_dataframe: bool = False
+) -> str:
     """
     Fetches player career statistics, including Regular Season and Playoffs if available, aggregated by season.
     Do NOT try to pass a 'season_type' argument to this tool; it processes all available types.
+    Provides DataFrame output capabilities.
 
     Args:
         player_name (str): The full name of the player (e.g., "Kevin Durant").
         per_mode (str, optional): The statistical mode (e.g., "PerGame", "Totals", "Per36").
             Valid values from `nba_api.stats.library.parameters.PerMode36`. Defaults to "PerGame".
+        as_dataframe (bool, optional): If True, returns a pandas DataFrame representation of the data
+            and saves it to CSV files in the cache directory. Defaults to False.
 
     Returns:
-        str: JSON string containing career statistics data.
+        str: JSON string containing career statistics data. If as_dataframe=True, the JSON response
+             will include additional information about the DataFrames and CSV files.
     """
-    logger.debug(f"Tool 'get_player_career_stats' called for '{player_name}', per_mode '{per_mode}'")
-    result = fetch_player_career_stats_logic(player_name, per_mode)
-    return result
+    logger.debug(f"Tool 'get_player_career_stats' called for '{player_name}', per_mode '{per_mode}', as_dataframe={as_dataframe}")
+
+    if as_dataframe:
+        # Get both JSON response and DataFrames
+        json_response, dataframes = fetch_player_career_stats_logic(
+            player_name=player_name,
+            per_mode=per_mode,
+            return_dataframe=True
+        )
+
+        # Parse the original JSON response
+        data = json.loads(json_response)
+
+        # Add DataFrame info
+        df_info = {
+            "message": "Player career statistics have been converted to DataFrames and saved as CSV files",
+            "dataframes": {}
+        }
+
+        for key, df in dataframes.items():
+            if not df.empty:
+                # Clean player name for filename
+                clean_player_name = player_name.replace(" ", "_").replace(".", "").lower()
+
+                # Clean per mode for filename
+                clean_per_mode = per_mode.lower()
+
+                # Determine data type for filename
+                if key == "season_totals_regular_season":
+                    data_type = "season_regular"
+                elif key == "career_totals_regular_season":
+                    data_type = "career_regular"
+                elif key == "season_totals_post_season":
+                    data_type = "season_post"
+                elif key == "career_totals_post_season":
+                    data_type = "career_post"
+                else:
+                    data_type = key
+
+                csv_path = f"backend/cache/player_career/{clean_player_name}_{clean_per_mode}_{data_type}.csv"
+
+                df_info["dataframes"][key] = {
+                    "shape": df.shape,
+                    "columns": df.columns.tolist(),
+                    "csv_path": csv_path,
+                    "sample_data": df.head(3).to_dict(orient="records") if not df.empty else []
+                }
+
+        # Add DataFrame info to the response
+        if "error" in data:
+            # If there was an error, keep it and add DataFrame info
+            data["dataframe_info"] = df_info
+        else:
+            # If successful, add DataFrame info
+            data["dataframe_info"] = df_info
+
+        # Return the enhanced JSON response
+        return json.dumps(data)
+    else:
+        # Return the standard JSON response
+        return fetch_player_career_stats_logic(player_name=player_name, per_mode=per_mode)
 
 @tool
-def get_player_awards(player_name: str) -> str:
+def get_player_awards(
+    player_name: str,
+    as_dataframe: bool = False
+) -> str:
     """
     Fetches a list of awards won by a specific player throughout their career.
+    Provides DataFrame output capabilities.
 
     Args:
         player_name (str): The full name of the player (e.g., "Michael Jordan").
+        as_dataframe (bool, optional): If True, returns a pandas DataFrame representation of the data
+            and saves it to CSV files in the cache directory. Defaults to False.
 
     Returns:
-        str: JSON string containing a list of awards.
+        str: JSON string containing a list of awards. If as_dataframe=True, the JSON response
+             will include additional information about the DataFrames and CSV files.
     """
-    logger.debug(f"Tool 'get_player_awards' called for '{player_name}'")
-    result = fetch_player_awards_logic(player_name)
-    return result
+    logger.debug(f"Tool 'get_player_awards' called for '{player_name}', as_dataframe={as_dataframe}")
+
+    if as_dataframe:
+        # Get both JSON response and DataFrames
+        json_response, dataframes = fetch_player_awards_logic(
+            player_name=player_name,
+            return_dataframe=True
+        )
+
+        # Parse the original JSON response
+        data = json.loads(json_response)
+
+        # Add DataFrame info
+        df_info = {
+            "message": "Player awards have been converted to DataFrames and saved as CSV files",
+            "dataframes": {}
+        }
+
+        for key, df in dataframes.items():
+            if not df.empty:
+                # Clean player name for filename
+                clean_player_name = player_name.replace(" ", "_").replace(".", "").lower()
+
+                csv_path = f"backend/cache/player_awards/{clean_player_name}_awards.csv"
+
+                df_info["dataframes"][key] = {
+                    "shape": df.shape,
+                    "columns": df.columns.tolist(),
+                    "csv_path": csv_path,
+                    "sample_data": df.head(3).to_dict(orient="records") if not df.empty else []
+                }
+
+        # Add DataFrame info to the response
+        if "error" in data:
+            # If there was an error, keep it and add DataFrame info
+            data["dataframe_info"] = df_info
+        else:
+            # If successful, add DataFrame info
+            data["dataframe_info"] = df_info
+
+        # Return the enhanced JSON response
+        return json.dumps(data)
+    else:
+        # Return the standard JSON response
+        return fetch_player_awards_logic(player_name=player_name)
 
 @tool
 def get_player_profile(player_name: str, per_mode: str = PerModeDetailed.per_game) -> str:
