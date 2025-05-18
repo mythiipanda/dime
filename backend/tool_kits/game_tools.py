@@ -154,22 +154,115 @@ def get_boxscore_traditional(
 def get_play_by_play(
     game_id: str,
     start_period: int = 0, # 0 for all
-    end_period: int = 0   # 0 for all
+    end_period: int = 0,   # 0 for all
+    event_types: str = None,  # Comma-separated list of event types (e.g., "SHOT,REBOUND,TURNOVER")
+    player_name: str = None,  # Filter plays by player name
+    person_id: int = None,    # Filter plays by player ID
+    team_id: int = None,      # Filter plays by team ID
+    team_tricode: str = None, # Filter plays by team tricode (e.g., 'LAL', 'BOS')
+    as_dataframe: bool = False  # Whether to return DataFrame output
 ) -> str:
     """
     Fetches the play-by-play data for a specific game (PlayByPlayV3).
+    Provides granular filtering options and DataFrame output capabilities.
 
     Args:
         game_id (str): The ID of the game.
         start_period (int, optional): Starting period number (0 for full game). Defaults to 0.
         end_period (int, optional): Ending period number (0 for full game). Defaults to 0.
+        event_types (str, optional): Comma-separated list of event types to filter by (e.g., "SHOT,REBOUND,TURNOVER").
+                                    Common event types include: 'SHOT', 'REBOUND', 'TURNOVER', 'FOUL', 'FREE_THROW',
+                                    'SUBSTITUTION', 'TIMEOUT', 'JUMP_BALL', 'BLOCK', 'STEAL', 'VIOLATION'.
+        player_name (str, optional): Filter plays by player name.
+        person_id (int, optional): Filter plays by player ID.
+        team_id (int, optional): Filter plays by team ID.
+        team_tricode (str, optional): Filter plays by team tricode (e.g., 'LAL', 'BOS').
+        as_dataframe (bool, optional): If True, returns a pandas DataFrame representation of the data
+                                      and saves it to CSV files in the cache directory. Defaults to False.
 
     Returns:
-        str: JSON string with play-by-play data.
+        str: JSON string with play-by-play data. If as_dataframe=True, the JSON response
+             will include additional information about the DataFrames and CSV files.
     """
-    logger.debug(f"Tool 'get_play_by_play' called for game_id '{game_id}', periods '{start_period}'-'{end_period}'")
-    result_str = fetch_playbyplay_logic(game_id=game_id, start_period=start_period, end_period=end_period)
-    return result_str
+    logger.debug(f"Tool 'get_play_by_play' called for game_id '{game_id}', periods '{start_period}'-'{end_period}', as_dataframe={as_dataframe}")
+
+    # Convert event_types string to list if provided
+    event_types_list = None
+    if event_types:
+        event_types_list = [event_type.strip().upper() for event_type in event_types.split(',')]
+
+    if as_dataframe:
+        # Get both JSON response and DataFrames
+        json_response, dataframes = fetch_playbyplay_logic(
+            game_id=game_id,
+            start_period=start_period,
+            end_period=end_period,
+            event_types=event_types_list,
+            player_name=player_name,
+            person_id=person_id,
+            team_id=team_id,
+            team_tricode=team_tricode,
+            return_dataframe=True
+        )
+
+        # Parse the original JSON response
+        data = json.loads(json_response)
+
+        # Add DataFrame info
+        df_info = {
+            "message": "Play-by-play data has been converted to DataFrames and saved as CSV files",
+            "dataframes": {}
+        }
+
+        for key, df in dataframes.items():
+            if not df.empty:
+                # Create a descriptive filename based on filters
+                filename_parts = [game_id]
+                if start_period > 0 or end_period > 0:
+                    filename_parts.append(f"periods_{start_period}_{end_period}")
+                if event_types:
+                    filename_parts.append(f"events_{event_types.replace(',', '_')}")
+                if player_name:
+                    filename_parts.append(f"player_{player_name.replace(' ', '_')}")
+                if person_id:
+                    filename_parts.append(f"personid_{person_id}")
+                if team_id:
+                    filename_parts.append(f"teamid_{team_id}")
+                if team_tricode:
+                    filename_parts.append(f"team_{team_tricode}")
+
+                csv_filename = "_".join(filename_parts) + ".csv"
+                csv_path = f"backend/cache/playbyplay/{csv_filename}"
+
+                df_info["dataframes"][key] = {
+                    "shape": df.shape,
+                    "columns": df.columns.tolist(),
+                    "csv_path": csv_path,
+                    "sample_data": df.head(5).to_dict(orient="records") if not df.empty else []
+                }
+
+        # Add DataFrame info to the response
+        if "error" in data:
+            # If there was an error, keep it and add DataFrame info
+            data["dataframe_info"] = df_info
+        else:
+            # If successful, add DataFrame info
+            data["dataframe_info"] = df_info
+
+        # Return the enhanced JSON response
+        return json.dumps(data)
+    else:
+        # Return the standard JSON response
+        return fetch_playbyplay_logic(
+            game_id=game_id,
+            start_period=start_period,
+            end_period=end_period,
+            event_types=event_types_list,
+            player_name=player_name,
+            person_id=person_id,
+            team_id=team_id,
+            team_tricode=team_tricode
+        )
 
 @tool
 def get_game_shotchart(game_id: str) -> str:
