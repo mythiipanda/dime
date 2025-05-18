@@ -39,8 +39,8 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: Optional[str] = None  # If None and GOOGLE_API_KEY is set, will default to GOOGLE_API_KEY
 
     # --- Agent & AI Model Configuration ---
-    AGENT_MODEL_ID: str = "gemini-1.5-flash-latest" # Updated default
-    SUGGESTION_MODEL_ID: str = "gemini-1.5-flash-latest" # Updated default
+    AGENT_MODEL_ID: str = "gemini-2.0-flash" # Updated default
+    SUGGESTION_MODEL_ID: str = "gemini-2.0-flash-lite" # Updated default
     AGENT_DEBUG_MODE: bool = False
 
     # --- Database & Storage ---
