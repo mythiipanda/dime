@@ -4,6 +4,7 @@ These tools wrap specific logic functions from `backend.api_tools` to fetch
 various NBA league-level statistics and information.
 """
 import logging
+import json
 from typing import Optional
 # import datetime # Unused import
 from agno.tools import tool
@@ -300,22 +301,74 @@ def get_league_player_on_details(
 def get_common_all_players(
     season: str, # YYYY-YY format
     league_id: str = LeagueID.nba,
-    is_only_current_season: int = 1 # 1 for current, 0 for all historical in that season
+    is_only_current_season: int = 1, # 1 for current, 0 for all historical in that season
+    as_dataframe: bool = False
 ) -> str:
     """
     Fetches a list of all players for a given league and season using CommonAllPlayers endpoint.
+    Provides DataFrame output capabilities.
 
     Args:
         season (str): The NBA season identifier in YYYY-YY format (e.g., "2023-24").
         league_id (str, optional): League ID. Defaults to "00" (NBA).
         is_only_current_season (int, optional): Flag to fetch only currently active players (1)
             or all players historically associated with that season (0). Defaults to 1.
+        as_dataframe (bool, optional): If True, returns a pandas DataFrame representation of the data
+            and saves it to CSV files in the cache directory. Defaults to False.
 
     Returns:
         str: JSON string with a list of players, including fields like PERSON_ID, DISPLAY_LAST_COMMA_FIRST, TEAM_ID, etc.
+             If as_dataframe=True, the JSON response will include additional information about
+             the DataFrames and CSV files.
     """
-    logger.debug(f"Tool 'get_common_all_players' called for Season: {season}, LeagueID: {league_id}, IsOnlyCurrentSeason: {is_only_current_season}")
-    return fetch_common_all_players_logic(season=season, league_id=league_id, is_only_current_season=is_only_current_season)
+    logger.debug(f"Tool 'get_common_all_players' called for Season: {season}, LeagueID: {league_id}, IsOnlyCurrentSeason: {is_only_current_season}, as_dataframe={as_dataframe}")
+
+    if as_dataframe:
+        # Get both JSON response and DataFrames
+        json_response, dataframes = fetch_common_all_players_logic(
+            season=season,
+            league_id=league_id,
+            is_only_current_season=is_only_current_season,
+            return_dataframe=True
+        )
+
+        # Parse the original JSON response
+        data = json.loads(json_response)
+
+        # Add DataFrame info
+        df_info = {
+            "message": "Player listings have been converted to DataFrames and saved as CSV files",
+            "dataframes": {}
+        }
+
+        for key, df in dataframes.items():
+            if not df.empty:
+                csv_path = f"backend/cache/player_listings/players_{season}_{league_id}_{is_only_current_season}.csv"
+
+                df_info["dataframes"][key] = {
+                    "shape": df.shape,
+                    "columns": df.columns.tolist(),
+                    "csv_path": csv_path,
+                    "sample_data": df.head(5).to_dict(orient="records") if not df.empty else []
+                }
+
+        # Add DataFrame info to the response
+        if "error" in data:
+            # If there was an error, keep it and add DataFrame info
+            data["dataframe_info"] = df_info
+        else:
+            # If successful, add DataFrame info
+            data["dataframe_info"] = df_info
+
+        # Return the enhanced JSON response
+        return json.dumps(data)
+    else:
+        # Return the standard JSON response
+        return fetch_common_all_players_logic(
+            season=season,
+            league_id=league_id,
+            is_only_current_season=is_only_current_season
+        )
 
 @tool(cache_results=True, cache_ttl=86400) # Cache for 1 day
 def get_common_playoff_series(
