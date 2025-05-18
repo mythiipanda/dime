@@ -89,23 +89,79 @@ def get_player_info(
         return fetch_player_info_logic(player_name=player_name)
 
 @tool
-def get_player_gamelog(player_name: str, season: str, season_type: str = SeasonTypeAllStar.regular) -> str:
+def get_player_gamelog(
+    player_name: str,
+    season: str,
+    season_type: str = SeasonTypeAllStar.regular,
+    as_dataframe: bool = False
+) -> str:
     """
     Fetches the game-by-game statistics for a specific player in a given season and season type.
     Includes video availability flags for plays if available.
+    Provides DataFrame output capabilities.
 
     Args:
         player_name (str): The full name of the player (e.g., "Jayson Tatum").
         season (str): The NBA season identifier in YYYY-YY format (e.g., "2023-24").
         season_type (str, optional): The type of season (e.g., "Regular Season", "Playoffs").
             Valid values from `nba_api.stats.library.parameters.SeasonTypeAllStar`. Defaults to "Regular Season".
+        as_dataframe (bool, optional): If True, returns a pandas DataFrame representation of the data
+            and saves it to CSV files in the cache directory. Defaults to False.
 
     Returns:
-        str: JSON string containing a list of game log entries.
+        str: JSON string containing a list of game log entries. If as_dataframe=True, the JSON response
+             will include additional information about the DataFrames and CSV files.
     """
-    logger.debug(f"Tool 'get_player_gamelog' called for '{player_name}', season '{season}', type '{season_type}'")
-    result = fetch_player_gamelog_logic(player_name, season, season_type)
-    return result
+    logger.debug(f"Tool 'get_player_gamelog' called for '{player_name}', season '{season}', type '{season_type}', as_dataframe={as_dataframe}")
+
+    if as_dataframe:
+        # Get both JSON response and DataFrames
+        json_response, dataframes = fetch_player_gamelog_logic(
+            player_name=player_name,
+            season=season,
+            season_type=season_type,
+            return_dataframe=True
+        )
+
+        # Parse the original JSON response
+        data = json.loads(json_response)
+
+        # Add DataFrame info
+        df_info = {
+            "message": "Player game logs have been converted to DataFrames and saved as CSV files",
+            "dataframes": {}
+        }
+
+        for key, df in dataframes.items():
+            if not df.empty:
+                # Clean player name for filename
+                clean_player_name = player_name.replace(" ", "_").replace(".", "").lower()
+
+                # Clean season type for filename
+                clean_season_type = season_type.replace(" ", "_").lower()
+
+                csv_path = f"backend/cache/player_gamelogs/{clean_player_name}_{season}_{clean_season_type}_gamelog.csv"
+
+                df_info["dataframes"][key] = {
+                    "shape": df.shape,
+                    "columns": df.columns.tolist(),
+                    "csv_path": csv_path,
+                    "sample_data": df.head(3).to_dict(orient="records") if not df.empty else []
+                }
+
+        # Add DataFrame info to the response
+        if "error" in data:
+            # If there was an error, keep it and add DataFrame info
+            data["dataframe_info"] = df_info
+        else:
+            # If successful, add DataFrame info
+            data["dataframe_info"] = df_info
+
+        # Return the enhanced JSON response
+        return json.dumps(data)
+    else:
+        # Return the standard JSON response
+        return fetch_player_gamelog_logic(player_name=player_name, season=season, season_type=season_type)
 
 @tool
 def get_player_career_stats(
