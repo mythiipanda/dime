@@ -23,7 +23,7 @@ from backend.api_tools.game_boxscores import (
 )
 from backend.api_tools.game_playbyplay import fetch_playbyplay_logic
 from backend.api_tools.game_visuals_analytics import (
-    fetch_shotchart_logic as fetch_game_shotchart_logic, # Alias to avoid confusion
+    fetch_shotchart_logic,
     fetch_win_probability_logic
 )
 
@@ -265,19 +265,127 @@ def get_play_by_play(
         )
 
 @tool
-def get_game_shotchart(game_id: str) -> str:
+def get_game_shotchart(
+    game_id: str,
+    team_id: int = None,
+    team_name: str = None,
+    player_id: int = None,
+    player_name: str = None,
+    period: int = None,
+    shot_type: str = None,
+    shot_made: bool = None,
+    zone_basic: str = None,
+    zone_area: str = None,
+    zone_range: str = None,
+    as_dataframe: bool = False
+) -> str:
     """
     Fetches shot chart details for all players in a specific game.
+    Provides granular filtering options and DataFrame output capabilities.
 
     Args:
         game_id (str): The ID of the game.
+        team_id (int, optional): Filter shots by team ID.
+        team_name (str, optional): Filter shots by team name (case-insensitive partial match).
+        player_id (int, optional): Filter shots by player ID.
+        player_name (str, optional): Filter shots by player name (case-insensitive partial match).
+        period (int, optional): Filter shots by period number (1-4 for quarters, 5+ for overtime).
+        shot_type (str, optional): Filter shots by shot type (e.g., '2PT Field Goal', '3PT Field Goal').
+        shot_made (bool, optional): If True, only include made shots; if False, only include missed shots.
+        zone_basic (str, optional): Filter shots by basic shot zone (e.g., 'Restricted Area', 'Mid-Range', '3PT Field Goal').
+        zone_area (str, optional): Filter shots by shot zone area (e.g., 'Center', 'Left Side', 'Right Side').
+        zone_range (str, optional): Filter shots by shot zone range (e.g., 'Less Than 8 ft.', '16-24 ft.').
+        as_dataframe (bool, optional): If True, returns a pandas DataFrame representation of the data
+            and saves it to CSV files in the cache directory. Defaults to False.
 
     Returns:
         str: JSON string with game shot chart data, including shots by team and league averages.
+             If as_dataframe=True, the JSON response will include additional information about
+             the DataFrames and CSV files.
     """
-    logger.debug(f"Tool 'get_game_shotchart' called for game '{game_id}'")
-    result = fetch_game_shotchart_logic(game_id=game_id) # Uses aliased import
-    return result
+    logger.debug(f"Tool 'get_game_shotchart' called for game '{game_id}', as_dataframe={as_dataframe}")
+
+    if as_dataframe:
+        # Get both JSON response and DataFrames
+        json_response, dataframes = fetch_shotchart_logic(
+            game_id=game_id,
+            team_id=team_id,
+            team_name=team_name,
+            player_id=player_id,
+            player_name=player_name,
+            period=period,
+            shot_type=shot_type,
+            shot_made=shot_made,
+            zone_basic=zone_basic,
+            zone_area=zone_area,
+            zone_range=zone_range,
+            return_dataframe=True
+        )
+
+        # Parse the original JSON response
+        data = json.loads(json_response)
+
+        # Add DataFrame info
+        df_info = {
+            "message": "Shot chart data has been converted to DataFrames and saved as CSV files",
+            "dataframes": {}
+        }
+
+        for key, df in dataframes.items():
+            if not df.empty:
+                # Create a descriptive filename based on filters
+                filename_parts = [game_id]
+                if team_id:
+                    filename_parts.append(f"team_{team_id}")
+                if team_name:
+                    filename_parts.append(f"team_{team_name.replace(' ', '_')}")
+                if player_id:
+                    filename_parts.append(f"player_{player_id}")
+                if player_name:
+                    filename_parts.append(f"player_{player_name.replace(' ', '_')}")
+                if period:
+                    filename_parts.append(f"period_{period}")
+                if shot_type:
+                    filename_parts.append(f"shottype_{shot_type.replace(' ', '_')}")
+                if shot_made is not None:
+                    filename_parts.append(f"made_{shot_made}")
+                if zone_basic:
+                    filename_parts.append(f"zone_{zone_basic.replace(' ', '_')}")
+
+                csv_path = f"backend/cache/shotcharts/{'_'.join(filename_parts)}_{key}.csv"
+
+                df_info["dataframes"][key] = {
+                    "shape": df.shape,
+                    "columns": df.columns.tolist(),
+                    "csv_path": csv_path,
+                    "sample_data": df.head(5).to_dict(orient="records") if not df.empty else []
+                }
+
+        # Add DataFrame info to the response
+        if "error" in data:
+            # If there was an error, keep it and add DataFrame info
+            data["dataframe_info"] = df_info
+        else:
+            # If successful, add DataFrame info
+            data["dataframe_info"] = df_info
+
+        # Return the enhanced JSON response
+        return json.dumps(data)
+    else:
+        # Return the standard JSON response
+        return fetch_shotchart_logic(
+            game_id=game_id,
+            team_id=team_id,
+            team_name=team_name,
+            player_id=player_id,
+            player_name=player_name,
+            period=period,
+            shot_type=shot_type,
+            shot_made=shot_made,
+            zone_basic=zone_basic,
+            zone_area=zone_area,
+            zone_range=zone_range
+        )
 
 @tool
 def get_boxscore_advanced(
@@ -599,18 +707,68 @@ def get_boxscore_summary(
         return fetch_boxscore_summary_logic(game_id)
 
 @tool
-def get_win_probability(game_id: str, run_type: str = RunType.default) -> str:
+def get_win_probability(
+    game_id: str,
+    run_type: str = RunType.default,
+    as_dataframe: bool = False
+) -> str:
     """
     Fetches win probability data throughout a specific game (WinProbabilityPBP).
+    Provides DataFrame output capabilities.
 
     Args:
         game_id (str): The ID of the game.
         run_type (str, optional): Type of run for win probability.
             Valid values from `nba_api.stats.library.parameters.RunType`. Defaults to "Default".
+        as_dataframe (bool, optional): If True, returns a pandas DataFrame representation of the data
+            and saves it to CSV files in the cache directory. Defaults to False.
 
     Returns:
         str: JSON string with win probability data including game info and PBP events.
+             If as_dataframe=True, the JSON response will include additional information about
+             the DataFrames and CSV files.
     """
-    logger.debug(f"Tool 'get_win_probability' called for game_id '{game_id}', run_type '{run_type}'")
-    result = fetch_win_probability_logic(game_id, run_type=run_type)
-    return result
+    logger.debug(f"Tool 'get_win_probability' called for game_id '{game_id}', run_type '{run_type}', as_dataframe={as_dataframe}")
+
+    if as_dataframe:
+        # Get both JSON response and DataFrames
+        json_response, dataframes = fetch_win_probability_logic(
+            game_id,
+            run_type=run_type,
+            return_dataframe=True
+        )
+
+        # Parse the original JSON response
+        data = json.loads(json_response)
+
+        # Add DataFrame info
+        df_info = {
+            "message": "Win probability data has been converted to DataFrames and saved as CSV files",
+            "dataframes": {}
+        }
+
+        for key, df in dataframes.items():
+            if not df.empty:
+                # Create a descriptive filename
+                csv_path = f"backend/cache/win_probability/{game_id}_run_{run_type.replace(' ', '_')}_{key}.csv"
+
+                df_info["dataframes"][key] = {
+                    "shape": df.shape,
+                    "columns": df.columns.tolist(),
+                    "csv_path": csv_path,
+                    "sample_data": df.head(5).to_dict(orient="records") if not df.empty else []
+                }
+
+        # Add DataFrame info to the response
+        if "error" in data:
+            # If there was an error, keep it and add DataFrame info
+            data["dataframe_info"] = df_info
+        else:
+            # If successful, add DataFrame info
+            data["dataframe_info"] = df_info
+
+        # Return the enhanced JSON response
+        return json.dumps(data)
+    else:
+        # Return the standard JSON response
+        return fetch_win_probability_logic(game_id, run_type=run_type)
