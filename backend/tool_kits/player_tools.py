@@ -4,6 +4,7 @@ These tools wrap specific logic functions from `backend.api_tools` to fetch and
 process various NBA player statistics and information, making them easily usable by an AI agent.
 """
 import logging
+import json
 from typing import Optional
 from agno.tools import tool
 from nba_api.stats.library.parameters import SeasonTypeAllStar, PerModeDetailed, PerMode36, LeagueID
@@ -108,23 +109,79 @@ def get_player_profile(player_name: str, per_mode: str = PerModeDetailed.per_gam
     return result
 
 @tool
-def get_player_aggregate_stats(player_name: str, season: str = settings.CURRENT_NBA_SEASON, season_type: str = SeasonTypeAllStar.regular) -> str:
+def get_player_aggregate_stats(
+    player_name: str,
+    season: str = settings.CURRENT_NBA_SEASON,
+    season_type: str = SeasonTypeAllStar.regular,
+    as_dataframe: bool = False
+) -> str:
     """
     Fetches an aggregated set of player statistics for a specific season.
     This tool combines player info, game logs, career stats, and awards for a holistic view.
+    Provides DataFrame output capabilities.
 
     Args:
         player_name (str): The full name of the player (e.g., "Trae Young").
         season (str, optional): The NBA season identifier (e.g., "2023-24"). Defaults to the current season.
         season_type (str, optional): The type of season (e.g., "Regular Season", "Playoffs").
             Valid values from `nba_api.stats.library.parameters.SeasonTypeAllStar`. Defaults to "Regular Season".
+        as_dataframe (bool, optional): If True, returns a pandas DataFrame representation of the data
+            and saves it to CSV files in the cache directory. Defaults to False.
 
     Returns:
-        str: JSON string containing aggregated player statistics.
+        str: JSON string containing aggregated player statistics. If as_dataframe=True, the JSON response
+             will include additional information about the DataFrames and CSV files.
     """
-    logger.debug(f"Tool 'get_player_aggregate_stats' called for {player_name}, season {season}, type {season_type}")
-    result = fetch_player_stats_logic(player_name=player_name, season=season, season_type=season_type)
-    return result
+    logger.debug(f"Tool 'get_player_aggregate_stats' called for {player_name}, season {season}, type {season_type}, as_dataframe={as_dataframe}")
+
+    if as_dataframe:
+        # Get both JSON response and DataFrames
+        json_response, dataframes = fetch_player_stats_logic(
+            player_name=player_name,
+            season=season,
+            season_type=season_type,
+            return_dataframe=True
+        )
+
+        # Parse the original JSON response
+        data = json.loads(json_response)
+
+        # Add DataFrame info
+        df_info = {
+            "message": "Player statistics have been converted to DataFrames and saved as CSV files",
+            "dataframes": {}
+        }
+
+        for key, df in dataframes.items():
+            if not df.empty:
+                # Clean player name for filename
+                clean_player_name = player_name.replace(" ", "_").replace(".", "").lower()
+
+                # Clean season type for filename
+                clean_season_type = season_type.replace(" ", "_").lower()
+
+                csv_path = f"backend/cache/player_stats/{clean_player_name}_{season}_{clean_season_type}_{key}.csv"
+
+                df_info["dataframes"][key] = {
+                    "shape": df.shape,
+                    "columns": df.columns.tolist(),
+                    "csv_path": csv_path,
+                    "sample_data": df.head(3).to_dict(orient="records") if not df.empty else []
+                }
+
+        # Add DataFrame info to the response
+        if "error" in data:
+            # If there was an error, keep it and add DataFrame info
+            data["dataframe_info"] = df_info
+        else:
+            # If successful, add DataFrame info
+            data["dataframe_info"] = df_info
+
+        # Return the enhanced JSON response
+        return json.dumps(data)
+    else:
+        # Return the standard JSON response
+        return fetch_player_stats_logic(player_name=player_name, season=season, season_type=season_type)
 
 @tool
 def get_player_analysis(
