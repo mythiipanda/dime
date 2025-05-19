@@ -14,6 +14,7 @@ from backend.api_tools.team_info_roster import fetch_team_info_and_roster_logic
 from backend.api_tools.team_general_stats import fetch_team_stats_logic
 from backend.api_tools.team_passing_tracking import fetch_team_passing_stats_logic
 from backend.api_tools.team_rebounding_tracking import fetch_team_rebounding_stats_logic
+from backend.api_tools.team_shooting_tracking import fetch_team_shooting_stats_logic
 
 logger = logging.getLogger(__name__)
 
@@ -280,6 +281,108 @@ def get_team_rebounding_stats(
     else:
         # Return the standard JSON response
         return fetch_team_rebounding_stats_logic(
+            team_identifier=team_identifier,
+            season=season,
+            season_type=season_type,
+            per_mode=per_mode,
+            opponent_team_id=opponent_team_id,
+            date_from=date_from,
+            date_to=date_to
+        )
+
+@tool
+def get_team_shooting_stats(
+    team_identifier: str,
+    season: str = settings.CURRENT_NBA_SEASON,
+    season_type: str = SeasonTypeAllStar.regular,
+    per_mode: str = PerModeSimple.per_game,
+    opponent_team_id: int = 0,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    as_dataframe: bool = False
+) -> str:
+    """
+    Fetches team shooting statistics, categorized by various factors like shot clock,
+    number of dribbles, defender distance, and touch time, using the TeamDashPtShots endpoint.
+    Provides DataFrame output capabilities.
+
+    Args:
+        team_identifier (str): The team's name, abbreviation, or ID (e.g., "Boston Celtics", "BOS", "1610612738").
+        season (str, optional): NBA season in 'YYYY-YY' format. Defaults to current season.
+        season_type (str, optional): Type of season. Defaults to "Regular Season".
+            Valid values from `nba_api.stats.library.parameters.SeasonTypeAllStar`.
+        per_mode (str, optional): Statistical mode. Defaults to "PerGame".
+            Valid values from `nba_api.stats.library.parameters.PerModeSimple`.
+        opponent_team_id (int, optional): Filter by opponent team ID. Defaults to 0 (all).
+        date_from (Optional[str], optional): Start date filter (YYYY-MM-DD).
+        date_to (Optional[str], optional): End date filter (YYYY-MM-DD).
+        as_dataframe (bool, optional): If True, returns a pandas DataFrame representation of the data
+            and saves it to CSV files in the cache directory. Defaults to False.
+
+    Returns:
+        str: JSON string with team shooting stats, including 'overall_shooting', 'general_shooting_splits',
+             'by_shot_clock', 'by_dribble', 'by_defender_distance', and 'by_touch_time'.
+             If as_dataframe=True, the JSON response will include additional information about
+             the DataFrames and CSV files.
+    """
+    logger.debug(f"Tool 'get_team_shooting_stats' called for '{team_identifier}', season '{season}', type '{season_type}', per_mode '{per_mode}', as_dataframe={as_dataframe}")
+
+    if as_dataframe:
+        # Get both JSON response and DataFrames
+        json_response, dataframes = fetch_team_shooting_stats_logic(
+            team_identifier=team_identifier,
+            season=season,
+            season_type=season_type,
+            per_mode=per_mode,
+            opponent_team_id=opponent_team_id,
+            date_from=date_from,
+            date_to=date_to,
+            return_dataframe=True
+        )
+
+        # Parse the original JSON response
+        data = json.loads(json_response)
+
+        # Add DataFrame info
+        df_info = {
+            "message": "Team shooting statistics have been converted to DataFrames and saved as CSV files",
+            "dataframes": {}
+        }
+
+        for key, df in dataframes.items():
+            if not df.empty:
+                # Clean team name for filename
+                team_name = data.get("team_name", team_identifier)
+                clean_team_name = team_name.replace(" ", "_").replace(".", "").lower()
+
+                # Clean season type for filename
+                clean_season_type = season_type.replace(" ", "_").lower()
+
+                # Clean per mode for filename
+                clean_per_mode = per_mode.replace(" ", "_").lower()
+
+                csv_path = f"backend/cache/team_shooting/{clean_team_name}_{season}_{clean_season_type}_{clean_per_mode}_{key}.csv"
+
+                df_info["dataframes"][key] = {
+                    "shape": df.shape,
+                    "columns": df.columns.tolist(),
+                    "csv_path": csv_path,
+                    "sample_data": df.head(3).to_dict(orient="records") if not df.empty else []
+                }
+
+        # Add DataFrame info to the response
+        if "error" in data:
+            # If there was an error, keep it and add DataFrame info
+            data["dataframe_info"] = df_info
+        else:
+            # If successful, add DataFrame info
+            data["dataframe_info"] = df_info
+
+        # Return the enhanced JSON response
+        return json.dumps(data)
+    else:
+        # Return the standard JSON response
+        return fetch_team_shooting_stats_logic(
             team_identifier=team_identifier,
             season=season,
             season_type=season_type,
