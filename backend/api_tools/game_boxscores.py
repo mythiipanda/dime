@@ -20,7 +20,8 @@ from nba_api.stats.endpoints import (
     BoxScoreSummaryV2,
     BoxScoreMiscV3,
     BoxScorePlayerTrackV3,
-    BoxScoreScoringV3
+    BoxScoreScoringV3,
+    BoxScoreHustleV2
 )
 from ..config import settings
 from ..core.errors import Errors
@@ -538,4 +539,29 @@ def fetch_boxscore_scoring_logic(
         return_dataframe=return_dataframe,
         start_period=start_period, end_period=end_period,
         start_range=start_range, end_range=end_range, range_type=range_type
+    )
+
+@lru_cache(maxsize=GAME_BOXSCORE_CACHE_SIZE)
+def fetch_boxscore_hustle_logic(
+    game_id: str,
+    return_dataframe: bool = False
+) -> Union[str, Tuple[str, Dict[str, pd.DataFrame]]]:
+    """
+    Fetches Hustle Box Score data (V2) for a given game_id.
+
+    Args:
+        game_id: The ID of the game to fetch data for
+        return_dataframe: Whether to return DataFrames along with the JSON response
+
+    Returns:
+        If return_dataframe=False: JSON string containing the boxscore data
+        If return_dataframe=True: Tuple of (JSON string, Dictionary of DataFrames)
+    """
+    return _fetch_boxscore_data_generic(
+        game_id=game_id,
+        endpoint_class=BoxScoreHustleV2,
+        dataset_mapping={"player_stats": "player_stats", "team_stats": "team_stats"},
+        error_constants={"api": Errors.BOXSCORE_API, "processing": Errors.PROCESSING_ERROR},
+        endpoint_name_for_logging="BoxScoreHustleV2",
+        return_dataframe=return_dataframe
     )
