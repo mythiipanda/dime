@@ -15,7 +15,8 @@ from nba_api.stats.endpoints import (
     playerdashptshotdefend,
     leaguehustlestatsplayer,
     PlayerFantasyProfile,
-    PlayerFantasyProfileBarGraph
+    PlayerFantasyProfileBarGraph,
+    PlayerNextNGames
 )
 from nba_api.stats.library.parameters import SeasonTypeAllStar, PerModeDetailed, PerMode36, LeagueID, PerModeSimple, PerModeTime
 from ..config import settings
@@ -726,6 +727,70 @@ def fetch_player_fantasy_profile_bargraph_logic(
         return format_response(error=str(e))
     except Exception as e:
         error_msg = f"Unexpected error in fetch_player_fantasy_profile_bargraph_logic for '{player_name}': {e}"
+        logger.critical(error_msg, exc_info=True)
+        if return_dataframe:
+            return format_response(error=error_msg), dataframes
+        return format_response(error=error_msg)
+
+def fetch_player_next_n_games_logic(
+    player_name: str,
+    season: str,
+    season_type: str,
+    number_of_games: int = 5,
+    league_id: str = None,
+    return_dataframe: bool = False
+) -> Union[str, Tuple[str, Dict[str, pd.DataFrame]]]:
+    """
+    Fetches the next N games for a player for a given season.
+    Args:
+        player_name: The name or ID of the player.
+        season: The NBA season (e.g., "2023-24").
+        season_type: Season type ("Regular Season", "Playoffs", etc.).
+        number_of_games: Number of upcoming games to fetch (default 5).
+        league_id: League ID, optional.
+        return_dataframe: Whether to return DataFrames along with the JSON response.
+    Returns:
+        If return_dataframe=False: JSON string with next N games data or error.
+        If return_dataframe=True: Tuple of (JSON string, dict of DataFrames).
+    """
+    dataframes = {}
+    try:
+        player_id, player_actual_name = find_player_id_or_error(player_name)
+        endpoint = PlayerNextNGames(
+            player_id=player_id,
+            season_all=season,
+            season_type_all_star=season_type,
+            number_of_games=number_of_games,
+            league_id_nullable=league_id,
+            timeout=settings.DEFAULT_TIMEOUT_SECONDS
+        )
+        # Dataset mapping from docs
+        if hasattr(endpoint, "next_n_games"):
+            df = endpoint.next_n_games.get_data_frame()
+            dataframes["next_n_games"] = df
+            # Save to CSV if not empty
+            if not df.empty:
+                csv_path = get_cache_file_path(f"player_{player_id}_nextngames_{season}_{season_type}_{number_of_games}.csv", "player_dashboard/nextngames")
+                _save_dataframe_to_csv(df, csv_path)
+        # Prepare JSON response
+        response_data = {
+            "player_name": player_actual_name,
+            "player_id": player_id,
+            "season": season,
+            "season_type": season_type,
+            "number_of_games": number_of_games,
+            "league_id": league_id,
+            "next_n_games": _process_dataframe(dataframes["next_n_games"], single_row=False) if "next_n_games" in dataframes else []
+        }
+        if return_dataframe:
+            return format_response(response_data), dataframes
+        return format_response(response_data)
+    except PlayerNotFoundError as e:
+        if return_dataframe:
+            return format_response(error=str(e)), dataframes
+        return format_response(error=str(e))
+    except Exception as e:
+        error_msg = f"Unexpected error in fetch_player_next_n_games_logic for '{player_name}': {e}"
         logger.critical(error_msg, exc_info=True)
         if return_dataframe:
             return format_response(error=error_msg), dataframes
