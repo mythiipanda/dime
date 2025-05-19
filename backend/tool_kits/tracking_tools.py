@@ -5,6 +5,7 @@ to fetch detailed statistics like clutch performance, passing, rebounding, shoot
 defense, hustle, and shot charts.
 """
 import logging
+import json
 from typing import Optional
 from agno.tools import tool
 from nba_api.stats.library.parameters import (
@@ -49,11 +50,13 @@ def get_player_clutch_stats(
     vs_division_nullable: Optional[str] = None,
     season_segment_nullable: Optional[str] = None,
     date_from_nullable: Optional[str] = None,
-    date_to_nullable: Optional[str] = None
+    date_to_nullable: Optional[str] = None,
+    as_dataframe: bool = False
 ) -> str:
     """
     Fetches player statistics in clutch situations using PlayerDashboardByClutch endpoint.
     Provides various splits like Last5Min5PointGame, Last3Min5PointGame, etc.
+    Provides DataFrame output capabilities.
 
     Args:
         player_name (str): Full name of the player (e.g., "LeBron James").
@@ -79,21 +82,81 @@ def get_player_clutch_stats(
         season_segment_nullable (Optional[str], optional): "Pre All-Star" or "Post All-Star".
         date_from_nullable (Optional[str], optional): Start date (YYYY-MM-DD).
         date_to_nullable (Optional[str], optional): End date (YYYY-MM-DD).
+        as_dataframe (bool, optional): If True, returns a pandas DataFrame representation of the data
+            and saves it to CSV files in the cache directory. Defaults to False.
 
     Returns:
         str: JSON string with clutch statistics, including multiple dashboard datasets.
+             If as_dataframe=True, the JSON response will include additional information about
+             the DataFrames and CSV files.
     """
-    logger.debug(f"Tool 'get_player_clutch_stats' called for '{player_name}', season '{season}'")
-    return fetch_player_clutch_stats_logic(
-        player_name=player_name, season=season, season_type=season_type,
-        measure_type=measure_type, per_mode=per_mode, plus_minus=plus_minus,
-        pace_adjust=pace_adjust, rank=rank, shot_clock_range_nullable=shot_clock_range_nullable,
-        game_segment_nullable=game_segment_nullable, period=period, last_n_games=last_n_games,
-        month=month, opponent_team_id=opponent_team_id, location_nullable=location_nullable,
-        outcome_nullable=outcome_nullable, vs_conference_nullable=vs_conference_nullable,
-        vs_division_nullable=vs_division_nullable, season_segment_nullable=season_segment_nullable,
-        date_from_nullable=date_from_nullable, date_to_nullable=date_to_nullable
-    )
+    logger.debug(f"Tool 'get_player_clutch_stats' called for '{player_name}', season '{season}', as_dataframe={as_dataframe}")
+
+    if as_dataframe:
+        # Get both JSON response and DataFrames
+        json_response, dataframes = fetch_player_clutch_stats_logic(
+            player_name=player_name, season=season, season_type=season_type,
+            measure_type=measure_type, per_mode=per_mode, plus_minus=plus_minus,
+            pace_adjust=pace_adjust, rank=rank, shot_clock_range_nullable=shot_clock_range_nullable,
+            game_segment_nullable=game_segment_nullable, period=period, last_n_games=last_n_games,
+            month=month, opponent_team_id=opponent_team_id, location_nullable=location_nullable,
+            outcome_nullable=outcome_nullable, vs_conference_nullable=vs_conference_nullable,
+            vs_division_nullable=vs_division_nullable, season_segment_nullable=season_segment_nullable,
+            date_from_nullable=date_from_nullable, date_to_nullable=date_to_nullable,
+            return_dataframe=True
+        )
+
+        # Parse the original JSON response
+        data = json.loads(json_response)
+
+        # Add DataFrame info
+        df_info = {
+            "message": "Player clutch statistics have been converted to DataFrames and saved as CSV files",
+            "dataframes": {}
+        }
+
+        for key, df in dataframes.items():
+            if not df.empty:
+                # Clean player name for filename
+                clean_player_name = player_name.replace(" ", "_").replace(".", "").lower()
+
+                # Clean season type for filename
+                clean_season_type = season_type.replace(" ", "_").lower()
+
+                # Clean dashboard name for filename
+                clean_dashboard = key.replace(" ", "_").lower()
+
+                csv_path = f"backend/cache/player_clutch/{clean_player_name}_{season}_{clean_season_type}_{clean_dashboard}.csv"
+
+                df_info["dataframes"][key] = {
+                    "shape": df.shape,
+                    "columns": df.columns.tolist(),
+                    "csv_path": csv_path,
+                    "sample_data": df.head(3).to_dict(orient="records") if not df.empty else []
+                }
+
+        # Add DataFrame info to the response
+        if "error" in data:
+            # If there was an error, keep it and add DataFrame info
+            data["dataframe_info"] = df_info
+        else:
+            # If successful, add DataFrame info
+            data["dataframe_info"] = df_info
+
+        # Return the enhanced JSON response
+        return json.dumps(data)
+    else:
+        # Return the standard JSON response
+        return fetch_player_clutch_stats_logic(
+            player_name=player_name, season=season, season_type=season_type,
+            measure_type=measure_type, per_mode=per_mode, plus_minus=plus_minus,
+            pace_adjust=pace_adjust, rank=rank, shot_clock_range_nullable=shot_clock_range_nullable,
+            game_segment_nullable=game_segment_nullable, period=period, last_n_games=last_n_games,
+            month=month, opponent_team_id=opponent_team_id, location_nullable=location_nullable,
+            outcome_nullable=outcome_nullable, vs_conference_nullable=vs_conference_nullable,
+            vs_division_nullable=vs_division_nullable, season_segment_nullable=season_segment_nullable,
+            date_from_nullable=date_from_nullable, date_to_nullable=date_to_nullable
+        )
 
 @tool
 def get_player_passing_stats(
