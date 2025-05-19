@@ -5,7 +5,6 @@ Provides both JSON and DataFrame outputs with CSV caching.
 """
 import logging
 import json
-import os
 from functools import lru_cache
 from typing import Optional, Dict, Any, Union, Tuple
 import pandas as pd
@@ -18,6 +17,7 @@ from .utils import (
     PlayerNotFoundError
 )
 from ..utils.validation import _validate_season_format
+from ..utils.path_utils import get_cache_dir, get_cache_file_path, get_relative_cache_path
 from .player_common_info import fetch_player_info_logic
 from .player_career_data import fetch_player_career_stats_logic, fetch_player_awards_logic
 from .player_gamelogs import fetch_player_gamelog_logic
@@ -27,12 +27,7 @@ logger = logging.getLogger(__name__)
 PLAYER_AGGREGATE_STATS_CACHE_SIZE = 128
 
 # --- Cache Directory Setup ---
-CSV_CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cache")
-PLAYER_STATS_CSV_DIR = os.path.join(CSV_CACHE_DIR, "player_stats")
-
-# Ensure cache directories exist
-os.makedirs(CSV_CACHE_DIR, exist_ok=True)
-os.makedirs(PLAYER_STATS_CSV_DIR, exist_ok=True)
+PLAYER_STATS_CSV_DIR = get_cache_dir("player_stats")
 
 # --- Helper Functions ---
 def _save_dataframe_to_csv(df: pd.DataFrame, file_path: str) -> None:
@@ -69,7 +64,7 @@ def _get_csv_path_for_player_stats(player_name: str, season: str, season_type: s
     clean_season_type = season_type.replace(" ", "_").lower()
 
     filename = f"{clean_player_name}_{season}_{clean_season_type}_{data_type}.csv"
-    return os.path.join(PLAYER_STATS_CSV_DIR, filename)
+    return get_cache_file_path(filename, "player_stats")
 
 def fetch_player_stats_logic(
     player_name: str,
@@ -267,6 +262,28 @@ def fetch_player_stats_logic(
             "season_gamelog": gamelog_data.get("gamelog", []),
             "awards": awards_data.get("awards", [])
         }
+
+        # Add DataFrame metadata to the response if DataFrames are being returned
+        if return_dataframe and dataframes:
+            dataframe_info = {
+                "message": "Player aggregate stats data has been converted to DataFrames and saved as CSV files",
+                "dataframes": {}
+            }
+
+            for df_key, df in dataframes.items():
+                if not df.empty:
+                    # Get the relative path for the CSV file
+                    csv_filename = f"{player_actual_name.replace(' ', '_').replace('.', '').lower()}_{effective_season}_{season_type.replace(' ', '_').lower()}_{df_key}.csv"
+                    relative_path = get_relative_cache_path(csv_filename, "player_stats")
+
+                    dataframe_info["dataframes"][df_key] = {
+                        "shape": list(df.shape),
+                        "columns": df.columns.tolist(),
+                        "csv_path": relative_path
+                    }
+
+            if dataframe_info["dataframes"]:
+                result_dict["dataframe_info"] = dataframe_info
 
         logger.info(f"fetch_player_stats_logic completed for '{player_actual_name}'")
 
