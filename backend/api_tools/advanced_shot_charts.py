@@ -2,6 +2,7 @@
 Advanced shot chart generation module for NBA player shot analysis.
 This module provides enhanced visualization capabilities for shot charts,
 including heatmaps, animated sequences, and interactive elements.
+Provides both JSON and DataFrame outputs with CSV caching.
 """
 
 import logging
@@ -22,8 +23,51 @@ from ..config import settings
 from ..core.errors import Errors
 from .utils import format_response, find_player_id_or_error
 from ..utils.validation import _validate_season_format
+from ..utils.path_utils import get_cache_dir, get_cache_file_path, get_relative_cache_path
 
 logger = logging.getLogger(__name__)
+
+# --- Cache Directory Setup ---
+SHOT_CHARTS_CSV_DIR = get_cache_dir("shot_charts")
+
+# --- Helper Functions for CSV Caching ---
+def _save_dataframe_to_csv(df: pd.DataFrame, file_path: str) -> None:
+    """
+    Saves a DataFrame to a CSV file.
+
+    Args:
+        df: DataFrame to save
+        file_path: Path to save the CSV file
+    """
+    try:
+        df.to_csv(file_path, index=False)
+        logger.info(f"Saved DataFrame to CSV: {file_path}")
+    except Exception as e:
+        logger.error(f"Error saving DataFrame to CSV: {e}", exc_info=True)
+
+def _get_csv_path_for_shot_charts(
+    player_id: int,
+    season: str,
+    season_type: str,
+    chart_type: str
+) -> str:
+    """
+    Generates a file path for saving shot chart DataFrame as CSV.
+
+    Args:
+        player_id: Player ID
+        season: The season in YYYY-YY format
+        season_type: The season type (e.g., 'Regular Season', 'Playoffs')
+        chart_type: The type of chart (e.g., 'scatter', 'heatmap')
+
+    Returns:
+        Path to the CSV file
+    """
+    # Clean season type for filename
+    clean_season_type = season_type.replace(" ", "_").lower()
+
+    filename = f"shotchart_{player_id}_{season}_{clean_season_type}_{chart_type}.csv"
+    return get_cache_file_path(filename, "shot_charts")
 
 # Module-level constants
 COURT_WIDTH = 500
@@ -623,10 +667,12 @@ def process_shot_data_for_visualization(
     season_type: str = "Regular Season",
     chart_type: str = "scatter",
     output_format: str = "base64",
-    use_cache: bool = True
-) -> Dict[str, Any]:
+    use_cache: bool = True,
+    return_dataframe: bool = False
+) -> Union[Dict[str, Any], Tuple[Dict[str, Any], Dict[str, pd.DataFrame]]]:
     """
     Process shot data for a player and create visualizations.
+    Provides DataFrame output capabilities.
 
     Args:
         player_name: Name of the player
@@ -635,9 +681,14 @@ def process_shot_data_for_visualization(
         chart_type: Type of chart to create (scatter, heatmap, hexbin, animated, frequency)
         output_format: Output format (base64, file)
         use_cache: Whether to use cached visualizations
+        return_dataframe: Whether to return DataFrames along with the JSON response
 
     Returns:
-        Dict containing the visualization data and metadata
+        If return_dataframe=False:
+            Dict containing the visualization data and metadata
+        If return_dataframe=True:
+            Tuple[Dict[str, Any], Dict[str, pd.DataFrame]]: A tuple containing the JSON response
+                                                          and a dictionary of DataFrames
     """
     from .visualization_cache import VisualizationCache
 
@@ -647,15 +698,26 @@ def process_shot_data_for_visualization(
         "season": season,
         "season_type": season_type,
         "chart_type": chart_type,
-        "output_format": output_format
+        "output_format": output_format,
+        "return_dataframe": return_dataframe
     }
+
+    # Store DataFrames if requested
+    dataframes = {}
 
     # Check cache first if enabled
     if use_cache:
         cached_result = VisualizationCache.get(cache_params)
         if cached_result:
             logger.info(f"Using cached visualization for {player_name}, {season}, {chart_type}")
-            return cached_result
+            if return_dataframe:
+                # If we're returning DataFrames but the cached result doesn't have them,
+                # we'll need to fetch the data again
+                if isinstance(cached_result, tuple) and len(cached_result) == 2:
+                    return cached_result
+                # Otherwise, continue with the fetch to get DataFrames
+            else:
+                return cached_result
 
     try:
         # Get player ID
@@ -675,9 +737,12 @@ def process_shot_data_for_visualization(
         league_avg_df = shotchart_endpoint.league_averages.get_data_frame()
 
         if shots_df.empty:
-            return {
+            error_response = {
                 "error": f"No shot data found for {player_actual_name} in {season} {season_type}"
             }
+            if return_dataframe:
+                return error_response, dataframes
+            return error_response
 
         # Process shot data
         shot_locations = []
@@ -749,22 +814,98 @@ def process_shot_data_for_visualization(
             result = create_shot_distance_chart(shot_data, output_format)
         elif chart_type == "comparison":
             # Comparison requires additional parameters
-            return {
+            error_response = {
                 "error": "Player comparison requires additional parameters. Use the comparison endpoint instead."
             }
+            if return_dataframe:
+                return error_response, dataframes
+            return error_response
         else:
-            return {
+            error_response = {
                 "error": f"Invalid chart type: {chart_type}. Valid types are: scatter, heatmap, hexbin, animated, frequency, distance, comparison"
             }
+            if return_dataframe:
+                return error_response, dataframes
+            return error_response
+
+        # Store DataFrames if requested
+        if return_dataframe:
+            # Save shots_df and league_avg_df to CSV
+            if not shots_df.empty:
+                shots_csv_path = _get_csv_path_for_shot_charts(
+                    player_id=player_id,
+                    season=season,
+                    season_type=season_type,
+                    chart_type=f"{chart_type}_shots"
+                )
+                _save_dataframe_to_csv(shots_df, shots_csv_path)
+
+                # Add relative path to result
+                shots_relative_path = get_relative_cache_path(
+                    os.path.basename(shots_csv_path),
+                    "shot_charts"
+                )
+
+                if "dataframe_info" not in result:
+                    result["dataframe_info"] = {
+                        "message": "Shot chart data has been converted to DataFrame and saved as CSV file",
+                        "dataframes": {}
+                    }
+
+                result["dataframe_info"]["dataframes"]["shots"] = {
+                    "shape": list(shots_df.shape),
+                    "columns": shots_df.columns.tolist(),
+                    "csv_path": shots_relative_path
+                }
+
+            if not league_avg_df.empty:
+                league_csv_path = _get_csv_path_for_shot_charts(
+                    player_id=player_id,
+                    season=season,
+                    season_type=season_type,
+                    chart_type=f"{chart_type}_league_avg"
+                )
+                _save_dataframe_to_csv(league_avg_df, league_csv_path)
+
+                # Add relative path to result
+                league_relative_path = get_relative_cache_path(
+                    os.path.basename(league_csv_path),
+                    "shot_charts"
+                )
+
+                if "dataframe_info" not in result:
+                    result["dataframe_info"] = {
+                        "message": "Shot chart data has been converted to DataFrame and saved as CSV file",
+                        "dataframes": {}
+                    }
+
+                result["dataframe_info"]["dataframes"]["league_averages"] = {
+                    "shape": list(league_avg_df.shape),
+                    "columns": league_avg_df.columns.tolist(),
+                    "csv_path": league_relative_path
+                }
+
+            # Add DataFrames to the return value
+            dataframes["shots"] = shots_df
+            dataframes["league_averages"] = league_avg_df
 
         # Cache the result if successful
         if result and use_cache and "error" not in result:
-            VisualizationCache.set(cache_params, result)
+            if return_dataframe:
+                # Cache the tuple with DataFrames
+                VisualizationCache.set(cache_params, (result, dataframes))
+            else:
+                VisualizationCache.set(cache_params, result)
 
+        if return_dataframe:
+            return result, dataframes
         return result
 
     except Exception as e:
         logger.error(f"Error processing shot data for {player_name}: {str(e)}", exc_info=True)
-        return {
+        error_response = {
             "error": f"Failed to process shot data: {str(e)}"
         }
+        if return_dataframe:
+            return error_response, dataframes
+        return error_response
