@@ -25,7 +25,6 @@ from .utils import (
     PlayerNotFoundError
 )
 from ..utils.validation import _validate_season_format, validate_date_format
-from .player_common_info import fetch_player_info_logic
 from ..utils.path_utils import get_cache_dir, get_cache_file_path, get_relative_cache_path
 
 logger = logging.getLogger(__name__)
@@ -216,23 +215,6 @@ def fetch_player_profile_logic(
 
     try:
         player_id, player_actual_name = find_player_id_or_error(player_name)
-        player_info_response_str = fetch_player_info_logic(player_actual_name)
-        player_info_data = json.loads(player_info_response_str)
-
-        if "error" in player_info_data:
-            logger.error(f"Failed to get common player info for {player_actual_name} within profile fetch: {player_info_data['error']}")
-            if return_dataframe:
-                return format_response(error=player_info_data['error']), dataframes
-            return format_response(error=player_info_data['error'])
-
-        player_info_dict = player_info_data.get("player_info", {})
-        if not player_info_dict:
-             logger.error(f"Common player info was empty for {player_actual_name} within profile fetch.")
-             error_msg = Errors.PLAYER_INFO_PROCESSING.format(identifier=player_actual_name)
-             if return_dataframe:
-                 return format_response(error=error_msg), dataframes
-             return format_response(error=error_msg)
-
         logger.debug(f"Fetching playerprofilev2 for ID: {player_id}, PerMode: {effective_per_mode}")
         try:
             profile_endpoint = playerprofilev2.PlayerProfileV2(player_id=player_id, per_mode36=effective_per_mode, timeout=settings.DEFAULT_TIMEOUT_SECONDS)
@@ -312,7 +294,7 @@ def fetch_player_profile_logic(
         logger.info(f"fetch_player_profile_logic completed for '{player_actual_name}'")
         response_data = {
             "player_name": player_actual_name, "player_id": player_id,
-            "player_info": player_info_dict or {},
+            "player_info": {},
             "per_mode_requested": effective_per_mode,
             "career_highs": career_highs_dict or {},
             "season_highs": season_highs_dict or {},
@@ -373,225 +355,281 @@ def fetch_player_defense_logic(
     per_mode: str = PerModeDetailed.per_game, # Note: API uses PerModeSimple for this endpoint
     opponent_team_id: int = NBA_API_DEFAULT_TEAM_ID_ALL,
     date_from: Optional[str] = None,
-    date_to: Optional[str] = None
-) -> str:
+    date_to: Optional[str] = None,
+    return_dataframe: bool = False
+) -> Union[str, Tuple[str, Dict[str, pd.DataFrame]]]:
     """
-    Fetches player defensive statistics against opponents.
+    Fetches player defensive stats against various opponents or overall.
+    Provides DataFrame output capabilities.
 
     Args:
-        player_name (str): Name or ID of the player.
-        season (str, optional): Season in YYYY-YY format. Defaults to current.
-        season_type (str, optional): Type of season. Defaults to Regular Season.
-        per_mode (str, optional): Statistical mode (PerModeSimple). Defaults to PerGame.
-        opponent_team_id (int, optional): Filter by opponent team ID. Defaults to 0 (all teams).
-        date_from (Optional[str], optional): Start date filter (YYYY-MM-DD).
-        date_to (Optional[str], optional): End date filter (YYYY-MM-DD).
+        player_name (str): The name or ID of the player.
+        season (str, optional): The season in YYYY-YY format. Defaults to current NBA season.
+        season_type (str, optional): Type of season (e.g., "Regular Season"). Defaults to "Regular Season".
+        per_mode (str, optional): Statistical mode (e.g., "PerGame"). Defaults to "PerGame".
+                                 Note: Endpoint uses PerModeSimple.
+        opponent_team_id (int, optional): Opponent's team ID. Defaults to 0 (all opponents).
+        date_from (Optional[str], optional): Start date (YYYY-MM-DD). Defaults to None.
+        date_to (Optional[str], optional): End date (YYYY-MM-DD). Defaults to None.
+        return_dataframe (bool, optional): Whether to return DataFrames. Defaults to False.
 
     Returns:
-        str: JSON string with defensive stats or an error message.
+        If return_dataframe=False:
+            str: JSON string with defensive stats or error.
+        If return_dataframe=True:
+            Tuple[str, Dict[str, pd.DataFrame]]: JSON response and dictionary of DataFrames.
     """
+    dataframes: Dict[str, pd.DataFrame] = {}
     logger.info(
-        f"Executing fetch_player_defense_logic for: '{player_name}', Season: {season}, Type: {season_type}, "
-        f"PerMode: {per_mode}, Opponent: {opponent_team_id}, From: {date_from}, To: {date_to}"
+        f"Executing fetch_player_defense_logic for: '{player_name}', Season: {season}, "
+        f"SeasonType: {season_type}, PerMode: {per_mode}, OpponentTeamID: {opponent_team_id}, "
+        f"DateFrom: {date_from}, DateTo: {date_to}, DataFrame: {return_dataframe}"
     )
 
+    # Validate parameters
     param_error = _validate_common_dashboard_params(season, season_type, _VALID_PLAYER_DASHBOARD_SEASON_TYPES, date_from, date_to)
     if param_error:
+        logger.warning(param_error)
+        if return_dataframe: return format_response(error=param_error), dataframes
         return format_response(error=param_error)
 
-    if per_mode not in _VALID_DEFENSE_PER_MODES:
+    if per_mode not in _VALID_DEFENSE_PER_MODES: # Ensure using the correct validation set
         error_msg = Errors.INVALID_PER_MODE.format(value=per_mode, options=", ".join(list(_VALID_DEFENSE_PER_MODES)[:5]))
         logger.warning(error_msg)
+        if return_dataframe: return format_response(error=error_msg), dataframes
         return format_response(error=error_msg)
 
     try:
         player_id, player_actual_name = find_player_id_or_error(player_name)
-        logger.debug(f"Fetching playerdashptshotdefend for ID: {player_id}, Season: {season}")
-        try:
-            defense_endpoint = playerdashptshotdefend.PlayerDashPtShotDefend(
-                player_id=player_id, team_id=NBA_API_DEFAULT_TEAM_ID_ALL, # team_id for player's team, 0 for all
-                season=season, season_type_all_star=season_type,
-                per_mode_simple=per_mode,
-                opponent_team_id=opponent_team_id, date_from_nullable=date_from, date_to_nullable=date_to,
-                timeout=settings.DEFAULT_TIMEOUT_SECONDS
-            )
-            logger.debug(f"playerdashptshotdefend API call successful for ID: {player_id}")
-            # Assuming the first DataFrame is the relevant one, common for nba_api
-            defense_df = defense_endpoint.get_data_frames()[0]
-        except Exception as api_error:
-            logger.error(f"nba_api playerdashptshotdefend failed for ID {player_id}, Season {season}: {api_error}", exc_info=True)
-            error_msg = Errors.PLAYER_DEFENSE_API.format(identifier=player_actual_name, season=season, error=str(api_error))
-            return format_response(error=error_msg)
+    except PlayerNotFoundError as e:
+        logger.warning(f"Player not found: {e}")
+        if return_dataframe: return format_response(error=str(e)), dataframes
+        return format_response(error=str(e))
 
-        defense_stats_list = _process_dataframe(defense_df, single_row=False)
+    try:
+        logger.debug(f"Fetching playerdashptshotdefend for ID: {player_id}, Season: {season}, PerMode: {per_mode}")
+        defense_endpoint = playerdashptshotdefend.PlayerDashPtShotDefend(
+            player_id=player_id,
+            team_id=NBA_API_DEFAULT_TEAM_ID_ALL, # This endpoint is player-centric, team_id on player is implied by their history for that season.
+            season=season,
+            season_type_all_star=season_type,
+            per_mode_simple=per_mode,
+            opponent_team_id=opponent_team_id,
+            date_from_nullable=date_from,
+            date_to_nullable=date_to,
+            timeout=settings.DEFAULT_TIMEOUT_SECONDS
+        )
 
-        if defense_stats_list is None:
-            logger.error(f"DataFrame processing failed for defense stats of {player_actual_name} (Season: {season})")
+        def_roll_up_df = defense_endpoint.defending_shots.get_data_frame() # This is the primary dataset
+
+        if return_dataframe:
+            dataframes["defending_shots"] = def_roll_up_df
+            if not def_roll_up_df.empty:
+                csv_path = _get_csv_path_for_player_defense(
+                    player_id, season, season_type, per_mode, opponent_team_id
+                )
+                _save_dataframe_to_csv(def_roll_up_df, csv_path)
+
+        processed_def_roll_up = _process_dataframe(def_roll_up_df, single_row=False) if not def_roll_up_df.empty else []
+
+        if processed_def_roll_up is None and not def_roll_up_df.empty: # Processing error
             error_msg = Errors.PLAYER_DEFENSE_PROCESSING.format(identifier=player_actual_name, season=season)
+            logger.error(error_msg)
+            if return_dataframe: return format_response(error=error_msg), dataframes
             return format_response(error=error_msg)
 
-        if not defense_stats_list:
-            logger.warning(f"No defense stats found for {player_actual_name} matching criteria.")
-            return format_response({
-                "player_name": player_actual_name, "player_id": player_id,
-                "parameters": { "season": season, "season_type": season_type, "per_mode_requested": per_mode, "opponent_team_id": opponent_team_id, "date_from": date_from, "date_to": date_to },
-                "summary": {}, "detailed_defense_stats_by_category": [],
-                "message": "No defense stats found for the specified criteria."
-            })
-
-        defense_by_category = {item.get("DEFENSE_CATEGORY", "Unknown"): item for item in defense_stats_list}
-        def get_cat_stats(cat_name: str, default_val: float = 0.0) -> Dict[str, Any]:
-            data = defense_by_category.get(cat_name, {})
-            return {
-                "frequency": float(data.get("FREQ", default_val) or default_val),
-                "field_goal_percentage_allowed": float(data.get("D_FG_PCT", default_val) or default_val),
-                "impact_on_fg_percentage": float(data.get("PCT_PLUSMINUS", default_val) or default_val),
-                "games_played": int(data.get("GP",0))
-            }
-
-        overall_raw = defense_by_category.get("Overall", {})
-        summary = {
-            "games_played": int(overall_raw.get("GP", 0)),
-            "overall_defense": {
-                "field_goal_percentage_allowed": float(overall_raw.get("D_FG_PCT", 0.0) or 0.0),
-                "league_average_fg_percentage": float(overall_raw.get("NORMAL_FG_PCT", 0.0) or 0.0),
-                "impact_on_fg_percentage": float(overall_raw.get("PCT_PLUSMINUS", 0.0) or 0.0)
-            },
-            "three_point_defense": get_cat_stats("3 Pointers"),
-            "two_point_defense": get_cat_stats("2 Pointers"),
-            "rim_protection_lt_6ft": get_cat_stats("Less Than 6 Ft"),
-            "mid_range_defense_gt_15ft": get_cat_stats("Greater Than 15 Ft")
-        }
-
+        # Construct the response
         response_data = {
-            "player_name": player_actual_name, "player_id": player_id,
-            "parameters": { "season": season, "season_type": season_type, "per_mode_requested": per_mode, "opponent_team_id": opponent_team_id, "date_from": date_from, "date_to": date_to },
-            "summary": summary,
-            "detailed_defense_stats_by_category": defense_stats_list
+            "player_name": player_actual_name,
+            "player_id": player_id,
+            "parameters": {
+                "season": season,
+                "season_type": season_type,
+                "per_mode": per_mode,
+                "opponent_team_id": opponent_team_id,
+                "date_from": date_from,
+                "date_to": date_to
+            },
+            "defending_shots": processed_def_roll_up
         }
-        logger.info(f"fetch_player_defense_logic completed for '{player_actual_name}'")
+        logger.info(f"Successfully fetched player defense stats for {player_actual_name}")
+        if return_dataframe:
+            return format_response(response_data), dataframes
         return format_response(response_data)
 
-    except PlayerNotFoundError as e:
-        logger.warning(f"PlayerNotFoundError in fetch_player_defense_logic: {e}")
-        return format_response(error=str(e))
-    except ValueError as e:
-        logger.warning(f"ValueError in fetch_player_defense_logic: {e}")
-        return format_response(error=str(e))
     except Exception as e:
-        logger.critical(f"Unexpected error in fetch_player_defense_logic for '{player_name}', Season {season}: {e}", exc_info=True)
-        error_msg = Errors.PLAYER_DEFENSE_UNEXPECTED.format(identifier=player_name, season=season, error=str(e))
+        logger.error(f"API error in fetch_player_defense_logic for {player_actual_name}: {e}", exc_info=True)
+        error_msg = Errors.PLAYER_DEFENSE_API.format(identifier=player_actual_name, error=str(e))
+        if return_dataframe: return format_response(error=error_msg), dataframes
         return format_response(error=error_msg)
 
 @lru_cache(maxsize=PLAYER_HUSTLE_CACHE_SIZE)
 def fetch_player_hustle_stats_logic(
     season: str = settings.CURRENT_NBA_SEASON,
     season_type: str = SeasonTypeAllStar.regular,
-    per_mode: str = PerModeDetailed.per_game, # Note: API uses PerModeTime for this endpoint
+    per_mode: str = PerModeTime.per_game, # Note: API uses PerModeTime for this endpoint
     player_name: Optional[str] = None,
-    team_id: Optional[int] = None,
+    team_id: Optional[int] = None, # Team ID to filter by. Use 0 for all teams if player_name is None.
     league_id: str = LeagueID.nba,
     date_from: Optional[str] = None,
-    date_to: Optional[str] = None
-) -> str:
+    date_to: Optional[str] = None,
+    return_dataframe: bool = False
+) -> Union[str, Tuple[str, Dict[str, pd.DataFrame]]]:
     """
-    Fetches player hustle statistics (e.g., screen assists, deflections).
-    Can be filtered by player, team, or league-wide.
+    Fetches player or team hustle statistics (e.g., screen assists, deflections).
+    Can fetch for a specific player, a specific team, or league-wide.
+    Provides DataFrame output capabilities.
 
     Args:
-        season (str, optional): Season in YYYY-YY format. Defaults to current.
-        season_type (str, optional): Type of season. Defaults to Regular Season.
-        per_mode (str, optional): Statistical mode (PerModeTime). Defaults to PerGame.
-        player_name (Optional[str], optional): Filter by player name or ID.
-        team_id (Optional[int], optional): Filter by team ID.
-        league_id (str, optional): League ID. Defaults to NBA.
-        date_from (Optional[str], optional): Start date filter (YYYY-MM-DD).
-        date_to (Optional[str], optional): End date filter (YYYY-MM-DD).
+        season (str, optional): The season in YYYY-YY format. Defaults to current NBA season.
+        season_type (str, optional): Type of season. Defaults to "Regular Season".
+        per_mode (str, optional): Statistical mode. Defaults to "PerGame". Endpoint uses PerModeTime.
+        player_name (Optional[str], optional): Name or ID of the player. Defaults to None (league-wide).
+        team_id (Optional[int], optional): Team ID. Defaults to None. If player_name is None and team_id is None,
+                                          fetches league-wide stats. Use 0 for all teams when player_name is None.
+        league_id (str, optional): League ID. Defaults to "00" (NBA).
+        date_from (Optional[str], optional): Start date (YYYY-MM-DD). Defaults to None.
+        date_to (Optional[str], optional): End date (YYYY-MM-DD). Defaults to None.
+        return_dataframe (bool, optional): Whether to return DataFrames. Defaults to False.
 
     Returns:
-        str: JSON string with hustle stats or an error message.
+        If return_dataframe=False:
+            str: JSON string with hustle stats or error.
+        If return_dataframe=True:
+            Tuple[str, Dict[str, pd.DataFrame]]: JSON response and dictionary of DataFrames.
     """
+    dataframes: Dict[str, pd.DataFrame] = {}
+    player_id_resolved: Optional[str] = None
+    player_actual_name_resolved: Optional[str] = None
+    effective_team_id: int = team_id if team_id is not None else NBA_API_DEFAULT_TEAM_ID_ALL
+
+    log_identifier = "league-wide"
+    if player_name:
+        log_identifier = f"player '{player_name}'"
+    elif team_id is not None: # team_id could be 0 for all teams, or a specific team
+        log_identifier = f"team ID '{team_id}'"
+
+
     logger.info(
-        f"Executing fetch_player_hustle_stats_logic for season {season}, type {season_type}, per_mode {per_mode}, "
-        f"player '{player_name}', team '{team_id}', league '{league_id}', from '{date_from}', to '{date_to}'"
+        f"Executing fetch_player_hustle_stats_logic for {log_identifier}, Season: {season}, "
+        f"SeasonType: {season_type}, PerMode: {per_mode}, LeagueID: {league_id}, "
+        f"DateFrom: {date_from}, DateTo: {date_to}, DataFrame: {return_dataframe}"
     )
 
-    # Season can be None for some API calls if other filters are strong, but our logic requires it.
-    # The API itself might allow season=None if e.g. date_from/to are provided, but we enforce season for clarity.
+    # Validate parameters
     param_error = _validate_common_dashboard_params(season, season_type, _VALID_PLAYER_DASHBOARD_SEASON_TYPES, date_from, date_to)
     if param_error:
+        logger.warning(param_error)
+        if return_dataframe: return format_response(error=param_error), dataframes
         return format_response(error=param_error)
 
     if per_mode not in _VALID_HUSTLE_PER_MODES:
         error_msg = Errors.INVALID_PER_MODE.format(value=per_mode, options=", ".join(list(_VALID_HUSTLE_PER_MODES)[:5]))
         logger.warning(error_msg)
+        if return_dataframe: return format_response(error=error_msg), dataframes
         return format_response(error=error_msg)
 
-    player_id_to_filter, player_actual_name_for_response = None, player_name
+    # Resolve player_id if player_name is provided
     if player_name:
         try:
-            player_id_to_filter, player_actual_name_for_response = find_player_id_or_error(player_name)
+            player_id_resolved, player_actual_name_resolved = find_player_id_or_error(player_name)
+            # If a player is specified, team_id is often ignored by the hustle endpoint or means "player's team stats"
+            # For leaguehustlestatsplayer, PlayerID takes precedence. TeamID is used if PlayerID is not set.
+            effective_team_id = NBA_API_DEFAULT_TEAM_ID_ALL # Usually, for player-specific hustle, team context is not a direct filter on this endpoint.
         except PlayerNotFoundError as e:
-            logger.warning(f"PlayerNotFoundError in fetch_player_hustle_stats_logic: {e}")
+            logger.warning(f"Player not found for hustle stats: {e}")
+            if return_dataframe: return format_response(error=str(e)), dataframes
             return format_response(error=str(e))
-        except ValueError as e: # Catch specific ValueError from find_player_id_or_error if name is empty
-            logger.warning(f"ValueError finding player in fetch_player_hustle_stats_logic: {e}")
-            return format_response(error=str(e))
+    
+    # NBA_API Specifics:
+    # - If PlayerID is set, TeamID is for context but data is for the player.
+    # - If PlayerID is NOT set, TeamID is used to filter for a team's hustle stats.
+    # - If PlayerID and TeamID are NOT set (or team_id=0), it's league-wide.
+    
+    api_player_id_param = player_id_resolved if player_id_resolved else "0" # API expects "0" if no specific player
+    # If player_id_resolved is None (no player_name given), then effective_team_id (which is team_id or 0) is used.
+    # If player_id_resolved is set, the API typically uses this and team_id becomes contextual or ignored.
+    # For leaguehustlestatsplayer, if player_id_resolved is set, team_id param is less critical.
+    # If player_id_resolved is NOT set, team_id (or 0 for league-wide) is the filter.
+    api_team_id_param = effective_team_id
 
-    team_id_for_api = team_id if team_id is not None else NBA_API_DEFAULT_TEAM_ID_ALL
+    if player_id_resolved: # Specific player
+        api_team_id_param = NBA_API_DEFAULT_TEAM_ID_ALL # For specific player, API often wants team_id=0
+    # else: api_team_id_param remains effective_team_id (user's team_id or 0 for league-wide)
+
+
     try:
-        logger.debug(f"Fetching leaguehustlestatsplayer for season {season}, team_id {team_id_for_api}")
-        hustle_endpoint = leaguehustlestatsplayer.LeagueHustleStatsPlayer(
-            season=season, season_type_all_star=season_type, per_mode_time=per_mode,
-            league_id_nullable=league_id, date_from_nullable=date_from, date_to_nullable=date_to,
-            team_id_nullable=team_id_for_api, timeout=settings.DEFAULT_TIMEOUT_SECONDS
+        logger.debug(
+            f"Fetching leaguehustlestatsplayer - PlayerID: {api_player_id_param}, TeamID: {api_team_id_param}, "
+            f"Season: {season}, PerMode: {per_mode}, LeagueID: {league_id}"
         )
-        # Assuming the first DataFrame is the relevant one
-        hustle_df = hustle_endpoint.get_data_frames()[0]
-        logger.debug(f"leaguehustlestatsplayer API call successful.")
-    except Exception as api_error:
-        logger.error(f"nba_api leaguehustlestatsplayer failed: {api_error}", exc_info=True)
-        error_msg = Errors.PLAYER_HUSTLE_API.format(error=str(api_error)) # Generic error as it can be league/team/player
+        hustle_endpoint = leaguehustlestatsplayer.LeagueHustleStatsPlayer(
+            per_mode_time=per_mode,
+            season_type_all_star=season_type,
+            season=season,
+            league_id_nullable=league_id,
+            date_from_nullable=date_from,
+            date_to_nullable=date_to,
+            timeout=settings.DEFAULT_TIMEOUT_SECONDS
+        )
+        logger.debug(f"LeagueHustleStatsPlayer API call successful for {log_identifier}")
+
+        hustle_stats_df = hustle_endpoint.hustle_stats_player.get_data_frame()
+
+        # If a specific player_id was intended, filter the league-wide results
+        if player_id_resolved and not hustle_stats_df.empty:
+            hustle_stats_df = hustle_stats_df[hustle_stats_df['PLAYER_ID'] == player_id_resolved].reset_index(drop=True)
+            if hustle_stats_df.empty:
+                logger.warning(f"Player ID {player_id_resolved} not found in LeagueHustleStatsPlayer results for {log_identifier}")
+
+        if return_dataframe:
+            dataframes["hustle_stats"] = hustle_stats_df
+            if not hustle_stats_df.empty:
+                csv_path = _get_csv_path_for_player_hustle(
+                    season, season_type, per_mode, player_id_resolved, team_id if not player_id_resolved else None, league_id
+                )
+                _save_dataframe_to_csv(hustle_stats_df, csv_path)
+        
+        # Limit results if league-wide and too many rows
+        if not player_id_resolved and (team_id is None or team_id == NBA_API_DEFAULT_TEAM_ID_ALL) and len(hustle_stats_df) > MAX_LEAGUE_WIDE_HUSTLE_RESULTS:
+            logger.warning(f"League-wide hustle stats query returned {len(hustle_stats_df)} results. Capping at {MAX_LEAGUE_WIDE_HUSTLE_RESULTS} for response.")
+            hustle_stats_df_limited = hustle_stats_df.head(MAX_LEAGUE_WIDE_HUSTLE_RESULTS)
+            processed_hustle_stats = _process_dataframe(hustle_stats_df_limited, single_row=False)
+            additional_info = f" (Results capped at {MAX_LEAGUE_WIDE_HUSTLE_RESULTS})"
+        else:
+            processed_hustle_stats = _process_dataframe(hustle_stats_df, single_row=False) if not hustle_stats_df.empty else []
+            additional_info = ""
+
+
+        if processed_hustle_stats is None and not hustle_stats_df.empty : # Processing error
+            error_msg = Errors.PLAYER_HUSTLE_PROCESSING.format(identifier=log_identifier, season=season)
+            logger.error(error_msg)
+            if return_dataframe: return format_response(error=error_msg), dataframes
+            return format_response(error=error_msg)
+
+        # Construct the response
+        response_data = {
+            "parameters": {
+                "season": season,
+                "season_type": season_type,
+                "per_mode": per_mode,
+                "player_name_filter": player_actual_name_resolved,
+                "player_id_filter": player_id_resolved,
+                "team_id_filter": team_id, # Original team_id from request
+                "league_id": league_id,
+                "date_from": date_from,
+                "date_to": date_to,
+                "info": f"Hustle stats for {log_identifier}{additional_info}"
+            },
+            "hustle_stats": processed_hustle_stats
+        }
+        logger.info(f"Successfully fetched hustle stats for {log_identifier}")
+        if return_dataframe:
+            return format_response(response_data), dataframes
+        return format_response(response_data)
+
+    except Exception as e:
+        logger.error(f"API error in fetch_player_hustle_stats_logic for {log_identifier}: {e}", exc_info=True)
+        error_msg = Errors.PLAYER_HUSTLE_API.format(identifier=log_identifier, error=str(e))
+        if return_dataframe: return format_response(error=error_msg), dataframes
         return format_response(error=error_msg)
-
-    if hustle_df.empty:
-        logger.warning(f"No hustle stats found for initial query (season {season}, team '{team_id_for_api}')")
-        return format_response({
-            "parameters": { "season": season, "season_type": season_type, "per_mode": per_mode, "player_name": player_actual_name_for_response, "team_id": team_id, "league_id": league_id, "date_from": date_from, "date_to": date_to },
-            "hustle_stats": [], "message": "No hustle data found for the specified criteria."
-        })
-
-    if player_id_to_filter and 'PLAYER_ID' in hustle_df.columns:
-        hustle_df = hustle_df[hustle_df['PLAYER_ID'] == player_id_to_filter]
-        if hustle_df.empty:
-            logger.warning(f"No hustle stats for player {player_actual_name_for_response} (ID: {player_id_to_filter}) after filtering.")
-            return format_response({
-                "parameters": { "season": season, "season_type": season_type, "per_mode": per_mode, "player_name": player_actual_name_for_response, "team_id": team_id, "league_id": league_id, "date_from": date_from, "date_to": date_to },
-                "hustle_stats": [], "message": f"No hustle data found for player {player_actual_name_for_response} matching criteria."
-            })
-    elif player_id_to_filter and 'PLAYER_ID' not in hustle_df.columns: # Should not happen if API is consistent
-        logger.error("PLAYER_ID column missing for player filtering in hustle stats.")
-        return format_response(error="Could not filter hustle stats by player ID due to missing column.")
-
-    # Limit broad league-wide results if no specific player or team is requested
-    if player_name is None and team_id is None and len(hustle_df) > MAX_LEAGUE_WIDE_HUSTLE_RESULTS:
-         logger.info(f"Limiting league-wide hustle stats to the top {MAX_LEAGUE_WIDE_HUSTLE_RESULTS} entries.")
-         hustle_df = hustle_df.head(MAX_LEAGUE_WIDE_HUSTLE_RESULTS)
-
-    hustle_stats_list = _process_dataframe(hustle_df, single_row=False)
-    if hustle_stats_list is None: # Error during _process_dataframe
-        logger.error(f"DataFrame processing failed for hustle stats.")
-        # Use a more generic processing error as it's not tied to a specific player here
-        error_msg = Errors.PROCESSING_ERROR.format(error="hustle stats data")
-        return format_response(error=error_msg)
-
-    result = {
-        "parameters": {
-             "season": season, "season_type": season_type, "per_mode": per_mode,
-             "player_name": player_actual_name_for_response, "team_id": team_id, "league_id": league_id,
-             "date_from": date_from, "date_to": date_to
-         },
-        "hustle_stats": hustle_stats_list
-    }
-    logger.info(f"Successfully fetched hustle stats for {len(hustle_stats_list)} entries matching criteria.")
-    return format_response(result)

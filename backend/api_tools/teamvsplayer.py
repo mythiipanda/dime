@@ -1,5 +1,6 @@
 import logging
 import json
+import os # Added for path operations
 from typing import Optional, Dict, Any, Union, Tuple
 import pandas as pd
 from nba_api.stats.endpoints import teamvsplayer
@@ -10,13 +11,65 @@ from ..config import settings
 from ..core.errors import Errors
 from .utils import format_response, _process_dataframe, find_team_id_or_error, find_player_id_or_error
 from ..utils.validation import _validate_season_format, validate_date_format
+from ..utils.path_utils import get_cache_dir, get_cache_file_path # Added imports
 
 logger = logging.getLogger(__name__)
+
+# Define cache directory
+TEAM_VS_PLAYER_CSV_DIR = get_cache_dir("team_vs_player")
 
 _VALID_SEASON_TYPES = {getattr(SeasonTypeAllStar, attr) for attr in dir(SeasonTypeAllStar) if not attr.startswith('_') and isinstance(getattr(SeasonTypeAllStar, attr), str)}
 _VALID_PER_MODES = {getattr(PerModeDetailed, attr) for attr in dir(PerModeDetailed) if not attr.startswith('_') and isinstance(getattr(PerModeDetailed, attr), str)}
 _VALID_MEASURE_TYPES = {getattr(MeasureTypeDetailedDefense, attr) for attr in dir(MeasureTypeDetailedDefense) if not attr.startswith('_') and isinstance(getattr(MeasureTypeDetailedDefense, attr), str)}
 _VALID_LEAGUE_IDS = {getattr(LeagueID, attr) for attr in dir(LeagueID) if not attr.startswith('_') and isinstance(getattr(LeagueID, attr), str)}
+
+# --- Helper Functions for CSV Caching ---
+def _save_dataframe_to_csv(df: pd.DataFrame, file_path: str) -> None:
+    """
+    Saves a DataFrame to a CSV file.
+
+    Args:
+        df: DataFrame to save
+        file_path: Path to save the CSV file
+    """
+    try:
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        df.to_csv(file_path, index=False)
+        logger.info(f"Saved DataFrame to CSV: {file_path}")
+    except Exception as e:
+        logger.error(f"Error saving DataFrame to CSV: {e}", exc_info=True)
+
+def _get_csv_path_for_team_vs_player(
+    team_id: str,
+    vs_player_id: str,
+    season: str,
+    season_type: str,
+    per_mode: str,
+    measure_type: str,
+    dashboard_type: str 
+) -> str:
+    """
+    Generates a file path for saving team vs player DataFrame as CSV.
+
+    Args:
+        team_id: The team's ID
+        vs_player_id: The opposing player's ID
+        season: The season in YYYY-YY format
+        season_type: The season type
+        per_mode: The per mode
+        measure_type: The measure type
+        dashboard_type: The type of dashboard (e.g., 'overall', 'on_off_court')
+
+    Returns:
+        Path to the CSV file
+    """
+    clean_season_type = season_type.replace(" ", "_").lower()
+    clean_per_mode = per_mode.replace(" ", "_").lower()
+    clean_measure_type = measure_type.replace(" ", "_").lower()
+    clean_dashboard_type = dashboard_type.replace(" ", "_").lower()
+
+    filename = f"team_{team_id}_vs_player_{vs_player_id}_{clean_dashboard_type}_{season}_{clean_season_type}_{clean_per_mode}_{clean_measure_type}.csv"
+    return get_cache_file_path(filename, "team_vs_player")
 
 def fetch_teamvsplayer_logic(
     team_identifier: str,
@@ -191,6 +244,19 @@ def fetch_teamvsplayer_logic(
                 "shot_distance_off_court": shot_distance_off_court_df,
                 "vs_player_overall": vs_player_overall_df
             }
+            # Save DataFrames to CSV
+            for df_key, df_value in dataframes.items():
+                if not df_value.empty:
+                    csv_path = _get_csv_path_for_team_vs_player(
+                        str(team_id),
+                        str(vs_player_id),
+                        season,
+                        season_type,
+                        per_mode,
+                        measure_type,
+                        dashboard_type=df_key
+                    )
+                    _save_dataframe_to_csv(df_value, csv_path)
 
         # Process DataFrames for JSON response
         response_data = {
@@ -238,7 +304,9 @@ def fetch_teamvsplayer_logic(
 
     except Exception as api_error:
         logger.error(f"nba_api teamvsplayer failed: {api_error}", exc_info=True)
-        error_msg = Errors.TEAM_VS_PLAYER_API.format(identifier=team_actual_name, error=str(api_error)) if hasattr(Errors, "TEAM_VS_PLAYER_API") else str(api_error)
+        # Use team_actual_name or vs_player_actual_name if available for better error context
+        error_identifier_context = f"team '{team_actual_name if 'team_actual_name' in locals() else team_identifier}' vs player '{vs_player_actual_name if 'vs_player_actual_name' in locals() else vs_player_identifier}'"
+        error_msg = Errors.TEAM_VS_PLAYER_API.format(identifier=error_identifier_context, error=str(api_error)) if hasattr(Errors, "TEAM_VS_PLAYER_API") else Errors.API_ERROR.format(error=str(api_error))
         if return_dataframe:
             return format_response(error=error_msg), dataframes
         return format_response(error=error_msg) 
