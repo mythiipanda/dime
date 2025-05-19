@@ -338,10 +338,12 @@ def get_player_shots_tracking(
     per_mode: str = PerModeSimple.per_game, # Added to match underlying logic
     opponent_team_id: int = 0, # Added to match underlying logic
     date_from: Optional[str] = None, # Added to match underlying logic
-    date_to: Optional[str] = None # Added to match underlying logic
+    date_to: Optional[str] = None, # Added to match underlying logic
+    as_dataframe: bool = False
 ) -> str:
     """
     Fetches detailed player shooting statistics by various factors (PlayerDashPtShots).
+    Provides DataFrame output capabilities.
 
     Args:
         player_name (str): Full name of the player (e.g., "Stephen Curry").
@@ -351,15 +353,91 @@ def get_player_shots_tracking(
         opponent_team_id (int, optional): Filter by opponent team ID. Defaults to 0 (all).
         date_from (Optional[str], optional): Start date filter (YYYY-MM-DD).
         date_to (Optional[str], optional): End date filter (YYYY-MM-DD).
+        as_dataframe (bool, optional): If True, returns a pandas DataFrame representation of the data
+            and saves it to CSV files in the cache directory. Defaults to False.
 
     Returns:
         str: JSON string with detailed shot tracking statistics (e.g., by shot clock, dribbles, defender distance).
+             If as_dataframe=True, the JSON response will include additional information about
+             the DataFrames and CSV files.
     """
-    logger.debug(f"Tool 'get_player_shots_tracking' called for player_name '{player_name}', season '{season}', type '{season_type}'")
-    return fetch_player_shots_tracking_logic(
-        player_name=player_name, season=season, season_type=season_type, per_mode=per_mode,
-        opponent_team_id=opponent_team_id, date_from=date_from, date_to=date_to
-    )
+    logger.debug(f"Tool 'get_player_shots_tracking' called for player_name '{player_name}', season '{season}', type '{season_type}', as_dataframe={as_dataframe}")
+
+    if as_dataframe:
+        # Get both JSON response and DataFrames
+        json_response, dataframes = fetch_player_shots_tracking_logic(
+            player_name=player_name,
+            season=season,
+            season_type=season_type,
+            per_mode=per_mode,
+            opponent_team_id=opponent_team_id,
+            date_from=date_from,
+            date_to=date_to,
+            return_dataframe=True
+        )
+
+        # Parse the original JSON response
+        data = json.loads(json_response)
+
+        # Add DataFrame info
+        df_info = {
+            "message": "Player shooting tracking statistics have been converted to DataFrames and saved as CSV files",
+            "dataframes": {}
+        }
+
+        for key, df in dataframes.items():
+            if not df.empty:
+                # Clean player name for filename
+                clean_player_name = player_name.replace(" ", "_").replace(".", "").lower()
+
+                # Clean season type for filename
+                clean_season_type = season_type.replace(" ", "_").lower()
+
+                # Clean per mode for filename
+                clean_per_mode = per_mode.replace(" ", "_").lower()
+
+                # Map the key to a more descriptive name for the file path
+                data_type_map = {
+                    "general_shooting": "general",
+                    "by_shot_clock": "shot_clock",
+                    "by_dribble_count": "dribble",
+                    "by_touch_time": "touch_time",
+                    "by_defender_distance": "defender_distance",
+                    "by_defender_distance_10ft_plus": "defender_distance_10ft_plus"
+                }
+
+                data_type = data_type_map.get(key, key)
+
+                csv_path = f"backend/cache/player_shooting_tracking/{clean_player_name}_{season}_{clean_season_type}_{clean_per_mode}_{data_type}.csv"
+
+                df_info["dataframes"][key] = {
+                    "shape": df.shape,
+                    "columns": df.columns.tolist(),
+                    "csv_path": csv_path,
+                    "sample_data": df.head(3).to_dict(orient="records") if not df.empty else []
+                }
+
+        # Add DataFrame info to the response
+        if "error" in data:
+            # If there was an error, keep it and add DataFrame info
+            data["dataframe_info"] = df_info
+        else:
+            # If successful, add DataFrame info
+            data["dataframe_info"] = df_info
+
+        # Return the enhanced JSON response
+        return json.dumps(data)
+    else:
+        # Return the standard JSON response
+        return fetch_player_shots_tracking_logic(
+            player_name=player_name,
+            season=season,
+            season_type=season_type,
+            per_mode=per_mode,
+            opponent_team_id=opponent_team_id,
+            date_from=date_from,
+            date_to=date_to
+        )
 
 @tool
 def get_player_shotchart(
