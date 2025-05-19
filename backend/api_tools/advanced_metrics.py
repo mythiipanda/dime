@@ -1,11 +1,12 @@
 """
 Advanced metrics module for NBA player analysis.
+Provides both JSON and DataFrame outputs with CSV caching.
 """
 
 import logging
 import json
 import time
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any, Tuple, Union
 import pandas as pd
 import numpy as np
 from nba_api.stats.endpoints import playerestimatedmetrics, leaguedashplayerstats, playerawards, playercareerstats
@@ -22,9 +23,109 @@ except ImportError:
     RAPTOR_AVAILABLE = False
     logging.warning("RAPTOR metrics module not available. Using fallback metrics.")
 
-# Path to cache directory for historical player data
+# Import path utilities
+from ..utils.path_utils import get_cache_dir, get_cache_file_path, get_relative_cache_path
+
+# Set up cache directories
+ADVANCED_METRICS_CSV_DIR = get_cache_dir("advanced_metrics")
+RAPTOR_METRICS_CSV_DIR = get_cache_dir("advanced_metrics/raptor")
+SKILL_GRADES_CSV_DIR = get_cache_dir("advanced_metrics/skill_grades")
+SIMILAR_PLAYERS_CSV_DIR = get_cache_dir("advanced_metrics/similar_players")
+
+# Legacy cache directory for historical player data
 CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cache")
 os.makedirs(CACHE_DIR, exist_ok=True)
+
+# --- Helper Functions for CSV Caching ---
+def _save_dataframe_to_csv(df: pd.DataFrame, file_path: str) -> None:
+    """
+    Saves a DataFrame to a CSV file.
+
+    Args:
+        df: DataFrame to save
+        file_path: Path to save the CSV file
+    """
+    try:
+        df.to_csv(file_path, index=False)
+        logger.info(f"Saved DataFrame to CSV: {file_path}")
+    except Exception as e:
+        logger.error(f"Error saving DataFrame to CSV: {e}", exc_info=True)
+
+def _get_csv_path_for_advanced_metrics(
+    player_id: int,
+    season: str
+) -> str:
+    """
+    Generates a file path for saving player advanced metrics DataFrame as CSV.
+
+    Args:
+        player_id: The player's ID
+        season: The season in YYYY-YY format
+
+    Returns:
+        Path to the CSV file
+    """
+    return get_cache_file_path(
+        f"player_{player_id}_advanced_metrics_{season}.csv",
+        "advanced_metrics"
+    )
+
+def _get_csv_path_for_raptor_metrics(
+    player_id: int,
+    season: str
+) -> str:
+    """
+    Generates a file path for saving player RAPTOR metrics DataFrame as CSV.
+
+    Args:
+        player_id: The player's ID
+        season: The season in YYYY-YY format
+
+    Returns:
+        Path to the CSV file
+    """
+    return get_cache_file_path(
+        f"player_{player_id}_raptor_metrics_{season}.csv",
+        "advanced_metrics/raptor"
+    )
+
+def _get_csv_path_for_skill_grades(
+    player_id: int,
+    season: str
+) -> str:
+    """
+    Generates a file path for saving player skill grades DataFrame as CSV.
+
+    Args:
+        player_id: The player's ID
+        season: The season in YYYY-YY format
+
+    Returns:
+        Path to the CSV file
+    """
+    return get_cache_file_path(
+        f"player_{player_id}_skill_grades_{season}.csv",
+        "advanced_metrics/skill_grades"
+    )
+
+def _get_csv_path_for_similar_players(
+    player_id: int,
+    season: str
+) -> str:
+    """
+    Generates a file path for saving similar players DataFrame as CSV.
+
+    Args:
+        player_id: The player's ID
+        season: The season in YYYY-YY format
+
+    Returns:
+        Path to the CSV file
+    """
+    return get_cache_file_path(
+        f"player_{player_id}_similar_players_{season}.csv",
+        "advanced_metrics/similar_players"
+    )
 
 # Award point values for achievements
 AWARD_VALUES = {
@@ -45,45 +146,59 @@ AWARD_VALUES = {
 
 logger = logging.getLogger(__name__)
 
-def fetch_player_advanced_analysis_logic(player_name: str, season: Optional[str] = None) -> str:
+def fetch_player_advanced_analysis_logic(
+    player_name: str,
+    season: Optional[str] = None,
+    return_dataframe: bool = False
+) -> Union[str, Tuple[str, Dict[str, pd.DataFrame]]]:
     """
     Fetches advanced metrics, skill grades, and similar players for a specified player.
 
     Args:
-        player_name (str): The full name of the player to analyze.
-        season (str, optional): The NBA season in format YYYY-YY (e.g., "2023-24").
+        player_name: The full name of the player to analyze.
+        season: The NBA season in format YYYY-YY (e.g., "2023-24").
             If None, uses the current season.
+        return_dataframe: Whether to return DataFrames along with the JSON response.
 
     Returns:
-        str: JSON string containing advanced metrics, skill grades, and similar players.
-             Expected structure:
-             {
-                 "player_name": str,
-                 "player_id": int,
-                 "advanced_metrics": {
-                     "RAPTOR_OFFENSE": float,
-                     "RAPTOR_DEFENSE": float,
-                     "RAPTOR_TOTAL": float,
-                     "WAR": float,
-                     "ELO_RATING": float,
-                     // ... other advanced metrics
-                 },
-                 "skill_grades": {
-                     "perimeter_shooting": str, // A+, A, A-, B+, B, etc.
-                     "interior_scoring": str,
-                     // ... other skill grades
-                 },
-                 "similar_players": [
-                     {"player_id": int, "player_name": str, "similarity_score": float},
-                     // ... other similar players
-                 ]
-             }
-             Or an {'error': 'Error message'} object if an issue occurs.
+        If return_dataframe=False:
+            str: JSON string containing advanced metrics, skill grades, and similar players.
+                 Expected structure:
+                 {
+                     "player_name": str,
+                     "player_id": int,
+                     "advanced_metrics": {
+                         "RAPTOR_OFFENSE": float,
+                         "RAPTOR_DEFENSE": float,
+                         "RAPTOR_TOTAL": float,
+                         "WAR": float,
+                         "ELO_RATING": float,
+                         // ... other advanced metrics
+                     },
+                     "skill_grades": {
+                         "perimeter_shooting": str, // A+, A, A-, B+, B, etc.
+                         "interior_scoring": str,
+                         // ... other skill grades
+                     },
+                     "similar_players": [
+                         {"player_id": int, "player_name": str, "similarity_score": float},
+                         // ... other similar players
+                     ]
+                 }
+                 Or an {'error': 'Error message'} object if an issue occurs.
+        If return_dataframe=True:
+            Tuple[str, Dict[str, pd.DataFrame]]: A tuple containing the JSON response string
+                                               and a dictionary of DataFrames.
     """
+    # Store DataFrames if requested
+    dataframes = {}
+
     try:
         # Get player ID
         player_id_result = get_player_id_from_name(player_name)
         if isinstance(player_id_result, dict) and 'error' in player_id_result:
+            if return_dataframe:
+                return json.dumps(player_id_result), dataframes
             return json.dumps(player_id_result)
 
         player_id = player_id_result
@@ -125,12 +240,35 @@ def fetch_player_advanced_analysis_logic(player_name: str, season: Optional[str]
                 basic_stats_data = retry_on_timeout(fetch_basic_stats)
                 basic_stats_df = basic_stats_data.get_data_frames()[0]
 
+                # Store basic stats DataFrame if requested
+                if return_dataframe:
+                    dataframes["basic_stats"] = basic_stats_df
+
+                    # Save to CSV if not empty
+                    if not basic_stats_df.empty:
+                        csv_path = get_cache_file_path(
+                            f"league_basic_stats_{season}.csv",
+                            "advanced_metrics"
+                        )
+                        _save_dataframe_to_csv(basic_stats_df, csv_path)
+
                 if not basic_stats_df.empty:
                     # Filter to find the player in the dataframe
                     player_stats = basic_stats_df[basic_stats_df['PLAYER_ID'] == player_id]
                     if not player_stats.empty:
                         basic_stats = player_stats.iloc[0].to_dict()
                         logger.info(f"Found basic stats for player ID {player_id}")
+
+                        # Store player basic stats DataFrame if requested
+                        if return_dataframe:
+                            dataframes["player_basic_stats"] = player_stats
+
+                            # Save to CSV
+                            csv_path = get_cache_file_path(
+                                f"player_{player_id}_basic_stats_{season}.csv",
+                                "advanced_metrics"
+                            )
+                            _save_dataframe_to_csv(player_stats, csv_path)
                     else:
                         logger.warning(f"Player ID {player_id} not found in basic stats dataframe")
 
@@ -138,6 +276,20 @@ def fetch_player_advanced_analysis_logic(player_name: str, season: Optional[str]
                 try:
                     skill_grades = generate_skill_grades(player_id, raptor_metrics, basic_stats)
                     logger.info(f"Skill grades for {player_name}: {skill_grades}")
+
+                    # Store skill grades DataFrame if requested
+                    if return_dataframe:
+                        # Convert skill grades dict to DataFrame
+                        skill_grades_df = pd.DataFrame([skill_grades])
+                        skill_grades_df['player_id'] = player_id
+                        skill_grades_df['player_name'] = player_name
+                        skill_grades_df['season'] = season
+
+                        dataframes["skill_grades"] = skill_grades_df
+
+                        # Save to CSV
+                        csv_path = _get_csv_path_for_skill_grades(player_id, season)
+                        _save_dataframe_to_csv(skill_grades_df, csv_path)
                 except Exception as e:
                     logger.error(f"Error generating skill grades for {player_name}: {str(e)}")
                     # Fallback to default skill grades
@@ -153,9 +305,29 @@ def fetch_player_advanced_analysis_logic(player_name: str, season: Optional[str]
                         "versatility": "C"
                     }
 
+                    # Store default skill grades DataFrame if requested
+                    if return_dataframe:
+                        # Convert default skill grades dict to DataFrame
+                        skill_grades_df = pd.DataFrame([skill_grades])
+                        skill_grades_df['player_id'] = player_id
+                        skill_grades_df['player_name'] = player_name
+                        skill_grades_df['season'] = season
+                        skill_grades_df['is_default'] = True
+
+                        dataframes["skill_grades"] = skill_grades_df
+
                 # Find similar players
                 try:
                     similar_players = find_similar_players(player_id, raptor_metrics, season)
+
+                    # Store similar players DataFrame if requested
+                    if return_dataframe and similar_players:
+                        similar_players_df = pd.DataFrame(similar_players)
+                        dataframes["similar_players"] = similar_players_df
+
+                        # Save to CSV
+                        csv_path = _get_csv_path_for_similar_players(player_id, season)
+                        _save_dataframe_to_csv(similar_players_df, csv_path)
                 except Exception as e:
                     logger.error(f"Error finding similar players for {player_name}: {str(e)}")
                     # Fallback to empty similar players list
@@ -178,6 +350,20 @@ def fetch_player_advanced_analysis_logic(player_name: str, season: Optional[str]
                 if 'WAR' in raptor_metrics:
                     raptor_metrics['PLAYER_VALUE'] = raptor_metrics['WAR']
 
+                # Store RAPTOR metrics DataFrame if requested
+                if return_dataframe:
+                    # Convert RAPTOR metrics dict to DataFrame
+                    raptor_df = pd.DataFrame([raptor_metrics])
+                    raptor_df['player_id'] = player_id
+                    raptor_df['player_name'] = player_name
+                    raptor_df['season'] = season
+
+                    dataframes["raptor_metrics"] = raptor_df
+
+                    # Save to CSV
+                    csv_path = _get_csv_path_for_raptor_metrics(player_id, season)
+                    _save_dataframe_to_csv(raptor_df, csv_path)
+
                 result = {
                     "player_name": player_name,
                     "player_id": player_id,
@@ -185,6 +371,42 @@ def fetch_player_advanced_analysis_logic(player_name: str, season: Optional[str]
                     "skill_grades": skill_grades,
                     "similar_players": similar_players
                 }
+
+                # Add DataFrame info to the response if requested
+                if return_dataframe:
+                    csv_paths = {}
+
+                    # Add CSV paths for each DataFrame
+                    if "raptor_metrics" in dataframes:
+                        csv_paths["raptor_metrics"] = get_relative_cache_path(
+                            os.path.basename(_get_csv_path_for_raptor_metrics(player_id, season)),
+                            "advanced_metrics/raptor"
+                        )
+
+                    if "skill_grades" in dataframes:
+                        csv_paths["skill_grades"] = get_relative_cache_path(
+                            os.path.basename(_get_csv_path_for_skill_grades(player_id, season)),
+                            "advanced_metrics/skill_grades"
+                        )
+
+                    if "similar_players" in dataframes:
+                        csv_paths["similar_players"] = get_relative_cache_path(
+                            os.path.basename(_get_csv_path_for_similar_players(player_id, season)),
+                            "advanced_metrics/similar_players"
+                        )
+
+                    result["dataframe_info"] = {
+                        "message": "Advanced metrics data has been converted to DataFrames and saved as CSV files",
+                        "dataframes": {
+                            name: {
+                                "shape": list(df.shape) if not df.empty else [],
+                                "columns": df.columns.tolist() if not df.empty else [],
+                                "csv_path": csv_paths.get(name, "")
+                            } for name, df in dataframes.items() if name in ["raptor_metrics", "skill_grades", "similar_players"]
+                        }
+                    }
+
+                    return format_response(result), dataframes
 
                 return format_response(result)
 
@@ -202,11 +424,48 @@ def fetch_player_advanced_analysis_logic(player_name: str, season: Optional[str]
         # Combine metrics
         combined_metrics = {**advanced_metrics, **additional_metrics}
 
+        # Store combined metrics DataFrame if requested
+        if return_dataframe:
+            # Convert combined metrics dict to DataFrame
+            combined_df = pd.DataFrame([combined_metrics])
+            combined_df['player_id'] = player_id
+            combined_df['player_name'] = player_name
+            combined_df['season'] = season
+
+            dataframes["advanced_metrics"] = combined_df
+
+            # Save to CSV
+            csv_path = _get_csv_path_for_advanced_metrics(player_id, season)
+            _save_dataframe_to_csv(combined_df, csv_path)
+
         # Generate skill grades based on the metrics
         skill_grades = generate_skill_grades_legacy(combined_metrics)
 
+        # Store skill grades DataFrame if requested
+        if return_dataframe:
+            # Convert skill grades dict to DataFrame
+            skill_grades_df = pd.DataFrame([skill_grades])
+            skill_grades_df['player_id'] = player_id
+            skill_grades_df['player_name'] = player_name
+            skill_grades_df['season'] = season
+
+            dataframes["skill_grades"] = skill_grades_df
+
+            # Save to CSV
+            csv_path = _get_csv_path_for_skill_grades(player_id, season)
+            _save_dataframe_to_csv(skill_grades_df, csv_path)
+
         # Find similar players
         similar_players = find_similar_players(player_id, combined_metrics, season)
+
+        # Store similar players DataFrame if requested
+        if return_dataframe and similar_players:
+            similar_players_df = pd.DataFrame(similar_players)
+            dataframes["similar_players"] = similar_players_df
+
+            # Save to CSV
+            csv_path = _get_csv_path_for_similar_players(player_id, season)
+            _save_dataframe_to_csv(similar_players_df, csv_path)
 
         result = {
             "player_name": player_name,
@@ -216,11 +475,50 @@ def fetch_player_advanced_analysis_logic(player_name: str, season: Optional[str]
             "similar_players": similar_players
         }
 
+        # Add DataFrame info to the response if requested
+        if return_dataframe:
+            csv_paths = {}
+
+            # Add CSV paths for each DataFrame
+            if "advanced_metrics" in dataframes:
+                csv_paths["advanced_metrics"] = get_relative_cache_path(
+                    os.path.basename(_get_csv_path_for_advanced_metrics(player_id, season)),
+                    "advanced_metrics"
+                )
+
+            if "skill_grades" in dataframes:
+                csv_paths["skill_grades"] = get_relative_cache_path(
+                    os.path.basename(_get_csv_path_for_skill_grades(player_id, season)),
+                    "advanced_metrics/skill_grades"
+                )
+
+            if "similar_players" in dataframes:
+                csv_paths["similar_players"] = get_relative_cache_path(
+                    os.path.basename(_get_csv_path_for_similar_players(player_id, season)),
+                    "advanced_metrics/similar_players"
+                )
+
+            result["dataframe_info"] = {
+                "message": "Advanced metrics data has been converted to DataFrames and saved as CSV files",
+                "dataframes": {
+                    name: {
+                        "shape": list(df.shape) if not df.empty else [],
+                        "columns": df.columns.tolist() if not df.empty else [],
+                        "csv_path": csv_paths.get(name, "")
+                    } for name, df in dataframes.items() if name in ["advanced_metrics", "skill_grades", "similar_players"]
+                }
+            }
+
+            return format_response(result), dataframes
+
         return format_response(result)
 
     except Exception as e:
         logger.error(f"Error in fetch_player_advanced_analysis_logic for {player_name}: {str(e)}", exc_info=True)
-        return format_response({"error": f"Failed to fetch advanced metrics for {player_name}: {str(e)}"})
+        error_response = {"error": f"Failed to fetch advanced metrics for {player_name}: {str(e)}"}
+        if return_dataframe:
+            return format_response(error_response), dataframes
+        return format_response(error_response)
 
 def fetch_player_estimated_metrics(player_id: int, season: str) -> Dict[str, float]:
     """Fetch player estimated metrics from the NBA API."""
