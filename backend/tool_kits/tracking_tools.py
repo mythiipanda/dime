@@ -163,10 +163,12 @@ def get_player_passing_stats(
     player_name: str,
     season: str = settings.CURRENT_NBA_SEASON,
     season_type: str = SeasonTypeAllStar.regular,
-    per_mode: str = PerModeSimple.per_game # Matches underlying logic default
+    per_mode: str = PerModeSimple.per_game, # Matches underlying logic default
+    as_dataframe: bool = False
 ) -> str:
     """
     Fetches player passing tracking statistics (PlayerDashPtPass).
+    Provides DataFrame output capabilities.
 
     Args:
         player_name (str): Full name of the player (e.g., "Nikola Jokic").
@@ -175,14 +177,73 @@ def get_player_passing_stats(
             Valid values from `nba_api.stats.library.parameters.SeasonTypeAllStar`.
         per_mode (str, optional): Statistical mode (e.g., "PerGame", "Totals"). Defaults to "PerGame".
             Valid values from `nba_api.stats.library.parameters.PerModeSimple`.
+        as_dataframe (bool, optional): If True, returns a pandas DataFrame representation of the data
+            and saves it to CSV files in the cache directory. Defaults to False.
 
     Returns:
         str: JSON string with player passing statistics (passes made, passes received).
+             If as_dataframe=True, the JSON response will include additional information about
+             the DataFrames and CSV files.
     """
-    logger.debug(f"Tool 'get_player_passing_stats' called for {player_name}, season {season}, type {season_type}, mode {per_mode}")
-    return fetch_player_passing_stats_logic(
-        player_name=player_name, season=season, season_type=season_type, per_mode=per_mode
-    )
+    logger.debug(f"Tool 'get_player_passing_stats' called for {player_name}, season {season}, type {season_type}, mode {per_mode}, as_dataframe={as_dataframe}")
+
+    if as_dataframe:
+        # Get both JSON response and DataFrames
+        json_response, dataframes = fetch_player_passing_stats_logic(
+            player_name=player_name,
+            season=season,
+            season_type=season_type,
+            per_mode=per_mode,
+            return_dataframe=True
+        )
+
+        # Parse the original JSON response
+        data = json.loads(json_response)
+
+        # Add DataFrame info
+        df_info = {
+            "message": "Player passing statistics have been converted to DataFrames and saved as CSV files",
+            "dataframes": {}
+        }
+
+        for key, df in dataframes.items():
+            if not df.empty:
+                # Clean player name for filename
+                clean_player_name = player_name.replace(" ", "_").replace(".", "").lower()
+
+                # Clean season type for filename
+                clean_season_type = season_type.replace(" ", "_").lower()
+
+                # Clean per mode for filename
+                clean_per_mode = per_mode.replace(" ", "_").lower()
+
+                csv_path = f"backend/cache/player_passing/{clean_player_name}_{season}_{clean_season_type}_{clean_per_mode}_{key}.csv"
+
+                df_info["dataframes"][key] = {
+                    "shape": df.shape,
+                    "columns": df.columns.tolist(),
+                    "csv_path": csv_path,
+                    "sample_data": df.head(3).to_dict(orient="records") if not df.empty else []
+                }
+
+        # Add DataFrame info to the response
+        if "error" in data:
+            # If there was an error, keep it and add DataFrame info
+            data["dataframe_info"] = df_info
+        else:
+            # If successful, add DataFrame info
+            data["dataframe_info"] = df_info
+
+        # Return the enhanced JSON response
+        return json.dumps(data)
+    else:
+        # Return the standard JSON response
+        return fetch_player_passing_stats_logic(
+            player_name=player_name,
+            season=season,
+            season_type=season_type,
+            per_mode=per_mode
+        )
 
 @tool
 def get_player_rebounding_stats(
