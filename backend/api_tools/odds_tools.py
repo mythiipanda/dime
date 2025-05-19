@@ -15,6 +15,7 @@ from nba_api.live.nba.library.http import NBALiveHTTP
 from ..config import settings
 from ..core.errors import Errors
 from .utils import format_response
+from ..utils.path_utils import get_cache_dir, get_cache_file_path, get_relative_cache_path
 
 logger = logging.getLogger(__name__)
 
@@ -22,11 +23,7 @@ logger = logging.getLogger(__name__)
 CACHE_TTL_SECONDS_ODDS = 3600  # 1 hour
 ODDS_RAW_CACHE_SIZE = 2
 ODDS_ENDPOINT_PATH = "odds/odds_todaysGames.json"
-CSV_CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cache")
-ODDS_CSV_PATH = os.path.join(CSV_CACHE_DIR, "odds_data.csv")
-
-# Ensure cache directory exists
-os.makedirs(CSV_CACHE_DIR, exist_ok=True)
+ODDS_CSV_DIR = get_cache_dir("odds")
 
 # --- Caching Function for Raw Data ---
 @lru_cache(maxsize=ODDS_RAW_CACHE_SIZE)
@@ -193,19 +190,32 @@ def _convert_to_dataframe(games_data: List[Dict[str, Any]]) -> pd.DataFrame:
 
     return pd.DataFrame(flattened_records)
 
-def _save_to_csv(df: pd.DataFrame, file_path: str = ODDS_CSV_PATH) -> None:
+def _save_to_csv(df: pd.DataFrame, date_str: str = None) -> str:
     """
-    Saves the DataFrame to a CSV file.
+    Saves the DataFrame to a CSV file using the standardized path_utils approach.
 
     Args:
         df: DataFrame to save
-        file_path: Path to save the CSV file
+        date_str: Optional date string to include in the filename (defaults to today's date)
+
+    Returns:
+        Relative path to the saved CSV file
     """
+    if date_str is None:
+        date_str = datetime.now().strftime('%Y-%m-%d')
+
+    filename = f"odds_data_{date_str}.csv"
+    file_path = get_cache_file_path(filename, "odds")
+
     try:
         df.to_csv(file_path, index=False)
         logger.info(f"Saved odds data to CSV: {file_path}")
+
+        # Return the relative path for inclusion in the response
+        return get_relative_cache_path(filename, "odds")
     except Exception as e:
         logger.error(f"Error saving odds data to CSV: {e}", exc_info=True)
+        return ""
 
 # --- Main Logic Function ---
 def fetch_odds_data_logic(
@@ -289,12 +299,32 @@ def fetch_odds_data_logic(
         result_payload = {"games": games_data_list}
         logger.info(f"Successfully fetched or retrieved cached odds data. Number of games: {len(games_data_list)}")
 
-        json_response = format_response(result_payload)
-
         if return_dataframe:
             df = _convert_to_dataframe(games_data_list)
-            _save_to_csv(df)
+
+            # Get today's date for the CSV filename
+            today_date_str = datetime.now().strftime('%Y-%m-%d')
+
+            # Save to CSV and get the relative path
+            csv_relative_path = _save_to_csv(df, today_date_str)
+
+            # Add DataFrame metadata to the response
+            if csv_relative_path:
+                result_payload["dataframe_info"] = {
+                    "message": "Odds data has been converted to DataFrame and saved as CSV file",
+                    "dataframes": {
+                        "odds": {
+                            "shape": list(df.shape),
+                            "columns": df.columns.tolist(),
+                            "csv_path": csv_relative_path
+                        }
+                    }
+                }
+
+            json_response = format_response(result_payload)
             return json_response, df
+
+        json_response = format_response(result_payload)
 
         return json_response
 

@@ -3,18 +3,21 @@ Smoke test for the odds_tools module.
 Tests the functionality of fetching live betting odds for NBA games.
 """
 import os
-
+import sys
 import json
 import pandas as pd
 from datetime import datetime
 
+# Add the project root directory to the Python path
+current_dir = os.path.dirname(os.path.abspath(__file__))
+backend_dir = os.path.dirname(current_dir)
+project_root = os.path.dirname(backend_dir)
+sys.path.insert(0, project_root)
 
-
-from api_tools.odds_tools import (
+from backend.api_tools.odds_tools import (
     fetch_odds_data_logic,
     _flatten_odds_data,
-    _convert_to_dataframe,
-    ODDS_CSV_PATH
+    _convert_to_dataframe
 )
 
 def test_fetch_odds_data_json():
@@ -112,19 +115,27 @@ def test_fetch_odds_data_dataframe():
     print(f"DataFrame columns: {df.columns.tolist()}")
 
     # Check if the CSV file was created
-    if os.path.exists(ODDS_CSV_PATH):
-        print(f"\nCSV file created at: {ODDS_CSV_PATH}")
-        csv_size = os.path.getsize(ODDS_CSV_PATH)
-        print(f"CSV file size: {csv_size} bytes")
+    data = json.loads(json_response)
+    if "dataframe_info" in data:
+        for df_key, df_info in data["dataframe_info"].get("dataframes", {}).items():
+            csv_path = df_info.get("csv_path")
+            if csv_path:
+                full_path = os.path.join(backend_dir, csv_path)
+                if os.path.exists(full_path):
+                    print(f"\nCSV file exists: {csv_path}")
+                    csv_size = os.path.getsize(full_path)
+                    print(f"CSV file size: {csv_size} bytes")
 
-        # Read the CSV file to verify it matches the DataFrame
-        df_from_csv = pd.read_csv(ODDS_CSV_PATH)
-        print(f"CSV DataFrame shape: {df_from_csv.shape}")
+                    # Read the CSV file to verify it matches the DataFrame
+                    df_from_csv = pd.read_csv(full_path)
+                    print(f"CSV DataFrame shape: {df_from_csv.shape}")
 
-        # Check if the shapes match
-        assert df.shape == df_from_csv.shape, "DataFrame and CSV should have the same shape"
+                    # Check if the shapes match
+                    assert df.shape == df_from_csv.shape, "DataFrame and CSV should have the same shape"
+                else:
+                    print(f"\nWarning: CSV file not found at {csv_path}")
     else:
-        print(f"\nWarning: CSV file not found at {ODDS_CSV_PATH}")
+        print("\nWarning: No DataFrame info found in the response")
 
     # Display a sample of the DataFrame if not empty
     if not df.empty:
@@ -224,9 +235,5 @@ def run_all_tests():
         return False
 
 if __name__ == "__main__":
-    import sys
-
-# Add the parent directory to the Python path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
     success = run_all_tests()
     sys.exit(0 if success else 1)
