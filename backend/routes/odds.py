@@ -4,8 +4,9 @@ import json
 from typing import Dict, Any
 from fastapi import APIRouter, HTTPException, status
 
-from backend.api_tools.odds_tools import fetch_odds_data_logic
-from backend.core.errors import Errors
+from ..api_tools.odds_tools import fetch_odds_data_logic
+from ..core.errors import Errors
+from ..utils.path_utils import get_relative_cache_path
 
 logger = logging.getLogger(__name__)
 router = APIRouter(
@@ -171,7 +172,7 @@ async def get_live_betting_odds_endpoint(
                 "message": "Odds data has been converted to a DataFrame and saved as CSV",
                 "dataframe_shape": df.shape,
                 "dataframe_columns": df.columns.tolist(),
-                "csv_path": "cache/odds_data.csv",  # Relative path without 'backend/' prefix
+                "csv_path": get_relative_cache_path("odds_data.csv"),  # Using path_utils for consistent paths
                 "sample_data": df.head(5).to_dict(orient="records") if not df.empty else []
             }
             result_data["dataframe_info"] = df_info

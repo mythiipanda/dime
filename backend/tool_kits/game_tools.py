@@ -12,8 +12,8 @@ from agno.tools import tool
 from nba_api.stats.library.parameters import LeagueID, RunType, SeasonTypeAllStar # Added SeasonTypeAllStar
 
 # Import specific logic functions for game tools
-from backend.api_tools.game_finder import fetch_league_games_logic
-from backend.api_tools.game_boxscores import (
+from ..api_tools.game_finder import fetch_league_games_logic
+from ..api_tools.game_boxscores import (
     fetch_boxscore_traditional_logic,
     fetch_boxscore_advanced_logic,
     fetch_boxscore_four_factors_logic,
@@ -21,11 +21,12 @@ from backend.api_tools.game_boxscores import (
     fetch_boxscore_defensive_logic,
     fetch_boxscore_summary_logic
 )
-from backend.api_tools.game_playbyplay import fetch_playbyplay_logic
-from backend.api_tools.game_visuals_analytics import (
+from ..api_tools.game_playbyplay import fetch_playbyplay_logic
+from ..api_tools.game_visuals_analytics import (
     fetch_shotchart_logic,
     fetch_win_probability_logic
 )
+from ..utils.path_utils import get_relative_cache_path
 
 logger = logging.getLogger(__name__)
 
@@ -125,7 +126,7 @@ def get_boxscore_traditional(
                 df_info["dataframes"][key] = {
                     "shape": df.shape,
                     "columns": df.columns.tolist(),
-                    "csv_path": f"backend/cache/boxscores/{game_id}_traditional_{key}.csv",
+                    "csv_path": get_relative_cache_path(f"{game_id}_traditional_{key}.csv", "boxscores"),
                     "sample_data": df.head(3).to_dict(orient="records") if not df.empty else []
                 }
 
@@ -232,7 +233,7 @@ def get_play_by_play(
                     filename_parts.append(f"team_{team_tricode}")
 
                 csv_filename = "_".join(filename_parts) + ".csv"
-                csv_path = f"backend/cache/playbyplay/{csv_filename}"
+                csv_path = get_relative_cache_path(csv_filename, "playbyplay")
 
                 df_info["dataframes"][key] = {
                     "shape": df.shape,
@@ -352,7 +353,7 @@ def get_game_shotchart(
                 if zone_basic:
                     filename_parts.append(f"zone_{zone_basic.replace(' ', '_')}")
 
-                csv_path = f"backend/cache/shotcharts/{'_'.join(filename_parts)}_{key}.csv"
+                csv_path = get_relative_cache_path(f"{'_'.join(filename_parts)}_{key}.csv", "shotcharts")
 
                 df_info["dataframes"][key] = {
                     "shape": df.shape,
@@ -439,7 +440,7 @@ def get_boxscore_advanced(
                 df_info["dataframes"][key] = {
                     "shape": df.shape,
                     "columns": df.columns.tolist(),
-                    "csv_path": f"backend/cache/boxscores/{game_id}_advanced_{key}.csv",
+                    "csv_path": get_relative_cache_path(f"{game_id}_advanced_{key}.csv", "boxscores"),
                     "sample_data": df.head(3).to_dict(orient="records") if not df.empty else []
                 }
 
@@ -509,7 +510,7 @@ def get_boxscore_four_factors(
                 df_info["dataframes"][key] = {
                     "shape": df.shape,
                     "columns": df.columns.tolist(),
-                    "csv_path": f"backend/cache/boxscores/{game_id}_four_factors_{key}.csv",
+                    "csv_path": get_relative_cache_path(f"{game_id}_four_factors_{key}.csv", "boxscores"),
                     "sample_data": df.head(3).to_dict(orient="records") if not df.empty else []
                 }
 
@@ -571,7 +572,7 @@ def get_boxscore_usage(
                 df_info["dataframes"][key] = {
                     "shape": df.shape,
                     "columns": df.columns.tolist(),
-                    "csv_path": f"backend/cache/boxscores/{game_id}_usage_{key}.csv",
+                    "csv_path": get_relative_cache_path(f"{game_id}_usage_{key}.csv", "boxscores"),
                     "sample_data": df.head(3).to_dict(orient="records") if not df.empty else []
                 }
 
@@ -629,7 +630,7 @@ def get_boxscore_defensive(
                 df_info["dataframes"][key] = {
                     "shape": df.shape,
                     "columns": df.columns.tolist(),
-                    "csv_path": f"backend/cache/boxscores/{game_id}_defensive_{key}.csv",
+                    "csv_path": get_relative_cache_path(f"{game_id}_defensive_{key}.csv", "boxscores"),
                     "sample_data": df.head(3).to_dict(orient="records") if not df.empty else []
                 }
 
@@ -688,7 +689,7 @@ def get_boxscore_summary(
                 df_info["dataframes"][key] = {
                     "shape": df.shape,
                     "columns": df.columns.tolist(),
-                    "csv_path": f"backend/cache/boxscores/{game_id}_summary_{key}.csv",
+                    "csv_path": get_relative_cache_path(f"{game_id}_summary_{key}.csv", "boxscores"),
                     "sample_data": df.head(3).to_dict(orient="records") if not df.empty else []
                 }
 
@@ -750,7 +751,7 @@ def get_win_probability(
         for key, df in dataframes.items():
             if not df.empty:
                 # Create a descriptive filename
-                csv_path = f"backend/cache/win_probability/{game_id}_run_{run_type.replace(' ', '_')}_{key}.csv"
+                csv_path = get_relative_cache_path(f"{game_id}_run_{run_type.replace(' ', '_')}_{key}.csv", "win_probability")
 
                 df_info["dataframes"][key] = {
                     "shape": df.shape,

@@ -12,24 +12,25 @@ from nba_api.stats.library.parameters import (
     SeasonTypeAllStar, LeagueID, PerMode48, Scope, PerModeSimple,
     PlayerOrTeamAbbreviation, PerModeDetailed, MeasureTypeDetailedDefense # Added MeasureTypeDetailedDefense
 )
-from backend.config import settings
+from ..config import settings
+from ..utils.path_utils import get_relative_cache_path
 
 # Import specific logic functions for league tools
-from backend.api_tools.league_standings import (
+from ..api_tools.league_standings import (
     fetch_league_standings_logic,
     _get_csv_path_for_league_standings
 )
-from backend.api_tools.scoreboard_tools import fetch_scoreboard_data_logic
-from backend.api_tools.league_draft import fetch_draft_history_logic
-from backend.api_tools.league_leaders_data import fetch_league_leaders_logic
-from backend.api_tools.synergy_tools import fetch_synergy_play_types_logic
-from backend.api_tools.league_player_on_details import fetch_league_player_on_details_logic
-from backend.api_tools.player_listings import fetch_common_all_players_logic
-from backend.api_tools.playoff_series import fetch_common_playoff_series_logic
-from backend.api_tools.team_history import fetch_common_team_years_logic
-from backend.api_tools.league_lineups import fetch_league_dash_lineups_logic
-from backend.api_tools.trending_tools import fetch_top_performers_logic
-from backend.api_tools.trending_team_tools import fetch_top_teams_logic
+from ..api_tools.scoreboard_tools import fetch_scoreboard_data_logic
+from ..api_tools.league_draft import fetch_draft_history_logic
+from ..api_tools.league_leaders_data import fetch_league_leaders_logic
+from ..api_tools.synergy_tools import fetch_synergy_play_types_logic
+from ..api_tools.league_player_on_details import fetch_league_player_on_details_logic
+from ..api_tools.player_listings import fetch_common_all_players_logic
+from ..api_tools.playoff_series import fetch_common_playoff_series_logic
+from ..api_tools.team_history import fetch_common_team_years_logic
+from ..api_tools.league_lineups import fetch_league_dash_lineups_logic
+from ..api_tools.trending_tools import fetch_top_performers_logic
+from ..api_tools.trending_team_tools import fetch_top_teams_logic
 
 logger = logging.getLogger(__name__)
 
@@ -453,7 +454,7 @@ def get_common_all_players(
 
         for key, df in dataframes.items():
             if not df.empty:
-                csv_path = f"backend/cache/player_listings/players_{season}_{league_id}_{is_only_current_season}.csv"
+                csv_path = get_relative_cache_path(f"players_{season}_{league_id}_{is_only_current_season}.csv", "player_listings")
 
                 df_info["dataframes"][key] = {
                     # Convert to list (or dict) so the default JSON encoder can handle it
