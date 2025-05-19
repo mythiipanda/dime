@@ -61,11 +61,13 @@ def get_team_stats(
     opponent_team_id: int = 0,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
-    league_id: str = LeagueID.nba
+    league_id: str = LeagueID.nba,
+    as_dataframe: bool = False
 ) -> str:
     """
     Fetches comprehensive team statistics for a given season, including current season dashboard stats
     and historical year-by-year performance, with various filtering options.
+    Provides DataFrame output capabilities.
 
     Args:
         team_identifier (str): The team's name, abbreviation, or ID.
@@ -81,23 +83,90 @@ def get_team_stats(
         date_to (Optional[str], optional): End date for filtering dashboard games (YYYY-MM-DD).
         league_id (str, optional): The league ID for historical stats (e.g., "00" for NBA).
             Valid values from `nba_api.stats.library.parameters.LeagueID`. Defaults to "00".
+        as_dataframe (bool, optional): If True, returns a pandas DataFrame representation of the data
+            and saves it to CSV files in the cache directory. Defaults to False.
 
     Returns:
         str: JSON string containing team statistics, including 'current_season_dashboard_stats' and 'historical_year_by_year_stats'.
+             If as_dataframe=True, the JSON response will include additional information about
+             the DataFrames and CSV files.
     """
-    logger.debug(f"Tool 'get_team_stats' called for '{team_identifier}', season '{season}', measure '{measure_type}'")
-    result = fetch_team_stats_logic(
-        team_identifier=team_identifier,
-        season=season,
-        season_type=season_type,
-        per_mode=per_mode,
-        measure_type=measure_type,
-        opponent_team_id=opponent_team_id,
-        date_from=date_from,
-        date_to=date_to,
-        league_id=league_id
-    )
-    return result
+    logger.debug(f"Tool 'get_team_stats' called for '{team_identifier}', season '{season}', measure '{measure_type}', as_dataframe={as_dataframe}")
+
+    if as_dataframe:
+        # Get both JSON response and DataFrames
+        json_response, dataframes = fetch_team_stats_logic(
+            team_identifier=team_identifier,
+            season=season,
+            season_type=season_type,
+            per_mode=per_mode,
+            measure_type=measure_type,
+            opponent_team_id=opponent_team_id,
+            date_from=date_from,
+            date_to=date_to,
+            league_id=league_id,
+            return_dataframe=True
+        )
+
+        # Parse the original JSON response
+        data = json.loads(json_response)
+
+        # Add DataFrame info
+        df_info = {
+            "message": "Team statistics have been converted to DataFrames and saved as CSV files",
+            "dataframes": {}
+        }
+
+        for key, df in dataframes.items():
+            if not df.empty:
+                # Clean team name for filename
+                team_name = data.get("team_name", team_identifier)
+                clean_team_name = team_name.replace(" ", "_").replace(".", "").lower()
+
+                # Clean season type for filename
+                clean_season_type = season_type.replace(" ", "_").lower()
+
+                # Clean per mode for filename
+                clean_per_mode = per_mode.replace(" ", "_").lower()
+
+                # Clean measure type for filename
+                clean_measure_type = measure_type.replace(" ", "_").lower()
+
+                if key == "dashboard":
+                    csv_path = f"backend/cache/team_general/{clean_team_name}_{season}_{clean_season_type}_{clean_per_mode}_{clean_measure_type}_dashboard.csv"
+                else:  # historical
+                    csv_path = f"backend/cache/team_general/{clean_team_name}_all_seasons_{clean_season_type}_pergame_base_historical.csv"
+
+                df_info["dataframes"][key] = {
+                    "shape": df.shape,
+                    "columns": df.columns.tolist(),
+                    "csv_path": csv_path,
+                    "sample_data": df.head(3).to_dict(orient="records") if not df.empty else []
+                }
+
+        # Add DataFrame info to the response
+        if "error" in data:
+            # If there was an error, keep it and add DataFrame info
+            data["dataframe_info"] = df_info
+        else:
+            # If successful, add DataFrame info
+            data["dataframe_info"] = df_info
+
+        # Return the enhanced JSON response
+        return json.dumps(data)
+    else:
+        # Return the standard JSON response
+        return fetch_team_stats_logic(
+            team_identifier=team_identifier,
+            season=season,
+            season_type=season_type,
+            per_mode=per_mode,
+            measure_type=measure_type,
+            opponent_team_id=opponent_team_id,
+            date_from=date_from,
+            date_to=date_to,
+            league_id=league_id
+        )
 
 @tool
 def get_team_passing_stats(
