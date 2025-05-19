@@ -3,7 +3,6 @@ Handles fetching and processing player career statistics and awards information.
 Provides both JSON and DataFrame outputs with CSV caching.
 """
 import logging
-import os
 from functools import lru_cache
 from typing import Dict, Any, Union, Tuple, Optional, List
 import pandas as pd
@@ -19,6 +18,7 @@ from .utils import (
     find_player_id_or_error,
     PlayerNotFoundError
 )
+from ..utils.path_utils import get_cache_dir, get_cache_file_path, get_relative_cache_path
 
 logger = logging.getLogger(__name__)
 
@@ -31,14 +31,8 @@ _VALID_PER_MODES_CAREER = {getattr(PerModeDetailed, attr) for attr in dir(PerMod
 _VALID_PER_MODES_CAREER.update({getattr(PerMode36, attr) for attr in dir(PerMode36) if not attr.startswith('_') and isinstance(getattr(PerMode36, attr), str)})
 
 # --- Cache Directory Setup ---
-CSV_CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cache")
-PLAYER_CAREER_CSV_DIR = os.path.join(CSV_CACHE_DIR, "player_career")
-PLAYER_AWARDS_CSV_DIR = os.path.join(CSV_CACHE_DIR, "player_awards")
-
-# Ensure cache directories exist
-os.makedirs(CSV_CACHE_DIR, exist_ok=True)
-os.makedirs(PLAYER_CAREER_CSV_DIR, exist_ok=True)
-os.makedirs(PLAYER_AWARDS_CSV_DIR, exist_ok=True)
+PLAYER_CAREER_CSV_DIR = get_cache_dir("player_career")
+PLAYER_AWARDS_CSV_DIR = get_cache_dir("player_awards")
 
 # --- Helper Functions ---
 def _save_dataframe_to_csv(df: pd.DataFrame, file_path: str) -> None:
@@ -74,7 +68,7 @@ def _get_csv_path_for_career_stats(player_name: str, per_mode: str, data_type: s
     clean_per_mode = per_mode.lower()
 
     filename = f"{clean_player_name}_{clean_per_mode}_{data_type}.csv"
-    return os.path.join(PLAYER_CAREER_CSV_DIR, filename)
+    return get_cache_file_path(filename, "player_career")
 
 def _get_csv_path_for_awards(player_name: str) -> str:
     """
@@ -90,7 +84,7 @@ def _get_csv_path_for_awards(player_name: str) -> str:
     clean_player_name = player_name.replace(" ", "_").replace(".", "").lower()
 
     filename = f"{clean_player_name}_awards.csv"
-    return os.path.join(PLAYER_AWARDS_CSV_DIR, filename)
+    return get_cache_file_path(filename, "player_awards")
 
 def fetch_player_career_stats_logic(
     player_name: str,
@@ -218,6 +212,58 @@ def fetch_player_career_stats_logic(
             "career_totals_post_season": career_totals_post_season or {}
         }
 
+        # Add DataFrame metadata to the response if DataFrames are being returned
+        if return_dataframe:
+            dataframe_info = {
+                "message": "Player career stats data has been converted to DataFrames and saved as CSV files",
+                "dataframes": {}
+            }
+
+            # Add metadata for regular season data
+            if not filtered_season_rs_df.empty:
+                csv_filename = f"{player_actual_name.replace(' ', '_').replace('.', '').lower()}_{per_mode.lower()}_season_regular.csv"
+                relative_path = get_relative_cache_path(csv_filename, "player_career")
+
+                dataframe_info["dataframes"]["season_totals_regular_season"] = {
+                    "shape": list(filtered_season_rs_df.shape),
+                    "columns": filtered_season_rs_df.columns.tolist(),
+                    "csv_path": relative_path
+                }
+
+            if not career_totals_rs_df.empty:
+                csv_filename = f"{player_actual_name.replace(' ', '_').replace('.', '').lower()}_{per_mode.lower()}_career_regular.csv"
+                relative_path = get_relative_cache_path(csv_filename, "player_career")
+
+                dataframe_info["dataframes"]["career_totals_regular_season"] = {
+                    "shape": list(career_totals_rs_df.shape),
+                    "columns": career_totals_rs_df.columns.tolist(),
+                    "csv_path": relative_path
+                }
+
+            # Add metadata for post season data
+            if not filtered_season_ps_df.empty:
+                csv_filename = f"{player_actual_name.replace(' ', '_').replace('.', '').lower()}_{per_mode.lower()}_season_post.csv"
+                relative_path = get_relative_cache_path(csv_filename, "player_career")
+
+                dataframe_info["dataframes"]["season_totals_post_season"] = {
+                    "shape": list(filtered_season_ps_df.shape),
+                    "columns": filtered_season_ps_df.columns.tolist(),
+                    "csv_path": relative_path
+                }
+
+            if not career_totals_ps_df.empty:
+                csv_filename = f"{player_actual_name.replace(' ', '_').replace('.', '').lower()}_{per_mode.lower()}_career_post.csv"
+                relative_path = get_relative_cache_path(csv_filename, "player_career")
+
+                dataframe_info["dataframes"]["career_totals_post_season"] = {
+                    "shape": list(career_totals_ps_df.shape),
+                    "columns": career_totals_ps_df.columns.tolist(),
+                    "csv_path": relative_path
+                }
+
+            if dataframe_info["dataframes"]:
+                response_data["dataframe_info"] = dataframe_info
+
         logger.info(f"fetch_player_career_stats_logic completed for '{player_actual_name}'")
 
         # Return the appropriate result based on return_dataframe
@@ -320,6 +366,22 @@ def fetch_player_awards_logic(
             "player_id": player_id,
             "awards": awards_list
         }
+
+        # Add DataFrame metadata to the response if DataFrames are being returned
+        if return_dataframe and not awards_df.empty:
+            csv_filename = f"{player_actual_name.replace(' ', '_').replace('.', '').lower()}_awards.csv"
+            relative_path = get_relative_cache_path(csv_filename, "player_awards")
+
+            response_data["dataframe_info"] = {
+                "message": "Player awards data has been converted to DataFrame and saved as CSV file",
+                "dataframes": {
+                    "awards": {
+                        "shape": list(awards_df.shape),
+                        "columns": awards_df.columns.tolist(),
+                        "csv_path": relative_path
+                    }
+                }
+            }
 
         logger.info(f"fetch_player_awards_logic completed for '{player_actual_name}'")
 
