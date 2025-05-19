@@ -243,7 +243,7 @@ def get_league_leaders(
                 # Clean per mode for filename
                 clean_per_mode = per_mode.replace(" ", "_").lower()
 
-                csv_path = f"backend/cache/league_leaders/leaders_{season}_{stat_category}_{clean_season_type}_{clean_per_mode}_{league_id}_{scope}.csv"
+                csv_path = f"cache/league_leaders/leaders_{season}_{stat_category}_{clean_season_type}_{clean_per_mode}_{league_id}_{scope}.csv"
 
                 df_info["dataframes"][key] = {
                     "shape": list(df.shape),

@@ -96,7 +96,7 @@ def test_odds_live_endpoint_dataframe():
         print(f"CSV path: {df_info.get('csv_path')}")
         
         # Check if the CSV file exists
-        csv_path = os.path.join(project_root, df_info.get('csv_path', ''))
+        csv_path = os.path.abspath(df_info.get('csv_path', ''))
         if os.path.exists(csv_path):
             print(f"\nCSV file exists at: {csv_path}")
             csv_size = os.path.getsize(csv_path)

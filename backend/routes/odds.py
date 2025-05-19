@@ -171,7 +171,7 @@ async def get_live_betting_odds_endpoint(
                 "message": "Odds data has been converted to a DataFrame and saved as CSV",
                 "dataframe_shape": df.shape,
                 "dataframe_columns": df.columns.tolist(),
-                "csv_path": "backend/cache/odds_data.csv",
+                "csv_path": "cache/odds_data.csv",  # Relative path without 'backend/' prefix
                 "sample_data": df.head(5).to_dict(orient="records") if not df.empty else []
             }
             result_data["dataframe_info"] = df_info
