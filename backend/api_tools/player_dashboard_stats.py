@@ -14,7 +14,8 @@ from nba_api.stats.endpoints import (
     playerprofilev2,
     playerdashptshotdefend,
     leaguehustlestatsplayer,
-    PlayerFantasyProfile
+    PlayerFantasyProfile,
+    PlayerFantasyProfileBarGraph
 )
 from nba_api.stats.library.parameters import SeasonTypeAllStar, PerModeDetailed, PerMode36, LeagueID, PerModeSimple, PerModeTime
 from ..config import settings
@@ -660,6 +661,71 @@ def fetch_player_fantasy_profile_logic(
         return format_response(error=str(e))
     except Exception as e:
         error_msg = f"Unexpected error in fetch_player_fantasy_profile_logic for '{player_name}': {e}"
+        logger.critical(error_msg, exc_info=True)
+        if return_dataframe:
+            return format_response(error=error_msg), dataframes
+        return format_response(error=error_msg)
+
+def fetch_player_fantasy_profile_bargraph_logic(
+    player_name: str,
+    season: str,
+    season_type: str = None,
+    league_id: str = None,
+    return_dataframe: bool = False
+) -> Union[str, Tuple[str, Dict[str, pd.DataFrame]]]:
+    """
+    Fetches fantasy profile bar graph stats for a player for a given season.
+    Args:
+        player_name: The name or ID of the player.
+        season: The NBA season (e.g., "2023-24").
+        season_type: Season type ("Regular Season", "Playoffs", etc.), optional.
+        league_id: League ID, optional.
+        return_dataframe: Whether to return DataFrames along with the JSON response.
+    Returns:
+        If return_dataframe=False: JSON string with fantasy profile bar graph data or error.
+        If return_dataframe=True: Tuple of (JSON string, dict of DataFrames).
+    """
+    dataframes = {}
+    try:
+        player_id, player_actual_name = find_player_id_or_error(player_name)
+        endpoint = PlayerFantasyProfileBarGraph(
+            player_id=player_id,
+            season=season,
+            season_type_all_star_nullable=season_type,
+            league_id_nullable=league_id,
+            timeout=settings.DEFAULT_TIMEOUT_SECONDS
+        )
+        # Dataset mapping from docs
+        dataset_map = {
+            "last_five_games_avg": "LastFiveGamesAvg",
+            "season_avg": "SeasonAvg"
+        }
+        for key, ds_name in dataset_map.items():
+            if hasattr(endpoint, ds_name):
+                df = getattr(endpoint, ds_name).get_data_frame()
+                dataframes[key] = df
+                # Save to CSV if not empty
+                if not df.empty:
+                    csv_path = get_cache_file_path(f"player_{player_id}_fantasybar_{key}_{season}.csv", "player_dashboard/fantasybar")
+                    _save_dataframe_to_csv(df, csv_path)
+        # Prepare JSON response
+        response_data = {
+            "player_name": player_actual_name,
+            "player_id": player_id,
+            "season": season,
+            "season_type": season_type,
+            "league_id": league_id,
+            "fantasy_profile_bargraph": {k: _process_dataframe(df, single_row=False) for k, df in dataframes.items()}
+        }
+        if return_dataframe:
+            return format_response(response_data), dataframes
+        return format_response(response_data)
+    except PlayerNotFoundError as e:
+        if return_dataframe:
+            return format_response(error=str(e)), dataframes
+        return format_response(error=str(e))
+    except Exception as e:
+        error_msg = f"Unexpected error in fetch_player_fantasy_profile_bargraph_logic for '{player_name}': {e}"
         logger.critical(error_msg, exc_info=True)
         if return_dataframe:
             return format_response(error=error_msg), dataframes
