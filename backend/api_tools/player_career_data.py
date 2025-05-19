@@ -11,9 +11,9 @@ import json
 
 from nba_api.stats.endpoints import playercareerstats, playerawards
 from nba_api.stats.library.parameters import PerModeDetailed, PerMode36
-from backend.config import settings
-from backend.core.errors import Errors
-from backend.api_tools.utils import (
+from ..config import settings
+from ..core.errors import Errors
+from .utils import (
     _process_dataframe,
     format_response,
     find_player_id_or_error,

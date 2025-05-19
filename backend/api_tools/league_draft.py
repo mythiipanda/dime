@@ -9,9 +9,9 @@ from functools import lru_cache
 
 from nba_api.stats.endpoints import drafthistory
 from nba_api.stats.library.parameters import LeagueID
-from backend.api_tools.utils import _process_dataframe, format_response
-from backend.config import settings
-from backend.core.errors import Errors
+from .utils import _process_dataframe, format_response
+from ..config import settings
+from ..core.errors import Errors
 
 logger = logging.getLogger(__name__)
 

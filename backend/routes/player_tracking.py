@@ -11,7 +11,7 @@ from backend.api_tools.player_rebounding import fetch_player_rebounding_stats_lo
 from backend.api_tools.player_passing import fetch_player_passing_stats_logic
 
 from backend.core.errors import Errors
-from backend.config import settings
+from config import settings
 
 router = APIRouter(
     prefix="/player", 

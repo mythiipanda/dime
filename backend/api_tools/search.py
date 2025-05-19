@@ -13,20 +13,20 @@ from nba_api.stats.endpoints import leaguegamefinder
 from nba_api.stats.library.parameters import SeasonTypeAllStar, LeagueID
 import pandas as pd
 
-from backend.config import settings
-from backend.core.constants import (
+from ..config import settings
+from core.constants import (
     DEFAULT_PLAYER_SEARCH_LIMIT,
     MIN_PLAYER_SEARCH_LENGTH,
     MAX_SEARCH_RESULTS # Used as default limit for all searches
 )
-from backend.core.errors import Errors
-from backend.api_tools.utils import (
+from ..core.errors import Errors
+from .utils import (
     _process_dataframe,
     format_response,
     find_team_id_or_error, # Used in game search
     TeamNotFoundError
 )
-from backend.utils.validation import _validate_season_format
+from ..utils.validation import _validate_season_format
 
 logger = logging.getLogger(__name__)
 

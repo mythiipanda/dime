@@ -9,7 +9,7 @@ import uuid # For creating unique temp dirs for text uploads
 import os
 
 from backend.core.knowledge_base import NBAnalyzerKnowledgeBase, KnowledgeSourceAdditionError
-from backend.config import settings
+from config import settings
 from backend.core.models import QueryRequest, QueryResponse, AddKnowledgeSourceRequest, GenericResponse, AddWikipediaRequest, AddTextFileRequest, AddUrlRequest, AddYouTubeVideosRequest
 
 router = APIRouter()

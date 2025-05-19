@@ -14,9 +14,9 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from matplotlib.figure import Figure
 from nba_api.stats.endpoints import shotchartdetail
-from backend.config import settings
-from backend.api_tools.utils import find_player_id_or_error
-from backend.api_tools.advanced_shot_charts import draw_court
+from ..config import settings
+from .utils import find_player_id_or_error
+from .advanced_shot_charts import draw_court
 
 logger = logging.getLogger(__name__)
 

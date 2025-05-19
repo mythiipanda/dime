@@ -18,10 +18,10 @@ from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.figure import Figure
 from matplotlib.patches import Circle, Rectangle, Arc, Polygon
 from nba_api.stats.endpoints import shotchartdetail
-from backend.config import settings
-from backend.core.errors import Errors
-from backend.api_tools.utils import format_response, find_player_id_or_error
-from backend.utils.validation import _validate_season_format
+from ..config import settings
+from ..core.errors import Errors
+from .utils import format_response, find_player_id_or_error
+from ..utils.validation import _validate_season_format
 
 logger = logging.getLogger(__name__)
 
@@ -639,7 +639,7 @@ def process_shot_data_for_visualization(
     Returns:
         Dict containing the visualization data and metadata
     """
-    from backend.api_tools.visualization_cache import VisualizationCache
+    from .visualization_cache import VisualizationCache
 
     # Create cache parameters
     cache_params = {

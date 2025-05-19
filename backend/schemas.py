@@ -7,8 +7,8 @@ from typing import Dict, Any, Optional, List, Union # Union might not be used, c
 from enum import Enum
 import datetime # Used in validators
 
-from backend.config import settings
-from backend.core.constants import (
+from config import settings
+from core.constants import (
     MIN_PLAYER_SEARCH_LENGTH,
     MAX_SEARCH_RESULTS,
 )

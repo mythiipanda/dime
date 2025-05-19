@@ -4,9 +4,9 @@ import json
 from typing import Dict, Any
 from fastapi import APIRouter, HTTPException, status
 
-from ..api_tools.odds_tools import fetch_odds_data_logic
-from ..core.errors import Errors
-from ..utils.path_utils import get_relative_cache_path
+from backend.api_tools.odds_tools import fetch_odds_data_logic
+from backend.core.errors import Errors
+from backend.utils.path_utils import get_relative_cache_path
 
 logger = logging.getLogger(__name__)
 router = APIRouter(

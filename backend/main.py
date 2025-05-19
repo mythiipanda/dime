@@ -26,8 +26,8 @@ if current_dir not in sys.path:
 # Import and apply centralized logging configuration.
 # This must be done early, before other modules (which might use logging) are imported.
 try:
-    from backend.logging_config import setup_logging
-    from backend.config import settings # settings is used for log level
+    from logging_config import setup_logging
+    from config import settings # settings is used for log level
     
     # Determine log level from settings (AGENT_DEBUG_MODE implies DEBUG level for app)
     log_level_str = "DEBUG" if settings.AGENT_DEBUG_MODE else settings.LOG_LEVEL
@@ -51,8 +51,8 @@ except ImportError as e:
 # These are imported after logging is set up.
 try:
     # settings is already imported above for logging.
-    from backend.core.errors import Errors
-    from backend.routes import ( # Grouped router imports
+    from core.errors import Errors
+    from routes import ( # Grouped router imports
         player as player_router,
         analyze as analyze_router,
         sse as sse_router,
@@ -67,7 +67,7 @@ try:
         search as search_router,
         leaders as leaders_router,
         fetch as fetch_router # Added fetch_router
-        # from backend.routes.charts import router as charts_router # Example, keep commented if not used
+        # from routes.charts import router as charts_router # Example, keep commented if not used
     )
 except ImportError as e:
     logger.critical(f"Failed to import application modules (config/routers). This is a fatal error. Error: {e}", exc_info=True)

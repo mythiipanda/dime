@@ -6,9 +6,9 @@ from functools import lru_cache
 from nba_api.stats.endpoints import teamdashptpass
 from nba_api.stats.library.parameters import SeasonTypeAllStar, PerModeSimple
 
-from backend.config import settings
-from backend.core.errors import Errors
-from backend.api_tools.utils import (
+from ..config import settings
+from ..core.errors import Errors
+from .utils import (
     _process_dataframe,
     _validate_season_format,
     format_response,

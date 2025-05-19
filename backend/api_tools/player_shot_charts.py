@@ -11,16 +11,16 @@ from typing import List, Dict, Tuple, Optional, Any, Union
 import pandas as pd
 from nba_api.stats.endpoints import shotchartdetail
 from nba_api.stats.library.parameters import SeasonTypeAllStar
-from backend.config import settings
-from backend.core.errors import Errors
-from backend.api_tools.utils import (
+from ..config import settings
+from ..core.errors import Errors
+from .utils import (
     _process_dataframe,
     format_response,
     find_player_id_or_error,
     PlayerNotFoundError
 )
-from backend.utils.validation import _validate_season_format
-from backend.api_tools.visualization import create_shotchart
+from ..utils.validation import _validate_season_format
+from .visualization import create_shotchart
 
 logger = logging.getLogger(__name__)
 

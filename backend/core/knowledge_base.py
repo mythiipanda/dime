@@ -23,7 +23,7 @@ from agno.document.chunking.fixed import FixedSizeChunking
 import logging
 from agno.vectordb.chroma import ChromaDb
 from agno.embedder.google import GeminiEmbedder
-from backend.config import settings
+from config import settings
 from agno.document import Document
 logger = logging.getLogger(__name__)
 

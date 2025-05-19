@@ -6,7 +6,7 @@ from nba_api.stats.library.parameters import SeasonTypeAllStar, LeagueID
 from backend.api_tools.league_standings import fetch_league_standings_logic
 import logging
 from backend.core.errors import Errors
-from backend.config import settings
+from config import settings
 from backend.utils.validation import validate_date_format, validate_season_format
 
 logger = logging.getLogger(__name__)

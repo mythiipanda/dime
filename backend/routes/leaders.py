@@ -14,7 +14,7 @@ from nba_api.stats.library.parameters import (
 from backend.api_tools.league_leaders_data import fetch_league_leaders_logic
 from backend.utils.validation import validate_season_format
 from backend.core.errors import Errors
-from backend.config import settings
+from config import settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter(

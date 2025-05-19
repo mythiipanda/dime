@@ -14,10 +14,10 @@ from nba_api.stats.library.parameters import (
     PlayerOrTeamAbbreviation,
     SeasonTypeAllStar
 )
-from backend.config import settings
-from backend.core.errors import Errors
-from backend.api_tools.utils import format_response, _process_dataframe
-from backend.utils.validation import _validate_season_format
+from ..config import settings
+from ..core.errors import Errors
+from .utils import format_response, _process_dataframe
+from ..utils.validation import _validate_season_format
 
 logger = logging.getLogger(__name__)
 

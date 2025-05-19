@@ -9,7 +9,7 @@ import logging
 import asyncio
 from typing import Dict, Any
 
-from backend.schemas import FetchRequest
+from schemas import FetchRequest
 from backend.api_tools.player_common_info import fetch_player_info_logic
 from backend.api_tools.player_gamelogs import fetch_player_gamelog_logic
 from backend.api_tools.player_career_data import fetch_player_career_stats_logic

@@ -14,16 +14,16 @@ from nba_api.stats.endpoints import (
     leaguehustlestatsplayer
 )
 from nba_api.stats.library.parameters import SeasonTypeAllStar, PerModeDetailed, PerMode36, LeagueID, PerModeSimple, PerModeTime
-from backend.config import settings
-from backend.core.errors import Errors
-from backend.api_tools.utils import (
+from ..config import settings
+from ..core.errors import Errors
+from .utils import (
     _process_dataframe,
     format_response,
     find_player_id_or_error,
     PlayerNotFoundError
 )
-from backend.utils.validation import _validate_season_format, validate_date_format
-from backend.api_tools.player_common_info import fetch_player_info_logic
+from ..utils.validation import _validate_season_format, validate_date_format
+from .player_common_info import fetch_player_info_logic
 
 logger = logging.getLogger(__name__)
 

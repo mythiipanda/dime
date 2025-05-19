@@ -3,10 +3,10 @@ from functools import lru_cache
 
 from nba_api.stats.endpoints import playerestimatedmetrics
 from nba_api.stats.library.parameters import LeagueID, SeasonTypeAllStar
-from backend.config import settings
-from backend.core.errors import Errors
-from backend.api_tools.utils import _process_dataframe, format_response
-from backend.utils.validation import _validate_season_format
+from ..config import settings
+from ..core.errors import Errors
+from .utils import _process_dataframe, format_response
+from ..utils.validation import _validate_season_format
 
 logger = logging.getLogger(__name__)
 

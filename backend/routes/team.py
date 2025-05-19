@@ -12,7 +12,7 @@ from backend.api_tools.team_rebounding_tracking import fetch_team_rebounding_sta
 from backend.api_tools.team_shooting_tracking import fetch_team_shooting_stats_logic
 
 from backend.core.errors import Errors
-from backend.config import settings
+from config import settings
 
 router = APIRouter(
     prefix="/team", # Add prefix for all team routes

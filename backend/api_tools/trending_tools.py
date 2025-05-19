@@ -9,11 +9,11 @@ from functools import lru_cache
 from datetime import datetime
 
 from nba_api.stats.library.parameters import SeasonTypeAllStar, StatCategoryAbbreviation, PerMode48, Scope, LeagueID
-from backend.core.errors import Errors
-from backend.api_tools.league_leaders_data import fetch_league_leaders_logic
-from backend.api_tools.utils import format_response
-from backend.utils.validation import _validate_season_format
-from backend.config import settings
+from ..core.errors import Errors
+from .league_leaders_data import fetch_league_leaders_logic
+from .utils import format_response
+from ..utils.validation import _validate_season_format
+from ..config import settings
 
 logger = logging.getLogger(__name__)
 

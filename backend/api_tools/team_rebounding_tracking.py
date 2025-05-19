@@ -13,12 +13,12 @@ import pandas as pd
 from nba_api.stats.endpoints import teamdashptreb
 from nba_api.stats.library.parameters import SeasonTypeAllStar, PerModeSimple
 
-from backend.config import settings
-from backend.core.errors import Errors
-from backend.api_tools.utils import _process_dataframe, format_response
-from backend.utils.validation import validate_date_format
-from backend.api_tools.team_tracking_utils import _validate_team_tracking_params, _get_team_info_for_tracking
-from backend.api_tools.http_client import nba_session # For session patching
+from ..config import settings
+from ..core.errors import Errors
+from .utils import _process_dataframe, format_response
+from ..utils.validation import validate_date_format
+from .team_tracking_utils import _validate_team_tracking_params, _get_team_info_for_tracking
+from .http_client import nba_session # For session patching
 
 logger = logging.getLogger(__name__)
 

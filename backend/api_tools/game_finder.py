@@ -10,13 +10,13 @@ from datetime import datetime
 from functools import lru_cache
 from nba_api.stats.endpoints import leaguegamefinder
 from nba_api.stats.library.parameters import LeagueID, SeasonTypeAllStar
-from backend.config import settings
-from backend.core.errors import Errors
-from backend.api_tools.utils import (
+from ..config import settings
+from ..core.errors import Errors
+from .utils import (
     _process_dataframe,
     format_response
 )
-from backend.utils.validation import _validate_season_format, validate_date_format
+from ..utils.validation import _validate_season_format, validate_date_format
 
 logger = logging.getLogger(__name__)
 

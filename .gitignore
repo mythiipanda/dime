@@ -27,6 +27,7 @@ backend/cache/
 # General Python
 *.pyc
 *~
+*.db
 __pycache__/
 .pytest_cache/
 .mypy_cache/

@@ -7,7 +7,7 @@ import logging
 import sys
 from typing import Optional
 
-from backend.config import settings # Import application settings
+from config import settings # Import application settings
 
 # Default log format
 LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(module)s:%(lineno)d - %(message)s'

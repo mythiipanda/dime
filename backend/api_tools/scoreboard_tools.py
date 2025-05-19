@@ -9,10 +9,10 @@ from nba_api.live.nba.endpoints import ScoreBoard as LiveScoreBoard
 from nba_api.stats.endpoints import scoreboardv2
 from nba_api.stats.library.parameters import LeagueID
 
-from backend.config import settings
-from backend.core.errors import Errors
-from backend.api_tools.utils import format_response, _process_dataframe, retry_on_timeout
-from backend.utils.validation import validate_date_format
+from ..config import settings
+from ..core.errors import Errors
+from .utils import format_response, _process_dataframe, retry_on_timeout
+from ..utils.validation import validate_date_format
 logger = logging.getLogger(__name__)
 
 CACHE_TTL_SECONDS_LIVE = 60

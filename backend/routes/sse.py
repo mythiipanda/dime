@@ -10,7 +10,7 @@ import re # For thinking pattern extraction
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from rich.pretty import pprint # For test_agent_stream
-from backend.agents import nba_agent
+from agents import nba_agent
 from dataclasses import is_dataclass # No need for asdict if using custom recursive one
 from agno.agent import RunResponse # For type hinting in test_agent_stream
 from typing import AsyncIterator, Dict, Any, Optional # Added Optional

@@ -14,15 +14,15 @@ import pandas as pd
 from nba_api.stats.endpoints import commonplayerinfo, playerdashptreb
 from nba_api.stats.library.parameters import SeasonTypeAllStar, PerModeSimple
 
-from backend.config import settings
-from backend.core.errors import Errors
-from backend.api_tools.utils import (
+from ..config import settings
+from ..core.errors import Errors
+from .utils import (
     _process_dataframe,
     format_response,
     find_player_id_or_error,
     PlayerNotFoundError
 )
-from backend.utils.validation import _validate_season_format
+from ..utils.validation import _validate_season_format
 
 logger = logging.getLogger(__name__)
 

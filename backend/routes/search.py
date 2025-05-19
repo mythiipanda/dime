@@ -4,7 +4,7 @@ import asyncio
 import json
 from typing import Any
 
-from backend.schemas import SearchRequest
+from schemas import SearchRequest
 from backend.api_tools.search import (
     search_players_logic, 
     search_teams_logic, 

@@ -10,17 +10,17 @@ from functools import lru_cache
 from typing import Optional, Dict, Any, Union, Tuple
 import pandas as pd
 from nba_api.stats.library.parameters import SeasonTypeAllStar
-from backend.config import settings
-from backend.core.errors import Errors
-from backend.api_tools.utils import (
+from ..config import settings
+from ..core.errors import Errors
+from .utils import (
     format_response,
     find_player_id_or_error,
     PlayerNotFoundError
 )
-from backend.utils.validation import _validate_season_format
-from backend.api_tools.player_common_info import fetch_player_info_logic
-from backend.api_tools.player_career_data import fetch_player_career_stats_logic, fetch_player_awards_logic
-from backend.api_tools.player_gamelogs import fetch_player_gamelog_logic
+from ..utils.validation import _validate_season_format
+from .player_common_info import fetch_player_info_logic
+from .player_career_data import fetch_player_career_stats_logic, fetch_player_awards_logic
+from .player_gamelogs import fetch_player_gamelog_logic
 
 logger = logging.getLogger(__name__)
 

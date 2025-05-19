@@ -24,13 +24,13 @@ from nba_api.stats.library.parameters import (
     ShotClockRangeNullable
 )
 
-from backend.config import settings
-from backend.core.errors import Errors
-from backend.api_tools.utils import (
+from ..config import settings
+from ..core.errors import Errors
+from .utils import (
     _process_dataframe,
     format_response
 )
-from backend.utils.validation import validate_season_format, validate_date_format, validate_team_id
+from ..utils.validation import validate_season_format, validate_date_format, validate_team_id
 
 logger = logging.getLogger(__name__)
 

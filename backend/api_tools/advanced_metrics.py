@@ -10,13 +10,13 @@ import pandas as pd
 import numpy as np
 from nba_api.stats.endpoints import playerestimatedmetrics, leaguedashplayerstats, playerawards, playercareerstats
 from nba_api.stats.static import players
-from backend.config import settings
-from backend.api_tools.utils import retry_on_timeout, format_response, get_player_id_from_name
+from ..config import settings
+from .utils import retry_on_timeout, format_response, get_player_id_from_name
 import os
 
 # Import our RAPTOR metrics implementation
 try:
-    from api_tools.raptor_metrics import get_player_raptor_metrics, generate_skill_grades
+    from .raptor_metrics import get_player_raptor_metrics, generate_skill_grades
     RAPTOR_AVAILABLE = True
 except ImportError:
     RAPTOR_AVAILABLE = False

@@ -3,7 +3,7 @@ import asyncio
 import json
 from fastapi import APIRouter, HTTPException, Body, Query
 from typing import Dict, Any, Optional, List
-from backend.schemas import PlayerAnalysisRequest
+from schemas import PlayerAnalysisRequest
 from backend.api_tools.analyze import analyze_player_stats_logic
 from backend.api_tools.advanced_metrics import fetch_player_advanced_analysis_logic
 from backend.api_tools.shot_charts import fetch_player_shot_chart
@@ -11,7 +11,7 @@ from backend.api_tools.advanced_shot_charts import process_shot_data_for_visuali
 from backend.api_tools.player_comparison import compare_player_shots as compare_shots # Moved from local import
 from backend.api_tools.visualization_cache import VisualizationCache # Moved from local import
 from backend.core.errors import Errors
-from backend.config import settings # Already at top, but ensure it's used if needed locally
+from config import settings # Already at top, but ensure it's used if needed locally
 
 # --- Module-Level Constants ---
 MIN_PLAYERS_FOR_COMPARISON = 2
