@@ -34,10 +34,12 @@ logger = logging.getLogger(__name__)
 def get_league_standings(
     season: str = settings.CURRENT_NBA_SEASON,
     season_type: str = SeasonTypeAllStar.regular,
-    league_id: str = LeagueID.nba # Added league_id to match underlying logic
+    league_id: str = LeagueID.nba, # Added league_id to match underlying logic
+    as_dataframe: bool = False
 ) -> str:
     """
     Fetches league standings for a specified season, season type, and league.
+    Provides DataFrame output capabilities.
 
     Args:
         season (str, optional): The NBA season identifier in YYYY-YY format (e.g., "2023-24").
@@ -46,14 +48,63 @@ def get_league_standings(
             Valid values from `nba_api.stats.library.parameters.SeasonTypeAllStar`. Defaults to "Regular Season".
         league_id (str, optional): The league ID (e.g., "00" for NBA).
             Valid values from `nba_api.stats.library.parameters.LeagueID`. Defaults to "00".
+        as_dataframe (bool, optional): If True, returns a pandas DataFrame representation of the data
+            and saves it to CSV files in the cache directory. Defaults to False.
 
     Returns:
         str: JSON string containing league standings data, typically a list of team objects
              with fields like TeamID, TeamName, Conference, WINS, LOSSES, WinPct, etc.
+             If as_dataframe=True, the JSON response will include additional information about
+             the DataFrames and CSV files.
     """
-    logger.debug(f"Tool 'get_league_standings' called for season '{season}', type '{season_type}', league '{league_id}'")
-    result = fetch_league_standings_logic(season=season, season_type=season_type, league_id=league_id)
-    return result
+    logger.debug(f"Tool 'get_league_standings' called for season '{season}', type '{season_type}', league '{league_id}', as_dataframe={as_dataframe}")
+
+    if as_dataframe:
+        # Get both JSON response and DataFrames
+        json_response, dataframes = fetch_league_standings_logic(
+            season=season,
+            season_type=season_type,
+            league_id=league_id,
+            return_dataframe=True
+        )
+
+        # Parse the original JSON response
+        data = json.loads(json_response)
+
+        # Add DataFrame info
+        df_info = {
+            "message": "League standings have been converted to DataFrames and saved as CSV files",
+            "dataframes": {}
+        }
+
+        for key, df in dataframes.items():
+            if not df.empty:
+                # Clean season type for filename
+                clean_season_type = season_type.replace(" ", "_").lower()
+
+                csv_path = f"backend/cache/league_standings/standings_{season}_{clean_season_type}_{league_id}.csv"
+
+                df_info["dataframes"][key] = {
+                    "shape": df.shape,
+                    "columns": df.columns.tolist(),
+                    "csv_path": csv_path,
+                    "sample_data": df.head(5).to_dict(orient="records") if not df.empty else []
+                }
+
+        # Add DataFrame info to the response
+        if "error" in data:
+            # If there was an error, keep it and add DataFrame info
+            data["dataframe_info"] = df_info
+        else:
+            # If successful, add DataFrame info
+            data["dataframe_info"] = df_info
+
+        # Return the enhanced JSON response
+        return json.dumps(data)
+    else:
+        # Return the standard JSON response
+        result = fetch_league_standings_logic(season=season, season_type=season_type, league_id=league_id)
+        return result
 
 @tool
 def get_scoreboard(
