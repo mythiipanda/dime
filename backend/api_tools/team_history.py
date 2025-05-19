@@ -15,7 +15,7 @@ from .utils import (
     format_response
 )
 from ..utils.validation import _validate_league_id
-from ..utils.path_utils import get_cache_dir, get_cache_file_path # Added imports
+from ..utils.path_utils import get_cache_dir, get_cache_file_path, get_relative_cache_path
 
 logger = logging.getLogger(__name__)
 
@@ -25,14 +25,21 @@ TEAM_HISTORY_CSV_DIR = get_cache_dir("team_history")
 # --- Helper Functions for CSV Caching ---
 def _save_dataframe_to_csv(df: pd.DataFrame, file_path: str) -> None:
     """
-    Saves a DataFrame to a CSV file.
+    Saves a DataFrame to a CSV file, creating the directory if it doesn't exist.
+
+    Args:
+        df: The DataFrame to save
+        file_path: The path to save the CSV file
     """
     try:
+        # Create directory if it doesn't exist
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
+        # Save DataFrame to CSV
         df.to_csv(file_path, index=False)
-        logger.info(f"Saved DataFrame to CSV: {file_path}")
+        logger.debug(f"Saved DataFrame to {file_path}")
     except Exception as e:
-        logger.error(f"Error saving DataFrame to CSV: {e}", exc_info=True)
+        logger.error(f"Error saving DataFrame to {file_path}: {e}", exc_info=True)
 
 def _get_csv_path_for_team_history(league_id: str) -> str:
     """
@@ -73,7 +80,7 @@ def fetch_common_team_years_logic(
         logger.debug(f"CommonTeamYears API call successful for LeagueID: {league_id}")
 
         team_years_df = team_years_endpoint.team_years.get_data_frame()
-        
+
         if return_dataframe:
             dataframes["team_years"] = team_years_df
             if not team_years_df.empty:
@@ -93,10 +100,27 @@ def fetch_common_team_years_logic(
             "parameters": {"league_id": league_id},
             "team_years": team_years_list
         }
-        
+
+        # Add DataFrame metadata to the response if returning DataFrames
+        if return_dataframe and not team_years_df.empty:
+            csv_path = _get_csv_path_for_team_history(league_id)
+            csv_filename = os.path.basename(csv_path)
+            relative_path = get_relative_cache_path(csv_filename, "team_history")
+
+            response_data["dataframe_info"] = {
+                "message": "Team history data has been converted to DataFrame and saved as CSV file",
+                "dataframes": {
+                    "team_years": {
+                        "shape": list(team_years_df.shape),
+                        "columns": team_years_df.columns.tolist(),
+                        "csv_path": relative_path
+                    }
+                }
+            }
+
         json_output = format_response(response_data)
         logger.info(f"Successfully fetched {len(team_years_list)} team year entries for LeagueID: {league_id}")
-        
+
         if return_dataframe:
             return json_output, dataframes
         return json_output
@@ -109,4 +133,4 @@ def fetch_common_team_years_logic(
         error_msg = Errors.COMMON_TEAM_YEARS_API_ERROR.format(error=str(e))
         if return_dataframe:
             return format_response(error=error_msg), dataframes
-        return format_response(error=error_msg) 
+        return format_response(error=error_msg)

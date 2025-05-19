@@ -50,26 +50,46 @@ def test_fetch_common_team_years_dataframe():
     """Test fetching common team years with DataFrame output and CSV verification."""
     print("\n=== Testing fetch_common_team_years_logic with DataFrame output ===")
     result = fetch_common_team_years_logic(league_id=SAMPLE_LEAGUE_ID, return_dataframe=True)
-    
+
     assert isinstance(result, tuple) and len(result) == 2, "Result should be a tuple (json_str, df_dict)"
     json_response, dataframes_dict = result
     assert isinstance(json_response, str), "First element of tuple should be JSON string"
     assert isinstance(dataframes_dict, dict), "Second element of tuple should be a dictionary of DataFrames"
-    
+
     data = json.loads(json_response)
     if "error" in data:
         print(f"API (DataFrame) returned an error: {data['error']}")
     else:
         print(f"Team history (DataFrame) fetched for League ID: {SAMPLE_LEAGUE_ID}")
         assert "team_years" in dataframes_dict, "'team_years' DataFrame missing"
-        
+
         team_years_df = dataframes_dict["team_years"]
         assert isinstance(team_years_df, pd.DataFrame), "'team_years' should be a DataFrame"
 
         if not team_years_df.empty:
             print(f"\nDataFrame 'team_years' shape: {team_years_df.shape}")
             print(team_years_df.head(2))
-            
+
+            # Check if the dataframe_info field exists in the response
+            if "dataframe_info" in data:
+                print("\nDataFrame info found in response:")
+                print(f"Message: {data['dataframe_info'].get('message', 'N/A')}")
+
+                # Check if the CSV paths are included
+                for df_key, df_info in data["dataframe_info"].get("dataframes", {}).items():
+                    csv_path = df_info.get("csv_path")
+                    if csv_path:
+                        full_path = os.path.join(backend_dir, csv_path)
+                        if os.path.exists(full_path):
+                            print(f"\nCSV file exists: {csv_path}")
+                            csv_size = os.path.getsize(full_path)
+                            print(f"CSV file size: {csv_size} bytes")
+                        else:
+                            print(f"\nCSV file does not exist: {csv_path}")
+            else:
+                print("\nNo DataFrame info found in response (this is unexpected).")
+
+            # Also verify using the old method
             csv_path = _get_csv_path_for_team_history(SAMPLE_LEAGUE_ID)
             _verify_csv_exists(csv_path)
         else:
@@ -90,15 +110,15 @@ def test_invalid_league_id():
 
 def run_all_tests():
     print(f"\n=== Running team_history (CommonTeamYears) smoke tests at {datetime.now().isoformat()} ===\n")
-    
+
     # Ensure cache directory exists
     os.makedirs(TEAM_HISTORY_CSV_DIR, exist_ok=True)
 
     test_fetch_common_team_years_basic()
     test_fetch_common_team_years_dataframe()
     test_invalid_league_id()
-        
+
     print("\n\n=== All team_history tests completed successfully ===")
 
 if __name__ == "__main__":
-    run_all_tests() 
+    run_all_tests()
