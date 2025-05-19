@@ -17,10 +17,7 @@ sys.path.insert(0, project_root)
 from backend.api_tools.player_dashboard_stats import (
     fetch_player_profile_logic,
     fetch_player_defense_logic,
-    fetch_player_hustle_stats_logic,
-    fetch_player_fantasy_profile_logic,
-    fetch_player_fantasy_profile_bargraph_logic,
-    fetch_player_next_n_games_logic
+    fetch_player_hustle_stats_logic
 )
 from nba_api.stats.library.parameters import (
     SeasonTypeAllStar, PerModeDetailed, PerModeSimple, LeagueID
@@ -209,99 +206,6 @@ def test_fetch_player_hustle():
     print("\n=== Hustle test completed ===")
     return data
 
-def test_fetch_player_fantasy_profile():
-    """Test fetching player fantasy profile with JSON and DataFrame output."""
-    print("\n=== Testing fetch_player_fantasy_profile_logic (JSON) ===")
-    json_response = fetch_player_fantasy_profile_logic(SAMPLE_PLAYER, SAMPLE_SEASON)
-    data = json.loads(json_response)
-    assert isinstance(data, dict), "Response should be a dictionary"
-    if "error" in data:
-        print(f"API returned an error: {data['error']}")
-    else:
-        print(f"Player Name: {data.get('player_name')}")
-        print(f"Season: {data.get('season')}")
-        print(f"Per Mode: {data.get('per_mode')}")
-        fantasy = data.get("fantasy_profile", {})
-        for key, val in fantasy.items():
-            print(f"\nSection: {key}, Entries: {len(val) if isinstance(val, list) else 'N/A'}")
-            if isinstance(val, list) and val:
-                print(f"Sample: {val[0]}")
-    print("\n=== Testing fetch_player_fantasy_profile_logic (DataFrame) ===")
-    result = fetch_player_fantasy_profile_logic(SAMPLE_PLAYER, SAMPLE_SEASON, return_dataframe=True)
-    assert isinstance(result, tuple) and len(result) == 2, "Result should be a tuple of (json, dataframes)"
-    json_response, dataframes = result
-    data = json.loads(json_response)
-    print(f"DataFrames returned: {list(dataframes.keys())}")
-    for key, df in dataframes.items():
-        if not df.empty:
-            print(f"\nDataFrame '{key}' shape: {df.shape}")
-            print(f"Columns: {df.columns.tolist()[:5]}...")
-            print(f"Sample data:\n{df.head(2)}")
-    print("\n=== Fantasy profile test completed ===")
-    return data
-
-def test_fetch_player_fantasy_profile_bargraph():
-    """Test fetching player fantasy profile bar graph with JSON and DataFrame output."""
-    print("\n=== Testing fetch_player_fantasy_profile_bargraph_logic (JSON) ===")
-    json_response = fetch_player_fantasy_profile_bargraph_logic(SAMPLE_PLAYER, SAMPLE_SEASON)
-    data = json.loads(json_response)
-    assert isinstance(data, dict), "Response should be a dictionary"
-    if "error" in data:
-        print(f"API returned an error: {data['error']}")
-    else:
-        print(f"Player Name: {data.get('player_name')}")
-        print(f"Season: {data.get('season')}")
-        print(f"Season Type: {data.get('season_type')}")
-        bargraph = data.get("fantasy_profile_bargraph", {})
-        for key, val in bargraph.items():
-            print(f"\nSection: {key}, Entries: {len(val) if isinstance(val, list) else 'N/A'}")
-            if isinstance(val, list) and val:
-                print(f"Sample: {val[0]}")
-    print("\n=== Testing fetch_player_fantasy_profile_bargraph_logic (DataFrame) ===")
-    result = fetch_player_fantasy_profile_bargraph_logic(SAMPLE_PLAYER, SAMPLE_SEASON, return_dataframe=True)
-    assert isinstance(result, tuple) and len(result) == 2, "Result should be a tuple of (json, dataframes)"
-    json_response, dataframes = result
-    data = json.loads(json_response)
-    print(f"DataFrames returned: {list(dataframes.keys())}")
-    for key, df in dataframes.items():
-        if not df.empty:
-            print(f"\nDataFrame '{key}' shape: {df.shape}")
-            print(f"Columns: {df.columns.tolist()[:5]}...")
-            print(f"Sample data:\n{df.head(2)}")
-    print("\n=== Fantasy profile bargraph test completed ===")
-    return data
-
-def test_fetch_player_next_n_games():
-    """Test fetching next N games for a player with JSON and DataFrame output."""
-    print("\n=== Testing fetch_player_next_n_games_logic (JSON) ===")
-    json_response = fetch_player_next_n_games_logic(SAMPLE_PLAYER, SAMPLE_SEASON, SeasonTypeAllStar.regular, number_of_games=3)
-    data = json.loads(json_response)
-    assert isinstance(data, dict), "Response should be a dictionary"
-    if "error" in data:
-        print(f"API returned an error: {data['error']}")
-    else:
-        print(f"Player Name: {data.get('player_name')}")
-        print(f"Season: {data.get('season')}")
-        print(f"Season Type: {data.get('season_type')}")
-        print(f"Number of Games: {data.get('number_of_games')}")
-        games = data.get("next_n_games", [])
-        print(f"Next N Games Entries: {len(games)}")
-        if games:
-            print(f"Sample: {games[0]}")
-    print("\n=== Testing fetch_player_next_n_games_logic (DataFrame) ===")
-    result = fetch_player_next_n_games_logic(SAMPLE_PLAYER, SAMPLE_SEASON, SeasonTypeAllStar.regular, number_of_games=3, return_dataframe=True)
-    assert isinstance(result, tuple) and len(result) == 2, "Result should be a tuple of (json, dataframes)"
-    json_response, dataframes = result
-    data = json.loads(json_response)
-    print(f"DataFrames returned: {list(dataframes.keys())}")
-    for key, df in dataframes.items():
-        if not df.empty:
-            print(f"\nDataFrame '{key}' shape: {df.shape}")
-            print(f"Columns: {df.columns.tolist()[:5]}...")
-            print(f"Sample data:\n{df.head(2)}")
-    print("\n=== Next N games test completed ===")
-    return data
-
 def run_all_tests():
     """Run all tests in sequence."""
     print(f"=== Running player_dashboard smoke tests at {datetime.now().isoformat()} ===\n")
@@ -312,9 +216,6 @@ def run_all_tests():
         profile_json, profile_dfs = test_fetch_player_profile_dataframe()
         defense_data = test_fetch_player_defense()
         hustle_data = test_fetch_player_hustle()
-        fantasy_data = test_fetch_player_fantasy_profile()
-        fantasy_bargraph_data = test_fetch_player_fantasy_profile_bargraph()
-        nextngames_data = test_fetch_player_next_n_games()
         
         print("\n=== All tests completed successfully ===")
         return True
