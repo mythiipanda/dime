@@ -1,25 +1,29 @@
 """
 Implementation of RAPTOR-style advanced metrics for NBA players.
 Based on the methodology described by FiveThirtyEight.
+Provides both JSON and DataFrame outputs with CSV caching.
 """
 
 import logging
 import json
 import time
 import os
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any, Tuple, Union
 import pandas as pd
 import numpy as np
 from nba_api.stats.endpoints import playercareerstats, commonplayerinfo, playerawards
 from nba_api.stats.endpoints import leaguedashplayerstats, playerdashboardbyyearoveryear
 from nba_api.stats.static import players
-from .utils import retry_on_timeout
+from .utils import retry_on_timeout, format_response
 from ..config import settings
+from ..utils.path_utils import get_cache_dir, get_cache_file_path, get_relative_cache_path
+
 logger = logging.getLogger(__name__)
 
-# Path to cache directory for historical player data
-CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cache")
-os.makedirs(CACHE_DIR, exist_ok=True)
+# --- Cache Directory Setup ---
+RAPTOR_METRICS_CSV_DIR = get_cache_dir("raptor_metrics")
+HISTORICAL_DATA_DIR = get_cache_dir("historical_data")
+LEAGUE_STATS_DIR = get_cache_dir("league_stats")
 
 # Award point values for achievements (used in ELO calculation)
 AWARD_VALUES = {
@@ -83,16 +87,27 @@ POSITION_ADJUSTMENTS = {
     "C": {"offense": -0.5, "defense": 0.5},
 }
 
-def get_player_raptor_metrics(player_id: int, season: str = "2023-24") -> Dict[str, Any]:
+def get_player_raptor_metrics(
+    player_id: int,
+    season: str = "2023-24",
+    return_dataframe: bool = False
+) -> Union[Dict[str, Any], Tuple[str, Dict[str, pd.DataFrame]]]:
     """
     Calculate RAPTOR-style metrics for a player.
+
+    Provides DataFrame output capabilities.
 
     Args:
         player_id: The NBA API player ID
         season: The season to calculate metrics for (e.g., "2023-24")
+        return_dataframe: Whether to return DataFrames along with the JSON response
 
     Returns:
-        Dictionary with RAPTOR metrics
+        If return_dataframe=False:
+            Dictionary with RAPTOR metrics
+        If return_dataframe=True:
+            Tuple[str, Dict[str, pd.DataFrame]]: A tuple containing the JSON response string
+                                               and a dictionary of DataFrames
     """
     try:
         # Get player info (for position)
@@ -101,7 +116,10 @@ def get_player_raptor_metrics(player_id: int, season: str = "2023-24") -> Dict[s
 
         if player_info_df.empty:
             logger.warning(f"No player info found for player ID {player_id}")
-            return {}
+            error_response = {"error": f"No player info found for player ID {player_id}"}
+            if return_dataframe:
+                return format_response(error_response), {}
+            return error_response
 
         player_name = player_info_df['DISPLAY_FIRST_LAST'].iloc[0]
         position = player_info_df['POSITION'].iloc[0]
@@ -113,13 +131,19 @@ def get_player_raptor_metrics(player_id: int, season: str = "2023-24") -> Dict[s
         basic_stats = get_player_basic_stats(player_id, season)
         if not basic_stats:
             logger.warning(f"No basic stats found for player ID {player_id} in season {season}")
-            return {}
+            error_response = {"error": f"No basic stats found for player ID {player_id} in season {season}"}
+            if return_dataframe:
+                return format_response(error_response), {}
+            return error_response
 
         # Get advanced stats
         advanced_stats = get_player_advanced_stats(player_id, season)
         if not advanced_stats:
             logger.warning(f"No advanced stats found for player ID {player_id} in season {season}")
-            return {}
+            error_response = {"error": f"No advanced stats found for player ID {player_id} in season {season}"}
+            if return_dataframe:
+                return format_response(error_response), {}
+            return error_response
 
         # Calculate RAPTOR metrics
         raptor_metrics = calculate_raptor_metrics(basic_stats, advanced_stats, position_category)
@@ -138,11 +162,62 @@ def get_player_raptor_metrics(player_id: int, season: str = "2023-24") -> Dict[s
         raptor_metrics["POSITION"] = position
         raptor_metrics["POSITION_CATEGORY"] = position_category
 
+        # Generate skill grades
+        skill_grades = generate_skill_grades(player_id, raptor_metrics, basic_stats)
+        raptor_metrics["SKILL_GRADES"] = skill_grades
+
+        # Create a DataFrame from the metrics
+        if return_dataframe:
+            # Convert the metrics to a DataFrame
+            metrics_df = pd.DataFrame([raptor_metrics])
+
+            # Create a separate DataFrame for skill grades
+            grades_df = pd.DataFrame([skill_grades])
+
+            # Save DataFrames to CSV
+            clean_player_name = player_name.replace(" ", "_").replace(".", "").lower()
+            metrics_csv_path = get_cache_file_path(f"{clean_player_name}_{season}_raptor_metrics.csv", "raptor_metrics")
+            grades_csv_path = get_cache_file_path(f"{clean_player_name}_{season}_skill_grades.csv", "raptor_metrics")
+
+            metrics_df.to_csv(metrics_csv_path, index=False)
+            grades_df.to_csv(grades_csv_path, index=False)
+
+            # Add DataFrame metadata to the response
+            metrics_relative_path = get_relative_cache_path(os.path.basename(metrics_csv_path), "raptor_metrics")
+            grades_relative_path = get_relative_cache_path(os.path.basename(grades_csv_path), "raptor_metrics")
+
+            raptor_metrics["dataframe_info"] = {
+                "message": "RAPTOR metrics data has been converted to DataFrames and saved as CSV files",
+                "dataframes": {
+                    "raptor_metrics": {
+                        "shape": list(metrics_df.shape),
+                        "columns": metrics_df.columns.tolist(),
+                        "csv_path": metrics_relative_path
+                    },
+                    "skill_grades": {
+                        "shape": list(grades_df.shape),
+                        "columns": grades_df.columns.tolist(),
+                        "csv_path": grades_relative_path
+                    }
+                }
+            }
+
+            # Return the JSON response and DataFrames
+            dataframes = {
+                "raptor_metrics": metrics_df,
+                "skill_grades": grades_df
+            }
+
+            return format_response(raptor_metrics), dataframes
+
         return raptor_metrics
 
     except Exception as e:
         logger.error(f"Error calculating RAPTOR metrics for player ID {player_id}: {str(e)}", exc_info=True)
-        return {}
+        error_response = {"error": f"Error calculating RAPTOR metrics: {str(e)}"}
+        if return_dataframe:
+            return format_response(error_response), {}
+        return error_response
 
 def map_position_to_category(position: str) -> str:
     """Map NBA position to one of the 5 position categories."""
@@ -500,7 +575,7 @@ def get_historical_player_data(player_id: int) -> Dict[str, Any]:
         - playoff_stats: Dictionary with playoff performance metrics
     """
     # Check if we have cached data
-    cache_file = os.path.join(CACHE_DIR, f"player_{player_id}_history.json")
+    cache_file = get_cache_file_path(f"player_{player_id}_history.json", "historical_data")
 
     # Try to load from cache first
     if os.path.exists(cache_file):
@@ -973,7 +1048,7 @@ def get_league_stats_for_percentiles() -> Dict[str, List[float]]:
         Dictionary mapping stat names to lists of values across the league
     """
     # Check if we have cached league stats
-    cache_file = os.path.join(CACHE_DIR, "league_stats.json")
+    cache_file = get_cache_file_path("league_stats.json", "league_stats")
 
     # Try to load from cache first
     if os.path.exists(cache_file):
