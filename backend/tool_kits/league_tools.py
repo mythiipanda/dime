@@ -181,10 +181,12 @@ def get_league_leaders(
     per_mode: str = PerMode48.per_game,
     league_id: str = LeagueID.nba,
     scope: str = Scope.s, # 'S' for Season, 'RS' for Rookies
-    top_n: int = 10
+    top_n: int = 10,
+    as_dataframe: bool = False
 ) -> str:
     """
     Fetches league leaders for a specific statistical category.
+    Provides DataFrame output capabilities.
 
     Args:
         stat_category (str): The statistical category abbreviation (e.g., "PTS", "REB", "AST").
@@ -198,24 +200,80 @@ def get_league_leaders(
         scope (str, optional): Scope of leaders (e.g., "S" for all players, "RS" for rookies).
             Valid values from `nba_api.stats.library.parameters.Scope`. Defaults to "S".
         top_n (int, optional): Number of top leaders to return. Defaults to 10.
+        as_dataframe (bool, optional): If True, returns a pandas DataFrame representation of the data
+            and saves it to CSV files in the cache directory. Defaults to False.
 
     Returns:
         str: JSON string containing a list of league leaders with their stats.
+             If as_dataframe=True, the JSON response will include additional information about
+             the DataFrames and CSV files.
     """
     logger.debug(
         f"Tool 'get_league_leaders' called for Cat: {stat_category}, Season: {season}, Type: {season_type}, "
-        f"Mode: {per_mode}, League: {league_id}, Scope: {scope}, TopN: {top_n}"
+        f"Mode: {per_mode}, League: {league_id}, Scope: {scope}, TopN: {top_n}, as_dataframe={as_dataframe}"
     )
-    result = fetch_league_leaders_logic(
-        season=season,
-        stat_category=stat_category,
-        season_type=season_type,
-        per_mode=per_mode,
-        league_id=league_id,
-        scope=scope,
-        top_n=top_n
-    )
-    return result
+
+    if as_dataframe:
+        # Get both JSON response and DataFrames
+        json_response, dataframes = fetch_league_leaders_logic(
+            season=season,
+            stat_category=stat_category,
+            season_type=season_type,
+            per_mode=per_mode,
+            league_id=league_id,
+            scope=scope,
+            top_n=top_n,
+            return_dataframe=True
+        )
+
+        # Parse the original JSON response
+        data = json.loads(json_response)
+
+        # Add DataFrame info
+        df_info = {
+            "message": "League leaders have been converted to DataFrames and saved as CSV files",
+            "dataframes": {}
+        }
+
+        for key, df in dataframes.items():
+            if not df.empty:
+                # Clean season type for filename
+                clean_season_type = season_type.replace(" ", "_").lower()
+
+                # Clean per mode for filename
+                clean_per_mode = per_mode.replace(" ", "_").lower()
+
+                csv_path = f"backend/cache/league_leaders/leaders_{season}_{stat_category}_{clean_season_type}_{clean_per_mode}_{league_id}_{scope}.csv"
+
+                df_info["dataframes"][key] = {
+                    "shape": list(df.shape),
+                    "columns": df.columns.tolist(),
+                    "csv_path": csv_path,
+                    "sample_data": df.head(5).to_dict(orient="records") if not df.empty else []
+                }
+
+        # Add DataFrame info to the response
+        if "error" in data:
+            # If there was an error, keep it and add DataFrame info
+            data["dataframe_info"] = df_info
+        else:
+            # If successful, add DataFrame info
+            data["dataframe_info"] = df_info
+
+        # Return the enhanced JSON response
+        return json.dumps(data)
+    else:
+        # Return the standard JSON response
+        result = fetch_league_leaders_logic(
+            season=season,
+            stat_category=stat_category,
+            season_type=season_type,
+            per_mode=per_mode,
+            league_id=league_id,
+            scope=scope,
+            top_n=top_n
+        )
+        return result
 
 @tool
 def get_synergy_play_types(
