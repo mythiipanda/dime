@@ -17,7 +17,9 @@ from nba_api.stats.endpoints import (
     BoxScoreFourFactorsV3,
     BoxScoreUsageV3,
     BoxScoreDefensiveV2,
-    BoxScoreSummaryV2
+    BoxScoreSummaryV2,
+    BoxScoreMiscV3,
+    BoxScorePlayerTrackV3
 )
 from ..config import settings
 from ..core.errors import Errors
@@ -426,4 +428,71 @@ def fetch_boxscore_summary_logic(
         endpoint_name_for_logging="BoxScoreSummaryV2",
         return_dataframe=return_dataframe
         # No additional constructor kwargs beyond game_id for BoxScoreSummaryV2
+    )
+
+@lru_cache(maxsize=GAME_BOXSCORE_CACHE_SIZE)
+def fetch_boxscore_misc_logic(
+    game_id: str,
+    start_period: int = StartPeriod.default,
+    end_period: int = EndPeriod.default,
+    start_range: int = StartRange.default,
+    end_range: int = EndRange.default,
+    range_type: int = RangeType.default,
+    return_dataframe: bool = False
+) -> Union[str, Tuple[str, Dict[str, pd.DataFrame]]]:
+    """
+    Fetches Miscellaneous Box Score data (V3) for a given game_id.
+
+    Args:
+        game_id: The ID of the game to fetch data for
+        start_period: Starting period number (0 for full game)
+        end_period: Ending period number (0 for full game)
+        start_range: Starting range in seconds
+        end_range: Ending range in seconds
+        range_type: Type of range (0 for full game)
+        return_dataframe: Whether to return DataFrames along with the JSON response
+
+    Returns:
+        If return_dataframe=False: JSON string containing the boxscore data
+        If return_dataframe=True: Tuple of (JSON string, Dictionary of DataFrames)
+    """
+    return _fetch_boxscore_data_generic(
+        game_id=game_id,
+        endpoint_class=BoxScoreMiscV3,
+        dataset_mapping={"player_stats": "player_stats", "team_stats": "team_stats"},
+        error_constants={"api": Errors.BOXSCORE_API, "processing": Errors.PROCESSING_ERROR},
+        endpoint_name_for_logging="BoxScoreMiscV3",
+        additional_params_for_response={
+            "start_period": start_period, "end_period": end_period,
+            "start_range": start_range, "end_range": end_range,
+            "range_type": range_type
+        },
+        return_dataframe=return_dataframe,
+        start_period=start_period, end_period=end_period,
+        start_range=start_range, end_range=end_range, range_type=range_type
+    )
+
+@lru_cache(maxsize=GAME_BOXSCORE_CACHE_SIZE)
+def fetch_boxscore_playertrack_logic(
+    game_id: str,
+    return_dataframe: bool = False
+) -> Union[str, Tuple[str, Dict[str, pd.DataFrame]]]:
+    """
+    Fetches Player Tracking Box Score data (V3) for a given game_id.
+
+    Args:
+        game_id: The ID of the game to fetch data for
+        return_dataframe: Whether to return DataFrames along with the JSON response
+
+    Returns:
+        If return_dataframe=False: JSON string containing the boxscore data
+        If return_dataframe=True: Tuple of (JSON string, Dictionary of DataFrames)
+    """
+    return _fetch_boxscore_data_generic(
+        game_id=game_id,
+        endpoint_class=BoxScorePlayerTrackV3,
+        dataset_mapping={"player_stats": "player_stats", "team_stats": "team_stats"},
+        error_constants={"api": Errors.BOXSCORE_API, "processing": Errors.PROCESSING_ERROR},
+        endpoint_name_for_logging="BoxScorePlayerTrackV3",
+        return_dataframe=return_dataframe
     )

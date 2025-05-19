@@ -10,13 +10,15 @@ from datetime import datetime
 
 
 
-from api_tools.game_boxscores import (
+from backend.api_tools.game_boxscores import (
     fetch_boxscore_traditional_logic,
     fetch_boxscore_advanced_logic,
     fetch_boxscore_four_factors_logic,
     fetch_boxscore_usage_logic,
     fetch_boxscore_defensive_logic,
     fetch_boxscore_summary_logic,
+    fetch_boxscore_misc_logic,
+    fetch_boxscore_playertrack_logic,
     BOXSCORE_CSV_DIR
 )
 
@@ -168,6 +170,56 @@ def test_other_boxscore_types():
 
     print("\n=== Other box score types test completed ===")
 
+def test_fetch_boxscore_misc():
+    """Test fetching miscellaneous box score data with DataFrame output."""
+    print("\n=== Testing fetch_boxscore_misc_logic with DataFrame output ===")
+
+    # Test with return_dataframe=True
+    result = fetch_boxscore_misc_logic(SAMPLE_GAME_ID, return_dataframe=True)
+
+    # Check if the result is a tuple
+    assert isinstance(result, tuple), "Result should be a tuple when return_dataframe=True"
+
+    json_response, dataframes = result
+
+    # Print DataFrame info
+    print(f"\nDataFrames returned: {list(dataframes.keys())}")
+    for key, df in dataframes.items():
+        if not df.empty:
+            print(f"\nDataFrame '{key}' shape: {df.shape}")
+            print(f"DataFrame '{key}' columns: {df.columns.tolist()[:5]}...")  # Show first 5 columns
+            print(f"Sample data (first row):")
+            first_row_dict = {col: df.iloc[0][col] for col in df.columns[:5]}  # First 5 columns
+            print(first_row_dict)
+
+    print("\n=== Miscellaneous box score test completed ===")
+    return json_response, dataframes
+
+def test_fetch_boxscore_playertrack():
+    """Test fetching player tracking box score data with DataFrame output."""
+    print("\n=== Testing fetch_boxscore_playertrack_logic with DataFrame output ===")
+
+    # Test with return_dataframe=True
+    result = fetch_boxscore_playertrack_logic(SAMPLE_GAME_ID, return_dataframe=True)
+
+    # Check if the result is a tuple
+    assert isinstance(result, tuple), "Result should be a tuple when return_dataframe=True"
+
+    json_response, dataframes = result
+
+    # Print DataFrame info
+    print(f"\nDataFrames returned: {list(dataframes.keys())}")
+    for key, df in dataframes.items():
+        if not df.empty:
+            print(f"\nDataFrame '{key}' shape: {df.shape}")
+            print(f"DataFrame '{key}' columns: {df.columns.tolist()[:5]}...")  # Show first 5 columns
+            print(f"Sample data (first row):")
+            first_row_dict = {col: df.iloc[0][col] for col in df.columns[:5]}  # First 5 columns
+            print(first_row_dict)
+
+    print("\n=== Player tracking box score test completed ===")
+    return json_response, dataframes
+
 def run_all_tests():
     """Run all tests in sequence."""
     print(f"=== Running game_boxscores smoke tests at {datetime.now().isoformat()} ===\n")
@@ -177,6 +229,8 @@ def run_all_tests():
         traditional_json, traditional_dfs = test_fetch_boxscore_traditional()
         advanced_json, advanced_dfs = test_fetch_boxscore_advanced()
         test_other_boxscore_types()
+        test_fetch_boxscore_misc()
+        test_fetch_boxscore_playertrack()
 
         print("\n=== All tests completed successfully ===")
         return True
@@ -188,8 +242,7 @@ def run_all_tests():
 
 if __name__ == "__main__":
     import sys
-
-# Add the parent directory to the Python path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+    # Add the parent directory to the Python path
+    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
     success = run_all_tests()
     sys.exit(0 if success else 1)
