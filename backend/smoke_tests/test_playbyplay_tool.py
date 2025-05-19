@@ -3,15 +3,11 @@ Smoke test for the get_play_by_play tool.
 Tests the functionality of the tool with both JSON and DataFrame outputs.
 """
 import os
-import sys
+
 import json
 from datetime import datetime
 
-# Add the project root directory to the Python path
-current_dir = os.path.dirname(os.path.abspath(__file__))
-backend_dir = os.path.dirname(current_dir)
-project_root = os.path.dirname(backend_dir)
-sys.path.insert(0, project_root)
+
 
 # Mock the agno.tools.tool decorator
 import functools
@@ -22,14 +18,14 @@ def mock_tool(func):
     return wrapper
 
 # Apply the mock to the module before importing
-import sys
+
 import types
 mock_agno_tools = types.ModuleType('agno.tools')
 mock_agno_tools.tool = mock_tool
 sys.modules['agno.tools'] = mock_agno_tools
 
 # Now import the tool
-from backend.tool_kits.game_tools import get_play_by_play
+from tool_kits.game_tools import get_play_by_play
 
 # Sample game ID for testing (2023-24 regular season game)
 SAMPLE_GAME_ID = "0022300161"  # Change this to a valid game ID if needed
@@ -195,5 +191,9 @@ def run_all_tests():
         return False
 
 if __name__ == "__main__":
+    import sys
+
+# Add the parent directory to the Python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
     success = run_all_tests()
     sys.exit(0 if success else 1)

@@ -109,7 +109,11 @@ def get_team_stats(
         )
 
         # Parse the original JSON response
-        data = json.loads(json_response)
+        try:
+            data = json.loads(json_response)
+        except json.JSONDecodeError as jde:
+            logger.error("Failed to parse team-stats JSON: %s", jde, exc_info=True)
+            return json_response  # propagate raw response up-stream
 
         # Add DataFrame info
         df_info = {

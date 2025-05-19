@@ -3,16 +3,12 @@ Smoke test for the odds endpoint.
 Tests the functionality of the /odds/live endpoint with both standard and DataFrame outputs.
 """
 import os
-import sys
+
 import json
 import requests
 from datetime import datetime
 
-# Add the project root directory to the Python path
-current_dir = os.path.dirname(os.path.abspath(__file__))
-backend_dir = os.path.dirname(current_dir)
-project_root = os.path.dirname(backend_dir)
-sys.path.insert(0, project_root)
+
 
 # Base URL for the API
 BASE_URL = "http://localhost:8000/api/v1"
@@ -150,5 +146,6 @@ def run_all_tests():
         return False
 
 if __name__ == "__main__":
+    import sys
     success = run_all_tests()
     sys.exit(0 if success else 1)

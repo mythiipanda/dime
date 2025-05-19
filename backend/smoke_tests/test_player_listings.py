@@ -3,22 +3,18 @@ Smoke test for the player_listings module.
 Tests the functionality of fetching all players for a given season.
 """
 import os
-import sys
+
 import json
 import pandas as pd
 from datetime import datetime
 
-# Add the project root directory to the Python path
-current_dir = os.path.dirname(os.path.abspath(__file__))
-backend_dir = os.path.dirname(current_dir)
-project_root = os.path.dirname(backend_dir)
-sys.path.insert(0, project_root)
 
-from backend.api_tools.player_listings import (
+
+from api_tools.player_listings import (
     fetch_common_all_players_logic,
     PLAYER_LISTINGS_CSV_DIR
 )
-from backend.config import settings
+from config import settings
 
 # Sample season for testing
 SAMPLE_SEASON = "2022-23"  # Use a completed season for testing
@@ -163,5 +159,9 @@ def run_all_tests():
         return False
 
 if __name__ == "__main__":
+    import sys
+
+# Add the parent directory to the Python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
     success = run_all_tests()
     sys.exit(0 if success else 1)

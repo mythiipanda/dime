@@ -13,7 +13,7 @@ import numpy as np
 from nba_api.stats.endpoints import playercareerstats, commonplayerinfo, playerawards
 from nba_api.stats.endpoints import leaguedashplayerstats, playerdashboardbyyearoveryear
 from nba_api.stats.static import players
-from .utils import retry_on_timeout
+from backend.api_tools.utils import retry_on_timeout
 from config import settings
 logger = logging.getLogger(__name__)
 

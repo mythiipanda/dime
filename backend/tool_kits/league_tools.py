@@ -15,7 +15,10 @@ from nba_api.stats.library.parameters import (
 from backend.config import settings
 
 # Import specific logic functions for league tools
-from backend.api_tools.league_standings import fetch_league_standings_logic
+from backend.api_tools.league_standings import (
+    fetch_league_standings_logic,
+    _get_csv_path_for_league_standings
+)
 from backend.api_tools.scoreboard_tools import fetch_scoreboard_data_logic
 from backend.api_tools.league_draft import fetch_draft_history_logic
 from backend.api_tools.league_leaders_data import fetch_league_leaders_logic
@@ -79,13 +82,11 @@ def get_league_standings(
 
         for key, df in dataframes.items():
             if not df.empty:
-                # Clean season type for filename
-                clean_season_type = season_type.replace(" ", "_").lower()
-
-                csv_path = f"backend/cache/league_standings/standings_{season}_{clean_season_type}_{league_id}.csv"
+                csv_path = _get_csv_path_for_league_standings(season, season_type, league_id)
 
                 df_info["dataframes"][key] = {
-                    "shape": df.shape,
+                    # Convert to list (or dict) so the default JSON encoder can handle it
+                    "shape": list(df.shape),
                     "columns": df.columns.tolist(),
                     "csv_path": csv_path,
                     "sample_data": df.head(5).to_dict(orient="records") if not df.empty else []
@@ -397,7 +398,8 @@ def get_common_all_players(
                 csv_path = f"backend/cache/player_listings/players_{season}_{league_id}_{is_only_current_season}.csv"
 
                 df_info["dataframes"][key] = {
-                    "shape": df.shape,
+                    # Convert to list (or dict) so the default JSON encoder can handle it
+                    "shape": list(df.shape),
                     "columns": df.columns.tolist(),
                     "csv_path": csv_path,
                     "sample_data": df.head(5).to_dict(orient="records") if not df.empty else []

@@ -7,11 +7,7 @@ import sys
 import json
 from datetime import datetime
 
-# Add the project root directory to the Python path
-current_dir = os.path.dirname(os.path.abspath(__file__))
-backend_dir = os.path.dirname(current_dir)
-project_root = os.path.dirname(backend_dir)
-sys.path.insert(0, project_root)
+
 
 # Mock the agno.tools.tool decorator
 import functools
@@ -22,14 +18,14 @@ def mock_tool(func):
     return wrapper
 
 # Apply the mock to the module before importing
-import sys
+
 import types
 mock_agno_tools = types.ModuleType('agno.tools')
 mock_agno_tools.tool = mock_tool
 sys.modules['agno.tools'] = mock_agno_tools
 
 # Now import the tools
-from backend.tool_kits.game_tools import (
+from tool_kits.game_tools import (
     get_boxscore_traditional,
     get_boxscore_advanced,
     get_boxscore_four_factors,

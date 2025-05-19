@@ -3,18 +3,14 @@ Smoke test for the player_common_info module.
 Tests the functionality of fetching player information, headline stats, and available seasons.
 """
 import os
-import sys
+
 import json
 import pandas as pd
 from datetime import datetime
 
-# Add the project root directory to the Python path
-current_dir = os.path.dirname(os.path.abspath(__file__))
-backend_dir = os.path.dirname(current_dir)
-project_root = os.path.dirname(backend_dir)
-sys.path.insert(0, project_root)
 
-from backend.api_tools.player_common_info import (
+
+from api_tools.player_common_info import (
     fetch_player_info_logic,
     get_player_headshot_url,
     PLAYER_INFO_CSV_DIR
@@ -186,5 +182,9 @@ def run_all_tests():
         return False
 
 if __name__ == "__main__":
+    import sys
+
+# Add the parent directory to the Python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
     success = run_all_tests()
     sys.exit(0 if success else 1)
