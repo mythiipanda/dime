@@ -1,11 +1,13 @@
 """
 Handles fetching and processing player matchup statistics, including
 player-vs-player season matchups and defensive player rollup stats.
+Provides both JSON and DataFrame outputs with CSV caching.
 """
 import logging
+import os
 from datetime import datetime
 import pandas as pd
-from typing import Dict, Tuple, Any, Type, Optional, Set, List
+from typing import Dict, Tuple, Any, Type, Optional, Set, List, Union
 from functools import lru_cache
 
 from nba_api.stats.endpoints import LeagueSeasonMatchups, MatchupsRollup
@@ -14,8 +16,73 @@ from ..config import settings
 from ..core.errors import Errors
 from .utils import format_response, _process_dataframe, find_player_id_or_error, PlayerNotFoundError
 from ..utils.validation import _validate_season_format
+from ..utils.path_utils import get_cache_dir, get_cache_file_path, get_relative_cache_path
 
 logger = logging.getLogger(__name__)
+
+# --- Cache Directory Setup ---
+MATCHUPS_CSV_DIR = get_cache_dir("matchups")
+
+# --- Helper Functions for CSV Caching ---
+def _save_dataframe_to_csv(df: pd.DataFrame, file_path: str) -> None:
+    """
+    Saves a DataFrame to a CSV file.
+
+    Args:
+        df: DataFrame to save
+        file_path: Path to save the CSV file
+    """
+    try:
+        df.to_csv(file_path, index=False)
+        logger.info(f"Saved DataFrame to CSV: {file_path}")
+    except Exception as e:
+        logger.error(f"Error saving DataFrame to CSV: {e}", exc_info=True)
+
+def _get_csv_path_for_season_matchups(
+    def_player_id: int,
+    off_player_id: int,
+    season: str,
+    season_type: str
+) -> str:
+    """
+    Generates a file path for saving season matchups DataFrame as CSV.
+
+    Args:
+        def_player_id: Defensive player ID
+        off_player_id: Offensive player ID
+        season: The season in YYYY-YY format
+        season_type: The season type (e.g., 'Regular Season', 'Playoffs')
+
+    Returns:
+        Path to the CSV file
+    """
+    # Clean season type for filename
+    clean_season_type = season_type.replace(" ", "_").lower()
+
+    filename = f"season_matchups_{def_player_id}_{off_player_id}_{season}_{clean_season_type}.csv"
+    return get_cache_file_path(filename, "matchups")
+
+def _get_csv_path_for_matchups_rollup(
+    def_player_id: int,
+    season: str,
+    season_type: str
+) -> str:
+    """
+    Generates a file path for saving matchups rollup DataFrame as CSV.
+
+    Args:
+        def_player_id: Defensive player ID
+        season: The season in YYYY-YY format
+        season_type: The season type (e.g., 'Regular Season', 'Playoffs')
+
+    Returns:
+        Path to the CSV file
+    """
+    # Clean season type for filename
+    clean_season_type = season_type.replace(" ", "_").lower()
+
+    filename = f"matchups_rollup_{def_player_id}_{season}_{clean_season_type}.csv"
+    return get_cache_file_path(filename, "matchups")
 
 # --- Module-Level Constants ---
 CACHE_TTL_SECONDS_MATCHUPS = 3600 * 6  # Cache matchup data for 6 hours
@@ -88,7 +155,7 @@ def _extract_dataframe_from_response(
                 logger.warning(f"Error accessing dataset '{expected_dataset_name}' directly via attribute '{dataset_attr_name}': {e}. Trying 'resultSets' fallback.")
         else:
             logger.warning(f"Dataset attribute '{dataset_attr_name}' for '{expected_dataset_name}' does not have 'get_data_frame' method.")
-    
+
     logger.debug(f"Attempting fallback to 'resultSets' for dataset: {expected_dataset_name}")
     if 'resultSets' in response_dict and isinstance(response_dict['resultSets'], list):
         for rs_item in response_dict['resultSets']:
@@ -112,7 +179,7 @@ def _extract_dataframe_from_response(
                  logger.warning(f"Single available result set for '{expected_dataset_name}' is malformed (missing rowSet/headers).")
         elif df.empty and len(response_dict['resultSets']) > 1: # Only log if still empty and multiple sets existed
             logger.warning(f"Dataset '{expected_dataset_name}' not found by name, and multiple result sets exist. Cannot reliably determine fallback beyond the first if it was also unnamed.")
-    
+
     if df.empty: # Log if still empty after all attempts
         logger.warning(f"Could not extract DataFrame for '{expected_dataset_name}' via direct access or 'resultSets' fallback.")
     return df
@@ -124,10 +191,12 @@ def fetch_league_season_matchups_logic(
     off_player_identifier: str,
     season: str = settings.CURRENT_NBA_SEASON,
     season_type: str = SeasonTypeAllStar.regular,
-    bypass_cache: bool = False
-) -> str:
+    bypass_cache: bool = False,
+    return_dataframe: bool = False
+) -> Union[str, Tuple[str, Dict[str, pd.DataFrame]]]:
     """
     Fetches season matchup statistics between two specific players.
+    Provides DataFrame output capabilities.
 
     Args:
         def_player_identifier: Name or ID of the defensive player.
@@ -135,25 +204,45 @@ def fetch_league_season_matchups_logic(
         season: NBA season in YYYY-YY format. Defaults to current.
         season_type: Type of season. Defaults to "Regular Season".
         bypass_cache: If True, ignores cached raw data. Defaults to False.
+        return_dataframe: Whether to return DataFrames along with the JSON response.
 
     Returns:
-        JSON string with matchup data or an error message.
+        If return_dataframe=False:
+            str: JSON string with matchup data or an error message.
+        If return_dataframe=True:
+            Tuple[str, Dict[str, pd.DataFrame]]: A tuple containing the JSON response string
+                                               and a dictionary of DataFrames.
     """
-    logger.info(f"Fetching season matchups: Def '{def_player_identifier}' vs Off '{off_player_identifier}' for {season}, Type: {season_type}")
+    logger.info(f"Fetching season matchups: Def '{def_player_identifier}' vs Off '{off_player_identifier}' for {season}, Type: {season_type}, return_dataframe: {return_dataframe}")
+
+    # Store DataFrames if requested
+    dataframes = {}
 
     if not def_player_identifier or not off_player_identifier:
-        return format_response(error=Errors.MISSING_PLAYER_IDENTIFIER)
+        error_response = format_response(error=Errors.MISSING_PLAYER_IDENTIFIER)
+        if return_dataframe:
+            return error_response, dataframes
+        return error_response
     if not season or not _validate_season_format(season):
-        return format_response(error=Errors.INVALID_SEASON_FORMAT.format(season=season))
+        error_response = format_response(error=Errors.INVALID_SEASON_FORMAT.format(season=season))
+        if return_dataframe:
+            return error_response, dataframes
+        return error_response
     if season_type not in _MATCHUP_VALID_SEASON_TYPES:
-        return format_response(error=Errors.INVALID_SEASON_TYPE.format(value=season_type, options=", ".join(list(_MATCHUP_VALID_SEASON_TYPES)[:5])))
+        error_response = format_response(error=Errors.INVALID_SEASON_TYPE.format(value=season_type, options=", ".join(list(_MATCHUP_VALID_SEASON_TYPES)[:5])))
+        if return_dataframe:
+            return error_response, dataframes
+        return error_response
 
     try:
         def_player_id_resolved, def_player_name_resolved = find_player_id_or_error(def_player_identifier)
         off_player_id_resolved, off_player_name_resolved = find_player_id_or_error(off_player_identifier)
     except (PlayerNotFoundError, ValueError) as e:
         logger.warning(f"Player ID lookup failed for matchups: {e}")
-        return format_response(error=str(e))
+        error_response = format_response(error=str(e))
+        if return_dataframe:
+            return error_response, dataframes
+        return error_response
 
     api_params = {
         "def_player_id_nullable": str(def_player_id_resolved),
@@ -179,21 +268,30 @@ def fetch_league_season_matchups_logic(
                  _get_cached_endpoint_dict(raw_data_cache_key, timestamp_bucket, LeagueSeasonMatchups, api_params)
         else:
             response_dict = _get_cached_endpoint_dict(raw_data_cache_key, timestamp_bucket, LeagueSeasonMatchups, api_params)
-        
+
         matchups_df = _extract_dataframe_from_response(response_dict, "SeasonMatchups", live_endpoint_instance)
 
         if matchups_df.empty:
             logger.warning(f"No matchup data found for Def {def_player_name_resolved} vs Off {off_player_name_resolved} in {season}.")
-            return format_response({
+            empty_response = {
                 "def_player_id": def_player_id_resolved, "def_player_name": def_player_name_resolved,
                 "off_player_id": off_player_id_resolved, "off_player_name": off_player_name_resolved,
                 "parameters": {"season": season, "season_type": season_type}, "matchups": []
-            })
+            }
+
+            if return_dataframe:
+                # Even if no matchups data, still return the empty DataFrame
+                dataframes["matchups"] = matchups_df
+                return format_response(empty_response), dataframes
+            return format_response(empty_response)
 
         matchups_list = _process_dataframe(matchups_df, single_row=False)
         if matchups_list is None:
             logger.error(f"DataFrame processing failed for season matchups Def {def_player_name_resolved} vs Off {off_player_name_resolved} ({season}).")
-            return format_response(error=Errors.MATCHUPS_PROCESSING)
+            error_response = format_response(error=Errors.MATCHUPS_PROCESSING)
+            if return_dataframe:
+                return error_response, dataframes
+            return error_response
 
         result_payload = {
             "def_player_id": def_player_id_resolved, "def_player_name": def_player_name_resolved,
@@ -201,37 +299,106 @@ def fetch_league_season_matchups_logic(
             "parameters": {"season": season, "season_type": season_type},
             "matchups": matchups_list or []
         }
+
+        # Store DataFrame if requested
+        if return_dataframe:
+            dataframes["matchups"] = matchups_df
+
+            # Save to CSV if not empty
+            if not matchups_df.empty:
+                csv_path = _get_csv_path_for_season_matchups(
+                    def_player_id=def_player_id_resolved,
+                    off_player_id=off_player_id_resolved,
+                    season=season,
+                    season_type=season_type
+                )
+                _save_dataframe_to_csv(matchups_df, csv_path)
+
+                # Add relative path to response
+                relative_path = get_relative_cache_path(
+                    os.path.basename(csv_path),
+                    "matchups"
+                )
+
+                result_payload["dataframe_info"] = {
+                    "message": "Season matchups data has been converted to DataFrame and saved as CSV file",
+                    "dataframes": {
+                        "matchups": {
+                            "shape": list(matchups_df.shape),
+                            "columns": matchups_df.columns.tolist(),
+                            "csv_path": relative_path
+                        }
+                    }
+                }
+
         logger.info(f"Successfully fetched season matchups for Def {def_player_name_resolved} vs Off {off_player_name_resolved}")
+
+        if return_dataframe:
+            return format_response(result_payload), dataframes
         return format_response(result_payload)
 
     except Exception as e:
         logger.error(f"Error fetching season matchups: {e}", exc_info=True)
-        return format_response(error=Errors.MATCHUPS_API.format(error=str(e)))
+        error_response = format_response(error=Errors.MATCHUPS_API.format(error=str(e)))
+        if return_dataframe:
+            return error_response, dataframes
+        return error_response
 
 @lru_cache(maxsize=MATCHUP_DATA_CACHE_SIZE)
 def fetch_matchups_rollup_logic(
     def_player_identifier: str,
     season: str = settings.CURRENT_NBA_SEASON,
     season_type: str = SeasonTypeAllStar.regular,
-    bypass_cache: bool = False
-) -> str:
+    bypass_cache: bool = False,
+    return_dataframe: bool = False
+) -> Union[str, Tuple[str, Dict[str, pd.DataFrame]]]:
     """
     Fetches matchup rollup statistics for a defensive player.
+    Provides DataFrame output capabilities.
+
+    Args:
+        def_player_identifier: Name or ID of the defensive player.
+        season: NBA season in YYYY-YY format. Defaults to current.
+        season_type: Type of season. Defaults to "Regular Season".
+        bypass_cache: If True, ignores cached raw data. Defaults to False.
+        return_dataframe: Whether to return DataFrames along with the JSON response.
+
+    Returns:
+        If return_dataframe=False:
+            str: JSON string with matchup rollup data or an error message.
+        If return_dataframe=True:
+            Tuple[str, Dict[str, pd.DataFrame]]: A tuple containing the JSON response string
+                                               and a dictionary of DataFrames.
     """
-    logger.info(f"Fetching matchup rollup for Def Player: '{def_player_identifier}' in {season}, Type: {season_type}")
+    logger.info(f"Fetching matchup rollup for Def Player: '{def_player_identifier}' in {season}, Type: {season_type}, return_dataframe: {return_dataframe}")
+
+    # Store DataFrames if requested
+    dataframes = {}
 
     if not def_player_identifier:
-        return format_response(error=Errors.MISSING_PLAYER_IDENTIFIER)
+        error_response = format_response(error=Errors.MISSING_PLAYER_IDENTIFIER)
+        if return_dataframe:
+            return error_response, dataframes
+        return error_response
     if not season or not _validate_season_format(season):
-        return format_response(error=Errors.INVALID_SEASON_FORMAT.format(season=season))
+        error_response = format_response(error=Errors.INVALID_SEASON_FORMAT.format(season=season))
+        if return_dataframe:
+            return error_response, dataframes
+        return error_response
     if season_type not in _MATCHUP_VALID_SEASON_TYPES:
-        return format_response(error=Errors.INVALID_SEASON_TYPE.format(value=season_type, options=", ".join(list(_MATCHUP_VALID_SEASON_TYPES)[:5])))
+        error_response = format_response(error=Errors.INVALID_SEASON_TYPE.format(value=season_type, options=", ".join(list(_MATCHUP_VALID_SEASON_TYPES)[:5])))
+        if return_dataframe:
+            return error_response, dataframes
+        return error_response
 
     try:
         def_player_id_resolved, def_player_name_resolved = find_player_id_or_error(def_player_identifier)
     except (PlayerNotFoundError, ValueError) as e:
         logger.warning(f"Player ID lookup failed for matchup rollup: {e}")
-        return format_response(error=str(e))
+        error_response = format_response(error=str(e))
+        if return_dataframe:
+            return error_response, dataframes
+        return error_response
 
     api_params = {
         "def_player_id_nullable": str(def_player_id_resolved),
@@ -254,29 +421,75 @@ def fetch_matchups_rollup_logic(
                  _get_cached_endpoint_dict(raw_data_cache_key, timestamp_bucket, MatchupsRollup, api_params)
         else:
             response_dict = _get_cached_endpoint_dict(raw_data_cache_key, timestamp_bucket, MatchupsRollup, api_params)
-        
+
         rollup_df = _extract_dataframe_from_response(response_dict, "MatchupsRollup", live_endpoint_instance)
 
         if rollup_df.empty:
             logger.warning(f"No matchup rollup data found for Def Player {def_player_name_resolved} in {season}.")
-            return format_response({
+            empty_response = {
                 "def_player_id": def_player_id_resolved, "def_player_name": def_player_name_resolved,
                 "parameters": {"season": season, "season_type": season_type}, "rollup": []
-            })
+            }
+
+            if return_dataframe:
+                # Even if no rollup data, still return the empty DataFrame
+                dataframes["rollup"] = rollup_df
+                return format_response(empty_response), dataframes
+            return format_response(empty_response)
 
         rollup_list = _process_dataframe(rollup_df, single_row=False)
         if rollup_list is None:
             logger.error(f"DataFrame processing failed for matchup rollup Def {def_player_name_resolved} ({season}).")
-            return format_response(error=Errors.MATCHUPS_ROLLUP_PROCESSING)
+            error_response = format_response(error=Errors.MATCHUPS_ROLLUP_PROCESSING)
+            if return_dataframe:
+                return error_response, dataframes
+            return error_response
 
         result_payload = {
             "def_player_id": def_player_id_resolved, "def_player_name": def_player_name_resolved,
             "parameters": {"season": season, "season_type": season_type},
             "rollup": rollup_list or []
         }
+
+        # Store DataFrame if requested
+        if return_dataframe:
+            dataframes["rollup"] = rollup_df
+
+            # Save to CSV if not empty
+            if not rollup_df.empty:
+                csv_path = _get_csv_path_for_matchups_rollup(
+                    def_player_id=def_player_id_resolved,
+                    season=season,
+                    season_type=season_type
+                )
+                _save_dataframe_to_csv(rollup_df, csv_path)
+
+                # Add relative path to response
+                relative_path = get_relative_cache_path(
+                    os.path.basename(csv_path),
+                    "matchups"
+                )
+
+                result_payload["dataframe_info"] = {
+                    "message": "Matchups rollup data has been converted to DataFrame and saved as CSV file",
+                    "dataframes": {
+                        "rollup": {
+                            "shape": list(rollup_df.shape),
+                            "columns": rollup_df.columns.tolist(),
+                            "csv_path": relative_path
+                        }
+                    }
+                }
+
         logger.info(f"Successfully fetched matchup rollup for Def Player {def_player_name_resolved}")
+
+        if return_dataframe:
+            return format_response(result_payload), dataframes
         return format_response(result_payload)
 
     except Exception as e:
         logger.error(f"Error fetching matchups rollup for Def Player {def_player_identifier}: {e}", exc_info=True)
-        return format_response(error=Errors.MATCHUPS_ROLLUP_API.format(error=str(e)))
+        error_response = format_response(error=Errors.MATCHUPS_ROLLUP_API.format(error=str(e)))
+        if return_dataframe:
+            return error_response, dataframes
+        return error_response
