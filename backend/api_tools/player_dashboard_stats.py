@@ -13,7 +13,8 @@ import pandas as pd
 from nba_api.stats.endpoints import (
     playerprofilev2,
     playerdashptshotdefend,
-    leaguehustlestatsplayer
+    leaguehustlestatsplayer,
+    PlayerFantasyProfile
 )
 from nba_api.stats.library.parameters import SeasonTypeAllStar, PerModeDetailed, PerMode36, LeagueID, PerModeSimple, PerModeTime
 from ..config import settings
@@ -595,3 +596,71 @@ def fetch_player_hustle_stats_logic(
     }
     logger.info(f"Successfully fetched hustle stats for {len(hustle_stats_list)} entries matching criteria.")
     return format_response(result)
+
+def fetch_player_fantasy_profile_logic(
+    player_name: str,
+    season: str,
+    per_mode: str = "Totals",
+    return_dataframe: bool = False
+) -> Union[str, Tuple[str, Dict[str, pd.DataFrame]]]:
+    """
+    Fetches fantasy profile stats for a player for a given season.
+    Args:
+        player_name: The name or ID of the player.
+        season: The NBA season (e.g., "2023-24").
+        per_mode: Statistical mode ("Totals", "PerGame", "Per36").
+        return_dataframe: Whether to return DataFrames along with the JSON response.
+    Returns:
+        If return_dataframe=False: JSON string with fantasy profile data or error.
+        If return_dataframe=True: Tuple of (JSON string, dict of DataFrames).
+    """
+    dataframes = {}
+    try:
+        player_id, player_actual_name = find_player_id_or_error(player_name)
+        endpoint = PlayerFantasyProfile(
+            player_id=player_id,
+            season=season,
+            per_mode36=per_mode,
+            measure_type_base="Base",
+            pace_adjust_no="N",
+            plus_minus_no="N",
+            rank_no="N",
+            timeout=settings.DEFAULT_TIMEOUT_SECONDS
+        )
+        # Dataset mapping from docs
+        dataset_map = {
+            "days_rest_modified": "DaysRestModified",
+            "last_n_games": "LastNGames",
+            "location": "Location",
+            "opponent": "Opponent",
+            "overall": "Overall"
+        }
+        for key, ds_name in dataset_map.items():
+            if hasattr(endpoint, ds_name):
+                df = getattr(endpoint, ds_name).get_data_frame()
+                dataframes[key] = df
+                # Save to CSV if not empty
+                if not df.empty:
+                    csv_path = get_cache_file_path(f"player_{player_id}_fantasy_{key}_{season}_{per_mode}.csv", "player_dashboard/fantasy")
+                    _save_dataframe_to_csv(df, csv_path)
+        # Prepare JSON response
+        response_data = {
+            "player_name": player_actual_name,
+            "player_id": player_id,
+            "season": season,
+            "per_mode": per_mode,
+            "fantasy_profile": {k: _process_dataframe(df, single_row=False) for k, df in dataframes.items()}
+        }
+        if return_dataframe:
+            return format_response(response_data), dataframes
+        return format_response(response_data)
+    except PlayerNotFoundError as e:
+        if return_dataframe:
+            return format_response(error=str(e)), dataframes
+        return format_response(error=str(e))
+    except Exception as e:
+        error_msg = f"Unexpected error in fetch_player_fantasy_profile_logic for '{player_name}': {e}"
+        logger.critical(error_msg, exc_info=True)
+        if return_dataframe:
+            return format_response(error=error_msg), dataframes
+        return format_response(error=error_msg)
