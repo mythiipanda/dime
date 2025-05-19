@@ -162,17 +162,36 @@ def test_fetch_team_stats_dataframe():
             print(f"\nDataFrame '{key}' shape: {df.shape}")
             print(f"DataFrame '{key}' columns: {df.columns.tolist()[:5]}...")  # Show first 5 columns
 
-    # Check if the CSV files were created
-    if os.path.exists(TEAM_GENERAL_CSV_DIR):
-        # Parse the JSON response to get the team name
-        data = json.loads(json_response)
-        team_name = data.get("team_name", SAMPLE_TEAM_NAME)
-        clean_team_name = team_name.lower().replace(" ", "_").replace(".", "")
+    # Parse the JSON response
+    data = json.loads(json_response)
 
-        csv_files = [f for f in os.listdir(TEAM_GENERAL_CSV_DIR) if f.startswith(clean_team_name)]
-        print(f"\nCSV files created: {len(csv_files)}")
-        if csv_files:
-            print(f"Sample CSV files: {csv_files[:2]}...")
+    # Check if the dataframe_info field exists
+    if "dataframe_info" in data:
+        print("\nDataFrame info found in response:")
+        print(f"Message: {data['dataframe_info'].get('message', 'N/A')}")
+
+        # Check if the CSV paths are included
+        for df_key, df_info in data["dataframe_info"].get("dataframes", {}).items():
+            csv_path = df_info.get("csv_path")
+            if csv_path:
+                full_path = os.path.join(backend_dir, csv_path)
+                if os.path.exists(full_path):
+                    print(f"\nCSV file exists: {csv_path}")
+                    csv_size = os.path.getsize(full_path)
+                    print(f"CSV file size: {csv_size} bytes")
+                else:
+                    print(f"\nCSV file does not exist: {csv_path}")
+    else:
+        # Check if the CSV files were created using the old method
+        if os.path.exists(TEAM_GENERAL_CSV_DIR):
+            # Get the team name from the response
+            team_name = data.get("team_name", SAMPLE_TEAM_NAME)
+            clean_team_name = team_name.lower().replace(" ", "_").replace(".", "")
+
+            csv_files = [f for f in os.listdir(TEAM_GENERAL_CSV_DIR) if f.startswith(clean_team_name)]
+            print(f"\nCSV files created: {len(csv_files)}")
+            if csv_files:
+                print(f"Sample CSV files: {csv_files[:2]}...")
 
     # Display a sample of one DataFrame if not empty
     for key, df in dataframes.items():
