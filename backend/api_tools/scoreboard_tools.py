@@ -1,9 +1,15 @@
+"""
+Handles fetching NBA scoreboard data for a specific date.
+Provides both JSON and DataFrame outputs with CSV caching.
+"""
 import logging
 import json
-from typing import Dict, List, Optional, Any, Tuple
+import os
+from typing import Dict, List, Optional, Any, Tuple, Union
 from datetime import date, datetime
 from functools import lru_cache
 from requests.exceptions import ReadTimeout, ConnectionError
+import pandas as pd
 
 from nba_api.live.nba.endpoints import ScoreBoard as LiveScoreBoard
 from nba_api.stats.endpoints import scoreboardv2
@@ -13,8 +19,14 @@ from ..config import settings
 from ..core.errors import Errors
 from .utils import format_response, _process_dataframe, retry_on_timeout
 from ..utils.validation import validate_date_format
+from ..utils.path_utils import get_cache_dir, get_cache_file_path, get_relative_cache_path
+
 logger = logging.getLogger(__name__)
 
+# --- Cache Directory Setup ---
+SCOREBOARD_CSV_DIR = get_cache_dir("scoreboard")
+
+# Cache TTL constants
 CACHE_TTL_SECONDS_LIVE = 60
 CACHE_TTL_SECONDS_STATIC = 3600 * 6
 
@@ -68,7 +80,7 @@ def get_cached_static_scoreboard_data(cache_key: Tuple, timestamp: str, **kwargs
         scoreboard_endpoint = scoreboardv2.ScoreboardV2(**kwargs, timeout=settings.DEFAULT_TIMEOUT_SECONDS) # Changed
         game_header_list = _process_dataframe(scoreboard_endpoint.game_header.get_data_frame(), single_row=False)
         line_score_list = _process_dataframe(scoreboard_endpoint.line_score.get_data_frame(), single_row=False)
-        
+
         # Ensure lists are returned even if processing results in None (e.g. due to empty df and processing error)
         return {
             "game_header": game_header_list if game_header_list is not None else [],
@@ -78,63 +90,81 @@ def get_cached_static_scoreboard_data(cache_key: Tuple, timestamp: str, **kwargs
         logger.error(f"ScoreboardV2 API call or processing failed for {kwargs.get('game_date')}: {e}", exc_info=True)
         raise e
 
-@lru_cache(maxsize=32)
-def fetch_scoreboard_data_logic(game_date: Optional[str] = None, league_id: str = LeagueID.nba, day_offset: int = 0, bypass_cache: bool = False) -> str:
+def fetch_scoreboard_data_logic(
+    game_date: Optional[str] = None,
+    league_id: str = LeagueID.nba,
+    day_offset: int = 0,
+    bypass_cache: bool = False,
+    return_dataframe: bool = False
+) -> Union[str, Tuple[str, Dict[str, pd.DataFrame]]]:
     """
     Fetches NBA scoreboard data for a specific date.
     Uses the live NBA API endpoint for the current date and the static ScoreboardV2 endpoint
     for past or future dates. Data is cached to minimize API calls.
 
+    Provides DataFrame output capabilities.
+
     Args:
-        game_date (str, optional): The date for the scoreboard in YYYY-MM-DD format.
-                                   Defaults to the current local date if None.
-        league_id (str, optional): The league ID. Valid values from `LeagueID` (e.g., "00" for NBA).
-                                   Defaults to "00" (NBA). This primarily applies to the static ScoreboardV2.
-        day_offset (int, optional): Day offset from `game_date` if `game_date` is also provided.
-                                    This primarily applies to the static ScoreboardV2. Defaults to 0.
-        bypass_cache (bool, optional): If True, ignores cached data and fetches fresh data. Defaults to False.
+        game_date: The date for the scoreboard in YYYY-MM-DD format.
+                   Defaults to the current local date if None.
+        league_id: The league ID. Valid values from `LeagueID` (e.g., "00" for NBA).
+                   Defaults to "00" (NBA). This primarily applies to the static ScoreboardV2.
+        day_offset: Day offset from `game_date` if `game_date` is also provided.
+                    This primarily applies to the static ScoreboardV2. Defaults to 0.
+        bypass_cache: If True, ignores cached data and fetches fresh data. Defaults to False.
+        return_dataframe: Whether to return DataFrames along with the JSON response.
 
     Returns:
-        str: JSON string containing formatted scoreboard data.
-             Expected dictionary structure passed to format_response:
-             {
-                 "gameDate": str (YYYY-MM-DD), // The target date for the scoreboard
-                 "games": [
-                     { // Structure for each game
-                         "gameId": str,
-                         "gameStatus": int, // 1: Scheduled, 2: In Progress, 3: Final
-                         "gameStatusText": str, // e.g., "7:00 PM ET", "Q2 5:30", "Final", "Halftime"
-                         "period": int, // Current period if game is live
-                         "gameClock": Optional[str], // Current game clock if game is live (e.g., "05:30")
-                         "homeTeam": {
-                             "teamId": int, "teamTricode": str, "score": int,
-                             "wins": Optional[int], "losses": Optional[int]
-                         },
-                         "awayTeam": {
-                             "teamId": int, "teamTricode": str, "score": int,
-                             "wins": Optional[int], "losses": Optional[int]
-                         },
-                         "gameEt": str // Game start time in Eastern Time (UTC for live, EST for static)
-                     }, ...
-                 ]
-             }
-             Returns {"games": []} if no games are found for the date.
-             Or an {'error': 'Error message'} object if a critical issue occurs.
+        If return_dataframe=False:
+            str: JSON string containing formatted scoreboard data.
+                 Expected dictionary structure passed to format_response:
+                 {
+                     "gameDate": str (YYYY-MM-DD), // The target date for the scoreboard
+                     "games": [
+                         { // Structure for each game
+                             "gameId": str,
+                             "gameStatus": int, // 1: Scheduled, 2: In Progress, 3: Final
+                             "gameStatusText": str, // e.g., "7:00 PM ET", "Q2 5:30", "Final", "Halftime"
+                             "period": int, // Current period if game is live
+                             "gameClock": Optional[str], // Current game clock if game is live (e.g., "05:30")
+                             "homeTeam": {
+                                 "teamId": int, "teamTricode": str, "score": int,
+                                 "wins": Optional[int], "losses": Optional[int]
+                             },
+                             "awayTeam": {
+                                 "teamId": int, "teamTricode": str, "score": int,
+                                 "wins": Optional[int], "losses": Optional[int]
+                             },
+                             "gameEt": str // Game start time in Eastern Time (UTC for live, EST for static)
+                         }, ...
+                     ]
+                 }
+                 Returns {"games": []} if no games are found for the date.
+                 Or an {'error': 'Error message'} object if a critical issue occurs.
+        If return_dataframe=True:
+            Tuple[str, Dict[str, pd.DataFrame]]: A tuple containing the JSON response string
+                                               and a dictionary of DataFrames.
     """
     effective_date_str = game_date if game_date is not None else date.today().strftime('%Y-%m-%d')
     # Explicitly log the date being used, especially when game_date is None
     if game_date is None:
         logger.info(f"fetch_scoreboard_data_logic: game_date is None, defaulting to effective_date_str (today's date): {effective_date_str}")
-    
+
     logger.info(f"Executing fetch_scoreboard_data_logic for Date: {effective_date_str}, League: {league_id}, Offset: {day_offset}, BypassCache: {bypass_cache}")
 
     if not validate_date_format(effective_date_str):
         logger.error(f"Invalid date format provided: {effective_date_str}. Use YYYY-MM-DD.")
-        return format_response(error=Errors.INVALID_DATE_FORMAT.format(date=effective_date_str))
+        error_response = format_response(error=Errors.INVALID_DATE_FORMAT.format(date=effective_date_str))
+        if return_dataframe:
+            return error_response, {}
+        return error_response
 
     VALID_LEAGUE_IDS = {getattr(LeagueID, lid) for lid in dir(LeagueID) if not lid.startswith('_') and isinstance(getattr(LeagueID, lid), str)}
     if league_id not in VALID_LEAGUE_IDS:
-        return format_response(error=Errors.INVALID_LEAGUE_ID.format(value=league_id, options=", ".join(VALID_LEAGUE_IDS)))
+        error_response = format_response(error=Errors.INVALID_LEAGUE_ID.format(value=league_id, options=", ".join(VALID_LEAGUE_IDS)))
+        if return_dataframe:
+            return error_response, {}
+        return error_response
 
     is_today_target = (effective_date_str == date.today().strftime('%Y-%m-%d') and day_offset == 0)
     formatted_games_list: List[Dict[str, Any]] = []
@@ -145,7 +175,7 @@ def fetch_scoreboard_data_logic(game_date: Optional[str] = None, league_id: str 
             # Live data for today
             cache_ts_live = datetime.now().replace(second=0, microsecond=0).isoformat() # Minute-level timestamp
             live_cache_key = "live_scoreboard_data"
-            
+
             raw_live_data: Dict[str, Any]
             if bypass_cache:
                 logger.info("Bypassing cache, fetching fresh live scoreboard data.")
@@ -157,7 +187,7 @@ def fetch_scoreboard_data_logic(game_date: Optional[str] = None, league_id: str 
             # Check if live data is stale
             live_api_game_date = raw_live_data.get('scoreboard', {}).get('gameDate')
             actual_current_date = date.today().strftime('%Y-%m-%d')
-            
+
             if live_api_game_date != actual_current_date:
                 logger.warning(f"Live scoreboard API returned stale data for date '{live_api_game_date}' when expecting '{actual_current_date}'. Forcing static fetch for today.")
                 force_static_fetch_for_today = True
@@ -176,7 +206,7 @@ def fetch_scoreboard_data_logic(game_date: Optional[str] = None, league_id: str 
                     if game_status_code == 2: # In Progress
                         if game_clock_live: game_status_str = f"Q{current_period_live} {game_clock_live}"
                         elif game_status_str != "Halftime": game_status_str = f"Q{current_period_live} In Progress"
-                    
+
                     formatted_games_list.append({
                         "gameId": game_item.get("gameId"), "gameStatus": game_status_code,
                         "gameStatusText": game_status_str, "period": current_period_live,
@@ -186,20 +216,20 @@ def fetch_scoreboard_data_logic(game_date: Optional[str] = None, league_id: str 
                         "gameEt": game_item.get("gameTimeUTC", "") # Live endpoint provides UTC
                     })
                 logger.info(f"Processed {len(formatted_games_list)} games from live scoreboard data for {effective_date_str}.")
-        
+
         if not is_today_target or force_static_fetch_for_today:
             date_for_static_fetch = actual_current_date if force_static_fetch_for_today else effective_date_str
             if force_static_fetch_for_today:
                  logger.info(f"Using static fetch for actual current date: {date_for_static_fetch} due to stale live feed.")
-            
+
             cache_ts_static = datetime.now().replace(minute=0, second=0, microsecond=0).isoformat()
             static_cache_key = ("static_scoreboard_data", date_for_static_fetch, league_id, day_offset) # Use date_for_static_fetch
             api_params_static = {"game_date": date_for_static_fetch, "league_id": league_id, "day_offset": day_offset} # Use date_for_static_fetch
-            
+
             processed_static_data: Dict[str, List[Dict[str, Any]]]
             if bypass_cache or force_static_fetch_for_today:
                 logger.info(f"Fetching fresh static scoreboard data for {date_for_static_fetch} (Bypass: {bypass_cache}, StaleLive: {force_static_fetch_for_today}).")
-                
+
                 def fetch_static_scoreboard():
                     # Use a slightly longer timeout for this specific potentially problematic call
                     endpoint = scoreboardv2.ScoreboardV2(**api_params_static, timeout=settings.DEFAULT_TIMEOUT_SECONDS + 15) # Increased timeout to 45s
@@ -212,10 +242,16 @@ def fetch_scoreboard_data_logic(game_date: Optional[str] = None, league_id: str 
                     processed_static_data = {"game_header": game_header_list or [], "line_score": line_score_list or []}
                 except (ReadTimeout, ConnectionError) as e: # Catch errors from retry_on_timeout if all retries fail
                     logger.error(f"Failed to fetch static scoreboard for {date_for_static_fetch} after retries: {e}", exc_info=True)
-                    return format_response(error=Errors.NBA_API_TIMEOUT.format(endpoint_name=f"ScoreboardV2 for {date_for_static_fetch}", details=str(e)))
+                    error_response = format_response(error=Errors.NBA_API_TIMEOUT.format(endpoint_name=f"ScoreboardV2 for {date_for_static_fetch}", details=str(e)))
+                    if return_dataframe:
+                        return error_response, {}
+                    return error_response
                 except Exception as e: # Catch other unexpected errors
                     logger.error(f"Unexpected error fetching/processing static scoreboard for {date_for_static_fetch}: {e}", exc_info=True)
-                    return format_response(error=Errors.NBA_API_GENERAL_ERROR.format(endpoint_name=f"ScoreboardV2 for {date_for_static_fetch}", details=str(e)))
+                    error_response = format_response(error=Errors.NBA_API_GENERAL_ERROR.format(endpoint_name=f"ScoreboardV2 for {date_for_static_fetch}", details=str(e)))
+                    if return_dataframe:
+                        return error_response, {}
+                    return error_response
 
             else:
                 # This is the cached path
@@ -234,7 +270,7 @@ def fetch_scoreboard_data_logic(game_date: Optional[str] = None, league_id: str 
                 header_static = game_headers_map.get(game_id_static)
                 if not game_id_static or not team_id_static or not header_static: continue
                 if game_id_static not in line_scores_by_game_map: line_scores_by_game_map[game_id_static] = {}
-                
+
                 team_key_static = 'homeTeam' if team_id_static == header_static.get('HOME_TEAM_ID') else 'awayTeam'
                 wins_static, losses_static = None, None
                 wl_record_static = ls_item.get('TEAM_WINS_LOSSES')
@@ -264,18 +300,111 @@ def fetch_scoreboard_data_logic(game_date: Optional[str] = None, league_id: str 
             logger.info(f"Processed {len(formatted_games_list)} games from static scoreboard data for {effective_date_str}.")
 
         final_result = {"gameDate": effective_date_str, "games": formatted_games_list}
+
+        # If DataFrame output is requested, create and save DataFrames
+        if return_dataframe:
+            # Create a DataFrame for the games
+            games_df = pd.DataFrame(formatted_games_list)
+
+            # Create separate DataFrames for home and away teams
+            home_teams_data = []
+            away_teams_data = []
+
+            for game in formatted_games_list:
+                game_id = game.get("gameId")
+
+                # Extract home team data
+                home_team = game.get("homeTeam", {})
+                if home_team:
+                    home_team_data = {
+                        "gameId": game_id,
+                        "teamId": home_team.get("teamId"),
+                        "teamTricode": home_team.get("teamTricode"),
+                        "score": home_team.get("score"),
+                        "wins": home_team.get("wins"),
+                        "losses": home_team.get("losses"),
+                        "isHome": True
+                    }
+                    home_teams_data.append(home_team_data)
+
+                # Extract away team data
+                away_team = game.get("awayTeam", {})
+                if away_team:
+                    away_team_data = {
+                        "gameId": game_id,
+                        "teamId": away_team.get("teamId"),
+                        "teamTricode": away_team.get("teamTricode"),
+                        "score": away_team.get("score"),
+                        "wins": away_team.get("wins"),
+                        "losses": away_team.get("losses"),
+                        "isHome": False
+                    }
+                    away_teams_data.append(away_team_data)
+
+            # Combine home and away teams into a single DataFrame
+            teams_df = pd.DataFrame(home_teams_data + away_teams_data)
+
+            # Save DataFrames to CSV
+            clean_date = effective_date_str.replace("-", "_")
+            games_csv_path = get_cache_file_path(f"scoreboard_games_{clean_date}.csv", "scoreboard")
+            teams_csv_path = get_cache_file_path(f"scoreboard_teams_{clean_date}.csv", "scoreboard")
+
+            if not games_df.empty:
+                games_df.to_csv(games_csv_path, index=False)
+
+            if not teams_df.empty:
+                teams_df.to_csv(teams_csv_path, index=False)
+
+            # Add DataFrame metadata to the response
+            games_relative_path = get_relative_cache_path(os.path.basename(games_csv_path), "scoreboard")
+            teams_relative_path = get_relative_cache_path(os.path.basename(teams_csv_path), "scoreboard")
+
+            final_result["dataframe_info"] = {
+                "message": "Scoreboard data has been converted to DataFrames and saved as CSV files",
+                "dataframes": {}
+            }
+
+            if not games_df.empty:
+                final_result["dataframe_info"]["dataframes"]["games"] = {
+                    "shape": list(games_df.shape),
+                    "columns": games_df.columns.tolist(),
+                    "csv_path": games_relative_path
+                }
+
+            if not teams_df.empty:
+                final_result["dataframe_info"]["dataframes"]["teams"] = {
+                    "shape": list(teams_df.shape),
+                    "columns": teams_df.columns.tolist(),
+                    "csv_path": teams_relative_path
+                }
+
+            # Return the JSON response and DataFrames
+            dataframes = {
+                "games": games_df,
+                "teams": teams_df
+            }
+
+            return format_response(final_result), dataframes
+
+        # Return just the JSON response if DataFrames are not requested
         return format_response(final_result)
 
     except ReadTimeout as e:
         logger.error(f"Global ReadTimeout in fetch_scoreboard_data_logic for {effective_date_str}: {e}", exc_info=True)
-        return format_response(error=Errors.NBA_API_TIMEOUT.format(endpoint_name=f"Scoreboard for {effective_date_str}", details=str(e)))
+        error_response = format_response(error=Errors.NBA_API_TIMEOUT.format(endpoint_name=f"Scoreboard for {effective_date_str}", details=str(e)))
+        if return_dataframe:
+            return error_response, {}
+        return error_response
     except ConnectionError as e:
         logger.error(f"Global ConnectionError in fetch_scoreboard_data_logic for {effective_date_str}: {e}", exc_info=True)
-        return format_response(error=Errors.NBA_API_CONNECTION_ERROR.format(endpoint_name=f"Scoreboard for {effective_date_str}", details=str(e)))
+        error_response = format_response(error=Errors.NBA_API_CONNECTION_ERROR.format(endpoint_name=f"Scoreboard for {effective_date_str}", details=str(e)))
+        if return_dataframe:
+            return error_response, {}
+        return error_response
     except Exception as e:
         logger.error(f"Unexpected error fetching/formatting scoreboard data for {effective_date_str}: {e}", exc_info=True)
         # Ensure a generic error is returned to the client
-        return format_response(error=Errors.UNEXPECTED_ERROR_SCOREBOARD.format(date=effective_date_str, error_details=str(e)))
-
-    # This final return should only be reached if no critical errors occurred that warranted an early error response.
-    return format_response(data=final_result)
+        error_response = format_response(error=Errors.UNEXPECTED_ERROR_SCOREBOARD.format(date=effective_date_str, error_details=str(e)))
+        if return_dataframe:
+            return error_response, {}
+        return error_response
