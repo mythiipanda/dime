@@ -1,5 +1,6 @@
 """
 Player comparison module for NBA player analysis.
+Provides both JSON and DataFrame outputs with CSV caching.
 """
 
 import logging
@@ -7,7 +8,7 @@ import os
 import json
 import base64
 from io import BytesIO
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Union, Tuple
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -15,18 +16,89 @@ import matplotlib.patches as mpatches
 from matplotlib.figure import Figure
 from nba_api.stats.endpoints import shotchartdetail
 from ..config import settings
-from .utils import find_player_id_or_error
+from .utils import find_player_id_or_error, format_response
 from .advanced_shot_charts import draw_court
+from ..utils.path_utils import get_cache_dir, get_cache_file_path, get_relative_cache_path
 
 logger = logging.getLogger(__name__)
+
+# --- Cache Directory Setup ---
+PLAYER_COMPARISON_CSV_DIR = get_cache_dir("player_comparison")
+
+# --- Helper Functions for CSV Caching ---
+def _save_dataframe_to_csv(df: pd.DataFrame, file_path: str) -> None:
+    """
+    Saves a DataFrame to a CSV file.
+
+    Args:
+        df: DataFrame to save
+        file_path: Path to save the CSV file
+    """
+    try:
+        df.to_csv(file_path, index=False)
+        logger.info(f"Saved DataFrame to CSV: {file_path}")
+    except Exception as e:
+        logger.error(f"Error saving DataFrame to CSV: {e}", exc_info=True)
+
+def _get_csv_path_for_player_shots(
+    player_id: str,
+    season: str,
+    season_type: str
+) -> str:
+    """
+    Generates a file path for saving player shot data DataFrame as CSV.
+
+    Args:
+        player_id: The player's ID
+        season: The season in YYYY-YY format
+        season_type: The season type (e.g., 'Regular Season', 'Playoffs')
+
+    Returns:
+        Path to the CSV file
+    """
+    # Clean season type for filename
+    clean_season_type = season_type.replace(" ", "_").lower()
+
+    return get_cache_file_path(
+        f"player_{player_id}_shots_{season}_{clean_season_type}.csv",
+        "player_comparison"
+    )
+
+def _get_csv_path_for_comparison(
+    player_ids: List[str],
+    season: str,
+    season_type: str
+) -> str:
+    """
+    Generates a file path for saving player comparison DataFrame as CSV.
+
+    Args:
+        player_ids: List of player IDs
+        season: The season in YYYY-YY format
+        season_type: The season type (e.g., 'Regular Season', 'Playoffs')
+
+    Returns:
+        Path to the CSV file
+    """
+    # Clean season type for filename
+    clean_season_type = season_type.replace(" ", "_").lower()
+
+    # Convert player IDs to strings and join for filename
+    player_ids_str = "_".join([str(player_id) for player_id in player_ids])
+
+    return get_cache_file_path(
+        f"comparison_{player_ids_str}_{season}_{clean_season_type}.csv",
+        "player_comparison"
+    )
 
 def compare_player_shots(
     player_names: List[str],
     season: str = settings.CURRENT_NBA_SEASON,
     season_type: str = "Regular Season",
     output_format: str = "base64",
-    chart_type: str = "scatter"
-) -> Dict[str, Any]:
+    chart_type: str = "scatter",
+    return_dataframe: bool = False
+) -> Union[Dict[str, Any], Tuple[Dict[str, Any], Dict[str, pd.DataFrame]]]:
     """
     Compare shot charts for multiple players.
 
@@ -36,26 +108,43 @@ def compare_player_shots(
         season_type: Type of season (Regular Season, Playoffs, etc.)
         output_format: Output format (base64, file)
         chart_type: Type of chart to create (scatter, heatmap, zones)
+        return_dataframe: Whether to return DataFrames along with the visualization data
 
     Returns:
-        Dict containing the visualization data and metadata
+        If return_dataframe=False:
+            Dict containing the visualization data and metadata
+        If return_dataframe=True:
+            Tuple[Dict[str, Any], Dict[str, pd.DataFrame]]: A tuple containing the visualization data
+                                                          and a dictionary of DataFrames
     """
+    # Store DataFrames if requested
+    dataframes = {}
+
     if len(player_names) < 2:
-        return {
+        error_response = {
             "error": "At least two players are required for comparison"
         }
+        if return_dataframe:
+            return error_response, dataframes
+        return error_response
 
     if len(player_names) > 4:
-        return {
+        error_response = {
             "error": "Maximum of 4 players can be compared at once"
         }
+        if return_dataframe:
+            return error_response, dataframes
+        return error_response
 
     try:
         # Get player data
         player_data = []
+        player_ids = []
+
         for player_name in player_names:
             # Get player ID
             player_id, player_actual_name = find_player_id_or_error(player_name)
+            player_ids.append(player_id)
 
             # Fetch shot chart data
             shotchart_endpoint = shotchartdetail.ShotChartDetail(
@@ -70,10 +159,27 @@ def compare_player_shots(
             shots_df = shotchart_endpoint.shot_chart_detail.get_data_frame()
             league_avg_df = shotchart_endpoint.league_averages.get_data_frame()
 
+            # Store DataFrames if requested
+            if return_dataframe:
+                dataframes[f"shots_{player_id}"] = shots_df
+                dataframes[f"league_avg_{player_id}"] = league_avg_df
+
+                # Save to CSV if not empty
+                if not shots_df.empty:
+                    csv_path = _get_csv_path_for_player_shots(
+                        player_id=player_id,
+                        season=season,
+                        season_type=season_type
+                    )
+                    _save_dataframe_to_csv(shots_df, csv_path)
+
             if shots_df.empty:
-                return {
+                error_response = {
                     "error": f"No shot data found for {player_actual_name} in {season} {season_type}"
                 }
+                if return_dataframe:
+                    return error_response, dataframes
+                return error_response
 
             # Process shot data
             shot_locations = []
@@ -126,23 +232,100 @@ def compare_player_shots(
                 "zone_breakdown": zone_breakdown
             })
 
+        # Create a combined DataFrame for all players if requested
+        if return_dataframe and len(player_data) > 0:
+            # Create a DataFrame with zone breakdown for all players
+            zone_data = []
+            for player in player_data:
+                for zone, stats in player["zone_breakdown"].items():
+                    zone_data.append({
+                        "player_id": player["player_id"],
+                        "player_name": player["player_name"],
+                        "zone": zone,
+                        "attempts": stats["attempts"],
+                        "made": stats["made"],
+                        "percentage": stats["percentage"],
+                        "league_percentage": stats["league_percentage"],
+                        "relative_percentage": stats["relative_percentage"]
+                    })
+
+            if zone_data:
+                zone_df = pd.DataFrame(zone_data)
+                dataframes["zone_breakdown"] = zone_df
+
+                # Save to CSV
+                csv_path = _get_csv_path_for_comparison(
+                    player_ids=player_ids,
+                    season=season,
+                    season_type=season_type
+                )
+                _save_dataframe_to_csv(zone_df, csv_path)
+
         # Create visualization based on chart type
+        result = None
         if chart_type == "scatter":
-            return create_comparison_scatter(player_data, season, season_type, output_format)
+            result = create_comparison_scatter(player_data, season, season_type, output_format)
         elif chart_type == "heatmap":
-            return create_comparison_heatmap(player_data, season, season_type, output_format)
+            result = create_comparison_heatmap(player_data, season, season_type, output_format)
         elif chart_type == "zones":
-            return create_comparison_zones(player_data, season, season_type, output_format)
+            result = create_comparison_zones(player_data, season, season_type, output_format)
         else:
-            return {
+            error_response = {
                 "error": f"Invalid chart type: {chart_type}. Valid types are: scatter, heatmap, zones"
             }
+            if return_dataframe:
+                return error_response, dataframes
+            return error_response
+
+        # Add DataFrame info to the result if requested
+        if return_dataframe:
+            # Add CSV paths to the result
+            csv_paths = {}
+            for player_id in player_ids:
+                csv_path = _get_csv_path_for_player_shots(
+                    player_id=player_id,
+                    season=season,
+                    season_type=season_type
+                )
+                csv_paths[f"shots_{player_id}"] = get_relative_cache_path(
+                    os.path.basename(csv_path),
+                    "player_comparison"
+                )
+
+            # Add comparison CSV path
+            comparison_csv_path = _get_csv_path_for_comparison(
+                player_ids=player_ids,
+                season=season,
+                season_type=season_type
+            )
+            csv_paths["zone_breakdown"] = get_relative_cache_path(
+                os.path.basename(comparison_csv_path),
+                "player_comparison"
+            )
+
+            result["dataframe_info"] = {
+                "message": "Player comparison data has been converted to DataFrames and saved as CSV files",
+                "dataframes": {
+                    name: {
+                        "shape": list(df.shape) if not df.empty else [],
+                        "columns": df.columns.tolist() if not df.empty else [],
+                        "csv_path": csv_paths.get(name, "")
+                    } for name, df in dataframes.items() if not df.empty
+                }
+            }
+
+            return result, dataframes
+
+        return result
 
     except Exception as e:
         logger.error(f"Error comparing player shots: {str(e)}", exc_info=True)
-        return {
+        error_response = {
             "error": f"Failed to compare player shots: {str(e)}"
         }
+        if return_dataframe:
+            return error_response, dataframes
+        return error_response
 
 def create_comparison_scatter(
     player_data: List[Dict[str, Any]],
