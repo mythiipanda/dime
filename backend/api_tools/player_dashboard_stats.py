@@ -1,10 +1,12 @@
 """
 Handles fetching various player dashboard statistics including profile,
 defensive stats, and hustle stats.
+Provides both JSON and DataFrame outputs with CSV caching.
 """
+import os
 import logging
 import json
-from typing import Optional, List, Dict, Any, Set
+from typing import Optional, List, Dict, Any, Set, Union, Tuple
 from functools import lru_cache
 import pandas as pd
 
@@ -24,6 +26,7 @@ from .utils import (
 )
 from ..utils.validation import _validate_season_format, validate_date_format
 from .player_common_info import fetch_player_info_logic
+from ..utils.path_utils import get_cache_dir, get_cache_file_path, get_relative_cache_path
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +37,12 @@ PLAYER_HUSTLE_CACHE_SIZE = 64
 MAX_LEAGUE_WIDE_HUSTLE_RESULTS = 200
 NBA_API_DEFAULT_TEAM_ID_ALL = 0 # Standard value for 'all teams' or no specific team filter
 
+# --- Cache Directory Setup ---
+PLAYER_DASHBOARD_CSV_DIR = get_cache_dir("player_dashboard")
+PLAYER_PROFILE_CSV_DIR = get_cache_dir("player_dashboard/profile")
+PLAYER_DEFENSE_CSV_DIR = get_cache_dir("player_dashboard/defense")
+PLAYER_HUSTLE_CSV_DIR = get_cache_dir("player_dashboard/hustle")
+
 # Validation sets for parameters
 _VALID_PER_MODES_PROFILE: Set[str] = {getattr(PerModeDetailed, attr) for attr in dir(PerModeDetailed) if not attr.startswith('_') and isinstance(getattr(PerModeDetailed, attr), str)}
 _VALID_PER_MODES_PROFILE.update({getattr(PerMode36, attr) for attr in dir(PerMode36) if not attr.startswith('_') and isinstance(getattr(PerMode36, attr), str)})
@@ -43,6 +52,106 @@ _VALID_PLAYER_DASHBOARD_SEASON_TYPES: Set[str] = {getattr(SeasonTypeAllStar, att
 _VALID_DEFENSE_PER_MODES: Set[str] = {getattr(PerModeSimple, attr) for attr in dir(PerModeSimple) if not attr.startswith('_') and isinstance(getattr(PerModeSimple, attr), str)}
 
 _VALID_HUSTLE_PER_MODES: Set[str] = {getattr(PerModeTime, attr) for attr in dir(PerModeTime) if not attr.startswith('_') and isinstance(getattr(PerModeTime, attr), str)}
+
+# --- Helper Functions for CSV Caching ---
+def _save_dataframe_to_csv(df: pd.DataFrame, file_path: str) -> None:
+    """
+    Saves a DataFrame to a CSV file.
+
+    Args:
+        df: DataFrame to save
+        file_path: Path to save the CSV file
+    """
+    try:
+        df.to_csv(file_path, index=False)
+        logger.info(f"Saved DataFrame to CSV: {file_path}")
+    except Exception as e:
+        logger.error(f"Error saving DataFrame to CSV: {e}", exc_info=True)
+
+def _get_csv_path_for_player_profile(player_id: str, per_mode: str) -> str:
+    """
+    Generates a file path for saving player profile DataFrame as CSV.
+
+    Args:
+        player_id: The player's ID
+        per_mode: The per mode (e.g., 'PerGame', 'Totals')
+
+    Returns:
+        Path to the CSV file
+    """
+    # Clean per mode for filename
+    clean_per_mode = per_mode.replace(" ", "_").lower()
+
+    return get_cache_file_path(f"player_{player_id}_profile_{clean_per_mode}.csv", "player_dashboard/profile")
+
+def _get_csv_path_for_player_defense(
+    player_id: str,
+    season: str,
+    season_type: str,
+    per_mode: str,
+    opponent_team_id: int
+) -> str:
+    """
+    Generates a file path for saving player defense DataFrame as CSV.
+
+    Args:
+        player_id: The player's ID
+        season: The season in YYYY-YY format
+        season_type: The season type (e.g., 'Regular Season', 'Playoffs')
+        per_mode: The per mode (e.g., 'PerGame', 'Totals')
+        opponent_team_id: The opponent team ID
+
+    Returns:
+        Path to the CSV file
+    """
+    # Clean season type for filename
+    clean_season_type = season_type.replace(" ", "_").lower()
+
+    # Clean per mode for filename
+    clean_per_mode = per_mode.replace(" ", "_").lower()
+
+    return get_cache_file_path(
+        f"player_{player_id}_defense_{season}_{clean_season_type}_{clean_per_mode}_{opponent_team_id}.csv",
+        "player_dashboard/defense"
+    )
+
+def _get_csv_path_for_player_hustle(
+    season: str,
+    season_type: str,
+    per_mode: str,
+    player_id: Optional[str] = None,
+    team_id: Optional[int] = None,
+    league_id: str = LeagueID.nba
+) -> str:
+    """
+    Generates a file path for saving player hustle DataFrame as CSV.
+
+    Args:
+        season: The season in YYYY-YY format
+        season_type: The season type (e.g., 'Regular Season', 'Playoffs')
+        per_mode: The per mode (e.g., 'PerGame', 'Totals')
+        player_id: The player's ID (optional)
+        team_id: The team ID (optional)
+        league_id: The league ID (e.g., '00' for NBA)
+
+    Returns:
+        Path to the CSV file
+    """
+    # Clean season type for filename
+    clean_season_type = season_type.replace(" ", "_").lower()
+
+    # Clean per mode for filename
+    clean_per_mode = per_mode.replace(" ", "_").lower()
+
+    # Create filename based on filters
+    if player_id:
+        filename = f"player_{player_id}_hustle_{season}_{clean_season_type}_{clean_per_mode}.csv"
+    elif team_id:
+        filename = f"team_{team_id}_hustle_{season}_{clean_season_type}_{clean_per_mode}.csv"
+    else:
+        filename = f"league_{league_id}_hustle_{season}_{clean_season_type}_{clean_per_mode}.csv"
+
+    return get_cache_file_path(filename, "player_dashboard/hustle")
 
 # --- Helper for Parameter Validation ---
 def _validate_common_dashboard_params(
@@ -64,30 +173,45 @@ def _validate_common_dashboard_params(
     return None
 
 # --- Logic Functions ---
-@lru_cache(maxsize=PLAYER_PROFILE_CACHE_SIZE)
-def fetch_player_profile_logic(player_name: str, per_mode: Optional[str] = PerModeDetailed.per_game) -> str:
+def fetch_player_profile_logic(
+    player_name: str,
+    per_mode: Optional[str] = PerModeDetailed.per_game,
+    return_dataframe: bool = False
+) -> Union[str, Tuple[str, Dict[str, pd.DataFrame]]]:
     """
     Fetches comprehensive player profile information including career stats, season stats,
     highs, and next game details.
+    Provides DataFrame output capabilities.
 
     Args:
         player_name (str): The name or ID of the player.
         per_mode (str, optional): Statistical mode for career/season stats (e.g., "PerGame").
                                   Defaults to "PerGame".
+        return_dataframe (bool, optional): Whether to return DataFrames along with the JSON response.
+                                          Defaults to False.
 
     Returns:
-        str: A JSON string containing the player's profile data or an error message.
+        If return_dataframe=False:
+            str: A JSON string containing the player's profile data or an error message.
+        If return_dataframe=True:
+            Tuple[str, Dict[str, pd.DataFrame]]: A tuple containing the JSON response string
+                                               and a dictionary of DataFrames.
     """
+    # Store DataFrames if requested
+    dataframes = {}
+
     effective_per_mode = per_mode
     if effective_per_mode is None or effective_per_mode == "None":
         effective_per_mode = PerModeDetailed.per_game
         logger.info(f"per_mode was None or 'None', defaulting to {effective_per_mode} for {player_name}")
-    
-    logger.info(f"Executing fetch_player_profile_logic for: '{player_name}', Effective PerMode: {effective_per_mode}")
+
+    logger.info(f"Executing fetch_player_profile_logic for: '{player_name}', Effective PerMode: {effective_per_mode}, return_dataframe={return_dataframe}")
 
     if effective_per_mode not in _VALID_PER_MODES_PROFILE:
         error_msg = Errors.INVALID_PER_MODE.format(value=effective_per_mode, options=", ".join(list(_VALID_PER_MODES_PROFILE)[:5]))
         logger.warning(error_msg)
+        if return_dataframe:
+            return format_response(error=error_msg), dataframes
         return format_response(error=error_msg)
 
     try:
@@ -97,12 +221,16 @@ def fetch_player_profile_logic(player_name: str, per_mode: Optional[str] = PerMo
 
         if "error" in player_info_data:
             logger.error(f"Failed to get common player info for {player_actual_name} within profile fetch: {player_info_data['error']}")
+            if return_dataframe:
+                return format_response(error=player_info_data['error']), dataframes
             return format_response(error=player_info_data['error'])
-        
+
         player_info_dict = player_info_data.get("player_info", {})
         if not player_info_dict:
              logger.error(f"Common player info was empty for {player_actual_name} within profile fetch.")
              error_msg = Errors.PLAYER_INFO_PROCESSING.format(identifier=player_actual_name)
+             if return_dataframe:
+                 return format_response(error=error_msg), dataframes
              return format_response(error=error_msg)
 
         logger.debug(f"Fetching playerprofilev2 for ID: {player_id}, PerMode: {effective_per_mode}")
@@ -117,6 +245,8 @@ def fetch_player_profile_logic(player_name: str, per_mode: Optional[str] = PerMo
                 raw_response_text = profile_endpoint.nba_response._response
                 logger.error(f"Raw NBA API response that caused JSONDecodeError (first 500 chars): {raw_response_text[:500] if raw_response_text else 'N/A'}")
             error_msg = Errors.PLAYER_PROFILE_API.format(identifier=player_actual_name, error=str(api_error))
+            if return_dataframe:
+                return format_response(error=error_msg), dataframes
             return format_response(error=error_msg)
 
         def get_df_safe(dataset_name: str) -> pd.DataFrame:
@@ -136,10 +266,37 @@ def fetch_player_profile_logic(player_name: str, per_mode: Optional[str] = PerMo
         career_highs_df = get_df_safe('career_highs')
         next_game_df = get_df_safe('next_game')
 
+        # Save DataFrames if requested
+        if return_dataframe:
+            dataframes["career_totals_regular_season"] = career_totals_rs_df
+            dataframes["season_totals_regular_season"] = season_totals_rs_df
+            dataframes["career_totals_post_season"] = career_totals_ps_df
+            dataframes["season_totals_post_season"] = season_totals_ps_df
+            dataframes["season_highs"] = season_highs_df
+            dataframes["career_highs"] = career_highs_df
+            dataframes["next_game"] = next_game_df
+
+            # Save to CSV if not empty
+            if not career_totals_rs_df.empty:
+                csv_path = _get_csv_path_for_player_profile(player_id, effective_per_mode)
+                _save_dataframe_to_csv(career_totals_rs_df, csv_path)
+
+            if not season_totals_rs_df.empty:
+                csv_path = get_cache_file_path(f"player_{player_id}_season_totals_rs_{effective_per_mode.replace(' ', '_').lower()}.csv", "player_dashboard/profile")
+                _save_dataframe_to_csv(season_totals_rs_df, csv_path)
+
+            if not career_totals_ps_df.empty:
+                csv_path = get_cache_file_path(f"player_{player_id}_career_totals_ps_{effective_per_mode.replace(' ', '_').lower()}.csv", "player_dashboard/profile")
+                _save_dataframe_to_csv(career_totals_ps_df, csv_path)
+
+            if not season_totals_ps_df.empty:
+                csv_path = get_cache_file_path(f"player_{player_id}_season_totals_ps_{effective_per_mode.replace(' ', '_').lower()}.csv", "player_dashboard/profile")
+                _save_dataframe_to_csv(season_totals_ps_df, csv_path)
+
         season_highs_dict = _process_dataframe(season_highs_df, single_row=True)
         career_highs_dict = _process_dataframe(career_highs_df, single_row=True)
         next_game_dict = _process_dataframe(next_game_df, single_row=True)
-        
+
         career_totals_rs = _process_dataframe(career_totals_rs_df, single_row=True)
         season_totals_rs_list = _process_dataframe(season_totals_rs_df, single_row=False)
         career_totals_ps = _process_dataframe(career_totals_ps_df, single_row=True)
@@ -148,10 +305,12 @@ def fetch_player_profile_logic(player_name: str, per_mode: Optional[str] = PerMo
         if career_totals_rs is None or season_totals_rs_list is None:
             logger.error(f"Essential profile data (regular season totals) processing failed for {player_actual_name}.")
             error_msg = Errors.PLAYER_PROFILE_PROCESSING.format(identifier=player_actual_name)
+            if return_dataframe:
+                return format_response(error=error_msg), dataframes
             return format_response(error=error_msg)
-        
+
         logger.info(f"fetch_player_profile_logic completed for '{player_actual_name}'")
-        return format_response({
+        response_data = {
             "player_name": player_actual_name, "player_id": player_id,
             "player_info": player_info_dict or {},
             "per_mode_requested": effective_per_mode,
@@ -166,16 +325,44 @@ def fetch_player_profile_logic(player_name: str, per_mode: Optional[str] = PerMo
                 "regular_season": season_totals_rs_list or [],
                 "post_season": season_totals_ps_list or []
             }
-        })
+        }
+
+        if return_dataframe:
+            # Add DataFrame info to the response
+            response_data["dataframe_info"] = {
+                "message": "Player profile data has been converted to DataFrames and saved as CSV files",
+                "dataframes": {
+                    "career_totals_regular_season": {
+                        "shape": list(career_totals_rs_df.shape) if not career_totals_rs_df.empty else [],
+                        "columns": career_totals_rs_df.columns.tolist() if not career_totals_rs_df.empty else [],
+                        "csv_path": get_relative_cache_path(f"player_{player_id}_profile_{effective_per_mode.replace(' ', '_').lower()}.csv", "player_dashboard/profile")
+                    },
+                    "season_totals_regular_season": {
+                        "shape": list(season_totals_rs_df.shape) if not season_totals_rs_df.empty else [],
+                        "columns": season_totals_rs_df.columns.tolist() if not season_totals_rs_df.empty else [],
+                        "csv_path": get_relative_cache_path(f"player_{player_id}_season_totals_rs_{effective_per_mode.replace(' ', '_').lower()}.csv", "player_dashboard/profile")
+                    }
+                }
+            }
+
+            return format_response(response_data), dataframes
+
+        return format_response(response_data)
     except PlayerNotFoundError as e:
         logger.warning(f"PlayerNotFoundError in fetch_player_profile_logic: {e}")
+        if return_dataframe:
+            return format_response(error=str(e)), dataframes
         return format_response(error=str(e))
     except ValueError as e:
         logger.warning(f"ValueError in fetch_player_profile_logic: {e}")
+        if return_dataframe:
+            return format_response(error=str(e)), dataframes
         return format_response(error=str(e))
     except Exception as e:
         logger.critical(f"Unexpected error in fetch_player_profile_logic for '{player_name}': {e}", exc_info=True)
         error_msg = Errors.PLAYER_PROFILE_UNEXPECTED.format(identifier=player_name, error=str(e))
+        if return_dataframe:
+            return format_response(error=error_msg), dataframes
         return format_response(error=error_msg)
 
 @lru_cache(maxsize=PLAYER_DEFENSE_CACHE_SIZE)
@@ -334,7 +521,7 @@ def fetch_player_hustle_stats_logic(
     param_error = _validate_common_dashboard_params(season, season_type, _VALID_PLAYER_DASHBOARD_SEASON_TYPES, date_from, date_to)
     if param_error:
         return format_response(error=param_error)
-    
+
     if per_mode not in _VALID_HUSTLE_PER_MODES:
         error_msg = Errors.INVALID_PER_MODE.format(value=per_mode, options=", ".join(list(_VALID_HUSTLE_PER_MODES)[:5]))
         logger.warning(error_msg)
