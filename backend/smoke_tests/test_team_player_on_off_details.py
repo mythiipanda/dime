@@ -26,12 +26,13 @@ SAMPLE_TEAM_ID = "1610612744"
 SAMPLE_SEASON = "2022-23" # A season with known data
 ALT_SEASON = "2021-22"
 NON_EXISTENT_TEAM = "Non Existent Team FC"
-# ERROR_SIM_TEAM = "Error Sim Team" # Placeholder for monkeypatching - not strictly needed if monkeypatching the endpoint directly
 
 def test_fetch_team_player_on_off_details_basic():
     """Test basic fetching of team player on/off details."""
     print(f"\n=== Testing fetch_team_player_on_off_details_logic (basic) for {SAMPLE_TEAM}, {SAMPLE_SEASON} ===")
     json_response = fetch_team_player_on_off_details_logic(SAMPLE_TEAM, SAMPLE_SEASON)
+    print("\n=== RAW JSON RESPONSE (BASIC) ===")
+    print(json_response)
     data = json.loads(json_response)
     assert isinstance(data, dict), "Response should be a dictionary"
     if "error" in data:
@@ -75,9 +76,6 @@ def test_fetch_team_player_on_off_details_dataframe():
             if not df.empty: print(df.head(1))
     else:
         print(f"API Error, DataFrames might be empty or not as expected: {data['error']}")
-        # For pre-API validation errors, dataframes should be an empty dict.
-        # For API errors after validation, it could be non-empty if some data was processed before error.
-        # The core logic ensures dataframes is initialized to {} and returned as such with error before API call
         if any(err_msg_part in data['error'] for err_msg_part in [
             Errors.TEAM_IDENTIFIER_EMPTY,
             "season format", "date format", "season type", "per mode", "measure type", "league_id",
@@ -114,6 +112,8 @@ def test_all_optional_parameters_set():
         date_from_nullable="2022-04-01",
         date_to_nullable="2022-04-30"
     )
+    print("\n=== RAW JSON RESPONSE (ALL OPTIONALS) ===")
+    print(json_response)
     data = json.loads(json_response)
     assert isinstance(data, dict)
     if "error" in data:
@@ -123,8 +123,24 @@ def test_all_optional_parameters_set():
         assert params["season"] == ALT_SEASON
         assert params["season_type_all_star"] == SeasonTypeAllStar.playoffs
         assert params["per_mode_detailed"] == PerModeDetailed.per_game
-        # ... (add more assertions for other params if crucial)
-        print("Successfully called with all optional parameters.")
+        assert params["measure_type_detailed_defense"] == MeasureTypeDetailedDefense.advanced
+        assert params["last_n_games"] == 5
+        assert params["month"] == 4
+        assert params["opponent_team_id"] == 1610612738
+        assert params["pace_adjust"] == "Y"
+        assert params["period"] == 1
+        assert params["plus_minus"] == "Y"
+        assert params["rank"] == "Y"
+        assert params["vs_division_nullable"] == "Pacific"
+        assert params["vs_conference_nullable"] == "West"
+        assert params["season_segment_nullable"] == "Post All-Star"
+        assert params["outcome_nullable"] == "W"
+        assert params["location_nullable"] == "Home"
+        assert params["league_id_nullable"] == LeagueID.nba
+        assert params["game_segment_nullable"] == "First Half"
+        assert params["date_from_nullable"] == "2022-04-01"
+        assert params["date_to_nullable"] == "2022-04-30"
+        print("Successfully called with all optional parameters and validated parameters in response (data presence not strictly asserted for this specific combination).")
     print("=== All optional parameters test completed ===")
 
 def run_validation_error_test(test_name, logic_kwargs, expected_error_substring):
@@ -168,9 +184,6 @@ def test_team_not_found():
     print("=== Team Not Found test completed ===")
 
 def test_empty_results_scenario():
-    # Use a very old season or unlikely combination to try and get empty results
-    # Note: The API might still return team shells or metadata.
-    # The goal is to ensure it handles cases where data arrays are empty.
     print(f"\n=== Testing scenario likely to yield empty or minimal results (e.g., old season {SAMPLE_TEAM}, 1950-51) ===")
     json_response = fetch_team_player_on_off_details_logic(SAMPLE_TEAM, "1950-51") 
     data = json.loads(json_response)
@@ -181,32 +194,22 @@ def test_empty_results_scenario():
         assert "overall_team_player_on_off_details" in data and isinstance(data["overall_team_player_on_off_details"], list)
         assert "players_off_court_team_player_on_off_details" in data and isinstance(data["players_off_court_team_player_on_off_details"], list)
         assert "players_on_court_team_player_on_off_details" in data and isinstance(data["players_on_court_team_player_on_off_details"], list)
-        # It's possible overall_team_player_on_off_details has one entry for the team itself, even if players lists are empty
         print(f"Overall details count: {len(data['overall_team_player_on_off_details'])}")
         print(f"Off-court details count: {len(data['players_off_court_team_player_on_off_details'])}")
         print(f"On-court details count: {len(data['players_on_court_team_player_on_off_details'])}")
-        # Assert that player-specific lists are empty if the overall team context doesn't make sense for players (e.g. team didn't exist)
-        # This specific check might need adjustment based on actual API behavior for such old seasons.
-        # For now, we just check that the structure is correct and lists are present.
     print("=== Empty results scenario test completed ===")
 
 def test_api_error_simulation(monkeypatch):
     print("\n=== Testing API error simulation ===")
     
-    # Store the original endpoint class
     original_endpoint_class = sys.modules['nba_api.stats.endpoints.teamplayeronoffdetails'].TeamPlayerOnOffDetails
 
     class MockTeamPlayerOnOffDetails:
         def __init__(self, *args, **kwargs):
-            # Simulate an API error during endpoint instantiation or a subsequent call
             raise Exception("Simulated NBA API internal server error during instantiation or call")
 
-        # Mock the result set attributes expected by the logic
         @property
         def overall_team_player_on_off_details(self):
-            # In a real scenario where instantiation might succeed but data fetching fails,
-            # this mock would need a get_data_frame method raising an error.
-            # For simplicity, if __init__ raises, these won't be called.
             raise NotImplementedError("This should not be called if __init__ fails")
 
         @property
@@ -217,7 +220,6 @@ def test_api_error_simulation(monkeypatch):
         def players_on_court_team_player_on_off_details(self):
             raise NotImplementedError("This should not be called if __init__ fails")
 
-    # Temporarily replace the real endpoint with our mock
     monkeypatch.setattr("nba_api.stats.endpoints.teamplayeronoffdetails.TeamPlayerOnOffDetails", MockTeamPlayerOnOffDetails)
     
     json_response = fetch_team_player_on_off_details_logic(SAMPLE_TEAM, SAMPLE_SEASON)
@@ -228,15 +230,9 @@ def test_api_error_simulation(monkeypatch):
         f"Error message should contain the simulated error, but got: {data['error']}"
     print(f"Simulated API error handled: {data['error']}")
     
-    # Restore the original class to avoid affecting other tests if run in the same session
-    # monkeypatch usually handles this, but good to be explicit if needed in other contexts.
-    # sys.modules['nba_api.stats.endpoints.teamplayeronoffdetails'].TeamPlayerOnOffDetails = original_endpoint_class
-
     print("=== API error simulation test completed ===")
 
 if __name__ == "__main__":
-    # This allows running the test script directly, though pytest is preferred.
-    # Note: monkeypatching might behave differently or require pytest to run.
     print("Running tests directly (pytest is recommended for full functionality like monkeypatching)...")
     test_fetch_team_player_on_off_details_basic()
     test_fetch_team_player_on_off_details_dataframe()
@@ -244,7 +240,5 @@ if __name__ == "__main__":
     test_validation_errors()
     test_team_not_found()
     test_empty_results_scenario()
-    # For test_api_error_simulation, it's best to run with pytest:
-    # pytest backend/smoke_tests/test_team_player_on_off_details.py -k test_api_error_simulation -s
     print("\nTo run the API error simulation, use: pytest backend/smoke_tests/test_team_player_on_off_details.py -k test_api_error_simulation -s")
     print("\nAll direct tests finished.") 
