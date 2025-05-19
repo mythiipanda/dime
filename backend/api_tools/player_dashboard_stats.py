@@ -13,7 +13,8 @@ import pandas as pd
 from nba_api.stats.endpoints import (
     playerprofilev2,
     playerdashptshotdefend,
-    leaguehustlestatsplayer
+    leaguehustlestatsplayer,
+    commonplayerinfo
 )
 from nba_api.stats.library.parameters import SeasonTypeAllStar, PerModeDetailed, PerMode36, LeagueID, PerModeSimple, PerModeTime
 from ..config import settings
@@ -291,10 +292,24 @@ def fetch_player_profile_logic(
                 return format_response(error=error_msg), dataframes
             return format_response(error=error_msg)
 
+        # Fetch player info from commonplayerinfo endpoint
+        try:
+            logger.debug(f"Fetching commonplayerinfo for player ID: {player_id} ({player_actual_name})")
+            info_endpoint = commonplayerinfo.CommonPlayerInfo(player_id=player_id, timeout=settings.DEFAULT_TIMEOUT_SECONDS)
+            player_info_df = info_endpoint.common_player_info.get_data_frame()
+            player_info_dict = _process_dataframe(player_info_df, single_row=True)
+
+            if player_info_dict is None:
+                logger.warning(f"Failed to process player info for {player_actual_name}. Using empty dict.")
+                player_info_dict = {}
+        except Exception as info_error:
+            logger.error(f"Error fetching commonplayerinfo for {player_actual_name}: {info_error}", exc_info=True)
+            player_info_dict = {}
+
         logger.info(f"fetch_player_profile_logic completed for '{player_actual_name}'")
         response_data = {
             "player_name": player_actual_name, "player_id": player_id,
-            "player_info": {},
+            "player_info": player_info_dict,
             "per_mode_requested": effective_per_mode,
             "career_highs": career_highs_dict or {},
             "season_highs": season_highs_dict or {},
@@ -314,6 +329,11 @@ def fetch_player_profile_logic(
             response_data["dataframe_info"] = {
                 "message": "Player profile data has been converted to DataFrames and saved as CSV files",
                 "dataframes": {
+                    "player_info": {
+                        "shape": list(player_info_df.shape) if 'player_info_df' in locals() and not player_info_df.empty else [],
+                        "columns": player_info_df.columns.tolist() if 'player_info_df' in locals() and not player_info_df.empty else [],
+                        "csv_path": get_relative_cache_path(f"player_{player_id}_info.csv", "player_dashboard/profile")
+                    },
                     "career_totals_regular_season": {
                         "shape": list(career_totals_rs_df.shape) if not career_totals_rs_df.empty else [],
                         "columns": career_totals_rs_df.columns.tolist() if not career_totals_rs_df.empty else [],
@@ -326,6 +346,15 @@ def fetch_player_profile_logic(
                     }
                 }
             }
+
+            # Add player_info DataFrame to the dataframes dictionary if available
+            if 'player_info_df' in locals() and not player_info_df.empty:
+                dataframes["player_info"] = player_info_df
+
+            # Save player_info DataFrame to CSV if available
+            if 'player_info_df' in locals() and not player_info_df.empty:
+                csv_path = get_cache_file_path(f"player_{player_id}_info.csv", "player_dashboard/profile")
+                _save_dataframe_to_csv(player_info_df, csv_path)
 
             return format_response(response_data), dataframes
 
@@ -540,12 +569,12 @@ def fetch_player_hustle_stats_logic(
             logger.warning(f"Player not found for hustle stats: {e}")
             if return_dataframe: return format_response(error=str(e)), dataframes
             return format_response(error=str(e))
-    
+
     # NBA_API Specifics:
     # - If PlayerID is set, TeamID is for context but data is for the player.
     # - If PlayerID is NOT set, TeamID is used to filter for a team's hustle stats.
     # - If PlayerID and TeamID are NOT set (or team_id=0), it's league-wide.
-    
+
     api_player_id_param = player_id_resolved if player_id_resolved else "0" # API expects "0" if no specific player
     # If player_id_resolved is None (no player_name given), then effective_team_id (which is team_id or 0) is used.
     # If player_id_resolved is set, the API typically uses this and team_id becomes contextual or ignored.
@@ -589,7 +618,7 @@ def fetch_player_hustle_stats_logic(
                     season, season_type, per_mode, player_id_resolved, team_id if not player_id_resolved else None, league_id
                 )
                 _save_dataframe_to_csv(hustle_stats_df, csv_path)
-        
+
         # Limit results if league-wide and too many rows
         if not player_id_resolved and (team_id is None or team_id == NBA_API_DEFAULT_TEAM_ID_ALL) and len(hustle_stats_df) > MAX_LEAGUE_WIDE_HUSTLE_RESULTS:
             logger.warning(f"League-wide hustle stats query returned {len(hustle_stats_df)} results. Capping at {MAX_LEAGUE_WIDE_HUSTLE_RESULTS} for response.")

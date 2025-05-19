@@ -121,6 +121,8 @@ export interface SkillGrades {
 }
 
 export interface PlayerData {
+  player_id: number;  // Added player_id at the top level
+  player_name: string; // Added player_name at the top level
   player_info: PlayerInfo | null;
   career_totals_regular_season: CareerOrSeasonStat | null;
   season_totals_regular_season: CareerOrSeasonStat[] | null;

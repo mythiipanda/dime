@@ -14,7 +14,7 @@ from nba_api.stats.library.parameters import SeasonTypeAllStar, LeagueID
 import pandas as pd
 
 from ..config import settings
-from core.constants import (
+from ..core.constants import (
     DEFAULT_PLAYER_SEARCH_LIMIT,
     MIN_PLAYER_SEARCH_LENGTH,
     MAX_SEARCH_RESULTS # Used as default limit for all searches
@@ -27,6 +27,7 @@ from .utils import (
     TeamNotFoundError
 )
 from ..utils.validation import _validate_season_format
+from ..utils.path_utils import get_cache_dir, get_cache_file_path, get_relative_cache_path
 
 logger = logging.getLogger(__name__)
 
@@ -38,18 +39,10 @@ GAME_SEARCH_CACHE_SIZE = 128
 GAME_SEARCH_DELIMITERS = [" vs ", " at ", " vs. "]
 
 # --- Cache Directory Setup ---
-CSV_CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cache")
-SEARCH_CSV_DIR = os.path.join(CSV_CACHE_DIR, "search")
-PLAYER_SEARCH_CSV_DIR = os.path.join(SEARCH_CSV_DIR, "players")
-TEAM_SEARCH_CSV_DIR = os.path.join(SEARCH_CSV_DIR, "teams")
-GAME_SEARCH_CSV_DIR = os.path.join(SEARCH_CSV_DIR, "games")
-
-# Ensure cache directories exist
-os.makedirs(CSV_CACHE_DIR, exist_ok=True)
-os.makedirs(SEARCH_CSV_DIR, exist_ok=True)
-os.makedirs(PLAYER_SEARCH_CSV_DIR, exist_ok=True)
-os.makedirs(TEAM_SEARCH_CSV_DIR, exist_ok=True)
-os.makedirs(GAME_SEARCH_CSV_DIR, exist_ok=True)
+SEARCH_CSV_DIR = get_cache_dir("search")
+PLAYER_SEARCH_CSV_DIR = get_cache_dir("search/players")
+TEAM_SEARCH_CSV_DIR = get_cache_dir("search/teams")
+GAME_SEARCH_CSV_DIR = get_cache_dir("search/games")
 
 # --- Helper Functions for CSV Caching ---
 def _save_dataframe_to_csv(df: pd.DataFrame, file_path: str) -> None:
@@ -80,7 +73,7 @@ def _get_csv_path_for_player_search(query: str) -> str:
     clean_query = query.replace(" ", "_").replace(".", "").lower()
 
     filename = f"player_search_{clean_query}.csv"
-    return os.path.join(PLAYER_SEARCH_CSV_DIR, filename)
+    return get_cache_file_path(filename, "search/players")
 
 def _get_csv_path_for_team_search(query: str) -> str:
     """
@@ -96,7 +89,7 @@ def _get_csv_path_for_team_search(query: str) -> str:
     clean_query = query.replace(" ", "_").replace(".", "").lower()
 
     filename = f"team_search_{clean_query}.csv"
-    return os.path.join(TEAM_SEARCH_CSV_DIR, filename)
+    return get_cache_file_path(filename, "search/teams")
 
 def _get_csv_path_for_game_search(query: str, season: str, season_type: str) -> str:
     """
@@ -115,7 +108,7 @@ def _get_csv_path_for_game_search(query: str, season: str, season_type: str) -> 
     clean_season_type = season_type.replace(" ", "_").lower()
 
     filename = f"game_search_{clean_query}_{season}_{clean_season_type}.csv"
-    return os.path.join(GAME_SEARCH_CSV_DIR, filename)
+    return get_cache_file_path(filename, "search/games")
 
 # --- Global Caches for Static Data ---
 _player_list_cache: Optional[List[Dict]] = None
@@ -238,6 +231,21 @@ def search_players_logic(
                 csv_path = _get_csv_path_for_player_search(query)
                 _save_dataframe_to_csv(players_df, csv_path)
 
+                # Add DataFrame metadata to the response
+                csv_filename = os.path.basename(csv_path)
+                relative_path = get_relative_cache_path(csv_filename, "search/players")
+
+                response_data["dataframe_info"] = {
+                    "message": "Player search results have been converted to DataFrame and saved as CSV file",
+                    "dataframes": {
+                        "players": {
+                            "shape": list(players_df.shape),
+                            "columns": players_df.columns.tolist(),
+                            "csv_path": relative_path
+                        }
+                    }
+                }
+
                 dataframes = {"players": players_df}
                 return format_response(response_data), dataframes
             else:
@@ -318,6 +326,21 @@ def search_teams_logic(
                 # Save DataFrame to CSV
                 csv_path = _get_csv_path_for_team_search(query)
                 _save_dataframe_to_csv(teams_df, csv_path)
+
+                # Add DataFrame metadata to the response
+                csv_filename = os.path.basename(csv_path)
+                relative_path = get_relative_cache_path(csv_filename, "search/teams")
+
+                response_data["dataframe_info"] = {
+                    "message": "Team search results have been converted to DataFrame and saved as CSV file",
+                    "dataframes": {
+                        "teams": {
+                            "shape": list(teams_df.shape),
+                            "columns": teams_df.columns.tolist(),
+                            "csv_path": relative_path
+                        }
+                    }
+                }
 
                 dataframes = {"teams": teams_df}
                 return format_response(response_data), dataframes
@@ -504,6 +527,21 @@ def search_games_logic(
             if not filtered_games_df.empty:
                 csv_path = _get_csv_path_for_game_search(query, season, season_type)
                 _save_dataframe_to_csv(filtered_games_df, csv_path)
+
+                # Add DataFrame metadata to the response
+                csv_filename = os.path.basename(csv_path)
+                relative_path = get_relative_cache_path(csv_filename, "search/games")
+
+                response_data["dataframe_info"] = {
+                    "message": "Game search results have been converted to DataFrame and saved as CSV file",
+                    "dataframes": {
+                        "games": {
+                            "shape": list(filtered_games_df.shape),
+                            "columns": filtered_games_df.columns.tolist(),
+                            "csv_path": relative_path
+                        }
+                    }
+                }
 
                 dataframes = {"games": filtered_games_df}
                 return format_response(response_data), dataframes

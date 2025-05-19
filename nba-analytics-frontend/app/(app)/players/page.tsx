@@ -19,15 +19,32 @@ async function fetchPlayerData(playerName: string): Promise<{ data: PlayerData |
     }
 
     const rawData = await profileResponse.json();
+    // Log the raw data structure to help with debugging
+    console.log("Raw player profile data structure:", {
+      has_player_id: !!rawData.player_id,
+      player_id_type: typeof rawData.player_id,
+      player_id_value: rawData.player_id,
+      has_player_info: !!rawData.player_info,
+      has_player_name: !!rawData.player_name
+    });
+
     // Basic validation - ensure player_info exists
     if (!rawData || !rawData.player_info) {
         console.error("Server Validation Failed - Missing player_info.");
         return { data: null, error: "Incomplete profile data received."};
     }
 
+    // Validate player_id exists
+    if (!rawData.player_id) {
+        console.error("Server Validation Failed - Missing player_id.");
+        return { data: null, error: "Incomplete profile data received: missing player_id."};
+    }
+
     // Map rawData to imported PlayerData structure
     // Explicitly type mappedData with the imported PlayerData type
     const mappedData: PlayerData = {
+        player_id: rawData.player_id, // Include player_id from the backend
+        player_name: rawData.player_name, // Include player_name from the backend
         player_info: rawData.player_info, // Assumes rawData.player_info matches PlayerInfo type
         career_totals_regular_season: rawData.career_totals?.regular_season ?? null,
         season_totals_regular_season: rawData.season_totals?.regular_season ?? null,
@@ -45,6 +62,12 @@ async function fetchPlayerData(playerName: string): Promise<{ data: PlayerData |
 
 // Function to fetch headshot URL
 async function fetchHeadshotUrl(playerId: number): Promise<string | null> {
+    // Validate playerId
+    if (!playerId) {
+        console.error(`Invalid player ID for headshot: ${playerId}`);
+        return null;
+    }
+
     const headshotUrlPath = `${API_BASE_URL}/player/${playerId}/headshot`; // Corrected: /player instead of /players/player
     console.log(`Fetching server-side headshot from: ${headshotUrlPath}`);
     try {
@@ -54,6 +77,7 @@ async function fetchHeadshotUrl(playerId: number): Promise<string | null> {
             return null;
         } else {
             const headshotData = await headshotResponse.json();
+            console.log("Headshot data received:", headshotData);
             return headshotData?.headshot_url || null;
         }
     } catch (headshotErr) {
@@ -90,7 +114,8 @@ export default async function PlayersPage({ searchParams }: PlayersPageProps) {
     } else if (data && data.player_info) {
       console.log("[Server Page] Player data fetched successfully for:", data.player_info.DISPLAY_FIRST_LAST);
       playerData = data;
-      headshotUrl = await fetchHeadshotUrl(data.player_info.PERSON_ID);
+      // Use player_id from the top level of the response
+      headshotUrl = await fetchHeadshotUrl(data.player_id);
       if (headshotUrl) {
         console.log("[Server Page] Headshot fetched successfully.");
       } else {
