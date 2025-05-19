@@ -1,3 +1,7 @@
+"""
+Handles fetching NBA player listings data using the CommonAllPlayers endpoint.
+Provides both JSON and DataFrame outputs with CSV caching.
+"""
 import logging
 import os
 from functools import lru_cache
@@ -14,18 +18,14 @@ from .utils import (
     format_response
 )
 from ..utils.validation import _validate_season_format, _validate_league_id
+from ..utils.path_utils import get_cache_dir, get_cache_file_path, get_relative_cache_path
 
 logger = logging.getLogger(__name__)
 
 # --- Cache Directory Setup ---
-CSV_CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cache")
-PLAYER_LISTINGS_CSV_DIR = os.path.join(CSV_CACHE_DIR, "player_listings")
+PLAYER_LISTINGS_CSV_DIR = get_cache_dir("player_listings")
 
-# Ensure cache directories exist
-os.makedirs(CSV_CACHE_DIR, exist_ok=True)
-os.makedirs(PLAYER_LISTINGS_CSV_DIR, exist_ok=True)
-
-# --- Helper Functions ---
+# --- Helper Functions for CSV Caching ---
 def _save_dataframe_to_csv(df: pd.DataFrame, file_path: str) -> None:
     """
     Saves a DataFrame to a CSV file.
@@ -53,7 +53,7 @@ def _get_csv_path_for_player_listings(season: str, league_id: str, is_only_curre
         Path to the CSV file
     """
     filename = f"players_{season}_{league_id}_{is_only_current_season}.csv"
-    return os.path.join(PLAYER_LISTINGS_CSV_DIR, filename)
+    return get_cache_file_path(filename, "player_listings")
 
 def fetch_common_all_players_logic(
     season: str,
@@ -159,6 +159,25 @@ def fetch_common_all_players_logic(
             },
             "players": players_list
         }
+
+        # Add DataFrame info to the response if requested
+        if return_dataframe:
+            csv_path = _get_csv_path_for_player_listings(season, league_id, is_only_current_season)
+            relative_path = get_relative_cache_path(
+                os.path.basename(csv_path),
+                "player_listings"
+            )
+
+            response_data["dataframe_info"] = {
+                "message": "Player listings data has been converted to DataFrame and saved as CSV file",
+                "dataframes": {
+                    "players": {
+                        "shape": list(players_df.shape) if not players_df.empty else [],
+                        "columns": players_df.columns.tolist() if not players_df.empty else [],
+                        "csv_path": relative_path
+                    }
+                }
+            }
 
         logger.info(f"Successfully fetched {len(players_list)} players for Season: {season}, LeagueID: {league_id}, IsOnlyCurrentSeason: {is_only_current_season}")
 
