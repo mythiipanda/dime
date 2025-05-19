@@ -19,6 +19,7 @@ from backend.api_tools.game_boxscores import (
     fetch_boxscore_summary_logic,
     fetch_boxscore_misc_logic,
     fetch_boxscore_playertrack_logic,
+    fetch_boxscore_scoring_logic,
     BOXSCORE_CSV_DIR
 )
 
@@ -220,6 +221,31 @@ def test_fetch_boxscore_playertrack():
     print("\n=== Player tracking box score test completed ===")
     return json_response, dataframes
 
+def test_fetch_boxscore_scoring():
+    """Test fetching scoring box score data with DataFrame output."""
+    print("\n=== Testing fetch_boxscore_scoring_logic with DataFrame output ===")
+
+    # Test with return_dataframe=True
+    result = fetch_boxscore_scoring_logic(SAMPLE_GAME_ID, return_dataframe=True)
+
+    # Check if the result is a tuple
+    assert isinstance(result, tuple), "Result should be a tuple when return_dataframe=True"
+
+    json_response, dataframes = result
+
+    # Print DataFrame info
+    print(f"\nDataFrames returned: {list(dataframes.keys())}")
+    for key, df in dataframes.items():
+        if not df.empty:
+            print(f"\nDataFrame '{key}' shape: {df.shape}")
+            print(f"DataFrame '{key}' columns: {df.columns.tolist()[:5]}...")  # Show first 5 columns
+            print(f"Sample data (first row):")
+            first_row_dict = {col: df.iloc[0][col] for col in df.columns[:5]}  # First 5 columns
+            print(first_row_dict)
+
+    print("\n=== Scoring box score test completed ===")
+    return json_response, dataframes
+
 def run_all_tests():
     """Run all tests in sequence."""
     print(f"=== Running game_boxscores smoke tests at {datetime.now().isoformat()} ===\n")
@@ -231,6 +257,7 @@ def run_all_tests():
         test_other_boxscore_types()
         test_fetch_boxscore_misc()
         test_fetch_boxscore_playertrack()
+        test_fetch_boxscore_scoring()
 
         print("\n=== All tests completed successfully ===")
         return True
