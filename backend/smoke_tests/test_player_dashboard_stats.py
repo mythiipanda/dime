@@ -46,8 +46,8 @@ def _verify_csv_exists(expected_path: str):
 def test_fetch_player_profile():
     """Test fetching player profile with JSON and DataFrame output."""
     print(f"\n=== Testing fetch_player_profile_logic for {SAMPLE_PLAYER_NAME} ===")
-    
-    # Test JSON output
+
+    # Test JSON output with default parameters
     json_response_only = fetch_player_profile_logic(SAMPLE_PLAYER_NAME, per_mode=DEFAULT_PER_MODE_PROFILE)
     data_only = json.loads(json_response_only)
     assert isinstance(data_only, dict), "JSON only response should be a dictionary"
@@ -58,10 +58,20 @@ def test_fetch_player_profile():
         assert data_only["player_name"] == SAMPLE_PLAYER_NAME # Or actual name if resolved differently
         print(f"Profile (JSON only) fetched for {data_only.get('player_name')}")
 
+    # Test with league_id parameter
+    json_response_league = fetch_player_profile_logic(SAMPLE_PLAYER_NAME, per_mode=DEFAULT_PER_MODE_PROFILE, league_id=LeagueID.nba)
+    data_league = json.loads(json_response_league)
+    if "error" in data_league:
+        print(f"API (with league_id) returned an error: {data_league['error']}")
+    else:
+        assert "parameters" in data_league
+        assert data_league["parameters"]["league_id"] == LeagueID.nba
+        print(f"Profile (with league_id) fetched for {data_league.get('player_name')}")
+
     # Test with return_dataframe=True
     result = fetch_player_profile_logic(SAMPLE_PLAYER_NAME, per_mode=DEFAULT_PER_MODE_PROFILE, return_dataframe=True)
     assert isinstance(result, tuple) and len(result) == 2, "Result should be a tuple (json, dataframes)"
-    
+
     json_response, dataframes = result
     data = json.loads(json_response)
     assert isinstance(dataframes, dict), "Second element should be a dictionary of DataFrames"
@@ -99,7 +109,7 @@ def test_fetch_player_defense():
     """Test fetching player defense stats with JSON and DataFrame output."""
     print(f"\n=== Testing fetch_player_defense_logic for {SAMPLE_PLAYER_NAME}, Season: {SAMPLE_SEASON} ===")
 
-    # Test JSON output
+    # Test JSON output with default parameters
     json_response_only = fetch_player_defense_logic(
         SAMPLE_PLAYER_NAME, SAMPLE_SEASON, SeasonTypeAllStar.regular, DEFAULT_PER_MODE_DEFENSE
     )
@@ -110,6 +120,28 @@ def test_fetch_player_defense():
     else:
         assert "player_name" in data_only
         print(f"Defense (JSON only) fetched for {data_only.get('player_name')}")
+
+    # Test with additional parameters
+    json_response_params = fetch_player_defense_logic(
+        SAMPLE_PLAYER_NAME,
+        SAMPLE_SEASON,
+        SeasonTypeAllStar.regular,
+        DEFAULT_PER_MODE_DEFENSE,
+        opponent_team_id=0,
+        last_n_games=10,
+        league_id=LeagueID.nba,
+        month=0,
+        period=0,
+        vs_conference="East"
+    )
+    data_params = json.loads(json_response_params)
+    if "error" in data_params:
+        print(f"API (with additional params) returned an error: {data_params['error']}")
+    else:
+        assert "parameters" in data_params
+        assert data_params["parameters"]["vs_conference"] == "East"
+        assert data_params["parameters"]["last_n_games"] == 10
+        print(f"Defense (with additional params) fetched for {data_params.get('player_name')}")
 
     # Test with return_dataframe=True
     result = fetch_player_defense_logic(
@@ -142,7 +174,7 @@ def test_fetch_player_hustle():
     """Test fetching player hustle stats with JSON and DataFrame output."""
     print(f"\n=== Testing fetch_player_hustle_stats_logic for {SAMPLE_PLAYER_NAME}, Season: {SAMPLE_SEASON} ===")
 
-    # Test JSON output
+    # Test JSON output with default parameters
     json_response_only = fetch_player_hustle_stats_logic(
         season=SAMPLE_SEASON, player_name=SAMPLE_PLAYER_NAME, per_mode=DEFAULT_PER_MODE_HUSTLE
     )
@@ -153,6 +185,21 @@ def test_fetch_player_hustle():
     else:
         assert "parameters" in data_only and data_only["parameters"].get("player_name_filter") is not None
         print(f"Hustle (JSON only) fetched for player: {data_only['parameters']['player_name_filter']}")
+
+    # Test with additional parameters - use fewer parameters to avoid API errors
+    json_response_params = fetch_player_hustle_stats_logic(
+        season=SAMPLE_SEASON,
+        player_name=SAMPLE_PLAYER_NAME,
+        per_mode=DEFAULT_PER_MODE_HUSTLE,
+        player_position="G"  # Just use one parameter that's more likely to work
+    )
+    data_params = json.loads(json_response_params)
+    if "error" in data_params:
+        print(f"API (with additional params) returned an error: {data_params['error']}")
+    else:
+        assert "parameters" in data_params
+        assert data_params["parameters"]["player_position"] == "G"
+        print(f"Hustle (with additional params) fetched for player: {data_params['parameters']['player_name_filter']}")
 
     # Test with return_dataframe=True
     result = fetch_player_hustle_stats_logic(
@@ -168,7 +215,7 @@ def test_fetch_player_hustle():
     else:
         print(f"Hustle (DataFrame) fetched for player: {data['parameters']['player_name_filter']}")
         player_id_for_csv = str(data["parameters"].get("player_id_filter", SAMPLE_PLAYER_ID))
-        
+
         assert "hustle_stats" in dataframes
         df = dataframes["hustle_stats"]
         if not df.empty:
@@ -176,7 +223,7 @@ def test_fetch_player_hustle():
             print(df.head(2))
             # For player-specific hustle, team_id is None in path generation by default
             csv_path = _get_csv_path_for_player_hustle(
-                SAMPLE_SEASON, SeasonTypeAllStar.regular, DEFAULT_PER_MODE_HUSTLE, player_id=player_id_for_csv 
+                SAMPLE_SEASON, SeasonTypeAllStar.regular, DEFAULT_PER_MODE_HUSTLE, player_id=player_id_for_csv
             )
             _verify_csv_exists(csv_path)
         else:
@@ -186,7 +233,7 @@ def test_fetch_player_hustle():
 def test_fetch_league_hustle():
     """Test fetching league-wide hustle stats with DataFrame output."""
     print(f"\n=== Testing fetch_player_hustle_stats_logic for league-wide, Season: {SAMPLE_SEASON} ===")
-    
+
     result = fetch_player_hustle_stats_logic(
         season=SAMPLE_SEASON, per_mode=DEFAULT_PER_MODE_HUSTLE, return_dataframe=True
     ) # No player, no team
@@ -205,7 +252,7 @@ def test_fetch_league_hustle():
             print(f"\nDataFrame 'hustle_stats' (league) shape: {df.shape}")
             print(df.head(2))
             csv_path = _get_csv_path_for_player_hustle(
-                SAMPLE_SEASON, SeasonTypeAllStar.regular, DEFAULT_PER_MODE_HUSTLE, player_id=None, team_id=None 
+                SAMPLE_SEASON, SeasonTypeAllStar.regular, DEFAULT_PER_MODE_HUSTLE, player_id=None, team_id=None
             )
             _verify_csv_exists(csv_path)
         else:
@@ -227,12 +274,12 @@ def run_all_tests():
 
 
     print(f"\n=== Running player_dashboard_stats smoke tests at {datetime.now().isoformat()} ===\n")
-    
+
     test_fetch_player_profile()
     test_fetch_player_defense()
     test_fetch_player_hustle()
     test_fetch_league_hustle()
-        
+
     print("\n\n=== All player_dashboard_stats tests completed successfully ===")
 
 if __name__ == "__main__":
@@ -240,5 +287,5 @@ if __name__ == "__main__":
     os.makedirs(PLAYER_PROFILE_CSV_DIR, exist_ok=True)
     os.makedirs(PLAYER_DEFENSE_CSV_DIR, exist_ok=True)
     os.makedirs(PLAYER_HUSTLE_CSV_DIR, exist_ok=True)
-    
-    run_all_tests() 
+
+    run_all_tests()

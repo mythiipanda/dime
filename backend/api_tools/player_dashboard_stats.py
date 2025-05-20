@@ -176,6 +176,7 @@ def _validate_common_dashboard_params(
 def fetch_player_profile_logic(
     player_name: str,
     per_mode: Optional[str] = PerModeDetailed.per_game,
+    league_id: Optional[str] = None,
     return_dataframe: bool = False
 ) -> Union[str, Tuple[str, Dict[str, pd.DataFrame]]]:
     """
@@ -187,6 +188,8 @@ def fetch_player_profile_logic(
         player_name (str): The name or ID of the player.
         per_mode (str, optional): Statistical mode for career/season stats (e.g., "PerGame").
                                   Defaults to "PerGame".
+        league_id (str, optional): League ID to filter data. Defaults to None (NBA).
+                                  Example: "00" for NBA.
         return_dataframe (bool, optional): Whether to return DataFrames along with the JSON response.
                                           Defaults to False.
 
@@ -216,9 +219,14 @@ def fetch_player_profile_logic(
 
     try:
         player_id, player_actual_name = find_player_id_or_error(player_name)
-        logger.debug(f"Fetching playerprofilev2 for ID: {player_id}, PerMode: {effective_per_mode}")
+        logger.debug(f"Fetching playerprofilev2 for ID: {player_id}, PerMode: {effective_per_mode}, LeagueID: {league_id}")
         try:
-            profile_endpoint = playerprofilev2.PlayerProfileV2(player_id=player_id, per_mode36=effective_per_mode, timeout=settings.DEFAULT_TIMEOUT_SECONDS)
+            profile_endpoint = playerprofilev2.PlayerProfileV2(
+                player_id=player_id,
+                per_mode36=effective_per_mode,
+                league_id_nullable=league_id,
+                timeout=settings.DEFAULT_TIMEOUT_SECONDS
+            )
             logger.debug(f"playerprofilev2 API call object created for ID: {player_id}")
         except Exception as api_error:
             logger.error(f"nba_api playerprofilev2 instantiation or initial request failed for ID {player_id}: {api_error}", exc_info=True)
@@ -310,7 +318,10 @@ def fetch_player_profile_logic(
         response_data = {
             "player_name": player_actual_name, "player_id": player_id,
             "player_info": player_info_dict,
-            "per_mode_requested": effective_per_mode,
+            "parameters": {
+                "per_mode": effective_per_mode,
+                "league_id": league_id
+            },
             "career_highs": career_highs_dict or {},
             "season_highs": season_highs_dict or {},
             "next_game": next_game_dict or {},
@@ -385,6 +396,17 @@ def fetch_player_defense_logic(
     opponent_team_id: int = NBA_API_DEFAULT_TEAM_ID_ALL,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
+    last_n_games: int = 0,
+    league_id: str = LeagueID.nba,
+    month: int = 0,
+    period: int = 0,
+    team_id: int = NBA_API_DEFAULT_TEAM_ID_ALL,
+    vs_conference: Optional[str] = None,
+    vs_division: Optional[str] = None,
+    season_segment: Optional[str] = None,
+    outcome: Optional[str] = None,
+    location: Optional[str] = None,
+    game_segment: Optional[str] = None,
     return_dataframe: bool = False
 ) -> Union[str, Tuple[str, Dict[str, pd.DataFrame]]]:
     """
@@ -400,6 +422,17 @@ def fetch_player_defense_logic(
         opponent_team_id (int, optional): Opponent's team ID. Defaults to 0 (all opponents).
         date_from (Optional[str], optional): Start date (YYYY-MM-DD). Defaults to None.
         date_to (Optional[str], optional): End date (YYYY-MM-DD). Defaults to None.
+        last_n_games (int, optional): Number of most recent games to include. Defaults to 0 (all games).
+        league_id (str, optional): League ID. Defaults to "00" (NBA).
+        month (int, optional): Month number (1-12). Defaults to 0 (all months).
+        period (int, optional): Period number (1-4, 0 for all). Defaults to 0 (all periods).
+        team_id (int, optional): Team ID of the player. Defaults to 0 (all teams).
+        vs_conference (Optional[str], optional): Conference filter (e.g., "East", "West"). Defaults to None.
+        vs_division (Optional[str], optional): Division filter. Defaults to None.
+        season_segment (Optional[str], optional): Season segment filter (e.g., "Post All-Star"). Defaults to None.
+        outcome (Optional[str], optional): Game outcome filter (e.g., "W", "L"). Defaults to None.
+        location (Optional[str], optional): Game location filter (e.g., "Home", "Road"). Defaults to None.
+        game_segment (Optional[str], optional): Game segment filter (e.g., "First Half"). Defaults to None.
         return_dataframe (bool, optional): Whether to return DataFrames. Defaults to False.
 
     Returns:
@@ -412,7 +445,11 @@ def fetch_player_defense_logic(
     logger.info(
         f"Executing fetch_player_defense_logic for: '{player_name}', Season: {season}, "
         f"SeasonType: {season_type}, PerMode: {per_mode}, OpponentTeamID: {opponent_team_id}, "
-        f"DateFrom: {date_from}, DateTo: {date_to}, DataFrame: {return_dataframe}"
+        f"DateFrom: {date_from}, DateTo: {date_to}, LastNGames: {last_n_games}, "
+        f"LeagueID: {league_id}, Month: {month}, Period: {period}, TeamID: {team_id}, "
+        f"VsConference: {vs_conference}, VsDivision: {vs_division}, SeasonSegment: {season_segment}, "
+        f"Outcome: {outcome}, Location: {location}, GameSegment: {game_segment}, "
+        f"DataFrame: {return_dataframe}"
     )
 
     # Validate parameters
@@ -439,13 +476,23 @@ def fetch_player_defense_logic(
         logger.debug(f"Fetching playerdashptshotdefend for ID: {player_id}, Season: {season}, PerMode: {per_mode}")
         defense_endpoint = playerdashptshotdefend.PlayerDashPtShotDefend(
             player_id=player_id,
-            team_id=NBA_API_DEFAULT_TEAM_ID_ALL, # This endpoint is player-centric, team_id on player is implied by their history for that season.
+            team_id=team_id,  # Player's team ID
             season=season,
             season_type_all_star=season_type,
             per_mode_simple=per_mode,
             opponent_team_id=opponent_team_id,
             date_from_nullable=date_from,
             date_to_nullable=date_to,
+            last_n_games=last_n_games,
+            league_id=league_id,
+            month=month,
+            period=period,
+            vs_conference_nullable=vs_conference,
+            vs_division_nullable=vs_division,
+            season_segment_nullable=season_segment,
+            outcome_nullable=outcome,
+            location_nullable=location,
+            game_segment_nullable=game_segment,
             timeout=settings.DEFAULT_TIMEOUT_SECONDS
         )
 
@@ -477,7 +524,18 @@ def fetch_player_defense_logic(
                 "per_mode": per_mode,
                 "opponent_team_id": opponent_team_id,
                 "date_from": date_from,
-                "date_to": date_to
+                "date_to": date_to,
+                "last_n_games": last_n_games,
+                "league_id": league_id,
+                "month": month,
+                "period": period,
+                "team_id": team_id,
+                "vs_conference": vs_conference,
+                "vs_division": vs_division,
+                "season_segment": season_segment,
+                "outcome": outcome,
+                "location": location,
+                "game_segment": game_segment
             },
             "defending_shots": processed_def_roll_up
         }
@@ -502,6 +560,24 @@ def fetch_player_hustle_stats_logic(
     league_id: str = LeagueID.nba,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
+    college: Optional[str] = None,
+    conference: Optional[str] = None,
+    country: Optional[str] = None,
+    division: Optional[str] = None,
+    draft_pick: Optional[str] = None,
+    draft_year: Optional[str] = None,
+    height: Optional[str] = None,
+    location: Optional[str] = None,
+    month: Optional[int] = None,
+    opponent_team_id: Optional[int] = None,
+    outcome: Optional[str] = None,
+    po_round: Optional[str] = None,
+    player_experience: Optional[str] = None,
+    player_position: Optional[str] = None,
+    season_segment: Optional[str] = None,
+    vs_conference: Optional[str] = None,
+    vs_division: Optional[str] = None,
+    weight: Optional[str] = None,
     return_dataframe: bool = False
 ) -> Union[str, Tuple[str, Dict[str, pd.DataFrame]]]:
     """
@@ -519,6 +595,24 @@ def fetch_player_hustle_stats_logic(
         league_id (str, optional): League ID. Defaults to "00" (NBA).
         date_from (Optional[str], optional): Start date (YYYY-MM-DD). Defaults to None.
         date_to (Optional[str], optional): End date (YYYY-MM-DD). Defaults to None.
+        college (Optional[str], optional): College filter. Defaults to None.
+        conference (Optional[str], optional): Conference filter. Defaults to None.
+        country (Optional[str], optional): Country filter. Defaults to None.
+        division (Optional[str], optional): Division filter. Defaults to None.
+        draft_pick (Optional[str], optional): Draft pick filter. Defaults to None.
+        draft_year (Optional[str], optional): Draft year filter. Defaults to None.
+        height (Optional[str], optional): Height filter. Defaults to None.
+        location (Optional[str], optional): Game location filter (e.g., "Home", "Road"). Defaults to None.
+        month (Optional[int], optional): Month number (1-12). Defaults to None.
+        opponent_team_id (Optional[int], optional): Opponent team ID filter. Defaults to None.
+        outcome (Optional[str], optional): Game outcome filter (e.g., "W", "L"). Defaults to None.
+        po_round (Optional[str], optional): Playoff round filter. Defaults to None.
+        player_experience (Optional[str], optional): Player experience filter. Defaults to None.
+        player_position (Optional[str], optional): Player position filter. Defaults to None.
+        season_segment (Optional[str], optional): Season segment filter (e.g., "Post All-Star"). Defaults to None.
+        vs_conference (Optional[str], optional): Conference filter (e.g., "East", "West"). Defaults to None.
+        vs_division (Optional[str], optional): Division filter. Defaults to None.
+        weight (Optional[str], optional): Weight filter. Defaults to None.
         return_dataframe (bool, optional): Whether to return DataFrames. Defaults to False.
 
     Returns:
@@ -542,7 +636,13 @@ def fetch_player_hustle_stats_logic(
     logger.info(
         f"Executing fetch_player_hustle_stats_logic for {log_identifier}, Season: {season}, "
         f"SeasonType: {season_type}, PerMode: {per_mode}, LeagueID: {league_id}, "
-        f"DateFrom: {date_from}, DateTo: {date_to}, DataFrame: {return_dataframe}"
+        f"DateFrom: {date_from}, DateTo: {date_to}, College: {college}, Conference: {conference}, "
+        f"Country: {country}, Division: {division}, DraftPick: {draft_pick}, DraftYear: {draft_year}, "
+        f"Height: {height}, Location: {location}, Month: {month}, OpponentTeamID: {opponent_team_id}, "
+        f"Outcome: {outcome}, PORound: {po_round}, PlayerExperience: {player_experience}, "
+        f"PlayerPosition: {player_position}, SeasonSegment: {season_segment}, "
+        f"VsConference: {vs_conference}, VsDivision: {vs_division}, Weight: {weight}, "
+        f"DataFrame: {return_dataframe}"
     )
 
     # Validate parameters
@@ -599,6 +699,25 @@ def fetch_player_hustle_stats_logic(
             league_id_nullable=league_id,
             date_from_nullable=date_from,
             date_to_nullable=date_to,
+            college_nullable=college,
+            conference_nullable=conference,
+            country_nullable=country,
+            division_simple_nullable=division,
+            draft_pick_nullable=draft_pick,
+            draft_year_nullable=draft_year,
+            height_nullable=height,
+            location_nullable=location,
+            month_nullable=month,
+            opponent_team_id_nullable=opponent_team_id,
+            outcome_nullable=outcome,
+            po_round_nullable=po_round,
+            player_experience_nullable=player_experience,
+            player_position_nullable=player_position,
+            season_segment_nullable=season_segment,
+            vs_conference_nullable=vs_conference,
+            vs_division_nullable=vs_division,
+            weight_nullable=weight,
+            team_id_nullable=api_team_id_param,
             timeout=settings.DEFAULT_TIMEOUT_SECONDS
         )
         logger.debug(f"LeagueHustleStatsPlayer API call successful for {log_identifier}")
@@ -648,6 +767,24 @@ def fetch_player_hustle_stats_logic(
                 "league_id": league_id,
                 "date_from": date_from,
                 "date_to": date_to,
+                "college": college,
+                "conference": conference,
+                "country": country,
+                "division": division,
+                "draft_pick": draft_pick,
+                "draft_year": draft_year,
+                "height": height,
+                "location": location,
+                "month": month,
+                "opponent_team_id": opponent_team_id,
+                "outcome": outcome,
+                "po_round": po_round,
+                "player_experience": player_experience,
+                "player_position": player_position,
+                "season_segment": season_segment,
+                "vs_conference": vs_conference,
+                "vs_division": vs_division,
+                "weight": weight,
                 "info": f"Hustle stats for {log_identifier}{additional_info}"
             },
             "hustle_stats": processed_hustle_stats
