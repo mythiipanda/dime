@@ -73,8 +73,8 @@ def test_fetch_boxscore_traditional():
             # Print details of the first player
             first_player = data["players"][0]
             print("\nFirst player details:")
-            print(f"Player Name: {first_player.get('PLAYER_NAME', 'N/A')}")
-            print(f"Team: {first_player.get('TEAM_ABBREVIATION', 'N/A')}")
+            print(f"Player Name: {first_player.get('PLAYER', 'N/A')}")
+            print(f"Team: {first_player.get('TEAM', 'N/A')}")
             print(f"Minutes: {first_player.get('MIN', 'N/A')}")
             print(f"Points: {first_player.get('PTS', 'N/A')}")
             print(f"Rebounds: {first_player.get('REB', 'N/A')}")

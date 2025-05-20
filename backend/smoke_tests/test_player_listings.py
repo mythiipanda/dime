@@ -63,7 +63,7 @@ def test_fetch_common_all_players_basic():
                 print(f"\nPlayer {i+1}:")
                 print(f"  ID: {player.get('PERSON_ID', 'N/A')}")
                 print(f"  Name: {player.get('DISPLAY_FIRST_LAST', 'N/A')}")
-                print(f"  Team: {player.get('TEAM_NAME', 'N/A')} ({player.get('TEAM_ABBREVIATION', 'N/A')})")
+                print(f"  Team: {player.get('TEAM', 'N/A')} ({player.get('TEAM', 'N/A')})")
                 print(f"  From Year: {player.get('FROM_YEAR', 'N/A')}")
                 print(f"  To Year: {player.get('TO_YEAR', 'N/A')}")
 
