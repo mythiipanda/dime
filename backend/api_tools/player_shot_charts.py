@@ -143,6 +143,32 @@ def fetch_player_shotchart_logic(
     player_name: str,
     season: str = settings.CURRENT_NBA_SEASON,
     season_type: str = SeasonTypeAllStar.regular,
+    last_n_games: int = 0,
+    league_id: str = "00",
+    month: int = 0,
+    opponent_team_id: int = 0,
+    period: int = 0,
+    vs_division_nullable: Optional[str] = None,
+    vs_conference_nullable: Optional[str] = None,
+    season_segment_nullable: Optional[str] = None,
+    outcome_nullable: Optional[str] = None,
+    location_nullable: Optional[str] = None,
+    game_segment_nullable: Optional[str] = None,
+    date_to_nullable: Optional[str] = None,
+    date_from_nullable: Optional[str] = None,
+    game_id_nullable: Optional[str] = None,
+    player_position_nullable: Optional[str] = None,
+    rookie_year_nullable: Optional[str] = None,
+    context_filter_nullable: Optional[str] = None,
+    clutch_time_nullable: Optional[str] = None,
+    ahead_behind_nullable: Optional[str] = None,
+    point_diff_nullable: Optional[str] = None,
+    position_nullable: Optional[str] = None,
+    range_type_nullable: Optional[str] = None,
+    start_period_nullable: Optional[str] = None,
+    start_range_nullable: Optional[str] = None,
+    end_period_nullable: Optional[str] = None,
+    end_range_nullable: Optional[str] = None,
     return_dataframe: bool = False
 ) -> Union[str, Tuple[str, Dict[str, pd.DataFrame]]]:
     """
@@ -153,6 +179,32 @@ def fetch_player_shotchart_logic(
         player_name: The name or ID of the player.
         season: NBA season in YYYY-YY format. Defaults to current season.
         season_type: Type of season. Defaults to Regular Season.
+        last_n_games: Number of games to include (0 for all games).
+        league_id: League ID (default: "00" for NBA).
+        month: Month number (0 for all months).
+        opponent_team_id: Filter by opponent team ID (0 for all teams).
+        period: Period number (0 for all periods).
+        vs_division_nullable: Filter by division (e.g., "Atlantic", "Central").
+        vs_conference_nullable: Filter by conference (e.g., "East", "West").
+        season_segment_nullable: Filter by season segment (e.g., "Post All-Star", "Pre All-Star").
+        outcome_nullable: Filter by game outcome (e.g., "W", "L").
+        location_nullable: Filter by game location (e.g., "Home", "Road").
+        game_segment_nullable: Filter by game segment (e.g., "First Half", "Second Half").
+        date_to_nullable: End date filter in format YYYY-MM-DD.
+        date_from_nullable: Start date filter in format YYYY-MM-DD.
+        game_id_nullable: Filter by game ID.
+        player_position_nullable: Filter by player position (e.g., "Guard", "Center", "Forward").
+        rookie_year_nullable: Filter by rookie year.
+        context_filter_nullable: Context filter.
+        clutch_time_nullable: Filter by clutch time (e.g., "Last 5 Minutes", "Last 2 Minutes").
+        ahead_behind_nullable: Filter by ahead/behind status (e.g., "Ahead or Behind", "Ahead or Tied").
+        point_diff_nullable: Filter by point differential.
+        position_nullable: Filter by position.
+        range_type_nullable: Filter by range type.
+        start_period_nullable: Filter by start period.
+        start_range_nullable: Filter by start range.
+        end_period_nullable: Filter by end period.
+        end_range_nullable: Filter by end range.
         return_dataframe: Whether to return DataFrames along with the JSON response.
 
     Returns:
@@ -162,7 +214,16 @@ def fetch_player_shotchart_logic(
             Tuple[str, Dict[str, pd.DataFrame]]: A tuple containing the JSON response string
                                                and a dictionary of DataFrames.
     """
-    logger.info(f"Executing fetch_player_shotchart_logic for: '{player_name}', Season: {season}, Type: {season_type}, return_dataframe={return_dataframe}")
+    logger.info(f"Executing fetch_player_shotchart_logic for: '{player_name}', Season: {season}, Type: {season_type}, " +
+              f"LastNGames: {last_n_games}, LeagueID: {league_id}, Month: {month}, OpponentTeamID: {opponent_team_id}, " +
+              f"Period: {period}, VsDivision: {vs_division_nullable}, VsConference: {vs_conference_nullable}, " +
+              f"SeasonSegment: {season_segment_nullable}, Outcome: {outcome_nullable}, Location: {location_nullable}, " +
+              f"GameSegment: {game_segment_nullable}, DateFrom: {date_from_nullable}, DateTo: {date_to_nullable}, " +
+              f"GameID: {game_id_nullable}, PlayerPosition: {player_position_nullable}, RookieYear: {rookie_year_nullable}, " +
+              f"ContextFilter: {context_filter_nullable}, ClutchTime: {clutch_time_nullable}, AheadBehind: {ahead_behind_nullable}, " +
+              f"PointDiff: {point_diff_nullable}, Position: {position_nullable}, RangeType: {range_type_nullable}, " +
+              f"StartPeriod: {start_period_nullable}, StartRange: {start_range_nullable}, EndPeriod: {end_period_nullable}, " +
+              f"EndRange: {end_range_nullable}, return_dataframe={return_dataframe}")
 
     if not season or not _validate_season_format(season):
         error_response = format_response(error=Errors.INVALID_SEASON_FORMAT.format(season=season))
@@ -187,9 +248,38 @@ def fetch_player_shotchart_logic(
 
         try:
             shotchart_endpoint = shotchartdetail.ShotChartDetail(
-                player_id=player_id, team_id=NBA_API_DEFAULT_TEAM_ID, season_nullable=season,
-                season_type_all_star=season_type, timeout=settings.DEFAULT_TIMEOUT_SECONDS,
-                context_measure_simple=SHOTCHART_CONTEXT_MEASURE
+                player_id=player_id,
+                team_id=NBA_API_DEFAULT_TEAM_ID,
+                season_nullable=season,
+                season_type_all_star=season_type,
+                context_measure_simple=SHOTCHART_CONTEXT_MEASURE,
+                last_n_games=last_n_games,
+                league_id=league_id,
+                month=month,
+                opponent_team_id=opponent_team_id,
+                period=period,
+                vs_division_nullable=vs_division_nullable,
+                vs_conference_nullable=vs_conference_nullable,
+                season_segment_nullable=season_segment_nullable,
+                outcome_nullable=outcome_nullable,
+                location_nullable=location_nullable,
+                game_segment_nullable=game_segment_nullable,
+                date_to_nullable=date_to_nullable,
+                date_from_nullable=date_from_nullable,
+                game_id_nullable=game_id_nullable,
+                player_position_nullable=player_position_nullable,
+                rookie_year_nullable=rookie_year_nullable,
+                context_filter_nullable=context_filter_nullable,
+                clutch_time_nullable=clutch_time_nullable,
+                ahead_behind_nullable=ahead_behind_nullable,
+                point_diff_nullable=point_diff_nullable,
+                position_nullable=position_nullable,
+                range_type_nullable=range_type_nullable,
+                start_period_nullable=start_period_nullable,
+                start_range_nullable=start_range_nullable,
+                end_period_nullable=end_period_nullable,
+                end_range_nullable=end_range_nullable,
+                timeout=settings.DEFAULT_TIMEOUT_SECONDS
             )
             shots_df = shotchart_endpoint.shot_chart_detail.get_data_frame()
             league_avg_df = shotchart_endpoint.league_averages.get_data_frame()
@@ -232,10 +322,44 @@ def fetch_player_shotchart_logic(
         if not shots_data_list:
             logger.warning(f"No shot data found for {player_actual_name} ({season}, {season_type}).")
             response_data = {
-                "player_name": player_actual_name, "player_id": player_id, "season": season, "season_type": season_type,
+                "player_name": player_actual_name,
+                "player_id": player_id,
+                "season": season,
+                "season_type": season_type,
+                "parameters": {
+                    "last_n_games": last_n_games,
+                    "league_id": league_id,
+                    "month": month,
+                    "opponent_team_id": opponent_team_id,
+                    "period": period,
+                    "vs_division": vs_division_nullable,
+                    "vs_conference": vs_conference_nullable,
+                    "season_segment": season_segment_nullable,
+                    "outcome": outcome_nullable,
+                    "location": location_nullable,
+                    "game_segment": game_segment_nullable,
+                    "date_from": date_from_nullable,
+                    "date_to": date_to_nullable,
+                    "game_id": game_id_nullable,
+                    "player_position": player_position_nullable,
+                    "rookie_year": rookie_year_nullable,
+                    "context_filter": context_filter_nullable,
+                    "clutch_time": clutch_time_nullable,
+                    "ahead_behind": ahead_behind_nullable,
+                    "point_diff": point_diff_nullable,
+                    "position": position_nullable,
+                    "range_type": range_type_nullable,
+                    "start_period": start_period_nullable,
+                    "start_range": start_range_nullable,
+                    "end_period": end_period_nullable,
+                    "end_range": end_range_nullable
+                },
                 "overall_stats": {"total_shots": 0, "made_shots": 0, "field_goal_percentage": 0.0},
-                "zone_breakdown": {}, "shot_data_summary": [], "league_averages": league_averages_list or [],
-                "visualization_path": None, "visualization_error": None,
+                "zone_breakdown": {},
+                "shot_data_summary": [],
+                "league_averages": league_averages_list or [],
+                "visualization_path": None,
+                "visualization_error": None,
                 "message": "No shot data found for the specified criteria."
             }
             if return_dataframe:
@@ -246,8 +370,40 @@ def fetch_player_shotchart_logic(
         zone_summary = _calculate_zone_summary(shots_data_list)
 
         shot_summary_for_viz = {
-            "player_name": player_actual_name, "player_id": player_id, "season": season, "season_type": season_type,
-            "overall_stats": overall_stats, "zone_breakdown": zone_summary,
+            "player_name": player_actual_name,
+            "player_id": player_id,
+            "season": season,
+            "season_type": season_type,
+            "parameters": {
+                "last_n_games": last_n_games,
+                "league_id": league_id,
+                "month": month,
+                "opponent_team_id": opponent_team_id,
+                "period": period,
+                "vs_division": vs_division_nullable,
+                "vs_conference": vs_conference_nullable,
+                "season_segment": season_segment_nullable,
+                "outcome": outcome_nullable,
+                "location": location_nullable,
+                "game_segment": game_segment_nullable,
+                "date_from": date_from_nullable,
+                "date_to": date_to_nullable,
+                "game_id": game_id_nullable,
+                "player_position": player_position_nullable,
+                "rookie_year": rookie_year_nullable,
+                "context_filter": context_filter_nullable,
+                "clutch_time": clutch_time_nullable,
+                "ahead_behind": ahead_behind_nullable,
+                "point_diff": point_diff_nullable,
+                "position": position_nullable,
+                "range_type": range_type_nullable,
+                "start_period": start_period_nullable,
+                "start_range": start_range_nullable,
+                "end_period": end_period_nullable,
+                "end_range": end_range_nullable
+            },
+            "overall_stats": overall_stats,
+            "zone_breakdown": zone_summary,
             "shot_locations": [{"x": s.get("LOC_X"), "y": s.get("LOC_Y"), "made": s.get("SHOT_MADE_FLAG") == 1, "zone": s.get("SHOT_ZONE_BASIC")} for s in shots_data_list]
         }
 
@@ -256,11 +412,44 @@ def fetch_player_shotchart_logic(
         visualization_path, visualization_error = _generate_shot_visualization(shot_summary_for_viz, player_actual_name, project_backend_dir)
 
         response_summary = {
-            "player_name": player_actual_name, "player_id": player_id, "season": season, "season_type": season_type,
-            "overall_stats": overall_stats, "zone_breakdown": zone_summary,
+            "player_name": player_actual_name,
+            "player_id": player_id,
+            "season": season,
+            "season_type": season_type,
+            "parameters": {
+                "last_n_games": last_n_games,
+                "league_id": league_id,
+                "month": month,
+                "opponent_team_id": opponent_team_id,
+                "period": period,
+                "vs_division": vs_division_nullable,
+                "vs_conference": vs_conference_nullable,
+                "season_segment": season_segment_nullable,
+                "outcome": outcome_nullable,
+                "location": location_nullable,
+                "game_segment": game_segment_nullable,
+                "date_from": date_from_nullable,
+                "date_to": date_to_nullable,
+                "game_id": game_id_nullable,
+                "player_position": player_position_nullable,
+                "rookie_year": rookie_year_nullable,
+                "context_filter": context_filter_nullable,
+                "clutch_time": clutch_time_nullable,
+                "ahead_behind": ahead_behind_nullable,
+                "point_diff": point_diff_nullable,
+                "position": position_nullable,
+                "range_type": range_type_nullable,
+                "start_period": start_period_nullable,
+                "start_range": start_range_nullable,
+                "end_period": end_period_nullable,
+                "end_range": end_range_nullable
+            },
+            "overall_stats": overall_stats,
+            "zone_breakdown": zone_summary,
             "shot_data_summary": shots_data_list,
             "league_averages": league_averages_list or [],
-            "visualization_path": visualization_path, "visualization_error": visualization_error
+            "visualization_path": visualization_path,
+            "visualization_error": visualization_error
         }
         logger.info(f"fetch_player_shotchart_logic completed for '{player_actual_name}'")
 
