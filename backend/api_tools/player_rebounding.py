@@ -88,6 +88,19 @@ def fetch_player_rebounding_stats_logic(
     season: str = settings.CURRENT_NBA_SEASON,
     season_type: str = SeasonTypeAllStar.regular,
     per_mode: str = PerModeSimple.per_game,
+    last_n_games: int = 0,
+    league_id: str = "00",
+    month: int = 0,
+    opponent_team_id: int = 0,
+    period: int = 0,
+    vs_division_nullable: Optional[str] = None,
+    vs_conference_nullable: Optional[str] = None,
+    season_segment_nullable: Optional[str] = None,
+    outcome_nullable: Optional[str] = None,
+    location_nullable: Optional[str] = None,
+    game_segment_nullable: Optional[str] = None,
+    date_to_nullable: Optional[str] = None,
+    date_from_nullable: Optional[str] = None,
     return_dataframe: bool = False
 ) -> Union[str, Tuple[str, Dict[str, pd.DataFrame]]]:
     """
@@ -102,6 +115,19 @@ def fetch_player_rebounding_stats_logic(
         season: NBA season in YYYY-YY format. Defaults to current season.
         season_type: Type of season. Defaults to Regular Season.
         per_mode: Statistical mode (PerModeSimple). Defaults to PerGame.
+        last_n_games: Number of games to include (0 for all games).
+        league_id: League ID (default: "00" for NBA).
+        month: Month number (0 for all months).
+        opponent_team_id: Filter by opponent team ID (0 for all teams).
+        period: Period number (0 for all periods).
+        vs_division_nullable: Filter by division (e.g., "Atlantic", "Central").
+        vs_conference_nullable: Filter by conference (e.g., "East", "West").
+        season_segment_nullable: Filter by season segment (e.g., "Post All-Star", "Pre All-Star").
+        outcome_nullable: Filter by game outcome (e.g., "W", "L").
+        location_nullable: Filter by game location (e.g., "Home", "Road").
+        game_segment_nullable: Filter by game segment (e.g., "First Half", "Second Half").
+        date_to_nullable: End date filter in format YYYY-MM-DD.
+        date_from_nullable: Start date filter in format YYYY-MM-DD.
         return_dataframe: Whether to return DataFrames along with the JSON response.
 
     Returns:
@@ -122,7 +148,11 @@ def fetch_player_rebounding_stats_logic(
             Tuple[str, Dict[str, pd.DataFrame]]: A tuple containing the JSON response string
                                                and a dictionary of DataFrames.
     """
-    logger.info(f"Executing fetch_player_rebounding_stats_logic for player: {player_name}, Season: {season}, PerMode: {per_mode}, return_dataframe={return_dataframe}")
+    logger.info(f"Executing fetch_player_rebounding_stats_logic for player: {player_name}, Season: {season}, PerMode: {per_mode}, " +
+              f"LastNGames: {last_n_games}, LeagueID: {league_id}, Month: {month}, OpponentTeamID: {opponent_team_id}, Period: {period}, " +
+              f"VsDivision: {vs_division_nullable}, VsConference: {vs_conference_nullable}, SeasonSegment: {season_segment_nullable}, " +
+              f"Outcome: {outcome_nullable}, Location: {location_nullable}, GameSegment: {game_segment_nullable}, " +
+              f"DateFrom: {date_from_nullable}, DateTo: {date_to_nullable}, return_dataframe={return_dataframe}")
 
     if not player_name or not player_name.strip():
         error_response = format_response(error=Errors.PLAYER_NAME_EMPTY)
@@ -170,8 +200,24 @@ def fetch_player_rebounding_stats_logic(
         # Call the API
         logger.debug(f"Fetching playerdashptreb for Player ID: {player_id}, Team ID: {team_id}, Season: {season}")
         reb_stats_endpoint = playerdashptreb.PlayerDashPtReb(
-            player_id=player_id, team_id=team_id, season=season,
-            season_type_all_star=season_type, per_mode_simple=per_mode,
+            player_id=player_id,
+            team_id=team_id,
+            season=season,
+            season_type_all_star=season_type,
+            per_mode_simple=per_mode,
+            last_n_games=last_n_games,
+            league_id=league_id,
+            month=month,
+            opponent_team_id=opponent_team_id,
+            period=period,
+            vs_division_nullable=vs_division_nullable,
+            vs_conference_nullable=vs_conference_nullable,
+            season_segment_nullable=season_segment_nullable,
+            outcome_nullable=outcome_nullable,
+            location_nullable=location_nullable,
+            game_segment_nullable=game_segment_nullable,
+            date_to_nullable=date_to_nullable,
+            date_from_nullable=date_from_nullable,
             timeout=settings.DEFAULT_TIMEOUT_SECONDS
         )
         logger.debug(f"playerdashptreb API call successful for {player_actual_name}")
@@ -251,10 +297,31 @@ def fetch_player_rebounding_stats_logic(
             logger.warning(f"No rebounding stats found for player {player_actual_name} with given filters (all original DFs were empty).")
 
             response_data = {
-                "player_name": player_actual_name, "player_id": player_id,
-                "parameters": {"season": season, "season_type": season_type, "per_mode": per_mode},
-                "overall": {}, "by_shot_type": [], "by_contest": [],
-                "by_shot_distance": [], "by_rebound_distance": []
+                "player_name": player_actual_name,
+                "player_id": player_id,
+                "parameters": {
+                    "season": season,
+                    "season_type": season_type,
+                    "per_mode": per_mode,
+                    "last_n_games": last_n_games,
+                    "league_id": league_id,
+                    "month": month,
+                    "opponent_team_id": opponent_team_id,
+                    "period": period,
+                    "vs_division": vs_division_nullable,
+                    "vs_conference": vs_conference_nullable,
+                    "season_segment": season_segment_nullable,
+                    "outcome": outcome_nullable,
+                    "location": location_nullable,
+                    "game_segment": game_segment_nullable,
+                    "date_from": date_from_nullable,
+                    "date_to": date_to_nullable
+                },
+                "overall": {},
+                "by_shot_type": [],
+                "by_contest": [],
+                "by_shot_distance": [],
+                "by_rebound_distance": []
             }
 
             if return_dataframe:
@@ -263,10 +330,30 @@ def fetch_player_rebounding_stats_logic(
 
         # Create response data
         result = {
-            "player_name": player_actual_name, "player_id": player_id,
-            "parameters": {"season": season, "season_type": season_type, "per_mode": per_mode},
-            "overall": overall_data or {}, "by_shot_type": shot_type_data or [],
-            "by_contest": contested_data or [], "by_shot_distance": distances_data or [],
+            "player_name": player_actual_name,
+            "player_id": player_id,
+            "parameters": {
+                "season": season,
+                "season_type": season_type,
+                "per_mode": per_mode,
+                "last_n_games": last_n_games,
+                "league_id": league_id,
+                "month": month,
+                "opponent_team_id": opponent_team_id,
+                "period": period,
+                "vs_division": vs_division_nullable,
+                "vs_conference": vs_conference_nullable,
+                "season_segment": season_segment_nullable,
+                "outcome": outcome_nullable,
+                "location": location_nullable,
+                "game_segment": game_segment_nullable,
+                "date_from": date_from_nullable,
+                "date_to": date_to_nullable
+            },
+            "overall": overall_data or {},
+            "by_shot_type": shot_type_data or [],
+            "by_contest": contested_data or [],
+            "by_shot_distance": distances_data or [],
             "by_rebound_distance": reb_dist_data or []
         }
 
