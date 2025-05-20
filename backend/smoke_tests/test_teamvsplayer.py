@@ -77,7 +77,7 @@ def test_fetch_teamvsplayer_dataframe():
     json_response, dataframes_dict = result
     assert isinstance(json_response, str)
     assert isinstance(dataframes_dict, dict)
-    
+
     data = json.loads(json_response)
     if "error" in data:
         print(f"API (DataFrame) returned an error: {data['error']}")
@@ -110,15 +110,19 @@ def test_fetch_teamvsplayer_dataframe():
     return json_response, dataframes_dict
 
 def test_fetch_teamvsplayer_advanced():
-    """Test fetching team vs player with advanced measure type."""
-    print("\n=== Testing fetch_teamvsplayer_logic with advanced measure type ===")
+    """Test fetching team vs player with advanced measure type and additional parameters."""
+    print("\n=== Testing fetch_teamvsplayer_logic with advanced measure type and additional parameters ===")
     json_response = fetch_teamvsplayer_logic(
         SAMPLE_TEAM_NAME,
         SAMPLE_VS_PLAYER_NAME,
         SAMPLE_SEASON,
         DEFAULT_SEASON_TYPE,
         DEFAULT_PER_MODE,
-        MeasureTypeDetailedDefense.advanced # Test with Advanced
+        MeasureTypeDetailedDefense.advanced, # Test with Advanced
+        last_n_games=10,
+        vs_conference_nullable="East",
+        location_nullable="Home",
+        league_id_nullable=LeagueID.nba
     )
     data = json.loads(json_response)
     assert isinstance(data, dict)
@@ -126,8 +130,13 @@ def test_fetch_teamvsplayer_advanced():
         print(f"API returned an error: {data['error']}")
     else:
         assert data["parameters"]["measure_type"] == MeasureTypeDetailedDefense.advanced
+        assert data["parameters"]["last_n_games"] == 10
+        assert data["parameters"]["vs_conference"] == "East"
+        assert data["parameters"]["location"] == "Home"
+        assert data["parameters"]["league_id"] == LeagueID.nba
         print(f"Advanced team vs player fetched for {data.get('team_name')} vs {data.get('vs_player_name')}")
-    print("\n=== Advanced measure type test completed ===")
+        print(f"Parameters: last_n_games={data['parameters']['last_n_games']}, vs_conference={data['parameters']['vs_conference']}, location={data['parameters']['location']}")
+    print("\n=== Advanced measure type and parameters test completed ===")
     return data
 
 # Minimal set of validation tests
@@ -154,7 +163,7 @@ def test_invalid_parameters_teamvsplayer():
 
 def run_all_tests():
     print(f"\n=== Running teamvsplayer smoke tests at {datetime.now().isoformat()} ===\n")
-    
+
     # Ensure cache directory exists
     os.makedirs(TEAM_VS_PLAYER_CSV_DIR, exist_ok=True)
 
@@ -162,8 +171,8 @@ def run_all_tests():
     test_fetch_teamvsplayer_dataframe()
     test_fetch_teamvsplayer_advanced()
     test_invalid_parameters_teamvsplayer()
-        
+
     print("\n\n=== All teamvsplayer tests completed successfully ===")
 
 if __name__ == "__main__":
-    run_all_tests() 
+    run_all_tests()

@@ -46,7 +46,7 @@ def _get_csv_path_for_team_vs_player(
     season_type: str,
     per_mode: str,
     measure_type: str,
-    dashboard_type: str 
+    dashboard_type: str
 ) -> str:
     """
     Generates a file path for saving team vs player DataFrame as CSV.
@@ -85,15 +85,15 @@ def fetch_teamvsplayer_logic(
     period: int = 0,
     plus_minus: str = "N",
     rank: str = "N",
-    vs_division: Optional[str] = None,
-    vs_conference: Optional[str] = None,
-    season_segment: Optional[str] = None,
-    outcome: Optional[str] = None,
-    location: Optional[str] = None,
-    league_id: Optional[str] = None,
-    game_segment: Optional[str] = None,
-    date_from: Optional[str] = None,
-    date_to: Optional[str] = None,
+    vs_division_nullable: Optional[str] = None,
+    vs_conference_nullable: Optional[str] = None,
+    season_segment_nullable: Optional[str] = None,
+    outcome_nullable: Optional[str] = None,
+    location_nullable: Optional[str] = None,
+    league_id_nullable: Optional[str] = None,
+    game_segment_nullable: Optional[str] = None,
+    date_from_nullable: Optional[str] = None,
+    date_to_nullable: Optional[str] = None,
     player_identifier: Optional[str] = None,
     return_dataframe: bool = False
 ) -> Union[str, Tuple[str, Dict[str, pd.DataFrame]]]:
@@ -113,15 +113,15 @@ def fetch_teamvsplayer_logic(
         period: Filter by period (0 for all)
         plus_minus: Whether to include plus/minus ('Y' or 'N')
         rank: Whether to include statistical ranks ('Y' or 'N')
-        vs_division: Filter by division
-        vs_conference: Filter by conference
-        season_segment: Filter by season segment
-        outcome: Filter by game outcome ('W' or 'L')
-        location: Filter by game location ('Home' or 'Road')
-        league_id: League ID
-        game_segment: Filter by game segment
-        date_from: Start date filter (YYYY-MM-DD)
-        date_to: End date filter (YYYY-MM-DD)
+        vs_division_nullable: Filter by division
+        vs_conference_nullable: Filter by conference
+        season_segment_nullable: Filter by season segment
+        outcome_nullable: Filter by game outcome ('W' or 'L')
+        location_nullable: Filter by game location ('Home' or 'Road')
+        league_id_nullable: League ID
+        game_segment_nullable: Filter by game segment
+        date_from_nullable: Start date filter (YYYY-MM-DD)
+        date_to_nullable: End date filter (YYYY-MM-DD)
         player_identifier: (Optional) Player name or ID for PlayerID param
         return_dataframe: Whether to return DataFrames along with the JSON response
     Returns:
@@ -141,14 +141,14 @@ def fetch_teamvsplayer_logic(
         return format_response(error=error_msg)
 
     # Validate dates
-    if date_from and not validate_date_format(date_from):
-        error_msg = Errors.INVALID_DATE_FORMAT.format(date=date_from)
+    if date_from_nullable and not validate_date_format(date_from_nullable):
+        error_msg = Errors.INVALID_DATE_FORMAT.format(date=date_from_nullable)
         if return_dataframe:
             return format_response(error=error_msg), dataframes
         return format_response(error=error_msg)
 
-    if date_to and not validate_date_format(date_to):
-        error_msg = Errors.INVALID_DATE_FORMAT.format(date=date_to)
+    if date_to_nullable and not validate_date_format(date_to_nullable):
+        error_msg = Errors.INVALID_DATE_FORMAT.format(date=date_to_nullable)
         if return_dataframe:
             return format_response(error=error_msg), dataframes
         return format_response(error=error_msg)
@@ -175,8 +175,8 @@ def fetch_teamvsplayer_logic(
         return format_response(error=error_msg)
 
     # Validate league_id
-    if league_id and league_id not in _VALID_LEAGUE_IDS:
-        error_msg = Errors.INVALID_LEAGUE_ID.format(value=league_id, options=", ".join(list(_VALID_LEAGUE_IDS)[:5]))
+    if league_id_nullable and league_id_nullable not in _VALID_LEAGUE_IDS:
+        error_msg = Errors.INVALID_LEAGUE_ID.format(value=league_id_nullable, options=", ".join(list(_VALID_LEAGUE_IDS)[:5]))
         if return_dataframe:
             return format_response(error=error_msg), dataframes
         return format_response(error=error_msg)
@@ -208,15 +208,15 @@ def fetch_teamvsplayer_logic(
             period=period,
             plus_minus=plus_minus,
             rank=rank,
-            vs_division_nullable=vs_division,
-            vs_conference_nullable=vs_conference,
-            season_segment_nullable=season_segment,
-            outcome_nullable=outcome,
-            location_nullable=location,
-            league_id_nullable=league_id,
-            game_segment_nullable=game_segment,
-            date_from_nullable=date_from,
-            date_to_nullable=date_to,
+            vs_division_nullable=vs_division_nullable,
+            vs_conference_nullable=vs_conference_nullable,
+            season_segment_nullable=season_segment_nullable,
+            outcome_nullable=outcome_nullable,
+            location_nullable=location_nullable,
+            league_id_nullable=league_id_nullable,
+            game_segment_nullable=game_segment_nullable,
+            date_from_nullable=date_from_nullable,
+            date_to_nullable=date_to_nullable,
             player_id_nullable=player_id,
             timeout=settings.DEFAULT_TIMEOUT_SECONDS
         )
@@ -276,15 +276,15 @@ def fetch_teamvsplayer_logic(
                 "period": period,
                 "plus_minus": plus_minus,
                 "rank": rank,
-                "vs_division": vs_division,
-                "vs_conference": vs_conference,
-                "season_segment": season_segment,
-                "outcome": outcome,
-                "location": location,
-                "league_id": league_id,
-                "game_segment": game_segment,
-                "date_from": date_from,
-                "date_to": date_to,
+                "vs_division": vs_division_nullable,
+                "vs_conference": vs_conference_nullable,
+                "season_segment": season_segment_nullable,
+                "outcome": outcome_nullable,
+                "location": location_nullable,
+                "league_id": league_id_nullable,
+                "game_segment": game_segment_nullable,
+                "date_from": date_from_nullable,
+                "date_to": date_to_nullable,
                 "player_id": player_id
             },
             "overall": _process_dataframe(overall_df, single_row=False),
@@ -309,4 +309,4 @@ def fetch_teamvsplayer_logic(
         error_msg = Errors.TEAM_VS_PLAYER_API.format(identifier=error_identifier_context, error=str(api_error)) if hasattr(Errors, "TEAM_VS_PLAYER_API") else Errors.API_ERROR.format(error=str(api_error))
         if return_dataframe:
             return format_response(error=error_msg), dataframes
-        return format_response(error=error_msg) 
+        return format_response(error=error_msg)
