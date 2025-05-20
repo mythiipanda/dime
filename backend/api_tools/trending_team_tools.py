@@ -1,11 +1,14 @@
 """
 Provides logic to fetch and determine top-performing (trending) teams
 based on league standings data.
+Provides both JSON and DataFrame outputs with CSV caching.
 """
 import logging
 import json
+import os
+import pandas as pd
 from datetime import datetime
-from typing import Any, Tuple, List, Dict, Optional, Set
+from typing import Any, Tuple, List, Dict, Optional, Set, Union
 from functools import lru_cache
 
 from nba_api.stats.library.parameters import SeasonTypeAllStar, LeagueID
@@ -14,6 +17,7 @@ from ..config import settings
 from ..core.errors import Errors
 from .utils import format_response
 from ..utils.validation import _validate_season_format
+from ..utils.path_utils import get_cache_dir, get_cache_file_path, get_relative_cache_path
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +26,52 @@ CACHE_TTL_SECONDS_TRENDING_TEAMS = 3600 * 4  # Cache standings for trending team
 TRENDING_TEAMS_RAW_STANDINGS_CACHE_SIZE = 16
 TOP_TEAMS_PROCESSED_CACHE_SIZE = 64
 DEFAULT_TOP_N_TEAMS = 5
+
+# --- Cache Directory Setup ---
+TRENDING_TEAMS_CSV_DIR = get_cache_dir("trending_teams")
+
+# --- Helper Functions for CSV Caching ---
+def _save_dataframe_to_csv(df: pd.DataFrame, file_path: str) -> None:
+    """
+    Saves a DataFrame to a CSV file, creating the directory if it doesn't exist.
+
+    Args:
+        df: The DataFrame to save
+        file_path: The path to save the CSV file
+    """
+    try:
+        # Create directory if it doesn't exist
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
+        # Save DataFrame to CSV
+        df.to_csv(file_path, index=False)
+        logger.debug(f"Saved DataFrame to {file_path}")
+    except Exception as e:
+        logger.error(f"Error saving DataFrame to {file_path}: {e}", exc_info=True)
+
+def _get_csv_path_for_trending_teams(
+    season: str,
+    season_type: str,
+    league_id: str,
+    top_n: int
+) -> str:
+    """
+    Generates a file path for saving trending teams DataFrame as CSV.
+
+    Args:
+        season: The season in YYYY-YY format
+        season_type: The season type (e.g., 'Regular Season', 'Playoffs')
+        league_id: The league ID (e.g., '00' for NBA)
+        top_n: The number of top teams to include
+
+    Returns:
+        Path to the CSV file
+    """
+    # Clean season type for filename
+    clean_season_type = season_type.replace(" ", "_").lower()
+
+    filename = f"top_{top_n}_teams_{season}_{clean_season_type}_{league_id}.csv"
+    return get_cache_file_path(filename, "trending_teams")
 
 _TRENDING_TEAMS_VALID_SEASON_TYPES: Set[str] = {getattr(SeasonTypeAllStar, attr) for attr in dir(SeasonTypeAllStar) if not attr.startswith('_') and isinstance(getattr(SeasonTypeAllStar, attr), str)}
 _TRENDING_TEAMS_VALID_LEAGUE_IDS: Set[str] = {getattr(LeagueID, attr) for attr in dir(LeagueID) if not attr.startswith('_') and isinstance(getattr(LeagueID, attr), str)}
@@ -91,16 +141,38 @@ def fetch_top_teams_logic(
     season_type: str = SeasonTypeAllStar.regular,
     league_id: str = LeagueID.nba,
     top_n: int = DEFAULT_TOP_N_TEAMS,
-    bypass_cache: bool = False
-) -> str:
+    bypass_cache: bool = False,
+    return_dataframe: bool = False
+) -> Union[str, Tuple[str, Dict[str, pd.DataFrame]]]:
     """
     Fetches the top N performing teams based on win percentage.
     Utilizes cached league standings data.
+    Provides DataFrame output capabilities.
+
+    Args:
+        season: NBA season in YYYY-YY format. Defaults to current season.
+        season_type: Type of season. Defaults to Regular Season.
+        league_id: League ID. Defaults to NBA.
+        top_n: Number of top teams to return. Defaults to 5.
+        bypass_cache: Whether to bypass the cache and fetch fresh data. Defaults to False.
+        return_dataframe: Whether to return DataFrames along with the JSON response.
+
+    Returns:
+        If return_dataframe=False:
+            str: JSON string with top teams or an error message.
+        If return_dataframe=True:
+            Tuple[str, Dict[str, pd.DataFrame]]: A tuple containing the JSON response string
+                                               and a dictionary of DataFrames.
     """
-    logger.info(f"Executing fetch_top_teams_logic for season: {season}, type: {season_type}, league: {league_id}, top_n: {top_n}")
+    logger.info(f"Executing fetch_top_teams_logic for season: {season}, type: {season_type}, league: {league_id}, top_n: {top_n}, return_dataframe: {return_dataframe}")
+
+    # Store DataFrames if requested
+    dataframes = {}
 
     param_error = _validate_trending_teams_params(season, season_type, league_id, top_n)
     if param_error:
+        if return_dataframe:
+            return format_response(error=param_error), dataframes
         return format_response(error=param_error)
 
     cache_key_for_standings = (season, season_type, league_id)
@@ -118,24 +190,43 @@ def fetch_top_teams_logic(
                 timestamp_bucket=timestamp_bucket, # Corrected arg name
                 **standings_params
             )
-        
+
         try:
             standings_data_response = json.loads(standings_json_str)
         except json.JSONDecodeError as json_err:
             logger.error(f"Failed to decode JSON from standings logic: {json_err}. Response (first 500): {standings_json_str[:500]}")
-            return format_response(error=Errors.PROCESSING_ERROR.format(error="invalid JSON from standings"))
+            error_response = format_response(error=Errors.PROCESSING_ERROR.format(error="invalid JSON from standings"))
+            if return_dataframe:
+                return error_response, dataframes
+            return error_response
 
         if isinstance(standings_data_response, dict) and "error" in standings_data_response:
             logger.error(f"Error received from upstream standings fetch: {standings_data_response['error']}")
+            if return_dataframe:
+                return standings_json_str, dataframes # Propagate the error JSON
             return standings_json_str # Propagate the error JSON
 
         standings_list = standings_data_response.get("standings", [])
         if not standings_list:
             logger.warning(f"No standings data available for {season}, type {season_type}, league {league_id}.")
-            return format_response({
+
+            response_data = {
                 "season": season, "season_type": season_type, "league_id": league_id,
                 "requested_top_n": top_n, "top_teams": []
-            })
+            }
+
+            # Add DataFrame metadata to the response if returning DataFrames
+            if return_dataframe:
+                response_data["dataframe_info"] = {
+                    "message": "No standings data available for the specified parameters",
+                    "dataframes": {}
+                }
+
+                # Create an empty DataFrame for top teams
+                dataframes["top_teams"] = pd.DataFrame(columns=_ESSENTIAL_TEAM_FIELDS_FOR_TRENDING)
+
+                return format_response(response_data), dataframes
+            return format_response(response_data)
 
         top_teams_list = _extract_and_format_top_teams(standings_list, top_n)
 
@@ -143,9 +234,38 @@ def fetch_top_teams_logic(
             "season": season, "season_type": season_type, "league_id": league_id,
             "requested_top_n": top_n, "top_teams": top_teams_list
         }
+
+        if return_dataframe:
+            # Create a DataFrame from the top teams list
+            top_teams_df = pd.DataFrame(top_teams_list)
+            dataframes["top_teams"] = top_teams_df
+
+            # Save DataFrame to CSV if not empty
+            if not top_teams_df.empty:
+                csv_path = _get_csv_path_for_trending_teams(season, season_type, league_id, top_n)
+                _save_dataframe_to_csv(top_teams_df, csv_path)
+
+                # Add DataFrame metadata to the response
+                result_payload["dataframe_info"] = {
+                    "message": "Top teams data has been converted to DataFrame and saved as CSV file",
+                    "dataframes": {
+                        "top_teams": {
+                            "shape": list(top_teams_df.shape),
+                            "columns": top_teams_df.columns.tolist(),
+                            "csv_path": get_relative_cache_path(os.path.basename(csv_path), "trending_teams")
+                        }
+                    }
+                }
+
         logger.info(f"Successfully determined top {len(top_teams_list)} teams for {season}, type {season_type}, league {league_id}.")
+
+        if return_dataframe:
+            return format_response(result_payload), dataframes
         return format_response(result_payload)
 
     except Exception as e:
         logger.error(f"Unexpected error in fetch_top_teams_logic: {e}", exc_info=True)
-        return format_response(error=Errors.TRENDING_TEAMS_UNEXPECTED.format(error=str(e)))
+        error_response = format_response(error=Errors.TRENDING_TEAMS_UNEXPECTED.format(error=str(e)))
+        if return_dataframe:
+            return error_response, dataframes
+        return error_response
