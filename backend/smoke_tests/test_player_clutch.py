@@ -10,7 +10,7 @@ from datetime import datetime
 
 
 
-from api_tools.player_clutch import (
+from backend.api_tools.player_clutch import (
     fetch_player_clutch_stats_logic,
     PLAYER_CLUTCH_CSV_DIR
 )
@@ -27,109 +27,113 @@ def test_fetch_player_clutch_stats_basic():
     """Test fetching player clutch stats with default parameters."""
     print("\n=== Testing fetch_player_clutch_stats_logic (basic) ===")
     
-    # Test with default parameters (JSON output)
     json_response = fetch_player_clutch_stats_logic(
         SAMPLE_PLAYER_NAME, 
         SAMPLE_SEASON, 
         SAMPLE_SEASON_TYPE
     )
-    
-    # Parse the JSON response
     data = json.loads(json_response)
     
-    # Check if the response has the expected structure
     assert isinstance(data, dict), "Response should be a dictionary"
     
-    # Check if there's an error in the response
-    if "error" in data:
+    if "error" in data and data["error"]:
         print(f"API returned an error: {data['error']}")
-        print("This might be expected if the NBA API is unavailable or rate-limited.")
-        print("Continuing with other tests...")
+        # Depending on the error, you might want to fail the test or log a warning
+        # For now, let's assume some errors (like temporary API issues) don't fail the smoke test
+        # but critical structural errors should.
+        assert "Player not found" not in data["error"], "Should find LeBron James"
     else:
-        # Check if the player_name field exists and matches the input
         assert "player_name" in data, "Response should have a 'player_name' field"
         assert data["player_name"] == SAMPLE_PLAYER_NAME, f"player_name should be {SAMPLE_PLAYER_NAME}"
+        assert "player_id" in data, "Response should have a 'player_id' field"
         
-        # Check if the parameters field exists
-        assert "parameters" in data, "Response should have a 'parameters' field"
+        assert "parameters_used" in data, "Response should have a 'parameters_used' field"
+        params_used = data["parameters_used"]
+        assert params_used["season"] == SAMPLE_SEASON
+        assert params_used["season_type_playoffs"] == SAMPLE_SEASON_TYPE # maps to season_type_playoffs
+        assert params_used["measure_type_detailed"] == MeasureTypeDetailed.base # Default
+
+        assert "data_sets" in data, "Response should have a 'data_sets' field"
+        data_sets = data["data_sets"]
+        assert isinstance(data_sets, dict), "'data_sets' should be a dictionary"
+        assert len(data_sets) > 5, f"Expected multiple clutch data sets, got {len(data_sets)}"
         
-        # Check if the clutch_dashboards field exists
-        assert "clutch_dashboards" in data, "Response should have a 'clutch_dashboards' field"
-        
-        # Print some information about the data
         print(f"Player: {data.get('player_name', 'N/A')} (ID: {data.get('player_id', 'N/A')})")
-        print(f"Season: {data.get('parameters', {}).get('season', 'N/A')}")
-        print(f"Season Type: {data.get('parameters', {}).get('season_type', 'N/A')}")
-        
-        # Print clutch dashboards
-        if "clutch_dashboards" in data:
-            dashboards = data["clutch_dashboards"]
-            print(f"\nClutch Dashboards: {len(dashboards)} dashboards")
-            for dash_name, dash_data in dashboards.items():
-                print(f"\n{dash_name}: {len(dash_data)} rows")
-                if dash_data:
-                    # Print first row of each dashboard
-                    first_row = dash_data[0]
-                    print("Sample data (first row):")
-                    for key, value in list(first_row.items())[:5]:  # Show first 5 columns
-                        print(f"  {key}: {value}")
+        print(f"Parameters Used: {params_used}")
+        print(f"\nData Sets Available: {list(data_sets.keys())}")
+
+        # Check a couple of expected data sets
+        for ds_name in ["OverallPlayerDashboard", "Last5Min5PointPlayerDashboard"]:
+            assert ds_name in data_sets, f"Expected data set '{ds_name}' not found."
+            assert isinstance(data_sets[ds_name], list), f"Data set '{ds_name}' should be a list."
+            if data_sets[ds_name]: # If not empty list
+                assert isinstance(data_sets[ds_name][0], dict), f"Elements of data set '{ds_name}' should be dictionaries."
     
     print("\n=== Basic test completed ===")
-    return data
 
-def test_fetch_player_clutch_stats_advanced():
-    """Test fetching player clutch stats with advanced measure type."""
-    print("\n=== Testing fetch_player_clutch_stats_logic (advanced) ===")
+def test_fetch_player_clutch_stats_advanced_and_filters():
+    """Test fetching player clutch stats with advanced measure type and other filters."""
+    print("\n=== Testing fetch_player_clutch_stats_logic (advanced and filters) ===")
     
-    # Test with advanced measure type
+    test_opponent_team_id = 1610612747 # Los Angeles Lakers
+    test_location = "Home"
+    test_outcome = "W"
+    test_league_id = "00" # NBA
+    test_date_from = f"{SAMPLE_SEASON[:4]}-10-01" # Start of typical season
+    test_date_to = f"{SAMPLE_SEASON[:4]}-12-31"
+
     json_response = fetch_player_clutch_stats_logic(
         SAMPLE_PLAYER_NAME, 
         SAMPLE_SEASON, 
         SAMPLE_SEASON_TYPE,
-        measure_type=MeasureTypeDetailed.advanced
+        measure_type=MeasureTypeDetailed.advanced,
+        per_mode=PerModeDetailed.per_game,
+        opponent_team_id=test_opponent_team_id,
+        location_nullable=test_location,
+        outcome_nullable=test_outcome,
+        league_id=test_league_id,
+        date_from_nullable=test_date_from,
+        date_to_nullable=test_date_to
     )
-    
-    # Parse the JSON response
     data = json.loads(json_response)
     
-    # Check if the response has the expected structure
     assert isinstance(data, dict), "Response should be a dictionary"
-    
-    # Check if there's an error in the response
-    if "error" in data:
+
+    if "error" in data and data["error"]:
         print(f"API returned an error: {data['error']}")
-        print("This might be expected if the NBA API is unavailable or rate-limited.")
-        print("Continuing with other tests...")
     else:
-        # Check if the measure_type parameter matches the input
-        assert data.get("parameters", {}).get("measure_type") == MeasureTypeDetailed.advanced, \
-            f"measure_type should be {MeasureTypeDetailed.advanced}"
-        
-        # Print some information about the data
+        assert "parameters_used" in data, "Response should have a 'parameters_used' field"
+        params_used = data["parameters_used"]
+        assert params_used["measure_type_detailed"] == MeasureTypeDetailed.advanced
+        assert params_used["per_mode_detailed"] == PerModeDetailed.per_game
+        assert params_used["opponent_team_id"] == test_opponent_team_id
+        assert params_used["location_nullable"] == test_location
+        assert params_used["outcome_nullable"] == test_outcome
+        assert params_used["league_id_nullable"] == test_league_id
+        assert params_used["date_from_nullable"] == test_date_from
+        assert params_used["date_to_nullable"] == test_date_to
+
+        assert "data_sets" in data, "Response should have a 'data_sets' field"
+        data_sets = data["data_sets"]
+        assert isinstance(data_sets, dict), "'data_sets' should be a dictionary"
+        # Even with filters, we expect the structure of data_sets
+        assert len(data_sets) > 0, "Expected data_sets structure even if filtered results are empty."
+
         print(f"Player: {data.get('player_name', 'N/A')} (ID: {data.get('player_id', 'N/A')})")
-        print(f"Measure Type: {data.get('parameters', {}).get('measure_type', 'N/A')}")
-        
-        # Print clutch dashboards
-        if "clutch_dashboards" in data:
-            dashboards = data["clutch_dashboards"]
-            print(f"\nClutch Dashboards: {len(dashboards)} dashboards")
-            for dash_name, dash_data in dashboards.items():
-                print(f"\n{dash_name}: {len(dash_data)} rows")
-                if dash_data:
-                    # Print first row of each dashboard
-                    first_row = dash_data[0]
-                    print("Sample data (first row):")
-                    for key, value in list(first_row.items())[:5]:  # Show first 5 columns
-                        print(f"  {key}: {value}")
-    
-    print("\n=== Advanced test completed ===")
-    return data
+        print(f"Parameters Used: {params_used}")
+        print(f"Data Sets Available (filtered): {list(data_sets.keys())}")
+        # It's harder to assert non-emptiness with tight filters, so we mainly check structure and param reflection
+        if "OverallPlayerDashboard" in data_sets and data_sets["OverallPlayerDashboard"]:
+            print(f"Sample from 'OverallPlayerDashboard' (filtered): {data_sets['OverallPlayerDashboard'][0]}")
+        else:
+            print("'OverallPlayerDashboard' is empty or not present with current filters.")
+            
+    print("\n=== Advanced and filters test completed ===")
 
 def test_fetch_player_clutch_stats_dataframe():
     """Test fetching player clutch stats with DataFrame output."""
     print("\n=== Testing fetch_player_clutch_stats_logic with DataFrame output ===")
     
-    # Test with return_dataframe=True
     result = fetch_player_clutch_stats_logic(
         SAMPLE_PLAYER_NAME, 
         SAMPLE_SEASON, 
@@ -137,64 +141,116 @@ def test_fetch_player_clutch_stats_dataframe():
         return_dataframe=True
     )
     
-    # Check if the result is a tuple
     assert isinstance(result, tuple), "Result should be a tuple when return_dataframe=True"
     assert len(result) == 2, "Result tuple should have 2 elements"
     
-    json_response, dataframes = result
+    json_response, dataframes_dict = result
     
-    # Check if the first element is a JSON string
     assert isinstance(json_response, str), "First element should be a JSON string"
+    data = json.loads(json_response) # Parse JSON to check its content too
+
+    assert isinstance(dataframes_dict, dict), "Second element should be a dictionary of DataFrames"
     
-    # Check if the second element is a dictionary of DataFrames
-    assert isinstance(dataframes, dict), "Second element should be a dictionary of DataFrames"
-    
-    # Print DataFrame info
-    print(f"\nDataFrames returned: {len(dataframes)} dashboards")
-    for key, df in dataframes.items():
-        if not df.empty:
-            print(f"\nDataFrame '{key}' shape: {df.shape}")
-            print(f"DataFrame '{key}' columns: {df.columns.tolist()[:5]}...")  # Show first 5 columns
-    
-    # Check if the CSV files were created
-    if os.path.exists(PLAYER_CLUTCH_CSV_DIR):
-        csv_files = [f for f in os.listdir(PLAYER_CLUTCH_CSV_DIR) if f.startswith(SAMPLE_PLAYER_NAME.lower().replace(" ", "_"))]
-        print(f"\nCSV files created: {len(csv_files)}")
-        if csv_files:
-            print(f"Sample CSV files: {csv_files[:3]}...")
-    
-    # Display a sample of one DataFrame if not empty
-    for key, df in dataframes.items():
-        if not df.empty:
-            print(f"\nSample of DataFrame '{key}' (first 3 rows):")
-            print(df.head(3))
-            break
-    
+    if "error" in data and data["error"]:
+        print(f"API returned an error in JSON part: {data['error']}")
+        assert not dataframes_dict, "DataFrames dict should be empty if JSON has error."
+    else:
+        assert "data_sets" in data, "JSON response should have 'data_sets' field"
+        json_data_sets = data["data_sets"]
+        assert isinstance(json_data_sets, dict)
+
+        print(f"\nDataFrames returned: {len(dataframes_dict)} dashboards")
+        assert len(dataframes_dict) > 5, f"Expected multiple DataFrames, got {len(dataframes_dict)}"
+        
+        # Check consistency between JSON data_sets keys and DataFrame keys
+        assert set(json_data_sets.keys()) == set(dataframes_dict.keys()), \
+            "Keys in JSON data_sets and DataFrame dictionary should match"
+
+        for key, df in dataframes_dict.items():
+            if not df.empty:
+                print(f"\nDataFrame '{key}' shape: {df.shape}")
+                print(f"DataFrame '{key}' columns: {df.columns.tolist()}")
+                assert key in json_data_sets, f"DataFrame key '{key}' should be in JSON data_sets"
+                assert isinstance(json_data_sets[key], list), f"JSON data_set '{key}' should be a list"
+                if json_data_sets[key]: # If JSON has data, DF rows should roughly match
+                    # This is a loose check, as processing might slightly alter things
+                    # assert df.shape[0] == len(json_data_sets[key]), \
+                    #    f"DataFrame '{key}' row count ({df.shape[0]}) should match JSON list length ({len(json_data_sets[key])})"
+                    pass # Row count can differ due to _process_dataframe, so skipping strict check here
+
+                # Check if the CSV files were created (only for non-empty DFs)
+                csv_file_name_part = f"{SAMPLE_PLAYER_NAME.lower().replace(' ', '_')}_{SAMPLE_SEASON}_{SAMPLE_SEASON_TYPE.lower().replace(' ', '_')}_{key.lower()}.csv"
+                expected_csv_path = os.path.join(PLAYER_CLUTCH_CSV_DIR, csv_file_name_part)
+                assert os.path.exists(expected_csv_path), f"Expected CSV file {expected_csv_path} was not created for DataFrame '{key}'"
+                print(f"CSV file found: {expected_csv_path}")
+
+            else:
+                print(f"DataFrame '{key}' is empty.")
+                # If DF is empty, corresponding JSON list might also be empty or just headers
+                # assert not json_data_sets.get(key) or len(json_data_sets.get(key,[])) <=1, \
+                #    f"If DataFrame '{key}' is empty, JSON data set should also be empty or header-only."
+
     print("\n=== DataFrame test completed ===")
-    return json_response, dataframes
 
 def run_all_tests():
     """Run all tests in sequence."""
     print(f"=== Running player_clutch smoke tests at {datetime.now().isoformat()} ===\n")
     
-    try:
-        # Run the tests
-        basic_data = test_fetch_player_clutch_stats_basic()
-        advanced_data = test_fetch_player_clutch_stats_advanced()
-        json_response, dataframes = test_fetch_player_clutch_stats_dataframe()
-        
-        print("\n=== All tests completed successfully ===")
-        return True
-    except Exception as e:
-        print(f"\n!!! Test failed with error: {str(e)} !!!")
-        import traceback
-        traceback.print_exc()
-        return False
+    all_passed = True
+    tests_run = 0
+    tests_failed = 0
+
+    def run_single_test(test_func, test_name):
+        nonlocal all_passed, tests_run, tests_failed
+        tests_run += 1
+        try:
+            print(f"--- Starting test: {test_name} ---")
+            test_func()
+            print(f"--- Test PASSED: {test_name} ---")
+        except AssertionError as e:
+            all_passed = False
+            tests_failed +=1
+            print(f"!!! Test FAILED: {test_name} - Assertion Error: {e} !!!")
+            import traceback
+            traceback.print_exc()
+        except Exception as e:
+            all_passed = False
+            tests_failed += 1
+            print(f"!!! Test FAILED: {test_name} - Exception: {e} !!!")
+            import traceback
+            traceback.print_exc()
+
+    run_single_test(test_fetch_player_clutch_stats_basic, "Basic Clutch Stats")
+    run_single_test(test_fetch_player_clutch_stats_advanced_and_filters, "Advanced Clutch Stats with Filters")
+    run_single_test(test_fetch_player_clutch_stats_dataframe, "Clutch Stats DataFrame Output")
+    
+    print("\n---------------------------------------")
+    print(f"Total Tests Run: {tests_run}")
+    print(f"Tests Passed: {tests_run - tests_failed}")
+    print(f"Tests Failed: {tests_failed}")
+    print("---------------------------------------")
+
+    if all_passed:
+        print("\n=== All player_clutch smoke tests completed successfully ===")
+    else:
+        print("\n!!! Some player_clutch smoke tests FAILED !!!")
+    return all_passed
 
 if __name__ == "__main__":
     import sys
+    # Ensure the backend directory is in the Python path for standalone execution
+    # This allows imports like `from api_tools.player_clutch import ...`
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    backend_dir = os.path.dirname(current_dir) # Goes from smoke_tests to backend
+    project_root_dir = os.path.dirname(backend_dir) # Goes from backend to project root
 
-# Add the parent directory to the Python path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+    # Add project root to sys.path to allow `from backend.api_tools...` if necessary
+    # and to find the `config` module if it's at the root or backend level.
+    if project_root_dir not in sys.path:
+        sys.path.insert(0, project_root_dir)
+    # If your config.py is in backend/ then backend_dir should be in path
+    # if backend_dir not in sys.path:
+    #     sys.path.insert(0, backend_dir)
+
     success = run_all_tests()
     sys.exit(0 if success else 1)
