@@ -10,7 +10,16 @@ from datetime import datetime
 
 
 
-from api_tools.player_passing import (
+import os
+import sys
+
+# Add the project root directory to the Python path
+current_dir = os.path.dirname(os.path.abspath(__file__))
+backend_dir = os.path.dirname(current_dir)
+project_root = os.path.dirname(backend_dir)
+sys.path.insert(0, project_root)
+
+from backend.api_tools.player_passing import (
     fetch_player_passing_stats_logic,
     PLAYER_PASSING_CSV_DIR
 )
@@ -133,6 +142,62 @@ def test_fetch_player_passing_stats_totals():
     print("\n=== Totals test completed ===")
     return data
 
+def test_fetch_player_passing_stats_with_filters():
+    """Test fetching player passing stats with additional filters."""
+    print("\n=== Testing fetch_player_passing_stats_logic with filters ===")
+
+    # Test with additional filters
+    json_response = fetch_player_passing_stats_logic(
+        SAMPLE_PLAYER_NAME,
+        SAMPLE_SEASON,
+        SAMPLE_SEASON_TYPE,
+        per_mode=PerModeSimple.per_game,
+        last_n_games=10,  # Last 10 games
+        location_nullable="Home"  # Only home games
+    )
+
+    # Parse the JSON response
+    data = json.loads(json_response)
+
+    # Check if the response has the expected structure
+    assert isinstance(data, dict), "Response should be a dictionary"
+
+    # Check if there's an error in the response
+    if "error" in data:
+        print(f"API returned an error: {data['error']}")
+        print("This might be expected if the NBA API is unavailable or rate-limited.")
+        print("Continuing with other tests...")
+    else:
+        # Check if the parameters field exists and contains the filter values
+        assert "parameters" in data, "Response should have a 'parameters' field"
+        params = data["parameters"]
+
+        # Check if the filter parameters are included in the response
+        assert "last_n_games" in params, "Parameters should include 'last_n_games'"
+        assert "location" in params, "Parameters should include 'location'"
+
+        # Check if the filter values match what we provided
+        assert params["last_n_games"] == 10, "last_n_games should be 10"
+        assert params["location"] == "Home", "location should be 'Home'"
+
+        # Print filter information
+        print(f"Player: {data.get('player_name', 'N/A')} (ID: {data.get('player_id', 'N/A')})")
+        print(f"Filters applied:")
+        print(f"  Last N Games: {params.get('last_n_games', 'N/A')}")
+        print(f"  Location: {params.get('location', 'N/A')}")
+
+        # Print passes made and received
+        if "passes_made" in data:
+            passes_made = data["passes_made"]
+            print(f"\nFiltered Passes Made: {len(passes_made)} entries")
+
+        if "passes_received" in data:
+            passes_received = data["passes_received"]
+            print(f"Filtered Passes Received: {len(passes_received)} entries")
+
+    print("\n=== Filters test completed ===")
+    return data
+
 def test_fetch_player_passing_stats_dataframe():
     """Test fetching player passing stats with DataFrame output."""
     print("\n=== Testing fetch_player_passing_stats_logic with DataFrame output ===")
@@ -189,6 +254,7 @@ def run_all_tests():
         # Run the tests
         basic_data = test_fetch_player_passing_stats_basic()
         totals_data = test_fetch_player_passing_stats_totals()
+        filters_data = test_fetch_player_passing_stats_with_filters()
         json_response, dataframes = test_fetch_player_passing_stats_dataframe()
 
         print("\n=== All tests completed successfully ===")
