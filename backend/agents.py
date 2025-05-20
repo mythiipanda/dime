@@ -32,31 +32,70 @@ FINAL_ANSWER_MARKER: str = "FINAL_ANSWER::" # Marker for the agent's final synth
 from backend.tool_kits.player_tools import (
     get_player_info, get_player_gamelog, get_player_career_stats, get_player_awards,
     get_player_aggregate_stats, get_player_profile, get_player_estimated_metrics,
-    get_player_analysis, get_player_insights, get_player_dashboard_by_team_performance
+    get_analyze_player_stats,
+    get_boxscore_playertrack,
+    get_common_all_players,
+    get_league_player_on_details,
+    get_player_advanced_analysis,
+    get_player_clutch_stats,
+    get_player_dashboard_by_team_performance,
+    get_player_defense,
+    get_player_hustle_stats,
+    get_player_passing_stats,
+    get_player_rebounding_stats,
+    get_player_shotchart,
+    get_player_shots_tracking,
+    get_search_players,
+    get_team_player_dashboard,
+    get_team_player_on_off_details,
+    get_teamplayeronoffsummary,
+    get_teamvsplayer,
 )
 from backend.tool_kits.team_tools import (
     get_team_info_and_roster,
-    get_team_stats
-)
-from backend.tool_kits.tracking_tools import (
-    get_player_clutch_stats, get_player_passing_stats, get_player_rebounding_stats,
-    get_player_shots_tracking, get_player_shotchart, get_player_defense_stats,
-    get_player_hustle_stats,
-    get_team_passing_stats, get_team_shooting_stats, get_team_rebounding_stats,
+    get_team_stats,
+    get_common_team_years,
+    get_search_teams,
+    get_team_historical_leaders,
+    get_team_passing_stats,
+    get_team_rebounding_stats,
+    get_team_shooting_stats,
+    get_top_teams,
 )
 from backend.tool_kits.game_tools import (
-    find_games, get_boxscore_traditional, get_play_by_play, get_game_shotchart,
-    get_boxscore_advanced, get_boxscore_four_factors, get_boxscore_usage,
-    get_boxscore_defensive, get_boxscore_summary, get_win_probability
+    get_league_games,
+    get_search_games,
+    get_boxscore_traditional,
+    get_playbyplay,
+    get_boxscore_advanced,
+    get_boxscore_four_factors,
+    get_boxscore_usage,
+    get_boxscore_defensive,
+    get_boxscore_summary,
+    get_win_probability,
 )
 from backend.tool_kits.league_tools import (
-    get_league_standings, get_scoreboard, get_draft_history, get_league_leaders,
-    get_synergy_play_types, get_league_player_on_details, get_common_all_players,
-    get_common_playoff_series, get_common_team_years, get_league_dash_lineups,
-    get_top_performers, get_top_teams
+    get_league_standings,
+    get_league_scoreboard,
+    get_league_leaders,
+    get_league_dash_lineups,
+    get_league_dash_opponent_pt_shot,
+    get_league_season_matchups,
 )
 from backend.tool_kits.misc_tools import (
-    get_season_matchups, get_matchups_rollup, get_live_odds
+    get_matchups_rollup,
+    get_game_odds,
+    get_historical_playbyplay,
+    get_live_playbyplay,
+    get_boxscore_hustle,
+    get_boxscore_misc,
+    get_boxscore_scoring,
+    get_shotchart,
+    get_synergy_play_types,
+    get_top_performers,
+    get_scoreboard_data,
+    get_draft_history,
+    get_common_playoff_series,
 )
 
 load_dotenv()
@@ -72,49 +111,88 @@ context_header = f"""# Current Context
 
 """
 
-_NBA_AGENT_SYSTEM_MESSAGE_BASE = f"""
-You are Dime, an AI-powered Expert NBA Analyst. Your primary objective is to provide users with accurate, insightful, and comprehensive information and analysis about NBA players, teams, games, and the league in general, leveraging your specialized suite of NBA data tools.
-Core Capabilities & Responsibilities:
-Deep Player Analysis:
-Provide detailed player information (get_player_info), game logs (get_player_gamelog), career statistics (get_player_career_stats), and awards (get_player_awards).
-Generate aggregate season stats (get_player_aggregate_stats) and player profiles (get_player_profile).
-Offer advanced insights through estimated metrics (get_player_estimated_metrics), specific analyses (get_player_analysis), general insights (get_player_insights), and performance dashboards (get_player_dashboard_by_team_performance).
-Utilize tracking data for nuanced understanding: clutch performance (get_player_clutch_stats), passing (get_player_passing_stats), rebounding (get_player_rebounding_stats), shot details (get_player_shots_tracking, get_player_shotchart), defense (get_player_defense_stats), and hustle plays (get_player_hustle_stats).
-Comprehensive Team Analysis:
-Retrieve team information and rosters (get_team_info_and_roster).
-Analyze overall team performance using various statistical measures (get_team_stats).
-Provide detailed team tracking stats for passing (get_team_passing_stats), shooting (get_team_shooting_stats), and rebounding (get_team_rebounding_stats).
-In-Depth Game Breakdown:
-Locate specific games or lists of games (find_games).
-Provide detailed box scores: traditional (get_boxscore_traditional), advanced (get_boxscore_advanced), four factors (get_boxscore_four_factors), usage (get_boxscore_usage), defensive (get_boxscore_defensive), and summary (get_boxscore_summary).
-Offer play-by-play details (get_play_by_play), game-specific shot charts (get_game_shotchart), and win probability narratives (get_win_probability).
-League-Wide Insights & Context:
-Provide current league standings (get_league_standings) and live scoreboards (get_scoreboard).
-Access historical data like draft history (get_draft_history) and common playoff series/team years (get_common_playoff_series, get_common_team_years).
-Identify league leaders (get_league_leaders), top performers (get_top_performers), and top teams (get_top_teams).
-Analyze play types (get_synergy_play_types), player-on-court details (get_league_player_on_details), common player lists (get_common_all_players), and league-wide lineup data (get_league_dash_lineups).
-Specialized & Contextual Information:
-Analyze season matchups (get_season_matchups) and matchup rollups (get_matchups_rollup).
-Provide live odds (get_live_odds) where appropriate and relevant.
-Utilize ThinkingTools() to plan complex queries, break down multi-step requests, or reflect on the best approach before committing to a series of tool calls.
-Employ Crawl4aiTools() (web search) and YouTubeTools() judiciously as supplementary resources for recent news, injury updates not yet in structured data, qualitative context, or to find specific game highlights/commentary when requested. Prioritize your specialized NBA tools for factual data.
-Operational Guidelines:
-Understand User Intent: Carefully parse the user's query to identify the specific entities (players, teams, games, seasons), the type of information requested (stats, comparison, analysis, trends), and any implicit context.
-Strategic Tool Selection:
-Choose the most direct and appropriate tool(s) for the request.
-For complex queries, consider using ThinkingTools() to outline a plan of which tools to use in sequence.
-Combine information from multiple tools to provide a richer, more complete answer. For example, when analyzing a player's recent game, you might use get_player_gamelog and then get_boxscore_advanced for that specific game.
-Information Synthesis & Insight Generation:
-Do not just dump raw data. Extract key statistics, identify trends, and explain their significance.
-Provide context. For instance, when giving a player's stats, compare them to their career averages, league averages, or historical performances if relevant.
-Highlight interesting patterns, anomalies, or narratives (e.g., a player's exceptional clutch performance, a team's defensive identity).
-Response Crafting:
-Structure your responses logically and clearly. Use headings, bullet points, or concise paragraphs.
-Be objective and data-driven, but present information in an engaging and understandable manner.
-If certain data is unavailable or a tool doesn't return the expected information, state that clearly and offer alternatives if possible.
-Proactively offer to provide more detail or related information if it seems relevant to the user's initial query (e.g., "Would you like to see their shot chart for that game?").
-Iterative Refinement: If a user asks a follow-up question, use the context of the previous interaction and your available tools to refine or expand upon your previous answer.
-Your Goal: Be the go-to, reliable, and insightful source for all things NBA, making complex data accessible and meaningful. Always aim to provide a response that is more than just numbers; provide understanding.
+_NBA_AGENT_SYSTEM_MESSAGE_BASE = """You are an NBA Analyst AI. Your goal is to provide insights and data based on user queries.
+You have access to a variety of tools to fetch NBA data. When a user asks a question, break it down and use the appropriate tools to gather the necessary information.
+Synthesize the data from multiple tool calls if needed to provide a comprehensive answer.
+
+Available Tool Categories and Key Tools:
+
+Player Analysis:
+- get_player_info: Basic player information (bio, draft, etc.).
+- get_player_gamelog: Game-by-game stats for a player.
+- get_player_career_stats: Season-by-season career stats.
+- get_player_awards: Player awards and honors.
+- get_player_aggregate_stats: Aggregated stats over various splits.
+- get_player_profile: Detailed player profile including advanced stats.
+- get_player_estimated_metrics: Estimated advanced metrics (RAPM, etc.).
+- get_analyze_player_stats: Deep statistical analysis for a player.
+- get_player_advanced_analysis: Advanced metrics and insights.
+- get_player_clutch_stats: Performance in clutch situations.
+- get_player_passing_stats: Detailed passing metrics.
+- get_player_rebounding_stats: Detailed rebounding metrics.
+- get_player_shots_tracking: Shot tracking data (makes, misses, locations).
+- get_player_shotchart: Shot chart visualizations.
+- get_player_defense: Defensive stats and impact.
+- get_player_hustle_stats: Hustle stats (deflections, loose balls recovered).
+- get_boxscore_playertrack: Player tracking data from a specific game's boxscore.
+- get_common_all_players: List of all players.
+- get_player_dashboard_by_team_performance: How a player performs with different teammates.
+- get_search_players: Search for players by name.
+- get_team_player_dashboard: Player stats when on/off court for their team.
+- get_team_player_on_off_details: More detailed on/off court impact.
+- get_teamplayeronoffsummary: Summary of player on/off impact.
+- get_teamvsplayer: Head-to-head stats between a team and a specific player.
+
+Team Analysis:
+- get_team_info_and_roster: Team information and current roster.
+- get_team_stats: General team stats for a season.
+- get_common_team_years: List of seasons a team has played.
+- get_search_teams: Search for teams by name.
+- get_team_historical_leaders: Franchise leaders in various categories.
+- get_team_passing_stats: Team passing metrics.
+- get_team_rebounding_stats: Team rebounding metrics.
+- get_team_shooting_stats: Team shooting metrics.
+- get_top_teams: Rankings of top teams by various criteria.
+
+Game & Boxscore Analysis:
+- get_league_games: Find games based on various criteria.
+- get_search_games: Search for specific games.
+- get_boxscore_traditional: Traditional boxscore stats for a game.
+- get_playbyplay: Play-by-play data for a game.
+- get_boxscore_advanced: Advanced boxscore stats (rate stats, etc.).
+- get_boxscore_four_factors: Four Factors analysis for a game.
+- get_boxscore_usage: Player usage percentages from a game.
+- get_boxscore_defensive: Defensive boxscore stats from a game.
+- get_boxscore_summary: A summary of a game's boxscore.
+- get_win_probability: Win probability chart/data for a game.
+
+League & Standings:
+- get_league_standings: Current league standings.
+- get_league_scoreboard: Scores for games on a specific date.
+- get_draft_history: Historical draft data.
+- get_league_leaders: League leaders in various statistical categories.
+- get_common_playoff_series: Information on playoff series.
+- get_league_dash_lineups: Performance of league-wide lineups.
+- get_league_dash_opponent_pt_shot: Opponent shooting stats dashboard.
+- get_league_season_matchups: Head-to-head stats for all matchups in a season.
+
+Miscellaneous (Odds, Matchups, Live Data, etc.):
+- get_matchups_rollup: Aggregate stats for specific player matchups.
+- get_game_odds: Betting odds for games.
+- get_historical_playbyplay: Access to historical play-by-play (use with caution, potentially large).
+- get_live_playbyplay: Access to live play-by-play (use for ongoing games).
+- get_boxscore_hustle: Hustle stats from a game's boxscore.
+- get_boxscore_misc: Miscellaneous stats from a game's boxscore.
+- get_boxscore_scoring: Scoring-specific stats from a game's boxscore.
+- get_shotchart: General shot chart data (can be for game, player, etc. - specify context).
+- get_synergy_play_types: Synergy play type data.
+- get_top_performers: Top performers for a given day or period.
+- get_scoreboard_data: Alternative way to get scoreboard information.
+
+Always try to use the most specific tool for the query. For example, if asked for a player's points in their last game, use `get_player_gamelog` rather than a general player stats tool.
+If a user asks a general question like "Tell me about LeBron James", consider using a few tools: `get_player_info` for bio, `get_player_career_stats` for an overview, and maybe `get_player_gamelog` for recent performance.
+Provide clear and concise answers. If data is presented in tables, ensure it's readable.
+Think step-by-step how to answer the user's question using the available tools.
 """
 
 NBA_AGENT_SYSTEM_MESSAGE = context_header + _NBA_AGENT_SYSTEM_MESSAGE_BASE
@@ -124,28 +202,78 @@ nba_tools = [
     ThinkingTools(),
     Crawl4aiTools(),
     YouTubeTools(),
-    # Player Tools
-    get_player_info, get_player_gamelog, get_player_career_stats, get_player_awards,
-    get_player_aggregate_stats, get_player_profile, get_player_estimated_metrics,
-    get_player_analysis, get_player_insights, get_player_dashboard_by_team_performance,
-    # Team Tools
-    get_team_info_and_roster, get_team_stats,
-    # Tracking Tools
-    get_player_clutch_stats, get_player_passing_stats, get_player_rebounding_stats, 
-    get_player_shots_tracking, get_player_shotchart, get_player_defense_stats, 
+    # Player Tools based on analysis
+    get_player_info,
+    get_player_gamelog,
+    get_player_career_stats,
+    get_player_awards,
+    get_player_aggregate_stats,
+    get_player_profile,
+    get_player_estimated_metrics,
+    get_analyze_player_stats,
+    get_player_advanced_analysis,
+    get_player_clutch_stats,
+    get_player_passing_stats,
+    get_player_rebounding_stats,
+    get_player_shots_tracking,
+    get_player_shotchart,
+    get_player_defense,
     get_player_hustle_stats,
-    get_team_passing_stats, get_team_shooting_stats, get_team_rebounding_stats,
-    # Game Tools
-    find_games, get_boxscore_traditional, get_play_by_play, get_game_shotchart,
-    get_boxscore_advanced, get_boxscore_four_factors, get_boxscore_usage,
-    get_boxscore_defensive, get_boxscore_summary, get_win_probability,
-    # League Tools
-    get_league_standings, get_scoreboard, get_draft_history, get_league_leaders,
-    get_synergy_play_types, get_league_player_on_details, get_common_all_players,
-    get_common_playoff_series, get_common_team_years, get_league_dash_lineups,
-    get_top_performers, get_top_teams,
-    # Misc Tools
-    get_season_matchups, get_matchups_rollup, get_live_odds
+    get_boxscore_playertrack,
+    get_common_all_players,
+    get_league_player_on_details,
+    get_player_dashboard_by_team_performance,
+    get_search_players,
+    get_team_player_dashboard,
+    get_team_player_on_off_details,
+    get_teamplayeronoffsummary,
+    get_teamvsplayer,
+
+    # Team Tools based on analysis
+    get_team_info_and_roster,
+    get_team_stats,
+    get_common_team_years,
+    get_search_teams,
+    get_team_historical_leaders,
+    get_team_passing_stats,
+    get_team_rebounding_stats,
+    get_team_shooting_stats,
+    get_top_teams,
+
+    # Game Tools based on analysis
+    get_league_games,
+    get_search_games,
+    get_boxscore_traditional,
+    get_playbyplay,
+    get_boxscore_advanced,
+    get_boxscore_four_factors,
+    get_boxscore_usage,
+    get_boxscore_defensive,
+    get_boxscore_summary,
+
+    # League Tools based on analysis
+    get_league_standings,
+    get_league_scoreboard,
+    get_league_leaders,
+    get_league_dash_lineups,
+    get_league_dash_opponent_pt_shot,
+    get_league_season_matchups,
+
+    # Misc Tools based on analysis
+    get_matchups_rollup,
+    get_game_odds,
+    get_historical_playbyplay,
+    get_live_playbyplay,
+    get_boxscore_hustle,
+    get_boxscore_misc,
+    get_boxscore_scoring,
+    get_shotchart,
+    get_synergy_play_types,
+    get_top_performers,
+    get_scoreboard_data,
+    get_win_probability,
+    get_draft_history,
+    get_common_playoff_series,
 ]
 
 

@@ -11,15 +11,31 @@ from nba_api.stats.library.parameters import SeasonTypeAllStar, PerModeDetailed,
 from backend.config import settings
 # Import specific logic functions for player tools
 from backend.api_tools.player_common_info import fetch_player_info_logic
+from backend.api_tools.player_listings import fetch_common_all_players_logic
 from backend.api_tools.player_gamelogs import fetch_player_gamelog_logic
 from backend.api_tools.player_career_data import fetch_player_career_stats_logic, fetch_player_awards_logic
-from backend.api_tools.player_dashboard_stats import fetch_player_profile_logic
+from backend.api_tools.player_dashboard_stats import (
+    fetch_player_profile_logic,
+    fetch_player_defense_logic,
+    fetch_player_hustle_stats_logic
+)
 from backend.api_tools.player_aggregate_stats import fetch_player_stats_logic
 from backend.api_tools.analyze import analyze_player_stats_logic
+from backend.api_tools.advanced_metrics import fetch_player_advanced_analysis_logic
 from backend.api_tools.player_estimated_metrics import fetch_player_estimated_metrics_logic
 from backend.api_tools.player_dashboard_team_performance import fetch_player_dashboard_by_team_performance_logic
 from backend.api_tools.player_clutch import fetch_player_clutch_stats_logic
 from backend.api_tools.player_shot_charts import fetch_player_shotchart_logic
+from backend.api_tools.player_passing import fetch_player_passing_stats_logic
+from backend.api_tools.player_rebounding import fetch_player_rebounding_stats_logic
+from backend.api_tools.player_shooting_tracking import fetch_player_shots_tracking_logic
+from backend.api_tools.search import search_players_logic
+from backend.api_tools.team_player_dashboard import fetch_team_player_dashboard_logic
+from backend.api_tools.team_player_on_off_details import fetch_team_player_on_off_details_logic
+from backend.api_tools.teamplayeronoffsummary import fetch_teamplayeronoffsummary_logic
+from backend.api_tools.teamvsplayer import fetch_teamvsplayer_logic
+from backend.api_tools.game_boxscores import fetch_boxscore_playertrack_logic
+from backend.api_tools.league_player_on_details import fetch_league_player_on_details_logic
 
 logger = logging.getLogger(__name__)
 
@@ -327,8 +343,7 @@ def get_player_profile(player_name: str, per_mode: str = PerModeDetailed.per_gam
         str: JSON string containing the player's profile.
     """
     logger.debug(f"Tool 'get_player_profile' called for {player_name}, per_mode {per_mode}")
-    result = fetch_player_profile_logic(player_name, per_mode=per_mode)
-    return result
+    return fetch_player_profile_logic(player_name=player_name, per_mode=per_mode)
 
 @tool
 def get_player_aggregate_stats(
@@ -404,67 +419,6 @@ def get_player_aggregate_stats(
     else:
         # Return the standard JSON response
         return fetch_player_stats_logic(player_name=player_name, season=season, season_type=season_type)
-
-@tool
-def get_player_analysis(
-    player_name: str,
-    season: str = settings.CURRENT_NBA_SEASON,
-    season_type: str = SeasonTypeAllStar.regular,
-    per_mode: str = PerModeDetailed.per_game,
-    league_id: str = LeagueID.nba
-) -> str:
-    """
-    Provides an analysis of a player's statistics, primarily fetching overall dashboard statistics
-    for a specified player and season using the `PlayerDashboardByYearOverYear` NBA API endpoint.
-
-    Args:
-        player_name (str): The full name of the player.
-        season (str, optional): The primary NBA season for analysis (e.g., "2023-24"). Defaults to current season.
-        season_type (str, optional): Type of season (e.g., "Regular Season", "Playoffs").
-            Valid values from `nba_api.stats.library.parameters.SeasonTypeAllStar`. Defaults to "Regular Season".
-        per_mode (str, optional): Statistical mode for dashboard stats (e.g., "PerGame", "Totals").
-            Valid values from `nba_api.stats.library.parameters.PerModeDetailed`. Defaults to "PerGame".
-        league_id (str, optional): League ID (e.g., "00" for NBA).
-            Valid values from `nba_api.stats.library.parameters.LeagueID`. Defaults to "00".
-
-    Returns:
-        str: JSON string containing player analysis and dashboard statistics.
-    """
-    logger.debug(f"Tool 'get_player_analysis' called for Player: {player_name}, Season: {season}")
-    return analyze_player_stats_logic(player_name, season, season_type, per_mode, league_id)
-
-@tool
-def get_player_insights(player_name: str, season: str = settings.CURRENT_NBA_SEASON, season_type: str = SeasonTypeAllStar.regular, per_mode: str = PerModeDetailed.per_game, league_id: str = LeagueID.nba) -> str:
-    """
-    Fetches overall player dashboard statistics for a given season, type, and mode, providing insights into performance.
-    This is a wrapper around `analyze_player_stats_logic` which uses `PlayerDashboardByYearOverYear`.
-    Consider using `get_player_analysis` which is identical.
-
-    Args:
-        player_name (str): The full name of the player (e.g., "Stephen Curry").
-        season (str, optional): The primary NBA season for analysis (e.g., "2023-24"). Defaults to current season.
-        season_type (str, optional): Type of season. Defaults to "Regular Season".
-            Valid values from `nba_api.stats.library.parameters.SeasonTypeAllStar`.
-        per_mode (str, optional): Statistical mode. Defaults to "PerGame".
-            Valid values from `nba_api.stats.library.parameters.PerModeDetailed`.
-        league_id (str, optional): League ID. Defaults to "00" (NBA).
-            Valid values from `nba_api.stats.library.parameters.LeagueID`.
-
-    Returns:
-        str: JSON string containing player dashboard statistics.
-    """
-    logger.debug(
-        f"Tool 'get_player_insights' called for Player: {player_name}, Season: {season}, Type: {season_type}, "
-        f"Mode: {per_mode}, League: {league_id}"
-    )
-    result = analyze_player_stats_logic(
-        player_name=player_name,
-        season=season,
-        season_type=season_type,
-        per_mode=per_mode,
-        league_id=league_id
-    )
-    return result
 
 @tool
 def get_player_estimated_metrics(
@@ -738,3 +692,361 @@ def get_player_shotchart(
             season=season,
             season_type=season_type
         )
+
+@tool
+def get_analyze_player_stats(
+    player_name: str,
+    season: str = settings.CURRENT_NBA_SEASON,
+    season_type: str = SeasonTypeAllStar.regular,
+    per_mode: str = PerModeDetailed.per_game,
+    opponent_team_id: int = 0
+) -> str:
+    """
+    Performs deep statistical analysis for a player based on specified parameters.
+    This tool was previously named get_player_analysis in some contexts.
+    Args:
+        player_name (str): The full name of the player.
+        season (str): NBA season (e.g., "2023-24").
+        season_type (str): Type of season (e.g., "Regular Season", "Playoffs").
+        per_mode (str): Statistical mode (e.g., "PerGame", "Totals").
+        opponent_team_id (int): Filter stats against a specific opponent team ID. 0 for all.
+    Returns:
+        str: JSON string with detailed player analysis.
+    """
+    logger.debug(f"Tool 'get_analyze_player_stats' called for {player_name}, season {season}, type {season_type}, per_mode {per_mode}, opponent_team_id {opponent_team_id}")
+    return analyze_player_stats_logic(
+        player_name=player_name,
+        season=season,
+        season_type=season_type,
+        per_mode=per_mode,
+        opponent_team_id=opponent_team_id
+    )
+
+@tool
+def get_player_advanced_analysis(
+    player_name: str,
+    season: str = settings.CURRENT_NBA_SEASON
+) -> str:
+    """
+    Provides advanced analytical insights for a player, including RAPTOR metrics, skill grades, and similar players.
+    Args:
+        player_name (str): The full name of the player.
+        season (str): NBA season (e.g., "2023-24"). Defaults to current season.
+    Returns:
+        str: JSON string with advanced player analysis.
+    """
+    logger.debug(f"Tool 'get_player_advanced_analysis' called for {player_name}, season {season}")
+    return fetch_player_advanced_analysis_logic(
+        player_name=player_name,
+        season=season
+    )
+
+@tool
+def get_boxscore_playertrack(
+    game_id: str,
+    as_dataframe: bool = False
+) -> str:
+    """
+    Fetches player tracking data from a specific game's boxscore.
+    Args:
+        game_id (str): The ID of the game.
+        as_dataframe (bool): Return data as DataFrame and save to CSV.
+    Returns:
+        str: JSON string with player tracking data.
+    """
+    logger.debug(f"Tool 'get_boxscore_playertrack' called for game_id {game_id}, as_dataframe={as_dataframe}")
+    return fetch_boxscore_playertrack_logic(game_id=game_id, return_dataframe=as_dataframe)
+
+@tool
+def get_common_all_players(
+    is_only_current_season: int = 1,
+    league_id: str = LeagueID.nba,
+    as_dataframe: bool = False
+) -> str:
+    """
+    Fetches a list of all common players, optionally filtered by current season.
+    Args:
+        is_only_current_season (int): 1 for current season only, 0 for all time.
+        league_id (str): League ID (e.g., "00" for NBA).
+        as_dataframe (bool): Return data as DataFrame and save to CSV.
+    Returns:
+        str: JSON string with list of players.
+    """
+    logger.debug(f"Tool 'get_common_all_players' called, current_season_only={is_only_current_season}, league_id={league_id}, as_dataframe={as_dataframe}")
+    return fetch_common_all_players_logic(
+        is_only_current_season=is_only_current_season,
+        league_id=league_id,
+        return_dataframe=as_dataframe
+    )
+
+@tool
+def get_league_player_on_details(
+    team_id: int,
+    player_id: int,
+    season: str = settings.CURRENT_NBA_SEASON,
+    season_type: str = SeasonTypeAllStar.regular,
+    measure_type: str = "Base",
+    per_mode: str = "PerGame"
+) -> str:
+    """
+    Fetches player on-court vs. off-court details for a specific team and player.
+    Args:
+        team_id (int): The ID of the team.
+        player_id (int): The ID of the player.
+        season (str): NBA season (e.g., "2023-24").
+        season_type (str): Type of season (e.g., "Regular Season", "Playoffs").
+        measure_type (str): Type of stats to measure (e.g., "Base", "Advanced").
+        per_mode (str): Statistical mode (e.g., "PerGame", "Totals").
+    Returns:
+        str: JSON string with player on/off details.
+    """
+    logger.debug(f"Tool 'get_league_player_on_details' for player {player_id} on team {team_id}, season {season}")
+    return fetch_league_player_on_details_logic(
+        team_id=team_id,
+        player_id=player_id,
+        season=season,
+        season_type=season_type,
+        measure_type=measure_type,
+        per_mode=per_mode
+    )
+
+@tool
+def get_player_defense(
+    player_name: str,
+    season: str = settings.CURRENT_NBA_SEASON,
+    season_type: str = SeasonTypeAllStar.regular,
+    per_mode: str = PerModeDetailed.per_game,
+    opponent_team_id: int = 0
+) -> str:
+    """
+    Fetches player defensive statistics. Renamed from get_player_defense_stats.
+    Args:
+        player_name (str): Full name of the player.
+        season (str): NBA season (e.g., "2023-24").
+        season_type (str): Type of season.
+        per_mode (str): Statistical mode.
+        opponent_team_id (int): Filter by opponent team ID. 0 for all.
+    Returns:
+        str: JSON string with defensive stats.
+    """
+    logger.debug(f"Tool 'get_player_defense' for {player_name}, season {season}")
+    return fetch_player_defense_logic(
+        player_name=player_name,
+        season=season,
+        season_type=season_type,
+        per_mode=per_mode,
+        opponent_team_id=opponent_team_id
+    )
+
+@tool
+def get_player_hustle_stats(
+    player_name: str,
+    season: str = settings.CURRENT_NBA_SEASON,
+    season_type: str = SeasonTypeAllStar.regular,
+    per_mode: str = PerModeDetailed.per_game,
+    opponent_team_id: int = 0
+) -> str:
+    """
+    Fetches player hustle statistics (deflections, loose balls, etc.).
+    Args:
+        player_name (str): Full name of the player.
+        season (str): NBA season (e.g., "2023-24").
+        season_type (str): Type of season.
+        per_mode (str): Statistical mode.
+        opponent_team_id (int): Filter by opponent team ID. 0 for all.
+    Returns:
+        str: JSON string with hustle stats.
+    """
+    logger.debug(f"Tool 'get_player_hustle_stats' for {player_name}, season {season}")
+    return fetch_player_hustle_stats_logic(
+        player_name=player_name,
+        season=season,
+        season_type=season_type,
+        per_mode=per_mode,
+        opponent_team_id=opponent_team_id
+    )
+
+@tool
+def get_player_passing_stats(
+    player_name: str,
+    season: str = settings.CURRENT_NBA_SEASON,
+    season_type: str = SeasonTypeAllStar.regular,
+    per_mode: str = PerModeDetailed.per_game
+) -> str:
+    """
+    Fetches detailed player passing statistics.
+    """
+    logger.debug(f"Tool 'get_player_passing_stats' for {player_name}, season {season}")
+    return fetch_player_passing_stats_logic(
+        player_name=player_name,
+        season=season,
+        season_type=season_type,
+        per_mode=per_mode
+    )
+
+@tool
+def get_player_rebounding_stats(
+    player_name: str,
+    season: str = settings.CURRENT_NBA_SEASON,
+    season_type: str = SeasonTypeAllStar.regular,
+    per_mode: str = PerModeDetailed.per_game
+) -> str:
+    """
+    Fetches detailed player rebounding statistics.
+    """
+    logger.debug(f"Tool 'get_player_rebounding_stats' for {player_name}, season {season}")
+    return fetch_player_rebounding_stats_logic(
+        player_name=player_name,
+        season=season,
+        season_type=season_type,
+        per_mode=per_mode
+    )
+
+@tool
+def get_player_shots_tracking(
+    player_name: str,
+    season: str = settings.CURRENT_NBA_SEASON,
+    season_type: str = SeasonTypeAllStar.regular,
+    per_mode: str = PerModeDetailed.per_game
+) -> str:
+    """
+    Fetches player shot tracking data (makes, misses, locations, types).
+    """
+    logger.debug(f"Tool 'get_player_shots_tracking' for {player_name}, season {season}")
+    return fetch_player_shots_tracking_logic(
+        player_name=player_name,
+        season=season,
+        season_type=season_type,
+        per_mode=per_mode
+    )
+
+@tool
+def get_search_players(player_name_query: str, as_dataframe: bool = False) -> str:
+    """
+    Searches for players by a partial or full name query.
+    Args:
+        player_name_query (str): The search term for the player's name.
+        as_dataframe (bool): Return data as DataFrame and save to CSV.
+    Returns:
+        str: JSON string with a list of matching players.
+    """
+    logger.debug(f"Tool 'get_search_players' called with query '{player_name_query}', as_dataframe={as_dataframe}")
+    return search_players_logic(player_name_query=player_name_query, return_dataframe=as_dataframe)
+
+@tool
+def get_team_player_dashboard(
+    team_id: int,
+    season: str = settings.CURRENT_NBA_SEASON,
+    season_type: str = SeasonTypeAllStar.regular,
+    measure_type: str = "Base",
+    per_mode: str = "PerGame"
+) -> str:
+    """
+    Fetches the player dashboard for a specific team, showing stats for all players on that team.
+    Args:
+        team_id (int): The ID of the team.
+        season (str): NBA season (e.g., "2023-24").
+        season_type (str): Type of season.
+        measure_type (str): Type of stats to measure.
+        per_mode (str): Statistical mode.
+    Returns:
+        str: JSON string with team player dashboard data.
+    """
+    logger.debug(f"Tool 'get_team_player_dashboard' for team {team_id}, season {season}")
+    return fetch_team_player_dashboard_logic(
+        team_id=team_id,
+        season=season,
+        season_type=season_type,
+        measure_type=measure_type,
+        per_mode=per_mode
+    )
+
+@tool
+def get_team_player_on_off_details(
+    team_id: int,
+    season: str = settings.CURRENT_NBA_SEASON,
+    season_type: str = SeasonTypeAllStar.regular,
+    measure_type: str = "Base",
+    per_mode: str = "PerGame"
+) -> str:
+    """
+    Fetches on/off court details for all players on a specific team.
+    Args:
+        team_id (int): The ID of the team.
+        season (str): NBA season (e.g., "2023-24").
+        season_type (str): Type of season.
+        measure_type (str): Type of stats to measure.
+        per_mode (str): Statistical mode.
+    Returns:
+        str: JSON string with team player on/off details.
+    """
+    logger.debug(f"Tool 'get_team_player_on_off_details' for team {team_id}, season {season}")
+    return fetch_team_player_on_off_details_logic(
+        team_id=team_id,
+        season=season,
+        season_type=season_type,
+        measure_type=measure_type,
+        per_mode=per_mode
+    )
+
+@tool
+def get_teamplayeronoffsummary(
+    team_id: int,
+    season: str = settings.CURRENT_NBA_SEASON,
+    season_type: str = SeasonTypeAllStar.regular,
+    measure_type: str = "Base",
+    per_mode: str = "PerGame"
+) -> str:
+    """
+    Fetches a summary of player on/off court impact for a specific team.
+    Args:
+        team_id (int): The ID of the team.
+        season (str): NBA season (e.g., "2023-24").
+        season_type (str): Type of season.
+        measure_type (str): Type of stats to measure.
+        per_mode (str): Statistical mode.
+    Returns:
+        str: JSON string with team player on/off summary.
+    """
+    logger.debug(f"Tool 'get_teamplayeronoffsummary' for team {team_id}, season {season}")
+    return fetch_teamplayeronoffsummary_logic(
+        team_id=team_id,
+        season=season,
+        season_type=season_type,
+        measure_type=measure_type,
+        per_mode=per_mode
+    )
+
+@tool
+def get_teamvsplayer(
+    team_id: int,
+    player_id: int,
+    season: str = settings.CURRENT_NBA_SEASON,
+    season_type: str = SeasonTypeAllStar.regular,
+    measure_type: str = "Base",
+    per_mode: str = "PerGame",
+    opponent_team_id: int = 0 # This seems redundant if we have team_id and player_id for a direct matchup
+) -> str:
+    """
+    Fetches head-to-head statistics between a specific team and a specific player.
+    Args:
+        team_id (int): The ID of the team.
+        player_id (int): The ID of the player.
+        season (str): NBA season (e.g., "2023-24").
+        season_type (str): Type of season.
+        measure_type (str): Type of stats to measure.
+        per_mode (str): Statistical mode.
+        opponent_team_id (int): Usually 0, as team_id implies the player's opponent.
+    Returns:
+        str: JSON string with team vs player stats.
+    """
+    logger.debug(f"Tool 'get_teamvsplayer' for team {team_id} vs player {player_id}, season {season}")
+    return fetch_teamvsplayer_logic(
+        team_id=team_id,
+        player_id=player_id,
+        season=season,
+        season_type=season_type,
+        measure_type=measure_type,
+        per_mode=per_mode,
+        opponent_team_id=opponent_team_id
+    )

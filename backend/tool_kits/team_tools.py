@@ -11,10 +11,14 @@ from nba_api.stats.library.parameters import SeasonTypeAllStar, PerModeDetailed,
 from backend.config import settings
 # Import specific logic functions for team tools
 from backend.api_tools.team_info_roster import fetch_team_info_and_roster_logic
+from backend.api_tools.team_history import fetch_common_team_years_logic
 from backend.api_tools.team_general_stats import fetch_team_stats_logic
 from backend.api_tools.team_passing_tracking import fetch_team_passing_stats_logic
 from backend.api_tools.team_rebounding_tracking import fetch_team_rebounding_stats_logic
 from backend.api_tools.team_shooting_tracking import fetch_team_shooting_stats_logic
+from backend.api_tools.search import search_teams_logic
+from backend.api_tools.team_historical_leaders import fetch_team_historical_leaders_logic
+from backend.api_tools.trending_team_tools import fetch_top_teams_logic
 
 logger = logging.getLogger(__name__)
 
@@ -464,3 +468,95 @@ def get_team_shooting_stats(
             date_from=date_from,
             date_to=date_to
         )
+
+@tool
+def get_common_team_years(team_identifier: str, as_dataframe: bool = False) -> str:
+    """
+    Fetches the years a specific team has common data for.
+    Args:
+        team_identifier (str): The team's name, abbreviation, or ID.
+        as_dataframe (bool): If True, returns a pandas DataFrame.
+    Returns:
+        str: JSON string containing common team years.
+    """
+    logger.debug(f"Tool 'get_common_team_years' called for '{team_identifier}', as_dataframe={as_dataframe}")
+    return fetch_common_team_years_logic(team_identifier=team_identifier, return_dataframe=as_dataframe)
+
+@tool
+def get_search_teams(team_name_query: str, as_dataframe: bool = False) -> str:
+    """
+    Searches for teams by a partial or full name query.
+    Args:
+        team_name_query (str): The search term for the team's name.
+        as_dataframe (bool): If True, returns a pandas DataFrame.
+    Returns:
+        str: JSON string with a list of matching teams.
+    """
+    logger.debug(f"Tool 'get_search_teams' called with query '{team_name_query}', as_dataframe={as_dataframe}")
+    return search_teams_logic(team_name_query=team_name_query, return_dataframe=as_dataframe)
+
+@tool
+def get_team_historical_leaders(
+    team_id: int,
+    season_id: str = settings.CURRENT_NBA_SEASON, # Typically, this is for a specific season's context
+    league_id: str = LeagueID.nba,
+    per_mode: str = PerModeSimple.per_game,
+    as_dataframe: bool = False
+) -> str:
+    """
+    Fetches historical leaders for a specific team in various statistical categories.
+    Args:
+        team_id (int): The ID of the team.
+        season_id (str): The season ID (e.g., "2023-24") to provide context, though leaders are often all-time or for specific eras.
+        league_id (str): League ID.
+        per_mode (str): Statistical mode for leaderboards.
+        as_dataframe (bool): If True, returns pandas DataFrames.
+    Returns:
+        str: JSON string with team historical leaders.
+    """
+    logger.debug(f"Tool 'get_team_historical_leaders' for team {team_id}, season_id {season_id}, as_dataframe={as_dataframe}")
+    return fetch_team_historical_leaders_logic(
+        team_id=team_id,
+        season_id=season_id, # The logic function might handle how season_id is used for historical context
+        league_id=league_id,
+        per_mode=per_mode,
+        return_dataframe=as_dataframe
+    )
+
+@tool
+def get_top_teams(
+    season: str = settings.CURRENT_NBA_SEASON,
+    season_type: str = SeasonTypeAllStar.regular,
+    league_id: str = LeagueID.nba,
+    stat_category: str = "PTS", # Example: Points, Rebounds, Assists etc.
+    per_mode: str = PerModeSimple.per_game,
+    scope: str = "S", # S = Season, A = All Time - typically Season for "top teams"
+    active_teams_only: bool = True,
+    as_dataframe: bool = False
+) -> str:
+    """
+    Fetches top teams in the league based on a specified statistical category.
+    This wraps logic that might be similar to league leaders but focused on team stats.
+    Args:
+        season (str): NBA season.
+        season_type (str): Type of season.
+        league_id (str): League ID.
+        stat_category (str): The statistical category to rank teams by (e.g., PTS, REB, AST, STL, BLK, FG_PCT, FT_PCT, FG3_PCT, TOV).
+        per_mode (str): Statistical mode.
+        scope (str): Scope of the ranking ('S' for Season, 'A' for All Time).
+        active_teams_only (bool): Whether to include only currently active teams.
+        as_dataframe (bool): If True, returns pandas DataFrames.
+    Returns:
+        str: JSON string with a list of top teams for the specified category.
+    """
+    logger.debug(f"Tool 'get_top_teams' for season {season}, stat {stat_category}, as_dataframe={as_dataframe}")
+    return fetch_top_teams_logic( # Assuming fetch_top_teams_logic exists and takes these params
+        season=season,
+        season_type=season_type,
+        league_id=league_id,
+        stat_category=stat_category,
+        per_mode=per_mode,
+        scope=scope,
+        active_teams_only=active_teams_only,
+        return_dataframe=as_dataframe
+    )

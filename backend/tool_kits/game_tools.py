@@ -23,15 +23,15 @@ from ..api_tools.game_boxscores import (
 )
 from ..api_tools.game_playbyplay import fetch_playbyplay_logic
 from ..api_tools.game_visuals_analytics import (
-    fetch_shotchart_logic,
     fetch_win_probability_logic
 )
+from ..api_tools.search import search_games_logic
 from ..utils.path_utils import get_relative_cache_path
 
 logger = logging.getLogger(__name__)
 
 @tool
-def find_games(
+def get_league_games(
     player_or_team_abbreviation: str = 'T',
     player_id_nullable: Optional[int] = None,
     team_id_nullable: Optional[int] = None,
@@ -43,6 +43,7 @@ def find_games(
 ) -> str:
     """
     Finds games based on various criteria using the LeagueGameFinder endpoint.
+    Previously named find_games.
 
     Args:
         player_or_team_abbreviation (str, optional): Specify 'P' for player or 'T' for team. Defaults to 'T'.
@@ -58,8 +59,8 @@ def find_games(
     Returns:
         str: JSON string containing a list of found games or an error message.
     """
-    logger.debug(f"Tool 'find_games' called with params: player_or_team={player_or_team_abbreviation}, player_id={player_id_nullable}, team_id={team_id_nullable}, season={season_nullable}, date_from={date_from_nullable}, date_to={date_to_nullable}")
-    result = fetch_league_games_logic(
+    logger.debug(f"Tool 'get_league_games' called with params: player_or_team={player_or_team_abbreviation}, player_id={player_id_nullable}, team_id={team_id_nullable}, season={season_nullable}, date_from={date_from_nullable}, date_to={date_to_nullable}")
+    return fetch_league_games_logic(
         player_or_team_abbreviation=player_or_team_abbreviation,
         player_id_nullable=player_id_nullable,
         team_id_nullable=team_id_nullable,
@@ -69,7 +70,6 @@ def find_games(
         date_from_nullable=date_from_nullable,
         date_to_nullable=date_to_nullable
     )
-    return result
 
 @tool
 def get_boxscore_traditional(
@@ -152,7 +152,7 @@ def get_boxscore_traditional(
         )
 
 @tool
-def get_play_by_play(
+def get_playbyplay(
     game_id: str,
     start_period: int = 0, # 0 for all
     end_period: int = 0,   # 0 for all
@@ -161,231 +161,63 @@ def get_play_by_play(
     person_id: int = None,    # Filter plays by player ID
     team_id: int = None,      # Filter plays by team ID
     team_tricode: str = None, # Filter plays by team tricode (e.g., 'LAL', 'BOS')
-    as_dataframe: bool = False  # Whether to return DataFrame output
+    as_dataframe: bool = False
 ) -> str:
     """
     Fetches the play-by-play data for a specific game (PlayByPlayV3).
+    Previously named get_play_by_play.
     Provides granular filtering options and DataFrame output capabilities.
 
     Args:
         game_id (str): The ID of the game.
         start_period (int, optional): Starting period number (0 for full game). Defaults to 0.
         end_period (int, optional): Ending period number (0 for full game). Defaults to 0.
-        event_types (str, optional): Comma-separated list of event types to filter by (e.g., "SHOT,REBOUND,TURNOVER").
-                                    Common event types include: 'SHOT', 'REBOUND', 'TURNOVER', 'FOUL', 'FREE_THROW',
-                                    'SUBSTITUTION', 'TIMEOUT', 'JUMP_BALL', 'BLOCK', 'STEAL', 'VIOLATION'.
+        event_types (str, optional): Comma-separated list of event types to filter by.
         player_name (str, optional): Filter plays by player name.
         person_id (int, optional): Filter plays by player ID.
         team_id (int, optional): Filter plays by team ID.
-        team_tricode (str, optional): Filter plays by team tricode (e.g., 'LAL', 'BOS').
-        as_dataframe (bool, optional): If True, returns a pandas DataFrame representation of the data
-                                      and saves it to CSV files in the cache directory. Defaults to False.
+        team_tricode (str, optional): Filter plays by team tricode.
+        as_dataframe (bool, optional): If True, returns pandas DataFrame and saves to CSV. Defaults to False.
 
     Returns:
-        str: JSON string with play-by-play data. If as_dataframe=True, the JSON response
-             will include additional information about the DataFrames and CSV files.
+        str: JSON string with play-by-play data.
     """
-    logger.debug(f"Tool 'get_play_by_play' called for game_id '{game_id}', periods '{start_period}'-'{end_period}', as_dataframe={as_dataframe}")
-
-    # Convert event_types string to list if provided
-    event_types_list = None
-    if event_types:
-        event_types_list = [event_type.strip().upper() for event_type in event_types.split(',')]
-
+    logger.debug(f"Tool 'get_playbyplay' called for game_id '{game_id}', periods '{start_period}'-'{end_period}', as_dataframe={as_dataframe}")
+    event_types_list = [event_type.strip().upper() for event_type in event_types.split(',')] if event_types else None
     if as_dataframe:
-        # Get both JSON response and DataFrames
         json_response, dataframes = fetch_playbyplay_logic(
             game_id=game_id,
             start_period=start_period,
             end_period=end_period,
-            event_types=event_types_list,
+            event_types_list=event_types_list,
             player_name=player_name,
             person_id=person_id,
             team_id=team_id,
             team_tricode=team_tricode,
             return_dataframe=True
         )
-
-        # Parse the original JSON response
         data = json.loads(json_response)
-
-        # Add DataFrame info
-        df_info = {
-            "message": "Play-by-play data has been converted to DataFrames and saved as CSV files",
-            "dataframes": {}
-        }
-
+        df_info = { "message": "Play-by-play data converted to DataFrames and saved as CSV files", "dataframes": {} }
         for key, df in dataframes.items():
             if not df.empty:
-                # Create a descriptive filename based on filters
-                filename_parts = [game_id]
-                if start_period > 0 or end_period > 0:
-                    filename_parts.append(f"periods_{start_period}_{end_period}")
-                if event_types:
-                    filename_parts.append(f"events_{event_types.replace(',', '_')}")
-                if player_name:
-                    filename_parts.append(f"player_{player_name.replace(' ', '_')}")
-                if person_id:
-                    filename_parts.append(f"personid_{person_id}")
-                if team_id:
-                    filename_parts.append(f"teamid_{team_id}")
-                if team_tricode:
-                    filename_parts.append(f"team_{team_tricode}")
-
-                csv_filename = "_".join(filename_parts) + ".csv"
-                csv_path = get_relative_cache_path(csv_filename, "playbyplay")
-
                 df_info["dataframes"][key] = {
                     "shape": df.shape,
                     "columns": df.columns.tolist(),
-                    "csv_path": csv_path,
-                    "sample_data": df.head(5).to_dict(orient="records") if not df.empty else []
+                    "csv_path": get_relative_cache_path(f"{game_id}_playbyplay_{key}.csv", "playbyplay"),
+                    "sample_data": df.head(3).to_dict(orient="records")
                 }
-
-        # Add DataFrame info to the response
-        if "error" in data:
-            # If there was an error, keep it and add DataFrame info
-            data["dataframe_info"] = df_info
-        else:
-            # If successful, add DataFrame info
-            data["dataframe_info"] = df_info
-
-        # Return the enhanced JSON response
+        data["dataframe_info"] = df_info
         return json.dumps(data)
     else:
-        # Return the standard JSON response
         return fetch_playbyplay_logic(
             game_id=game_id,
             start_period=start_period,
             end_period=end_period,
-            event_types=event_types_list,
+            event_types_list=event_types_list,
             player_name=player_name,
             person_id=person_id,
             team_id=team_id,
             team_tricode=team_tricode
-        )
-
-@tool
-def get_game_shotchart(
-    game_id: str,
-    team_id: int = None,
-    team_name: str = None,
-    player_id: int = None,
-    player_name: str = None,
-    period: int = None,
-    shot_type: str = None,
-    shot_made: bool = None,
-    zone_basic: str = None,
-    zone_area: str = None,
-    zone_range: str = None,
-    as_dataframe: bool = False
-) -> str:
-    """
-    Fetches shot chart details for all players in a specific game.
-    Provides granular filtering options and DataFrame output capabilities.
-
-    Args:
-        game_id (str): The ID of the game.
-        team_id (int, optional): Filter shots by team ID.
-        team_name (str, optional): Filter shots by team name (case-insensitive partial match).
-        player_id (int, optional): Filter shots by player ID.
-        player_name (str, optional): Filter shots by player name (case-insensitive partial match).
-        period (int, optional): Filter shots by period number (1-4 for quarters, 5+ for overtime).
-        shot_type (str, optional): Filter shots by shot type (e.g., '2PT Field Goal', '3PT Field Goal').
-        shot_made (bool, optional): If True, only include made shots; if False, only include missed shots.
-        zone_basic (str, optional): Filter shots by basic shot zone (e.g., 'Restricted Area', 'Mid-Range', '3PT Field Goal').
-        zone_area (str, optional): Filter shots by shot zone area (e.g., 'Center', 'Left Side', 'Right Side').
-        zone_range (str, optional): Filter shots by shot zone range (e.g., 'Less Than 8 ft.', '16-24 ft.').
-        as_dataframe (bool, optional): If True, returns a pandas DataFrame representation of the data
-            and saves it to CSV files in the cache directory. Defaults to False.
-
-    Returns:
-        str: JSON string with game shot chart data, including shots by team and league averages.
-             If as_dataframe=True, the JSON response will include additional information about
-             the DataFrames and CSV files.
-    """
-    logger.debug(f"Tool 'get_game_shotchart' called for game '{game_id}', as_dataframe={as_dataframe}")
-
-    if as_dataframe:
-        # Get both JSON response and DataFrames
-        json_response, dataframes = fetch_shotchart_logic(
-            game_id=game_id,
-            team_id=team_id,
-            team_name=team_name,
-            player_id=player_id,
-            player_name=player_name,
-            period=period,
-            shot_type=shot_type,
-            shot_made=shot_made,
-            zone_basic=zone_basic,
-            zone_area=zone_area,
-            zone_range=zone_range,
-            return_dataframe=True
-        )
-
-        # Parse the original JSON response
-        data = json.loads(json_response)
-
-        # Add DataFrame info
-        df_info = {
-            "message": "Shot chart data has been converted to DataFrames and saved as CSV files",
-            "dataframes": {}
-        }
-
-        for key, df in dataframes.items():
-            if not df.empty:
-                # Create a descriptive filename based on filters
-                filename_parts = [game_id]
-                if team_id:
-                    filename_parts.append(f"team_{team_id}")
-                if team_name:
-                    filename_parts.append(f"team_{team_name.replace(' ', '_')}")
-                if player_id:
-                    filename_parts.append(f"player_{player_id}")
-                if player_name:
-                    filename_parts.append(f"player_{player_name.replace(' ', '_')}")
-                if period:
-                    filename_parts.append(f"period_{period}")
-                if shot_type:
-                    filename_parts.append(f"shottype_{shot_type.replace(' ', '_')}")
-                if shot_made is not None:
-                    filename_parts.append(f"made_{shot_made}")
-                if zone_basic:
-                    filename_parts.append(f"zone_{zone_basic.replace(' ', '_')}")
-
-                csv_path = get_relative_cache_path(f"{'_'.join(filename_parts)}_{key}.csv", "shotcharts")
-
-                df_info["dataframes"][key] = {
-                    "shape": df.shape,
-                    "columns": df.columns.tolist(),
-                    "csv_path": csv_path,
-                    "sample_data": df.head(5).to_dict(orient="records") if not df.empty else []
-                }
-
-        # Add DataFrame info to the response
-        if "error" in data:
-            # If there was an error, keep it and add DataFrame info
-            data["dataframe_info"] = df_info
-        else:
-            # If successful, add DataFrame info
-            data["dataframe_info"] = df_info
-
-        # Return the enhanced JSON response
-        return json.dumps(data)
-    else:
-        # Return the standard JSON response
-        return fetch_shotchart_logic(
-            game_id=game_id,
-            team_id=team_id,
-            team_name=team_name,
-            player_id=player_id,
-            player_name=player_name,
-            period=period,
-            shot_type=shot_type,
-            shot_made=shot_made,
-            zone_basic=zone_basic,
-            zone_area=zone_area,
-            zone_range=zone_range
         )
 
 @tool
@@ -773,3 +605,36 @@ def get_win_probability(
     else:
         # Return the standard JSON response
         return fetch_win_probability_logic(game_id, run_type=run_type)
+
+@tool
+def get_search_games(
+    game_id_query: Optional[str] = None,
+    team_abbreviation_query: Optional[str] = None,
+    player_name_query: Optional[str] = None,
+    date_query: Optional[str] = None, # YYYY-MM-DD
+    season_year_query: Optional[str] = None, # YYYY
+    as_dataframe: bool = False
+) -> str:
+    """
+    Searches for games based on various query parameters like game ID, team, player, date, or season.
+
+    Args:
+        game_id_query (Optional[str]): A specific game ID to search for.
+        team_abbreviation_query (Optional[str]): Team abbreviation (e.g., LAL, BOS).
+        player_name_query (Optional[str]): Player name involved in the game.
+        date_query (Optional[str]): Specific date of the game (YYYY-MM-DD).
+        season_year_query (Optional[str]): Season year (e.g., 2023 for 2023-24 season).
+        as_dataframe (bool): If True, returns pandas DataFrames.
+
+    Returns:
+        str: JSON string with a list of matching games.
+    """
+    logger.debug(f"Tool 'get_search_games' called with query: game_id='{game_id_query}', team_abbr='{team_abbreviation_query}', player_name='{player_name_query}', date='{date_query}', season_year='{season_year_query}', as_dataframe={as_dataframe}")
+    return search_games_logic(
+        game_id_query=game_id_query,
+        team_abbreviation_query=team_abbreviation_query,
+        player_name_query=player_name_query,
+        date_query=date_query,
+        season_year_query=season_year_query,
+        return_dataframe=as_dataframe
+    )

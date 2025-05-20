@@ -23,14 +23,11 @@ from ..api_tools.league_standings import (
 from ..api_tools.scoreboard_tools import fetch_scoreboard_data_logic
 from ..api_tools.league_draft import fetch_draft_history_logic
 from ..api_tools.league_leaders_data import fetch_league_leaders_logic
-from ..api_tools.synergy_tools import fetch_synergy_play_types_logic
 from ..api_tools.league_player_on_details import fetch_league_player_on_details_logic
-from ..api_tools.player_listings import fetch_common_all_players_logic
 from ..api_tools.playoff_series import fetch_common_playoff_series_logic
-from ..api_tools.team_history import fetch_common_team_years_logic
 from ..api_tools.league_lineups import fetch_league_dash_lineups_logic
-from ..api_tools.trending_tools import fetch_top_performers_logic
-from ..api_tools.trending_team_tools import fetch_top_teams_logic
+from ..api_tools.league_opponent_shot_dashboard import fetch_league_dash_opponent_pt_shot_logic
+from ..api_tools.matchup_tools import fetch_league_season_matchups_logic
 
 logger = logging.getLogger(__name__)
 
@@ -109,11 +106,11 @@ def get_league_standings(
         return result
 
 @tool
-def get_scoreboard(
+def get_league_scoreboard(
     game_date: Optional[str] = None, # YYYY-MM-DD format
-    league_id: str = LeagueID.nba, # Added league_id
-    day_offset: int = 0, # Added day_offset
-    bypass_cache: bool = False # Added bypass_cache
+    league_id: str = LeagueID.nba,
+    day_offset: int = 0,
+    bypass_cache: bool = False
 ) -> str:
     """
     Fetches the scoreboard for a specific date, league, and day offset.
@@ -126,19 +123,16 @@ def get_scoreboard(
         day_offset (int, optional): Offset from the game_date (e.g., -1 for previous day). Defaults to 0.
         bypass_cache (bool, optional): If True, bypasses any caching for live data. Defaults to False.
 
-
     Returns:
         str: JSON string with scoreboard data, including game headers, line scores, and series standings.
     """
-    # The logic function fetch_scoreboard_data_logic handles defaulting game_date if None.
-    logger.debug(f"Tool 'get_scoreboard' called for date '{game_date}', league '{league_id}', offset '{day_offset}'")
-    result = fetch_scoreboard_data_logic(
+    logger.debug(f"Tool 'get_league_scoreboard' called for date '{game_date}', league '{league_id}', offset '{day_offset}'")
+    return fetch_scoreboard_data_logic(
         game_date=game_date,
         league_id=league_id,
         day_offset=day_offset,
         bypass_cache=bypass_cache
     )
-    return result
 
 @tool(cache_results=True, cache_ttl=86400) # Cache for 1 day
 def get_draft_history(
@@ -277,72 +271,6 @@ def get_league_leaders(
         return result
 
 @tool
-def get_synergy_play_types(
-    play_type: str, # This is REQUIRED by the underlying logic, moved to front
-    season: str = settings.CURRENT_NBA_SEASON,
-    season_type: str = SeasonTypeAllStar.regular,
-    player_or_team_abbreviation: str = PlayerOrTeamAbbreviation.team, # 'T' or 'P'
-    league_id: str = LeagueID.nba,
-    per_mode: str = PerModeSimple.per_game,
-    type_grouping: str = "Offensive", # "Offensive" or "Defensive"
-    player_id_nullable: Optional[int] = None,
-    team_id_nullable: Optional[int] = None
-) -> str:
-    """
-    Fetches Synergy Sports play type statistics for players or teams.
-    A specific 'play_type' (e.g., "Isolation", "Transition") is REQUIRED.
-    The 'type_grouping' (context: "Offensive" or "Defensive") defaults to "Offensive".
-    Results include 'POSS_PCT' (frequency of possessions) and 'PPP' (Points Per Possession).
-
-    Args:
-        season (str, optional): Season in YYYY-YY format. Defaults to current season.
-        season_type (str, optional): Season phase. Defaults to "Regular Season".
-            Valid values from `nba_api.stats.library.parameters.SeasonTypeAllStar`.
-        player_or_team_abbreviation (str, optional): "P" for players or "T" for teams. Defaults to "T".
-            Valid values from `nba_api.stats.library.parameters.PlayerOrTeamAbbreviation`.
-        play_type (str): Specific play type (e.g., "Isolation", "PostUp", "Transition"). This is REQUIRED.
-            Valid values from `nba_api.stats.library.parameters.PlayType`.
-        league_id (str, optional): League ID. Defaults to "00" (NBA).
-        per_mode (str, optional): Statistical mode. Defaults to "PerGame".
-            Valid values from `nba_api.stats.library.parameters.PerModeSimple`.
-        type_grouping (str, optional): Context filter ("Offensive" or "Defensive"). Defaults to "Offensive".
-            Valid values from `nba_api.stats.library.parameters.TypeGrouping`.
-        player_id_nullable (Optional[int], optional): Player ID (if player_or_team_abbreviation="P").
-        team_id_nullable (Optional[int], optional): Team ID (if player_or_team_abbreviation="T").
-
-    Returns:
-        str: JSON string with Synergy play type statistics.
-    """
-    # Ensure type_grouping is one of the valid options, default if not.
-    effective_type_grouping = type_grouping if type_grouping in ["Offensive", "Defensive"] else "Offensive"
-
-    logger.debug(
-        f"Tool 'get_synergy_play_types' called for League: {league_id}, Mode: {per_mode}, "
-        f"P/T: {player_or_team_abbreviation}, Season: {season}, PlayType: {play_type}, "
-        f"TypeGrouping: {effective_type_grouping}, PlayerID: {player_id_nullable}, TeamID: {team_id_nullable}"
-    )
-
-    # Validate player_id and team_id match the player_or_team_abbreviation mode
-    if player_id_nullable is not None and player_or_team_abbreviation != PlayerOrTeamAbbreviation.player:
-        logger.warning("player_id provided but player_or_team_abbreviation is not 'P'. player_id will be ignored by API.")
-        # player_id_nullable = None # Logic function handles this
-    if team_id_nullable is not None and player_or_team_abbreviation != PlayerOrTeamAbbreviation.team:
-        logger.warning("team_id provided but player_or_team_abbreviation is not 'T'. team_id will be ignored by API.")
-        # team_id_nullable = None
-
-    return fetch_synergy_play_types_logic(
-        league_id=league_id,
-        per_mode=per_mode,
-        player_or_team=player_or_team_abbreviation, # Parameter name for logic function
-        season_type=season_type,
-        season=season,
-        play_type_nullable=play_type, # Parameter name for logic function
-        type_grouping_nullable=effective_type_grouping, # Parameter name for logic function
-        player_id_nullable=player_id_nullable,
-        team_id_nullable=team_id_nullable
-    )
-
-@tool
 def get_league_player_on_details(
     season: str = settings.CURRENT_NBA_SEASON,
     season_type: str = SeasonTypeAllStar.regular,
@@ -409,80 +337,6 @@ def get_league_player_on_details(
     )
 
 @tool(cache_results=True, cache_ttl=86400) # Cache for 1 day
-def get_common_all_players(
-    season: str, # YYYY-YY format
-    league_id: str = LeagueID.nba,
-    is_only_current_season: int = 1, # 1 for current, 0 for all historical in that season
-    as_dataframe: bool = False
-) -> str:
-    """
-    Fetches a list of all players for a given league and season using CommonAllPlayers endpoint.
-    Provides DataFrame output capabilities.
-
-    Args:
-        season (str): The NBA season identifier in YYYY-YY format (e.g., "2023-24").
-        league_id (str, optional): League ID. Defaults to "00" (NBA).
-        is_only_current_season (int, optional): Flag to fetch only currently active players (1)
-            or all players historically associated with that season (0). Defaults to 1.
-        as_dataframe (bool, optional): If True, returns a pandas DataFrame representation of the data
-            and saves it to CSV files in the cache directory. Defaults to False.
-
-    Returns:
-        str: JSON string with a list of players, including fields like PERSON_ID, DISPLAY_LAST_COMMA_FIRST, TEAM_ID, etc.
-             If as_dataframe=True, the JSON response will include additional information about
-             the DataFrames and CSV files.
-    """
-    logger.debug(f"Tool 'get_common_all_players' called for Season: {season}, LeagueID: {league_id}, IsOnlyCurrentSeason: {is_only_current_season}, as_dataframe={as_dataframe}")
-
-    if as_dataframe:
-        # Get both JSON response and DataFrames
-        json_response, dataframes = fetch_common_all_players_logic(
-            season=season,
-            league_id=league_id,
-            is_only_current_season=is_only_current_season,
-            return_dataframe=True
-        )
-
-        # Parse the original JSON response
-        data = json.loads(json_response)
-
-        # Add DataFrame info
-        df_info = {
-            "message": "Player listings have been converted to DataFrames and saved as CSV files",
-            "dataframes": {}
-        }
-
-        for key, df in dataframes.items():
-            if not df.empty:
-                csv_path = get_relative_cache_path(f"players_{season}_{league_id}_{is_only_current_season}.csv", "player_listings")
-
-                df_info["dataframes"][key] = {
-                    # Convert to list (or dict) so the default JSON encoder can handle it
-                    "shape": list(df.shape),
-                    "columns": df.columns.tolist(),
-                    "csv_path": csv_path,
-                    "sample_data": df.head(5).to_dict(orient="records") if not df.empty else []
-                }
-
-        # Add DataFrame info to the response
-        if "error" in data:
-            # If there was an error, keep it and add DataFrame info
-            data["dataframe_info"] = df_info
-        else:
-            # If successful, add DataFrame info
-            data["dataframe_info"] = df_info
-
-        # Return the enhanced JSON response
-        return json.dumps(data)
-    else:
-        # Return the standard JSON response
-        return fetch_common_all_players_logic(
-            season=season,
-            league_id=league_id,
-            is_only_current_season=is_only_current_season
-        )
-
-@tool(cache_results=True, cache_ttl=86400) # Cache for 1 day
 def get_common_playoff_series(
     season: str, # YYYY format for this endpoint (e.g., "2023" for 2023-24 playoffs)
     league_id: str = LeagueID.nba,
@@ -501,20 +355,6 @@ def get_common_playoff_series(
     """
     logger.debug(f"Tool 'get_common_playoff_series' called for Season: {season}, League: {league_id}, SeriesID: {series_id}")
     return fetch_common_playoff_series_logic(season=season, league_id=league_id, series_id=series_id)
-
-@tool(cache_results=True, cache_ttl=86400) # Cache for 1 day
-def get_common_team_years(league_id: str = LeagueID.nba) -> str:
-    """
-    Fetches a list of all team years for a given league, indicating the range of seasons each team existed.
-
-    Args:
-        league_id (str, optional): League ID. Defaults to "00" (NBA).
-
-    Returns:
-        str: JSON string with team year details, including TEAM_ID, MIN_YEAR, MAX_YEAR, ABBREVIATION.
-    """
-    logger.debug(f"Tool 'get_common_team_years' called for League: {league_id}")
-    return fetch_common_team_years_logic(league_id=league_id)
 
 @tool
 def get_league_dash_lineups(
@@ -595,56 +435,76 @@ def get_league_dash_lineups(
     )
 
 @tool
-def get_top_performers(
-    category: str = "PTS", # Default to Points
+def get_league_dash_opponent_pt_shot(
     season: str = settings.CURRENT_NBA_SEASON,
     season_type: str = SeasonTypeAllStar.regular,
-    per_mode: str = PerMode48.per_game, # Consistent with fetch_top_performers_logic
-    scope: str = Scope.s, # Added scope to match underlying logic
-    league_id: str = LeagueID.nba, # Added league_id to match underlying logic
-    top_n: int = 5
+    league_id: str = LeagueID.nba,
+    per_mode: str = "PerGame",
+    shot_dist_range: Optional[str] = None, # e.g., "8-16 ft."
+    close_def_dist_range: Optional[str] = None, # e.g., "0-2 Feet - Very Tight"
+    as_dataframe: bool = False
 ) -> str:
     """
-    Gets the top N players for a specific statistical category.
-
+    Fetches league-wide opponent player tracking shooting dashboard data.
+    Details what shots opponents take against all teams in the league under various conditions.
     Args:
-        category (str, optional): Statistical category abbreviation (e.g., "PTS", "REB", "AST"). Defaults to "PTS".
-            Valid values from `nba_api.stats.library.parameters.StatCategoryAbbreviation`.
-        season (str, optional): NBA season in YYYY-YY format. Defaults to current season.
-        season_type (str, optional): Type of season. Defaults to "Regular Season".
-        per_mode (str, optional): Statistical mode. Defaults to "PerGame".
-        scope (str, optional): Scope of leaders (e.g., "S" for all players, "RS" for rookies). Defaults to "S".
-        league_id (str, optional): League ID. Defaults to "00" (NBA).
-        top_n (int, optional): Number of top performers to return. Defaults to 5.
-
+        season (str): NBA season (e.g., "2023-24").
+        season_type (str): Type of season.
+        league_id (str): League ID.
+        per_mode (str): Statistical mode.
+        shot_dist_range (Optional[str]): Filter by shot distance.
+        close_def_dist_range (Optional[str]): Filter by defender proximity.
+        as_dataframe (bool): If True, returns pandas DataFrames.
     Returns:
-        str: JSON string with top performers, including fields like PLAYER_ID, RANK, PLAYER, TEAM, GP, MIN, and the stat category.
+        str: JSON string with opponent shooting dashboard data.
     """
-    logger.debug(f"Tool 'get_top_performers' called for Cat: {category}, Season: {season}, Type: {season_type}, Mode: {per_mode}, Scope: {scope}, League: {league_id}, Top: {top_n}")
-    result = fetch_top_performers_logic(
-        category=category, season=season, season_type=season_type, per_mode=per_mode, scope=scope, league_id=league_id, top_n=top_n
+    logger.debug(f"Tool 'get_league_dash_opponent_pt_shot' for season {season}, as_dataframe={as_dataframe}")
+    return fetch_league_dash_opponent_pt_shot_logic(
+        season=season,
+        season_type=season_type,
+        league_id=league_id,
+        per_mode=per_mode,
+        shot_dist_range=shot_dist_range,
+        close_def_dist_range=close_def_dist_range,
+        return_dataframe=as_dataframe
     )
-    return result
 
 @tool
-def get_top_teams(
+def get_league_season_matchups(
     season: str = settings.CURRENT_NBA_SEASON,
     season_type: str = SeasonTypeAllStar.regular,
-    league_id: str = LeagueID.nba, # Added league_id to match underlying logic
-    top_n: int = 5
+    league_id: str = LeagueID.nba,
+    def_player_id_nullable: Optional[int] = None,
+    def_team_id_nullable: Optional[int] = None,
+    off_player_id_nullable: Optional[int] = None,
+    off_team_id_nullable: Optional[int] = None,
+    per_mode: str = "PerGame",
+    as_dataframe: bool = False
 ) -> str:
     """
-    Gets the top N teams based on league standings (win percentage).
-
+    Fetches head-to-head matchup statistics for all player/team combinations in a season.
     Args:
-        season (str, optional): NBA season in YYYY-YY format. Defaults to current season.
-        season_type (str, optional): Type of season. Defaults to "Regular Season".
-        league_id (str, optional): League ID. Defaults to "00" (NBA).
-        top_n (int, optional): Number of top teams to return. Defaults to 5.
-
+        season (str): NBA season (e.g., "2023-24").
+        season_type (str): Type of season.
+        league_id (str): League ID.
+        def_player_id_nullable (Optional[int]): Defensive player ID to filter by.
+        def_team_id_nullable (Optional[int]): Defensive team ID to filter by.
+        off_player_id_nullable (Optional[int]): Offensive player ID to filter by.
+        off_team_id_nullable (Optional[int]): Offensive team ID to filter by.
+        per_mode (str): Statistical mode.
+        as_dataframe (bool): If True, returns pandas DataFrames.
     Returns:
-        str: JSON string with top teams, including fields like TeamID, TeamName, Conference, WinPct, WINS, LOSSES.
+        str: JSON string with league season matchup data.
     """
-    logger.debug(f"Tool 'get_top_teams' called for Season: {season}, Type: {season_type}, League: {league_id}, Top: {top_n}")
-    result = fetch_top_teams_logic(season=season, season_type=season_type, league_id=league_id, top_n=top_n)
-    return result
+    logger.debug(f"Tool 'get_league_season_matchups' for season {season}, as_dataframe={as_dataframe}")
+    return fetch_league_season_matchups_logic(
+        season=season,
+        season_type=season_type,
+        league_id=league_id,
+        def_player_id_nullable=def_player_id_nullable,
+        def_team_id_nullable=def_team_id_nullable,
+        off_player_id_nullable=off_player_id_nullable,
+        off_team_id_nullable=off_team_id_nullable,
+        per_mode=per_mode,
+        return_dataframe=as_dataframe
+    )
