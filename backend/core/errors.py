@@ -194,6 +194,7 @@ class Errors:
 
     # Advanced Player Stats (PlayerEstimatedMetrics, TeamEstimatedMetrics, TeamPlayerOnOffDetails)
     PLAYER_ESTIMATED_METRICS_API: str = "API error fetching player estimated metrics (Season: {season}, Type: {season_type}): {error}"
+    PLAYER_DASHBOARD_GENERAL_API: str = "API error fetching player dashboard general splits for {player_name}: {error}"
 
     PLAYER_SHOT_CHART_API: str = "Error fetching shot chart data for player {player_id} in season {season}: {error}"
     PLAYER_SHOT_CHART_NO_DATA: str = "No shot chart data found for player {player_id} in season {season}."
