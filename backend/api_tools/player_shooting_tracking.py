@@ -93,6 +93,16 @@ def fetch_player_shots_tracking_logic(
     opponent_team_id: int = NBA_API_DEFAULT_OPPONENT_TEAM_ID,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
+    last_n_games: int = 0,
+    league_id: str = "00",
+    month: int = 0,
+    period: int = 0,
+    vs_division_nullable: Optional[str] = None,
+    vs_conference_nullable: Optional[str] = None,
+    season_segment_nullable: Optional[str] = None,
+    outcome_nullable: Optional[str] = None,
+    location_nullable: Optional[str] = None,
+    game_segment_nullable: Optional[str] = None,
     return_dataframe: bool = False
 ) -> Union[str, Tuple[str, Dict[str, pd.DataFrame]]]:
     """
@@ -110,6 +120,16 @@ def fetch_player_shots_tracking_logic(
         opponent_team_id: Filter by opponent team ID. Defaults to 0 (all).
         date_from: Start date filter (YYYY-MM-DD).
         date_to: End date filter (YYYY-MM-DD).
+        last_n_games: Number of games to include (0 for all games).
+        league_id: League ID (default: "00" for NBA).
+        month: Month number (0 for all months).
+        period: Period number (0 for all periods).
+        vs_division_nullable: Filter by division (e.g., "Atlantic", "Central").
+        vs_conference_nullable: Filter by conference (e.g., "East", "West").
+        season_segment_nullable: Filter by season segment (e.g., "Post All-Star", "Pre All-Star").
+        outcome_nullable: Filter by game outcome (e.g., "W", "L").
+        location_nullable: Filter by game location (e.g., "Home", "Road").
+        game_segment_nullable: Filter by game segment (e.g., "First Half", "Second Half").
         return_dataframe: Whether to return DataFrames along with the JSON response.
 
     Returns:
@@ -122,7 +142,11 @@ def fetch_player_shots_tracking_logic(
             Tuple[str, Dict[str, pd.DataFrame]]: A tuple containing the JSON response string
                                                and a dictionary of DataFrames.
     """
-    logger.info(f"Executing fetch_player_shots_tracking_logic for player name: {player_name}, Season: {season}, PerMode: {per_mode}, return_dataframe={return_dataframe}")
+    logger.info(f"Executing fetch_player_shots_tracking_logic for player name: {player_name}, Season: {season}, PerMode: {per_mode}, " +
+              f"OpponentTeamID: {opponent_team_id}, DateFrom: {date_from}, DateTo: {date_to}, LastNGames: {last_n_games}, " +
+              f"LeagueID: {league_id}, Month: {month}, Period: {period}, VsDivision: {vs_division_nullable}, " +
+              f"VsConference: {vs_conference_nullable}, SeasonSegment: {season_segment_nullable}, Outcome: {outcome_nullable}, " +
+              f"Location: {location_nullable}, GameSegment: {game_segment_nullable}, return_dataframe={return_dataframe}")
 
     if not player_name or not player_name.strip():
         error_response = format_response(error=Errors.PLAYER_NAME_EMPTY)
@@ -181,10 +205,24 @@ def fetch_player_shots_tracking_logic(
         # Call the API
         logger.debug(f"Fetching playerdashptshots for Player ID: {player_id_int}, Team ID: {team_id}, Season: {season}")
         shooting_stats_endpoint = playerdashptshots.PlayerDashPtShots(
-            player_id=player_id_int, team_id=team_id, season=season,
-            season_type_all_star=season_type, per_mode_simple=per_mode,
+            player_id=player_id_int,
+            team_id=team_id,
+            season=season,
+            season_type_all_star=season_type,
+            per_mode_simple=per_mode,
             opponent_team_id=opponent_team_id,
-            date_from_nullable=date_from, date_to_nullable=date_to,
+            date_from_nullable=date_from,
+            date_to_nullable=date_to,
+            last_n_games=last_n_games,
+            league_id=league_id,
+            month=month,
+            period=period,
+            vs_division_nullable=vs_division_nullable,
+            vs_conference_nullable=vs_conference_nullable,
+            season_segment_nullable=season_segment_nullable,
+            outcome_nullable=outcome_nullable,
+            location_nullable=location_nullable,
+            game_segment_nullable=game_segment_nullable,
             timeout=settings.DEFAULT_TIMEOUT_SECONDS
         )
         logger.debug(f"playerdashptshots API call successful for {player_actual_name}")
@@ -273,10 +311,33 @@ def fetch_player_shots_tracking_logic(
                 logger.warning(f"No shooting stats data found for player {player_actual_name} (ID: {player_id_int}) with given filters (all original DFs were empty).")
 
                 response_data = {
-                    "player_id": player_id_int, "player_name": player_actual_name, "team_id": team_id,
-                    "parameters": {"season": season, "season_type": season_type, "per_mode": per_mode, "opponent_team_id": opponent_team_id, "date_from": date_from, "date_to": date_to},
-                    "general_shooting": [], "by_shot_clock": [], "by_dribble_count": [],
-                    "by_touch_time": [], "by_defender_distance": [], "by_defender_distance_10ft_plus": []
+                    "player_id": player_id_int,
+                    "player_name": player_actual_name,
+                    "team_id": team_id,
+                    "parameters": {
+                        "season": season,
+                        "season_type": season_type,
+                        "per_mode": per_mode,
+                        "opponent_team_id": opponent_team_id,
+                        "date_from": date_from,
+                        "date_to": date_to,
+                        "last_n_games": last_n_games,
+                        "league_id": league_id,
+                        "month": month,
+                        "period": period,
+                        "vs_division": vs_division_nullable,
+                        "vs_conference": vs_conference_nullable,
+                        "season_segment": season_segment_nullable,
+                        "outcome": outcome_nullable,
+                        "location": location_nullable,
+                        "game_segment": game_segment_nullable
+                    },
+                    "general_shooting": [],
+                    "by_shot_clock": [],
+                    "by_dribble_count": [],
+                    "by_touch_time": [],
+                    "by_defender_distance": [],
+                    "by_defender_distance_10ft_plus": []
                 }
 
                 if return_dataframe:
@@ -285,14 +346,33 @@ def fetch_player_shots_tracking_logic(
 
         # Create response data
         result = {
-            "player_id": player_id_int, "player_name": player_actual_name, "team_id": team_id,
+            "player_id": player_id_int,
+            "player_name": player_actual_name,
+            "team_id": team_id,
             "parameters": {
-                "season": season, "season_type": season_type, "per_mode": per_mode, "opponent_team_id": opponent_team_id,
-                "date_from": date_from, "date_to": date_to
+                "season": season,
+                "season_type": season_type,
+                "per_mode": per_mode,
+                "opponent_team_id": opponent_team_id,
+                "date_from": date_from,
+                "date_to": date_to,
+                "last_n_games": last_n_games,
+                "league_id": league_id,
+                "month": month,
+                "period": period,
+                "vs_division": vs_division_nullable,
+                "vs_conference": vs_conference_nullable,
+                "season_segment": season_segment_nullable,
+                "outcome": outcome_nullable,
+                "location": location_nullable,
+                "game_segment": game_segment_nullable
             },
-            "general_shooting": general_list or [], "by_shot_clock": shot_clock_list or [],
-            "by_dribble_count": dribbles_list or [], "by_touch_time": touch_time_list or [],
-            "by_defender_distance": defender_dist_list or [], "by_defender_distance_10ft_plus": defender_dist_10ft_list or []
+            "general_shooting": general_list or [],
+            "by_shot_clock": shot_clock_list or [],
+            "by_dribble_count": dribbles_list or [],
+            "by_touch_time": touch_time_list or [],
+            "by_defender_distance": defender_dist_list or [],
+            "by_defender_distance_10ft_plus": defender_dist_10ft_list or []
         }
 
         logger.info(f"fetch_player_shots_tracking_logic completed for {player_actual_name}")
