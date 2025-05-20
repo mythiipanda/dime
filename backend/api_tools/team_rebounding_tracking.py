@@ -90,8 +90,18 @@ def fetch_team_rebounding_stats_logic(
     season_type: str = SeasonTypeAllStar.regular,
     per_mode: str = PerModeSimple.per_game,
     opponent_team_id: int = NBA_API_DEFAULT_OPPONENT_TEAM_ID,
-    date_from: Optional[str] = None,
-    date_to: Optional[str] = None,
+    last_n_games: int = 0,
+    league_id: str = "00",
+    month: int = 0,
+    period: int = 0,
+    vs_division_nullable: Optional[str] = None,
+    vs_conference_nullable: Optional[str] = None,
+    season_segment_nullable: Optional[str] = None,
+    outcome_nullable: Optional[str] = None,
+    location_nullable: Optional[str] = None,
+    game_segment_nullable: Optional[str] = None,
+    date_from_nullable: Optional[str] = None,
+    date_to_nullable: Optional[str] = None,
     return_dataframe: bool = False
 ) -> Union[str, Tuple[str, Dict[str, pd.DataFrame]]]:
     """
@@ -105,8 +115,18 @@ def fetch_team_rebounding_stats_logic(
         season_type: Type of season. Defaults to Regular Season.
         per_mode: Statistical mode. Defaults to PerGame.
         opponent_team_id: Filter by opponent team ID. Defaults to 0 (all).
-        date_from: Start date filter (YYYY-MM-DD).
-        date_to: End date filter (YYYY-MM-DD).
+        last_n_games: Number of games to include (0 for all games).
+        league_id: League ID (default: "00" for NBA).
+        month: Month number (0 for all months).
+        period: Filter by period (0 for all, 1-4 for quarters, 5+ for OT).
+        vs_division_nullable: Filter by division (e.g., "Atlantic", "Central").
+        vs_conference_nullable: Filter by conference (e.g., "East", "West").
+        season_segment_nullable: Filter by season segment (e.g., "Post All-Star", "Pre All-Star").
+        outcome_nullable: Filter by game outcome (e.g., "W", "L").
+        location_nullable: Filter by game location (e.g., "Home", "Road").
+        game_segment_nullable: Filter by game segment (e.g., "First Half", "Second Half", "Overtime").
+        date_from_nullable: Start date filter in format YYYY-MM-DD.
+        date_to_nullable: End date filter in format YYYY-MM-DD.
         return_dataframe: Whether to return DataFrames along with the JSON response.
 
     Returns:
@@ -118,7 +138,12 @@ def fetch_team_rebounding_stats_logic(
             Tuple[str, Dict[str, pd.DataFrame]]: A tuple containing the JSON response string
                                                and a dictionary of DataFrames.
     """
-    logger.info(f"Executing fetch_team_rebounding_stats_logic for: {team_identifier}, Season: {season}, PerMode: {per_mode}, return_dataframe={return_dataframe}")
+    logger.info(f"Executing fetch_team_rebounding_stats_logic for: {team_identifier}, Season: {season}, PerMode: {per_mode}, " +
+              f"OpponentTeamID: {opponent_team_id}, LastNGames: {last_n_games}, LeagueID: {league_id}, Month: {month}, " +
+              f"Period: {period}, VsDivision: {vs_division_nullable}, VsConference: {vs_conference_nullable}, " +
+              f"SeasonSegment: {season_segment_nullable}, Outcome: {outcome_nullable}, Location: {location_nullable}, " +
+              f"GameSegment: {game_segment_nullable}, DateFrom: {date_from_nullable}, DateTo: {date_to_nullable}, " +
+              f"return_dataframe={return_dataframe}")
 
     # Store DataFrames if requested
     dataframes = {}
@@ -129,14 +154,14 @@ def fetch_team_rebounding_stats_logic(
             return validation_error_msg, dataframes
         return validation_error_msg
 
-    if date_from and not validate_date_format(date_from):
-        error_response = format_response(error=Errors.INVALID_DATE_FORMAT.format(date=date_from))
+    if date_from_nullable and not validate_date_format(date_from_nullable):
+        error_response = format_response(error=Errors.INVALID_DATE_FORMAT.format(date=date_from_nullable))
         if return_dataframe:
             return error_response, dataframes
         return error_response
 
-    if date_to and not validate_date_format(date_to):
-        error_response = format_response(error=Errors.INVALID_DATE_FORMAT.format(date=date_to))
+    if date_to_nullable and not validate_date_format(date_to_nullable):
+        error_response = format_response(error=Errors.INVALID_DATE_FORMAT.format(date=date_to_nullable))
         if return_dataframe:
             return error_response, dataframes
         return error_response
@@ -168,9 +193,24 @@ def fetch_team_rebounding_stats_logic(
     try:
         logger.debug(f"Fetching teamdashptreb for Team ID: {team_id_resolved}, Season: {season}")
         reb_stats_endpoint = teamdashptreb.TeamDashPtReb(
-            team_id=team_id_resolved, season=season, season_type_all_star=season_type,
-            per_mode_simple=per_mode, opponent_team_id=opponent_team_id,
-            date_from_nullable=date_from, date_to_nullable=date_to, timeout=settings.DEFAULT_TIMEOUT_SECONDS
+            team_id=team_id_resolved,
+            season=season,
+            season_type_all_star=season_type,
+            per_mode_simple=per_mode,
+            opponent_team_id=opponent_team_id,
+            last_n_games=last_n_games,
+            league_id=league_id,
+            month=month,
+            period=period,
+            vs_division_nullable=vs_division_nullable,
+            vs_conference_nullable=vs_conference_nullable,
+            season_segment_nullable=season_segment_nullable,
+            outcome_nullable=outcome_nullable,
+            location_nullable=location_nullable,
+            game_segment_nullable=game_segment_nullable,
+            date_from_nullable=date_from_nullable,
+            date_to_nullable=date_to_nullable,
+            timeout=settings.DEFAULT_TIMEOUT_SECONDS
         )
         logger.debug(f"teamdashptreb API call successful for {team_name_resolved}")
 
@@ -229,10 +269,31 @@ def fetch_team_rebounding_stats_logic(
                 logger.warning(f"No rebounding stats found for team {team_name_resolved} with given filters.")
 
                 response_data = {
-                    "team_id": team_id_resolved, "team_name": team_name_resolved, "season": season, "season_type": season_type,
-                    "parameters": {"per_mode": per_mode, "opponent_team_id": opponent_team_id, "date_from": date_from, "date_to": date_to},
-                    "overall": {}, "by_shot_type": [], "by_contest": [],
-                    "by_shot_distance": [], "by_rebound_distance": []
+                    "team_id": team_id_resolved,
+                    "team_name": team_name_resolved,
+                    "season": season,
+                    "season_type": season_type,
+                    "parameters": {
+                        "per_mode": per_mode,
+                        "opponent_team_id": opponent_team_id,
+                        "last_n_games": last_n_games,
+                        "league_id": league_id,
+                        "month": month,
+                        "period": period,
+                        "vs_division": vs_division_nullable,
+                        "vs_conference": vs_conference_nullable,
+                        "season_segment": season_segment_nullable,
+                        "outcome": outcome_nullable,
+                        "location": location_nullable,
+                        "game_segment": game_segment_nullable,
+                        "date_from": date_from_nullable,
+                        "date_to": date_to_nullable
+                    },
+                    "overall": {},
+                    "by_shot_type": [],
+                    "by_contest": [],
+                    "by_shot_distance": [],
+                    "by_rebound_distance": []
                 }
 
                 if return_dataframe:
@@ -248,10 +309,30 @@ def fetch_team_rebounding_stats_logic(
                 return error_response
 
         result = {
-            "team_id": team_id_resolved, "team_name": team_name_resolved, "season": season, "season_type": season_type,
-            "parameters": {"per_mode": per_mode, "opponent_team_id": opponent_team_id, "date_from": date_from, "date_to": date_to},
-            "overall": overall_data or {}, "by_shot_type": shot_type_list or [],
-            "by_contest": contested_list or [], "by_shot_distance": distances_list or [],
+            "team_id": team_id_resolved,
+            "team_name": team_name_resolved,
+            "season": season,
+            "season_type": season_type,
+            "parameters": {
+                "per_mode": per_mode,
+                "opponent_team_id": opponent_team_id,
+                "last_n_games": last_n_games,
+                "league_id": league_id,
+                "month": month,
+                "period": period,
+                "vs_division": vs_division_nullable,
+                "vs_conference": vs_conference_nullable,
+                "season_segment": season_segment_nullable,
+                "outcome": outcome_nullable,
+                "location": location_nullable,
+                "game_segment": game_segment_nullable,
+                "date_from": date_from_nullable,
+                "date_to": date_to_nullable
+            },
+            "overall": overall_data or {},
+            "by_shot_type": shot_type_list or [],
+            "by_contest": contested_list or [],
+            "by_shot_distance": distances_list or [],
             "by_rebound_distance": reb_dist_list or []
         }
 
