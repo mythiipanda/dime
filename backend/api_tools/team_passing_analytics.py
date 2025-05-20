@@ -81,6 +81,17 @@ def fetch_team_passing_stats_logic(
     season: str = settings.CURRENT_NBA_SEASON,
     season_type: str = SeasonTypeAllStar.regular,
     per_mode: str = PerModeSimple.per_game,
+    last_n_games: int = 0,
+    league_id: str = "00",
+    month: int = 0,
+    opponent_team_id: int = 0,
+    vs_division_nullable: Optional[str] = None,
+    vs_conference_nullable: Optional[str] = None,
+    season_segment_nullable: Optional[str] = None,
+    outcome_nullable: Optional[str] = None,
+    location_nullable: Optional[str] = None,
+    date_from_nullable: Optional[str] = None,
+    date_to_nullable: Optional[str] = None,
     return_dataframe: bool = False
 ) -> Union[str, Tuple[str, Dict[str, pd.DataFrame]]]:
     """
@@ -92,6 +103,17 @@ def fetch_team_passing_stats_logic(
         season: NBA season in YYYY-YY format. Defaults to current season.
         season_type: Type of season. Defaults to Regular Season.
         per_mode: Statistical mode. Defaults to PerGame.
+        last_n_games: Number of games to include (0 for all games).
+        league_id: League ID (default: "00" for NBA).
+        month: Month number (0 for all months).
+        opponent_team_id: Filter by opponent team ID (0 for all teams).
+        vs_division_nullable: Filter by division (e.g., "Atlantic", "Central").
+        vs_conference_nullable: Filter by conference (e.g., "East", "West").
+        season_segment_nullable: Filter by season segment (e.g., "Post All-Star", "Pre All-Star").
+        outcome_nullable: Filter by game outcome (e.g., "W", "L").
+        location_nullable: Filter by game location (e.g., "Home", "Road").
+        date_from_nullable: Start date filter in format YYYY-MM-DD.
+        date_to_nullable: End date filter in format YYYY-MM-DD.
         return_dataframe: Whether to return DataFrames along with the JSON response.
 
     Returns:
@@ -101,7 +123,11 @@ def fetch_team_passing_stats_logic(
             Tuple[str, Dict[str, pd.DataFrame]]: A tuple containing the JSON response string
                                                and a dictionary of DataFrames.
     """
-    logger.info(f"Executing fetch_team_passing_stats_logic for: '{team_identifier}', Season: {season}, PerMode: {per_mode}, DataFrame: {return_dataframe}")
+    logger.info(f"Executing fetch_team_passing_stats_logic for: '{team_identifier}', Season: {season}, PerMode: {per_mode}, " +
+              f"LastNGames: {last_n_games}, LeagueID: {league_id}, Month: {month}, OpponentTeamID: {opponent_team_id}, " +
+              f"VsDivision: {vs_division_nullable}, VsConference: {vs_conference_nullable}, " +
+              f"SeasonSegment: {season_segment_nullable}, Outcome: {outcome_nullable}, Location: {location_nullable}, " +
+              f"DateFrom: {date_from_nullable}, DateTo: {date_to_nullable}, DataFrame: {return_dataframe}")
 
     # Store DataFrames if requested
     dataframes = {}
@@ -133,8 +159,22 @@ def fetch_team_passing_stats_logic(
         logger.debug(f"Fetching teamdashptpass for Team ID: {team_id}, Season: {season}, PerMode: {per_mode}")
         try:
             passing_stats_endpoint = teamdashptpass.TeamDashPtPass(
-                team_id=team_id, season=season, season_type_all_star=season_type,
-                per_mode_simple=per_mode, timeout=settings.DEFAULT_TIMEOUT_SECONDS
+                team_id=team_id,
+                season=season,
+                season_type_all_star=season_type,
+                per_mode_simple=per_mode,
+                last_n_games=last_n_games,
+                league_id=league_id,
+                month=month,
+                opponent_team_id=opponent_team_id,
+                vs_division_nullable=vs_division_nullable,
+                vs_conference_nullable=vs_conference_nullable,
+                season_segment_nullable=season_segment_nullable,
+                outcome_nullable=outcome_nullable,
+                location_nullable=location_nullable,
+                date_from_nullable=date_from_nullable,
+                date_to_nullable=date_to_nullable,
+                timeout=settings.DEFAULT_TIMEOUT_SECONDS
             )
             logger.debug(f"teamdashptpass API call successful for ID: {team_id}, Season: {season}")
             passes_made_df = passing_stats_endpoint.passes_made.get_data_frame()
@@ -181,8 +221,24 @@ def fetch_team_passing_stats_logic(
                 return format_response(error=error_msg)
 
         result = {
-            "team_name": team_actual_name, "team_id": team_id, "season": season, "season_type": season_type,
-            "parameters": {"per_mode": per_mode},
+            "team_name": team_actual_name,
+            "team_id": team_id,
+            "season": season,
+            "season_type": season_type,
+            "parameters": {
+                "per_mode": per_mode,
+                "last_n_games": last_n_games,
+                "league_id": league_id,
+                "month": month,
+                "opponent_team_id": opponent_team_id,
+                "vs_division": vs_division_nullable,
+                "vs_conference": vs_conference_nullable,
+                "season_segment": season_segment_nullable,
+                "outcome": outcome_nullable,
+                "location": location_nullable,
+                "date_from": date_from_nullable,
+                "date_to": date_to_nullable
+            },
             "passes_made": passes_made_list or [],
             "passes_received": passes_received_list or []
         }
