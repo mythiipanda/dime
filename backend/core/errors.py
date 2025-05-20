@@ -106,6 +106,7 @@ class Errors:
     BOXSCORE_USAGE_API: str = "Error fetching BoxScoreUsageV3 for game {game_id}: {error}"
     BOXSCORE_DEFENSIVE_API: str = "Error fetching BoxScoreDefensiveV2 for game {game_id}: {error}"
     BOXSCORE_SUMMARY_API: str = "Error fetching BoxScoreSummaryV2 for game {game_id}: {error}"
+    BOXSCORE_MATCHUPS_API: str = "Error fetching BoxScoreMatchupsV3 for game {game_id}: {error}"
     WINPROBABILITY_API: str = "API error fetching win probability for game {game_id}: {error}"
     PLAYBYPLAY_API: str = "API error fetching play-by-play for game {game_id}: {error}"
     SHOTCHART_API: str = "API error fetching shot chart for game {game_id}: {error}"
