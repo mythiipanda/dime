@@ -73,9 +73,9 @@ def _get_csv_path_for_team_player_on_off_summary(
 def fetch_teamplayeronoffsummary_logic(
     team_identifier: str,
     season: str = settings.CURRENT_NBA_SEASON,
-    season_type: str = SeasonTypeAllStar.regular,
-    per_mode: str = PerModeDetailed.totals,
-    measure_type: str = MeasureTypeDetailedDefense.base,
+    season_type_all_star: str = SeasonTypeAllStar.regular,
+    per_mode_detailed: str = PerModeDetailed.totals,
+    measure_type_detailed_defense: str = MeasureTypeDetailedDefense.base,
     last_n_games: int = 0,
     month: int = 0,
     opponent_team_id: int = 0,
@@ -83,15 +83,15 @@ def fetch_teamplayeronoffsummary_logic(
     period: int = 0,
     plus_minus: str = "N",
     rank: str = "N",
-    vs_division: Optional[str] = None,
-    vs_conference: Optional[str] = None,
-    season_segment: Optional[str] = None,
-    outcome: Optional[str] = None,
-    location: Optional[str] = None,
-    league_id: Optional[str] = None,
-    game_segment: Optional[str] = None,
-    date_from: Optional[str] = None,
-    date_to: Optional[str] = None,
+    vs_division_nullable: Optional[str] = None,
+    vs_conference_nullable: Optional[str] = None,
+    season_segment_nullable: Optional[str] = None,
+    outcome_nullable: Optional[str] = None,
+    location_nullable: Optional[str] = None,
+    league_id_nullable: Optional[str] = None,
+    game_segment_nullable: Optional[str] = None,
+    date_from_nullable: Optional[str] = None,
+    date_to_nullable: Optional[str] = None,
     return_dataframe: bool = False
 ) -> Union[str, Tuple[str, Dict[str, pd.DataFrame]]]:
     """
@@ -99,9 +99,9 @@ def fetch_teamplayeronoffsummary_logic(
     Args:
         team_identifier: Name, abbreviation, or ID of the team
         season: NBA season in YYYY-YY format
-        season_type: Type of season (e.g., 'Regular Season', 'Playoffs')
-        per_mode: Statistical mode (e.g., 'PerGame', 'Totals')
-        measure_type: Measure type (e.g., 'Base', 'Advanced')
+        season_type_all_star: Type of season (e.g., 'Regular Season', 'Playoffs')
+        per_mode_detailed: Statistical mode (e.g., 'PerGame', 'Totals')
+        measure_type_detailed_defense: Measure type (e.g., 'Base', 'Advanced')
         last_n_games: Number of most recent games to include
         month: Filter by month (0 for all)
         opponent_team_id: Filter by opponent team ID
@@ -109,15 +109,15 @@ def fetch_teamplayeronoffsummary_logic(
         period: Filter by period (0 for all)
         plus_minus: Whether to include plus/minus ('Y' or 'N')
         rank: Whether to include statistical ranks ('Y' or 'N')
-        vs_division: Filter by division
-        vs_conference: Filter by conference
-        season_segment: Filter by season segment
-        outcome: Filter by game outcome ('W' or 'L')
-        location: Filter by game location ('Home' or 'Road')
-        league_id: League ID
-        game_segment: Filter by game segment
-        date_from: Start date filter (YYYY-MM-DD)
-        date_to: End date filter (YYYY-MM-DD)
+        vs_division_nullable: Filter by division
+        vs_conference_nullable: Filter by conference
+        season_segment_nullable: Filter by season segment
+        outcome_nullable: Filter by game outcome ('W' or 'L')
+        location_nullable: Filter by game location ('Home' or 'Road')
+        league_id_nullable: League ID
+        game_segment_nullable: Filter by game segment
+        date_from_nullable: Start date filter (YYYY-MM-DD)
+        date_to_nullable: End date filter (YYYY-MM-DD)
         return_dataframe: Whether to return DataFrames along with the JSON response
     Returns:
         If return_dataframe=False:
@@ -126,7 +126,7 @@ def fetch_teamplayeronoffsummary_logic(
             Tuple[str, Dict[str, pd.DataFrame]]: A tuple containing the JSON response string and a dictionary of DataFrames.
     """
     dataframes = {}
-    logger.info(f"Executing fetch_teamplayeronoffsummary_logic for '{team_identifier}', season {season}, type {season_type}, return_dataframe={return_dataframe}")
+    logger.info(f"Executing fetch_teamplayeronoffsummary_logic for '{team_identifier}', season {season}, type {season_type_all_star}, return_dataframe={return_dataframe}")
 
     # Validate season
     if not season or not _validate_season_format(season):
@@ -136,42 +136,42 @@ def fetch_teamplayeronoffsummary_logic(
         return format_response(error=error_msg)
 
     # Validate dates
-    if date_from and not validate_date_format(date_from):
-        error_msg = Errors.INVALID_DATE_FORMAT.format(date=date_from)
+    if date_from_nullable and not validate_date_format(date_from_nullable):
+        error_msg = Errors.INVALID_DATE_FORMAT.format(date=date_from_nullable)
         if return_dataframe:
             return format_response(error=error_msg), dataframes
         return format_response(error=error_msg)
 
-    if date_to and not validate_date_format(date_to):
-        error_msg = Errors.INVALID_DATE_FORMAT.format(date=date_to)
+    if date_to_nullable and not validate_date_format(date_to_nullable):
+        error_msg = Errors.INVALID_DATE_FORMAT.format(date=date_to_nullable)
         if return_dataframe:
             return format_response(error=error_msg), dataframes
         return format_response(error=error_msg)
 
     # Validate season type
-    if season_type not in _VALID_SEASON_TYPES:
-        error_msg = Errors.INVALID_SEASON_TYPE.format(value=season_type, options=", ".join(list(_VALID_SEASON_TYPES)[:5]))
+    if season_type_all_star not in _VALID_SEASON_TYPES:
+        error_msg = Errors.INVALID_SEASON_TYPE.format(value=season_type_all_star, options=", ".join(list(_VALID_SEASON_TYPES)[:5]))
         if return_dataframe:
             return format_response(error=error_msg), dataframes
         return format_response(error=error_msg)
 
     # Validate per_mode
-    if per_mode not in _VALID_PER_MODES:
-        error_msg = Errors.INVALID_PER_MODE.format(value=per_mode, options=", ".join(list(_VALID_PER_MODES)[:5]))
+    if per_mode_detailed not in _VALID_PER_MODES:
+        error_msg = Errors.INVALID_PER_MODE.format(value=per_mode_detailed, options=", ".join(list(_VALID_PER_MODES)[:5]))
         if return_dataframe:
             return format_response(error=error_msg), dataframes
         return format_response(error=error_msg)
 
     # Validate measure_type
-    if measure_type not in _VALID_MEASURE_TYPES:
-        error_msg = Errors.INVALID_MEASURE_TYPE.format(value=measure_type, options=", ".join(list(_VALID_MEASURE_TYPES)[:5]))
+    if measure_type_detailed_defense not in _VALID_MEASURE_TYPES:
+        error_msg = Errors.INVALID_MEASURE_TYPE.format(value=measure_type_detailed_defense, options=", ".join(list(_VALID_MEASURE_TYPES)[:5]))
         if return_dataframe:
             return format_response(error=error_msg), dataframes
         return format_response(error=error_msg)
 
     # Validate league_id
-    if league_id and league_id not in _VALID_LEAGUE_IDS:
-        error_msg = Errors.INVALID_LEAGUE_ID.format(value=league_id, options=", ".join(list(_VALID_LEAGUE_IDS)[:5]))
+    if league_id_nullable and league_id_nullable not in _VALID_LEAGUE_IDS:
+        error_msg = Errors.INVALID_LEAGUE_ID.format(value=league_id_nullable, options=", ".join(list(_VALID_LEAGUE_IDS)[:5]))
         if return_dataframe:
             return format_response(error=error_msg), dataframes
         return format_response(error=error_msg)
@@ -188,9 +188,9 @@ def fetch_teamplayeronoffsummary_logic(
         endpoint = teamplayeronoffsummary.TeamPlayerOnOffSummary(
             team_id=team_id,
             season=season,
-            season_type_all_star=season_type,
-            per_mode_detailed=per_mode,
-            measure_type_detailed_defense=measure_type,
+            season_type_all_star=season_type_all_star,
+            per_mode_detailed=per_mode_detailed,
+            measure_type_detailed_defense=measure_type_detailed_defense,
             last_n_games=last_n_games,
             month=month,
             opponent_team_id=opponent_team_id,
@@ -198,15 +198,15 @@ def fetch_teamplayeronoffsummary_logic(
             period=period,
             plus_minus=plus_minus,
             rank=rank,
-            vs_division_nullable=vs_division,
-            vs_conference_nullable=vs_conference,
-            season_segment_nullable=season_segment,
-            outcome_nullable=outcome,
-            location_nullable=location,
-            league_id_nullable=league_id,
-            game_segment_nullable=game_segment,
-            date_from_nullable=date_from,
-            date_to_nullable=date_to,
+            vs_division_nullable=vs_division_nullable,
+            vs_conference_nullable=vs_conference_nullable,
+            season_segment_nullable=season_segment_nullable,
+            outcome_nullable=outcome_nullable,
+            location_nullable=location_nullable,
+            league_id_nullable=league_id_nullable,
+            game_segment_nullable=game_segment_nullable,
+            date_from_nullable=date_from_nullable,
+            date_to_nullable=date_to_nullable,
             timeout=settings.DEFAULT_TIMEOUT_SECONDS
         )
 
@@ -223,19 +223,19 @@ def fetch_teamplayeronoffsummary_logic(
             # Save DataFrames to CSV
             if not overall_df.empty:
                 csv_path_overall = _get_csv_path_for_team_player_on_off_summary(
-                    str(team_id), season, season_type, per_mode, measure_type, "overall"
+                    str(team_id), season, season_type_all_star, per_mode_detailed, measure_type_detailed_defense, "overall"
                 )
                 _save_dataframe_to_csv(overall_df, csv_path_overall)
-            
+
             if not off_court_df.empty:
                 csv_path_off_court = _get_csv_path_for_team_player_on_off_summary(
-                    str(team_id), season, season_type, per_mode, measure_type, "off_court"
+                    str(team_id), season, season_type_all_star, per_mode_detailed, measure_type_detailed_defense, "off_court"
                 )
                 _save_dataframe_to_csv(off_court_df, csv_path_off_court)
 
             if not on_court_df.empty:
                 csv_path_on_court = _get_csv_path_for_team_player_on_off_summary(
-                    str(team_id), season, season_type, per_mode, measure_type, "on_court"
+                    str(team_id), season, season_type_all_star, per_mode_detailed, measure_type_detailed_defense, "on_court"
                 )
                 _save_dataframe_to_csv(on_court_df, csv_path_on_court)
 
@@ -249,9 +249,9 @@ def fetch_teamplayeronoffsummary_logic(
             "team_id": team_id,
             "parameters": {
                 "season": season,
-                "season_type": season_type,
-                "per_mode": per_mode,
-                "measure_type": measure_type,
+                "season_type": season_type_all_star,
+                "per_mode": per_mode_detailed,
+                "measure_type": measure_type_detailed_defense,
                 "last_n_games": last_n_games,
                 "month": month,
                 "opponent_team_id": opponent_team_id,
@@ -259,15 +259,15 @@ def fetch_teamplayeronoffsummary_logic(
                 "period": period,
                 "plus_minus": plus_minus,
                 "rank": rank,
-                "vs_division": vs_division,
-                "vs_conference": vs_conference,
-                "season_segment": season_segment,
-                "outcome": outcome,
-                "location": location,
-                "league_id": league_id,
-                "game_segment": game_segment,
-                "date_from": date_from,
-                "date_to": date_to
+                "vs_division": vs_division_nullable,
+                "vs_conference": vs_conference_nullable,
+                "season_segment": season_segment_nullable,
+                "outcome": outcome_nullable,
+                "location": location_nullable,
+                "league_id": league_id_nullable,
+                "game_segment": game_segment_nullable,
+                "date_from": date_from_nullable,
+                "date_to": date_to_nullable
             },
             "overall_team_player_on_off_summary": overall_list,
             "players_off_court_team_player_on_off_summary": off_court_list,
@@ -284,4 +284,4 @@ def fetch_teamplayeronoffsummary_logic(
         error_msg = Errors.TEAM_PLAYER_ON_OFF_SUMMARY_API.format(identifier=error_label, error=str(api_error)) if hasattr(Errors, "TEAM_PLAYER_ON_OFF_SUMMARY_API") else Errors.API_ERROR.format(error=str(api_error))
         if return_dataframe:
             return format_response(error=error_msg), dataframes
-        return format_response(error=error_msg) 
+        return format_response(error=error_msg)
