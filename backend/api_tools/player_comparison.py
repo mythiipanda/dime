@@ -98,32 +98,6 @@ def compare_player_shots(
     output_format: str = "base64",
     chart_type: str = "scatter",
     context_measure: str = "FGA",
-    league_id: str = "00",
-    last_n_games: int = 0,
-    month: int = 0,
-    opponent_team_id: int = 0,
-    period: int = 0,
-    date_from_nullable: Optional[str] = None,
-    date_to_nullable: Optional[str] = None,
-    game_segment_nullable: Optional[str] = None,
-    location_nullable: Optional[str] = None,
-    outcome_nullable: Optional[str] = None,
-    player_position_nullable: Optional[str] = None,
-    rookie_year_nullable: Optional[str] = None,
-    season_segment_nullable: Optional[str] = None,
-    vs_conference_nullable: Optional[str] = None,
-    vs_division_nullable: Optional[str] = None,
-    game_id_nullable: Optional[str] = None,
-    ahead_behind_nullable: Optional[str] = None,
-    clutch_time_nullable: Optional[str] = None,
-    point_diff_nullable: Optional[str] = None,
-    context_filter_nullable: Optional[str] = None,
-    start_period_nullable: Optional[int] = None,
-    end_period_nullable: Optional[int] = None,
-    start_range_nullable: Optional[int] = None,
-    end_range_nullable: Optional[int] = None,
-    range_type_nullable: Optional[int] = None,
-    position_nullable: Optional[str] = None,
     return_dataframe: bool = False
 ) -> Union[Dict[str, Any], Tuple[Dict[str, Any], Dict[str, pd.DataFrame]]]:
     """
@@ -136,32 +110,6 @@ def compare_player_shots(
         output_format: Output format (base64, file)
         chart_type: Type of chart to create (scatter, heatmap, zones)
         context_measure: Context measure for shot chart (FGA, FGM, FG_PCT, etc.)
-        league_id: League ID (00 for NBA)
-        last_n_games: Number of most recent games to include (0 for all)
-        month: Filter by month (0 for all)
-        opponent_team_id: Filter by opponent team ID (0 for all)
-        period: Filter by period (0 for all)
-        date_from_nullable: Start date filter (YYYY-MM-DD)
-        date_to_nullable: End date filter (YYYY-MM-DD)
-        game_segment_nullable: Filter by game segment (First Half, Second Half, Overtime)
-        location_nullable: Filter by location (Home, Road)
-        outcome_nullable: Filter by game outcome (W, L)
-        player_position_nullable: Filter by player position (Guard, Forward, Center)
-        rookie_year_nullable: Filter by rookie year
-        season_segment_nullable: Filter by season segment (Pre All-Star, Post All-Star)
-        vs_conference_nullable: Filter by opponent conference (East, West)
-        vs_division_nullable: Filter by opponent division (Atlantic, Central, etc.)
-        game_id_nullable: Filter by game ID
-        ahead_behind_nullable: Filter by score situation (Ahead or Behind, Ahead or Tied, Behind or Tied)
-        clutch_time_nullable: Filter by clutch time (Last 5 Minutes, Last 4 Minutes, etc.)
-        point_diff_nullable: Filter by point differential
-        context_filter_nullable: Additional context filter
-        start_period_nullable: Start period filter
-        end_period_nullable: End period filter
-        start_range_nullable: Start range filter
-        end_range_nullable: End range filter
-        range_type_nullable: Range type filter
-        position_nullable: Position filter
         return_dataframe: Whether to return DataFrames along with the visualization data
 
     Returns:
@@ -201,65 +149,14 @@ def compare_player_shots(
             player_ids.append(player_id)
 
             # Fetch shot chart data
-            shotchart_params = {
-                'player_id': player_id,
-                'team_id': 0,
-                'season_nullable': season,
-                'season_type_all_star': season_type,
-                'timeout': settings.DEFAULT_TIMEOUT_SECONDS,
-                'context_measure_simple': context_measure,
-                'league_id': league_id,
-                'last_n_games': last_n_games,
-                'month': month,
-                'opponent_team_id': opponent_team_id,
-                'period': period
-            }
-
-            # Add nullable parameters if they are provided
-            if date_from_nullable is not None:
-                shotchart_params['date_from_nullable'] = date_from_nullable
-            if date_to_nullable is not None:
-                shotchart_params['date_to_nullable'] = date_to_nullable
-            if game_segment_nullable is not None:
-                shotchart_params['game_segment_nullable'] = game_segment_nullable
-            if location_nullable is not None:
-                shotchart_params['location_nullable'] = location_nullable
-            if outcome_nullable is not None:
-                shotchart_params['outcome_nullable'] = outcome_nullable
-            if player_position_nullable is not None:
-                shotchart_params['player_position_nullable'] = player_position_nullable
-            if rookie_year_nullable is not None:
-                shotchart_params['rookie_year_nullable'] = rookie_year_nullable
-            if season_segment_nullable is not None:
-                shotchart_params['season_segment_nullable'] = season_segment_nullable
-            if vs_conference_nullable is not None:
-                shotchart_params['vs_conference_nullable'] = vs_conference_nullable
-            if vs_division_nullable is not None:
-                shotchart_params['vs_division_nullable'] = vs_division_nullable
-            if game_id_nullable is not None:
-                shotchart_params['game_id_nullable'] = game_id_nullable
-            if ahead_behind_nullable is not None:
-                shotchart_params['ahead_behind_nullable'] = ahead_behind_nullable
-            if clutch_time_nullable is not None:
-                shotchart_params['clutch_time_nullable'] = clutch_time_nullable
-            if point_diff_nullable is not None:
-                shotchart_params['point_diff_nullable'] = point_diff_nullable
-            if context_filter_nullable is not None:
-                shotchart_params['context_filter_nullable'] = context_filter_nullable
-            if start_period_nullable is not None:
-                shotchart_params['start_period_nullable'] = start_period_nullable
-            if end_period_nullable is not None:
-                shotchart_params['end_period_nullable'] = end_period_nullable
-            if start_range_nullable is not None:
-                shotchart_params['start_range_nullable'] = start_range_nullable
-            if end_range_nullable is not None:
-                shotchart_params['end_range_nullable'] = end_range_nullable
-            if range_type_nullable is not None:
-                shotchart_params['range_type_nullable'] = range_type_nullable
-            if position_nullable is not None:
-                shotchart_params['position_nullable'] = position_nullable
-
-            shotchart_endpoint = shotchartdetail.ShotChartDetail(**shotchart_params)
+            shotchart_endpoint = shotchartdetail.ShotChartDetail(
+                player_id=player_id,
+                team_id=0,
+                season_nullable=season,
+                season_type_all_star=season_type,
+                timeout=settings.DEFAULT_TIMEOUT_SECONDS,
+                context_measure_simple=context_measure
+            )
 
             shots_df = shotchart_endpoint.shot_chart_detail.get_data_frame()
             league_avg_df = shotchart_endpoint.league_averages.get_data_frame()
