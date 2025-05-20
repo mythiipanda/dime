@@ -22,18 +22,24 @@ from backend.utils.path_utils import get_relative_cache_path # For DataFrame sav
 # Import specific logic functions for misc tools
 from backend.api_tools.matchup_tools import fetch_matchups_rollup_logic
 from backend.api_tools.odds_tools import fetch_odds_data_logic
-from backend.api_tools.game_playbyplay import fetch_playbyplay_logic # For get_historical_playbyplay and get_live_playbyplay
-from backend.api_tools.game_boxscores import (\
-    fetch_boxscore_hustle_logic, \
-    fetch_boxscore_misc_logic, \
-    fetch_boxscore_scoring_logic\
+from backend.api_tools.game_playbyplay import (
+    fetch_playbyplay_logic,
+    _fetch_historical_playbyplay_logic,
+    _fetch_live_playbyplay_logic
 )
-from backend.api_tools.game_visuals_analytics import fetch_shotchart_logic, fetch_win_probability_logic # For get_shotchart, get_win_probability
-from backend.api_tools.synergy_tools import fetch_synergy_play_types_logic # For get_synergy_play_types
-from backend.api_tools.trending_tools import fetch_top_performers_logic # For get_top_performers
-from backend.api_tools.scoreboard_tools import fetch_scoreboard_data_logic # For get_scoreboard_data
-from backend.api_tools.league_draft import fetch_draft_history_logic # For get_draft_history
-from backend.api_tools.playoff_series import fetch_common_playoff_series_logic # For get_common_playoff_series
+from backend.api_tools.game_boxscores import (
+    fetch_boxscore_hustle_logic,
+    fetch_boxscore_misc_logic,
+    fetch_boxscore_scoring_logic,
+    fetch_boxscore_defensive_logic,
+    fetch_boxscore_summary_logic
+)
+from backend.api_tools.game_visuals_analytics import fetch_shotchart_logic, fetch_win_probability_logic
+from backend.api_tools.synergy_tools import fetch_synergy_play_types_logic
+from backend.api_tools.trending_tools import fetch_top_performers_logic
+from backend.api_tools.scoreboard_tools import fetch_scoreboard_data_logic
+from backend.api_tools.league_draft import fetch_draft_history_logic
+from backend.api_tools.playoff_series import fetch_common_playoff_series_logic
 from backend.api_tools.game_finder import fetch_league_games_logic
 
 logger = logging.getLogger(__name__)
@@ -43,7 +49,8 @@ def get_matchups_rollup(
     def_player_identifier: str,
     season: str = settings.CURRENT_NBA_SEASON,
     season_type: str = SeasonTypeAllStar.regular,
-    bypass_cache: bool = False # Added to match underlying logic
+    bypass_cache: bool = False,
+    as_dataframe: bool = False
 ) -> str:
     """
     Fetches a rollup of matchup statistics for a defensive player against all opponents for a specific season.
@@ -54,17 +61,20 @@ def get_matchups_rollup(
         season_type (str, optional): The type of season. Defaults to "Regular Season".
             Valid values from `nba_api.stats.library.parameters.SeasonTypeAllStar`.
         bypass_cache (bool, optional): If True, bypasses any caching. Defaults to False.
+        as_dataframe (bool, optional): If True, returns a pandas DataFrame representation of the data
+            and saves it to CSV files in the cache directory. Defaults to False.
 
     Returns:
         str: JSON string containing matchup rollup statistics, showing how various offensive players
              performed when guarded by the specified defensive player.
     """
-    logger.debug(f"Tool 'get_matchups_rollup' called for Def: {def_player_identifier}, Season: {season}, Type: {season_type}")
+    logger.debug(f"Tool 'get_matchups_rollup' called for Def: {def_player_identifier}, Season: {season}, Type: {season_type}, as_dataframe={as_dataframe}")
     return fetch_matchups_rollup_logic(
         def_player_identifier=def_player_identifier,
         season=season,
         season_type=season_type,
-        bypass_cache=bypass_cache
+        bypass_cache=bypass_cache,
+        return_dataframe=as_dataframe
     )
 
 @tool
@@ -384,4 +394,82 @@ def get_common_playoff_series(
     logger.debug(f"Tool 'get_common_playoff_series' for season {season}, series_id {series_id}")
     return fetch_common_playoff_series_logic(\
         season=season, league_id=league_id, series_id=series_id, return_dataframe=as_dataframe\
+    )
+
+@tool
+def get__historical_playbyplay(
+    game_id: str,
+    start_period: int = 0,
+    end_period: int = 0,
+    event_types: List[str] = None,
+    player_name: str = None,
+    person_id: int = None,
+    team_id: int = None,
+    team_tricode: str = None,
+    as_dataframe: bool = False
+) -> str:
+    """
+    Fetches historical play-by-play data using PlayByPlayV3.
+
+    Args:
+        game_id: The ID of the game.
+        start_period: The starting period to fetch. Defaults to 0 (all).
+        end_period: The ending period to fetch. Defaults to 0 (all).
+        event_types: List of event types to filter by (e.g., ['SHOT', 'REBOUND', 'TURNOVER']).
+        player_name: Filter plays by player name.
+        person_id: Filter plays by player ID.
+        team_id: Filter plays by team ID.
+        team_tricode: Filter plays by team tricode (e.g., 'LAL', 'BOS').
+        as_dataframe: Whether to return DataFrames along with the JSON response.
+
+    Returns:
+        str: JSON string with play-by-play data.
+    """
+    logger.debug(f"Tool 'get__historical_playbyplay' called for game_id {game_id}")
+    return _fetch_historical_playbyplay_logic(
+        game_id=game_id,
+        start_period=start_period,
+        end_period=end_period,
+        event_types=event_types,
+        player_name=player_name,
+        person_id=person_id,
+        team_id=team_id,
+        team_tricode=team_tricode,
+        return_dataframe=as_dataframe
+    )
+
+@tool
+def get__live_playbyplay(
+    game_id: str,
+    event_types: List[str] = None,
+    player_name: str = None,
+    person_id: int = None,
+    team_id: int = None,
+    team_tricode: str = None,
+    as_dataframe: bool = False
+) -> str:
+    """
+    Fetches live play-by-play data.
+
+    Args:
+        game_id: The ID of the game.
+        event_types: List of event types to filter by (e.g., ['SHOT', 'REBOUND', 'TURNOVER']).
+        player_name: Filter plays by player name.
+        person_id: Filter plays by player ID.
+        team_id: Filter plays by team ID.
+        team_tricode: Filter plays by team tricode (e.g., 'LAL', 'BOS').
+        as_dataframe: Whether to return DataFrames along with the JSON response.
+
+    Returns:
+        str: JSON string with live play-by-play data.
+    """
+    logger.debug(f"Tool 'get__live_playbyplay' called for game_id {game_id}")
+    return _fetch_live_playbyplay_logic(
+        game_id=game_id,
+        event_types=event_types,
+        player_name=player_name,
+        person_id=person_id,
+        team_id=team_id,
+        team_tricode=team_tricode,
+        return_dataframe=as_dataframe
     )

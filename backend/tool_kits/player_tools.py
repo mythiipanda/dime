@@ -5,7 +5,7 @@ process various NBA player statistics and information, making them easily usable
 """
 import logging
 import json
-from typing import Optional
+from typing import Optional, List
 from agno.tools import tool
 from nba_api.stats.library.parameters import SeasonTypeAllStar, PerModeDetailed, PerMode36, LeagueID
 from backend.config import settings
@@ -42,6 +42,7 @@ logger = logging.getLogger(__name__)
 @tool
 def get_player_info(
     player_name: str,
+    league_id_nullable: Optional[str] = None,
     as_dataframe: bool = False
 ) -> str:
     """
@@ -51,6 +52,7 @@ def get_player_info(
 
     Args:
         player_name (str): The full name of the player (e.g., "LeBron James").
+        league_id_nullable (Optional[str], optional): The league ID to filter results (optional).
         as_dataframe (bool, optional): If True, returns a pandas DataFrame representation of the data
             and saves it to CSV files in the cache directory. Defaults to False.
 
@@ -65,6 +67,7 @@ def get_player_info(
         # Get both JSON response and DataFrames
         json_response, dataframes = fetch_player_info_logic(
             player_name=player_name,
+            league_id_nullable=league_id_nullable,
             return_dataframe=True
         )
 
@@ -103,7 +106,10 @@ def get_player_info(
         return json.dumps(data)
     else:
         # Return the standard JSON response
-        return fetch_player_info_logic(player_name=player_name)
+        return fetch_player_info_logic(
+            player_name=player_name,
+            league_id_nullable=league_id_nullable
+        )
 
 @tool
 def get_player_gamelog(
@@ -759,55 +765,117 @@ def get_boxscore_playertrack(
 
 @tool
 def get_common_all_players(
-    is_only_current_season: int = 1,
+    season: str = settings.CURRENT_NBA_SEASON,
     league_id: str = LeagueID.nba,
+    is_only_current_season: int = 1,
     as_dataframe: bool = False
 ) -> str:
     """
-    Fetches a list of all common players, optionally filtered by current season.
+    Fetches a list of all players for a given league and season, or all players historically
+    if is_only_current_season is set to 0.
+    Provides DataFrame output capabilities.
+
     Args:
-        is_only_current_season (int): 1 for current season only, 0 for all time.
-        league_id (str): League ID (e.g., "00" for NBA).
-        as_dataframe (bool): Return data as DataFrame and save to CSV.
+        season (str, optional): The NBA season identifier in YYYY-YY format (e.g., "2023-24").
+            Defaults to current season.
+        league_id (str, optional): The league ID. Defaults to "00" (NBA).
+        is_only_current_season (int, optional): Flag to filter for only the current season's active players (1)
+            or all players historically associated with that season context (0).
+            Defaults to 1.
+        as_dataframe (bool, optional): If True, returns a pandas DataFrame representation of the data
+            and saves it to CSV files in the cache directory. Defaults to False.
+
     Returns:
         str: JSON string with list of players.
     """
-    logger.debug(f"Tool 'get_common_all_players' called, current_season_only={is_only_current_season}, league_id={league_id}, as_dataframe={as_dataframe}")
+    logger.debug(f"Tool 'get_common_all_players' called, season={season}, current_season_only={is_only_current_season}, league_id={league_id}, as_dataframe={as_dataframe}")
     return fetch_common_all_players_logic(
-        is_only_current_season=is_only_current_season,
+        season=season,
         league_id=league_id,
+        is_only_current_season=is_only_current_season,
         return_dataframe=as_dataframe
     )
 
 @tool
 def get_league_player_on_details(
     team_id: int,
-    player_id: int,
     season: str = settings.CURRENT_NBA_SEASON,
     season_type: str = SeasonTypeAllStar.regular,
     measure_type: str = "Base",
-    per_mode: str = "PerGame"
+    per_mode: str = "PerGame",
+    last_n_games: int = 0,
+    month: int = 0,
+    opponent_team_id: int = 0,
+    pace_adjust: str = "N",
+    plus_minus: str = "N",
+    rank: str = "N",
+    period: int = 0,
+    vs_division_nullable: Optional[str] = None,
+    vs_conference_nullable: Optional[str] = None,
+    season_segment_nullable: Optional[str] = None,
+    outcome_nullable: Optional[str] = None,
+    location_nullable: Optional[str] = None,
+    league_id_nullable: Optional[str] = None,
+    game_segment_nullable: Optional[str] = None,
+    date_to_nullable: Optional[str] = None,
+    date_from_nullable: Optional[str] = None,
+    as_dataframe: bool = False
 ) -> str:
     """
-    Fetches player on-court vs. off-court details for a specific team and player.
+    Fetches NBA league player on details data using the leagueplayerondetails endpoint.
+    Provides DataFrame output capabilities.
+
     Args:
-        team_id (int): The ID of the team.
-        player_id (int): The ID of the player.
-        season (str): NBA season (e.g., "2023-24").
-        season_type (str): Type of season (e.g., "Regular Season", "Playoffs").
-        measure_type (str): Type of stats to measure (e.g., "Base", "Advanced").
-        per_mode (str): Statistical mode (e.g., "PerGame", "Totals").
+        team_id (int): Team ID to filter by.
+        season (str, optional): Season in YYYY-YY format (e.g., "2023-24"). Defaults to current season.
+        season_type (str, optional): Type of season (Regular Season, Playoffs, etc.). Defaults to "Regular Season".
+        measure_type (str, optional): Type of statistical measure (Base, Advanced, etc.). Defaults to "Base".
+        per_mode (str, optional): Statistical mode (Totals, PerGame, etc.). Defaults to "PerGame".
+        last_n_games (int, optional): Filter by last N games. Defaults to 0 (all games).
+        month (int, optional): Filter by month (0 for all months). Defaults to 0.
+        opponent_team_id (int, optional): Filter by opponent team ID (0 for all opponents). Defaults to 0.
+        pace_adjust (str, optional): Whether to pace-adjust stats ("Y" or "N"). Defaults to "N".
+        plus_minus (str, optional): Whether to include plus-minus stats ("Y" or "N"). Defaults to "N".
+        rank (str, optional): Whether to include rank stats ("Y" or "N"). Defaults to "N".
+        period (int, optional): Filter by period (0 for all periods). Defaults to 0.
+        vs_division_nullable (Optional[str], optional): Filter by opponent division. Defaults to None.
+        vs_conference_nullable (Optional[str], optional): Filter by opponent conference. Defaults to None.
+        season_segment_nullable (Optional[str], optional): Filter by season segment. Defaults to None.
+        outcome_nullable (Optional[str], optional): Filter by outcome (W, L). Defaults to None.
+        location_nullable (Optional[str], optional): Filter by location (Home, Road). Defaults to None.
+        league_id_nullable (Optional[str], optional): League ID. Defaults to None.
+        game_segment_nullable (Optional[str], optional): Filter by game segment. Defaults to None.
+        date_to_nullable (Optional[str], optional): End date (YYYY-MM-DD). Defaults to None.
+        date_from_nullable (Optional[str], optional): Start date (YYYY-MM-DD). Defaults to None.
+        as_dataframe (bool, optional): Whether to return DataFrames along with the JSON response. Defaults to False.
+
     Returns:
-        str: JSON string with player on/off details.
+        str: JSON string with league player on details data or an error message.
     """
-    logger.debug(f"Tool 'get_league_player_on_details' for player {player_id} on team {team_id}, season {season}")
+    logger.debug(f"Tool 'get_league_player_on_details' for team {team_id}, season {season}")
     return fetch_league_player_on_details_logic(
         team_id=team_id,
-        player_id=player_id,
         season=season,
         season_type=season_type,
         measure_type=measure_type,
-        per_mode=per_mode
+        per_mode=per_mode,
+        last_n_games=last_n_games,
+        month=month,
+        opponent_team_id=opponent_team_id,
+        pace_adjust=pace_adjust,
+        plus_minus=plus_minus,
+        rank=rank,
+        period=period,
+        vs_division_nullable=vs_division_nullable,
+        vs_conference_nullable=vs_conference_nullable,
+        season_segment_nullable=season_segment_nullable,
+        outcome_nullable=outcome_nullable,
+        location_nullable=location_nullable,
+        league_id_nullable=league_id_nullable,
+        game_segment_nullable=game_segment_nullable,
+        date_to_nullable=date_to_nullable,
+        date_from_nullable=date_from_nullable,
+        return_dataframe=as_dataframe
     )
 
 @tool
@@ -816,18 +884,50 @@ def get_player_defense(
     season: str = settings.CURRENT_NBA_SEASON,
     season_type: str = SeasonTypeAllStar.regular,
     per_mode: str = PerModeDetailed.per_game,
-    opponent_team_id: int = 0
+    opponent_team_id: int = 0,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    last_n_games: int = 0,
+    league_id: str = LeagueID.nba,
+    month: int = 0,
+    period: int = 0,
+    team_id: int = 0,
+    vs_conference: Optional[str] = None,
+    vs_division: Optional[str] = None,
+    season_segment: Optional[str] = None,
+    outcome: Optional[str] = None,
+    location: Optional[str] = None,
+    game_segment: Optional[str] = None,
+    as_dataframe: bool = False
 ) -> str:
     """
-    Fetches player defensive statistics. Renamed from get_player_defense_stats.
+    Fetches player defensive stats against various opponents or overall.
+    Provides DataFrame output capabilities.
+
     Args:
-        player_name (str): Full name of the player.
-        season (str): NBA season (e.g., "2023-24").
-        season_type (str): Type of season.
-        per_mode (str): Statistical mode.
-        opponent_team_id (int): Filter by opponent team ID. 0 for all.
+        player_name (str): The name or ID of the player.
+        season (str, optional): The season in YYYY-YY format. Defaults to current NBA season.
+        season_type (str, optional): Type of season (e.g., "Regular Season"). Defaults to "Regular Season".
+        per_mode (str, optional): Statistical mode (e.g., "PerGame"). Defaults to "PerGame".
+                                 Note: Endpoint uses PerModeSimple.
+        opponent_team_id (int, optional): Opponent's team ID. Defaults to 0 (all opponents).
+        date_from (Optional[str], optional): Start date (YYYY-MM-DD). Defaults to None.
+        date_to (Optional[str], optional): End date (YYYY-MM-DD). Defaults to None.
+        last_n_games (int, optional): Number of most recent games to include. Defaults to 0 (all games).
+        league_id (str, optional): League ID. Defaults to "00" (NBA).
+        month (int, optional): Month number (1-12). Defaults to 0 (all months).
+        period (int, optional): Period number (1-4, 0 for all). Defaults to 0 (all periods).
+        team_id (int, optional): Team ID of the player. Defaults to 0 (all teams).
+        vs_conference (Optional[str], optional): Conference filter (e.g., "East", "West"). Defaults to None.
+        vs_division (Optional[str], optional): Division filter. Defaults to None.
+        season_segment (Optional[str], optional): Season segment filter (e.g., "Post All-Star"). Defaults to None.
+        outcome (Optional[str], optional): Game outcome filter (e.g., "W", "L"). Defaults to None.
+        location (Optional[str], optional): Game location filter (e.g., "Home", "Road"). Defaults to None.
+        game_segment (Optional[str], optional): Game segment filter (e.g., "First Half"). Defaults to None.
+        as_dataframe (bool, optional): Whether to return DataFrames. Defaults to False.
+
     Returns:
-        str: JSON string with defensive stats.
+        str: JSON string with defensive stats or error.
     """
     logger.debug(f"Tool 'get_player_defense' for {player_name}, season {season}")
     return fetch_player_defense_logic(
@@ -835,35 +935,120 @@ def get_player_defense(
         season=season,
         season_type=season_type,
         per_mode=per_mode,
-        opponent_team_id=opponent_team_id
+        opponent_team_id=opponent_team_id,
+        date_from=date_from,
+        date_to=date_to,
+        last_n_games=last_n_games,
+        league_id=league_id,
+        month=month,
+        period=period,
+        team_id=team_id,
+        vs_conference=vs_conference,
+        vs_division=vs_division,
+        season_segment=season_segment,
+        outcome=outcome,
+        location=location,
+        game_segment=game_segment,
+        return_dataframe=as_dataframe
     )
 
 @tool
 def get_player_hustle_stats(
-    player_name: str,
     season: str = settings.CURRENT_NBA_SEASON,
     season_type: str = SeasonTypeAllStar.regular,
     per_mode: str = PerModeDetailed.per_game,
-    opponent_team_id: int = 0
+    player_name: Optional[str] = None,
+    team_id: Optional[int] = None,
+    league_id: str = LeagueID.nba,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    college: Optional[str] = None,
+    conference: Optional[str] = None,
+    country: Optional[str] = None,
+    division: Optional[str] = None,
+    draft_pick: Optional[str] = None,
+    draft_year: Optional[str] = None,
+    height: Optional[str] = None,
+    location: Optional[str] = None,
+    month: Optional[int] = None,
+    opponent_team_id: Optional[int] = None,
+    outcome: Optional[str] = None,
+    po_round: Optional[str] = None,
+    player_experience: Optional[str] = None,
+    player_position: Optional[str] = None,
+    season_segment: Optional[str] = None,
+    vs_conference: Optional[str] = None,
+    vs_division: Optional[str] = None,
+    weight: Optional[str] = None,
+    as_dataframe: bool = False
 ) -> str:
     """
-    Fetches player hustle statistics (deflections, loose balls, etc.).
+    Fetches player or team hustle statistics (e.g., screen assists, deflections).
+    Can fetch for a specific player, a specific team, or league-wide.
+    Provides DataFrame output capabilities.
+
     Args:
-        player_name (str): Full name of the player.
-        season (str): NBA season (e.g., "2023-24").
-        season_type (str): Type of season.
-        per_mode (str): Statistical mode.
-        opponent_team_id (int): Filter by opponent team ID. 0 for all.
+        season (str, optional): The season in YYYY-YY format. Defaults to current NBA season.
+        season_type (str, optional): Type of season. Defaults to "Regular Season".
+        per_mode (str, optional): Statistical mode. Defaults to "PerGame". Endpoint uses PerModeTime.
+        player_name (Optional[str], optional): Name or ID of the player. Defaults to None (league-wide).
+        team_id (Optional[int], optional): Team ID. Defaults to None. If player_name is None and team_id is None,
+                                          fetches league-wide stats. Use 0 for all teams when player_name is None.
+        league_id (str, optional): League ID. Defaults to "00" (NBA).
+        date_from (Optional[str], optional): Start date (YYYY-MM-DD). Defaults to None.
+        date_to (Optional[str], optional): End date (YYYY-MM-DD). Defaults to None.
+        college (Optional[str], optional): College filter. Defaults to None.
+        conference (Optional[str], optional): Conference filter. Defaults to None.
+        country (Optional[str], optional): Country filter. Defaults to None.
+        division (Optional[str], optional): Division filter. Defaults to None.
+        draft_pick (Optional[str], optional): Draft pick filter. Defaults to None.
+        draft_year (Optional[str], optional): Draft year filter. Defaults to None.
+        height (Optional[str], optional): Height filter. Defaults to None.
+        location (Optional[str], optional): Game location filter (e.g., "Home", "Road"). Defaults to None.
+        month (Optional[int], optional): Month number (1-12). Defaults to None.
+        opponent_team_id (Optional[int], optional): Opponent team ID filter. Defaults to None.
+        outcome (Optional[str], optional): Game outcome filter (e.g., "W", "L"). Defaults to None.
+        po_round (Optional[str], optional): Playoff round filter. Defaults to None.
+        player_experience (Optional[str], optional): Player experience filter. Defaults to None.
+        player_position (Optional[str], optional): Player position filter. Defaults to None.
+        season_segment (Optional[str], optional): Season segment filter (e.g., "Post All-Star"). Defaults to None.
+        vs_conference (Optional[str], optional): Conference filter (e.g., "East", "West"). Defaults to None.
+        vs_division (Optional[str], optional): Division filter. Defaults to None.
+        weight (Optional[str], optional): Weight filter. Defaults to None.
+        as_dataframe (bool, optional): Whether to return DataFrames. Defaults to False.
+
     Returns:
-        str: JSON string with hustle stats.
+        str: JSON string with hustle stats or error.
     """
-    logger.debug(f"Tool 'get_player_hustle_stats' for {player_name}, season {season}")
+    logger.debug(f"Tool 'get_player_hustle_stats' for player={player_name}, team={team_id}, season={season}")
     return fetch_player_hustle_stats_logic(
-        player_name=player_name,
         season=season,
         season_type=season_type,
         per_mode=per_mode,
-        opponent_team_id=opponent_team_id
+        player_name=player_name,
+        team_id=team_id,
+        league_id=league_id,
+        date_from=date_from,
+        date_to=date_to,
+        college=college,
+        conference=conference,
+        country=country,
+        division=division,
+        draft_pick=draft_pick,
+        draft_year=draft_year,
+        height=height,
+        location=location,
+        month=month,
+        opponent_team_id=opponent_team_id,
+        outcome=outcome,
+        po_round=po_round,
+        player_experience=player_experience,
+        player_position=player_position,
+        season_segment=season_segment,
+        vs_conference=vs_conference,
+        vs_division=vs_division,
+        weight=weight,
+        return_dataframe=as_dataframe
     )
 
 @tool
@@ -871,17 +1056,66 @@ def get_player_passing_stats(
     player_name: str,
     season: str = settings.CURRENT_NBA_SEASON,
     season_type: str = SeasonTypeAllStar.regular,
-    per_mode: str = PerModeDetailed.per_game
+    per_mode: str = PerModeDetailed.per_game,
+    last_n_games: int = 0,
+    league_id: str = LeagueID.nba,
+    month: int = 0,
+    opponent_team_id: int = 0,
+    vs_division_nullable: Optional[str] = None,
+    vs_conference_nullable: Optional[str] = None,
+    season_segment_nullable: Optional[str] = None,
+    outcome_nullable: Optional[str] = None,
+    location_nullable: Optional[str] = None,
+    date_to_nullable: Optional[str] = None,
+    date_from_nullable: Optional[str] = None,
+    as_dataframe: bool = False
 ) -> str:
     """
-    Fetches detailed player passing statistics.
+    Fetches player passing statistics (passes made and received) for a given season.
+    This function first determines the player's team_id for the given season via commonplayerinfo,
+    then uses that team_id to fetch passing stats from playerdashptpass.
+
+    Provides DataFrame output capabilities.
+
+    Args:
+        player_name (str): The name or ID of the player.
+        season (str, optional): NBA season in YYYY-YY format. Defaults to current season.
+        season_type (str, optional): Type of season. Defaults to Regular Season.
+        per_mode (str, optional): Statistical mode (PerModeSimple). Defaults to PerGame.
+        last_n_games (int, optional): Number of games to include (0 for all games). Defaults to 0.
+        league_id (str, optional): League ID (default: "00" for NBA). Defaults to "00".
+        month (int, optional): Month number (0 for all months). Defaults to 0.
+        opponent_team_id (int, optional): Filter by opponent team ID (0 for all teams). Defaults to 0.
+        vs_division_nullable (Optional[str], optional): Filter by division (e.g., "Atlantic", "Central"). Defaults to None.
+        vs_conference_nullable (Optional[str], optional): Filter by conference (e.g., "East", "West"). Defaults to None.
+        season_segment_nullable (Optional[str], optional): Filter by season segment (e.g., "Post All-Star", "Pre All-Star"). Defaults to None.
+        outcome_nullable (Optional[str], optional): Filter by game outcome (e.g., "W", "L"). Defaults to None.
+        location_nullable (Optional[str], optional): Filter by game location (e.g., "Home", "Road"). Defaults to None.
+        date_to_nullable (Optional[str], optional): End date filter in format YYYY-MM-DD. Defaults to None.
+        date_from_nullable (Optional[str], optional): Start date filter in format YYYY-MM-DD. Defaults to None.
+        as_dataframe (bool, optional): Whether to return DataFrames along with the JSON response. Defaults to False.
+
+    Returns:
+        str: A JSON string containing player passing stats or an error message.
     """
     logger.debug(f"Tool 'get_player_passing_stats' for {player_name}, season {season}")
     return fetch_player_passing_stats_logic(
         player_name=player_name,
         season=season,
         season_type=season_type,
-        per_mode=per_mode
+        per_mode=per_mode,
+        last_n_games=last_n_games,
+        league_id=league_id,
+        month=month,
+        opponent_team_id=opponent_team_id,
+        vs_division_nullable=vs_division_nullable,
+        vs_conference_nullable=vs_conference_nullable,
+        season_segment_nullable=season_segment_nullable,
+        outcome_nullable=outcome_nullable,
+        location_nullable=location_nullable,
+        date_to_nullable=date_to_nullable,
+        date_from_nullable=date_from_nullable,
+        return_dataframe=as_dataframe
     )
 
 @tool
@@ -889,17 +1123,66 @@ def get_player_rebounding_stats(
     player_name: str,
     season: str = settings.CURRENT_NBA_SEASON,
     season_type: str = SeasonTypeAllStar.regular,
-    per_mode: str = PerModeDetailed.per_game
+    per_mode: str = PerModeDetailed.per_game,
+    last_n_games: int = 0,
+    league_id: str = LeagueID.nba,
+    month: int = 0,
+    opponent_team_id: int = 0,
+    vs_division_nullable: Optional[str] = None,
+    vs_conference_nullable: Optional[str] = None,
+    season_segment_nullable: Optional[str] = None,
+    outcome_nullable: Optional[str] = None,
+    location_nullable: Optional[str] = None,
+    date_to_nullable: Optional[str] = None,
+    date_from_nullable: Optional[str] = None,
+    as_dataframe: bool = False
 ) -> str:
     """
-    Fetches detailed player rebounding statistics.
+    Fetches player rebounding statistics (offensive, defensive, contested, etc.) for a given season.
+    This function first determines the player's team_id for the given season via commonplayerinfo,
+    then uses that team_id to fetch rebounding stats from playerdashptreb.
+
+    Provides DataFrame output capabilities.
+
+    Args:
+        player_name (str): The name or ID of the player.
+        season (str, optional): NBA season in YYYY-YY format. Defaults to current season.
+        season_type (str, optional): Type of season. Defaults to Regular Season.
+        per_mode (str, optional): Statistical mode (PerModeSimple). Defaults to PerGame.
+        last_n_games (int, optional): Number of games to include (0 for all games). Defaults to 0.
+        league_id (str, optional): League ID (default: "00" for NBA). Defaults to "00".
+        month (int, optional): Month number (0 for all months). Defaults to 0.
+        opponent_team_id (int, optional): Filter by opponent team ID (0 for all teams). Defaults to 0.
+        vs_division_nullable (Optional[str], optional): Filter by division (e.g., "Atlantic", "Central"). Defaults to None.
+        vs_conference_nullable (Optional[str], optional): Filter by conference (e.g., "East", "West"). Defaults to None.
+        season_segment_nullable (Optional[str], optional): Filter by season segment (e.g., "Post All-Star", "Pre All-Star"). Defaults to None.
+        outcome_nullable (Optional[str], optional): Filter by game outcome (e.g., "W", "L"). Defaults to None.
+        location_nullable (Optional[str], optional): Filter by game location (e.g., "Home", "Road"). Defaults to None.
+        date_to_nullable (Optional[str], optional): End date filter in format YYYY-MM-DD. Defaults to None.
+        date_from_nullable (Optional[str], optional): Start date filter in format YYYY-MM-DD. Defaults to None.
+        as_dataframe (bool, optional): Whether to return DataFrames along with the JSON response. Defaults to False.
+
+    Returns:
+        str: A JSON string containing player rebounding stats or an error message.
     """
     logger.debug(f"Tool 'get_player_rebounding_stats' for {player_name}, season {season}")
     return fetch_player_rebounding_stats_logic(
         player_name=player_name,
         season=season,
         season_type=season_type,
-        per_mode=per_mode
+        per_mode=per_mode,
+        last_n_games=last_n_games,
+        league_id=league_id,
+        month=month,
+        opponent_team_id=opponent_team_id,
+        vs_division_nullable=vs_division_nullable,
+        vs_conference_nullable=vs_conference_nullable,
+        season_segment_nullable=season_segment_nullable,
+        outcome_nullable=outcome_nullable,
+        location_nullable=location_nullable,
+        date_to_nullable=date_to_nullable,
+        date_from_nullable=date_from_nullable,
+        return_dataframe=as_dataframe
     )
 
 @tool
@@ -907,31 +1190,80 @@ def get_player_shots_tracking(
     player_name: str,
     season: str = settings.CURRENT_NBA_SEASON,
     season_type: str = SeasonTypeAllStar.regular,
-    per_mode: str = PerModeDetailed.per_game
+    per_mode: str = PerModeDetailed.per_game,
+    last_n_games: int = 0,
+    league_id: str = LeagueID.nba,
+    month: int = 0,
+    opponent_team_id: int = 0,
+    vs_division_nullable: Optional[str] = None,
+    vs_conference_nullable: Optional[str] = None,
+    season_segment_nullable: Optional[str] = None,
+    outcome_nullable: Optional[str] = None,
+    location_nullable: Optional[str] = None,
+    date_to_nullable: Optional[str] = None,
+    date_from_nullable: Optional[str] = None,
+    as_dataframe: bool = False
 ) -> str:
     """
-    Fetches player shot tracking data (makes, misses, locations, types).
+    Fetches player shot tracking statistics (general, closest defender, etc.) for a given season.
+    This function first determines the player's team_id for the given season via commonplayerinfo,
+    then uses that team_id to fetch shot tracking stats from playerdashptshots.
+
+    Provides DataFrame output capabilities.
+
+    Args:
+        player_name (str): The name or ID of the player.
+        season (str, optional): NBA season in YYYY-YY format. Defaults to current season.
+        season_type (str, optional): Type of season. Defaults to Regular Season.
+        per_mode (str, optional): Statistical mode (PerModeSimple). Defaults to PerGame.
+        last_n_games (int, optional): Number of games to include (0 for all games). Defaults to 0.
+        league_id (str, optional): League ID (default: "00" for NBA). Defaults to "00".
+        month (int, optional): Month number (0 for all months). Defaults to 0.
+        opponent_team_id (int, optional): Filter by opponent team ID (0 for all teams). Defaults to 0.
+        vs_division_nullable (Optional[str], optional): Filter by division (e.g., "Atlantic", "Central"). Defaults to None.
+        vs_conference_nullable (Optional[str], optional): Filter by conference (e.g., "East", "West"). Defaults to None.
+        season_segment_nullable (Optional[str], optional): Filter by season segment (e.g., "Post All-Star", "Pre All-Star"). Defaults to None.
+        outcome_nullable (Optional[str], optional): Filter by game outcome (e.g., "W", "L"). Defaults to None.
+        location_nullable (Optional[str], optional): Filter by game location (e.g., "Home", "Road"). Defaults to None.
+        date_to_nullable (Optional[str], optional): End date filter in format YYYY-MM-DD. Defaults to None.
+        date_from_nullable (Optional[str], optional): Start date filter in format YYYY-MM-DD. Defaults to None.
+        as_dataframe (bool, optional): Whether to return DataFrames along with the JSON response. Defaults to False.
+
+    Returns:
+        str: A JSON string containing player shot tracking stats or an error message.
     """
     logger.debug(f"Tool 'get_player_shots_tracking' for {player_name}, season {season}")
     return fetch_player_shots_tracking_logic(
         player_name=player_name,
         season=season,
         season_type=season_type,
-        per_mode=per_mode
+        per_mode=per_mode,
+        last_n_games=last_n_games,
+        league_id=league_id,
+        month=month,
+        opponent_team_id=opponent_team_id,
+        vs_division_nullable=vs_division_nullable,
+        vs_conference_nullable=vs_conference_nullable,
+        season_segment_nullable=season_segment_nullable,
+        outcome_nullable=outcome_nullable,
+        location_nullable=location_nullable,
+        date_to_nullable=date_to_nullable,
+        date_from_nullable=date_from_nullable,
+        return_dataframe=as_dataframe
     )
 
 @tool
-def get_search_players(player_name_query: str, as_dataframe: bool = False) -> str:
+def get_search_players(player_name: str, as_dataframe: bool = False) -> str:
     """
     Searches for players by a partial or full name query.
     Args:
-        player_name_query (str): The search term for the player's name.
+        player_name (str): The search term for the player's name.
         as_dataframe (bool): Return data as DataFrame and save to CSV.
     Returns:
         str: JSON string with a list of matching players.
     """
-    logger.debug(f"Tool 'get_search_players' called with query '{player_name_query}', as_dataframe={as_dataframe}")
-    return search_players_logic(player_name_query=player_name_query, return_dataframe=as_dataframe)
+    logger.debug(f"Tool 'get_search_players' called with query '{player_name}', as_dataframe={as_dataframe}")
+    return search_players_logic(query=player_name, return_dataframe=as_dataframe)
 
 @tool
 def get_team_player_dashboard(
@@ -939,16 +1271,51 @@ def get_team_player_dashboard(
     season: str = settings.CURRENT_NBA_SEASON,
     season_type: str = SeasonTypeAllStar.regular,
     measure_type: str = "Base",
-    per_mode: str = "PerGame"
+    per_mode: str = "PerGame",
+    last_n_games: int = 0,
+    month: int = 0,
+    opponent_team_id: int = 0,
+    pace_adjust: str = "N",
+    plus_minus: str = "N",
+    rank: str = "N",
+    period: int = 0,
+    vs_division_nullable: Optional[str] = None,
+    vs_conference_nullable: Optional[str] = None,
+    season_segment_nullable: Optional[str] = None,
+    outcome_nullable: Optional[str] = None,
+    location_nullable: Optional[str] = None,
+    game_segment_nullable: Optional[str] = None,
+    date_to_nullable: Optional[str] = None,
+    date_from_nullable: Optional[str] = None,
+    as_dataframe: bool = False
 ) -> str:
     """
     Fetches the player dashboard for a specific team, showing stats for all players on that team.
+    Provides DataFrame output capabilities.
+
     Args:
         team_id (int): The ID of the team.
-        season (str): NBA season (e.g., "2023-24").
-        season_type (str): Type of season.
-        measure_type (str): Type of stats to measure.
-        per_mode (str): Statistical mode.
+        season (str, optional): NBA season in YYYY-YY format. Defaults to current season.
+        season_type (str, optional): Type of season. Defaults to "Regular Season".
+        measure_type (str, optional): Type of stats to measure. Defaults to "Base".
+        per_mode (str, optional): Statistical mode. Defaults to "PerGame".
+        last_n_games (int, optional): Number of most recent games to include. Defaults to 0 (all).
+        month (int, optional): Filter by month (0 for all). Defaults to 0.
+        opponent_team_id (int, optional): Filter by opponent team ID. Defaults to 0.
+        pace_adjust (str, optional): Pace adjust ("Y" or "N"). Defaults to "N".
+        plus_minus (str, optional): Plus/Minus ("Y" or "N"). Defaults to "N".
+        rank (str, optional): Rank ("Y" or "N"). Defaults to "N".
+        period (int, optional): Filter by period (0 for all). Defaults to 0.
+        vs_division_nullable (Optional[str], optional): Filter by division. Defaults to None.
+        vs_conference_nullable (Optional[str], optional): Filter by conference. Defaults to None.
+        season_segment_nullable (Optional[str], optional): Filter by season segment. Defaults to None.
+        outcome_nullable (Optional[str], optional): Filter by outcome (W, L). Defaults to None.
+        location_nullable (Optional[str], optional): Filter by location (Home, Road). Defaults to None.
+        game_segment_nullable (Optional[str], optional): Filter by game segment. Defaults to None.
+        date_to_nullable (Optional[str], optional): End date filter (YYYY-MM-DD). Defaults to None.
+        date_from_nullable (Optional[str], optional): Start date filter (YYYY-MM-DD). Defaults to None.
+        as_dataframe (bool, optional): If True, returns a pandas DataFrame. Defaults to False.
+
     Returns:
         str: JSON string with team player dashboard data.
     """
@@ -958,7 +1325,23 @@ def get_team_player_dashboard(
         season=season,
         season_type=season_type,
         measure_type=measure_type,
-        per_mode=per_mode
+        per_mode=per_mode,
+        last_n_games=last_n_games,
+        month=month,
+        opponent_team_id=opponent_team_id,
+        pace_adjust=pace_adjust,
+        plus_minus=plus_minus,
+        rank=rank,
+        period=period,
+        vs_division_nullable=vs_division_nullable,
+        vs_conference_nullable=vs_conference_nullable,
+        season_segment_nullable=season_segment_nullable,
+        outcome_nullable=outcome_nullable,
+        location_nullable=location_nullable,
+        game_segment_nullable=game_segment_nullable,
+        date_to_nullable=date_to_nullable,
+        date_from_nullable=date_from_nullable,
+        return_dataframe=as_dataframe
     )
 
 @tool
@@ -967,16 +1350,51 @@ def get_team_player_on_off_details(
     season: str = settings.CURRENT_NBA_SEASON,
     season_type: str = SeasonTypeAllStar.regular,
     measure_type: str = "Base",
-    per_mode: str = "PerGame"
+    per_mode: str = "PerGame",
+    last_n_games: int = 0,
+    month: int = 0,
+    opponent_team_id: int = 0,
+    pace_adjust: str = "N",
+    plus_minus: str = "N",
+    rank: str = "N",
+    period: int = 0,
+    vs_division_nullable: Optional[str] = None,
+    vs_conference_nullable: Optional[str] = None,
+    season_segment_nullable: Optional[str] = None,
+    outcome_nullable: Optional[str] = None,
+    location_nullable: Optional[str] = None,
+    game_segment_nullable: Optional[str] = None,
+    date_to_nullable: Optional[str] = None,
+    date_from_nullable: Optional[str] = None,
+    as_dataframe: bool = False
 ) -> str:
     """
     Fetches on/off court details for all players on a specific team.
+    Provides DataFrame output capabilities.
+
     Args:
         team_id (int): The ID of the team.
-        season (str): NBA season (e.g., "2023-24").
-        season_type (str): Type of season.
-        measure_type (str): Type of stats to measure.
-        per_mode (str): Statistical mode.
+        season (str, optional): NBA season in YYYY-YY format. Defaults to current season.
+        season_type (str, optional): Type of season. Defaults to "Regular Season".
+        measure_type (str, optional): Type of stats to measure. Defaults to "Base".
+        per_mode (str, optional): Statistical mode. Defaults to "PerGame".
+        last_n_games (int, optional): Number of most recent games to include. Defaults to 0 (all).
+        month (int, optional): Filter by month (0 for all). Defaults to 0.
+        opponent_team_id (int, optional): Filter by opponent team ID. Defaults to 0.
+        pace_adjust (str, optional): Pace adjust ("Y" or "N"). Defaults to "N".
+        plus_minus (str, optional): Plus/Minus ("Y" or "N"). Defaults to "N".
+        rank (str, optional): Rank ("Y" or "N"). Defaults to "N".
+        period (int, optional): Filter by period (0 for all). Defaults to 0.
+        vs_division_nullable (Optional[str], optional): Filter by division. Defaults to None.
+        vs_conference_nullable (Optional[str], optional): Filter by conference. Defaults to None.
+        season_segment_nullable (Optional[str], optional): Filter by season segment. Defaults to None.
+        outcome_nullable (Optional[str], optional): Filter by outcome (W, L). Defaults to None.
+        location_nullable (Optional[str], optional): Filter by location (Home, Road). Defaults to None.
+        game_segment_nullable (Optional[str], optional): Filter by game segment. Defaults to None.
+        date_to_nullable (Optional[str], optional): End date filter (YYYY-MM-DD). Defaults to None.
+        date_from_nullable (Optional[str], optional): Start date filter (YYYY-MM-DD). Defaults to None.
+        as_dataframe (bool, optional): If True, returns a pandas DataFrame. Defaults to False.
+
     Returns:
         str: JSON string with team player on/off details.
     """
@@ -986,7 +1404,23 @@ def get_team_player_on_off_details(
         season=season,
         season_type=season_type,
         measure_type=measure_type,
-        per_mode=per_mode
+        per_mode=per_mode,
+        last_n_games=last_n_games,
+        month=month,
+        opponent_team_id=opponent_team_id,
+        pace_adjust=pace_adjust,
+        plus_minus=plus_minus,
+        rank=rank,
+        period=period,
+        vs_division_nullable=vs_division_nullable,
+        vs_conference_nullable=vs_conference_nullable,
+        season_segment_nullable=season_segment_nullable,
+        outcome_nullable=outcome_nullable,
+        location_nullable=location_nullable,
+        game_segment_nullable=game_segment_nullable,
+        date_to_nullable=date_to_nullable,
+        date_from_nullable=date_from_nullable,
+        return_dataframe=as_dataframe
     )
 
 @tool
@@ -995,16 +1429,51 @@ def get_teamplayeronoffsummary(
     season: str = settings.CURRENT_NBA_SEASON,
     season_type: str = SeasonTypeAllStar.regular,
     measure_type: str = "Base",
-    per_mode: str = "PerGame"
+    per_mode: str = "PerGame",
+    last_n_games: int = 0,
+    month: int = 0,
+    opponent_team_id: int = 0,
+    pace_adjust: str = "N",
+    plus_minus: str = "N",
+    rank: str = "N",
+    period: int = 0,
+    vs_division_nullable: Optional[str] = None,
+    vs_conference_nullable: Optional[str] = None,
+    season_segment_nullable: Optional[str] = None,
+    outcome_nullable: Optional[str] = None,
+    location_nullable: Optional[str] = None,
+    game_segment_nullable: Optional[str] = None,
+    date_to_nullable: Optional[str] = None,
+    date_from_nullable: Optional[str] = None,
+    as_dataframe: bool = False
 ) -> str:
     """
     Fetches a summary of player on/off court impact for a specific team.
+    Provides DataFrame output capabilities.
+
     Args:
         team_id (int): The ID of the team.
-        season (str): NBA season (e.g., "2023-24").
-        season_type (str): Type of season.
-        measure_type (str): Type of stats to measure.
-        per_mode (str): Statistical mode.
+        season (str, optional): NBA season in YYYY-YY format. Defaults to current season.
+        season_type (str, optional): Type of season. Defaults to "Regular Season".
+        measure_type (str, optional): Type of stats to measure. Defaults to "Base".
+        per_mode (str, optional): Statistical mode. Defaults to "PerGame".
+        last_n_games (int, optional): Number of most recent games to include. Defaults to 0 (all).
+        month (int, optional): Filter by month (0 for all). Defaults to 0.
+        opponent_team_id (int, optional): Filter by opponent team ID. Defaults to 0.
+        pace_adjust (str, optional): Pace adjust ("Y" or "N"). Defaults to "N".
+        plus_minus (str, optional): Plus/Minus ("Y" or "N"). Defaults to "N".
+        rank (str, optional): Rank ("Y" or "N"). Defaults to "N".
+        period (int, optional): Filter by period (0 for all). Defaults to 0.
+        vs_division_nullable (Optional[str], optional): Filter by division. Defaults to None.
+        vs_conference_nullable (Optional[str], optional): Filter by conference. Defaults to None.
+        season_segment_nullable (Optional[str], optional): Filter by season segment. Defaults to None.
+        outcome_nullable (Optional[str], optional): Filter by outcome (W, L). Defaults to None.
+        location_nullable (Optional[str], optional): Filter by location (Home, Road). Defaults to None.
+        game_segment_nullable (Optional[str], optional): Filter by game segment. Defaults to None.
+        date_to_nullable (Optional[str], optional): End date filter (YYYY-MM-DD). Defaults to None.
+        date_from_nullable (Optional[str], optional): Start date filter (YYYY-MM-DD). Defaults to None.
+        as_dataframe (bool, optional): If True, returns a pandas DataFrame. Defaults to False.
+
     Returns:
         str: JSON string with team player on/off summary.
     """
@@ -1014,39 +1483,108 @@ def get_teamplayeronoffsummary(
         season=season,
         season_type=season_type,
         measure_type=measure_type,
-        per_mode=per_mode
+        per_mode=per_mode,
+        last_n_games=last_n_games,
+        month=month,
+        opponent_team_id=opponent_team_id,
+        pace_adjust=pace_adjust,
+        plus_minus=plus_minus,
+        rank=rank,
+        period=period,
+        vs_division_nullable=vs_division_nullable,
+        vs_conference_nullable=vs_conference_nullable,
+        season_segment_nullable=season_segment_nullable,
+        outcome_nullable=outcome_nullable,
+        location_nullable=location_nullable,
+        game_segment_nullable=game_segment_nullable,
+        date_to_nullable=date_to_nullable,
+        date_from_nullable=date_from_nullable,
+        return_dataframe=as_dataframe
     )
 
 @tool
 def get_teamvsplayer(
     team_id: int,
-    player_id: int,
+    vs_player_id: int,
     season: str = settings.CURRENT_NBA_SEASON,
     season_type: str = SeasonTypeAllStar.regular,
     measure_type: str = "Base",
     per_mode: str = "PerGame",
-    opponent_team_id: int = 0 # This seems redundant if we have team_id and player_id for a direct matchup
+    last_n_games: int = 0,
+    month: int = 0,
+    opponent_team_id: int = 0,
+    pace_adjust: str = "N",
+    period: int = 0,
+    plus_minus: str = "N",
+    rank: str = "N",
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    vs_division_nullable: Optional[str] = None,
+    vs_conference_nullable: Optional[str] = None,
+    season_segment_nullable: Optional[str] = None,
+    outcome_nullable: Optional[str] = None,
+    location_nullable: Optional[str] = None,
+    game_segment_nullable: Optional[str] = None,
+    league_id_nullable: Optional[str] = None,
+    player_identifier: Optional[str] = None,
+    as_dataframe: bool = False
 ) -> str:
     """
-    Fetches head-to-head statistics between a specific team and a specific player.
+    Fetches statistics for a specific team against a specific player.
+
     Args:
         team_id (int): The ID of the team.
-        player_id (int): The ID of the player.
-        season (str): NBA season (e.g., "2023-24").
-        season_type (str): Type of season.
-        measure_type (str): Type of stats to measure.
-        per_mode (str): Statistical mode.
-        opponent_team_id (int): Usually 0, as team_id implies the player's opponent.
+        vs_player_id (int): The ID of the player to analyze against.
+        season (str, optional): NBA season in YYYY-YY format. Defaults to current season.
+        season_type (str, optional): Type of season. Defaults to "Regular Season".
+        measure_type (str, optional): Statistical measure type. Defaults to "Base".
+        per_mode (str, optional): Statistical mode. Defaults to "PerGame".
+        last_n_games (int, optional): Number of most recent games to include. Defaults to 0 (all).
+        month (int, optional): Filter by month (0 for all). Defaults to 0.
+        opponent_team_id (int, optional): Filter by opponent team ID. Defaults to 0.
+        pace_adjust (str, optional): Pace adjust ("Y" or "N"). Defaults to "N".
+        period (int, optional): Filter by period (0 for all). Defaults to 0.
+        plus_minus (str, optional): Plus/Minus ("Y" or "N"). Defaults to "N".
+        rank (str, optional): Rank ("Y" or "N"). Defaults to "N".
+        date_from (Optional[str], optional): Start date filter (YYYY-MM-DD).
+        date_to (Optional[str], optional): End date filter (YYYY-MM-DD).
+        vs_division_nullable (Optional[str], optional): Filter by division. Defaults to None.
+        vs_conference_nullable (Optional[str], optional): Filter by conference. Defaults to None.
+        season_segment_nullable (Optional[str], optional): Filter by season segment. Defaults to None.
+        outcome_nullable (Optional[str], optional): Filter by outcome (W, L). Defaults to None.
+        location_nullable (Optional[str], optional): Filter by location (Home, Road). Defaults to None.
+        game_segment_nullable (Optional[str], optional): Filter by game segment. Defaults to None.
+        league_id_nullable (Optional[str], optional): League ID. Defaults to None.
+        player_identifier (Optional[str], optional): Filter by player. Defaults to None.
+        as_dataframe (bool, optional): If True, returns a pandas DataFrame. Defaults to False.
+
     Returns:
-        str: JSON string with team vs player stats.
+        str: JSON string with team vs player statistics.
     """
-    logger.debug(f"Tool 'get_teamvsplayer' for team {team_id} vs player {player_id}, season {season}")
+    logger.debug(f"Tool 'get_teamvsplayer' called for team {team_id} vs player {vs_player_id}")
     return fetch_teamvsplayer_logic(
-        team_id=team_id,
-        player_id=player_id,
+        team_identifier=str(team_id),
+        vs_player_identifier=str(vs_player_id),
         season=season,
         season_type=season_type,
         measure_type=measure_type,
         per_mode=per_mode,
-        opponent_team_id=opponent_team_id
+        last_n_games=last_n_games,
+        month=month,
+        opponent_team_id=opponent_team_id,
+        pace_adjust=pace_adjust,
+        period=period,
+        plus_minus=plus_minus,
+        rank=rank,
+        vs_division_nullable=vs_division_nullable,
+        vs_conference_nullable=vs_conference_nullable,
+        season_segment_nullable=season_segment_nullable,
+        outcome_nullable=outcome_nullable,
+        location_nullable=location_nullable,
+        game_segment_nullable=game_segment_nullable,
+        league_id_nullable=league_id_nullable,
+        date_from_nullable=date_from,
+        date_to_nullable=date_to,
+        player_identifier=player_identifier,
+        return_dataframe=as_dataframe
     )

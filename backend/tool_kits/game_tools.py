@@ -608,33 +608,30 @@ def get_win_probability(
 
 @tool
 def get_search_games(
-    game_id_query: Optional[str] = None,
-    team_abbreviation_query: Optional[str] = None,
-    player_name_query: Optional[str] = None,
-    date_query: Optional[str] = None, # YYYY-MM-DD
-    season_year_query: Optional[str] = None, # YYYY
+    query: str,
+    season: str,
+    season_type: str = SeasonTypeAllStar.regular,
+    limit: int = 10,
     as_dataframe: bool = False
 ) -> str:
     """
-    Searches for games based on various query parameters like game ID, team, player, date, or season.
+    Searches for games based on a query string (e.g., "Lakers vs Celtics", "Lakers").
 
     Args:
-        game_id_query (Optional[str]): A specific game ID to search for.
-        team_abbreviation_query (Optional[str]): Team abbreviation (e.g., LAL, BOS).
-        player_name_query (Optional[str]): Player name involved in the game.
-        date_query (Optional[str]): Specific date of the game (YYYY-MM-DD).
-        season_year_query (Optional[str]): Season year (e.g., 2023 for 2023-24 season).
-        as_dataframe (bool): If True, returns pandas DataFrames.
+        query (str): The search query string.
+        season (str): The NBA season in YYYY-YY format (e.g., "2023-24").
+        season_type (str, optional): Type of season. Defaults to "Regular Season".
+        limit (int, optional): Maximum number of results to return. Defaults to 10.
+        as_dataframe (bool, optional): If True, returns pandas DataFrames. Defaults to False.
 
     Returns:
         str: JSON string with a list of matching games.
     """
-    logger.debug(f"Tool 'get_search_games' called with query: game_id='{game_id_query}', team_abbr='{team_abbreviation_query}', player_name='{player_name_query}', date='{date_query}', season_year='{season_year_query}', as_dataframe={as_dataframe}")
+    logger.debug(f"Tool 'get_search_games' called with query: '{query}', season: {season}, season_type: {season_type}, limit: {limit}, as_dataframe={as_dataframe}")
     return search_games_logic(
-        game_id_query=game_id_query,
-        team_abbreviation_query=team_abbreviation_query,
-        player_name_query=player_name_query,
-        date_query=date_query,
-        season_year_query=season_year_query,
+        query=query,
+        season=season,
+        season_type=season_type,
+        limit=limit,
         return_dataframe=as_dataframe
     )

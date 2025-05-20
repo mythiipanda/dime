@@ -114,7 +114,7 @@ def generate_report(results):
             report.append(f"Suggested Tool Configuration:")
             report.append(f"```python")
             report.append(f"# Add to backend/tool_kits/{category}.py")
-            report.append(f"@tool('get_{tool_name}')")
+            report.append(f"@tool")
             report.append(f"def get_{tool_name}(...):  # Add parameters based on {func_name}")
             report.append(f"    return {func_name}(...)")
             report.append(f"```\n")

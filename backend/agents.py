@@ -4,9 +4,9 @@ This includes the primary `nba_agent` and a multi-agent `NBAAnalysisWorkflow`,
 their system messages, tool registrations, and initialization using the Agno framework.
 """
 import os
-import datetime # Moved from line 50 to top
+import datetime
 from textwrap import dedent
-from typing import Iterator, AsyncIterator, List, Optional, Dict, Any # Consolidated typing imports
+from typing import Iterator, AsyncIterator, List, Optional, Dict, Any
 from dotenv import load_dotenv
 
 from agno.agent import Agent, RunResponse
@@ -23,15 +23,17 @@ from backend.config import settings
 
 # --- Agent Configuration Constants & Markers ---
 FINAL_ANSWER_MARKER: str = "FINAL_ANSWER::" # Marker for the agent's final synthesized answer.
-# The comment below was: "# --- Pydantic Models for Rich Outputs (for nba_agent) ---"
-# It's being rephrased as no Pydantic models are defined here for rich output,
-# but markers like FINAL_ANSWER_MARKER relate to structured/final output.
 # Other rich output markers (STAT_CARD, CHART_DATA, TABLE_DATA) are defined in sse.py.
 
 # Import tools from their new locations
 from backend.tool_kits.player_tools import (
-    get_player_info, get_player_gamelog, get_player_career_stats, get_player_awards,
-    get_player_aggregate_stats, get_player_profile, get_player_estimated_metrics,
+    get_player_info,
+    get_player_gamelog,
+    get_player_career_stats,
+    get_player_awards,
+    get_player_aggregate_stats,
+    get_player_profile,
+    get_player_estimated_metrics,
     get_analyze_player_stats,
     get_boxscore_playertrack,
     get_common_all_players,
@@ -81,6 +83,8 @@ from backend.tool_kits.league_tools import (
     get_league_dash_lineups,
     get_league_dash_opponent_pt_shot,
     get_league_season_matchups,
+    get_draft_history,
+    get_common_playoff_series,
 )
 from backend.tool_kits.misc_tools import (
     get_matchups_rollup,
@@ -94,8 +98,8 @@ from backend.tool_kits.misc_tools import (
     get_synergy_play_types,
     get_top_performers,
     get_scoreboard_data,
-    get_draft_history,
-    get_common_playoff_series,
+    get__historical_playbyplay,
+    get__live_playbyplay,
 )
 
 load_dotenv()
@@ -136,6 +140,7 @@ Player Analysis:
 - get_player_hustle_stats: Hustle stats (deflections, loose balls recovered).
 - get_boxscore_playertrack: Player tracking data from a specific game's boxscore.
 - get_common_all_players: List of all players.
+- get_league_player_on_details: League-wide player on/off court details.
 - get_player_dashboard_by_team_performance: How a player performs with different teammates.
 - get_search_players: Search for players by name.
 - get_team_player_dashboard: Player stats when on/off court for their team.
@@ -165,6 +170,9 @@ Game & Boxscore Analysis:
 - get_boxscore_defensive: Defensive boxscore stats from a game.
 - get_boxscore_summary: A summary of a game's boxscore.
 - get_win_probability: Win probability chart/data for a game.
+- get_boxscore_hustle: Hustle stats from a game's boxscore.
+- get_boxscore_misc: Miscellaneous stats from a game's boxscore.
+- get_boxscore_scoring: Scoring-specific stats from a game's boxscore.
 
 League & Standings:
 - get_league_standings: Current league standings.
@@ -181,9 +189,8 @@ Miscellaneous (Odds, Matchups, Live Data, etc.):
 - get_game_odds: Betting odds for games.
 - get_historical_playbyplay: Access to historical play-by-play (use with caution, potentially large).
 - get_live_playbyplay: Access to live play-by-play (use for ongoing games).
-- get_boxscore_hustle: Hustle stats from a game's boxscore.
-- get_boxscore_misc: Miscellaneous stats from a game's boxscore.
-- get_boxscore_scoring: Scoring-specific stats from a game's boxscore.
+- get__historical_playbyplay: Alternative way to access historical play-by-play data.
+- get__live_playbyplay: Alternative way to access live play-by-play data.
 - get_shotchart: General shot chart data (can be for game, player, etc. - specify context).
 - get_synergy_play_types: Synergy play type data.
 - get_top_performers: Top performers for a given day or period.
@@ -202,7 +209,7 @@ nba_tools = [
     ThinkingTools(),
     Crawl4aiTools(),
     YouTubeTools(),
-    # Player Tools based on analysis
+    # Player Tools
     get_player_info,
     get_player_gamelog,
     get_player_career_stats,
@@ -229,7 +236,7 @@ nba_tools = [
     get_teamplayeronoffsummary,
     get_teamvsplayer,
 
-    # Team Tools based on analysis
+    # Team Tools
     get_team_info_and_roster,
     get_team_stats,
     get_common_team_years,
@@ -240,7 +247,7 @@ nba_tools = [
     get_team_shooting_stats,
     get_top_teams,
 
-    # Game Tools based on analysis
+    # Game Tools
     get_league_games,
     get_search_games,
     get_boxscore_traditional,
@@ -250,16 +257,19 @@ nba_tools = [
     get_boxscore_usage,
     get_boxscore_defensive,
     get_boxscore_summary,
+    get_win_probability,
 
-    # League Tools based on analysis
+    # League Tools
     get_league_standings,
     get_league_scoreboard,
     get_league_leaders,
     get_league_dash_lineups,
     get_league_dash_opponent_pt_shot,
     get_league_season_matchups,
+    get_draft_history,
+    get_common_playoff_series,
 
-    # Misc Tools based on analysis
+    # Misc Tools
     get_matchups_rollup,
     get_game_odds,
     get_historical_playbyplay,
@@ -271,9 +281,8 @@ nba_tools = [
     get_synergy_play_types,
     get_top_performers,
     get_scoreboard_data,
-    get_win_probability,
-    get_draft_history,
-    get_common_playoff_series,
+    get__historical_playbyplay,
+    get__live_playbyplay,
 ]
 
 
@@ -344,7 +353,7 @@ class NBAAnalysisWorkflow(Workflow):
         - If a tool call results in a validation error (e.g., Pydantic validation errors), analyze the error message.
         - If the error suggests missing or malformed parameters that you can correct (e.g., providing a default for a missing required field, or correcting a format), attempt the tool call again with the corrected parameters.
         - If the error persists or critical information is truly missing, report this clearly in your analysis.
-        
+
         # Existing Specific Instructions (Integrated)
         - Gather relevant statistics methodically based on user request.
         - Calculate key metrics as needed.
@@ -493,9 +502,9 @@ class NBAAnalysisWorkflow(Workflow):
 
     async def arun(self, query: str) -> AsyncIterator[RunResponse]:
         """Execute the NBA analysis workflow with error handling and structured prompts."""
-        
+
         logger.info(f"Starting NBA analysis for query: {query}")
-        
+
         try:
             # Step 1: Statistical Analysis
             yield RunResponse(run_id=self.run_id, content="Starting statistical analysis...")
@@ -503,7 +512,7 @@ class NBAAnalysisWorkflow(Workflow):
                 dedent(f"""\
                 Analyze NBA statistics with proper error handling:
                 Query: {query}
-                
+
                 Instructions:
                 1. Get player/team estimated metrics first
                 2. Validate data before reporting
@@ -523,14 +532,14 @@ class NBAAnalysisWorkflow(Workflow):
                 dedent(f"""\
                 Evaluate performance based on statistical findings:
                 Query: {query}
-                
+
                 Instructions:
                 1. Focus on key performance indicators
                 2. Compare relevant metrics
                 3. Consider contextual factors
                 4. Highlight significant patterns
                 5. Support findings with data
-                
+
                 Remember to handle missing data and validation errors gracefully.
                 """),
                 stream=True,
@@ -545,7 +554,7 @@ class NBAAnalysisWorkflow(Workflow):
                 dedent(f"""\
                 Synthesize findings into strategic insights:
                 Query: {query}
-                
+
                 Requirements:
                 1. Connect statistical findings with performance analysis
                 2. Support conclusions with specific data

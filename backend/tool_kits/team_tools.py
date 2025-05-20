@@ -182,6 +182,18 @@ def get_team_passing_stats(
     season: str = settings.CURRENT_NBA_SEASON,
     season_type: str = SeasonTypeAllStar.regular,
     per_mode: str = PerModeSimple.per_game,
+    last_n_games: int = 0,
+    month: int = 0,
+    opponent_team_id: int = 0,
+    period: int = 0,
+    vs_division_nullable: Optional[str] = None,
+    vs_conference_nullable: Optional[str] = None,
+    season_segment_nullable: Optional[str] = None,
+    outcome_nullable: Optional[str] = None,
+    location_nullable: Optional[str] = None,
+    game_segment_nullable: Optional[str] = None,
+    date_to_nullable: Optional[str] = None,
+    date_from_nullable: Optional[str] = None,
     as_dataframe: bool = False
 ) -> str:
     """
@@ -196,6 +208,18 @@ def get_team_passing_stats(
             Valid values from `nba_api.stats.library.parameters.SeasonTypeAllStar`.
         per_mode (str, optional): Statistical mode. Defaults to "PerGame".
             Valid values from `nba_api.stats.library.parameters.PerModeSimple`.
+        last_n_games (int, optional): Number of most recent games to include. Defaults to 0 (all).
+        month (int, optional): Filter by month (0 for all). Defaults to 0.
+        opponent_team_id (int, optional): Filter by opponent team ID. Defaults to 0.
+        period (int, optional): Filter by period (0 for all). Defaults to 0.
+        vs_division_nullable (Optional[str], optional): Filter by division. Defaults to None.
+        vs_conference_nullable (Optional[str], optional): Filter by conference. Defaults to None.
+        season_segment_nullable (Optional[str], optional): Filter by season segment. Defaults to None.
+        outcome_nullable (Optional[str], optional): Filter by outcome (W, L). Defaults to None.
+        location_nullable (Optional[str], optional): Filter by location (Home, Road). Defaults to None.
+        game_segment_nullable (Optional[str], optional): Filter by game segment. Defaults to None.
+        date_to_nullable (Optional[str], optional): End date filter (YYYY-MM-DD). Defaults to None.
+        date_from_nullable (Optional[str], optional): Start date filter (YYYY-MM-DD). Defaults to None.
         as_dataframe (bool, optional): If True, returns a pandas DataFrame representation of the data
             and saves it to CSV files in the cache directory. Defaults to False.
 
@@ -213,6 +237,18 @@ def get_team_passing_stats(
             season=season,
             season_type=season_type,
             per_mode=per_mode,
+            last_n_games=last_n_games,
+            month=month,
+            opponent_team_id=opponent_team_id,
+            period=period,
+            vs_division_nullable=vs_division_nullable,
+            vs_conference_nullable=vs_conference_nullable,
+            season_segment_nullable=season_segment_nullable,
+            outcome_nullable=outcome_nullable,
+            location_nullable=location_nullable,
+            game_segment_nullable=game_segment_nullable,
+            date_to_nullable=date_to_nullable,
+            date_from_nullable=date_from_nullable,
             return_dataframe=True
         )
 
@@ -262,7 +298,19 @@ def get_team_passing_stats(
             team_identifier=team_identifier,
             season=season,
             season_type=season_type,
-            per_mode=per_mode
+            per_mode=per_mode,
+            last_n_games=last_n_games,
+            month=month,
+            opponent_team_id=opponent_team_id,
+            period=period,
+            vs_division_nullable=vs_division_nullable,
+            vs_conference_nullable=vs_conference_nullable,
+            season_segment_nullable=season_segment_nullable,
+            outcome_nullable=outcome_nullable,
+            location_nullable=location_nullable,
+            game_segment_nullable=game_segment_nullable,
+            date_to_nullable=date_to_nullable,
+            date_from_nullable=date_from_nullable
         )
 
 @tool
@@ -271,9 +319,18 @@ def get_team_rebounding_stats(
     season: str = settings.CURRENT_NBA_SEASON,
     season_type: str = SeasonTypeAllStar.regular,
     per_mode: str = PerModeSimple.per_game,
+    last_n_games: int = 0,
+    month: int = 0,
     opponent_team_id: int = 0,
-    date_from: Optional[str] = None,
-    date_to: Optional[str] = None,
+    period: int = 0,
+    vs_division_nullable: Optional[str] = None,
+    vs_conference_nullable: Optional[str] = None,
+    season_segment_nullable: Optional[str] = None,
+    outcome_nullable: Optional[str] = None,
+    location_nullable: Optional[str] = None,
+    game_segment_nullable: Optional[str] = None,
+    date_to_nullable: Optional[str] = None,
+    date_from_nullable: Optional[str] = None,
     as_dataframe: bool = False
 ) -> str:
     """
@@ -288,9 +345,18 @@ def get_team_rebounding_stats(
             Valid values from `nba_api.stats.library.parameters.SeasonTypeAllStar`.
         per_mode (str, optional): Statistical mode. Defaults to "PerGame".
             Valid values from `nba_api.stats.library.parameters.PerModeSimple`.
-        opponent_team_id (int, optional): Filter by opponent team ID. Defaults to 0 (all).
-        date_from (Optional[str], optional): Start date filter (YYYY-MM-DD).
-        date_to (Optional[str], optional): End date filter (YYYY-MM-DD).
+        last_n_games (int, optional): Number of most recent games to include. Defaults to 0 (all).
+        month (int, optional): Filter by month (0 for all). Defaults to 0.
+        opponent_team_id (int, optional): Filter by opponent team ID. Defaults to 0.
+        period (int, optional): Filter by period (0 for all). Defaults to 0.
+        vs_division_nullable (Optional[str], optional): Filter by division. Defaults to None.
+        vs_conference_nullable (Optional[str], optional): Filter by conference. Defaults to None.
+        season_segment_nullable (Optional[str], optional): Filter by season segment. Defaults to None.
+        outcome_nullable (Optional[str], optional): Filter by outcome (W, L). Defaults to None.
+        location_nullable (Optional[str], optional): Filter by location (Home, Road). Defaults to None.
+        game_segment_nullable (Optional[str], optional): Filter by game segment. Defaults to None.
+        date_to_nullable (Optional[str], optional): End date filter (YYYY-MM-DD). Defaults to None.
+        date_from_nullable (Optional[str], optional): Start date filter (YYYY-MM-DD). Defaults to None.
         as_dataframe (bool, optional): If True, returns a pandas DataFrame representation of the data
             and saves it to CSV files in the cache directory. Defaults to False.
 
@@ -309,9 +375,18 @@ def get_team_rebounding_stats(
             season=season,
             season_type=season_type,
             per_mode=per_mode,
+            last_n_games=last_n_games,
+            month=month,
             opponent_team_id=opponent_team_id,
-            date_from=date_from,
-            date_to=date_to,
+            period=period,
+            vs_division_nullable=vs_division_nullable,
+            vs_conference_nullable=vs_conference_nullable,
+            season_segment_nullable=season_segment_nullable,
+            outcome_nullable=outcome_nullable,
+            location_nullable=location_nullable,
+            game_segment_nullable=game_segment_nullable,
+            date_to_nullable=date_to_nullable,
+            date_from_nullable=date_from_nullable,
             return_dataframe=True
         )
 
@@ -362,9 +437,18 @@ def get_team_rebounding_stats(
             season=season,
             season_type=season_type,
             per_mode=per_mode,
+            last_n_games=last_n_games,
+            month=month,
             opponent_team_id=opponent_team_id,
-            date_from=date_from,
-            date_to=date_to
+            period=period,
+            vs_division_nullable=vs_division_nullable,
+            vs_conference_nullable=vs_conference_nullable,
+            season_segment_nullable=season_segment_nullable,
+            outcome_nullable=outcome_nullable,
+            location_nullable=location_nullable,
+            game_segment_nullable=game_segment_nullable,
+            date_to_nullable=date_to_nullable,
+            date_from_nullable=date_from_nullable
         )
 
 @tool
@@ -373,9 +457,18 @@ def get_team_shooting_stats(
     season: str = settings.CURRENT_NBA_SEASON,
     season_type: str = SeasonTypeAllStar.regular,
     per_mode: str = PerModeSimple.per_game,
+    last_n_games: int = 0,
+    month: int = 0,
     opponent_team_id: int = 0,
-    date_from: Optional[str] = None,
-    date_to: Optional[str] = None,
+    period: int = 0,
+    vs_division_nullable: Optional[str] = None,
+    vs_conference_nullable: Optional[str] = None,
+    season_segment_nullable: Optional[str] = None,
+    outcome_nullable: Optional[str] = None,
+    location_nullable: Optional[str] = None,
+    game_segment_nullable: Optional[str] = None,
+    date_to_nullable: Optional[str] = None,
+    date_from_nullable: Optional[str] = None,
     as_dataframe: bool = False
 ) -> str:
     """
@@ -390,9 +483,18 @@ def get_team_shooting_stats(
             Valid values from `nba_api.stats.library.parameters.SeasonTypeAllStar`.
         per_mode (str, optional): Statistical mode. Defaults to "PerGame".
             Valid values from `nba_api.stats.library.parameters.PerModeSimple`.
-        opponent_team_id (int, optional): Filter by opponent team ID. Defaults to 0 (all).
-        date_from (Optional[str], optional): Start date filter (YYYY-MM-DD).
-        date_to (Optional[str], optional): End date filter (YYYY-MM-DD).
+        last_n_games (int, optional): Number of most recent games to include. Defaults to 0 (all).
+        month (int, optional): Filter by month (0 for all). Defaults to 0.
+        opponent_team_id (int, optional): Filter by opponent team ID. Defaults to 0.
+        period (int, optional): Filter by period (0 for all). Defaults to 0.
+        vs_division_nullable (Optional[str], optional): Filter by division. Defaults to None.
+        vs_conference_nullable (Optional[str], optional): Filter by conference. Defaults to None.
+        season_segment_nullable (Optional[str], optional): Filter by season segment. Defaults to None.
+        outcome_nullable (Optional[str], optional): Filter by outcome (W, L). Defaults to None.
+        location_nullable (Optional[str], optional): Filter by location (Home, Road). Defaults to None.
+        game_segment_nullable (Optional[str], optional): Filter by game segment. Defaults to None.
+        date_to_nullable (Optional[str], optional): End date filter (YYYY-MM-DD). Defaults to None.
+        date_from_nullable (Optional[str], optional): Start date filter (YYYY-MM-DD). Defaults to None.
         as_dataframe (bool, optional): If True, returns a pandas DataFrame representation of the data
             and saves it to CSV files in the cache directory. Defaults to False.
 
@@ -411,9 +513,18 @@ def get_team_shooting_stats(
             season=season,
             season_type=season_type,
             per_mode=per_mode,
+            last_n_games=last_n_games,
+            month=month,
             opponent_team_id=opponent_team_id,
-            date_from=date_from,
-            date_to=date_to,
+            period=period,
+            vs_division_nullable=vs_division_nullable,
+            vs_conference_nullable=vs_conference_nullable,
+            season_segment_nullable=season_segment_nullable,
+            outcome_nullable=outcome_nullable,
+            location_nullable=location_nullable,
+            game_segment_nullable=game_segment_nullable,
+            date_to_nullable=date_to_nullable,
+            date_from_nullable=date_from_nullable,
             return_dataframe=True
         )
 
@@ -464,9 +575,18 @@ def get_team_shooting_stats(
             season=season,
             season_type=season_type,
             per_mode=per_mode,
+            last_n_games=last_n_games,
+            month=month,
             opponent_team_id=opponent_team_id,
-            date_from=date_from,
-            date_to=date_to
+            period=period,
+            vs_division_nullable=vs_division_nullable,
+            vs_conference_nullable=vs_conference_nullable,
+            season_segment_nullable=season_segment_nullable,
+            outcome_nullable=outcome_nullable,
+            location_nullable=location_nullable,
+            game_segment_nullable=game_segment_nullable,
+            date_to_nullable=date_to_nullable,
+            date_from_nullable=date_from_nullable
         )
 
 @tool
@@ -493,7 +613,7 @@ def get_search_teams(team_name_query: str, as_dataframe: bool = False) -> str:
         str: JSON string with a list of matching teams.
     """
     logger.debug(f"Tool 'get_search_teams' called with query '{team_name_query}', as_dataframe={as_dataframe}")
-    return search_teams_logic(team_name_query=team_name_query, return_dataframe=as_dataframe)
+    return search_teams_logic(query=team_name_query, return_dataframe=as_dataframe)
 
 @tool
 def get_team_historical_leaders(
