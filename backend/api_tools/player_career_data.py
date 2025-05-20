@@ -89,6 +89,7 @@ def _get_csv_path_for_awards(player_name: str) -> str:
 def fetch_player_career_stats_logic(
     player_name: str,
     per_mode: str = PerModeDetailed.per_game,
+    league_id_nullable: Optional[str] = None,
     return_dataframe: bool = False
 ) -> Union[str, Tuple[str, Dict[str, pd.DataFrame]]]:
     """
@@ -100,6 +101,7 @@ def fetch_player_career_stats_logic(
         player_name: The name or ID of the player.
         per_mode: The statistical mode (e.g., "PerGame", "Totals", "Per36").
                  Defaults to "PerGame".
+        league_id_nullable: The league ID to filter results (optional).
         return_dataframe: Whether to return DataFrames along with the JSON response.
 
     Returns:
@@ -111,6 +113,7 @@ def fetch_player_career_stats_logic(
                      "player_id": 12345,
                      "per_mode_requested": "PerModeValue",
                      "data_retrieved_mode": "PerModeValue",
+                     "league_id": "LeagueID",
                      "season_totals_regular_season": [ { ... stats ... } ],
                      "career_totals_regular_season": { ... stats ... },
                      "season_totals_post_season": [ { ... stats ... } ],
@@ -120,7 +123,7 @@ def fetch_player_career_stats_logic(
             Tuple[str, Dict[str, pd.DataFrame]]: A tuple containing the JSON response string
                                                and a dictionary of DataFrames.
     """
-    logger.info(f"Executing fetch_player_career_stats_logic for: '{player_name}', Requested PerMode: {per_mode}, return_dataframe={return_dataframe}")
+    logger.info(f"Executing fetch_player_career_stats_logic for: '{player_name}', Requested PerMode: {per_mode}, league_id: {league_id_nullable}, return_dataframe={return_dataframe}")
 
     if per_mode not in _VALID_PER_MODES_CAREER:
         error_msg = Errors.INVALID_PER_MODE.format(value=per_mode, options=", ".join(list(_VALID_PER_MODES_CAREER)[:5]))
@@ -135,7 +138,12 @@ def fetch_player_career_stats_logic(
         logger.debug(f"Fetching playercareerstats for ID: {player_id} (PerMode '{per_mode}' requested)")
 
         try:
-            career_endpoint = playercareerstats.PlayerCareerStats(player_id=player_id, per_mode36=per_mode, timeout=settings.DEFAULT_TIMEOUT_SECONDS)
+            career_endpoint = playercareerstats.PlayerCareerStats(
+                player_id=player_id,
+                per_mode36=per_mode,
+                league_id_nullable=league_id_nullable,
+                timeout=settings.DEFAULT_TIMEOUT_SECONDS
+            )
             logger.debug(f"playercareerstats API call successful for ID: {player_id}")
         except Exception as api_error:
             logger.error(f"nba_api playercareerstats failed for ID {player_id}: {api_error}", exc_info=True)
@@ -206,6 +214,7 @@ def fetch_player_career_stats_logic(
             "player_id": player_id,
             "per_mode_requested": per_mode,
             "data_retrieved_mode": per_mode,
+            "league_id": league_id_nullable,
             "season_totals_regular_season": season_totals_regular_season or [],
             "career_totals_regular_season": career_totals_regular_season or {},
             "season_totals_post_season": season_totals_post_season or [],

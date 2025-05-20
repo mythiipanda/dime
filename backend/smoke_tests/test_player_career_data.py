@@ -18,7 +18,7 @@ from backend.api_tools.player_career_data import (
     fetch_player_career_stats_logic,
     fetch_player_awards_logic
 )
-from nba_api.stats.library.parameters import PerModeDetailed
+from nba_api.stats.library.parameters import PerModeDetailed, LeagueID
 
 # Sample player name for testing
 SAMPLE_PLAYER_NAME = "LeBron James"  # A well-known player with a long career and many awards
@@ -86,6 +86,41 @@ def test_fetch_player_career_stats_basic():
                     print(f"  Points: {season.get('PTS', 'N/A')}")
 
     print("\n=== Basic test completed ===")
+    return data
+
+def test_fetch_player_career_stats_with_league_id():
+    """Test fetching player career stats with league_id parameter."""
+    print("\n=== Testing fetch_player_career_stats_logic with league_id parameter ===")
+
+    # Test with league_id parameter
+    json_response = fetch_player_career_stats_logic(
+        SAMPLE_PLAYER_NAME,
+        per_mode=PerModeDetailed.per_game,
+        league_id_nullable=LeagueID.nba
+    )
+
+    # Parse the JSON response
+    data = json.loads(json_response)
+
+    # Check if the response has the expected structure
+    assert isinstance(data, dict), "Response should be a dictionary"
+
+    # Check if there's an error in the response
+    if "error" in data:
+        print(f"API returned an error: {data['error']}")
+        print("This might be expected if the NBA API is unavailable or rate-limited.")
+    else:
+        # Check if the league_id parameter is correctly included
+        assert "league_id" in data, "Response should have a 'league_id' field"
+        assert data["league_id"] == LeagueID.nba, f"league_id should be {LeagueID.nba}"
+
+        print(f"League ID parameter correctly included: {data['league_id']}")
+
+        # Print player info
+        print(f"Player: {data.get('player_name', 'N/A')} (ID: {data.get('player_id', 'N/A')})")
+        print(f"Per Mode: {data.get('per_mode_requested', 'N/A')}")
+
+    print("\n=== League ID parameter test completed ===")
     return data
 
 def test_fetch_player_career_stats_dataframe():
@@ -229,6 +264,7 @@ def run_all_tests():
     try:
         # Run the tests
         career_data = test_fetch_player_career_stats_basic()
+        league_id_data = test_fetch_player_career_stats_with_league_id()
         career_json, career_dataframes = test_fetch_player_career_stats_dataframe()
         awards_data = test_fetch_player_awards_basic()
         awards_json, awards_dataframes = test_fetch_player_awards_dataframe()
