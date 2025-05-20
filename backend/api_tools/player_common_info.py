@@ -61,6 +61,7 @@ def _get_csv_path_for_player_info(player_name: str, data_type: str) -> str:
 
 def fetch_player_info_logic(
     player_name: str,
+    league_id_nullable: Optional[str] = None,
     return_dataframe: bool = False
 ) -> Union[str, Tuple[str, Dict[str, pd.DataFrame]]]:
     """
@@ -70,6 +71,7 @@ def fetch_player_info_logic(
 
     Args:
         player_name: The name or ID of the player.
+        league_id_nullable: The league ID to filter results (optional).
         return_dataframe: Whether to return DataFrames along with the JSON response.
 
     Returns:
@@ -86,14 +88,18 @@ def fetch_player_info_logic(
             Tuple[str, Dict[str, pd.DataFrame]]: A tuple containing the JSON response string
                                                and a dictionary of DataFrames.
     """
-    logger.info(f"Executing fetch_player_info_logic for: '{player_name}', return_dataframe={return_dataframe}")
+    logger.info(f"Executing fetch_player_info_logic for: '{player_name}', league_id={league_id_nullable}, return_dataframe={return_dataframe}")
 
     try:
         player_id, player_actual_name = find_player_id_or_error(player_name)
         logger.debug(f"Fetching commonplayerinfo for player ID: {player_id} ({player_actual_name})")
 
         try:
-            info_endpoint = commonplayerinfo.CommonPlayerInfo(player_id=player_id, timeout=settings.DEFAULT_TIMEOUT_SECONDS)
+            info_endpoint = commonplayerinfo.CommonPlayerInfo(
+                player_id=player_id,
+                league_id_nullable=league_id_nullable,
+                timeout=settings.DEFAULT_TIMEOUT_SECONDS
+            )
             logger.debug(f"commonplayerinfo API call successful for ID: {player_id}")
         except Exception as api_error:
             logger.error(f"nba_api commonplayerinfo failed for ID {player_id}: {api_error}", exc_info=True)
@@ -140,7 +146,10 @@ def fetch_player_info_logic(
         response_data = {
             "player_info": player_info_dict or {}, # Ensure empty dict if None
             "headline_stats": headline_stats_dict or {}, # Ensure empty dict if None
-            "available_seasons": available_seasons_list or [] # Ensure empty list if None
+            "available_seasons": available_seasons_list or [], # Ensure empty list if None
+            "parameters": {
+                "league_id": league_id_nullable
+            }
         }
 
         logger.info(f"fetch_player_info_logic completed for '{player_actual_name}'")
