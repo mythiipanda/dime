@@ -126,7 +126,10 @@ def fetch_player_gamelog_logic(
 
         try:
             gamelog_endpoint = playergamelog.PlayerGameLog(
-                player_id=player_id, season=season, season_type_all_star=season_type, timeout=settings.DEFAULT_TIMEOUT_SECONDS
+                player_id=player_id,
+                season=season,
+                season_type_all_star=season_type,
+                timeout=settings.DEFAULT_TIMEOUT_SECONDS
             )
             logger.debug(f"playergamelog API call successful for ID: {player_id}, Season: {season}")
         except Exception as api_error:
