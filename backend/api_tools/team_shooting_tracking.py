@@ -33,27 +33,27 @@ _TEAM_SHOOTING_VALID_PER_MODES: Set[str] = {getattr(PerModeSimple, attr) for att
 teamdashptshots.requests = nba_session
 
 # --- Cache Directory Setup ---
-CSV_CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cache")
-TEAM_SHOOTING_CSV_DIR = os.path.join(CSV_CACHE_DIR, "team_shooting")
-
-# Ensure cache directories exist
-os.makedirs(CSV_CACHE_DIR, exist_ok=True)
-os.makedirs(TEAM_SHOOTING_CSV_DIR, exist_ok=True)
+from ..utils.path_utils import get_cache_dir, get_cache_file_path, get_relative_cache_path
+TEAM_SHOOTING_CSV_DIR = get_cache_dir("team_shooting")
 
 # --- Helper Functions for CSV Caching ---
 def _save_dataframe_to_csv(df: pd.DataFrame, file_path: str) -> None:
     """
-    Saves a DataFrame to a CSV file.
+    Saves a DataFrame to a CSV file, creating the directory if it doesn't exist.
 
     Args:
-        df: DataFrame to save
-        file_path: Path to save the CSV file
+        df: The DataFrame to save
+        file_path: The path to save the CSV file
     """
     try:
+        # Create directory if it doesn't exist
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
+        # Save DataFrame to CSV
         df.to_csv(file_path, index=False)
-        logger.info(f"Saved DataFrame to CSV: {file_path}")
+        logger.debug(f"Saved DataFrame to {file_path}")
     except Exception as e:
-        logger.error(f"Error saving DataFrame to CSV: {e}", exc_info=True)
+        logger.error(f"Error saving DataFrame to {file_path}: {e}", exc_info=True)
 
 def _get_csv_path_for_team_shooting(
     team_name: str,
@@ -81,7 +81,7 @@ def _get_csv_path_for_team_shooting(
     clean_per_mode = per_mode.replace(" ", "_").lower()
 
     filename = f"{clean_team_name}_{season}_{clean_season_type}_{clean_per_mode}_{data_type}.csv"
-    return os.path.join(TEAM_SHOOTING_CSV_DIR, filename)
+    return get_cache_file_path(filename, "team_shooting")
 
 # --- Main Logic Function ---
 def fetch_team_shooting_stats_logic(
@@ -250,7 +250,13 @@ def fetch_team_shooting_stats_logic(
                 "by_dribble": [], "by_defender_distance": [], "by_touch_time": []
             }
 
+            # Add DataFrame metadata to the response if returning DataFrames
             if return_dataframe:
+                response_data["dataframe_info"] = {
+                    "message": "No team shooting tracking data found for the specified parameters",
+                    "dataframes": {}
+                }
+
                 return format_response(response_data), dataframes
             return format_response(response_data)
 
@@ -264,6 +270,37 @@ def fetch_team_shooting_stats_logic(
             "by_defender_distance": defender_list or [],
             "by_touch_time": touch_time_list or []
         }
+
+        # Add DataFrame metadata to the response if returning DataFrames
+        if return_dataframe:
+            result["dataframe_info"] = {
+                "message": "Team shooting tracking data has been converted to DataFrames and saved as CSV files",
+                "dataframes": {}
+            }
+
+            # Add metadata for each DataFrame if not empty
+            dataframe_types = {
+                "general": general_df,
+                "shot_clock": shot_clock_df,
+                "dribble": dribbles_df,
+                "defender": defender_df,
+                "touch_time": touch_time_df
+            }
+
+            for df_key, df in dataframe_types.items():
+                if not df.empty:
+                    csv_path = _get_csv_path_for_team_shooting(
+                        team_name_resolved, season, season_type, per_mode, df_key
+                    )
+                    csv_filename = os.path.basename(csv_path)
+                    relative_path = get_relative_cache_path(csv_filename, "team_shooting")
+
+                    result["dataframe_info"]["dataframes"][df_key] = {
+                        "shape": list(df.shape),
+                        "columns": df.columns.tolist(),
+                        "csv_path": relative_path
+                    }
+
         logger.info(f"fetch_team_shooting_stats_logic completed for {team_name_resolved}")
 
         if return_dataframe:
