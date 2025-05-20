@@ -36,9 +36,9 @@ def test_fetch_teamplayeronoffsummary_basic():
     json_response = fetch_teamplayeronoffsummary_logic(
         SAMPLE_TEAM_NAME,
         SAMPLE_SEASON,
-        DEFAULT_SEASON_TYPE,
-        DEFAULT_PER_MODE,
-        DEFAULT_MEASURE_TYPE
+        season_type_all_star=DEFAULT_SEASON_TYPE,
+        per_mode_detailed=DEFAULT_PER_MODE,
+        measure_type_detailed_defense=DEFAULT_MEASURE_TYPE
     )
     data = json.loads(json_response)
     assert isinstance(data, dict), "Response should be a dictionary"
@@ -56,16 +56,16 @@ def test_fetch_teamplayeronoffsummary_dataframe():
     result = fetch_teamplayeronoffsummary_logic(
         SAMPLE_TEAM_NAME,
         SAMPLE_SEASON,
-        DEFAULT_SEASON_TYPE,
-        DEFAULT_PER_MODE,
-        DEFAULT_MEASURE_TYPE,
+        season_type_all_star=DEFAULT_SEASON_TYPE,
+        per_mode_detailed=DEFAULT_PER_MODE,
+        measure_type_detailed_defense=DEFAULT_MEASURE_TYPE,
         return_dataframe=True
     )
     assert isinstance(result, tuple) and len(result) == 2
     json_response, dataframes_dict = result
     assert isinstance(json_response, str)
     assert isinstance(dataframes_dict, dict)
-    
+
     data = json.loads(json_response)
     if "error" in data:
         print(f"API (DataFrame) returned an error: {data['error']}")
@@ -97,14 +97,18 @@ def test_fetch_teamplayeronoffsummary_dataframe():
     return json_response, dataframes_dict
 
 def test_fetch_teamplayeronoffsummary_advanced():
-    """Test fetching team player on/off summary with advanced measure type."""
-    print("\n=== Testing fetch_teamplayeronoffsummary_logic with advanced measure type ===")
+    """Test fetching team player on/off summary with advanced measure type and additional parameters."""
+    print("\n=== Testing fetch_teamplayeronoffsummary_logic with advanced measure type and additional parameters ===")
     json_response = fetch_teamplayeronoffsummary_logic(
         SAMPLE_TEAM_NAME,
         SAMPLE_SEASON,
-        DEFAULT_SEASON_TYPE,
-        DEFAULT_PER_MODE,
-        MeasureTypeDetailedDefense.advanced # Test with Advanced
+        season_type_all_star=DEFAULT_SEASON_TYPE,
+        per_mode_detailed=DEFAULT_PER_MODE,
+        measure_type_detailed_defense=MeasureTypeDetailedDefense.advanced, # Test with Advanced
+        last_n_games=10,
+        vs_conference_nullable="East",
+        location_nullable="Home",
+        league_id_nullable=LeagueID.nba
     )
     data = json.loads(json_response)
     assert isinstance(data, dict)
@@ -112,21 +116,32 @@ def test_fetch_teamplayeronoffsummary_advanced():
         print(f"API returned an error: {data['error']}")
     else:
         assert data["parameters"]["measure_type"] == MeasureTypeDetailedDefense.advanced
+        assert data["parameters"]["last_n_games"] == 10
+        assert data["parameters"]["vs_conference"] == "East"
+        assert data["parameters"]["location"] == "Home"
+        assert data["parameters"]["league_id"] == LeagueID.nba
         print(f"Advanced on/off summary fetched for {data.get('team_name')}")
-    print("\n=== Advanced measure type test completed ===")
+        print(f"Parameters: last_n_games={data['parameters']['last_n_games']}, vs_conference={data['parameters']['vs_conference']}, location={data['parameters']['location']}")
+    print("\n=== Advanced measure type and parameters test completed ===")
     return data
 
 # Minimal set of validation tests for brevity, expand as needed
 def test_invalid_parameters_teamplayeronoffsummary():
     print("\n=== Testing invalid parameters for teamplayeronoffsummary ===")
     # Test invalid season format
-    json_response_season = fetch_teamplayeronoffsummary_logic(SAMPLE_TEAM_NAME, "20XX-YY")
+    json_response_season = fetch_teamplayeronoffsummary_logic(
+        team_identifier=SAMPLE_TEAM_NAME,
+        season="20XX-YY"
+    )
     data_season = json.loads(json_response_season)
     assert "error" in data_season
     print(f"Invalid season error: {data_season['error']}")
 
     # Test invalid team identifier
-    json_response_team = fetch_teamplayeronoffsummary_logic("NotATeam", SAMPLE_SEASON)
+    json_response_team = fetch_teamplayeronoffsummary_logic(
+        team_identifier="NotATeam",
+        season=SAMPLE_SEASON
+    )
     data_team = json.loads(json_response_team)
     assert "error" in data_team
     print(f"Invalid team error: {data_team['error']}")
@@ -134,7 +149,7 @@ def test_invalid_parameters_teamplayeronoffsummary():
 
 def run_all_tests():
     print(f"\n=== Running teamplayeronoffsummary smoke tests at {datetime.now().isoformat()} ===\n")
-    
+
     # Ensure cache directory exists
     os.makedirs(TEAM_PLAYER_ON_OFF_CSV_DIR, exist_ok=True)
 
@@ -142,8 +157,8 @@ def run_all_tests():
     test_fetch_teamplayeronoffsummary_dataframe()
     test_fetch_teamplayeronoffsummary_advanced()
     test_invalid_parameters_teamplayeronoffsummary()
-        
+
     print("\n\n=== All teamplayeronoffsummary tests completed successfully ===")
 
 if __name__ == "__main__":
-    run_all_tests() 
+    run_all_tests()

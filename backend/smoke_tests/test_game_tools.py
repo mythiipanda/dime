@@ -6,6 +6,8 @@ import os
 import sys
 import json
 from datetime import datetime
+import pytest
+import pandas as pd
 
 
 
@@ -25,13 +27,15 @@ mock_agno_tools.tool = mock_tool
 sys.modules['agno.tools'] = mock_agno_tools
 
 # Now import the tools
-from tool_kits.game_tools import (
+from ..tool_kits.game_tools import (
     get_boxscore_traditional,
     get_boxscore_advanced,
     get_boxscore_four_factors,
     get_boxscore_usage,
     get_boxscore_defensive,
-    get_boxscore_summary
+    get_boxscore_summary,
+    find_games_logic,
+    fetch_boxscore_traditional_logic
 )
 
 # Sample game ID for testing (2023-24 regular season game)

@@ -3,6 +3,7 @@ Smoke test for the get_live_odds tool.
 Tests the functionality of the tool with both JSON and DataFrame outputs.
 """
 import os
+import sys
 
 import json
 import pandas as pd
@@ -144,9 +145,7 @@ def run_all_tests():
         return False
 
 if __name__ == "__main__":
-    import sys
-
-# Add the parent directory to the Python path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+    # Add the parent directory to the Python path
+    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
     success = run_all_tests()
     sys.exit(0 if success else 1)
