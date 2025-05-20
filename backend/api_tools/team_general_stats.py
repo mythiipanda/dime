@@ -98,6 +98,21 @@ def _fetch_dashboard_general_splits_data(
     team_id: int, season: str, season_type: str, per_mode: str, measure_type: str,
     opponent_team_id: int, date_from: Optional[str], date_to: Optional[str],
     team_name: str = "",
+    last_n_games: int = 0,
+    league_id_nullable: Optional[str] = None,
+    month: int = 0,
+    period: int = 0,
+    vs_division_nullable: Optional[str] = None,
+    vs_conference_nullable: Optional[str] = None,
+    season_segment_nullable: Optional[str] = None,
+    outcome_nullable: Optional[str] = None,
+    location_nullable: Optional[str] = None,
+    game_segment_nullable: Optional[str] = None,
+    pace_adjust: str = "N",
+    plus_minus: str = "N",
+    rank: str = "N",
+    shot_clock_range_nullable: Optional[str] = None,
+    po_round_nullable: Optional[str] = None,
     return_dataframe: bool = False
 ) -> Union[Tuple[Dict[str, Any], Optional[str]], Tuple[Dict[str, Any], Optional[str], pd.DataFrame]]:
     """
@@ -113,6 +128,21 @@ def _fetch_dashboard_general_splits_data(
         date_from: Start date filter (YYYY-MM-DD)
         date_to: End date filter (YYYY-MM-DD)
         team_name: The team's name (for CSV file naming)
+        last_n_games: Number of games to include (0 for all games)
+        league_id_nullable: League ID (e.g., "00" for NBA)
+        month: Month number (0 for all months)
+        period: Period number (0 for all periods)
+        vs_division_nullable: Filter by division (e.g., "Atlantic", "Central")
+        vs_conference_nullable: Filter by conference (e.g., "East", "West")
+        season_segment_nullable: Filter by season segment (e.g., "Post All-Star", "Pre All-Star")
+        outcome_nullable: Filter by game outcome (e.g., "W", "L")
+        location_nullable: Filter by game location (e.g., "Home", "Road")
+        game_segment_nullable: Filter by game segment (e.g., "First Half", "Second Half")
+        pace_adjust: Whether to adjust for pace (Y/N)
+        plus_minus: Whether to include plus-minus (Y/N)
+        rank: Whether to include rank (Y/N)
+        shot_clock_range_nullable: Filter by shot clock range
+        po_round_nullable: Filter by playoff round
         return_dataframe: Whether to return the original DataFrame
 
     Returns:
@@ -128,10 +158,30 @@ def _fetch_dashboard_general_splits_data(
     logger.debug(f"Fetching team dashboard stats for Team ID: {team_id}, Season: {season}, Measure: {measure_type}")
     try:
         dashboard_endpoint = teamdashboardbygeneralsplits.TeamDashboardByGeneralSplits(
-            team_id=team_id, season=season, season_type_all_star=season_type,
-            per_mode_detailed=per_mode, measure_type_detailed_defense=measure_type,
-            opponent_team_id=opponent_team_id, date_from_nullable=date_from,
-            date_to_nullable=date_to, timeout=settings.DEFAULT_TIMEOUT_SECONDS
+            team_id=team_id,
+            season=season,
+            season_type_all_star=season_type,
+            per_mode_detailed=per_mode,
+            measure_type_detailed_defense=measure_type,
+            opponent_team_id=opponent_team_id,
+            date_from_nullable=date_from,
+            date_to_nullable=date_to,
+            last_n_games=last_n_games,
+            league_id_nullable=league_id_nullable,
+            month=month,
+            period=period,
+            vs_division_nullable=vs_division_nullable,
+            vs_conference_nullable=vs_conference_nullable,
+            season_segment_nullable=season_segment_nullable,
+            outcome_nullable=outcome_nullable,
+            location_nullable=location_nullable,
+            game_segment_nullable=game_segment_nullable,
+            pace_adjust=pace_adjust,
+            plus_minus=plus_minus,
+            rank=rank,
+            shot_clock_range_nullable=shot_clock_range_nullable,
+            po_round_nullable=po_round_nullable,
+            timeout=settings.DEFAULT_TIMEOUT_SECONDS
         )
         overall_stats_df = dashboard_endpoint.overall_team_dashboard.get_data_frame()
 
@@ -228,6 +278,20 @@ def fetch_team_stats_logic(
     date_from: Optional[str] = None, # For dashboard stats
     date_to: Optional[str] = None,   # For dashboard stats
     league_id: str = LeagueID.nba,    # LeagueID for historical stats (and dashboard if needed)
+    last_n_games: int = 0,
+    month: int = 0,
+    period: int = 0,
+    vs_division_nullable: Optional[str] = None,
+    vs_conference_nullable: Optional[str] = None,
+    season_segment_nullable: Optional[str] = None,
+    outcome_nullable: Optional[str] = None,
+    location_nullable: Optional[str] = None,
+    game_segment_nullable: Optional[str] = None,
+    pace_adjust: str = "N",
+    plus_minus: str = "N",
+    rank: str = "N",
+    shot_clock_range_nullable: Optional[str] = None,
+    po_round_nullable: Optional[str] = None,
     return_dataframe: bool = False
 ) -> Union[str, Tuple[str, Dict[str, pd.DataFrame]]]:
     """
@@ -244,6 +308,20 @@ def fetch_team_stats_logic(
         date_from: Start date filter for dashboard stats (YYYY-MM-DD).
         date_to: End date filter for dashboard stats (YYYY-MM-DD).
         league_id: League ID for historical stats. Defaults to NBA.
+        last_n_games: Number of games to include (0 for all games).
+        month: Month number (0 for all months).
+        period: Period number (0 for all periods).
+        vs_division_nullable: Filter by division (e.g., "Atlantic", "Central").
+        vs_conference_nullable: Filter by conference (e.g., "East", "West").
+        season_segment_nullable: Filter by season segment (e.g., "Post All-Star", "Pre All-Star").
+        outcome_nullable: Filter by game outcome (e.g., "W", "L").
+        location_nullable: Filter by game location (e.g., "Home", "Road").
+        game_segment_nullable: Filter by game segment (e.g., "First Half", "Second Half").
+        pace_adjust: Whether to adjust for pace (Y/N).
+        plus_minus: Whether to include plus-minus (Y/N).
+        rank: Whether to include rank (Y/N).
+        shot_clock_range_nullable: Filter by shot clock range.
+        po_round_nullable: Filter by playoff round.
         return_dataframe: Whether to return DataFrames along with the JSON response.
 
     Returns:
@@ -253,7 +331,12 @@ def fetch_team_stats_logic(
             Tuple[str, Dict[str, pd.DataFrame]]: A tuple containing the JSON response string
                                                and a dictionary of DataFrames.
     """
-    logger.info(f"Executing fetch_team_stats_logic for: '{team_identifier}', Dashboard Season: {season}, Dashboard Measure: {measure_type}, return_dataframe={return_dataframe}")
+    logger.info(f"Executing fetch_team_stats_logic for: '{team_identifier}', Dashboard Season: {season}, Dashboard Measure: {measure_type}, " +
+              f"LastNGames: {last_n_games}, Month: {month}, Period: {period}, VsDivision: {vs_division_nullable}, " +
+              f"VsConference: {vs_conference_nullable}, SeasonSegment: {season_segment_nullable}, Outcome: {outcome_nullable}, " +
+              f"Location: {location_nullable}, GameSegment: {game_segment_nullable}, PaceAdjust: {pace_adjust}, " +
+              f"PlusMinus: {plus_minus}, Rank: {rank}, ShotClockRange: {shot_clock_range_nullable}, " +
+              f"PORound: {po_round_nullable}, return_dataframe={return_dataframe}")
 
     # Store DataFrames if requested
     dataframes = {}
@@ -307,12 +390,43 @@ def fetch_team_stats_logic(
         if return_dataframe:
             dashboard_stats, dash_err, dashboard_df = _fetch_dashboard_general_splits_data(
                 team_id, season, season_type, per_mode, measure_type, opponent_team_id, date_from, date_to,
-                team_name=team_actual_name, return_dataframe=True
+                team_name=team_actual_name,
+                last_n_games=last_n_games,
+                league_id_nullable=league_id,
+                month=month,
+                period=period,
+                vs_division_nullable=vs_division_nullable,
+                vs_conference_nullable=vs_conference_nullable,
+                season_segment_nullable=season_segment_nullable,
+                outcome_nullable=outcome_nullable,
+                location_nullable=location_nullable,
+                game_segment_nullable=game_segment_nullable,
+                pace_adjust=pace_adjust,
+                plus_minus=plus_minus,
+                rank=rank,
+                shot_clock_range_nullable=shot_clock_range_nullable,
+                po_round_nullable=po_round_nullable,
+                return_dataframe=True
             )
             dataframes["dashboard"] = dashboard_df
         else:
             dashboard_stats, dash_err = _fetch_dashboard_general_splits_data(
-                team_id, season, season_type, per_mode, measure_type, opponent_team_id, date_from, date_to
+                team_id, season, season_type, per_mode, measure_type, opponent_team_id, date_from, date_to,
+                last_n_games=last_n_games,
+                league_id_nullable=league_id,
+                month=month,
+                period=period,
+                vs_division_nullable=vs_division_nullable,
+                vs_conference_nullable=vs_conference_nullable,
+                season_segment_nullable=season_segment_nullable,
+                outcome_nullable=outcome_nullable,
+                location_nullable=location_nullable,
+                game_segment_nullable=game_segment_nullable,
+                pace_adjust=pace_adjust,
+                plus_minus=plus_minus,
+                rank=rank,
+                shot_clock_range_nullable=shot_clock_range_nullable,
+                po_round_nullable=po_round_nullable
             )
 
         if dash_err: all_errors.append(dash_err)
@@ -343,11 +457,29 @@ def fetch_team_stats_logic(
         result = {
             "team_id": team_id, "team_name": team_actual_name,
             "parameters": {
-                "season_for_dashboard": season, "season_type_for_dashboard": season_type,
-                "per_mode_for_dashboard": per_mode, "measure_type_for_dashboard": measure_type,
+                "season_for_dashboard": season,
+                "season_type_for_dashboard": season_type,
+                "per_mode_for_dashboard": per_mode,
+                "measure_type_for_dashboard": measure_type,
                 "opponent_team_id_for_dashboard": opponent_team_id,
-                "date_from_for_dashboard": date_from, "date_to_for_dashboard": date_to,
-                "league_id_for_historical": league_id, "season_type_for_historical": season_type
+                "date_from_for_dashboard": date_from,
+                "date_to_for_dashboard": date_to,
+                "league_id_for_historical": league_id,
+                "season_type_for_historical": season_type,
+                "last_n_games": last_n_games,
+                "month": month,
+                "period": period,
+                "vs_division": vs_division_nullable,
+                "vs_conference": vs_conference_nullable,
+                "season_segment": season_segment_nullable,
+                "outcome": outcome_nullable,
+                "location": location_nullable,
+                "game_segment": game_segment_nullable,
+                "pace_adjust": pace_adjust,
+                "plus_minus": plus_minus,
+                "rank": rank,
+                "shot_clock_range": shot_clock_range_nullable,
+                "po_round": po_round_nullable
             },
             "current_season_dashboard_stats": dashboard_stats, # Renamed for clarity
             "historical_year_by_year_stats": historical_stats # Renamed for clarity
