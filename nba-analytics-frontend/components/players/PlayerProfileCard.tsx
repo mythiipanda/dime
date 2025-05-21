@@ -92,14 +92,14 @@ export function PlayerProfileCard({
               <h3 className="text-lg font-semibold mb-2">Advanced Player Metrics</h3>
               {onLoadAdvancedMetrics && !advancedMetrics && (
                 <Button onClick={onLoadAdvancedMetrics} variant="outline">
-                  Load Advanced Metrics
-                </Button>
-              )}
+                                Load Advanced Metrics
+                            </Button>
+                        )}
               {advancedMetrics ? (
                 <AdvancedMetricsDisplay metrics={advancedMetrics} />
               ) : (
                 !onLoadAdvancedMetrics && <p className="text-sm text-muted-foreground">Advanced metrics not available or not loaded.</p>
-              )}
+                )}
             </TabsContent>
 
             <TabsContent value="analysis" className="space-y-4 pt-4">
@@ -115,8 +115,8 @@ export function PlayerProfileCard({
               {similarPlayers && similarPlayers.length > 0 && (
                 <div className="mt-4">
                   <SimilarPlayersDisplay players={similarPlayers} />
-                </div>
-              )}
+                    </div>
+                )}
               {(!skillGrades || Object.keys(skillGrades).length === 0) && 
                (!similarPlayers || similarPlayers.length === 0) && 
                (playerData.skill_grades !== undefined || playerData.similar_players !== undefined) && // only show if attempted to load

@@ -54,7 +54,11 @@ async def scoreboard_websocket_endpoint(websocket: WebSocket):
             
             try:
                 # Fetch latest scoreboard data (logic defaults to today if game_date is None)
-                data_json_string = await asyncio.to_thread(fetch_scoreboard_data_logic, game_date=None)
+                data_json_string = await asyncio.to_thread(
+                    fetch_scoreboard_data_logic, 
+                    game_date=None, 
+                    bypass_cache=True # Ensure fresh data for WebSocket
+                )
                 
                 try:
                     data_dict_parsed = json.loads(data_json_string)
@@ -75,7 +79,7 @@ async def scoreboard_websocket_endpoint(websocket: WebSocket):
                     if not (websocket.application_state == WebSocketState.CONNECTED): break # Break if disconnected during send
                     # Otherwise, log and continue to next update cycle for transient send issues.
 
-                await asyncio.sleep(30) # Interval for updates
+                await asyncio.sleep(2) # Interval for updates, changed from 30 to 10
 
             except WebSocketDisconnect:
                 logger.info(f"WebSocket client {websocket.client} disconnected.")
