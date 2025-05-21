@@ -165,6 +165,9 @@ class Errors:
     INVALID_GROUP_QUANTITY: str = "Invalid group_quantity: '{value}'. Valid options: {options}"
     INVALID_LEAGUE_ID: str = "Invalid league_id: '{value}'. Valid options: {options}"
     INVALID_MEASURE_TYPE: str = "Invalid measure_type: '{value}'. Valid options: {options}"
+    INVALID_PLAYER_POSITION: str = "Invalid player_position: '{value}'. Valid options: {options}"
+    INVALID_PLAYER_EXPERIENCE: str = "Invalid player_experience: '{value}'. Valid options: {options}"
+    INVALID_STARTER_BENCH: str = "Invalid starter_bench: '{value}'. Valid options: {options}"
     INVALID_SCOPE: str = "Invalid scope: '{value}'. Valid options: {options}"
     INVALID_PLAYER_OR_TEAM_ABBREVIATION: str = "Invalid player_or_team_abbreviation: '{value}'. Must be 'P' or 'T'."
     INVALID_DEFENSE_CATEGORY: str = "Invalid defense_category: '{value}'. Valid options: {options}"
@@ -202,6 +205,7 @@ class Errors:
     PLAYER_DASHBOARD_LASTN_API: str = "API error fetching player dashboard last N games for {player_name}: {error}"
     TEAM_DASHBOARD_SHOOTING_API: str = "API error fetching team dashboard shooting splits for {team_identifier}: {error}"
     TEAM_DASH_LINEUPS_API: str = "API error fetching team lineups for {team_identifier}: {error}"
+    LEAGUE_DASH_PLAYER_BIO_API: str = "API error fetching player bio stats (Season: {season}, Type: {season_type}): {error}"
 
     PLAYER_SHOT_CHART_API: str = "Error fetching shot chart data for player {player_id} in season {season}: {error}"
     PLAYER_SHOT_CHART_NO_DATA: str = "No shot chart data found for player {player_id} in season {season}."
