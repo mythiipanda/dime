@@ -1,14 +1,11 @@
 """
-NBA API tools for accessing draft combine drill results data.
+NBA API tools for accessing draft combine non-stationary shooting data.
 
 This module provides functions to fetch and process data from the NBA's draft combine
-drill results endpoint, which includes physical testing metrics such as:
-- Standing vertical leap
-- Max vertical leap
-- Lane agility time
-- Modified lane agility time
-- Three-quarter sprint
-- Bench press
+non-stationary shooting endpoint, which includes shooting metrics such as:
+- Off-dribble shooting from different positions (15-foot and college range)
+- On-the-move shooting (15-foot and college range)
+- Shooting percentages and attempts
 
 The data is returned as pandas DataFrames and can be cached as CSV files for faster access.
 """
@@ -20,7 +17,7 @@ from typing import Optional, Dict, Any, Union, Tuple, List
 from functools import lru_cache
 import pandas as pd
 
-from nba_api.stats.endpoints import draftcombinedrillresults
+from nba_api.stats.endpoints import draftcombinenonstationaryshooting
 from utils.validation import _validate_season_format
 from utils.path_utils import get_cache_dir, get_cache_file_path
 
@@ -45,7 +42,7 @@ def format_response(data=None, error=None):
 logger = logging.getLogger(__name__)
 
 # --- Module-Level Constants ---
-DRAFT_COMBINE_DRILLS_CACHE_SIZE = 128
+DRAFT_COMBINE_NONSHOOTING_CACHE_SIZE = 128
 DRAFT_COMBINE_CSV_DIR = get_cache_dir("draft_combine")
 
 # Valid parameter values
@@ -68,16 +65,16 @@ def _save_dataframe_to_csv(df: pd.DataFrame, file_path: str) -> None:
         # Create directory if it doesn't exist
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
 
-        # Save DataFrame to CSV with data types preserved
+        # Save DataFrame to CSV
         df.to_csv(file_path, index=False)
         logger.info(f"Saved DataFrame to CSV: {file_path}")
     except Exception as e:
         logger.error(f"Error saving DataFrame to CSV: {e}", exc_info=True)
 
 
-def _get_csv_path_for_draft_combine_drills(season_year: str, league_id: str = "00") -> str:
+def _get_csv_path_for_draft_combine_nonshooting(season_year: str, league_id: str = "00") -> str:
     """
-    Generates a file path for saving draft combine drill results DataFrame.
+    Generates a file path for saving draft combine non-stationary shooting DataFrame.
 
     Args:
         season_year: Season year in YYYY format
@@ -86,17 +83,17 @@ def _get_csv_path_for_draft_combine_drills(season_year: str, league_id: str = "0
     Returns:
         Path to the CSV file
     """
-    filename = f"draft_combine_drills_{season_year}_{league_id}.csv"
+    filename = f"draft_combine_nonshooting_{season_year}_{league_id}.csv"
     return get_cache_file_path(filename, "draft_combine")
 
 
 # --- Parameter Validation Functions ---
-def _validate_draft_combine_drills_params(
+def _validate_draft_combine_nonshooting_params(
     season_year: str,
     league_id: str
 ) -> Optional[str]:
     """
-    Validates parameters for the draft combine drills function.
+    Validates parameters for the draft combine non-stationary shooting function.
 
     Args:
         season_year: Season year in YYYY format
@@ -119,22 +116,19 @@ def _validate_draft_combine_drills_params(
     return None
 
 # --- Main Logic Function ---
-@lru_cache(maxsize=DRAFT_COMBINE_DRILLS_CACHE_SIZE)
-def fetch_draft_combine_drills_logic(
+@lru_cache(maxsize=DRAFT_COMBINE_NONSHOOTING_CACHE_SIZE)
+def fetch_draft_combine_nonshooting_logic(
     season_year: str,
     league_id: str = "00",
     return_dataframe: bool = False
 ) -> Union[str, Tuple[str, Dict[str, pd.DataFrame]]]:
     """
-    Fetches draft combine drill results data from the NBA API.
+    Fetches draft combine non-stationary shooting data from the NBA API.
 
-    This endpoint provides physical testing metrics from the NBA Draft Combine:
-    - Standing vertical leap
-    - Max vertical leap
-    - Lane agility time
-    - Modified lane agility time
-    - Three-quarter sprint
-    - Bench press
+    This endpoint provides shooting metrics from the NBA Draft Combine:
+    - Off-dribble shooting from different positions (15-foot and college range)
+    - On-the-move shooting (15-foot and college range)
+    - Shooting percentages and attempts
 
     Args:
         season_year (str): Season year in YYYY format (e.g., "2023")
@@ -143,35 +137,34 @@ def fetch_draft_combine_drills_logic(
 
     Returns:
         If return_dataframe=False:
-            str: JSON string with draft combine drill results data or error.
+            str: JSON string with draft combine non-stationary shooting data or error.
         If return_dataframe=True:
             Tuple[str, Dict[str, pd.DataFrame]]: JSON response and dictionary of DataFrames.
     """
-    logger.info(f"Executing fetch_draft_combine_drills_logic for: Season: {season_year}, League: {league_id}")
+    logger.info(f"Executing fetch_draft_combine_nonshooting_logic for: Season: {season_year}, League: {league_id}")
 
     dataframes: Dict[str, pd.DataFrame] = {}
 
     # Validate parameters
-    validation_error = _validate_draft_combine_drills_params(season_year, league_id)
+    validation_error = _validate_draft_combine_nonshooting_params(season_year, league_id)
     if validation_error:
         if return_dataframe:
             return format_response(error=validation_error), dataframes
         return format_response(error=validation_error)
 
     # Check if cached CSV file exists
-    csv_path = _get_csv_path_for_draft_combine_drills(season_year, league_id)
+    csv_path = _get_csv_path_for_draft_combine_nonshooting(season_year, league_id)
 
     if os.path.exists(csv_path) and return_dataframe:
         try:
-            logger.info(f"Loading draft combine drill results from CSV: {csv_path}")
+            logger.info(f"Loading draft combine non-stationary shooting from CSV: {csv_path}")
             # Read CSV with appropriate data types
             df = pd.read_csv(csv_path)
 
             # Convert numeric columns to appropriate types
             numeric_columns = [
-                "STANDING_VERTICAL_LEAP", "MAX_VERTICAL_LEAP",
-                "LANE_AGILITY_TIME", "MODIFIED_LANE_AGILITY_TIME",
-                "THREE_QUARTER_SPRINT", "BENCH_PRESS"
+                col for col in df.columns
+                if any(x in col for x in ["MADE", "ATTEMPT", "PCT"])
             ]
 
             for col in numeric_columns:
@@ -208,14 +201,14 @@ def fetch_draft_combine_drills_logic(
 
     try:
         # Call the NBA API endpoint
-        logger.debug(f"Calling DraftCombineDrillResults with parameters: {api_params}")
-        drill_results = draftcombinedrillresults.DraftCombineDrillResults(**api_params)
+        logger.debug(f"Calling DraftCombineNonStationaryShooting with parameters: {api_params}")
+        nonshooting_results = draftcombinenonstationaryshooting.DraftCombineNonStationaryShooting(**api_params)
 
         # Get normalized dictionary for data set names
-        normalized_dict = drill_results.get_normalized_dict()
+        normalized_dict = nonshooting_results.get_normalized_dict()
 
         # Get data frames
-        list_of_dataframes = drill_results.get_data_frames()
+        list_of_dataframes = nonshooting_results.get_data_frames()
 
         # Expected data set name based on documentation
         expected_data_set_name = "Results"
@@ -252,30 +245,30 @@ def fetch_draft_combine_drills_logic(
                 result_dict["data_sets"][data_set_name] = processed_data
 
         # Return response
-        logger.info(f"Successfully fetched draft combine drill results for {season_year}")
+        logger.info(f"Successfully fetched draft combine non-stationary shooting for {season_year}")
         if return_dataframe:
             return format_response(result_dict), dataframes
         return format_response(result_dict)
 
     except Exception as e:
-        logger.error(f"API error in fetch_draft_combine_drills_logic: {e}", exc_info=True)
-        error_msg = f"Error fetching draft combine drill results for season {season_year}: {str(e)}"
+        logger.error(f"API error in fetch_draft_combine_nonshooting_logic: {e}", exc_info=True)
+        error_msg = f"Error fetching draft combine non-stationary shooting for season {season_year}: {str(e)}"
 
         if return_dataframe:
             return format_response(error=error_msg), dataframes
         return format_response(error=error_msg)
 
 
-def get_draft_combine_drills(
+def get_draft_combine_nonshooting(
     season_year: str,
     league_id: str = "00",
     return_dataframe: bool = False
 ) -> Union[str, Tuple[str, Dict[str, pd.DataFrame]]]:
     """
-    Gets draft combine drill results data.
+    Gets draft combine non-stationary shooting data.
 
-    This function is the main entry point for fetching draft combine drill results data.
-    It calls the fetch_draft_combine_drills_logic function and returns the results.
+    This function is the main entry point for fetching draft combine non-stationary shooting data.
+    It calls the fetch_draft_combine_nonshooting_logic function and returns the results.
 
     Args:
         season_year (str): Season year in YYYY format (e.g., "2023")
@@ -284,11 +277,11 @@ def get_draft_combine_drills(
 
     Returns:
         If return_dataframe=False:
-            str: JSON string with draft combine drill results data or error.
+            str: JSON string with draft combine non-stationary shooting data or error.
         If return_dataframe=True:
             Tuple[str, Dict[str, pd.DataFrame]]: JSON response and dictionary of DataFrames.
     """
-    return fetch_draft_combine_drills_logic(
+    return fetch_draft_combine_nonshooting_logic(
         season_year=season_year,
         league_id=league_id,
         return_dataframe=return_dataframe

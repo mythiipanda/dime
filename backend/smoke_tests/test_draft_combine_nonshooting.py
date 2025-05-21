@@ -1,7 +1,7 @@
 """
-Smoke tests for the draft_combine_drills module using real API calls.
+Smoke tests for the draft_combine_nonshooting module using real API calls.
 
-These tests verify that the draft combine drill results API functions work correctly
+These tests verify that the draft combine non-stationary shooting API functions work correctly
 by making actual calls to the NBA API.
 """
 
@@ -15,17 +15,17 @@ import json
 # Add the parent directory to the path so we can import the api_tools module
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from api_tools.draft_combine_drills import (
-    fetch_draft_combine_drills_logic,
-    get_draft_combine_drills,
-    _get_csv_path_for_draft_combine_drills,
+from api_tools.draft_combine_nonshooting import (
+    fetch_draft_combine_nonshooting_logic,
+    get_draft_combine_nonshooting,
+    _get_csv_path_for_draft_combine_nonshooting,
     DRAFT_COMBINE_CSV_DIR,
     VALID_LEAGUE_IDS
 )
 
 
-class TestDraftCombineDrillsReal(unittest.TestCase):
-    """Test cases for the draft_combine_drills module using real API calls."""
+class TestDraftCombineNonShootingReal(unittest.TestCase):
+    """Test cases for the draft_combine_nonshooting module using real API calls."""
 
     def setUp(self):
         """Set up the test environment."""
@@ -38,20 +38,20 @@ class TestDraftCombineDrillsReal(unittest.TestCase):
         """Clean up after the tests."""
         # We're keeping the CSV files for inspection, so no cleanup needed
 
-    def test_get_csv_path_for_draft_combine_drills(self):
+    def test_get_csv_path_for_draft_combine_nonshooting(self):
         """Test that the CSV path is generated correctly."""
         # Test with default league_id
-        path = _get_csv_path_for_draft_combine_drills("2022")
-        self.assertIn("draft_combine_drills_2022_00.csv", path)
+        path = _get_csv_path_for_draft_combine_nonshooting("2022")
+        self.assertIn("draft_combine_nonshooting_2022_00.csv", path)
 
         # Test with custom league_id
-        path = _get_csv_path_for_draft_combine_drills("2022", "01")
-        self.assertIn("draft_combine_drills_2022_01.csv", path)
+        path = _get_csv_path_for_draft_combine_nonshooting("2022", "01")
+        self.assertIn("draft_combine_nonshooting_2022_01.csv", path)
 
-    def test_fetch_draft_combine_drills_logic_json(self):
-        """Test fetching draft combine drill results in JSON format."""
+    def test_fetch_draft_combine_nonshooting_logic_json(self):
+        """Test fetching draft combine non-stationary shooting in JSON format."""
         # Call the function with real API
-        json_response = fetch_draft_combine_drills_logic("2022")
+        json_response = fetch_draft_combine_nonshooting_logic("2022")
 
         # Parse the JSON response
         data = json.loads(json_response)
@@ -86,10 +86,10 @@ class TestDraftCombineDrillsReal(unittest.TestCase):
                     print("No data in this data set.")
                 break  # Just print the first data set
 
-    def test_fetch_draft_combine_drills_logic_dataframe(self):
-        """Test fetching draft combine drill results in DataFrame format."""
+    def test_fetch_draft_combine_nonshooting_logic_dataframe(self):
+        """Test fetching draft combine non-stationary shooting in DataFrame format."""
         # Call the function with real API
-        json_response, dataframes = fetch_draft_combine_drills_logic("2022", return_dataframe=True)
+        json_response, dataframes = fetch_draft_combine_nonshooting_logic("2022", return_dataframe=True)
 
         # Parse the JSON response
         data = json.loads(json_response)
@@ -117,23 +117,21 @@ class TestDraftCombineDrillsReal(unittest.TestCase):
             # Verify DataFrame columns
             expected_columns = [
                 "TEMP_PLAYER_ID", "PLAYER_ID", "FIRST_NAME", "LAST_NAME",
-                "PLAYER_NAME", "POSITION", "STANDING_VERTICAL_LEAP",
-                "MAX_VERTICAL_LEAP", "LANE_AGILITY_TIME",
-                "MODIFIED_LANE_AGILITY_TIME", "THREE_QUARTER_SPRINT", "BENCH_PRESS"
+                "PLAYER_NAME", "POSITION", "OFF_DRIB_FIFTEEN_BREAK_LEFT_MADE"
             ]
             for col in expected_columns:
                 self.assertIn(col, df.columns)
 
             # Verify CSV file was created
-            csv_path = _get_csv_path_for_draft_combine_drills("2022", "00")
+            csv_path = _get_csv_path_for_draft_combine_nonshooting("2022", "00")
             self.assertTrue(os.path.exists(csv_path))
             print(f"CSV file created: {csv_path}")
             print(f"File size: {os.path.getsize(csv_path)} bytes")
 
-    def test_fetch_draft_combine_drills_logic_csv_cache(self):
+    def test_fetch_draft_combine_nonshooting_logic_csv_cache(self):
         """Test that CSV caching works correctly."""
         # Check if CSV already exists
-        csv_path = _get_csv_path_for_draft_combine_drills("2022", "00")
+        csv_path = _get_csv_path_for_draft_combine_nonshooting("2022", "00")
         if os.path.exists(csv_path):
             print(f"CSV file already exists: {csv_path}")
             print(f"File size: {os.path.getsize(csv_path)} bytes")
@@ -141,7 +139,7 @@ class TestDraftCombineDrillsReal(unittest.TestCase):
 
         # First call to create the cache if it doesn't exist
         print("Making first API call to create/update CSV...")
-        json_response1, dataframes1 = fetch_draft_combine_drills_logic("2022", return_dataframe=True)
+        json_response1, dataframes1 = fetch_draft_combine_nonshooting_logic("2022", return_dataframe=True)
 
         # Verify the CSV file was created
         self.assertTrue(os.path.exists(csv_path))
@@ -162,7 +160,7 @@ class TestDraftCombineDrillsReal(unittest.TestCase):
 
         # Second call should use the cache
         print("Making second API call (should use CSV cache)...")
-        json_response2, dataframes2 = fetch_draft_combine_drills_logic("2022", return_dataframe=True)
+        json_response2, dataframes2 = fetch_draft_combine_nonshooting_logic("2022", return_dataframe=True)
 
         # Verify the CSV file wasn't modified
         mtime2 = os.path.getmtime(csv_path)
@@ -173,10 +171,10 @@ class TestDraftCombineDrillsReal(unittest.TestCase):
         pd.testing.assert_frame_equal(dataframes1["Results"], dataframes2["Results"], check_dtype=False)
         print(f"Data loaded from CSV matches original data: {len(dataframes2['Results'])} players")
 
-    def test_get_draft_combine_drills(self):
-        """Test the get_draft_combine_drills function."""
+    def test_get_draft_combine_nonshooting(self):
+        """Test the get_draft_combine_nonshooting function."""
         # Call the function with real API
-        json_response, dataframes = get_draft_combine_drills("2022", return_dataframe=True)
+        json_response, dataframes = get_draft_combine_nonshooting("2022", return_dataframe=True)
 
         # Parse the JSON response
         data = json.loads(json_response)
@@ -204,7 +202,7 @@ class TestDraftCombineDrillsReal(unittest.TestCase):
     def test_different_league_id(self):
         """Test using a different league_id parameter."""
         # Call the function with a different league_id
-        json_response, dataframes = get_draft_combine_drills("2022", league_id="10", return_dataframe=True)
+        json_response, dataframes = get_draft_combine_nonshooting("2022", league_id="10", return_dataframe=True)
 
         # Parse the JSON response
         data = json.loads(json_response)
@@ -228,14 +226,14 @@ class TestDraftCombineDrillsReal(unittest.TestCase):
 
         for season in seasons:
             # Get the CSV path for this season
-            csv_path = _get_csv_path_for_draft_combine_drills(season, "00")
+            csv_path = _get_csv_path_for_draft_combine_nonshooting(season, "00")
             if os.path.exists(csv_path):
                 print(f"CSV file already exists: {csv_path}")
                 print(f"File size: {os.path.getsize(csv_path)} bytes")
                 print(f"Last modified: {time.ctime(os.path.getmtime(csv_path))}")
 
             # Call the function to fetch data and create CSV
-            json_response, dataframes = get_draft_combine_drills(season, return_dataframe=True)
+            json_response, dataframes = get_draft_combine_nonshooting(season, return_dataframe=True)
 
             # Parse the JSON response
             data = json.loads(json_response)
@@ -280,7 +278,7 @@ class TestDraftCombineDrillsReal(unittest.TestCase):
 
             # Now test loading from the CSV
             print(f"Testing loading from CSV for season {season}...")
-            json_response2, dataframes2 = get_draft_combine_drills(season, return_dataframe=True)
+            json_response2, dataframes2 = get_draft_combine_nonshooting(season, return_dataframe=True)
             print(f"Successfully loaded from CSV: {len(dataframes2['Results'])} players")
 
             # Keep the CSV files for inspection
