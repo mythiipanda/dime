@@ -199,6 +199,7 @@ class Errors:
     PLAYER_DASHBOARD_SHOOTING_API: str = "API error fetching player dashboard shooting splits for {player_name}: {error}"
     PLAYER_DASHBOARD_GAME_API: str = "API error fetching player dashboard game splits for {player_name}: {error}"
     PLAYER_DASHBOARD_LASTN_API: str = "API error fetching player dashboard last N games for {player_name}: {error}"
+    TEAM_DASHBOARD_SHOOTING_API: str = "API error fetching team dashboard shooting splits for {team_identifier}: {error}"
 
     PLAYER_SHOT_CHART_API: str = "Error fetching shot chart data for player {player_id} in season {season}: {error}"
     PLAYER_SHOT_CHART_NO_DATA: str = "No shot chart data found for player {player_id} in season {season}."
