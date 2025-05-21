@@ -168,6 +168,9 @@ class Errors:
     INVALID_PLAYER_POSITION: str = "Invalid player_position: '{value}'. Valid options: {options}"
     INVALID_PLAYER_EXPERIENCE: str = "Invalid player_experience: '{value}'. Valid options: {options}"
     INVALID_STARTER_BENCH: str = "Invalid starter_bench: '{value}'. Valid options: {options}"
+    INVALID_CLUTCH_TIME: str = "Invalid clutch_time: '{value}'. Valid options: {options}"
+    INVALID_AHEAD_BEHIND: str = "Invalid ahead_behind: '{value}'. Valid options: {options}"
+    INVALID_POINT_DIFF: str = "Invalid point_diff: '{value}'. Must be a positive integer."
     INVALID_SCOPE: str = "Invalid scope: '{value}'. Valid options: {options}"
     INVALID_PLAYER_OR_TEAM_ABBREVIATION: str = "Invalid player_or_team_abbreviation: '{value}'. Must be 'P' or 'T'."
     INVALID_DEFENSE_CATEGORY: str = "Invalid defense_category: '{value}'. Valid options: {options}"
@@ -206,6 +209,7 @@ class Errors:
     TEAM_DASHBOARD_SHOOTING_API: str = "API error fetching team dashboard shooting splits for {team_identifier}: {error}"
     TEAM_DASH_LINEUPS_API: str = "API error fetching team lineups for {team_identifier}: {error}"
     LEAGUE_DASH_PLAYER_BIO_API: str = "API error fetching player bio stats (Season: {season}, Type: {season_type}): {error}"
+    LEAGUE_DASH_PLAYER_CLUTCH_API: str = "API error fetching player clutch stats (Season: {season}, Type: {season_type}, Clutch Time: {clutch_time}): {error}"
 
     PLAYER_SHOT_CHART_API: str = "Error fetching shot chart data for player {player_id} in season {season}: {error}"
     PLAYER_SHOT_CHART_NO_DATA: str = "No shot chart data found for player {player_id} in season {season}."
