@@ -216,6 +216,7 @@ class Errors:
     LEAGUE_DASH_PLAYER_STATS_API: str = "API error fetching league player stats (Season: {season}, Type: {season_type}, Measure Type: {measure_type}): {error}"
     TEAM_GAME_LOGS_API: str = "API error fetching team game logs (Team ID: {team_id}, Season: {season}, Type: {season_type}): {error}"
     LEAGUE_DASH_TEAM_STATS_API: str = "API error fetching league team stats (Season: {season}, Type: {season_type}, Measure Type: {measure_type}): {error}"
+    PLAYER_CAREER_STATS_API: str = "API error fetching player career stats (Player ID: {player_id}, Per Mode: {per_mode}): {error}"
 
     PLAYER_SHOT_CHART_API: str = "Error fetching shot chart data for player {player_id} in season {season}: {error}"
     PLAYER_SHOT_CHART_NO_DATA: str = "No shot chart data found for player {player_id} in season {season}."
