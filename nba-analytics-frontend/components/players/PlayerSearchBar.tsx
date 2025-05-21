@@ -1,21 +1,19 @@
 "use client";
 
 import * as React from "react";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { Suggestion } from "@/app/(app)/players/types";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { API_BASE_URL } from "@/lib/config";
 import { Search } from "lucide-react";
+import { usePlayerSearchSuggestions } from "@/hooks/usePlayerSearchSuggestions";
 
 // Constants
-const MIN_SEARCH_LENGTH = 2;
-const DEBOUNCE_DELAY_MS = 300;
 const BLUR_TIMEOUT_MS = 150; // Delay to allow clicks on suggestions before blur hides them
-const SUGGESTION_LIMIT = 7;
+const MIN_SEARCH_LENGTH = 2; // Still needed for conditional rendering of "No suggestions found."
 
 interface PlayerSearchBarProps {
   initialValue?: string;
@@ -24,93 +22,56 @@ interface PlayerSearchBarProps {
 
 export function PlayerSearchBar({ initialValue = "", onSearchSubmit }: PlayerSearchBarProps) {
   const [searchTerm, setSearchTerm] = useState(initialValue);
-  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
-  const [isFetchingSuggestions, setIsFetchingSuggestions] = useState(false);
-  const [suggestionError, setSuggestionError] = useState<string | null>(null);
   const [isFocused, setIsFocused] = useState(false);
 
-  const debounceTimer = useRef<NodeJS.Timeout | null>(null);
+  const {
+    suggestions,
+    isLoading: isFetchingSuggestions, // Renaming for consistency with old variable names if preferred
+    error: suggestionError,
+    fetchSuggestions,
+    clearSuggestions
+  } = usePlayerSearchSuggestions();
 
-  // Effect for debounced suggestion fetching
+  // Effect for triggering suggestion fetching when searchTerm changes
   useEffect(() => {
     const trimmedSearch = searchTerm.trim();
-    if (debounceTimer.current) clearTimeout(debounceTimer.current);
-
-    if (trimmedSearch.length < MIN_SEARCH_LENGTH || (initialValue && trimmedSearch === initialValue)) {
-      setSuggestions([]);
-      setSuggestionError(null);
-      setIsFetchingSuggestions(false);
-      return;
-    }
-
-    setIsFetchingSuggestions(true);
-    setSuggestionError(null);
-
-    debounceTimer.current = setTimeout(async () => {
-      console.log(`[SearchBar] Debounced suggestion search for: ${trimmedSearch}`);
-      try {
-        const suggestionsUrl = `${API_BASE_URL}/player/search?q=${encodeURIComponent(trimmedSearch)}&limit=${SUGGESTION_LIMIT}`; // Corrected: /player instead of /players
-        const response = await fetch(suggestionsUrl);
-        if (!response.ok) {
-          throw new Error(`Failed to fetch suggestions (${response.status})`);
+    // Do not fetch if it's the initial value being set, unless initialValue itself is long enough
+    if (trimmedSearch === initialValue && initialValue.length < MIN_SEARCH_LENGTH) {
+        if (trimmedSearch.length < MIN_SEARCH_LENGTH) {
+             clearSuggestions();
+             return;
         }
-        const data: Suggestion[] = await response.json();
-        setSuggestions(data);
-      } catch (err) {
-        console.error("[SearchBar] Failed to fetch suggestions:", err);
-        setSuggestionError(err instanceof Error ? err.message : "Could not fetch suggestions.");
-        setSuggestions([]);
-      } finally {
-        setIsFetchingSuggestions(false);
-      }
-    }, DEBOUNCE_DELAY_MS);
-
-    return () => {
-      if (debounceTimer.current) clearTimeout(debounceTimer.current);
-    };
-  }, [searchTerm, initialValue]);
+    }
+    fetchSuggestions(searchTerm);
+  }, [searchTerm, fetchSuggestions, clearSuggestions, initialValue]);
 
   // Sync with initialValue prop changes
   useEffect(() => {
     setSearchTerm(initialValue);
-  }, [initialValue]);
+    // When initialValue changes (e.g. parent page reloads with new search term in URL),
+    // clear old suggestions to avoid showing stale ones briefly.
+    clearSuggestions(); 
+  }, [initialValue, clearSuggestions]);
 
   const handleSearchTermChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     setSearchTerm(event.target.value);
   };
 
   const handleSuggestionClick = (suggestion: Suggestion) => {
-    if (debounceTimer.current) clearTimeout(debounceTimer.current);
-    setSearchTerm(suggestion.full_name);
-    setSuggestions([]);
-    setIsFetchingSuggestions(false);
+    const termToSubmit = suggestion.full_name;
+    setSearchTerm(termToSubmit); // Update input field
+    clearSuggestions();
     setIsFocused(false);
-
-    // For players page, use direct navigation to ensure server-side data fetching
-    if (window.location.pathname === '/players') {
-      window.location.href = `/players?query=${encodeURIComponent(suggestion.full_name)}`;
-    } else {
-      // For other pages, use the provided callback
-      onSearchSubmit(suggestion.full_name);
-    }
+    onSearchSubmit(termToSubmit);
   };
 
   const handleFormSubmit = (event?: React.FormEvent<HTMLFormElement>) => {
     if (event) event.preventDefault();
     const trimmedSearch = searchTerm.trim();
     if (trimmedSearch) {
-      if (debounceTimer.current) clearTimeout(debounceTimer.current);
-      setSuggestions([]);
-      setIsFetchingSuggestions(false);
+      clearSuggestions();
       setIsFocused(false);
-
-      // For players page, use direct navigation to ensure server-side data fetching
-      if (window.location.pathname === '/players') {
-        window.location.href = `/players?query=${encodeURIComponent(trimmedSearch)}`;
-      } else {
-        // For other pages, use the provided callback
-        onSearchSubmit(trimmedSearch);
-      }
+      onSearchSubmit(trimmedSearch);
     }
   };
 

@@ -3,6 +3,8 @@ import { PlayerData } from "./types"; // Use this imported type
 import { API_BASE_URL } from "@/lib/config";
 import PlayersClientPage from "./PlayersClientPage";
 
+export const dynamic = 'force-dynamic'; // Ensure the page is always dynamic
+
 // --- Server-Side Data Fetching ---
 
 // Update function signature to use imported PlayerData type

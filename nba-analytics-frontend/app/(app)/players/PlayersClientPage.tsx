@@ -26,34 +26,40 @@ export default function PlayersClientPage({
   serverFetchError,
 }: PlayersClientPageProps) {
   const router = useRouter();
-  const currentSearchParams = useSearchParams();
+  const currentSearchParams = useSearchParams(); // Keep for reading initial state if needed, but not for forced reloads
 
   const [playerData, setPlayerData] = useState<PlayerData | null>(initialPlayerData);
   const [headshotUrl, setHeadshotUrl] = useState<string | null>(initialHeadshotUrl);
   const [fetchError, setFetchError] = useState<string | null>(serverFetchError);
   const [isLoadingAdvanced, setIsLoadingAdvanced] = useState<boolean>(false);
+  const [advancedFetchError, setAdvancedFetchError] = useState<string | null>(null);
+
+  // Update state if initial props change (e.g., due to navigation)
+  useEffect(() => {
+    setPlayerData(initialPlayerData);
+    setHeadshotUrl(initialHeadshotUrl);
+    setFetchError(serverFetchError);
+    setAdvancedFetchError(null);
+  }, [initialPlayerData, initialHeadshotUrl, serverFetchError]);
 
   const noPlayerFoundError = fetchError?.toLowerCase().includes("not found") ? fetchError : null;
   const generalFetchError = fetchError && !noPlayerFoundError ? fetchError : null;
 
-  // Fetch advanced metrics only when explicitly requested
   const fetchAdvancedMetrics = async () => {
     if (playerData?.player_info?.DISPLAY_FIRST_LAST && !playerData.advanced_metrics) {
       try {
         setIsLoadingAdvanced(true);
+        setAdvancedFetchError(null);
         const playerName = playerData.player_info.DISPLAY_FIRST_LAST;
         console.log(`Fetching advanced metrics for ${playerName}`);
-
         const response = await fetch(`/api/v1/analyze/player/${encodeURIComponent(playerName)}/advanced`);
-
         if (!response.ok) {
-          console.error(`Error fetching advanced metrics: ${response.statusText}`);
+          const errorText = `Failed to fetch advanced metrics: ${response.status} ${response.statusText}`;
+          console.error(errorText);
+          setAdvancedFetchError(errorText);
           return;
         }
-
         const data = await response.json();
-
-        // Update player data with advanced metrics
         setPlayerData(prevData => {
           if (!prevData) return null;
           return {
@@ -64,46 +70,35 @@ export default function PlayersClientPage({
           };
         });
       } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : "An unknown error occurred while fetching advanced metrics.";
         console.error("Error fetching advanced metrics:", error);
+        setAdvancedFetchError(errorMessage);
       } finally {
         setIsLoadingAdvanced(false);
       }
     }
   };
 
-  // Listen for URL parameter changes and reload the page
+  // Auto-fetch advanced metrics when player data becomes available (e.g. on initial load or after a new search)
+  // This needs to be careful not to re-fetch if they are already loaded or being loaded.
   useEffect(() => {
-    const query = currentSearchParams.get('query');
-    if (query && query !== initialSearchTerm) {
-      console.log(`URL parameter changed from "${initialSearchTerm}" to "${query}". Reloading page...`);
-      // Force a hard reload of the page with the new query parameter
-      window.location.href = `/players?query=${encodeURIComponent(query)}`;
-    }
-  }, [currentSearchParams, initialSearchTerm]);
-
-  // Load advanced metrics when player data changes, but only if they were previously loaded
-  useEffect(() => {
-    // Only auto-fetch if this is the initial load with player data
-    if (initialPlayerData?.player_info?.DISPLAY_FIRST_LAST &&
-        initialPlayerData === playerData) {
+    if (playerData?.player_info?.DISPLAY_FIRST_LAST && 
+        !playerData.advanced_metrics && 
+        !playerData.skill_grades && 
+        !isLoadingAdvanced &&
+        !fetchError &&
+        !advancedFetchError
+    ) {
       fetchAdvancedMetrics();
     }
-  }, [initialPlayerData?.player_info?.DISPLAY_FIRST_LAST]);
+    // Dependencies: Trigger when playerData is newly available or changes, but not if advanced metrics are already there or loading.
+  }, [playerData, isLoadingAdvanced, fetchError, advancedFetchError]); 
 
   const handleSearchSubmit = (term: string) => {
     const trimmedSearch = term.trim();
     if (trimmedSearch) {
-      // If the search term is the same as the current one, force a reload
-      if (trimmedSearch === initialSearchTerm) {
-        console.log("Search term is the same as current. Forcing reload...");
-        window.location.href = `/players?query=${encodeURIComponent(trimmedSearch)}`;
-        return;
-      }
-
-      // Otherwise, use client-side navigation
-      const params = new URLSearchParams(currentSearchParams.toString());
-      params.set("query", trimmedSearch);
-      router.push(`/players?${params.toString()}`);
+      console.log(`Navigating to search: ${trimmedSearch}`);
+      router.push(`/players?query=${encodeURIComponent(trimmedSearch)}`);
     }
   };
 
@@ -113,7 +108,7 @@ export default function PlayersClientPage({
 
       <div className="flex flex-col md:flex-row gap-4 items-start">
         <PlayerSearchBar
-          initialValue={initialSearchTerm || ""}
+          initialValue={initialSearchTerm || ""} // Use initialSearchTerm from props for consistency
           onSearchSubmit={handleSearchSubmit}
         />
       </div>
@@ -166,10 +161,7 @@ export default function PlayersClientPage({
                   key={name}
                   variant="outline"
                   size="sm"
-                  onClick={() => {
-                    // Always force a reload for example buttons
-                    window.location.href = `/players?query=${encodeURIComponent(name)}`;
-                  }}
+                  onClick={() => handleSearchSubmit(name)} // Use handleSearchSubmit for examples too
                   className="transition-all hover:scale-105 hover:bg-accent/50"
                 >
                   {name}
