@@ -210,6 +210,7 @@ class Errors:
     TEAM_DASH_LINEUPS_API: str = "API error fetching team lineups for {team_identifier}: {error}"
     LEAGUE_DASH_PLAYER_BIO_API: str = "API error fetching player bio stats (Season: {season}, Type: {season_type}): {error}"
     LEAGUE_DASH_PLAYER_CLUTCH_API: str = "API error fetching player clutch stats (Season: {season}, Type: {season_type}, Clutch Time: {clutch_time}): {error}"
+    LEAGUE_DASH_TEAM_CLUTCH_API: str = "API error fetching team clutch stats (Season: {season}, Type: {season_type}, Clutch Time: {clutch_time}): {error}"
 
     PLAYER_SHOT_CHART_API: str = "Error fetching shot chart data for player {player_id} in season {season}: {error}"
     PLAYER_SHOT_CHART_NO_DATA: str = "No shot chart data found for player {player_id} in season {season}."
