@@ -1,14 +1,13 @@
-import { getLeagueStandings, TeamStanding } from "@/lib/api/teams";
-import TeamsClientPage from "./TeamsClientPage";
 import { Metadata } from 'next';
+import TeamsClientPage from "./TeamsClientPage";
 
 // Force dynamic rendering for this page
 export const dynamic = 'force-dynamic';
 
 // Add metadata for the page
 export const metadata: Metadata = {
-  title: 'NBA Team Standings',
-  description: 'View the latest NBA team standings by conference and season.',
+  title: 'NBA Teams',
+  description: 'Browse and analyze all 30 NBA teams.',
 };
 
 interface TeamsPageProps {
@@ -16,43 +15,17 @@ interface TeamsPageProps {
 }
 
 // Make the component async to fetch data
-export default async function TeamsStandingsPage({ searchParams }: TeamsPageProps) {
-  // Default to current year or handle invalid/missing param
+export default async function TeamsIndexPage({ searchParams }: TeamsPageProps) {
+  // Default to current season or handle invalid/missing param
   const season = typeof searchParams.season === 'string' ? searchParams.season : "2024-25";
 
-  let easternStandings: TeamStanding[] = [];
-  let westernStandings: TeamStanding[] = [];
-  let fetchError: string | null = null; // Declare fetchError
+  console.log("Fetching teams for season (Server Component):", season);
   
-
-  console.log("Fetching standings for season (Server Component):", season);
-  try {
-    // Fetch data directly on the server
-    const { standings } = await getLeagueStandings(season);
-
-    easternStandings = standings
-      .filter((team) => team.Conference === "East")
-      .sort((a, b) => a.PlayoffRank - b.PlayoffRank);
-
-    westernStandings = standings
-      .filter((team) => team.Conference === "West")
-      .sort((a, b) => a.PlayoffRank - b.PlayoffRank);
-
-  } catch (error) {
-    console.error("Error fetching standings in Server Component:", error);
-    fetchError = "Failed to load team standings. Please check connection or try again later.";
-    // Optionally, you could return a specific error UI here instead of rendering the client page
-    // For now, we'll pass empty arrays and let the client page potentially show a message if needed,
-    // or rely on the error.tsx boundary.
-  }
-
-  // Render the client component, passing the fetched data as props
+  // We'll pass the season to the client component
+  // In a real implementation, we could fetch additional data here if needed
   return (
-    <TeamsClientPage
-      initialEasternStandings={easternStandings}
-      initialWesternStandings={westernStandings}
+    <TeamsClientPage 
       currentSeason={season}
-      fetchError={fetchError} // Pass fetchError to client component
     />
   );
 }

@@ -4,16 +4,22 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import {
-  BotIcon,
-  UsersIcon,
-  BarChart2Icon,
-  TrophyIcon,
-  CalendarIcon,
-  HomeIcon,
-  ActivityIcon,
-  BookOpenIcon,
-  GitCompareIcon,
-  TargetIcon,
+  Bot as BotIcon,
+  Users as UsersIcon,
+  BarChart2 as BarChart2Icon,
+  Trophy as TrophyIcon,
+  Calendar as CalendarIcon,
+  Home as HomeIcon,
+  Activity as ActivityIcon,
+  BookOpen as BookOpenIcon,
+  GitCompare as GitCompareIcon,
+  Target as TargetIcon,
+  Microscope,
+  LayoutDashboard,
+  User,
+  CalendarDays,
+  BarChart3,
+  ListOrdered,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -90,18 +96,19 @@ const navSections: NavSection[] = [
   {
     title: "Overview",
     items: [
-      { href: '/dashboard', label: 'Dashboard', icon: HomeIcon },
+      { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
       { href: '/ai-assistant', label: 'AI Assistant', icon: BotIcon },
-      { href: '/research', label: 'Research', icon: BookOpenIcon },
+      { href: '/research', label: 'Research', icon: Microscope },
     ]
   },
   {
     title: "Analysis",
     items: [
-      { href: '/players', label: 'Players', icon: UsersIcon },
-      { href: '/teams', label: 'Teams', icon: TrophyIcon },
-      { href: '/games', label: 'Games', icon: CalendarIcon },
-      { href: '/statistics', label: 'Statistics', icon: BarChart2Icon },
+      { href: '/players', label: 'Players', icon: User },
+      { href: '/teams', label: 'Teams', icon: UsersIcon },
+      { href: '/standings', label: 'Standings', icon: ListOrdered },
+      { href: '/games', label: 'Games', icon: CalendarDays },
+      { href: '/statistics', label: 'Statistics', icon: BarChart3 },
     ]
   },
   {
@@ -109,7 +116,6 @@ const navSections: NavSection[] = [
     items: [
       { href: '/shot-charts', label: 'Shot Charts', icon: TargetIcon },
       { href: '/player-comparison', label: 'Player Comparison', icon: GitCompareIcon },
-      { href: '/chat', label: 'Chat', icon: ActivityIcon }, // Note: '/chat' might conflict with '/ai-assistant'
     ]
   }
 ];
