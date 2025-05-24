@@ -6,10 +6,10 @@ from nba_api.stats.endpoints import teamplayerdashboard
 from nba_api.stats.library.parameters import (
     SeasonTypeAllStar, PerModeDetailed, LeagueID, MeasureTypeDetailedDefense
 )
-from ..config import settings
-from ..core.errors import Errors
-from .utils import format_response, _process_dataframe, find_team_id_or_error
-from ..utils.validation import _validate_season_format, validate_date_format
+from config import settings
+from core.errors import Errors
+from api_tools.utils import format_response, _process_dataframe, find_team_id_or_error
+from utils.validation import _validate_season_format, validate_date_format
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +131,7 @@ def fetch_team_player_dashboard_logic(
             error_msg = f"Invalid {param_name} value: '{param_value}'. Must be 'Y' or 'N'."
             if return_dataframe: return format_response(error=error_msg), dataframes
             return format_response(error=error_msg)
-            
+
     # Validate Outcome (W/L)
     if outcome_nullable and outcome_nullable not in ["W", "L"]:
         error_msg = f"Invalid outcome_nullable value: '{outcome_nullable}'. Must be 'W' or 'L'."
@@ -143,7 +143,7 @@ def fetch_team_player_dashboard_logic(
         error_msg = f"Invalid location_nullable value: '{location_nullable}'. Must be 'Home' or 'Road'."
         if return_dataframe: return format_response(error=error_msg), dataframes
         return format_response(error=error_msg)
-        
+
     # Validate GameSegment (First Half, Second Half, Overtime)
     if game_segment_nullable and game_segment_nullable not in ["First Half", "Second Half", "Overtime"]:
         error_msg = f"Invalid game_segment_nullable value: '{game_segment_nullable}'. Must be 'First Half', 'Second Half', or 'Overtime'."
@@ -224,7 +224,7 @@ def fetch_team_player_dashboard_logic(
             "players_season_totals": _process_dataframe(players_season_totals_df, single_row=False),
             "team_overall": _process_dataframe(team_overall_df, single_row=True) # TeamOverall is usually a single row
         }
-        
+
         logger.info(f"Successfully fetched TeamPlayerDashboard for team_id {team_id}")
         if return_dataframe:
             return format_response(response_data), dataframes
@@ -239,4 +239,4 @@ def fetch_team_player_dashboard_logic(
         logger.error(f"NBA API error for TeamPlayerDashboard, team '{team_actual_name}': {api_error}", exc_info=True)
         error_msg = Errors.TEAM_PLAYER_DASHBOARD_API.format(identifier=team_actual_name, error=str(api_error)) if hasattr(Errors, "TEAM_PLAYER_DASHBOARD_API") else f"API error for TeamPlayerDashboard: {str(api_error)}"
         if return_dataframe: return format_response(error=error_msg), dataframes
-        return format_response(error=error_msg) 
+        return format_response(error=error_msg)

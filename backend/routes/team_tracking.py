@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Query, Path
 from typing import Dict, Any, Optional
 import json
 
-from backend.api_tools.team_passing_tracking import fetch_team_passing_stats_logic
+from backend.api_tools.team_passing_analytics import fetch_team_passing_stats_logic
 from backend.api_tools.team_rebounding_tracking import fetch_team_rebounding_stats_logic
 from backend.api_tools.team_shooting_tracking import fetch_team_shooting_stats_logic
 

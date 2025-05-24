@@ -66,7 +66,8 @@ try:
         odds as odds_router,
         search as search_router,
         leaders as leaders_router,
-        fetch as fetch_router # Added fetch_router
+        fetch as fetch_router,
+        league_stats as league_stats_router # Added league_stats_router
         # from routes.charts import router as charts_router # Example, keep commented if not used
     )
 except ImportError as e:
@@ -114,6 +115,7 @@ app.include_router(team_tracking_router.router, prefix=API_V1_PREFIX + "/team", 
 app.include_router(game_router.router, prefix=API_V1_PREFIX, tags=["Game Data"]) # Added tag
 app.include_router(standings_router.router, prefix=API_V1_PREFIX, tags=["League Standings"]) # Added tag
 app.include_router(leaders_router.router, prefix=API_V1_PREFIX, tags=["League Leaders"]) # Added tag
+app.include_router(league_stats_router.router, prefix=API_V1_PREFIX, tags=["League Statistics"]) # Added league_stats_router
 app.include_router(live_game_router.router, prefix=API_V1_PREFIX, tags=["Live Game Data"]) # Added tag
 app.include_router(scoreboard_router.router, prefix=API_V1_PREFIX, tags=["Scoreboard"]) # Added tag
 app.include_router(odds_router.router, prefix=API_V1_PREFIX, tags=["Odds"]) # Added tag

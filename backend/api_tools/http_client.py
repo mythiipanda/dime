@@ -5,7 +5,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import logging
 from nba_api.stats.library.http import NBAStatsHTTP
-from ..config import settings
+from config import settings
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -18,7 +18,7 @@ DEFAULT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.
 
 def configure_nba_api_client(timeout: Optional[int] = None):
     """Configure the NBA API client with custom settings for better reliability.
-    
+
     Args:
         timeout (Optional[int]): Timeout in seconds for API requests. Defaults to settings.DEFAULT_TIMEOUT_SECONDS.
     """
@@ -29,25 +29,25 @@ def configure_nba_api_client(timeout: Optional[int] = None):
             backoff_factor=DEFAULT_BACKOFF_FACTOR,
             status_forcelist=RETRY_STATUS_CODES,
         )
-        
+
         # Mount the retry adapter to both HTTP and HTTPS requests
         adapter = HTTPAdapter(max_retries=retries)
         session.mount('http://', adapter)
         session.mount('https://', adapter)
-        
+
         # Create NBA stats client
         nba_session = NBAStatsHTTP()
-        
+
         # Configure the session
         nba_session.session = session
         nba_session.timeout = timeout or settings.DEFAULT_TIMEOUT_SECONDS
         nba_session.headers = {
             'User-Agent': DEFAULT_USER_AGENT
         }
-        
+
         logger.info(f"NBA API client configured successfully with timeout {nba_session.timeout}s")
         return nba_session
-        
+
     except Exception as e:
         logger.error(f"Failed to configure NBA API client: {str(e)}")
         raise
@@ -57,4 +57,4 @@ nba_session = configure_nba_api_client()
 
 # Patch the NBA API's internal requests session
 players.requests = nba_session
-endpoints.requests = nba_session 
+endpoints.requests = nba_session
