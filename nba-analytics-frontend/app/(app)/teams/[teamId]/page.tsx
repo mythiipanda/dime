@@ -15,8 +15,9 @@ interface TeamDashboardPageProps {
 // Generate metadata for the page
 export async function generateMetadata({ params }: TeamDashboardPageProps): Promise<Metadata> {
   // In a real implementation, fetch the team name from an API
-  const teamName = await getTeamName(params.teamId);
-  
+  const resolvedParams = await params;
+  const teamName = await getTeamName(resolvedParams.teamId);
+
   return {
     title: `${teamName} Team Dashboard | NBA Analytics`,
     description: `Comprehensive analytics dashboard for ${teamName} with performance metrics, player stats, and AI-powered insights.`,
@@ -32,28 +33,30 @@ async function getTeamName(teamId: string): Promise<string> {
     '1610612739': 'Cleveland Cavaliers',
     // Add more teams as needed
   };
-  
+
   return teamNames[teamId] || 'NBA Team';
 }
 
 export default async function TeamDashboardPage({ params, searchParams }: TeamDashboardPageProps) {
-  const { teamId } = params;
-  
+  const resolvedParams = await params;
+  const resolvedSearchParams = await searchParams;
+  const { teamId } = resolvedParams;
+
   // Default to current season or handle invalid/missing param
-  const season = typeof searchParams.season === 'string' ? searchParams.season : "2023-24";
-  
+  const season = typeof resolvedSearchParams.season === 'string' ? resolvedSearchParams.season : "2024-25";
+
   // Validate teamId (basic validation)
   if (!teamId || !/^\d+$/.test(teamId)) {
     return notFound();
   }
-  
+
   // In a production app, you would fetch team data here
   // For now, we'll pass the teamId to the client component
-  
+
   return (
-    <TeamDashboardClient 
+    <TeamDashboardClient
       teamId={teamId}
       season={season}
     />
   );
-} 
+}

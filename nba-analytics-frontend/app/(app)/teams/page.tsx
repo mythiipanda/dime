@@ -17,14 +17,15 @@ interface TeamsPageProps {
 // Make the component async to fetch data
 export default async function TeamsIndexPage({ searchParams }: TeamsPageProps) {
   // Default to current season or handle invalid/missing param
-  const season = typeof searchParams.season === 'string' ? searchParams.season : "2024-25";
+  const resolvedSearchParams = await searchParams;
+  const season = typeof resolvedSearchParams.season === 'string' ? resolvedSearchParams.season : "2024-25";
 
   console.log("Fetching teams for season (Server Component):", season);
-  
+
   // We'll pass the season to the client component
   // In a real implementation, we could fetch additional data here if needed
   return (
-    <TeamsClientPage 
+    <TeamsClientPage
       currentSeason={season}
     />
   );

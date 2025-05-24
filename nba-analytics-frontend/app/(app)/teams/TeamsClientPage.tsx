@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -12,13 +12,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
 import Link from "next/link";
-import { 
-  TrendingUp, 
-  TrendingDown, 
-  Activity, 
-  Users, 
-  Target, 
-  Calendar, 
+import {
+  TrendingUp,
+  TrendingDown,
+  Activity,
+  Users,
+  Target,
+  Calendar,
   BarChart3,
   Grid3X3,
   List,
@@ -31,7 +31,11 @@ import {
   DollarSign,
   Brain,
   AreaChart,
-  Bot
+  Bot,
+  Check,
+  Plus,
+  ExternalLink,
+  RefreshCw
 } from "lucide-react";
 
 // Import Advanced Analytics Components
@@ -41,6 +45,18 @@ import GameIntelligenceDashboard from "@/components/charts/GameIntelligenceDashb
 import AIOrchestrationHub from "@/components/charts/AIOrchestrationHub";
 import MarketIntelligenceDashboard from "@/components/charts/MarketIntelligenceDashboard";
 import TeamStrategyOptimizer from "@/components/charts/TeamStrategyOptimizer";
+import { AdvancedAnalyticsDashboard } from "@/components/analytics/AdvancedAnalyticsDashboard";
+
+// Import API functions
+import {
+  getEnhancedTeams,
+  getEnhancedTeamsWithStats,
+  getLeagueStandings,
+  getLeagueTeamStats,
+  getAllTeams,
+  TEAM_COLORS,
+  type EnhancedTeam
+} from "@/lib/api/teams";
 
 interface TeamsClientPageProps {
   currentSeason: string;
@@ -67,9 +83,9 @@ const mockAIWidgets: AIWidget[] = [
     id: '1',
     type: 'trade-alert',
     confidence: 0.85,
-    data: { 
-      team: 'Lakers', 
-      player: 'D\'Angelo Russell', 
+    data: {
+      team: 'Lakers',
+      player: 'D\'Angelo Russell',
       targetTeam: 'Hawks',
       reasoning: 'Hawks need veteran playmaking, Lakers need defensive depth'
     },
@@ -82,8 +98,8 @@ const mockAIWidgets: AIWidget[] = [
     id: '2',
     type: 'breakout-prediction',
     confidence: 0.78,
-    data: { 
-      player: 'Brandon Miller', 
+    data: {
+      player: 'Brandon Miller',
       team: 'Hornets',
       prediction: '18+ PPG by season end',
       factors: ['increased usage', 'improved shooting', 'confidence growth']
@@ -97,8 +113,8 @@ const mockAIWidgets: AIWidget[] = [
     id: '3',
     type: 'weakness-analysis',
     confidence: 0.92,
-    data: { 
-      team: 'Warriors', 
+    data: {
+      team: 'Warriors',
       weakness: 'Rebounding',
       impact: 'High',
       solution: 'Acquire rim-running center'
@@ -110,150 +126,7 @@ const mockAIWidgets: AIWidget[] = [
   }
 ];
 
-// Enhanced NBA Teams data with performance metrics
-const nbaTeams = [
-  { 
-    id: '1610612737', 
-    name: 'Atlanta Hawks', 
-    abbreviation: 'ATL', 
-    conference: 'East',
-    division: 'Southeast',
-    logo: 'https://cdn.nba.com/logos/nba/1610612737/primary/L/logo.svg',
-    primaryColor: '#E03A3E',
-    secondaryColor: '#C1D32F',
-    // Enhanced performance data
-    record: { wins: 15, losses: 18 },
-    streak: { type: 'W', count: 2 },
-    lastGame: { opponent: 'MIA', result: 'W', score: '108-92' },
-    nextGame: { opponent: 'BOS', date: '2024-01-15', home: true },
-    offensiveRating: 115.2,
-    defensiveRating: 118.5,
-    pace: 101.8,
-    playoffOdds: 25,
-    keyPlayers: ['Trae Young', 'Dejounte Murray'],
-    injuries: ['John Collins (ankle)'],
-    recentTrades: [],
-    capSpace: 15.2,
-    status: 'rebuilding'
-  },
-  { 
-    id: '1610612738', 
-    name: 'Boston Celtics', 
-    abbreviation: 'BOS', 
-    conference: 'East',
-    division: 'Atlantic',
-    logo: 'https://cdn.nba.com/logos/nba/1610612738/primary/L/logo.svg',
-    primaryColor: '#007A33',
-    secondaryColor: '#BA9653',
-    record: { wins: 28, losses: 8 },
-    streak: { type: 'W', count: 5 },
-    lastGame: { opponent: 'PHI', result: 'W', score: '125-119' },
-    nextGame: { opponent: 'ATL', date: '2024-01-15', home: false },
-    offensiveRating: 121.8,
-    defensiveRating: 110.2,
-    pace: 98.5,
-    playoffOdds: 95,
-    keyPlayers: ['Jayson Tatum', 'Jaylen Brown'],
-    injuries: [],
-    recentTrades: [],
-    capSpace: 2.1,
-    status: 'contender'
-  },
-  { 
-    id: '1610612751', 
-    name: 'Brooklyn Nets', 
-    abbreviation: 'BKN', 
-    conference: 'East',
-    division: 'Atlantic',
-    logo: 'https://cdn.nba.com/logos/nba/1610612751/primary/L/logo.svg',
-    primaryColor: '#000000',
-    secondaryColor: '#FFFFFF',
-    record: { wins: 19, losses: 16 },
-    streak: { type: 'L', count: 1 },
-    lastGame: { opponent: 'NYK', result: 'L', score: '98-105' },
-    nextGame: { opponent: 'MIL', date: '2024-01-16', home: true },
-    offensiveRating: 113.5,
-    defensiveRating: 115.8,
-    pace: 100.2,
-    playoffOdds: 45,
-    keyPlayers: ['Mikal Bridges', 'Nic Claxton'],
-    injuries: ['Ben Simmons (back)'],
-    recentTrades: [],
-    capSpace: 8.7,
-    status: 'playoff-push'
-  },
-  { 
-    id: '1610612766', 
-    name: 'Charlotte Hornets', 
-    abbreviation: 'CHA', 
-    conference: 'East',
-    division: 'Southeast',
-    logo: 'https://cdn.nba.com/logos/nba/1610612766/primary/L/logo.svg',
-    primaryColor: '#1D1160',
-    secondaryColor: '#00788C',
-    record: { wins: 9, losses: 26 },
-    streak: { type: 'L', count: 7 },
-    lastGame: { opponent: 'ORL', result: 'L', score: '89-102' },
-    nextGame: { opponent: 'WAS', date: '2024-01-17', home: false },
-    offensiveRating: 108.9,
-    defensiveRating: 121.3,
-    pace: 102.5,
-    playoffOdds: 5,
-    keyPlayers: ['LaMelo Ball', 'Brandon Miller'],
-    injuries: ['LaMelo Ball (ankle)', 'Mark Williams (back)'],
-    recentTrades: [],
-    capSpace: 22.3,
-    status: 'rebuilding'
-  },
-  // Add Lakers with high profile
-  { 
-    id: '1610612747', 
-    name: 'Los Angeles Lakers', 
-    abbreviation: 'LAL', 
-    conference: 'West',
-    division: 'Pacific',
-    logo: 'https://cdn.nba.com/logos/nba/1610612747/primary/L/logo.svg',
-    primaryColor: '#552583',
-    secondaryColor: '#FDB927',
-    record: { wins: 22, losses: 13 },
-    streak: { type: 'W', count: 3 },
-    lastGame: { opponent: 'GSW', result: 'W', score: '115-110' },
-    nextGame: { opponent: 'DEN', date: '2024-01-16', home: true },
-    offensiveRating: 118.7,
-    defensiveRating: 113.2,
-    pace: 99.8,
-    playoffOdds: 82,
-    keyPlayers: ['LeBron James', 'Anthony Davis'],
-    injuries: [],
-    recentTrades: [],
-    capSpace: 1.2,
-    status: 'contender'
-  },
-  // Add a few more for demonstration
-  { 
-    id: '1610612744', 
-    name: 'Golden State Warriors', 
-    abbreviation: 'GSW', 
-    conference: 'West',
-    division: 'Pacific',
-    logo: 'https://cdn.nba.com/logos/nba/1610612744/primary/L/logo.svg',
-    primaryColor: '#1D428A',
-    secondaryColor: '#FFC72C',
-    record: { wins: 18, losses: 18 },
-    streak: { type: 'L', count: 2 },
-    lastGame: { opponent: 'LAL', result: 'L', score: '110-115' },
-    nextGame: { opponent: 'SAC', date: '2024-01-17', home: false },
-    offensiveRating: 116.3,
-    defensiveRating: 116.8,
-    pace: 102.1,
-    playoffOdds: 55,
-    keyPlayers: ['Stephen Curry', 'Draymond Green'],
-    injuries: ['Andrew Wiggins (illness)'],
-    recentTrades: [],
-    capSpace: 0.8,
-    status: 'playoff-push'
-  }
-];
+// REMOVED: Mock data - using real NBA API data only
 
 type ViewMode = 'grid' | 'list' | 'table' | 'analytics';
 type SortOption = 'name' | 'record' | 'offense' | 'defense' | 'pace' | 'playoff-odds';
@@ -273,15 +146,59 @@ export default function TeamsClientPage({ currentSeason }: TeamsClientPageProps)
   const [aiWidgets, setAIWidgets] = useState<AIWidget[]>(mockAIWidgets);
   const [activeAdvancedTab, setActiveAdvancedTab] = useState<string>("teamChemistry");
 
+  // Real data state
+  const [teams, setTeams] = useState<EnhancedTeam[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [leagueStandings, setLeagueStandings] = useState<any>(null);
+  const [leagueStats, setLeagueStats] = useState<any>(null);
+
+  // Fetch real team data with comprehensive stats
+  useEffect(() => {
+    const fetchTeams = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        // Fetch comprehensive team data with real stats
+        const [enhancedTeams, standings, teamStats] = await Promise.all([
+          getEnhancedTeamsWithStats(currentSeason),
+          getLeagueStandings(currentSeason),
+          getLeagueTeamStats(currentSeason)
+        ]);
+
+        setTeams(enhancedTeams);
+        setLeagueStandings(standings);
+        setLeagueStats(teamStats);
+      } catch (err) {
+        console.error('Error fetching teams:', err);
+        setError('Failed to load team data. Please try again.');
+
+        // Fallback to basic enhanced teams if comprehensive fetch fails
+        try {
+          const basicTeams = await getEnhancedTeams(currentSeason);
+          setTeams(basicTeams);
+        } catch (fallbackErr) {
+          console.error('Fallback fetch also failed:', fallbackErr);
+          setTeams([]);
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchTeams();
+  }, [currentSeason]);
+
   // Filter and sort teams
   const filteredAndSortedTeams = useMemo(() => {
-    let filtered = nbaTeams.filter(team => {
-      const matchesSearch = team.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    let filtered = teams.filter(team => {
+      const matchesSearch = team.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           team.abbreviation.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesConference = selectedConference === "all" || team.conference.toLowerCase() === selectedConference.toLowerCase();
       const matchesStatus = filterStatus === "all" || team.status === filterStatus;
       const matchesInjury = !showOnlyInjuries || team.injuries.length > 0;
-      
+
       return matchesSearch && matchesConference && matchesStatus && matchesInjury;
     });
 
@@ -306,7 +223,7 @@ export default function TeamsClientPage({ currentSeason }: TeamsClientPageProps)
     });
 
     return filtered;
-  }, [nbaTeams, searchTerm, selectedConference, filterStatus, showOnlyInjuries, sortBy]);
+  }, [teams, searchTerm, selectedConference, filterStatus, showOnlyInjuries, sortBy]);
 
   const handleSeasonChange = (newSeason: string) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -315,8 +232,8 @@ export default function TeamsClientPage({ currentSeason }: TeamsClientPageProps)
   };
 
   const toggleTeamSelection = (teamId: string) => {
-    setSelectedTeams(prev => 
-      prev.includes(teamId) 
+    setSelectedTeams(prev =>
+      prev.includes(teamId)
         ? prev.filter(id => id !== teamId)
         : [...prev, teamId]
     );
@@ -378,71 +295,95 @@ export default function TeamsClientPage({ currentSeason }: TeamsClientPageProps)
     </Card>
   );
 
-  const renderTeamCard = (team: any) => (
-    <div key={team.id} className="relative">
+  const renderTeamCard = (team: EnhancedTeam) => (
+    <div key={team.id} className="relative group">
       {viewMode === 'grid' && (
         <div className="absolute top-2 right-2 z-10">
           <Checkbox
             checked={selectedTeams.includes(team.id)}
             onCheckedChange={() => toggleTeamSelection(team.id)}
-            className="bg-white"
+            className="bg-white shadow-md"
           />
         </div>
       )}
-      
-      <Link href={`/teams/${team.id}`} className="block transition-transform hover:scale-105">
-        <Card className="overflow-hidden h-full">
-          <div 
-            className="h-32 flex items-center justify-center p-4 relative" 
-            style={{ 
-              backgroundColor: team.primaryColor, 
+
+      <Link href={`/teams/${team.id}?season=${currentSeason}`} className="block transition-all duration-300 hover:scale-[1.02]">
+        <Card className="overflow-hidden h-full hover:shadow-xl transition-all duration-300 border-2 hover:border-primary/20">
+          <div
+            className="h-32 flex items-center justify-center p-4 relative"
+            style={{
+              backgroundColor: team.primaryColor,
               backgroundImage: `linear-gradient(45deg, ${team.primaryColor}, ${team.secondaryColor})`
             }}
           >
-            <img 
-              src={team.logo} 
-              alt={`${team.name} logo`} 
-              className="h-full object-contain"
+            <img
+              src={team.logo}
+              alt={`${team.name} logo`}
+              className="h-full object-contain transition-transform duration-300 group-hover:scale-110"
               style={{ filter: "drop-shadow(0px 4px 6px rgba(0, 0, 0, 0.3))" }}
             />
-            
+
             {/* Status badge */}
             <Badge className={`absolute top-2 left-2 ${getStatusBadgeColor(team.status)} text-white`}>
               {team.status.replace('-', ' ')}
             </Badge>
+
+            {/* Real Data indicator */}
+            <Badge className="absolute top-2 right-12 bg-green-500 text-white text-xs">
+              <BarChart3 className="w-3 h-3 mr-1" />
+              Live Data
+            </Badge>
+
+            {/* Win percentage indicator */}
+            <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/20">
+              <div
+                className="h-full bg-white/80 transition-all duration-500"
+                style={{
+                  width: `${(team.record.wins / (team.record.wins + team.record.losses)) * 100}%`
+                }}
+              />
+            </div>
           </div>
 
           <CardContent className="p-4">
             <div className="space-y-3">
               {/* Team name and record */}
               <div className="text-center">
-                <h3 className="font-bold text-lg">{team.name}</h3>
+                <h3 className="font-bold text-lg group-hover:text-primary transition-colors">{team.name}</h3>
                 <div className="flex items-center justify-center gap-2">
                   <span className="text-2xl font-bold">{team.record.wins}-{team.record.losses}</span>
                   <Badge variant={team.streak.type === 'W' ? 'default' : 'destructive'}>
                     {team.streak.type}{team.streak.count}
                   </Badge>
                 </div>
-                <p className="text-sm text-muted-foreground">{team.conference}ern • {team.division}</p>
+                <p className="text-sm text-muted-foreground">{team.conference} • {team.division}</p>
               </div>
 
-              {/* Performance metrics */}
+              {/* Performance metrics with color coding */}
               <div className="grid grid-cols-2 gap-2 text-sm">
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">OFF</span>
-                  <span className="font-medium">{team.offensiveRating}</span>
+                  <span className={`font-medium ${team.offensiveRating > 115 ? 'text-green-600' : team.offensiveRating > 110 ? 'text-yellow-600' : 'text-red-600'}`}>
+                    {team.offensiveRating}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">DEF</span>
-                  <span className="font-medium">{team.defensiveRating}</span>
+                  <span className={`font-medium ${team.defensiveRating < 110 ? 'text-green-600' : team.defensiveRating < 115 ? 'text-yellow-600' : 'text-red-600'}`}>
+                    {team.defensiveRating}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Pace</span>
-                  <span className="font-medium">{team.pace}</span>
+                  <span className={`font-medium ${team.pace > 102 ? 'text-blue-600' : team.pace > 98 ? 'text-gray-600' : 'text-purple-600'}`}>
+                    {team.pace}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Playoffs</span>
-                  <span className="font-medium">{team.playoffOdds}%</span>
+                  <span className={`font-medium ${team.playoffOdds > 70 ? 'text-green-600' : team.playoffOdds > 40 ? 'text-yellow-600' : 'text-red-600'}`}>
+                    {team.playoffOdds}%
+                  </span>
                 </div>
               </div>
 
@@ -451,7 +392,7 @@ export default function TeamsClientPage({ currentSeason }: TeamsClientPageProps)
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Last:</span>
                   <span className={team.lastGame.result === 'W' ? 'text-green-600' : 'text-red-600'}>
-                    {team.lastGame.result} vs {team.lastGame.opponent} {team.lastGame.score}
+                    {team.lastGame.result} vs {team.lastGame.opponent}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
@@ -460,18 +401,67 @@ export default function TeamsClientPage({ currentSeason }: TeamsClientPageProps)
                 </div>
               </div>
 
-              {/* Injuries indicator */}
-              {team.injuries.length > 0 && (
-                <div className="flex items-center gap-1 text-xs text-red-600">
-                  <AlertTriangle className="w-3 h-3" />
-                  <span>{team.injuries.length} injured</span>
-                </div>
-              )}
+              {/* Status indicators */}
+              <div className="flex items-center justify-between">
+                {team.injuries.length > 0 && (
+                  <div className="flex items-center gap-1 text-xs text-red-600">
+                    <AlertTriangle className="w-3 h-3" />
+                    <span>{team.injuries.length} injured</span>
+                  </div>
+                )}
 
-              {/* Key players */}
-              <div className="text-xs">
-                <span className="text-muted-foreground">Stars: </span>
-                <span>{team.keyPlayers.join(', ')}</span>
+                {team.recentTrades.length > 0 && (
+                  <div className="flex items-center gap-1 text-xs text-blue-600">
+                    <GitCompare className="w-3 h-3" />
+                    <span>Recent trade</span>
+                  </div>
+                )}
+
+                {/* Net rating indicator */}
+                <div className="text-xs">
+                  <span className="text-muted-foreground">Net: </span>
+                  <span className={`font-medium ${(team.offensiveRating - team.defensiveRating) > 5 ? 'text-green-600' : (team.offensiveRating - team.defensiveRating) > 0 ? 'text-yellow-600' : 'text-red-600'}`}>
+                    {(team.offensiveRating - team.defensiveRating).toFixed(1)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Quick action buttons - shown on hover */}
+              <div className="flex gap-1 pt-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="flex-1 text-xs h-7"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    toggleTeamSelection(team.id);
+                  }}
+                >
+                  {selectedTeams.includes(team.id) ? (
+                    <>
+                      <Check className="w-3 h-3 mr-1" />
+                      Selected
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-3 h-3 mr-1" />
+                      Compare
+                    </>
+                  )}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-xs h-7 px-2"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    window.open(`/teams/${team.id}?season=${currentSeason}`, '_blank');
+                  }}
+                >
+                  <ExternalLink className="w-3 h-3" />
+                </Button>
               </div>
             </div>
           </CardContent>
@@ -480,20 +470,96 @@ export default function TeamsClientPage({ currentSeason }: TeamsClientPageProps)
     </div>
   );
 
+  // Show loading state
+  if (loading) {
+    return (
+      <div className="container mx-auto px-4 py-8 space-y-6">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold">NBA Teams</h1>
+            <p className="text-muted-foreground">Loading team data...</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <Card key={i} className="animate-pulse">
+              <div className="h-32 bg-gray-200 rounded-t-lg"></div>
+              <CardContent className="p-4">
+                <div className="space-y-3">
+                  <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                  <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="h-3 bg-gray-200 rounded"></div>
+                    <div className="h-3 bg-gray-200 rounded"></div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // Show error state
+  if (error) {
+    return (
+      <div className="container mx-auto px-4 py-8 space-y-6">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold">NBA Teams</h1>
+            <p className="text-muted-foreground text-red-600">{error}</p>
+          </div>
+        </div>
+        <Card className="p-6 text-center">
+          <div className="space-y-4">
+            <AlertTriangle className="w-12 h-12 text-red-500 mx-auto" />
+            <h3 className="text-lg font-semibold">Unable to load team data</h3>
+            <p className="text-muted-foreground">Please check your connection and try again.</p>
+            <Button onClick={() => window.location.reload()}>
+              Retry
+            </Button>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="container mx-auto px-4 py-8 space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold">NBA Teams</h1>
-          <p className="text-muted-foreground">Comprehensive team analysis and intelligence</p>
+          <div className="flex items-center gap-2">
+            <p className="text-muted-foreground">Comprehensive team analysis and intelligence ({teams.length} teams)</p>
+            <Badge variant="secondary" className="text-xs">
+              <BarChart3 className="w-3 h-3 mr-1" />
+              Real NBA Data
+            </Badge>
+            {leagueStandings && (
+              <Badge variant="outline" className="text-xs">
+                <RefreshCw className="w-3 h-3 mr-1" />
+                Live Standings
+              </Badge>
+            )}
+          </div>
         </div>
-        
+
         {/* View Mode Toggle */}
         <div className="flex items-center gap-4">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => window.location.reload()}
+            className="flex items-center gap-2"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Refresh Data
+          </Button>
           <Label className="text-sm font-medium">View:</Label>
-          <RadioGroup 
-            value={viewMode} 
+          <RadioGroup
+            value={viewMode}
             onValueChange={(value: string) => setViewMode(value as ViewMode)}
             className="flex items-center gap-2"
           >
@@ -537,7 +603,7 @@ export default function TeamsClientPage({ currentSeason }: TeamsClientPageProps)
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
         />
-        
+
         {/* Conference Filter */}
         <Select value={selectedConference} onValueChange={setSelectedConference}>
           <SelectTrigger>
@@ -582,9 +648,9 @@ export default function TeamsClientPage({ currentSeason }: TeamsClientPageProps)
       {/* Additional Filters */}
       <div className="flex flex-wrap items-center gap-4">
         <div className="flex items-center space-x-2">
-          <Checkbox 
-            id="injuries" 
-            checked={showOnlyInjuries} 
+          <Checkbox
+            id="injuries"
+            checked={showOnlyInjuries}
             onCheckedChange={(checked) => setShowOnlyInjuries(checked === true)}
           />
           <Label htmlFor="injuries" className="text-sm">Teams with injuries only</Label>
@@ -599,13 +665,21 @@ export default function TeamsClientPage({ currentSeason }: TeamsClientPageProps)
               Clear
             </Button>
             {selectedTeams.length > 1 && (
-              <Button size="sm">
+              <Button
+                size="sm"
+                onClick={() => {
+                  const compareUrl = `/teams/compare?teams=${selectedTeams.join(',')}&season=${currentSeason}`;
+                  window.open(compareUrl, '_blank');
+                }}
+              >
                 <GitCompare className="w-4 h-4 mr-2" />
                 Compare Teams
               </Button>
             )}
           </div>
         )}
+
+
 
         {/* Season Selector */}
         <div className="flex items-center gap-2 ml-auto">
@@ -632,9 +706,9 @@ export default function TeamsClientPage({ currentSeason }: TeamsClientPageProps)
               <h3 className="text-lg font-semibold">AI Intelligence Hub</h3>
               <Badge variant="secondary">Live</Badge>
             </div>
-            <Button 
-              size="sm" 
-              variant="ghost" 
+            <Button
+              size="sm"
+              variant="ghost"
               onClick={() => setShowAIWidgets(false)}
             >
               Hide AI Insights
@@ -648,7 +722,7 @@ export default function TeamsClientPage({ currentSeason }: TeamsClientPageProps)
 
       {!showAIWidgets && (
         <div className="text-center">
-          <Button 
+          <Button
             onClick={() => setShowAIWidgets(true)}
             className="bg-blue-500 hover:bg-blue-600"
           >
@@ -698,7 +772,7 @@ export default function TeamsClientPage({ currentSeason }: TeamsClientPageProps)
                       <Badge variant="outline" className="text-xs">High Impact</Badge>
                     </div>
                   </div>
-                  
+
                   <div className="border-l-4 border-l-green-500 pl-4">
                     <div className="flex items-start justify-between">
                       <div>
@@ -711,7 +785,7 @@ export default function TeamsClientPage({ currentSeason }: TeamsClientPageProps)
                       <Badge variant="outline" className="text-xs">Rising Star</Badge>
                     </div>
                   </div>
-                  
+
                   <div className="border-l-4 border-l-red-500 pl-4">
                     <div className="flex items-start justify-between">
                       <div>
@@ -724,7 +798,7 @@ export default function TeamsClientPage({ currentSeason }: TeamsClientPageProps)
                       <Badge variant="destructive" className="text-xs">Concern</Badge>
                     </div>
                   </div>
-                  
+
                   <div className="border-l-4 border-l-yellow-500 pl-4">
                     <div className="flex items-start justify-between">
                       <div>
@@ -763,7 +837,7 @@ export default function TeamsClientPage({ currentSeason }: TeamsClientPageProps)
                       <div className="text-xs text-muted-foreground">Fan sentiment</div>
                     </div>
                   </div>
-                  
+
                   <div className="flex items-center justify-between p-3 bg-red-50 rounded-lg">
                     <div className="flex items-center gap-3">
                       <img src="https://cdn.nba.com/logos/nba/1610612744/primary/L/logo.svg" alt="Warriors" className="w-8 h-8" />
@@ -777,7 +851,7 @@ export default function TeamsClientPage({ currentSeason }: TeamsClientPageProps)
                       <div className="text-xs text-muted-foreground">Fan sentiment</div>
                     </div>
                   </div>
-                  
+
                   <div className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg">
                     <div className="flex items-center gap-3">
                       <img src="https://cdn.nba.com/logos/nba/1610612766/primary/L/logo.svg" alt="Hornets" className="w-8 h-8" />
@@ -835,7 +909,7 @@ export default function TeamsClientPage({ currentSeason }: TeamsClientPageProps)
                       </div>
                     </div>
                   </div>
-                  
+
                   <div className="flex items-start gap-3 p-3 bg-yellow-50 rounded-lg border-l-4 border-l-yellow-500">
                     <TrendingDown className="w-4 h-4 text-yellow-500 mt-0.5" />
                     <div className="flex-1">
@@ -849,7 +923,7 @@ export default function TeamsClientPage({ currentSeason }: TeamsClientPageProps)
                       </div>
                     </div>
                   </div>
-                  
+
                   <div className="flex items-start gap-3 p-3 bg-orange-50 rounded-lg border-l-4 border-l-orange-500">
                     <Target className="w-4 h-4 text-orange-500 mt-0.5" />
                     <div className="flex-1">
@@ -892,7 +966,7 @@ export default function TeamsClientPage({ currentSeason }: TeamsClientPageProps)
                       </div>
                     </div>
                   </div>
-                  
+
                   <div className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg border-l-4 border-l-blue-500">
                     <GitCompare className="w-4 h-4 text-blue-500 mt-0.5" />
                     <div className="flex-1">
@@ -937,7 +1011,7 @@ export default function TeamsClientPage({ currentSeason }: TeamsClientPageProps)
                         Current compatibility: High
                       </div>
                     </div>
-                    
+
                     <div className="p-3 bg-muted rounded-lg">
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-sm font-medium">Warriors ↔ Nets</span>
@@ -949,7 +1023,7 @@ export default function TeamsClientPage({ currentSeason }: TeamsClientPageProps)
                         Current compatibility: Medium
                       </div>
                     </div>
-                    
+
                     <div className="p-3 bg-muted rounded-lg">
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-sm font-medium">Celtics ↔ Hornets</span>
@@ -976,7 +1050,7 @@ export default function TeamsClientPage({ currentSeason }: TeamsClientPageProps)
                         Similar systems, player development
                       </div>
                     </div>
-                    
+
                     <div className="p-3 bg-muted rounded-lg">
                       <div className="text-sm font-medium mb-1">Steve Kerr Disciples</div>
                       <div className="text-xs text-muted-foreground">
@@ -985,7 +1059,7 @@ export default function TeamsClientPage({ currentSeason }: TeamsClientPageProps)
                         Motion offense specialists
                       </div>
                     </div>
-                    
+
                     <div className="p-3 bg-muted rounded-lg">
                       <div className="text-sm font-medium mb-1">Player Development Hub</div>
                       <div className="text-xs text-muted-foreground">
@@ -1006,7 +1080,7 @@ export default function TeamsClientPage({ currentSeason }: TeamsClientPageProps)
                         Activity typically increases 300% in final 2 weeks
                       </div>
                     </div>
-                    
+
                     <div className="p-3 bg-green-50 rounded-lg">
                       <div className="text-sm font-medium text-green-800 mb-1">Cap Space Opportunities</div>
                       <div className="text-xs text-green-600">
@@ -1014,7 +1088,7 @@ export default function TeamsClientPage({ currentSeason }: TeamsClientPageProps)
                         Prime for salary dumps
                       </div>
                     </div>
-                    
+
                     <div className="p-3 bg-yellow-50 rounded-lg">
                       <div className="text-sm font-medium text-yellow-800 mb-1">Contract Extensions</div>
                       <div className="text-xs text-yellow-600">
@@ -1022,7 +1096,7 @@ export default function TeamsClientPage({ currentSeason }: TeamsClientPageProps)
                         Deadline pressure building
                       </div>
                     </div>
-                    
+
                     <div className="p-3 bg-purple-50 rounded-lg">
                       <div className="text-sm font-medium text-purple-800 mb-1">Draft Capital</div>
                       <div className="text-xs text-purple-600">
@@ -1047,7 +1121,7 @@ export default function TeamsClientPage({ currentSeason }: TeamsClientPageProps)
             </CardHeader>
             <CardContent>
               <Tabs value={activeAdvancedTab} onValueChange={setActiveAdvancedTab} className="w-full">
-                <TabsList className="grid w-full grid-cols-3 md:grid-cols-6 gap-1 p-1 h-auto">
+                <TabsList className="grid w-full grid-cols-3 md:grid-cols-7 gap-1 p-1 h-auto">
                   <TabsTrigger value="teamChemistry" className="flex-col h-16 text-xs p-1">
                     <Users className="w-4 h-4 mb-1" />Team Chemistry
                   </TabsTrigger>
@@ -1065,6 +1139,9 @@ export default function TeamsClientPage({ currentSeason }: TeamsClientPageProps)
                   </TabsTrigger>
                   <TabsTrigger value="teamStrategy" className="flex-col h-16 text-xs p-1">
                     <Target className="w-4 h-4 mb-1" />Strategy Optimizer
+                  </TabsTrigger>
+                  <TabsTrigger value="mlAnalytics" className="flex-col h-16 text-xs p-1">
+                    <Brain className="w-4 h-4 mb-1" />ML Analytics
                   </TabsTrigger>
                 </TabsList>
                 <TabsContent value="teamChemistry" className="mt-4">
@@ -1084,6 +1161,11 @@ export default function TeamsClientPage({ currentSeason }: TeamsClientPageProps)
                 </TabsContent>
                 <TabsContent value="teamStrategy" className="mt-4">
                   <TeamStrategyOptimizer />
+                </TabsContent>
+                <TabsContent value="mlAnalytics" className="mt-4">
+                  <AdvancedAnalyticsDashboard
+                    season={currentSeason}
+                  />
                 </TabsContent>
               </Tabs>
             </CardContent>
@@ -1284,8 +1366,8 @@ export default function TeamsClientPage({ currentSeason }: TeamsClientPageProps)
                           </div>
                           <div className="flex items-center gap-2">
                             <div className="w-20 bg-gray-200 rounded-full h-2">
-                              <div 
-                                className="bg-blue-600 h-2 rounded-full" 
+                              <div
+                                className="bg-blue-600 h-2 rounded-full"
                                 style={{ width: `${team.playoffOdds}%` }}
                               ></div>
                             </div>
@@ -1313,7 +1395,7 @@ export default function TeamsClientPage({ currentSeason }: TeamsClientPageProps)
                         <span className="font-medium">
                           {(filteredAndSortedTeams
                             .filter(t => t.conference === 'East')
-                            .reduce((sum, t) => sum + t.offensiveRating, 0) / 
+                            .reduce((sum, t) => sum + t.offensiveRating, 0) /
                            Math.max(filteredAndSortedTeams.filter(t => t.conference === 'East').length, 1)
                           ).toFixed(1)}
                         </span>
@@ -1323,23 +1405,23 @@ export default function TeamsClientPage({ currentSeason }: TeamsClientPageProps)
                         <span className="font-medium">
                           {(filteredAndSortedTeams
                             .filter(t => t.conference === 'West')
-                            .reduce((sum, t) => sum + t.offensiveRating, 0) / 
+                            .reduce((sum, t) => sum + t.offensiveRating, 0) /
                            Math.max(filteredAndSortedTeams.filter(t => t.conference === 'West').length, 1)
                           ).toFixed(1)}
                         </span>
                       </div>
                       <div className="mt-4 text-xs text-muted-foreground">
                         <Badge variant={
-                          (filteredAndSortedTeams.filter(t => t.conference === 'East').reduce((sum, t) => sum + t.offensiveRating, 0) / 
-                           Math.max(filteredAndSortedTeams.filter(t => t.conference === 'East').length, 1)) > 
-                          (filteredAndSortedTeams.filter(t => t.conference === 'West').reduce((sum, t) => sum + t.offensiveRating, 0) / 
-                           Math.max(filteredAndSortedTeams.filter(t => t.conference === 'West').length, 1)) 
+                          (filteredAndSortedTeams.filter(t => t.conference === 'East').reduce((sum, t) => sum + t.offensiveRating, 0) /
+                           Math.max(filteredAndSortedTeams.filter(t => t.conference === 'East').length, 1)) >
+                          (filteredAndSortedTeams.filter(t => t.conference === 'West').reduce((sum, t) => sum + t.offensiveRating, 0) /
+                           Math.max(filteredAndSortedTeams.filter(t => t.conference === 'West').length, 1))
                            ? 'default' : 'secondary'
                         }>
-                          {(filteredAndSortedTeams.filter(t => t.conference === 'East').reduce((sum, t) => sum + t.offensiveRating, 0) / 
-                            Math.max(filteredAndSortedTeams.filter(t => t.conference === 'East').length, 1)) > 
-                           (filteredAndSortedTeams.filter(t => t.conference === 'West').reduce((sum, t) => sum + t.offensiveRating, 0) / 
-                            Math.max(filteredAndSortedTeams.filter(t => t.conference === 'West').length, 1)) 
+                          {(filteredAndSortedTeams.filter(t => t.conference === 'East').reduce((sum, t) => sum + t.offensiveRating, 0) /
+                            Math.max(filteredAndSortedTeams.filter(t => t.conference === 'East').length, 1)) >
+                           (filteredAndSortedTeams.filter(t => t.conference === 'West').reduce((sum, t) => sum + t.offensiveRating, 0) /
+                            Math.max(filteredAndSortedTeams.filter(t => t.conference === 'West').length, 1))
                             ? 'East leads offense' : 'West leads offense'}
                         </Badge>
                       </div>
@@ -1455,7 +1537,7 @@ export default function TeamsClientPage({ currentSeason }: TeamsClientPageProps)
 
         {/* Results Summary */}
         <div className="text-center text-sm text-muted-foreground">
-          Showing {filteredAndSortedTeams.length} of {nbaTeams.length} teams
+          Showing {filteredAndSortedTeams.length} of {teams.length} teams
           {selectedTeams.length > 0 && ` • ${selectedTeams.length} selected`}
         </div>
       </div>
