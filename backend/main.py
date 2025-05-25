@@ -28,7 +28,7 @@ if current_dir not in sys.path:
 try:
     from logging_config import setup_logging
     from config import settings # settings is used for log level
-    
+
     # Determine log level from settings (AGENT_DEBUG_MODE implies DEBUG level for app)
     log_level_str = "DEBUG" if settings.AGENT_DEBUG_MODE else settings.LOG_LEVEL
     setup_logging(log_level_override=log_level_str) # Pass string level to setup_logging
@@ -67,7 +67,7 @@ try:
         search as search_router,
         leaders as leaders_router,
         fetch as fetch_router,
-        league_stats as league_stats_router # Added league_stats_router
+        league_stats as league_stats_router, # Added league_stats_router
         # from routes.charts import router as charts_router # Example, keep commented if not used
     )
 except ImportError as e:
@@ -147,11 +147,11 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
 @app.exception_handler(Exception)
 async def generic_unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse: # Added return type hint
     logger.critical(f"Unhandled generic exception: {type(exc).__name__} - {exc} for URL: {request.url.path}", exc_info=True)
-    
+
     error_content = Errors.UNEXPECTED_ERROR.format(error="An internal server error occurred.") \
         if hasattr(Errors, 'UNEXPECTED_ERROR') and '{error}' in Errors.UNEXPECTED_ERROR \
         else "An internal server error occurred. Please contact support." # More user-friendly fallback
-        
+
     return JSONResponse(
         status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={"detail": error_content},
@@ -179,11 +179,11 @@ if __name__ == "__main__":
             name_str = getattr(route, 'name', 'N/A')
             logger.info(f"Path: {route.path}, Name: {name_str}, Methods: [{methods_str}]")
     logger.info("-----------------------")
-    
+
     host = os.getenv("HOST", "0.0.0.0")
     port = int(os.getenv("PORT", 8000)) # Ensure PORT is integer
     reload_app = settings.ENVIRONMENT == "development" # Simpler reload logic based on ENVIRONMENT
-    
+
     log_level_for_uvicorn = settings.LOG_LEVEL.lower()
     if log_level_for_uvicorn not in ["critical", "error", "warning", "info", "debug", "trace"]:
         log_level_for_uvicorn = "info" # Default for uvicorn if invalid

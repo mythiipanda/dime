@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 import { Loader2, Target } from "lucide-react";
 import { seasons } from "@/lib/constants";
-import { ShotChart } from "@/components/charts/ShotChart";
+import ShotChart from "@/components/charts/ShotChart";
 import { usePlayerShotData } from "@/hooks/usePlayerShotData";
 import { usePlayerSearchSuggestions } from "@/hooks/usePlayerSearchSuggestions";
 import { Suggestion } from "@/app/(app)/players/types";
@@ -57,7 +57,7 @@ export function ShotChartTab({ playerName }: ShotChartTabProps) {
     clearCompareSuggestions();
     setCompareSearchQuery("");
     setIsCompareSearchFocused(false);
-    
+
     const params = new URLSearchParams();
     params.append("player_names", playerName);
     params.append("player_names", selectedPlayer.full_name);
@@ -78,7 +78,7 @@ export function ShotChartTab({ playerName }: ShotChartTabProps) {
             Visualize {playerName}&apos;s shooting patterns and efficiency.
           </p>
         </div>
-        
+
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="w-full sm:w-auto min-w-[150px]">
             <Label htmlFor={`${playerName}-season`} className="text-xs">Season</Label>
@@ -93,7 +93,7 @@ export function ShotChartTab({ playerName }: ShotChartTabProps) {
               </SelectContent>
             </Select>
           </div>
-          
+
           <div className="w-full sm:w-auto min-w-[180px]">
             <Label htmlFor={`${playerName}-season-type`} className="text-xs">Season Type</Label>
             <Select value={seasonType} onValueChange={setSeasonType}>
@@ -108,7 +108,7 @@ export function ShotChartTab({ playerName }: ShotChartTabProps) {
           </div>
         </div>
       </div>
-      
+
       <Card>
         <CardContent className="pt-6">
           {isLoading ? (
@@ -144,7 +144,7 @@ export function ShotChartTab({ playerName }: ShotChartTabProps) {
           )}
         </CardContent>
       </Card>
-      
+
       <div className="pt-4 mt-6 border-t">
         <div className="flex flex-col md:flex-row gap-4 items-start justify-between mb-3">
             <div className="space-y-1">
@@ -171,7 +171,7 @@ export function ShotChartTab({ playerName }: ShotChartTabProps) {
               <Loader2 className="h-4 w-4 animate-spin absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             )}
           </div>
-          
+
           {isCompareSearchFocused && (isCompareSearching || compareSearchResults.length > 0 || compareSearchError) && (
             <Card className="absolute z-20 mt-1 w-full border bg-popover text-popover-foreground shadow-lg max-h-60 overflow-y-auto">
               <CardContent className="p-1">
@@ -187,7 +187,7 @@ export function ShotChartTab({ playerName }: ShotChartTabProps) {
                         <Button
                           variant="ghost"
                           className="w-full justify-start h-auto px-2 py-1.5 text-sm font-normal hover:bg-accent/50 rounded-sm"
-                          onMouseDown={() => handleComparePlayerSelect(player)} 
+                          onMouseDown={() => handleComparePlayerSelect(player)}
                         >
                           <span className={cn("truncate", { 'text-muted-foreground': !player.is_active })}>
                             {player.full_name}

@@ -11,11 +11,12 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import { Input } from '@/components/ui/input';
-import { 
-  DollarSign, 
-  TrendingUp, 
+import { TradeAnalysis } from '@/components/teams/TradeAnalysis';
+import {
+  DollarSign,
+  TrendingUp,
   TrendingDown,
-  Target, 
+  Target,
   Zap,
   BarChart3,
   LineChart,
@@ -435,8 +436,8 @@ export default function MarketIntelligenceDashboard({
   const highConfidenceTrades = tradePredictions.filter(trade => trade.confidence >= confidenceThreshold[0]);
 
   // Recent high-impact alerts
-  const highImpactAlerts = alerts.filter(alert => 
-    Math.abs(alert.moneyLine) >= impactThreshold[0] && 
+  const highImpactAlerts = alerts.filter(alert =>
+    Math.abs(alert.moneyLine) >= impactThreshold[0] &&
     alert.timestamp > new Date(Date.now() - 24 * 60 * 60 * 1000)
   );
 
@@ -464,16 +465,16 @@ export default function MarketIntelligenceDashboard({
                 <span>Monitoring: {monitoringMode ? 'Active' : 'Paused'}</span>
               </div>
             </div>
-            
+
             <div className="flex items-center gap-3">
-              <Badge 
+              <Badge
                 variant={isLive ? 'default' : 'secondary'}
                 className="flex items-center gap-1"
               >
                 {isLive ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
                 {isLive ? 'Live Data' : 'Offline'}
               </Badge>
-              
+
               <Button
                 size="sm"
                 variant={monitoringMode ? 'default' : 'outline'}
@@ -482,7 +483,7 @@ export default function MarketIntelligenceDashboard({
                 {monitoringMode ? <Eye className="w-4 h-4" /> : <Settings className="w-4 h-4" />}
                 {monitoringMode ? 'Monitoring' : 'Configure'}
               </Button>
-              
+
               <Button size="sm" variant="outline">
                 <Download className="w-4 h-4" />
                 Export
@@ -503,7 +504,7 @@ export default function MarketIntelligenceDashboard({
             <div className="text-xs text-blue-600 mt-1">{contracts.length} contracts tracked</div>
           </CardContent>
         </Card>
-        
+
         <Card>
           <CardContent className="p-4 text-center">
             <div className="text-2xl font-bold text-blue-600">{tradePredictions.length}</div>
@@ -511,7 +512,7 @@ export default function MarketIntelligenceDashboard({
             <div className="text-xs text-green-600 mt-1">{highConfidenceTrades.length} high confidence</div>
           </CardContent>
         </Card>
-        
+
         <Card>
           <CardContent className="p-4 text-center">
             <div className="text-2xl font-bold text-purple-600">{bettingOdds.length}</div>
@@ -521,7 +522,7 @@ export default function MarketIntelligenceDashboard({
             </div>
           </CardContent>
         </Card>
-        
+
         <Card>
           <CardContent className="p-4 text-center">
             <div className="text-2xl font-bold text-orange-600">{marketTrends.length}</div>
@@ -531,7 +532,7 @@ export default function MarketIntelligenceDashboard({
             </div>
           </CardContent>
         </Card>
-        
+
         <Card>
           <CardContent className="p-4 text-center">
             <div className="text-2xl font-bold text-red-600">{alerts.length}</div>
@@ -541,27 +542,38 @@ export default function MarketIntelligenceDashboard({
         </Card>
       </div>
 
-      {/* Control Panel */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <h4 className="font-semibold flex items-center gap-2">
-              <Settings className="w-4 h-4" />
-              Market Intelligence Controls
-            </h4>
-            <div className="flex items-center gap-3">
-              <Tabs value={selectedCategory} onValueChange={(value: any) => setSelectedCategory(value)}>
-                <TabsList>
-                  <TabsTrigger value="odds">Betting Odds</TabsTrigger>
-                  <TabsTrigger value="contracts">Contracts</TabsTrigger>
-                  <TabsTrigger value="trades">Trade Intel</TabsTrigger>
-                  <TabsTrigger value="trends">Market Trends</TabsTrigger>
-                  <TabsTrigger value="alerts">Alerts</TabsTrigger>
-                </TabsList>
-              </Tabs>
-            </div>
-          </div>
-        </CardHeader>
+      {/* Main Tabs */}
+      <Tabs defaultValue="overview" className="w-full">
+        <TabsList className="grid w-full grid-cols-4 gap-1 p-1 h-auto">
+          <TabsTrigger value="overview" className="flex-col h-16 text-xs p-1">
+            <DollarSign className="w-4 h-4 mb-1" />
+            Market Overview
+          </TabsTrigger>
+          <TabsTrigger value="trades" className="flex-col h-16 text-xs p-1">
+            <Brain className="w-4 h-4 mb-1" />
+            Trade Analysis
+          </TabsTrigger>
+          <TabsTrigger value="contracts" className="flex-col h-16 text-xs p-1">
+            <FileText className="w-4 h-4 mb-1" />
+            Contract Intel
+          </TabsTrigger>
+          <TabsTrigger value="odds" className="flex-col h-16 text-xs p-1">
+            <Target className="w-4 h-4 mb-1" />
+            Betting Markets
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview" className="space-y-6">
+          {/* Control Panel */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <h4 className="font-semibold flex items-center gap-2">
+                  <Settings className="w-4 h-4" />
+                  Market Intelligence Controls
+                </h4>
+              </div>
+            </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             <div className="space-y-3">
@@ -581,7 +593,7 @@ export default function MarketIntelligenceDashboard({
                 </Select>
               </div>
             </div>
-            
+
             <div className="space-y-3">
               <div>
                 <Label className="text-sm">Confidence Threshold: {confidenceThreshold[0]}%</Label>
@@ -595,7 +607,7 @@ export default function MarketIntelligenceDashboard({
                 />
               </div>
             </div>
-            
+
             <div className="space-y-3">
               <div>
                 <Label className="text-sm">Impact Threshold: {formatCurrency(impactThreshold[0])}</Label>
@@ -609,7 +621,7 @@ export default function MarketIntelligenceDashboard({
                 />
               </div>
             </div>
-            
+
             <div className="space-y-3">
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
@@ -626,7 +638,7 @@ export default function MarketIntelligenceDashboard({
                 </div>
               </div>
             </div>
-            
+
             <div className="space-y-3">
               <div>
                 <Label className="text-sm">Search</Label>
@@ -659,7 +671,7 @@ export default function MarketIntelligenceDashboard({
                   <div className="flex items-center justify-between mb-2">
                     <span className="font-medium text-red-800">{alert.title}</span>
                     <div className="flex items-center gap-2">
-                      <Badge 
+                      <Badge
                         style={{ backgroundColor: getPriorityColor(alert.priority) }}
                         className="text-white text-xs"
                       >
@@ -705,7 +717,7 @@ export default function MarketIntelligenceDashboard({
                         {formatCurrency(odds.volume)} volume
                       </Badge>
                     </div>
-                    
+
                     <div className="grid grid-cols-3 gap-4 text-sm">
                       <div>
                         <div className="text-muted-foreground">Moneyline</div>
@@ -733,7 +745,7 @@ export default function MarketIntelligenceDashboard({
                         </div>
                       </div>
                     </div>
-                    
+
                     <div className="flex items-center justify-between mt-3 pt-3 border-t">
                       <div className="flex items-center gap-4 text-xs">
                         <div>
@@ -784,7 +796,7 @@ export default function MarketIntelligenceDashboard({
                       strokeWidth="1"
                     />
                   ))}
-                  
+
                   {[-150, -110, -100, +100, +150].map((odds, index) => (
                     <line
                       key={odds}
@@ -826,7 +838,7 @@ export default function MarketIntelligenceDashboard({
                   <text x="275" y="195" textAnchor="middle" className="text-xs fill-gray-600">3h ago</text>
                   <text x="350" y="195" textAnchor="middle" className="text-xs fill-gray-600">Now</text>
                 </svg>
-                
+
                 <div className="absolute top-4 right-4 bg-white/90 backdrop-blur-sm rounded-lg p-3 text-xs">
                   <div className="font-medium mb-2">Lakers Spread Movement</div>
                   <div className="space-y-1">
@@ -872,7 +884,7 @@ export default function MarketIntelligenceDashboard({
                       <div className="text-sm text-muted-foreground">{contract.yearsRemaining} years left</div>
                     </div>
                   </div>
-                  
+
                   <div className="grid grid-cols-4 gap-4 text-sm mb-4">
                     <div>
                       <div className="text-muted-foreground">Market Value</div>
@@ -891,7 +903,7 @@ export default function MarketIntelligenceDashboard({
                       <div className="font-medium">{contract.extensionLikelihood}%</div>
                     </div>
                   </div>
-                  
+
                   <div className="flex items-center justify-between">
                     <div className="flex flex-wrap gap-2">
                       {contract.playerOption && <Badge variant="secondary">Player Option</Badge>}
@@ -938,7 +950,7 @@ export default function MarketIntelligenceDashboard({
                       <div className="text-sm text-muted-foreground">{trade.confidence}% confidence</div>
                     </div>
                   </div>
-                  
+
                   <div className="mb-3">
                     <div className="text-sm font-medium mb-2">Teams & Players:</div>
                     <div className="flex flex-wrap gap-2 mb-2">
@@ -952,7 +964,7 @@ export default function MarketIntelligenceDashboard({
                       ))}
                     </div>
                   </div>
-                  
+
                   <div className="grid grid-cols-4 gap-4 text-sm mb-3">
                     <div>
                       <div className="text-muted-foreground">Salary Impact</div>
@@ -979,11 +991,11 @@ export default function MarketIntelligenceDashboard({
                       </div>
                     </div>
                   </div>
-                  
+
                   <div className="text-sm text-muted-foreground mb-3">
                     <span className="font-medium">Reasoning:</span> {trade.reasoning}
                   </div>
-                  
+
                   <div className="flex items-center justify-between">
                     <div className="flex flex-wrap gap-1 text-xs">
                       <span className="text-muted-foreground">Sources:</span>
@@ -1032,7 +1044,7 @@ export default function MarketIntelligenceDashboard({
                             <ArrowRight className="w-4 h-4 text-gray-500" />
                           )}
                           <span className={`font-bold ${
-                            trend.changePercent > 0 ? 'text-green-600' : 
+                            trend.changePercent > 0 ? 'text-green-600' :
                             trend.changePercent < 0 ? 'text-red-600' : 'text-gray-600'
                           }`}>
                             {trend.changePercent > 0 ? '+' : ''}{trend.changePercent.toFixed(2)}%
@@ -1041,7 +1053,7 @@ export default function MarketIntelligenceDashboard({
                         <div className="text-sm text-muted-foreground">{trend.confidence}% confidence</div>
                       </div>
                     </div>
-                    
+
                     <div className="grid grid-cols-2 gap-4 text-sm mb-3">
                       <div>
                         <div className="text-muted-foreground">Current</div>
@@ -1052,7 +1064,7 @@ export default function MarketIntelligenceDashboard({
                         <div className="font-medium">{formatCurrency(trend.previousValue)}</div>
                       </div>
                     </div>
-                    
+
                     <div className="mb-3">
                       <div className="text-sm font-medium mb-2">Key Factors:</div>
                       <div className="flex flex-wrap gap-1">
@@ -1061,7 +1073,7 @@ export default function MarketIntelligenceDashboard({
                         ))}
                       </div>
                     </div>
-                    
+
                     <div className="flex items-center justify-between">
                       <Badge variant={trend.impact === 'positive' ? 'default' : trend.impact === 'negative' ? 'destructive' : 'secondary'}>
                         {trend.impact} impact
@@ -1116,7 +1128,7 @@ export default function MarketIntelligenceDashboard({
                     />
                   </g>
                 </svg>
-                
+
                 <div className="absolute top-4 right-4 bg-white/90 backdrop-blur-sm rounded-lg p-3 text-xs">
                   <div className="font-medium mb-2">Market Allocation</div>
                   <div className="space-y-1">
@@ -1143,6 +1155,168 @@ export default function MarketIntelligenceDashboard({
           </Card>
         </div>
       )}
+        </TabsContent>
+
+        <TabsContent value="trades" className="space-y-6">
+          <TradeAnalysis />
+        </TabsContent>
+
+        <TabsContent value="contracts" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <h4 className="font-semibold flex items-center gap-2">
+                <FileText className="w-4 h-4" />
+                Contract Intelligence ({contracts.length})
+              </h4>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {contracts.map(contract => (
+                  <div key={contract.playerId} className="p-4 border rounded-lg">
+                    <div className="flex items-center justify-between mb-3">
+                      <div>
+                        <div className="font-medium">{contract.playerName}</div>
+                        <div className="text-sm text-muted-foreground">{contract.team} • {contract.contractType}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-bold">{formatCurrency(contract.currentSalary)}</div>
+                        <div className="text-sm text-muted-foreground">{contract.yearsRemaining} years left</div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-4 gap-4 text-sm mb-4">
+                      <div>
+                        <div className="text-muted-foreground">Market Value</div>
+                        <div className="font-medium">{formatCurrency(contract.marketValue)}</div>
+                      </div>
+                      <div>
+                        <div className="text-muted-foreground">2025 Projection</div>
+                        <div className="font-medium">{formatCurrency(contract.predicted2025Value)}</div>
+                      </div>
+                      <div>
+                        <div className="text-muted-foreground">Trade Probability</div>
+                        <div className="font-medium">{contract.tradeProbability}%</div>
+                      </div>
+                      <div>
+                        <div className="text-muted-foreground">Extension Likelihood</div>
+                        <div className="font-medium">{contract.extensionLikelihood}%</div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div className="flex flex-wrap gap-2">
+                        {contract.playerOption && <Badge variant="secondary">Player Option</Badge>}
+                        {contract.teamOption && <Badge variant="secondary">Team Option</Badge>}
+                        {contract.tradeKicker && <Badge variant="secondary">Trade Kicker</Badge>}
+                        {contract.noTradeClause && <Badge variant="destructive">No Trade Clause</Badge>}
+                        {contract.freeAgentStatus !== 'N/A' && (
+                          <Badge variant="outline">{contract.freeAgentStatus}</Badge>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        <Progress value={contract.tradeProbability} className="w-16 h-2" />
+                        <span className="text-xs text-muted-foreground">Trade Risk</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="odds" className="space-y-6">
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+            <Card>
+              <CardHeader>
+                <h4 className="font-semibold flex items-center gap-2">
+                  <Target className="w-4 h-4" />
+                  Live Betting Odds
+                </h4>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {bettingOdds.map((odds, index) => (
+                    <div key={index} className="p-4 border rounded-lg">
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <div className="font-medium">{odds.awayTeam} @ {odds.homeTeam}</div>
+                          <div className="text-sm text-muted-foreground">{odds.bookmaker}</div>
+                        </div>
+                        <Badge variant="outline">
+                          {formatCurrency(odds.volume)} volume
+                        </Badge>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-4 text-sm">
+                        <div>
+                          <div className="text-muted-foreground">Moneyline</div>
+                          <div className="font-medium">
+                            {odds.awayTeam}: {odds.awayOdds > 0 ? '+' : ''}{odds.awayOdds}
+                          </div>
+                          <div className="font-medium">
+                            {odds.homeTeam}: {odds.homeOdds > 0 ? '+' : ''}{odds.homeOdds}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-muted-foreground">Spread</div>
+                          <div className="font-medium">
+                            {odds.homeTeam} {odds.spread > 0 ? '+' : ''}{odds.spread}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            ({odds.homeSpreadOdds > 0 ? '+' : ''}{odds.homeSpreadOdds})
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-muted-foreground">O/U</div>
+                          <div className="font-medium">{odds.overUnder}</div>
+                          <div className="text-xs text-muted-foreground">
+                            Last: {odds.lastUpdated.toLocaleTimeString()}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between mt-3 pt-3 border-t">
+                        <div className="flex items-center gap-4 text-xs">
+                          <div>
+                            <span className="text-muted-foreground">Sharp Money:</span>
+                            <span className="font-medium ml-1 capitalize">{odds.sharpMoney}</span>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Public Money:</span>
+                            <span className="font-medium ml-1 capitalize">{odds.publicMoney}</span>
+                          </div>
+                        </div>
+                        <Badge variant={odds.sharpMoney !== odds.publicMoney ? 'destructive' : 'secondary'}>
+                          {odds.sharpMoney !== odds.publicMoney ? 'Conflict' : 'Aligned'}
+                        </Badge>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <h4 className="font-semibold flex items-center gap-2">
+                  <LineChart className="w-4 h-4" />
+                  Odds Movement Analysis
+                </h4>
+              </CardHeader>
+              <CardContent>
+                <div className="text-center py-8">
+                  <Target className="w-12 h-12 mx-auto mb-4 text-blue-500" />
+                  <h3 className="text-lg font-semibold mb-2">Odds Movement Chart</h3>
+                  <p className="text-muted-foreground">
+                    Real-time odds movement visualization coming soon...
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
-} 
+}

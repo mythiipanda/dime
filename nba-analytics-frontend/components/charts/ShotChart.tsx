@@ -8,11 +8,11 @@ import { Badge } from '@/components/ui/badge';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { 
-  Target, 
-  Zap, 
-  TrendingUp, 
-  Activity, 
+import {
+  Target,
+  Zap,
+  TrendingUp,
+  Activity,
   Filter,
   Play,
   Pause,
@@ -47,7 +47,9 @@ interface Zone {
 interface ShotChartProps {
   playerName: string;
   shots: ShotData[];
+  zones?: Zone[];
   season?: string;
+  seasonType?: string;
   gameRange?: [number, number];
 }
 
@@ -57,18 +59,18 @@ const mockShots: ShotData[] = [
   { id: '1', x: 25, y: 5, made: true, points: 2, quarter: 1, timeRemaining: '10:23', defender: 'Lopez', shotType: 'Layup', distance: 2, difficulty: 'Easy' },
   { id: '2', x: 25, y: 8, made: false, points: 2, quarter: 1, timeRemaining: '9:45', defender: 'Howard', shotType: 'Hook', distance: 4, difficulty: 'Medium' },
   { id: '3', x: 23, y: 6, made: true, points: 2, quarter: 2, timeRemaining: '8:12', defender: 'None', shotType: 'Dunk', distance: 1, difficulty: 'Easy' },
-  
+
   // Mid-range shots
   { id: '4', x: 25, y: 15, made: true, points: 2, quarter: 1, timeRemaining: '7:30', defender: 'Smart', shotType: 'Pullup', distance: 12, difficulty: 'Medium' },
   { id: '5', x: 30, y: 18, made: false, points: 2, quarter: 2, timeRemaining: '6:45', defender: 'Brown', shotType: 'Fadeaway', distance: 16, difficulty: 'Hard' },
   { id: '6', x: 20, y: 17, made: true, points: 2, quarter: 3, timeRemaining: '11:22', defender: 'White', shotType: 'Turnaround', distance: 14, difficulty: 'Medium' },
-  
+
   // 3-point shots
   { id: '7', x: 25, y: 23, made: true, points: 3, quarter: 1, timeRemaining: '5:15', defender: 'Holiday', shotType: '3PT', distance: 24, difficulty: 'Medium' },
   { id: '8', x: 35, y: 23, made: false, points: 3, quarter: 2, timeRemaining: '4:33', defender: 'Tatum', shotType: '3PT', distance: 26, difficulty: 'Contested' },
   { id: '9', x: 15, y: 23, made: true, points: 3, quarter: 3, timeRemaining: '3:44', defender: 'None', shotType: '3PT', distance: 25, difficulty: 'Easy' },
   { id: '10', x: 42, y: 20, made: false, points: 3, quarter: 4, timeRemaining: '2:18', defender: 'Horford', shotType: '3PT', distance: 28, difficulty: 'Hard' },
-  
+
   // Corner 3s
   { id: '11', x: 47, y: 7, made: true, points: 3, quarter: 2, timeRemaining: '8:55', defender: 'None', shotType: 'Corner3', distance: 22, difficulty: 'Easy' },
   { id: '12', x: 3, y: 7, made: false, points: 3, quarter: 4, timeRemaining: '1:45', defender: 'Pritchard', shotType: 'Corner3', distance: 22, difficulty: 'Contested' },
@@ -82,7 +84,13 @@ const shotZones: Zone[] = [
   { id: 'corner3', name: 'Corner 3', path: 'M 0 7 L 3 7 L 3 23 L 0 23 Z', attempts: 4, makes: 2, percentage: 50, expectedPoints: 1.5, difficulty: 5 },
 ];
 
-export default function ShotChart({ playerName = "Player", shots = mockShots, season = "2024-25" }: ShotChartProps) {
+function ShotChart({
+  playerName = "Player",
+  shots = mockShots,
+  zones = shotZones,
+  season = "2024-25",
+  seasonType = "Regular Season"
+}: ShotChartProps) {
   const [viewMode, setViewMode] = useState<'shots' | 'heatmap' | 'zones' | 'evolution'>('shots');
   const [filterQuarter, setFilterQuarter] = useState<string>('all');
   const [filterDifficulty, setFilterDifficulty] = useState<string>('all');
@@ -111,7 +119,7 @@ export default function ShotChart({ playerName = "Player", shots = mockShots, se
     const threeMakes = threePointers.filter(s => s.made).length;
     const twoPointers = filteredShots.filter(s => s.points === 2);
     const twoMakes = twoPointers.filter(s => s.made).length;
-    
+
     return {
       totalShots,
       makes,
@@ -146,13 +154,13 @@ export default function ShotChart({ playerName = "Player", shots = mockShots, se
       setIsAnimating(false);
       return;
     }
-    
+
     setIsAnimating(true);
     let position = 0;
     const interval = setInterval(() => {
       position += 2;
       setTimelinePosition([position]);
-      
+
       if (position >= 100) {
         setIsAnimating(false);
         clearInterval(interval);
@@ -178,7 +186,7 @@ export default function ShotChart({ playerName = "Player", shots = mockShots, se
                 <span>eFG: <strong>{stats.effectiveFieldGoal}%</strong></span>
               </div>
             </div>
-            
+
             {/* View Mode Selector */}
             <Select value={viewMode} onValueChange={(value: any) => setViewMode(value)}>
               <SelectTrigger className="w-[140px]">
@@ -292,8 +300,8 @@ export default function ShotChart({ playerName = "Player", shots = mockShots, se
         <CardContent className="p-6">
           <div className="relative">
             {/* Basketball Court SVG */}
-            <svg 
-              viewBox="0 0 50 25" 
+            <svg
+              viewBox="0 0 50 25"
               className="w-full h-96 border border-gray-300 rounded-lg bg-gradient-to-b from-orange-50 to-orange-100"
               style={{ aspectRatio: '2/1' }}
             >
@@ -303,29 +311,29 @@ export default function ShotChart({ playerName = "Player", shots = mockShots, se
                   <rect width="1" height="1" fill="none" stroke="#d1d5db" strokeWidth="0.05"/>
                 </pattern>
               </defs>
-              
+
               {/* Free throw lane */}
               <rect x="19" y="0" width="12" height="19" fill="none" stroke="#374151" strokeWidth="0.2"/>
-              
+
               {/* Free throw circle */}
               <circle cx="25" cy="19" r="6" fill="none" stroke="#374151" strokeWidth="0.2"/>
-              
+
               {/* 3-point arc */}
-              <path 
-                d="M 3 23.75 A 22 22 0 0 0 47 23.75" 
-                fill="none" 
-                stroke="#374151" 
+              <path
+                d="M 3 23.75 A 22 22 0 0 0 47 23.75"
+                fill="none"
+                stroke="#374151"
                 strokeWidth="0.2"
               />
-              
+
               {/* Hoop */}
               <circle cx="25" cy="5" r="0.75" fill="#dc2626" stroke="#991b1b" strokeWidth="0.1"/>
-              
+
               {/* Backboard */}
               <line x1="22" y1="4" x2="28" y2="4" stroke="#374151" strokeWidth="0.3"/>
 
               {/* Zone overlays for heat map */}
-              {viewMode === 'heatmap' && shotZones.map(zone => (
+              {viewMode === 'heatmap' && zones.map(zone => (
                 <path
                   key={zone.id}
                   d={zone.path}
@@ -336,7 +344,7 @@ export default function ShotChart({ playerName = "Player", shots = mockShots, se
               ))}
 
               {/* Zone analysis overlay */}
-              {viewMode === 'zones' && shotZones.map(zone => (
+              {viewMode === 'zones' && zones.map(zone => (
                 <g key={zone.id}>
                   <path
                     d={zone.path}
@@ -345,10 +353,10 @@ export default function ShotChart({ playerName = "Player", shots = mockShots, se
                     strokeWidth="0.2"
                     strokeDasharray="0.5,0.3"
                   />
-                  <text 
-                    x={zone.id === 'paint' ? 25 : zone.id === 'corner3' ? 1.5 : 25} 
-                    y={zone.id === 'paint' ? 10 : zone.id === 'corner3' ? 15 : 21} 
-                    textAnchor="middle" 
+                  <text
+                    x={zone.id === 'paint' ? 25 : zone.id === 'corner3' ? 1.5 : 25}
+                    y={zone.id === 'paint' ? 10 : zone.id === 'corner3' ? 15 : 21}
+                    textAnchor="middle"
                     className="text-xs fill-blue-700 font-medium"
                     fontSize="1.2"
                   >
@@ -362,9 +370,9 @@ export default function ShotChart({ playerName = "Player", shots = mockShots, se
                 const pos = getShotPosition(shot);
                 const radius = shot.points === 3 ? 0.4 : 0.3;
                 const color = shot.made ? '#10b981' : '#ef4444';
-                const opacity = viewMode === 'evolution' ? 
+                const opacity = viewMode === 'evolution' ?
                   (timelinePosition[0] / 100 >= (shot.quarter - 1) / 4 ? 1 : 0.2) : 1;
-                
+
                 return (
                   <g key={shot.id} opacity={opacity}>
                     <circle
@@ -427,7 +435,7 @@ export default function ShotChart({ playerName = "Player", shots = mockShots, se
       {/* Zone Statistics */}
       {viewMode === 'zones' && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {shotZones.map(zone => (
+          {zones.map(zone => (
             <Card key={zone.id}>
               <CardContent className="p-4">
                 <div className="space-y-2">
@@ -522,14 +530,14 @@ export default function ShotChart({ playerName = "Player", shots = mockShots, se
               Hot Zones
             </h4>
             <div className="space-y-2 text-sm">
-              {shotZones
+              {zones
                 .sort((a, b) => b.percentage - a.percentage)
                 .slice(0, 3)
                 .map((zone, index) => (
                   <div key={zone.id} className="flex justify-between">
                     <span>{zone.name}:</span>
-                    <Badge 
-                      variant={index === 0 ? 'default' : 'secondary'} 
+                    <Badge
+                      variant={index === 0 ? 'default' : 'secondary'}
                       className="text-xs"
                     >
                       {zone.percentage.toFixed(1)}%
@@ -543,3 +551,6 @@ export default function ShotChart({ playerName = "Player", shots = mockShots, se
     </div>
   );
 }
+
+export default ShotChart;
+export { ShotChart };
