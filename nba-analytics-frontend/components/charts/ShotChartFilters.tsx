@@ -22,7 +22,7 @@ interface ShotChartFiltersComponentProps {
     setShowThreePointers: (value: boolean) => void;
   };
   maxShotDistance: number;
-  onResetFilters: () => void; // Add a reset handler prop
+  onResetFilters: () => void;
 }
 
 export function ShotChartFiltersComponent({

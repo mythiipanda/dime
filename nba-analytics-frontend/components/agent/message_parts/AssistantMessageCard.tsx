@@ -2,12 +2,10 @@
 
 import React from 'react';
 import { Card } from "@/components/ui/card";
-import { Components } from 'react-markdown'; // For markdownComponents prop type
-import { AgentProcessCollapsible, AgentProcessCollapsibleProps, ToolCall } from './AgentProcessCollapsible'; // Assuming ToolCall is exported here too or from a shared types file
+import { Components } from 'react-markdown';
+import { AgentProcessCollapsible, AgentProcessCollapsibleProps, ToolCall } from './AgentProcessCollapsible';
 import { FinalAnswerDisplay, FinalAnswerDisplayProps } from './FinalAnswerDisplay';
 
-// Minimal SSEChatMessage type needed for this component
-// Actual import: import { ChatMessage as SSEChatMessage } from "@/lib/hooks/useAgentChatSSE";
 interface MessageMetadata {
   agent_id?: string;
   session_id?: string;
@@ -44,7 +42,7 @@ interface MinimalSSEChatMessage {
 
 export interface AssistantMessageCardProps {
   message: MinimalSSEChatMessage;
-  agentDisplayName?: string; // Added to receive the processed agent name
+  agentDisplayName?: string;
   reasoningNarrative: string;
   finalAnswerForDisplay: string;
   isThinkingExpanded: boolean;
@@ -75,7 +73,6 @@ export const AssistantMessageCard: React.FC<AssistantMessageCardProps> = ({
   onCopyFinalAnswer,
   isFinalAnswerCopied,
 }) => {
-  // Get model name for display if available
   const modelName = message.metadata?.model || "";
 
   return (

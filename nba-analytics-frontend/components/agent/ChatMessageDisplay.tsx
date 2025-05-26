@@ -1,4 +1,3 @@
-// components/agent/ChatMessageDisplay.tsx
 "use client"
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
@@ -114,12 +113,10 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
   const [expandedToolContent, setExpandedToolContent] = useState<{ [key: number]: boolean }>({});
   const [isCodeCopied, setIsCodeCopied] = useState(false);
 
-  // Extract content for display
   let reasoningNarrative = "";
   let finalAnswerForDisplay = "";
   const fullContent = message.content || "";
 
-  // Get agent name from metadata or fallback to message.agentName
   let agentDisplayName = "Assistant";
   if (message.metadata?.agent_id) {
     const agentIdParts = message.metadata.agent_id.split('-');
@@ -129,11 +126,9 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
       message.agentName.split('-')[0] : message.agentName;
   }
 
-  // Extract reasoning data if available
   const thinkingProcess = message.reasoning?.thinking || "";
   const reasoningContent = message.reasoning?.content || "";
 
-  // Extract thinking patterns from content
   const extractThinkingPatterns = (content: string): { thinking: string, planning: string, analyzing: string } => {
     const patterns = {
       thinking: /\*\*Thinking:\*\*(.*?)(?=\*\*|$)/gi,
@@ -147,7 +142,6 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
       analyzing: ""
     };
 
-    // Extract each pattern
     for (const [key, pattern] of Object.entries(patterns)) {
       const matches = [...content.matchAll(pattern)];
       if (matches.length > 0) {
@@ -159,33 +153,25 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
   };
 
   if (message.role === 'assistant') {
-    // Check for final answer marker
     const markerIndex = fullContent.indexOf(FINAL_ANSWER_MARKER);
 
     if (markerIndex !== -1) {
-      // Split content at the marker
       reasoningNarrative = fullContent.substring(0, markerIndex).trim();
       finalAnswerForDisplay = fullContent.substring(markerIndex + FINAL_ANSWER_MARKER.length).trim();
     } else if (message.status === 'complete' && !message.dataType) {
-      // If complete and no data type, treat all content as final answer
       finalAnswerForDisplay = fullContent.trim();
       reasoningNarrative = "";
     } else if (message.status === 'thinking' || message.status === 'tool_calling') {
-      // If thinking or calling tools, treat all content as reasoning
       reasoningNarrative = fullContent.trim();
       finalAnswerForDisplay = "";
     } else {
-      // Default case - treat as reasoning
       reasoningNarrative = fullContent.trim();
     }
 
-    // Extract thinking patterns from content
     const extractedPatterns = extractThinkingPatterns(fullContent);
 
-    // Build enhanced reasoning narrative
     let enhancedReasoning = reasoningNarrative;
 
-    // If we have explicit reasoning data from the message metadata, add it
     if (thinkingProcess || reasoningContent || message.reasoning?.patterns) {
       if (enhancedReasoning) {
         enhancedReasoning += "\n\n";
@@ -199,7 +185,6 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
         enhancedReasoning += `**Reasoning:**\n${reasoningContent}\n\n`;
       }
 
-      // Add patterns from the reasoning data if available
       if (message.reasoning?.patterns) {
         const patterns = message.reasoning.patterns;
 
@@ -217,7 +202,6 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
       }
     }
 
-    // Add extracted thinking patterns if they're not already in the reasoning
     if (extractedPatterns.thinking && !enhancedReasoning.includes(extractedPatterns.thinking)) {
       enhancedReasoning += `\n\n**Thinking:**\n${extractedPatterns.thinking}\n\n`;
     }
@@ -230,14 +214,11 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
       enhancedReasoning += `\n\n**Analyzing:**\n${extractedPatterns.analyzing}\n\n`;
     }
 
-    // Update the reasoning narrative with the enhanced version
     reasoningNarrative = enhancedReasoning.trim();
   }
 
-  // Track if the final event has been received
   const [finalEventReceived, setFinalEventReceived] = useState(false);
 
-  // When the event changes to "RunCompleted" or "final", mark that the final event has been received
   useEffect(() => {
     if (message.event === "RunCompleted" || message.event === "final") {
       console.log(`ChatMessageDisplay: Received ${message.event} event`);
@@ -245,11 +226,9 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
     }
   }, [message.event]);
 
-  // Also check for the "complete" status with 100% progress as a fallback
   useEffect(() => {
     if (message.status === "complete" && message.progress === 100) {
       console.log("ChatMessageDisplay: Detected complete status with 100% progress");
-      // Add a small delay to ensure all content is processed
       const timer = setTimeout(() => {
         setFinalEventReceived(true);
       }, 500);
@@ -257,7 +236,6 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
     }
   }, [message.status, message.progress]);
 
-  // Log when final event is received for debugging
   useEffect(() => {
     if (finalEventReceived) {
       console.log("ChatMessageDisplay: Final event received, content should be complete");
@@ -266,23 +244,19 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
 
   useEffect(() => {
     if (isLatest && message.role === 'assistant') {
-      // Auto-expand thinking process while in progress
       if (message.status === 'thinking' || message.status === 'tool_calling') {
         setIsThinkingExpanded(true);
       }
     }
   }, [isLatest, message.status, message.role]);
 
-  // Separate effect for handling auto-collapse to avoid conflicts
   useEffect(() => {
     if (isLatest && message.role === 'assistant') {
-      // Auto-collapse thinking process ONLY when final event is received AND has final answer
       if (finalEventReceived && finalAnswerForDisplay) {
         console.log("ChatMessageDisplay: Auto-collapsing thinking process");
-        // Add a small delay to allow the user to see the final thinking state
         const collapseTimer = setTimeout(() => {
           setIsThinkingExpanded(false);
-        }, 1500); // 1.5 second delay
+        }, 1500);
 
         return () => clearTimeout(collapseTimer);
       }

@@ -21,10 +21,10 @@ import {
 
 interface ShotData {
   id: string;
-  x: number; // Court coordinates (0-94 feet)
-  y: number; // Court coordinates (0-50 feet)
+  x: number;
+  y: number;
   made: boolean;
-  points: number; // 2 or 3
+  points: number;
   quarter: number;
   timeRemaining: string;
   defender: string;
@@ -36,7 +36,7 @@ interface ShotData {
 interface Zone {
   id: string;
   name: string;
-  path: string; // SVG path
+  path: string;
   attempts: number;
   makes: number;
   percentage: number;
@@ -53,30 +53,24 @@ interface ShotChartProps {
   gameRange?: [number, number];
 }
 
-// Mock shot data for demonstration
 const mockShots: ShotData[] = [
-  // Paint shots
   { id: '1', x: 25, y: 5, made: true, points: 2, quarter: 1, timeRemaining: '10:23', defender: 'Lopez', shotType: 'Layup', distance: 2, difficulty: 'Easy' },
   { id: '2', x: 25, y: 8, made: false, points: 2, quarter: 1, timeRemaining: '9:45', defender: 'Howard', shotType: 'Hook', distance: 4, difficulty: 'Medium' },
   { id: '3', x: 23, y: 6, made: true, points: 2, quarter: 2, timeRemaining: '8:12', defender: 'None', shotType: 'Dunk', distance: 1, difficulty: 'Easy' },
 
-  // Mid-range shots
   { id: '4', x: 25, y: 15, made: true, points: 2, quarter: 1, timeRemaining: '7:30', defender: 'Smart', shotType: 'Pullup', distance: 12, difficulty: 'Medium' },
   { id: '5', x: 30, y: 18, made: false, points: 2, quarter: 2, timeRemaining: '6:45', defender: 'Brown', shotType: 'Fadeaway', distance: 16, difficulty: 'Hard' },
   { id: '6', x: 20, y: 17, made: true, points: 2, quarter: 3, timeRemaining: '11:22', defender: 'White', shotType: 'Turnaround', distance: 14, difficulty: 'Medium' },
 
-  // 3-point shots
   { id: '7', x: 25, y: 23, made: true, points: 3, quarter: 1, timeRemaining: '5:15', defender: 'Holiday', shotType: '3PT', distance: 24, difficulty: 'Medium' },
   { id: '8', x: 35, y: 23, made: false, points: 3, quarter: 2, timeRemaining: '4:33', defender: 'Tatum', shotType: '3PT', distance: 26, difficulty: 'Contested' },
   { id: '9', x: 15, y: 23, made: true, points: 3, quarter: 3, timeRemaining: '3:44', defender: 'None', shotType: '3PT', distance: 25, difficulty: 'Easy' },
   { id: '10', x: 42, y: 20, made: false, points: 3, quarter: 4, timeRemaining: '2:18', defender: 'Horford', shotType: '3PT', distance: 28, difficulty: 'Hard' },
 
-  // Corner 3s
   { id: '11', x: 47, y: 7, made: true, points: 3, quarter: 2, timeRemaining: '8:55', defender: 'None', shotType: 'Corner3', distance: 22, difficulty: 'Easy' },
   { id: '12', x: 3, y: 7, made: false, points: 3, quarter: 4, timeRemaining: '1:45', defender: 'Pritchard', shotType: 'Corner3', distance: 22, difficulty: 'Contested' },
 ];
 
-// Shot zones for heat map analysis
 const shotZones: Zone[] = [
   { id: 'paint', name: 'Paint', path: 'M 19 0 L 19 19 L 31 19 L 31 0 Z', attempts: 8, makes: 6, percentage: 75, expectedPoints: 1.5, difficulty: 2 },
   { id: 'midrange', name: 'Mid-Range', path: 'M 10 19 L 10 23 L 40 23 L 40 19 Z', attempts: 12, makes: 7, percentage: 58.3, expectedPoints: 1.17, difficulty: 6 },
@@ -100,7 +94,6 @@ function ShotChart({
   const [timelinePosition, setTimelinePosition] = useState([100]);
   const [isAnimating, setIsAnimating] = useState(false);
 
-  // Filter shots based on current filters
   const filteredShots = useMemo(() => {
     return shots.filter(shot => {
       if (filterQuarter !== 'all' && shot.quarter.toString() !== filterQuarter) return false;
@@ -111,7 +104,6 @@ function ShotChart({
     });
   }, [shots, filterQuarter, filterDifficulty, showMakes, showMisses]);
 
-  // Calculate shooting stats
   const stats = useMemo(() => {
     const totalShots = filteredShots.length;
     const makes = filteredShots.filter(s => s.made).length;
@@ -131,24 +123,19 @@ function ShotChart({
     };
   }, [filteredShots]);
 
-  // Convert shot coordinates to SVG coordinates
   const getShotPosition = (shot: ShotData) => {
-    // NBA court is 94 feet long, 50 feet wide
-    // SVG viewBox is 0 0 50 25 (half court)
     const x = (shot.x / 94) * 50;
     const y = (shot.y / 50) * 25;
     return { x, y };
   };
 
-  // Get heat map intensity for a zone
   const getHeatMapIntensity = (percentage: number) => {
-    if (percentage >= 60) return 'rgba(34, 197, 94, 0.8)'; // Green
-    if (percentage >= 45) return 'rgba(234, 179, 8, 0.8)'; // Yellow
-    if (percentage >= 35) return 'rgba(249, 115, 22, 0.8)'; // Orange
-    return 'rgba(239, 68, 68, 0.8)'; // Red
+    if (percentage >= 60) return 'rgba(34, 197, 94, 0.8)';
+    if (percentage >= 45) return 'rgba(234, 179, 8, 0.8)';
+    if (percentage >= 35) return 'rgba(249, 115, 22, 0.8)';
+    return 'rgba(239, 68, 68, 0.8)';
   };
 
-  // Animate timeline
   const handlePlayAnimation = () => {
     if (isAnimating) {
       setIsAnimating(false);

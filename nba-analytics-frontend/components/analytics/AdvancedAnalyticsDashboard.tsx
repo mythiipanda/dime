@@ -47,7 +47,6 @@ export function AdvancedAnalyticsDashboard({ teamId, playerId, season }: Advance
         setLoading(true);
         setError(null);
 
-        // Fetch real RAPTOR metrics if player ID is provided
         if (playerId) {
           try {
             const raptorResponse = await fetch(`/api/v1/advanced-analytics/raptor-metrics?player_id=${playerId}&season=${season}&return_dataframe=true`);
@@ -56,27 +55,49 @@ export function AdvancedAnalyticsDashboard({ teamId, playerId, season }: Advance
             const playerImpactResponse = await fetch(`/api/v1/advanced-analytics/player-impact?player_id=${playerId}&season=${season}&return_dataframe=true`);
             const playerImpactData = await playerImpactResponse.json();
 
-            // Transform the data to match our component structure
-            const transformedPlayerData = [{
+            const transformedPlayerData: PlayerImpactMetrics[] = [{
               playerId: playerId,
               playerName: raptorData.PLAYER_NAME || 'Unknown Player',
               team: 'N/A',
               position: raptorData.POSITION || 'N/A',
+              minutesPlayed: playerImpactData.MINUTES_PLAYED || 2000, // Added
+              gamesPlayed: playerImpactData.GAMES_PLAYED || 70,
               offensiveRAPTOR: raptorData.RAPTOR_OFFENSE || 0,
               defensiveRAPTOR: raptorData.RAPTOR_DEFENSE || 0,
               totalRAPTOR: raptorData.RAPTOR_TOTAL || 0,
-              offensiveEPM: raptorData.RAPTOR_OFFENSE || 0, // Use RAPTOR as EPM fallback
-              defensiveEPM: raptorData.RAPTOR_DEFENSE || 0,
-              totalEPM: raptorData.RAPTOR_TOTAL || 0,
-              gamesPlayed: 70, // Default value
-              war: raptorData.WAR || 0,
-              eloRating: raptorData.ELO_RATING || 1500
+              offensiveEPM: raptorData.RAPTOR_OFFENSE || 0, // Using RAPTOR as fallback
+              defensiveEPM: raptorData.RAPTOR_DEFENSE || 0, // Using RAPTOR as fallback
+              totalEPM: raptorData.RAPTOR_TOTAL || 0, // Using RAPTOR as fallback
+              offensiveLEBRON: 0, // Added default
+              defensiveLEBRON: 0, // Added default
+              totalLEBRON: 0, // Added default
+              per: playerImpactData.PER || 15.0, // Added
+              trueShooting: playerImpactData.TS_PCT || 0.550, // Added
+              usageRate: playerImpactData.USG_PCT || 0.20, // Added
+              winShares: playerImpactData.WS || 0, // Added
+              winSharesPer48: playerImpactData.WS_PER_48 || 0.100, // Added
+              bpm: playerImpactData.BPM || 0, // Added
+              vorp: playerImpactData.VORP || 0, // Added
+              defenseImpact: 0, // Added default
+              playmaking: 0, // Added default
+              rebounding: 0, // Added default
+              shooting: 0, // Added default
+              clutchPerformance: 0, // Added default
+              playoffImpact: 0, // Added default
+              versatility: 0, // Added default
+              durability: 0, // Added default
+              projectedWins: raptorData.WAR || 0, // Using WAR as fallback for projectedWins
+              marketValue: 0, // Added default
+              injuryRisk: 0, // Added default
+              overallPercentile: 0, // Added default
+              offensePercentile: 0, // Added default
+              defensePercentile: 0, // Added default
+              // eloRating is not in PlayerImpactMetrics, WAR is used for projectedWins
             }];
 
             setPlayerMetrics(transformedPlayerData);
           } catch (playerError) {
             console.error('Error fetching player metrics:', playerError);
-            // Fall back to mock data for player
             const mockPlayerData = generateMockPlayerData();
             const raptorMetrics = mockPlayerData.map(player => {
               const raptor = RAPTORModel.calculateRAPTOR(player);
@@ -93,7 +114,6 @@ export function AdvancedAnalyticsDashboard({ teamId, playerId, season }: Advance
             setPlayerMetrics(raptorMetrics);
           }
         } else {
-          // Use mock data if no player ID
           const mockPlayerData = generateMockPlayerData();
           const raptorMetrics = mockPlayerData.map(player => {
             const raptor = RAPTORModel.calculateRAPTOR(player);
@@ -110,47 +130,54 @@ export function AdvancedAnalyticsDashboard({ teamId, playerId, season }: Advance
           setPlayerMetrics(raptorMetrics);
         }
 
-        // Fetch team efficiency metrics if team ID is provided
         if (teamId) {
           try {
             const teamEfficiencyResponse = await fetch(`/api/v1/advanced-analytics/team-efficiency?team_id=${teamId}&season=${season}&return_dataframe=true`);
             const teamEfficiencyData = await teamEfficiencyResponse.json();
 
-            // Transform team data
-            const transformedTeamData = {
+            const transformedTeamData: TeamImpactMetrics = {
               teamId: teamId,
-              teamName: 'Team',
+              teamName: teamEfficiencyData.TEAM_NAME || 'Team',
               season: season,
-              offensiveRating: 116.3, // Default values - would be extracted from API response
-              defensiveRating: 116.8,
-              netRating: -0.5,
-              pace: 102.1,
-              assistRatio: 0.63,
-              passesPerGame: 312,
-              secondaryAssists: 12,
-              deflections: 18,
-              contestedShots: 52,
-              helpDefense: 23,
-              effectiveFieldGoalPct: 0.566,
-              turnoverRate: 0.142,
-              offensiveReboundPct: 0.231,
-              freeThrowRate: 0.198
+              offensiveRating: teamEfficiencyData.OFF_RATING || 116.3,
+              defensiveRating: teamEfficiencyData.DEF_RATING || 116.8,
+              netRating: teamEfficiencyData.NET_RATING || -0.5,
+              pace: teamEfficiencyData.PACE || 102.1,
+              assistRatio: teamEfficiencyData.AST_RATIO || 0.63,
+              // passesPerGame, secondaryAssists, deflections, contestedShots, helpDefense are not directly in TeamImpactMetrics
+              // They might be used to calculate other metrics like ballMovement or defensiveRotations
+              effectiveFieldGoalPct: teamEfficiencyData.EFG_PCT || 0.566,
+              turnoverRate: teamEfficiencyData.TOV_PCT || 0.142, // Assuming TOV_PCT is turnover rate
+              offensiveReboundPct: teamEfficiencyData.OREB_PCT || 0.231,
+              freeThrowRate: teamEfficiencyData.FTA_RATE || 0.198, // Assuming FTA_RATE is free throw rate
+              oppEffectiveFieldGoalPct: teamEfficiencyData.OPP_EFG_PCT || 0.530, // Added default
+              oppTurnoverRate: teamEfficiencyData.OPP_TOV_PCT || 0.135, // Added default
+              oppOffensiveReboundPct: teamEfficiencyData.OPP_OREB_PCT || 0.220, // Added default
+              oppFreeThrowRate: teamEfficiencyData.OPP_FTA_RATE || 0.190, // Added default
+              strengthOfSchedule: teamEfficiencyData.SOS || 0, // Added default
+              strengthOfScheduleRank: teamEfficiencyData.SOS_RANK || 15, // Added default
+              clutchRecord: "0-0", // Added default
+              clutchNetRating: 0, // Added default
+              playoffProbability: 0.5, // Added default
+              projectedWins: teamEfficiencyData.W || 41, // Added default
+              championshipOdds: 0.05, // Added default
+              ballMovement: 0, // Added default (can be calculated later)
+              defensiveRotations: 0, // Added default (can be calculated later)
+              injuryImpact: 0, // Added default
+              depthScore: 0, // Added default
             };
 
             setTeamMetrics(transformedTeamData);
           } catch (teamError) {
             console.error('Error fetching team metrics:', teamError);
-            // Fall back to mock data
             const mockTeamData = generateMockTeamData();
             setTeamMetrics(mockTeamData);
           }
         } else {
-          // Use mock data if no team ID
           const mockTeamData = generateMockTeamData();
           setTeamMetrics(mockTeamData);
         }
 
-        // Calculate team chemistry (using mock for now)
         const chemistry = TeamChemistryModel.calculateTeamChemistry(
           teamMetrics || generateMockTeamData(),
           playerMetrics
@@ -161,7 +188,6 @@ export function AdvancedAnalyticsDashboard({ teamId, playerId, season }: Advance
         console.error('Error fetching advanced metrics:', err);
         setError('Failed to load advanced analytics');
 
-        // Fall back to mock data on error
         const mockPlayerData = generateMockPlayerData();
         const mockTeamData = generateMockTeamData();
 

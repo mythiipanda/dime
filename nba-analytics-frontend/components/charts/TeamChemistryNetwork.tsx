@@ -71,7 +71,6 @@ interface TeamChemistryProps {
   viewMode: 'chemistry' | 'leadership' | 'performance' | 'clutch';
 }
 
-// Mock data for Lakers chemistry network
 const mockPlayers: PlayerNode[] = [
   {
     id: 'lebron', name: 'LeBron James', position: 'SF', jersey: 23, isStarter: true,
@@ -118,23 +117,19 @@ const mockPlayers: PlayerNode[] = [
 ];
 
 const mockConnections: PlayerConnection[] = [
-  // LeBron connections (high leadership influence)
   { from: 'lebron', to: 'ad', strength: 95, type: 'positive', onCourtPlusMinus: 12.3, gamesPlayedTogether: 45, assistConnectionRate: 78, defensiveCoordination: 88, improvingTrend: true, clutchSynergy: 92, playoffPerformance: 89 },
   { from: 'lebron', to: 'reaves', strength: 88, type: 'positive', onCourtPlusMinus: 8.7, gamesPlayedTogether: 42, assistConnectionRate: 65, defensiveCoordination: 72, improvingTrend: true, clutchSynergy: 85, playoffPerformance: 82 },
   { from: 'lebron', to: 'russell', strength: 72, type: 'neutral', onCourtPlusMinus: 3.2, gamesPlayedTogether: 38, assistConnectionRate: 45, defensiveCoordination: 58, improvingTrend: false, clutchSynergy: 68, playoffPerformance: 65 },
   { from: 'lebron', to: 'vanderbilt', strength: 91, type: 'positive', onCourtPlusMinus: 9.8, gamesPlayedTogether: 28, assistConnectionRate: 42, defensiveCoordination: 95, improvingTrend: true, clutchSynergy: 78, playoffPerformance: 88 },
   
-  // AD connections
   { from: 'ad', to: 'reaves', strength: 82, type: 'positive', onCourtPlusMinus: 6.8, gamesPlayedTogether: 41, assistConnectionRate: 58, defensiveCoordination: 85, improvingTrend: true, clutchSynergy: 80, playoffPerformance: 75 },
   { from: 'ad', to: 'hachimura', strength: 79, type: 'positive', onCourtPlusMinus: 5.2, gamesPlayedTogether: 35, assistConnectionRate: 52, defensiveCoordination: 82, improvingTrend: false, clutchSynergy: 72, playoffPerformance: 78 },
   { from: 'ad', to: 'vanderbilt', strength: 89, type: 'positive', onCourtPlusMinus: 8.9, gamesPlayedTogether: 26, assistConnectionRate: 38, defensiveCoordination: 92, improvingTrend: true, clutchSynergy: 85, playoffPerformance: 90 },
   
-  // Role player connections
   { from: 'reaves', to: 'russell', strength: 75, type: 'positive', onCourtPlusMinus: 4.1, gamesPlayedTogether: 39, assistConnectionRate: 68, defensiveCoordination: 65, improvingTrend: true, clutchSynergy: 75, playoffPerformance: 70 },
   { from: 'reaves', to: 'christie', strength: 85, type: 'positive', onCourtPlusMinus: 6.2, gamesPlayedTogether: 25, assistConnectionRate: 72, defensiveCoordination: 78, improvingTrend: true, clutchSynergy: 82, playoffPerformance: 68 },
   { from: 'russell', to: 'hachimura', strength: 68, type: 'neutral', onCourtPlusMinus: 1.8, gamesPlayedTogether: 33, assistConnectionRate: 48, defensiveCoordination: 55, improvingTrend: false, clutchSynergy: 62, playoffPerformance: 58 },
   
-  // Developing connections
   { from: 'vanderbilt', to: 'christie', strength: 78, type: 'positive', onCourtPlusMinus: 4.8, gamesPlayedTogether: 18, assistConnectionRate: 35, defensiveCoordination: 88, improvingTrend: true, clutchSynergy: 70, playoffPerformance: 72 },
 ];
 
@@ -155,10 +150,8 @@ export default function TeamChemistryNetwork({
   const [timeElapsed, setTimeElapsed] = useState(0);
   const animationRef = useRef<number | null>(null);
 
-  // Filter connections by strength
   const filteredConnections = connections.filter(conn => conn.strength >= filterStrength[0]);
 
-  // Calculate network positions based on layout
   const nodePositions = useMemo(() => {
     const positions: { [key: string]: { x: number; y: number } } = {};
     const centerX = 250;
@@ -174,7 +167,6 @@ export default function TeamChemistryNetwork({
         };
       });
     } else if (networkLayout === 'hierarchical') {
-      // Sort by leadership/centrality
       const sortedPlayers = [...players].sort((a, b) => b.leadership - a.leadership);
       sortedPlayers.forEach((player, index) => {
         const tier = Math.floor(index / 3);
@@ -185,7 +177,6 @@ export default function TeamChemistryNetwork({
         };
       });
     } else {
-      // Force-directed layout simulation (simplified)
       players.forEach((player, index) => {
         const angle = (index / players.length) * 2 * Math.PI;
         const radius = 80 + player.centralityScore * 0.8;
@@ -199,7 +190,6 @@ export default function TeamChemistryNetwork({
     return positions;
   }, [players, networkLayout]);
 
-  // Get node color based on view mode
   const getNodeColor = (player: PlayerNode) => {
     switch (viewMode) {
       case 'chemistry':
@@ -215,17 +205,15 @@ export default function TeamChemistryNetwork({
     }
   };
 
-  // Get connection color and width
   const getConnectionStyle = (connection: PlayerConnection) => {
     const width = Math.max(1, (connection.strength / 100) * 4);
-    const color = connection.type === 'positive' ? '#10b981' : 
+    const color = connection.type === 'positive' ? '#10b981' :
                  connection.type === 'negative' ? '#ef4444' : '#6b7280';
     const opacity = connection.improvingTrend ? 0.8 : 0.5;
     
     return { width, color, opacity };
   };
 
-  // Animation loop for flow effects
   useEffect(() => {
     if (animateFlow) {
       const animate = () => {
@@ -246,7 +234,6 @@ export default function TeamChemistryNetwork({
     };
   }, [animateFlow]);
 
-  // Calculate team chemistry insights
   const teamInsights = useMemo(() => {
     const avgChemistry = players.reduce((sum, p) => sum + p.teamChemistry, 0) / players.length;
     const strongConnections = filteredConnections.filter(c => c.strength > 80).length;
@@ -395,7 +382,6 @@ export default function TeamChemistryNetwork({
                 const style = getConnectionStyle(connection);
                 const isSelected = selectedConnection?.from === connection.from && selectedConnection?.to === connection.to;
                 
-                // Animation offset for flow effect
                 const animOffset = animateFlow ? (timeElapsed * 50 + index * 30) % 100 : 0;
 
                 return (

@@ -4,7 +4,7 @@ import React from 'react';
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Loader2, CheckCircle2, XCircle, AlertCircle, TerminalSquare } from "lucide-react";
-import { ToolCall } from "../ChatMessageDisplay"; // Assuming ToolCall interface is exported from ChatMessageDisplay or a shared types file
+import { ToolCall } from "../ChatMessageDisplay";
 import { cn } from "@/lib/utils";
 
 interface ToolCallItemProps {

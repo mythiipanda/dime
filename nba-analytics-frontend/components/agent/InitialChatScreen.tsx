@@ -5,7 +5,6 @@ import { Logo } from "@/components/layout/Logo";
 import { ZapIcon, AlertTriangleIcon, MessageSquareTextIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-// Animation delay constants
 const INITIAL_SCREEN_BASE_DELAY_MS = 300;
 const PROMPT_BUTTON_STAGGER_DELAY_MS = 75;
 
@@ -24,7 +23,6 @@ export function InitialChatScreen({ onExampleClick }: InitialChatScreenProps) {
   return (
     <div className={cn(
       "flex flex-col items-center justify-center text-center space-y-6 sm:space-y-8",
-      // "animate-in fade-in-0 duration-500" // Animation disabled
     )}>
       {/* <div className="animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-100"> */}
       <div> {/* Animation disabled */}
@@ -46,9 +44,7 @@ export function InitialChatScreen({ onExampleClick }: InitialChatScreenProps) {
               className={cn(
                 "text-left justify-start h-auto py-2.5 px-3.5 text-sm font-normal leading-snug whitespace-normal",
                 "hover:bg-accent/70 dark:hover:bg-accent/50 transition-all hover:scale-[1.02] active:scale-[0.98]",
-                // "animate-in fade-in-0 zoom-in-95 duration-300" // Animation disabled
               )}
-              // style={{ animationDelay: `${INITIAL_SCREEN_BASE_DELAY_MS + index * PROMPT_BUTTON_STAGGER_DELAY_MS}ms` }} // Animation disabled
               onClick={() => onExampleClick(promptItem.text)}
             >
               {promptItem.icon}

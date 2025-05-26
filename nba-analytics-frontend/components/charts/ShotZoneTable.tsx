@@ -4,10 +4,10 @@ import React from 'react';
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from '@/lib/utils';
-import { ZoneData } from './types'; // Import from new types file
+import { ZoneData } from './types';
 
 interface ShotZoneTableProps {
-  zones: ZoneData[]; // Use imported ZoneData
+  zones: ZoneData[];
 }
 
 export function ShotZoneTable({ zones }: ShotZoneTableProps) {

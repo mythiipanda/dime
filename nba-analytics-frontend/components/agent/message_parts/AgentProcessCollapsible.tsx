@@ -2,14 +2,13 @@
 
 import React from 'react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Button } from "@/components/ui/button"; // Added for consistency, though not directly in this snippet
+import { Button } from "@/components/ui/button";
 import { Loader2, CheckCircle2, Brain, ChevronUp, ChevronDown, Wrench, AlertCircle } from "lucide-react";
 import ReactMarkdown, { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { cn } from "@/lib/utils";
-import ToolCallItem from './ToolCallItem'; // Changed to default import
+import ToolCallItem from './ToolCallItem';
 
-// Ensure these types are correctly imported or defined in a shared location
 export interface ToolCall {
   tool_name: string;
   args?: any;
@@ -18,14 +17,9 @@ export interface ToolCall {
   isError?: boolean;
 }
 
-// Assuming SSEChatMessage is defined elsewhere, e.g., in a types file or imported from the hook
-// For now, let's define a minimal version here if not readily available for import path
-// import { ChatMessage as SSEChatMessage } from "@/lib/hooks/useAgentChatSSE";
-// If the above import path is not correct, ensure SSEChatMessage is defined appropriately.
-// For the purpose of this component, we only need status and event from message.
 interface MinimalSSEChatMessage {
-    status?: 'thinking' | 'tool_calling' | 'complete' | 'error';
-    event?: string;
+  status?: 'thinking' | 'tool_calling' | 'complete' | 'error';
+  event?: string;
 }
 
 

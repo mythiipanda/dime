@@ -79,7 +79,6 @@ interface Player {
   weight: number;
   experience: number;
   
-  // Current Performance Metrics
   minutesPlayed: number;
   points: number;
   rebounds: number;
@@ -92,7 +91,6 @@ interface Player {
   threePointPercentage: number;
   freeThrowPercentage: number;
   
-  // Advanced Metrics
   playerEfficiencyRating: number;
   trueShootingPercentage: number;
   usageRate: number;
@@ -101,25 +99,22 @@ interface Player {
   stealRate: number;
   blockRate: number;
   
-  // Fitness & Health
-  fatigueLevel: number; // 0-100
-  injuryRisk: number; // 0-100
+  fatigueLevel: number;
+  injuryRisk: number;
   condition: 'excellent' | 'good' | 'fair' | 'questionable' | 'injured';
-  stamina: number; // 0-100
-  
-  // Strategic Attributes
+  stamina: number;
+
   defensiveRating: number;
   offensiveRating: number;
   clutchRating: number;
-  leadership: number; // 0-100
-  chemistry: { [playerId: string]: number }; // chemistry with other players
-  versatility: number; // ability to play multiple positions
-  
-  // AI Predictions
-  projectedPerformance: number; // 0-100 for next game
+  leadership: number;
+  chemistry: { [playerId: string]: number };
+  versatility: number;
+
+  projectedPerformance: number;
   optimalMinutes: number;
   recommendedRole: 'starter' | 'sixth-man' | 'rotation' | 'situational' | 'bench';
-  matchupAdvantage: number; // -100 to 100 vs opponent
+  matchupAdvantage: number;
 }
 
 interface LineupConfiguration {
@@ -127,15 +122,15 @@ interface LineupConfiguration {
   name: string;
   players: Player[];
   type: 'starting' | 'closing' | 'defensive' | 'offensive' | 'small-ball' | 'big-ball' | 'bench';
-  expectedEfficiency: number; // 0-100
+  expectedEfficiency: number;
   offensiveRating: number;
   defensiveRating: number;
   paceRating: number;
   reboundingRating: number;
   ballMovementRating: number;
-  spacing: number; // 0-100
-  chemistry: number; // 0-100
-  matchupRating: number; // vs specific opponent
+  spacing: number;
+  chemistry: number;
+  matchupRating: number;
   situationalUse: string[];
   strengths: string[];
   weaknesses: string[];
@@ -148,11 +143,11 @@ interface GameStrategy {
   name: string;
   description: string;
   type: 'offensive' | 'defensive' | 'balanced' | 'pace' | 'specialty';
-  effectiveness: number; // 0-100
+  effectiveness: number;
   gameContext: {
     quarter: 1 | 2 | 3 | 4 | 'OT';
     timeRemaining: number;
-    scoreMargin: number; // positive = leading, negative = trailing
+    scoreMargin: number;
     fouls: number;
     timeouts: number;
   };
@@ -167,23 +162,23 @@ interface GameStrategy {
     turnoverRate: number;
     reboundRate: number;
   };
-  counters: string[]; // what this strategy counters
-  weaknesses: string[]; // what this strategy is weak against
-  successRate: number; // historical success rate
+  counters: string[];
+  weaknesses: string[];
+  successRate: number;
 }
 
 interface RotationPlan {
   quarter: 1 | 2 | 3 | 4;
   timeSegments: {
-    startTime: number; // minutes remaining in quarter
+    startTime: number;
     endTime: number;
-    lineup: string; // lineup ID
-    strategy: string; // strategy ID
+    lineup: string;
+    strategy: string;
     priority: 'rest' | 'scoring' | 'defense' | 'momentum' | 'closing';
     playerMinutes: { [playerId: string]: number };
   }[];
   totalMinutes: { [playerId: string]: number };
-  restPeriods: { [playerId: string]: number[] }; // minutes of rest
+  restPeriods: { [playerId: string]: number[] };
   keyMoments: {
     time: number;
     action: string;
@@ -228,7 +223,6 @@ interface StrategyOptimizerProps {
   };
 }
 
-// Mock Data
 const mockPlayers: Player[] = [
   {
     id: 'lebron',
@@ -517,8 +511,8 @@ export default function TeamStrategyOptimizer({
   const [optimizationMode, setOptimizationMode] = useState<'defensive' | 'offensive' | 'balanced' | 'situational'>('balanced');
   const [autoOptimize, setAutoOptimize] = useState(true);
   const [showAdvancedMetrics, setShowAdvancedMetrics] = useState(true);
-  const [timeHorizon, setTimeHorizon] = useState([240]); // 4 minutes ahead
-  const [riskTolerance, setRiskTolerance] = useState([50]); // 0-100
+  const [timeHorizon, setTimeHorizon] = useState([240]);
+  const [riskTolerance, setRiskTolerance] = useState([50]);
   const [priorityWeight, setPriorityWeight] = useState<{ [key: string]: number }>({
     offense: 50,
     defense: 50,
@@ -527,7 +521,6 @@ export default function TeamStrategyOptimizer({
     experience: 40
   });
 
-  // Calculate lineup efficiency
   const calculateLineupEfficiency = (lineup: LineupConfiguration) => {
     const offenseWeight = priorityWeight.offense / 100;
     const defenseWeight = priorityWeight.defense / 100;
@@ -540,7 +533,6 @@ export default function TeamStrategyOptimizer({
     ) / (offenseWeight + defenseWeight + chemistryWeight);
   };
 
-  // Get optimal lineup for situation
   const getOptimalLineup = (situation: string) => {
     return lineups.reduce((best, current) => {
       if (current.optimalGameSituations.includes(situation)) {
@@ -550,13 +542,11 @@ export default function TeamStrategyOptimizer({
     }, lineups[0]);
   };
 
-  // Calculate player fatigue impact
   const getFatigueImpact = (player: Player) => {
-    const impact = (player.fatigueLevel / 100) * 20; // Max 20% reduction
+    const impact = (player.fatigueLevel / 100) * 20;
     return Math.max(0, player.projectedPerformance - impact);
   };
 
-  // Get position color
   const getPositionColor = (position: string) => {
     switch (position) {
       case 'PG': return '#3b82f6';
@@ -568,7 +558,6 @@ export default function TeamStrategyOptimizer({
     }
   };
 
-  // Get condition color
   const getConditionColor = (condition: string) => {
     switch (condition) {
       case 'excellent': return '#10b981';

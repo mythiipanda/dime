@@ -17,9 +17,8 @@ export interface FinalAnswerDisplayProps {
 }
 
 export const FinalAnswerDisplay: React.FC<FinalAnswerDisplayProps> = ({ content, onCopy, copied, markdownComponents }) => {
-  // Remove FINAL_ANSWER_MARKER if it exists
-  const displayContent = content.startsWith(FINAL_ANSWER_MARKER) 
-    ? content.substring(FINAL_ANSWER_MARKER.length) 
+  const displayContent = content.startsWith(FINAL_ANSWER_MARKER)
+    ? content.substring(FINAL_ANSWER_MARKER.length)
     : content;
 
   return (

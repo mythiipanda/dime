@@ -32,27 +32,22 @@ interface ShotData {
   id: string;
   playerName: string;
   shotType: string;
-  // Position data
-  releaseX: number; // Court position X (0-94 feet)
-  releaseY: number; // Court position Y (0-50 feet) 
-  releaseHeight: number; // Height of release (feet)
-  targetX: number; // Basket X position
-  targetY: number; // Basket Y position
-  targetHeight: number; // Basket height (10 feet)
-  // Physics data
-  releaseAngle: number; // Launch angle in degrees
-  releaseVelocity: number; // Initial velocity (ft/s)
-  spinRate: number; // Ball spin (RPM)
-  // Shot result
+  releaseX: number;
+  releaseY: number;
+  releaseHeight: number;
+  targetX: number;
+  targetY: number;
+  targetHeight: number;
+  releaseAngle: number;
+  releaseVelocity: number;
+  spinRate: number;
   made: boolean;
-  actualArcHeight: number; // Peak height reached
-  actualDistance: number; // Total distance traveled
-  // Analytics
-  shotDifficulty: number; // 1-10
-  defenseProximity: number; // Distance to nearest defender
-  successProbability: number; // 0-100%
-  releaseTime: number; // Time to release (seconds)
-  // Tracking data
+  actualArcHeight: number;
+  actualDistance: number;
+  shotDifficulty: number;
+  defenseProximity: number;
+  successProbability: number;
+  releaseTime: number;
   trajectoryPoints: { x: number; y: number; z: number; time: number }[];
 }
 
@@ -65,7 +60,6 @@ interface ShotVisualizerProps {
   showPhysicsData?: boolean;
 }
 
-// Mock shot data with 3D trajectory
 const mockShots: ShotData[] = [
   {
     id: 'shot-1',
@@ -151,16 +145,14 @@ export default function ShotTrajectoryVisualizer({
 
   const selectedShot = shots.find(shot => shot.id === currentShot) || shots[0];
 
-  // Calculate optimal trajectory for comparison
   const optimalTrajectory = useMemo(() => {
     if (!selectedShot) return [];
     
     const distance = Math.sqrt(
-      Math.pow(selectedShot.targetX - selectedShot.releaseX, 2) + 
+      Math.pow(selectedShot.targetX - selectedShot.releaseX, 2) +
       Math.pow(selectedShot.targetY - selectedShot.releaseY, 2)
     );
     
-    // Optimal angle calculation (simplified physics)
     const optimalAngle = 45 + (selectedShot.targetHeight - selectedShot.releaseHeight) / distance * 10;
     const optimalVelocity = Math.sqrt(
       (distance * 32.174) / Math.sin(2 * optimalAngle * Math.PI / 180)
@@ -170,8 +162,8 @@ export default function ShotTrajectoryVisualizer({
     for (let t = 0; t <= 1.2; t += 0.05) {
       const x = selectedShot.releaseX + (selectedShot.targetX - selectedShot.releaseX) * (t / 1.2);
       const y = selectedShot.releaseY + (selectedShot.targetY - selectedShot.releaseY) * (t / 1.2);
-      const z = selectedShot.releaseHeight + 
-        optimalVelocity * Math.sin(optimalAngle * Math.PI / 180) * t - 
+      const z = selectedShot.releaseHeight +
+        optimalVelocity * Math.sin(optimalAngle * Math.PI / 180) * t -
         16.087 * t * t;
       
       if (z >= 0) points.push({ x, y, z, time: t });
@@ -180,12 +172,11 @@ export default function ShotTrajectoryVisualizer({
     return points;
   }, [selectedShot]);
 
-  // Animation loop
   useEffect(() => {
     if (isAnimating) {
       const animate = () => {
         setTimeElapsed(prev => {
-          const newTime = prev + 0.016 * playbackSpeed[0]; // 60fps
+          const newTime = prev + 0.016 * playbackSpeed[0];
           if (newTime >= (selectedShot?.trajectoryPoints[selectedShot.trajectoryPoints.length - 1]?.time || 1)) {
             setIsAnimating(false);
             return newTime;
@@ -208,24 +199,19 @@ export default function ShotTrajectoryVisualizer({
     };
   }, [isAnimating, playbackSpeed, selectedShot]);
 
-  // Convert 3D coordinates to SVG coordinates with perspective
   const project3D = (x: number, y: number, z: number) => {
-    // Apply camera transformations
     const cos_elev = Math.cos(camera3D.elevation * Math.PI / 180);
     const sin_elev = Math.sin(camera3D.elevation * Math.PI / 180);
     const cos_rot = Math.cos(camera3D.rotation * Math.PI / 180);
     const sin_rot = Math.sin(camera3D.rotation * Math.PI / 180);
     
-    // Rotate around Y axis (court rotation)
     const x_rot = x * cos_rot - y * sin_rot;
     const y_rot = x * sin_rot + y * cos_rot;
     
-    // Apply elevation
     const x_proj = x_rot;
     const y_proj = y_rot * cos_elev - z * sin_elev;
     const z_proj = y_rot * sin_elev + z * cos_elev;
     
-    // Perspective projection
     const perspective = camera3D.distance / (camera3D.distance + z_proj);
     
     return {
@@ -235,14 +221,12 @@ export default function ShotTrajectoryVisualizer({
     };
   };
 
-  // Get current ball position for animation
   const getCurrentBallPosition = () => {
     if (!selectedShot || !isAnimating) return null;
     
     const trajectory = selectedShot.trajectoryPoints;
     const currentTime = timeElapsed;
     
-    // Find interpolation points
     let i = 0;
     while (i < trajectory.length - 1 && trajectory[i].time < currentTime) {
       i++;
@@ -265,7 +249,6 @@ export default function ShotTrajectoryVisualizer({
 
   const currentBallPos = getCurrentBallPosition();
 
-  // Calculate shot analytics
   const shotAnalytics = useMemo(() => {
     if (!selectedShot) return null;
     

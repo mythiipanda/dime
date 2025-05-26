@@ -1,4 +1,3 @@
-// components/agent/ErrorDisplay.tsx
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { TerminalIcon } from "lucide-react";
 

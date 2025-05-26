@@ -1,6 +1,5 @@
 "use client"
 
-// components/agent/PromptInputForm.tsx
 import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { SendIcon, Loader2Icon } from 'lucide-react';
@@ -22,12 +21,11 @@ export function PromptInputForm({
   const [prompt, setPrompt] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Auto-resize textarea height based on content
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.transition = 'height 0.15s ease-out';
-      textareaRef.current.style.height = 'auto'; // Reset height to shrink if needed
-      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`; // Set to scroll height
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
     }
   }, [prompt]);
 
@@ -36,7 +34,7 @@ export function PromptInputForm({
     const trimmedPrompt = prompt.trim();
     if (trimmedPrompt && !isLoading) {
       onSubmit(trimmedPrompt);
-      setPrompt(''); // Clear prompt, which will trigger useEffect for resize
+      setPrompt('');
     }
   };
 
