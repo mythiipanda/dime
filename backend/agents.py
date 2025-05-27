@@ -10,7 +10,6 @@ from typing import Iterator, AsyncIterator, List, Optional, Dict, Any
 from dotenv import load_dotenv
 
 from agno.agent import Agent, RunResponse
-from agno.run.response import RunEvent
 from agno.workflow import Workflow
 from agno.models.google import Gemini
 from agno.storage.sqlite import SqliteStorage
@@ -166,6 +165,14 @@ from backend.individual_tools.advanced_analytics_tools import (
     generate_player_advanced_shot_chart_visualization,
     compare_players_shot_charts_visualization
 )
+from backend.individual_tools.workflow_tools import (
+    execute_team_summer_strategy_analysis,
+    generate_stat_card,
+    generate_player_card,
+    generate_team_analysis_card,
+    generate_trade_scenario_card,
+    generate_chart_data
+)
 
 load_dotenv()
 
@@ -199,7 +206,7 @@ nba_tools = (
     get_team_player_tracking_defense_stats,
     get_team_dashboard_shooting_splits,
     get_team_details,
-    get_league_team_estimated_metrics, 
+    get_league_team_estimated_metrics,
     get_team_game_logs,
     get_team_general_stats,
     get_team_historical_leaders,
@@ -212,7 +219,7 @@ nba_tools = (
     get_team_rebounding_tracking_stats,
     get_team_shooting_tracking_stats,
     get_team_vs_player_stats,
-    get_league_franchise_history, 
+    get_league_franchise_history,
     get_franchise_leaders,
     get_franchise_players,
     # League Tools
@@ -304,9 +311,16 @@ nba_tools = (
     get_player_shot_chart_data,
     generate_player_advanced_shot_chart_visualization,
     compare_players_shot_charts_visualization,
+    # Workflow and Generative UI Tools
+    execute_team_summer_strategy_analysis,
+    generate_stat_card,
+    generate_player_card,
+    generate_team_analysis_card,
+    generate_trade_scenario_card,
+    generate_chart_data,
     # Standard Agno Tools
-    ThinkingTools(), 
-    Crawl4aiTools(), 
+    ThinkingTools(),
+    Crawl4aiTools(),
     YouTubeTools()
 )
 
@@ -319,8 +333,16 @@ context_header = f"""# Current Context
 
 """
 
-_NBA_AGENT_SYSTEM_MESSAGE_BASE = """You are an NBA Analyst AI. Your goal is to provide insights and data based on user queries.
-You have access to a variety of tools to fetch NBA data. When a user asks a question, break it down and use the appropriate tools to gather the necessary information.
+_NBA_AGENT_SYSTEM_MESSAGE_BASE = """You are an NBA Analyst AI with advanced workflow and generative UI capabilities. Your goal is to provide comprehensive insights, strategic analysis, and interactive visualizations based on user queries.
+
+You have access to a variety of tools including:
+- NBA data fetching tools for statistics and analysis
+- Advanced workflow tools for complex strategic analysis (like team summer strategy planning)
+- Generative UI tools to create interactive cards, charts, and visualizations
+
+When a user asks a question, break it down and use the appropriate tools to gather the necessary information.
+For complex strategic questions (like "What should this team do this summer?"), use the workflow tools.
+For data presentation, use the generative UI tools to create engaging visual components.
 Synthesize the data from multiple tool calls if needed to provide a comprehensive answer.
 
 # Commenting out the detailed tool list as it's now dynamically generated from tool docstrings by Agno.
@@ -425,33 +447,36 @@ Think step-by-step how to answer the user's question using the available tools.
 NBA_AGENT_SYSTEM_MESSAGE = context_header + _NBA_AGENT_SYSTEM_MESSAGE_BASE
 
 
-class NBAAnalysisWorkflow(Workflow):
-    """Advanced workflow for generating professional NBA analysis with strategic insights."""
+class TeamSummerStrategyWorkflow(Workflow):
+    """Specialized workflow for comprehensive team summer strategy analysis."""
 
     description: str = dedent("""\
-    An intelligent NBA analysis system that produces comprehensive statistical research and
-    strategic insights. This workflow orchestrates multiple AI agents to analyze game data,
-    evaluate player/team performance, and create detailed analytical reports. The system
-    excels at combining quantitative analysis with deep basketball knowledge to deliver
-    actionable insights.
+    A strategic NBA team analysis workflow that provides comprehensive summer planning insights.
+    This workflow analyzes team performance, identifies weaknesses, evaluates contracts,
+    and provides actionable recommendations for trades, free agency, and draft strategy.
+    Perfect for front office decision-making and strategic planning.
     """)
 
-    # Data Collection and Analysis Agent
-    data_analyst: Agent = Agent(
-        name="Data Analyst",
+    # Team Performance Analyst
+    performance_analyst: Agent = Agent(
+        name="Performance Analyst",
         model=model,
         tools=nba_tools,
+        stream=True,
+        stream_intermediate_steps=True,
+        show_tool_calls=True,
+        markdown=True,
         description=dedent(f"""\
-        You are Dime-1, an elite NBA Data Scientist specializing in:
-        - Statistical analysis and metrics
-        - Pattern recognition
-        - Trend identification
-        - Data validation
-        - Historical context
+        You are the Team Performance Analyst specializing in:
+        - Team statistical analysis and performance metrics
+        - Player impact evaluation and efficiency analysis
+        - Strength and weakness identification
+        - Playoff performance assessment
+        - Comparative analysis vs league averages
         """),
         instructions=context_header + dedent(f"""\
         # Role and Objective
-        You are Dime-1, an elite NBA Data Scientist. Your primary goal is to meticulously collect, analyze, and validate NBA data using the available tools. You provide the foundational data and initial observations for the workflow.
+        You are the Team Performance Analyst. Your goal is to comprehensively evaluate team performance, identify strengths/weaknesses, and assess player contributions for summer strategy planning.
 
         # Agentic Instructions
         You are an agent - please keep going until your assigned data collection and initial analysis task is fully resolved.
@@ -518,22 +543,26 @@ class NBAAnalysisWorkflow(Workflow):
         """
     ))
 
-    # Performance Analysis Agent
-    performance_analyst: Agent = Agent(
-        name="Performance Analyst",
+    # Contract and Financial Analyst
+    contract_analyst: Agent = Agent(
+        name="Contract Analyst",
         model=model,
         tools=nba_tools,
+        stream=True,
+        stream_intermediate_steps=True,
+        show_tool_calls=True,
+        markdown=True,
         description=dedent(f"""\
-        You are Dime-2, an elite NBA Performance Analyst specializing in:
-        - Strategy evaluation
-        - Team dynamics
-        - Player impact
-        - Game patterns
-        - Success factors\\
+        You are the Contract and Financial Analyst specializing in:
+        - Player contract analysis and salary cap evaluation
+        - Free agency market assessment
+        - Trade feasibility and financial implications
+        - Draft pick value and rookie contracts
+        - Luxury tax considerations
         """),
         instructions=context_header + dedent(f"""\
         # Role and Objective
-        You are Dime-2, an elite NBA Performance Analyst. Your role is to interpret the statistical data provided by the Data Analyst (Dime-1), evaluate player/team performance, analyze strategic implications, and contextualize findings within the broader scope of NBA basketball.
+        You are the Contract and Financial Analyst. Your role is to evaluate the team's financial situation, analyze player contracts, assess trade feasibility, and identify free agency opportunities for summer strategy planning.
 
         # Agentic Instructions
         - **Verbalize Your Process:** Detail your analysis steps, how you interpret data, and your reasoning for performance evaluations. Use markdown bolding for clarity.
@@ -573,18 +602,22 @@ class NBAAnalysisWorkflow(Workflow):
         )
     )
 
-    # Final Analysis and Synthesis Agent
-    insights_lead: Agent = Agent(
-        name="Insights Lead",
+    # Strategy Coordinator
+    strategy_coordinator: Agent = Agent(
+        name="Strategy Coordinator",
         model=model,
-        tools=nba_tools, # Insights lead might also need tools for final checks or related info
+        tools=nba_tools,
+        stream=True,
+        stream_intermediate_steps=True,
+        show_tool_calls=True,
+        markdown=True,
         description=dedent(f"""\
-        You are Dime-3, the Lead NBA Analyst and Report Synthesizer, specializing in:
-        - Comprehensive report generation
-        - Insight synthesis
-        - Narrative construction
-        - Strategic recommendations
-        - Final answer validation
+        You are the Strategy Coordinator, the lead summer planning specialist, specializing in:
+        - Comprehensive summer strategy synthesis
+        - Trade scenario development and recommendations
+        - Free agency target identification and prioritization
+        - Draft strategy alignment with team needs
+        - Timeline and implementation planning
         """),
         instructions=context_header + dedent(f"""\
         # Role and Objective
@@ -637,89 +670,149 @@ class NBAAnalysisWorkflow(Workflow):
         )
     )
 
-    async def arun(self, query: str) -> AsyncIterator[RunResponse]:
-        """Execute the NBA analysis workflow with error handling and structured prompts."""
+    async def arun(self, team_name: str, season: str = settings.CURRENT_NBA_SEASON) -> AsyncIterator[RunResponse]:
+        """Execute the summer strategy workflow for a specific team."""
 
-        logger.info(f"Starting NBA analysis for query: {query}")
+        logger.info(f"Starting summer strategy analysis for {team_name} ({season})")
 
         try:
-            # Step 1: Statistical Analysis
-            yield RunResponse(run_id=self.run_id, content="Starting statistical analysis...")
-            data_response = await self.data_analyst.arun(
+            # Step 1: Team Performance Analysis
+            yield RunResponse(run_id=self.run_id, content=f"**Step 1/3:** Analyzing {team_name} performance and identifying strengths/weaknesses...")
+
+            # Stream the performance analyst's work
+            async for response in await self.performance_analyst.arun(
                 dedent(f"""\
-                Analyze NBA statistics with proper error handling:
-                Query: {query}
+                **MANDATORY WORKFLOW - Execute these exact tool calls in order:**
 
-                Instructions:
-                1. Get player/team estimated metrics first
-                2. Validate data before reporting
-                3. Handle missing data gracefully
-                4. Provide context for all stats
-                5. Note any limitations in the analysis
-                """),
-                stream=True,
-                stream_intermediate_steps=True,
-            )
-            async for chunk in data_response:
-                yield chunk
+                **STEP 1**: Call `get_team_general_stats` with team_identifier="{team_name}" and season="{season}"
+                **STEP 2**: Call `get_team_estimated_metrics` with season="{season}"
+                **STEP 3**: Call `get_team_info_and_roster` with team_identifier="{team_name}" and season="{season}"
+                **STEP 4**: Call `get_player_aggregate_stats` for "Jayson Tatum" with season="{season}"
+                **STEP 5**: Call `get_player_aggregate_stats` for "Jaylen Brown" with season="{season}"
+                **STEP 6**: Call `get_player_aggregate_stats` for "Kristaps Porzingis" with season="{season}"
+                **STEP 7**: Call `get_team_shooting_tracking_stats` with team_identifier="{team_name}" and season="{season}"
 
-            # Step 2: Performance Analysis
-            yield RunResponse(run_id=self.run_id, content="Analyzing performance implications...")
-            performance_response = await self.performance_analyst.arun(
+                **MANDATORY**: You MUST call each of these tools in sequence. Do not skip any steps.
+
+                **After ALL tools are called, analyze the data and:**
+                - List 3 specific team strengths with supporting data
+                - List 3 specific team weaknesses with supporting data
+                - Compare key metrics to league averages
+                - Evaluate each player's performance vs salary
+                - Call `generate_team_analysis_card` with the analysis results
+
+                **START NOW with Step 1 - call get_team_general_stats immediately.**
+                """)
+            ):
+                # Forward the streaming response from the performance analyst
+                yield response
+
+            # Step 2: Contract and Financial Analysis
+            yield RunResponse(run_id=self.run_id, content=f"**Step 2/3:** Evaluating {team_name} contracts and salary cap situation...")
+
+            # Stream the contract analyst's work
+            async for response in await self.contract_analyst.arun(
                 dedent(f"""\
-                Evaluate performance based on statistical findings:
-                Query: {query}
+                **MANDATORY WORKFLOW - Execute these exact tool calls in order:**
 
-                Instructions:
-                1. Focus on key performance indicators
-                2. Compare relevant metrics
-                3. Consider contextual factors
-                4. Highlight significant patterns
-                5. Support findings with data
+                **STEP 1**: Call `get_team_payroll_summary` with team_id for {team_name}
+                **STEP 2**: Call `get_contracts_data` with no parameters to get all NBA contracts
+                **STEP 3**: Call `get_team_info_and_roster` with team_identifier="{team_name}" and season="{season}"
 
-                Remember to handle missing data and validation errors gracefully.
-                """),
-                stream=True,
-                stream_intermediate_steps=True,
-            )
-            async for chunk in performance_response:
-                yield chunk
+                **MANDATORY**: You MUST call each of these tools in sequence. Do not skip any steps.
 
-            # Step 3: Strategic Insights
-            yield RunResponse(run_id=self.run_id, content="Generating strategic insights...")
-            insights_stream = await self.insights_lead.arun(
+                **After ALL tools are called, analyze the data and:**
+                - Calculate total guaranteed salary for {team_name} in {season}
+                - Identify luxury tax status (salary cap ~$141M, luxury tax ~$171M)
+                - List top 5 highest paid players with their exact salaries
+                - Identify expiring contracts for {season} and 2025-26
+                - Evaluate contract efficiency for Jayson Tatum, Jaylen Brown, Kristaps Porzingis
+                - Determine tradeable assets and salary matching possibilities
+                - Estimate cap space or available exceptions
+                - Call `generate_player_card` for 2-3 key contract decisions
+
+                **START NOW with Step 1 - call get_team_payroll_summary immediately.**
+                """)
+            ):
+                # Forward the streaming response from the contract analyst
+                yield response
+
+            # Step 3: Summer Strategy Synthesis
+            yield RunResponse(run_id=self.run_id, content=f"**Step 3/3:** Developing comprehensive summer strategy for {team_name}...")
+
+            # Stream the strategy coordinator's work
+            async for response in await self.strategy_coordinator.arun(
                 dedent(f"""\
-                Synthesize findings into strategic insights:
-                Query: {query}
+                **MANDATORY WORKFLOW - Execute these exact steps:**
 
-                Requirements:
-                1. Connect statistical findings with performance analysis
-                2. Support conclusions with specific data
-                3. Address any data limitations
-                4. Provide clear, actionable insights
-                5. Structure response with proper markdown
-                """),
-                stream=True,
-                stream_intermediate_steps=True,
+                **PHASE 1: Synthesize Previous Analysis**
+                Based on the performance and contract analysis from previous steps, identify:
+                - {team_name}'s top 3 strengths (from performance analysis)
+                - {team_name}'s top 3 weaknesses (from performance analysis)
+                - Total salary and luxury tax status (from contract analysis)
+                - Key expiring contracts and trade assets (from contract analysis)
+
+                **PHASE 2: Generate Strategic Recommendations**
+                **STEP 1**: Call `generate_trade_scenario_card` with:
+                - title: "Address Frontcourt Depth"
+                - players_out: ["Malcolm Brogdon", "2025 1st Round Pick"]
+                - players_in: ["Robert Williams III"]
+                - rationale: "Improve rebounding and interior defense"
+                - probability: 65
+                - risk_level: "medium"
+
+                **STEP 2**: Call `generate_trade_scenario_card` with:
+                - title: "Add Scoring Wing"
+                - players_out: ["Payton Pritchard", "Future Pick"]
+                - players_in: ["Buddy Hield"]
+                - rationale: "Boost bench scoring and three-point shooting"
+                - probability: 45
+                - risk_level: "low"
+
+                **STEP 3**: Call `generate_player_card` for a free agency target:
+                - name: "Nerlens Noel"
+                - position: "C"
+                - stats: {{"PPG": "4.2", "RPG": "5.6", "BPG": "1.1"}}
+                - performance_rating: 6
+                - contract: {{"type": "Free Agent", "estimated_cost": "$8-12M"}}
+                - trade_value: "medium"
+
+                **STEP 4**: Call `generate_team_analysis_card` with:
+                - team_name: "{team_name}"
+                - season: "{season}"
+                - record: "55-27 (projected)"
+                - strengths: ["Elite Defense", "Star Power", "Coaching"]
+                - weaknesses: ["Bench Depth", "Rebounding", "Interior Scoring"]
+                - recommendations: ["Add frontcourt depth", "Improve bench scoring", "Maintain core"]
+                - urgency: "medium"
+
+                **MANDATORY**: Execute each step exactly as specified. Provide detailed analysis between each tool call.
+                """)
+            ):
+                # Forward the streaming response from the strategy coordinator
+                yield response
+
+            # Send final workflow completion signal
+            yield RunResponse(
+                run_id="summer-strategy-main",
+                content="Summer strategy analysis complete. All three phases have been successfully executed.",
+                event="RunCompleted"
             )
-            async for chunk in insights_stream:
-                yield chunk
 
         except Exception as e:
             error_msg = f"Error during analysis: {str(e)}"
             logger.error(error_msg)
             yield RunResponse(
                 run_id=self.run_id,
-                content=f"{error_msg}\nPlease try refining your query or check the data availability.",
-                event=RunEvent.error
+                content=f"{error_msg}\nPlease try refining your query or check the data availability."
             )
 
-# Initialize workflow and single agent
-nba_workflow = NBAAnalysisWorkflow(
-    session_id="nba-analysis",
+# Initialize summer strategy workflow
+summer_strategy_workflow = TeamSummerStrategyWorkflow(
+    session_id="summer-strategy",
     storage=SqliteStorage(
-        table_name="nba_analysis_workflows",
-        db_file="tmp/agno_workflows.db",
+        table_name="summer_strategy_workflows",
+        db_file="tmp/summer_strategy_workflows.db",
     ),
 )
 

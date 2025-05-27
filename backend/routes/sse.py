@@ -27,6 +27,9 @@ SSE_LOG_TRUNCATE_LIMIT = 1000 # Max characters to log for an SSE message
 STAT_CARD_MARKER = "STAT_CARD_JSON::"
 CHART_DATA_MARKER = "CHART_DATA_JSON::"
 TABLE_DATA_MARKER = "TABLE_DATA_JSON::"
+PLAYER_CARD_MARKER = "PLAYER_CARD_JSON::"
+TEAM_ANALYSIS_MARKER = "TEAM_ANALYSIS_JSON::"
+TRADE_SCENARIO_MARKER = "TRADE_SCENARIO_JSON::"
 
 # --- Helper Functions ---
 def recursive_asdict(obj: Any, _depth: int = 0) -> Any:
@@ -106,7 +109,10 @@ def format_message_data(chunk_dict: Dict[str, Any]) -> Dict[str, Any]:
         for marker, marker_type in [
             (STAT_CARD_MARKER, "STAT_CARD"),
             (CHART_DATA_MARKER, "CHART_DATA"),
-            (TABLE_DATA_MARKER, "TABLE_DATA")
+            (TABLE_DATA_MARKER, "TABLE_DATA"),
+            (PLAYER_CARD_MARKER, "PLAYER_CARD"),
+            (TEAM_ANALYSIS_MARKER, "TEAM_ANALYSIS"),
+            (TRADE_SCENARIO_MARKER, "TRADE_SCENARIO")
         ]:
             if marker in content:
                 try:
@@ -216,6 +222,77 @@ def format_message_data(chunk_dict: Dict[str, Any]) -> Dict[str, Any]:
             "patterns": thinking_patterns
         }
 
+    # Enhanced processing - add step detection and confidence extraction
+    enhanced_data = {}
+    content_str = str(content) if content is not None else ""
+
+    if content_str:
+        # Extract steps using simple patterns
+        step_patterns = [
+            r"\*\*Step (\d+)(?:/(\d+))?\*\*:?\s*(.*?)(?=\*\*|$)",
+            r"Step (\d+)(?:/(\d+))?\s*[:.-]\s*(.*?)(?=Step|\n|$)"
+        ]
+
+        steps = []
+        for pattern in step_patterns:
+            matches = re.findall(pattern, content_str, re.DOTALL | re.IGNORECASE)
+            for match in matches:
+                if isinstance(match, tuple):
+                    if len(match) == 3:  # Step X/Y: Description
+                        step_num, total_steps, description = match
+                        steps.append({
+                            "step": int(step_num),
+                            "total": int(total_steps) if total_steps else None,
+                            "description": description.strip()
+                        })
+
+        if steps:
+            enhanced_data["steps"] = sorted(steps, key=lambda x: x["step"])
+
+        # Extract confidence levels
+        confidence_patterns = [r"(\d+)%\s*confident", r"confidence(?:\s+level)?:?\s*(\d+)%"]
+        confidence_levels = []
+
+        for pattern in confidence_patterns:
+            matches = re.findall(pattern, content_str, re.IGNORECASE)
+            for match in matches:
+                try:
+                    confidence = int(match)
+                    if 0 <= confidence <= 100:
+                        confidence_levels.append({"level": confidence})
+                except ValueError:
+                    continue
+
+        if confidence_levels:
+            enhanced_data["confidence"] = confidence_levels
+
+        # Extract key insights
+        insight_patterns = [r"key insight:?\s*(.*?)(?=\.|$)", r"recommendation:?\s*(.*?)(?=\.|$)"]
+        insights = []
+
+        for pattern in insight_patterns:
+            matches = re.findall(pattern, content_str, re.IGNORECASE)
+            for match in matches:
+                insight = match.strip()
+                if len(insight) > 10:
+                    insights.append(insight)
+
+        if insights:
+            enhanced_data["insights"] = insights
+
+    # Enhanced progress calculation
+    if enhanced_data.get("steps"):
+        current_step = max(enhanced_data["steps"], key=lambda x: x["step"])
+        if current_step.get("total"):
+            step_progress = (current_step["step"] / current_step["total"]) * 100
+            progress = max(progress, step_progress)
+            message_data["progress"] = progress
+            message_data["phase"] = "analysis" if progress < 80 else "synthesis"
+
+    # Add enhanced data if any was found
+    if enhanced_data:
+        message_data["enhanced"] = enhanced_data
+
     # Set default content for certain events if no content is provided
     if not content:
         if event_type == "RunStarted":
@@ -295,10 +372,78 @@ async def ask_agent_keepalive_sse(request: Request, prompt: str) -> StreamingRes
     }
     return StreamingResponse(keepalive_sse_generator(), headers=headers, media_type="text/event-stream")
 
+@router.get("/summer-strategy")
+async def summer_strategy_sse(request: Request, team_name: str, season: str = "2024-25") -> StreamingResponse:
+    """
+    Handles summer strategy analysis for a specific NBA team using the specialized workflow.
+    Streams comprehensive strategic analysis including performance evaluation, contract analysis, and recommendations.
+    """
+    logger.info(f"Received summer strategy request for {team_name} ({season})")
+
+    # Import here to avoid circular imports
+    from agents import summer_strategy_workflow
+
+    async def summer_strategy_generator() -> AsyncIterator[str]:
+        """Generates SSE messages from the summer strategy workflow."""
+        try:
+            logger.info(f"Starting summer strategy workflow for {team_name}")
+            async for chunk in summer_strategy_workflow.arun(team_name, season):
+                chunk_dict = recursive_asdict(chunk)
+                message_data = format_message_data(chunk_dict)
+                sse_message_string = format_sse(json.dumps(message_data))
+
+                log_msg_preview = sse_message_string[:SSE_LOG_TRUNCATE_LIMIT]
+                if len(sse_message_string) > SSE_LOG_TRUNCATE_LIMIT:
+                    log_msg_preview += "..."
+                logger.debug(f"Yielding summer strategy SSE (len={len(sse_message_string)}): {log_msg_preview}")
+
+                yield sse_message_string
+                await asyncio.sleep(0.01)
+
+                # Only break on the main workflow completion, not individual agent completions
+                # Check if this is the final workflow completion by looking for specific markers
+                if (chunk_dict.get("event") == "RunCompleted" and
+                    chunk_dict.get("run_id") == "summer-strategy-main"):
+                    logger.info("Summer strategy analysis completed.")
+                    final_event_data = {
+                        "role": "assistant",
+                        "content": message_data.get("content", "Summer strategy analysis complete."),
+                        "event": "final",
+                        "status": "complete",
+                        "progress": 100,
+                        "reasoning": message_data.get("reasoning"),
+                        "metadata": message_data.get("metadata")
+                    }
+                    yield format_sse(json.dumps(final_event_data), event="final")
+                    await asyncio.sleep(0.01)
+                    logger.info("Final summer strategy SSE event sent.")
+                    break
+
+        except Exception as e:
+            logger.exception("Error during summer strategy SSE generation.")
+            error_content = {
+                "role": "assistant",
+                "content": f"An error occurred during summer strategy analysis: {str(e)}",
+                "status": "error",
+                "progress": 0,
+                "event": "error"
+            }
+            yield format_sse(json.dumps(error_content), event="error")
+        finally:
+            logger.info("Summer strategy SSE generator finished.")
+
+    headers = {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache, no-transform",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
+    }
+    return StreamingResponse(summer_strategy_generator(), headers=headers, media_type="text/event-stream")
+
 @router.get("/test_stream")
 async def test_agent_stream(request: Request, prompt: str) -> None: # Returns None as it prints
     logger.info(f"Received GET /test_streaming request with prompt: '{prompt}'")
-    run_stream: AsyncIterator[RunResponse] = await nba_agent.arun(prompt)
+    run_stream: AsyncIterator[RunResponse] = nba_agent.arun(prompt)
     async for chunk in run_stream:
         pprint(dataclass_to_dict(chunk, exclude={"messages"}))
         print("---" * 20)

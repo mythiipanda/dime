@@ -6,17 +6,34 @@ import remarkGfm from 'remark-gfm';
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Copy, Check, BookOpen } from "lucide-react";
+import { GenerativeUIRenderer } from '../GenerativeUIRenderer';
 
 const FINAL_ANSWER_MARKER = "FINAL_ANSWER::";
+
+interface ToolCall {
+  tool_name: string;
+  content?: string;
+  status: string;
+  args?: any;
+}
 
 export interface FinalAnswerDisplayProps {
   content: string;
   onCopy: (text: string) => Promise<void>;
   copied: boolean;
   markdownComponents: Components;
+  generativeUIContent?: string;
+  toolCalls?: ToolCall[];
 }
 
-export const FinalAnswerDisplay: React.FC<FinalAnswerDisplayProps> = ({ content, onCopy, copied, markdownComponents }) => {
+export const FinalAnswerDisplay: React.FC<FinalAnswerDisplayProps> = ({
+  content,
+  onCopy,
+  copied,
+  markdownComponents,
+  generativeUIContent,
+  toolCalls
+}) => {
   const displayContent = content.startsWith(FINAL_ANSWER_MARKER)
     ? content.substring(FINAL_ANSWER_MARKER.length)
     : content;
@@ -39,9 +56,18 @@ export const FinalAnswerDisplay: React.FC<FinalAnswerDisplayProps> = ({ content,
             </Tooltip>
           </TooltipProvider>
         </div>
+
+      {/* Generative UI Components - Render before markdown content */}
+      {generativeUIContent && (
+        <GenerativeUIRenderer
+          content={generativeUIContent}
+          toolCalls={toolCalls}
+        />
+      )}
+
       <ReactMarkdown components={markdownComponents} remarkPlugins={[remarkGfm]}>
         {displayContent || ''}
       </ReactMarkdown>
     </div>
   );
-}; 
+};

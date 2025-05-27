@@ -272,7 +272,7 @@ def get_team_game_logs(
     # Logic might require team_id, team_identifier passed for now.
     # Ensure fetch_team_game_logs_logic can handle team_identifier or resolve it.
     return fetch_team_game_logs_logic(
-        team_identifier=team_identifier, 
+        team_identifier=team_identifier,
         season=season,
         season_type_nullable=season_type_nullable,
         date_from_nullable=date_from_nullable,
@@ -381,7 +381,7 @@ def get_team_info_and_roster(
     return fetch_team_info_and_roster_logic(
         team_identifier=team_identifier,
         season=season,
-        season_type_all_star=season_type, # Map to logic function param name
+        season_type=season_type, # Correct parameter name
         league_id=league_id,
         return_dataframe=return_dataframe
     )
@@ -684,4 +684,4 @@ def get_franchise_players(
         per_mode_detailed=per_mode_detailed,
         season_type_all_star=season_type_all_star,
         return_dataframe=return_dataframe
-    ) 
+    )

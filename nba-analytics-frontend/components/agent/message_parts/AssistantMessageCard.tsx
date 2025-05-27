@@ -55,6 +55,8 @@ export interface AssistantMessageCardProps {
   markdownComponents: Components;
   onCopyFinalAnswer: (text: string) => Promise<void>;
   isFinalAnswerCopied: boolean;
+  generativeUIContent?: string;
+  toolCalls?: ToolCall[];
 }
 
 export const AssistantMessageCard: React.FC<AssistantMessageCardProps> = ({
@@ -72,6 +74,8 @@ export const AssistantMessageCard: React.FC<AssistantMessageCardProps> = ({
   markdownComponents,
   onCopyFinalAnswer,
   isFinalAnswerCopied,
+  generativeUIContent,
+  toolCalls,
 }) => {
   const modelName = message.metadata?.model || "";
 
@@ -115,6 +119,8 @@ export const AssistantMessageCard: React.FC<AssistantMessageCardProps> = ({
           onCopy={onCopyFinalAnswer}
           copied={isFinalAnswerCopied}
           markdownComponents={markdownComponents}
+          generativeUIContent={generativeUIContent}
+          toolCalls={toolCalls}
         />
       )}
 

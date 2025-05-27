@@ -15,6 +15,7 @@ import remarkGfm from 'remark-gfm'
 import UserMessageCard from './message_parts/UserMessageCard';
 import { AssistantMessageCard } from './message_parts/AssistantMessageCard';
 
+
 export interface ToolCall {
   tool_name: string
   args?: any
@@ -311,22 +312,27 @@ export function ChatMessageDisplay({ message, isLatest = false }: ChatMessageDis
             markdownComponents={sharedMarkdownComponents}
           />
         ) : (
-          <AssistantMessageCard
-            message={message as SSEChatMessage & { role: 'assistant' }}
-            agentDisplayName={agentDisplayName}
-            reasoningNarrative={reasoningNarrative}
-            finalAnswerForDisplay={finalAnswerForDisplay}
-            isThinkingExpanded={isThinkingExpanded}
-            onThinkingToggle={toggleThinkingProcess}
-            expandedToolContent={expandedToolContent}
-            onToolContentToggle={toggleToolContent}
-            showThinkingProcessCollapsible={showThinkingProcessCollapsible}
-            hasReasoningToShow={hasReasoningToShow}
-            hasToolsToShow={hasToolsToShow}
-            markdownComponents={sharedMarkdownComponents}
-            onCopyFinalAnswer={(text) => handleCopyToClipboard(text, 'finalAnswer')}
-            isFinalAnswerCopied={isFinalAnswerCopied}
-          />
+          <>
+            {/* Standard Assistant Message Card with integrated Generative UI */}
+            <AssistantMessageCard
+              message={message as SSEChatMessage & { role: 'assistant' }}
+              agentDisplayName={agentDisplayName}
+              reasoningNarrative={reasoningNarrative}
+              finalAnswerForDisplay={finalAnswerForDisplay}
+              isThinkingExpanded={isThinkingExpanded}
+              onThinkingToggle={toggleThinkingProcess}
+              expandedToolContent={expandedToolContent}
+              onToolContentToggle={toggleToolContent}
+              showThinkingProcessCollapsible={showThinkingProcessCollapsible && !message.dataType}
+              hasReasoningToShow={hasReasoningToShow}
+              hasToolsToShow={hasToolsToShow}
+              markdownComponents={sharedMarkdownComponents}
+              onCopyFinalAnswer={(text) => handleCopyToClipboard(text, 'finalAnswer')}
+              isFinalAnswerCopied={isFinalAnswerCopied}
+              generativeUIContent={fullContent + '\n' + finalAnswerForDisplay}
+              toolCalls={message.toolCalls}
+            />
+          </>
         )}
       </div>
 
