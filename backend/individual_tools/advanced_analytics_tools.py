@@ -11,6 +11,7 @@ from ..api_tools.player_comparison import compare_player_shots as compare_player
 
 from ..config import settings
 from nba_api.stats.library.parameters import SeasonTypeAllStar # Used in default args
+from ..api_tools.advanced_player_metrics import calculate_advanced_player_metrics as calculate_advanced_player_metrics_logic
 
 @tool
 def get_player_advanced_analysis(
@@ -161,12 +162,43 @@ def generate_player_advanced_shot_chart_visualization(
     )
 
 @tool
+def calculate_comprehensive_advanced_player_metrics(
+    player_id: int,
+    current_season: int = settings.CURRENT_NBA_SEASON_YEAR, # Assuming settings has CURRENT_NBA_SEASON_YEAR
+    include_projections: bool = True,
+    return_dataframe: bool = False
+) -> Union[Dict[str, Any], Tuple[str, Dict[str, pd.DataFrame]]]:
+    """
+    Calculates comprehensive advanced metrics for a player using EPM/DARKO methodology.
+    Includes multi-season RAPM, age/experience adjustments, historical progression,
+    and predictive projections.
+
+    Args:
+        player_id (int): The NBA API player ID.
+        current_season (int, optional): Current season year (e.g., 2024 for 2024-25).
+                                        Defaults to the current NBA season year from settings.
+        include_projections (bool, optional): Whether to include future projections. Defaults to True.
+        return_dataframe (bool, optional): If True, returns (JSON, Dict of DataFrames). Defaults to False.
+
+    Returns:
+        Union[Dict[str, Any], Tuple[str, Dict[str, pd.DataFrame]]]: Dictionary with advanced metrics
+                                                                     or tuple with JSON and DataFrames.
+    """
+    logger.info(f"Tool: calculate_comprehensive_advanced_player_metrics for player {player_id}, season {current_season}")
+    return calculate_advanced_player_metrics_logic(
+        player_id=player_id,
+        current_season=current_season,
+        include_projections=include_projections,
+        return_dataframe=return_dataframe
+    )
+
+@tool
 def compare_players_shot_charts_visualization(
     player_names: List[str],
     season: Optional[str] = None,
     season_type: str = SeasonTypeAllStar.regular, # Corrected default from toolkit
     output_format: str = "base64",
-    chart_type: str = "scatter", 
+    chart_type: str = "scatter",
     context_measure: str = "FGA",
     return_dataframe: bool = False
 ) -> Union[Dict[str, Any], Tuple[Dict[str, Any], Dict[str, pd.DataFrame]]]:
@@ -193,4 +225,4 @@ def compare_players_shot_charts_visualization(
         chart_type=chart_type,
         context_measure=context_measure,
         return_dataframe=return_dataframe
-    ) 
+    )
