@@ -11,7 +11,7 @@ import pandas as pd
 import numpy as np
 from nba_api.stats.endpoints import playerestimatedmetrics, leaguedashplayerstats, playerawards, playercareerstats
 from nba_api.stats.static import players
-from config import settings
+from ..config import settings
 from .utils import retry_on_timeout, format_response, get_player_id_from_name
 import os
 
