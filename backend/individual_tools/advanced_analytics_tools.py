@@ -164,7 +164,7 @@ def generate_player_advanced_shot_chart_visualization(
 @tool
 def calculate_comprehensive_advanced_player_metrics(
     player_id: int,
-    current_season: int = settings.CURRENT_NBA_SEASON, # Assuming settings has CURRENT_NBA_SEASON_YEAR
+    current_season: int = settings.CURRENT_NBA_SEASON,
     include_projections: bool = True,
     return_dataframe: bool = False
 ) -> Union[Dict[str, Any], Tuple[str, Dict[str, pd.DataFrame]]]:
