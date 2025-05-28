@@ -1,0 +1,12 @@
+langchain
+langgraph
+google-generativeai # Core Google API client
+langchain-google-genai # Langchain specific integration for Google generative AI models
+nba_api
+pandas
+duckduckgo-search
+firecrawl-py
+python-dotenv
+fastapi
+uvicorn
+# Add other existing dependencies if known, otherwise start with this base. 

@@ -7,11 +7,18 @@ import os
 import datetime
 import logging
 from typing import List, Optional
+from dotenv import load_dotenv
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Initialize logger for this module
 logger = logging.getLogger(__name__)
+
+# Load environment variables from .env file
+load_dotenv()
+
+# Gemini API Key
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 # Helper function for dynamic default NBA season
 def get_default_nba_season() -> str:
@@ -36,7 +43,7 @@ class Settings(BaseSettings):
     # --- Secrets & API Keys ---
     GOOGLE_API_KEY: Optional[str] = None
     OPENAI_API_KEY: Optional[str] = None  # Consider for deprecation if fully on Gemini
-    GEMINI_API_KEY: Optional[str] = None  # If None and GOOGLE_API_KEY is set, will default to GOOGLE_API_KEY
+    GEMINI_API_KEY: Optional[str] = GEMINI_API_KEY
 
     # --- Agent & AI Model Configuration ---
     AGENT_MODEL_ID: str = "gemini-2.0-flash-lite" # Updated default
@@ -52,7 +59,7 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"  # Valid levels: DEBUG, INFO, WARNING, ERROR, CRITICAL
     ENVIRONMENT: str = "development"  # e.g., development, staging, production
     CURRENT_NBA_SEASON: str = get_default_nba_season() # Default, can be overridden by env var
-    DEFAULT_TIMEOUT_SECONDS: int = 30
+    DEFAULT_TIMEOUT_SECONDS: int = 10
     DEFAULT_LRU_CACHE_SIZE: int = 128 # Default size for LRU caches
     HEADSHOT_BASE_URL: str = "https://ak-static.cms.nba.com/wp-content/uploads/headshots/nba/latest/260x190"
 
@@ -101,3 +108,6 @@ elif not settings.GEMINI_API_KEY: # Specific warning if Gemini is intended prima
         "GEMINI_API_KEY is not configured. AI features relying on Gemini may not work, "
         "even if GOOGLE_API_KEY (used as fallback) or OPENAI_API_KEY is set."
     )
+
+if not GEMINI_API_KEY:
+    print("WARNING: GEMINI_API_KEY not found in environment variables. Please set it in a .env file in the project root (nba-agent/.env).")
