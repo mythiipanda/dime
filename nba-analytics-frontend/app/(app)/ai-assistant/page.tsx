@@ -254,30 +254,32 @@ const ChatMessageCard: React.FC<{ message: FrontendChatMessage; isLatest: boolea
     );
   };
   
-  let content;
+  let contentWrapper;
   let avatar;
-  let alignment = "items-start";
+  let messageRowClasses = "flex gap-3 py-2 my-1 items-start";
+  let contentContainerClasses = "w-full max-w-[calc(100%-44px)]";
 
   switch (message.type) {
     case 'human':
-      content = renderHumanMessage();
+      contentWrapper = renderHumanMessage();
       avatar = <Avatar className="h-8 w-8 border shadow-sm shrink-0"><AvatarFallback className="bg-secondary"><UserIcon className="h-5 w-5 text-secondary-foreground" /></AvatarFallback></Avatar>;
-      alignment = "items-end";
+      messageRowClasses = "flex gap-3 py-2 my-1 items-end justify-end";
+      contentContainerClasses = "max-w-[80%]";
       break;
     case 'ai':
-      content = renderAIMessage();
+      contentWrapper = renderAIMessage();
       avatar = <Avatar className="h-8 w-8 border shadow-sm shrink-0"><AvatarFallback className="bg-primary/10 text-primary"><BotIcon className="h-5 w-5" /></AvatarFallback></Avatar>;
       break;
     default:
-      content = <Card className="p-3"><p className="text-xs text-red-500">Unknown message type in ChatMessageCard</p></Card>; 
+      contentWrapper = <Card className="p-3"><p className="text-xs text-red-500">Unknown message type</p></Card>; 
       avatar = <Avatar className="h-8 w-8 border shadow-sm shrink-0"><AvatarFallback>?</AvatarFallback></Avatar>;
   }
 
   return (
-    <div className={cn("flex gap-3 py-2 my-1", alignment)}>
-      {message.type !== 'human' && avatar}
-      <div className={cn("flex flex-col gap-1.5", message.type === 'human' ? "max-w-[80%]" : "w-full max-w-[calc(100%-44px)]")}>
-        {content}
+    <div className={cn(messageRowClasses)}>
+      {message.type === 'ai' && avatar}
+      <div className={cn("flex flex-col gap-1.5", contentContainerClasses)}>
+        {contentWrapper}
       </div>
       {message.type === 'human' && avatar}
     </div>
