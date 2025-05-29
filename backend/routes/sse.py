@@ -79,11 +79,8 @@ async def agent_event_generator(input_query: str, chat_history: list = None):
             if node_name == "__end__":
                 logger.info("Yielding graph_end event as node_name is __end__.")
                 yield f"event: graph_end\ndata: {json.dumps({})}\n\n"
-                await asyncio.sleep(0.05) # Slightly increased sleep
                 break
             
-            await asyncio.sleep(0.01) 
-
     except Exception as e:
         logger.error(f"Error in agent event generator: {e}", exc_info=True)
         error_payload = json.dumps({"message": str(e), "type": e.__class__.__name__})
@@ -100,7 +97,6 @@ async def agent_event_generator(input_query: str, chat_history: list = None):
         # The 'return' in the except block prevents this 'finally' from sending graph_end after an error.
         logger.info("Agent event stream processing finished. Ensuring graph_end is sent if no error was explicitly yielded.")
         yield f"event: graph_end\ndata: {json.dumps({})}\n\n"
-        await asyncio.sleep(0.05)
         logger.info("Agent event stream generator fully terminated.")
 
 @router.get("/agent/stream", tags=["AI Agent SSE"])
