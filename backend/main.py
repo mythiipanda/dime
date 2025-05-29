@@ -12,23 +12,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, JSONResponse # Moved imports to top
 import uvicorn
 
-# --- Python Path Setup ---
-# Ensures the backend directory and its parent are in the Python path
-# for consistent module resolution, especially when running main.py directly.
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir) # Insert at beginning to prioritize project modules
+    sys.path.insert(0, parent_dir)
 if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
-
-# --- Logging Configuration ---
-# Import and apply centralized logging configuration.
-# This must be done early, before other modules (which might use logging) are imported.
 try:
     from logging_config import setup_logging
-    from config import settings # settings is used for log level
-
+    from config import settings
     # Determine log level from settings (AGENT_DEBUG_MODE implies DEBUG level for app)
     log_level_str = "DEBUG" if settings.AGENT_DEBUG_MODE else settings.LOG_LEVEL
     setup_logging(log_level_override=log_level_str) # Pass string level to setup_logging
@@ -44,22 +36,10 @@ except ImportError as e:
     )
     logger = logging.getLogger(__name__)
     logger.critical(f"CRITICAL: Failed to import or apply logging_config from backend.logging_config. Falling back to basicConfig. Error: {e}", exc_info=True)
-    # Consider if sys.exit(1) is appropriate here or if the app should attempt to run with basic logging.
-    # For now, allowing it to proceed with a critical log.
 
-# --- Import Configuration and Routers ---
-# These are imported after logging is set up.
 try:
-    # settings is already imported above for logging.
     from core.errors import Errors
     from backend.routes.sse import router as sse_router # Direct import of the sse router
-
-    # Placeholder for other routers if they are re-enabled
-    # player_router = None
-    # analyze_router = None
-    # team_router = None
-    # game_router = None
-    # etc.
 
 except ImportError as e:
     logger.critical(f"Failed to import application modules (config/routers). This is a fatal error. Error: {e}", exc_info=True)
@@ -110,26 +90,6 @@ if 'sse_router' in locals() and sse_router:
 else:
     logger.warning("sse_router was not imported or is None. SSE endpoint will not be available.")
 
-# Comment out other router inclusions
-# if player_router:
-#     app.include_router(player_router, prefix=API_V1_PREFIX, tags=[\"Player\"])
-# if analyze_router:
-#     app.include_router(analyze_router, prefix=API_V1_PREFIX, tags=[\"Analysis\"])
-# if sse_router: # Already handled above
-#     pass
-# if team_router:
-# app.include_router(team_router.router, prefix=API_V1_PREFIX, tags=["Team Data"]) # Temporarily commented out
-# app.include_router(team_tracking_router.router, prefix=API_V1_PREFIX + "/team", tags=["Team Tracking Data"]) # Temporarily commented out
-# app.include_router(game_router.router, prefix=API_V1_PREFIX, tags=["Game Data"]) # Temporarily commented out
-# app.include_router(standings_router.router, prefix=API_V1_PREFIX, tags=["League Standings"]) # Temporarily commented out
-# app.include_router(leaders_router.router, prefix=API_V1_PREFIX, tags=["League Leaders"]) # Temporarily commented out
-# app.include_router(league_stats_router.router, prefix=API_V1_PREFIX, tags=["League Statistics"]) # Temporarily commented out
-# app.include_router(live_game_router.router, prefix=API_V1_PREFIX, tags=["Live Game Data"]) # Temporarily commented out
-# app.include_router(scoreboard_router.router, prefix=API_V1_PREFIX, tags=["Scoreboard"]) # Temporarily commented out
-# app.include_router(odds_router.router, prefix=API_V1_PREFIX, tags=["Odds"]) # Temporarily commented out
-# app.include_router(search_router.router, prefix=API_V1_PREFIX, tags=["Search"]) # Temporarily commented out
-# app.include_router(fetch_router.router, prefix=API_V1_PREFIX) # Temporarily commented out
-# app.include_router(charts_router, prefix=API_V1_PREFIX, tags=["Visualizations"]) # Example
 
 logger.info("API routers included under /api/v1 prefix. Some routers are temporarily disabled.")
 
@@ -166,17 +126,17 @@ async def generic_unhandled_exception_handler(request: Request, exc: Exception) 
     )
 
 # --- Startup/Shutdown Events ---
-# @app.on_event("startup")
-# async def startup_event() -> None: # Added return type hint
-#     logger.info("NBA Analytics API starting up...")
-#     # Potential future startup tasks: Initialize DB connections, load ML models, etc.
-#     pass
+@app.on_event("startup")
+async def startup_event() -> None: # Added return type hint
+    logger.info("NBA Analytics API starting up...")
+    # Potential future startup tasks: Initialize DB connections, load ML models, etc.
+    pass
 
-# @app.on_event("shutdown")
-# async def shutdown_event() -> None: # Added return type hint
-#     logger.info("NBA Analytics API shutting down...")
-#     # Potential future shutdown tasks: Close DB connections, save state, etc.
-#     pass
+@app.on_event("shutdown")
+async def shutdown_event() -> None: # Added return type hint
+    logger.info("NBA Analytics API shutting down...")
+    # Potential future shutdown tasks: Close DB connections, save state, etc.
+    pass
 
 # --- Uvicorn Runner ---
 if __name__ == "__main__":
@@ -187,12 +147,3 @@ if __name__ == "__main__":
         print("Python script imports in main.py appear to be successful (without starting server).")
     except Exception as e:
         print(f"Error during basic script execution (after imports): {e}")
-    # logger.info(f"Starting Uvicorn server on http://{settings.APP_HOST}:{settings.APP_PORT}")
-    # uvicorn.run(
-    #     "main:app", 
-    #     host=settings.APP_HOST, 
-    #     port=settings.APP_PORT, 
-    #     reload=settings.AUTO_RELOAD_APP, # Controlled by .env setting
-    #     log_level=settings.LOG_LEVEL.lower(),
-    #     # workers=settings.WEB_CONCURRENCY # Consider for production if needed
-    # )
