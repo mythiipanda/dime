@@ -48,6 +48,19 @@ def llm_node(state: AgentState) -> dict:
     # Langchain's bind_tools and the model itself handle the tool_choice and tool_calling protocol.
     try:
         ai_response_message = llm_with_tools.invoke(current_messages)
+        
+        # --- Start of new diagnostic logging ---
+        print(f"RAW LLM Response Object: {ai_response_message!r}") # Print the repr of the object
+        if hasattr(ai_response_message, 'response_metadata') and ai_response_message.response_metadata:
+            print(f"LLM Response Metadata: {ai_response_message.response_metadata}")
+            # Look for common error patterns in metadata (actual keys depend on Gemini API structure via Langchain)
+            if ai_response_message.response_metadata.get('error'):
+                print(f"ERROR in LLM Response Metadata: {ai_response_message.response_metadata['error']}")
+            if ai_response_message.response_metadata.get('block_reason'):
+                 print(f"CONTENT BLOCKED by Gemini. Reason: {ai_response_message.response_metadata.get('block_reason')}, Safety Ratings: {ai_response_message.response_metadata.get('safety_ratings')}")
+
+        # --- End of new diagnostic logging ---
+
         # ai_response_message will be an AIMessage.
         # If the LLM decided to call a tool, ai_response_message.tool_calls will be populated.
         # If it decided to respond directly, ai_response_message.content will have the response.
