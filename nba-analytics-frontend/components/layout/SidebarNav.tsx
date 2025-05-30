@@ -98,24 +98,6 @@ const navSections: NavSection[] = [
     items: [
       { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
       { href: '/ai-assistant', label: 'AI Assistant', icon: BotIcon },
-      { href: '/research', label: 'Research', icon: Microscope },
-    ]
-  },
-  {
-    title: "Analysis",
-    items: [
-      { href: '/players', label: 'Players', icon: User },
-      { href: '/teams', label: 'Teams', icon: UsersIcon },
-      { href: '/standings', label: 'Standings', icon: ListOrdered },
-      { href: '/games', label: 'Games', icon: CalendarDays },
-      { href: '/statistics', label: 'Statistics', icon: BarChart3 },
-    ]
-  },
-  {
-    title: "Tools",
-    items: [
-      { href: '/shot-charts', label: 'Shot Charts', icon: TargetIcon },
-      { href: '/player-comparison', label: 'Player Comparison', icon: GitCompareIcon },
     ]
   }
 ];
