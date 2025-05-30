@@ -1,19 +1,24 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 
-const isProtectedRoute = createRouteMatcher([
-  '/dashboard(.*)',
-]);
-
-export default clerkMiddleware(); // Let Clerk handle protection based on config
+// This is the default export, Clerk handles protection automatically
+// based on the publicRoutes config below.
+export default clerkMiddleware();
 
 export const config = {
-  // Protect all routes including api/trpc routes
-  // Please edit this to allow other routes to be public as needed.
-  // See https://clerk.com/docs/references/nextjs/clerk-middleware for more information about configuring your Middleware
   matcher: [
     '/((?!.+\.[\w]+$|_next).*)', // Match all routes except static files and _next
     '/',                        // Match the root route
     '/(api|trpc)(.*)'           // Match API routes
   ],
-  publicRoutes: ['/', '/sign-in', '/sign-up'], // Explicitly mark landing and auth pages as public
+  // Routes that are publicly accessible. All other routes will be protected by default.
+  // Ensure that new app routes like /overview, /player-intel are NOT listed here.
+  publicRoutes: [
+    '/',
+    '/sign-in',
+    '/sign-up',
+    '/features', // Assuming this is a public landing page section
+    '/pricing',  // Assuming this is a public landing page section
+    '/about',    // Assuming this is a public landing page section
+    '/api/waitlist' // Public API endpoint
+  ],
 };
