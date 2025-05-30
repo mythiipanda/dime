@@ -140,10 +140,15 @@ async def shutdown_event() -> None: # Added return type hint
 
 # --- Uvicorn Runner ---
 if __name__ == "__main__":
-    logger.info("Attempting to run basic script imports...")
+    logger.info("Starting Uvicorn server...")
     try:
-        # This is just to confirm Python can resolve up to this point.
-        # All the app and uvicorn related lines are commented out.
-        print("Python script imports in main.py appear to be successful (without starting server).")
+        uvicorn.run(
+            "backend.main:app",
+            host="0.0.0.0",
+            port=8000,
+            reload=True,  # Set to False in production
+            log_level="info" # Uvicorn's log level, separate from app's logger
+        )
     except Exception as e:
-        print(f"Error during basic script execution (after imports): {e}")
+        logger.critical(f"Failed to start Uvicorn server: {e}", exc_info=True)
+        sys.exit(1)

@@ -1405,15 +1405,15 @@ class TeamShootingSplitsInput(BaseModel):
     )
     season_type: str = Field(
         "Regular Season",
-        description=f"Type of season. Options: {', '.join(SHOOTING_SEASON_TYPES.keys())}."
+        description=f"Type of season. Options: {', '.join(SHOOTING_SEASON_TYPES)}."
     )
     measure_type: str = Field(
         "Base",
-        description=f"Statistical category to analyze. Options: {', '.join(SHOOTING_MEASURE_TYPES.keys())}."
+        description=f"Statistical category to analyze. Options: {', '.join(SHOOTING_MEASURE_TYPES)}."
     )
     per_mode: str = Field(
         "Totals",
-        description=f"How to present the statistics. Options: {', '.join(SHOOTING_PER_MODES.keys())}."
+        description=f"How to present the statistics. Options: {', '.join(SHOOTING_PER_MODES)}."
     )
 
 @tool("get_team_shooting_splits", args_schema=TeamShootingSplitsInput)

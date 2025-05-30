@@ -52,15 +52,27 @@ app = workflow.compile()
 
 # Optional: For testing or direct invocation from Python
 if __name__ == "__main__":
-    inputs = {"input_query": "Get info on LeBron James", "chat_history": []} # chat_history is for AgentState
+    # More complex query for testing
+    inputs = {
+        "input_query": "Compare Michael Jordan\'s 1990-91 season stats with LeBron James\' 2012-13 season. Who was more efficient and had a better overall impact based on PER and Win Shares?", 
+        "chat_history": []
+    } 
     print("INVOKING LANGGRAPH APP (from graph.py direct test with ToolNode)...")
     print("---STREAMING OUTPUT START---")
     
     final_graph_state: AgentState = None
+    system_prompt_printed = False
     for event in app.stream(inputs, stream_mode="updates"):
         node_name, node_output_state = list(event.items())[0]
         print(f"NODE EXECUTED: {node_name}")
         
+        # Print system prompt once when llm_node executes
+        if node_name == "llm_node" and node_output_state.get("system_prompt_used") and not system_prompt_printed:
+            print("\n--- SYSTEM PROMPT USED BY LLM NODE ---")
+            print(node_output_state["system_prompt_used"])
+            print("-------------------------------------\n")
+            system_prompt_printed = True
+
         if node_output_state and 'messages' in node_output_state and node_output_state['messages']:
             print(f"  MESSAGES (from {node_name}, last one): {node_output_state['messages'][-1]}")
 

@@ -2,10 +2,12 @@
 
 from .state import AgentState
 from .tool_manager import all_tools # Import all_tools for the LLM
-from langchain_core.messages import AIMessage, ToolMessage, HumanMessage
+from langchain_core.messages import AIMessage, ToolMessage, HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI # For Gemini
 from ..config import GEMINI_API_KEY # Import API key
 import json
+import datetime # Added datetime
+from .prompt import get_nba_analyst_prompt # Added import for the new prompt function
 
 # Initialize Gemini LLM
 # Ensure GEMINI_API_KEY is set in your .env file
@@ -33,21 +35,32 @@ def entry_node(state: AgentState) -> dict:
 
 def llm_node(state: AgentState) -> dict:
     """
-    Invokes the Gemini LLM with the current message history and bound tools.
+    Invokes the Gemini LLM with the current message history (prepended with a system prompt) and bound tools.
     The LLM will decide whether to call a tool or respond directly.
     Returns the AIMessage from the LLM.
     """
     print("---ENTERING LLM NODE (Using Gemini)---")
-    current_messages = state['messages']
+    current_messages_from_state = state['messages']
     streaming_log = []
 
-    print(f"LLM Input Messages: {current_messages}")
-    streaming_log.append(f"LLM invoking with messages: {json.dumps([m.dict() for m in current_messages], indent=2)[:300]}...")
+    # --- Prepare dynamic system prompt ---
+    # TODO: Make current_season dynamic (e.g., from config or a dedicated tool/input)
+    current_season = "2024-25" 
+    current_date_str = datetime.date.today().strftime("%Y-%m-%d")
+    system_prompt_content = get_nba_analyst_prompt(current_season=current_season, current_date=current_date_str)
+    system_message = SystemMessage(content=system_prompt_content)
+    
+    # Prepend system message to the history for this LLM call
+    messages_for_llm = [system_message] + current_messages_from_state
+    # --- End of system prompt preparation ---
+
+    print(f"LLM Input Messages (with system prompt): {messages_for_llm}")
+    streaming_log.append(f"LLM invoking with messages (incl. system prompt): {json.dumps([m.dict() for m in messages_for_llm], indent=2)[:300]}...")
 
     # Invoke the LLM with the message history and tools
     # Langchain's bind_tools and the model itself handle the tool_choice and tool_calling protocol.
     try:
-        ai_response_message = llm_with_tools.invoke(current_messages)
+        ai_response_message = llm_with_tools.invoke(messages_for_llm)
         
         # --- Start of new diagnostic logging ---
         print(f"RAW LLM Response Object: {ai_response_message!r}") # Print the repr of the object
@@ -83,7 +96,8 @@ def llm_node(state: AgentState) -> dict:
         "messages": [ai_response_message], # Langgraph will add this to existing messages
         "streaming_output": streaming_log,
         "agent_scratchpad": streaming_log, # For now, use streaming_log for scratchpad
-        "current_step": state.get('current_step', 0) + 1
+        "current_step": state.get('current_step', 0) + 1,
+        "system_prompt_used": system_prompt_content # Adding this for debugging/verification
     }
 
 # My custom tool_node is no longer needed if using langgraph.prebuilt.ToolNode directly in the graph.
