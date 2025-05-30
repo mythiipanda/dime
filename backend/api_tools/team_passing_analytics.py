@@ -12,16 +12,16 @@ import pandas as pd
 from nba_api.stats.endpoints import teamdashptpass
 from nba_api.stats.library.parameters import SeasonTypeAllStar, PerModeSimple
 
-from config import settings
-from core.errors import Errors
-from api_tools.utils import (
+from ..config import settings
+from ..core.errors import Errors
+from .utils import (
     _process_dataframe,
     format_response,
     find_team_id_or_error,
     TeamNotFoundError
 )
-from utils.validation import _validate_season_format
-from utils.path_utils import get_cache_dir, get_cache_file_path, get_relative_cache_path
+from ..utils.validation import _validate_season_format
+from ..utils.path_utils import get_cache_dir, get_cache_file_path, get_relative_cache_path
 
 logger = logging.getLogger(__name__)
 

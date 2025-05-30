@@ -13,12 +13,12 @@ from functools import lru_cache
 from nba_api.stats.endpoints import teamdashptshots
 from nba_api.stats.library.parameters import SeasonTypeAllStar, PerModeSimple
 
-from config import settings
-from core.errors import Errors
-from api_tools.utils import _process_dataframe, format_response
-from utils.validation import validate_date_format
-from api_tools.team_tracking_utils import _validate_team_tracking_params, _get_team_info_for_tracking
-from api_tools.http_client import nba_session # For session patching
+from ..config import settings
+from ..core.errors import Errors
+from .utils import _process_dataframe, format_response
+from ..utils.validation import validate_date_format
+from .team_tracking_utils import _validate_team_tracking_params, _get_team_info_for_tracking
+from .http_client import nba_session # For session patching
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,7 @@ _TEAM_SHOOTING_VALID_PER_MODES: Set[str] = {getattr(PerModeSimple, attr) for att
 teamdashptshots.requests = nba_session
 
 # --- Cache Directory Setup ---
-from utils.path_utils import get_cache_dir, get_cache_file_path, get_relative_cache_path
+from ..utils.path_utils import get_cache_dir, get_cache_file_path, get_relative_cache_path
 TEAM_SHOOTING_CSV_DIR = get_cache_dir("team_shooting")
 
 # --- Helper Functions for CSV Caching ---

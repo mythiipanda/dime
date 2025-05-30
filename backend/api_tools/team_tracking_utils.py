@@ -1,13 +1,13 @@
 import logging
 from typing import Optional, Tuple
 
-from core.errors import Errors
-from api_tools.utils import (
+from ..core.errors import Errors
+from .utils import (
     format_response,
     find_team_id_or_error,
     TeamNotFoundError
 )
-from utils.validation import _validate_season_format
+from ..utils.validation import _validate_season_format
 
 logger = logging.getLogger(__name__)
 
