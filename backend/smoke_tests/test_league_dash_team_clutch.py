@@ -27,7 +27,7 @@ from backend.api_tools.league_dash_team_clutch import (
     VALID_AHEAD_BEHIND,
     VALID_LEAGUE_IDS
 )
-from backend.config import settings
+from ..config import settings
 
 # --- Test Constants ---
 SAMPLE_SEASON = "2023-24"

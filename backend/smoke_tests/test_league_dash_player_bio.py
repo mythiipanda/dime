@@ -27,7 +27,7 @@ from backend.api_tools.league_dash_player_bio import (
     VALID_PLAYER_EXPERIENCES,
     VALID_STARTER_BENCH
 )
-from backend.config import settings
+from ..config import settings
 
 # --- Test Constants ---
 SAMPLE_SEASON = "2023-24"

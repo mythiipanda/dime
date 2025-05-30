@@ -26,7 +26,7 @@ from backend.api_tools.league_dash_team_stats import (
     VALID_CONFERENCES,
     VALID_DIVISIONS
 )
-from backend.config import settings
+from ..config import settings
 
 # --- Test Constants ---
 SAMPLE_SEASON = "2023-24"

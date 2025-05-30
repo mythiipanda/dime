@@ -24,7 +24,7 @@ from backend.api_tools.player_dashboard_general import (
     VALID_PER_MODES,
     VALID_SEASON_TYPES
 )
-from backend.config import settings
+from ..config import settings
 
 # --- Test Constants ---
 SAMPLE_PLAYER_NAME = "LeBron James"

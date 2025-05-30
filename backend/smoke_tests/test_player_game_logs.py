@@ -24,7 +24,7 @@ from backend.api_tools.player_game_logs import (
     VALID_PER_MODES,
     VALID_MEASURE_TYPES
 )
-from backend.config import settings
+from ..config import settings
 
 # --- Test Constants ---
 SAMPLE_SEASON = "2024-25"

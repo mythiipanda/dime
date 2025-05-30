@@ -25,7 +25,7 @@ from backend.api_tools.team_dash_lineups import (
     VALID_SEASON_TYPES,
     VALID_GROUP_QUANTITIES
 )
-from backend.config import settings
+from ..config import settings
 
 # --- Test Constants ---
 SAMPLE_TEAM_NAME = "Lakers"

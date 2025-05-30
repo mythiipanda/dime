@@ -24,7 +24,7 @@ from backend.api_tools.team_dashboard_shooting import (
     VALID_PER_MODES,
     VALID_SEASON_TYPES
 )
-from backend.config import settings
+from ..config import settings
 
 # --- Test Constants ---
 SAMPLE_TEAM_NAME = "Lakers"
