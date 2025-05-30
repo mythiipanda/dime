@@ -39,7 +39,7 @@ export function FeaturesSection() {
             Uncover Insights with <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary">Powerful Tools</span>
           </h2>
           <p className="text-lg leading-7 text-muted-foreground max-w-2xl mx-auto mb-10">From live game data to deep statistical comparisons, Dime provides the tools you need for comprehensive NBA analysis.</p>
-          <Link href="/dashboard" className="group"> {/* Added group class for icon hover */}
+          <Link href="/overview" className="group">
             <Button>
               Explore Features <ArrowRight className="h-5 w-5 ml-2 transition-transform group-hover:translate-x-1" />
             </Button>

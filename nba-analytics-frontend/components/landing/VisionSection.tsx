@@ -97,7 +97,7 @@ export function VisionSection() {
             {/* Call to Action Buttons - Apply new primary style */}
             <div className="flex justify-center md:justify-start">
               <SignedIn>
-                <Link href="/dashboard">
+                <Link href="/overview">
                   <Button size="lg">
                     Try the AI Assistant
                   </Button>

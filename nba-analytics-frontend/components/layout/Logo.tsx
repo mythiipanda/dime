@@ -9,7 +9,7 @@ interface LogoProps {
   href?: string; // Add href prop
 }
 
-export function Logo({ className, iconSize = 6, textSize = 'xl', hideText = false, href = "/dashboard" }: LogoProps) { // Add href to props and default
+export function Logo({ className, iconSize = 6, textSize = 'xl', hideText = false, href = "/overview" }: LogoProps) { // Changed default href to /overview
   const iconClass = `h-${iconSize} w-${iconSize}`;
   const titleSizeClass = `text-${textSize}`;
   const subtitleSizeClass = textSize === 'xl' ? 'text-sm' : 'text-xs'; // Adjust subtitle size based on title

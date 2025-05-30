@@ -35,12 +35,12 @@ export function Navbar({ transparent = false }: NavbarProps) {
         </div>
         
         <div className="hidden md:flex items-center space-x-4 animate-in fade-in-0 slide-in-from-right-3 duration-500 delay-300">
-          <Link href="/dashboard">
+          <Link href="/overview">
             <Button variant="outline" className="px-4 py-2 border-white/20 hover:bg-white/10 text-white">
               Sign In
             </Button>
           </Link>
-          <Link href="/dashboard">
+          <Link href="/overview">
             <Button className="bg-white hover:bg-gray-100 text-black font-medium px-4 py-2">
               Try Demo
             </Button>

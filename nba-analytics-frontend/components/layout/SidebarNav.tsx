@@ -7,19 +7,16 @@ import {
   Bot as BotIcon,
   Users as UsersIcon,
   BarChart2 as BarChart2Icon,
-  Trophy as TrophyIcon,
-  Calendar as CalendarIcon,
-  Home as HomeIcon,
-  Activity as ActivityIcon,
+  ShieldCheck as ShieldCheckIcon,
   BookOpen as BookOpenIcon,
-  GitCompare as GitCompareIcon,
-  Target as TargetIcon,
-  Microscope,
   LayoutDashboard,
   User,
   CalendarDays,
   BarChart3,
   ListOrdered,
+  Briefcase as BriefcaseIcon,
+  Home as HomeIcon,
+  SearchCode
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -94,9 +91,19 @@ interface SidebarNavProps {
 
 const navSections: NavSection[] = [
   {
-    title: "Overview",
+    title: "Analyze",
     items: [
-      { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+      { href: '/overview', label: 'Overview', icon: HomeIcon },
+      { href: '/player-intel', label: 'Player Intel', icon: User },
+      { href: '/team-command', label: 'Team Command', icon: ShieldCheckIcon },
+      { href: '/league-analysis', label: 'League Analysis', icon: BarChart3 },
+      { href: '/game-center', label: 'Game Center', icon: CalendarDays },
+      { href: '/market-watch', label: 'Market Watch', icon: BriefcaseIcon },
+    ]
+  },
+  {
+    title: "Tools",
+    items: [
       { href: '/ai-assistant', label: 'AI Assistant', icon: BotIcon },
     ]
   }

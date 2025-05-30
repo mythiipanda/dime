@@ -79,7 +79,7 @@ export function LandingNavbar() {
                 </SignedOut>
                 <SignedIn>
                   <SheetClose asChild>
-                    <Link href="/overviewd" className="w-full">
+                    <Link href="/overview" className="w-full">
                       <Button className="w-full bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white font-semibold">Dashboard</Button>
                     </Link>
                   </SheetClose>
