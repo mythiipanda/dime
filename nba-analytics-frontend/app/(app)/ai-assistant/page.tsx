@@ -247,7 +247,7 @@ const ChatMessageCard: React.FC<{ message: FrontendChatMessage; isLatest: boolea
             </div>
         ) : message.isStreaming && !hasIntermediateSteps ? (
              <div className="flex items-center text-sm opacity-80 p-3">
-                <Loader2 size={16} className="mr-2 animate-spin" /> AI is preparing...
+                <Loader2 size={16} className="mr-2 animate-spin" /> AI is thinking...
             </div>
         ) : null}
       </Card>
