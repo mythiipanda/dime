@@ -4,7 +4,7 @@ from .state import AgentState
 from .tool_manager import all_tools # Import all_tools for the LLM
 from langchain_core.messages import AIMessage, ToolMessage, HumanMessage
 from langchain_google_genai import ChatGoogleGenerativeAI # For Gemini
-from backend.config import GEMINI_API_KEY # Import API key
+from ..config import GEMINI_API_KEY # Import API key
 import json
 
 # Initialize Gemini LLM
