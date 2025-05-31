@@ -145,6 +145,150 @@ if __name__ == "__main__":
         expected_final_answer_substring="Hello! I'm functioning as an AI assistant"
     ))
 
+    # New Test Cases for Player Tools
+    test_results.append(run_agent_test(
+        "Player Aggregate Stats Test",
+        "Give me aggregated stats for LeBron James for the 2023-24 season.",
+        expected_tool_name="get_player_aggregate_stats"
+    ))
+    test_results.append(run_agent_test(
+        "Player Career By College Stats Test",
+        "Show me career stats for players from Duke.",
+        expected_tool_name="get_player_career_by_college_stats"
+    ))
+    test_results.append(run_agent_test(
+        "Player Career By College Rollup Stats Test",
+        "Show me college rollup stats for all players.",
+        expected_tool_name="get_player_career_by_college_rollup_stats"
+    ))
+    test_results.append(run_agent_test(
+        "Player Career Stats Test",
+        "What are Stephen Curry's career stats?",
+        expected_tool_name="get_player_career_stats"
+    ))
+    test_results.append(run_agent_test(
+        "Player Awards Test",
+        "What awards has Michael Jordan won?",
+        expected_tool_name="get_player_awards"
+    ))
+    test_results.append(run_agent_test(
+        "Player Clutch Stats Test",
+        "Show me LeBron James' clutch stats for the 2022-23 season.",
+        expected_tool_name="get_player_clutch_stats"
+    ))
+    test_results.append(run_agent_test(
+        "Player Info Test",
+        "Tell me about Kevin Durant.",
+        expected_tool_name="get_player_info"
+    ))
+    test_results.append(run_agent_test(
+        "Player Compare Stats Test",
+        "Compare LeBron James (ID 2544) and Stephen Curry (ID 201939) for the 2023-24 season.",
+        expected_tool_name="get_player_compare_stats"
+    ))
+    test_results.append(run_agent_test(
+        "Player Dashboard By Year Over Year Test",
+        "Show me LeBron James' year over year dashboard stats for the 2023-24 season.",
+        expected_tool_name="get_player_dashboard_by_year_over_year"
+    ))
+    test_results.append(run_agent_test(
+        "Player Dashboard Game Splits Test",
+        "What are Nikola Jokic's game splits for the 2023-24 regular season?",
+        expected_tool_name="get_player_dashboard_game_splits"
+    ))
+    test_results.append(run_agent_test(
+        "Player Dashboard General Splits Test",
+        "Show me Giannis Antetokounmpo's general splits for the 2023-24 regular season.",
+        expected_tool_name="get_player_dashboard_general_splits"
+    ))
+    test_results.append(run_agent_test(
+        "Player Dashboard Last N Games Test",
+        "What are Luka Doncic's stats for his last 10 games in the 2023-24 season?",
+        expected_tool_name="get_player_dashboard_last_n_games"
+    ))
+    test_results.append(run_agent_test(
+        "Player Dashboard Shooting Splits Test",
+        "Show me Jayson Tatum's shooting splits for the 2023-24 regular season.",
+        expected_tool_name="get_player_dashboard_shooting_splits"
+    ))
+    test_results.append(run_agent_test(
+        "Player Profile Test",
+        "Give me the profile for Joel Embiid.",
+        expected_tool_name="get_player_profile"
+    ))
+    test_results.append(run_agent_test(
+        "Player Defense Stats Test",
+        "What are Rudy Gobert's defensive stats for the 2023-24 season?",
+        expected_tool_name="get_player_defense_stats"
+    ))
+    test_results.append(run_agent_test(
+        "Player Hustle Stats Test",
+        "Show me hustle stats for the 2023-24 season.",
+        expected_tool_name="get_player_hustle_stats"
+    ))
+    test_results.append(run_agent_test(
+        "Player Estimated Metrics Test",
+        "What are the estimated metrics for the 2023-24 season?",
+        expected_tool_name="get_player_estimated_metrics"
+    ))
+    test_results.append(run_agent_test(
+        "Player Fantasy Profile Test",
+        "Show me LeBron James' fantasy profile for the 2023-24 season.",
+        expected_tool_name="get_player_fantasy_profile"
+    ))
+    test_results.append(run_agent_test(
+        "Player Fantasy Profile Bar Graph Test",
+        "Give me LeBron James' fantasy profile bar graph data for the 2023-24 season.",
+        expected_tool_name="get_player_fantasy_profile_bar_graph"
+    ))
+    test_results.append(run_agent_test(
+        "Player Game Logs Test",
+        "Show me game logs for Damian Lillard for the 2023-24 season.",
+        expected_tool_name="get_player_game_logs"
+    ))
+    test_results.append(run_agent_test(
+        "Player Game Streak Finder Test",
+        "Find game streaks for Stephen Curry.",
+        expected_tool_name="get_player_game_streak_finder"
+    ))
+    test_results.append(run_agent_test(
+        "Player Index Test",
+        "List all active players for the 2023-24 season.",
+        expected_tool_name="get_player_index"
+    ))
+    test_results.append(run_agent_test(
+        "Player Listings Test",
+        "List all players for the 2023-24 season.",
+        expected_tool_name="get_player_listings"
+    ))
+    test_results.append(run_agent_test(
+        "Player Passing Stats Test",
+        "Show me Nikola Jokic's passing stats for the 2023-24 season.",
+        expected_tool_name="get_player_passing_stats"
+    ))
+    test_results.append(run_agent_test(
+        "Player Rebounding Stats Test",
+        "What are Domantas Sabonis' rebounding stats for the 2023-24 season?",
+        expected_tool_name="get_player_rebounding_stats"
+    ))
+    test_results.append(run_agent_test(
+        "Player Shots Tracking Stats Test",
+        "Show me Kevin Durant's shots tracking stats for the 2023-24 season.",
+        expected_tool_name="get_player_shots_tracking_stats"
+    ))
+    test_results.append(run_agent_test(
+        "Player Vs Player Stats Test",
+        "Compare LeBron James (ID 2544) and Michael Jordan (ID 893) head-to-head for the 1997-98 season.",
+        expected_tool_name="get_player_vs_player_stats"
+    ))
+
+    # New Test Cases for League Tools
+    test_results.append(run_agent_test(
+        "Common Playoff Series Test",
+        "Show me the playoff series for the 2023-24 season.",
+        expected_tool_name="get_common_playoff_series"
+    ))
+
     print("\n--- Overall Test Results ---")
     if all(test_results):
         print("All tests PASSED!")

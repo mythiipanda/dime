@@ -19,7 +19,33 @@ if _project_root_dir not in sys.path:
 # Player Tools
 from backend.langgraph_agent.toolkits.player_tools import (
     get_player_shot_chart,
-    PlayerShotChartInput
+    get_player_aggregate_stats,
+    get_player_career_by_college_stats,
+    get_player_career_by_college_rollup_stats,
+    get_player_career_stats,
+    get_player_awards,
+    get_player_clutch_stats,
+    get_player_info,
+    get_player_compare_stats,
+    get_player_dashboard_by_year_over_year,
+    get_player_dashboard_game_splits,
+    get_player_dashboard_general_splits,
+    get_player_dashboard_last_n_games,
+    get_player_dashboard_shooting_splits,
+    get_player_profile,
+    get_player_defense_stats,
+    get_player_hustle_stats,
+    get_player_estimated_metrics,
+    get_player_fantasy_profile,
+    get_player_fantasy_profile_bar_graph,
+    get_player_game_logs,
+    get_player_game_streak_finder,
+    get_player_index,
+    get_player_listings,
+    get_player_passing_stats,
+    get_player_rebounding_stats,
+    get_player_shots_tracking_stats,
+    get_player_vs_player_stats
 )
 
 # Team Tools
@@ -140,13 +166,41 @@ from backend.langgraph_agent.toolkits.league_tools import (
     get_league_player_shot_locations,
     get_nba_schedule_league_v2_int,
     get_nba_league_wide_shot_chart,
-    get_nba_playoff_picture
+    get_nba_playoff_picture,
+    get_common_playoff_series
 )
 
 # --- Tool Registry by Category ---
 
 player_tools: List[Tool] = [
-    get_player_shot_chart
+    get_player_shot_chart,
+    get_player_aggregate_stats,
+    get_player_career_by_college_stats,
+    get_player_career_by_college_rollup_stats,
+    get_player_career_stats,
+    get_player_awards,
+    get_player_clutch_stats,
+    get_player_info,
+    get_player_compare_stats,
+    get_player_dashboard_by_year_over_year,
+    get_player_dashboard_game_splits,
+    get_player_dashboard_general_splits,
+    get_player_dashboard_last_n_games,
+    get_player_dashboard_shooting_splits,
+    get_player_profile,
+    get_player_defense_stats,
+    get_player_hustle_stats,
+    get_player_estimated_metrics,
+    get_player_fantasy_profile,
+    get_player_fantasy_profile_bar_graph,
+    get_player_game_logs,
+    get_player_game_streak_finder,
+    get_player_index,
+    get_player_listings,
+    get_player_passing_stats,
+    get_player_rebounding_stats,
+    get_player_shots_tracking_stats,
+    get_player_vs_player_stats
 ]
 
 team_tools: List[Tool] = [
@@ -257,7 +311,8 @@ league_tools: List[Tool] = [
     get_league_player_shot_locations,
     get_nba_schedule_league_v2_int,
     get_nba_league_wide_shot_chart,
-    get_nba_playoff_picture
+    get_nba_playoff_picture,
+    get_common_playoff_series
 ]
 
 # --- Combine All Tools ---
