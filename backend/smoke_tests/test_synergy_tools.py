@@ -401,6 +401,38 @@ def test_fetch_synergy_different_per_modes():
     print("\n=== Different per_mode values test completed ===")
     return True
 
+def test_fetch_synergy_postup():
+    result = fetch_synergy_play_types_logic(
+        league_id="00",
+        per_mode="PerGame",
+        player_or_team="P",
+        season_type="Regular Season",
+        season="2024-25",
+        play_type_nullable="PostUp",
+        type_grouping_nullable="offensive",
+        player_id_nullable=None,
+        team_id_nullable=None,
+        return_dataframe=False
+    )
+    data = json.loads(result)
+    if "error" in data:
+        print(f"API returned an error: {data['error']}")
+        print("This might be expected if the NBA API is unavailable or rate-limited.")
+        return False
+    print(f"Number of PostUp entries: {len(data['synergy_stats'])}")
+    if data['synergy_stats']:
+        print("\nFirst 3 PostUp entries:")
+        for i, entry in enumerate(data['synergy_stats'][:3]):
+            print(f"\nEntry {i+1}:")
+            print(f"  Player: {entry.get('PLAYER_NAME', 'N/A')}")
+            print(f"  Player ID: {entry.get('PLAYER_ID', 'N/A')}")
+            print(f"  Team: {entry.get('TEAM_NAME', 'N/A')}")
+            print(f"  GP: {entry.get('GP', 'N/A')}")
+            print(f"  Poss: {entry.get('POSS', 'N/A')}")
+            print(f"  PPP: {entry.get('PPP', 'N/A')}")
+    else:
+        print("No PostUp entries found.")
+    return True
 def run_all_tests():
     """Run all tests in sequence."""
     print(f"=== Running synergy_tools smoke tests at {datetime.now().isoformat()} ===\n")
@@ -417,7 +449,7 @@ def run_all_tests():
         different_play_types = test_fetch_synergy_different_play_types()
         different_seasons = test_fetch_synergy_different_seasons()
         different_per_modes = test_fetch_synergy_different_per_modes()
-
+        postup_data = test_fetch_synergy_postup()
         print("\n=== All tests completed successfully ===")
         return True
     except Exception as e:

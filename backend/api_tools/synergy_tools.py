@@ -88,6 +88,24 @@ _SYNERGY_VALID_LEAGUE_IDS: Set[str] = {getattr(LeagueID, attr) for attr in dir(L
 _SYNERGY_VALID_PER_MODES: Set[str] = {getattr(PerModeSimple, attr) for attr in dir(PerModeSimple) if not attr.startswith('_') and isinstance(getattr(PerModeSimple, attr), str)}
 _SYNERGY_VALID_SEASON_TYPES: Set[str] = {getattr(SeasonTypeAllStar, attr) for attr in dir(SeasonTypeAllStar) if not attr.startswith('_') and isinstance(getattr(SeasonTypeAllStar, attr), str)}
 
+# Custom headers to mimic browser requests
+CUSTOM_HEADERS = {
+    "accept": "*/*",
+    "accept-encoding": "gzip, deflate, br, zstd",
+    "accept-language": "en-US,en;q=0.9",
+    "connection": "keep-alive",
+    "host": "stats.nba.com",
+    "origin": "https://www.nba.com",
+    "referer": "https://www.nba.com/",
+    "sec-ch-ua": '"Chromium";v="136", "Brave";v="136", "Not.A/Brand";v="99"',
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": '"Windows"',
+    "sec-fetch-dest": "empty",
+    "sec-fetch-mode": "cors",
+    "sec-fetch-site": "same-site",
+    "sec-gpc": "1",
+    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
+}
 
 # --- Helper Functions ---
 def get_cached_synergy_data(
@@ -98,7 +116,7 @@ def get_cached_synergy_data(
     """Wrapper for the SynergyPlayTypes NBA API endpoint."""
     logger.info(f"Fetching Synergy data (ts: {timestamp_bucket}). Params: {api_kwargs}")
     try:
-        synergy_stats_endpoint = endpoint_class(**api_kwargs, timeout=settings.DEFAULT_TIMEOUT_SECONDS)
+        synergy_stats_endpoint = endpoint_class(**api_kwargs, headers=CUSTOM_HEADERS, timeout=settings.DEFAULT_TIMEOUT_SECONDS)
         return synergy_stats_endpoint.get_dict()
     except Exception as e:
         logger.error(f"{endpoint_class.__name__} API call failed: {e}", exc_info=True)
@@ -236,10 +254,11 @@ def fetch_synergy_play_types_logic(
     try:
         response_dict: Dict[str, Any]
         if bypass_cache:
-            logger.info(f"Bypassing cache, fetching fresh Synergy data with params: {api_params_for_call}")
-            synergy_endpoint = SynergyPlayTypes(**api_params_for_call, timeout=settings.DEFAULT_TIMEOUT_SECONDS)
+            logger.info(f"Bypassing cache, fetching fresh Synergy data with params: {api_params_for_call} and custom headers.")
+            synergy_endpoint = SynergyPlayTypes(**api_params_for_call, headers=CUSTOM_HEADERS, timeout=settings.DEFAULT_TIMEOUT_SECONDS)
             response_dict = synergy_endpoint.get_dict()
         else:
+            # For cached data, we don't need to pass headers again as the request was already made
             response_dict = get_cached_synergy_data(
                 timestamp_bucket=timestamp_bucket,
                 endpoint_class=SynergyPlayTypes, api_kwargs=api_params_for_call
