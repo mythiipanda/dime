@@ -191,6 +191,47 @@ def test_fetch_synergy_play_types_player():
     print("\n=== Player synergy play types test completed ===")
     return data
 
+def test_fetch_synergy_play_types_player_with_id():
+    """Test fetching synergy play types for a specific player ID."""
+    print("\n=== Testing fetch_synergy_play_types_logic for a specific player ID ===")
+
+    play_type = "Isolation"
+    season = "2022-23"
+    lebron_james_id = 2544 # LeBron James' Player ID
+
+    json_response = fetch_synergy_play_types_logic(
+        play_type_nullable=play_type,
+        type_grouping_nullable="offensive",
+        player_or_team=PlayerOrTeamAbbreviation.player,
+        season=season,
+        season_type=SeasonTypeAllStar.regular,
+        league_id=LeagueID.nba,
+        per_mode=PerModeSimple.per_game,
+        player_id_nullable=lebron_james_id
+    )
+
+    data = json.loads(json_response)
+
+    if "error" in data:
+        print(f"API returned an error: {data['error']}")
+        print("This might be expected if the NBA API is unavailable or rate-limited.")
+    else:
+        print(f"Number of player entries for LeBron James: {len(data['synergy_stats'])}")
+        if data['synergy_stats']:
+            print("\nFirst 3 player entries for LeBron James:")
+            for i, entry in enumerate(data['synergy_stats'][:3]):
+                print(f"\nPlayer {i+1}:")
+                print(f"  Name: {entry.get('PLAYER_NAME', 'N/A')}")
+                print(f"  Player ID: {entry.get('PLAYER_ID', 'N/A')}")
+                print(f"  Team: {entry.get('TEAM_NAME', 'N/A')}")
+                print(f"  GP: {entry.get('GP', 'N/A')}")
+                print(f"  Poss: {entry.get('POSS', 'N/A')}")
+                print(f"  PPP: {entry.get('PPP', 'N/A')}")
+                assert entry.get('PLAYER_ID') == lebron_james_id, "Filtered data should only contain LeBron James' ID"
+
+    print("\n=== Player synergy play types with ID test completed ===")
+    return data
+
 def test_fetch_synergy_play_types_defensive():
     """Test fetching defensive synergy play types."""
     print("\n=== Testing fetch_synergy_play_types_logic for defensive plays ===")
@@ -369,6 +410,7 @@ def run_all_tests():
         basic_data = test_fetch_synergy_play_types_basic()
         df_result = test_fetch_synergy_play_types_dataframe()
         player_data = test_fetch_synergy_play_types_player()
+        player_with_id_data = test_fetch_synergy_play_types_player_with_id() # New test
 
         # Run the additional tests for better coverage
         defensive_data = test_fetch_synergy_play_types_defensive()
