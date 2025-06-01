@@ -7,8 +7,8 @@ from fastapi import APIRouter, Query, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from starlette.types import Send
 
-from backend.langgraph_agent.graph import app as langgraph_app
-from backend.langgraph_agent.state import AgentState # For type hinting if needed
+from langgraph_agent.graph import app as langgraph_app
+from langgraph_agent.state import AgentState # For type hinting if needed
 
 logger = logging.getLogger(__name__)
 
