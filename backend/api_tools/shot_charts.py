@@ -11,10 +11,10 @@ import pandas as pd
 import numpy as np
 from nba_api.stats.endpoints import shotchartdetail
 from nba_api.stats.static import players, teams
-from .utils import retry_on_timeout, format_response, get_player_id_from_name
-from ..config import settings
-from ..core.errors import Errors
-from ..utils.path_utils import get_cache_dir, get_cache_file_path, get_relative_cache_path
+from api_tools.utils import retry_on_timeout, format_response, get_player_id_from_name
+from config import settings
+from core.errors import Errors
+from utils.path_utils import get_cache_dir, get_cache_file_path, get_relative_cache_path
 
 logger = logging.getLogger(__name__)
 
