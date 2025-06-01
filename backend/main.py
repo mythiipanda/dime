@@ -12,12 +12,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, JSONResponse # Moved imports to top
 import uvicorn
 
-current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(current_dir)
-if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir)
-if current_dir not in sys.path:
-    sys.path.insert(0, current_dir)
 try:
     from logging_config import setup_logging
     from config import settings
@@ -35,11 +29,11 @@ except ImportError as e:
         datefmt='%Y-%m-%d %H:%M:%S'
     )
     logger = logging.getLogger(__name__)
-    logger.critical(f"CRITICAL: Failed to import or apply logging_config from backend.logging_config. Falling back to basicConfig. Error: {e}", exc_info=True)
+    logger.critical(f"CRITICAL: Failed to import or apply logging_config. Falling back to basicConfig. Error: {e}", exc_info=True)
 
 try:
     from core.errors import Errors
-    from backend.routes.sse import router as sse_router # Direct import of the sse router
+    from routes.sse import router as sse_router
 
 except ImportError as e:
     logger.critical(f"Failed to import application modules (config/routers). This is a fatal error. Error: {e}", exc_info=True)
