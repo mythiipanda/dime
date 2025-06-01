@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 from langchain_core.tools import tool
 
 # Assuming your project structure allows this import path
-from backend.api_tools.fantasy_widget import get_fantasy_widget as fetch_fantasy_widget_data
+from api_tools.fantasy_widget import get_fantasy_widget as fetch_fantasy_widget_data
 
 class FantasyWidgetInput(BaseModel):
     """Input schema for the NBA Fantasy Widget tool."""

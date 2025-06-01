@@ -14,13 +14,12 @@ backend_dir = os.path.dirname(current_dir)
 project_root = os.path.dirname(backend_dir)
 sys.path.insert(0, project_root)
 
-from backend.api_tools.team_history import (
+from api_tools.team_history import (
     fetch_common_team_years_logic,
     _get_csv_path_for_team_history,  # For verification
     TEAM_HISTORY_CSV_DIR             # For ensuring directory exists
 )
 from nba_api.stats.library.parameters import LeagueID
-
 SAMPLE_LEAGUE_ID = LeagueID.nba # "00"
 
 def _verify_csv_exists(expected_path: str):

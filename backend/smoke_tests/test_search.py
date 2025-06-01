@@ -14,7 +14,7 @@ backend_dir = os.path.dirname(current_dir)
 project_root = os.path.dirname(backend_dir)
 sys.path.insert(0, project_root)
 
-from backend.api_tools.search import (
+from api_tools.search import (
     search_players_logic,
     search_teams_logic,
     search_games_logic

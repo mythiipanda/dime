@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 from langchain_core.tools import tool
 
 # Assuming your project structure allows this import path
-from backend.api_tools.contracts_data import (
+from api_tools.contracts_data import (
     get_player_contract as fetch_player_contract_data,
     get_team_payroll as fetch_team_payroll_data,
     get_highest_paid_players as fetch_highest_paid_players_data,

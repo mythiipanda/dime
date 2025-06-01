@@ -22,8 +22,6 @@ from api_tools.homepage_leaders import (
     HOMEPAGE_LEADERS_CSV_DIR
 )
 from nba_api.stats.library.parameters import SeasonTypePlayoffs, PlayerOrTeam, PlayerScope, StatCategory, GameScopeDetailed
-
-
 class TestHomePageLeadersReal(unittest.TestCase):
     """Test cases for the homepage_leaders module using real API calls."""
 

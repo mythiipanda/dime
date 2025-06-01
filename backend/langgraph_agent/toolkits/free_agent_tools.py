@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 from langchain_core.tools import tool
 
 # Assuming your project structure allows this import path
-from backend.api_tools.free_agents_data import (
+from api_tools.free_agents_data import (
     get_free_agent_info as fetch_free_agent_info_data,
     get_team_free_agents as fetch_team_free_agents_data,
     get_top_free_agents as fetch_top_free_agents_data,

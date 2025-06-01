@@ -23,15 +23,15 @@ from nba_api.stats.endpoints import playerdashboardbygeneralsplits
 from nba_api.stats.library.parameters import (
     SeasonTypeAllStar, PerModeDetailed, MeasureTypeDetailed
 )
-from ..config import settings
-from ..core.errors import Errors
-from .utils import (
+from config import settings
+from core.errors import Errors
+from api_tools.utils import (
     _process_dataframe,
     format_response,
     find_player_id_or_error,
     PlayerNotFoundError
 )
-from ..utils.path_utils import get_cache_dir, get_cache_file_path
+from utils.path_utils import get_cache_dir, get_cache_file_path
 
 logger = logging.getLogger(__name__)
 

@@ -24,7 +24,7 @@ from nba_api.stats.endpoints import playerfantasyprofile
 from nba_api.stats.library.parameters import SeasonTypePlayoffs, MeasureTypeBase, PerMode36
 import pandas as pd
 
-from ..utils.path_utils import get_cache_dir, get_cache_file_path
+from utils.path_utils import get_cache_dir, get_cache_file_path
 
 # Define utility functions here since we can't import from .utils
 def _process_dataframe(df, single_row=False):

@@ -14,7 +14,7 @@ backend_dir = os.path.dirname(current_dir)
 project_root = os.path.dirname(backend_dir)
 sys.path.insert(0, project_root)
 
-from backend.api_tools.team_passing_analytics import fetch_team_passing_stats_logic
+from api_tools.team_passing_analytics import fetch_team_passing_stats_logic
 from nba_api.stats.library.parameters import SeasonTypeAllStar, PerModeSimple
 
 def test_fetch_team_passing_stats_basic():

@@ -14,7 +14,7 @@ backend_dir = os.path.dirname(current_dir)
 project_root = os.path.dirname(backend_dir)
 sys.path.insert(0, project_root)
 
-from backend.api_tools.player_dashboard_team_performance import (
+from api_tools.player_dashboard_team_performance import (
     fetch_player_dashboard_by_team_performance_logic,
     _get_csv_path_for_team_performance,  # For verification
     PLAYER_TEAM_PERFORMANCE_CSV_DIR      # For ensuring directory exists

@@ -14,7 +14,7 @@ backend_dir = os.path.dirname(current_dir)
 project_root = os.path.dirname(backend_dir)
 sys.path.insert(0, project_root)
 
-from backend.api_tools.playoff_series import fetch_common_playoff_series_logic
+from api_tools.playoff_series import fetch_common_playoff_series_logic
 from nba_api.stats.library.parameters import LeagueID
 
 # Sample season for testing

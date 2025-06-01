@@ -22,8 +22,6 @@ from api_tools.leaders_tiles import (
     LEADERS_TILES_CSV_DIR
 )
 from nba_api.stats.library.parameters import SeasonTypePlayoffs, PlayerOrTeam, PlayerScope, GameScopeDetailed
-
-
 class TestLeadersTilesReal(unittest.TestCase):
     """Test cases for the leaders_tiles module using real API calls."""
 

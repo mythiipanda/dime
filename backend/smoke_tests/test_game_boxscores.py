@@ -17,7 +17,7 @@ from datetime import datetime
 
 
 
-from backend.api_tools.game_boxscores import (
+from api_tools.game_boxscores import (
     fetch_boxscore_traditional_logic,
     fetch_boxscore_advanced_logic,
     fetch_boxscore_four_factors_logic,

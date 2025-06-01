@@ -14,7 +14,7 @@ backend_dir = os.path.dirname(current_dir)
 project_root = os.path.dirname(backend_dir)
 sys.path.insert(0, project_root)
 
-from backend.api_tools.raptor_metrics import get_player_raptor_metrics
+from api_tools.raptor_metrics import get_player_raptor_metrics
 
 # Sample player for testing
 SAMPLE_PLAYER_ID = 2544  # LeBron James

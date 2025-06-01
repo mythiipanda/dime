@@ -17,14 +17,14 @@ backend_dir = os.path.dirname(current_dir)
 project_root = os.path.dirname(backend_dir)
 sys.path.insert(0, project_root)
 
-from backend.api_tools.team_game_logs import (
+from api_tools.team_game_logs import (
     fetch_team_game_logs_logic,
     _get_csv_path_for_team_game_logs,
     VALID_SEASON_TYPES,
     VALID_PER_MODES,
     VALID_MEASURE_TYPES
 )
-from ..config import settings
+from config import settings
 
 # --- Test Constants ---
 SAMPLE_SEASON = "2023-24"

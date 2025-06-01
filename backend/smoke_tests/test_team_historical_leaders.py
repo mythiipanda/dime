@@ -10,10 +10,9 @@ backend_dir = os.path.dirname(current_dir)
 project_root = os.path.dirname(backend_dir)
 sys.path.insert(0, project_root)
 
-from backend.api_tools.team_historical_leaders import fetch_team_historical_leaders_logic
+from api_tools.team_historical_leaders import fetch_team_historical_leaders_logic
 from nba_api.stats.library.parameters import LeagueID
-from backend.core.errors import Errors # For checking error messages
-
+from core.errors import Errors # For checking error messages
 # Sample data for testing
 SAMPLE_TEAM = "Los Angeles Lakers"
 SAMPLE_TEAM_ID_STR = "1610612747"

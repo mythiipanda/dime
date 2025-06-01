@@ -11,15 +11,15 @@ import json
 
 from nba_api.stats.endpoints import playergamelog
 from nba_api.stats.library.parameters import SeasonTypeAllStar
-from ..config import settings
-from ..core.errors import Errors
-from .utils import (
+from config import settings
+from core.errors import Errors
+from api_tools.utils import (
     _process_dataframe,
     format_response,
     find_player_id_or_error,
     PlayerNotFoundError
 )
-from ..utils.validation import _validate_season_format
+from utils.validation import _validate_season_format
 
 logger = logging.getLogger(__name__)
 

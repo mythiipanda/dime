@@ -11,13 +11,13 @@ import pandas as pd
 from typing import Dict, Optional, Union, Tuple
 
 from nba_api.stats.endpoints import BoxScoreMatchupsV3
-from ..config import settings
-from ..core.errors import Errors
-from .utils import (
+from config import settings
+from core.errors import Errors
+from api_tools.utils import (
     _process_dataframe,
     format_response
 )
-from ..utils.validation import validate_game_id_format
+from utils.validation import validate_game_id_format
 
 logger = logging.getLogger(__name__)
 

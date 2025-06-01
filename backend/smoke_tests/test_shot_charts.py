@@ -14,7 +14,7 @@ backend_dir = os.path.dirname(current_dir)
 project_root = os.path.dirname(backend_dir)
 sys.path.insert(0, project_root)
 
-from backend.api_tools.shot_charts import fetch_player_shot_chart
+from api_tools.shot_charts import fetch_player_shot_chart
 
 def test_fetch_player_shot_chart_basic():
     """Test fetching player shot chart with default parameters."""

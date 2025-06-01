@@ -22,8 +22,6 @@ from api_tools.player_fantasy_profile_bar_graph import (
     PLAYER_FANTASY_PROFILE_BAR_GRAPH_CSV_DIR
 )
 from nba_api.stats.library.parameters import SeasonTypeAllStar
-
-
 class TestPlayerFantasyProfileBarGraphReal(unittest.TestCase):
     """Test cases for the player_fantasy_profile_bar_graph module using real API calls."""
 

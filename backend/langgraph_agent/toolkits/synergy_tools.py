@@ -2,7 +2,7 @@ from typing import Optional, List
 from pydantic import BaseModel, Field
 from langchain_core.tools import tool
 
-from backend.api_tools.synergy_tools import (
+from api_tools.synergy_tools import (
     fetch_synergy_play_types_logic,
     VALID_PLAY_TYPES,
     VALID_TYPE_GROUPINGS

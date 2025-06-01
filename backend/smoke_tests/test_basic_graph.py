@@ -9,10 +9,9 @@ _project_root_dir = os.path.dirname(os.path.dirname(_current_script_dir))
 if _project_root_dir not in sys.path:
     sys.path.insert(0, _project_root_dir)
 
-from backend.langgraph_agent.graph import app  # Import the compiled graph app
-from backend.langgraph_agent.state import AgentState # Import AgentState for type checking if needed
+from langgraph_agent.graph import app  # Import the compiled graph app
+from langgraph_agent.state import AgentState # Import AgentState for type checking if needed
 from langgraph.graph import END
-
 def run_basic_graph_test():
     """Tests the basic Langgraph graph with Gemini LLM and tool calling."""
     # inputs = {"input_query": "Tell me a joke about basketball.", "chat_history": []} # Previous input

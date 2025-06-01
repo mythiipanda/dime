@@ -14,7 +14,7 @@ backend_dir = os.path.dirname(current_dir)
 project_root = os.path.dirname(backend_dir)
 sys.path.insert(0, project_root)
 
-from backend.api_tools.live_game_tools import (
+from api_tools.live_game_tools import (
     fetch_league_scoreboard_logic
 )
 

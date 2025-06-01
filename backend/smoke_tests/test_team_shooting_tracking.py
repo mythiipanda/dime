@@ -14,7 +14,7 @@ backend_dir = os.path.dirname(current_dir)
 project_root = os.path.dirname(backend_dir)
 sys.path.insert(0, project_root)
 
-from backend.api_tools.team_shooting_tracking import fetch_team_shooting_stats_logic
+from api_tools.team_shooting_tracking import fetch_team_shooting_stats_logic
 
 # Define the cache directory path
 TEAM_SHOOTING_CSV_DIR = os.path.join(backend_dir, "cache", "team_shooting")

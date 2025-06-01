@@ -19,7 +19,7 @@ backend_dir = os.path.dirname(current_dir)
 project_root = os.path.dirname(backend_dir)
 sys.path.insert(0, project_root)
 
-from backend.api_tools.player_passing import (
+from api_tools.player_passing import (
     fetch_player_passing_stats_logic,
     PLAYER_PASSING_CSV_DIR
 )

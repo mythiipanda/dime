@@ -14,7 +14,7 @@ backend_dir = os.path.dirname(current_dir)
 project_root = os.path.dirname(backend_dir)
 sys.path.insert(0, project_root)
 
-from backend.api_tools.player_dashboard_stats import (
+from api_tools.player_dashboard_stats import (
     fetch_player_profile_logic,
     fetch_player_defense_logic,
     fetch_player_hustle_stats_logic,
@@ -28,8 +28,7 @@ from backend.api_tools.player_dashboard_stats import (
 from nba_api.stats.library.parameters import (
     SeasonTypeAllStar, PerModeDetailed, MeasureTypeDetailedDefense, LeagueID, PerModeSimple
 )
-from backend.api_tools.utils import find_player_id_or_error # To get player ID for CSV path construction
-
+from api_tools.utils import find_player_id_or_error # To get player ID for CSV path construction
 # Sample player for testing
 SAMPLE_PLAYER_NAME = "LeBron James"
 SAMPLE_PLAYER_ID = "2544" # LeBron James ID, replace if needed or fetch dynamically

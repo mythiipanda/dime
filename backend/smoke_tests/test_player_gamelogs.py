@@ -13,7 +13,7 @@ backend_dir = os.path.dirname(current_dir)
 project_root = os.path.dirname(backend_dir)
 sys.path.insert(0, project_root)
 
-from backend.api_tools.player_gamelogs import (
+from api_tools.player_gamelogs import (
     fetch_player_gamelog_logic,
     PLAYER_GAMELOG_CSV_DIR
 )

@@ -10,7 +10,7 @@ from datetime import datetime
 
 
 
-from backend.api_tools.game_playbyplay import (
+from api_tools.game_playbyplay import (
     fetch_playbyplay_logic,
     PBP_CSV_DIR
 )

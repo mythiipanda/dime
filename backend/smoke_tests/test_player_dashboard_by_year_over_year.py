@@ -14,12 +14,12 @@ backend_dir = os.path.dirname(current_dir)
 project_root = os.path.dirname(backend_dir)
 sys.path.insert(0, project_root)
 
-from backend.api_tools.player_dashboard_by_year_over_year import (
+from api_tools.player_dashboard_by_year_over_year import (
     fetch_player_dashboard_by_year_over_year_logic,
     _get_csv_path_for_player_dashboard_by_year,
     PLAYER_DASHBOARD_BY_YEAR_CSV_DIR
 )
-from backend.api_tools.utils import find_player_id_or_error
+from api_tools.utils import find_player_id_or_error
 
 # Sample player for testing
 SAMPLE_PLAYER_NAME = "LeBron James"

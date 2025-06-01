@@ -1,7 +1,6 @@
 from nba_api.stats.static import players, teams
 from nba_api.stats.endpoints import leaguegamefinder
 import pandas as pd
-
 def get_mj_vs_pistons_playoff_matchups():
     """
     Finds historical playoff game data for when Michael Jordan played against the Detroit Pistons.

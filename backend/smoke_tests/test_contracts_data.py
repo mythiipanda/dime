@@ -12,7 +12,7 @@ backend_dir = os.path.dirname(current_dir)
 project_root = os.path.dirname(backend_dir)
 sys.path.insert(0, project_root)
 
-from backend.api_tools.contracts_data import (
+from api_tools.contracts_data import (
     fetch_contracts_data_logic,
     get_player_contract,
     get_team_payroll,

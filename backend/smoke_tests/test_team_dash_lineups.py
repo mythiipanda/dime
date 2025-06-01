@@ -17,7 +17,7 @@ backend_dir = os.path.dirname(current_dir)
 project_root = os.path.dirname(backend_dir)
 sys.path.insert(0, project_root)
 
-from backend.api_tools.team_dash_lineups import (
+from api_tools.team_dash_lineups import (
     fetch_team_lineups_logic,
     _get_csv_path_for_lineups,
     VALID_MEASURE_TYPES,
@@ -25,7 +25,7 @@ from backend.api_tools.team_dash_lineups import (
     VALID_SEASON_TYPES,
     VALID_GROUP_QUANTITIES
 )
-from ..config import settings
+from config import settings
 
 # --- Test Constants ---
 SAMPLE_TEAM_NAME = "Lakers"

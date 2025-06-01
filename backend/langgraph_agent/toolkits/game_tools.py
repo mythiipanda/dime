@@ -4,9 +4,9 @@ from pydantic import BaseModel, Field
 from langchain_core.tools import tool
 from typing import List
 # Assuming your project structure allows this import path
-from backend.api_tools.game_boxscore_matchups import fetch_game_boxscore_matchups_logic as fetch_game_boxscore_matchups_data
-from backend.api_tools.scoreboard_tools import fetch_scoreboard_data_logic as fetch_scoreboard_data
-from backend.api_tools.win_probability_pbp import (
+from api_tools.game_boxscore_matchups import fetch_game_boxscore_matchups_logic as fetch_game_boxscore_matchups_data
+from api_tools.scoreboard_tools import fetch_scoreboard_data_logic as fetch_scoreboard_data
+from api_tools.win_probability_pbp import (
     fetch_win_probability_pbp_logic,
     _VALID_RUN_TYPES
 )
@@ -25,7 +25,7 @@ def get_nba_game_boxscore_matchups(game_id: str) -> str:
     )
     return json_response
 
-from backend.api_tools.game_boxscores import (
+from api_tools.game_boxscores import (
     fetch_boxscore_traditional_logic as fetch_boxscore_traditional_data,
     fetch_boxscore_advanced_logic as fetch_boxscore_advanced_data,
     fetch_boxscore_four_factors_logic as fetch_boxscore_four_factors_data,
@@ -185,7 +185,7 @@ def get_nba_boxscore_misc(
     )
     return json_response
 
-from backend.api_tools.game_playbyplay import fetch_playbyplay_logic as fetch_playbyplay_data
+from api_tools.game_playbyplay import fetch_playbyplay_logic as fetch_playbyplay_data
 
 class PlayByPlayInput(BaseModel):
     """Input schema for the NBA Play-by-Play tool."""
@@ -272,7 +272,7 @@ def get_win_probability_pbp(game_id: str, run_type: str = "default") -> str:
     )
     return json_response
 
-from backend.api_tools.game_rotation import get_game_rotation as fetch_game_rotation_data
+from api_tools.game_rotation import get_game_rotation as fetch_game_rotation_data
 
 class GameRotationInput(BaseModel):
     """Input schema for the NBA Game Rotation tool."""
@@ -295,7 +295,7 @@ def get_nba_game_rotation(
     )
     return json_response
 
-from backend.api_tools.hustle_stats_boxscore import get_hustle_stats_boxscore as fetch_hustle_stats_boxscore_data
+from api_tools.hustle_stats_boxscore import get_hustle_stats_boxscore as fetch_hustle_stats_boxscore_data
 
 class HustleStatsBoxscoreInput(BaseModel):
     """Input schema for the NBA Hustle Stats Box Score tool."""
@@ -310,7 +310,7 @@ def get_nba_hustle_stats_boxscore(game_id: str) -> str:
     )
     return json_response
 
-from backend.api_tools.infographic_fanduel_player import get_infographic_fanduel_player as fetch_infographic_fanduel_player_data
+from api_tools.infographic_fanduel_player import get_infographic_fanduel_player as fetch_infographic_fanduel_player_data
 
 class InfographicFanDuelPlayerInput(BaseModel):
     """Input schema for the NBA FanDuel Player Infographic tool."""
@@ -325,7 +325,7 @@ def get_nba_fanduel_player_infographic(game_id: str) -> str:
     )
     return json_response
 
-from backend.api_tools.game_finder import fetch_league_games_logic as fetch_league_games_data
+from api_tools.game_finder import fetch_league_games_logic as fetch_league_games_data
 
 class LeagueGameFinderInput(BaseModel):
     """Input schema for the NBA League Game Finder tool."""

@@ -15,13 +15,13 @@ from functools import lru_cache
 
 from nba_api.stats.endpoints import playbyplayv3
 from nba_api.live.nba.endpoints import PlayByPlay as LivePlayByPlay
-from ..config import settings
-from ..core.errors import Errors
-from .utils import (
+from config import settings
+from core.errors import Errors
+from api_tools.utils import (
     _process_dataframe,
     format_response
 )
-from ..utils.validation import validate_game_id_format
+from utils.validation import validate_game_id_format
 
 logger = logging.getLogger(__name__)
 

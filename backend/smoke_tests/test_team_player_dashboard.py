@@ -10,7 +10,7 @@ backend_dir = os.path.dirname(current_dir)
 project_root = os.path.dirname(backend_dir)
 sys.path.insert(0, project_root)
 
-from backend.api_tools.team_player_dashboard import fetch_team_player_dashboard_logic
+from api_tools.team_player_dashboard import fetch_team_player_dashboard_logic
 from nba_api.stats.library.parameters import (
     SeasonTypeAllStar, PerModeDetailed, MeasureTypeDetailedDefense, LeagueID
 )

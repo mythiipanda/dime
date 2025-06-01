@@ -139,5 +139,5 @@ async def stream_agent_response(
     return StreamingResponse(safe_generator_wrapper(), media_type="text/event-stream")
 
 # Example of how to include this router in your main FastAPI app (e.g., in backend/main.py):
-# from backend.routes.sse import router as sse_router # Adjusted import if this file is sse.py
+# from routes.sse import router as sse_router # Adjusted import if this file is sse.py
 # app.include_router(sse_router) 

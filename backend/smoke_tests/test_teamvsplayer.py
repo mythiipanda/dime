@@ -10,7 +10,7 @@ backend_dir = os.path.dirname(current_dir)
 project_root = os.path.dirname(backend_dir)
 sys.path.insert(0, project_root)
 
-from backend.api_tools.teamvsplayer import (
+from api_tools.teamvsplayer import (
     fetch_teamvsplayer_logic,
     _get_csv_path_for_team_vs_player, # For verification
     TEAM_VS_PLAYER_CSV_DIR          # For ensuring directory exists

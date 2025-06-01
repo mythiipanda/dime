@@ -14,7 +14,7 @@ backend_dir = os.path.dirname(current_dir)
 project_root = os.path.dirname(backend_dir)
 sys.path.insert(0, project_root)
 
-from backend.api_tools.win_probability_pbp import (
+from api_tools.win_probability_pbp import (
     fetch_win_probability_pbp_logic,
     _get_csv_path_for_win_probability_pbp,
     WIN_PROBABILITY_PBP_CSV_DIR

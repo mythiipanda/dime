@@ -22,8 +22,6 @@ from api_tools.franchise_players import (
     FRANCHISE_PLAYERS_CSV_DIR
 )
 from nba_api.stats.library.parameters import SeasonTypeAllStar, PerModeDetailed
-
-
 class TestFranchisePlayersReal(unittest.TestCase):
     """Test cases for the franchise_players module using real API calls."""
 

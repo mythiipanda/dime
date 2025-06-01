@@ -14,7 +14,7 @@ backend_dir = os.path.dirname(current_dir)
 project_root = os.path.dirname(backend_dir)
 sys.path.insert(0, project_root)
 
-from backend.api_tools.league_standings import (
+from api_tools.league_standings import (
     fetch_league_standings_logic,
     LEAGUE_STANDINGS_CSV_DIR
 )

@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 from langchain_core.tools import tool
 
 # Assuming your project structure allows this import path
-from backend.api_tools.franchise_history import get_franchise_history as fetch_franchise_history_data
+from api_tools.franchise_history import get_franchise_history as fetch_franchise_history_data
 
 class FranchiseHistoryInput(BaseModel):
     """Input schema for the NBA Franchise History tool."""
@@ -24,7 +24,7 @@ def get_nba_franchise_history(
     )
     return json_response
 
-from backend.api_tools.franchise_players import get_franchise_players as fetch_franchise_players_data
+from api_tools.franchise_players import get_franchise_players as fetch_franchise_players_data
 
 class FranchisePlayersInput(BaseModel):
     """Input schema for the NBA Franchise Players tool."""
@@ -61,7 +61,7 @@ def get_nba_franchise_players(
     )
     return json_response
 
-from backend.api_tools.franchise_leaders import get_franchise_leaders as fetch_franchise_leaders_data
+from api_tools.franchise_leaders import get_franchise_leaders as fetch_franchise_leaders_data
 
 class FranchiseLeadersInput(BaseModel):
     """Input schema for the NBA Franchise Leaders tool."""

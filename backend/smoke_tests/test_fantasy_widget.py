@@ -22,8 +22,6 @@ from api_tools.fantasy_widget import (
     FANTASY_WIDGET_CSV_DIR
 )
 from nba_api.stats.library.parameters import SeasonTypeAllStar
-
-
 class TestFantasyWidgetReal(unittest.TestCase):
     """Test cases for the fantasy_widget module using real API calls."""
 

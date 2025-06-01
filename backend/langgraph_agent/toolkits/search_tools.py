@@ -3,9 +3,9 @@ from typing import Optional, Dict, Any, Union, Tuple, List
 from pydantic import BaseModel, Field
 from langchain_core.tools import tool
 
-from backend.api_tools.search import search_players_logic as fetch_search_players_data
-from backend.api_tools.search import search_teams_logic as fetch_search_teams_data
-from backend.api_tools.search import search_games_logic as fetch_search_games_data
+from api_tools.search import search_players_logic as fetch_search_players_data
+from api_tools.search import search_teams_logic as fetch_search_teams_data
+from api_tools.search import search_games_logic as fetch_search_games_data
 
 class PlayerSearchInput(BaseModel):
     """Input schema for the NBA Player Search tool."""

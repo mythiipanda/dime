@@ -11,15 +11,14 @@ backend_dir = os.path.dirname(current_dir)
 project_root = os.path.dirname(backend_dir)
 sys.path.insert(0, project_root)
 
-from backend.api_tools.team_player_on_off_details import fetch_team_player_on_off_details_logic
+from api_tools.team_player_on_off_details import fetch_team_player_on_off_details_logic
 from nba_api.stats.library.parameters import (
     SeasonTypeAllStar,
     PerModeDetailed,
     MeasureTypeDetailedDefense,
     LeagueID
 )
-from backend.core.errors import Errors # For checking error messages
-
+from core.errors import Errors # For checking error messages
 # Sample data for testing
 SAMPLE_TEAM = "Golden State Warriors"
 SAMPLE_TEAM_ID = "1610612744"

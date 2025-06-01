@@ -22,8 +22,6 @@ from api_tools.player_career_by_college import (
     PLAYER_CAREER_BY_COLLEGE_CSV_DIR
 )
 from nba_api.stats.library.parameters import SeasonTypeAllStar, PerModeSimple
-
-
 class TestPlayerCareerByCollegeReal(unittest.TestCase):
     """Test cases for the player_career_by_college module using real API calls."""
 

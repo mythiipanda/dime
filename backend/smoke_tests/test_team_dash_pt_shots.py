@@ -22,8 +22,6 @@ from api_tools.team_dash_pt_shots import (
     TEAM_DASH_PT_SHOTS_CSV_DIR
 )
 from nba_api.stats.library.parameters import SeasonTypeAllStar, PerModeSimple
-
-
 class TestTeamDashPtShotsReal(unittest.TestCase):
     """Test cases for the team_dash_pt_shots module using real API calls."""
 

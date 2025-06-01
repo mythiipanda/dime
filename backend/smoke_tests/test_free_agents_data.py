@@ -12,7 +12,7 @@ backend_dir = os.path.dirname(current_dir)
 project_root = os.path.dirname(backend_dir)
 sys.path.insert(0, project_root)
 
-from backend.api_tools.free_agents_data import (
+from api_tools.free_agents_data import (
     fetch_free_agents_data_logic,
     get_free_agent_info,
     get_team_free_agents,

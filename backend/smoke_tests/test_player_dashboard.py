@@ -14,7 +14,7 @@ backend_dir = os.path.dirname(current_dir)
 project_root = os.path.dirname(backend_dir)
 sys.path.insert(0, project_root)
 
-from backend.api_tools.player_dashboard_stats import (
+from api_tools.player_dashboard_stats import (
     fetch_player_profile_logic,
     fetch_player_defense_logic,
     fetch_player_hustle_stats_logic

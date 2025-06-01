@@ -23,14 +23,14 @@ from nba_api.stats.endpoints import (
     BoxScoreScoringV3,
     BoxScoreHustleV2
 )
-from ..config import settings
-from ..core.errors import Errors
+from config import settings
+from core.errors import Errors
 from nba_api.stats.library.parameters import EndPeriod, EndRange, RangeType, StartPeriod, StartRange
-from .utils import (
+from api_tools.utils import (
     _process_dataframe,
     format_response
 )
-from ..utils.validation import validate_game_id_format
+from utils.validation import validate_game_id_format
 
 logger = logging.getLogger(__name__)
 

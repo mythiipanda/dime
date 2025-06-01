@@ -11,9 +11,9 @@ import pandas as pd
 import json
 
 from nba_api.stats.endpoints import commonplayerinfo
-from ..config import settings
-from ..core.errors import Errors
-from .utils import _process_dataframe, format_response, find_player_id_or_error, PlayerNotFoundError
+from config import settings
+from core.errors import Errors
+from api_tools.utils import _process_dataframe, format_response, find_player_id_or_error, PlayerNotFoundError
 
 logger = logging.getLogger(__name__)
 

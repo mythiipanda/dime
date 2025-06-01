@@ -17,7 +17,7 @@ backend_dir = os.path.dirname(current_dir)
 project_root = os.path.dirname(backend_dir)
 sys.path.insert(0, project_root)
 
-from backend.api_tools.league_dash_player_bio import (
+from api_tools.league_dash_player_bio import (
     fetch_league_player_bio_stats_logic,
     _get_csv_path_for_player_bio,
     VALID_SEASON_TYPES,
@@ -27,7 +27,7 @@ from backend.api_tools.league_dash_player_bio import (
     VALID_PLAYER_EXPERIENCES,
     VALID_STARTER_BENCH
 )
-from ..config import settings
+from config import settings
 
 # --- Test Constants ---
 SAMPLE_SEASON = "2023-24"

@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 from langchain_core.tools import tool
 
 # Assuming your project structure allows this import path
-from backend.api_tools.draft_combine_drill_results import get_draft_combine_drill_results as fetch_draft_combine_drill_results_data
+from api_tools.draft_combine_drill_results import get_draft_combine_drill_results as fetch_draft_combine_drill_results_data
 
 class DraftCombineDrillResultsInput(BaseModel):
     """Input schema for the NBA Draft Combine Drill Results tool."""
@@ -30,7 +30,7 @@ def get_nba_draft_combine_drill_results(
     )
     return json_response
 
-from backend.api_tools.draft_combine_nonshooting import get_draft_combine_nonshooting as fetch_draft_combine_nonshooting_data
+from api_tools.draft_combine_nonshooting import get_draft_combine_nonshooting as fetch_draft_combine_nonshooting_data
 
 class DraftCombineNonStationaryShootingInput(BaseModel):
     """Input schema for the NBA Draft Combine Non-Stationary Shooting tool."""
@@ -55,7 +55,7 @@ def get_nba_draft_combine_nonstationary_shooting(
     )
     return json_response
 
-from backend.api_tools.draft_combine_player_anthro import get_draft_combine_player_anthro as fetch_draft_combine_player_anthro_data
+from api_tools.draft_combine_player_anthro import get_draft_combine_player_anthro as fetch_draft_combine_player_anthro_data
 
 class DraftCombinePlayerAnthroInput(BaseModel):
     """Input schema for the NBA Draft Combine Player Anthropometric tool."""
@@ -80,7 +80,7 @@ def get_nba_draft_combine_player_anthropometric(
     )
     return json_response
 
-from backend.api_tools.draft_combine_stats import get_draft_combine_stats as fetch_draft_combine_stats_data
+from api_tools.draft_combine_stats import get_draft_combine_stats as fetch_draft_combine_stats_data
 
 class DraftCombineStatsInput(BaseModel):
     """Input schema for the NBA Draft Combine Stats tool."""
@@ -105,7 +105,7 @@ def get_nba_draft_combine_stats(
     )
     return json_response
 
-from backend.api_tools.draft_combine_spot_shooting import get_draft_combine_spot_shooting as fetch_draft_combine_spot_shooting_data
+from api_tools.draft_combine_spot_shooting import get_draft_combine_spot_shooting as fetch_draft_combine_spot_shooting_data
 
 class DraftCombineSpotShootingInput(BaseModel):
     """Input schema for the NBA Draft Combine Spot Shooting tool."""
@@ -130,7 +130,7 @@ def get_nba_draft_combine_spot_shooting(
     )
     return json_response
 
-from backend.api_tools.draft_combine_drills import get_draft_combine_drills as fetch_draft_combine_drills_data
+from api_tools.draft_combine_drills import get_draft_combine_drills as fetch_draft_combine_drills_data
 
 class DraftCombineDrillsInput(BaseModel):
     """Input schema for the NBA Draft Combine Drills tool."""

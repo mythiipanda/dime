@@ -17,7 +17,7 @@ backend_dir = os.path.dirname(current_dir)
 project_root = os.path.dirname(backend_dir)
 sys.path.insert(0, project_root)
 
-from backend.api_tools.league_dash_team_stats import (
+from api_tools.league_dash_team_stats import (
     fetch_league_team_stats_logic,
     _get_csv_path_for_league_team_stats,
     VALID_SEASON_TYPES,
@@ -26,7 +26,7 @@ from backend.api_tools.league_dash_team_stats import (
     VALID_CONFERENCES,
     VALID_DIVISIONS
 )
-from ..config import settings
+from config import settings
 
 # --- Test Constants ---
 SAMPLE_SEASON = "2023-24"

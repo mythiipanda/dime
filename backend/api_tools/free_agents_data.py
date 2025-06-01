@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional, Union, List, Tuple
 from functools import lru_cache
 import pandas as pd
 
-from ..utils.path_utils import get_cache_dir, get_cache_file_path
+from utils.path_utils import get_cache_dir, get_cache_file_path
 
 logger = logging.getLogger(__name__)
 

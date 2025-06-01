@@ -5,7 +5,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import logging
 from nba_api.stats.library.http import NBAStatsHTTP
-from ..config import settings
+from config import settings
 from typing import Optional
 
 logger = logging.getLogger(__name__)

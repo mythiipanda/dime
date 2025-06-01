@@ -6,18 +6,9 @@ from typing import List
 from langchain_core.tools import Tool
 from pydantic import BaseModel
 
-# --- Robust Import Handling for Direct Execution & Package Use ---
-_current_script_path = os.path.abspath(__file__)
-_langgraph_agent_dir = os.path.dirname(_current_script_path)
-_backend_dir = os.path.dirname(_langgraph_agent_dir)
-_project_root_dir = os.path.dirname(_backend_dir)
-
-if _project_root_dir not in sys.path:
-    sys.path.insert(0, _project_root_dir)
-
 # --- Import Tools from Toolkits ---
 # Player Tools
-from backend.langgraph_agent.toolkits.player_tools import (
+from langgraph_agent.toolkits.player_tools import (
     get_player_shot_chart,
     get_player_aggregate_stats,
     get_player_career_by_college_stats,
@@ -49,7 +40,7 @@ from backend.langgraph_agent.toolkits.player_tools import (
 )
 
 # Team Tools
-from backend.langgraph_agent.toolkits.team_tools import (
+from langgraph_agent.toolkits.team_tools import (
     get_team_lineups,
     get_team_game_logs,
     get_team_historical_leaders,
@@ -70,31 +61,31 @@ from backend.langgraph_agent.toolkits.team_tools import (
 )
 
 # Search Tools
-from backend.langgraph_agent.toolkits.search_tools import (
+from langgraph_agent.toolkits.search_tools import (
     search_nba_players,
     search_nba_teams,
     search_nba_games
 )
 
 # Synergy Tools
-from backend.langgraph_agent.toolkits.synergy_tools import (
+from langgraph_agent.toolkits.synergy_tools import (
     get_synergy_play_types
 )
 
 # Fantasy Tools
-from backend.langgraph_agent.toolkits.fantasy_tools import (
+from langgraph_agent.toolkits.fantasy_tools import (
     get_nba_fantasy_widget_data
 )
 
 # Franchise Tools
-from backend.langgraph_agent.toolkits.franchise_tools import (
+from langgraph_agent.toolkits.franchise_tools import (
     get_nba_franchise_history,
     get_nba_franchise_players,
     get_nba_franchise_leaders
 )
 
 # Free Agent Tools
-from backend.langgraph_agent.toolkits.free_agent_tools import (
+from langgraph_agent.toolkits.free_agent_tools import (
     get_nba_free_agent_info,
     get_nba_team_free_agents,
     get_nba_top_free_agents,
@@ -102,7 +93,7 @@ from backend.langgraph_agent.toolkits.free_agent_tools import (
 )
 
 # Contracts Tools
-from backend.langgraph_agent.toolkits.contracts_tools import (
+from langgraph_agent.toolkits.contracts_tools import (
     get_nba_player_contract,
     get_nba_team_payroll,
     get_nba_highest_paid_players,
@@ -110,7 +101,7 @@ from backend.langgraph_agent.toolkits.contracts_tools import (
 )
 
 # Draft Combine Tools
-from backend.langgraph_agent.toolkits.draft_combine_tools import (
+from langgraph_agent.toolkits.draft_combine_tools import (
     get_nba_draft_combine_drill_results,
     get_nba_draft_combine_nonstationary_shooting,
     get_nba_draft_combine_player_anthropometric,
@@ -120,7 +111,7 @@ from backend.langgraph_agent.toolkits.draft_combine_tools import (
 )
 
 # Game Tools
-from backend.langgraph_agent.toolkits.game_tools import (
+from langgraph_agent.toolkits.game_tools import (
     get_nba_game_boxscore_matchups,
     get_nba_boxscore_traditional,
     get_nba_boxscore_advanced,
@@ -142,7 +133,7 @@ from backend.langgraph_agent.toolkits.game_tools import (
 )
 
 # League Tools
-from backend.langgraph_agent.toolkits.league_tools import (
+from langgraph_agent.toolkits.league_tools import (
     get_all_time_nba_leaders,
     get_league_wide_shot_chart,
     get_nba_homepage_leaders,

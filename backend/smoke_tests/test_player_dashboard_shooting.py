@@ -17,14 +17,14 @@ backend_dir = os.path.dirname(current_dir)
 project_root = os.path.dirname(backend_dir)
 sys.path.insert(0, project_root)
 
-from backend.api_tools.player_dashboard_shooting import (
+from api_tools.player_dashboard_shooting import (
     fetch_player_dashboard_shooting_splits_logic,
     _get_csv_path_for_dashboard,
     VALID_MEASURE_TYPES,
     VALID_PER_MODES,
     VALID_SEASON_TYPES
 )
-from ..config import settings
+from config import settings
 
 # --- Test Constants ---
 SAMPLE_PLAYER_NAME = "LeBron James"

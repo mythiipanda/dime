@@ -14,7 +14,7 @@ backend_dir = os.path.dirname(current_dir)
 project_root = os.path.dirname(backend_dir)
 sys.path.insert(0, project_root)
 
-from backend.api_tools.matchup_tools import (
+from api_tools.matchup_tools import (
     fetch_league_season_matchups_logic,
     fetch_matchups_rollup_logic
 )

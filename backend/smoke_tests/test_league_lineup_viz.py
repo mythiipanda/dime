@@ -22,8 +22,6 @@ from api_tools.league_lineup_viz import (
     LEAGUE_LINEUP_VIZ_CSV_DIR
 )
 from nba_api.stats.library.parameters import SeasonTypeAllStar, PerModeDetailed, MeasureTypeDetailedDefense
-
-
 class TestLeagueLineupVizReal(unittest.TestCase):
     """Test cases for the league_lineup_viz module using real API calls."""
 

@@ -17,7 +17,7 @@ sys.path.insert(0, project_root)
 # Import directly from nba_api for league ID constants
 from nba_api.stats.library.parameters import LeagueID
 
-from backend.api_tools.player_common_info import (
+from api_tools.player_common_info import (
     fetch_player_info_logic,
     get_player_headshot_url,
     PLAYER_INFO_CSV_DIR

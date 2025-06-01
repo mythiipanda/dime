@@ -1,6 +1,7 @@
 # This file will define the main Langgraph StateGraph for the NBA agent. 
 
 from langgraph.graph import StateGraph, END
+from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.prebuilt import ToolNode, tools_condition # Import ToolNode and tools_condition
 from langgraph_agent.state import AgentState
 from langgraph_agent.nodes import entry_node, llm_node, response_node # tool_node removed from here
@@ -48,7 +49,8 @@ workflow.add_edge("actual_tool_node", "llm_node")
 workflow.add_edge("response_node", END)
 
 # Compile the graph
-app = workflow.compile()
+checkpointer = InMemorySaver()
+app = workflow.compile(checkpointer=checkpointer)
 
 # Optional: For testing or direct invocation from Python
 if __name__ == "__main__":
@@ -62,7 +64,8 @@ if __name__ == "__main__":
     
     final_graph_state: AgentState = None
     system_prompt_printed = False
-    for event in app.stream(inputs, stream_mode="updates"):
+    config = {"configurable": {"thread_id": "test_thread_1"}}
+    for event in app.stream(inputs, config=config, stream_mode="updates"):
         node_name, node_output_state = list(event.items())[0]
         print(f"NODE EXECUTED: {node_name}")
         

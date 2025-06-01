@@ -14,7 +14,7 @@ backend_dir = os.path.dirname(current_dir)
 project_root = os.path.dirname(backend_dir)
 sys.path.insert(0, project_root)
 
-from backend.api_tools.team_general_stats import (
+from api_tools.team_general_stats import (
     fetch_team_stats_logic,
     TEAM_GENERAL_CSV_DIR
 )

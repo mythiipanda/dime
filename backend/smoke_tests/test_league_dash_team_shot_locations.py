@@ -14,7 +14,7 @@ backend_dir = os.path.dirname(current_dir)
 project_root = os.path.dirname(backend_dir)
 sys.path.insert(0, project_root)
 
-from backend.api_tools.league_dash_team_shot_locations import (
+from api_tools.league_dash_team_shot_locations import (
     fetch_league_team_shot_locations_logic,
     LEAGUE_DASH_TEAM_SHOT_LOCATIONS_CSV_DIR
 )

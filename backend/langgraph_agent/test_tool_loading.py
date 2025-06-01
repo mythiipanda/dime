@@ -12,7 +12,7 @@ _project_root_dir = os.path.dirname(_backend_dir)
 if _project_root_dir not in sys.path:
     sys.path.insert(0, _project_root_dir)
 
-from backend.langgraph_agent.tool_manager import all_tools
+from langgraph_agent.tool_manager import all_tools
 
 def test_all_tools_loaded():
     """

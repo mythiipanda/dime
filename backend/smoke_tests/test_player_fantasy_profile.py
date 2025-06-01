@@ -22,8 +22,6 @@ from api_tools.player_fantasy_profile import (
     PLAYER_FANTASY_PROFILE_CSV_DIR
 )
 from nba_api.stats.library.parameters import SeasonTypePlayoffs, MeasureTypeBase, PerMode36
-
-
 class TestPlayerFantasyProfileReal(unittest.TestCase):
     """Test cases for the player_fantasy_profile module using real API calls."""
 

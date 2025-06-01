@@ -22,8 +22,6 @@ from api_tools.league_dash_player_shot_locations import (
     LEAGUE_DASH_PLAYER_SHOT_LOCATIONS_CSV_DIR
 )
 from nba_api.stats.library.parameters import SeasonTypeAllStar, PerModeDetailed, MeasureTypeSimple
-
-
 class TestLeagueDashPlayerShotLocationsReal(unittest.TestCase):
     """Test cases for the league_dash_player_shot_locations module using real API calls."""
 

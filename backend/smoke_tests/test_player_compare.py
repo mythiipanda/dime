@@ -22,8 +22,6 @@ from api_tools.player_compare import (
     PLAYER_COMPARE_CSV_DIR
 )
 from nba_api.stats.library.parameters import SeasonTypePlayoffs, PerModeDetailed, MeasureTypeDetailedDefense
-
-
 class TestPlayerCompareReal(unittest.TestCase):
     """Test cases for the player_compare module using real API calls."""
 

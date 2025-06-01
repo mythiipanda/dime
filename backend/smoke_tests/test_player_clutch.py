@@ -10,7 +10,7 @@ from datetime import datetime
 
 
 
-from backend.api_tools.player_clutch import (
+from api_tools.player_clutch import (
     fetch_player_clutch_stats_logic,
     PLAYER_CLUTCH_CSV_DIR
 )
@@ -244,7 +244,7 @@ if __name__ == "__main__":
     backend_dir = os.path.dirname(current_dir) # Goes from smoke_tests to backend
     project_root_dir = os.path.dirname(backend_dir) # Goes from backend to project root
 
-    # Add project root to sys.path to allow `from backend.api_tools...` if necessary
+    # Add project root to sys.path to allow `from api_tools...` if necessary
     # and to find the `config` module if it's at the root or backend level.
     if project_root_dir not in sys.path:
         sys.path.insert(0, project_root_dir)
