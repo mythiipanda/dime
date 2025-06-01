@@ -1,13 +1,13 @@
 # This file will implement the logic for individual nodes in the Langgraph agent. 
 
-from .state import AgentState
-from .tool_manager import all_tools # Import all_tools for the LLM
+from langgraph_agent.state import AgentState
+from langgraph_agent.tool_manager import all_tools # Import all_tools for the LLM
 from langchain_core.messages import AIMessage, ToolMessage, HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI # For Gemini
-from ..config import GEMINI_API_KEY # Import API key
+from config import GEMINI_API_KEY # Import API key
 import json
 import datetime # Added datetime
-from .prompt import get_nba_analyst_prompt # Added import for the new prompt function
+from langgraph_agent.prompt import get_nba_analyst_prompt # Added import for the new prompt function
 
 # Initialize Gemini LLM
 # Ensure GEMINI_API_KEY is set in your .env file

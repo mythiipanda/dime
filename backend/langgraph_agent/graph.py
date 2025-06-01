@@ -2,9 +2,9 @@
 
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode, tools_condition # Import ToolNode and tools_condition
-from .state import AgentState
-from .nodes import entry_node, llm_node, response_node # tool_node removed from here
-from .tool_manager import all_tools # Import the list of actual tools
+from langgraph_agent.state import AgentState
+from langgraph_agent.nodes import entry_node, llm_node, response_node # tool_node removed from here
+from langgraph_agent.tool_manager import all_tools # Import the list of actual tools
 
 # Define the graph
 workflow = StateGraph(AgentState)
