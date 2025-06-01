@@ -5,16 +5,7 @@ from typing import Dict, Any, List
 import builtins
 from contextlib import redirect_stdout
 
-# Add project root to sys.path for imports
-_current_script_path = os.path.abspath(__file__)
-_langgraph_agent_dir = os.path.dirname(_current_script_path)
-_backend_dir = os.path.dirname(_langgraph_agent_dir)
-_project_root_dir = os.path.dirname(_backend_dir)
-
-if _project_root_dir not in sys.path:
-    sys.path.insert(0, _project_root_dir)
-
-from backend.langgraph_agent.graph import app
+from langgraph_agent.graph import app
 from langchain_core.messages import AIMessage, ToolMessage, HumanMessage
 
 def run_agent_test(test_name: str, input_query: str, expected_tool_name: str = None, expected_final_answer_substring: str = None):
@@ -217,7 +208,7 @@ if __name__ == "__main__":
         {"name": "Common Playoff Series Test", "query": "Show me the playoff series for the 2023-24 season.", "tool": "get_common_playoff_series"},
     ]
 
-    output_file = os.path.join(_project_root_dir, "test_results.txt")
+    output_file = "test_results.txt"
     with open(output_file, "w", encoding="utf-8") as f, redirect_stdout(f):
         # Also print to console
         class Tee:
