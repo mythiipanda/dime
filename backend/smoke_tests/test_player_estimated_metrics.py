@@ -8,11 +8,6 @@ import json
 import pandas as pd
 from datetime import datetime
 
-# Add the project root directory to the Python path
-current_dir = os.path.dirname(os.path.abspath(__file__))
-backend_dir = os.path.dirname(current_dir)
-project_root = os.path.dirname(backend_dir)
-sys.path.insert(0, project_root)
 
 from api_tools.player_estimated_metrics import (
     fetch_player_estimated_metrics_logic
@@ -118,7 +113,7 @@ def test_fetch_player_estimated_metrics_dataframe():
     if "dataframe_info" in data:
         csv_path = data["dataframe_info"].get("csv_path")
         if csv_path:
-            full_path = os.path.join(backend_dir, csv_path)
+            full_path = os.path.join(os.getcwd(), csv_path)
             if os.path.exists(full_path):
                 print(f"\nCSV file exists: {csv_path}")
             else:

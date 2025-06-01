@@ -10,10 +10,6 @@ from typing import Dict, Any
 from datetime import datetime
 
 # Add the parent directory to sys.path to allow importing from backend
-current_dir = os.path.dirname(os.path.abspath(__file__))
-backend_dir = os.path.dirname(current_dir)
-project_root = os.path.dirname(backend_dir)
-sys.path.insert(0, project_root)
 
 from api_tools.game_boxscore_matchups import (
     fetch_game_boxscore_matchups_logic,

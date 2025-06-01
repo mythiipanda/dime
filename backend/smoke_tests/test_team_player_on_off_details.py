@@ -5,11 +5,6 @@ import pandas as pd
 from datetime import datetime
 import pytest # For monkeypatching
 
-# Add the project root directory to the Python path
-current_dir = os.path.dirname(os.path.abspath(__file__))
-backend_dir = os.path.dirname(current_dir)
-project_root = os.path.dirname(backend_dir)
-sys.path.insert(0, project_root)
 
 from api_tools.team_player_on_off_details import fetch_team_player_on_off_details_logic
 from nba_api.stats.library.parameters import (

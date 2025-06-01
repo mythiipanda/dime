@@ -5,11 +5,6 @@ Tests the functionality of fetching various types of box score data for NBA game
 import os
 import sys # Import sys
 
-# Add the project root directory to the Python path
-current_dir = os.path.dirname(os.path.abspath(__file__))
-backend_dir = os.path.dirname(current_dir)
-project_root = os.path.dirname(backend_dir)
-sys.path.insert(0, project_root)
 
 import json
 import pandas as pd
@@ -304,6 +299,5 @@ def run_all_tests():
 if __name__ == "__main__":
     import sys
     # Add the parent directory to the Python path
-    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
     success = run_all_tests()
     sys.exit(0 if success else 1)

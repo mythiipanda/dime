@@ -13,11 +13,6 @@ from datetime import datetime
 import os
 import sys
 
-# Add the project root directory to the Python path
-current_dir = os.path.dirname(os.path.abspath(__file__))
-backend_dir = os.path.dirname(current_dir)
-project_root = os.path.dirname(backend_dir)
-sys.path.insert(0, project_root)
 
 from api_tools.player_passing import (
     fetch_player_passing_stats_logic,
@@ -268,6 +263,5 @@ def run_all_tests():
 if __name__ == "__main__":
     import sys
     # Add the parent directory to the Python path
-    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
     success = run_all_tests()
     sys.exit(0 if success else 1)

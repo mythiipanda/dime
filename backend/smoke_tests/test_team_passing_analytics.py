@@ -8,11 +8,6 @@ import json
 import pandas as pd
 from datetime import datetime
 
-# Add the project root directory to the Python path
-current_dir = os.path.dirname(os.path.abspath(__file__))
-backend_dir = os.path.dirname(current_dir)
-project_root = os.path.dirname(backend_dir)
-sys.path.insert(0, project_root)
 
 from api_tools.team_passing_analytics import fetch_team_passing_stats_logic
 from nba_api.stats.library.parameters import SeasonTypeAllStar, PerModeSimple
@@ -138,7 +133,7 @@ def test_fetch_team_passing_stats_dataframe():
             for df_key, df_info in data["dataframe_info"].get("dataframes", {}).items():
                 csv_path = df_info.get("csv_path")
                 if csv_path:
-                    full_path = os.path.join(backend_dir, csv_path)
+                    full_path = os.path.join(os.getcwd(), csv_path)
                     if os.path.exists(full_path):
                         print(f"\nCSV file exists: {csv_path}")
                         csv_size = os.path.getsize(full_path)

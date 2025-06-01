@@ -13,7 +13,6 @@ import time
 import json
 
 # Add the parent directory to the path so we can import the api_tools module
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from api_tools.all_time_leaders_grids import (
     fetch_all_time_leaders_logic,

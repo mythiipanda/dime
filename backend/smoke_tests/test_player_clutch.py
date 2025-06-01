@@ -240,17 +240,13 @@ if __name__ == "__main__":
     import sys
     # Ensure the backend directory is in the Python path for standalone execution
     # This allows imports like `from api_tools.player_clutch import ...`
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    backend_dir = os.path.dirname(current_dir) # Goes from smoke_tests to backend
-    project_root_dir = os.path.dirname(backend_dir) # Goes from backend to project root
+    project_root_dir = os.path.dirname(os.getcwd()) # Goes from backend to project root
 
     # Add project root to sys.path to allow `from api_tools...` if necessary
     # and to find the `config` module if it's at the root or backend level.
     if project_root_dir not in sys.path:
-        sys.path.insert(0, project_root_dir)
-    # If your config.py is in backend/ then backend_dir should be in path
-    # if backend_dir not in sys.path:
-    #     sys.path.insert(0, backend_dir)
+    # If your config.py is in backend/ then os.getcwd() should be in path
+    # if os.getcwd() not in sys.path:
 
     success = run_all_tests()
     sys.exit(0 if success else 1)

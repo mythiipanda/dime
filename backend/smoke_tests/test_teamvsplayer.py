@@ -4,11 +4,6 @@ import json
 import pandas as pd
 from datetime import datetime
 
-# Add the project root directory to the Python path
-current_dir = os.path.dirname(os.path.abspath(__file__))
-backend_dir = os.path.dirname(current_dir)
-project_root = os.path.dirname(backend_dir)
-sys.path.insert(0, project_root)
 
 from api_tools.teamvsplayer import (
     fetch_teamvsplayer_logic,
