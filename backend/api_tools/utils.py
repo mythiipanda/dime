@@ -7,7 +7,7 @@ import numpy as np
 from datetime import datetime, date
 from requests.exceptions import ReadTimeout, ConnectionError
 
-from backend.core.errors import Errors
+from core.errors import Errors
 from nba_api.stats.static import players, teams
 logger = logging.getLogger(__name__)
 
