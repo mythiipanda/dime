@@ -294,7 +294,7 @@ export default function AiAssistantPage() {
     submitPrompt,
     closeConnection,
     setChatHistory
-  } = useLangGraphAgentChatSSE({ apiUrl: '/api/v1/agent/stream' });
+  } = useLangGraphAgentChatSSE({ apiUrl: 'http://localhost:8000/api/v1/agent/stream' });
 
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);

@@ -24,62 +24,72 @@ async def agent_event_generator(input_query: str, chat_history: list = None):
     inputs = {"input_query": input_query, "chat_history": chat_history}
 
     try:
-        # langgraph_app.stream yields dictionaries: { node_name: output_state_dict }
-        async for event_chunk in langgraph_app.astream(inputs, stream_mode="updates"):
-            # logger.debug(f"Raw agent event chunk: {event_chunk}") # Detailed logging
+        # Use streaming modes that work reliably
+        async for stream_mode, event_chunk in langgraph_app.astream(
+            inputs,
+            stream_mode=["updates", "custom"]
+        ):
+            # logger.debug(f"Raw agent event chunk: {stream_mode}:{event_chunk}") # Detailed logging
             
-            node_name, node_output_state_dict = list(event_chunk.items())[0]
+            # Handle different streaming modes
+            if stream_mode == "updates":
+                # Original node-level updates
+                node_name, node_output_state_dict = list(event_chunk.items())[0]
 
-            # 1. Node Update Event
-            yield f"event: node_update\ndata: {json.dumps({'node_name': node_name})}\n\n"
+                # 1. Node Update Event
+                yield f"event: node_update\ndata: {json.dumps({'node_name': node_name})}\n\n"
 
-            # 2. Process Messages from state
-            messages = node_output_state_dict.get("messages", [])
-            if messages:
-                last_msg_obj = messages[-1] # Langchain BaseMessage object
+                # 2. Process Messages from state
+                messages = node_output_state_dict.get("messages", [])
+                if messages:
+                    last_msg_obj = messages[-1] # Langchain BaseMessage object
+                    
+                    msg_data_payload = {"type": last_msg_obj.type}
+
+                    if hasattr(last_msg_obj, 'content'):
+                        msg_data_payload["content"] = last_msg_obj.content
+                    
+                    if hasattr(last_msg_obj, 'name') and last_msg_obj.name:
+                         msg_data_payload["name"] = last_msg_obj.name
+
+                    if last_msg_obj.type == "ai": # AIMessage specific
+                        if hasattr(last_msg_obj, 'tool_calls') and last_msg_obj.tool_calls:
+                            msg_data_payload["type"] = "tool_call"
+                            msg_data_payload["tool_calls"] = [
+                                {"name": tc.get('name'), "args": tc.get('args'), "id": tc.get('id')}
+                                for tc in last_msg_obj.tool_calls
+                            ]
+                            if not msg_data_payload.get("content"):
+                                 msg_data_payload.pop("content", None)
+                    
+                    elif last_msg_obj.type == "tool": # ToolMessage specific
+                        msg_data_payload["type"] = "tool_result"
+                        if hasattr(last_msg_obj, 'tool_call_id'):
+                            msg_data_payload["tool_call_id"] = last_msg_obj.tool_call_id
+                    
+                    yield f"event: message\ndata: {json.dumps(msg_data_payload)}\n\n"
+
+                # 3. Process streaming_output from state (for intermediate thoughts/logs)
+                streaming_outputs = node_output_state_dict.get("streaming_output", [])
+                if streaming_outputs:
+                    latest_stream_chunk = streaming_outputs[-1]
+                    yield f"event: thought_stream\ndata: {json.dumps({'chunk': latest_stream_chunk})}\n\n"
+
+                # 4. Process final_answer
+                final_answer = node_output_state_dict.get("final_answer")
+                if final_answer is not None and node_name == "response_node":
+                    logger.info(f"Yielding final_answer from node: {node_name}")
+                    yield f"event: final_answer\ndata: {json.dumps({'answer': final_answer})}\n\n"
                 
-                msg_data_payload = {"type": last_msg_obj.type}
-
-                if hasattr(last_msg_obj, 'content'):
-                    msg_data_payload["content"] = last_msg_obj.content
-                
-                if hasattr(last_msg_obj, 'name') and last_msg_obj.name:
-                     msg_data_payload["name"] = last_msg_obj.name
-
-                if last_msg_obj.type == "ai": # AIMessage specific
-                    if hasattr(last_msg_obj, 'tool_calls') and last_msg_obj.tool_calls:
-                        msg_data_payload["type"] = "tool_call" 
-                        msg_data_payload["tool_calls"] = [
-                            {"name": tc.get('name'), "args": tc.get('args'), "id": tc.get('id')}
-                            for tc in last_msg_obj.tool_calls
-                        ]
-                        if not msg_data_payload.get("content"):
-                             msg_data_payload.pop("content", None)
-                
-                elif last_msg_obj.type == "tool": # ToolMessage specific
-                    msg_data_payload["type"] = "tool_result" 
-                    if hasattr(last_msg_obj, 'tool_call_id'):
-                        msg_data_payload["tool_call_id"] = last_msg_obj.tool_call_id
-                
-                yield f"event: message\ndata: {json.dumps(msg_data_payload)}\n\n"
-
-            # 3. Process streaming_output from state (for intermediate thoughts/logs)
-            streaming_outputs = node_output_state_dict.get("streaming_output", [])
-            if streaming_outputs:
-                latest_stream_chunk = streaming_outputs[-1]
-                yield f"event: thought_stream\ndata: {json.dumps({'chunk': latest_stream_chunk})}\n\n"
-
-            # 4. Process final_answer
-            final_answer = node_output_state_dict.get("final_answer")
-            if final_answer is not None and node_name == "response_node": 
-                logger.info(f"Yielding final_answer from node: {node_name}")
-                yield f"event: final_answer\ndata: {json.dumps({'answer': final_answer})}\n\n"
+                # 5. Graph End
+                if node_name == "__end__":
+                    logger.info("Yielding graph_end event as node_name is __end__.")
+                    yield f"event: graph_end\ndata: {json.dumps({})}\n\n"
+                    break
             
-            # 5. Graph End
-            if node_name == "__end__":
-                logger.info("Yielding graph_end event as node_name is __end__.")
-                yield f"event: graph_end\ndata: {json.dumps({})}\n\n"
-                break
+            elif stream_mode == "custom":
+                # Stream custom data from nodes
+                yield f"event: custom_data\ndata: {json.dumps(event_chunk)}\n\n"
             
     except Exception as e:
         logger.error(f"Error in agent event generator: {e}", exc_info=True)
@@ -106,6 +116,9 @@ async def stream_agent_response(
 ):
     """
     Streams the AI agent's processing steps and final response using Server-Sent Events (SSE).
+    
+    Enhanced streaming with reliable LangGraph modes for real-time updates:
+    
     Events:
     - `node_update`: {"node_name": str} - Indicates which graph node just ran.
     - `message`: Various payloads depending on message type:
@@ -114,6 +127,7 @@ async def stream_agent_response(
         - AI (tool call): {"type": "tool_call", "tool_calls": [{"name": str, "args": dict, "id": str}]}
         - Tool Result: {"type": "tool_result", "name": str, "content": str, "tool_call_id": str}
     - `thought_stream`: {"chunk": str} - Intermediate textual output from a node (e.g., LLM thinking).
+    - `custom_data`: {various} - Custom streaming data from nodes with status updates.
     - `final_answer`: {"answer": str} - The final textual answer from the agent.
     - `graph_end`: {} - Signals the end of the graph execution.
     - `error`: {"message": str, "type": str} - If an error occurs.
@@ -140,4 +154,4 @@ async def stream_agent_response(
 
 # Example of how to include this router in your main FastAPI app (e.g., in backend/main.py):
 # from routes.sse import router as sse_router # Adjusted import if this file is sse.py
-# app.include_router(sse_router) 
+# app.include_router(sse_router)

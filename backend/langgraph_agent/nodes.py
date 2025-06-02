@@ -8,13 +8,19 @@ from config import GEMINI_API_KEY # Import API key
 import json
 import datetime # Added datetime
 from langgraph_agent.prompt import get_nba_analyst_prompt # Added import for the new prompt function
+from langgraph.config import get_stream_writer
 
-# Initialize Gemini LLM
+# Initialize Gemini LLM with streaming enabled
 # Ensure GEMINI_API_KEY is set in your .env file
-llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", google_api_key=GEMINI_API_KEY, convert_system_message_to_human=True)
+llm = ChatGoogleGenerativeAI(
+    model="gemini-2.0-flash",
+    google_api_key=GEMINI_API_KEY,
+    convert_system_message_to_human=True,
+    streaming=True  # Enable streaming for token-level updates
+)
 
 # Bind tools to the LLM. This allows the LLM to be aware of the tools and their schemas.
-# The .bind_tools() method is standard in Langchain for models that support tool calling.
+# The .bind_tools() method is standard in Langchain for model that support tool calling.
 llm_with_tools = llm.bind_tools(all_tools)
 
 # Node definitions
@@ -22,11 +28,27 @@ llm_with_tools = llm.bind_tools(all_tools)
 def entry_node(state: AgentState) -> dict:
     """Initial node. Returns the initial HumanMessage."""
     print("---ENTERING ENTRY NODE---")
+    
+    # Get stream writer for custom streaming
+    try:
+        writer = get_stream_writer()
+        writer({"status": "starting", "step": "entry_node", "message": "Initializing NBA Analytics Agent..."})
+    except Exception:
+        # Fallback if streaming not available
+        pass
+    
     # input_query is from the initial state
     # streaming_output is handled by returning it in the dict
     user_input = state['input_query']
+    
+    try:
+        writer = get_stream_writer()
+        writer({"status": "processing", "step": "entry_node", "message": f"Processing query: {user_input[:100]}..."})
+    except Exception:
+        pass
+    
     return {
-        "messages": [HumanMessage(content=user_input)], 
+        "messages": [HumanMessage(content=user_input)],
         "streaming_output": [f"User: {user_input}"],
         "current_step": 1,
         "agent_scratchpad": [],
@@ -43,9 +65,16 @@ def llm_node(state: AgentState) -> dict:
     current_messages_from_state = state['messages']
     streaming_log = []
 
+    # Custom streaming for preparation phase
+    try:
+        writer = get_stream_writer()
+        writer({"status": "preparing", "step": "llm_node", "message": "Preparing system prompt and context..."})
+    except Exception:
+        pass
+
     # --- Prepare dynamic system prompt ---
     # TODO: Make current_season dynamic (e.g., from config or a dedicated tool/input)
-    current_season = "2024-25" 
+    current_season = "2024-25"
     current_date_str = datetime.date.today().strftime("%Y-%m-%d")
     system_prompt_content = get_nba_analyst_prompt(current_season=current_season, current_date=current_date_str)
     system_message = SystemMessage(content=system_prompt_content)
@@ -54,12 +83,32 @@ def llm_node(state: AgentState) -> dict:
     messages_for_llm = [system_message] + current_messages_from_state
     # --- End of system prompt preparation ---
 
+    try:
+        writer = get_stream_writer()
+        writer({"status": "invoking", "step": "llm_node", "message": f"Invoking LLM with {len(messages_for_llm)} messages..."})
+    except Exception:
+        pass
+
     print(f"LLM Input Messages (with system prompt): {messages_for_llm}")
     streaming_log.append(f"LLM invoking with messages (incl. system prompt): {json.dumps([m.dict() for m in messages_for_llm], indent=2)[:300]}...")
 
     # Invoke the LLM with the message history and tools
     # Langchain's bind_tools and the model itself handle the tool_choice and tool_calling protocol.
     try:
+        try:
+            writer = get_stream_writer()
+            writer({"status": "processing", "step": "llm_node", "message": "LLM is analyzing the request..."})
+        except Exception:
+            pass
+        
+        # Add thinking indicator for better UX
+        try:
+            writer = get_stream_writer()
+            writer({"status": "thinking", "step": "llm_node", "message": "🤔 Thinking..."})
+        except Exception:
+            pass
+        
+        # Invoke LLM with tools
         ai_response_message = llm_with_tools.invoke(messages_for_llm)
         
         # --- Start of new diagnostic logging ---
@@ -81,6 +130,24 @@ def llm_node(state: AgentState) -> dict:
         log_content = ai_response_message.content if ai_response_message.content else "[LLM decided to use a tool]"
         if ai_response_message.tool_calls:
             log_content += f" Tool calls: {ai_response_message.tool_calls}"
+            try:
+                writer = get_stream_writer()
+                writer({"status": "tool_decision", "step": "llm_node", "message": f"🔧 LLM decided to use tools: {[tc.get('name') for tc in ai_response_message.tool_calls]}"})
+            except Exception:
+                pass
+        else:
+            try:
+                writer = get_stream_writer()
+                writer({"status": "response_ready", "step": "llm_node", "message": "✅ LLM generated a direct response"})
+            except Exception:
+                pass
+        
+        # Add progress updates for better UX
+        try:
+            writer = get_stream_writer()
+            writer({"status": "processing_complete", "step": "llm_node", "message": "Processing completed, preparing response..."})
+        except Exception:
+            pass
         
         print(f"LLM Output: {log_content}")
         streaming_log.append(f"LLM Output: {log_content}")
@@ -89,6 +156,11 @@ def llm_node(state: AgentState) -> dict:
         error_msg = f"Error invoking LLM: {e}"
         print(f"LLM NODE ERROR: {error_msg}")
         streaming_log.append(error_msg)
+        try:
+            writer = get_stream_writer()
+            writer({"status": "error", "step": "llm_node", "message": f"LLM error: {str(e)}"})
+        except Exception:
+            pass
         # Create a fallback AIMessage indicating the error
         ai_response_message = AIMessage(content=f"Sorry, I encountered an error trying to process your request: {e}")
 
@@ -109,6 +181,13 @@ def response_node(state: AgentState) -> dict:
     Returns the final_answer.
     """
     print("---ENTERING RESPONSE NODE---")
+    
+    try:
+        writer = get_stream_writer()
+        writer({"status": "finalizing", "step": "response_node", "message": "Preparing final response..."})
+    except Exception:
+        pass
+    
     current_messages = state['messages'] # Accumulated messages
     final_answer_content = "Response Node: Default final answer."
     streaming_log = []
@@ -117,9 +196,19 @@ def response_node(state: AgentState) -> dict:
     
     if last_ai_message and not last_ai_message.tool_calls and last_ai_message.content:
         final_answer_content = last_ai_message.content
+        try:
+            writer = get_stream_writer()
+            writer({"status": "complete", "step": "response_node", "message": "Final answer extracted from LLM response"})
+        except Exception:
+            pass
     elif state.get('error_message'):
         final_answer_content = f"Error encountered: {state['error_message']}"
         streaming_log.append(final_answer_content)
+        try:
+            writer = get_stream_writer()
+            writer({"status": "error", "step": "response_node", "message": "Error state detected"})
+        except Exception:
+            pass
     else:
         warning_msg = f"Response Node: Could not determine a final answer from the last LLM message. Last AI message: {last_ai_message}"
         if last_ai_message and last_ai_message.tool_calls:
@@ -127,12 +216,23 @@ def response_node(state: AgentState) -> dict:
         print(warning_msg)
         streaming_log.append(warning_msg)
         final_answer_content = last_ai_message.content if last_ai_message and last_ai_message.content else "No conclusive text response generated by LLM."
+        try:
+            writer = get_stream_writer()
+            writer({"status": "fallback", "step": "response_node", "message": "Using fallback response generation"})
+        except Exception:
+            pass
 
     final_log_message = f"Final Answer: {final_answer_content}"
     streaming_log.append(final_log_message)
+
+    try:
+        writer = get_stream_writer()
+        writer({"status": "ready", "step": "response_node", "message": "Final response ready for delivery"})
+    except Exception:
+        pass
 
     return {
         "final_answer": final_answer_content,
         "streaming_output": streaming_log,
         "current_step": state.get('current_step', 0) + 1
-    } 
+    }
