@@ -29,6 +29,47 @@ const copyToClipboardUtil = async (textToCopy: string, setCopied: (isCopied: boo
   }
 };
 
+// Utility function to render JSON as a table
+const JsonTable: React.FC<{ data: any; title?: string }> = ({ data, title }) => {
+  if (!data || typeof data !== 'object') {
+    return <span className="font-mono text-sm">{String(data)}</span>;
+  }
+
+  const entries = Object.entries(data);
+  
+  return (
+    <div className="space-y-2">
+      {title && <div className="text-xs font-medium text-muted-foreground mb-2">{title}</div>}
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse border border-border rounded-md text-xs">
+          <thead>
+            <tr className="bg-muted/50">
+              <th className="border border-border px-2 py-1.5 text-left font-medium">Parameter</th>
+              <th className="border border-border px-2 py-1.5 text-left font-medium">Value</th>
+            </tr>
+          </thead>
+          <tbody>
+            {entries.map(([key, value]) => (
+              <tr key={key} className="hover:bg-muted/20">
+                <td className="border border-border px-2 py-1.5 font-mono font-medium text-primary">
+                  {key}
+                </td>
+                <td className="border border-border px-2 py-1.5 font-mono break-words">
+                  {typeof value === 'object' ? (
+                    <JsonTable data={value} />
+                  ) : (
+                    <span className="text-foreground">{String(value)}</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
 interface CustomCodeProps extends React.HTMLAttributes<HTMLElement>, ExtraProps {
   inline?: boolean;
   className?: string;
@@ -93,30 +134,35 @@ const IntermediateStepDisplay: React.FC<{ step: IntermediateStep, index: number 
         case 'tool_call':
             return (
                 <div className={cn(
-                    "p-2 my-1 rounded-md border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30 smooth-transition",
+                    "p-3 my-2 rounded-lg border border-blue-200 dark:border-blue-700 bg-gradient-to-r from-blue-50 to-blue-50/80 dark:from-blue-950/40 dark:to-blue-900/20 smooth-transition",
                     isVisible ? "animate-fade-in-up opacity-100" : "opacity-0 translate-y-2"
                 )}>
-                    <div className="flex items-center gap-2 mb-1">
-                        <Wrench className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400 shrink-0 smooth-transition" />
-                        <span className="text-xs font-semibold text-blue-700 dark:text-blue-400">Tool Call</span>
+                    <div className="flex items-center gap-2 text-sm text-blue-700 dark:text-blue-300 mb-3">
+                        <Wrench size={14} className="shrink-0" />
+                        <span className="font-semibold">Tool Call</span>
                     </div>
                     {step.toolCalls?.map(tc => (
-                        <div key={tc.id} className="ml-2 pl-2 border-l border-blue-300 dark:border-blue-700 py-1 last:pb-0">
-                            <p className="font-mono text-[11px] font-medium text-blue-800 dark:text-blue-300">{tc.name}</p>
+                        <div key={tc.id} className="space-y-3">
+                            <div className="bg-white dark:bg-gray-900/50 rounded-md p-3 border border-blue-100 dark:border-blue-800">
+                                <div className="text-xs font-medium text-blue-600 dark:text-blue-400 mb-1">Function</div>
+                                <div className="font-mono text-sm font-semibold text-blue-800 dark:text-blue-200">{tc.name}</div>
+                            </div>
                             {tc.args && Object.keys(tc.args).length > 0 && (
-                                <Collapsible open={isExpanded} onOpenChange={setIsExpanded}>
-                                    <CollapsibleTrigger asChild>
-                                        <Button variant="link" size="sm" className="text-blue-500 dark:text-blue-400 px-0 h-auto -mt-0.5 text-[10px]">
-                                            {isExpanded ? <ChevronUp className="h-2.5 w-2.5 mr-0.5" /> : <ChevronDown className="h-2.5 w-2.5 mr-0.5" />}
-                                            Arguments
-                                        </Button>
-                                    </CollapsibleTrigger>
-                                    <CollapsibleContent className="animate-collapsible-down">
-                                        <pre className="text-[10px] text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/50 p-1.5 mt-0.5 rounded font-mono max-w-full overflow-x-auto whitespace-pre-wrap break-all">
-                                            {JSON.stringify(tc.args, null, 2)}
-                                        </pre>
-                                    </CollapsibleContent>
-                                </Collapsible>
+                                <div className="bg-white dark:bg-gray-900/50 rounded-md p-3 border border-blue-100 dark:border-blue-800">
+                                    <Collapsible open={isExpanded} onOpenChange={setIsExpanded}>
+                                        <CollapsibleTrigger asChild>
+                                            <Button variant="ghost" size="sm" className="text-blue-600 dark:text-blue-400 px-0 h-auto text-xs font-medium mb-2 hover:text-blue-800 dark:hover:text-blue-200">
+                                                {isExpanded ? <ChevronUp className="h-3 w-3 mr-1" /> : <ChevronDown className="h-3 w-3 mr-1" />}
+                                                Arguments
+                                            </Button>
+                                        </CollapsibleTrigger>
+                                        <CollapsibleContent className="animate-collapsible-down">
+                                            <div className="bg-blue-50 dark:bg-blue-950/50 rounded p-2 border border-blue-200 dark:border-blue-800">
+                                                <JsonTable data={tc.args} />
+                                            </div>
+                                        </CollapsibleContent>
+                                    </Collapsible>
+                                </div>
                             )}
                         </div>
                     ))}
@@ -127,77 +173,106 @@ const IntermediateStepDisplay: React.FC<{ step: IntermediateStep, index: number 
             const StatusIcon = isErrorResult ? AlertTriangle : CheckCircle2;
             return (
                 <div className={cn(
-                    "p-2 my-1 rounded-md border smooth-transition",
-                    isErrorResult ? "border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30" : "border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/30",
+                    "p-3 my-2 rounded-lg border smooth-transition",
+                    isErrorResult
+                        ? "border-red-200 dark:border-red-700 bg-gradient-to-r from-red-50 to-red-50/80 dark:from-red-950/40 dark:to-red-900/20"
+                        : "border-green-200 dark:border-green-700 bg-gradient-to-r from-green-50 to-green-50/80 dark:from-green-950/40 dark:to-green-900/20",
                     isVisible ? "animate-fade-in-up opacity-100" : "opacity-0 translate-y-2"
                 )}>
-                    <div className="flex items-center gap-2 mb-0.5">
-                        <StatusIcon className={cn("h-3.5 w-3.5 shrink-0 smooth-transition", isErrorResult ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400")} />
-                        <span className={cn("text-xs font-semibold smooth-transition", isErrorResult ? "text-red-700 dark:text-red-400" : "text-green-700 dark:text-green-400")}>
-                            Tool Result: {step.toolName} {step.toolCallId && <span className="text-[9px] font-normal text-muted-foreground/70">(ID: {step.toolCallId.slice(-6)})</span>}
+                    <div className="flex items-center gap-2 text-sm mb-3">
+                        <StatusIcon className={cn("h-4 w-4 shrink-0 smooth-transition", isErrorResult ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400")} />
+                        <span className={cn("font-semibold smooth-transition", isErrorResult ? "text-red-700 dark:text-red-400" : "text-green-700 dark:text-green-400")}>
+                            Tool Result: {step.toolName}
                         </span>
+                        {step.toolCallId && <span className="text-xs font-normal text-muted-foreground/70">(ID: {step.toolCallId.slice(-6)})</span>}
                     </div>
                     {step.toolResultContent && (
-                         <Collapsible open={isExpanded} onOpenChange={setIsExpanded}>
-                            <CollapsibleTrigger asChild>
-                                <Button variant="link" size="sm" className={cn("px-0 h-auto text-[10px] ml-5 -mt-0.5", isErrorResult ? "text-red-500 dark:text-red-400" : "text-green-500 dark:text-green-400")}>
-                                    {isExpanded ? <ChevronUp className="h-2.5 w-2.5 mr-0.5" /> : <ChevronDown className="h-2.5 w-2.5 mr-0.5" />}
-                                    {isErrorResult ? "Error Details" : "Output"}
-                                </Button>
-                            </CollapsibleTrigger>
-                            <CollapsibleContent className="animate-collapsible-down">
-                                <pre className={cn(
-                                    "text-[10px] p-1.5 mt-0.5 rounded font-mono max-w-full overflow-x-auto whitespace-pre-wrap break-all",
-                                    isErrorResult ? "bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-300" : "bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-300"
-                                )}>
-                                    {step.toolResultContent}
-                                </pre>
-                            </CollapsibleContent>
-                        </Collapsible>
+                        <div className="bg-white dark:bg-gray-900/50 rounded-md p-3 border border-gray-100 dark:border-gray-800">
+                            <Collapsible open={isExpanded} onOpenChange={setIsExpanded}>
+                                <CollapsibleTrigger asChild>
+                                    <Button variant="ghost" size="sm" className={cn("px-0 h-auto text-xs font-medium mb-2", isErrorResult ? "text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-200" : "text-green-600 dark:text-green-400 hover:text-green-800 dark:hover:text-green-200")}>
+                                        {isExpanded ? <ChevronUp className="h-3 w-3 mr-1" /> : <ChevronDown className="h-3 w-3 mr-1" />}
+                                        {isErrorResult ? "Error Details" : "Output"}
+                                    </Button>
+                                </CollapsibleTrigger>
+                                <CollapsibleContent className="animate-collapsible-down">
+                                    <div className={cn(
+                                        "rounded p-2 border max-h-96 overflow-auto",
+                                        isErrorResult
+                                            ? "bg-red-50 dark:bg-red-950/50 border-red-200 dark:border-red-800"
+                                            : "bg-green-50 dark:bg-green-950/50 border-green-200 dark:border-green-800"
+                                    )}>
+                                        {(() => {
+                                            try {
+                                                const parsedData = JSON.parse(step.toolResultContent || '');
+                                                return <JsonTable data={parsedData} />;
+                                            } catch {
+                                                return (
+                                                    <pre className={cn(
+                                                        "text-xs font-mono whitespace-pre-wrap break-words",
+                                                        isErrorResult ? "text-red-800 dark:text-red-200" : "text-green-800 dark:text-green-200"
+                                                    )}>
+                                                        {step.toolResultContent}
+                                                    </pre>
+                                                );
+                                            }
+                                        })()}
+                                    </div>
+                                </CollapsibleContent>
+                            </Collapsible>
+                        </div>
                     )}
                 </div>
             );
         case 'system_event':
             return (
                 <div className={cn(
-                    "p-1.5 my-1 rounded-md border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-950/30 flex items-center text-xs smooth-transition",
+                    "p-2 my-1 rounded-lg border border-purple-200 dark:border-purple-700 bg-gradient-to-r from-purple-50 to-purple-50/80 dark:from-purple-950/40 dark:to-purple-900/20 smooth-transition",
                     isVisible ? "animate-slide-in-right opacity-100" : "opacity-0 translate-x-4"
                 )}>
-                    <Settings2 size={12} className="mr-1.5 text-purple-600 dark:text-purple-400 shrink-0 smooth-transition" />
-                    <span className="text-purple-700 dark:text-purple-300 smooth-transition">
-                        <span className="font-medium">{step.nodeName || 'System'}:</span> {step.systemEventContent}
-                    </span>
+                    <div className="flex items-center gap-2 text-sm">
+                        <Settings2 size={14} className="text-purple-600 dark:text-purple-400 shrink-0 smooth-transition" />
+                        <span className="text-purple-700 dark:text-purple-300 smooth-transition">
+                            <span className="font-semibold">{step.nodeName || 'System'}:</span>
+                            <span className="ml-1 text-purple-600 dark:text-purple-400">{step.systemEventContent}</span>
+                        </span>
+                    </div>
                 </div>
             );
          case 'thought_chunk':
             return (
                 <div className={cn(
-                    "p-2 my-1 rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/30 smooth-transition",
+                    "p-3 my-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-gradient-to-r from-gray-50 to-gray-50/80 dark:from-gray-900/40 dark:to-gray-800/20 smooth-transition",
                     isVisible ? "animate-fade-in opacity-100" : "opacity-0"
                 )}>
-                    <div className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-400 mb-1">
-                        <Brain size={12} className="shrink-0 animate-pulse" />
-                        <span className="font-medium">Thinking...</span>
+                    <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 mb-3">
+                        <Brain size={14} className="shrink-0 animate-pulse" />
+                        <span className="font-semibold">Thinking...</span>
                         <div className="typing-cursor opacity-70"></div>
                     </div>
-                    <div className="text-gray-700 dark:text-gray-300 text-[11px] leading-snug">
-                        <ReactMarkdown components={stepMarkdownComponents} remarkPlugins={[remarkGfm]}>{step.thoughtChunkContent || ''}</ReactMarkdown>
+                    <div className="bg-white dark:bg-gray-900/50 rounded-md p-3 border border-gray-100 dark:border-gray-800">
+                        <div className="text-gray-700 dark:text-gray-300 text-sm leading-relaxed">
+                            <ReactMarkdown components={stepMarkdownComponents} remarkPlugins={[remarkGfm]}>{step.thoughtChunkContent || ''}</ReactMarkdown>
+                        </div>
                     </div>
                 </div>
             );
         case 'error_event':
             return (
                 <div className={cn(
-                    "p-2 my-1 rounded-md border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30 flex items-center text-xs smooth-transition",
+                    "p-3 my-2 rounded-lg border border-red-200 dark:border-red-700 bg-gradient-to-r from-red-50 to-red-50/80 dark:from-red-950/40 dark:to-red-900/20 smooth-transition",
                     isVisible ? "animate-fade-in-up opacity-100" : "opacity-0 translate-y-2"
                 )}>
-                    <AlertTriangle size={12} className="mr-1.5 text-red-600 dark:text-red-400 shrink-0 animate-pulse" />
-                    <span className="text-red-700 dark:text-red-400 smooth-transition">
-                        <span className="font-medium">Error:</span> {step.errorEventContent}
-                    </span>
+                    <div className="flex items-center gap-2 text-sm">
+                        <AlertTriangle size={14} className="text-red-600 dark:text-red-400 shrink-0 animate-pulse" />
+                        <span className="text-red-700 dark:text-red-400 smooth-transition">
+                            <span className="font-semibold">Error:</span>
+                            <span className="ml-1 text-red-600 dark:text-red-300">{step.errorEventContent}</span>
+                        </span>
+                    </div>
                 </div>
             );
-        default: return <div className="text-xs p-1">Unsupported step: {step.type}</div>;
+        default: return <div className="text-xs p-2 text-muted-foreground">Unsupported step: {step.type}</div>;
     }
 };
 
