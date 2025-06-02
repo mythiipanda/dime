@@ -5,6 +5,7 @@ from langgraph.prebuilt import ToolNode, tools_condition # Import ToolNode and t
 from langgraph_agent.state import AgentState
 from langgraph_agent.nodes import entry_node, llm_node, response_node # tool_node removed from here
 from langgraph_agent.tool_manager import all_tools # Import the list of actual tools
+from langgraph.pregel import RetryPolicy
 
 # Define the graph
 workflow = StateGraph(AgentState)
@@ -13,10 +14,10 @@ workflow = StateGraph(AgentState)
 actual_tool_node = ToolNode(all_tools)
 
 # Add nodes
-workflow.add_node("entry_node", entry_node)
-workflow.add_node("llm_node", llm_node)             # Node to decide on action (e.g., call tool or respond)
-workflow.add_node("actual_tool_node", actual_tool_node) # The prebuilt ToolNode for executing tools
-workflow.add_node("response_node", response_node)   # Node to formulate final response
+workflow.add_node("entry_node", entry_node, retry=RetryPolicy())
+workflow.add_node("llm_node", llm_node, retry=RetryPolicy())             # Node to decide on action (e.g., call tool or respond)
+workflow.add_node("actual_tool_node", actual_tool_node, retry=RetryPolicy()) # The prebuilt ToolNode for executing tools
+workflow.add_node("response_node", response_node, retry=RetryPolicy())   # Node to formulate final response
 
 # Set the entry point
 workflow.set_entry_point("entry_node")
