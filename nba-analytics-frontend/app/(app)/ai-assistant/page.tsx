@@ -49,7 +49,7 @@ const createMarkdownComponents = (isCopiedState?: boolean, setIsCopiedState?: (i
           <div className="absolute right-2 top-2 z-10 flex items-center gap-1.5">
             {match && <span className="rounded-sm bg-black/70 px-1.5 py-0.5 text-[10px] font-mono text-white/70">{match[1]}</span>}
             <TooltipProvider><Tooltip><TooltipTrigger asChild>
-                <button 
+                <button
                     className="opacity-0 group-hover:opacity-100 h-5 w-5 p-0 flex items-center justify-center rounded hover:bg-muted/50 transition-opacity"
                     onClick={() => copyToClipboardUtil(codeText, actualSetIsCopiedState)} >
                     {isCopiedState ? <Check className="h-2.5 w-2.5 text-green-500" /> : <Copy className="h-2.5 w-2.5 text-muted-foreground" />}
@@ -64,7 +64,7 @@ const createMarkdownComponents = (isCopiedState?: boolean, setIsCopiedState?: (i
         </code>
       );
     },
-    p: ({ node, ...props }) => <p className="mb-2 leading-relaxed last:mb-0" {...props} />,
+    p: ({ node, ...props }) => <div className="mb-2 leading-relaxed last:mb-0" {...props} />,
     ul: ({ node, ...props }) => <ul className="my-2 ml-5 list-disc marker:text-muted-foreground [&>li]:mt-1" {...props} />,
     ol: ({ node, ...props }) => <ol className="my-2 ml-5 list-decimal marker:text-muted-foreground [&>li]:mt-1" {...props} />,
     li: ({ node, ...props }) => <li className="leading-relaxed" {...props} />,
@@ -77,17 +77,27 @@ const createMarkdownComponents = (isCopiedState?: boolean, setIsCopiedState?: (i
 });
 
 const IntermediateStepDisplay: React.FC<{ step: IntermediateStep, index: number }> = ({ step, index }) => {
-    const [isExpanded, setIsExpanded] = useState(true); 
+    const [isExpanded, setIsExpanded] = useState(true);
     const [isCopied, setIsCopied] = useState(false);
+    const [isVisible, setIsVisible] = useState(false);
 
     const stepMarkdownComponents = React.useMemo(() => createMarkdownComponents(isCopied, setIsCopied), [isCopied]);
+
+    // Animate in when component mounts
+    useEffect(() => {
+        const timer = setTimeout(() => setIsVisible(true), index * 100); // Stagger animation
+        return () => clearTimeout(timer);
+    }, [index]);
 
     switch (step.type) {
         case 'tool_call':
             return (
-                <div className="p-2 my-1 rounded-md border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30">
+                <div className={cn(
+                    "p-2 my-1 rounded-md border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30 smooth-transition",
+                    isVisible ? "animate-fade-in-up opacity-100" : "opacity-0 translate-y-2"
+                )}>
                     <div className="flex items-center gap-2 mb-1">
-                        <Wrench className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                        <Wrench className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400 shrink-0 smooth-transition" />
                         <span className="text-xs font-semibold text-blue-700 dark:text-blue-400">Tool Call</span>
                     </div>
                     {step.toolCalls?.map(tc => (
@@ -117,12 +127,13 @@ const IntermediateStepDisplay: React.FC<{ step: IntermediateStep, index: number 
             const StatusIcon = isErrorResult ? AlertTriangle : CheckCircle2;
             return (
                 <div className={cn(
-                    "p-2 my-1 rounded-md border",
-                    isErrorResult ? "border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30" : "border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/30"
+                    "p-2 my-1 rounded-md border smooth-transition",
+                    isErrorResult ? "border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30" : "border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/30",
+                    isVisible ? "animate-fade-in-up opacity-100" : "opacity-0 translate-y-2"
                 )}>
                     <div className="flex items-center gap-2 mb-0.5">
-                        <StatusIcon className={cn("h-3.5 w-3.5 shrink-0", isErrorResult ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400")} />
-                        <span className={cn("text-xs font-semibold", isErrorResult ? "text-red-700 dark:text-red-400" : "text-green-700 dark:text-green-400")}>
+                        <StatusIcon className={cn("h-3.5 w-3.5 shrink-0 smooth-transition", isErrorResult ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400")} />
+                        <span className={cn("text-xs font-semibold smooth-transition", isErrorResult ? "text-red-700 dark:text-red-400" : "text-green-700 dark:text-green-400")}>
                             Tool Result: {step.toolName} {step.toolCallId && <span className="text-[9px] font-normal text-muted-foreground/70">(ID: {step.toolCallId.slice(-6)})</span>}
                         </span>
                     </div>
@@ -148,28 +159,42 @@ const IntermediateStepDisplay: React.FC<{ step: IntermediateStep, index: number 
             );
         case 'system_event':
             return (
-                <div className="p-1.5 my-1 rounded-md border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-950/30 flex items-center text-xs">
-                    <Settings2 size={12} className="mr-1.5 text-purple-600 dark:text-purple-400 shrink-0" />
-                    <span className="text-purple-700 dark:text-purple-300"><span className="font-medium">{step.nodeName || 'System'}:</span> {step.systemEventContent}</span>
+                <div className={cn(
+                    "p-1.5 my-1 rounded-md border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-950/30 flex items-center text-xs smooth-transition",
+                    isVisible ? "animate-slide-in-right opacity-100" : "opacity-0 translate-x-4"
+                )}>
+                    <Settings2 size={12} className="mr-1.5 text-purple-600 dark:text-purple-400 shrink-0 smooth-transition" />
+                    <span className="text-purple-700 dark:text-purple-300 smooth-transition">
+                        <span className="font-medium">{step.nodeName || 'System'}:</span> {step.systemEventContent}
+                    </span>
                 </div>
             );
          case 'thought_chunk':
             return (
-                <div className="p-2 my-1 rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/30">
+                <div className={cn(
+                    "p-2 my-1 rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/30 smooth-transition",
+                    isVisible ? "animate-fade-in opacity-100" : "opacity-0"
+                )}>
                     <div className="flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-400 mb-1">
-                        <Brain size={12} className="shrink-0" /> 
+                        <Brain size={12} className="shrink-0 animate-pulse" />
                         <span className="font-medium">Thinking...</span>
+                        <div className="typing-cursor opacity-70"></div>
                     </div>
-                    <div className="prose prose-xs dark:prose-invert max-w-full text-gray-700 dark:text-gray-300 text-[11px] leading-snug">
+                    <div className="text-gray-700 dark:text-gray-300 text-[11px] leading-snug">
                         <ReactMarkdown components={stepMarkdownComponents} remarkPlugins={[remarkGfm]}>{step.thoughtChunkContent || ''}</ReactMarkdown>
                     </div>
                 </div>
             );
         case 'error_event':
             return (
-                <div className="p-2 my-1 rounded-md border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30 flex items-center text-xs">
-                    <AlertTriangle size={12} className="mr-1.5 text-red-600 dark:text-red-400 shrink-0" />
-                    <span className="text-red-700 dark:text-red-400"><span className="font-medium">Error:</span> {step.errorEventContent}</span>
+                <div className={cn(
+                    "p-2 my-1 rounded-md border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/30 flex items-center text-xs smooth-transition",
+                    isVisible ? "animate-fade-in-up opacity-100" : "opacity-0 translate-y-2"
+                )}>
+                    <AlertTriangle size={12} className="mr-1.5 text-red-600 dark:text-red-400 shrink-0 animate-pulse" />
+                    <span className="text-red-700 dark:text-red-400 smooth-transition">
+                        <span className="font-medium">Error:</span> {step.errorEventContent}
+                    </span>
                 </div>
             );
         default: return <div className="text-xs p-1">Unsupported step: {step.type}</div>;
@@ -179,6 +204,13 @@ const IntermediateStepDisplay: React.FC<{ step: IntermediateStep, index: number 
 const ChatMessageCard: React.FC<{ message: FrontendChatMessage; isLatest: boolean }> = ({ message, isLatest }) => {
   const [isFinalAnswerCopied, setIsFinalAnswerCopied] = useState(false);
   const [isProcessExpanded, setIsProcessExpanded] = useState(message.isStreaming && (!message.content || message.content.length === 0));
+  const [isVisible, setIsVisible] = useState(false);
+
+  // Animate in when component mounts
+  useEffect(() => {
+    const timer = setTimeout(() => setIsVisible(true), 50);
+    return () => clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     if (isLatest && message.isStreaming === false && message.content && message.content.length > 0) {
@@ -191,7 +223,10 @@ const ChatMessageCard: React.FC<{ message: FrontendChatMessage; isLatest: boolea
   const finalAnswerMarkdownComponents = React.useMemo(() => createMarkdownComponents(isFinalAnswerCopied, setIsFinalAnswerCopied), [isFinalAnswerCopied]);
 
   const renderHumanMessage = () => (
-    <Card className="prose prose-sm dark:prose-invert max-w-full rounded-xl bg-primary text-primary-foreground p-3 shadow-md break-words">
+    <Card className={cn(
+      "prose prose-sm dark:prose-invert max-w-full rounded-xl bg-primary text-primary-foreground p-3 shadow-md break-words smooth-transition",
+      isVisible ? "animate-slide-in-right opacity-100" : "opacity-0 translate-x-4"
+    )}>
       <ReactMarkdown components={finalAnswerMarkdownComponents} remarkPlugins={[remarkGfm]}>{message.content || ''}</ReactMarkdown>
     </Card>
   );
@@ -201,22 +236,33 @@ const ChatMessageCard: React.FC<{ message: FrontendChatMessage; isLatest: boolea
     const hasIntermediateSteps = message.intermediateSteps && message.intermediateSteps.length > 0;
 
     return (
-      <Card className="rounded-xl bg-card text-card-foreground p-0 shadow-md w-full break-words">
+      <Card className={cn(
+        "rounded-xl bg-card text-card-foreground p-0 shadow-md w-full break-words smooth-transition",
+        isVisible ? "animate-fade-in-up opacity-100" : "opacity-0 translate-y-2",
+        message.isStreaming && "animate-border-pulse"
+      )}>
         {hasIntermediateSteps && (
             <Collapsible open={isProcessExpanded} onOpenChange={setIsProcessExpanded} className="border-b dark:border-border/50">
                 <CollapsibleTrigger asChild>
-                    <div className="flex items-center justify-between p-2.5 hover:bg-muted/50 dark:hover:bg-muted/20 cursor-pointer rounded-t-xl">
+                    <div className="flex items-center justify-between p-2.5 hover:bg-muted/50 dark:hover:bg-muted/20 cursor-pointer rounded-t-xl smooth-transition">
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                            <Settings2 size={14} className={cn(message.isStreaming && "animate-spin-slow")} />
-                            <span>{message.isStreaming && !hasFinalContent ? "AI is working..." : "Show process"}</span>
+                            <Settings2 size={14} className={cn("smooth-transition", message.isStreaming && "animate-spin")} />
+                            <span className="smooth-transition">
+                                {message.isStreaming && !hasFinalContent ? "AI is working..." : "Show process"}
+                            </span>
                         </div>
-                        {isProcessExpanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                        {isProcessExpanded ?
+                            <ChevronUp className="h-4 w-4 text-muted-foreground smooth-transition" /> :
+                            <ChevronDown className="h-4 w-4 text-muted-foreground smooth-transition" />
+                        }
                     </div>
                 </CollapsibleTrigger>
                 <CollapsibleContent className="animate-collapsible-down p-2 bg-muted/30 dark:bg-muted/10 max-h-96 overflow-y-auto custom-scrollbar">
                     <div className="space-y-1.5">
                         {message.intermediateSteps?.map((step, idx) => (
-                            <IntermediateStepDisplay key={step.id} step={step} index={idx} />
+                            <div key={step.id} className="stagger-animation">
+                                <IntermediateStepDisplay step={step} index={idx} />
+                            </div>
                         ))}
                     </div>
                 </CollapsibleContent>
@@ -224,30 +270,44 @@ const ChatMessageCard: React.FC<{ message: FrontendChatMessage; isLatest: boolea
         )}
 
         {hasFinalContent ? (
-            <div className="p-3 final-answer-container prose prose-sm dark:prose-invert max-w-full break-words">
+            <div className={cn(
+                "p-3 final-answer-container prose prose-sm dark:prose-invert max-w-full break-words smooth-transition",
+                "animate-fade-in"
+            )}>
                  <div className="flex items-center justify-between mb-1.5 -mt-0.5">
-                    <div className="flex items-center gap-1.5 text-primary">
-                        <BookOpen className="h-4 w-4" />
+                    <div className="flex items-center gap-1.5 text-primary animate-fade-in">
+                        <BookOpen className="h-4 w-4 smooth-transition" />
                         <span className="text-xs font-semibold">Final Answer</span>
                     </div>
                     <TooltipProvider>
                         <Tooltip>
                         <TooltipTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copyToClipboardUtil(message.content!, setIsFinalAnswerCopied)}>
-                            {isFinalAnswerCopied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 smooth-transition hover:scale-110"
+                                onClick={() => copyToClipboardUtil(message.content!, setIsFinalAnswerCopied)}
+                            >
+                                {isFinalAnswerCopied ?
+                                    <Check className="h-3.5 w-3.5 text-green-500 animate-fade-in" /> :
+                                    <Copy className="h-3.5 w-3.5 smooth-transition" />
+                                }
                             </Button>
                         </TooltipTrigger>
                         <TooltipContent><p className="text-xs">{isFinalAnswerCopied ? 'Copied!' : 'Copy answer'}</p></TooltipContent>
                         </Tooltip>
                     </TooltipProvider>
                 </div>
-                <ReactMarkdown components={finalAnswerMarkdownComponents} remarkPlugins={[remarkGfm]}>
-                    {message.content}
-                </ReactMarkdown>
+                <div className="animate-fade-in">
+                    <ReactMarkdown components={finalAnswerMarkdownComponents} remarkPlugins={[remarkGfm]}>
+                        {message.content}
+                    </ReactMarkdown>
+                </div>
             </div>
         ) : message.isStreaming && !hasIntermediateSteps ? (
-             <div className="flex items-center text-sm opacity-80 p-3">
-                <Loader2 size={16} className="mr-2 animate-spin" /> AI is thinking...
+             <div className="flex items-center text-sm opacity-80 p-3 animate-fade-in">
+                <Loader2 size={16} className="mr-2 animate-spin" />
+                <span className="typing-cursor">AI is thinking</span>
             </div>
         ) : null}
       </Card>
@@ -276,12 +336,24 @@ const ChatMessageCard: React.FC<{ message: FrontendChatMessage; isLatest: boolea
   }
 
   return (
-    <div className={cn(messageRowClasses)}>
-      {message.type === 'ai' && avatar}
-      <div className={cn("flex flex-col gap-1.5", contentContainerClasses)}>
+    <div className={cn(
+      messageRowClasses,
+      "smooth-transition",
+      isVisible ? "animate-fade-in-up opacity-100" : "opacity-0 translate-y-4"
+    )}>
+      {message.type === 'ai' && (
+        <div className={cn("smooth-transition", isVisible ? "animate-fade-in" : "opacity-0")}>
+          {avatar}
+        </div>
+      )}
+      <div className={cn("flex flex-col gap-1.5 smooth-transition", contentContainerClasses)}>
         {contentWrapper}
       </div>
-      {message.type === 'human' && avatar}
+      {message.type === 'human' && (
+        <div className={cn("smooth-transition", isVisible ? "animate-slide-in-right" : "opacity-0 translate-x-4")}>
+          {avatar}
+        </div>
+      )}
     </div>
   );
 };
@@ -322,16 +394,16 @@ export default function AiAssistantPage() {
   const renderChatArea = () => {
     if (chatHistory.length === 0 && !isLoading && !error) {
       return (
-        <div className="flex-1 flex flex-col items-center justify-center p-4 sm:p-6 bg-gradient-to-br from-background to-muted/30 dark:from-background dark:to-muted/10">
-          <div className="w-full max-w-3xl">
+        <div className="flex-1 flex flex-col items-center justify-center p-2 sm:p-3 bg-gradient-to-br from-background to-muted/30 dark:from-background dark:to-muted/10">
+          <div className="w-full max-w-4xl">
             <InitialChatScreen onExampleClick={handlePromptSubmit} />
           </div>
         </div>
       );
     }
     return (
-      <ScrollArea className="flex-1 p-4 sm:p-6 bg-muted/10 dark:bg-muted/5" ref={scrollAreaRef}>
-        <div className="space-y-0 max-w-3xl mx-auto pb-4">
+      <ScrollArea className="flex-1 p-2 sm:p-3 bg-muted/10 dark:bg-muted/5" ref={scrollAreaRef}>
+        <div className="space-y-0 max-w-4xl mx-auto pb-2">
           {chatHistory.map((msg, index) => (
             <ChatMessageCard
               key={msg.id}
@@ -340,19 +412,26 @@ export default function AiAssistantPage() {
             />
           ))}
           {isLoading && chatHistory.length > 0 && chatHistory[chatHistory.length -1].type === 'human' && (
-            <div className={cn("flex gap-3 py-2 my-1 items-start")}>
-                <Avatar className="h-8 w-8 border shadow-sm shrink-0"><AvatarFallback className="bg-primary/10 text-primary"><BotIcon className="h-5 w-5" /></AvatarFallback></Avatar>
-                <div className={cn("flex flex-col gap-1.5 w-full max-w-[calc(100%-44px)]")}>
-                    <Card className="rounded-xl bg-card text-card-foreground p-3 shadow-md break-words w-full">
-                        <div className="flex items-center text-sm opacity-80">
-                            <Loader2 size={16} className="mr-2 animate-spin" /> AI is connecting...
-                        </div>
-                    </Card>
-                </div>
-            </div>
-           )}
-          {error && 
-            <div className="max-w-3xl mx-auto py-2 px-3">
+           <div className="flex gap-3 py-2 my-1 items-start animate-fade-in-up">
+               <div className="animate-fade-in">
+                   <Avatar className="h-8 w-8 border shadow-sm shrink-0">
+                       <AvatarFallback className="bg-primary/10 text-primary">
+                           <BotIcon className="h-5 w-5" />
+                       </AvatarFallback>
+                   </Avatar>
+               </div>
+               <div className="flex flex-col gap-1.5 w-full max-w-[calc(100%-44px)]">
+                   <Card className="rounded-xl bg-card text-card-foreground p-3 shadow-md break-words w-full animate-subtle-pulse">
+                       <div className="flex items-center text-sm opacity-80">
+                           <Loader2 size={16} className="mr-2 animate-spin" />
+                           <span className="typing-cursor">AI is connecting</span>
+                       </div>
+                   </Card>
+               </div>
+           </div>
+          )}
+          {error &&
+            <div className="max-w-4xl mx-auto py-2 px-2 animate-fade-in-up">
               <ErrorDisplay error={error} />
             </div>
           }
@@ -367,8 +446,8 @@ export default function AiAssistantPage() {
       <main className="flex-1 flex flex-col overflow-hidden">
         {renderChatArea()}
       </main>
-      <div className="bg-background border-t p-3 sm:p-4 sticky bottom-0 z-10">
-        <div className="max-w-3xl mx-auto space-y-2">
+      <div className="bg-background border-t p-2 sm:p-3 sticky bottom-0 z-10">
+        <div className="max-w-4xl mx-auto space-y-2">
           <PromptInputForm onSubmit={handlePromptSubmit} onStop={handleStop} isLoading={isLoading} />
           <p className="text-xs text-center text-muted-foreground opacity-75 transition-opacity hover:opacity-100">
             AI may produce inaccurate information. Verify important details.

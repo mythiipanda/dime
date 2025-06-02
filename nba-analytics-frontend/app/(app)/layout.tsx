@@ -32,7 +32,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
       <aside
         className={cn(
           "fixed hidden top-0 left-0 bottom-0 border-r transition-all duration-300 ease-in-out lg:flex flex-col justify-between overflow-y-auto",
-          "bg-muted dark:bg-gray-950/70 dark:backdrop-blur-md border-border dark:border-white/10", // Use bg-muted for light, dark overrides
+          "bg-muted dark:bg-gray-950 border-border dark:border-white/10", // Removed backdrop-blur for better text clarity
           isCollapsed ? "w-20 px-2 py-4" : "w-60 px-4 py-6"
         )}
       >
@@ -98,7 +98,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
       {/* Mobile Header */}
       <header className={cn(
         "fixed top-0 z-30 w-full border-b lg:hidden px-4 sm:px-6",
-        "bg-muted dark:bg-gray-950/70 dark:backdrop-blur-md border-border dark:border-white/10" // Light/Dark styles inside cn
+        "bg-muted dark:bg-gray-950 border-border dark:border-white/10" // Removed backdrop-blur for better text clarity
       )}>
         <div className="flex h-16 items-center gap-4">
           <Sheet>
@@ -142,7 +142,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
         )}
       >
         <div className={cn(
-          'max-w-full mx-auto px-4 sm:px-6 py-8 lg:px-8 lg:py-12 flex-1 overflow-y-auto',
+          'max-w-full mx-auto py-4 lg:py-6 flex-1 overflow-y-auto',
           'animate-in fade-in-0 slide-in-from-bottom-4 duration-500'
         )}>
           <SignedIn>
