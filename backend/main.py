@@ -58,21 +58,17 @@ app = FastAPI(
 # For development, if settings.CORS_ALLOWED_ORIGINS is empty, a permissive policy might be used with a warning.
 # However, for production, settings.CORS_ALLOWED_ORIGINS should be explicitly set.
 
-# Example (ensure settings.CORS_ALLOWED_ORIGINS is correctly populated from your config):
-# if not settings.CORS_ALLOWED_ORIGINS:
-#     logger.warning("CORS_ALLOWED_ORIGINS is not set. Defaulting to a restrictive policy or consider a local dev setup.")
-#     allow_origins = [] # Or a specific local dev origin like ["http://localhost:3000"]
-# else:
-#     allow_origins = settings.CORS_ALLOWED_ORIGINS
+# Enable CORS for development with Next.js frontend
+allow_origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
 
-# app.add_middleware(
-#     CORSMiddleware,
-#     allow_origins=allow_origins, # Use the determined list
-#     allow_credentials=True,
-#     allow_methods=["GET", "POST", "OPTIONS"],
-#     allow_headers=["*"],
-# )
-# logger.info(f"CORS middleware configured. Allowed origins: {allow_origins if 'allow_origins' in locals() else 'not explicitly set'}")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allow_origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
+)
+logger.info(f"CORS middleware configured. Allowed origins: {allow_origins}")
 
 # --- API Router Inclusion ---
 API_V1_PREFIX = "/api/v1"
