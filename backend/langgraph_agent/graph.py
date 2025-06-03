@@ -7,6 +7,9 @@ from langgraph_agent.nodes import entry_node, llm_node, response_node # tool_nod
 from langgraph_agent.tool_manager import all_tools # Import the list of actual tools
 from langgraph.pregel import RetryPolicy
 
+# Import memory manager for checkpointer
+from langgraph_agent.memory import get_memory_manager
+
 # Define the graph
 workflow = StateGraph(AgentState)
 
@@ -48,8 +51,9 @@ workflow.add_edge("actual_tool_node", "llm_node")
 # Edge after response_node (final step)
 workflow.add_edge("response_node", END)
 
-# Compile the graph
-app = workflow.compile()
+# Get memory manager and compile graph with checkpointer for multi-turn conversations
+memory_manager = get_memory_manager()
+app = workflow.compile(checkpointer=memory_manager.checkpointer)
 
 # Optional: For testing or direct invocation from Python
 if __name__ == "__main__":
@@ -98,4 +102,4 @@ if __name__ == "__main__":
         print(f"Tool Outputs (from AgentState, if any manually added): {final_graph_state.get('tool_outputs')}")
         print(f"Final Step Count: {final_graph_state.get('current_step')}")
     else:
-        print("\nNo final graph state was captured (from graph.py direct test with ToolNode).") 
+        print("\nNo final graph state was captured (from graph.py direct test with ToolNode).")

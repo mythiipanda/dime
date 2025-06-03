@@ -26,7 +26,7 @@ llm_with_tools = llm.bind_tools(all_tools)
 # Node definitions
 
 def entry_node(state: AgentState) -> dict:
-    """Initial node. Returns the initial HumanMessage."""
+    """Initial node. Handles both new conversations and multi-turn interactions."""
     print("---ENTERING ENTRY NODE---")
     
     # Get stream writer for custom streaming
@@ -37,22 +37,39 @@ def entry_node(state: AgentState) -> dict:
         # Fallback if streaming not available
         pass
     
-    # input_query is from the initial state
-    # streaming_output is handled by returning it in the dict
+    # For multi-turn conversations, we only need to add the new user message
+    # The checkpointer automatically maintains the message history
     user_input = state['input_query']
     
-    try:
-        writer = get_stream_writer()
-        writer({"status": "processing", "step": "entry_node", "message": f"Processing query: {user_input[:100]}..."})
-    except Exception:
-        pass
+    # Check if this is a continuation of an existing conversation
+    existing_messages = state.get('messages', [])
+    is_continuation = len(existing_messages) > 0
+    
+    if is_continuation:
+        print(f"---CONTINUING CONVERSATION with {len(existing_messages)} existing messages---")
+        try:
+            writer = get_stream_writer()
+            writer({"status": "continuing", "step": "entry_node", "message": f"Continuing conversation with new query: {user_input[:100]}..."})
+        except Exception:
+            pass
+    else:
+        print("---STARTING NEW CONVERSATION---")
+        try:
+            writer = get_stream_writer()
+            writer({"status": "processing", "step": "entry_node", "message": f"Processing new query: {user_input[:100]}..."})
+        except Exception:
+            pass
+    
+    # Always add the new user message to the conversation
+    # LangGraph's add_messages will handle appending to existing history
+    new_human_message = HumanMessage(content=user_input)
     
     return {
-        "messages": [HumanMessage(content=user_input)],
+        "messages": [new_human_message],  # This gets added to existing messages by add_messages
         "streaming_output": [f"User: {user_input}"],
-        "current_step": 1,
-        "agent_scratchpad": [],
-        "tool_outputs": [] # Initialize if needed elsewhere, ToolNode uses messages for ToolMessage
+        "current_step": state.get('current_step', 0) + 1,
+        "agent_scratchpad": state.get('agent_scratchpad', []),
+        "tool_outputs": state.get('tool_outputs', [])
     }
 
 def llm_node(state: AgentState) -> dict:

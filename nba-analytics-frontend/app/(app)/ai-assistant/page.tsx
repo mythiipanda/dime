@@ -12,8 +12,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { 
-    UserIcon, BotIcon, Wrench, PlayCircle, AlertTriangle, Cpu, ChevronDown, ChevronUp, Copy, Check, BookOpen, Loader2, CheckCircle2, Settings2, Brain
+import {
+    UserIcon, BotIcon, Wrench, PlayCircle, AlertTriangle, Cpu, ChevronDown, ChevronUp, Copy, Check, BookOpen, Loader2, CheckCircle2, Settings2, Brain, MessageSquarePlus, RotateCcw
 } from 'lucide-react';
 import ReactMarkdown, { Components, ExtraProps } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -438,10 +438,16 @@ export default function AiAssistantPage() {
     isLoading,
     error,
     chatHistory,
+    currentThreadId,
     submitPrompt,
     closeConnection,
-    setChatHistory
-  } = useLangGraphAgentChatSSE({ apiUrl: 'http://localhost:8000/api/v1/agent/stream' });
+    setChatHistory,
+    startNewConversation,
+    submitNewConversation
+  } = useLangGraphAgentChatSSE({
+    apiUrl: 'http://localhost:8000/api/v1/agent/stream',
+    userId: 'user-1' // You can make this dynamic based on user authentication
+  });
 
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -455,14 +461,13 @@ export default function AiAssistantPage() {
   }, [closeConnection]);
 
   const handlePromptSubmit = useCallback((prompt: string) => {
-    const userMessage: FrontendChatMessage = {
-        id: Date.now().toString() + '-human',
-        type: 'human',
-        content: prompt,
-    };
-    setChatHistory((prev: FrontendChatMessage[]) => [...prev, userMessage]); 
+    // Don't manually add user message here anymore - the SSE hook handles it
     submitPrompt(prompt);
-  }, [submitPrompt, setChatHistory]);
+  }, [submitPrompt]);
+
+  const handleNewConversation = useCallback(() => {
+    startNewConversation();
+  }, [startNewConversation]);
 
   const handleStop = useCallback(() => closeConnection(),[closeConnection]);
 
@@ -518,6 +523,39 @@ export default function AiAssistantPage() {
 
   return (
     <div className="h-full flex flex-col bg-background">
+      {/* Header with conversation controls */}
+      <div className="bg-background border-b px-3 py-2 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          {currentThreadId && (
+            <div className="flex items-center gap-1 px-2 py-1 bg-muted/50 rounded-md text-xs text-muted-foreground">
+              <MessageSquarePlus className="h-3 w-3" />
+              <span>Thread: {currentThreadId.slice(-8)}</span>
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {chatHistory.length > 0 && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleNewConversation}
+                    className="flex items-center gap-2"
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                    <span className="hidden sm:inline">New Conversation</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Start a new conversation</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
+        </div>
+      </div>
       <main className="flex-1 flex flex-col overflow-hidden">
         {renderChatArea()}
       </main>

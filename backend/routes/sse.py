@@ -14,19 +14,30 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter() # Renamed from agent_sse_router
 
-async def agent_event_generator(input_query: str, chat_history: list = None):
+async def agent_event_generator(input_query: str, thread_id: str = None, user_id: str = None):
     """
-    Runs the LangGraph agent and yields formatted SSE events.
+    Runs the LangGraph agent and yields formatted SSE events with memory support.
     """
-    if chat_history is None:
-        chat_history = []
-
-    inputs = {"input_query": input_query, "chat_history": chat_history}
+    from langgraph_agent.memory import get_memory_manager
+    
+    # Get memory manager and create thread config
+    memory_manager = get_memory_manager()
+    
+    # Generate thread_id if not provided (new conversation)
+    if not thread_id:
+        thread_id = memory_manager.generate_thread_id()
+    
+    # Create configuration for this conversation thread
+    config = memory_manager.create_thread_config(thread_id, user_id)
+    
+    # Prepare inputs - only need the new query, memory handles the rest
+    inputs = {"input_query": input_query}
 
     try:
         # Use streaming modes that work reliably
         async for stream_mode, event_chunk in langgraph_app.astream(
             inputs,
+            config=config,  # Pass the thread configuration
             stream_mode=["updates", "custom"]
         ):
             # logger.debug(f"Raw agent event chunk: {stream_mode}:{event_chunk}") # Detailed logging
@@ -36,8 +47,12 @@ async def agent_event_generator(input_query: str, chat_history: list = None):
                 # Original node-level updates
                 node_name, node_output_state_dict = list(event_chunk.items())[0]
 
-                # 1. Node Update Event
-                yield f"event: node_update\ndata: {json.dumps({'node_name': node_name})}\n\n"
+                # 1. Node Update Event (include thread_id for first event)
+                node_update_data = {'node_name': node_name}
+                if node_name == "entry_node":
+                    node_update_data['thread_id'] = thread_id
+                    
+                yield f"event: node_update\ndata: {json.dumps(node_update_data)}\n\n"
 
                 # 2. Process Messages from state
                 messages = node_output_state_dict.get("messages", [])
@@ -111,13 +126,20 @@ async def agent_event_generator(input_query: str, chat_history: list = None):
 
 @router.get("/agent/stream", tags=["AI Agent SSE"])
 async def stream_agent_response(
-    request: Request, 
+    request: Request,
     query: str = Query(..., description="The user's query for the AI agent."),
+    thread_id: str = Query(None, description="Thread ID for multi-turn conversation. If not provided, a new conversation starts."),
+    user_id: str = Query(None, description="User ID for cross-thread persistence and user-specific memory."),
 ):
     """
     Streams the AI agent's processing steps and final response using Server-Sent Events (SSE).
     
-    Enhanced streaming with reliable LangGraph modes for real-time updates:
+    Enhanced streaming with reliable LangGraph modes and multi-turn conversation support:
+    
+    Multi-turn Conversation:
+    - Use `thread_id` to continue existing conversations
+    - Use `user_id` for user-specific memory across conversations
+    - If no `thread_id` provided, a new conversation thread is created
     
     Events:
     - `node_update`: {"node_name": str} - Indicates which graph node just ran.
@@ -133,10 +155,8 @@ async def stream_agent_response(
     - `error`: {"message": str, "type": str} - If an error occurs.
     """
     logger.info(f"SSE connection established for query: '{query[:50]}...'")
-    
-    chat_history_mock = [] 
 
-    generator = agent_event_generator(query, chat_history_mock)
+    generator = agent_event_generator(query, thread_id, user_id)
     
     async def safe_generator_wrapper():
         try:

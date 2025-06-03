@@ -31,14 +31,20 @@ export interface FrontendChatMessage {
 
 interface AgentSSEHookOptions {
   apiUrl: string;
+  threadId?: string; // Optional thread ID for continuing conversations
+  userId?: string;   // Optional user ID for cross-thread persistence
 }
 
 export function useLangGraphAgentChatSSE({
   apiUrl,
+  threadId: initialThreadId,
+  userId,
 }: AgentSSEHookOptions) {
   const [chatHistory, setChatHistory] = useState<FrontendChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [currentThreadId, setCurrentThreadId] = useState<string | null>(initialThreadId || null);
+  const threadIdRef = useRef<string | null>(initialThreadId || null); // Immediate access to thread_id
   const eventSourceRef = useRef<EventSource | null>(null);
   const currentAIMessageRef = useRef<FrontendChatMessage | null>(null); // This will hold the AI's entire turn
   const currentThoughtChunkRef = useRef<IntermediateStep | null>(null); // To accumulate thought stream
@@ -94,13 +100,30 @@ export function useLangGraphAgentChatSSE({
     }
   }, [updateCurrentAIMessage]);
 
-  const submitPrompt = useCallback(async (prompt: string) => {
+  const submitPrompt = useCallback(async (prompt: string, isNewConversation: boolean = false) => {
     if (eventSourceRef.current) {
       console.log("Closing existing SSE connection before starting new one.");
       closeConnection();
     }
     graphEndReceivedRef.current = false;
     connectionClosedIntentionallyRef.current = false;
+    
+    // Add user message to chat history first
+    const userMsgId = Date.now().toString() + '-user-' + Math.random().toString(36).substring(7);
+    const userMessage: FrontendChatMessage = {
+      id: userMsgId,
+      type: 'human',
+      content: prompt,
+    };
+    
+    // If starting a new conversation, clear history and reset thread ID
+    if (isNewConversation) {
+      threadIdRef.current = null;
+      setCurrentThreadId(null);
+      setChatHistory([userMessage]);
+    } else {
+      setChatHistory(prev => [...prev, userMessage]);
+    }
     
     // Initialize the new AI message for this turn
     const newAIMsgId = Date.now().toString() + '-ai-' + Math.random().toString(36).substring(7);
@@ -118,9 +141,26 @@ export function useLangGraphAgentChatSSE({
     setIsLoading(true);
     setError(null);
 
-    const url = `${apiUrl}?query=${encodeURIComponent(prompt)}`;
+    // Build URL with multi-turn conversation parameters
+    const urlParams = new URLSearchParams({
+      query: prompt,
+    });
+    
+    // Add thread_id if we have one (continuing conversation)
+    if (threadIdRef.current && !isNewConversation) {
+      console.log(`Including thread_id in request: ${threadIdRef.current}`);
+      urlParams.append('thread_id', threadIdRef.current);
+    }
+    
+    // Add user_id if provided
+    if (userId) {
+      urlParams.append('user_id', userId);
+    }
+
+    const url = `${apiUrl}?${urlParams.toString()}`;
     eventSourceRef.current = new EventSource(url);
     console.log(`SSE connection opened to: ${url}`);
+    console.log(`Thread state - ref: ${threadIdRef.current}, state: ${currentThreadId}, isNewConversation: ${isNewConversation}`);
 
     eventSourceRef.current.onopen = () => {
       console.log("SSE connection established.");
@@ -147,10 +187,21 @@ export function useLangGraphAgentChatSSE({
       const eventWithMessage = event as MessageEvent;
       const data = JSON.parse(eventWithMessage.data);
       console.log("SSE Event (node_update):", data);
-      addIntermediateStep({ 
-        type: 'system_event', 
+      
+      // Capture thread_id from the first node update
+      if (data.thread_id) {
+        console.log(`Received thread_id: ${data.thread_id}, current: ${threadIdRef.current}`);
+        if (!threadIdRef.current || threadIdRef.current !== data.thread_id) {
+          console.log(`Setting thread_id: ${data.thread_id}`);
+          threadIdRef.current = data.thread_id;
+          setCurrentThreadId(data.thread_id);
+        }
+      }
+      
+      addIntermediateStep({
+        type: 'system_event',
         systemEventContent: `Processing step: ${data.node_name || 'Unknown step'}`,
-        nodeName: data.node_name 
+        nodeName: data.node_name
       });
     });
 
@@ -291,12 +342,26 @@ export function useLangGraphAgentChatSSE({
     };
   }, [closeConnection]);
 
+  // Method to start a new conversation
+  const startNewConversation = useCallback(() => {
+    setCurrentThreadId(null);
+    setChatHistory([]);
+    setError(null);
+    if (eventSourceRef.current) {
+      closeConnection(true);
+    }
+  }, [closeConnection]);
+
   return {
     chatHistory,
     isLoading,
     error,
+    currentThreadId,
     submitPrompt,
     closeConnection,
-    setChatHistory
+    setChatHistory,
+    startNewConversation,
+    // Method to submit prompt and start new conversation
+    submitNewConversation: (prompt: string) => submitPrompt(prompt, true),
   };
 } 
