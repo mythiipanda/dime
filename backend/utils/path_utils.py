@@ -22,7 +22,7 @@ def ensure_dir_exists(directory_path: str) -> None:
     """
     try:
         os.makedirs(directory_path, exist_ok=True)
-        logger.debug(f"Ensured directory exists: {directory_path}")
+        # logger.debug(f"Ensured directory exists: {directory_path}")
     except Exception as e:
         logger.error(f"Error creating directory {directory_path}: {e}", exc_info=True)
         raise
