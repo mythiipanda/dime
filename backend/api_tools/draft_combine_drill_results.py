@@ -50,7 +50,7 @@ def _validate_season_year_format(season_year):
         return False
 
 # Default current NBA season year
-CURRENT_NBA_SEASON_YEAR = "2024"
+CURRENT_NBA_SEASON_YEAR = "2025"
 
 logger = logging.getLogger(__name__)
 
