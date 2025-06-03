@@ -260,6 +260,29 @@ export function useLangGraphAgentChatSSE({
       closeConnection(); // Close on backend error
     });
 
+
+
+    eventSourceRef.current.addEventListener('custom_data', (event: Event) => {
+      const eventWithMessage = event as MessageEvent;
+      const data = JSON.parse(eventWithMessage.data);
+      console.log("SSE Event (custom_data):", data);
+      
+      // Handle custom streaming data from nodes
+      if (data.status && data.step && data.message) {
+        addIntermediateStep({
+          type: 'system_event',
+          systemEventContent: `[${data.step.toUpperCase()}] ${data.message}`,
+          nodeName: data.step
+        });
+      } else {
+        // Generic custom data
+        addIntermediateStep({
+          type: 'system_event',
+          systemEventContent: `Custom: ${JSON.stringify(data)}`
+        });
+      }
+    });
+
   }, [apiUrl, closeConnection, addIntermediateStep, updateCurrentAIMessage]);
 
   useEffect(() => {
