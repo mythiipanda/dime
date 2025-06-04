@@ -67,6 +67,13 @@ from langgraph_agent.toolkits.search_tools import (
     search_nba_games
 )
 
+# Exa AI Search Tools
+from langgraph_agent.toolkits.exa_search_tools import (
+    exa_web_search,
+    exa_nba_search,
+    exa_extract_content
+)
+
 # Synergy Tools
 from langgraph_agent.toolkits.synergy_tools import (
     get_synergy_play_types
@@ -220,6 +227,12 @@ search_tools: List[Tool] = [
     search_nba_games
 ]
 
+exa_search_tools: List[Tool] = [
+    exa_web_search,
+    exa_nba_search,
+    exa_extract_content
+]
+
 synergy_tools: List[Tool] = [
     get_synergy_play_types
 ]
@@ -311,6 +324,7 @@ all_tools: List[Tool] = (
     player_tools +
     team_tools +
     search_tools +
+    exa_search_tools +
     synergy_tools +
     fantasy_tools +
     franchise_tools +
@@ -354,4 +368,8 @@ if __name__ == '__main__':
     
     print("\nFree Agent Tools:")
     for tool in free_agent_tools:
+        print(f"- {tool.name}")
+    
+    print("\nExa Search Tools:")
+    for tool in exa_search_tools:
         print(f"- {tool.name}")

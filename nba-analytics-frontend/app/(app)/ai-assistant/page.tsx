@@ -6,6 +6,7 @@ import { useLangGraphAgentChatSSE, FrontendChatMessage, IntermediateStep } from 
 import { InitialChatScreen } from '@/components/agent/InitialChatScreen';
 import { PromptInputForm } from '@/components/agent/PromptInputForm';
 import { ErrorDisplay } from '@/components/agent/ErrorDisplay';
+import { ExaSearchResultDisplay, ExaSearchData } from '@/components/agent/ExaSearchResultDisplay';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Card, CardContent } from "@/components/ui/card";
@@ -68,6 +69,29 @@ const JsonTable: React.FC<{ data: any; title?: string }> = ({ data, title }) => 
       </div>
     </div>
   );
+};
+
+// Helper function to detect and parse Exa search results
+const parseExaSearchResults = (toolResultContent: string, toolName: string): ExaSearchData | null => {
+  try {
+    const parsedData = JSON.parse(toolResultContent);
+    
+    // Check if this looks like an Exa search result
+    if (toolName?.includes('exa') && parsedData && typeof parsedData === 'object') {
+      // Check for common Exa search result structure
+      if (parsedData.results && Array.isArray(parsedData.results)) {
+        return parsedData as ExaSearchData;
+      }
+      // Handle error cases
+      if (parsedData.error && (parsedData.query || parsedData.original_query)) {
+        return parsedData as ExaSearchData;
+      }
+    }
+    
+    return null;
+  } catch {
+    return null;
+  }
 };
 
 interface CustomCodeProps extends React.HTMLAttributes<HTMLElement>, ExtraProps {
@@ -203,6 +227,19 @@ const IntermediateStepDisplay: React.FC<{ step: IntermediateStep, index: number 
                                             : "bg-green-50 dark:bg-green-950/50 border-green-200 dark:border-green-800"
                                     )}>
                                         {(() => {
+                                            // Check if this is an Exa search result
+                                            const exaSearchData = parseExaSearchResults(step.toolResultContent || '', step.toolName || '');
+                                            if (exaSearchData) {
+                                                return (
+                                                    <ExaSearchResultDisplay
+                                                        data={exaSearchData}
+                                                        toolName={step.toolName || ''}
+                                                        isError={isErrorResult}
+                                                    />
+                                                );
+                                            }
+                                            
+                                            // Fallback to original display
                                             try {
                                                 const parsedData = JSON.parse(step.toolResultContent || '');
                                                 return <JsonTable data={parsedData} />;

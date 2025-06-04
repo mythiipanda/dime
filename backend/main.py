@@ -133,7 +133,7 @@ if __name__ == "__main__":
     logger.info("Starting Uvicorn server...")
     try:
         uvicorn.run(
-            "backend.main:app",
+            "main:app",
             host="0.0.0.0",
             port=8000,
             reload=True,  # Set to False in production

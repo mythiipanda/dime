@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     GOOGLE_API_KEY: Optional[str] = None
     OPENAI_API_KEY: Optional[str] = None  # Consider for deprecation if fully on Gemini
     GEMINI_API_KEY: Optional[str] = GEMINI_API_KEY
+    EXA_API_KEY: Optional[str] = None
 
     # --- Agent & AI Model Configuration ---
     AGENT_MODEL_ID: str = "gemini-2.0-flash-lite" # Updated default
