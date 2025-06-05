@@ -6,25 +6,23 @@ interface LogoProps {
   iconSize?: number;
   textSize?: 'sm' | 'md' | 'lg' | 'xl';
   hideText?: boolean;
-  href?: string; // Add href prop
+  href?: string;
 }
 
-export function Logo({ className, iconSize = 6, textSize = 'xl', hideText = false, href = "/overview" }: LogoProps) { // Changed default href to /overview
+export function Logo({ className, iconSize = 6, textSize = 'xl', hideText = false, href = "/" }: LogoProps) {
   const iconClass = `h-${iconSize} w-${iconSize}`;
   const titleSizeClass = `text-${textSize}`;
-  const subtitleSizeClass = textSize === 'xl' ? 'text-sm' : 'text-xs'; // Adjust subtitle size based on title
 
   return (
-    <Link href={href} className={`flex items-center gap-2 ${className}`}>
-      <div className="rounded-lg bg-primary p-2">
-        <CircleDot className={`${iconClass} text-primary-foreground`} />
+    <Link href={href} className={`flex items-center gap-3 group ${className}`}>
+      <div className="rounded-lg bg-white p-2 group-hover:bg-gray-100 transition-colors duration-200">
+        <CircleDot className={`${iconClass} text-black`} />
       </div>
       {!hideText && (
-        <div className="flex flex-col">
-          <span className={`${titleSizeClass} font-semibold tracking-tight`}>Dime</span>
-          <span className={`${subtitleSizeClass} font-regular text-muted-foreground`}>NBA Analytics</span>
-        </div>
+        <span className={`${titleSizeClass} font-medium tracking-tight text-white group-hover:text-gray-300 transition-colors duration-200`}>
+          Dime
+        </span>
       )}
     </Link>
   );
-} 
+}
