@@ -46,10 +46,10 @@ export function WaitlistForm({ className }: { className?: string }) {
 
   if (submitted) {
     return (
-      <div className={`text-center p-6 rounded-lg bg-green-500/10 border border-green-500/30 text-green-300 backdrop-blur-sm animate-in fade-in zoom-in-95 duration-500 ${className}`}>
-        <CheckCircle className="h-8 w-8 text-green-400 mx-auto mb-3" />
+      <div className={`text-center p-6 rounded-lg bg-green-50 border border-green-200 text-green-800 animate-in fade-in zoom-in-95 duration-500 ${className}`}>
+        <CheckCircle className="h-8 w-8 text-green-600 mx-auto mb-3" />
         <p className="font-medium text-lg mb-1">You're on the list!</p>
-        <p className="text-sm text-green-400/80 font-light">We'll notify you when Dime launches.</p>
+        <p className="text-sm text-green-600 font-normal">We'll notify you when Dime launches.</p>
       </div>
     );
   }
@@ -67,14 +67,14 @@ export function WaitlistForm({ className }: { className?: string }) {
             required
             disabled={loading}
             aria-label="Email address for waitlist"
-            className="pl-12 h-12 text-base bg-white/5 backdrop-blur-sm border-gray-700 rounded-lg placeholder:text-gray-400 focus:bg-white/10 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all duration-300 text-white disabled:opacity-50"
+            className="pl-12 h-12 text-base bg-white border-gray-300 rounded-lg placeholder:text-gray-500 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all duration-300 text-gray-900 disabled:opacity-50 disabled:bg-gray-50"
           />
         </div>
-        <Button 
-          type="submit" 
+        <Button
+          type="submit"
           size="lg"
           disabled={loading}
-          className="h-12 px-8 text-base bg-white text-black font-medium rounded-lg hover:bg-gray-100 transition-all duration-300 transform hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+          className="h-12 px-8 text-base bg-gray-900 text-white font-medium rounded-lg hover:bg-gray-800 transition-all duration-300 transform hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
         >
           {loading ? (
             <Loader2 className="h-5 w-5 animate-spin" />
@@ -84,7 +84,7 @@ export function WaitlistForm({ className }: { className?: string }) {
         </Button>
       </div>
       {error && (
-        <p className="text-sm text-red-400 text-left animate-in fade-in slide-in-from-top-2 duration-300">
+        <p className="text-sm text-red-600 text-left animate-in fade-in slide-in-from-top-2 duration-300">
           {error}
         </p>
       )}
