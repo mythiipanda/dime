@@ -77,8 +77,8 @@ def _get_csv_path_for_synergy(
     return get_cache_file_path(filename, "synergy")
 
 VALID_PLAY_TYPES: Set[str] = {
-    "Cut", "Handoff", "Isolation", "Misc", "OffScreen", "PostUp",
-    "PRBallHandler", "PRRollman", "OffRebound", "SpotUp", "Transition"
+    "Cut", "Handoff", "Isolation", "Misc", "OffScreen", "Postup",
+    "PRBallHandler", "PRRollMan", "OffRebound", "Spotup", "Transition"
 }
 VALID_TYPE_GROUPINGS: Set[str] = {"offensive", "defensive"}
 
@@ -87,25 +87,6 @@ _SYNERGY_VALID_PLAYER_TEAM_ABBR: Set[str] = {getattr(PlayerOrTeamAbbreviation, a
 _SYNERGY_VALID_LEAGUE_IDS: Set[str] = {getattr(LeagueID, attr) for attr in dir(LeagueID) if not attr.startswith('_') and isinstance(getattr(LeagueID, attr), str)}
 _SYNERGY_VALID_PER_MODES: Set[str] = {getattr(PerModeSimple, attr) for attr in dir(PerModeSimple) if not attr.startswith('_') and isinstance(getattr(PerModeSimple, attr), str)}
 _SYNERGY_VALID_SEASON_TYPES: Set[str] = {getattr(SeasonTypeAllStar, attr) for attr in dir(SeasonTypeAllStar) if not attr.startswith('_') and isinstance(getattr(SeasonTypeAllStar, attr), str)}
-
-# Custom headers to mimic browser requests
-CUSTOM_HEADERS = {
-    "accept": "*/*",
-    "accept-encoding": "gzip, deflate, br, zstd",
-    "accept-language": "en-US,en;q=0.9",
-    "connection": "keep-alive",
-    "host": "stats.nba.com",
-    "origin": "https://www.nba.com",
-    "referer": "https://www.nba.com/",
-    "sec-ch-ua": '"Chromium";v="136", "Brave";v="136", "Not.A/Brand";v="99"',
-    "sec-ch-ua-mobile": "?0",
-    "sec-ch-ua-platform": '"Windows"',
-    "sec-fetch-dest": "empty",
-    "sec-fetch-mode": "cors",
-    "sec-fetch-site": "same-site",
-    "sec-gpc": "1",
-    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
-}
 
 # --- Helper Functions ---
 def get_cached_synergy_data(
@@ -116,7 +97,7 @@ def get_cached_synergy_data(
     """Wrapper for the SynergyPlayTypes NBA API endpoint."""
     logger.info(f"Fetching Synergy data (ts: {timestamp_bucket}). Params: {api_kwargs}")
     try:
-        synergy_stats_endpoint = endpoint_class(**api_kwargs, headers=CUSTOM_HEADERS, timeout=settings.DEFAULT_TIMEOUT_SECONDS)
+        synergy_stats_endpoint = endpoint_class(**api_kwargs, timeout=settings.DEFAULT_TIMEOUT_SECONDS)
         return synergy_stats_endpoint.get_dict()
     except Exception as e:
         logger.error(f"{endpoint_class.__name__} API call failed: {e}", exc_info=True)
@@ -243,10 +224,13 @@ def fetch_synergy_play_types_logic(
     # API parameters do not include player_id_nullable or team_id_nullable directly for SynergyPlayTypes
     # These are used for post-filtering if player_or_team is general ('P' or 'T')
     api_params_for_call = {
-        "league_id": league_id, "per_mode_simple": per_mode,
+        "league_id": league_id,
+        "per_mode_simple": per_mode,
         "player_or_team_abbreviation": player_or_team,
-        "season_type_all_star": season_type, "season": season,
-        "play_type_nullable": play_type_nullable, "type_grouping_nullable": type_grouping_nullable
+        "season_type_all_star": season_type,
+        "season": season,
+        "play_type_nullable": play_type_nullable,
+        "type_grouping_nullable": type_grouping_nullable
     }
     # Create a timestamp bucket for logging
     timestamp_bucket = str(int(datetime.now().timestamp() // CACHE_TTL_SECONDS_SYNERGY))
@@ -255,7 +239,7 @@ def fetch_synergy_play_types_logic(
         response_dict: Dict[str, Any]
         if bypass_cache:
             logger.info(f"Bypassing cache, fetching fresh Synergy data with params: {api_params_for_call} and custom headers.")
-            synergy_endpoint = SynergyPlayTypes(**api_params_for_call, headers=CUSTOM_HEADERS, timeout=settings.DEFAULT_TIMEOUT_SECONDS)
+            synergy_endpoint = SynergyPlayTypes(**api_params_for_call, timeout=settings.DEFAULT_TIMEOUT_SECONDS)
             response_dict = synergy_endpoint.get_dict()
         else:
             # For cached data, we don't need to pass headers again as the request was already made

@@ -403,7 +403,7 @@ def test_fetch_synergy_postup():
         player_or_team="P",
         season_type="Regular Season",
         season="2024-25",
-        play_type_nullable="PostUp",
+        play_type_nullable="Postup",
         type_grouping_nullable="offensive",
         player_id_nullable=None,
         team_id_nullable=None,

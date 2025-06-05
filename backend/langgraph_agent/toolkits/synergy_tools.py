@@ -72,10 +72,10 @@ def get_synergy_play_types(
 
     Examples of play types include:
     - "Isolation" - One-on-one plays
-    - "PostUp" - Plays initiated in the post
+    - "Postup" - Plays initiated in the post
     - "PRBallHandler" - Pick and roll ball handler
     - "Transition" - Fast break opportunities
-    - "SpotUp" - Spot-up shooting situations
+    - "Spotup" - Spot-up shooting situations
     """
     
     json_response = fetch_synergy_play_types_logic(
