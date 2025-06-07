@@ -8,121 +8,26 @@ from fastapi.responses import StreamingResponse
 from starlette.types import Send
 
 from langgraph_agent.graph import app as langgraph_app
-from langgraph_agent.state import AgentState # For type hinting if needed
+from langgraph_agent.services import EventStreamProcessor
+from langgraph_agent.memory import get_memory_manager
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter() # Renamed from agent_sse_router
+router = APIRouter()
+
+# Create service instance
+event_processor = EventStreamProcessor(langgraph_app, get_memory_manager())
 
 async def agent_event_generator(input_query: str, thread_id: str = None, user_id: str = None):
     """
     Runs the LangGraph agent and yields formatted SSE events with memory support.
     """
-    from langgraph_agent.memory import get_memory_manager
-    
-    # Get memory manager and create thread config
-    memory_manager = get_memory_manager()
-    
-    # Generate thread_id if not provided (new conversation)
-    if not thread_id:
-        thread_id = memory_manager.generate_thread_id()
-    
-    # Create configuration for this conversation thread
-    config = memory_manager.create_thread_config(thread_id, user_id)
-    
-    # Prepare inputs - only need the new query, memory handles the rest
-    inputs = {"input_query": input_query}
+    async for event in event_processor.process_events(input_query, thread_id, user_id):
+        yield event
 
-    try:
-        # Use streaming modes that work reliably
-        async for stream_mode, event_chunk in langgraph_app.astream(
-            inputs,
-            config=config,  # Pass the thread configuration
-            stream_mode=["updates", "custom"]
-        ):
-            # logger.debug(f"Raw agent event chunk: {stream_mode}:{event_chunk}") # Detailed logging
-            
-            # Handle different streaming modes
-            if stream_mode == "updates":
-                # Original node-level updates
-                node_name, node_output_state_dict = list(event_chunk.items())[0]
-
-                # 1. Node Update Event (include thread_id for first event)
-                node_update_data = {'node_name': node_name}
-                if node_name == "entry_node":
-                    node_update_data['thread_id'] = thread_id
-                    
-                yield f"event: node_update\ndata: {json.dumps(node_update_data)}\n\n"
-
-                # 2. Process Messages from state
-                messages = node_output_state_dict.get("messages", [])
-                if messages:
-                    last_msg_obj = messages[-1] # Langchain BaseMessage object
-                    
-                    msg_data_payload = {"type": last_msg_obj.type}
-
-                    if hasattr(last_msg_obj, 'content'):
-                        msg_data_payload["content"] = last_msg_obj.content
-                    
-                    if hasattr(last_msg_obj, 'name') and last_msg_obj.name:
-                         msg_data_payload["name"] = last_msg_obj.name
-
-                    if last_msg_obj.type == "ai": # AIMessage specific
-                        if hasattr(last_msg_obj, 'tool_calls') and last_msg_obj.tool_calls:
-                            msg_data_payload["type"] = "tool_call"
-                            msg_data_payload["tool_calls"] = [
-                                {"name": tc.get('name'), "args": tc.get('args'), "id": tc.get('id')}
-                                for tc in last_msg_obj.tool_calls
-                            ]
-                            if not msg_data_payload.get("content"):
-                                 msg_data_payload.pop("content", None)
-                    
-                    elif last_msg_obj.type == "tool": # ToolMessage specific
-                        msg_data_payload["type"] = "tool_result"
-                        if hasattr(last_msg_obj, 'tool_call_id'):
-                            msg_data_payload["tool_call_id"] = last_msg_obj.tool_call_id
-                    
-                    yield f"event: message\ndata: {json.dumps(msg_data_payload)}\n\n"
-
-                # 3. Process streaming_output from state (for intermediate thoughts/logs)
-                streaming_outputs = node_output_state_dict.get("streaming_output", [])
-                if streaming_outputs:
-                    latest_stream_chunk = streaming_outputs[-1]
-                    yield f"event: thought_stream\ndata: {json.dumps({'chunk': latest_stream_chunk})}\n\n"
-
-                # 4. Process final_answer
-                final_answer = node_output_state_dict.get("final_answer")
-                if final_answer is not None and node_name == "response_node":
-                    logger.info(f"Yielding final_answer from node: {node_name}")
-                    yield f"event: final_answer\ndata: {json.dumps({'answer': final_answer})}\n\n"
-                
-                # 5. Graph End
-                if node_name == "__end__":
-                    logger.info("Yielding graph_end event as node_name is __end__.")
-                    yield f"event: graph_end\ndata: {json.dumps({})}\n\n"
-                    break
-            
-            elif stream_mode == "custom":
-                # Stream custom data from nodes
-                yield f"event: custom_data\ndata: {json.dumps(event_chunk)}\n\n"
-            
-    except Exception as e:
-        logger.error(f"Error in agent event generator: {e}", exc_info=True)
-        error_payload = json.dumps({"message": str(e), "type": e.__class__.__name__})
-        yield f"event: error\ndata: {error_payload}\n\n"
-        # Explicitly do not yield graph_end if an error occurred and was yielded
-        return # Stop the generator here
-    finally:
-        # This block will execute whether the try block completed normally or an unhandled exception occurred
-        # (though handled exceptions with 'return' won't reach here for graph_end).
-        # We only want to send graph_end if the stream finished without yielding an 'error' event above.
-        # A more robust way would be to track if an error was sent, but for now, 
-        # if we reach here and no error was caught and yielded by the 'except' block directly above,
-        # assume normal completion or an unyielded error (which is less ideal).
-        # The 'return' in the except block prevents this 'finally' from sending graph_end after an error.
-        logger.info("Agent event stream processing finished. Ensuring graph_end is sent if no error was explicitly yielded.")
-        yield f"event: graph_end\ndata: {json.dumps({})}\n\n"
-        logger.info("Agent event stream generator fully terminated.")
+def format_sse_event(event_type: str, data: Dict[str, Any]) -> str:
+    """Format data as SSE event."""
+    return f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
 
 @router.get("/agent/stream", tags=["AI Agent SSE"])
 async def stream_agent_response(
@@ -172,6 +77,5 @@ async def stream_agent_response(
 
     return StreamingResponse(safe_generator_wrapper(), media_type="text/event-stream")
 
-# Example of how to include this router in your main FastAPI app (e.g., in backend/main.py):
-# from routes.sse import router as sse_router # Adjusted import if this file is sse.py
-# app.include_router(sse_router)
+# For backwards compatibility
+agent_sse_router = router

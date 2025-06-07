@@ -3,7 +3,8 @@
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode, tools_condition # Import ToolNode and tools_condition
 from langgraph_agent.state import AgentState
-from langgraph_agent.nodes import entry_node, llm_node, response_node # tool_node removed from here
+# Import node functions from the renamed node_functions module
+from langgraph_agent.node_functions import entry_node, llm_node, response_node
 from langgraph_agent.tool_manager import all_tools # Import the list of actual tools
 from langgraph.pregel import RetryPolicy
 
