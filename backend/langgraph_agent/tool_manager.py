@@ -168,6 +168,14 @@ from langgraph_agent.toolkits.league_tools import (
     get_common_playoff_series
 )
 
+# Data Science Tools
+from langgraph_agent.toolkits.data_science_tools import (
+    pandas_dataframe_tool,
+    csv_operations_tool,
+    python_repl_tool,
+    data_visualization_tool,
+    session_variables_tool
+)
 # --- Tool Registry by Category ---
 
 player_tools: List[Tool] = [
@@ -319,6 +327,15 @@ league_tools: List[Tool] = [
     get_common_playoff_series
 ]
 
+# Data Science Tools
+data_science_tools: List[Tool] = [
+    pandas_dataframe_tool,
+    csv_operations_tool,
+    python_repl_tool,
+    data_visualization_tool,
+    session_variables_tool
+]
+
 # --- Combine All Tools ---
 all_tools: List[Tool] = (
     player_tools +
@@ -332,7 +349,8 @@ all_tools: List[Tool] = (
     contracts_tools +
     draft_combine_tools +
     game_tools +
-    league_tools
+    league_tools +
+    data_science_tools
 )
 
 # Example of how to get a dictionary of tools for Langgraph
@@ -372,4 +390,8 @@ if __name__ == '__main__':
     
     print("\nExa Search Tools:")
     for tool in exa_search_tools:
+        print(f"- {tool.name}")
+    
+    print("\nData Science Tools:")
+    for tool in data_science_tools:
         print(f"- {tool.name}")
