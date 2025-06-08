@@ -1,14 +1,14 @@
 {
   "models": {
     "main": {
-      "provider": "anthropic",
-      "modelId": "claude-3-7-sonnet-20250219",
+      "provider": "google",
+      "modelId": "gemini-2.5-flash-preview-04-17",
       "maxTokens": 64000,
       "temperature": 0.2
     },
     "research": {
-      "provider": "perplexity",
-      "modelId": "sonar-pro",
+      "provider": "openai",
+      "modelId": "gpt-4o-search-preview",
       "maxTokens": 8700,
       "temperature": 0.1
     },
