@@ -25,7 +25,9 @@ def run_agent_test(test_name: str, input_query: str, expected_tool_name: str = N
     final_answer_received = False
     
     try:
-        for event in app.stream(inputs, stream_mode="updates"):
+        # Add a dummy config for the checkpointer
+        config = {"configurable": {"thread_id": "test_thread", "checkpoint_ns": "test_ns"}}
+        for event in app.stream(inputs, config=config, stream_mode="updates"):
             node_name, node_output_state = list(event.items())[0]
             print(f"\nNODE EXECUTED: {node_name}")
             
