@@ -234,8 +234,10 @@ def execute_python_code(code: str, save_variables: bool = True) -> str:
             # Save variables back to session if requested
             if save_variables:
                 for key, value in exec_globals.items():
-                    if not key.startswith('__') and key not in ['pd', 'np', 'plt', 'sns', 'os', 'json', 'io']:
-                        if isinstance(value, (pd.DataFrame, pd.Series, dict, list, int, float, str, np.ndarray)):
+                    # Avoid saving built-in modules or internal variables
+                    if not key.startswith('__') and key not in ['pd', 'np', 'plt', 'sns', 'os', 'json', 'io', 'sys', 'tempfile', 'traceback', 'Path']:
+                        # Only save types that are generally useful and serializable/manageable
+                        if isinstance(value, (pd.DataFrame, pd.Series, dict, list, int, float, str, bool, type(None), np.ndarray)):
                             _python_session[key] = value
             
         finally:
@@ -243,15 +245,17 @@ def execute_python_code(code: str, save_variables: bool = True) -> str:
         
         output = captured_output.getvalue()
         
-        # If no output, try to get the result of the last expression
+        # If no explicit print output, try to get the result of the last expression
         if not output.strip():
             try:
-                # Try to evaluate as expression
-                result = eval(code, exec_globals)
+                # Attempt to evaluate the last statement as an expression
+                # This is a heuristic and might not always work for multi-line code
+                last_line = code.strip().split('\n')[-1]
+                result = eval(last_line, exec_globals)
                 if result is not None:
                     output = str(result)
-            except:
-                output = "Code executed successfully (no output)"
+            except Exception:
+                output = "Code executed successfully (no explicit output or last expression result)"
         
         return f"Python code executed successfully!\n\nOutput:\n{output}"
         
@@ -406,6 +410,26 @@ csv_operations_tool = Tool(
     }[json.loads(x)['operation'] if isinstance(x, str) else x['operation']](json.loads(x) if isinstance(x, str) else x)
 )
 
+def _parse_python_code_tool_input(x: Union[str, Dict[str, Any]]) -> Dict[str, Any]:
+    """Helper function to parse python_code_execution tool input, handling __arg1."""
+    if isinstance(x, str):
+        parsed_input = json.loads(x)
+    elif isinstance(x, dict):
+        parsed_input = x
+    else:
+        raise ValueError(f"Unsupported input type for python_code_execution tool: {type(x)}")
+
+    # If the LLM wraps the arguments in '__arg1', unwrap it.
+    if '__arg1' in parsed_input and isinstance(parsed_input['__arg1'], str):
+        # The value of __arg1 is itself a JSON string, so parse it again.
+        # This handles cases where the LLM double-encodes the arguments.
+        return json.loads(parsed_input['__arg1'])
+    elif '__arg1' in parsed_input and isinstance(parsed_input['__arg1'], dict):
+        # If __arg1 is already a dict, use it directly.
+        return parsed_input['__arg1']
+    else:
+        return parsed_input
+
 python_repl_tool = Tool(
     name="python_code_execution",
     description="""Execute Python code with access to pandas, numpy, matplotlib, and session variables.
@@ -418,7 +442,7 @@ python_repl_tool = Tool(
     - {"code": "import pandas as pd; df = pd.DataFrame({'A': [1,2,3], 'B': [4,5,6]}); print(df)"}
     - {"code": "result = df.groupby('category').mean(); print(result)"}
     - {"code": "df.plot(); plt.savefig('chart.png')"}""",
-    func=lambda x: execute_python_code(**json.loads(x) if isinstance(x, str) else x)
+    func=lambda x: execute_python_code(**_parse_python_code_tool_input(x))
 )
 
 data_visualization_tool = Tool(

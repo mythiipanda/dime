@@ -4,12 +4,17 @@ from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode, tools_condition # Import ToolNode and tools_condition
 from langgraph_agent.state import AgentState
 # Import node functions from the renamed node_functions module
-from langgraph_agent.node_functions import entry_node, llm_node, response_node
+from langgraph_agent.node_functions import entry_node, llm_service, prompt_service
 from langgraph_agent.tool_manager import all_tools # Import the list of actual tools
 from langgraph.pregel import RetryPolicy
 
 # Import memory manager for checkpointer
 from langgraph_agent.memory import get_memory_manager
+
+# Import the new specialized agents
+from langgraph_agent.agents.data_retrieval_agent import DataRetrievalAgent
+from langgraph_agent.agents.analytics_agent import AnalyticsAgent
+from langgraph_agent.agents.presentation_agent import PresentationAgent
 
 # Define the graph
 workflow = StateGraph(AgentState)
@@ -17,40 +22,110 @@ workflow = StateGraph(AgentState)
 # Initialize the ToolNode with our tools
 actual_tool_node = ToolNode(all_tools)
 
-# Add nodes
+# Initialize specialized agent instances
+data_retrieval_agent = DataRetrievalAgent(llm_provider=llm_service.bind_tools(all_tools))
+analytics_agent = AnalyticsAgent(llm_provider=llm_service.bind_tools(all_tools))
+presentation_agent = PresentationAgent(llm_provider=llm_service.bind_tools(all_tools))
+
+# Add nodes for each agent and the tool executor
 workflow.add_node("entry_node", entry_node, retry=RetryPolicy())
-workflow.add_node("llm_node", llm_node, retry=RetryPolicy())             # Node to decide on action (e.g., call tool or respond)
-workflow.add_node("actual_tool_node", actual_tool_node, retry=RetryPolicy()) # The prebuilt ToolNode for executing tools
-workflow.add_node("response_node", response_node, retry=RetryPolicy())   # Node to formulate final response
+workflow.add_node("data_retrieval_agent", data_retrieval_agent.execute, retry=RetryPolicy())
+workflow.add_node("actual_tool_node", actual_tool_node, retry=RetryPolicy())
+workflow.add_node("analytics_agent", analytics_agent.execute, retry=RetryPolicy())
+workflow.add_node("presentation_agent", presentation_agent.execute, retry=RetryPolicy())
 
 # Set the entry point
 workflow.set_entry_point("entry_node")
 
-# Define edges and conditional routing
-workflow.add_edge("entry_node", "llm_node")
+def route_after_data_retrieval(state):
+    """Route after data_retrieval_agent based on tool calls and analysis needs."""
+    if state.get("should_call_tool"):
+        # Set which agent called the tool for proper routing back
+        state["calling_agent"] = "data_retrieval_agent"
+        return "tools"
+    else:
+        # Check if the response indicates no data retrieval needed (simple query)
+        last_message = state.get("messages", [])[-1] if state.get("messages") else None
+        if last_message and hasattr(last_message, 'content'):
+            # If the response is conversational and doesn't mention data gathering
+            content_lower = last_message.content.lower()
+            if any(phrase in content_lower for phrase in ['hello', 'how are you', 'i am', 'thank you']):
+                return "presentation_agent"
+        return "analytics_agent"
 
-# Conditional edge after llm_node:
-# Use the prebuilt tools_condition. It checks the last AIMessage in state['messages']
-# for tool_calls. If present, it routes to the node specified for True (our actual_tool_node).
-# Otherwise, it routes to the node for False (our response_node, or eventually another LLM call).
+def route_after_analytics(state):
+    """Route after analytics_agent based on tool calls."""
+    if state.get("should_call_tool"):
+        # Set which agent called the tool for proper routing back
+        state["calling_agent"] = "analytics_agent"
+        return "tools"
+    else:
+        return "presentation_agent"
+
+def route_after_presentation(state):
+    """Route after presentation_agent based on tool calls."""
+    if state.get("should_call_tool"):
+        # Set which agent called the tool for proper routing back
+        state["calling_agent"] = "presentation_agent"
+        return "tools"
+    else:
+        return "__end__"
+
+def route_after_tools(state):
+    """Route after tool execution back to the agent that called the tool."""
+    calling_agent = state.get("calling_agent", "analytics_agent")  # Default fallback
+    
+    # Clear the calling_agent to avoid confusion in subsequent calls
+    if "calling_agent" in state:
+        del state["calling_agent"]
+    
+    return calling_agent
+
+# Define edges and conditional routing
+# From entry_node, always go to data_retrieval_agent to start the process
+workflow.add_edge("entry_node", "data_retrieval_agent")
+
+# Conditional routing after data_retrieval_agent
 workflow.add_conditional_edges(
-    "llm_node",
-    tools_condition, 
+    "data_retrieval_agent",
+    route_after_data_retrieval,
     {
-        "tools": "actual_tool_node",  # Route to tool node if tools_condition returns "tools"
-        "__end__": "response_node"    # Route to response node if tools_condition returns "__end__"
-        # We might need to handle a "continue" case later if the LLM outputs AIMessage with no content and no tool_calls
+        "tools": "actual_tool_node",
+        "analytics_agent": "analytics_agent",
+        "presentation_agent": "presentation_agent",
     }
 )
 
-# Edge after actual_tool_node:
-# The ToolNode adds a ToolMessage to state['messages'] with the tool's output.
-# This output should then be processed by an LLM.
-# So, route back to llm_node.
-workflow.add_edge("actual_tool_node", "llm_node") 
+# Smart routing after tool execution back to the calling agent
+workflow.add_conditional_edges(
+    "actual_tool_node",
+    route_after_tools,
+    {
+        "data_retrieval_agent": "analytics_agent",  # After data retrieval tools, go to analytics
+        "analytics_agent": "analytics_agent",
+        "presentation_agent": "presentation_agent",
+    }
+)
 
-# Edge after response_node (final step)
-workflow.add_edge("response_node", END)
+# Conditional routing after analytics_agent
+workflow.add_conditional_edges(
+    "analytics_agent",
+    route_after_analytics,
+    {
+        "tools": "actual_tool_node",
+        "presentation_agent": "presentation_agent",
+    }
+)
+
+# Conditional routing after presentation_agent
+workflow.add_conditional_edges(
+    "presentation_agent",
+    route_after_presentation,
+    {
+        "tools": "actual_tool_node",
+        "__end__": END,
+    }
+)
 
 # Get memory manager and compile graph with checkpointer for multi-turn conversations
 memory_manager = get_memory_manager()

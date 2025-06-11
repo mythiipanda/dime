@@ -8,9 +8,10 @@ from contextlib import redirect_stdout
 from langgraph_agent.graph import app
 from langchain_core.messages import AIMessage, ToolMessage, HumanMessage
 
-def run_agent_test(test_name: str, input_query: str, expected_tool_name: str = None, expected_final_answer_substring: str = None):
+def run_agent_test(test_name: str, input_query: str, expected_node_sequence: List[str] = None, expected_final_answer_substring: str = None):
     """
     Runs a single test case for the Langgraph agent and prints detailed output.
+    Verifies node execution sequence and final answer content.
     """
     print(f"\n--- Running Test: {test_name} ---")
     print(f"Input Query: {input_query}")
@@ -21,12 +22,13 @@ def run_agent_test(test_name: str, input_query: str, expected_tool_name: str = N
     }
 
     final_graph_state: Dict[str, Any] = {}
+    executed_nodes = []
     
     try:
-        # Add a dummy config for the checkpointer
-        config = {"configurable": {"thread_id": "test_thread", "checkpoint_ns": "test_ns"}}
+        config = {"configurable": {"thread_id": f"test_thread_{test_name.replace(' ', '_')}", "checkpoint_ns": "test_ns"}}
         for event in app.stream(inputs, config=config, stream_mode="updates"):
             node_name, node_output_state = list(event.items())[0]
+            executed_nodes.append(node_name)
             print(f"\nNODE EXECUTED: {node_name}")
             
             if node_output_state and 'messages' in node_output_state and node_output_state['messages']:
@@ -35,18 +37,11 @@ def run_agent_test(test_name: str, input_query: str, expected_tool_name: str = N
 
                 if isinstance(last_message, AIMessage) and last_message.tool_calls:
                     print(f"  TOOL CALLS DETECTED: {last_message.tool_calls}")
-                    if expected_tool_name:
-                        for tool_call in last_message.tool_calls:
-                            if tool_call.get('name') == expected_tool_name:
-                                tool_called = True
-                                print(f"  SUCCESS: Expected tool '{expected_tool_name}' was called.")
-                                break
                 elif isinstance(last_message, ToolMessage):
                     print(f"  TOOL OUTPUT: {last_message.content}")
                 
                 if node_output_state.get('final_answer'):
                     print(f"  FINAL ANSWER: {node_output_state['final_answer']}")
-                    final_answer_received = True
                     if expected_final_answer_substring and expected_final_answer_substring.lower() in node_output_state['final_answer'].lower():
                         print(f"  SUCCESS: Final answer contains expected substring: '{expected_final_answer_substring}'")
                     elif expected_final_answer_substring:
@@ -55,7 +50,23 @@ def run_agent_test(test_name: str, input_query: str, expected_tool_name: str = N
             final_graph_state.update(node_output_state)
     except Exception as e:
         print(f"  ERROR: An exception occurred during test execution: {e}")
+        return False # Indicate test failure on exception
     
+    # Verify node sequence
+    if expected_node_sequence:
+        sequence_match = True
+        for i, expected_node in enumerate(expected_node_sequence):
+            if i >= len(executed_nodes) or executed_nodes[i] != expected_node:
+                print(f"  FAILURE: Expected node sequence mismatch at index {i}.")
+                print(f"    Expected: {expected_node}, Got: {executed_nodes[i] if i < len(executed_nodes) else 'N/A'}")
+                sequence_match = False
+                break
+        if sequence_match and len(executed_nodes) >= len(expected_node_sequence):
+            print(f"  SUCCESS: Expected node sequence matched: {expected_node_sequence}")
+        else:
+            print(f"  FAILURE: Expected node sequence not fully matched or too short. Expected: {expected_node_sequence}, Actual: {executed_nodes}")
+            return False # Indicate test failure on sequence mismatch
+
     print("Test completed. Check logs above for details.")
     return True
 
@@ -63,13 +74,24 @@ if __name__ == "__main__":
     test_results = []
 
     test_cases = [
-        # Player Tools
-        {"name": "Player Shot Chart Test", "query": "Show me LeBron James' shot chart for the 2022-23 season, regular season.", "tool": "get_player_shot_chart"},
+        # Test Case 1: Data Retrieval -> Analytics -> Presentation (Tool Call in Data Retrieval)
+        {
+            "name": "Complex Player Analysis with Visualization",
+            "query": "Compare LeBron James' 2022-23 season stats with Michael Jordan's 1997-98 season stats, focusing on points, assists, and rebounds. Then visualize their per-game averages for these stats.",
+            "expected_node_sequence": ["entry_node", "data_retrieval_agent", "actual_tool_node", "analytics_agent", "actual_tool_node", "presentation_agent", "actual_tool_node", "presentation_agent", "END"],
+            "expected_final_answer_substring": "comparison and visualization" # Expecting a final answer after visualization
+        },
+        # Test Case 2: Direct Answer (no tools needed, should go straight to presentation)
+        {
+            "name": "Direct Answer Test",
+            "query": "Hello, how are you today?",
+            "expected_node_sequence": ["entry_node", "data_retrieval_agent", "presentation_agent", "END"],
+            "expected_final_answer_substring": "How can I assist you with NBA-related information or analysis today?"
+        }
     ]
 
     output_file = "test_results.txt"
     with open(output_file, "w", encoding="utf-8") as f, redirect_stdout(f):
-        # Also print to console
         class Tee:
             def __init__(self, *files):
                 self.files = files
@@ -86,16 +108,9 @@ if __name__ == "__main__":
                 test_results.append(run_agent_test(
                     case["name"],
                     case["query"],
-                    expected_tool_name=case["tool"]
+                    expected_node_sequence=case.get("expected_node_sequence"),
+                    expected_final_answer_substring=case.get("expected_final_answer_substring")
                 ))
-
-            # Test Case for Direct Answer (no tool needed)
-            test_results.append(run_agent_test(
-                "Direct Answer Test",
-                "Hello, how are you today?",
-                expected_tool_name=None,
-                expected_final_answer_substring="How can I assist you with NBA-related information or analysis today?"
-            ))
 
             print("\n--- Overall Test Results ---")
             if all(test_results):
