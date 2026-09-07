@@ -1,62 +1,57 @@
+# Local-only files. Never commit these. CI fails if they are tracked.
+LEARNINGS.MD
+AGENTS.md
+decisions.tsv
 .env
-.clinerules/
-docs/
-nba-analytics-backend/backend_app.log
-.cursorrules/
 .env.local
-.cursor/
-.windsurfrules/
-.roo/
+backend/.env
 
-# Backend specific
+# Secrets and creds
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.uv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Node
+node_modules/
+.next/
+out/
+dist/
+*.tsbuildinfo
+
+# OS and editors
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Azure and Vercel
+.azure/
+.vercel
+
+# Warehouse files. Seeded at deploy, never committed.
+backend/data/
+*.duckdb
+*.db
+
+# Old backend artifacts. Never again.
 backend/output/
 backend/chunk.json
 backend/chunk.txt
-backend/test_chart_generation.py
-backend/smoke_test_agent_tools.py
-backend/__pycache__/
-backend/api_tools/__pycache__/
-backend/routes/__pycache__/
-backend/smoke_tests/__pycache__/
-backend/tests/__pycache__/
-backend/utils/__pycache__/
-backend/models/__pycache__/
-backend/workflows/__pycache__/
 backend/cache/
+nba-analytics-backend/backend_app.log
 
-# General Python
-*.pyc
-*~
-*.db
-__pycache__/
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-
-# VS Code
-.vscode/
-
-# Added by Task Master AI
 # Logs
 logs
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-dev-debug.log
-# Dependency directories
-node_modules/
-# Environment variables
-# Editor directories and files
-.idea
-.vscode
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
-# OS specific
-.DS_Store
-# Task files
-tasks.json
-tasks/ 

@@ -1,0 +1,112 @@
+import { BACKEND, ModelsResponse } from "./chat";
+
+export async function getModels(): Promise<ModelsResponse> {
+  const res = await fetch(`${BACKEND}/api/v1/models`);
+  if (!res.ok) throw new Error(`models failed: ${res.status}`);
+  return res.json();
+}
+
+export interface StreamHandlers {
+  onEvent: (type: string, data: unknown) => void;
+  onDone: () => void;
+  onError: (message: string) => void;
+}
+
+export async function postChatStream(
+  q: string,
+  model: string | null,
+  handlers: StreamHandlers,
+  signal?: AbortSignal,
+  thread?: string | null,
+): Promise<void> {
+  const res = await fetch(`${BACKEND}/api/v1/chat/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ q, model, thread }),
+    signal,
+  });
+  const contentType = res.headers.get("content-type") || "";
+  if (!res.ok || !res.body || !contentType.includes("text/event-stream")) {
+    if (res.status === 429) {
+      handlers.onError("Too many requests. Wait a minute and try again.");
+    } else {
+      handlers.onError(`Chat failed with status ${res.status}. Try again.`);
+    }
+    return;
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const parts = buf.split("\n\n");
+    buf = parts.pop() || "";
+    for (const part of parts) {
+      const typeLine = part.split("\n").find((l) => l.startsWith("event:"));
+      const dataLines = part
+        .split("\n")
+        .filter((l) => l.startsWith("data:"))
+        .map((l) => l.slice(5).trim());
+      if (!typeLine || !dataLines.length) continue;
+      try {
+        handlers.onEvent(
+          typeLine.slice(6).trim(),
+          JSON.parse(dataLines.join("\n")),
+        );
+      } catch {
+        continue;
+      }
+    }
+  }
+  handlers.onDone();
+}
+
+export function datasetUrl(
+  name: string,
+  params: Record<string, string>,
+  fmt: string,
+): string {
+  const q = new URLSearchParams({ ...params, fmt });
+  return `${BACKEND}/api/v1/datasets/${name}?${q.toString()}`;
+}
+
+export async function getDatasetJson(
+  name: string,
+  params: Record<string, string>,
+): Promise<{ ok: boolean; data?: unknown[]; meta?: Record<string, unknown>; error?: string }> {
+  const res = await fetch(datasetUrl(name, params, "json"));
+  return res.json();
+}
+
+export interface ThreadInfo {
+  id: string;
+  title: string;
+  updated: string;
+  turns: number;
+}
+
+export async function getThreads(): Promise<ThreadInfo[]> {
+  const res = await fetch(`${BACKEND}/api/v1/threads`);
+  if (!res.ok) return [];
+  return ((await res.json()).threads || []) as ThreadInfo[];
+}
+
+export interface RunInfo {
+  question: string;
+  answer: string;
+  tables: unknown[];
+  suggestions: string[];
+  created_at: string;
+}
+
+export async function getRuns(thread: string): Promise<RunInfo[]> {
+  const res = await fetch(`${BACKEND}/api/v1/threads/${thread}/runs`);
+  if (!res.ok) return [];
+  return ((await res.json()).runs || []) as RunInfo[];
+}
+
+export function exportUrl(thread: string): string {
+  return `${BACKEND}/api/v1/threads/${thread}/export`;
+}

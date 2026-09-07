@@ -1,0 +1,115 @@
+"""Analyst eval set. Canonical tasks against warehouse tools. No LLM cost.
+
+Usage: python -m scripts.eval
+Pass means real rows plus provenance on every task.
+"""
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from app import tools
+
+PASS = 0
+FAIL = 0
+
+
+def check(name: str, cond: bool, detail: str = "") -> None:
+    global PASS, FAIL
+    if cond:
+        PASS += 1
+        print(f"PASS {name}")
+    else:
+        FAIL += 1
+        print(f"FAIL {name} :: {detail[:160]}")
+
+
+def main() -> None:
+    res = tools.search_nba.invoke({"query": "LeBron James"})
+    check("search finds lebron id 2544",
+          any(p.get("id") == 2544 for p in res["rows"]["players"]), str(res))
+
+    res = tools.get_player_intel.invoke({"player_id": 2544})
+    check("intel returns rows with provenance",
+          len(res["rows"]) > 0 and "source" in res["meta"], str(res)[:200])
+    game_id = res["rows"][0].get("Game_ID", "") if res["rows"] else ""
+    game_date = res["rows"][0].get("GAME_DATE", "") if res["rows"] else ""
+
+    res = tools.get_team_hub.invoke({"team_id": 1610612747})
+    check("team hub returns games",
+          len(res["rows"]["games"]) > 0, str(res)[:200])
+
+    res = tools.get_standings.invoke({})
+    check("standings returns 30 teams", len(res["rows"]) == 30, str(len(res["rows"])))
+
+    res = tools.get_leaders.invoke({"stat_category": "PTS"})
+    check("leaders carry PTS column",
+          res["rows"] and "PTS" in res["rows"][0], str(res)[:200])
+
+    res = tools.get_leaders.invoke({"stat_category": "AST"})
+    check("second category caches separately",
+          res["rows"] and "AST" in res["rows"][0], str(res)[:200])
+
+    if game_id:
+        res = tools.get_boxscore.invoke({"game_id": str(game_id)})
+        check("boxscore chains from gamelog",
+              len(res["rows"]) > 0, str(res)[:200])
+    if game_date:
+        from datetime import datetime
+
+        try:
+            day = datetime.strptime(game_date, "%b %d, %Y").strftime("%m/%d/%Y")
+        except ValueError:
+            day = game_date
+        res = tools.get_games_on_date.invoke({"game_date": day})
+        check("scoreboard chains from gamelog date",
+              len(res["rows"]) > 0, str(res)[:200])
+
+    res = tools.get_lineups.invoke({"team_id": 1610612760})
+    check("lineups carry group plus minus",
+          res["rows"] and "GROUP_NAME" in res["rows"][0]
+          and "PLUS_MINUS" in res["rows"][0], str(res)[:200])
+
+    res = tools.get_on_off.invoke({"player_id": 2544, "team_id": 1610612747})
+    check("on-off returns splits",
+          res["rows"] and "On-Off" in res["rows"][0], str(res)[:200])
+
+    res = tools.get_four_factors.invoke({"player_id": 2544, "team_id": 1610612747})
+    check("four factors return rows",
+          len(res["rows"]) > 0, str(res)[:200])
+
+    res = tools.get_last_x.invoke({"player_id": 2544, "n": 5})
+    check("last-x returns 5 recent first",
+          len(res["rows"]) == 5, str(res)[:200])
+
+    res = tools.get_percentiles.invoke({"player_id": 203999})
+    check("percentiles cover five cats",
+          len(res["rows"]) == 5, str(res)[:200])
+
+    res = tools.get_hustle.invoke({})
+    check("hustle returns rows",
+          len(res["rows"]) > 0, str(res)[:200])
+
+    res = tools.get_splits.invoke({"player_id": 2544})
+    check("splits home away",
+          len(res["rows"]) == 2, str(res)[:200])
+
+    res = tools.get_scouting_report.invoke({"team_id": 1610612760})
+    check("scouting has record",
+          "record" in res["rows"], str(res)[:200])
+
+    res = tools.get_recap.invoke({"game_id": str(game_id)})
+    check("recap names top scorer",
+          res["rows"] and "PLAYER" in res["rows"][0], str(res)[:200])
+
+    res = tools.get_finder.invoke({"mode": "streak", "team_abbrev": "OKC"})
+    check("finder streak reads history",
+          res["rows"].get("longest_win_streak", 0) >= 10, str(res)[:200])
+
+    print(f"\neval: {PASS} pass, {FAIL} fail")
+    sys.exit(1 if FAIL else 0)
+
+
+if __name__ == "__main__":
+    main()
