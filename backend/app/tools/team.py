@@ -23,7 +23,7 @@ def _abbrev(who: str) -> str:
 
 @tool
 async def get_preview(
-    a: str, b: str, season: str = SEASON,
+    a: str, b: str, season: str = SEASON, home_abbrev: str = "",
 ) -> dict[str, Any]:
     """Side-by-side preview of two teams. Names, abbrevs, or ids. One call."""
     from .league import get_standings, get_win_prob
@@ -44,7 +44,8 @@ async def get_preview(
     (left, right), prob, st = await _asyncio.gather(
         _asyncio.gather(one(a), one(b)),
         get_win_prob.ainvoke(
-            {"team_a": _abbrev(a), "team_b": _abbrev(b), "season": season}),
+            {"team_a": _abbrev(a), "team_b": _abbrev(b), "season": season,
+             "home_abbrev": home_abbrev}),
         get_standings.ainvoke({"season": season}),
     )
     import random as _random
@@ -123,8 +124,8 @@ async def get_preview(
             "meta": {"source": "nba_api+warehouse", "season": season,
                      "sim_note": "Monte Carlo over blended ratings scores "
                      "(poss=mean pace; exp=poss/100*mean(own OFF, opp DEF)); "
-                     "neutral court, +1.5 home edge not applied "
-                     "(no home context in preview args); normal std 12",
+                     "sim runs neutral court; ELO win_prob respects "
+                     "home_abbrev when passed; normal std 12",
                      "confidence": _confidence,
                      "injuries_ignored": True}}
 

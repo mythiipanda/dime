@@ -971,3 +971,53 @@ def get_draft_model(season: str = "2025") -> dict[str, Any]:
     except Exception as exc:
         return {"tool": "get_draft_model", "ok": False,
                 "error": str(exc)[:200]}
+
+
+@tool
+def get_risers(season: str = "2025-26", weeks: int = 4) -> dict[str, Any]:
+    """Risers and fallers: last-N win pct vs season win pct, warehouse only."""
+    from .. import store as _store
+
+    season = str(season or "2025-26").strip() or "2025-26"
+    try:
+        weeks = max(1, min(int(weeks or 4), 8))
+    except (TypeError, ValueError):
+        weeks = 4
+    n = max(5, min(round(weeks * 2.5), 15))
+    con = _store.connect()
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        if "silver_hist_gamelogs" not in tables:
+            return {"tool": "get_risers", "ok": False, "error": "history empty"}
+        cols = {r[1] for r in
+                con.execute("PRAGMA table_info(silver_hist_gamelogs)").fetchall()}
+        q = """SELECT team_abbreviation, game_date, wl FROM silver_hist_gamelogs
+               WHERE _season = ?"""
+        if "season_type" in cols:
+            q += " AND season_type = 'regular-season'"
+        rows = con.execute(q + " ORDER BY team_abbreviation, game_date",
+                           [season]).fetchall()
+    finally:
+        con.close()
+    if not rows:
+        return {"tool": "get_risers", "ok": False,
+                "error": f"no games for {season}"}
+    by_team: dict[str, list] = {}
+    for t, _, w in rows:
+        if t:
+            by_team.setdefault(t, []).append(w)
+    table = []
+    for t, ws in by_team.items():
+        w_all = sum(1 for w in ws if w == "W")
+        last = ws[-n:]
+        w_last = sum(1 for w in last if w == "W")
+        sp = w_all / len(ws)
+        lp = w_last / len(last)
+        table.append({"TEAM": t, "LAST10": f"{w_last}-{len(last) - w_last}",
+                      "LAST10_PCT": round(lp, 3), "SEASON_PCT": round(sp, 3),
+                      "DELTA": round(lp - sp, 3)})
+    table.sort(key=lambda d: d["DELTA"], reverse=True)
+    return {"tool": "get_risers", "ok": True,
+            "rows": {"risers": table[:5], "fallers": table[-5:][::-1]},
+            "meta": {"source": "warehouse", "season": season,
+                     "window": n, "weeks": weeks}}

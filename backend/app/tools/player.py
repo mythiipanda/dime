@@ -483,3 +483,36 @@ def get_four_factors(player_id: str | int, team_id: str | int, season: str = SEA
         entity=f"player:{player_id}", live_first=True,
     )
     return {"tool": "get_four_factors", "ok": True, "rows": rows, "meta": meta}
+
+
+@tool
+async def get_shot_compare(a: str, b: str, season: str = SEASON) -> dict[str, Any]:
+    """Shot-diet showdown: zone eFG and share for two players."""
+    async def _zones(who: str) -> dict[str, dict]:
+        try:
+            pid = coerce_player_id(who)
+            res = await get_shot_zones.ainvoke({"player_id": pid, "season": season})
+            return {r.get("zone", "?"): r for r in res.get("rows", [])}
+        except Exception:
+            return {}
+    ma, mb = await _asyncio.gather(_zones(a), _zones(b))
+    rows: list[dict[str, Any]] = []
+    for z in sorted(set(ma) | set(mb)):
+        ra, rb = ma.get(z, {}), mb.get(z, {})
+        ae = float(ra.get("eFG_PCT", 0) or 0)
+        be = float(rb.get("eFG_PCT", 0) or 0)
+        ash = float(ra.get("SHARE", ra.get("share", 0)) or 0)
+        bsh = float(rb.get("SHARE", rb.get("share", 0)) or 0)
+        edge = "wash" if max(ash, bsh) < 0.05 or ae == be else (a if ae > be else b)
+        rows.append({"zone": z, "a_eFG": ae, "b_eFG": be,
+                     "a_share": ash, "b_share": bsh, "edge": edge})
+    rim = next((r for r in rows if r["zone"] == "Restricted Area"), None)
+    rim_owner = "wash" if not rim or max(rim["a_share"], rim["b_share"]) < 0.05 or rim["a_eFG"] == rim["b_eFG"] else (a if rim["a_eFG"] > rim["b_eFG"] else b)
+    threes = [r for r in rows if "3" in r["zone"] or "corner" in r["zone"].lower() or "break" in r["zone"].lower()]
+    arc = max(threes, key=lambda r: max(r["a_share"], r["b_share"]), default=None)
+    arc_owner = "wash" if not arc or arc["a_eFG"] == arc["b_eFG"] else (a if arc["a_eFG"] > arc["b_eFG"] else b)
+    arc_zone = arc["zone"] if arc else "no threes"
+    verdict = f"{rim_owner} owns the rim; {arc_owner} owns the arc ({arc_zone})."
+    return {"tool": "get_shot_compare", "ok": True, "rows": rows,
+            "verdict": verdict, "meta": {"source": "nba_api", "season": season,
+            "a": a, "b": b, "arc_zone": arc_zone, "arc_edge": arc_owner}}

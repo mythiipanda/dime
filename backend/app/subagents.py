@@ -142,6 +142,7 @@ SCOUT_BRIEF = (
     "Splits means home/away plus wins/losses plus last-10 plus monthly "
     "PPG with FG_PCT from get_splits. "
     "Shot diet means zone eFG plus share from get_shot_zones. "
+    "Two-player shot showdowns go to get_shot_compare. "
     "Resolve names with resolve_entity first. Use returned ids verbatim. "
     "Never invent ids. Season 2025-26 unless told otherwise."
 )
@@ -175,6 +176,8 @@ LEAGUE_BRIEF = (
     "THEN call get_draft_board. "
     "IF the task mentions star probability or draft model, "
     "THEN call get_draft_model. "
+    "IF the task mentions form, streaks, risers, fallers, or who is hot, "
+    "THEN call get_risers. "
     "IF the task names one stat category, THEN call get_leaders. "
     "Otherwise call get_standings."
 )
@@ -186,10 +189,10 @@ def delegate_tools(provider: ProviderName, model: str) -> list:
         """Hand player research to the scout. One player per call."""
         return await _run_desk(
             "scout", SCOUT_BRIEF, task, provider, model,
-            ["resolve_entity", "search_nba", "get_player_intel",
+            ["resolve_entity", "search_nba",              "get_player_intel",
              "get_on_off", "get_wowy", "get_four_factors",
              "get_last_x", "get_percentiles", "get_shot_zones",
-             "get_trend", "get_comps", "text_to_sql"],
+             "get_shot_compare", "get_trend", "get_comps", "text_to_sql"],
         )
 
     @tool("delegate_team")
@@ -215,7 +218,7 @@ def delegate_tools(provider: ProviderName, model: str) -> list:
             ["get_standings", "get_leaders", "get_injuries", "get_rapm",
              "get_playoffs", "get_ratings", "get_clutch", "get_elo",
              "get_playoff_sim", "get_contract_value", "get_draft_board",
-             "get_draft_model", "text_to_sql"],
+             "get_draft_model", "get_risers", "text_to_sql"],
             force_tool=force,
         )
 

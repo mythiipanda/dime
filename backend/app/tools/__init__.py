@@ -19,6 +19,7 @@ from .league import (
     get_playoff_sim,
     get_rapm,
     get_ratings,
+    get_risers,
     get_rest,
     get_standings,
     get_trade_check,
@@ -33,6 +34,7 @@ from .player import (
     get_on_off,
     get_percentiles,
     get_player_intel,
+    get_shot_compare,
     get_shot_zones,
     get_splits,
     get_trend,
@@ -69,6 +71,7 @@ v1_tools: list[BaseTool] = [
     get_last_x,
     get_percentiles,
     get_briefing,
+    get_shot_compare,
     get_shot_zones,
     get_hustle,
     get_injuries,
@@ -96,6 +99,7 @@ v1_tools: list[BaseTool] = [
     get_contract_value,
     get_draft_board,
     get_draft_model,
+    get_risers,
 ]
 
 TOOL_NAMES = [t.name for t in v1_tools]

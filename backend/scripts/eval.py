@@ -227,6 +227,22 @@ def main() -> None:
           and "proxy" in str(model_res.get("meta", {})).lower(),
           str(model_res["rows"][:1])[:160])
 
+    async def _shotcmp():
+        return await tools.get_shot_compare.ainvoke(
+            {"a": "LeBron James", "b": "Stephen Curry"})
+
+    cmp_res = _aio2.run(_shotcmp())
+    check("shot compare aligns zones",
+          cmp_res["ok"] and len(cmp_res["rows"]) == 6
+          and cmp_res.get("verdict", "") != "",
+          str(cmp_res.get("verdict"))[:160])
+
+    res = tools.get_risers.invoke({})
+    check("risers name hot teams",
+          res["ok"] and len(res["rows"].get("risers", [])) == 5
+          and len(res["rows"].get("fallers", [])) == 5,
+          str(res["rows"].get("risers", [])[:2])[:160])
+
     async def _pack():
         return await tools.get_scout_pack.ainvoke(
             {"team": "OKC", "opponent": "BOS"})
