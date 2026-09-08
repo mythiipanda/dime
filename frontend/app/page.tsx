@@ -3,11 +3,11 @@
 import { useCallback, useEffect, useState } from "react";import ChatPanel from "../components/ChatPanel";
 import CommandPalette from "../components/CommandPalette";
 import DatasetPanel from "../components/DatasetPanel";
+import DraftPanel from "../components/DraftPanel";
 import TradePanel from "../components/TradePanel";
 import ScoreStrip from "../components/ScoreStrip";
 import RunsPanel from "../components/RunsPanel";
 import ThreadRail from "../components/ThreadRail";
-import { ShotChartCard } from "../components/ShotChart";
 import { ThreadInfo, getThreads } from "../lib/api";
 
 function newThreadId() {
@@ -93,9 +93,11 @@ export default function Home() {
           ) : (
             <div>
               <DatasetPanel />
-              <ShotChartCard />
               <div style={{ marginTop: 16 }}>
                 <TradePanel />
+              </div>
+              <div style={{ marginTop: 16 }}>
+                <DraftPanel />
               </div>
             </div>
           )}

@@ -23,6 +23,7 @@ TABLES = {
     "wowy": "silver_wowy",
     "four_factors": "silver_four_factors",
     "hustle": "silver_hustle_player",
+    "combine": "silver_combine",
 }
 
 
@@ -65,6 +66,8 @@ def _fetch_live(
         if name == "on_off":
             return pbpstats.on_off(player_id, team_id, season)
         return pbpstats.four_factors(player_id, team_id, season)
+    if name == "combine":
+        return nba_stats.combine(season)
     if name == "wowy" and team_id and ids:
         from .sources import pbpstats
 
