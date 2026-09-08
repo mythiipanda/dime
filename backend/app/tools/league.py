@@ -430,35 +430,49 @@ async def text_to_sql(question: str) -> dict[str, Any]:
     if not present:
         return {"tool": "text_to_sql", "ok": False, "error": "warehouse empty"}
     schema = "\n".join(f"{t}: {', '.join(c)}" for t, c in cols.items())
-    try:
-        resp = await invoke_with_fallback(
-            "mistral", "ministral-8b-2512",
-            [SystemMessage(content="Reply with SQL only, no prose."),
-             HumanMessage(
-                 content="Write one SQLite SELECT using only these tables "
-                 f"and columns.\nSchema:\n{schema}\nQuestion: {question}")])
-        sql = _re.sub(r"^```sql|```$", "", str(getattr(resp, "content", "") or ""),
-                      flags=_re.MULTILINE).strip()
-    except Exception as exc:
-        return {"tool": "text_to_sql", "ok": False, "error": str(exc)[:160]}
-    if not _re.match(r"(?i)^\s*select\b", sql) or _re.search(
-            r"(?i)\b(insert|update|delete|drop|alter|create|pragma|attach|copy)\b", sql):
-        return {"tool": "text_to_sql", "ok": False,
-                "error": "rejected non-SELECT", "sql": sql[:200]}
-    used = set(_re.findall(r"(?i)from\s+(\w+)|join\s+(\w+)", sql))
-    used_tables = {a or b for a, b in used}
-    if not used_tables or not used_tables.issubset(set(present)):
-        return {"tool": "text_to_sql", "ok": False,
-                "error": "unknown table", "sql": sql[:200]}
-    con = _store.connect()
-    try:
-        rows = con.execute(sql).fetchall()
-        names = [d[0] for d in con.description]
-    except Exception as exc:
-        return {"tool": "text_to_sql", "ok": False,
-                "error": str(exc)[:160], "sql": sql[:200]}
-    finally:
-        con.close()
-    return {"tool": "text_to_sql", "ok": True,
-            "rows": [dict(zip(names, r)) for r in rows[:25]],
-            "meta": {"sql": sql[:500], "source": "warehouse"}}
+    examples = (
+        "\nExamples.\nQ: Thunder record this season?\n"
+        "SQL: SELECT WINS, LOSSES FROM silver_standings "
+        "WHERE TeamCity = 'Oklahoma City' AND _season = '2025-26'\n"
+        "Q: OKC wins per season, last 3 seasons?\n"
+        "SQL: SELECT _season, SUM(CASE WHEN wl = 'W' THEN 1 ELSE 0 END) AS wins "
+        "FROM silver_hist_gamelogs WHERE team_abbreviation = 'OKC' "
+        "AND _season IN ('2025-26', '2024-25', '2023-24') GROUP BY _season"
+    )
+    feedback = ""
+    for _ in range(3):
+        try:
+            resp = await invoke_with_fallback(
+                "mistral", "ministral-8b-2512",
+                [SystemMessage(content="Reply with SQL only, no prose."),
+                 HumanMessage(
+                     content="Write one SQLite SELECT using only these tables "
+                     "and columns. Match column case exactly as listed.\n"
+                     f"Schema:\n{schema}{examples}\nQuestion: {question}{feedback}")])
+            sql = _re.sub(r"^```sql|```$", "", str(getattr(resp, "content", "") or ""),
+                          flags=_re.MULTILINE).strip()
+        except Exception as exc:
+            return {"tool": "text_to_sql", "ok": False, "error": str(exc)[:160]}
+        if not _re.match(r"(?i)^\s*select\b", sql) or _re.search(
+                r"(?i)\b(insert|update|delete|drop|alter|create|pragma|attach|copy)\b", sql):
+            feedback = "\nPrevious reply was not a single SELECT. Reply with SQL only."
+            continue
+        used = set(_re.findall(r"(?i)from\s+(\w+)|join\s+(\w+)", sql))
+        used_tables = {a or b for a, b in used}
+        if not used_tables or not used_tables.issubset(set(present)):
+            feedback = "\nPrevious reply used unknown tables. Use only listed tables."
+            continue
+        con = _store.connect()
+        try:
+            rows = con.execute(sql).fetchall()
+            names = [d[0] for d in con.description]
+        except Exception as exc:
+            feedback = f"\nPrevious SQL failed: {str(exc)[:200]} Fix it."
+            continue
+        finally:
+            con.close()
+        return {"tool": "text_to_sql", "ok": True,
+                "rows": [dict(zip(names, r)) for r in rows[:25]],
+                "meta": {"sql": sql[:500], "source": "warehouse"}}
+    return {"tool": "text_to_sql", "ok": False,
+            "error": "sql failed after retries" + feedback[-160:]}

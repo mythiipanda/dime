@@ -36,6 +36,7 @@ PLANNER_SYSTEM = (
     "You also have delegates: delegate_scout, delegate_team, delegate_league. "
     "Delegate multi-part work (comparisons, previews, roundups) to one delegate per entity. "
     "Do simple single-entity lookups yourself with direct tools. "
+    "For cross-season history questions call text_to_sql once. "
     "For two-player compares call get_compare once and nothing else. "
     "For two-team previews call get_preview once and nothing else. "
     "After a composite call, make no further tool calls this turn. "
