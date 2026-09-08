@@ -621,9 +621,9 @@ async def text_to_sql(question: str) -> dict[str, Any]:
                "silver_leaders_pts", "silver_leaders_reb", "silver_leaders_ast",
                "silver_leaders_stl", "silver_leaders_blk", "silver_boxscores",
                "silver_lineups", "silver_shots", "silver_hustle_player",
-               "silver_hustle_team", "silver_injuries", "silver_hist_gamelogs",
-               "silver_hist_standings", "silver_hist_possessions",
-               "silver_hist_shots", "silver_hist_lineups"]
+                "silver_hustle_team", "silver_injuries", "silver_hist_gamelogs",
+                "silver_hist_standings", "silver_hist_possessions",
+                "silver_hist_shots", "silver_hist_lineups", "silver_salaries"]
     con = _store.connect()
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
@@ -644,7 +644,19 @@ async def text_to_sql(question: str) -> dict[str, Any]:
         "Q: OKC wins per season, last 3 seasons?\n"
         "SQL: SELECT _season, SUM(CASE WHEN wl = 'W' THEN 1 ELSE 0 END) AS wins "
         "FROM silver_hist_gamelogs WHERE team_abbreviation = 'OKC' "
-        "AND _season IN ('2025-26', '2024-25', '2023-24') GROUP BY _season"
+        "AND _season IN ('2025-26', '2024-25', '2023-24') GROUP BY _season\n"
+        "Q: Which 5 teams have the highest total payroll?\n"
+        "SQL: SELECT TEAM, SUM(SALARY_2025_26) AS payroll FROM silver_salaries "
+        "GROUP BY TEAM ORDER BY payroll DESC LIMIT 5\n"
+        "Q: Who has the best clutch FG% with at least 10 GP?\n"
+        "SQL: SELECT PLAYER_NAME, FG_PCT FROM silver_clutch "
+        "WHERE GP >= 10 ORDER BY FG_PCT DESC LIMIT 5\n"
+        "Q: Which top-10 net-rating team plays fastest?\n"
+        "SQL: SELECT TEAM_NAME, PACE, NET_RATING FROM silver_team_ratings "
+        "WHERE NET_RATING_RANK <= 10 ORDER BY PACE DESC LIMIT 1\n"
+        "Q: Who has the most playoff wins in 2025-26?\n"
+        "SQL: SELECT TEAM_ABBREVIATION, COUNT(*) AS wins FROM silver_playoffs "
+        "WHERE WL = 'W' GROUP BY TEAM_ABBREVIATION ORDER BY wins DESC LIMIT 5"
     )
     feedback = ""
     for _ in range(3):
