@@ -109,9 +109,12 @@ async def get_preview(
     _gap = abs(_win_pct_a - 0.5)
     _confidence = ("low — near coin flip" if _gap < 0.05 else
                    "moderate" if _gap < 0.15 else "high")
+    prob_rows = prob.get("rows", {}) or {}
     return {"tool": "get_preview", "ok": True,
             "rows": {"a": left, "b": right,
-                     "win_prob": prob.get("rows", {}),
+                     "win_prob": prob_rows.get("win_prob", prob_rows),
+                     "elo_a": prob_rows.get("elo_a"),
+                     "elo_b": prob_rows.get("elo_b"),
                      "standings_rows": len(st.get("rows", [])),
                      "win_pct_a": _win_pct_a,
                      "projected_total": _proj_total,

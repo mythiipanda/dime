@@ -82,7 +82,8 @@ def main() -> None:
 
     wp = tools.get_win_prob.invoke({"team_a": "OKC", "team_b": "DEN"})
     check("win prob favors better record",
-          wp["rows"]["OKC"] > wp["rows"]["DEN"], str(wp["rows"]))
+          wp["rows"]["win_prob"]["OKC"] > wp["rows"]["win_prob"]["DEN"]
+          and wp["rows"]["elo_a"] > wp["rows"]["elo_b"], str(wp["rows"]))
 
     zones = tools.get_shot_zones.invoke({"player_id": 2544})
     check("shot zones sum shares",

@@ -376,35 +376,72 @@ def get_rest(team_abbrev: str = "", season: str = SEASON) -> dict[str, Any]:
 
 
 @tool
-def get_win_prob(team_a: str = "", team_b: str = "", season: str = SEASON) -> dict[str, Any]:
-    """Elo-lite win probability between two abbreviations. Neutral court."""
+def get_win_prob(team_a: str = "", team_b: str = "", season: str = SEASON,
+                 home_abbrev: str = "") -> dict[str, Any]:
+    """Real ELO win probability between two abbreviations. Neutral unless home_abbrev matches a side."""
     import math
 
     from .. import store as _store
 
-    def rating(abbrev: str) -> float:
-        con = _store.connect()
-        try:
-            rows = con.execute(
-                """SELECT wl, pts FROM silver_hist_gamelogs
-                WHERE _season = ? AND team_abbreviation = ?""",
-                [season, abbrev.upper()],
-            ).fetchall()
-        finally:
-            con.close()
-        if not rows:
-            return 1500.0
-        w = sum(1 for result, _ in rows if result == "W")
-        r = 1500 + (w / len(rows) - 0.5) * 200
-        return r
-
     if not team_a or not team_b:
         return {"tool": "get_win_prob", "ok": False, "error": "two abbreviations needed"}
-    ra, rb = rating(team_a), rating(team_b)
-    pa = 1 / (1 + 10 ** ((rb - ra) / 400))
+    a, b = team_a.upper(), team_b.upper()
+    home = (home_abbrev or "").upper()
+    con = _store.connect()
+    try:
+        rows = con.execute(
+            """SELECT team_abbreviation, game_id, game_date, matchup, wl,
+            plus_minus FROM silver_hist_gamelogs
+            WHERE _season = ? ORDER BY game_date, game_id""",
+            [season],
+        ).fetchall()
+    finally:
+        con.close()
+    games: dict[str, list] = {}
+    for r in rows:
+        games.setdefault(r[1], []).append(r)
+    # Mirrors get_elo below. Same constants so the two never drift.
+    elo: dict[str, float] = {}
+    for _, pair in sorted(games.items()):
+        if len(pair) != 2:
+            continue
+        (ta, _, _, ma, wa, pma), (tb, _, _, mb, wb, pmb) = pair
+        if (wa == "W") == (wb == "W"):
+            continue
+        wrow, lrow = (pair[0], pair[1]) if wa == "W" else (pair[1], pair[0])
+        wteam, lteam = wrow[0], lrow[0]
+        margin = wrow[5]
+        if margin is None:
+            margin = -(lrow[5]) if lrow[5] is not None else None
+        mov_mult = 1.0
+        if margin is not None:
+            margin = abs(margin)
+        elo.setdefault(wteam, 1500.0)
+        elo.setdefault(lteam, 1500.0)
+        w_home = "vs." in str(wrow[3])
+        l_home = "vs." in str(lrow[3])
+        w_adj = elo[wteam] + (100 if w_home else 0)
+        l_adj = elo[lteam] + (100 if l_home else 0)
+        diff = w_adj - l_adj
+        expected_w = 1 / (1 + 10 ** (-diff / 400))
+        if margin is not None:
+            mov_mult = ((margin + 3) ** 0.8) / (7.5 + 0.006 * abs(diff))
+        shift = 20 * mov_mult * (1 - expected_w)
+        elo[wteam] += shift
+        elo[lteam] -= shift
+    ra, rb = elo.get(a, 1500.0), elo.get(b, 1500.0)
+    ra_adj, rb_adj = ra, rb
+    if home == a:
+        ra_adj += 65
+    elif home == b:
+        rb_adj += 65
+    pa = 1 / (1 + 10 ** ((rb_adj - ra_adj) / 400))
     return {"tool": "get_win_prob", "ok": True,
-            "rows": {team_a.upper(): round(pa, 3), team_b.upper(): round(1 - pa, 3)},
-            "meta": {"source": "warehouse", "season": season}}
+            "rows": {"win_prob": {a: round(pa, 3), b: round(1 - pa, 3)},
+                     "elo_a": round(ra), "elo_b": round(rb)},
+            "meta": {"source": "warehouse", "season": season,
+                     "elo": "538-style MOV-adjusted (K20, HCA100 in build)",
+                     "home_edge": 65 if home in (a, b) else 0}}
 
 
 CAP = {"cap": 165_000_000, "tax": 201_048_000,

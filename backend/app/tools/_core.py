@@ -110,6 +110,17 @@ def _warehouse_or_live(
     if frame is None or frame.height == 0:
         live: FetchResult = fetch()
         if not live.ok or live.frame.height == 0:
+            if live_first:
+                frame = store.read_frame(table, where, params)
+                if frame is not None and frame.height > 0:
+                    meta: dict[str, Any] = {
+                        "rows": frame.height, "cached": True, "stale": True,
+                        "live_error": live.error or "empty upstream response",
+                    }
+                    if "_source" in frame.columns:
+                        meta["source"] = frame["_source"][0]
+                        meta["fetched_at"] = frame["_fetched_at"][0]
+                    return frame.head(limit).to_dicts(), meta
             return [], {"source": live.meta.source,
                         "error": live.error or "empty upstream response"}
         store.save_frame(table, live, entity)
