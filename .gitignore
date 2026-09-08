@@ -33,6 +33,9 @@ dist/
 .vscode/
 *.swp
 
+# Foreign checkouts sitting in the workspace. Never track.
+claude-talk-to-figma-mcp/
+
 # Azure and Vercel
 .azure/
 .vercel
