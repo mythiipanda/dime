@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { AiMessage, NodeName } from "../lib/chat";
 import AutoChart from "./AutoChart";
+import CompareView from "./CompareView";
 import DataTable from "./DataTable";
 
 const ORDER: NodeName[] = ["entry", "data_retrieval", "tools", "analytics", "presentation"];
@@ -28,7 +29,7 @@ function chipStyle(status: string): React.CSSProperties {
 export default function NodeCards({ ai }: { ai: AiMessage }) {
   const names = ORDER.filter((n) => ai.nodes[n]);
   const [open, setOpen] = useState(false);
-  const [page, setPage] = useState(0);
+  const [pageState, setPageState] = useState<number | null>(null);
   const [heat, setHeat] = useState(false);
   if (!names.length) return null;
   const done = names.filter((n) => ai.nodes[n]!.status === "complete").length;
@@ -38,7 +39,12 @@ export default function NodeCards({ ai }: { ai: AiMessage }) {
   for (const n of names) {
     for (const t of ai.nodes[n]!.tables) tables.push(t);
   }
-  const table = tables[Math.min(page, Math.max(tables.length - 1, 0))];
+  const table = tables[Math.min(
+    pageState ?? tables.length - 1, Math.max(tables.length - 1, 0))];
+  const page = Math.min(
+    pageState ?? tables.length - 1, Math.max(tables.length - 1, 0));
+  const setPage = (n: number) => setPageState(
+    Math.max(0, Math.min(n, tables.length - 1)));
   return (
     <div style={{ marginTop: 12 }}>
       <button
@@ -163,8 +169,14 @@ export default function NodeCards({ ai }: { ai: AiMessage }) {
               )}
             </span>
           </div>
-          <AutoChart table={table as { rows?: unknown }} />
-          <DataTable rows={(table.rows as { rows?: unknown })?.rows ?? table.rows} heat={heat} />
+          {table.tool === "get_compare" || table.tool === "get_preview" ? (
+            <CompareView rows={table.rows} />
+          ) : (
+            <div>
+              <AutoChart table={table as { rows?: unknown }} />
+              <DataTable rows={(table.rows as { rows?: unknown })?.rows ?? table.rows} heat={heat} />
+            </div>
+          )}
         </div>
       )}
     </div>

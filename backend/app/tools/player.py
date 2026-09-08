@@ -20,7 +20,14 @@ async def get_compare(
         intel = await get_player_intel.ainvoke(
             {"player_id": pid, "season": season})
         games = intel.get("rows", [])
-        team = (games[0].get("TEAM_ID", 0) if games else 0) or 0
+        team = 0
+        try:
+            from nba_api.stats.endpoints import CommonPlayerInfo
+
+            info = CommonPlayerInfo(player_id=pid, timeout=10).get_data_frames()[0]
+            team = int(info["TEAM_ID"].iloc[0])
+        except Exception:
+            team = 0
         oo = {"rows": []}
         if team:
             oo = await get_on_off.ainvoke(
@@ -29,6 +36,7 @@ async def get_compare(
             {"player_id": pid, "n": 5, "season": season})
         pts = [g.get("PTS", 0) for g in intel.get("rows", [])[:10]]
         return {
+            "name": who,
             "player_id": pid,
             "gp": len(games),
             "ppg": round(sum(pts) / max(len(pts), 1), 1),
