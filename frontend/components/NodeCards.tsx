@@ -325,6 +325,13 @@ export default function NodeCards({ ai }: { ai: AiMessage }) {
 
           {table.tool === "get_compare" || table.tool === "get_preview" ? (
             <CompareView rows={table.rows} />
+          ) : table.tool === "run_python" ? (
+            <div style={{ background: "var(--color-stone-canvas)", border: "1px solid var(--color-stone-border)", padding: 12, borderRadius: 8, fontFamily: "monospace", fontSize: 12, overflowX: "auto" }}>
+              <div style={{ fontSize: 11, color: "var(--color-warm-gray)", marginBottom: 6, fontWeight: 500 }}>Python Execution Output:</div>
+              <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>
+                {String((table.rows as Record<string, unknown>)?.printed || (table.rows as Record<string, unknown>)?.out || "Execution completed (no stdout).")}
+              </pre>
+            </div>
           ) : viewMode === "chart" ? (
             <AutoChart table={table as { rows?: unknown }} />
           ) : (
