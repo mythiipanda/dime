@@ -35,7 +35,7 @@ export default function NodeCards({ ai }: { ai: AiMessage }) {
   const done = names.filter((n) => ai.nodes[n]!.status === "complete").length;
   const anyRunning = names.some((n) => ai.nodes[n]!.status === "running");
   const showTrace = open || anyRunning;
-  const tables: { tool: string; rows?: unknown; meta?: { source?: string; fetched_at?: string; stat_category?: string; links?: { watch?: string } } }[] = [];
+  const tables: { tool: string; rows?: unknown; meta?: { source?: string; fetched_at?: string; stat_category?: string; sql?: string; links?: { watch?: string } } }[] = [];
   for (const n of names) {
     for (const t of ai.nodes[n]!.tables) tables.push(t);
   }
@@ -148,6 +148,12 @@ export default function NodeCards({ ai }: { ai: AiMessage }) {
                 </a>
               ) : null}
             </span>
+            {table.meta?.sql ? (
+              <details style={{ fontSize: 11, color: "#78716c", marginTop: 2 }}>
+                <summary style={{ cursor: "pointer" }}>SQL</summary>
+                <pre style={{ whiteSpace: "pre-wrap", margin: "4px 0 0" }}>{table.meta.sql}</pre>
+              </details>
+            ) : null}
             <span style={{ display: "flex", gap: 4, marginLeft: "auto" }}>
               <button
                 className={heat ? "tab-active" : "pill-ghost"}

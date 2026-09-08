@@ -119,6 +119,14 @@ def get_lineups(team_id: str | int, season: str = SEASON) -> dict[str, Any]:
         lambda: nba_stats.lineups(team_id, season), season,
         entity=f"team:{team_id}", live_first=True,
     )
+    for r in rows:
+        try:
+            small = float(r.get("MIN") or 0) < 50
+        except (TypeError, ValueError):
+            small = True
+        if small:
+            r["SAMPLE"] = "small: under ~100 possessions, do not trust"
+    rows = sorted(rows, key=lambda r: float(r.get("MIN") or 0), reverse=True)
     return {"tool": "get_lineups", "ok": True, "rows": rows, "meta": meta}
 
 
