@@ -259,3 +259,47 @@ def get_recap(game_id: str, season: str = SEASON) -> dict[str, Any]:
             "meta": {"source": res.meta.source, "fetched_at": res.meta.fetched_at,
                       "rows": len(top), "cached": False,
                       "links": game_links(game_id)}}
+
+
+@tool
+async def get_scout_pack(team: str = "", opponent: str = "", season: str = SEASON) -> dict[str, Any]:
+    """One-call next-opponent brief: record, net rating, top lineups, injuries."""
+    from .league import get_injuries, get_ratings
+
+    async def one(who: str) -> dict[str, Any]:
+        try:
+            tid = coerce_team_id(who)
+            abbr = _abbrev(who)
+        except Exception as exc:
+            return {"error": str(exc)[:160]}
+        try:
+            hub = await get_team_hub.ainvoke({"team_id": tid, "season": season})
+            games = (hub.get("rows") or {}).get("games", []) or []
+            wins = sum(1 for g in games if g.get("WL") == "W")
+            rec = f"{wins}-{len(games) - wins}" if games else "0-0"
+            rat = await get_ratings.ainvoke({"season": season})
+            rr = next((r for r in rat.get("rows", []) if str(r.get("TEAM", "")).upper() == abbr.upper()), {})
+            lin = await get_lineups.ainvoke({"team_id": tid, "season": season})
+            top = [{"GROUP_NAME": r.get("GROUP_NAME"), "MIN": r.get("MIN"), "PLUS_MINUS": r.get("PLUS_MINUS")}
+                   for r in lin.get("rows", []) if "SAMPLE" not in r][:3]
+            inj = await get_injuries.ainvoke({"team": abbr, "season": season})
+            irows = inj.get("rows", []) or []
+            return {"abbrev": abbr, "team_id": tid, "record": rec, "games": len(games),
+                    "net_rating": rr.get("NET_RATING"), "net_rank": rr.get("NET_RATING_RANK"),
+                    "off_rating": rr.get("OFF_RATING"), "def_rating": rr.get("DEF_RATING"),
+                    "top_lineups": top, "injuries": irows, "injury_count": len(irows)}
+        except Exception as exc:
+            return {"abbrev": who, "error": str(exc)[:160]}
+
+    t, o = await _asyncio.gather(one(team or ""), one(opponent or ""))
+    try:
+        tn, on_ = float(t.get("net_rating") or 0), float(o.get("net_rating") or 0)
+        tp = (t.get("top_lineups") or [{}])[0].get("PLUS_MINUS", 0)
+        op = (o.get("top_lineups") or [{}])[0].get("PLUS_MINUS", 0)
+        edge = (f"{t.get('abbrev', team)} ({t.get('record')}, net {tn:+.1f}) vs "
+                f"{o.get('abbrev', opponent)} ({o.get('record')}, net {on_:+.1f}): "
+                f"net gap {tn - on_:+.1f}, top-unit {tp} vs {op}.")
+    except Exception:
+        edge = f"{team} vs {opponent}: data incomplete, check records and health."
+    return {"tool": "get_scout_pack", "ok": True, "rows": {"team": t, "opponent": o, "edge": edge},
+            "meta": {"source": "nba_api+warehouse", "season": season}}

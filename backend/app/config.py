@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     mistral_model: str = "ministral-8b-2512"
     openrouter_api_key: str = ""
     openrouter_model: str = "nvidia/nemotron-3-super-120b-a12b:free"
+    inception_api_key: str = ""
+    inception_model: str = "mercury-2.5"
     cors_allowed_origins: str = "http://localhost:3000"
     llm_timeout_s: int = 60
     llm_max_retries: int = 1

@@ -44,6 +44,7 @@ from .team import (
     get_lineups,
     get_preview,
     get_recap,
+    get_scout_pack,
     get_scouting_report,
     get_team_hub,
 )
@@ -82,6 +83,7 @@ v1_tools: list[BaseTool] = [
     get_trend,
     get_win_prob,
     get_preview,
+    get_scout_pack,
     get_cap_ledger,
     get_trade_check,
     get_ratings,

@@ -27,6 +27,10 @@ def test_resolve_model_clamps_unknown_openrouter():
     assert name == "openrouter"
 
 
+def test_resolve_model_inception():
+    assert resolve_model_id("inception:mercury-2.5") == ("inception", "mercury-2.5")
+
+
 def test_resolve_model_rejects_bare_names():
     name, model = resolve_model_id("LeBron James")
     assert (name, model) == ("mistral", "ministral-8b-2512")

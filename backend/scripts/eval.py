@@ -217,6 +217,17 @@ def main() -> None:
           and board_res["rows"][0].get("SCORE", 0) > 80,
           str(board_res["rows"][:1])[:160])
 
+    async def _pack():
+        return await tools.get_scout_pack.ainvoke(
+            {"team": "OKC", "opponent": "BOS"})
+
+    pack_res = _aio2.run(_pack())
+    check("scout pack briefs both sides",
+          pack_res["ok"] and pack_res["rows"]["team"].get("net_rating", 0) > 5
+          and len(pack_res["rows"]["team"].get("top_lineups", [])) > 0
+          and "net gap" in pack_res["rows"].get("edge", ""),
+          str(pack_res["rows"].get("edge"))[:160])
+
     res = tools.get_finder.invoke({"mode": "player_streak",
                                    "team_abbrev": "LeBron James",
                                    "season": "2024-25"})

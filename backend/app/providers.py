@@ -10,11 +10,12 @@ from langchain_openai import ChatOpenAI
 
 from .config import settings
 
-ProviderName = Literal["mistral", "openrouter"]
+ProviderName = Literal["mistral", "openrouter", "inception"]
 
 MISTRAL_DEFAULT = "ministral-8b-2512"
 OPENROUTER_DEFAULT = "nvidia/nemotron-3-super-120b-a12b:free"
 OPENROUTER_AUTO = "openrouter/free"
+INCEPTION_DEFAULT = "mercury-2.5"
 
 OPENROUTER_ALLOWLIST: frozenset[str] = frozenset(
     {
@@ -36,6 +37,9 @@ def resolve_model_id(model_id: str | None) -> tuple[ProviderName, str]:
     if raw.startswith("mistral:"):
         slug = raw.split(":", 1)[1] or settings.mistral_model
         return ("mistral", slug)
+    if raw.startswith("inception:"):
+        slug = raw.split(":", 1)[1] or settings.inception_model
+        return ("inception", slug)
     if raw:
         if ":free" in raw or "/" in raw:
             if raw == OPENROUTER_AUTO or raw in OPENROUTER_ALLOWLIST:
@@ -56,6 +60,16 @@ def get_llm(name: ProviderName, model: str | None = None) -> ChatOpenAI | None:
             timeout=settings.llm_timeout_s,
             max_retries=settings.llm_max_retries,
         )
+    if name == "inception":
+        if not settings.inception_api_key:
+            return None
+        return ChatOpenAI(
+            model=model or settings.inception_model or INCEPTION_DEFAULT,
+            base_url="https://api.inceptionlabs.ai/v1",
+            api_key=settings.inception_api_key,
+            timeout=settings.llm_timeout_s,
+            max_retries=settings.llm_max_retries,
+        )
     if not settings.openrouter_api_key:
         return None
     return ChatOpenAI(
@@ -72,7 +86,9 @@ def get_llm(name: ProviderName, model: str | None = None) -> ChatOpenAI | None:
 
 
 def fallback_order(primary: ProviderName) -> list[ProviderName]:
-    return [primary, "openrouter" if primary == "mistral" else "mistral"]
+    rest: list[ProviderName] = ["mistral", "openrouter", "inception"]
+    rest.remove(primary)
+    return [primary, *rest]
 
 
 async def invoke_with_fallback(
@@ -130,8 +146,13 @@ def models_catalog() -> dict[str, Any]:
     for slug in sorted(OPENROUTER_ALLOWLIST):
         options.append({"id": f"openrouter:{slug}", "engine": "openrouter"})
     options.append({"id": f"openrouter:{OPENROUTER_AUTO}", "engine": "openrouter"})
+    options.append({
+        "id": f"inception:{settings.inception_model or INCEPTION_DEFAULT}",
+        "engine": "inception",
+    })
     available = {
         "mistral": bool(settings.mistral_api_key),
         "openrouter": bool(settings.openrouter_api_key),
+        "inception": bool(settings.inception_api_key),
     }
     return {"models": options, "available": available}
