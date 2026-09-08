@@ -168,6 +168,8 @@ LEAGUE_BRIEF = (
     "playoffs, THEN call get_playoff_sim. "
     "IF the task mentions overpaid, underpaid, contract value, or "
     "salary vs production, THEN call get_contract_value. "
+    "IF the task mentions draft, prospects, or rookies, "
+    "THEN call get_draft_board. "
     "IF the task names one stat category, THEN call get_leaders. "
     "Otherwise call get_standings."
 )
@@ -206,7 +208,8 @@ def delegate_tools(provider: ProviderName, model: str) -> list:
             "league", LEAGUE_BRIEF, task, provider, model,
             ["get_standings", "get_leaders", "get_injuries", "get_rapm",
              "get_playoffs", "get_ratings", "get_clutch", "get_elo",
-             "get_playoff_sim", "get_contract_value", "text_to_sql"],
+             "get_playoff_sim", "get_contract_value", "get_draft_board",
+             "text_to_sql"],
             force_tool=force,
         )
 

@@ -206,6 +206,17 @@ def main() -> None:
           and all(0 <= r.get("eFG_PCT", -1) <= 1.5 for r in res["rows"]),
           str(res["rows"][:1])[:160])
 
+    import asyncio as _aio2
+
+    async def _board():
+        return await tools.get_draft_board.ainvoke({})
+
+    board_res = _aio2.run(_board())
+    check("draft board ranks scorers",
+          board_res["ok"] and len(board_res["rows"]) == 30
+          and board_res["rows"][0].get("SCORE", 0) > 80,
+          str(board_res["rows"][:1])[:160])
+
     res = tools.get_finder.invoke({"mode": "player_streak",
                                    "team_abbrev": "LeBron James",
                                    "season": "2024-25"})

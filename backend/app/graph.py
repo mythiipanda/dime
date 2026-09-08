@@ -127,6 +127,8 @@ async def _triage_seed(question: str, primary: str, model: str,
         pick = "delegate_team"
     elif _LEAGUE_RX.search(question):
         pick = "delegate_league"
+    elif re.search(r"draft|prospect|rookie|combine", question, re.IGNORECASE):
+        pick = "delegate_league"
     if pick is None or pick not in delegates:
         return
     try:

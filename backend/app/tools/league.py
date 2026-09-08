@@ -499,6 +499,49 @@ def get_trade_check(
 
 
 @tool
+def get_draft_board(season: str = "2025") -> dict[str, Any]:
+    """Draft board: college production plus combine measurements, blended rank."""
+    import unicodedata as _ud
+
+    from ..sources import cbb as _cbb
+
+    def norm(s: object) -> str:
+        return "".join(c for c in _ud.normalize("NFKD", str(s or ""))
+                       if not _ud.combining(c)).lower().strip()
+
+    prod = _cbb.get_player_stats(2025 if season == "2025" else int(season))
+    if not prod.ok or prod.frame.height == 0:
+        return {"tool": "get_draft_board", "ok": False,
+                "error": prod.error or "college stats empty"}
+    rows, meta = _warehouse_or_live(
+        "silver_combine", "_season = ?",
+        [season], lambda: nba_stats.combine(season), season,
+    )
+    meas = {norm(r.get("PLAYER_NAME")): r for r in rows}
+    board = []
+    for p in prod.frame.to_dicts():
+        m = meas.get(norm(p.get("PLAYER_NAME")), {})
+        try:
+            score = (float(p.get("PTS") or 0) * 2
+                     + float(p.get("TS_PCT") or 0) * 50
+                     + float(p.get("USG") or 0))
+        except (TypeError, ValueError):
+            continue
+        board.append({"PLAYER": p.get("PLAYER_NAME"), "TEAM": p.get("TEAM"),
+                      "PTS": p.get("PTS"), "TS_PCT": p.get("TS_PCT"),
+                      "USG": p.get("USG"),
+                      "HEIGHT": m.get("HEIGHT_WO_SHOES_FT_IN"),
+                      "WINGSPAN": m.get("WINGSPAN_FT_IN"),
+                      "SCORE": round(score, 1)})
+    board.sort(key=lambda d: d["SCORE"], reverse=True)
+    return {"tool": "get_draft_board", "ok": True, "rows": board[:30],
+            "meta": {"source": "barttorvik+nba_api", "season": season,
+                     "matched_measurements": sum(1 for b in board[:30]
+                                                 if b["HEIGHT"]),
+                     "formula": "2*PTS + 50*TS + USG"}}
+
+
+@tool
 def get_combine(season: str = "2025") -> dict[str, Any]:
     """Draft combine measurements plus shooting drills for one draft year."""
     res = nba_stats.combine(season)
