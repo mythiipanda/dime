@@ -19,7 +19,7 @@ from .providers import (
 )
 from .skills import catalog as skills_catalog
 from .subagents import delegate_tools
-from .tools import TOOL_NAMES, v1_tools
+from .tools import v1_tools
 
 ANALYST_SYSTEM = (
     "You are Dime, an NBA data analyst assistant. "
@@ -32,11 +32,13 @@ ANALYST_SYSTEM = (
 )
 
 PLANNER_SYSTEM = (
-    "You are the retrieval supervisor. You have direct tools: " + ", ".join(TOOL_NAMES) + ". "
-    "You also have delegates: delegate_scout, delegate_team, delegate_league. "
+    "You are the retrieval supervisor. Your tools: resolve_entity, "
+    "get_compare, get_preview, get_briefing, text_to_sql, delegate_scout, "
+    "delegate_team, delegate_league. Workers behind the delegates own "
+    "every granular dataset. "
     "Delegate multi-part work (comparisons, previews, roundups) to one delegate per entity. "
-    "Do simple single-entity lookups yourself with direct tools. "
     "For cross-season history questions call text_to_sql once. "
+    "For single-season leaders, standings, or injuries call delegate_league. "
     "For two-player compares call get_compare once and nothing else. "
     "For two-team previews call get_preview once and nothing else. "
     "After a composite call, make no further tool calls this turn. "
@@ -79,6 +81,16 @@ def _all_tools(state: DimeState) -> list:
     return list(v1_tools) + delegate_tools(state["primary"], state["model"])  # type: ignore[arg-type]
 
 
+SUPERVISOR_TOOL_NAMES = frozenset({
+    "resolve_entity", "get_compare", "get_preview", "get_briefing",
+    "text_to_sql", "delegate_scout", "delegate_team", "delegate_league",
+})
+
+
+def _supervisor_tools(state: DimeState) -> list:
+    return [t for t in _all_tools(state) if t.name in SUPERVISOR_TOOL_NAMES]
+
+
 def _flatten_tables(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     flat: list[dict[str, Any]] = []
     for r in results:
@@ -115,7 +127,7 @@ async def data_retrieval_agent(
     if client is None:
         yield _event("error", {"node": "data_retrieval", "message": "no key"})
         return
-    tooled = client.bind_tools(_all_tools(state))
+    tooled = client.bind_tools(_supervisor_tools(state))
     prior = ""
     if state["history"]:
         turns = state["history"][-6:]
@@ -239,13 +251,15 @@ async def analytics_agent(state: DimeState) -> AsyncGenerator[dict[str, Any], No
         return bool(rows)
 
     evidenced = [
-        r for r in state["tool_results"]
+        r for r in _flatten_tables(state["tool_results"])
         if isinstance(r, dict) and _has_rows(r.get("rows"))
     ]
     if not evidenced:
+        tried = [k.split(":", 1)[0] for k in state["calls_made"]][:6]
         state["analysis"] = (
-            "No data came back from the warehouse or live sources. "
-            "Try a player or team name, or another date."
+            "The research step came back empty, so there is nothing to report. "
+            "Ask again or ask something narrower."
+            + (f" Tried: {', '.join(tried)}." if tried else "")
         )
         yield _event(
             "custom_data", {"node": "analytics", "tables": _flatten_tables(state["tool_results"])}

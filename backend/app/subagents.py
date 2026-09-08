@@ -41,15 +41,20 @@ async def _run_desk(
     tooled = client.bind_tools(subset)
     calls_made = 0
     collected: list[dict[str, Any]] = []
-    try:
-        resp = await tooled.ainvoke(
-            [
-                SystemMessage(content=brief),
-                HumanMessage(content=f"Season {SEASON}. Task: {task}"),
-            ]
-        )
-    except Exception as exc:
-        return {"agent": desk, "ok": False, "error": str(exc)[:200]}
+    attempts = [
+        [SystemMessage(content=brief),
+         HumanMessage(content=f"Season {SEASON}. Task: {task}")],
+        [SystemMessage(content=brief + " Call exactly one tool now. No prose."),
+         HumanMessage(content=f"Season {SEASON}. Task: {task}")],
+    ]
+    resp = None
+    for attempt in attempts:
+        try:
+            resp = await tooled.ainvoke(attempt)
+        except Exception as exc:
+            return {"agent": desk, "ok": False, "error": str(exc)[:200]}
+        if getattr(resp, "tool_calls", None):
+            break
     for call in getattr(resp, "tool_calls", None) or []:
         if calls_made >= WORKER_BUDGET:
             break
