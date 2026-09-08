@@ -160,6 +160,22 @@ def main() -> None:
           res["ok"] and all("Atlanta" in r.get("display_name", "")
                             for r in res["rows"]), str(res)[:160])
 
+    res = tools.get_ratings.invoke({})
+    check("ratings carry ranks",
+          res["ok"] and len(res["rows"]) == 30
+          and res["rows"][0].get("NET_RATING_RANK") is not None
+          and all(r.get("TEAM") for r in res["rows"]), str(res)[:160])
+
+    res = tools.get_clutch.invoke({"scope": "player"})
+    check("clutch names a leader",
+          res["ok"] and len(res["rows"]) > 0
+          and res["rows"][0].get("PTS", 0) > 50, str(res)[:160])
+
+    res = tools.get_boxscore.invoke({"game_id": "0042500405"})
+    check("boxscore carries watch link",
+          res["ok"] and res["meta"].get("links", {}).get("watch", "").startswith(
+              "https://www.nba.com/game/"), str(res["meta"])[:160])
+
     print(f"\neval: {PASS} pass, {FAIL} fail")
     sys.exit(1 if FAIL else 0)
 

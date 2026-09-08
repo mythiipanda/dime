@@ -35,7 +35,7 @@ export default function NodeCards({ ai }: { ai: AiMessage }) {
   const done = names.filter((n) => ai.nodes[n]!.status === "complete").length;
   const anyRunning = names.some((n) => ai.nodes[n]!.status === "running");
   const showTrace = open || anyRunning;
-  const tables: { tool: string; rows?: unknown; meta?: { source?: string; fetched_at?: string; stat_category?: string } }[] = [];
+  const tables: { tool: string; rows?: unknown; meta?: { source?: string; fetched_at?: string; stat_category?: string; links?: { watch?: string } } }[] = [];
   for (const n of names) {
     for (const t of ai.nodes[n]!.tables) tables.push(t);
   }
@@ -141,6 +141,12 @@ export default function NodeCards({ ai }: { ai: AiMessage }) {
               Insight {Math.min(page + 1, tables.length)} of {tables.length}: {table.tool}
               {table.meta?.source ? ` from ${table.meta.source}` : ""}
               {table.meta?.fetched_at ? ` at ${String(table.meta.fetched_at).slice(0, 10)}` : ""}
+              {table.meta?.links?.watch ? (
+                <a href={table.meta.links.watch} target="_blank" rel="noreferrer"
+                  style={{ fontSize: 12, marginLeft: 6 }}>
+                  Watch
+                </a>
+              ) : null}
             </span>
             <span style={{ display: "flex", gap: 4, marginLeft: "auto" }}>
               <button

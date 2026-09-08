@@ -41,6 +41,49 @@ def get_standings(season: str = SEASON) -> dict[str, Any]:
 
 
 @tool
+def get_ratings(season: str = SEASON) -> dict[str, Any]:
+    """Team offensive, defensive, and net ratings plus pace and ranks."""
+    from nba_api.stats.static import teams as _teams
+
+    abbrev = {t["id"]: t["abbreviation"] for t in _teams.get_teams()}
+    rows, meta = _warehouse_or_live(
+        "silver_team_ratings", "_season = ?",
+        [season], lambda: nba_stats.team_ratings(season), season,
+        limit=30,
+    )
+    keep = ["TEAM_NAME", "GP", "W", "L",
+            "OFF_RATING", "DEF_RATING", "NET_RATING", "PACE",
+            "OFF_RATING_RANK", "DEF_RATING_RANK", "NET_RATING_RANK"]
+    slim = []
+    for r in rows:
+        d = {k: r.get(k) for k in keep if k in r}
+        d["TEAM"] = abbrev.get(r.get("TEAM_ID"), str(r.get("TEAM_NAME") or ""))
+        slim.append(d)
+    return {"tool": "get_ratings", "ok": True, "rows": slim, "meta": meta}
+
+
+@tool
+def get_clutch(scope: str = "player", season: str = SEASON) -> dict[str, Any]:
+    """Clutch stats (last 5 min, margin 5 or less), player or team scope."""
+    scope = "team" if str(scope).lower().startswith("team") else "player"
+    entity = f"{scope}-clutch"
+    rows, meta = _warehouse_or_live(
+        "silver_clutch", "_season = ? AND _entity = ?",
+        [season, entity], lambda: nba_stats.clutch(scope, season), season,
+        entity=entity, limit=600,
+    )
+    name_col = "TEAM_ABBREVIATION" if scope == "team" else "PLAYER_NAME"
+    slim = sorted(
+        ({name_col: r.get(name_col), "GP": r.get("GP"), "W": r.get("W"),
+          "L": r.get("L"), "PTS": r.get("PTS"),
+          "FG_PCT": r.get("FG_PCT"), "FG3_PCT": r.get("FG3_PCT"),
+          "PLUS_MINUS": r.get("PLUS_MINUS")} for r in rows),
+        key=lambda d: (d.get("PTS") or 0), reverse=True,
+    )
+    return {"tool": "get_clutch", "ok": True, "rows": slim[:30], "meta": meta}
+
+
+@tool
 def get_playoffs(season: str = SEASON) -> dict[str, Any]:
     """Playoff wins per team plus champion for one season."""
     rows, meta = _warehouse_or_live(
@@ -417,7 +460,8 @@ async def text_to_sql(question: str) -> dict[str, Any]:
     from .. import store as _store
     from ..providers import invoke_with_fallback
 
-    allowed = ["silver_standings", "silver_playoffs", "silver_player_gamelogs", "silver_team_games",
+    allowed = ["silver_standings", "silver_playoffs", "silver_team_ratings",
+               "silver_clutch", "silver_player_gamelogs", "silver_team_games",
                "silver_leaders_pts", "silver_leaders_reb", "silver_leaders_ast",
                "silver_leaders_stl", "silver_leaders_blk", "silver_boxscores",
                "silver_lineups", "silver_shots", "silver_hustle_player",

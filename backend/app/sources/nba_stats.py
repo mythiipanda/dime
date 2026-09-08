@@ -234,6 +234,31 @@ def team_roster(team_id: int, season: str) -> FetchResult:
     return safe(SOURCE, season, run)
 
 
+def team_ratings(season: str) -> FetchResult:
+    from nba_api.stats.endpoints import LeagueDashTeamStats
+
+    def run() -> pl.DataFrame:
+        frames = _frames(LeagueDashTeamStats(
+            season=season or None,
+            measure_type_detailed_defense="Advanced", timeout=_t()))
+        return _pl(frames[0])
+
+    return safe(SOURCE, season, run)
+
+
+def clutch(scope: str, season: str) -> FetchResult:
+    if scope == "team":
+        from nba_api.stats.endpoints import LeagueDashTeamClutch as Clutch
+    else:
+        from nba_api.stats.endpoints import LeagueDashPlayerClutch as Clutch
+
+    def run() -> pl.DataFrame:
+        frames = _frames(Clutch(season=season or None, timeout=_t()))
+        return _pl(frames[0])
+
+    return safe(SOURCE, season, run)
+
+
 def current_season_meta() -> FetchMeta:
     from nba_api.stats.static import teams
 

@@ -117,6 +117,10 @@ LEAGUE_BRIEF = (
     "You are the league desk. Season 2025-26 unless told otherwise. "
     "IF the task mentions playoffs, champion, finals, or rings, "
     "THEN call get_playoffs first and nothing else. "
+    "IF the task mentions clutch, late game, or last 5 minutes, "
+    "THEN call get_clutch. "
+    "IF the task mentions offense, defense, net rating, pace, or ranks, "
+    "THEN call get_ratings. "
     "IF the task names one stat category, THEN call get_leaders. "
     "Otherwise call get_standings."
 )
@@ -154,7 +158,7 @@ def delegate_tools(provider: ProviderName, model: str) -> list:
         return await _run_desk(
             "league", LEAGUE_BRIEF, task, provider, model,
             ["get_standings", "get_leaders", "get_injuries", "get_rapm",
-             "get_playoffs", "text_to_sql"],
+             "get_playoffs", "get_ratings", "get_clutch", "text_to_sql"],
             force_tool=force,
         )
 

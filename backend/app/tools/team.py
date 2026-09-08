@@ -76,6 +76,10 @@ def get_team_hub(team_id: str | int, season: str = SEASON) -> dict[str, Any]:
     }
 
 
+def game_links(game_id: str) -> dict[str, str]:
+    return {"watch": f"https://www.nba.com/game/{game_id}"}
+
+
 @tool
 def get_games_on_date(game_date: str, season: str = SEASON) -> dict[str, Any]:
     """Scoreboard for one date. Date format is MM/DD/YYYY."""
@@ -85,6 +89,10 @@ def get_games_on_date(game_date: str, season: str = SEASON) -> dict[str, Any]:
         lambda: nba_stats.scoreboard(game_date, season), season,
         entity=f"date:{game_date}", live_first=True,
     )
+    for r in rows:
+        gid = r.get("GAME_ID")
+        if gid:
+            r["LINKS"] = game_links(str(gid))
     return {"tool": "get_games_on_date", "ok": True, "rows": rows, "meta": meta}
 
 
@@ -97,7 +105,8 @@ def get_boxscore(game_id: str, season: str = SEASON) -> dict[str, Any]:
         lambda: nba_stats.boxscore_traditional(game_id, season), season,
         entity=f"game:{game_id}", live_first=True,
     )
-    return {"tool": "get_boxscore", "ok": True, "rows": rows, "meta": meta}
+    return {"tool": "get_boxscore", "ok": True, "rows": rows,
+            "meta": {**meta, "links": game_links(game_id)}}
 
 
 @tool
@@ -168,4 +177,5 @@ def get_recap(game_id: str, season: str = SEASON) -> dict[str, Any]:
         return {"tool": "get_recap", "ok": False, "error": str(exc)[:160]}
     return {"tool": "get_recap", "ok": True, "rows": top,
             "meta": {"source": res.meta.source, "fetched_at": res.meta.fetched_at,
-                     "rows": len(top), "cached": False}}
+                      "rows": len(top), "cached": False,
+                      "links": game_links(game_id)}}
