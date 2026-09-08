@@ -243,6 +243,13 @@ def main() -> None:
           and len(res["rows"].get("fallers", [])) == 5,
           str(res["rows"].get("risers", [])[:2])[:160])
 
+    res = tools.get_team_splits.invoke({"team": "OKC"})
+    check("team splits balance",
+          res["ok"] and sum(r["GP"] for r in res["rows"]
+                            if r["split"] in ("home", "away")) == 82
+          and {"home", "away", "last10"} <= {r["split"] for r in res["rows"]},
+          str(res["rows"][:2])[:160])
+
     async def _pack():
         return await tools.get_scout_pack.ainvoke(
             {"team": "OKC", "opponent": "BOS"})

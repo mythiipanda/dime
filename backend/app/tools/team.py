@@ -386,3 +386,48 @@ def get_rotation_check(team: str = "", season: str = SEASON) -> dict[str, Any]:
     return {"tool": "get_rotation_check", "ok": True,
             "rows": {"team": abbr, "players": players, "flag": flag},
             "meta": {"source": "nba_api+warehouse", "season": season}}
+
+
+@tool
+def get_team_splits(team: str | int, season: str = SEASON) -> dict[str, Any]:
+    """Home/away, wins/losses, last-10, monthly record plus PPG from cached gamelog."""
+    try:
+        tid = coerce_team_id(team)
+    except ValueError as exc:
+        return {"tool": "get_team_splits", "ok": False, "error": str(exc)[:160]}
+    from datetime import datetime as _dt
+    from .. import store as _store
+    con = _store.connect()
+    try:
+        rows = con.execute(
+            "SELECT MATCHUP, WL, GAME_DATE, PTS FROM silver_team_games"
+            " WHERE _season = ? AND _entity = ?",
+            [season, f"team:{tid}"],
+        ).fetchall()
+    finally:
+        con.close()
+    if not rows:
+        return {"tool": "get_team_splits", "ok": False,
+                "error": f"no cached games for team {tid}"}
+    def _dkey(d: object) -> object:
+        try:
+            return _dt.strptime(str(d).title(), "%b %d, %Y")
+        except (TypeError, ValueError):
+            return _dt.min
+    def _row(split: str, rs: list) -> dict[str, Any]:
+        gp = len(rs)
+        w = sum(1 for r in rs if r[1] == "W")
+        ppg = round(sum((r[3] or 0) for r in rs) / gp, 1) if gp else 0.0
+        return {"split": split, "GP": gp, "W": w, "L": gp - w, "PPG": ppg}
+    out = [_row("home", [r for r in rows if "@" not in str(r[0])]),
+           _row("away", [r for r in rows if "@" in str(r[0])]),
+           _row("wins", [r for r in rows if r[1] == "W"]),
+           _row("losses", [r for r in rows if r[1] == "L"])]
+    ordered = sorted(rows, key=lambda r: _dkey(r[2]), reverse=True)
+    out.append(_row("last10", ordered[:10]))
+    months: dict[str, list] = {}
+    for r in sorted(rows, key=lambda r: _dkey(r[2])):
+        months.setdefault(str(r[2])[:3].upper(), []).append(r)
+    out.extend(_row(m, rs) for m, rs in months.items())
+    return {"tool": "get_team_splits", "ok": True, "rows": out,
+            "meta": {"source": "warehouse", "season": season, "team_id": tid}}

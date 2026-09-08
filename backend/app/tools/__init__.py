@@ -51,6 +51,7 @@ from .team import (
     get_scout_pack,
     get_scouting_report,
     get_team_hub,
+    get_team_splits,
 )
 from ._core import MAX_ROWS, SEASON, STAT_CATEGORIES, clamp_stat
 
@@ -90,6 +91,7 @@ v1_tools: list[BaseTool] = [
     get_preview,
     get_scout_pack,
     get_rotation_check,
+    get_team_splits,
     get_cap_ledger,
     get_trade_check,
     get_ratings,
