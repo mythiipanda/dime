@@ -34,6 +34,7 @@ async def get_preview(
         lineups = await get_lineups.ainvoke({"team_id": tid, "season": season})
         top = (lineups.get("rows", []) or [{}])[0]
         return {
+            "name": who,
             "team_id": tid,
             "games": len(hub.get("rows", {}).get("games", [])),
             "top_lineup": top.get("GROUP_NAME", ""),

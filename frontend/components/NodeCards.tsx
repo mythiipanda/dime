@@ -39,10 +39,13 @@ export default function NodeCards({ ai }: { ai: AiMessage }) {
   for (const n of names) {
     for (const t of ai.nodes[n]!.tables) tables.push(t);
   }
-  const table = tables[Math.min(
-    pageState ?? tables.length - 1, Math.max(tables.length - 1, 0))];
-  const page = Math.min(
-    pageState ?? tables.length - 1, Math.max(tables.length - 1, 0));
+  const preferred = tables.findIndex((t) =>
+    t.tool === "get_compare" || t.tool === "get_preview" ||
+    t.tool === "get_rapm" || t.tool === "get_finder",
+  );
+  const fallback = preferred >= 0 ? preferred : tables.length - 1;
+  const table = tables[Math.min(pageState ?? fallback, Math.max(tables.length - 1, 0))];
+  const page = Math.min(pageState ?? fallback, Math.max(tables.length - 1, 0));
   const setPage = (n: number) => setPageState(
     Math.max(0, Math.min(n, tables.length - 1)));
   return (

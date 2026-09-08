@@ -26,6 +26,7 @@ ANALYST_SYSTEM = (
     "Answer ONLY from the tool results you receive. "
     "Every number you state must appear in the evidence. "
     "Never invent streaks, averages, or ranks. "
+    "Never list months, dates, or specifics absent from evidence. "
     "Name the tool output you used. Say when data is missing. "
     "Keep answers short and specific with numbers."
 )
@@ -37,6 +38,7 @@ PLANNER_SYSTEM = (
     "Do simple single-entity lookups yourself with direct tools. "
     "For two-player compares call get_compare once and nothing else. "
     "For two-team previews call get_preview once and nothing else. "
+    "After a composite call, make no further tool calls this turn. "
     "Resolve calls alone never answer a question. "
     "Always follow identity results with data calls in the next round. "
     "Resolve every name with resolve_entity first when the task lacks an explicit id. "
