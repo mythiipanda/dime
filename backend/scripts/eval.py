@@ -155,6 +155,11 @@ def main() -> None:
     check("trade check returns verdict",
           res["ok"] and "legal" in res["rows"], str(res)[:200])
 
+    res = tools.get_injuries.invoke({"team": "ATL"})
+    check("injuries filter by team",
+          res["ok"] and all("Atlanta" in r.get("display_name", "")
+                            for r in res["rows"]), str(res)[:160])
+
     print(f"\neval: {PASS} pass, {FAIL} fail")
     sys.exit(1 if FAIL else 0)
 

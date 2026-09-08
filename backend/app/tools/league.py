@@ -8,6 +8,28 @@ from ._core import SEASON, clamp_stat, _warehouse_or_live
 
 
 @tool
+def get_injuries(team: str = "", season: str = SEASON) -> dict[str, Any]:
+    """Injury report, optional team abbreviation filter."""
+    from ..sources import espn
+
+    rows, meta = _warehouse_or_live(
+        "silver_injuries", "_season = ?",
+        [season], lambda: espn.injuries(season), season,
+    )
+    if team:
+        from nba_api.stats.static import teams as _teams
+
+        want = team.strip().upper()
+        full = next(
+            (t["full_name"] for t in _teams.get_teams()
+             if t["abbreviation"] == want or t["full_name"].upper() == want),
+            want,
+        )
+        rows = [r for r in rows if full.lower() in str(r.get("display_name", "")).lower()]
+    return {"tool": "get_injuries", "ok": True, "rows": rows, "meta": meta}
+
+
+@tool
 def get_standings(season: str = SEASON) -> dict[str, Any]:
     """League standings for one season like 2025-26."""
     rows, meta = _warehouse_or_live(
