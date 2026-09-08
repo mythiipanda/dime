@@ -154,6 +154,8 @@ def main() -> None:
                                         "team_b": "DEN", "players_b": "Nikola Jokic"})
     check("trade check returns verdict",
           res["ok"] and "legal" in res["rows"], str(res)[:200])
+    check("trade check carries disclaimer",
+          "Estimate only" in res["rows"].get("disclaimer", ""), str(res["rows"])[:160])
 
     res = tools.get_injuries.invoke({"team": "ATL"})
     check("injuries filter by team",

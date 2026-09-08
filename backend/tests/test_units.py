@@ -56,6 +56,7 @@ def test_dataset_tables_allowlisted():
         "standings", "leaders", "injuries", "player_gamelogs",
         "team_games", "scoreboard", "shots", "lineups",
         "on_off", "wowy", "four_factors", "hustle", "combine",
+        "ratings", "playoffs",
     }
 
 

@@ -406,7 +406,10 @@ def get_trade_check(
                                 "players": names_a, "payroll": pay_a},
                      "team_b": {"team": team_b.upper(), "out": out_b,
                                 "players": names_b, "payroll": pay_b},
-                     "legal": not issues, "issues": issues},
+                     "legal": not issues, "issues": issues,
+                     "disclaimer": "Estimate only. Skips base-year, trade-kicker, "
+                     "cash, minimum-salary, Stepien, pick, exception, and "
+                     "sign-and-trade rules. Confirm with a cap specialist."},
             "meta": {"source": "orojas119/nba-salary-cap", "rules": "v1-simplified"}}
 
 

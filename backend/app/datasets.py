@@ -24,7 +24,32 @@ TABLES = {
     "four_factors": "silver_four_factors",
     "hustle": "silver_hustle_player",
     "combine": "silver_combine",
+    "ratings": "silver_team_ratings",
+    "playoffs": "silver_playoffs",
 }
+
+
+@router.get("/datasets/freshness")
+def freshness() -> dict:
+    con = store.connect()
+    try:
+        tables = [r[0] for r in
+                  con.execute("SHOW TABLES").fetchall()]
+        rows = []
+        for t in sorted(tables):
+            if not t.startswith("silver_"):
+                continue
+            cols = [r[1] for r in
+                    con.execute(f"PRAGMA table_info({t})").fetchall()]
+            n = con.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
+            last = None
+            if "_fetched_at" in cols:
+                last = con.execute(
+                    f"SELECT MAX(_fetched_at) FROM {t}").fetchone()[0]
+            rows.append({"table": t, "rows": n, "last_fetch": last})
+    finally:
+        con.close()
+    return {"ok": True, "rows": rows}
 
 
 def _envelope(table: str, season: str, frame: object, cached: bool) -> dict:
@@ -68,6 +93,10 @@ def _fetch_live(
         return pbpstats.four_factors(player_id, team_id, season)
     if name == "combine":
         return nba_stats.combine(season)
+    if name == "ratings":
+        return nba_stats.team_ratings(season)
+    if name == "playoffs":
+        return nba_stats.playoff_results(season)
     if name == "wowy" and team_id and ids:
         from .sources import pbpstats
 
