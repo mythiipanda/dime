@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";import ChatPanel from "
 import CommandPalette from "../components/CommandPalette";
 import DatasetPanel from "../components/DatasetPanel";
 import DraftPanel from "../components/DraftPanel";
+import LineupPanel from "../components/LineupPanel";
 import PlayoffPanel from "../components/PlayoffPanel";
 import FreshnessPanel from "../components/FreshnessPanel";
 import TradePanel from "../components/TradePanel";
@@ -100,6 +101,9 @@ export default function Home() {
               </div>
               <div style={{ marginTop: 16 }}>
                 <DraftPanel />
+              </div>
+              <div style={{ marginTop: 16 }}>
+                <LineupPanel />
               </div>
               <div style={{ marginTop: 16 }}>
                 <PlayoffPanel />

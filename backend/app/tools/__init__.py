@@ -9,6 +9,7 @@ from .league import (
     get_combine,
     get_contract_value,
     get_draft_board,
+    get_draft_model,
     get_elo,
     get_finder,
     get_hustle,
@@ -94,6 +95,7 @@ v1_tools: list[BaseTool] = [
     get_playoff_sim,
     get_contract_value,
     get_draft_board,
+    get_draft_model,
 ]
 
 TOOL_NAMES = [t.name for t in v1_tools]

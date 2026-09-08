@@ -886,3 +886,51 @@ def get_contract_value(season: str = "2025-26", min_gp: int = 20) -> dict[str, A
                      "production_season": season, "salary_season": "2026-27",
                      "production_date": prod_date, "salary_date": cap_date,
                      "overpaid_first": True}}
+
+
+@tool
+def get_draft_model(season: str = "2025") -> dict[str, Any]:
+    """Star-probability classifier from college production (honest proxy)."""
+    try:
+        from ..sources import cbb as _cbb
+        from sklearn.linear_model import LogisticRegression
+        yr = 2025 if str(season) == "2025" else int(str(season))
+        prod = _cbb.get_player_stats(yr)
+        if not prod.ok or prod.frame.height == 0:
+            return {"tool": "get_draft_model", "ok": False,
+                    "error": prod.error or "college stats empty"}
+        feats = ["PTS", "TS_PCT", "USG", "REB", "AST"]
+        pls = [p for p in prod.frame.to_dicts()
+               if all(p.get(k) is not None for k in feats)]
+        if len(pls) < 50:
+            return {"tool": "get_draft_model", "ok": False,
+                    "error": "not enough rows"}
+        scores = [float(p["PTS"]) * 2 + float(p["TS_PCT"]) * 50
+                  + float(p["USG"]) for p in pls]
+        cut = sorted(scores, reverse=True)[max(0, len(scores) // 10 - 1)]
+        y = [1 if s >= cut else 0 for s in scores]
+        mus = [sum(float(p[f]) for p in pls) / len(pls) for f in feats]
+        sds = []
+        for j, f in enumerate(feats):
+            v = sum((float(p[f]) - mus[j]) ** 2 for p in pls) / len(pls)
+            sds.append(v ** 0.5 or 1.0)
+        X = [[(float(p[f]) - mus[j]) / sds[j] for j, f in enumerate(feats)]
+             for p in pls]
+        clf = LogisticRegression(max_iter=1000).fit(X, y)
+        proba = [float(v) for v in clf.predict_proba(X)[:, 1]]
+        acc = sum((pr >= 0.5) == bool(t) for pr, t in zip(proba, y)) / len(y)
+        top = sorted(range(len(pls)), key=lambda i: proba[i], reverse=True)[:20]
+        rows = [{"PLAYER": pls[i].get("PLAYER_NAME"), "TEAM": pls[i].get("TEAM"),
+                 "PTS": pls[i].get("PTS"), "TS_PCT": pls[i].get("TS_PCT"),
+                 "USG": pls[i].get("USG"), "STAR_P": round(proba[i], 3)}
+                for i in top]
+        meta = {"source": "barttorvik+sklearn", "season": str(season),
+                "n": len(pls), "features": feats,
+                "label": "top-decile of 2*PTS+50*TS+USG",
+                "accuracy": round(acc, 3),
+                "disclaimer": "Label is a production proxy, not real NBA "
+                "outcomes. In-sample accuracy only, no cross-validation."}
+        return {"tool": "get_draft_model", "ok": True, "rows": rows, "meta": meta}
+    except Exception as exc:
+        return {"tool": "get_draft_model", "ok": False,
+                "error": str(exc)[:200]}

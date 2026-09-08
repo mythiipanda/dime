@@ -217,6 +217,16 @@ def main() -> None:
           and board_res["rows"][0].get("SCORE", 0) > 80,
           str(board_res["rows"][:1])[:160])
 
+    async def _model():
+        return await tools.get_draft_model.ainvoke({})
+
+    model_res = _aio2.run(_model())
+    check("draft model probabilities sane",
+          model_res["ok"] and len(model_res["rows"]) == 20
+          and all(0 <= r.get("STAR_P", -1) <= 1 for r in model_res["rows"])
+          and "proxy" in str(model_res.get("meta", {})).lower(),
+          str(model_res["rows"][:1])[:160])
+
     async def _pack():
         return await tools.get_scout_pack.ainvoke(
             {"team": "OKC", "opponent": "BOS"})
