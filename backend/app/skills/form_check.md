@@ -9,4 +9,5 @@ Output: last 10 averages for PTS, FG_PCT, and 3P, percentile context per
 category, one verdict sentence on trend direction.
 
 Pitfalls: ten games is noisy. Say so. Never call a slump before checking
-minutes and attempts first.
+minutes and attempts first. Prefer get_trend for the decay-weighted
+verdict, last_x for the raw game list.

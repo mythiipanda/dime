@@ -113,7 +113,8 @@ def delegate_tools(provider: ProviderName, model: str) -> list:
             "scout", SCOUT_BRIEF, task, provider, model,
             ["resolve_entity", "search_nba", "get_player_intel",
              "get_on_off", "get_wowy", "get_four_factors",
-             "get_last_x", "get_percentiles", "get_shot_zones"],
+             "get_last_x", "get_percentiles", "get_shot_zones",
+             "get_trend", "get_comps"],
         )
 
     @tool("delegate_team")
