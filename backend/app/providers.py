@@ -10,12 +10,13 @@ from langchain_openai import ChatOpenAI
 
 from .config import settings
 
-ProviderName = Literal["mistral", "openrouter", "inception"]
+ProviderName = Literal["mistral", "openrouter", "inception", "groq"]
 
 MISTRAL_DEFAULT = "ministral-8b-2512"
 OPENROUTER_DEFAULT = "nvidia/nemotron-3-super-120b-a12b:free"
 OPENROUTER_AUTO = "openrouter/free"
 INCEPTION_DEFAULT = "mercury-2.5"
+GROQ_DEFAULT = "openai/gpt-oss-20b"
 
 OPENROUTER_ALLOWLIST: frozenset[str] = frozenset(
     {
@@ -24,6 +25,14 @@ OPENROUTER_ALLOWLIST: frozenset[str] = frozenset(
         "nvidia/nemotron-3.5-lightning:free",
     }
 )
+
+
+def _default_provider() -> tuple[ProviderName, str]:
+    if settings.inception_api_key:
+        return ("inception", settings.inception_model or INCEPTION_DEFAULT)
+    if settings.groq_api_key:
+        return ("groq", settings.groq_model or GROQ_DEFAULT)
+    return ("mistral", settings.mistral_model or MISTRAL_DEFAULT)
 
 
 def resolve_model_id(model_id: str | None) -> tuple[ProviderName, str]:
@@ -40,13 +49,16 @@ def resolve_model_id(model_id: str | None) -> tuple[ProviderName, str]:
     if raw.startswith("inception:"):
         slug = raw.split(":", 1)[1] or settings.inception_model
         return ("inception", slug)
+    if raw.startswith("groq:"):
+        slug = raw.split(":", 1)[1] or settings.groq_model
+        return ("groq", slug)
     if raw:
         if ":free" in raw or "/" in raw:
             if raw == OPENROUTER_AUTO or raw in OPENROUTER_ALLOWLIST:
                 return ("openrouter", raw)
             return ("openrouter", settings.openrouter_model or OPENROUTER_DEFAULT)
-        return ("mistral", settings.mistral_model or MISTRAL_DEFAULT)
-    return ("mistral", settings.mistral_model or MISTRAL_DEFAULT)
+        return _default_provider()
+    return _default_provider()
 
 
 def get_llm(name: ProviderName, model: str | None = None) -> ChatOpenAI | None:
@@ -70,6 +82,16 @@ def get_llm(name: ProviderName, model: str | None = None) -> ChatOpenAI | None:
             timeout=settings.llm_timeout_s,
             max_retries=settings.llm_max_retries,
         )
+    if name == "groq":
+        if not settings.groq_api_key:
+            return None
+        return ChatOpenAI(
+            model=model or settings.groq_model or GROQ_DEFAULT,
+            base_url="https://api.groq.com/openai/v1",
+            api_key=settings.groq_api_key,
+            timeout=settings.llm_timeout_s,
+            max_retries=settings.llm_max_retries,
+        )
     if not settings.openrouter_api_key:
         return None
     return ChatOpenAI(
@@ -86,7 +108,7 @@ def get_llm(name: ProviderName, model: str | None = None) -> ChatOpenAI | None:
 
 
 def fallback_order(primary: ProviderName) -> list[ProviderName]:
-    rest: list[ProviderName] = ["mistral", "openrouter", "inception"]
+    rest: list[ProviderName] = ["mistral", "openrouter", "inception", "groq"]
     rest.remove(primary)
     return [primary, *rest]
 
@@ -136,11 +158,12 @@ async def astream_with_fallback(
 
 
 def models_catalog() -> dict[str, Any]:
+    default_id = f"{_default_provider()[0]}:{_default_provider()[1]}"
     options = [
         {
             "id": f"mistral:{settings.mistral_model or MISTRAL_DEFAULT}",
             "engine": "mistral",
-            "default": True,
+            "default": default_id.startswith("mistral:"),
         }
     ]
     for slug in sorted(OPENROUTER_ALLOWLIST):
@@ -149,10 +172,17 @@ def models_catalog() -> dict[str, Any]:
     options.append({
         "id": f"inception:{settings.inception_model or INCEPTION_DEFAULT}",
         "engine": "inception",
+        "default": default_id.startswith("inception:"),
+    })
+    options.append({
+        "id": f"groq:{settings.groq_model or GROQ_DEFAULT}",
+        "engine": "groq",
+        "default": default_id.startswith("groq:"),
     })
     available = {
         "mistral": bool(settings.mistral_api_key),
         "openrouter": bool(settings.openrouter_api_key),
         "inception": bool(settings.inception_api_key),
+        "groq": bool(settings.groq_api_key),
     }
     return {"models": options, "available": available}

@@ -19,7 +19,7 @@ def test_clamp_stat_normalizes_case():
 
 
 def test_resolve_model_defaults_mistral():
-    assert resolve_model_id(None) == ("mistral", "ministral-8b-2512")
+    assert resolve_model_id(None) == ("inception", "mercury-2.5")
 
 
 def test_resolve_model_clamps_unknown_openrouter():
@@ -33,7 +33,7 @@ def test_resolve_model_inception():
 
 def test_resolve_model_rejects_bare_names():
     name, model = resolve_model_id("LeBron James")
-    assert (name, model) == ("mistral", "ministral-8b-2512")
+    assert (name, model) == ("inception", "mercury-2.5")
 
 
 def test_call_keys_dedupe():
