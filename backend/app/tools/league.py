@@ -188,7 +188,8 @@ def get_finder(
     mode: str = "streak", team_abbrev: str = "", opponent: str = "",
     season: str = SEASON, window: int = 5,
 ) -> dict[str, Any]:
-    """Team finder across history seasons. Modes: streak, versus, span."""
+    """Team finder across history seasons. Modes: streak, versus, span,
+    player_streak, head2head."""
     from .. import store as _store
 
     con = _store.connect()
@@ -205,6 +206,90 @@ def get_finder(
         rows = con.execute(q + " ORDER BY game_date", params).fetchall()
     finally:
         con.close()
+    if mode == "player_streak":
+        from datetime import datetime as _dt
+
+        from ._core import coerce_player_id as _cpid
+
+        if not team_abbrev:
+            return {"tool": "get_finder", "ok": False, "error": "player needed"}
+        try:
+            _pid = _cpid(team_abbrev)
+        except ValueError as exc:
+            return {"tool": "get_finder", "ok": False, "error": str(exc)[:160]}
+        _con = _store.connect()
+        try:
+            _tables = {r[0] for r in _con.execute("SHOW TABLES").fetchall()}
+            if "silver_player_gamelogs" not in _tables:
+                return {"tool": "get_finder", "ok": False,
+                        "error": "player gamelogs empty"}
+            _prows = _con.execute(
+                """SELECT GAME_DATE, PTS FROM silver_player_gamelogs
+                WHERE _season = ? AND Player_ID = ?""",
+                [season, _pid],
+            ).fetchall()
+        finally:
+            _con.close()
+        if not _prows:
+            return {"tool": "get_finder", "ok": False,
+                    "error": f"no cached games for player {_pid}"}
+
+        def _dkey(d: object) -> object:
+            try:
+                return _dt.strptime(str(d), "%b %d, %Y")
+            except (TypeError, ValueError):
+                return _dt.min
+
+        _prows = sorted(_prows, key=lambda r: _dkey(r[0]))
+        _best = _cur = 0
+        for _, _pts in _prows:
+            if (_pts or 0) >= 20:
+                _cur += 1
+                _best = max(_best, _cur)
+            else:
+                _cur = 0
+        return {"tool": "get_finder", "ok": True,
+                "rows": {"player_id": _pid, "longest_20pt_streak": _best,
+                         "games": len(_prows)},
+                "meta": {"source": "warehouse", "season": season}}
+    if mode == "head2head":
+        from ._core import coerce_player_id as _cpid2
+
+        if not team_abbrev or not opponent:
+            return {"tool": "get_finder", "ok": False,
+                    "error": "two players needed"}
+        try:
+            _pa = _cpid2(team_abbrev)
+            _pb = _cpid2(opponent)
+        except ValueError as exc:
+            return {"tool": "get_finder", "ok": False, "error": str(exc)[:160]}
+
+        def _pts_for(_pid: int) -> list:
+            _c = _store.connect()
+            try:
+                return _c.execute(
+                    """SELECT PTS FROM silver_player_gamelogs
+                    WHERE _season = ? AND Player_ID = ?""",
+                    [season, _pid],
+                ).fetchall()
+            finally:
+                _c.close()
+
+        _ra = _pts_for(_pa)
+        _rb = _pts_for(_pb)
+        if not _ra:
+            return {"tool": "get_finder", "ok": False,
+                    "error": f"no cached games for player {team_abbrev}"}
+        if not _rb:
+            return {"tool": "get_finder", "ok": False,
+                    "error": f"no cached games for player {opponent}"}
+        _ga, _gb = len(_ra), len(_rb)
+        _pa_avg = round(sum((_x[0] or 0) for _x in _ra) / _ga, 1)
+        _pb_avg = round(sum((_x[0] or 0) for _x in _rb) / _gb, 1)
+        return {"tool": "get_finder", "ok": True,
+                "rows": {"a": {"player_id": _pa, "gp": _ga, "ppg": _pa_avg},
+                         "b": {"player_id": _pb, "gp": _gb, "ppg": _pb_avg}},
+                "meta": {"source": "warehouse", "season": season}}
     if not rows:
         return {"tool": "get_finder", "ok": False, "error": "no games found"}
     if mode == "versus" and opponent:

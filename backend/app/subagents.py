@@ -101,6 +101,8 @@ async def _run_desk(
 
 SCOUT_BRIEF = (
     "You are the player scout. Report form, splits, and shot profile. "
+    "Splits means home/away plus wins/losses plus last-10 plus monthly "
+    "PPG with FG_PCT from get_splits. "
     "Resolve names with resolve_entity first. Use returned ids verbatim. "
     "Never invent ids. Season 2025-26 unless told otherwise."
 )

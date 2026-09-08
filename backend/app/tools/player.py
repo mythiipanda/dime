@@ -244,7 +244,7 @@ def get_shot_zones(player_id: str | int, season: str = SEASON) -> dict[str, Any]
 
 @tool
 def get_splits(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
-    """Home versus away plus monthly splits from the game log."""
+    """Home/away plus monthly, wins/losses, last-10, starter splits from the game log."""
     player_id = coerce_player_id(player_id)
     res = nba_stats.player_gamelog(player_id, season)
     if not res.ok or res.frame.height == 0:
@@ -254,19 +254,128 @@ def get_splits(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
         g = res.frame.with_columns(
             pl.col("MATCHUP").str.contains("@").alias("away")
         )
+        cols = g.columns
+        if "GAME_DATE" in cols:
+            try:
+                g = g.with_columns(
+                    pl.col("GAME_DATE").str.strptime(
+                        pl.Date, "%b %d, %Y", strict=False).alias("_d")
+                )
+            except Exception:
+                pass
+
+        def _row(label: str, f: pl.DataFrame) -> dict[str, Any] | None:
+            gp = f.height
+            if gp == 0:
+                return None
+            ppg = round(float(f["PTS"].mean() or 0), 1) if "PTS" in f.columns else 0.0
+            row: dict[str, Any] = {"split": label, "GP": gp, "PPG": ppg}
+            if "FG_PCT" in f.columns:
+                try:
+                    row["FG_PCT"] = round(float(f["FG_PCT"].mean() or 0), 3)
+                except Exception:
+                    pass
+            return row
+
+        rows: list[dict[str, Any]] = []
         home = g.filter(~pl.col("away")).select("PTS", "FG_PCT")
         away = g.filter(pl.col("away")).select("PTS", "FG_PCT")
-        rows = [
-            {"split": "home", "GP": home.height,
-             "PPG": round(home["PTS"].mean() or 0, 1)},
-            {"split": "away", "GP": away.height,
-             "PPG": round(away["PTS"].mean() or 0, 1)},
-        ]
+        for r in (_row("home", home), _row("away", away)):
+            if r:
+                rows.append(r)
+        if "WL" in g.columns:
+            wins = g.filter(pl.col("WL") == "W").select("PTS", "FG_PCT")
+            losses = g.filter(pl.col("WL") == "L").select("PTS", "FG_PCT")
+            for r in (_row("wins", wins), _row("losses", losses)):
+                if r:
+                    rows.append(r)
+        ordered: pl.DataFrame | None = None
+        if "_d" in g.columns:
+            try:
+                if g["_d"].drop_nulls().len() > 0:
+                    ordered = g.sort("_d", descending=True)
+            except Exception:
+                ordered = None
+        last10 = ordered.head(10) if ordered is not None else g.head(10)
+        r = _row("last10", last10.select("PTS", "FG_PCT"))
+        if r:
+            rows.append(r)
+        if "START_POSITION" in g.columns:
+            try:
+                started = g.filter(
+                    pl.col("START_POSITION").is_not_null()
+                    & (pl.col("START_POSITION").cast(pl.String) != "")
+                )
+                benched = g.filter(
+                    pl.col("START_POSITION").is_null()
+                    | (pl.col("START_POSITION").cast(pl.String) == "")
+                )
+                for label, f in (("starter", started), ("bench", benched)):
+                    rr = _row(label, f.select("PTS", "FG_PCT"))
+                    if rr:
+                        rows.append(rr)
+            except Exception:
+                pass
+        elif "GS" in g.columns:
+            try:
+                gs = pl.col("GS").cast(pl.String)
+                started = g.filter(gs.is_in(["1", "1.0", "*", "S", "True", "true"]))
+                benched = g.filter(~gs.is_in(["1", "1.0", "*", "S", "True", "true"]))
+                for label, f in (("starter", started), ("bench", benched)):
+                    rr = _row(label, f.select("PTS", "FG_PCT"))
+                    if rr:
+                        rows.append(rr)
+            except Exception:
+                pass
+        if "GAME_DATE" in g.columns:
+            try:
+                gm = g.with_columns(
+                    pl.col("GAME_DATE").cast(pl.String).str.slice(0, 3).alias("_mon")
+                )
+                if "_d" in gm.columns:
+                    try:
+                        order = (gm.filter(pl.col("_d").is_not_null())
+                                   .group_by("_mon").agg(pl.col("_d").min().alias("_d0")))
+                    except Exception:
+                        order = None
+                else:
+                    order = None
+                agg = gm.group_by("_mon").agg(
+                    pl.len().alias("GP"),
+                    pl.col("PTS").mean().alias("_ppg"),
+                    pl.col("FG_PCT").mean().alias("_fg")
+                    if "FG_PCT" in gm.columns else pl.len().alias("_fg"),
+                )
+                if order is not None:
+                    try:
+                        agg = agg.join(order, on="_mon", how="left").sort("_d0").drop("_d0")
+                    except Exception:
+                        agg = agg.sort("_mon")
+                else:
+                    agg = agg.sort("_mon")
+                for d in agg.to_dicts():
+                    try:
+                        gp = int(d.get("GP") or 0)
+                        if gp == 0:
+                            continue
+                        mrow: dict[str, Any] = {
+                            "split": str(d.get("_mon")),
+                            "GP": gp,
+                            "PPG": round(float(d.get("_ppg") or 0), 1),
+                        }
+                        if "FG_PCT" in gm.columns:
+                            mrow["FG_PCT"] = round(float(d.get("_fg") or 0), 3)
+                        rows.append(mrow)
+                    except (TypeError, ValueError):
+                        continue
+            except Exception:
+                pass
+        rows = rows[:12]
     except Exception as exc:
         return {"tool": "get_splits", "ok": False, "error": str(exc)[:160]}
     return {"tool": "get_splits", "ok": True, "rows": rows,
             "meta": {"source": res.meta.source, "fetched_at": res.meta.fetched_at,
-                     "rows": 2, "cached": False}}
+                     "rows": len(rows), "cached": False}}
 
 
 @tool

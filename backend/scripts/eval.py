@@ -93,7 +93,8 @@ def main() -> None:
 
     res = tools.get_splits.invoke({"player_id": 2544})
     check("splits home away",
-          len(res["rows"]) == 2, str(res)[:200])
+          {r["split"] for r in res["rows"]} >= {"home", "away", "last10"}
+          and all(r["GP"] > 0 for r in res["rows"]), str(res)[:200])
 
     res = tools.get_scouting_report.invoke({"team_id": 1610612760})
     check("scouting has record",
@@ -177,6 +178,21 @@ def main() -> None:
     check("boxscore carries watch link",
           res["ok"] and res["meta"].get("links", {}).get("watch", "").startswith(
               "https://www.nba.com/game/"), str(res["meta"])[:160])
+
+    res = tools.get_finder.invoke({"mode": "player_streak",
+                                   "team_abbrev": "LeBron James",
+                                   "season": "2024-25"})
+    check("finder player streak sane",
+          res["ok"] and res["rows"].get("longest_20pt_streak", 0) >= 1
+          and res["rows"].get("games", 0) > 0, str(res)[:200])
+
+    res = tools.get_finder.invoke({"mode": "head2head",
+                                   "team_abbrev": "2544",
+                                   "opponent": "LeBron James",
+                                   "season": "2024-25"})
+    check("finder head2head ppg sane",
+          res["ok"] and 5 < res["rows"]["a"].get("ppg", 0) < 40
+          and 5 < res["rows"]["b"].get("ppg", 0) < 40, str(res)[:200])
 
     print(f"\neval: {PASS} pass, {FAIL} fail")
     sys.exit(1 if FAIL else 0)

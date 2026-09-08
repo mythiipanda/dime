@@ -103,6 +103,19 @@ def main() -> None:
           and "top_lineup" in pa and "top_lineup" in pb
           and abs(sum(wp.values()) - 1.0) < 0.01, str(prev)[:200])
 
+    rs = tools.get_finder.invoke({"mode": "player_streak",
+                                  "team_abbrev": "LeBron James",
+                                  "season": "2024-25"})
+    rh = tools.get_finder.invoke({"mode": "head2head",
+                                  "team_abbrev": "LeBron James",
+                                  "opponent": "2544",
+                                  "season": "2024-25"})
+    check("finder player modes streak plus head2head",
+          rs["ok"] and rs["rows"].get("longest_20pt_streak", 0) >= 1
+          and rh["ok"] and 5 < rh["rows"]["a"].get("ppg", 0) < 40
+          and 5 < rh["rows"]["b"].get("ppg", 0) < 40,
+          str((rs, rh))[:200])
+
     print(f"\nscenarios: {PASS} pass, {FAIL} fail")
     sys.exit(1 if FAIL else 0)
 
