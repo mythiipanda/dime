@@ -483,17 +483,108 @@ def get_on_off(player_id: str | int, team_id: str | int, season: str = SEASON) -
 
 
 @tool
-def get_wowy(player_ids: str, team_id: str | int, season: str = SEASON) -> dict[str, Any]:
-    """With-or-without-you splits. player_ids is comma separated ids."""
-    team_id = coerce_team_id(team_id)
+def get_wowy(
+    player_a: str = "",
+    player_b: str = "",
+    player_ids: str = "",
+    team_id: str | int = 0,
+    season: str = SEASON,
+) -> dict[str, Any]:
+    """With-or-without-you (WOWY) 4-way lineup combination splits for two players.
+
+    Accepts player_a and player_b by name or id, or comma-separated player_ids.
+    Computes Both ON, A ON / B OFF, B ON / A OFF, and Both OFF with minutes,
+    offensive rating, defensive rating, and net rating from warehouse lineups.
+    """
+    raw_a = (player_a or "").strip()
+    raw_b = (player_b or "").strip()
+    if not raw_a and not raw_b and player_ids:
+        parts = [p.strip() for p in player_ids.split(",") if p.strip()]
+        if len(parts) >= 2:
+            raw_a, raw_b = parts[0], parts[1]
+        elif len(parts) == 1:
+            raw_a = parts[0]
+
+    pid_a = coerce_player_id(raw_a) if raw_a else 0
+    pid_b = coerce_player_id(raw_b) if raw_b else 0
+
+    if pid_a and pid_b:
+        con = store.connect(read_only=True)
+        try:
+            tid = coerce_team_id(team_id) if team_id else None
+            if not tid:
+                team_row = con.execute(
+                    """
+                    SELECT DISTINCT TEAM_ID, TEAM_ABBREVIATION FROM silver_lineups
+                    WHERE _season = ? 
+                      AND (GROUP_ID LIKE '%-' || ? || '-%' OR GROUP_ID LIKE '%-' || ? || '-%')
+                    GROUP BY TEAM_ID, TEAM_ABBREVIATION
+                    ORDER BY COUNT(*) DESC LIMIT 1
+                    """,
+                    [season, str(pid_a), str(pid_b)],
+                ).fetchone()
+                if team_row:
+                    tid, tabbr = team_row[0], team_row[1]
+                else:
+                    tabbr = ""
+            else:
+                tabbr = str(tid)
+
+            if tid:
+                df = con.execute(
+                    """
+                    SELECT 
+                      CASE 
+                        WHEN GROUP_ID LIKE '%-' || ? || '-%' AND GROUP_ID LIKE '%-' || ? || '-%' THEN 'Both ON'
+                        WHEN GROUP_ID LIKE '%-' || ? || '-%' AND GROUP_ID NOT LIKE '%-' || ? || '-%' THEN ? || ' ON, ' || ? || ' OFF'
+                        WHEN GROUP_ID NOT LIKE '%-' || ? || '-%' AND GROUP_ID LIKE '%-' || ? || '-%' THEN ? || ' ON, ' || ? || ' OFF'
+                        ELSE 'Both OFF'
+                      END AS split,
+                      ROUND(SUM(MIN), 1) AS minutes,
+                      ROUND(SUM(FGA - OREB + TOV + 0.44 * FTA), 0) AS possessions,
+                      ROUND(100.0 * SUM(PTS) / NULLIF(SUM(FGA - OREB + TOV + 0.44 * FTA), 0), 2) AS off_rating,
+                      ROUND(100.0 * SUM(PTS - PLUS_MINUS) / NULLIF(SUM(FGA - OREB + TOV + 0.44 * FTA), 0), 2) AS def_rating,
+                      ROUND(100.0 * SUM(PLUS_MINUS) / NULLIF(SUM(FGA - OREB + TOV + 0.44 * FTA), 0), 2) AS net_rating
+                    FROM silver_lineups
+                    WHERE TEAM_ID = ? AND _season = ?
+                    GROUP BY split
+                    ORDER BY minutes DESC
+                    """,
+                    [str(pid_a), str(pid_b), str(pid_a), str(pid_b), raw_a, raw_b, str(pid_a), str(pid_b), raw_b, raw_a, tid, season],
+                ).fetchdf()
+
+                if len(df) > 0:
+                    rows = df.to_dict(orient="records")
+                    both_on = next((r for r in rows if r["split"] == "Both ON"), None)
+                    net_str = f"{both_on['net_rating']:+.1f}" if both_on and both_on.get("net_rating") is not None else "N/A"
+                    min_val = both_on['minutes'] if both_on else 0
+                    verdict = f"{tabbr}: Both on court net rating {net_str} across {min_val} minutes."
+                    return {
+                        "tool": "get_wowy",
+                        "ok": True,
+                        "team": tabbr,
+                        "player_a": raw_a,
+                        "player_b": raw_b,
+                        "rows": rows,
+                        "verdict": verdict,
+                        "meta": {"source": "silver_lineups", "season": season, "team": tabbr},
+                    }
+        except Exception:
+            pass
+        finally:
+            con.close()
+
+    # Fallback to PBPStats API if warehouse lacks the lineup rows
     from ..sources import pbpstats
 
-    ids = [int(x) for x in player_ids.split(",") if x.strip().isdigit()]
+    ids = [p for p in (pid_a, pid_b) if p]
+    resolved_team = coerce_team_id(team_id) if team_id else 0
+    entity_key = f"wowy:{raw_a}_{raw_b}"
     rows, meta = _warehouse_or_live(
         "silver_wowy", "_season = ? AND _entity = ?",
-        [season, f"wowy:{player_ids}"],
-        lambda: pbpstats.wowy(ids, team_id, season), season,
-        entity=f"wowy:{player_ids}", live_first=True,
+        [season, entity_key],
+        lambda: pbpstats.wowy(ids, resolved_team, season), season,
+        entity=entity_key, live_first=True,
     )
     return {"tool": "get_wowy", "ok": True, "rows": rows, "meta": meta}
 

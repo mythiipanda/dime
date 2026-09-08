@@ -320,6 +320,11 @@ def main() -> None:
           res["ok"] and 5 < res["rows"]["a"].get("ppg", 0) < 40
           and 5 < res["rows"]["b"].get("ppg", 0) < 40, str(res)[:200])
 
+    res = tools.get_wowy.invoke({"player_a": "Luka", "player_b": "LeBron"})
+    check("wowy splits calculate minutes and ratings",
+          res["ok"] and len(res["rows"]) == 4
+          and all("net_rating" in r for r in res["rows"]), str(res)[:200])
+
     print(f"\neval: {PASS} pass, {FAIL} fail")
     sys.exit(1 if FAIL else 0)
 

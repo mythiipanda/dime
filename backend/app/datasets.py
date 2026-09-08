@@ -117,8 +117,24 @@ def dataset(
     game_date: str = Query(""),
     stat: str = Query("PTS"),
     ids: str = Query(""),
+    player_a: str = Query(""),
+    player_b: str = Query(""),
     fmt: str = Query("json"),
 ):
+    if name == "wowy" and (player_a or ids):
+        from .tools.player import get_wowy
+
+        res = get_wowy.invoke(
+            {"player_a": player_a or ids, "player_b": player_b, "team_id": team_id, "season": season}
+        )
+        if not res.get("ok"):
+            return {"ok": False, "error": res.get("error", "wowy failed")}
+        rows = res.get("rows", [])
+        if fmt == "csv":
+            df = pl.DataFrame(rows)
+            return Response(df.write_csv(), media_type="text/csv")
+        return {"ok": True, "data": rows, "verdict": res.get("verdict"), "meta": res.get("meta")}
+
     if name not in TABLES:
         return {"ok": False, "error": f"unknown dataset, pick one of {sorted(TABLES)}"}
     table = TABLES[name]

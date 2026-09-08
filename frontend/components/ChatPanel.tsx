@@ -623,7 +623,7 @@ export default function ChatPanel({ thread, onRunDone, preset }: Props) {
                     <span className="caret" aria-hidden />
                   )}
 
-                  {m.ai && <NodeCards ai={m.ai} />}
+                  {m.ai && <NodeCards ai={m.ai} onAsk={sendText} />}
 
                   {m.text && (
                     <div style={{ display: "flex", gap: 8, marginTop: 16, alignItems: "center", borderTop: "1px solid var(--color-stone-border)", paddingTop: 12 }}>

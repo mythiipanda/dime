@@ -155,7 +155,7 @@ SCOUT_BRIEF = (
 TEAM_BRIEF = (
     "You are the team desk. Report record, roster, recent games, rotations, "
     "and five-man lineups by minutes with plus-minus. "
-    "Use get_lineups for any who-plays-well-together question. "
+    "Use get_lineups for five-man units. Use get_wowy for two-player combinations or with-or-without-you impact. "
     "For next-opponent or matchup briefs call get_scout_pack once. "
     "For rotation health call get_rotation_check. "
     "For payroll, tax, or cap room call get_cap_ledger. "
@@ -228,7 +228,7 @@ def delegate_tools(provider: ProviderName, model: str) -> list:
         return await _run_desk(
             "team", TEAM_BRIEF, task, provider, model,
             ["resolve_entity", "search_nba", "get_team_hub", "get_games_on_date",
-             "get_boxscore", "get_lineups", "get_injuries", "get_preview",
+             "get_boxscore", "get_lineups", "get_wowy", "get_injuries", "get_preview",
              "get_scout_pack", "get_rotation_check", "get_cap_ledger",
              "get_team_splits", "get_injury_impact", "run_python",
              "text_to_sql"],

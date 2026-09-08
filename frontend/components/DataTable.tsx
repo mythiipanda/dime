@@ -9,6 +9,7 @@ interface Props {
   capRows?: number;
   heat?: boolean;
   storeKey?: string;
+  onPlayerSelect?: (playerName: string) => void;
 }
 
 function asTable(rows: unknown, capCols: number): {
@@ -66,7 +67,7 @@ function asTable(rows: unknown, capCols: number): {
   return { cols, body, nums, maxs, subs, numeric };
 }
 
-export default function DataTable({ rows, capCols = 8, capRows = 25, heat = false, storeKey }: Props) {
+export default function DataTable({ rows, capCols = 8, capRows = 25, heat = false, storeKey, onPlayerSelect }: Props) {
   const safeCapRows = Math.max(5, Math.min(100, capRows));
   const t = useMemo(() => asTable(rows, capCols), [rows, capCols]);
   const [sortCol, setSortCol] = useState<string | null>(null);
@@ -247,7 +248,29 @@ export default function DataTable({ rows, capCols = 8, capRows = 25, heat = fals
                       fontVariantNumeric: "tabular-nums",
                     }}
                   >
-                    {cell}
+                    {(t.cols[j] === "PLAYER" || t.cols[j] === "player" || t.cols[j] === "PLAYER_NAME") && cell ? (
+                      <button
+                        type="button"
+                        onClick={() => onPlayerSelect ? onPlayerSelect(cell) : setFilter(cell)}
+                        style={{
+                          background: "none",
+                          border: "none",
+                          padding: 0,
+                          font: "inherit",
+                          cursor: "pointer",
+                          color: "var(--color-cyan-edge)",
+                          textAlign: "left",
+                          fontWeight: 500,
+                          textDecoration: "underline",
+                          textUnderlineOffset: 2,
+                        }}
+                        title={`Filter or analyze ${cell}`}
+                      >
+                        {cell}
+                      </button>
+                    ) : (
+                      cell
+                    )}
                     {t.subs[ri][t.cols[j]] && (
                       <div style={{ fontSize: 10, color: "var(--color-ash-gray)" }}>
                         {t.subs[ri][t.cols[j]]}

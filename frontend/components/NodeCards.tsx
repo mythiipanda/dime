@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AiMessage, NodeName } from "../lib/chat";
 import AutoChart from "./AutoChart";
 import CompareView from "./CompareView";
+import CourtHeatmap from "./CourtHeatmap";
 import DataTable from "./DataTable";
+import WowyCard from "./WowyCard";
 
 const ORDER: NodeName[] = ["entry", "data_retrieval", "tools", "analytics", "presentation"];
 
@@ -16,28 +18,27 @@ const LABELS: Record<NodeName, string> = {
   presentation: "Synthesizing answer",
 };
 
-export default function NodeCards({ ai }: { ai: AiMessage }) {
+export default function NodeCards({ ai, onAsk }: { ai: AiMessage; onAsk?: (query: string) => void }) {
   const names = ORDER.filter((n) => ai.nodes[n]);
   const [open, setOpen] = useState(false);
   const [pageState, setPageState] = useState<number | null>(null);
   const [heat, setHeat] = useState(false);
-  const [viewMode, setViewMode] = useState<"table" | "chart">("table");
-
-  if (!names.length) return null;
-
-  const anyRunning = names.some((n) => ai.nodes[n]!.status === "running");
-  const isDone = ai.done;
-  const showTrace = open || (!isDone && anyRunning);
+  const [viewMode, setViewMode] = useState<"table" | "chart" | "court">("table");
 
   const tables: {
     tool: string;
     rows?: unknown;
+    verdict?: string;
     meta?: {
       source?: string;
       fetched_at?: string;
       stat_category?: string;
       sql?: string;
       links?: { watch?: string };
+      a?: string;
+      b?: string;
+      season?: string;
+      team?: string;
     };
   }[] = [];
 
@@ -47,6 +48,9 @@ export default function NodeCards({ ai }: { ai: AiMessage }) {
 
   const preferred = tables.findIndex(
     (t) =>
+      t.tool === "get_shot_compare" ||
+      t.tool === "get_shot_zones" ||
+      t.tool === "get_wowy" ||
       t.tool === "get_compare" ||
       t.tool === "get_preview" ||
       t.tool === "get_rapm" ||
@@ -56,6 +60,22 @@ export default function NodeCards({ ai }: { ai: AiMessage }) {
   const table = tables[Math.min(pageState ?? fallback, Math.max(tables.length - 1, 0))];
   const page = Math.min(pageState ?? fallback, Math.max(tables.length - 1, 0));
   const setPage = (n: number) => setPageState(Math.max(0, Math.min(n, tables.length - 1)));
+
+  // Auto-switch to court mode if shot-zone tool is active
+  const isShotTool = table?.tool === "get_shot_zones" || table?.tool === "get_shot_compare";
+  useEffect(() => {
+    if (isShotTool) {
+      setViewMode("court");
+    } else {
+      setViewMode("table");
+    }
+  }, [table?.tool, isShotTool]);
+
+  if (!names.length) return null;
+
+  const anyRunning = names.some((n) => ai.nodes[n]!.status === "running");
+  const isDone = ai.done;
+  const showTrace = open || (!isDone && anyRunning);
 
   // Extract all thoughts and tool calls in chronological sequence
   const allEvents: { type: "thought" | "tool" | "result" | "summary"; text: string; sub?: string }[] = [];
@@ -266,6 +286,15 @@ export default function NodeCards({ ai }: { ai: AiMessage }) {
             </div>
 
             <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              {isShotTool && (
+                <button
+                  className={viewMode === "court" ? "tab-active" : "pill-ghost"}
+                  style={{ fontSize: 11, padding: "3px 10px" }}
+                  onClick={() => setViewMode("court")}
+                >
+                  Court
+                </button>
+              )}
               <button
                 className={viewMode === "table" ? "tab-active" : "pill-ghost"}
                 style={{ fontSize: 11, padding: "3px 10px" }}
@@ -273,21 +302,25 @@ export default function NodeCards({ ai }: { ai: AiMessage }) {
               >
                 Table
               </button>
-              <button
-                className={viewMode === "chart" ? "tab-active" : "pill-ghost"}
-                style={{ fontSize: 11, padding: "3px 10px" }}
-                onClick={() => setViewMode("chart")}
-              >
-                Chart
-              </button>
-              <button
-                className={heat ? "tab-active" : "pill-ghost"}
-                style={{ fontSize: 11, padding: "3px 10px" }}
-                onClick={() => setHeat(!heat)}
-                title="Toggle heat map gradient"
-              >
-                Heat
-              </button>
+              {!isShotTool && (
+                <button
+                  className={viewMode === "chart" ? "tab-active" : "pill-ghost"}
+                  style={{ fontSize: 11, padding: "3px 10px" }}
+                  onClick={() => setViewMode("chart")}
+                >
+                  Chart
+                </button>
+              )}
+              {viewMode === "table" && (
+                <button
+                  className={heat ? "tab-active" : "pill-ghost"}
+                  style={{ fontSize: 11, padding: "3px 10px" }}
+                  onClick={() => setHeat(!heat)}
+                  title="Toggle heat map gradient"
+                >
+                  Heat
+                </button>
+              )}
               {tables.length > 1 && (
                 <div style={{ display: "flex", gap: 4, marginLeft: 6 }}>
                   <button
@@ -325,6 +358,10 @@ export default function NodeCards({ ai }: { ai: AiMessage }) {
 
           {table.tool === "get_compare" || table.tool === "get_preview" ? (
             <CompareView rows={table.rows} />
+          ) : table.tool === "get_wowy" ? (
+            <WowyCard rows={table.rows} meta={table.meta} verdict={table.verdict} />
+          ) : isShotTool && viewMode === "court" ? (
+            <CourtHeatmap rows={table.rows} meta={table.meta} verdict={table.verdict} />
           ) : table.tool === "run_python" ? (
             <div style={{ background: "var(--color-stone-canvas)", border: "1px solid var(--color-stone-border)", padding: 12, borderRadius: 8, fontFamily: "monospace", fontSize: 12, overflowX: "auto" }}>
               <div style={{ fontSize: 11, color: "var(--color-warm-gray)", marginBottom: 6, fontWeight: 500 }}>Python Execution Output:</div>
@@ -335,7 +372,11 @@ export default function NodeCards({ ai }: { ai: AiMessage }) {
           ) : viewMode === "chart" ? (
             <AutoChart table={table as { rows?: unknown }} />
           ) : (
-            <DataTable rows={(table.rows as { rows?: unknown })?.rows ?? table.rows} heat={heat} />
+            <DataTable
+              rows={(table.rows as { rows?: unknown })?.rows ?? table.rows}
+              heat={heat}
+              onPlayerSelect={(player) => onAsk ? onAsk(`Tell me about ${player} this season`) : undefined}
+            />
           )}
         </div>
       )}
