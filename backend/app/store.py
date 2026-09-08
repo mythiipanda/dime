@@ -78,9 +78,17 @@ def save_frame(
                 con.execute(f"DROP TABLE {table}")
                 con.execute(f"CREATE TABLE {table} AS SELECT * FROM _incoming")
             if replace_season:
-                con.execute(
-                    f"DELETE FROM {table} WHERE _season = ?", [result.meta.season]
-                )
+                if entity:
+                    con.execute(
+                        "DELETE FROM {table} WHERE _season = ? AND _entity = ?"
+                        .format(table=table),
+                        [result.meta.season, entity],
+                    )
+                else:
+                    con.execute(
+                        f"DELETE FROM {table} WHERE _season = ?",
+                        [result.meta.season],
+                    )
             con.execute(f"INSERT INTO {table} SELECT * FROM _incoming")
             con.execute(
                 "INSERT INTO fetch_log VALUES (?,?,?,?,?,?)",

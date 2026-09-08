@@ -133,7 +133,18 @@ def dataset(
             return {"ok": False, "error": "missing id param for this dataset"}
         if not live.ok:
             return {"ok": False, "error": live.error}
-        store.save_frame(table, live)
+        entity = ""
+        if player_id:
+            entity = f"player:{player_id}"
+        elif team_id:
+            entity = f"team:{team_id}"
+        elif game_id:
+            entity = f"game:{game_id}"
+        elif game_date:
+            entity = f"date:{game_date}"
+        elif ids:
+            entity = f"wowy:{ids}"
+        store.save_frame(table, live, entity)
         if entity_scoped:
             frame = store.read_frame(
                 table, "_fetched_at = ?", [live.meta.fetched_at]
