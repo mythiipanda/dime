@@ -78,6 +78,38 @@ def get_last_x(player_id: str | int, n: int = 10, season: str = SEASON) -> dict[
 
 
 @tool
+def get_trend(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
+    """Decay-weighted recent form versus season baseline. DARKO-lite."""
+    import math
+
+    player_id = coerce_player_id(player_id)
+    res = nba_stats.player_gamelog(player_id, season)
+    if not res.ok or res.frame.height == 0:
+        return {"tool": "get_trend", "ok": False,
+                "error": res.error or "empty upstream response"}
+    try:
+        pts = [float(r.get("PTS") or 0) for r in res.frame.to_dicts()]
+    except (TypeError, ValueError):
+        return {"tool": "get_trend", "ok": False, "error": "bad points"}
+    if len(pts) < 5:
+        return {"tool": "get_trend", "ok": False, "error": "too few games"}
+    decay = 0.94
+    weights = [decay ** i for i in range(len(pts))]
+    recent = pts[-20:]
+    rw = weights[-len(recent):]
+    form = sum(p * w for p, w in zip(recent, rw)) / sum(rw)
+    base = sum(pts) / len(pts)
+    return {"tool": "get_trend", "ok": True,
+            "rows": {"games": len(pts),
+                     "season_ppg": round(base, 1),
+                     "form_ppg": round(form, 1),
+                     "delta": round(form - base, 1),
+                     "direction": "up" if form > base + 1 else (
+                         "down" if form < base - 1 else "flat")},
+            "meta": {"source": res.meta.source, "season": season}}
+
+
+@tool
 def get_percentiles(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
     """Percentile ranks for one player id across PTS REB AST STL BLK."""
     player_id = coerce_player_id(player_id)

@@ -139,6 +139,11 @@ def main() -> None:
           prev_res["ok"] and abs(sum(prev_res["rows"]["win_prob"].values()) - 1.0) < 0.01,
           str(prev_res)[:200])
 
+    res = tools.get_trend.invoke({"player_id": 2544})
+    check("trend reports direction",
+          res["ok"] and res["rows"].get("direction") in ("up", "down", "flat"),
+          str(res)[:200])
+
     print(f"\neval: {PASS} pass, {FAIL} fail")
     sys.exit(1 if FAIL else 0)
 

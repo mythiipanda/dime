@@ -25,6 +25,7 @@ from .player import (
     get_player_intel,
     get_shot_zones,
     get_splits,
+    get_trend,
     get_wowy,
 )
 from .shared import resolve_entity, search_nba
@@ -68,6 +69,7 @@ v1_tools: list[BaseTool] = [
     get_compare,
     get_comps,
     get_rest,
+    get_trend,
     get_win_prob,
     get_preview,
 ]
