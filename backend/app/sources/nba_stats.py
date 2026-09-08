@@ -142,7 +142,7 @@ def shot_chart(player_id: int, season: str, team_id: int = 0) -> FetchResult:
         frames = _frames(
             ShotChartDetail(
                 player_id=player_id, team_id=team_id, season_nullable=season or None,
-                timeout=_t(),
+                context_measure_simple="FGA", timeout=_t(),
             )
         )
         return _pl(frames[0])

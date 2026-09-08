@@ -9,8 +9,14 @@ interface Shot {
   LOC_X?: number;
   LOC_Y?: number;
   EVENT_TYPE?: string;
+  SHOT_MADE_FLAG?: number | string;
   ACTION_TYPE?: string;
   PERIOD?: number;
+}
+
+export function isMade(s: { EVENT_TYPE?: string; SHOT_MADE_FLAG?: number | string }): boolean {
+  if (s.SHOT_MADE_FLAG === 1 || s.SHOT_MADE_FLAG === "1") return true;
+  return (s.EVENT_TYPE || "").toLowerCase().includes("made");
 }
 
 function drawShots(canvas: HTMLCanvasElement, shots: Shot[]) {
@@ -42,7 +48,7 @@ function drawShots(canvas: HTMLCanvasElement, shots: Shot[]) {
   ctx.stroke();
   for (const s of shots) {
     if (typeof s.LOC_X !== "number" || typeof s.LOC_Y !== "number") continue;
-    const made = (s.EVENT_TYPE || "").toLowerCase().includes("made");
+    const made = isMade(s);
     ctx.beginPath();
     ctx.arc(sx(s.LOC_X / 10), sy(s.LOC_Y / 10), 3, 0, Math.PI * 2);
     if (made) {

@@ -27,13 +27,16 @@ export default function Sparkline({
 }
 
 export function zoneSplits(
-  rows: { LOC_X?: number; LOC_Y?: number; EVENT_TYPE?: string }[],
+  rows: { LOC_X?: number; LOC_Y?: number; EVENT_TYPE?: string; SHOT_MADE_FLAG?: number | string }[],
 ): { zone: string; FGM: number; FGA: number; FG_PCT: number; share: number }[] {
   const zones: Record<string, [number, number]> = { rim: [0, 0], mid: [0, 0], three: [0, 0] };
   for (const r of rows) {
     if (typeof r.LOC_X !== "number" || typeof r.LOC_Y !== "number") continue;
     const dist = Math.hypot(r.LOC_X, r.LOC_Y) / 10;
-    const made = (r.EVENT_TYPE || "").toLowerCase().startsWith("made");
+    const made =
+      r.SHOT_MADE_FLAG === 1 ||
+      r.SHOT_MADE_FLAG === "1" ||
+      (r.EVENT_TYPE || "").toLowerCase().startsWith("made");
     const z = dist < 8 ? "rim" : dist > 23.75 ? "three" : "mid";
     zones[z][1] += 1;
     if (made) zones[z][0] += 1;

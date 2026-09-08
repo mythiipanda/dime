@@ -35,11 +35,20 @@ async def get_compare(
         last = await get_last_x.ainvoke(
             {"player_id": pid, "n": 5, "season": season})
         pts = [g.get("PTS", 0) for g in intel.get("rows", [])[:10]]
+        fgm = sum(g.get("FGM", 0) or 0 for g in games)
+        fga = sum(g.get("FGA", 0) or 0 for g in games)
+        fg3m = sum(g.get("FG3M", 0) or 0 for g in games)
+        fta = sum(g.get("FTA", 0) or 0 for g in games)
+        pts_total = sum(g.get("PTS", 0) or 0 for g in games)
+        ts = round(pts_total / max(2 * (fga + 0.44 * fta), 1), 3)
+        efg = round((fgm + 0.5 * fg3m) / max(fga, 1), 3)
         return {
             "name": who,
             "player_id": pid,
             "gp": len(games),
             "ppg": round(sum(pts) / max(len(pts), 1), 1),
+            "ts_pct": ts,
+            "efg_pct": efg,
             "on_off": (oo.get("rows", []) or [{}])[0],
             "last5": [g.get("PTS", 0) for g in last.get("rows", [])],
         }
@@ -216,7 +225,8 @@ def get_shot_zones(player_id: str | int, season: str = SEASON) -> dict[str, Any]
             dist = math.hypot(float(r.get("LOC_X", 0)), float(r.get("LOC_Y", 0))) / 10
         except (TypeError, ValueError):
             continue
-        made = str(r.get("EVENT_TYPE", "")).lower().startswith("made")
+        made = str(r.get("SHOT_MADE_FLAG", "") or "") == "1" or str(
+            r.get("EVENT_TYPE", "")).lower().startswith("made")
         z = "rim" if dist < 8 else ("three" if dist > 23.75 else "mid")
         zones[z][1] += 1
         zones[z][0] += 1 if made else 0

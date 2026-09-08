@@ -14,7 +14,21 @@ type Side = {
 
 function fmt(v: unknown): string {
   if (v === null || v === undefined) return "";
-  if (typeof v === "object") return JSON.stringify(v).slice(0, 80);
+  if (Array.isArray(v)) {
+    const first = v[0] as Record<string, unknown> | undefined;
+    if (first && typeof first === "object" && "Stat" in first) {
+      return (v as Record<string, unknown>[])
+        .slice(0, 3)
+        .map((x) => `${String(x.Stat)} ${String(x["On-Off"] ?? "")}`)
+        .join(" · ");
+    }
+    return v.map((x) => fmt(x)).join(", ").slice(0, 80);
+  }
+  if (typeof v === "object") {
+    const o = v as Record<string, unknown>;
+    if ("Stat" in o) return `${String(o.Stat)} ${String(o["On-Off"] ?? "")}`;
+    return JSON.stringify(v).slice(0, 80);
+  }
   return String(v).slice(0, 80);
 }
 
