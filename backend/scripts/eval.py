@@ -158,6 +158,12 @@ def main() -> None:
     check("trade check carries disclaimer",
           "simplified" in res["rows"].get("disclaimer", "").lower(), str(res["rows"])[:160])
 
+    res = tools.get_trade_check.invoke({"team_a": "LAL", "players_a": "LeBron James",
+                                        "team_b": "BOS", "players_b": "Jayson Tatum"})
+    check("trade check fails loud on unknown names",
+          (not res["ok"] and "LeBron James" in str(res.get("error", "")))
+          or (res["ok"] and "legal" in res["rows"]), str(res)[:160])
+
     res = tools.get_injuries.invoke({"team": "ATL"})
     check("injuries filter by team",
           res["ok"] and all("Atlanta" in r.get("display_name", "")

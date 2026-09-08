@@ -515,25 +515,47 @@ def get_trade_check(
     teams, 100 percent for second-apron teams, no aggregation above
     the second apron. Picks and exceptions stay out of v1.
     """
+    import difflib as _dl
     import math as _math
 
-    def salaries(team: str, names: str) -> tuple[int, list[str]]:
+    def salaries(team: str, names: str) -> tuple[int, list[str], list[str]]:
         total, roster = _payroll(team)
-        want = [n.strip().lower() for n in names.split(",") if n.strip()]
-        matched = []
+        want = [n.strip() for n in names.split(",") if n.strip()]
+        lows = [p["player"].lower() for p in roster]
+        by_low = {p["player"].lower(): p for p in roster}
+        disp = {p["player"].lower(): p["player"] for p in roster}
+        matched: list[str] = []
+        unknown: list[str] = []
         total_out = 0
-        for w in want:
+        for orig in want:
+            w = orig.lower()
             hit = next((p for p in roster if w in p["player"].lower()), None)
+            if hit is None:
+                fb = _dl.get_close_matches(w, lows, n=1, cutoff=0.8)
+                if fb and _dl.SequenceMatcher(
+                        None, w.split()[0], fb[0].split()[0]).ratio() >= 0.8:
+                    hit = by_low[fb[0]]
             if hit:
                 matched.append(hit["player"])
                 total_out += hit["salary"] or 0
-        return total_out, matched
+            else:
+                sug = [disp[s] for s in _dl.get_close_matches(w, lows, n=2, cutoff=0.6)]
+                unknown.append(f"{orig} (suggestions: {', '.join(sug)})" if sug else orig)
+        return total_out, matched, unknown
 
     if not team_a or not team_b:
         return {"tool": "get_trade_check", "ok": False,
                 "error": "two teams needed"}
-    out_a, names_a = salaries(team_a, players_a)
-    out_b, names_b = salaries(team_b, players_b)
+    out_a, names_a, unk_a = salaries(team_a, players_a)
+    out_b, names_b, unk_b = salaries(team_b, players_b)
+    if unk_a or unk_b:
+        parts = []
+        if unk_a:
+            parts.append(f"{team_a.upper()}: {'; '.join(unk_a)}")
+        if unk_b:
+            parts.append(f"{team_b.upper()}: {'; '.join(unk_b)}")
+        return {"tool": "get_trade_check", "ok": False,
+                "error": "unknown players: " + " | ".join(parts)}
     pay_a, _ = _payroll(team_a)
     pay_b, _ = _payroll(team_b)
     over2 = lambda p: p > CAP["apron2"]
