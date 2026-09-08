@@ -229,7 +229,7 @@ function Gamelog() {
           className="field"
           value={idVal}
           onChange={(e) => setIdVal(e.target.value)}
-          placeholder="player name or id, e.g. LeBron or 2544"
+          placeholder="player id, e.g. 2544"
           style={{ width: 240 }}
           aria-label="Player name or id"
         />

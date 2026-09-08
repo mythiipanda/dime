@@ -175,7 +175,7 @@ def _all_tools(state: DimeState) -> list:
 
 SUPERVISOR_TOOL_NAMES = frozenset({
     "resolve_entity", "get_compare", "get_preview", "get_briefing",
-    "delegate_scout", "delegate_team", "delegate_league",
+    "delegate_scout", "delegate_team", "delegate_league", "run_python",
 })
 
 

@@ -39,9 +39,14 @@ def write_guard(timeout_s: float = 60.0):
             fcntl.flock(fh, fcntl.LOCK_UN)
 
 
-def connect() -> duckdb.DuckDBPyConnection:
+def connect(read_only: bool = False) -> duckdb.DuckDBPyConnection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    con = duckdb.connect(str(DB_PATH))
+    if read_only:
+        return duckdb.connect(str(DB_PATH), read_only=True)
+    try:
+        con = duckdb.connect(str(DB_PATH))
+    except duckdb.IOException:
+        return duckdb.connect(str(DB_PATH), read_only=True)
     con.execute(
         """CREATE TABLE IF NOT EXISTS fetch_log(
         dataset VARCHAR, season VARCHAR, entity VARCHAR,

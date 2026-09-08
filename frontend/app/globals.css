@@ -101,7 +101,36 @@ body {
 .tab-idle,
 .pill-cta,
 .pill-ghost {
-  transition: background 160ms ease, color 160ms ease, border-color 160ms ease;
+  transition: transform 120ms cubic-bezier(0.16, 1, 0.3, 1),
+              background 140ms ease,
+              color 140ms ease,
+              border-color 140ms ease,
+              box-shadow 140ms ease;
+  user-select: none;
+}
+
+.pill-cta:active,
+.pill-ghost:active,
+.tab-active:active,
+.tab-idle:active {
+  transform: scale(0.97);
+}
+
+.pill-cta:hover {
+  filter: brightness(1.04);
+}
+
+.pill-ghost:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.composer-card {
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.composer-card:focus-within {
+  border-color: var(--color-stone-muted);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
 }
 
 @keyframes dime-rise {

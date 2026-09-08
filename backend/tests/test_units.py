@@ -19,7 +19,9 @@ def test_clamp_stat_normalizes_case():
 
 
 def test_resolve_model_defaults_mistral():
-    assert resolve_model_id(None) == ("inception", "mercury-2.5")
+    from app.providers import _default_provider
+
+    assert resolve_model_id(None) == _default_provider()
 
 
 def test_resolve_model_clamps_unknown_openrouter():
@@ -40,8 +42,9 @@ def test_clamp_season_rejects_garbage():
 
 
 def test_resolve_model_rejects_bare_names():
-    name, model = resolve_model_id("LeBron James")
-    assert (name, model) == ("inception", "mercury-2.5")
+    from app.providers import _default_provider
+
+    assert resolve_model_id("LeBron James") == _default_provider()
 
 
 def test_call_keys_dedupe():

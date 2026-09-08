@@ -9,7 +9,6 @@ import PlayoffPanel from "../components/PlayoffPanel";
 import FreshnessPanel from "../components/FreshnessPanel";
 import TradePanel from "../components/TradePanel";
 import ScoreStrip from "../components/ScoreStrip";
-import RunsPanel from "../components/RunsPanel";
 import ThreadRail from "../components/ThreadRail";
 import { ThreadInfo, getQueryParam, getThreads, setQueryParam } from "../lib/api";
 
@@ -77,96 +76,138 @@ export default function Home() {
   }, [reload]);
 
   return (
-    <main style={{ maxWidth: 1200, margin: "0 auto", padding: "24px 16px 96px" }}>
-      <header
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          marginBottom: 32,
-        }}
-      >
-        <div style={{ fontWeight: 500, fontSize: 14, color: "var(--color-ink-black)" }}>Dime</div>
-        <nav style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <button
-            onClick={() => setPaletteKey((k) => k + 1)}
-            className="pill-ghost"
-            style={{ fontSize: 13 }}
-          >
-            Search
-          </button>
-          <button
-            onClick={() => selectTab("chat")}
-            className={tab === "chat" ? "tab-active" : "tab-idle"}
-            style={{ fontSize: 14 }}
-          >
-            Analyst chat
-          </button>
-          <button
-            onClick={() => selectTab("data")}
-            className={tab === "data" ? "tab-active" : "tab-idle"}
-            style={{ fontSize: 14 }}
-          >
-            Explore
-          </button>
-        </nav>
-      </header>
+    <div style={{ display: "flex", height: "100vh", width: "100vw", overflow: "hidden", background: "var(--color-stone-canvas)" }}>
+      {/* ChatGPT-style Left Sidebar */}
+      <aside style={{ width: 260, flexShrink: 0, height: "100vh" }}>
+        <ThreadRail
+          threads={threads}
+          active={active}
+          onSelect={selectThread}
+          onNew={newThread}
+          onSearch={() => setPaletteKey((k) => k + 1)}
+        />
+      </aside>
 
-      <ScoreStrip />
+      {/* Main Content Area */}
+      <div style={{ flex: 1, minWidth: 0, height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        {/* Top Header */}
+        <header
+          style={{
+            height: 52,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "0 20px",
+            borderBottom: "1px solid var(--color-stone-border)",
+            background: "var(--color-pure-white)",
+            flexShrink: 0,
+            zIndex: 10,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 13, fontWeight: 500, color: "var(--color-ink-black)" }}>
+              Dime Analyst
+            </span>
+          </div>
 
-      <CommandPalette
-        onAsk={(q) => setPreset(q)}
-        onTab={selectTab}
-      />
-      {tab === "data" && (
-        <nav aria-label="Explore sections" style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
-          {[
-            ["leaders", "Leaders"],
-            ["shots", "Shots"],
-            ["trade", "Trade"],
-            ["lineups", "Lineups"],
-            ["playoffs", "Playoffs"],
-          ].map(([id, label]) => (
-            <a key={id} href={`#explore-${id}`} className="pill-ghost" style={{ fontSize: 12, textDecoration: "none" }}>
-              {label}
-            </a>
-          ))}
-        </nav>
-      )}
-      <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
-        <aside style={{ width: 220, flexShrink: 0 }}>
-          <ThreadRail
-            threads={threads}
-            active={active}
-            onSelect={selectThread}
-            onNew={newThread}
-          />
-        </aside>
-        <div style={{ flex: 1, minWidth: 0 }}>
+          {/* Centered Capsule Switcher (ChatGPT [Chat] [Work] style) */}
+          <div
+            style={{
+              display: "inline-flex",
+              background: "var(--color-stone-canvas)",
+              padding: "3px",
+              borderRadius: 9999,
+              border: "1px solid var(--color-stone-border)",
+            }}
+          >
+            <button
+              onClick={() => selectTab("chat")}
+              className={tab === "chat" ? "tab-active" : "pill-ghost"}
+              style={{
+                fontSize: 13,
+                border: "none",
+                padding: "4px 14px",
+                cursor: "pointer",
+              }}
+            >
+              Analyst chat
+            </button>
+            <button
+              onClick={() => selectTab("data")}
+              className={tab === "data" ? "tab-active" : "pill-ghost"}
+              style={{
+                fontSize: 13,
+                border: "none",
+                padding: "4px 14px",
+                cursor: "pointer",
+              }}
+            >
+              Explore
+            </button>
+          </div>
+
+          {/* Right Status */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span
+              style={{
+                fontSize: 12,
+                color: "var(--color-warm-gray)",
+                background: "var(--color-stone-canvas)",
+                border: "1px solid var(--color-stone-border)",
+                padding: "3px 10px",
+                borderRadius: 9999,
+              }}
+            >
+              2025-26 season
+            </span>
+          </div>
+        </header>
+
+        {/* Scrollable Viewport */}
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", position: "relative" }}>
+          <CommandPalette onAsk={(q) => setPreset(q)} onTab={selectTab} />
+
           {tab === "chat" ? (
-            <div>
+            <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
               {active ? (
-                <div>
+                <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
                   <ChatPanel thread={active} onRunDone={reload} preset={preset} />
-                  <RunsPanel thread={active} refreshKey={refreshKey} />
                 </div>
               ) : (
-                <div className="card">Starting session...</div>
+                <div className="card" style={{ margin: 24 }}>Starting session...</div>
               )}
             </div>
           ) : (
-            <div>
+            <div style={{ maxWidth: 1100, margin: "0 auto", padding: "24px 20px 80px" }}>
+              <div style={{ marginBottom: 16 }}>
+                <ScoreStrip />
+              </div>
+
+              <nav aria-label="Explore sections" style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 20, background: "var(--color-pure-white)", padding: "10px 14px", borderRadius: 12, border: "1px solid var(--color-stone-border)" }}>
+                {[
+                  ["leaders", "Leaders"],
+                  ["shots", "Shots"],
+                  ["trade", "Trade"],
+                  ["lineups", "Lineups"],
+                  ["playoffs", "Playoffs"],
+                ].map(([id, label]) => (
+                  <a key={id} href={`#explore-${id}`} className="pill-ghost" style={{ fontSize: 12, textDecoration: "none", padding: "5px 12px" }}>
+                    {label}
+                  </a>
+                ))}
+              </nav>
+
               <DatasetPanel key={exploreKey} />
-              <div id="explore-trade" style={{ marginTop: 16, scrollMarginTop: 16 }}>
+              <div id="explore-trade" style={{ marginTop: 24, scrollMarginTop: 24 }}>
                 <TradePanel />
               </div>
-              <div style={{ marginTop: 16 }}>
+              <div style={{ marginTop: 24 }}>
                 <DraftPanel />
               </div>
-              <div id="explore-lineups" style={{ marginTop: 16, scrollMarginTop: 16 }}>
+              <div id="explore-lineups" style={{ marginTop: 24, scrollMarginTop: 24 }}>
                 <LineupPanel />
               </div>
-              <div id="explore-playoffs" style={{ marginTop: 16, scrollMarginTop: 16 }}>
+              <div id="explore-playoffs" style={{ marginTop: 24, scrollMarginTop: 24 }}>
                 <PlayoffPanel />
               </div>
               <FreshnessPanel />
@@ -174,10 +215,6 @@ export default function Home() {
           )}
         </div>
       </div>
-
-      <footer style={{ marginTop: 96, fontSize: 12, color: "var(--color-ash-gray)" }}>
-        Anonymous workspace. Tables carry their source and fetch date.
-      </footer>
-    </main>
+    </div>
   );
 }
