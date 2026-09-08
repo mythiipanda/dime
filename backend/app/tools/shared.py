@@ -10,15 +10,18 @@ def resolve_entity(query: str) -> dict[str, Any]:
     try:
         from nba_api.stats.static import players, teams
 
-        name = query.strip().lower()
-        p = players.find_players_by_full_name(query)[:8]
+        from ._core import NICKNAMES
+
+        raw = NICKNAMES.get(query.strip().lower(), query.strip())
+        name = raw.lower()
+        p = players.find_players_by_full_name(raw)[:8]
         if not p:
             seen: set[int] = set()
             p = []
             for fn in (players.find_players_by_last_name,
                        players.find_players_by_first_name):
                 try:
-                    for x in fn(query)[:8]:
+                    for x in fn(raw)[:8]:
                         if x.get("id") not in seen:
                             seen.add(x.get("id"))
                             p.append(x)
@@ -27,7 +30,7 @@ def resolve_entity(query: str) -> dict[str, Any]:
         if not p:
             all_p = players.get_players()
             p = [x for x in all_p if name in x.get("full_name", "").lower()][:8]
-        t = teams.find_teams_by_full_name(query)[:8]
+        t = teams.find_teams_by_full_name(raw)[:8]
         if not t:
             all_t = teams.get_teams()
             t = [x for x in all_t

@@ -8,6 +8,7 @@ from .league import (
     get_finder,
     get_hustle,
     get_leaders,
+    get_playoffs,
     get_rapm,
     get_rest,
     get_standings,
@@ -15,6 +16,7 @@ from .league import (
     text_to_sql,
 )
 from .player import (
+    get_compare,
     get_comps,
     get_four_factors,
     get_last_x,
@@ -30,6 +32,7 @@ from .team import (
     get_boxscore,
     get_games_on_date,
     get_lineups,
+    get_preview,
     get_recap,
     get_scouting_report,
     get_team_hub,
@@ -44,6 +47,7 @@ v1_tools: list[BaseTool] = [
     get_games_on_date,
     get_boxscore,
     get_standings,
+    get_playoffs,
     get_leaders,
     get_lineups,
     get_on_off,
@@ -61,9 +65,11 @@ v1_tools: list[BaseTool] = [
     get_finder,
     get_rapm,
     get_combine,
+    get_compare,
     get_comps,
     get_rest,
     get_win_prob,
+    get_preview,
 ]
 
 TOOL_NAMES = [t.name for t in v1_tools]

@@ -1,17 +1,51 @@
 """Player desk. Intel, form, comps, zones, splits, possession splits."""
 
 from typing import Any
+import asyncio as _asyncio
 import polars as pl
 from langchain_core.tools import tool
 
 from .. import store
 from ..sources import nba_stats
-from ._core import SEASON, _warehouse_or_live
+from ._core import SEASON, _warehouse_or_live, coerce_player_id, coerce_team_id
 
 
 @tool
-def get_player_intel(player_id: int, season: str = SEASON) -> dict[str, Any]:
+async def get_compare(
+    a: str, b: str, season: str = SEASON,
+) -> dict[str, Any]:
+    """Side-by-side compare of two players. Names or ids. One call."""
+    async def one(who: str) -> dict[str, Any]:
+        pid = coerce_player_id(who)
+        intel = await get_player_intel.ainvoke(
+            {"player_id": pid, "season": season})
+        games = intel.get("rows", [])
+        team = (games[0].get("TEAM_ID", 0) if games else 0) or 0
+        oo = {"rows": []}
+        if team:
+            oo = await get_on_off.ainvoke(
+                {"player_id": pid, "team_id": team, "season": season})
+        last = await get_last_x.ainvoke(
+            {"player_id": pid, "n": 5, "season": season})
+        pts = [g.get("PTS", 0) for g in intel.get("rows", [])[:10]]
+        return {
+            "player_id": pid,
+            "gp": len(games),
+            "ppg": round(sum(pts) / max(len(pts), 1), 1),
+            "on_off": (oo.get("rows", []) or [{}])[0],
+            "last5": [g.get("PTS", 0) for g in last.get("rows", [])],
+        }
+
+    left, right = await _asyncio.gather(one(a), one(b))
+    return {"tool": "get_compare", "ok": True,
+            "rows": {"a": left, "b": right},
+            "meta": {"source": "nba_api+pbpstats", "season": season}}
+
+
+@tool
+def get_player_intel(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
     """Game log plus shot sample for one player id. Warehouse first."""
+    player_id = coerce_player_id(player_id)
     rows, meta = _warehouse_or_live(
         "silver_player_gamelogs", "_season = ? AND _entity = ?",
         [season, f"player:{player_id}"],
@@ -22,8 +56,9 @@ def get_player_intel(player_id: int, season: str = SEASON) -> dict[str, Any]:
 
 
 @tool
-def get_last_x(player_id: int, n: int = 10, season: str = SEASON) -> dict[str, Any]:
+def get_last_x(player_id: str | int, n: int = 10, season: str = SEASON) -> dict[str, Any]:
     """Last n games for one player id, most recent first."""
+    player_id = coerce_player_id(player_id)
     res = nba_stats.player_gamelog(player_id, season)
     if not res.ok or res.frame.height == 0:
         return {"tool": "get_last_x", "ok": False,
@@ -43,8 +78,9 @@ def get_last_x(player_id: int, n: int = 10, season: str = SEASON) -> dict[str, A
 
 
 @tool
-def get_percentiles(player_id: int, season: str = SEASON) -> dict[str, Any]:
+def get_percentiles(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
     """Percentile ranks for one player id across PTS REB AST STL BLK."""
+    player_id = coerce_player_id(player_id)
     cats = ["PTS", "REB", "AST", "STL", "BLK"]
     out: dict[str, Any] = {}
     for cat in cats:
@@ -66,8 +102,9 @@ def get_percentiles(player_id: int, season: str = SEASON) -> dict[str, Any]:
 
 
 @tool
-def get_comps(player_id: int, season: str = SEASON, n: int = 5) -> dict[str, Any]:
+def get_comps(player_id: str | int, season: str = SEASON, n: int = 5) -> dict[str, Any]:
     """Nearest statistical neighbors by per-game shape. Development comps."""
+    player_id = coerce_player_id(player_id)
     import math
 
     base, _ = _warehouse_or_live(
@@ -124,8 +161,9 @@ def get_comps(player_id: int, season: str = SEASON, n: int = 5) -> dict[str, Any
 
 
 @tool
-def get_shot_zones(player_id: int, season: str = SEASON) -> dict[str, Any]:
+def get_shot_zones(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
     """Zone splits for one player id: rim, midrange, three with shares."""
+    player_id = coerce_player_id(player_id)
     import math
 
     res = nba_stats.shot_chart(player_id, season)
@@ -155,8 +193,9 @@ def get_shot_zones(player_id: int, season: str = SEASON) -> dict[str, Any]:
 
 
 @tool
-def get_splits(player_id: int, season: str = SEASON) -> dict[str, Any]:
+def get_splits(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
     """Home versus away plus monthly splits from the game log."""
+    player_id = coerce_player_id(player_id)
     res = nba_stats.player_gamelog(player_id, season)
     if not res.ok or res.frame.height == 0:
         return {"tool": "get_splits", "ok": False,
@@ -181,8 +220,10 @@ def get_splits(player_id: int, season: str = SEASON) -> dict[str, Any]:
 
 
 @tool
-def get_on_off(player_id: int, team_id: int, season: str = SEASON) -> dict[str, Any]:
+def get_on_off(player_id: str | int, team_id: str | int, season: str = SEASON) -> dict[str, Any]:
     """On and off splits for one player on one team. Possession level."""
+    player_id = coerce_player_id(player_id)
+    team_id = coerce_team_id(team_id)
     from ..sources import pbpstats
 
     rows, meta = _warehouse_or_live(
@@ -195,8 +236,9 @@ def get_on_off(player_id: int, team_id: int, season: str = SEASON) -> dict[str, 
 
 
 @tool
-def get_wowy(player_ids: str, team_id: int, season: str = SEASON) -> dict[str, Any]:
+def get_wowy(player_ids: str, team_id: str | int, season: str = SEASON) -> dict[str, Any]:
     """With-or-without-you splits. player_ids is comma separated ids."""
+    team_id = coerce_team_id(team_id)
     from ..sources import pbpstats
 
     ids = [int(x) for x in player_ids.split(",") if x.strip().isdigit()]
@@ -210,8 +252,10 @@ def get_wowy(player_ids: str, team_id: int, season: str = SEASON) -> dict[str, A
 
 
 @tool
-def get_four_factors(player_id: int, team_id: int, season: str = SEASON) -> dict[str, Any]:
+def get_four_factors(player_id: str | int, team_id: str | int, season: str = SEASON) -> dict[str, Any]:
     """Four factor on-off splits for one player on one team."""
+    player_id = coerce_player_id(player_id)
+    team_id = coerce_team_id(team_id)
     from ..sources import pbpstats
 
     rows, meta = _warehouse_or_live(

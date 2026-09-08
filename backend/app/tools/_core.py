@@ -26,6 +26,74 @@ def clamp_scope(scope: str) -> str:
     return lower if lower in ("player", "team") else "player"
 
 
+NICKNAMES = {
+    "sga": "Shai Gilgeous-Alexander",
+    "luka": "Luka Doncic",
+    "joker": "Nikola Jokic",
+    "jokic": "Nikola Jokic",
+    "giannis": "Giannis Antetokounmpo",
+    "bron": "LeBron James",
+    "kd": "Kevin Durant",
+    "steph": "Stephen Curry",
+    "tatum": "Jayson Tatum",
+    "embiid": "Joel Embiid",
+    "dame": "Damian Lillard",
+    "kyrie": "Kyrie Irving",
+    "ad": "Anthony Davis",
+    "kat": "Karl-Anthony Towns",
+    "dbook": "Devin Booker",
+    "ant": "Anthony Edwards",
+    "wemby": "Victor Wembanyama",
+    "celtics": "Boston Celtics",
+    "lakers": "Los Angeles Lakers",
+    "knicks": "New York Knicks",
+    "dubs": "Golden State Warriors",
+    "sixers": "Philadelphia 76ers",
+}
+
+
+def coerce_player_id(value: object) -> int:
+    """Accept an id or a name. Names resolve through static tables."""
+    raw = str(value).strip()
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        pass
+    raw = NICKNAMES.get(raw.lower(), raw)
+    from nba_api.stats.static import players
+
+    name = raw.lower()
+    found = players.find_players_by_full_name(raw)
+    if not found:
+        all_p = players.get_players()
+        found = [x for x in all_p if name in x.get("full_name", "").lower()]
+    if not found:
+        raise ValueError(f"unknown player: {value}")
+    return int(found[0]["id"])
+
+
+def coerce_team_id(value: object) -> int:
+    """Accept an id or a name. Names resolve through static tables."""
+    raw = str(value).strip()
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        pass
+    raw = NICKNAMES.get(raw.lower(), raw)
+    from nba_api.stats.static import teams
+
+    name = raw.lower()
+    found = teams.find_teams_by_full_name(raw)
+    if not found:
+        all_t = teams.get_teams()
+        found = [x for x in all_t
+                 if name in x.get("full_name", "").lower()
+                 or name == x.get("abbreviation", "").lower()]
+    if not found:
+        raise ValueError(f"unknown team: {value}")
+    return int(found[0]["id"])
+
+
 def _warehouse_or_live(
     table: str,
     where: str,

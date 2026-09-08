@@ -62,6 +62,18 @@ def standings(season: str) -> FetchResult:
     return safe(SOURCE, season, run)
 
 
+def playoff_results(season: str) -> FetchResult:
+    from nba_api.stats.endpoints import LeagueGameFinder
+
+    def run() -> pl.DataFrame:
+        frames = _frames(LeagueGameFinder(
+            season_nullable=season or None, season_type_nullable="Playoffs",
+            timeout=_t()))
+        return _pl(frames[0])
+
+    return safe(SOURCE, season, run)
+
+
 def leaders(stat_category: str, season: str) -> FetchResult:
     from nba_api.stats.endpoints import LeagueLeaders
 

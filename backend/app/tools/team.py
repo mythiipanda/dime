@@ -1,15 +1,62 @@
 """Team desk. Hubs, games, boxscores, lineups, dossiers, recaps."""
 
 from typing import Any
+import asyncio as _asyncio
 from langchain_core.tools import tool
 
 from ..sources import nba_stats
-from ._core import SEASON, _warehouse_or_live
+from ._core import SEASON, _warehouse_or_live, coerce_team_id
+
+
+def _abbrev(who: str) -> str:
+    try:
+        tid = coerce_team_id(who)
+    except ValueError:
+        return str(who).upper()
+    from nba_api.stats.static import teams
+
+    for t in teams.get_teams():
+        if t.get("id") == tid:
+            return t.get("abbreviation", str(who).upper())
+    return str(who).upper()
 
 
 @tool
-def get_team_hub(team_id: int, season: str = SEASON) -> dict[str, Any]:
+async def get_preview(
+    a: str, b: str, season: str = SEASON,
+) -> dict[str, Any]:
+    """Side-by-side preview of two teams. Names, abbrevs, or ids. One call."""
+    from .league import get_standings, get_win_prob
+
+    async def one(who: str) -> dict[str, Any]:
+        tid = coerce_team_id(who)
+        hub = await get_team_hub.ainvoke({"team_id": tid, "season": season})
+        lineups = await get_lineups.ainvoke({"team_id": tid, "season": season})
+        top = (lineups.get("rows", []) or [{}])[0]
+        return {
+            "team_id": tid,
+            "games": len(hub.get("rows", {}).get("games", [])),
+            "top_lineup": top.get("GROUP_NAME", ""),
+            "top_lineup_pm": top.get("PLUS_MINUS", 0),
+        }
+
+    (left, right), prob, st = await _asyncio.gather(
+        _asyncio.gather(one(a), one(b)),
+        get_win_prob.ainvoke(
+            {"team_a": _abbrev(a), "team_b": _abbrev(b), "season": season}),
+        get_standings.ainvoke({"season": season}),
+    )
+    return {"tool": "get_preview", "ok": True,
+            "rows": {"a": left, "b": right,
+                     "win_prob": prob.get("rows", {}),
+                     "standings_rows": len(st.get("rows", []))},
+            "meta": {"source": "nba_api+warehouse", "season": season}}
+
+
+@tool
+def get_team_hub(team_id: str | int, season: str = SEASON) -> dict[str, Any]:
     """Game log plus roster for one team id. Warehouse first."""
+    team_id = coerce_team_id(team_id)
     games, meta = _warehouse_or_live(
         "silver_team_games", "_season = ? AND _entity = ?",
         [season, f"team:{team_id}"],
@@ -53,8 +100,9 @@ def get_boxscore(game_id: str, season: str = SEASON) -> dict[str, Any]:
 
 
 @tool
-def get_lineups(team_id: int, season: str = SEASON) -> dict[str, Any]:
+def get_lineups(team_id: str | int, season: str = SEASON) -> dict[str, Any]:
     """Five-man lineup stats for one team id, sorted by minutes."""
+    team_id = coerce_team_id(team_id)
     rows, meta = _warehouse_or_live(
         "silver_lineups", "_season = ? AND _entity = ?",
         [season, f"team:{team_id}"],
@@ -65,8 +113,9 @@ def get_lineups(team_id: int, season: str = SEASON) -> dict[str, Any]:
 
 
 @tool
-def get_scouting_report(team_id: int, season: str = SEASON) -> dict[str, Any]:
+def get_scouting_report(team_id: str | int, season: str = SEASON) -> dict[str, Any]:
     """One-call dossier: record, roster, lineups, leaders context."""
+    team_id = coerce_team_id(team_id)
     games, _ = _warehouse_or_live(
         "silver_team_games", "_season = ? AND _entity = ?",
         [season, f"team:{team_id}"],

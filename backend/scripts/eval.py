@@ -107,6 +107,18 @@ def main() -> None:
     check("finder streak reads history",
           res["rows"].get("longest_win_streak", 0) >= 10, str(res)[:200])
 
+    res = tools.get_playoffs.invoke({})
+    check("playoffs name champion",
+          res["rows"].get("champion", "") != "", str(res)[:200])
+
+    res = tools.get_player_intel.invoke({"player_id": "Luka Doncic"})
+    check("intel accepts names",
+          len(res["rows"]) > 0, str(res)[:200])
+
+    from app.tools._core import coerce_player_id
+    check("nicknames resolve",
+          coerce_player_id("SGA") == 1628983, "")
+
     print(f"\neval: {PASS} pass, {FAIL} fail")
     sys.exit(1 if FAIL else 0)
 

@@ -19,6 +19,33 @@ def get_standings(season: str = SEASON) -> dict[str, Any]:
 
 
 @tool
+def get_playoffs(season: str = SEASON) -> dict[str, Any]:
+    """Playoff wins per team plus champion for one season."""
+    rows, meta = _warehouse_or_live(
+        "silver_playoffs", "_season = ?",
+        [season], lambda: nba_stats.playoff_results(season), season,
+        limit=600,
+    )
+    wins: dict[str, int] = {}
+    games = 0
+    for r in rows:
+        team = str(r.get("TEAM_ABBREVIATION") or "")
+        if not team:
+            continue
+        games += 1
+        if r.get("WL") == "W":
+            wins[team] = wins.get(team, 0) + 1
+    table = sorted(
+        ((t, w) for t, w in wins.items()), key=lambda x: x[1], reverse=True)
+    champ = table[0][0] if table and table[0][1] >= 12 else ""
+    return {"tool": "get_playoffs", "ok": True,
+            "rows": {"champion": champ,
+                     "wins": [{"team": t, "w": w} for t, w in table[:16]],
+                     "games": games},
+            "meta": meta}
+
+
+@tool
 def get_leaders(stat_category: str = "PTS", season: str = SEASON) -> dict[str, Any]:
     """League leaders for one stat category like PTS, REB, AST."""
     stat_category = clamp_stat(stat_category)
@@ -28,6 +55,16 @@ def get_leaders(stat_category: str = "PTS", season: str = SEASON) -> dict[str, A
         [season], lambda: nba_stats.leaders(stat_category, season), season,
     )
     meta["stat_category"] = stat_category
+    try:
+        from .. import store as _store
+
+        total = len(_store.read_frame(table, "_season = ?", [season]))
+        for r in rows:
+            rank = r.get("RANK") or 0
+            if rank and total:
+                r["PERCENTILE"] = round(100 * (1 - (rank - 1) / total), 1)
+    except Exception:
+        pass
     return {"tool": "get_leaders", "ok": True, "rows": rows, "meta": meta}
 
 
