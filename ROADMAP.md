@@ -24,7 +24,6 @@ threads plus runs plus export. Suites: 10 + 27 + 16, browser 5/5.
    count, last fetch, stale flag.
 
 ## Phase 2 — Analyst currency (unused nba_api depth, 274 endpoints)
-
 5. Splits finder. General/game/last-N/shooting splits per player and
    team. Partly exists (get_splits) — widen coverage, force-route it.
 6. Shot locations league-wide. LeagueDashPlayerShotLocations and
@@ -63,3 +62,29 @@ threads plus runs plus export. Suites: 10 + 27 + 16, browser 5/5.
 V1 tools only, new tools need a decision row. Verify each unit before
 the next with real runs, not summaries. Local commits only, no pushes,
 no deploys without approval. Never log keys.
+
+## Appendix — Analyst scenarios from public repos and notebooks
+
+Each scenario maps to a tool or workflow. Status as of this writing.
+
+1. RAPM player impact (Dianjeol stint-data, rd11490 tutorials). Ridge
+   on stint differentials. Have RAPM-lite. Next: multi-season priors.
+2. Win probability plus WPA (tbukic, colekev). Have get_win_prob.
+   Next: WPA-by-play leaders from PBP.
+3. ELO power ratings (538 nba-elo). Missing. Tool: standings
+   extension with ELO, win-equiv, Elo-implied spread.
+4. Game predictor via Monte Carlo (norrisja, badariayush). Missing.
+   Tool: preview extension with win percent, projected total,
+   confidence interval from ratings plus injuries.
+5. Playoff simulator (PRODHOSH, NHX87). Missing. Workflow: bracket
+   plus net ratings, 10k best-of-7 sims, series and title odds.
+6. Shot hexmaps (hkair, ManoSegr). Have shot charts and zones. Next:
+   zone efficiency deltas vs league average.
+7. DFS optimizer (owenauch). Out of scope, gambling-adjacent. Skip.
+8. Trade checker (HP2324). Have v1-simplified with disclaimer. Next:
+   real salaries from BRef contracts (Phase 3.13).
+9. Draft model (JasonG7234, AggieSportsAnalytics). Have combine
+   panel. Next: BartTorvik college stats plus classifier.
+10. Contract value and referee bias (dribbleanalytics, kpelechrinis).
+    Value residual fits get_compare later. Officiating needs L2M
+    reports, no stable feed. Park officiating, keep value residual.
