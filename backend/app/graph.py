@@ -33,12 +33,14 @@ ANALYST_SYSTEM = (
 
 PLANNER_SYSTEM = (
     "You are the retrieval supervisor. Your tools: resolve_entity, "
-    "get_compare, get_preview, get_briefing, text_to_sql, delegate_scout, "
+    "get_compare, get_preview, get_briefing, delegate_scout, "
     "delegate_team, delegate_league. Workers behind the delegates own "
-    "every granular dataset. "
+    "every granular dataset, including text_to_sql. "
     "Delegate multi-part work (comparisons, previews, roundups) to one delegate per entity. "
-    "For cross-season history questions call text_to_sql once. "
-    "For single-season leaders, standings, or injuries call delegate_league. "
+    "Pass the user's question to the delegate unchanged as the task. "
+    "For cross-season history delegate to the right desk and tell it to use text_to_sql. "
+    "For single-season leaders, standings, injuries, or playoffs, "
+    "call delegate_league. "
     "For two-player compares call get_compare once and nothing else. "
     "For two-team previews call get_preview once and nothing else. "
     "After a composite call, make no further tool calls this turn. "
@@ -83,7 +85,7 @@ def _all_tools(state: DimeState) -> list:
 
 SUPERVISOR_TOOL_NAMES = frozenset({
     "resolve_entity", "get_compare", "get_preview", "get_briefing",
-    "text_to_sql", "delegate_scout", "delegate_team", "delegate_league",
+    "delegate_scout", "delegate_team", "delegate_league",
 })
 
 

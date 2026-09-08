@@ -49,6 +49,7 @@ def get_playoffs(season: str = SEASON) -> dict[str, Any]:
         limit=600,
     )
     wins: dict[str, int] = {}
+    losses: dict[str, int] = {}
     games = 0
     for r in rows:
         team = str(r.get("TEAM_ABBREVIATION") or "")
@@ -57,13 +58,19 @@ def get_playoffs(season: str = SEASON) -> dict[str, Any]:
         games += 1
         if r.get("WL") == "W":
             wins[team] = wins.get(team, 0) + 1
+        else:
+            losses[team] = losses.get(team, 0) + 1
     table = sorted(
         ((t, w) for t, w in wins.items()), key=lambda x: x[1], reverse=True)
     champ = table[0][0] if table and table[0][1] >= 12 else ""
     return {"tool": "get_playoffs", "ok": True,
             "rows": {"champion": champ,
-                     "wins": [{"team": t, "w": w} for t, w in table[:16]],
-                     "games": games},
+                     "champion_record":
+                         {"w": wins.get(champ, 0), "l": losses.get(champ, 0)}
+                         if champ else {},
+                     "wins": [{"team": t, "w": w, "l": losses.get(t, 0)}
+                              for t, w in table[:16]],
+                     "games_total": games // 2},
             "meta": meta}
 
 
@@ -410,7 +417,7 @@ async def text_to_sql(question: str) -> dict[str, Any]:
     from .. import store as _store
     from ..providers import invoke_with_fallback
 
-    allowed = ["silver_standings", "silver_player_gamelogs", "silver_team_games",
+    allowed = ["silver_standings", "silver_playoffs", "silver_player_gamelogs", "silver_team_games",
                "silver_leaders_pts", "silver_leaders_reb", "silver_leaders_ast",
                "silver_leaders_stl", "silver_leaders_blk", "silver_boxscores",
                "silver_lineups", "silver_shots", "silver_hustle_player",
@@ -471,6 +478,14 @@ async def text_to_sql(question: str) -> dict[str, Any]:
             continue
         finally:
             con.close()
+        if not rows:
+            feedback = (
+                "\nPrevious SQL ran but returned 0 rows. "
+                "A literal value is probably wrong. Query again with "
+                "different literals or look at the table first "
+                "(SELECT DISTINCT col FROM table LIMIT 20)."
+            )
+            continue
         return {"tool": "text_to_sql", "ok": True,
                 "rows": [dict(zip(names, r)) for r in rows[:25]],
                 "meta": {"sql": sql[:500], "source": "warehouse"}}

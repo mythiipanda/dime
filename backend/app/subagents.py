@@ -6,6 +6,7 @@ stays lean. New desks need a decision row first.
 """
 
 from typing import Any
+import re as _re
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.tools import tool
 
@@ -30,6 +31,7 @@ async def _run_desk(
     provider: ProviderName,
     model: str,
     tool_names: list[str],
+    force_tool: str | None = None,
 ) -> dict[str, Any]:
     from . import tools as _tools
 
@@ -41,6 +43,13 @@ async def _run_desk(
     tooled = client.bind_tools(subset)
     calls_made = 0
     collected: list[dict[str, Any]] = []
+    if force_tool and force_tool in by_name:
+        try:
+            out = await by_name[force_tool].ainvoke({})
+            collected.append(out if isinstance(out, dict) else {"rows": out})
+        except Exception as exc:
+            collected.append({"tool": force_tool, "error": str(exc)[:160]})
+        calls_made += 1
     attempts = [
         [SystemMessage(content=brief),
          HumanMessage(content=f"Season {SEASON}. Task: {task}")],
@@ -105,8 +114,11 @@ TEAM_BRIEF = (
 )
 
 LEAGUE_BRIEF = (
-    "You are the league desk. Report standings, leaders, and injuries. "
-    "Season 2025-26 unless told otherwise."
+    "You are the league desk. Season 2025-26 unless told otherwise. "
+    "IF the task mentions playoffs, champion, finals, or rings, "
+    "THEN call get_playoffs first and nothing else. "
+    "IF the task names one stat category, THEN call get_leaders. "
+    "Otherwise call get_standings."
 )
 
 
@@ -119,7 +131,7 @@ def delegate_tools(provider: ProviderName, model: str) -> list:
             ["resolve_entity", "search_nba", "get_player_intel",
              "get_on_off", "get_wowy", "get_four_factors",
              "get_last_x", "get_percentiles", "get_shot_zones",
-             "get_trend", "get_comps"],
+             "get_trend", "get_comps", "text_to_sql"],
         )
 
     @tool("delegate_team")
@@ -128,15 +140,22 @@ def delegate_tools(provider: ProviderName, model: str) -> list:
         return await _run_desk(
             "team", TEAM_BRIEF, task, provider, model,
             ["resolve_entity", "search_nba", "get_team_hub", "get_games_on_date",
-             "get_boxscore", "get_lineups", "get_injuries", "get_preview"],
+             "get_boxscore", "get_lineups", "get_injuries", "get_preview",
+             "text_to_sql"],
         )
 
     @tool("delegate_league")
     async def delegate_league(task: str) -> dict[str, Any]:
         """Hand leaguewide questions to the league desk."""
+        force = None
+        if _re.search(r"playoff|champion|finals|\bring\b|title",
+                       task, _re.IGNORECASE):
+            force = "get_playoffs"
         return await _run_desk(
             "league", LEAGUE_BRIEF, task, provider, model,
-            ["get_standings", "get_leaders", "get_injuries", "get_rapm"],
+            ["get_standings", "get_leaders", "get_injuries", "get_rapm",
+             "get_playoffs", "text_to_sql"],
+            force_tool=force,
         )
 
     return [delegate_scout, delegate_team, delegate_league]
