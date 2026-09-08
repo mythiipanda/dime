@@ -143,6 +143,7 @@ SCOUT_BRIEF = (
     "PPG with FG_PCT from get_splits. "
     "Shot diet means zone eFG plus share from get_shot_zones. "
     "Two-player shot showdowns go to get_shot_compare. "
+    "Career impact arcs go to get_raptor_history. "
     "Resolve names with resolve_entity first. Use returned ids verbatim. "
     "Never invent ids. Season 2025-26 unless told otherwise."
 )
@@ -190,7 +191,7 @@ def delegate_tools(provider: ProviderName, model: str) -> list:
         """Hand player research to the scout. One player per call."""
         return await _run_desk(
             "scout", SCOUT_BRIEF, task, provider, model,
-            ["resolve_entity", "search_nba",              "get_player_intel",
+            ["resolve_entity", "search_nba",              "get_player_intel", "get_raptor_history",
              "get_on_off", "get_wowy", "get_four_factors",
              "get_last_x", "get_percentiles", "get_shot_zones",
              "get_shot_compare", "get_trend", "get_comps", "text_to_sql"],

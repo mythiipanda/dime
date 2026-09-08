@@ -250,6 +250,12 @@ def main() -> None:
           and {"home", "away", "last10"} <= {r["split"] for r in res["rows"]},
           str(res["rows"][:2])[:160])
 
+    res = tools.get_raptor_history.invoke({"player": "LeBron James"})
+    check("raptor history spans seasons",
+          res["ok"] and len(res["rows"]) >= 5
+          and res["rows"][0].get("RAPTOR", 0) > 0,
+          str(res["rows"][:1])[:160])
+
     async def _pack():
         return await tools.get_scout_pack.ainvoke(
             {"team": "OKC", "opponent": "BOS"})

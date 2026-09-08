@@ -516,3 +516,40 @@ async def get_shot_compare(a: str, b: str, season: str = SEASON) -> dict[str, An
     return {"tool": "get_shot_compare", "ok": True, "rows": rows,
             "verdict": verdict, "meta": {"source": "nba_api", "season": season,
             "a": a, "b": b, "arc_zone": arc_zone, "arc_edge": arc_owner}}
+
+
+@tool
+def get_raptor_history(player: str, season: str = "") -> dict[str, Any]:
+    """Season-by-season RAPTOR and WAR for one player name. Warehouse only."""
+    name = (player or "").strip()
+    if not name:
+        return {"tool": "get_raptor_history", "ok": False, "error": "empty player name"}
+    con = store.connect()
+    try:
+        q = ("SELECT * FROM silver_raptor_player WHERE LOWER(PLAYER_NAME) = LOWER(?)"
+             + (" AND _season = ?" if season else "") + " ORDER BY _season DESC LIMIT 10")
+        try:
+            frame = pl.from_arrow(con.execute(
+                q, [name] + ([season] if season else [])).fetch_arrow_table())
+        except Exception as exc:
+            return {"tool": "get_raptor_history", "ok": False,
+                    "error": f"raptor warehouse not seeded: {str(exc)[:120]}"}
+        try:
+            teams = {r[1]: r[0] for r in con.execute(
+                """SELECT TEAM, _season FROM silver_raptor_team
+                WHERE LOWER(PLAYER_NAME) = LOWER(?) AND SEASON_TYPE = 'RS'""",
+                [name]).fetchall()}
+        except Exception:
+            teams = {}
+    finally:
+        con.close()
+    if frame.height == 0:
+        return {"tool": "get_raptor_history", "ok": False,
+                "error": f"no RAPTOR history for '{name}'"
+                + (f" in {season}" if season else "")}
+    rows = [{"SEASON": r.get("_season"), "TEAM": teams.get(r.get("_season")),
+             "MP": r.get("MP"), "RAPTOR_O": r.get("RAPTOR_OFFENSE"),
+             "RAPTOR_D": r.get("RAPTOR_DEFENSE"), "RAPTOR": r.get("RAPTOR_TOTAL"),
+             "WAR": r.get("WAR_TOTAL")} for r in frame.to_dicts()]
+    return {"tool": "get_raptor_history", "ok": True, "rows": rows,
+            "meta": {"source": "fivethirtyeight:raptor", "seasons": len(rows)}}

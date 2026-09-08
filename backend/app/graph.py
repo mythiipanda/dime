@@ -43,6 +43,8 @@ PLANNER_SYSTEM = (
     "clutch, ELO, or title odds, call delegate_league. "
     "For two-player compares call get_compare once and nothing else. "
     "For two-team previews call get_preview once and nothing else. "
+    "If the question names a venue or home team (in, at, hosting, "
+    "homestand), pass it as home_abbrev. "
     "After a composite call, make no further tool calls this turn. "
     "Resolve calls alone never answer a question. "
     "Always follow identity results with data calls in the next round. "
