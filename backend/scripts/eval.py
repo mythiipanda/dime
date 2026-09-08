@@ -119,6 +119,26 @@ def main() -> None:
     check("nicknames resolve",
           coerce_player_id("SGA") == 1628983, "")
 
+    import asyncio as _asyncio
+
+    async def _cmp():
+        return await tools.get_compare.ainvoke(
+            {"a": "Luka Doncic", "b": "Shai Gilgeous-Alexander"})
+
+    async def _prev():
+        return await tools.get_preview.ainvoke(
+            {"a": "Thunder", "b": "Celtics"})
+
+    cmp_res = _asyncio.run(_cmp())
+    check("compare composite sides",
+          cmp_res["ok"] and cmp_res["rows"]["a"].get("ppg", 0) > 20
+          and cmp_res["rows"]["b"].get("ppg", 0) > 20,
+          str(cmp_res)[:200])
+    prev_res = _asyncio.run(_prev())
+    check("preview composite probs",
+          prev_res["ok"] and abs(sum(prev_res["rows"]["win_prob"].values()) - 1.0) < 0.01,
+          str(prev_res)[:200])
+
     print(f"\neval: {PASS} pass, {FAIL} fail")
     sys.exit(1 if FAIL else 0)
 

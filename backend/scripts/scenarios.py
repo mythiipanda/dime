@@ -88,6 +88,21 @@ def main() -> None:
     check("shot zones sum shares",
           abs(sum(r.get("share", 0) for r in zones["rows"]) - 1.0) < 0.05, "")
 
+    import asyncio as _asyncio
+
+    async def _prev2():
+        return await tools.get_preview.ainvoke(
+            {"a": "Thunder", "b": "Celtics"})
+
+    prev = _asyncio.run(_prev2())
+    pa = prev["rows"].get("a", {})
+    pb = prev["rows"].get("b", {})
+    wp = prev["rows"].get("win_prob", {})
+    check("preview carries both teams plus odds",
+          prev["ok"] and pa.get("team_id") == 1610612760
+          and "top_lineup" in pa and "top_lineup" in pb
+          and abs(sum(wp.values()) - 1.0) < 0.01, str(prev)[:200])
+
     print(f"\nscenarios: {PASS} pass, {FAIL} fail")
     sys.exit(1 if FAIL else 0)
 
