@@ -123,7 +123,7 @@ def delegate_tools(provider: ProviderName, model: str) -> list:
         return await _run_desk(
             "team", TEAM_BRIEF, task, provider, model,
             ["resolve_entity", "search_nba", "get_team_hub", "get_games_on_date",
-             "get_boxscore", "get_lineups"],
+             "get_boxscore", "get_lineups", "get_injuries", "get_preview"],
         )
 
     @tool("delegate_league")
@@ -131,7 +131,7 @@ def delegate_tools(provider: ProviderName, model: str) -> list:
         """Hand leaguewide questions to the league desk."""
         return await _run_desk(
             "league", LEAGUE_BRIEF, task, provider, model,
-            ["get_standings", "get_leaders"],
+            ["get_standings", "get_leaders", "get_injuries", "get_rapm"],
         )
 
     return [delegate_scout, delegate_team, delegate_league]

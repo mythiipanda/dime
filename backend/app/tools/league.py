@@ -414,7 +414,9 @@ async def text_to_sql(question: str) -> dict[str, Any]:
                "silver_leaders_pts", "silver_leaders_reb", "silver_leaders_ast",
                "silver_leaders_stl", "silver_leaders_blk", "silver_boxscores",
                "silver_lineups", "silver_shots", "silver_hustle_player",
-               "silver_hustle_team", "silver_injuries"]
+               "silver_hustle_team", "silver_injuries", "silver_hist_gamelogs",
+               "silver_hist_standings", "silver_hist_possessions",
+               "silver_hist_shots", "silver_hist_lineups"]
     con = _store.connect()
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
