@@ -47,11 +47,83 @@ async def get_preview(
             {"team_a": _abbrev(a), "team_b": _abbrev(b), "season": season}),
         get_standings.ainvoke({"season": season}),
     )
+    import random as _random
+
+    _sims = 2000
+    try:
+        from nba_api.stats.static import teams as _static_teams
+
+        _full_by_id = {t["id"]: t["full_name"] for t in _static_teams.get_teams()}
+    except Exception:
+        _full_by_id = {}
+    _ida = coerce_team_id(a)
+    _idb = coerce_team_id(b)
+
+    def _rating_row(_tid: int) -> dict[str, float]:
+        _row = None
+        try:
+            from .. import store as _store
+
+            _con = _store.connect()
+            try:
+                _row = _con.execute(
+                    "SELECT OFF_RATING, DEF_RATING, PACE FROM silver_team_ratings"
+                    " WHERE _season = ? AND TEAM_ID = ?",
+                    [season, _tid],
+                ).fetchone()
+                if not _row and _full_by_id.get(_tid):
+                    _row = _con.execute(
+                        "SELECT OFF_RATING, DEF_RATING, PACE FROM silver_team_ratings"
+                        " WHERE _season = ? AND TEAM_NAME = ?",
+                        [season, _full_by_id[_tid]],
+                    ).fetchone()
+            finally:
+                _con.close()
+        except Exception:
+            _row = None
+        if _row and _row[0] and _row[1] and _row[2]:
+            return {"OFF_RATING": float(_row[0]), "DEF_RATING": float(_row[1]),
+                    "PACE": float(_row[2])}
+        return {"OFF_RATING": 114.0, "DEF_RATING": 114.0, "PACE": 99.0}
+
+    _ra = _rating_row(_ida)
+    _rb = _rating_row(_idb)
+    _poss = ((_ra["PACE"] or 99.0) + (_rb["PACE"] or 99.0)) / 2
+    # Neutral court: preview(a, b) carries no home/matchup context, so the
+    # +1.5 home edge is not applied to either side.
+    _home_edge = 0.0
+    _exp_a = _poss / 100 * (_ra["OFF_RATING"] + _rb["DEF_RATING"]) / 2 + _home_edge
+    _exp_b = _poss / 100 * (_rb["OFF_RATING"] + _ra["DEF_RATING"]) / 2
+    _wins_a = 0
+    _tot = 0.0
+    _marg = 0.0
+    for _i in range(_sims):
+        _sa = _random.gauss(_exp_a, 12)
+        _sb = _random.gauss(_exp_b, 12)
+        _wins_a += _sa > _sb
+        _tot += _sa + _sb
+        _marg += _sa - _sb
+    _win_pct_a = round(_wins_a / _sims, 3)
+    _proj_total = round(_tot / _sims, 1)
+    _spread_a = round(_marg / _sims, 1)
+    _gap = abs(_win_pct_a - 0.5)
+    _confidence = ("low — near coin flip" if _gap < 0.05 else
+                   "moderate" if _gap < 0.15 else "high")
     return {"tool": "get_preview", "ok": True,
             "rows": {"a": left, "b": right,
                      "win_prob": prob.get("rows", {}),
-                     "standings_rows": len(st.get("rows", []))},
-            "meta": {"source": "nba_api+warehouse", "season": season}}
+                     "standings_rows": len(st.get("rows", [])),
+                     "win_pct_a": _win_pct_a,
+                     "projected_total": _proj_total,
+                     "spread_a": _spread_a,
+                     "sims": _sims},
+            "meta": {"source": "nba_api+warehouse", "season": season,
+                     "sim_note": "Monte Carlo over blended ratings scores "
+                     "(poss=mean pace; exp=poss/100*mean(own OFF, opp DEF)); "
+                     "neutral court, +1.5 home edge not applied "
+                     "(no home context in preview args); normal std 12",
+                     "confidence": _confidence,
+                     "injuries_ignored": True}}
 
 
 @tool

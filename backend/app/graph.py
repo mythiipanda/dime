@@ -40,7 +40,7 @@ PLANNER_SYSTEM = (
     "Pass the user's question to the delegate unchanged as the task. "
     "For cross-season history delegate to the right desk and tell it to use text_to_sql. "
     "For single-season leaders, standings, injuries, playoffs, ratings, "
-    "or clutch, call delegate_league. "
+    "clutch, ELO, or title odds, call delegate_league. "
     "For two-player compares call get_compare once and nothing else. "
     "For two-team previews call get_preview once and nothing else. "
     "After a composite call, make no further tool calls this turn. "

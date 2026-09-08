@@ -623,3 +623,84 @@ async def text_to_sql(question: str) -> dict[str, Any]:
                 "meta": {"sql": sql[:500], "source": "warehouse"}}
     return {"tool": "text_to_sql", "ok": False,
             "error": "sql failed after retries" + feedback[-160:]}
+
+
+@tool
+def get_elo(season: str = SEASON) -> dict[str, Any]:
+    """ELO power ratings from warehouse game results for one season."""
+    from .. import store as _store
+
+    con = _store.connect()
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        if "silver_hist_gamelogs" not in tables:
+            return {"tool": "get_elo", "ok": False, "error": "history empty"}
+        rows = con.execute(
+            """SELECT team_abbreviation, game_id, game_date, matchup, wl,
+            plus_minus FROM silver_hist_gamelogs
+            WHERE _season = ? ORDER BY game_date, game_id""",
+            [season],
+        ).fetchall()
+    finally:
+        con.close()
+    games: dict[str, list] = {}
+    for r in rows:
+        games.setdefault(r[1], []).append(r)
+    elo: dict[str, float] = {}
+    wins: dict[str, int] = {}
+    losses: dict[str, int] = {}
+    mov_ok = False
+    for _, pair in sorted(games.items()):
+        if len(pair) != 2:
+            continue
+        (ta, _, _, ma, wa, pma), (tb, _, _, mb, wb, pmb) = pair
+        if (wa == "W") == (wb == "W"):
+            continue
+        wrow, lrow = (pair[0], pair[1]) if wa == "W" else (pair[1], pair[0])
+        wteam, lteam = wrow[0], lrow[0]
+        margin = wrow[5]
+        if margin is None:
+            margin = -(lrow[5]) if lrow[5] is not None else None
+        mov_mult = 1.0
+        if margin is not None:
+            margin = abs(margin)
+            mov_ok = True
+        elo.setdefault(wteam, 1500.0)
+        elo.setdefault(lteam, 1500.0)
+        wins[wteam] = wins.get(wteam, 0) + 1
+        losses[lteam] = losses.get(lteam, 0) + 1
+        w_home = "vs." in str(wrow[3])
+        l_home = "vs." in str(lrow[3])
+        w_adj = elo[wteam] + (100 if w_home else 0)
+        l_adj = elo[lteam] + (100 if l_home else 0)
+        diff = w_adj - l_adj
+        expected_w = 1 / (1 + 10 ** (-diff / 400))
+        if margin is not None:
+            mov_mult = ((margin + 3) ** 0.8) / (7.5 + 0.006 * abs(diff))
+        shift = 20 * mov_mult * (1 - expected_w)
+        elo[wteam] += shift
+        elo[lteam] -= shift
+    table = sorted(
+        ({"TEAM": t, "ELO": round(v), "W": wins.get(t, 0),
+          "L": losses.get(t, 0)} for t, v in elo.items()),
+        key=lambda d: d["ELO"], reverse=True,
+    )
+    return {"tool": "get_elo", "ok": True, "rows": table,
+            "meta": {"source": "warehouse", "mov": mov_ok, "season": season}}
+
+
+@tool
+def get_playoff_sim(season: str = SEASON, sims: int = 2000) -> dict[str, Any]:
+    """Simulated title and finals odds from ratings, Monte Carlo brackets."""
+    from .sim import run_playoff_sim
+
+    try:
+        sims = max(100, min(int(sims or 2000), 10000))
+    except (TypeError, ValueError):
+        sims = 2000
+    out = run_playoff_sim(season, sims)
+    if not out.get("teams"):
+        return {"tool": "get_playoff_sim", "ok": False,
+                "error": out.get("meta", {}).get("error", "no field")}
+    return {"tool": "get_playoff_sim", "ok": True, "rows": out,
+            "meta": {**out.get("meta", {}), "season": season, "sims": sims}}

@@ -7,11 +7,13 @@ from .league import (
     get_cap_ledger,
     get_clutch,
     get_combine,
+    get_elo,
     get_finder,
     get_hustle,
     get_injuries,
     get_leaders,
     get_playoffs,
+    get_playoff_sim,
     get_rapm,
     get_ratings,
     get_rest,
@@ -82,6 +84,8 @@ v1_tools: list[BaseTool] = [
     get_trade_check,
     get_ratings,
     get_clutch,
+    get_elo,
+    get_playoff_sim,
 ]
 
 TOOL_NAMES = [t.name for t in v1_tools]

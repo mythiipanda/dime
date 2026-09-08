@@ -179,6 +179,21 @@ def main() -> None:
           res["ok"] and res["meta"].get("links", {}).get("watch", "").startswith(
               "https://www.nba.com/game/"), str(res["meta"])[:160])
 
+    res = tools.get_elo.invoke({})
+    check("elo ranks thirty teams",
+          res["ok"] and len(res["rows"]) == 30
+          and abs(sum(r["ELO"] for r in res["rows"]) - 45000) < 5,
+          str(res["rows"][:2])[:160])
+
+    async def _sim():
+        return await tools.get_playoff_sim.ainvoke({})
+
+    sim_res = _asyncio.run(_sim())
+    check("playoff sim odds sum",
+          sim_res["ok"] and abs(sum(
+              sim_res["rows"]["title_probs"].values()) - 100) < 2,
+          str(sim_res["rows"].get("meta"))[:160])
+
     res = tools.get_finder.invoke({"mode": "player_streak",
                                    "team_abbrev": "LeBron James",
                                    "season": "2024-25"})
