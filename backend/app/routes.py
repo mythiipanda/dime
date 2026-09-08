@@ -91,6 +91,23 @@ def threads() -> dict:
     return {"threads": store.list_threads()}
 
 
+class TradeBody(BaseModel):
+    team_a: str = ""
+    players_a: str = ""
+    team_b: str = ""
+    players_b: str = ""
+
+
+@router.post("/trade/check")
+def trade_check(body: TradeBody) -> dict:
+    from .tools import get_trade_check
+
+    return get_trade_check.invoke({
+        "team_a": body.team_a, "players_a": body.players_a,
+        "team_b": body.team_b, "players_b": body.players_b,
+    })
+
+
 @router.get("/threads/{thread_id}/runs")
 def thread_runs(thread_id: str) -> dict:
     return {"runs": store.list_runs(thread_id)}
