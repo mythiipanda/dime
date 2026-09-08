@@ -94,10 +94,19 @@ def _detect_entities(question: str) -> tuple[list[str], list[str]]:
     players, teams = _entity_lists()
     found_p = [p["full_name"] for p in players
                if p.get("full_name", "").lower() in q]
-    found_t = [t["full_name"] for t in teams
-               if t.get("full_name", "").lower() in q
-               or re.search(r"\b" + re.escape(t.get("abbreviation", "")) + r"\b",
-                            question, re.IGNORECASE)]
+    found_t = []
+    race_words = re.search(
+        r"magic number|standings|playoff race|\bseed\b|tanking|lottery",
+        q)
+    for t in teams:
+        full = t.get("full_name", "")
+        nick = full.split()[-1].lower() if full else ""
+        if (full.lower() in q
+                or (nick and not race_words
+                    and re.search(r"\b" + re.escape(nick) + r"\b", q))
+                or re.search(r"\b" + re.escape(t.get("abbreviation", "")) + r"\b",
+                             question, re.IGNORECASE)):
+            found_t.append(full)
     return found_p, found_t
 
 

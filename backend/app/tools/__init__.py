@@ -45,6 +45,7 @@ from .shared import resolve_entity, search_nba
 from .team import (
     get_boxscore,
     get_games_on_date,
+    get_injury_impact,
     get_lineups,
     get_preview,
     get_recap,
@@ -94,6 +95,7 @@ v1_tools: list[BaseTool] = [
     get_scout_pack,
     get_rotation_check,
     get_team_splits,
+    get_injury_impact,
     get_cap_ledger,
     get_trade_check,
     get_ratings,

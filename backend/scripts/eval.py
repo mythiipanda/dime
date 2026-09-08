@@ -250,6 +250,16 @@ def main() -> None:
           and {"home", "away", "last10"} <= {r["split"] for r in res["rows"]},
           str(res["rows"][:2])[:160])
 
+    async def _inj():
+        return await tools.get_injury_impact.ainvoke({"team": "GSW"})
+
+    inj_res = _aio2.run(_inj())
+    check("injury impact grades",
+          inj_res["ok"] and inj_res["rows"].get("impact") in
+          ("high", "moderate", "low")
+          and isinstance(inj_res["rows"].get("out"), list),
+          str(inj_res["rows"])[:160])
+
     res = tools.get_raptor_history.invoke({"player": "LeBron James"})
     check("raptor history spans seasons",
           res["ok"] and len(res["rows"]) >= 5

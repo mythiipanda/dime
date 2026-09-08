@@ -31,7 +31,7 @@ async def _run_desk(
     provider: ProviderName,
     model: str,
     tool_names: list[str],
-    force_tool: str | None = None,
+    force_tool: str | tuple[str, dict] | None = None,
 ) -> dict[str, Any]:
     from . import tools as _tools
 
@@ -43,13 +43,16 @@ async def _run_desk(
     tooled = client.bind_tools(subset)
     calls_made = 0
     collected: list[dict[str, Any]] = []
-    if force_tool and force_tool in by_name:
-        try:
-            out = await by_name[force_tool].ainvoke({})
-            collected.append(out if isinstance(out, dict) else {"rows": out})
-        except Exception as exc:
-            collected.append({"tool": force_tool, "error": str(exc)[:160]})
-        calls_made += 1
+    if force_tool:
+        fname, fargs = (force_tool if isinstance(force_tool, tuple)
+                        else (force_tool, {}))
+        if fname in by_name:
+            try:
+                out = await by_name[fname].ainvoke(fargs)
+                collected.append(out if isinstance(out, dict) else {"rows": out})
+            except Exception as exc:
+                collected.append({"tool": fname, "error": str(exc)[:160]})
+            calls_made += 1
     attempts = [
         [SystemMessage(content=brief),
          HumanMessage(content=f"Season {SEASON}. Task: {task}")],
@@ -156,6 +159,8 @@ TEAM_BRIEF = (
     "For rotation health call get_rotation_check. "
     "For payroll, tax, or cap room call get_cap_ledger. "
     "For home/away or monthly team splits call get_team_splits. "
+    "For injury impact (how much do injuries matter) call get_injury_impact, "
+    "not get_injuries. "
     "Resolve names with resolve_entity first. Use returned ids verbatim. "
     "Never invent ids. Season 2025-26 unless told otherwise."
 )
@@ -200,12 +205,27 @@ def delegate_tools(provider: ProviderName, model: str) -> list:
     @tool("delegate_team")
     async def delegate_team(task: str) -> dict[str, Any]:
         """Hand team research to the team desk. One team per call."""
+        force = None
+        if _re.search(r"impact|how much|how bad|hurting|without|matter",
+                       task, _re.IGNORECASE):
+            from nba_api.stats.static import teams as _teams
+
+            abbr = next(
+                (t["abbreviation"] for t in _teams.get_teams()
+                 if t["full_name"].lower() in task.lower()
+                 or _re.search(r"\b" + _re.escape(t["abbreviation"]) + r"\b",
+                               task, _re.IGNORECASE)),
+                "",
+            )
+            if abbr:
+                force = ("get_injury_impact", {"team": abbr})
         return await _run_desk(
             "team", TEAM_BRIEF, task, provider, model,
             ["resolve_entity", "search_nba", "get_team_hub", "get_games_on_date",
              "get_boxscore", "get_lineups", "get_injuries", "get_preview",
              "get_scout_pack", "get_rotation_check", "get_cap_ledger",
-             "get_team_splits", "text_to_sql"],
+             "get_team_splits", "get_injury_impact", "text_to_sql"],
+            force_tool=force,
         )
 
     @tool("delegate_league")

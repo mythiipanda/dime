@@ -431,3 +431,71 @@ def get_team_splits(team: str | int, season: str = SEASON) -> dict[str, Any]:
     out.extend(_row(m, rs) for m, rs in months.items())
     return {"tool": "get_team_splits", "ok": True, "rows": out,
             "meta": {"source": "warehouse", "season": season, "team_id": tid}}
+
+
+@tool
+async def get_injury_impact(team: str = "", season: str = SEASON) -> dict[str, Any]:
+    """Injury impact in one call: outs, net rating, last-10, heuristic impact."""
+    import ast as _ast
+    import json as _json
+
+    from .league import get_injuries, get_ratings
+
+    abbr = _abbrev(team or "")
+    out: list[str] = []
+    questionable: list[str] = []
+    net = None
+    rank = None
+    last10 = None
+    try:
+        inj = await get_injuries.ainvoke({"team": abbr, "season": season})
+        for r in inj.get("rows", []) or []:
+            raw = r.get("injuries", "")
+            try:
+                try:
+                    items = _json.loads(raw) if isinstance(raw, str) else raw
+                except Exception:
+                    items = _ast.literal_eval(raw) if isinstance(raw, str) else raw
+            except Exception:
+                items = []
+            for it in items or []:
+                if not isinstance(it, dict):
+                    continue
+                name = (it.get("athlete") or {}).get("displayName", "?")
+                if "out" in str(it.get("status", "")).lower():
+                    out.append(str(name))
+                else:
+                    questionable.append(str(name))
+    except Exception:
+        pass
+    try:
+        rat = await get_ratings.ainvoke({"season": season})
+        row = next((x for x in rat.get("rows", []) or []
+                    if str(x.get("TEAM", "")).upper() == abbr.upper()), {})
+        try:
+            net = float(row.get("NET_RATING")) if row.get("NET_RATING") is not None else None
+        except (TypeError, ValueError):
+            net = None
+        rank = row.get("NET_RATING_RANK")
+    except Exception:
+        pass
+    try:
+        sp = get_team_splits.invoke({"team": abbr, "season": season})
+        l10 = next((x for x in sp.get("rows", []) or []
+                    if x.get("split") == "last10"), {})
+        if l10:
+            last10 = f"{l10.get('W')}-{l10.get('L')}"
+    except Exception:
+        pass
+    try:
+        below = net is not None and float(net) < 0
+    except (TypeError, ValueError):
+        below = False
+    impact = "high" if len(out) >= 2 and below else "moderate" if out else "low"
+    return {"tool": "get_injury_impact", "ok": True,
+            "rows": {"team": abbr, "out": out, "questionable": questionable,
+                     "net_rating": net, "net_rank": rank, "last10": last10,
+                     "impact": impact},
+            "meta": {"source": "espn+nba_api+warehouse", "season": season,
+                     "heuristic": "OUT>=2 and net<0 -> high; OUT>=1 -> moderate; else low; "
+                     "OUT = 'out' in status text, questionable = other listings"}}
