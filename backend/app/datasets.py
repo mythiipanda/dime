@@ -44,7 +44,9 @@ def _fetch_live(
     if name == "standings":
         return nba_stats.standings(season)
     if name == "leaders":
-        return nba_stats.leaders(stat, season)
+        from .tools import clamp_stat
+
+        return nba_stats.leaders(clamp_stat(stat), season)
     if name == "injuries":
         return espn.injuries(season)
     if name == "player_gamelogs" and player_id:

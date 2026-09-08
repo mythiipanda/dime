@@ -5,14 +5,38 @@ Watermarks in fetch_log drive incremental refresh.
 """
 
 from pathlib import Path
+from contextlib import contextmanager
 import duckdb
+import fcntl
 import polars as pl
+import time
 
 from .sources.base import FetchResult
 
 DB_PATH = Path(__file__).resolve().parent.parent / "data" / "warehouse.duckdb"
+LOCK_PATH = DB_PATH.parent / ".write.lock"
 
 PROVENANCE_COLS = ["_source", "_season", "_fetched_at"]
+
+
+@contextmanager
+def write_guard(timeout_s: float = 60.0):
+    """Serialize DuckDB writers across threads and processes."""
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    start = time.time()
+    with open(LOCK_PATH, "w") as fh:
+        while True:
+            try:
+                fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.time() - start > timeout_s:
+                    raise TimeoutError("warehouse write lock timed out")
+                time.sleep(0.05)
+        try:
+            yield
+        finally:
+            fcntl.flock(fh, fcntl.LOCK_UN)
 
 
 def connect() -> duckdb.DuckDBPyConnection:
@@ -42,33 +66,34 @@ def save_frame(
     )
     con = connect()
     try:
-        con.register("_incoming", frame.to_arrow())
-        con.execute(
-            f"""CREATE TABLE IF NOT EXISTS {table} AS
-            SELECT * FROM _incoming LIMIT 0"""
-        )
-        have = [r[1] for r in con.execute(f"PRAGMA table_info({table})").fetchall()]
-        incoming = frame.columns
-        if have != incoming:
-            con.execute(f"DROP TABLE {table}")
-            con.execute(f"CREATE TABLE {table} AS SELECT * FROM _incoming")
-        if replace_season:
+        with write_guard():
+            con.register("_incoming", frame.to_arrow())
             con.execute(
-                f"DELETE FROM {table} WHERE _season = ?", [result.meta.season]
+                f"""CREATE TABLE IF NOT EXISTS {table} AS
+                SELECT * FROM _incoming LIMIT 0"""
             )
-        con.execute(f"INSERT INTO {table} SELECT * FROM _incoming")
-        con.execute(
-            "INSERT INTO fetch_log VALUES (?,?,?,?,?,?)",
-            [
-                table,
-                result.meta.season,
-                entity,
-                result.meta.source,
-                result.meta.fetched_at,
-                frame.height,
-            ],
-        )
-        return frame.height
+            have = [r[1] for r in con.execute(f"PRAGMA table_info({table})").fetchall()]
+            incoming = frame.columns
+            if have != incoming:
+                con.execute(f"DROP TABLE {table}")
+                con.execute(f"CREATE TABLE {table} AS SELECT * FROM _incoming")
+            if replace_season:
+                con.execute(
+                    f"DELETE FROM {table} WHERE _season = ?", [result.meta.season]
+                )
+            con.execute(f"INSERT INTO {table} SELECT * FROM _incoming")
+            con.execute(
+                "INSERT INTO fetch_log VALUES (?,?,?,?,?,?)",
+                [
+                    table,
+                    result.meta.season,
+                    entity,
+                    result.meta.source,
+                    result.meta.fetched_at,
+                    frame.height,
+                ],
+            )
+            return frame.height
     finally:
         con.close()
 
@@ -103,17 +128,18 @@ def last_fetch(table: str, season: str, entity: str = "") -> str:
 def save_chat(thread: str, role: str, text: str) -> None:
     con = connect()
     try:
-        con.execute(
-            """CREATE TABLE IF NOT EXISTS chat_history(
-            thread VARCHAR, role VARCHAR, text VARCHAR, created_at VARCHAR)"""
-        )
-        from datetime import datetime, timezone
+        with write_guard():
+            con.execute(
+                """CREATE TABLE IF NOT EXISTS chat_history(
+                thread VARCHAR, role VARCHAR, text VARCHAR, created_at VARCHAR)"""
+            )
+            from datetime import datetime, timezone
 
-        con.execute(
-            "INSERT INTO chat_history VALUES (?,?,?,?)",
-            [thread, role, text[:4000],
-             datetime.now(timezone.utc).isoformat()],
-        )
+            con.execute(
+                "INSERT INTO chat_history VALUES (?,?,?,?)",
+                [thread, role, text[:4000],
+                 datetime.now(timezone.utc).isoformat()],
+            )
     finally:
         con.close()
 
@@ -167,20 +193,21 @@ def save_run(
 
     con = connect()
     try:
-        con.execute(
-            """CREATE TABLE IF NOT EXISTS runs(
-            thread VARCHAR, question VARCHAR, answer VARCHAR,
-            tables VARCHAR, suggestions VARCHAR, created_at VARCHAR)"""
-        )
-        from datetime import datetime, timezone
+        with write_guard():
+            con.execute(
+                """CREATE TABLE IF NOT EXISTS runs(
+                thread VARCHAR, question VARCHAR, answer VARCHAR,
+                tables VARCHAR, suggestions VARCHAR, created_at VARCHAR)"""
+            )
+            from datetime import datetime, timezone
 
-        con.execute(
-            "INSERT INTO runs VALUES (?,?,?,?,?,?)",
-            [thread, question[:2000], answer[:8000],
-             _json.dumps(tables, default=str)[:60000],
-             _json.dumps(suggestions)[:2000],
-             datetime.now(timezone.utc).isoformat()],
-        )
+            con.execute(
+                "INSERT INTO runs VALUES (?,?,?,?,?,?)",
+                [thread, question[:2000], answer[:8000],
+                 _json.dumps(tables, default=str)[:60000],
+                 _json.dumps(suggestions)[:2000],
+                 datetime.now(timezone.utc).isoformat()],
+            )
     finally:
         con.close()
 
