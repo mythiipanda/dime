@@ -205,8 +205,37 @@ def get_comps(player_id: str | int, season: str = SEASON, n: int = 5) -> dict[st
     scored.sort()
     rows = [{"PLAYER": name, "TEAM": team, "distance": round(d, 2)}
             for d, name, team in scored[:n]]
+    latest: dict[str, dict] = {}
+    try:
+        names = [r["PLAYER"] for r in rows]
+        if names:
+            con = store.connect()
+            try:
+                ph = ",".join("?" for _ in names)
+                up = [str(x).upper() for x in names]
+                q = ("SELECT PLAYER_NAME,_season,RAPTOR_TOTAL,WAR_TOTAL "
+                     "FROM silver_raptor_player "
+                     f"WHERE UPPER(PLAYER_NAME) IN ({ph}) ORDER BY _season DESC")
+                try:
+                    rf = pl.from_arrow(con.execute(q, up).fetch_arrow_table())
+                except Exception:
+                    rf = pl.DataFrame([])
+                for d in rf.to_dicts():
+                    k = str(d.get("PLAYER_NAME") or "").upper()
+                    if k and k not in latest:
+                        latest[k] = d
+            finally:
+                con.close()
+    except Exception:
+        latest = {}
+    for r in rows:
+        hit = latest.get(str(r.get("PLAYER")).upper())
+        r["RAPTOR"] = hit.get("RAPTOR_TOTAL") if hit else None
+        r["WAR"] = hit.get("WAR_TOTAL") if hit else None
+    cov = sum(1 for r in rows if r.get("RAPTOR") is not None)
     return {"tool": "get_comps", "ok": True, "rows": rows,
-            "meta": {"source": "nba_api", "season": season}}
+            "meta": {"source": "nba_api", "season": season,
+                     "raptor_coverage": f"{cov}/{len(rows)} neighbors with RAPTOR"}}
 
 
 @tool
