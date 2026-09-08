@@ -194,6 +194,18 @@ def main() -> None:
               sim_res["rows"]["title_probs"].values()) - 100) < 2,
           str(sim_res["rows"].get("meta"))[:160])
 
+    res = tools.get_contract_value.invoke({})
+    check("contract value both signs",
+          res["ok"] and len(res["rows"]) == 20
+          and res["rows"][0].get("RESIDUAL", 0) > 0
+          and res["rows"][-1].get("RESIDUAL", 0) < 0, str(res["rows"][:1])[:160])
+
+    res = tools.get_shot_zones.invoke({"player_id": 2544})
+    check("shot zones carry efg and share",
+          res["ok"] and abs(sum(r.get("SHARE", 0) for r in res["rows"]) - 1.0) < 0.01
+          and all(0 <= r.get("eFG_PCT", -1) <= 1.5 for r in res["rows"]),
+          str(res["rows"][:1])[:160])
+
     res = tools.get_finder.invoke({"mode": "player_streak",
                                    "team_abbrev": "LeBron James",
                                    "season": "2024-25"})

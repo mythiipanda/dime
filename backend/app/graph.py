@@ -47,6 +47,7 @@ PLANNER_SYSTEM = (
     "Resolve calls alone never answer a question. "
     "Always follow identity results with data calls in the next round. "
     "Resolve every name with resolve_entity first when the task lacks an explicit id. "
+    "Never expand a nickname yourself. Pass names to tools verbatim. "
     "Id params also accept names directly and resolve internally. "
     "Use returned ids verbatim. Never invent or recall ids from memory. "
     "Plan the SMALLEST set of calls that answers the question. "
@@ -61,6 +62,81 @@ PLANNER_SYSTEM = (
 
 MAX_TOOL_ROUNDS = 3
 MAX_TOOL_CALLS = 8
+
+_LEAGUE_RX = re.compile(
+    r"playoff|champion|finals|leader|standing|injur|clutch|\brating\b|"
+    r"elo|title odds|streak|versus|power rank|net rating", re.IGNORECASE)
+_COMPARE_RX = re.compile(
+    r"\bvs\.?\b|\bversus\b|\bcompare\b", re.IGNORECASE)
+
+_entity_cache: dict[str, Any] | None = None
+
+
+def _entity_lists() -> tuple[list[dict], list[dict]]:
+    global _entity_cache
+    if _entity_cache is None:
+        from nba_api.stats.static import players, teams
+
+        _entity_cache = {"players": players.get_players(),
+                         "teams": teams.get_teams()}
+    return _entity_cache["players"], _entity_cache["teams"]
+
+
+def _detect_entities(question: str) -> tuple[list[str], list[str]]:
+    from .tools._core import NICKNAMES
+
+    q = question.lower()
+    for nick, full in NICKNAMES.items():
+        if nick in q:
+            q += " " + full.lower()
+    players, teams = _entity_lists()
+    found_p = [p["full_name"] for p in players
+               if p.get("full_name", "").lower() in q]
+    found_t = [t["full_name"] for t in teams
+               if t.get("full_name", "").lower() in q
+               or re.search(r"\b" + re.escape(t.get("abbreviation", "")) + r"\b",
+                            question, re.IGNORECASE)]
+    return found_p, found_t
+
+
+def _expand_nicknames(question: str) -> str:
+    from .tools._core import NICKNAMES
+
+    out = question
+    lowered = out.lower()
+    for nick in sorted(NICKNAMES, key=len, reverse=True):
+        full = NICKNAMES[nick]
+        if full.lower() in lowered:
+            continue
+        out = re.sub(r"\b" + re.escape(nick) + r"\b", full, out,
+                     flags=re.IGNORECASE)
+        lowered = out.lower()
+    return out
+
+
+async def _triage_seed(question: str, primary: str, model: str,
+                       state: dict) -> None:
+    found_p, found_t = _detect_entities(question)
+    if len(found_p) >= 2 or len(found_t) >= 2 or _COMPARE_RX.search(question):
+        return
+    delegates = {t.name: t for t in delegate_tools(primary, model)}  # type: ignore[arg-type]
+    pick = None
+    if found_p and not found_t:
+        pick = "delegate_scout"
+    elif found_t and not found_p:
+        pick = "delegate_team"
+    elif _LEAGUE_RX.search(question):
+        pick = "delegate_league"
+    if pick is None or pick not in delegates:
+        return
+    try:
+        out = await delegates[pick].ainvoke({"task": question})
+    except Exception as exc:
+        out = {"tool": pick, "ok": False, "error": str(exc)[:160]}
+    state["tool_results"].append(
+        out if isinstance(out, dict) else {"tool": pick, "rows": out})
+    state["calls_made"].append(pick + ":" + json.dumps({"task": question},
+                                                       sort_keys=True))
 
 
 class DimeState(TypedDict):
@@ -166,7 +242,15 @@ async def data_retrieval_agent(
         thought = getattr(resp, "content", "") or ""
         if thought:
             yield _event("thought_stream", {"node": "data_retrieval", "text": thought[:500]})
-        state["round"] = MAX_TOOL_ROUNDS
+        made = {k.partition(":")[0] for k in state["calls_made"]}
+        if made <= {"resolve_entity", "search_nba"}:
+            state["tool_results"].append(
+                {"tool": "supervisor_note", "rows": [],
+                 "note": "Identity is resolved. Call a delegate or data "
+                         "tool now. No more identity calls."})
+            state["_pending_calls"] = []  # type: ignore[typeddict-unknown-key]
+        else:
+            state["round"] = MAX_TOOL_ROUNDS
     else:
         for call in fresh:
             yield _event("message", {"node": "data_retrieval", "tool_call": call})
@@ -179,7 +263,7 @@ async def data_retrieval_agent(
 
 async def actual_tool_node(state: DimeState) -> AsyncGenerator[dict[str, Any], None]:
     yield _event("node_update", {"node": "tools", "status": "running"})
-    by_name = {t.name: t for t in _all_tools(state)}
+    by_name = {t.name: t for t in _supervisor_tools(state)}
     pending = state.pop("_pending_calls", [])  # type: ignore[typeddict-unknown-key]
 
     async def _run(call: dict[str, Any]) -> dict[str, Any]:
@@ -255,6 +339,7 @@ async def analytics_agent(state: DimeState) -> AsyncGenerator[dict[str, Any], No
     evidenced = [
         r for r in _flatten_tables(state["tool_results"])
         if isinstance(r, dict) and _has_rows(r.get("rows"))
+        and r.get("tool", "") not in ("resolve_entity", "search_nba")
     ]
     if not evidenced:
         tried = [k.split(":", 1)[0] for k in state["calls_made"]][:6]
@@ -317,6 +402,7 @@ async def run_chat(
     history: list[dict[str, str]] | None = None,
 ) -> AsyncGenerator[dict[str, Any], None]:
     primary, model = resolve_model_id(model_id)
+    question = _expand_nicknames(question or "")
     state = DimeState(
         question=question, primary=primary, model=model, round=0,
         tool_results=[], calls_made=[], history=history or [],
@@ -324,6 +410,7 @@ async def run_chat(
     )
     async for e in entry_node(state):
         yield e
+    await _triage_seed(question, primary, model, state)
     while state["round"] < MAX_TOOL_ROUNDS:
         async for e in data_retrieval_agent(state):
             yield e

@@ -704,3 +704,105 @@ def get_playoff_sim(season: str = SEASON, sims: int = 2000) -> dict[str, Any]:
                 "error": out.get("meta", {}).get("error", "no field")}
     return {"tool": "get_playoff_sim", "ok": True, "rows": out,
             "meta": {**out.get("meta", {}), "season": season, "sims": sims}}
+
+
+@tool
+def get_contract_value(season: str = "2025-26", min_gp: int = 20) -> dict[str, Any]:
+    """Contract value residuals: 2026-27 salary vs OLS prediction from per-game production. Ten most overpaid plus ten most underpaid."""
+    import unicodedata as _ud
+
+    from .. import store as _store
+
+    season = str(season or "2025-26").strip() or "2025-26"
+    try:
+        min_gp = max(0, min(int(min_gp), 82))
+    except (TypeError, ValueError):
+        min_gp = 20
+
+    weights = {"PTS": 1.0, "REB": 1.2, "AST": 1.5,
+               "STL": 2.0, "BLK": 2.0, "TOV": -1.5}
+
+    def _norm(s: object) -> str:
+        return "".join(
+            c for c in _ud.normalize("NFKD", str(s or ""))
+            if not _ud.combining(c)
+        ).strip().lower()
+
+    con = _store.connect()
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        if "silver_cap_players" not in tables or "silver_leaders_pts" not in tables:
+            return {"tool": "get_contract_value", "ok": False,
+                    "error": "warehouse empty"}
+        have = {r[1] for r in
+                con.execute("PRAGMA table_info(silver_leaders_pts)").fetchall()}
+        prod = con.execute(
+            """SELECT PLAYER, TEAM, GP, PTS, REB, AST, STL, BLK, TOV
+            FROM silver_leaders_pts WHERE _season = ?""",
+            [season],
+        ).fetchall()
+        cap = con.execute(
+            "SELECT player, team, salary FROM silver_cap_players"
+        ).fetchall()
+        try:
+            prod_date = con.execute(
+                "SELECT MAX(_fetched_at) FROM silver_leaders_pts").fetchall()[0][0]
+            cap_date = con.execute(
+                "SELECT MAX(_fetched_at) FROM silver_cap_players").fetchall()[0][0]
+        except Exception:
+            prod_date = cap_date = None
+    finally:
+        con.close()
+    if not prod:
+        return {"tool": "get_contract_value", "ok": False,
+                "error": f"no production rows for {season}"}
+    missing = [c for c in weights if c not in have]
+    use_w = {c: (0.0 if c in missing else w) for c, w in weights.items()}
+    by_name: dict[str, tuple] = {}
+    for r in prod:
+        by_name.setdefault(_norm(r[0]), r)
+    fitted = []
+    for player, team, salary in cap:
+        r = by_name.get(_norm(player))
+        if r is None:
+            continue
+        _, lteam, gp, pts, reb, ast, stl, blk, tov = r
+        gp = gp or 0
+        if gp < min_gp or gp <= 0:
+            continue
+        vals = {"PTS": pts or 0, "REB": reb or 0, "AST": ast or 0,
+                "STL": stl or 0, "BLK": blk or 0, "TOV": tov or 0}
+        score = sum(vals[c] / gp * use_w[c] for c in use_w)
+        fitted.append({"PLAYER": player, "TEAM": team or lteam,
+                       "SALARY": salary or 0, "GP": gp, "SCORE": score})
+    n = len(fitted)
+    if n < 2:
+        return {"tool": "get_contract_value", "ok": False,
+                "error": "not enough qualified players"}
+    mx = sum(f["SCORE"] for f in fitted) / n
+    my = sum(f["SALARY"] for f in fitted) / n
+    var = sum((f["SCORE"] - mx) ** 2 for f in fitted)
+    if var <= 0:
+        return {"tool": "get_contract_value", "ok": False,
+                "error": "no production variance"}
+    cov = sum((f["SCORE"] - mx) * (f["SALARY"] - my) for f in fitted)
+    slope = cov / var
+    intercept = my - slope * mx
+    for f in fitted:
+        f["PREDICTED"] = int(round(slope * f["SCORE"] + intercept))
+        f["RESIDUAL"] = int(f["SALARY"]) - int(f["PREDICTED"])
+        f["SCORE"] = round(f["SCORE"], 2)
+    over = sorted(fitted, key=lambda f: f["RESIDUAL"], reverse=True)[:10]
+    under = sorted(fitted, key=lambda f: f["RESIDUAL"])[:10]
+    rows = over + under
+    formula = ("score = PTS + 1.2*REB + 1.5*AST + 2*STL + 2*BLK - 1.5*TOV "
+               "(per game); salary_hat = slope*score + intercept (OLS by hand); "
+               "residual = salary - salary_hat")
+    return {"tool": "get_contract_value", "ok": True, "rows": rows,
+            "meta": {"formula": formula, "weights": weights,
+                     "missing_columns_zero_weight": missing,
+                     "slope": round(slope, 2), "intercept": round(intercept, 2),
+                     "n_qualified": n, "min_gp": min_gp,
+                     "production_season": season, "salary_season": "2026-27",
+                     "production_date": prod_date, "salary_date": cap_date,
+                     "overpaid_first": True}}

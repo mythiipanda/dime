@@ -76,8 +76,45 @@ async def _run_desk(
         except Exception as exc:
             collected.append({"tool": call.get("name"), "error": str(exc)[:160]})
         calls_made += 1
+    ran_data_tool = any(
+        isinstance(c, dict) and c.get("tool", "") not in
+        ("resolve_entity", "search_nba") and _row_count(c.get("rows")) > 0
+        for c in collected
+    )
+    if collected and not ran_data_tool and calls_made < WORKER_BUDGET:
+        data_names = [t.name for t in subset
+                      if t.name not in ("resolve_entity", "search_nba")]
+        data_only = client.bind_tools(
+            [t for t in subset
+             if t.name not in ("resolve_entity", "search_nba")])
+        try:
+            resp = await data_only.ainvoke(
+                [SystemMessage(content=brief + " Identity is settled, use "
+                               "these ids verbatim. "
+                               f"Call exactly one of these now: "
+                               f"{', '.join(data_names)}. No prose."),
+                 HumanMessage(content=f"Season {SEASON}. Task: {task}. "
+                              f"Resolved: {str(collected)[:600]}")]
+            )
+        except Exception as exc:
+            return {"agent": desk, "ok": False, "error": str(exc)[:200]}
+        for call in getattr(resp, "tool_calls", None) or []:
+            if calls_made >= WORKER_BUDGET:
+                break
+            fn = by_name.get(call.get("name", ""))
+            if fn is None:
+                continue
+            try:
+                out = await fn.ainvoke(call.get("args", {}) or {})
+                collected.append(out if isinstance(out, dict) else {"rows": out})
+            except Exception as exc:
+                collected.append({"tool": call.get("name"),
+                                  "error": str(exc)[:160]})
+            calls_made += 1
     has_data = any(
-        isinstance(c, dict) and _row_count(c.get("rows")) > 0 for c in collected
+        isinstance(c, dict) and c.get("tool", "") not in
+        ("resolve_entity", "search_nba")
+        and _row_count(c.get("rows")) > 0 for c in collected
     )
     if not has_data:
         return {"agent": desk, "ok": False,
@@ -87,7 +124,8 @@ async def _run_desk(
             [
                 SystemMessage(
                     content="Summarize these findings in 5 short sentences max. "
-                    "Use only numbers present in the evidence."
+                    "Use only numbers present in the evidence. "
+                    "If the evidence has no data rows, reply exactly: NO DATA."
                 ),
                 HumanMessage(content=f"Task: {task}\nEvidence: {str(collected)[:8000]}"),
             ]
@@ -103,6 +141,7 @@ SCOUT_BRIEF = (
     "You are the player scout. Report form, splits, and shot profile. "
     "Splits means home/away plus wins/losses plus last-10 plus monthly "
     "PPG with FG_PCT from get_splits. "
+    "Shot diet means zone eFG plus share from get_shot_zones. "
     "Resolve names with resolve_entity first. Use returned ids verbatim. "
     "Never invent ids. Season 2025-26 unless told otherwise."
 )
@@ -127,6 +166,8 @@ LEAGUE_BRIEF = (
     "THEN call get_elo. "
     "IF the task mentions title odds, finals odds, or simulating the "
     "playoffs, THEN call get_playoff_sim. "
+    "IF the task mentions overpaid, underpaid, contract value, or "
+    "salary vs production, THEN call get_contract_value. "
     "IF the task names one stat category, THEN call get_leaders. "
     "Otherwise call get_standings."
 )
@@ -165,7 +206,7 @@ def delegate_tools(provider: ProviderName, model: str) -> list:
             "league", LEAGUE_BRIEF, task, provider, model,
             ["get_standings", "get_leaders", "get_injuries", "get_rapm",
              "get_playoffs", "get_ratings", "get_clutch", "get_elo",
-             "get_playoff_sim", "text_to_sql"],
+             "get_playoff_sim", "get_contract_value", "text_to_sql"],
             force_tool=force,
         )
 

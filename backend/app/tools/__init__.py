@@ -7,6 +7,7 @@ from .league import (
     get_cap_ledger,
     get_clutch,
     get_combine,
+    get_contract_value,
     get_elo,
     get_finder,
     get_hustle,
@@ -86,6 +87,7 @@ v1_tools: list[BaseTool] = [
     get_clutch,
     get_elo,
     get_playoff_sim,
+    get_contract_value,
 ]
 
 TOOL_NAMES = [t.name for t in v1_tools]

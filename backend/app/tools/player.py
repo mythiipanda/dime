@@ -219,27 +219,86 @@ def get_shot_zones(player_id: str | int, season: str = SEASON) -> dict[str, Any]
     if not res.ok or res.frame.height == 0:
         return {"tool": "get_shot_zones", "ok": False,
                 "error": res.error or "empty upstream response"}
-    zones = {"rim": [0, 0], "mid": [0, 0], "three": [0, 0]}
-    for r in res.frame.to_dicts():
+
+    def _zone_of(r: dict) -> str:
+        zb = str(r.get("SHOT_ZONE_BASIC") or "").strip()
+        if zb:
+            return zb
         try:
             dist = math.hypot(float(r.get("LOC_X", 0)), float(r.get("LOC_Y", 0))) / 10
         except (TypeError, ValueError):
-            continue
-        made = str(r.get("SHOT_MADE_FLAG", "") or "") == "1" or str(
+            return "Mid-Range"
+        return ("Restricted Area" if dist < 8
+                else ("Above the Break 3" if dist > 23.75 else "Mid-Range"))
+
+    def _is_made(r: dict) -> bool:
+        return str(r.get("SHOT_MADE_FLAG", "") or "") == "1" or str(
             r.get("EVENT_TYPE", "")).lower().startswith("made")
-        z = "rim" if dist < 8 else ("three" if dist > 23.75 else "mid")
-        zones[z][1] += 1
-        zones[z][0] += 1 if made else 0
-    total = sum(a for _, a in zones.values()) or 1
-    rows = [
-        {"zone": z, "FGM": m, "FGA": a,
-         "FG_PCT": round(m / a, 3) if a else 0.0,
-         "share": round(a / total, 3)}
-        for z, (m, a) in zones.items()
-    ]
-    return {"tool": "get_shot_zones", "ok": True, "rows": rows,
-            "meta": {"source": res.meta.source, "fetched_at": res.meta.fetched_at,
-                     "rows": 3, "cached": False}}
+
+    def _is_three(r: dict) -> bool:
+        return "3pt" in str(r.get("SHOT_TYPE", "") or "").lower()
+
+    zones: dict[str, list] = {}
+    for r in res.frame.to_dicts():
+        z = _zone_of(r)
+        made = _is_made(r)
+        three = _is_three(r)
+        slot = zones.setdefault(z, [0, 0, 0])
+        slot[1] += 1
+        if made:
+            slot[0] += 1
+            if three:
+                slot[2] += 1
+    total = sum(a for _, a, _ in zones.values()) or 1
+    league_efg: dict[str, float] = {}
+    baseline_missing = True
+    baseline_detail = ""
+    try:
+        w = store.read_frame("silver_shots", "_season = ?", [season])
+        if (w.height > 0 and "PLAYER_ID" in w.columns
+                and "SHOT_ZONE_BASIC" in w.columns
+                and "SHOT_MADE_FLAG" in w.columns):
+            n_players = w.select("PLAYER_ID").n_unique()
+            if n_players >= 10:
+                agg: dict[str, list] = {}
+                for r in w.to_dicts():
+                    zb = str(r.get("SHOT_ZONE_BASIC") or "").strip() or "Mid-Range"
+                    s = agg.setdefault(zb, [0, 0, 0])
+                    s[1] += 1
+                    if _is_made(r):
+                        s[0] += 1
+                        if _is_three(r):
+                            s[2] += 1
+                for zb, (m, a, t) in agg.items():
+                    if a:
+                        league_efg[zb] = round((m + 0.5 * t) / a, 3)
+                baseline_missing = False
+            else:
+                baseline_detail = f"silver_shots has {n_players} player(s), need 10+"
+        else:
+            baseline_detail = "silver_shots empty or missing zone/made columns"
+    except Exception as exc:
+        baseline_detail = str(exc)[:120]
+    rows = []
+    for z, (m, a, t) in sorted(zones.items()):
+        fgp = round(m / a, 3) if a else 0.0
+        efg = round((m + 0.5 * t) / a, 3) if a else 0.0
+        shr = round(a / total, 3)
+        row: dict[str, Any] = {"zone": z, "FGM": m, "FGA": a,
+                               "FG_PCT": fgp, "share": shr,
+                               "eFG_PCT": efg, "SHARE": shr}
+        if not baseline_missing and z in league_efg:
+            row["LEAGUE_DELTA"] = round(efg - league_efg[z], 3)
+        rows.append(row)
+    meta: dict[str, Any] = {"source": res.meta.source, "fetched_at": res.meta.fetched_at,
+                            "rows": len(rows), "cached": False}
+    if baseline_missing:
+        meta["baseline_missing"] = True
+        if baseline_detail:
+            meta["baseline_detail"] = baseline_detail
+    else:
+        meta["baseline"] = "silver_shots league zone eFG"
+    return {"tool": "get_shot_zones", "ok": True, "rows": rows, "meta": meta}
 
 
 @tool
