@@ -416,6 +416,16 @@ def _payroll(team: str) -> tuple[int, list[dict]]:
 
     con = _store.connect()
     try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        if "silver_salaries" in tables:
+            rows = con.execute(
+                """SELECT PLAYER_NAME, SALARY_2025_26 FROM silver_salaries
+                WHERE TEAM = ?""",
+                [team.upper()],
+            ).fetchall()
+            if rows:
+                players = [{"player": r[0], "salary": r[1]} for r in rows]
+                return sum(r[1] or 0 for r in rows), players
         rows = con.execute(
             """SELECT player, salary FROM silver_cap_players
             WHERE team = ?""",
@@ -425,6 +435,21 @@ def _payroll(team: str) -> tuple[int, list[dict]]:
         con.close()
     players = [{"player": r[0], "salary": r[1]} for r in rows]
     return sum(r[1] or 0 for r in rows), players
+
+
+def _payroll_source() -> str:
+    from .. import store as _store
+
+    con = _store.connect()
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        if "silver_salaries" in tables:
+            n = con.execute("SELECT COUNT(*) FROM silver_salaries").fetchone()[0]
+            if n > 300:
+                return "basketball-reference contracts (real 2026-27 salaries)"
+    finally:
+        con.close()
+    return "orojas119/nba-salary-cap (estimated)"
 
 
 @tool
@@ -439,7 +464,7 @@ def get_cap_ledger(team: str = "") -> dict[str, Any]:
                                        reverse=True)[:15],
                      "room_under_apron2": CAP["apron2"] - total,
                      "over_tax": total > CAP["tax"]},
-            "meta": {"source": "orojas119/nba-salary-cap", "season": "2026-27",
+            "meta": {"source": _payroll_source(), "season": "2026-27",
                      **{k: v for k, v in CAP.items()}}}
 
 
@@ -492,10 +517,10 @@ def get_trade_check(
                      "team_b": {"team": team_b.upper(), "out": out_b,
                                 "players": names_b, "payroll": pay_b},
                      "legal": not issues, "issues": issues,
-                     "disclaimer": "Estimate only. Skips base-year, trade-kicker, "
+                     "disclaimer": "Rules simplified. Skips base-year, trade-kicker, "
                      "cash, minimum-salary, Stepien, pick, exception, and "
                      "sign-and-trade rules. Confirm with a cap specialist."},
-            "meta": {"source": "orojas119/nba-salary-cap", "rules": "v1-simplified"}}
+            "meta": {"source": _payroll_source(), "rules": "v1-simplified"}}
 
 
 @tool

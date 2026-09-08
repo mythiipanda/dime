@@ -151,6 +151,8 @@ TEAM_BRIEF = (
     "and five-man lineups by minutes with plus-minus. "
     "Use get_lineups for any who-plays-well-together question. "
     "For next-opponent or matchup briefs call get_scout_pack once. "
+    "For rotation health call get_rotation_check. "
+    "For payroll, tax, or cap room call get_cap_ledger. "
     "Resolve names with resolve_entity first. Use returned ids verbatim. "
     "Never invent ids. Season 2025-26 unless told otherwise."
 )
@@ -195,7 +197,8 @@ def delegate_tools(provider: ProviderName, model: str) -> list:
             "team", TEAM_BRIEF, task, provider, model,
             ["resolve_entity", "search_nba", "get_team_hub", "get_games_on_date",
              "get_boxscore", "get_lineups", "get_injuries", "get_preview",
-             "get_scout_pack", "text_to_sql"],
+             "get_scout_pack", "get_rotation_check", "get_cap_ledger",
+             "text_to_sql"],
         )
 
     @tool("delegate_league")

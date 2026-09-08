@@ -303,3 +303,82 @@ async def get_scout_pack(team: str = "", opponent: str = "", season: str = SEASO
         edge = f"{team} vs {opponent}: data incomplete, check records and health."
     return {"tool": "get_scout_pack", "ok": True, "rows": {"team": t, "opponent": o, "edge": edge},
             "meta": {"source": "nba_api+warehouse", "season": season}}
+
+
+@tool
+def get_rotation_check(team: str = "", season: str = SEASON) -> dict[str, Any]:
+    """Rotation health in one call: roster plus cached on/off net per player."""
+    from .. import store as _store
+
+    tid = coerce_team_id(team)
+    abbr = _abbrev(team)
+    ros: list[dict[str, Any]] = []
+    try:
+        from nba_api.stats.endpoints import CommonTeamRoster as _CTR
+        import polars as _pl
+
+        for _df in _CTR(team_id=tid, season=season, timeout=30).get_data_frames():
+            _p = _pl.from_pandas(_df)
+            if "PLAYER_ID" in _p.columns and _p.height:
+                ros = _p.to_dicts()
+                break
+    except Exception:
+        ros = []
+    if not ros:
+        try:
+            res = nba_stats.team_roster(tid, season)
+            ros = [r for r in (res.frame.to_dicts() if res.ok else [])
+                   if r.get("PLAYER_ID")]
+        except Exception:
+            ros = []
+    mcol = next((c for c in ("MIN", "MPG", "PTS", "EXP") if ros and c in ros[0]), "")
+    if mcol:
+        def _num(r: dict[str, Any]) -> float:
+            try:
+                return float(r.get(mcol) or 0)
+            except (TypeError, ValueError):
+                return 0.0
+        ros = sorted(ros, key=_num, reverse=True)
+    ros = ros[:10]
+    players: list[dict[str, Any]] = []
+    for r in ros:
+        try:
+            pid = r.get("PLAYER_ID")
+            name = r.get("PLAYER") or f"{r.get('FIRST_NAME', '')} {r.get('LAST_NAME', '')}".strip() or str(pid)
+            cached: list = []
+            try:
+                con = _store.connect()
+                try:
+                    cached = con.execute(
+                        'SELECT Stat, "On", "Off", "On-Off" FROM silver_on_off'
+                        " WHERE _season = ? AND _entity = ?",
+                        [season, f"player:{pid}"],
+                    ).fetchall()
+                finally:
+                    con.close()
+            except Exception:
+                cached = []
+            by_stat = {s: (o, f, d) for s, o, f, d in cached}
+            row: dict[str, Any] = {"PLAYER": name, "ON": None, "OFF": None,
+                                   "DIFF": None, "MIN": 0, "CACHED": bool(cached)}
+            try:
+                o, f, d = by_stat["Pts per 100 Possessions"]
+                row["ON"], row["OFF"], row["DIFF"] = float(o), float(f), float(d)
+            except (KeyError, TypeError, ValueError):
+                pass
+            try:
+                m = next(v[0] for k, v in by_stat.items()
+                         if k.strip().lower() in ("minutes", "min", "possessions"))
+                row["MIN"] = float(m)
+            except (StopIteration, TypeError, ValueError):
+                pass
+            players.append(row)
+        except Exception:
+            players.append({"PLAYER": "?", "ON": None, "OFF": None,
+                            "DIFF": None, "MIN": 0, "CACHED": False})
+    flag = ", ".join(p["PLAYER"] for p in players
+                     if isinstance(p.get("DIFF"), (int, float)) and p["DIFF"] < -5
+                     and isinstance(p.get("MIN"), (int, float)) and p["MIN"] > 100)
+    return {"tool": "get_rotation_check", "ok": True,
+            "rows": {"team": abbr, "players": players, "flag": flag},
+            "meta": {"source": "nba_api+warehouse", "season": season}}

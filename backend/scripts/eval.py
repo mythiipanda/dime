@@ -156,7 +156,7 @@ def main() -> None:
     check("trade check returns verdict",
           res["ok"] and "legal" in res["rows"], str(res)[:200])
     check("trade check carries disclaimer",
-          "Estimate only" in res["rows"].get("disclaimer", ""), str(res["rows"])[:160])
+          "simplified" in res["rows"].get("disclaimer", "").lower(), str(res["rows"])[:160])
 
     res = tools.get_injuries.invoke({"team": "ATL"})
     check("injuries filter by team",
@@ -227,6 +227,20 @@ def main() -> None:
           and len(pack_res["rows"]["team"].get("top_lineups", [])) > 0
           and "net gap" in pack_res["rows"].get("edge", ""),
           str(pack_res["rows"].get("edge"))[:160])
+
+    async def _rot():
+        return await tools.get_rotation_check.ainvoke({"team": "LAL"})
+
+    rot_res = _aio2.run(_rot())
+    check("rotation check lists players",
+          rot_res["ok"] and len(rot_res["rows"].get("players", [])) >= 8
+          and "flag" in rot_res["rows"],
+          str(rot_res["rows"].get("flag"))[:160])
+
+    res = tools.get_cap_ledger.invoke({"team": "DEN"})
+    check("cap ledger uses real salaries",
+          res["ok"] and "basketball-reference" in res["meta"].get("source", ""),
+          str(res["meta"].get("source"))[:120])
 
     res = tools.get_finder.invoke({"mode": "player_streak",
                                    "team_abbrev": "LeBron James",
