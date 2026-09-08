@@ -144,6 +144,17 @@ def main() -> None:
           res["ok"] and res["rows"].get("direction") in ("up", "down", "flat"),
           str(res)[:200])
 
+    res = tools.get_cap_ledger.invoke({"team": "OKC"})
+    check("cap ledger reports payroll",
+          res["ok"] and res["rows"].get("payroll", 0) > 10**8
+          and isinstance(res["rows"].get("room_under_apron2"), int),
+          str(res["rows"].get("payroll")))
+
+    res = tools.get_trade_check.invoke({"team_a": "OKC", "players_a": "Shai Gilgeous-Alexander",
+                                        "team_b": "DEN", "players_b": "Nikola Jokic"})
+    check("trade check returns verdict",
+          res["ok"] and "legal" in res["rows"], str(res)[:200])
+
     print(f"\neval: {PASS} pass, {FAIL} fail")
     sys.exit(1 if FAIL else 0)
 

@@ -250,6 +250,94 @@ def get_win_prob(team_a: str = "", team_b: str = "", season: str = SEASON) -> di
             "meta": {"source": "warehouse", "season": season}}
 
 
+CAP = {"cap": 165_000_000, "tax": 201_048_000,
+       "apron1": 209_661_000, "apron2": 222_372_000}
+
+
+def _payroll(team: str) -> tuple[int, list[dict]]:
+    from .. import store as _store
+
+    con = _store.connect()
+    try:
+        rows = con.execute(
+            """SELECT player, salary FROM silver_cap_players
+            WHERE team = ?""",
+            [team.upper()],
+        ).fetchall()
+    finally:
+        con.close()
+    players = [{"player": r[0], "salary": r[1]} for r in rows]
+    return sum(r[1] or 0 for r in rows), players
+
+
+@tool
+def get_cap_ledger(team: str = "") -> dict[str, Any]:
+    """Payroll plus apron room for one abbreviation. 2026-27 thresholds."""
+    if not team:
+        return {"tool": "get_cap_ledger", "ok": False, "error": "abbreviation needed"}
+    total, players = _payroll(team)
+    return {"tool": "get_cap_ledger", "ok": True,
+            "rows": {"team": team.upper(), "payroll": total,
+                     "players": sorted(players, key=lambda p: p["salary"] or 0,
+                                       reverse=True)[:15],
+                     "room_under_apron2": CAP["apron2"] - total,
+                     "over_tax": total > CAP["tax"]},
+            "meta": {"source": "orojas119/nba-salary-cap", "season": "2026-27",
+                     **{k: v for k, v in CAP.items()}}}
+
+
+@tool
+def get_trade_check(
+    team_a: str = "", players_a: str = "", team_b: str = "", players_b: str = "",
+) -> dict[str, Any]:
+    """Trade legality check. Player names comma separated per side.
+
+    Simplified 2023 CBA: 125 percent plus 250k matching for non-apron
+    teams, 100 percent for second-apron teams, no aggregation above
+    the second apron. Picks and exceptions stay out of v1.
+    """
+    import math as _math
+
+    def salaries(team: str, names: str) -> tuple[int, list[str]]:
+        total, roster = _payroll(team)
+        want = [n.strip().lower() for n in names.split(",") if n.strip()]
+        matched = []
+        total_out = 0
+        for w in want:
+            hit = next((p for p in roster if w in p["player"].lower()), None)
+            if hit:
+                matched.append(hit["player"])
+                total_out += hit["salary"] or 0
+        return total_out, matched
+
+    if not team_a or not team_b:
+        return {"tool": "get_trade_check", "ok": False,
+                "error": "two teams needed"}
+    out_a, names_a = salaries(team_a, players_a)
+    out_b, names_b = salaries(team_b, players_b)
+    pay_a, _ = _payroll(team_a)
+    pay_b, _ = _payroll(team_b)
+    over2 = lambda p: p > CAP["apron2"]
+    issues = []
+    if over2(pay_a) and len(names_a) > 1:
+        issues.append(f"{team_a.upper()} cannot aggregate above second apron")
+    if over2(pay_b) and len(names_b) > 1:
+        issues.append(f"{team_b.upper()} cannot aggregate above second apron")
+    ok_a = out_b <= (out_a if over2(pay_a) else out_a * 1.25 + 250_000)
+    ok_b = out_a <= (out_b if over2(pay_b) else out_b * 1.25 + 250_000)
+    if not ok_a:
+        issues.append(f"{team_a.upper()} takes back too much")
+    if not ok_b:
+        issues.append(f"{team_b.upper()} takes back too much")
+    return {"tool": "get_trade_check", "ok": True,
+            "rows": {"team_a": {"team": team_a.upper(), "out": out_a,
+                                "players": names_a, "payroll": pay_a},
+                     "team_b": {"team": team_b.upper(), "out": out_b,
+                                "players": names_b, "payroll": pay_b},
+                     "legal": not issues, "issues": issues},
+            "meta": {"source": "orojas119/nba-salary-cap", "rules": "v1-simplified"}}
+
+
 @tool
 def get_combine(season: str = "2025") -> dict[str, Any]:
     """Draft combine measurements plus shooting drills for one draft year."""

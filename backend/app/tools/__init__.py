@@ -4,6 +4,7 @@ from langchain_core.tools import BaseTool
 
 from .league import (
     get_briefing,
+    get_cap_ledger,
     get_combine,
     get_finder,
     get_hustle,
@@ -12,6 +13,7 @@ from .league import (
     get_rapm,
     get_rest,
     get_standings,
+    get_trade_check,
     get_win_prob,
     text_to_sql,
 )
@@ -72,6 +74,8 @@ v1_tools: list[BaseTool] = [
     get_trend,
     get_win_prob,
     get_preview,
+    get_cap_ledger,
+    get_trade_check,
 ]
 
 TOOL_NAMES = [t.name for t in v1_tools]
