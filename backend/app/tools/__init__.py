@@ -41,7 +41,7 @@ from .player import (
     get_trend,
     get_wowy,
 )
-from .shared import resolve_entity, search_nba
+from .shared import resolve_entity, run_python, search_nba
 from .team import (
     get_boxscore,
     get_games_on_date,
@@ -60,6 +60,7 @@ from ._core import MAX_ROWS, SEASON, STAT_CATEGORIES, clamp_stat
 v1_tools: list[BaseTool] = [
     resolve_entity,
     search_nba,
+    run_python,
     get_player_intel,
     get_raptor_history,
     get_team_hub,

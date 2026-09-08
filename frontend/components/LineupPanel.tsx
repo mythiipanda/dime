@@ -4,16 +4,36 @@ import { useEffect, useState } from "react";
 import { BACKEND } from "../lib/chat";
 
 const TEAMS: Record<string, number> = {
+  ATL: 1610612737,
   BOS: 1610612738,
-  OKC: 1610612760,
-  NYK: 1610612752,
-  SAS: 1610612759,
   CLE: 1610612739,
+  NOP: 1610612740,
+  CHI: 1610612741,
+  DAL: 1610612742,
   DEN: 1610612743,
-  MIN: 1610612750,
-  DET: 1610612765,
-  PHI: 1610612755,
+  GSW: 1610612744,
+  HOU: 1610612745,
+  LAC: 1610612746,
   LAL: 1610612747,
+  MIA: 1610612748,
+  MIL: 1610612749,
+  MIN: 1610612750,
+  BKN: 1610612751,
+  NYK: 1610612752,
+  ORL: 1610612753,
+  IND: 1610612754,
+  PHI: 1610612755,
+  PHX: 1610612756,
+  POR: 1610612757,
+  SAC: 1610612758,
+  SAS: 1610612759,
+  OKC: 1610612760,
+  TOR: 1610612761,
+  UTA: 1610612762,
+  MEM: 1610612763,
+  WAS: 1610612764,
+  DET: 1610612765,
+  CHA: 1610612766,
 };
 
 type Row = { GROUP_NAME: string; MIN: number; PLUS_MINUS: number; SAMPLE?: string };
@@ -33,7 +53,16 @@ export default function LineupPanel() {
     let live = true;
     setBusy(true);
     setError("");
-    fetch(`${BACKEND}/api/v1/datasets/lineups?team_id=${TEAMS[team]}`)
+    const id = TEAMS[team];
+    if (!id) {
+      setBusy(false);
+      setError("Unknown team.");
+      setRows([]);
+      return () => {
+        live = false;
+      };
+    }
+    fetch(`${BACKEND}/api/v1/datasets/lineups?team_id=${id}`)
       .then((r) => r.json())
       .then((d) => {
         if (!live) return;
@@ -54,7 +83,7 @@ export default function LineupPanel() {
   return (
     <div className="card">
       <div className="display" style={{ fontSize: 20 }}>Crew lineups</div>
-      <div style={{ fontSize: 12, color: "#78716c", marginTop: 4 }}>
+      <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginTop: 4 }}>
         Five-man units by minutes. Dots mark under 50 MIN.
       </div>
       <select className="field" value={team} onChange={(e) => setTeam(e.target.value)} style={{ marginTop: 12, width: 120 }}>
@@ -62,7 +91,7 @@ export default function LineupPanel() {
           <option key={t} value={t}>{t}</option>
         ))}
       </select>
-      {error && <div style={{ color: "#78716c", marginTop: 8 }}>{error}</div>}
+      {error && <div style={{ color: "var(--color-warm-gray)", marginTop: 8 }}>{error}</div>}
       <table style={{ width: "100%", marginTop: 8, fontSize: 12 }}>
         <thead><tr><th style={{ textAlign: "left" }}>Unit</th><th>MIN</th><th>+/-</th><th /></tr></thead>
         <tbody>
@@ -76,7 +105,7 @@ export default function LineupPanel() {
           ))}
         </tbody>
       </table>
-      {busy && <div style={{ fontSize: 12, color: "#78716c" }}>Loading</div>}
+      {busy && <div style={{ fontSize: 12, color: "var(--color-warm-gray)" }}>Loading</div>}
     </div>
   );
 }

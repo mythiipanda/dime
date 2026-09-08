@@ -31,6 +31,14 @@ def test_resolve_model_inception():
     assert resolve_model_id("inception:mercury-2.5") == ("inception", "mercury-2.5")
 
 
+def test_clamp_season_rejects_garbage():
+    from app.tools._core import clamp_season
+
+    assert clamp_season("22025") == "2025-26"
+    assert clamp_season("2025-26") == "2025-26"
+    assert clamp_season("") == "2025-26"
+
+
 def test_resolve_model_rejects_bare_names():
     name, model = resolve_model_id("LeBron James")
     assert (name, model) == ("inception", "mercury-2.5")

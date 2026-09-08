@@ -48,17 +48,17 @@ export default function PlayoffPanel() {
   return (
     <div className="card">
       <div className="display" style={{ fontSize: 20 }}>Playoffs 2025-26</div>
-      {busy && <div style={{ fontSize: 12, color: "#78716c", marginTop: 8 }}>Loading</div>}
-      {error && <div style={{ fontSize: 12, color: "#78716c", marginTop: 8 }}>{error}</div>}
+      {busy && <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginTop: 8 }}>Loading</div>}
+      {error && <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginTop: 8 }}>{error}</div>}
       {!busy && !error && champion && (
-        <div style={{ fontSize: 14, color: "#0c0a09", marginTop: 8 }}>
+        <div style={{ fontSize: 14, color: "var(--color-ink-black)", marginTop: 8 }}>
           Champion {champion.team} ({champion.w}-{champion.l}, {count} rows)
         </div>
       )}
       {!busy && !error && (
         <table style={{ marginTop: 12, fontSize: 12, borderCollapse: "collapse", width: "100%" }}>
           <thead>
-            <tr style={{ color: "#78716c", textAlign: "left" }}>
+            <tr style={{ color: "var(--color-warm-gray)", textAlign: "left" }}>
               <th style={{ padding: "4px 8px 4px 0" }}>Team</th>
               <th style={{ padding: "4px 8px" }}>W</th>
               <th style={{ padding: "4px 8px" }}>L</th>
@@ -66,8 +66,8 @@ export default function PlayoffPanel() {
           </thead>
           <tbody>
             {table.map((t) => (
-              <tr key={t.team} style={{ borderTop: "1px solid #e8e6e5" }}>
-                <td style={{ padding: "4px 8px 4px 0", color: "#0c0a09" }}>{t.team}</td>
+              <tr key={t.team} style={{ borderTop: "1px solid var(--color-stone-border)" }}>
+                <td style={{ padding: "4px 8px 4px 0", color: "var(--color-ink-black)" }}>{t.team}</td>
                 <td style={{ padding: "4px 8px" }}>{t.w}</td>
                 <td style={{ padding: "4px 8px" }}>{t.l}</td>
               </tr>
@@ -75,7 +75,7 @@ export default function PlayoffPanel() {
           </tbody>
         </table>
       )}
-      <div style={{ fontSize: 12, color: "#78716c", marginTop: 12 }}>
+      <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginTop: 12 }}>
         Simulated odds live in chat: ask Simulate the playoffs.
       </div>
     </div>

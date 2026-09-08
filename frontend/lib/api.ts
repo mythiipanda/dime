@@ -110,3 +110,42 @@ export async function getRuns(thread: string): Promise<RunInfo[]> {
 export function exportUrl(thread: string): string {
   return `${BACKEND}/api/v1/threads/${thread}/export`;
 }
+
+export interface PlayerHit {
+  id: number;
+  name: string;
+}
+
+export async function resolvePlayers(q: string, limit = 4): Promise<PlayerHit[]> {
+  try {
+    const res = await fetch(`${BACKEND}/api/v1/resolve?q=${encodeURIComponent(q)}`);
+    const data = (await res.json()) as unknown;
+    if (typeof data !== "object" || data === null || !("rows" in data)) return [];
+    const players = (data as { rows: { players?: { id: number; full_name: string }[] } }).rows.players;
+    return (players || []).slice(0, limit).map((v) => ({ id: v.id, name: v.full_name }));
+  } catch {
+    return [];
+  }
+}
+
+export async function resolveFirstPlayerId(q: string): Promise<number | null> {
+  const hit = (await resolvePlayers(q, 1))[0];
+  return hit ? hit.id : null;
+}
+
+export function getQueryParam(key: string): string | null {
+  if (typeof window === "undefined") return null;
+  return new URLSearchParams(window.location.search).get(key);
+}
+
+export function setQueryParam(key: string, value: string, push = false) {
+  if (typeof window === "undefined") return;
+  const sp = new URLSearchParams(window.location.search);
+  if (value) sp.set(key, value);
+  else sp.delete(key);
+  const qs = sp.toString();
+  const url = window.location.pathname + (qs ? `?${qs}` : "");
+  const cur = window.location.pathname + window.location.search;
+  if (url === cur) return;
+  window.history[push ? "pushState" : "replaceState"](null, "", url);
+}

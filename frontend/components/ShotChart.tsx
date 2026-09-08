@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import DataTable from "./DataTable";
 import { zoneSplits } from "./Sparkline";
-import { getDatasetJson } from "../lib/api";
+import { getDatasetJson, resolveFirstPlayerId, resolvePlayers } from "../lib/api";
 
 interface Shot {
   LOC_X?: number;
@@ -97,14 +97,14 @@ export default function ShotChart({
   return (
     <div className="card" style={{ marginTop: 16 }}>
       <div style={{ fontWeight: 500 }}>Shot chart</div>
-      <div style={{ fontSize: 12, color: "#78716c" }}>
+      <div style={{ fontSize: 12, color: "var(--color-warm-gray)" }}>
         {count} shots. Filled marks fell. Outlines missed.
       </div>
-      {error && <div style={{ fontSize: 12, color: "#78716c" }}>{error}</div>}
+      {error && <div style={{ fontSize: 12, color: "var(--color-warm-gray)" }}>{error}</div>}
       <canvas ref={ref} width={500} height={475} style={{ width: "100%", marginTop: 8 }} />
       {zones.length > 0 && (
         <div style={{ marginTop: 8 }}>
-          <div style={{ fontSize: 12, color: "#78716c", marginBottom: 4 }}>
+          <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginBottom: 4 }}>
             Rim under 8 feet. Three beyond 23.75.
           </div>
           <DataTable rows={zones} />
@@ -118,15 +118,41 @@ export function ShotChartCard() {
   const [playerId, setPlayerId] = useState("");
   const [season, setSeason] = useState("2025-26");
   const [active, setActive] = useState("");
+  const [suggest, setSuggest] = useState<{ id: number; name: string }[]>([]);
+  useEffect(() => {
+    const q = playerId.trim();
+    if (/^\d+$/.test(q) || q.length < 2) {
+      setSuggest([]);
+      return;
+    }
+    const t = setTimeout(async () => {
+      setSuggest(await resolvePlayers(q));
+    }, 250);
+    return () => clearTimeout(t);
+  }, [playerId]);
+  const plot = async () => {
+    const raw = playerId.trim();
+    if (/^\d+$/.test(raw)) {
+      setActive(raw);
+      return;
+    }
+    if (suggest.length) {
+      setActive(String(suggest[0].id));
+      return;
+    }
+    const found = await resolveFirstPlayerId(raw);
+    if (found) setActive(String(found));
+  };
   return (
     <div>
-      <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+      <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
         <input
           className="field"
           value={playerId}
           onChange={(e) => setPlayerId(e.target.value)}
-          placeholder="player id, e.g. 2544"
-          style={{ width: 200 }}
+          placeholder="player name or id, e.g. LeBron or 2544"
+          style={{ width: 240 }}
+          aria-label="Player name or id"
         />
         <input
           className="field"
@@ -135,10 +161,27 @@ export function ShotChartCard() {
           placeholder="season"
           style={{ width: 110 }}
         />
-        <button className="pill-ghost" onClick={() => setActive(playerId)}>
+        <button className="pill-ghost" onClick={plot}>
           Plot
         </button>
       </div>
+      {suggest.length > 0 && (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+          {suggest.map((s) => (
+            <button
+              key={s.id}
+              className="pill-ghost"
+              style={{ fontSize: 12 }}
+              onClick={() => {
+                setPlayerId(String(s.id));
+                setActive(String(s.id));
+              }}
+            >
+              {s.name}
+            </button>
+          ))}
+        </div>
+      )}
       <ShotChart playerId={active} season={season} />
     </div>
   );

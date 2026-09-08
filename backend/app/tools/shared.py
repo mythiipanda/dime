@@ -1,5 +1,6 @@
 """Identity tools. Resolve names to canonical ids before any id tool."""
 
+import re as _re
 from typing import Any
 from langchain_core.tools import tool
 
@@ -70,3 +71,69 @@ def search_nba(query: str) -> dict[str, Any]:
         }
     except Exception as exc:
         return {"tool": "search_nba", "ok": False, "error": str(exc)[:200]}
+
+
+_CODE_BANNED = (
+    "import ", "import(", "__", "os.", "sys.", "open(",
+    "exec(", "eval(", "compile(", "subprocess", "socket",
+    "pathlib", "shutil", "globals(", "locals(", "vars(",
+    "getattr(", "setattr(", "delattr(", "input(",
+)
+
+
+@tool
+def run_python(code: str) -> dict[str, Any]:
+    """Run read-only Python over the warehouse. Tables: any silver_* table.
+
+    Available: con (read-only DuckDB connection), pl (polars), math,
+    statistics. SELECT via con.execute("...").fetchall(). No imports,
+    no writes, no network. Print or set `out`. Output capped.
+    """
+    import io as _io
+    import math as _math
+    import statistics as _stats
+    from contextlib import redirect_stdout as _redir
+
+    import duckdb as _ddb
+    import polars as _pl
+
+    from ..store import DB_PATH
+
+    lowered = str(code or "").lower()
+    if not code or not code.strip():
+        return {"tool": "run_python", "ok": False, "error": "empty code"}
+    if any(b in lowered for b in _CODE_BANNED):
+        return {"tool": "run_python", "ok": False,
+                "error": "blocked construct (imports, IO, and writes banned)"}
+    if _re.search(r"\b(insert|update|delete|drop|alter|create|attach|copy)\b",
+                   lowered):
+        return {"tool": "run_python", "ok": False,
+                "error": "writes banned, SELECT only"}
+    try:
+        con = _ddb.connect(str(DB_PATH), read_only=True)
+    except Exception as exc:
+        return {"tool": "run_python", "ok": False, "error": str(exc)[:160]}
+    buf = _io.StringIO()
+    g: dict[str, Any] = {"con": con, "pl": _pl, "math": _math,
+                         "statistics": _stats, "out": None}
+    try:
+        with _redir(buf):
+            exec(compile(str(code), "<dime>", "exec"),
+                 {"__builtins__": __builtins__}, g)
+    except Exception as exc:
+        return {"tool": "run_python", "ok": False, "error": str(exc)[:300]}
+    finally:
+        try:
+            con.close()
+        except Exception:
+            pass
+    text = buf.getvalue()[:2000]
+    out = g.get("out")
+    if out is not None:
+        try:
+            out = str(out)[:2000]
+        except Exception:
+            out = None
+    return {"tool": "run_python", "ok": True,
+            "rows": {"printed": text, "out": out},
+            "meta": {"source": "warehouse"}}

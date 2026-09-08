@@ -6,9 +6,10 @@ import {
   ChatMessage,
   ModelOption,
   NodeName,
+  ToolResult,
   emptyNode,
 } from "../lib/chat";
-import { getModels, postChatStream } from "../lib/api";
+import { RunInfo, getModels, getRuns, postChatStream } from "../lib/api";
 import AnswerText from "./AnswerText";
 import NodeCards from "./NodeCards";
 
@@ -88,13 +89,94 @@ interface Props {
   preset?: string | null;
 }
 
-export default function ChatPanel({ thread, onRunDone, preset }: Props) {
-  const [models, setModels] = useState<ModelOption[]>([]);
+function aiFromRun(r: RunInfo): AiMessage {
+  const tables: ToolResult[] = [];
+  if (Array.isArray(r.tables)) {
+    for (const t of r.tables) {
+      if (
+        typeof t === "object" &&
+        t !== null &&
+        typeof (t as { tool?: unknown }).tool === "string"
+      ) {
+        tables.push(t as ToolResult);
+      }
+    }
+  }
+  return {
+    text: typeof r.answer === "string" ? r.answer : "",
+    nodes: tables.length
+      ? {
+          analytics: {
+            status: "complete",
+            thoughts: [],
+            toolCalls: [],
+            toolResults: [],
+            tables,
+          },
+        }
+      : {},
+    done: true,
+    suggestions: Array.isArray(r.suggestions) ? r.suggestions : [],
+  };
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button
+      className="pill-ghost"
+      style={{ fontSize: 12 }}
+      onClick={() => {
+        navigator.clipboard
+          .writeText(text)
+          .then(() => {
+            setDone(true);
+            setTimeout(() => setDone(false), 1500);
+          })
+          .catch(() => {});
+      }}
+    >
+      {done ? "Copied" : "Copy"}
+    </button>
+  );
+}
+
+function LinkButton({ index }: { index: number }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button
+      className="pill-ghost"
+      style={{ fontSize: 12 }}
+      onClick={() => {
+        if (typeof window === "undefined") return;
+        const url =
+          window.location.origin +
+          window.location.pathname +
+          window.location.search +
+          `#m-${index}`;
+        navigator.clipboard
+          .writeText(url)
+          .then(() => {
+            setDone(true);
+            setTimeout(() => setDone(false), 1500);
+          })
+          .catch(() => {});
+      }}
+    >
+      {done ? "Copied" : "Link"}
+    </button>
+  );
+}
+
+export default function ChatPanel({ thread, onRunDone, preset }: Props) {  const [models, setModels] = useState<ModelOption[]>([]);
   const [model, setModel] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [elapsed, setElapsed] = useState(0);
+  const [atBottom, setAtBottom] = useState(true);
+  const endRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const abort = useRef<AbortController | null>(null);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -120,12 +202,73 @@ export default function ChatPanel({ thread, onRunDone, preset }: Props) {
   }, []);
 
   useEffect(() => {
+    const onScroll = () => {
+      const gap =
+        document.documentElement.scrollHeight -
+        (window.innerHeight + window.scrollY);
+      setAtBottom(gap < 120);
+    };
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  useEffect(() => {
+    const h = typeof window !== "undefined" ? window.location.hash : "";
+    if (h) {
+      const el = document.getElementById(h.slice(1));
+      if (el) {
+        el.scrollIntoView({ block: "start" });
+        return;
+      }
+    }
+    if (atBottom) {
+      endRef.current?.scrollIntoView({ block: "end" });
+    }
+  }, [messages, atBottom]);
+
+  useEffect(() => {
+    const toHash = () => {
+      const h = window.location.hash;
+      if (!h) return;
+      document.getElementById(h.slice(1))?.scrollIntoView({ block: "start" });
+    };
+    window.addEventListener("hashchange", toHash);
+    return () => window.removeEventListener("hashchange", toHash);
+  }, []);
+
+  useEffect(() => {
     abort.current?.abort();
     setMessages([]);
     setInput("");
     setBusy(false);
     stopTimer();
+    let cancelled = false;
+    getRuns(thread)
+      .then((runs) => {
+        if (cancelled || !runs.length) return;
+        const seeded: ChatMessage[] = [];
+        for (const r of runs) {
+          if (typeof r.question !== "string") continue;
+          seeded.push({ role: "human", text: r.question });
+          seeded.push({ role: "ai", text: r.answer || "", ai: aiFromRun(r) });
+        }
+        if (seeded.length) {
+          setMessages((m) => (m.length ? m : seeded));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [thread]);
+
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = Math.min(el.scrollHeight, 160) + "px";
+  }, [input]);
 
   useEffect(() => {
     if (preset) setInput(preset);
@@ -178,6 +321,18 @@ export default function ChatPanel({ thread, onRunDone, preset }: Props) {
     abort.current?.abort();
     setBusy(false);
     stopTimer();
+    setMessages((m) => {
+      if (!m.length) return m;
+      const copy = [...m];
+      const last = copy[copy.length - 1];
+      if (last.role === "ai" && last.ai && !last.ai.done) {
+        copy[copy.length - 1] = {
+          ...last,
+          ai: { ...last.ai, done: true, streaming: false },
+        };
+      }
+      return copy;
+    });
   };
 
   return (
@@ -196,7 +351,11 @@ export default function ChatPanel({ thread, onRunDone, preset }: Props) {
         )}
         {messages.map((m, i) =>
           m.role === "human" ? (
-            <div key={i} style={{ alignSelf: "flex-end", maxWidth: "80%" }}>
+            <div
+              key={i}
+              id={`m-${i}`}
+              style={{ alignSelf: "flex-end", maxWidth: "80%", scrollMarginTop: 16 }}
+            >
               <div
                 style={{
                   background: "#1c1917",
@@ -209,7 +368,7 @@ export default function ChatPanel({ thread, onRunDone, preset }: Props) {
               </div>
             </div>
           ) : (
-            <div key={i} className="card">
+            <div key={i} id={`m-${i}`} className="card" style={{ scrollMarginTop: 16 }}>
               {m.ai && !m.ai.done && !m.text && (
                 <div>
                   <div style={{ fontSize: 12, color: "#a8a29e", marginBottom: 4 }}>
@@ -239,13 +398,8 @@ export default function ChatPanel({ thread, onRunDone, preset }: Props) {
               {m.ai && <NodeCards ai={m.ai} />}
               {m.text && (
                 <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center" }}>
-                  <button
-                    className="pill-ghost"
-                    style={{ fontSize: 12 }}
-                    onClick={() => navigator.clipboard.writeText(m.text)}
-                  >
-                    Copy
-                  </button>
+                  <CopyButton text={m.text} />
+                  <LinkButton index={i} />
                   {m.ai?.nodes.analytics?.tables.map((t, j) => (
                     <span key={j} style={{ fontSize: 11, color: "#a8a29e" }}>
                       [S{j + 1}] {t.tool}
@@ -274,7 +428,21 @@ export default function ChatPanel({ thread, onRunDone, preset }: Props) {
             </div>
           ),
         )}
+        <div ref={endRef} />
       </div>
+
+      {!atBottom && messages.length > 2 && (
+        <button
+          className="pill-ghost"
+          style={{ fontSize: 12, marginTop: 12 }}
+          onClick={() => {
+            setAtBottom(true);
+            endRef.current?.scrollIntoView({ block: "end" });
+          }}
+        >
+          Jump to latest
+        </button>
+      )}
 
       <div
         style={{
@@ -309,12 +477,30 @@ export default function ChatPanel({ thread, onRunDone, preset }: Props) {
             </option>
           ))}
         </select>
-        <input
-          style={{ flex: 1, border: "none", outline: "none", fontSize: 14 }}
+        <textarea
+          ref={inputRef}
+          style={{
+            flex: 1,
+            border: "none",
+            outline: "none",
+            fontSize: 14,
+            resize: "none",
+            fontFamily: "inherit",
+            background: "transparent",
+            maxHeight: 160,
+            overflowY: "auto",
+          }}
           value={input}
+          rows={1}
+          autoFocus
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && sendText(input)}
-          placeholder="Compare Luka and SGA by efficiency..."
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              sendText(input);
+            }
+          }}
+          placeholder="Compare Luka and SGA by efficiency... (Enter to send, Shift+Enter for a new line)"
         />
         {busy ? (
           <button className="pill-ghost" onClick={stop}>

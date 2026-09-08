@@ -33,7 +33,7 @@ export default function DraftPanel() {
   return (
     <div className="card">
       <div className="display" style={{ fontSize: 20 }}>Draft combine</div>
-      <div style={{ fontSize: 12, color: "#78716c", marginTop: 4 }}>
+      <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginTop: 4 }}>
         Measurements plus spot shooting. Names sort by wingspan scouts love.
       </div>
       <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
@@ -48,7 +48,7 @@ export default function DraftPanel() {
           {busy ? "Loading" : "Show"}
         </button>
       </div>
-      {error && <div style={{ color: "#78716c", marginTop: 8 }}>{error}</div>}
+      {error && <div style={{ color: "var(--color-warm-gray)", marginTop: 8 }}>{error}</div>}
       {rows !== null && (
         <div style={{ marginTop: 8 }}>
           <DataTable rows={rows} />

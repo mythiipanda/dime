@@ -56,7 +56,7 @@ export function zoneData(
   return rows.map((r) => ({ label: str(r.zone), FG_PCT: num(r.FG_PCT) }));
 }
 
-const AXIS = { fontSize: 11, fill: "#78716c" } as const;
+const AXIS = { fontSize: 11, fill: "var(--color-warm-gray)" } as const;
 
 export default function AutoChart({
   table,
@@ -69,16 +69,16 @@ export default function AutoChart({
   if (trend) {
     return (
       <div style={{ marginTop: 8 }}>
-        <div style={{ fontSize: 12, color: "#78716c", marginBottom: 4 }}>
+        <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginBottom: 4 }}>
           Points by game
         </div>
         <ResponsiveContainer width="100%" height={160}>
           <LineChart data={trend}>
-            <CartesianGrid stroke="#e8e6e5" vertical={false} />
+            <CartesianGrid stroke="var(--color-stone-border)" vertical={false} />
             <XAxis dataKey="label" tick={AXIS} interval={2} />
             <YAxis tick={AXIS} width={30} />
             <Tooltip />
-            <Line type="monotone" dataKey="PTS" stroke="#3ba6f1" strokeWidth={2} dot={false} />
+            <Line type="monotone" dataKey="PTS" stroke="var(--color-cyan-signal)" strokeWidth={2} dot={false} />
           </LineChart>
         </ResponsiveContainer>
       </div>
@@ -88,16 +88,16 @@ export default function AutoChart({
   if (lead) {
     return (
       <div style={{ marginTop: 8 }}>
-        <div style={{ fontSize: 12, color: "#78716c", marginBottom: 4 }}>
+        <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginBottom: 4 }}>
           Top {stat}
         </div>
         <ResponsiveContainer width="100%" height={200}>
           <BarChart data={lead} layout="vertical">
-            <CartesianGrid stroke="#e8e6e5" horizontal={false} />
+            <CartesianGrid stroke="var(--color-stone-border)" horizontal={false} />
             <XAxis type="number" tick={AXIS} />
             <YAxis type="category" dataKey="label" tick={AXIS} width={70} />
             <Tooltip />
-            <Bar dataKey="value" fill="#0c0a09" radius={[0, 4, 4, 0]} />
+            <Bar dataKey="value" fill="var(--color-ink-black)" radius={[0, 4, 4, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -107,16 +107,16 @@ export default function AutoChart({
   if (zone) {
     return (
       <div style={{ marginTop: 8 }}>
-        <div style={{ fontSize: 12, color: "#78716c", marginBottom: 4 }}>
+        <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginBottom: 4 }}>
           Efficiency by zone
         </div>
         <ResponsiveContainer width="100%" height={140}>
           <BarChart data={zone}>
-            <CartesianGrid stroke="#e8e6e5" vertical={false} />
+            <CartesianGrid stroke="var(--color-stone-border)" vertical={false} />
             <XAxis dataKey="label" tick={AXIS} />
             <YAxis tick={AXIS} width={36} domain={[0, 1]} />
             <Tooltip />
-            <Bar dataKey="FG_PCT" fill="#3ba6f1" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="FG_PCT" fill="var(--color-cyan-signal)" radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>

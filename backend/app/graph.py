@@ -67,7 +67,8 @@ MAX_TOOL_CALLS = 8
 
 _LEAGUE_RX = re.compile(
     r"playoff|champion|finals|leader|standing|injur|clutch|\brating\b|"
-    r"elo|title odds|streak|versus|power rank|net rating", re.IGNORECASE)
+    r"elo|title odds|streak|versus|power rank|net rating|"
+    r"\btrade\b|sign-and-trade|\bswap\b", re.IGNORECASE)
 _COMPARE_RX = re.compile(
     r"\bvs\.?\b|\bversus\b|\bcompare\b", re.IGNORECASE)
 
@@ -285,6 +286,10 @@ async def actual_tool_node(state: DimeState) -> AsyncGenerator[dict[str, Any], N
         fn = by_name.get(name)
         if fn is None:
             return {"tool": name, "ok": False, "error": "unknown tool"}
+        if isinstance(args, dict) and "season" in args:
+            from .tools._core import clamp_season
+
+            args = {**args, "season": clamp_season(args.get("season"))}
         try:
             out = await fn.ainvoke(args)
             return out if isinstance(out, dict) else {"tool": name, "rows": out}

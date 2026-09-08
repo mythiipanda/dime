@@ -16,6 +16,19 @@ STAT_CATEGORIES = frozenset({
 })
 
 
+def clamp_season(season: object) -> str:
+    import re as _re
+
+    s = str(season or "").strip()
+    if _re.fullmatch(r"20\d{2}-\d{2}", s):
+        return s
+    m = _re.fullmatch(r"20(\d{2})", s)
+    if m:
+        y = int(m.group(1))
+        return f"20{y}-{y + 1:02d}" if y < 50 else f"19{y}-{y + 1:02d}"
+    return SEASON
+
+
 def clamp_stat(stat: str) -> str:
     upper = (stat or "").strip().upper()
     return upper if upper in STAT_CATEGORIES else "PTS"

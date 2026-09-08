@@ -48,7 +48,7 @@ export default function TradePanel() {
   return (
     <div className="card">
       <div className="display" style={{ fontSize: 20 }}>Trade checker</div>
-      <div style={{ fontSize: 12, color: "#78716c", marginTop: 4 }}>
+      <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginTop: 4 }}>
         Simplified 2023 CBA matching. Picks and exceptions stay out of v1.
       </div>
       <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
@@ -64,7 +64,7 @@ export default function TradePanel() {
           {busy ? "Checking" : "Check legality"}
         </button>
       </div>
-      {error && <div style={{ color: "#78716c", marginTop: 8 }}>{error}</div>}
+      {error && <div style={{ color: "var(--color-warm-gray)", marginTop: 8 }}>{error}</div>}
       {out && (
         <div style={{ marginTop: 12 }}>
           <div
@@ -73,8 +73,8 @@ export default function TradePanel() {
               fontSize: 12,
               borderRadius: 9999,
               padding: "4px 12px",
-              background: out.legal ? "#0c0a09" : "#e8e6e5",
-              color: out.legal ? "#ffffff" : "#0c0a09",
+              background: out.legal ? "var(--color-ink-black)" : "var(--color-stone-border)",
+              color: out.legal ? "var(--color-pure-white)" : "var(--color-ink-black)",
             }}
           >
             {out.legal ? "Legal" : "Illegal"}
@@ -88,14 +88,14 @@ export default function TradePanel() {
                 <div style={{ fontWeight: 500 }}>
                   {side.team} sends {millions(side.out)}
                 </div>
-                <div style={{ fontSize: 12, color: "#78716c" }}>
+                <div style={{ fontSize: 12, color: "var(--color-warm-gray)" }}>
                   {side.players.join(", ") || "nobody"} · payroll {millions(side.payroll)}
                 </div>
               </div>
             ))}
           </div>
           {out.issues.map((issue) => (
-            <div key={issue} style={{ fontSize: 12, color: "#78716c", marginTop: 4 }}>
+            <div key={issue} style={{ fontSize: 12, color: "var(--color-warm-gray)", marginTop: 4 }}>
               {issue}
             </div>
           ))}

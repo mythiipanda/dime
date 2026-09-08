@@ -272,6 +272,14 @@ def main() -> None:
           and res["rows"][0].get("RAPTOR", 0) > 0,
           str(res["rows"][:1])[:160])
 
+    res = tools.run_python.invoke(
+        {"code": "out = con.execute(\"SELECT COUNT(*) FROM silver_standings\").fetchall()[0][0]"})
+    check("python sandbox reads warehouse",
+          res["ok"] and int(res["rows"].get("out") or 0) > 0,
+          str(res["rows"])[:120])
+    res = tools.run_python.invoke({"code": "import os"})
+    check("python sandbox blocks imports", not res["ok"], str(res)[:80])
+
     async def _pack():
         return await tools.get_scout_pack.ainvoke(
             {"team": "OKC", "opponent": "BOS"})

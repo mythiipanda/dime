@@ -9,17 +9,31 @@ interface Hit {
   name: string;
 }
 
+const SECTIONS = [
+  { label: "League leaders", hash: "explore-leaders" },
+  { label: "Shot charts", hash: "explore-shots" },
+  { label: "Trade checker", hash: "explore-trade" },
+  { label: "Crew lineups", hash: "explore-lineups" },
+  { label: "Playoffs", hash: "explore-playoffs" },
+];
+
 export default function CommandPalette({
   onAsk,
   onTab,
+  openKey = 0,
 }: {
   onAsk: (q: string) => void;
   onTab: (t: "chat" | "data") => void;
+  openKey?: number;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [hits, setHits] = useState<Hit[]>([]);
   const input = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (openKey > 0) setOpen(true);
+  }, [openKey]);
 
   useEffect(() => {
     const fn = (e: KeyboardEvent) => {
@@ -47,18 +61,23 @@ export default function CommandPalette({
         const res = await fetch(
           `${BACKEND}/api/v1/resolve?q=${encodeURIComponent(q.trim())}`,
         );
-        const data = await res.json();
-        const rows = (data.rows || {}) as {
-          players?: { id: number; full_name: string }[];
-          teams?: { id: number; full_name: string }[];
-        };
+        const data = (await res.json()) as unknown;
+        const rows =
+          typeof data === "object" && data !== null && "rows" in data
+            ? (data as {
+                rows: {
+                  players?: { id: number; full_name: string }[];
+                  teams?: { id: number; full_name: string }[];
+                };
+              }).rows
+            : null;
         const out: Hit[] = [
-          ...(rows.players || []).slice(0, 4).map((p) => ({
+          ...(rows?.players || []).slice(0, 4).map((p) => ({
             kind: "player",
             id: p.id,
             name: p.full_name,
           })),
-          ...(rows.teams || []).slice(0, 4).map((t) => ({
+          ...(rows?.teams || []).slice(0, 4).map((t) => ({
             kind: "team",
             id: t.id,
             name: t.full_name,
@@ -73,6 +92,17 @@ export default function CommandPalette({
   }, [q, open]);
 
   if (!open) return null;
+  const needle = q.trim().toLowerCase();
+  const sections = SECTIONS.filter(
+    (s) => !needle || s.label.toLowerCase().includes(needle),
+  );
+  const goto = (hash: string) => {
+    onTab("data");
+    setOpen(false);
+    setTimeout(() => {
+      document.getElementById(hash)?.scrollIntoView({ behavior: "smooth" });
+    }, 80);
+  };
   return (
     <div
       style={{
@@ -118,6 +148,16 @@ export default function CommandPalette({
           >
             Go to datasets
           </button>
+          {sections.map((s) => (
+            <button
+              key={s.hash}
+              style={{ textAlign: "left", padding: "8px", fontSize: 13 }}
+              onClick={() => goto(s.hash)}
+            >
+              <span style={{ color: "var(--color-ash-gray)", fontSize: 11 }}>section </span>
+              {s.label}
+            </button>
+          ))}
           {hits.map((h) => (
             <button
               key={`${h.kind}-${h.id}`}
@@ -128,12 +168,12 @@ export default function CommandPalette({
                 setOpen(false);
               }}
             >
-              <span style={{ color: "#a8a29e", fontSize: 11 }}>{h.kind} </span>
+              <span style={{ color: "var(--color-ash-gray)", fontSize: 11 }}>{h.kind} </span>
               {h.name}
             </button>
           ))}
         </div>
-        <div style={{ fontSize: 11, color: "#a8a29e", marginTop: 8 }}>
+        <div style={{ fontSize: 11, color: "var(--color-ash-gray)", marginTop: 8 }}>
           Ctrl or Cmd plus K toggles. Esc closes.
         </div>
       </div>

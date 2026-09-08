@@ -22,19 +22,33 @@ function yesterday(): string {
 
 export default function ScoreStrip() {
   const [games, setGames] = useState<Game[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const date = yesterday();
 
   useEffect(() => {
-    getDatasetJson("scoreboard", { season: "2025-26", game_date: yesterday() })
+    getDatasetJson("scoreboard", { season: "2025-26", game_date: date })
       .then((res) => {
         if (res.ok && Array.isArray(res.data)) {
           setGames((res.data as Game[]).slice(0, 8));
         }
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setLoaded(true));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (!games.length) return null;
+  if (!loaded) return null;
+  if (!games.length)
+    return (
+      <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginBottom: 16 }}>
+        Scores {date}: no games posted yet.
+      </div>
+    );
   return (
+    <section aria-label={`Scores from ${date}`}>
+      <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginBottom: 4 }}>
+        Scores {date}
+      </div>
     <div
       style={{
         display: "flex",
@@ -49,10 +63,10 @@ export default function ScoreStrip() {
           key={i}
           style={{
             flexShrink: 0,
-            border: "1px solid #e8e6e5",
+            border: "1px solid var(--color-stone-border)",
             borderRadius: 10,
             padding: "6px 12px",
-            background: "#ffffff",
+            background: "var(--color-pure-white)",
             fontSize: 12,
           }}
         >
@@ -61,11 +75,12 @@ export default function ScoreStrip() {
           {"  "}
           <span style={{ fontWeight: 500 }}>{g.HOME_TEAM_ABBREVIATION}</span>{" "}
           {g.HOME_TEAM_PTS ?? "-"}
-          <div style={{ fontSize: 10, color: "#a8a29e" }}>
+          <div style={{ fontSize: 10, color: "var(--color-ash-gray)" }}>
             {g.GAME_STATUS_TEXT || "Final"}
           </div>
         </div>
       ))}
     </div>
+    </section>
   );
 }
