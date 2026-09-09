@@ -146,6 +146,50 @@ def main() -> None:
           and clean(lz_res.get("error")),
           f"freq={lz_freq:.3f} n={len(lz_rows)}" + str(lz_res.get("error", "")))
 
+    lu_res = tools.get_lineups.invoke({"team_id": 1610612760})
+    lu_scope = ((lu_res.get("meta", {}) or {}).get("scope", "")
+                if isinstance(lu_res.get("meta"), dict) else "")
+    check("lineups scope states no-margin coverage",
+          lu_res.get("ok") and isinstance(lu_scope, str)
+          and "garbage time is included" in lu_scope
+          and "no margin" in lu_scope,
+          str(lu_scope)[:160])
+
+    u24_q = ("Which players under 24 averaged at least 15 points "
+             "and 5 assists last season?")
+    try:
+        u24_res = _aio2.run(tools.text_to_sql.ainvoke({"question": u24_q}))
+    except Exception as exc:
+        u24_res = {"ok": False, "error": str(exc)[:160], "meta": {}}
+    u24_rows = [r for r in (u24_res.get("rows", []) or [])
+                if isinstance(r, dict)]
+
+    def _num(row: dict, *keys: str) -> float:
+        for k in keys:
+            for cand in (k, k.upper(), k.lower()):
+                if cand in row and row[cand] is not None:
+                    try:
+                        return float(row[cand])
+                    except (TypeError, ValueError):
+                        continue
+        return 0.0
+
+    try:
+        u24_good = [r for r in u24_rows
+                    if _num(r, "PTS") >= 15 and _num(r, "AST") >= 5]
+    except (TypeError, ValueError):
+        u24_good = []
+    u24_sql = ((u24_res.get("meta", {}) or {}).get("sql", "")
+               if isinstance(u24_res.get("meta"), dict) else "")
+    if not (u24_res.get("ok") and len(u24_good) >= 5):
+        print(f"U24_SQL :: {u24_sql[:500]}")
+    check("under-24 15p5a last season",
+          u24_res.get("ok") and len(u24_rows) >= 5
+          and len(u24_good) == len(u24_rows)
+          and clean(u24_res.get("error")),
+          f"n={len(u24_rows)} good={len(u24_good)} sql={u24_sql[:120]}"
+          + str(u24_res.get("error", "")))
+
     print(f"\nholdout: {PASS} pass, {FAIL} fail")
     sys.exit(1 if FAIL else 0)
 

@@ -206,6 +206,9 @@ def get_lineups(team_id: str | int, season: str = SEASON) -> dict[str, Any]:
         if tier == "SMALL":
             r["SAMPLE"] = "small: under ~100 possessions, do not trust"
     rows = sorted(rows, key=lambda r: float(r.get("MIN") or 0), reverse=True)
+    meta = {**meta,
+            "scope": f"Lineup nets are full-game totals for season {season} "
+            "with no margin or clock filter, so garbage time is included."}
     return {"tool": "get_lineups", "ok": True, "rows": rows, "meta": meta}
 
 

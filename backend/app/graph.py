@@ -62,6 +62,9 @@ PLANNER_SYSTEM = (
     "every granular dataset, including text_to_sql. "
     "For custom math, statistical calculations, regression, or ad-hoc queries "
     "over warehouse tables, call run_python. "
+    "For filtered or ranked player lists (top-N, under an age, above "
+    "stat thresholds, draft queries), call text_to_sql first and use "
+    "run_python only if it fails. "
     "For supporting-cast questions, call run_python averaging teammate PPG "
     "from silver_leaders_pts excluding the star, joined with NET_RATING "
     "from silver_team_ratings. "
@@ -451,18 +454,42 @@ async def _triage_seed(question: str, primary: str, model: str,
                     f"AND UPPER(PLAYER) NOT LIKE '%{last.upper()}%' "
                     f"ORDER BY PTS DESC LIMIT 4\").fetchall()")
                 lines.append(
+                    f"_adv_{ab} = con.execute(\"SELECT PLAYER_NAME, TS_PCT, "
+                    f"NET_RATING FROM silver_advanced WHERE _season='2025-26' "
+                    f"AND TEAM_ABBREVIATION='{ab}'\").fetchall()")
+                lines.append(
+                    f"_admap_{ab} = {{str(r[0]): (r[1], r[2]) "
+                    f"for r in _adv_{ab}}}")
+                lines.append(
                     f"print('{safe} ({ab}) team net: ' + str(_t_{ab}))")
                 lines.append(
                     f"print('{ab} supporting mates (excluding {safe}):')")
                 lines.append(
-                    f"[print(f'  {{m[0]}}: {{m[1]/max(m[2],1):.1f}} ppg') "
-                    f"for m in _mates_{ab}]")
+                    f"for m in _mates_{ab}:\n"
+                    f"    _nm = str(m[0]).encode('ascii', 'ignore').decode()\n"
+                    f"    _ppg = m[1]/max(m[2], 1)\n"
+                    f"    _pair = _admap_{ab}.get(m[0], (None, None))\n"
+                    f"    _ts = _pair[0]\n"
+                    f"    _nr = _pair[1]\n"
+                    f"    _tss = f'{{_ts*100:.1f}}%' if _ts is not None else 'n/a'\n"
+                    f"    _nrs = f'{{_nr:+.1f}}' if _nr is not None else 'n/a'\n"
+                    f"    print(f'  {{_nm}}: {{_ppg:.1f}} ppg, TS {{_tss}} net {{_nrs}}')")
                 lines.append(
                     f"_best_{ab} = max([m[1]/max(m[2],1) for m in _mates_{ab}] "
                     f"+ [0])")
                 lines.append(
                     f"print('Top {ab} supporting scorer ({safe} excluded): ' "
                     f"+ str(round(_best_{ab}, 1)) + ' ppg')")
+                lines.append(
+                    f"_tslist_{ab} = [_admap_{ab}.get(m[0], "
+                    f"(None, None))[0] for m in _mates_{ab}]")
+                lines.append(
+                    f"_tsvals_{ab} = [v for v in _tslist_{ab} "
+                    f"if v is not None]")
+                lines.append(
+                    f"print('{ab} cast-average TS%: ' + "
+                    f"(f'{{sum(_tsvals_{ab})/len(_tsvals_{ab})*100:.1f}}%' "
+                    f"if _tsvals_{ab} else 'n/a'))")
         if sides:
             lines.append("out = 'cast table printed'")
             code = "\n".join(lines)
@@ -607,6 +634,45 @@ def _supervisor_tools(state: DimeState) -> list:
     return [t for t in _all_tools(state) if t.name in SUPERVISOR_TOOL_NAMES]
 
 
+_DISPLAY_TITLES = {
+    "run_python": "Warehouse query",
+    "text_to_sql": "Warehouse query",
+    "get_compare": "Player comparison",
+    "get_leaders": "League leaders",
+    "get_lineups": "Lineups",
+    "get_shot_zones": "Shot zones",
+}
+
+
+def _display_title(name: str, meta: dict[str, Any] | None = None) -> str:
+    base = _DISPLAY_TITLES.get(name or "")
+    if base is None:
+        if (name or "").startswith("delegate_"):
+            base = "Analyst research"
+        elif (name or "").startswith("get_"):
+            base = name[4:].replace("_", " ").strip().title() or "Dataset"
+        elif name:
+            base = tool_label(name)
+        else:
+            base = "Dataset"
+    cat = ""
+    try:
+        cat = str((meta or {}).get("stat_category") or "").strip()
+    except Exception:
+        cat = ""
+    return f"{base} · {cat}" if cat else base
+
+
+def _with_title(rec: dict[str, Any]) -> dict[str, Any]:
+    out = dict(rec)
+    try:
+        meta = out.get("meta") if isinstance(out.get("meta"), dict) else None
+        out["title"] = _display_title(str(out.get("tool", "")), meta)
+    except Exception:
+        out["title"] = "Dataset"
+    return out
+
+
 def _flatten_tables(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     flat: list[dict[str, Any]] = []
     for r in results:
@@ -616,9 +682,9 @@ def _flatten_tables(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if isinstance(nested, list) and r.get("agent"):
             for t in nested:
                 if isinstance(t, dict):
-                    flat.append(t)
+                    flat.append(_with_title(t))
         else:
-            flat.append(r)
+            flat.append(_with_title(r))
     return flat
 
 

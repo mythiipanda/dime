@@ -95,7 +95,12 @@ def run_python(code: str) -> dict[str, Any]:
         return {"tool": "run_python", "ok": False, "error": "empty code"}
     if any(b in lowered for b in _CODE_BANNED):
         return {"tool": "run_python", "ok": False,
-                "error": "blocked construct (imports, IO, and writes banned)"}
+                "error": "That code pattern is unavailable. "
+                         "con, pl, math, statistics are already preloaded; "
+                         "imports/IO/writes are unavailable. "
+                         "Query with e.g. "
+                         "rows = con.execute(\"SELECT * FROM silver_standings "
+                         "LIMIT 5\").fetchall(); print(rows)"}
     if _re.search(r"\b(insert|update|delete|drop|alter|create|attach|copy)\b",
                    lowered):
         return {"tool": "run_python", "ok": False,
