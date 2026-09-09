@@ -31,8 +31,14 @@ ANALYST_SYSTEM = (
     "percent sign, never as raw decimals. Never print raw field names "
     "like ts_pct or efg_pct. "
     "Name the tool output you used. Say when data is missing. "
+    "When a tool reports an error naming unknown players or missing data, "
+    "say so plainly instead of claiming nothing came back. "
+    "Derive per-game numbers when totals and games are both present, "
+    "showing the division. "
     "Keep answers short and specific with numbers. "
-    "For player comparisons: one markdown table with one row per metric, "
+    "For player comparisons: one markdown table with 8 or more metric rows "
+    "covering scoring, rebounds, assists, shooting splits, efficiency, "
+    "usage, impact, and team record, "
     "then 2 to 4 takeaways each naming who leads and by how much, "
     "then one verdict per dimension covering scoring, efficiency, shot "
     "diet, clutch, impact, and team context, then one overall verdict. "
@@ -68,6 +74,8 @@ PLANNER_SYSTEM = (
     "Never expand a nickname yourself. Pass names to tools verbatim. "
     "Id params also accept names directly and resolve internally. "
     "Use returned ids verbatim. Never invent or recall ids from memory. "
+    "Never ask the user for clarification. Always call tools, using "
+    "carried thread entities when the question has pronouns. "
     "Plan the SMALLEST set of calls that answers the question. "
     "Prefer one call, except comparisons, previews, and roundups, which "
     "need one call per dimension. "
@@ -268,7 +276,68 @@ async def _triage_seed(question: str, primary: str, model: str,
                 state["calls_made"].append("get_trade_check:" + json.dumps(
                     sides, sort_keys=True))
                 return
+    if len(found_t) == 1 and re.search(
+            r"last \d+ seasons|each of the last|past \d+ seasons|"
+            r"across the last|last three seasons",
+            question, re.IGNORECASE):
+        from nba_api.stats.static import teams as _static_teams
+
+        full = found_t[0]
+        nick = full.split()[-1] if full else ""
+        code = (
+            "rows = con.execute(\"SELECT _season, WINS, LOSSES "
+            "FROM silver_standings WHERE TeamName IN ('"
+            + nick.replace("'", "") + "', '" + full.replace("'", "")
+            + "') ORDER BY _season DESC LIMIT 5\").fetchall()\n"
+            "for _s, _w, _l in rows:\n"
+            "    print(f\"{_s}: {_w} wins, {_l} losses (regular season)\")\n"
+            "out = [{\"season\": _s, \"wins\": _w, \"losses\": _l} "
+            "for _s, _w, _l in rows]"
+        )
+        try:
+            from .tools import v1_tools as _vt
+
+            fn = next((t for t in _vt if t.name == "run_python"), None)
+            out = await fn.ainvoke({"code": code}) if fn is not None else {
+                "tool": "run_python", "ok": False, "error": "no python tool"}
+        except Exception as exc:
+            out = {"tool": "run_python", "ok": False, "error": str(exc)[:160]}
+        state["tool_results"].append(
+            out if isinstance(out, dict) else {"tool": "run_python",
+                                              "rows": out})
+        state["calls_made"].append("run_python:" + json.dumps(
+            {"code": code[:120]}, sort_keys=True))
+        return
     delegates = {t.name: t for t in delegate_tools(primary, model)}  # type: ignore[arg-type]
+    if not found_p and not found_t and state.get("history"):
+        carry_p, carry_t = [], []
+        for t in state["history"][-6:]:
+            p, q = _detect_entities((t.get("text") or ""))
+            carry_p.extend(p)
+            carry_t.extend(q)
+        seeds: list[tuple[str, str]] = []
+        for p in sorted(set(carry_p))[:2]:
+            seeds.append(("delegate_scout",
+                          f"Player focus: {p}. Report advanced metrics via "
+                          f"get_advanced, plus form, shot diet, and clutch. "
+                          f"Original question: {question}"))
+        for t in sorted(set(carry_t))[:1]:
+            seeds.append(("delegate_team",
+                          f"Team focus: {t}. Report record, splits, and "
+                          f"rating context. Original question: {question}"))
+        for name, task in seeds[:3]:
+            if name not in delegates:
+                continue
+            try:
+                out = await delegates[name].ainvoke({"task": task})
+            except Exception as exc:
+                out = {"tool": name, "ok": False, "error": str(exc)[:160]}
+            state["tool_results"].append(
+                out if isinstance(out, dict) else {"tool": name, "rows": out})
+            state["calls_made"].append(name + ":" + json.dumps(
+                {"task": task}, sort_keys=True))
+        if seeds:
+            return
     pick = None
     if is_trade:
         pick = "delegate_league"

@@ -129,6 +129,22 @@ async def get_compare(
                     rapm = round(float(rrows[0]["rapm"]), 2)
             except Exception:
                 pass
+            clutch_pts = None
+            try:
+                from nba_api.stats.static import players as _static_p
+
+                canon = next(
+                    (p["full_name"] for p in _static_p.get_players()
+                     if p.get("id") == pid), who)
+                crows = _read_df(
+                    "SELECT PTS FROM silver_clutch"
+                    " WHERE _season = ? AND PLAYER_NAME = ? LIMIT 1",
+                    [season, canon],
+                )
+                if crows and crows[0].get("PTS") is not None:
+                    clutch_pts = int(crows[0]["PTS"])
+            except Exception:
+                pass
         for r in oo.get("rows", []) or []:
             if isinstance(r, dict) and r.get("Stat") == "Pts per 100 Possessions":
                 try:
@@ -158,6 +174,7 @@ async def get_compare(
             "usg_pct": adv_rows.get("USG_PCT"),
             "tov_pct": adv_rows.get("TM_TOV_PCT"),
             "pie": adv_rows.get("PIE"),
+            "clutch_pts": clutch_pts,
             "net_onoff": net_onoff,
             "rapm": rapm,
             "last5": [g.get("PTS", 0) for g in last.get("rows", [])],

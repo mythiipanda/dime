@@ -49,12 +49,14 @@ class ChatBody(BaseModel):
     q: str
     model: str | None = None
     thread: str | None = None
+    history: list[dict[str, str]] | None = None
 
 
 async def _stream(
     question: str, model: str | None, thread: str | None = None,
+    history: list[dict[str, str]] | None = None,
 ):
-    history = store.chat_history(thread, 6) if thread else []
+    history = history or (store.chat_history(thread, 6) if thread else [])
     if thread:
         store.save_chat(thread, "human", question[:2000])
 
@@ -154,6 +156,6 @@ async def chat_stream_post(request: Request, body: ChatBody):
 
         return StreamingResponse(limited(), media_type="text/event-stream")
     return StreamingResponse(
-        _stream(body.q, body.model, body.thread),
+        _stream(body.q, body.model, body.thread, body.history),
         media_type="text/event-stream",
     )

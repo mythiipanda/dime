@@ -150,6 +150,8 @@ SCOUT_BRIEF = (
     "Usage, turnover rate, PIE, and rating ranks go to get_advanced. "
     "Career impact arcs go to get_raptor_history. "
     "Custom math over warehouse tables goes to run_python. "
+    "Confirm a player's current team from get_advanced TEAM_ABBREVIATION "
+    "before any team claim. Never take a team from memory. "
     "Resolve names with resolve_entity first. Use returned ids verbatim. "
     "Never invent ids. Season 2025-26 unless told otherwise."
 )
@@ -164,6 +166,9 @@ TEAM_BRIEF = (
     "For home/away or monthly team splits call get_team_splits. "
     "For injury impact (how much do injuries matter) call get_injury_impact, "
     "not get_injuries. "
+    "When the task names a player, resolve their current team from "
+    "warehouse gamelog MATCHUP or get_advanced first. Never trust a team "
+    "from memory. "
     "Resolve names with resolve_entity first. Use returned ids verbatim. "
     "Never invent ids. Season 2025-26 unless told otherwise."
 )

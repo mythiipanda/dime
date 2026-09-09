@@ -131,13 +131,14 @@ def main() -> None:
             {"a": "Thunder", "b": "Celtics"})
 
     cmp_res = _asyncio.run(_cmp())
+    cmp_sides = cmp_res["rows"] if isinstance(cmp_res["rows"], dict) else {}
     check("compare composite sides",
-          cmp_res["ok"] and cmp_res["rows"]["a"].get("ppg", 0) > 20
-          and cmp_res["rows"]["b"].get("ppg", 0) > 20
-          and cmp_res["rows"]["a"].get("team") == "LAL"
-          and cmp_res["rows"]["b"].get("team") == "OKC"
-          and cmp_res["rows"]["a"].get("rpg", 0) > 0
-          and "on_off" not in cmp_res["rows"]["a"],
+          cmp_res["ok"] and (cmp_sides.get("a", {}) or {}).get("ppg", 0) > 20
+          and (cmp_sides.get("b", {}) or {}).get("ppg", 0) > 20
+          and (cmp_sides.get("a", {}) or {}).get("team") == "LAL"
+          and (cmp_sides.get("b", {}) or {}).get("team") == "OKC"
+          and (cmp_sides.get("a", {}) or {}).get("rpg", 0) > 0
+          and "on_off" not in (cmp_sides.get("a", {}) or {}),
           str(cmp_res)[:200])
     prev_res = _asyncio.run(_prev())
     check("preview composite probs",
@@ -333,6 +334,11 @@ def main() -> None:
     check("advanced carries usage and pie",
           res["ok"] and 0.2 < float(res["rows"].get("USG_PCT", 0)) < 0.5
           and float(res["rows"].get("PIE", 0)) > 0.1, str(res)[:200])
+
+    check("compare carries clutch points",
+          (cmp_sides.get("b", {}) or {}).get("clutch_pts", 0) == 175
+          and (cmp_sides.get("a", {}) or {}).get("clutch_pts", 0) > 0,
+          str(cmp_sides)[:200])
 
     print(f"\neval: {PASS} pass, {FAIL} fail")
     sys.exit(1 if FAIL else 0)
