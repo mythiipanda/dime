@@ -474,6 +474,22 @@ def _payroll(team: str) -> tuple[int, list[dict]]:
     return sum(r[1] or 0 for r in rows), players
 
 
+def _apron_state(payroll: int) -> dict[str, object]:
+    return {
+        "over_tax": payroll > CAP["tax"],
+        "over_apron1": payroll > CAP["apron1"],
+        "over_apron2": payroll > CAP["apron2"],
+        "room_apron1": CAP["apron1"] - payroll,
+        "room_apron2": CAP["apron2"] - payroll,
+    }
+
+
+def _allowed_incoming(outgoing: int, over_apron1: bool) -> tuple[int, str]:
+    if over_apron1:
+        return outgoing, "100pct above first apron"
+    return int(outgoing * 1.25 + 250_000), "125pct plus 250k below first apron"
+
+
 def _payroll_source() -> str:
     from .. import store as _store
 
@@ -511,9 +527,9 @@ def get_trade_check(
 ) -> dict[str, Any]:
     """Trade legality check. Player names comma separated per side.
 
-    Simplified 2023 CBA: 125 percent plus 250k matching for non-apron
-    teams, 100 percent for second-apron teams, no aggregation above
-    the second apron. Picks and exceptions stay out of v1.
+    Simplified 2023 CBA: 125 percent plus 250k matching below the first
+    apron, 100 percent above it, no aggregation above the second apron.
+    Picks and exceptions stay out of v1.
     """
     import difflib as _dl
     import math as _math
@@ -581,27 +597,47 @@ def get_trade_check(
         return {"tool": "get_trade_check", "ok": False, "error": msg}
     pay_a, _ = _payroll(team_a)
     pay_b, _ = _payroll(team_b)
-    over2 = lambda p: p > CAP["apron2"]
+    state_a = _apron_state(pay_a)
+    state_b = _apron_state(pay_b)
+    allow_a, rule_a = _allowed_incoming(out_a, bool(state_a["over_apron1"]))
+    allow_b, rule_b = _allowed_incoming(out_b, bool(state_b["over_apron1"]))
     issues = []
-    if over2(pay_a) and len(names_a) > 1:
+    if state_a["over_apron2"] and len(names_a) > 1:
         issues.append(f"{team_a.upper()} cannot aggregate above second apron")
-    if over2(pay_b) and len(names_b) > 1:
+    if state_b["over_apron2"] and len(names_b) > 1:
         issues.append(f"{team_b.upper()} cannot aggregate above second apron")
-    ok_a = out_b <= (out_a if over2(pay_a) else out_a * 1.25 + 250_000)
-    ok_b = out_a <= (out_b if over2(pay_b) else out_b * 1.25 + 250_000)
+    ok_a = out_b <= allow_a
+    ok_b = out_a <= allow_b
     if not ok_a:
         issues.append(f"{team_a.upper()} takes back too much")
     if not ok_b:
         issues.append(f"{team_b.upper()} takes back too much")
+    checks = [
+        {"rule": "salary matching", "checked": True,
+         "note": f"{team_a.upper()} {rule_a}, {team_b.upper()} {rule_b}"},
+        {"rule": "second apron aggregation ban", "checked": True,
+         "note": "multi player out banned above second apron"},
+        {"rule": "cash in trade", "checked": False, "note": "not modeled"},
+        {"rule": "prior trade exceptions", "checked": False, "note": "not modeled"},
+        {"rule": "taxpayer midlevel hard cap", "checked": False, "note": "not modeled"},
+        {"rule": "frozen pick plus Stepien", "checked": False, "note": "not modeled"},
+        {"rule": "base-year plus trade-kicker plus minimum-salary plus sign-and-trade",
+         "checked": False, "note": "not modeled"},
+    ]
     return {"tool": "get_trade_check", "ok": True,
             "rows": {"team_a": {"team": team_a.upper(), "out": out_a,
-                                "players": names_a, "payroll": pay_a},
+                                "players": names_a, "payroll": pay_a,
+                                "allowed_in": allow_a, "match_rule": rule_a,
+                                **{k: v for k, v in state_a.items()}},
                      "team_b": {"team": team_b.upper(), "out": out_b,
-                                "players": names_b, "payroll": pay_b},
-                     "legal": not issues, "issues": issues,
-                     "disclaimer": "Rules simplified. Skips base-year, trade-kicker, "
-                     "cash, minimum-salary, Stepien, pick, exception, and "
-                     "sign-and-trade rules. Confirm with a cap specialist."},
+                                "players": names_b, "payroll": pay_b,
+                                "allowed_in": allow_b, "match_rule": rule_b,
+                                **{k: v for k, v in state_b.items()}},
+                     "legal": not issues, "issues": issues, "checks": checks,
+                     "disclaimer": "Estimate only, rules simplified. Skips cash, "
+                     "prior trade exceptions, taxpayer midlevel, frozen pick, Stepien, "
+                     "base-year, trade-kicker, minimum-salary, and sign-and-trade rules. "
+                     "Confirm with a cap specialist."},
             "meta": {"source": _payroll_source(), "rules": "v1-simplified"}}
 
 
@@ -750,9 +786,9 @@ async def text_to_sql(question: str) -> dict[str, Any]:
         "SQL: SELECT TEAM_ABBREVIATION, COUNT(*) AS wins FROM silver_playoffs "
         "WHERE WL = 'W' GROUP BY TEAM_ABBREVIATION ORDER BY wins DESC LIMIT 5\n"
         "Q: Who was drafted #1 overall in the June 2003 NBA draft?\n"
-        "Note: draft SEASON is the upcoming season end-year, so June 2003 = SEASON 2004.\n"
+        "Note: DRAFT_YEAR is the June draft year.\n"
         "SQL: SELECT OVERALL_PICK, PLAYER_NAME, TEAM_ABBREVIATION FROM silver_hist_draft "
-        "WHERE OVERALL_PICK = 1 AND SEASON = 2004\n"
+        "WHERE OVERALL_PICK = 1 AND DRAFT_YEAR = 2003\n"
         "Q: What was Michael Jordan's peak RAPTOR season?\n"
         "SQL: SELECT _season, RAPTOR_TOTAL, WAR_TOTAL FROM silver_raptor_player "
         "WHERE PLAYER_NAME = 'Michael Jordan' ORDER BY RAPTOR_TOTAL DESC LIMIT 1\n"

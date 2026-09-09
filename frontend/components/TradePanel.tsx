@@ -4,10 +4,12 @@ import { useState } from "react";
 import { BACKEND } from "../lib/chat";
 
 interface Verdict {
-  team_a: { team: string; out: number; players: string[]; payroll: number };
-  team_b: { team: string; out: number; players: string[]; payroll: number };
+  team_a: { team: string; out: number; players: string[]; payroll: number; allowed_in?: number; match_rule?: string; over_apron1?: boolean; over_apron2?: boolean };
+  team_b: { team: string; out: number; players: string[]; payroll: number; allowed_in?: number; match_rule?: string; over_apron1?: boolean; over_apron2?: boolean };
   legal: boolean;
   issues: string[];
+  checks?: { rule: string; checked: boolean; note: string }[];
+  disclaimer?: string;
 }
 
 function millions(n: number): string {
@@ -91,6 +93,13 @@ export default function TradePanel() {
                 <div style={{ fontSize: 12, color: "var(--color-warm-gray)" }}>
                   {side.players.join(", ") || "nobody"} · payroll {millions(side.payroll)}
                 </div>
+                {(side.allowed_in != null || side.match_rule) && (
+                  <div style={{ fontSize: 12, color: "var(--color-warm-gray)" }}>
+                    Takes back up to {side.allowed_in != null ? millions(side.allowed_in) : "n/a"}
+                    {side.match_rule ? ` · ${side.match_rule}` : ""}
+                    {side.over_apron2 ? " · 2nd apron" : side.over_apron1 ? " · 1st apron" : ""}
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -99,6 +108,16 @@ export default function TradePanel() {
               {issue}
             </div>
           ))}
+          {out.checks && out.checks.filter((c) => !c.checked).length > 0 && (
+            <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginTop: 4 }}>
+              Not checked: {out.checks.filter((c) => !c.checked).map((c) => c.rule).join(", ")}.
+            </div>
+          )}
+          {out.disclaimer && (
+            <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginTop: 4 }}>
+              {out.disclaimer}
+            </div>
+          )}
         </div>
       )}
     </div>
