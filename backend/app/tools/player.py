@@ -10,6 +10,38 @@ from ..sources import nba_stats
 from ._core import SEASON, _warehouse_or_live, coerce_player_id, coerce_team_id
 
 
+def _num(value: object) -> float | None:
+    try:
+        if value is None or value == "":
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def portability_fit(a: dict[str, Any], b: dict[str, Any]) -> dict[str, str]:
+    au, bu = _num(a.get("usg_pct")), _num(b.get("usg_pct"))
+    at, bt = _num(a.get("ts_pct")), _num(b.get("ts_pct"))
+    an, bn = _num(a.get("net_onoff")), _num(b.get("net_onoff"))
+    na = str(a.get("name") or "A")
+    nb = str(b.get("name") or "B")
+    if au is not None and bu is not None and au >= 30 and bu >= 30:
+        return {"fit": "risk",
+                "note": f"{na} and {nb} both use 30 pct or more. One must bend."}
+    for high, low, hn, ln in ((a, b, na, nb), (b, a, nb, na)):
+        hu, lu = _num(high.get("usg_pct")), _num(low.get("usg_pct"))
+        lt = _num(low.get("ts_pct"))
+        if hu is not None and lu is not None and lt is not None:
+            if hu >= 30 and lu <= 25 and lt >= 0.60:
+                return {"fit": "scalable",
+                        "note": f"{ln} profiles as a low usage efficient fit next to {hn}."}
+    if an is not None and bn is not None and abs(an - bn) >= 5:
+        lead = na if an > bn else nb
+        return {"fit": "leans driver",
+                "note": f"On off tilts to {lead} by {abs(an - bn):.1f} per 100."}
+    return {"fit": "neutral", "note": "No clear usage or on off tilt."}
+
+
 def _read_df(sql: str, params: list, tries: int = 5) -> list[dict[str, Any]]:
     """Warehouse read with retries. Concurrent writers briefly lock the file."""
     import time as _time
@@ -182,8 +214,9 @@ async def get_compare(
 
     left, right = await _asyncio.gather(one(a), one(b))
     return {"tool": "get_compare", "ok": True,
-            "rows": {"a": left, "b": right},
-            "meta": {"source": "nba_api+pbpstats", "season": season}}
+            "rows": {"a": left, "b": right, "fit": portability_fit(left, right)},
+            "meta": {"source": "nba_api+pbpstats", "season": season,
+                     "fit_rule": "both usg>=30 risk; high usg plus low usg with ts>=0.60 scalable; on off gap>=5 leans driver"}}
 
 
 @tool
@@ -214,8 +247,30 @@ def get_playoff_intel(player_id: str | int, season: str = SEASON) -> dict[str, A
         entity=f"player:{pid}", live_first=True,
     )
     if not rows:
-        return {"tool": "get_playoff_intel", "ok": False,
-                "error": f"no playoff games for {player_id} in {season}"}
+        try:
+            con = store.connect()
+            try:
+                tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+                if "silver_playoff_gamelogs" in tables:
+                    seasons = sorted(
+                        r[0] for r in con.execute(
+                            "SELECT DISTINCT _season FROM silver_playoff_gamelogs"
+                        ).fetchall() if r[0]
+                    )
+                else:
+                    seasons = []
+            finally:
+                con.close()
+        except Exception:
+            seasons = []
+        if seasons:
+            coverage = ", ".join(seasons)
+            err = (f"No playoff games found for {player_id} in {season} "
+                   f"(playoff coverage: {coverage}).")
+        else:
+            err = (f"No playoff games found for {player_id} in {season} "
+                   f"and no playoff seasons are stored yet.")
+        return {"tool": "get_playoff_intel", "ok": False, "error": err}
     cols = ["GAME_DATE", "MATCHUP", "PTS", "REB", "AST", "MIN"]
     slim = [{k: r.get(k) for k in cols if k in r} for r in rows]
     return {"tool": "get_playoff_intel", "ok": True, "rows": slim, "meta": meta}
