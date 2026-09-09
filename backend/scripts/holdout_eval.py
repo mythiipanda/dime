@@ -202,6 +202,36 @@ def main() -> None:
           f"n={len(u24_rows)} good={len(u24_good)} sql={u24_sql[:120]}"
           + str(u24_res.get("error", "")))
 
+    dt_res = tools.get_trade_check.invoke(
+        {"team_a": "HOU", "players_a": "Kevin Durant",
+         "team_b": "LAL", "players_b": "Austin Reaves"})
+    dt_rows = dt_res.get("rows", {}) if isinstance(dt_res.get("rows"), dict) else {}
+    dt_a = dt_rows.get("team_a", {}) or {}
+    dt_b = dt_rows.get("team_b", {}) or {}
+    dt_out_a = dt_a.get("out", 0) or 0
+    dt_out_b = dt_b.get("out", 0) or 0
+    check("durant trade currency",
+          dt_res.get("ok") and dt_out_a > 10**6 and dt_out_b > 10**6
+          and clean(dt_res.get("error")),
+          f"out_a={dt_out_a} out_b={dt_out_b}" + str(dt_res.get("error", "")))
+
+    chall_names = [n for n in tools.TOOL_NAMES
+                   if "chall" in n.lower() or "l2m" in n.lower()]
+    check("challenge honest admission",
+          len(chall_names) == 0,
+          "no challenge data source by design")
+
+    elo_res = tools.get_elo.invoke({})
+    elo_rows = [r for r in (elo_res.get("rows", []) or []) if isinstance(r, dict)]
+    elo_ranks = [r.get("rank") for r in elo_rows]
+    elo_gsw = next((r for r in elo_rows if r.get("TEAM") == "GSW"), {})
+    check("elo full ranks",
+          elo_res.get("ok") and len(elo_rows) == 30
+          and elo_ranks == list(range(1, 31))
+          and elo_gsw.get("ELO") == 1416 and elo_gsw.get("rank") == 20
+          and clean(elo_res.get("error")),
+          f"n={len(elo_rows)} gsw={elo_gsw}" + str(elo_res.get("error", "")))
+
     print(f"\nholdout: {PASS} pass, {FAIL} fail")
     sys.exit(1 if FAIL else 0)
 

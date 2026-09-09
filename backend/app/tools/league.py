@@ -448,6 +448,128 @@ CAP = {"cap": 165_000_000, "tax": 201_048_000,
        "apron1": 209_661_000, "apron2": 222_372_000}
 
 
+def _current_team_for_player(
+    player_name: str, player_id: object = None, fallback: str = "",
+) -> str:
+    """Current-season team for one player, else fallback.
+
+    Prefers silver_leaders_pts TEAM for SEASON, then the most recent
+    silver_player_gamelogs MATCHUP, then the salary-sheet TEAM.
+    """
+    from .. import store as _store
+
+    name = str(player_name or "").strip()
+    try:
+        con = _store.connect()
+    except Exception:
+        return fallback
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        if name and "silver_leaders_pts" in tables:
+            try:
+                row = con.execute(
+                    "SELECT TEAM FROM silver_leaders_pts "
+                    "WHERE _season = ? AND LOWER(PLAYER) = LOWER(?) LIMIT 1",
+                    [SEASON, name],
+                ).fetchone()
+                if row and row[0]:
+                    return str(row[0])
+            except Exception:
+                pass
+        pid: object = player_id
+        if pid is None and name and "silver_leaders_pts" in tables:
+            try:
+                found = con.execute(
+                    "SELECT PLAYER_ID FROM silver_leaders_pts "
+                    "WHERE LOWER(PLAYER) = LOWER(?) LIMIT 1",
+                    [name],
+                ).fetchone()
+                if found and found[0] is not None:
+                    pid = int(found[0])
+            except Exception:
+                pid = None
+        if pid is not None and "silver_player_gamelogs" in tables:
+            try:
+                for where, params in (
+                    ("Player_ID = ? AND _season = ?", [pid, SEASON]),
+                    ("Player_ID = ?", [pid]),
+                ):
+                    try:
+                        grow = con.execute(
+                            f"SELECT MATCHUP FROM silver_player_gamelogs "
+                            f"WHERE {where} LIMIT 1",
+                            params,
+                        ).fetchone()
+                    except Exception:
+                        grow = None
+                    if grow and grow[0]:
+                        abbr = str(grow[0]).split()[0].upper()
+                        if abbr:
+                            return abbr
+                    if grow:
+                        break
+            except Exception:
+                pass
+    finally:
+        try:
+            con.close()
+        except Exception:
+            pass
+    return fallback
+
+
+def _resolve_stale_trade_player(want: str, team: str) -> tuple[str, int] | None:
+    """Salary-sheet row for want whose current team is team, else None."""
+    import difflib as _dl
+
+    from .. import store as _store
+
+    target = str(team or "").upper()
+    w = str(want or "").strip()
+    if not w or not target:
+        return None
+    try:
+        con = _store.connect()
+    except Exception:
+        return None
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        if "silver_salaries" not in tables:
+            return None
+        try:
+            rows = con.execute(
+                "SELECT PLAYER_NAME, SALARY_2025_26, TEAM FROM silver_salaries"
+            ).fetchall()
+        except Exception:
+            return None
+    finally:
+        try:
+            con.close()
+        except Exception:
+            pass
+    wl = w.lower()
+    exact = [r for r in rows if str(r[0]).lower() == wl]
+    subs = [r for r in rows if wl in str(r[0]).lower() and r not in exact]
+    lows = [str(r[0]).lower() for r in rows]
+    fuzzy: list = []
+    try:
+        for m in _dl.get_close_matches(wl, lows, n=3, cutoff=0.8):
+            for r in rows:
+                if str(r[0]).lower() == m and r not in exact and r not in subs:
+                    fuzzy.append(r)
+    except Exception:
+        fuzzy = []
+    for cand in exact + subs + fuzzy:
+        cname, csal, cteam = str(cand[0]), cand[1] or 0, str(cand[2] or "")
+        try:
+            cur = _current_team_for_player(cname, None, cteam)
+        except Exception:
+            cur = cteam
+        if str(cur).upper() == target:
+            return cname, int(csal)
+    return None
+
+
 def _payroll(team: str) -> tuple[int, list[dict]]:
     from .. import store as _store
 
@@ -578,8 +700,13 @@ def get_trade_check(
                 matched.append(hit["player"])
                 total_out += hit["salary"] or 0
             else:
-                sug = [disp[s] for s in _dl.get_close_matches(w, lows, n=2, cutoff=0.6)]
-                unknown.append(f"{orig} (suggestions: {', '.join(sug)})" if sug else orig)
+                stale = _resolve_stale_trade_player(orig, team)
+                if stale:
+                    matched.append(stale[0])
+                    total_out += stale[1]
+                else:
+                    sug = [disp[s] for s in _dl.get_close_matches(w, lows, n=2, cutoff=0.6)]
+                    unknown.append(f"{orig} (suggestions: {', '.join(sug)})" if sug else orig)
         return total_out, matched, unknown
 
     if not team_a or not team_b:
@@ -609,7 +736,12 @@ def get_trade_check(
                         [like],
                     ).fetchone()
                     if hit:
-                        hints.append(f"{base} is on {hit[0]} per salary data")
+                        try:
+                            cur = _current_team_for_player(
+                                str(hit[1]), None, str(hit[0]))
+                        except Exception:
+                            cur = hit[0]
+                        hints.append(f"{base} is on {cur} per salary data")
             finally:
                 con2.close()
         except Exception:

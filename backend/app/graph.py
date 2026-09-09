@@ -699,6 +699,26 @@ def _with_title(rec: dict[str, Any]) -> dict[str, Any]:
 
 
 def _flatten_tables(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _sanitize(rec: dict[str, Any]) -> dict[str, Any] | None:
+        tool = rec.get("tool")
+        if tool in ("resolve_entity", "search_nba"):
+            return None
+        out = dict(rec)
+        out.pop("tool", None)
+        if tool in _DISPLAY_TITLES:
+            try:
+                meta = out.get("meta") if isinstance(out.get("meta"), dict) else None
+                out["title"] = _display_title(str(tool or ""), meta)
+            except Exception:
+                out["title"] = _DISPLAY_TITLES.get(str(tool), "Dataset")
+        else:
+            out.pop("title", None)
+        meta = out.get("meta")
+        if isinstance(meta, dict):
+            out["meta"] = {k: v for k, v in meta.items()
+                           if k not in ("sql", "query")}
+        return out
+
     flat: list[dict[str, Any]] = []
     for r in results:
         if not isinstance(r, dict):
@@ -707,9 +727,13 @@ def _flatten_tables(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if isinstance(nested, list) and r.get("agent"):
             for t in nested:
                 if isinstance(t, dict):
-                    flat.append(_with_title(t))
+                    clean = _sanitize(_with_title(t))
+                    if clean is not None:
+                        flat.append(clean)
         else:
-            flat.append(_with_title(r))
+            clean = _sanitize(_with_title(r))
+            if clean is not None:
+                flat.append(clean)
     return flat
 
 
