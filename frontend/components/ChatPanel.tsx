@@ -11,6 +11,8 @@ import {
 } from "../lib/chat";
 import { RunInfo, getModels, getRuns, postChatStream } from "../lib/api";
 import AnswerText from "./AnswerText";
+import { ArtifactItem } from "./ArtifactCanvas";
+import ModelPicker from "./ModelPicker";
 import NodeCards from "./NodeCards";
 
 function applyEvent(ai: AiMessage, type: string, data: unknown): AiMessage {
@@ -87,6 +89,8 @@ interface Props {
   thread: string;
   onRunDone: () => void;
   preset?: string | null;
+  onOpenArtifact?: (artifact: ArtifactItem) => void;
+  activeArtifactId?: string;
 }
 
 function aiFromRun(r: RunInfo): AiMessage {
@@ -168,7 +172,7 @@ function LinkButton({ index }: { index: number }) {
   );
 }
 
-export default function ChatPanel({ thread, onRunDone, preset }: Props) {
+export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, activeArtifactId }: Props) {
   const [models, setModels] = useState<ModelOption[]>([]);
   const [model, setModel] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -403,47 +407,15 @@ export default function ChatPanel({ thread, onRunDone, preset }: Props) {
                   sendText(input);
                 }
               }}
-                  placeholder="Compare Luka and SGA by efficiency..."
+              placeholder="Compare Luka and SGA by efficiency..."
             />
 
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 4, borderTop: "1px solid var(--color-stone-canvas)" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ fontSize: 12, color: "var(--color-ash-gray)", display: "flex", alignItems: "center", gap: 4 }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <circle cx="12" cy="12" r="10" />
-                    <line x1="12" y1="8" x2="12" y2="12" />
-                    <line x1="12" y1="16" x2="12.01" y2="16" />
-                  </svg>
-                  Model:
-                </span>
-                <select
-                  value={model || ""}
-                  onChange={(e) => setModel(e.target.value || null)}
-                  style={{
-                    border: "1px solid var(--color-stone-border)",
-                    borderRadius: 8,
-                    background: "var(--color-stone-canvas)",
-                    fontSize: 12,
-                    color: "var(--color-ink-black)",
-                    outline: "none",
-                    cursor: "pointer",
-                    padding: "4px 8px",
-                    maxWidth: 180,
-                  }}
-                  aria-label="Model"
-                >
-                  {!models.length && <option value="">Offline</option>}
-                  {models.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.id.replace("openrouter:", "").replace(":free", "")}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <ModelPicker models={models} value={model} onChange={setModel} />
 
               {busy ? (
                 <button
-                  className="pill-ghost"
+                  className="pill-ghost interactive-tactile"
                   onClick={stop}
                   style={{ borderColor: "var(--color-cyan-signal)", color: "var(--color-cyan-edge)" }}
                 >
@@ -451,7 +423,7 @@ export default function ChatPanel({ thread, onRunDone, preset }: Props) {
                 </button>
               ) : (
                 <button
-                  className="pill-cta"
+                  className="pill-cta interactive-tactile"
                   style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 20px" }}
                   onClick={() => sendText(input)}
                 >
@@ -461,11 +433,13 @@ export default function ChatPanel({ thread, onRunDone, preset }: Props) {
             </div>
           </div>
 
-          {/* Quick Prompt Starters (ChatGPT style) */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%", marginTop: 24 }}>
+          {/* Curated 2x2 Prompt Cards (Frontier AI style) */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10, width: "100%", marginTop: 24 }}>
             {[
               {
-                text: "Compare Luka Dončić and Shai Gilgeous-Alexander",
+                title: "Compare Luka & Shai",
+                desc: "True shooting, shot zones, and on-off impact",
+                prompt: "Compare Luka Dončić and Shai Gilgeous-Alexander",
                 icon: (
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <line x1="18" y1="20" x2="18" y2="10" />
@@ -475,7 +449,9 @@ export default function ChatPanel({ thread, onRunDone, preset }: Props) {
                 ),
               },
               {
-                text: "Who leads the league in assists?",
+                title: "League Assist Leaders",
+                desc: "Top playmakers, assist-to-turnover ratio, and creation",
+                prompt: "Who leads the league in assists?",
                 icon: (
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <circle cx="12" cy="8" r="7" />
@@ -484,7 +460,9 @@ export default function ChatPanel({ thread, onRunDone, preset }: Props) {
                 ),
               },
               {
-                text: "Show OKC Thunder playoff odds and ELO",
+                title: "OKC Championship Odds",
+                desc: "2,000 Monte Carlo playoff simulations and ELO rating",
+                prompt: "Show OKC Thunder playoff odds and ELO",
                 icon: (
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
@@ -492,7 +470,9 @@ export default function ChatPanel({ thread, onRunDone, preset }: Props) {
                 ),
               },
               {
-                text: "Run a trade check: Zach LaVine for draft picks",
+                title: "Trade: Zach LaVine",
+                desc: "2024 CBA salary matching, aprons, and legal draft picks",
+                prompt: "Run a trade check: Zach LaVine for draft picks",
                 icon: (
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <polyline points="17 1 21 5 17 9" />
@@ -504,37 +484,33 @@ export default function ChatPanel({ thread, onRunDone, preset }: Props) {
               },
             ].map((item) => (
               <button
-                key={item.text}
-                onClick={() => sendText(item.text)}
+                key={item.title}
+                type="button"
+                onClick={() => sendText(item.prompt)}
+                className="interactive-tactile"
                 style={{
                   display: "flex",
-                  alignItems: "center",
-                  gap: 12,
-                  padding: "10px 14px",
+                  flexDirection: "column",
+                  alignItems: "flex-start",
+                  gap: 6,
+                  padding: "14px 16px",
                   borderRadius: 12,
-                  background: "transparent",
-                  border: "1px solid transparent",
+                  background: "var(--color-pure-white)",
+                  border: "1px solid var(--color-stone-border)",
+                  boxShadow: "var(--shadow-subtle)",
                   cursor: "pointer",
                   textAlign: "left",
-                  fontSize: 14,
-                  color: "var(--color-warm-gray)",
-                  transition: "all 140ms ease",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "var(--color-pure-white)";
-                  e.currentTarget.style.borderColor = "var(--color-stone-border)";
-                  e.currentTarget.style.color = "var(--color-ink-black)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "transparent";
-                  e.currentTarget.style.borderColor = "transparent";
-                  e.currentTarget.style.color = "var(--color-warm-gray)";
                 }}
               >
-                <span style={{ color: "var(--color-ash-gray)", display: "flex", alignItems: "center" }}>
-                  {item.icon}
-                </span>
-                <span>{item.text}</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--color-ink-black)", fontWeight: 500, fontSize: 13 }}>
+                  <span style={{ color: "var(--color-cyan-edge)", display: "flex", alignItems: "center" }}>
+                    {item.icon}
+                  </span>
+                  <span>{item.title}</span>
+                </div>
+                <div style={{ fontSize: 12, color: "var(--color-warm-gray)", lineHeight: 1.4 }}>
+                  {item.desc}
+                </div>
               </button>
             ))}
           </div>
@@ -565,11 +541,11 @@ export default function ChatPanel({ thread, onRunDone, preset }: Props) {
                     style={{
                       background: "var(--color-soot)",
                       color: "#ffffff",
-                      borderRadius: "16px 16px 4px 16px",
-                      padding: "12px 18px",
+                      borderRadius: "18px 18px 4px 18px",
+                      padding: "10px 16px",
                       fontSize: 14,
                       lineHeight: 1.5,
-                      boxShadow: "var(--shadow-card)",
+                      boxShadow: "0 1px 3px rgba(0, 0, 0, 0.08)",
                     }}
                   >
                     {m.text}
@@ -582,77 +558,113 @@ export default function ChatPanel({ thread, onRunDone, preset }: Props) {
                   style={{
                     alignSelf: "flex-start",
                     width: "100%",
-                    background: "var(--color-pure-white)",
-                    border: "1px solid var(--color-stone-border)",
-                    borderRadius: 14,
-                    padding: "20px",
-                    boxShadow: "var(--shadow-card)",
-                    boxSizing: "border-box",
+                    display: "flex",
+                    gap: 14,
+                    alignItems: "flex-start",
                     scrollMarginTop: 16,
                   }}
                 >
-                  {m.ai && !m.ai.done && !m.text && (
-                    <div>
-                      <div style={{ fontSize: 12, color: "var(--color-ash-gray)", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
-                        <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "var(--color-cyan-signal)" }} className="shimmer" />
-                        Looking up stats...
+                  {/* Assistant Avatar Glyph */}
+                  <div
+                    style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: 8,
+                      background: "var(--color-pure-white)",
+                      border: "1px solid var(--color-stone-border)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexShrink: 0,
+                      marginTop: 2,
+                      boxShadow: "0 1px 2px rgba(0, 0, 0, 0.04)",
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 7,
+                        height: 7,
+                        borderRadius: "50%",
+                        background: "var(--color-cyan-signal)",
+                      }}
+                    />
+                  </div>
+
+                  {/* Message Body */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                      <span style={{ fontWeight: 600, fontSize: 13, color: "var(--color-ink-black)" }}>
+                        Dime
+                      </span>
+                      <span style={{ fontSize: 11, color: "var(--color-ash-gray)" }}>
+                        2025-26
+                      </span>
+                    </div>
+
+                    {m.ai && !m.ai.done && !m.text && (
+                      <div>
+                        <div style={{ fontSize: 12, color: "var(--color-ash-gray)", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+                          <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "var(--color-cyan-signal)" }} className="shimmer" />
+                          Looking up stats...
+                        </div>
+                        {[90, 70, 55].map((w, d) => (
+                          <div
+                            key={d}
+                            className="shimmer skeleton-row"
+                            style={{ width: `${w}%` }}
+                          />
+                        ))}
                       </div>
-                      {[90, 70, 55].map((w, d) => (
-                        <div
-                          key={d}
-                          className="shimmer skeleton-row"
-                          style={{ width: `${w}%` }}
-                        />
-                      ))}
-                    </div>
-                  )}
+                    )}
 
-                  {m.ai?.error && (
-                    <div style={{ color: "#e11d48", fontSize: 13 }}>Error: {m.ai.error}</div>
-                  )}
+                    {m.ai?.error && (
+                      <div style={{ color: "#e11d48", fontSize: 13, marginBottom: 8 }}>Error: {m.ai.error}</div>
+                    )}
 
-                  {m.ai?.caution && m.ai.caution.length > 0 && (
-                    <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginBottom: 10, background: "var(--color-sky-wash)", padding: "6px 12px", borderRadius: 8 }}>
-                      Check these numbers against the tables: {m.ai.caution.join(", ")}
-                    </div>
-                  )}
+                    {m.ai?.caution && m.ai.caution.length > 0 && (
+                      <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginBottom: 10, background: "var(--color-sky-wash)", padding: "6px 12px", borderRadius: 8 }}>
+                        Check numbers against tables: {m.ai.caution.join(", ")}
+                      </div>
+                    )}
 
-                  <AnswerText text={m.text} />
+                    <AnswerText text={m.text} />
 
-                  {m.ai?.streaming && !m.ai.done && (
-                    <span className="caret" aria-hidden />
-                  )}
+                    {m.ai?.streaming && !m.ai.done && (
+                      <span className="caret" aria-hidden />
+                    )}
 
-                  {m.ai && <NodeCards ai={m.ai} onAsk={sendText} />}
+                    {m.ai && (
+                      <NodeCards
+                        ai={m.ai}
+                        onAsk={sendText}
+                        onOpenArtifact={onOpenArtifact}
+                        activeArtifactId={activeArtifactId}
+                      />
+                    )}
 
-                  {m.text && (
-                    <div style={{ display: "flex", gap: 8, marginTop: 16, alignItems: "center", borderTop: "1px solid var(--color-stone-border)", paddingTop: 12 }}>
-                      <CopyButton text={m.text} />
-                      <LinkButton index={i} />
-                      {m.ai?.nodes.analytics?.tables.map((t, j) => (
-                        <span key={j} style={{ fontSize: 11, color: "var(--color-ash-gray)" }}>
-                          [S{j + 1}] {t.tool}
-                          {t.meta?.fetched_at ? ` ${String(t.meta.fetched_at).slice(0, 10)}` : ""}
-                        </span>
-                      ))}
-                    </div>
-                  )}
+                    {m.text && (
+                      <div style={{ display: "flex", gap: 8, marginTop: 12, alignItems: "center" }}>
+                        <CopyButton text={m.text} />
+                        <LinkButton index={i} />
+                      </div>
+                    )}
 
-                  {m.ai?.suggestions && m.ai.suggestions.length > 0 && m.ai.done && (
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14 }}>
-                      {m.ai.suggestions.map((s) => (
-                        <button
-                          key={s}
-                          className="pill-ghost"
-                          style={{ fontSize: 12 }}
-                          onClick={() => sendText(s)}
-                          disabled={busy}
-                        >
-                          {s}
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                    {m.ai?.suggestions && m.ai.suggestions.length > 0 && m.ai.done && (
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 12 }}>
+                        {m.ai.suggestions.map((s) => (
+                          <button
+                            key={s}
+                            className="pill-ghost interactive-tactile"
+                            style={{ fontSize: 12, padding: "3px 10px", background: "var(--color-pure-white)" }}
+                            onClick={() => sendText(s)}
+                            disabled={busy}
+                          >
+                            {s}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               ),
             )}
@@ -692,36 +704,16 @@ export default function ChatPanel({ thread, onRunDone, preset }: Props) {
                 className="composer-card"
                 style={{
                   display: "flex",
-                  gap: 8,
+                  gap: 10,
                   alignItems: "center",
                   border: "1px solid var(--color-stone-border)",
-                  borderRadius: 18,
+                  borderRadius: 20,
                   padding: "10px 14px 10px 16px",
                   background: "var(--color-pure-white)",
-                  boxShadow: "0 4px 20px rgba(0, 0, 0, 0.08)",
+                  boxShadow: "0 8px 30px rgba(0, 0, 0, 0.08)",
                 }}
               >
-                <select
-                  value={model || ""}
-                  onChange={(e) => setModel(e.target.value || null)}
-                  style={{
-                    border: "none",
-                    background: "transparent",
-                    fontSize: 12,
-                    color: "var(--color-warm-gray)",
-                    outline: "none",
-                    cursor: "pointer",
-                    maxWidth: 160,
-                  }}
-                  aria-label="Model"
-                >
-                  {!models.length && <option value="">Offline</option>}
-                  {models.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.id.replace("openrouter:", "").replace(":free", "")}
-                    </option>
-                  ))}
-                </select>
+                <ModelPicker models={models} value={model} onChange={setModel} />
 
                 <textarea
                   ref={inputRef}

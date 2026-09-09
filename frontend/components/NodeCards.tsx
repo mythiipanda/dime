@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { AiMessage, NodeName } from "../lib/chat";
+import { ArtifactItem } from "./ArtifactCanvas";
 import AutoChart from "./AutoChart";
 import CompareView from "./CompareView";
 import CourtHeatmap from "./CourtHeatmap";
@@ -18,12 +19,23 @@ const LABELS: Record<NodeName, string> = {
   presentation: "Synthesizing answer",
 };
 
-export default function NodeCards({ ai, onAsk }: { ai: AiMessage; onAsk?: (query: string) => void }) {
+export default function NodeCards({
+  ai,
+  onAsk,
+  onOpenArtifact,
+  activeArtifactId,
+}: {
+  ai: AiMessage;
+  onAsk?: (query: string) => void;
+  onOpenArtifact?: (artifact: ArtifactItem) => void;
+  activeArtifactId?: string;
+}) {
   const names = ORDER.filter((n) => ai.nodes[n]);
   const [open, setOpen] = useState(false);
   const [pageState, setPageState] = useState<number | null>(null);
   const [heat, setHeat] = useState(false);
   const [viewMode, setViewMode] = useState<"table" | "chart" | "court">("table");
+  const [showInline, setShowInline] = useState(false);
 
   const tables: {
     tool: string;
@@ -102,29 +114,30 @@ export default function NodeCards({ ai, onAsk }: { ai: AiMessage; onAsk?: (query
   return (
     <div style={{ marginTop: 14 }}>
       {/* Reasoning Trigger Header (OpenAI / Claude 3.7 style) */}
-      <div style={{ marginBottom: 10 }}>
+      <div style={{ marginBottom: 8 }}>
         <button
+          type="button"
           onClick={() => setOpen(!open)}
+          className="interactive-tactile"
           style={{
             display: "inline-flex",
             alignItems: "center",
-            gap: 8,
-            padding: "6px 12px",
+            gap: 6,
+            padding: "3px 8px",
             background: "var(--color-stone-canvas)",
             border: "1px solid var(--color-stone-border)",
-            borderRadius: 8,
+            borderRadius: 6,
             fontSize: 12,
             color: "var(--color-warm-gray)",
             cursor: "pointer",
-            transition: "all 140ms ease",
           }}
         >
           {!isDone ? (
             <>
               <span
                 style={{
-                  width: 8,
-                  height: 8,
+                  width: 6,
+                  height: 6,
                   borderRadius: "50%",
                   background: "var(--color-cyan-signal)",
                   display: "inline-block",
@@ -137,7 +150,7 @@ export default function NodeCards({ ai, onAsk }: { ai: AiMessage; onAsk?: (query
             </>
           ) : (
             <>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--color-cyan-signal)" }}>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--color-cyan-signal)" }}>
                 <polyline points="20 6 9 17 4 12" />
               </svg>
               <span>
@@ -145,8 +158,8 @@ export default function NodeCards({ ai, onAsk }: { ai: AiMessage; onAsk?: (query
               </span>
             </>
           )}
-          <span style={{ fontSize: 10, opacity: 0.7 }}>
-            {showTrace ? "▲ Hide" : "▼ Show"}
+          <span style={{ fontSize: 9, opacity: 0.6 }}>
+            {showTrace ? "▲" : "▼"}
           </span>
         </button>
       </div>
@@ -246,140 +259,299 @@ export default function NodeCards({ ai, onAsk }: { ai: AiMessage; onAsk?: (query
       )}
 
       {/* Interactive Data Artifact Card (Claude Artifact style) */}
-      {table && (
-        <div
-          style={{
-            border: "1px solid var(--color-stone-border)",
-            borderRadius: 12,
-            padding: "16px",
-            background: "var(--color-pure-white)",
-            boxShadow: "var(--shadow-card)",
-            marginTop: 12,
-          }}
-        >
+      {table && (() => {
+        const artifactId = `${table.tool}-${page}`;
+        const isCanvasOpen = activeArtifactId === artifactId;
+        const rawTitle =
+          table.tool.replace("get_", "").replace(/_/g, " ").toUpperCase() +
+          (table.meta?.stat_category ? ` · ${table.meta.stat_category}` : "");
+
+        if (isCanvasOpen && !showInline) {
+          return (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                background: "var(--color-stone-canvas)",
+                border: "1px solid var(--color-stone-border)",
+                borderRadius: 8,
+                padding: "8px 12px",
+                marginTop: 10,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: "50%",
+                    background: "var(--color-cyan-signal)",
+                  }}
+                />
+                <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-ink-black)" }}>
+                  {rawTitle} is open in Canvas
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowInline(true)}
+                className="pill-ghost interactive-tactile"
+                style={{ fontSize: 11, padding: "2px 8px" }}
+              >
+                Show inline
+              </button>
+            </div>
+          );
+        }
+
+        return (
           <div
             style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              flexWrap: "wrap",
-              gap: 8,
-              borderBottom: "1px solid var(--color-stone-border)",
-              paddingBottom: 12,
-              marginBottom: 12,
+              border: "1px solid var(--color-stone-border)",
+              borderRadius: 12,
+              padding: "16px",
+              background: "var(--color-pure-white)",
+              boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
+              marginTop: 10,
             }}
           >
-            <div>
-              <div style={{ fontWeight: 600, fontSize: 13, color: "var(--color-ink-black)" }}>
-                {table.tool.replace("get_", "").replace(/_/g, " ").toUpperCase()}
-                {table.meta?.stat_category ? ` · ${table.meta.stat_category}` : ""}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: 8,
+                borderBottom: "1px solid var(--color-stone-border)",
+                paddingBottom: 12,
+                marginBottom: 12,
+              }}
+            >
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 13, color: "var(--color-ink-black)" }}>
+                  {rawTitle}
+                </div>
+                <div style={{ fontSize: 11, color: "var(--color-ash-gray)", marginTop: 2 }}>
+                  {table.meta?.source ? `Source: ${table.meta.source}` : "Source: NBA Warehouse"}
+                  {table.meta?.fetched_at ? ` · ${String(table.meta.fetched_at).slice(0, 10)}` : ""}
+                  {table.meta?.links?.watch && (
+                    <a
+                      href={table.meta.links.watch}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ marginLeft: 6, color: "var(--color-cyan-edge)" }}
+                    >
+                      Watch video
+                    </a>
+                  )}
+                </div>
               </div>
-              <div style={{ fontSize: 11, color: "var(--color-ash-gray)", marginTop: 2 }}>
-                {table.meta?.source ? `Source: ${table.meta.source}` : "Source: NBA Warehouse"}
-                {table.meta?.fetched_at ? ` · ${String(table.meta.fetched_at).slice(0, 10)}` : ""}
-                {table.meta?.links?.watch && (
-                  <a href={table.meta.links.watch} target="_blank" rel="noreferrer" style={{ marginLeft: 6, color: "var(--color-cyan-edge)" }}>
-                    Watch video
-                  </a>
+
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                {onOpenArtifact && (
+                  <button
+                    type="button"
+                    className="pill-ghost interactive-tactile"
+                    style={{
+                      fontSize: 11,
+                      padding: "3px 10px",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 4,
+                      borderColor: "var(--color-cyan-edge)",
+                      color: "var(--color-cyan-edge)",
+                    }}
+                    onClick={() => {
+                      onOpenArtifact({
+                        id: artifactId,
+                        tool: table.tool,
+                        title: rawTitle,
+                        rows: table.rows,
+                        meta: table.meta,
+                        verdict: table.verdict,
+                      });
+                      setShowInline(false);
+                    }}
+                    title="Open in dedicated side canvas"
+                  >
+                    <span>Canvas</span>
+                    <svg
+                      width="10"
+                      height="10"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                    >
+                      <polyline points="15 3 21 3 21 9" />
+                      <line x1="10" y1="14" x2="21" y2="3" />
+                    </svg>
+                  </button>
+                )}
+                {isShotTool && (
+                  <button
+                    className={viewMode === "court" ? "tab-active" : "pill-ghost"}
+                    style={{ fontSize: 11, padding: "3px 10px" }}
+                    onClick={() => setViewMode("court")}
+                  >
+                    Court
+                  </button>
+                )}
+                <button
+                  className={viewMode === "table" ? "tab-active" : "pill-ghost"}
+                  style={{ fontSize: 11, padding: "3px 10px" }}
+                  onClick={() => setViewMode("table")}
+                >
+                  Table
+                </button>
+                {!isShotTool && (
+                  <button
+                    className={viewMode === "chart" ? "tab-active" : "pill-ghost"}
+                    style={{ fontSize: 11, padding: "3px 10px" }}
+                    onClick={() => setViewMode("chart")}
+                  >
+                    Chart
+                  </button>
+                )}
+                {viewMode === "table" && (
+                  <button
+                    className={heat ? "tab-active" : "pill-ghost"}
+                    style={{ fontSize: 11, padding: "3px 10px" }}
+                    onClick={() => setHeat(!heat)}
+                    title="Toggle heat map gradient"
+                  >
+                    Heat
+                  </button>
+                )}
+                {isCanvasOpen && (
+                  <button
+                    type="button"
+                    onClick={() => setShowInline(false)}
+                    className="pill-ghost interactive-tactile"
+                    style={{ fontSize: 11, padding: "3px 8px" }}
+                    title="Hide inline table since canvas is active"
+                  >
+                    Minimize
+                  </button>
+                )}
+                {tables.length > 1 && (
+                  <div style={{ display: "flex", gap: 4, marginLeft: 6 }}>
+                    <button
+                      className="pill-ghost"
+                      style={{ fontSize: 11, padding: "3px 8px" }}
+                      disabled={page === 0}
+                      onClick={() => setPage(page - 1)}
+                    >
+                      ‹ Prev
+                    </button>
+                    <span
+                      style={{
+                        fontSize: 11,
+                        color: "var(--color-warm-gray)",
+                        display: "flex",
+                        alignItems: "center",
+                      }}
+                    >
+                      {page + 1}/{tables.length}
+                    </span>
+                    <button
+                      className="pill-ghost"
+                      style={{ fontSize: 11, padding: "3px 8px" }}
+                      disabled={page >= tables.length - 1}
+                      onClick={() => setPage(page + 1)}
+                    >
+                      Next ›
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
 
-            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-              {isShotTool && (
-                <button
-                  className={viewMode === "court" ? "tab-active" : "pill-ghost"}
-                  style={{ fontSize: 11, padding: "3px 10px" }}
-                  onClick={() => setViewMode("court")}
-                >
-                  Court
-                </button>
-              )}
-              <button
-                className={viewMode === "table" ? "tab-active" : "pill-ghost"}
-                style={{ fontSize: 11, padding: "3px 10px" }}
-                onClick={() => setViewMode("table")}
+            {table.meta?.sql && (
+              <details
+                style={{
+                  fontSize: 11,
+                  color: "var(--color-warm-gray)",
+                  marginBottom: 12,
+                }}
               >
-                Table
-              </button>
-              {!isShotTool && (
-                <button
-                  className={viewMode === "chart" ? "tab-active" : "pill-ghost"}
-                  style={{ fontSize: 11, padding: "3px 10px" }}
-                  onClick={() => setViewMode("chart")}
+                <summary style={{ cursor: "pointer", fontWeight: 500 }}>
+                  View SQL
+                </summary>
+                <pre
+                  style={{
+                    whiteSpace: "pre-wrap",
+                    margin: "6px 0 0",
+                    background: "var(--color-stone-canvas)",
+                    padding: 8,
+                    borderRadius: 6,
+                    fontSize: 11,
+                  }}
                 >
-                  Chart
-                </button>
-              )}
-              {viewMode === "table" && (
-                <button
-                  className={heat ? "tab-active" : "pill-ghost"}
-                  style={{ fontSize: 11, padding: "3px 10px" }}
-                  onClick={() => setHeat(!heat)}
-                  title="Toggle heat map gradient"
+                  {table.meta.sql}
+                </pre>
+              </details>
+            )}
+
+            {table.tool === "get_compare" || table.tool === "get_preview" ? (
+              <CompareView rows={table.rows} />
+            ) : table.tool === "get_wowy" ? (
+              <WowyCard
+                rows={table.rows}
+                meta={table.meta}
+                verdict={table.verdict}
+              />
+            ) : isShotTool && viewMode === "court" ? (
+              <CourtHeatmap
+                rows={table.rows}
+                meta={table.meta}
+                verdict={table.verdict}
+              />
+            ) : table.tool === "run_python" ? (
+              <div
+                style={{
+                  background: "var(--color-stone-canvas)",
+                  border: "1px solid var(--color-stone-border)",
+                  padding: 12,
+                  borderRadius: 8,
+                  fontFamily: "monospace",
+                  fontSize: 12,
+                  overflowX: "auto",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: "var(--color-warm-gray)",
+                    marginBottom: 6,
+                    fontWeight: 500,
+                  }}
                 >
-                  Heat
-                </button>
-              )}
-              {tables.length > 1 && (
-                <div style={{ display: "flex", gap: 4, marginLeft: 6 }}>
-                  <button
-                    className="pill-ghost"
-                    style={{ fontSize: 11, padding: "3px 8px" }}
-                    disabled={page === 0}
-                    onClick={() => setPage(page - 1)}
-                  >
-                    ‹ Prev
-                  </button>
-                  <span style={{ fontSize: 11, color: "var(--color-warm-gray)", display: "flex", alignItems: "center" }}>
-                    {page + 1}/{tables.length}
-                  </span>
-                  <button
-                    className="pill-ghost"
-                    style={{ fontSize: 11, padding: "3px 8px" }}
-                    disabled={page >= tables.length - 1}
-                    onClick={() => setPage(page + 1)}
-                  >
-                    Next ›
-                  </button>
+                  Python Execution Output:
                 </div>
-              )}
-            </div>
+                <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>
+                  {String(
+                    (table.rows as Record<string, unknown>)?.printed ||
+                      (table.rows as Record<string, unknown>)?.out ||
+                      "Execution completed (no stdout).",
+                  )}
+                </pre>
+              </div>
+            ) : viewMode === "chart" ? (
+              <AutoChart table={table as { rows?: unknown }} />
+            ) : (
+              <DataTable
+                rows={(table.rows as { rows?: unknown })?.rows ?? table.rows}
+                heat={heat}
+                onPlayerSelect={(player) =>
+                  onAsk ? onAsk(`Tell me about ${player} this season`) : undefined
+                }
+              />
+            )}
           </div>
-
-          {table.meta?.sql && (
-            <details style={{ fontSize: 11, color: "var(--color-warm-gray)", marginBottom: 12 }}>
-              <summary style={{ cursor: "pointer", fontWeight: 500 }}>View SQL</summary>
-              <pre style={{ whiteSpace: "pre-wrap", margin: "6px 0 0", background: "var(--color-stone-canvas)", padding: 8, borderRadius: 6, fontSize: 11 }}>
-                {table.meta.sql}
-              </pre>
-            </details>
-          )}
-
-          {table.tool === "get_compare" || table.tool === "get_preview" ? (
-            <CompareView rows={table.rows} />
-          ) : table.tool === "get_wowy" ? (
-            <WowyCard rows={table.rows} meta={table.meta} verdict={table.verdict} />
-          ) : isShotTool && viewMode === "court" ? (
-            <CourtHeatmap rows={table.rows} meta={table.meta} verdict={table.verdict} />
-          ) : table.tool === "run_python" ? (
-            <div style={{ background: "var(--color-stone-canvas)", border: "1px solid var(--color-stone-border)", padding: 12, borderRadius: 8, fontFamily: "monospace", fontSize: 12, overflowX: "auto" }}>
-              <div style={{ fontSize: 11, color: "var(--color-warm-gray)", marginBottom: 6, fontWeight: 500 }}>Python Execution Output:</div>
-              <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>
-                {String((table.rows as Record<string, unknown>)?.printed || (table.rows as Record<string, unknown>)?.out || "Execution completed (no stdout).")}
-              </pre>
-            </div>
-          ) : viewMode === "chart" ? (
-            <AutoChart table={table as { rows?: unknown }} />
-          ) : (
-            <DataTable
-              rows={(table.rows as { rows?: unknown })?.rows ?? table.rows}
-              heat={heat}
-              onPlayerSelect={(player) => onAsk ? onAsk(`Tell me about ${player} this season`) : undefined}
-            />
-          )}
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

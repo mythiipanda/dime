@@ -72,29 +72,41 @@ body {
 }
 
 .tab-active {
-  background: var(--color-soot);
-  color: #ffffff;
+  background: var(--color-pure-white);
+  color: var(--color-ink-black);
+  font-weight: 500;
   border-radius: 9999px;
-  padding: 8px 16px;
+  padding: 5px 14px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.07);
 }
 
 .tab-idle {
   background: transparent;
-  color: var(--color-ink-black);
-  border: 1px solid var(--color-stone-border);
+  color: var(--color-warm-gray);
+  border: 1px solid transparent;
   border-radius: 9999px;
-  padding: 8px 16px;
+  padding: 5px 14px;
+}
+
+.tab-idle:hover {
+  color: var(--color-ink-black);
+  background: rgba(0, 0, 0, 0.03);
 }
 
 .field {
   background: var(--color-pure-white);
-  border: 1px solid var(--color-stone-muted);
-  border-radius: 6px;
-  padding: 4px 12px;
+  border: 1px solid var(--color-stone-border);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 13px;
+  color: var(--color-ink-black);
+  transition: border-color 140ms ease, box-shadow 140ms ease;
 }
 
 .field:focus {
-  outline: 2px solid var(--color-cyan-signal);
+  outline: none;
+  border-color: var(--color-cyan-edge);
+  box-shadow: 0 0 0 2px var(--color-sky-wash);
 }
 
 .tab-active,
