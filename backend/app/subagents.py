@@ -121,7 +121,7 @@ async def _run_desk(
     )
     if not has_data:
         return {"agent": desk, "ok": False,
-                "error": "no evidence from warehouse or live sources"}
+                "error": "no further detail available on that angle"}
     try:
         summary = await client.ainvoke(
             [

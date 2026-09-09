@@ -50,7 +50,9 @@ ANALYST_SYSTEM = (
     "State one number per fact, never ranges. "
     "Only cite all-in-one metrics present in evidence: RAPM-lite, on-off "
     "net, RAPTOR history. Label RAPM-lite and RAPTOR as estimates. "
-    "Never invent PER, BPM, EPM, WS, VORP, or LEBRON. Say EPM is unavailable."
+    "Never invent PER, BPM, EPM, WS, VORP, or LEBRON. Say EPM is unavailable. "
+    "State the season the data covers in the first line of every answer. "
+    "Never name tools, tables, or query languages."
 )
 
 PLANNER_SYSTEM = (
@@ -722,6 +724,76 @@ def _suggest(
     return seen[:3]
 
 
+def _sanitize_evidence(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _label(name: str) -> str:
+        n = (name or "").lower()
+        if n == "run_python" or "python" in n:
+            return "computed"
+        if n.startswith("delegate_") or n in ("resolve_entity", "search_nba"):
+            return "league data"
+        return "warehouse table"
+
+    def _clean(obj: Any) -> Any:
+        if isinstance(obj, dict):
+            out: dict[str, Any] = {}
+            for k, v in obj.items():
+                if k == "tool":
+                    out["source_kind"] = _label(str(v) if v is not None else "")
+                    continue
+                if k == "calls_made":
+                    continue
+                if k == "meta" and isinstance(v, dict):
+                    blob = json.dumps(v, default=str).lower()
+                    if "sql" in blob:
+                        continue
+                if isinstance(v, str) and k.lower() in ("sql", "query"):
+                    continue
+                out[k] = _clean(v)
+            return out
+        if isinstance(obj, list):
+            return [_clean(v) for v in obj]
+        return obj
+
+    cleaned = _clean(results)
+    return cleaned if isinstance(cleaned, list) else []
+
+
+def _collect_seasons(results: list[dict[str, Any]]) -> list[str]:
+    found: list[str] = []
+
+    def _walk(obj: Any) -> None:
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                if k == "_season" and isinstance(v, str) and v:
+                    found.append(v)
+                else:
+                    _walk(v)
+        elif isinstance(obj, list):
+            for v in obj:
+                _walk(v)
+
+    _walk(results)
+    seen: list[str] = []
+    for s in found:
+        if s not in seen:
+            seen.append(s)
+    return sorted(seen)
+
+
+def _clean_error_text(text: str) -> str:
+    s = text or ""
+    s = re.sub(r"\b(get_\w+|delegate_\w+|resolve_entity|search_nba|run_python|text_to_sql)\b", "", s, flags=re.IGNORECASE)
+    s = re.sub(r"\bsilver_\w+\b", "", s, flags=re.IGNORECASE)
+    s = re.sub(r"`[^`]*`", " ", s)
+    s = re.sub(r"(?is)\bselect\b.*?(;|$)", " ", s)
+    s = re.sub(r"\bSQL\b", " ", s, flags=re.IGNORECASE)
+    s = re.sub(r"\b\d{5,}\b", " ", s)
+    s = re.sub(r"\b\d{3,4}\b", " ", s)
+    s = re.sub(r"\s+", " ", s).strip(" .;:,")
+    s = re.sub(r"\s+\b(id|on|in|at|for|with|from|and|or)$", "", s, flags=re.IGNORECASE).strip(" .;:,")
+    return s
+
+
 async def analytics_agent(state: DimeState) -> AsyncGenerator[dict[str, Any], None]:
     yield _event("node_update", {"node": "analytics", "status": "running"})
     def _has_rows(rows: Any) -> bool:
@@ -737,27 +809,37 @@ async def analytics_agent(state: DimeState) -> AsyncGenerator[dict[str, Any], No
         and r.get("tool", "") not in ("resolve_entity", "search_nba")
     ]
     if not evidenced:
-        tried = [k.split(":", 1)[0] for k in state["calls_made"]][:6]
-        errs = [f"{r.get('tool')}: {r.get('error')}"
-                for r in state["tool_results"]
-                if isinstance(r, dict) and r.get("error")][:3]
-        if errs:
-            state["analysis"] = (
-                "The data lookup reported a problem, so there is no table "
-                "to show. " + " ".join(errs)
-            )
+        raw_errs = [str(r.get("error", ""))
+                    for r in state["tool_results"]
+                    if isinstance(r, dict) and r.get("error")][:3]
+        cleaned = [_clean_error_text(e) for e in raw_errs]
+        cleaned = [c for c in cleaned if c and len(c) >= 12][:1]
+        seasons = _collect_seasons(state["tool_results"])
+        try:
+            _qp, _qt = _detect_entities(state.get("question", "") or "")
+            subject = (_qp + _qt)[:1]
+            subject = subject[0] if subject else "NBA"
+        except Exception:
+            subject = "NBA"
+        m = re.search(r"(20\d\d-\d\d)", state.get("question", "") or "")
+        season_q = m.group(1) if m else (seasons[-1] if seasons else "")
+        if season_q:
+            base = f"No {subject} data found for {season_q}"
         else:
-            state["analysis"] = (
-                "The research step came back empty, so there is nothing to report. "
-                "Ask again or ask something narrower."
-                + (f" Tried: {', '.join(tried)}." if tried else "")
-            )
+            base = f"No {subject} data found"
+        if seasons and seasons != [season_q]:
+            base += f"; warehouse covers {', '.join(seasons)}"
+        elif seasons and len(seasons) > 1:
+            base += f"; warehouse covers {', '.join(seasons)}"
+        if cleaned:
+            base += f"; {cleaned[0]}"
+        state["analysis"] = base + "."
         yield _event(
             "custom_data", {"node": "analytics", "tables": _flatten_tables(state["tool_results"])}
         )
         yield _event("node_update", {"node": "analytics", "status": "complete"})
         return
-    evidence = str(state["tool_results"])[:12000]
+    evidence = str(_sanitize_evidence(state["tool_results"]))[:12000]
     try:
         parts: list[str] = []
         async for chunk in astream_with_fallback(
