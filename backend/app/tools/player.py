@@ -649,7 +649,9 @@ def get_shot_zones(player_id: str | int, season: str = SEASON) -> dict[str, Any]
         shr = round(a / total, 3)
         row: dict[str, Any] = {"zone": z, "FGM": m, "FGA": a,
                                "FG_PCT": fgp, "share": shr,
-                               "eFG_PCT": efg, "SHARE": shr}
+                               "eFG_PCT": efg, "SHARE": shr,
+                               "fgm": m, "fga": a, "fg_pct": fgp,
+                               "freq_pct": shr}
         if not baseline_missing and z in league_efg:
             row["LEAGUE_DELTA"] = round(efg - league_efg[z], 3)
         rows.append(row)
@@ -996,7 +998,7 @@ def get_raptor_history(player: str, season: str = "") -> dict[str, Any]:
     con = store.connect()
     try:
         q = ("SELECT * FROM silver_raptor_player WHERE LOWER(PLAYER_NAME) = LOWER(?)"
-             + (" AND _season = ?" if season else "") + " ORDER BY _season DESC LIMIT 10")
+             + (" AND _season = ?" if season else "") + " ORDER BY _season ASC LIMIT 25")
         try:
             frame = pl.from_arrow(con.execute(
                 q, [name] + ([season] if season else [])).fetch_arrow_table())

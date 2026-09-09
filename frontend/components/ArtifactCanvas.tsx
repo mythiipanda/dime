@@ -5,7 +5,9 @@ import AutoChart from "./AutoChart";
 import CompareView from "./CompareView";
 import CourtHeatmap from "./CourtHeatmap";
 import DataTable from "./DataTable";
+import TrendChart, { isRaptorRows } from "./TrendChart";
 import WowyCard from "./WowyCard";
+import ZoneBars, { isZoneRows } from "./ZoneBars";
 
 export interface ArtifactItem {
   id: string;
@@ -38,6 +40,17 @@ export default function ArtifactCanvas({ artifact, onClose, onAsk }: ArtifactCan
   const isShotTool =
     artifact?.tool === "get_shot_zones" || artifact?.tool === "get_shot_compare";
 
+  const tableRows =
+    (artifact?.rows as { rows?: unknown } | undefined)?.rows ?? artifact?.rows;
+  const showTrend = isRaptorRows(tableRows);
+  const showZones = !showTrend && isZoneRows(tableRows);
+  const hasCustomChart = showTrend || showZones;
+  const [showChart, setShowChart] = useState(true);
+
+  useEffect(() => {
+    setShowChart(showTrend);
+  }, [artifact?.id, showTrend]);
+
   useEffect(() => {
     if (isShotTool) {
       setViewMode("court");
@@ -48,10 +61,12 @@ export default function ArtifactCanvas({ artifact, onClose, onAsk }: ArtifactCan
 
   if (!artifact) return null;
 
-  const rawTitle =
-    artifact.title ||
+  const autoTitle =
     artifact.tool.replace("get_", "").replace(/_/g, " ").toUpperCase() +
-      (artifact.meta?.stat_category ? ` · ${artifact.meta.stat_category}` : "");
+    (artifact.meta?.stat_category ? ` · ${artifact.meta.stat_category}` : "");
+  const rawTitle = artifact.title || autoTitle;
+  const playerName =
+    artifact.title && artifact.title !== autoTitle ? artifact.title : undefined;
 
   return (
     <div
@@ -223,12 +238,48 @@ export default function ArtifactCanvas({ artifact, onClose, onAsk }: ArtifactCan
         ) : viewMode === "chart" ? (
           <AutoChart table={artifact as { rows?: unknown }} />
         ) : (
-          <DataTable
-            rows={(artifact.rows as { rows?: unknown })?.rows ?? artifact.rows}
-            heat={heat}
-            capRows={100}
-            onPlayerSelect={(player) => (onAsk ? onAsk(`Analyze ${player} this season`) : undefined)}
-          />
+          <>
+            {hasCustomChart && (
+              <div
+                style={{
+                  background: "var(--color-pure-white)",
+                  border: "1px solid var(--color-stone-border)",
+                  borderRadius: 10,
+                  padding: "12px 14px",
+                  marginBottom: 12,
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "flex-end",
+                    marginBottom: showChart ? 8 : 0,
+                  }}
+                >
+                  <button
+                    type="button"
+                    className="pill-ghost"
+                    style={{ fontSize: 11, padding: "2px 10px" }}
+                    onClick={() => setShowChart((v) => !v)}
+                  >
+                    {showChart ? "Hide chart" : "Show chart"}
+                  </button>
+                </div>
+                {showChart &&
+                  (showTrend ? (
+                    <TrendChart rows={tableRows} playerName={playerName} />
+                  ) : (
+                    <ZoneBars rows={tableRows} />
+                  ))}
+              </div>
+            )}
+            <DataTable
+              rows={tableRows}
+              heat={heat}
+              capRows={100}
+              onPlayerSelect={(player) => (onAsk ? onAsk(`Analyze ${player} this season`) : undefined)}
+            />
+          </>
         )}
       </div>
     </div>

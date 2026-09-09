@@ -126,6 +126,26 @@ def main() -> None:
           and clean(cap_res.get("error")),
           str(cap_rows.get("payroll")) + str(cap_res.get("error", "")))
 
+    rj_res = tools.get_raptor_history.invoke({"player": "Michael Jordan"})
+    rj_rows = rj_res.get("rows", []) or []
+    rj_seasons = [r.get("SEASON") for r in rj_rows if isinstance(r, dict)]
+    check("jordan raptor arc",
+          rj_res.get("ok") and len(rj_rows) >= 10
+          and rj_seasons == sorted(rj_seasons)
+          and (rj_seasons[0] or "") <= "1985-86"
+          and clean(rj_res.get("error")),
+          f"n={len(rj_rows)} first={rj_seasons[0] if rj_seasons else None}" + str(rj_res.get("error", "")))
+
+    lz_res = tools.get_shot_zones.invoke({"player_id": "LeBron James"})
+    lz_rows = [r for r in (lz_res.get("rows", []) or []) if isinstance(r, dict)]
+    lz_freq = sum(float(r.get("freq_pct", 0) or 0) for r in lz_rows)
+    check("lebron shot zone freq",
+          lz_res.get("ok") and len(lz_rows) > 0
+          and all("freq_pct" in r and "fg_pct" in r for r in lz_rows)
+          and abs(lz_freq - 1.0) < 0.05
+          and clean(lz_res.get("error")),
+          f"freq={lz_freq:.3f} n={len(lz_rows)}" + str(lz_res.get("error", "")))
+
     print(f"\nholdout: {PASS} pass, {FAIL} fail")
     sys.exit(1 if FAIL else 0)
 

@@ -7,7 +7,39 @@ import AutoChart from "./AutoChart";
 import CompareView from "./CompareView";
 import CourtHeatmap from "./CourtHeatmap";
 import DataTable from "./DataTable";
+import TrendChart, { isRaptorRows } from "./TrendChart";
 import WowyCard from "./WowyCard";
+import ZoneBars, { isZoneRows } from "./ZoneBars";
+
+function InlineChart({ rows }: { rows: unknown }) {
+  const trend = isRaptorRows(rows);
+  const zones = !trend && isZoneRows(rows);
+  const [open, setOpen] = useState(trend);
+  if (!trend && !zones) return null;
+  return (
+    <div
+      style={{
+        background: "var(--color-pure-white)",
+        border: "1px solid var(--color-stone-border)",
+        borderRadius: 10,
+        padding: "12px 14px",
+        marginBottom: 12,
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: open ? 8 : 0 }}>
+        <button
+          type="button"
+          className="pill-ghost"
+          style={{ fontSize: 11, padding: "2px 10px" }}
+          onClick={() => setOpen((v) => !v)}
+        >
+          {open ? "Hide chart" : "Show chart"}
+        </button>
+      </div>
+      {open && (trend ? <TrendChart rows={rows} /> : <ZoneBars rows={rows} />)}
+    </div>
+  );
+}
 
 const ORDER: NodeName[] = ["entry", "data_retrieval", "tools", "analytics", "presentation"];
 
@@ -516,13 +548,18 @@ export default function NodeCards({
             ) : viewMode === "chart" ? (
               <AutoChart table={table as { rows?: unknown }} />
             ) : (
-              <DataTable
-                rows={(table.rows as { rows?: unknown })?.rows ?? table.rows}
-                heat={heat}
-                onPlayerSelect={(player) =>
-                  onAsk ? onAsk(`Tell me about ${player} this season`) : undefined
-                }
-              />
+              <>
+                <InlineChart
+                  rows={(table.rows as { rows?: unknown })?.rows ?? table.rows}
+                />
+                <DataTable
+                  rows={(table.rows as { rows?: unknown })?.rows ?? table.rows}
+                  heat={heat}
+                  onPlayerSelect={(player) =>
+                    onAsk ? onAsk(`Tell me about ${player} this season`) : undefined
+                  }
+                />
+              </>
             )}
           </div>
         );
