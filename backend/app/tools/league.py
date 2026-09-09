@@ -823,7 +823,13 @@ async def text_to_sql(question: str) -> dict[str, Any]:
         "Season ints are end-years, so 2023-24 = SEASON 2024 = _season '2023-24'.\n"
         "SQL: SELECT PLAYER_NAME, TEAM_ABBREVIATION, GP, PTS, AST, TS_PCT, NET_RATING "
         "FROM silver_hist_player_seasons WHERE PLAYER_NAME = 'LeBron James' "
-        "AND _season = '2023-24'"
+        "AND _season = '2023-24'\n"
+        "Q: Which players under 24 averaged at least 15 points and 5 assists last season?\n"
+        "Note silver_hist_player_seasons stores per-game averages with AGE, PTS, AST "
+        "columns and season end-year ints.\n"
+        "SQL: SELECT PLAYER_NAME, TEAM_ABBREVIATION, AGE, GP, PTS, AST "
+        "FROM silver_hist_player_seasons WHERE AGE < 24 AND PTS >= 15 AND AST >= 5 "
+        "AND SEASON = 2024 ORDER BY PTS DESC LIMIT 10"
     )
     feedback = ""
     for _ in range(3):

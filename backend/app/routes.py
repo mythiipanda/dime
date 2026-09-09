@@ -17,6 +17,26 @@ router = APIRouter()
 _hits: dict[str, list[float]] = defaultdict(list)
 
 
+def _sanitize_sse_event(etype: str, data: dict) -> dict:
+    if etype == "error":
+        node = data.get("node") if isinstance(data, dict) else None
+        out: dict = {"status": "fail",
+                     "message": "Something went wrong, try again"}
+        if node:
+            out["node"] = node
+        return out
+    if etype == "message" and isinstance(data, dict):
+        if "tool_call" in data or "tool_result" in data or "error" in data:
+            node = data.get("node")
+            out = {"status": "fail", "rows": 0}
+            if node:
+                out["node"] = node
+            return out
+        return {k: data[k] for k in ("node", "label", "status", "rows")
+                if k in data}
+    return data
+
+
 def _allowed(ip: str) -> bool:
     now = time.time()
     window = [t for t in _hits[ip] if now - t < 60]
@@ -79,7 +99,8 @@ async def _stream(
                 items = event["data"].get("items", [])
                 if isinstance(items, list):
                     suggestions = [str(i) for i in items]
-            yield emit_sse(event["type"], event["data"])
+            yield emit_sse(event["type"],
+                           _sanitize_sse_event(event["type"], event["data"]))
         if thread and final:
             store.save_chat(thread, "ai", final)
             store.save_run(thread, question[:2000], final, tables, suggestions)

@@ -172,6 +172,146 @@ function LinkButton({ index }: { index: number }) {
   );
 }
 
+type StepState = "pending" | "running" | "complete";
+
+interface ProgressStep {
+  label: string;
+  state: StepState;
+  detail: string | null;
+}
+
+function progressFor(ai: AiMessage): ProgressStep[] {
+  const entry = ai.nodes.entry;
+  const retrieval = ai.nodes.data_retrieval;
+  const tools = ai.nodes.tools;
+  const analytics = ai.nodes.analytics;
+  const presentation = ai.nodes.presentation;
+  const anyNode = Boolean(entry || retrieval || tools || analytics || presentation);
+  const textOf = (n: typeof entry): string | null => {
+    if (!n) return null;
+    const last = n.thoughts[n.thoughts.length - 1];
+    if (typeof last !== "string") return null;
+    const t = last.trim();
+    if (!t) return null;
+    if (t.startsWith("{") || t.startsWith("[")) return null;
+    return t.slice(0, 160);
+  };
+
+  let planning: StepState;
+  if (entry) planning = entry.status === "complete" ? "complete" : "running";
+  else planning = anyNode || ai.done ? "complete" : "running";
+
+  let gathering: StepState;
+  if (retrieval?.status === "running" || tools?.status === "running") gathering = "running";
+  else if (retrieval?.status === "complete" || tools?.status === "complete") gathering = "complete";
+  else if (ai.done) gathering = "complete";
+  else if (planning === "complete") gathering = "running";
+  else gathering = "pending";
+
+  let analyzing: StepState;
+  if (analytics) analyzing = analytics.status === "complete" ? "complete" : "running";
+  else if (ai.done) analyzing = "complete";
+  else if (ai.streaming || (ai.text && ai.text.length > 0)) analyzing = "running";
+  else if (gathering === "complete") analyzing = "running";
+  else analyzing = "pending";
+
+  let writing: StepState;
+  if (presentation) writing = presentation.status === "complete" ? "complete" : "running";
+  else if (ai.done) writing = "complete";
+  else if (ai.streaming || (ai.text && ai.text.length > 0)) writing = "running";
+  else writing = "pending";
+
+  const gatherThought = textOf(retrieval) || textOf(tools);
+  const analyzeThought = textOf(analytics);
+  const liveTail =
+    ai.streaming && ai.text
+      ? ai.text.slice(-140).trim().slice(-140)
+      : null;
+  const analyzeDetail = liveTail || analyzeThought;
+
+  return [
+    { label: "Planning", state: planning, detail: textOf(entry) },
+    { label: "Gathering data", state: gathering, detail: gatherThought },
+    { label: "Analyzing stats", state: analyzing, detail: analyzeDetail },
+    { label: "Writing answer", state: writing, detail: null },
+  ];
+}
+
+function ProgressSteps({ ai }: { ai: AiMessage }) {
+  const steps = progressFor(ai);
+  const active = steps.some((s) => s.state === "running");
+  if (ai.done && steps.every((s) => s.state !== "running")) return null;
+  if (!active && !ai.text) return null;
+  return (
+    <div style={{ marginBottom: 10 }}>
+      {steps.map((s) => (
+        <div key={s.label} style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "3px 0" }}>
+          <span
+            aria-hidden
+            style={{
+              width: 14,
+              height: 14,
+              borderRadius: "50%",
+              marginTop: 2,
+              flexShrink: 0,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 10,
+              fontWeight: 600,
+              background:
+                s.state === "complete"
+                  ? "var(--color-ink-black)"
+                  : s.state === "running"
+                    ? "var(--color-cyan-signal)"
+                    : "transparent",
+              color: "var(--color-pure-white)",
+              border:
+                s.state === "pending"
+                  ? "1px solid var(--color-stone-border)"
+                  : "1px solid transparent",
+              animation:
+                s.state === "running" ? "dime-caret 900ms steps(2) infinite" : undefined,
+            }}
+          >
+            {s.state === "complete" ? "✓" : ""}
+          </span>
+          <div style={{ minWidth: 0 }}>
+            <div
+              style={{
+                fontSize: 12,
+                fontWeight: s.state === "running" ? 600 : 400,
+                color:
+                  s.state === "pending"
+                    ? "var(--color-ash-gray)"
+                    : "var(--color-ink-black)",
+              }}
+            >
+              {s.label}
+              {s.state === "running" ? "..." : ""}
+            </div>
+            {s.detail && (
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "var(--color-warm-gray)",
+                  lineHeight: 1.4,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  maxWidth: 560,
+                }}
+              >
+                {s.detail}
+              </div>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, activeArtifactId }: Props) {
   const [models, setModels] = useState<ModelOption[]>([]);
   const [model, setModel] = useState<string | null>(null);
@@ -540,7 +680,11 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                     </span>
                   </div>
 
-                  {m.ai && !m.ai.done && !m.text && (
+                  {m.ai && !m.ai.done && (
+                    <ProgressSteps ai={m.ai} />
+                  )}
+
+                  {m.ai && !m.ai.done && !m.text && Object.keys(m.ai.nodes).length === 0 && (
                     <div style={{ marginBottom: 8 }}>
                       <div style={{ fontSize: 12, color: "var(--color-ash-gray)", marginBottom: 8 }}>
                         Looking up stats...
