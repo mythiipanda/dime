@@ -48,6 +48,29 @@ def zone_diet(rows: object) -> dict[str, float | None]:
     return {"rim_share": rim, "three_share": round(three, 3) if found_three else None}
 
 
+def pair_history(wowy: object) -> dict[str, object]:
+    if not isinstance(wowy, dict) or not wowy.get("ok"):
+        err = wowy.get("error", "wowy failed") if isinstance(wowy, dict) else "wowy failed"
+        return {"teammates": True, "both_on_net": None,
+                "both_on_minutes": 0, "note": str(err)[:160]}
+    both = next((r for r in wowy.get("rows", []) or []
+                 if isinstance(r, dict) and r.get("split") == "Both ON"), None)
+    if not both:
+        return {"teammates": True, "both_on_net": None,
+                "both_on_minutes": 0, "note": "No shared court time found."}
+    try:
+        net = round(float(both.get("net_rating")), 1)
+    except (TypeError, ValueError):
+        net = None
+    try:
+        mins = round(float(both.get("minutes") or 0), 1)
+    except (TypeError, ValueError):
+        mins = 0
+    return {"teammates": True, "both_on_net": net, "both_on_minutes": mins,
+            "note": f"Shared court net {net:+.1f} across {mins} minutes."
+            if net is not None else "Shared court time found."}
+
+
 def portability_fit(a: dict[str, Any], b: dict[str, Any]) -> dict[str, str]:
     au, bu = _num(a.get("usg_pct")), _num(b.get("usg_pct"))
     at, bt = _num(a.get("ts_pct")), _num(b.get("ts_pct"))
@@ -260,10 +283,25 @@ async def get_compare(
         }
 
     left, right = await _asyncio.gather(one(a), one(b))
+    ta, tb = str(left.get("team") or ""), str(right.get("team") or "")
+    if ta and ta == tb:
+        try:
+            wowy = await get_wowy.ainvoke(
+                {"player_ids": f"{left.get('player_id')},{right.get('player_id')}",
+                 "team_id": ta, "season": season})
+            pair: dict[str, object] = pair_history(wowy)
+        except Exception as exc:
+            pair = {"teammates": True, "both_on_net": None,
+                    "both_on_minutes": 0, "note": str(exc)[:160]}
+    else:
+        pair = {"teammates": False, "both_on_net": None,
+                "both_on_minutes": 0, "note": "Different teams, no shared court."}
     return {"tool": "get_compare", "ok": True,
-            "rows": {"a": left, "b": right, "fit": portability_fit(left, right)},
+            "rows": {"a": left, "b": right, "fit": portability_fit(left, right),
+                     "pair": pair},
             "meta": {"source": "nba_api+pbpstats", "season": season,
-                     "fit_rule": "both usg>=30 risk; high usg plus low usg with ts>=0.60 scalable; on off gap>=5 leans driver; rim plus three shares append shot diet"}}
+                     "fit_rule": "both usg>=30 risk; high usg plus low usg with ts>=0.60 scalable; on off gap>=5 leans driver; rim plus three shares append shot diet",
+                     "pair_rule": "same team abbrev runs wowy, Both ON net plus minutes"}}
 
 
 @tool

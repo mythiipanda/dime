@@ -46,11 +46,17 @@ export default function CompareView({ rows }: { rows: unknown }) {
   const prob = (r.win_prob || {}) as Record<string, number>;
   const names = Object.keys(prob);
   const fit = r.fit as { fit?: string; note?: string } | undefined;
+  const pair = r.pair as { teammates?: boolean; both_on_net?: number | null; both_on_minutes?: number; note?: string } | undefined;
   return (
     <div style={{ marginTop: 8 }}>
       {fit && fit.note && (
         <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginBottom: 8 }}>
           Fit {fit.fit}: {fit.note}
+        </div>
+      )}
+      {pair && pair.teammates && pair.note && (
+        <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginBottom: 8 }}>
+          Together: {pair.note}
         </div>
       )}
       <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12 }}>

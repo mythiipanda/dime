@@ -143,3 +143,17 @@ def test_apron_matching_rules():
     assert over["over_apron1"] and over["over_apron2"]
     under = _apron_state(0)
     assert not under["over_apron1"] and not under["over_apron2"]
+
+
+def test_pair_history_slim_both_on():
+    from app.tools.player import pair_history
+
+    wowy = {"ok": True, "rows": [
+        {"split": "Both ON", "minutes": 812.4, "net_rating": 6.26},
+        {"split": "Both OFF", "minutes": 100.0, "net_rating": -2.0},
+    ]}
+    assert pair_history(wowy) == {
+        "teammates": True, "both_on_net": 6.3, "both_on_minutes": 812.4,
+        "note": "Shared court net +6.3 across 812.4 minutes."}
+    assert pair_history({"ok": True, "rows": []})["both_on_net"] is None
+    assert pair_history({"ok": False, "error": "never shared"})["both_on_net"] is None
