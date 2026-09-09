@@ -287,7 +287,8 @@ async def get_scout_pack(team: str = "", opponent: str = "", season: str = SEASO
             rat = await get_ratings.ainvoke({"season": season})
             rr = next((r for r in rat.get("rows", []) if str(r.get("TEAM", "")).upper() == abbr.upper()), {})
             lin = await get_lineups.ainvoke({"team_id": tid, "season": season})
-            top = [{"GROUP_NAME": r.get("GROUP_NAME"), "MIN": r.get("MIN"), "PLUS_MINUS": r.get("PLUS_MINUS")}
+            top = [{"GROUP_NAME": r.get("GROUP_NAME"), "MIN": r.get("MIN"),
+                    "PLUS_MINUS": r.get("PLUS_MINUS"), "TRUST": r.get("TRUST")}
                    for r in lin.get("rows", []) if "SAMPLE" not in r][:3]
             inj = await get_injuries.ainvoke({"team": abbr, "season": season})
             irows = inj.get("rows", []) or []
@@ -306,6 +307,10 @@ async def get_scout_pack(team: str = "", opponent: str = "", season: str = SEASO
         edge = (f"{t.get('abbrev', team)} ({t.get('record')}, net {tn:+.1f}) vs "
                 f"{o.get('abbrev', opponent)} ({o.get('record')}, net {on_:+.1f}): "
                 f"net gap {tn - on_:+.1f}, top-unit {tp} vs {op}.")
+        fragile = [s.get("abbrev", "") for s in (t, o)
+                   if (s.get("top_lineups") or [{}])[0].get("TRUST") == "FRAGILE"]
+        if fragile:
+            edge += f" Caution: {', '.join(fragile)} top unit is FRAGILE (50-100 minutes)."
     except Exception:
         edge = f"{team} vs {opponent}: data incomplete, check records and health."
     return {"tool": "get_scout_pack", "ok": True, "rows": {"team": t, "opponent": o, "edge": edge},
