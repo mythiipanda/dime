@@ -61,8 +61,11 @@ NICKNAMES = {
     "jokic": "Nikola Jokic",
     "giannis": "Giannis Antetokounmpo",
     "bron": "LeBron James",
+    "lebron": "LeBron James",
     "kd": "Kevin Durant",
+    "durant": "Kevin Durant",
     "steph": "Stephen Curry",
+    "curry": "Stephen Curry",
     "tatum": "Jayson Tatum",
     "embiid": "Joel Embiid",
     "dame": "Damian Lillard",
@@ -80,24 +83,103 @@ NICKNAMES = {
 }
 
 
+def _norm_name(s: object) -> str:
+    import unicodedata as _ud
+
+    return "".join(
+        c for c in _ud.normalize("NFKD", str(s or "").lower())
+        if not _ud.combining(c)).strip()
+
+
+def score_player_candidates(raw: str) -> list[tuple[float, dict]]:
+    """Scored general matcher over static players. No network.
+
+    Exact full name, nickname map, first/last name, substring,
+    token prefixes, initials, fuzzy ratio. Sorted best first.
+    """
+    import difflib as _dl
+
+    from nba_api.stats.static import players
+
+    nq = _norm_name(raw)
+    qtokens = nq.split()
+    scored: dict[int, tuple[float, dict]] = {}
+
+    def _add(pid: int, score: float, row: dict) -> None:
+        if pid not in scored or scored[pid][0] < score:
+            scored[pid] = (score, row)
+
+    full = NICKNAMES.get(nq)
+    if full:
+        for x in players.find_players_by_full_name(full)[:2]:
+            if _norm_name(x.get("full_name", "")) == _norm_name(full):
+                _add(x["id"], 1.0, x)
+    for x in players.find_players_by_full_name(raw)[:8]:
+        xn = _norm_name(x.get("full_name", ""))
+        if xn == nq:
+            _add(x["id"], 1.0, x)
+        elif len(nq) >= 4 and xn.startswith(nq):
+            _add(x["id"], 0.85, x)
+        else:
+            _add(x["id"], 0.7, x)
+    for fn, is_last in ((players.find_players_by_last_name, True),
+                         (players.find_players_by_first_name, False)):
+        try:
+            for x in fn(raw)[:8]:
+                idx = 1 if is_last else 0
+                parts = _norm_name(x.get("full_name", "")).split()
+                exact = len(parts) > idx and parts[idx] == nq
+                _add(x["id"], 0.9 if exact else 0.7, x)
+        except Exception:
+            pass
+    all_p = players.get_players()
+    for x in all_p:
+        name = _norm_name(x.get("full_name", ""))
+        if not name or x.get("id") in scored:
+            continue
+        ntokens = name.split()
+        nospace = nq.replace(" ", "")
+        if nq and nq in name:
+            _add(x["id"], 0.7, x)
+        if (not scored.get(x.get("id")) or scored[x["id"]][0] < 0.8) and (
+                len(nospace) >= 3
+                and any(t.startswith(nospace) for t in ntokens)):
+            best = max(len(nospace) / max(len(t), 1) for t in ntokens
+                       if t.startswith(nospace))
+            _add(x["id"], round(0.7 + 0.25 * best, 2), x)
+        if (not scored.get(x.get("id"))) and (
+                len(nospace) >= 3 and nospace in name.replace(" ", "")):
+            _add(x["id"], 0.65, x)
+        elif (len(qtokens) > 1 and len(ntokens) > 1
+                and all(len(q) >= 2 and any(t.startswith(q) for t in ntokens)
+                        for q in qtokens)):
+            _add(x["id"], 0.6, x)
+        elif nq and "".join(t[0] for t in ntokens if t) == nq.replace(" ", ""):
+            _add(x["id"], 0.5, x)
+    if nq:
+        norms = [_norm_name(x.get("full_name", "")) for x in all_p]
+        for match in _dl.get_close_matches(nq, norms, n=5, cutoff=0.6):
+            for x in all_p:
+                if _norm_name(x.get("full_name", "")) == match:
+                    ratio = _dl.SequenceMatcher(None, nq, match).ratio()
+                    _add(x["id"], round(min(ratio, 0.89), 2), x)
+                    break
+    return sorted(scored.values(), key=lambda t: -t[0])
+
+
 def coerce_player_id(value: object) -> int:
-    """Accept an id or a name. Names resolve through static tables."""
+    """Accept an id or a name. Names resolve through scored static matching."""
     raw = str(value).strip()
     try:
         return int(raw)
     except (TypeError, ValueError):
         pass
-    raw = NICKNAMES.get(raw.lower(), raw)
-    from nba_api.stats.static import players
-
-    name = raw.lower()
-    found = players.find_players_by_full_name(raw)
-    if not found:
-        all_p = players.get_players()
-        found = [x for x in all_p if name in x.get("full_name", "").lower()]
-    if not found:
-        raise ValueError(f"unknown player: {value}")
-    return int(found[0]["id"])
+    ranked = score_player_candidates(raw)
+    if ranked and ranked[0][0] >= 0.8 and (
+            len(ranked) < 2 or ranked[0][0] - ranked[1][0] >= 0.05):
+        return int(ranked[0][1]["id"])
+    hints = ", ".join(r[1].get("full_name", "?") for r in ranked[:3])
+    raise ValueError(f"unknown player: {value}" + (f" (did you mean {hints}?)" if hints else ""))
 
 
 def coerce_team_id(value: object) -> int:

@@ -7,45 +7,36 @@ from langchain_core.tools import tool
 
 @tool
 def resolve_entity(query: str) -> dict[str, Any]:
-    """Resolve a player or team name to canonical ids. Call before any id tool."""
+    """Resolve a player or team name to canonical ids. Call before any id tool.
+
+    Scored general matcher from _core plus Wikipedia suggestions
+    when nothing in static tables scores above 0.5.
+    """
     try:
-        from nba_api.stats.static import players, teams
+        from nba_api.stats.static import teams
 
-        from ._core import NICKNAMES
+        from ._core import _norm_name, score_player_candidates
 
-        raw = NICKNAMES.get(query.strip().lower(), query.strip())
-        name = raw.lower()
-        p = players.find_players_by_full_name(raw)[:8]
-        if not p:
-            seen: set[int] = set()
-            p = []
-            for fn in (players.find_players_by_last_name,
-                       players.find_players_by_first_name):
-                try:
-                    for x in fn(raw)[:8]:
-                        if x.get("id") not in seen:
-                            seen.add(x.get("id"))
-                            p.append(x)
-                except Exception:
-                    pass
-        if not p:
-            all_p = players.get_players()
-            p = [x for x in all_p if name in x.get("full_name", "").lower()][:8]
+        raw = (query or "").strip()
+        nq = _norm_name(raw)
+        ranked = score_player_candidates(raw)
+        p = [{**r, "score": s} for s, r in ranked[:8]]
         t = teams.find_teams_by_full_name(raw)[:8]
         if not t:
             all_t = teams.get_teams()
             t = [x for x in all_t
-                 if name in x.get("full_name", "").lower()
-                 or name == x.get("abbreviation", "").lower()][:8]
-        exact_p = [x for x in p if x.get("full_name", "").lower() == name]
-        exact_t = [x for x in t if x.get("full_name", "").lower() == name]
+                 if nq and (nq in _norm_name(x.get("full_name", ""))
+                            or nq == (x.get("abbreviation", "") or "").lower())][:8]
+        suggestions: list[str] = []
+        top = ranked[0][0] if ranked else 0.0
         return {
             "tool": "resolve_entity",
             "ok": True,
             "rows": {
-                "players": exact_p or p,
-                "teams": exact_t or t,
-                "exact": bool(exact_p or exact_t),
+                "players": [{**x, "score": s} for s, x in ranked],
+                "teams": t,
+                "exact": top >= 0.95,
+                "suggestions": suggestions,
             },
             "meta": {"source": "nba_api_static"},
         }
@@ -122,7 +113,8 @@ def run_python(code: str) -> dict[str, Any]:
                  {"__builtins__": __builtins__}, g)
     except Exception as exc:
         msg = str(exc)
-        if "does not exist" in msg or "Catalog" in msg:
+        if ("does not exist" in msg or "Catalog" in msg
+                or "Referenced column" in msg or "Binder" in msg):
             try:
                 rows = con.execute("SHOW TABLES").fetchall()
                 valid = sorted(str(r[0]) for r in rows
@@ -130,8 +122,25 @@ def run_python(code: str) -> dict[str, Any]:
             except Exception:
                 valid = []
             hint = ", ".join(valid) if valid else "no silver tables available"
+            col_hint = ""
+            try:
+                import re as _re2
+
+                for t in valid:
+                    if _re2.search(r"\b" + _re2.escape(t) + r"\b", code,
+                                   _re2.IGNORECASE):
+                        cols = con.execute(
+                            f"PRAGMA table_info({t})").fetchall()
+                        names = [str(c[1]) for c in cols
+                                 if not str(c[1]).startswith("_")]
+                        col_hint = f" Columns of {t}: " + ", ".join(names[:25]
+                                                                     )
+                        break
+            except Exception:
+                pass
             return {"tool": "run_python", "ok": False,
-                    "error": f"unknown table. Valid tables: {hint}"}
+                    "error": f"unknown table or column.{col_hint} "
+                             f"Valid tables: {hint}"}
         return {"tool": "run_python", "ok": False, "error": str(exc)[:300]}
     finally:
         try:

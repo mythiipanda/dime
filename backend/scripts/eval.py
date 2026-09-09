@@ -25,6 +25,16 @@ def check(name: str, cond: bool, detail: str = "") -> None:
         print(f"FAIL {name} :: {detail[:160]}")
 
 
+def safe(res: object) -> str:
+    """Crash-proof detail string. Live tools fail without rows."""
+    try:
+        if isinstance(res, dict):
+            return str(res.get("rows", res.get("error", res)))[:160]
+        return str(res)[:160]
+    except Exception:
+        return "unprintable"
+
+
 def main() -> None:
     res = tools.search_nba.invoke({"query": "LeBron James"})
     check("search finds lebron id 2544",
@@ -154,14 +164,14 @@ def main() -> None:
     check("cap ledger reports payroll",
           res["ok"] and res["rows"].get("payroll", 0) > 10**8
           and isinstance(res["rows"].get("room_under_apron2"), int),
-          str(res["rows"].get("payroll")))
+          safe(res))
 
     res = tools.get_trade_check.invoke({"team_a": "OKC", "players_a": "Shai Gilgeous-Alexander",
                                         "team_b": "DEN", "players_b": "Nikola Jokic"})
     check("trade check returns verdict",
           res["ok"] and "legal" in res["rows"], str(res)[:200])
     check("trade check carries disclaimer",
-          "simplified" in res["rows"].get("disclaimer", "").lower(), str(res["rows"])[:160])
+          "simplified" in res["rows"].get("disclaimer", "").lower(), safe(res))
 
     res = tools.get_trade_check.invoke({"team_a": "LAL", "players_a": "LeBron James",
                                         "team_b": "BOS", "players_b": "Jayson Tatum"})
@@ -194,7 +204,7 @@ def main() -> None:
     check("elo ranks thirty teams",
           res["ok"] and len(res["rows"]) == 30
           and abs(sum(r["ELO"] for r in res["rows"]) - 45000) < 5,
-          str(res["rows"][:2])[:160])
+          safe(res))
 
     async def _sim():
         return await tools.get_playoff_sim.ainvoke({})
@@ -209,13 +219,13 @@ def main() -> None:
     check("contract value both signs",
           res["ok"] and len(res["rows"]) == 20
           and res["rows"][0].get("RESIDUAL", 0) > 0
-          and res["rows"][-1].get("RESIDUAL", 0) < 0, str(res["rows"][:1])[:160])
+          and res["rows"][-1].get("RESIDUAL", 0) < 0, safe(res))
 
     res = tools.get_shot_zones.invoke({"player_id": 2544})
     check("shot zones carry efg and share",
           res["ok"] and abs(sum(r.get("SHARE", 0) for r in res["rows"]) - 1.0) < 0.01
           and all(0 <= r.get("eFG_PCT", -1) <= 1.5 for r in res["rows"]),
-          str(res["rows"][:1])[:160])
+          safe(res))
 
     import asyncio as _aio2
 
@@ -226,7 +236,7 @@ def main() -> None:
     check("draft board ranks scorers",
           board_res["ok"] and len(board_res["rows"]) == 30
           and board_res["rows"][0].get("SCORE", 0) > 80,
-          str(board_res["rows"][:1])[:160])
+          safe(board_res))
 
     async def _model():
         return await tools.get_draft_model.ainvoke({})
@@ -252,14 +262,14 @@ def main() -> None:
     check("risers name hot teams",
           res["ok"] and len(res["rows"].get("risers", [])) == 5
           and len(res["rows"].get("fallers", [])) == 5,
-          str(res["rows"].get("risers", [])[:2])[:160])
+          safe(res))
 
     res = tools.get_team_splits.invoke({"team": "OKC"})
     check("team splits balance",
           res["ok"] and sum(r["GP"] for r in res["rows"]
                             if r["split"] in ("home", "away")) == 82
           and {"home", "away", "last10"} <= {r["split"] for r in res["rows"]},
-          str(res["rows"][:2])[:160])
+          safe(res))
 
     async def _inj():
         return await tools.get_injury_impact.ainvoke({"team": "GSW"})
@@ -269,19 +279,19 @@ def main() -> None:
           inj_res["ok"] and inj_res["rows"].get("impact") in
           ("high", "moderate", "low")
           and isinstance(inj_res["rows"].get("out"), list),
-          str(inj_res["rows"])[:160])
+          safe(inj_res))
 
     res = tools.get_raptor_history.invoke({"player": "LeBron James"})
     check("raptor history spans seasons",
           res["ok"] and len(res["rows"]) >= 5
           and res["rows"][0].get("RAPTOR", 0) > 0,
-          str(res["rows"][:1])[:160])
+          safe(res))
 
     res = tools.run_python.invoke(
         {"code": "out = con.execute(\"SELECT COUNT(*) FROM silver_standings\").fetchall()[0][0]"})
     check("python sandbox reads warehouse",
           res["ok"] and int(res["rows"].get("out") or 0) > 0,
-          str(res["rows"])[:120])
+          safe(res))
     res = tools.run_python.invoke({"code": "import os"})
     check("python sandbox blocks imports", not res["ok"], str(res)[:80])
 
@@ -294,7 +304,7 @@ def main() -> None:
           pack_res["ok"] and pack_res["rows"]["team"].get("net_rating", 0) > 5
           and len(pack_res["rows"]["team"].get("top_lineups", [])) > 0
           and "net gap" in pack_res["rows"].get("edge", ""),
-          str(pack_res["rows"].get("edge"))[:160])
+          safe(pack_res))
 
     async def _rot():
         return await tools.get_rotation_check.ainvoke({"team": "LAL"})
@@ -303,7 +313,7 @@ def main() -> None:
     check("rotation check lists players",
           rot_res["ok"] and len(rot_res["rows"].get("players", [])) >= 8
           and "flag" in rot_res["rows"],
-          str(rot_res["rows"].get("flag"))[:160])
+          safe(rot_res))
 
     res = tools.get_cap_ledger.invoke({"team": "DEN"})
     check("cap ledger uses real salaries",

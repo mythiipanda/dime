@@ -105,6 +105,83 @@ PLANNER_SYSTEM = (
 MAX_TOOL_ROUNDS = 3
 MAX_TOOL_CALLS = 8
 
+TOOL_LABELS = {
+    "resolve_entity": "Identifying players and teams",
+    "search_nba": "Searching league coverage",
+    "get_compare": "Comparing players",
+    "delegate_scout": "Scouting players",
+    "delegate_team": "Scouting teams",
+    "delegate_league": "Scanning league data",
+    "run_python": "Crunching numbers",
+    "text_to_sql": "Querying the warehouse",
+    "get_playoff_intel": "Pulling playoff logs",
+    "get_trade_check": "Checking trade math",
+}
+
+
+def tool_label(name: str) -> str:
+    if not name:
+        return "Checking data"
+    if name in TOOL_LABELS:
+        return TOOL_LABELS[name]
+    return name.replace("_", " ").strip().title() or "Checking data"
+
+
+def _tool_names_from_calls_made(calls_made: list[str]) -> list[str]:
+    names: list[str] = []
+    for key in calls_made or []:
+        name = key.partition(":")[0].strip()
+        if name and name not in names:
+            names.append(name)
+    return names
+
+
+def _friendly_progress(names: list[str]) -> str:
+    labels: list[str] = []
+    for name in names or []:
+        label = tool_label(name)
+        if label not in labels:
+            labels.append(label)
+    if not labels:
+        return "Reviewing evidence"
+    return "Checking " + " and ".join(sorted(labels))
+
+
+def _result_rows(result: dict[str, Any]) -> int:
+    rows = result.get("rows", None)
+    if isinstance(rows, list):
+        return len(rows)
+    if isinstance(rows, dict):
+        total = 0
+        for value in rows.values():
+            if isinstance(value, list):
+                total += len(value)
+            elif value:
+                total += 1
+        return total
+    tables = result.get("tables")
+    if isinstance(tables, list):
+        total = 0
+        for table in tables:
+            if isinstance(table, dict):
+                total += _result_rows(table)
+            elif isinstance(table, list):
+                total += len(table)
+            elif table:
+                total += 1
+        return total
+    if rows is None:
+        return 0
+    return 1 if rows else 0
+
+
+def _result_status(result: dict[str, Any]) -> str:
+    if result.get("ok") is False:
+        return "fail"
+    if result.get("error"):
+        return "fail"
+    return "ok"
+
 _LEAGUE_RX = re.compile(
     r"playoff|champion|finals|leader|standing|injur|clutch|\brating\b|"
     r"elo|title odds|streak|versus|power rank|net rating|"
@@ -406,7 +483,8 @@ async def _triage_seed(question: str, primary: str, model: str,
             return
     if found_p and re.search(
             r"\braptor\b|\bwar\b|peak|all-time|all time|greatest season|"
-            r"best season|career (year|season|high)",
+            r"best season|career (arc|trajectory|history|impact)|"
+            r"\btrajectory\b|\barc\b|over time|aging|development curve",
             question, re.IGNORECASE):
         try:
             from .tools import v1_tools as _vt3
@@ -632,9 +710,10 @@ async def data_retrieval_agent(
         if len(state["calls_made"]) >= MAX_TOOL_CALLS:
             break
     if not fresh:
-        thought = getattr(resp, "content", "") or ""
-        if thought:
-            yield _event("thought_stream", {"node": "data_retrieval", "text": thought[:500]})
+        made_names = _tool_names_from_calls_made(state["calls_made"])
+        if made_names:
+            yield _event("thought_stream", {"node": "data_retrieval",
+                                            "text": _friendly_progress(made_names)})
         made = {k.partition(":")[0] for k in state["calls_made"]}
         if made <= {"resolve_entity", "search_nba"}:
             state["tool_results"].append(
@@ -646,11 +725,13 @@ async def data_retrieval_agent(
             state["round"] = MAX_TOOL_ROUNDS
     else:
         for call in fresh:
-            yield _event("message", {"node": "data_retrieval", "tool_call": call})
+            yield _event("message", {"node": "data_retrieval",
+                                     "label": tool_label(call.get("name", "")),
+                                     "status": "started"})
         state["_pending_calls"] = fresh  # type: ignore[typeddict-unknown-key]
         names = sorted({c.get("name", "") for c in fresh})
         yield _event("thought_stream", {"node": "data_retrieval",
-                                        "text": "Plan: " + ", ".join(names)})
+                                        "text": _friendly_progress(names)})
     yield _event("node_update", {"node": "data_retrieval", "status": "complete"})
 
 
@@ -676,9 +757,15 @@ async def actual_tool_node(state: DimeState) -> AsyncGenerator[dict[str, Any], N
             return {"tool": name, "ok": False, "error": str(exc)[:200]}
 
     results = await asyncio.gather(*(_run(c) for c in pending))
-    for result in results:
+    for call, result in zip(pending, results):
         state["tool_results"].append(result)
-        yield _event("message", {"node": "tools", "tool_result": result})
+        name = call.get("name", "") if isinstance(call, dict) else ""
+        if not name and isinstance(result, dict):
+            name = str(result.get("tool", ""))
+        yield _event("message", {"node": "tools",
+                                 "label": tool_label(name),
+                                 "status": _result_status(result if isinstance(result, dict) else {}),
+                                 "rows": _result_rows(result if isinstance(result, dict) else {})})
     state["round"] += 1
     yield _event("node_update", {"node": "tools", "status": "complete"})
 
