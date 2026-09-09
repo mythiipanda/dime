@@ -36,6 +36,7 @@ def main() -> None:
         print("No draft data found")
         return
     combined = pl.concat(dfs, how="diagonal")
+    combined = combined.with_columns((pl.col("SEASON").cast(pl.Int64) - 1).alias("DRAFT_YEAR"))
     total = 0
     for s in sorted(combined["SEASON"].unique().to_list()):
         chunk = combined.filter(pl.col("SEASON") == s)

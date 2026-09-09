@@ -121,6 +121,17 @@ def run_python(code: str) -> dict[str, Any]:
             exec(compile(str(code), "<dime>", "exec"),
                  {"__builtins__": __builtins__}, g)
     except Exception as exc:
+        msg = str(exc)
+        if "does not exist" in msg or "Catalog" in msg:
+            try:
+                rows = con.execute("SHOW TABLES").fetchall()
+                valid = sorted(str(r[0]) for r in rows
+                               if str(r[0]).startswith("silver_"))
+            except Exception:
+                valid = []
+            hint = ", ".join(valid) if valid else "no silver tables available"
+            return {"tool": "run_python", "ok": False,
+                    "error": f"unknown table. Valid tables: {hint}"}
         return {"tool": "run_python", "ok": False, "error": str(exc)[:300]}
     finally:
         try:

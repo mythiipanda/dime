@@ -34,6 +34,9 @@ ANALYST_SYSTEM = (
     "Name the tool output you used. Say when data is missing. "
     "When a tool reports an error naming unknown players or missing data, "
     "say so plainly instead of claiming nothing came back. "
+    "Never mention tool names, table names, SQL, or phrases like "
+    "'no table to show' or 'no evidence'. Restate any error as one "
+    "plain analyst sentence with names, never ids. "
     "Derive per-game numbers when totals and games are both present, "
     "showing the division. "
     "Keep answers short and specific with numbers. "
@@ -425,46 +428,51 @@ async def _triage_seed(question: str, primary: str, model: str,
         except Exception:
             pass
     delegates = {t.name: t for t in delegate_tools(primary, model)}  # type: ignore[arg-type]
-    if not found_p and not found_t and state.get("history"):
+    if (not found_p or not found_t) and state.get("history"):
         carry_p, carry_t = [], []
         for t in state["history"][-6:]:
             p, q = _detect_entities((t.get("text") or ""))
             carry_p.extend(p)
             carry_t.extend(q)
-        seeds: list[tuple[str, str]] = []
-        for p in sorted(set(carry_p))[:2]:
-            team_hint = ""
-            try:
-                from .tools._core import coerce_player_id as _cp
+        hist_p = sorted(set(carry_p))
+        hist_t = sorted(set(carry_t))
+        if (not found_p and hist_p) or (not found_t and hist_t):
+            seed_p = list(found_p[:2]) if found_p else hist_p[:2]
+            seed_t = list(found_t[:1]) if found_t else hist_t[:1]
+            seeds: list[tuple[str, str]] = []
+            for p in seed_p:
+                team_hint = ""
+                try:
+                    from .tools._core import coerce_player_id as _cp
 
-                _pid = _cp(p)
-                if _pid:
-                    _ab = _player_team_abbr(_pid, "2025-26")
-                    if _ab:
-                        team_hint = f" Warehouse lists {p} on {_ab}."
-            except Exception:
-                pass
-            seeds.append(("delegate_scout",
-                          f"Player focus: {p}.{team_hint} Report advanced "
-                          f"metrics via get_advanced, plus form, shot diet, "
-                          f"and clutch. Original question: {question}"))
-        for t in sorted(set(carry_t))[:1]:
-            seeds.append(("delegate_team",
-                          f"Team focus: {t}. Report record, splits, and "
-                          f"rating context. Original question: {question}"))
-        for name, task in seeds[:3]:
-            if name not in delegates:
-                continue
-            try:
-                out = await delegates[name].ainvoke({"task": task})
-            except Exception as exc:
-                out = {"tool": name, "ok": False, "error": str(exc)[:160]}
-            state["tool_results"].append(
-                out if isinstance(out, dict) else {"tool": name, "rows": out})
-            state["calls_made"].append(name + ":" + json.dumps(
-                {"task": task}, sort_keys=True))
-        if seeds:
-            return
+                    _pid = _cp(p)
+                    if _pid:
+                        _ab = _player_team_abbr(_pid, "2025-26")
+                        if _ab:
+                            team_hint = f" Warehouse lists {p} on {_ab}."
+                except Exception:
+                    pass
+                seeds.append(("delegate_scout",
+                              f"Player focus: {p}.{team_hint} Report advanced "
+                              f"metrics via get_advanced, plus form, shot diet, "
+                              f"and clutch. Original question: {question}"))
+            for t in seed_t:
+                seeds.append(("delegate_team",
+                              f"Team focus: {t}. Report record, splits, and "
+                              f"rating context. Original question: {question}"))
+            for name, task in seeds[:3]:
+                if name not in delegates:
+                    continue
+                try:
+                    out = await delegates[name].ainvoke({"task": task})
+                except Exception as exc:
+                    out = {"tool": name, "ok": False, "error": str(exc)[:160]}
+                state["tool_results"].append(
+                    out if isinstance(out, dict) else {"tool": name, "rows": out})
+                state["calls_made"].append(name + ":" + json.dumps(
+                    {"task": task}, sort_keys=True))
+            if seeds:
+                return
     pick = None
     if is_trade:
         pick = "delegate_league"
