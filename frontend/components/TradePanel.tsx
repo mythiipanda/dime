@@ -9,6 +9,7 @@ interface Verdict {
   legal: boolean;
   issues: string[];
   checks?: { rule: string; checked: boolean; note: string }[];
+  salary_date?: string | null;
   disclaimer?: string;
 }
 
@@ -116,6 +117,7 @@ export default function TradePanel() {
           {out.disclaimer && (
             <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginTop: 4 }}>
               {out.disclaimer}
+              {out.salary_date ? ` Salaries as of ${out.salary_date.slice(0, 10)}.` : ""}
             </div>
           )}
         </div>

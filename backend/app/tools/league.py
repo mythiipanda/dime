@@ -505,6 +505,28 @@ def _payroll_source() -> str:
     return "orojas119/nba-salary-cap (estimated)"
 
 
+def _salary_date() -> str | None:
+    from .. import store as _store
+
+    con = _store.connect()
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        for table in ("silver_salaries", "silver_cap_players"):
+            if table not in tables:
+                continue
+            cols = [r[1] for r in con.execute(f"PRAGMA table_info({table})").fetchall()]
+            if "_fetched_at" not in cols:
+                continue
+            row = con.execute(f"SELECT MAX(_fetched_at) FROM {table}").fetchone()
+            if row and row[0]:
+                return str(row[0])
+    except Exception:
+        return None
+    finally:
+        con.close()
+    return None
+
+
 @tool
 def get_cap_ledger(team: str = "") -> dict[str, Any]:
     """Payroll plus apron room for one abbreviation. 2026-27 thresholds."""
@@ -518,6 +540,7 @@ def get_cap_ledger(team: str = "") -> dict[str, Any]:
                      "room_under_apron2": CAP["apron2"] - total,
                      "over_tax": total > CAP["tax"]},
             "meta": {"source": _payroll_source(), "season": "2026-27",
+                     "salary_date": _salary_date(),
                      **{k: v for k, v in CAP.items()}}}
 
 
@@ -634,11 +657,13 @@ def get_trade_check(
                                 "allowed_in": allow_b, "match_rule": rule_b,
                                 **{k: v for k, v in state_b.items()}},
                      "legal": not issues, "issues": issues, "checks": checks,
+                     "salary_date": _salary_date(),
                      "disclaimer": "Estimate only, rules simplified. Skips cash, "
                      "prior trade exceptions, taxpayer midlevel, frozen pick, Stepien, "
                      "base-year, trade-kicker, minimum-salary, and sign-and-trade rules. "
                      "Confirm with a cap specialist."},
-            "meta": {"source": _payroll_source(), "rules": "v1-simplified"}}
+            "meta": {"source": _payroll_source(), "rules": "v1-simplified",
+                     "salary_date": _salary_date()}}
 
 
 @tool
