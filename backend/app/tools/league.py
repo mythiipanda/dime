@@ -938,6 +938,8 @@ def get_elo(season: str = SEASON) -> dict[str, Any]:
           "L": losses.get(t, 0)} for t, v in elo.items()),
         key=lambda d: d["ELO"], reverse=True,
     )
+    for i, row in enumerate(table, 1):
+        row["rank"] = i
     return {"tool": "get_elo", "ok": True, "rows": table,
             "meta": {"source": "warehouse", "mov": mov_ok, "season": season}}
 

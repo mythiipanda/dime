@@ -149,6 +149,18 @@ def main() -> None:
     lu_res = tools.get_lineups.invoke({"team_id": 1610612760})
     lu_scope = ((lu_res.get("meta", {}) or {}).get("scope", "")
                 if isinstance(lu_res.get("meta"), dict) else "")
+    lu_rows = [r for r in (lu_res.get("rows", []) or []) if isinstance(r, dict)]
+    lu_top = lu_rows[0] if lu_rows else {}
+    check("okc competitive lineups",
+          isinstance(lu_top.get("competitive_net"), (int, float))
+          and isinstance(lu_top.get("competitive_poss"), int)
+          and (lu_top.get("competitive_poss") or 0) > 0,
+          str({k: lu_top.get(k) for k in
+               ("GROUP_NAME", "competitive_net", "competitive_poss")}))
+    check("lineups keep full-game plus-minus",
+          lu_res.get("ok") and len(lu_rows) > 0
+          and all("PLUS_MINUS" in r for r in lu_rows),
+          str({k: lu_top.get(k) for k in ("GROUP_NAME", "PLUS_MINUS")}))
     check("lineups scope states no-margin coverage",
           lu_res.get("ok") and isinstance(lu_scope, str)
           and "garbage time is included" in lu_scope

@@ -189,6 +189,76 @@ def _trust_tier(minutes: object) -> tuple[str, int]:
     return trust_tier(minutes)
 
 
+def _competitive_lineup_nets(
+    team_id: int, season: str,
+) -> dict[tuple[int, ...], tuple[float, int]] | None:
+    from .. import store as _store
+
+    con = _store.connect()
+    try:
+        pros = con.execute(
+            "SELECT offense_team_id, defense_team_id, points,"
+            " off_player_1, off_player_2, off_player_3,"
+            " off_player_4, off_player_5,"
+            " def_player_1, def_player_2, def_player_3,"
+            " def_player_4, def_player_5"
+            " FROM silver_hist_possessions"
+            " WHERE _season = ?"
+            " AND (offense_team_id = ? OR defense_team_id = ?)"
+            " AND garbage = 0",
+            [season, team_id, team_id],
+        ).fetchall()
+    finally:
+        try:
+            con.close()
+        except Exception:
+            pass
+    if not pros:
+        return None
+    agg: dict[tuple[int, ...], list[float]] = {}
+    for row in pros:
+        try:
+            off_tid, def_tid = row[0], row[1]
+            pts = row[2] or 0
+        except (IndexError, TypeError):
+            continue
+        if off_tid == team_id:
+            unit = tuple(sorted(row[3:8]))
+            pf, pa = pts, 0
+        elif def_tid == team_id:
+            unit = tuple(sorted(row[8:13]))
+            pf, pa = 0, pts
+        else:
+            continue
+        if any(v is None for v in unit):
+            continue
+        try:
+            unit = tuple(int(v) for v in unit)
+        except (TypeError, ValueError):
+            continue
+        a = agg.setdefault(unit, [0.0, 0.0, 0])
+        a[0] += pf
+        a[1] += pa
+        a[2] += 1
+    out: dict[tuple[int, ...], tuple[float, int]] = {}
+    for unit, (pf, pa, poss) in agg.items():
+        net = round((pf - pa) / poss * 100, 1) if poss else 0.0
+        out[unit] = (net, int(poss))
+    return out
+
+
+def _lineup_key(row: dict[str, Any]) -> tuple[int, ...] | None:
+    gid = row.get("GROUP_ID")
+    if gid:
+        try:
+            parts = [int(p) for p in str(gid).split("-") if p.strip().isdigit()]
+            if len(parts) == 5:
+                return tuple(sorted(parts))
+        except (TypeError, ValueError):
+            pass
+    return None
+
+
 @tool
 def get_lineups(team_id: str | int, season: str = SEASON) -> dict[str, Any]:
     """Five-man lineup stats for one team id, sorted by minutes."""
@@ -206,6 +276,48 @@ def get_lineups(team_id: str | int, season: str = SEASON) -> dict[str, Any]:
         if tier == "SMALL":
             r["SAMPLE"] = "small: under ~100 possessions, do not trust"
     rows = sorted(rows, key=lambda r: float(r.get("MIN") or 0), reverse=True)
+    try:
+        comp = _competitive_lineup_nets(team_id, season)
+    except Exception:
+        comp = None
+    if comp is None:
+        for r in rows:
+            r["competitive_net"] = None
+            r["competitive_poss"] = None
+            r["competitive_note"] = "possessions missing for team/season"
+    else:
+        try:
+            from nba_api.stats.static import players as _static_players
+
+            _all = _static_players.get_players()
+            _by_last = {}
+            for p in _all:
+                last = str(p.get("last_name", "")).lower()
+                if last:
+                    _by_last.setdefault(last, p["id"])
+        except Exception:
+            _by_last = {}
+        for r in rows:
+            key = _lineup_key(r)
+            if key is None and _by_last:
+                try:
+                    parts = [t.strip().lower().split()[-1]
+                             for t in str(r.get("GROUP_NAME", "")).split("-")]
+                    ids = [_by_last[t] for t in parts if t in _by_last]
+                    if len(ids) == 5:
+                        key = tuple(sorted(ids))
+                except (TypeError, ValueError, IndexError):
+                    key = None
+            if key is not None and key in comp:
+                net, poss = comp[key]
+                r["competitive_net"] = net
+                r["competitive_poss"] = poss
+                if poss < 50:
+                    r["SAMPLE"] = "small: under 50 competitive possessions"
+            else:
+                r["competitive_net"] = None
+                r["competitive_poss"] = 0
+                r["SAMPLE"] = "small: under 50 competitive possessions"
     meta = {**meta,
             "scope": f"Lineup nets are full-game totals for season {season} "
             "with no margin or clock filter, so garbage time is included."}

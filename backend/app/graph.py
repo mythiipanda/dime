@@ -63,8 +63,8 @@ PLANNER_SYSTEM = (
     "For custom math, statistical calculations, regression, or ad-hoc queries "
     "over warehouse tables, call run_python. "
     "For filtered or ranked player lists (top-N, under an age, above "
-    "stat thresholds, draft queries), call text_to_sql first and use "
-    "run_python only if it fails. "
+    "stat thresholds, draft queries), call delegate_league and tell it "
+    "to answer via text_to_sql. "
     "For supporting-cast questions, call run_python averaging teammate PPG "
     "from silver_leaders_pts excluding the star, joined with NET_RATING "
     "from silver_team_ratings. "
@@ -191,6 +191,11 @@ _LEAGUE_RX = re.compile(
     r"\btrad(e|es|ed|ing)\b|sign-and-trade|\bswap\b", re.IGNORECASE)
 _COMPARE_RX = re.compile(
     r"\bvs\.?\b|\bversus\b|\bcompare\b", re.IGNORECASE)
+_LIST_RX = re.compile(
+    r"which\s+(players|teams)|what\s+(players|teams)|top\s+\d+|"
+    r"\bunder\s+\d+|\bover\s+\d+|\bage\b|"
+    r"\baverag\w*\b|\bat least\b|"
+    r"leads?\s+the\s+league|who\s+leads\b", re.IGNORECASE)
 
 _entity_cache: dict[str, Any] | None = None
 
@@ -535,6 +540,26 @@ async def _triage_seed(question: str, primary: str, model: str,
         except Exception:
             pass
     delegates = {t.name: t for t in delegate_tools(primary, model)}  # type: ignore[arg-type]
+    is_raptor = bool(found_p and re.search(
+        r"\braptor\b|\bwar\b|peak|all-time|all time|greatest season|"
+        r"best season|career (arc|trajectory|history|impact)|"
+        r"\btrajectory\b|\barc\b|over time|aging|development curve",
+        question, re.IGNORECASE))
+    if (_LIST_RX.search(question) and not is_trade and not is_cast
+            and not is_compare and not is_raptor
+            and "delegate_league" in delegates):
+        task = (question + " Answer via text_to_sql (you own that tool).")
+        try:
+            out = await delegates["delegate_league"].ainvoke({"task": task})
+        except Exception as exc:
+            out = {"tool": "delegate_league", "ok": False,
+                   "error": str(exc)[:160]}
+        state["tool_results"].append(
+            out if isinstance(out, dict) else {"tool": "delegate_league",
+                                               "rows": out})
+        state["calls_made"].append("delegate_league:" + json.dumps(
+            {"task": task}, sort_keys=True))
+        return
     if (not found_p or not found_t) and state.get("history"):
         carry_p, carry_t = [], []
         for t in state["history"][-6:]:

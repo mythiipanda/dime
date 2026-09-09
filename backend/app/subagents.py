@@ -254,6 +254,14 @@ def delegate_tools(provider: ProviderName, model: str) -> list:
         if _re.search(r"playoff|champion|finals|\bring\b|title",
                        task, _re.IGNORECASE):
             force = "get_playoffs"
+        elif _re.search(
+                r"which\s+(players|teams)|what\s+(players|teams)|"
+                r"top\s+\d+|\bunder\s+\d+|\bover\s+\d+|\bage\b|"
+                r"\baverag\w*\b|\bat least\b|"
+                r"leads?\s+the\s+league|who\s+leads\b",
+                task, _re.IGNORECASE):
+            force = ("text_to_sql", {"question": task.replace(
+                " Answer via text_to_sql (you own that tool).", "")})
         return await _run_desk(
             "league", LEAGUE_BRIEF, task, provider, model,
             ["get_standings", "get_leaders", "get_injuries", "get_rapm",
