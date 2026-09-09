@@ -19,27 +19,66 @@ def _num(value: object) -> float | None:
         return None
 
 
+def _is_three_zone(name: object) -> bool:
+    z = str(name or "").lower()
+    return "3" in z or "corner" in z or "break" in z
+
+
+def zone_diet(rows: object) -> dict[str, float | None]:
+    try:
+        items = list(rows or [])
+    except TypeError:
+        return {"rim_share": None, "three_share": None}
+    rim = None
+    three = 0.0
+    found_three = False
+    for r in items:
+        if not isinstance(r, dict):
+            continue
+        try:
+            share = float(r.get("SHARE", r.get("share", 0)) or 0)
+        except (TypeError, ValueError):
+            continue
+        zone = str(r.get("zone", ""))
+        if zone == "Restricted Area":
+            rim = round(share, 3)
+        if _is_three_zone(zone):
+            three += share
+            found_three = True
+    return {"rim_share": rim, "three_share": round(three, 3) if found_three else None}
+
+
 def portability_fit(a: dict[str, Any], b: dict[str, Any]) -> dict[str, str]:
     au, bu = _num(a.get("usg_pct")), _num(b.get("usg_pct"))
     at, bt = _num(a.get("ts_pct")), _num(b.get("ts_pct"))
     an, bn = _num(a.get("net_onoff")), _num(b.get("net_onoff"))
     na = str(a.get("name") or "A")
     nb = str(b.get("name") or "B")
+    verdict: dict[str, str] | None = None
     if au is not None and bu is not None and au >= 30 and bu >= 30:
-        return {"fit": "risk",
-                "note": f"{na} and {nb} both use 30 pct or more. One must bend."}
-    for high, low, hn, ln in ((a, b, na, nb), (b, a, nb, na)):
-        hu, lu = _num(high.get("usg_pct")), _num(low.get("usg_pct"))
-        lt = _num(low.get("ts_pct"))
-        if hu is not None and lu is not None and lt is not None:
-            if hu >= 30 and lu <= 25 and lt >= 0.60:
-                return {"fit": "scalable",
-                        "note": f"{ln} profiles as a low usage efficient fit next to {hn}."}
-    if an is not None and bn is not None and abs(an - bn) >= 5:
-        lead = na if an > bn else nb
-        return {"fit": "leans driver",
-                "note": f"On off tilts to {lead} by {abs(an - bn):.1f} per 100."}
-    return {"fit": "neutral", "note": "No clear usage or on off tilt."}
+        verdict = {"fit": "risk",
+                   "note": f"{na} and {nb} both use 30 pct or more. One must bend."}
+    if verdict is None:
+        for high, low, hn, ln in ((a, b, na, nb), (b, a, nb, na)):
+            hu, lu = _num(high.get("usg_pct")), _num(low.get("usg_pct"))
+            lt = _num(low.get("ts_pct"))
+            if hu is not None and lu is not None and lt is not None:
+                if hu >= 30 and lu <= 25 and lt >= 0.60:
+                    verdict = {"fit": "scalable",
+                               "note": f"{ln} profiles as a low usage efficient fit next to {hn}."}
+                    break
+    if verdict is None:
+        if an is not None and bn is not None and abs(an - bn) >= 5:
+            lead = na if an > bn else nb
+            verdict = {"fit": "leans driver",
+                       "note": f"On off tilts to {lead} by {abs(an - bn):.1f} per 100."}
+    if verdict is None:
+        verdict = {"fit": "neutral", "note": "No clear usage or on off tilt."}
+    ar, br = _num(a.get("rim_share")), _num(b.get("rim_share"))
+    ath, bth = _num(a.get("three_share")), _num(b.get("three_share"))
+    if ar is not None and br is not None and ath is not None and bth is not None:
+        verdict["note"] += f" Shot diet rim {ar:.0%} vs {br:.0%}, three {ath:.0%} vs {bth:.0%}."
+    return verdict
 
 
 def _read_df(sql: str, params: list, tries: int = 5) -> list[dict[str, Any]]:
@@ -110,6 +149,12 @@ async def get_compare(
             {"player_id": pid, "n": 5, "season": season})
         adv = await get_advanced.ainvoke({"player": pid, "season": season})
         adv_rows = adv.get("rows", {}) if adv.get("ok") else {}
+        try:
+            zones = await get_shot_zones.ainvoke({"player_id": pid, "season": season})
+            diet = zone_diet(zones.get("rows", [])) if zones.get("ok") else {
+                "rim_share": None, "three_share": None}
+        except Exception:
+            diet = {"rim_share": None, "three_share": None}
         gp = len(games)
 
         def _sum(key: str) -> float:
@@ -209,6 +254,8 @@ async def get_compare(
             "clutch_pts": clutch_pts,
             "net_onoff": net_onoff,
             "rapm": rapm,
+            "rim_share": diet.get("rim_share"),
+            "three_share": diet.get("three_share"),
             "last5": [g.get("PTS", 0) for g in last.get("rows", [])],
         }
 
@@ -216,7 +263,7 @@ async def get_compare(
     return {"tool": "get_compare", "ok": True,
             "rows": {"a": left, "b": right, "fit": portability_fit(left, right)},
             "meta": {"source": "nba_api+pbpstats", "season": season,
-                     "fit_rule": "both usg>=30 risk; high usg plus low usg with ts>=0.60 scalable; on off gap>=5 leans driver"}}
+                     "fit_rule": "both usg>=30 risk; high usg plus low usg with ts>=0.60 scalable; on off gap>=5 leans driver; rim plus three shares append shot diet"}}
 
 
 @tool
