@@ -34,6 +34,18 @@ def player_gamelog(player_id: int, season: str) -> FetchResult:
     return safe(SOURCE, season, run)
 
 
+def player_playoff_gamelog(player_id: int, season: str) -> FetchResult:
+    from nba_api.stats.endpoints import PlayerGameLog
+
+    def run() -> pl.DataFrame:
+        frames = _frames(PlayerGameLog(
+            player_id=player_id, season=season,
+            season_type_all_star="Playoffs", timeout=_t()))
+        return _pl(frames[0])
+
+    return safe(SOURCE, season, run)
+
+
 def team_gamelog(team_id: int, season: str) -> FetchResult:
     from nba_api.stats.endpoints import TeamGameLog
 

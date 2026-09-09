@@ -147,6 +147,7 @@ SCOUT_BRIEF = (
     "Shot diet means zone eFG plus share from get_shot_zones. "
     "Two-player shot showdowns go to get_shot_compare. "
     "Clutch production goes to get_clutch. "
+    "Playoff performance for a named player goes to get_playoff_intel. "
     "Usage, turnover rate, PIE, and rating ranks go to get_advanced. "
     "Career impact arcs go to get_raptor_history. "
     "Custom math over warehouse tables goes to run_python. "
@@ -176,7 +177,10 @@ TEAM_BRIEF = (
 LEAGUE_BRIEF = (
     "You are the league desk. Season 2025-26 unless told otherwise. "
     "IF the task mentions playoffs, champion, finals, or rings, "
-    "THEN call get_playoffs first and nothing else. "
+    "AND names a player, THEN call get_playoff_intel with that player "
+    "name first and nothing else. "
+    "IF the task mentions playoffs, champion, finals, or rings, "
+    "without a player name, THEN call get_playoffs first and nothing else. "
     "IF the task mentions clutch, late game, or last 5 minutes, "
     "THEN call get_clutch. "
     "IF the task mentions offense, defense, net rating, pace, or ranks, "
@@ -212,7 +216,8 @@ def delegate_tools(provider: ProviderName, model: str) -> list:
              "get_on_off", "get_wowy", "get_four_factors",
              "get_last_x", "get_percentiles", "get_shot_zones",
              "get_shot_compare", "get_trend", "get_comps", "get_clutch",
-             "get_advanced", "run_python", "text_to_sql"],
+             "get_playoff_intel",
+              "get_advanced", "run_python", "text_to_sql"],
         )
 
     @tool("delegate_team")
@@ -252,7 +257,7 @@ def delegate_tools(provider: ProviderName, model: str) -> list:
         return await _run_desk(
             "league", LEAGUE_BRIEF, task, provider, model,
             ["get_standings", "get_leaders", "get_injuries", "get_rapm",
-             "get_playoffs", "get_ratings", "get_clutch", "get_elo",
+             "get_playoffs", "get_playoff_intel", "get_ratings", "get_clutch", "get_elo",
              "get_playoff_sim", "get_contract_value", "get_draft_board",
              "get_draft_model", "get_risers", "get_trade_check",
              "run_python", "text_to_sql"],

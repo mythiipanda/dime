@@ -340,6 +340,11 @@ def main() -> None:
           and (cmp_sides.get("a", {}) or {}).get("clutch_pts", 0) > 0,
           str(cmp_sides)[:200])
 
+    res = tools.get_playoff_intel.invoke(
+        {"player_id": 1628983, "season": "2024-25"})
+    check("playoff intel returns 10+ rows",
+          res["ok"] and len(res["rows"]) >= 10, str(res)[:200])
+
     print(f"\neval: {PASS} pass, {FAIL} fail")
     sys.exit(1 if FAIL else 0)
 

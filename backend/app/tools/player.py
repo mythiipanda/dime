@@ -200,6 +200,28 @@ def get_player_intel(player_id: str | int, season: str = SEASON) -> dict[str, An
 
 
 @tool
+def get_playoff_intel(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
+    """Playoff game log for one player. Names or ids. Warehouse first."""
+    try:
+        pid = coerce_player_id(player_id)
+    except ValueError:
+        return {"tool": "get_playoff_intel", "ok": False,
+                "error": f"unknown player: {player_id}"}
+    rows, meta = _warehouse_or_live(
+        "silver_playoff_gamelogs", "_season = ? AND _entity = ?",
+        [season, f"player:{pid}"],
+        lambda: nba_stats.player_playoff_gamelog(pid, season), season,
+        entity=f"player:{pid}", live_first=True,
+    )
+    if not rows:
+        return {"tool": "get_playoff_intel", "ok": False,
+                "error": f"no playoff games for {player_id} in {season}"}
+    cols = ["GAME_DATE", "MATCHUP", "PTS", "REB", "AST", "MIN"]
+    slim = [{k: r.get(k) for k in cols if k in r} for r in rows]
+    return {"tool": "get_playoff_intel", "ok": True, "rows": slim, "meta": meta}
+
+
+@tool
 def get_last_x(player_id: str | int, n: int = 10, season: str = SEASON) -> dict[str, Any]:
     """Last n games for one player id, most recent first."""
     player_id = coerce_player_id(player_id)

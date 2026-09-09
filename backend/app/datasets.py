@@ -26,6 +26,7 @@ TABLES = {
     "combine": "silver_combine",
     "ratings": "silver_team_ratings",
     "playoffs": "silver_playoffs",
+    "playoff_gamelogs": "silver_playoff_gamelogs",
 }
 
 

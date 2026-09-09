@@ -63,6 +63,8 @@ PLANNER_SYSTEM = (
     "clutch, ELO, or title odds, call delegate_league. "
     "For two-player compares call get_compare first, then one "
     "delegate_scout per player for shot diet, clutch, and advanced depth. "
+    "If the question asks how players did in the playoffs, call "
+    "get_playoff_intel per player first. "
     "Synthesize dimension by dimension with a verdict per dimension."
     "For two-team previews call get_preview once and nothing else. "
     "If the question names a venue or home team (in, at, hosting, "
@@ -395,6 +397,7 @@ def _all_tools(state: DimeState) -> list:
 SUPERVISOR_TOOL_NAMES = frozenset({
     "resolve_entity", "get_compare", "get_preview", "get_briefing",
     "delegate_scout", "delegate_team", "delegate_league", "run_python",
+    "get_playoff_intel",
 })
 
 

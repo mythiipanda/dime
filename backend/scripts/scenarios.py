@@ -117,6 +117,20 @@ def main() -> None:
           and 5 < rh["rows"]["b"].get("ppg", 0) < 40,
           str((rs, rh))[:200])
 
+    cast = tools.run_python.invoke({
+        "code": "rows = con.execute(\"SELECT AVG(PTS * 1.0 / GP) FROM "
+                "silver_leaders_pts WHERE TEAM = 'OKC' AND "
+                "PLAYER <> 'Shai Gilgeous-Alexander' AND "
+                "_season = '2025-26' AND GP >= 10\").fetchall()\n"
+                "out = rows[0][0]"
+    })
+    try:
+        cast_ppg = float((cast.get("rows") or {}).get("out"))
+    except (TypeError, ValueError):
+        cast_ppg = -1.0
+    check("supporting cast ppg is numeric and positive",
+          cast.get("ok") and cast_ppg > 0, str(cast)[:200])
+
     print(f"\nscenarios: {PASS} pass, {FAIL} fail")
     sys.exit(1 if FAIL else 0)
 
