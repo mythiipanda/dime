@@ -127,15 +127,6 @@ export default function Home() {
               }}
               title="Return to home"
             >
-              <span
-                style={{
-                  width: 7,
-                  height: 7,
-                  borderRadius: "50%",
-                  background: "var(--color-cyan-signal)",
-                  display: "inline-block",
-                }}
-              />
               <span style={{ fontSize: 13, fontWeight: 600, letterSpacing: "-0.015em" }}>Dime</span>
             </button>
             <span style={{ fontSize: 11, color: "var(--color-ash-gray)" }}>/</span>
@@ -200,12 +191,8 @@ export default function Home() {
                 border: "1px solid var(--color-stone-border)",
                 padding: "3px 8px",
                 borderRadius: 6,
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 5,
               }}
             >
-              <span style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--color-cyan-signal)" }} />
               2025-26 season
             </span>
           </div>

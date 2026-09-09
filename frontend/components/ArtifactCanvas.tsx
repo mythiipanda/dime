@@ -77,33 +77,22 @@ export default function ArtifactCanvas({ artifact, onClose, onAsk }: ArtifactCan
           flexShrink: 0,
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-          <span
+        <div style={{ minWidth: 0 }}>
+          <div
             style={{
-              width: 8,
-              height: 8,
-              borderRadius: "50%",
-              background: "var(--color-cyan-signal)",
-              flexShrink: 0,
+              fontSize: 14,
+              fontWeight: 600,
+              color: "var(--color-ink-black)",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
             }}
-          />
-          <div style={{ minWidth: 0 }}>
-            <div
-              style={{
-                fontSize: 14,
-                fontWeight: 600,
-                color: "var(--color-ink-black)",
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-              }}
-            >
-              {rawTitle}
-            </div>
-            <div style={{ fontSize: 11, color: "var(--color-warm-gray)", marginTop: 1 }}>
-              {artifact.meta?.source ? `Source: ${artifact.meta.source}` : "NBA Warehouse"}
-              {artifact.meta?.fetched_at ? ` · ${String(artifact.meta.fetched_at).slice(0, 10)}` : ""}
-            </div>
+          >
+            {rawTitle}
+          </div>
+          <div style={{ fontSize: 11, color: "var(--color-warm-gray)", marginTop: 1 }}>
+            {artifact.meta?.source ? `Source: ${artifact.meta.source}` : "Source: NBA Warehouse"}
+            {artifact.meta?.fetched_at ? ` · ${String(artifact.meta.fetched_at).slice(0, 10)}` : ""}
           </div>
         </div>
 

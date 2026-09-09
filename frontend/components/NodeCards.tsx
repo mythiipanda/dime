@@ -133,30 +133,13 @@ export default function NodeCards({
           }}
         >
           {!isDone ? (
-            <>
-              <span
-                style={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: "50%",
-                  background: "var(--color-cyan-signal)",
-                  display: "inline-block",
-                }}
-                className="shimmer"
-              />
-              <span style={{ fontWeight: 500, color: "var(--color-ink-black)" }}>
-                Thinking...
-              </span>
-            </>
+            <span style={{ fontWeight: 500, color: "var(--color-ink-black)" }}>
+              Thinking...
+            </span>
           ) : (
-            <>
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--color-cyan-signal)" }}>
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-              <span>
-                Thought {durationSec ? `for ${durationSec}s` : "process"}
-              </span>
-            </>
+            <span>
+              Thought {durationSec ? `for ${durationSec}s` : "process"}
+            </span>
           )}
           <span style={{ fontSize: 9, opacity: 0.6 }}>
             {showTrace ? "▲" : "▼"}
@@ -281,14 +264,6 @@ export default function NodeCards({
               }}
             >
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span
-                  style={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: "50%",
-                    background: "var(--color-cyan-signal)",
-                  }}
-                />
                 <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-ink-black)" }}>
                   {rawTitle} is open in Canvas
                 </span>

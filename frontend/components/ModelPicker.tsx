@@ -68,9 +68,9 @@ export default function ModelPicker({ models, value, onChange }: ModelPickerProp
         style={{
           display: "inline-flex",
           alignItems: "center",
-          gap: 6,
-          padding: "4px 10px",
-          borderRadius: 8,
+          gap: 5,
+          padding: "4px 8px",
+          borderRadius: 6,
           background: "var(--color-stone-canvas)",
           border: "1px solid var(--color-stone-border)",
           fontSize: 12,
@@ -80,14 +80,6 @@ export default function ModelPicker({ models, value, onChange }: ModelPickerProp
         }}
         title="Switch AI reasoning model"
       >
-        <span
-          style={{
-            width: 6,
-            height: 6,
-            borderRadius: "50%",
-            background: "var(--color-cyan-signal)",
-          }}
-        />
         <span>{formatName(selectedModel?.id)}</span>
         <svg
           width="10"

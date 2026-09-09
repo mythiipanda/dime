@@ -51,21 +51,12 @@ export default function ThreadRail({
               gap: 8,
               background: "none",
               border: "none",
-              padding: 0,
+              padding: "2px 4px",
               cursor: "pointer",
             }}
             title="Return to Home"
           >
-            <span
-              style={{
-                width: 10,
-                height: 10,
-                borderRadius: "50%",
-                background: "var(--color-cyan-signal)",
-                display: "inline-block",
-              }}
-            />
-            <span style={{ fontWeight: 600, fontSize: 16, letterSpacing: "-0.01em", color: "var(--color-ink-black)" }}>
+            <span style={{ fontWeight: 600, fontSize: 16, letterSpacing: "-0.02em", color: "var(--color-ink-black)" }}>
               Dime
             </span>
           </button>
@@ -192,9 +183,6 @@ export default function ThreadRail({
                   onClick={() => onSelect(t.id)}
                   className="interactive-tactile"
                   style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
                     textAlign: "left",
                     borderRadius: 6,
                     padding: "6px 8px",
@@ -204,30 +192,15 @@ export default function ThreadRail({
                     boxShadow: isSelected ? "0 1px 2px rgba(0, 0, 0, 0.04)" : "none",
                     cursor: "pointer",
                     width: "100%",
-                    color: "var(--color-ink-black)",
+                    color: isSelected ? "var(--color-ink-black)" : "var(--color-warm-gray)",
                   }}
                 >
-                  <svg
-                    width="13"
-                    height="13"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    style={{
-                      color: isSelected ? "var(--color-cyan-edge)" : "var(--color-ash-gray)",
-                      flexShrink: 0,
-                    }}
-                  >
-                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                  </svg>
                   <div
                     style={{
                       fontWeight: isSelected ? 500 : 400,
                       overflow: "hidden",
                       textOverflow: "ellipsis",
                       whiteSpace: "nowrap",
-                      flex: 1,
                     }}
                   >
                     {t.title || t.id}

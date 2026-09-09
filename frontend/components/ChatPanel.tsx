@@ -362,7 +362,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
             What would you like to know?
           </div>
           <div style={{ fontSize: 13, color: "var(--color-warm-gray)", textAlign: "center", marginBottom: 28 }}>
-            NBA stats and analysis · <span className="highlight">2025-26 season</span>
+            NBA stats and analysis · 2025-26 season
           </div>
 
           {/* Centered Large Prompt Composer Card */}
@@ -433,54 +433,28 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
             </div>
           </div>
 
-          {/* Curated 2x2 Prompt Cards (Frontier AI style) */}
+          {/* Curated 2x2 Prompt Cards (Minimalist Frontier AI style) */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10, width: "100%", marginTop: 24 }}>
             {[
               {
                 title: "Compare Luka & Shai",
                 desc: "True shooting, shot zones, and on-off impact",
                 prompt: "Compare Luka Dončić and Shai Gilgeous-Alexander",
-                icon: (
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <line x1="18" y1="20" x2="18" y2="10" />
-                    <line x1="12" y1="20" x2="12" y2="4" />
-                    <line x1="6" y1="20" x2="6" y2="14" />
-                  </svg>
-                ),
               },
               {
                 title: "League Assist Leaders",
                 desc: "Top playmakers, assist-to-turnover ratio, and creation",
                 prompt: "Who leads the league in assists?",
-                icon: (
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <circle cx="12" cy="8" r="7" />
-                    <polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88" />
-                  </svg>
-                ),
               },
               {
                 title: "OKC Championship Odds",
                 desc: "2,000 Monte Carlo playoff simulations and ELO rating",
                 prompt: "Show OKC Thunder playoff odds and ELO",
-                icon: (
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-                  </svg>
-                ),
               },
               {
                 title: "Trade: Zach LaVine",
                 desc: "2024 CBA salary matching, aprons, and legal draft picks",
                 prompt: "Run a trade check: Zach LaVine for draft picks",
-                icon: (
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <polyline points="17 1 21 5 17 9" />
-                    <path d="M3 11V9a4 4 0 0 1 4-4h14" />
-                    <polyline points="7 23 3 19 7 15" />
-                    <path d="M21 13v2a4 4 0 0 1-4 4H3" />
-                  </svg>
-                ),
               },
             ].map((item) => (
               <button
@@ -492,9 +466,9 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                   display: "flex",
                   flexDirection: "column",
                   alignItems: "flex-start",
-                  gap: 6,
+                  gap: 4,
                   padding: "14px 16px",
-                  borderRadius: 12,
+                  borderRadius: 10,
                   background: "var(--color-pure-white)",
                   border: "1px solid var(--color-stone-border)",
                   boxShadow: "var(--shadow-subtle)",
@@ -502,11 +476,8 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                   textAlign: "left",
                 }}
               >
-                <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--color-ink-black)", fontWeight: 500, fontSize: 13 }}>
-                  <span style={{ color: "var(--color-cyan-edge)", display: "flex", alignItems: "center" }}>
-                    {item.icon}
-                  </span>
-                  <span>{item.title}</span>
+                <div style={{ color: "var(--color-ink-black)", fontWeight: 500, fontSize: 13 }}>
+                  {item.title}
                 </div>
                 <div style={{ fontSize: 12, color: "var(--color-warm-gray)", lineHeight: 1.4 }}>
                   {item.desc}
@@ -559,63 +530,31 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                     alignSelf: "flex-start",
                     width: "100%",
                     display: "flex",
-                    gap: 14,
-                    alignItems: "flex-start",
+                    flexDirection: "column",
                     scrollMarginTop: 16,
                   }}
                 >
-                  {/* Assistant Avatar Glyph */}
-                  <div
-                    style={{
-                      width: 28,
-                      height: 28,
-                      borderRadius: 8,
-                      background: "var(--color-pure-white)",
-                      border: "1px solid var(--color-stone-border)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      flexShrink: 0,
-                      marginTop: 2,
-                      boxShadow: "0 1px 2px rgba(0, 0, 0, 0.04)",
-                    }}
-                  >
-                    <span
-                      style={{
-                        width: 7,
-                        height: 7,
-                        borderRadius: "50%",
-                        background: "var(--color-cyan-signal)",
-                      }}
-                    />
+                  {/* Message Header */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                    <span style={{ fontWeight: 600, fontSize: 13, color: "var(--color-ink-black)" }}>
+                      Dime
+                    </span>
                   </div>
 
-                  {/* Message Body */}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                      <span style={{ fontWeight: 600, fontSize: 13, color: "var(--color-ink-black)" }}>
-                        Dime
-                      </span>
-                      <span style={{ fontSize: 11, color: "var(--color-ash-gray)" }}>
-                        2025-26
-                      </span>
-                    </div>
-
-                    {m.ai && !m.ai.done && !m.text && (
-                      <div>
-                        <div style={{ fontSize: 12, color: "var(--color-ash-gray)", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
-                          <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "var(--color-cyan-signal)" }} className="shimmer" />
-                          Looking up stats...
-                        </div>
-                        {[90, 70, 55].map((w, d) => (
-                          <div
-                            key={d}
-                            className="shimmer skeleton-row"
-                            style={{ width: `${w}%` }}
-                          />
-                        ))}
+                  {m.ai && !m.ai.done && !m.text && (
+                    <div style={{ marginBottom: 8 }}>
+                      <div style={{ fontSize: 12, color: "var(--color-ash-gray)", marginBottom: 8 }}>
+                        Looking up stats...
                       </div>
-                    )}
+                      {[90, 70, 55].map((w, d) => (
+                        <div
+                          key={d}
+                          className="shimmer skeleton-row"
+                          style={{ width: `${w}%` }}
+                        />
+                      ))}
+                    </div>
+                  )}
 
                     {m.ai?.error && (
                       <div style={{ color: "#e11d48", fontSize: 13, marginBottom: 8 }}>Error: {m.ai.error}</div>
@@ -664,7 +603,6 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                         ))}
                       </div>
                     )}
-                  </div>
                 </div>
               ),
             )}
