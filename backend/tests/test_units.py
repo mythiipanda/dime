@@ -80,3 +80,66 @@ def test_resolve_entity_static():
     res = tools.resolve_entity.invoke({"query": "LeBron James"})
     ids = [p.get("id") for p in res["rows"]["players"]]
     assert 2544 in ids
+
+
+def test_trust_tier_thresholds():
+    from app.tools._core import trust_tier
+
+    assert trust_tier(120) == ("TRUSTED", 240)
+    assert trust_tier(100)[0] == "TRUSTED"
+    assert trust_tier(99.9)[0] == "FRAGILE"
+    assert trust_tier(50)[0] == "FRAGILE"
+    assert trust_tier(49.9)[0] == "SMALL"
+    assert trust_tier(None) == ("SMALL", 0)
+    assert trust_tier("bad") == ("SMALL", 0)
+
+
+def test_zone_diet_sums_three_zones():
+    from app.tools.player import zone_diet
+
+    rows = [
+        {"zone": "Restricted Area", "SHARE": 0.35},
+        {"zone": "Above the Break 3", "SHARE": 0.30},
+        {"zone": "Corner 3", "SHARE": 0.10},
+        {"zone": "Mid-Range", "SHARE": 0.25},
+    ]
+    assert zone_diet(rows) == {"rim_share": 0.35, "three_share": 0.4}
+    assert zone_diet([]) == {"rim_share": None, "three_share": None}
+    assert zone_diet([{"zone": "Mid-Range", "SHARE": 1.0}]) == {
+        "rim_share": None, "three_share": None}
+
+
+def test_portability_fit_branches():
+    from app.tools.player import portability_fit
+
+    risk = portability_fit(
+        {"name": "A", "usg_pct": 33, "net_onoff": 6},
+        {"name": "B", "usg_pct": 32, "net_onoff": 1})
+    assert risk["fit"] == "risk"
+    assert "Shot diet" not in risk["note"]
+    scalable = portability_fit(
+        {"name": "H", "usg_pct": 34, "ts_pct": 0.62, "net_onoff": 4,
+         "rim_share": 0.35, "three_share": 0.40},
+        {"name": "S", "usg_pct": 21, "ts_pct": 0.65, "net_onoff": 2,
+         "rim_share": 0.20, "three_share": 0.45})
+    assert scalable["fit"] == "scalable"
+    assert "Shot diet rim 35% vs 20%, three 40% vs 45%." in scalable["note"]
+    driver = portability_fit(
+        {"name": "A", "usg_pct": 27, "net_onoff": 7},
+        {"name": "B", "usg_pct": 26, "net_onoff": 0})
+    assert driver["fit"] == "leans driver"
+    neutral = portability_fit({"name": "A"}, {"name": "B"})
+    assert neutral == {"fit": "neutral", "note": "No clear usage or on off tilt."}
+
+
+def test_apron_matching_rules():
+    from app.tools.league import CAP, _allowed_incoming, _apron_state
+
+    assert _allowed_incoming(20_000_000, True) == (
+        20_000_000, "100pct above first apron")
+    assert _allowed_incoming(20_000_000, False) == (
+        25_250_000, "125pct plus 250k below first apron")
+    over = _apron_state(CAP["apron2"] + 1)
+    assert over["over_apron1"] and over["over_apron2"]
+    under = _apron_state(0)
+    assert not under["over_apron1"] and not under["over_apron2"]
