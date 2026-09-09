@@ -5,7 +5,7 @@ import asyncio as _asyncio
 from langchain_core.tools import tool
 
 from ..sources import nba_stats
-from ._core import SEASON, _warehouse_or_live, coerce_team_id
+from ._core import SEASON, _warehouse_or_live, coerce_team_id, trust_tier
 
 
 def _abbrev(who: str) -> str:
@@ -185,6 +185,10 @@ def get_boxscore(game_id: str, season: str = SEASON) -> dict[str, Any]:
             "meta": {**meta, "links": game_links(game_id)}}
 
 
+def _trust_tier(minutes: object) -> tuple[str, int]:
+    return trust_tier(minutes)
+
+
 @tool
 def get_lineups(team_id: str | int, season: str = SEASON) -> dict[str, Any]:
     """Five-man lineup stats for one team id, sorted by minutes."""
@@ -196,11 +200,10 @@ def get_lineups(team_id: str | int, season: str = SEASON) -> dict[str, Any]:
         entity=f"team:{team_id}", live_first=True,
     )
     for r in rows:
-        try:
-            small = float(r.get("MIN") or 0) < 50
-        except (TypeError, ValueError):
-            small = True
-        if small:
+        tier, est = _trust_tier(r.get("MIN"))
+        r["TRUST"] = tier
+        r["EST_POSS"] = est
+        if tier == "SMALL":
             r["SAMPLE"] = "small: under ~100 possessions, do not trust"
     rows = sorted(rows, key=lambda r: float(r.get("MIN") or 0), reverse=True)
     return {"tool": "get_lineups", "ok": True, "rows": rows, "meta": meta}

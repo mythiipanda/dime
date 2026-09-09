@@ -40,6 +40,19 @@ def clamp_scope(scope: str) -> str:
     return lower if lower in ("player", "team") else "player"
 
 
+def trust_tier(minutes: object) -> tuple[str, int]:
+    try:
+        mins = float(minutes or 0)
+    except (TypeError, ValueError):
+        return "SMALL", 0
+    est = int(round(mins * 2))
+    if mins >= 100:
+        return "TRUSTED", est
+    if mins >= 50:
+        return "FRAGILE", est
+    return "SMALL", est
+
+
 NICKNAMES = {
     "sga": "Shai Gilgeous-Alexander",
     "shai": "Shai Gilgeous-Alexander",

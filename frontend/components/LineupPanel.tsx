@@ -37,7 +37,7 @@ const TEAMS: Record<string, number> = {
   CHA: 1610612766,
 };
 
-type Row = { GROUP_NAME: string; MIN: number; PLUS_MINUS: number; SAMPLE?: string };
+type Row = { GROUP_NAME: string; MIN: number; PLUS_MINUS: number; SAMPLE?: string; TRUST?: string; EST_POSS?: number };
 
 function short(full: string) {
   const p = full.trim().split(/\s+/);
@@ -146,13 +146,14 @@ export default function LineupPanel() {
           </select>
           {error && <div style={{ color: "var(--color-warm-gray)", marginTop: 8 }}>{error}</div>}
           <table style={{ width: "100%", marginTop: 8, fontSize: 12 }}>
-            <thead><tr><th style={{ textAlign: "left" }}>Unit</th><th>MIN</th><th>+/-</th><th /></tr></thead>
+            <thead><tr><th style={{ textAlign: "left" }}>Unit</th><th>MIN</th><th>+/-</th><th>Trust</th><th /></tr></thead>
             <tbody>
               {rows.map((r, i) => (
-                <tr key={i}>
+                <tr key={i} style={r.TRUST === "SMALL" ? { opacity: 0.55 } : undefined}>
                   <td>{String(r.GROUP_NAME || "").split(" - ").map(short).join(", ")}</td>
                   <td style={{ textAlign: "right" }}>{Number(r.MIN).toFixed(1)}</td>
                   <td style={{ textAlign: "right" }}>{r.PLUS_MINUS}</td>
+                  <td style={{ textAlign: "right", color: "var(--color-warm-gray)", fontSize: 11 }}>{r.TRUST || (r.SAMPLE ? "SMALL" : "")}</td>
                   <td title={r.SAMPLE || ""}>{r.SAMPLE ? "●" : ""}</td>
                 </tr>
               ))}

@@ -64,7 +64,17 @@ def _envelope(table: str, season: str, frame: object, cached: bool) -> dict:
     if frame.height and "_source" in frame.columns:
         meta["source"] = frame["_source"][0]
         meta["fetched_at"] = frame["_fetched_at"][0]
-    return {"data": frame.to_dicts(), "meta": meta}
+    rows = frame.to_dicts()
+    if table == "silver_lineups":
+        from .tools._core import trust_tier
+
+        for r in rows:
+            tier, est = trust_tier(r.get("MIN"))
+            r["TRUST"] = tier
+            r["EST_POSS"] = est
+            if tier == "SMALL" and not r.get("SAMPLE"):
+                r["SAMPLE"] = "small: under ~100 possessions, do not trust"
+    return {"data": rows, "meta": meta}
 
 
 def _fetch_live(
