@@ -317,10 +317,21 @@ async def _triage_seed(question: str, primary: str, model: str,
             carry_t.extend(q)
         seeds: list[tuple[str, str]] = []
         for p in sorted(set(carry_p))[:2]:
+            team_hint = ""
+            try:
+                from .tools._core import coerce_player_id as _cp
+
+                _pid = _cp(p)
+                if _pid:
+                    _ab = _player_team_abbr(_pid, "2025-26")
+                    if _ab:
+                        team_hint = f" Warehouse lists {p} on {_ab}."
+            except Exception:
+                pass
             seeds.append(("delegate_scout",
-                          f"Player focus: {p}. Report advanced metrics via "
-                          f"get_advanced, plus form, shot diet, and clutch. "
-                          f"Original question: {question}"))
+                          f"Player focus: {p}.{team_hint} Report advanced "
+                          f"metrics via get_advanced, plus form, shot diet, "
+                          f"and clutch. Original question: {question}"))
         for t in sorted(set(carry_t))[:1]:
             seeds.append(("delegate_team",
                           f"Team focus: {t}. Report record, splits, and "
@@ -586,11 +597,20 @@ async def analytics_agent(state: DimeState) -> AsyncGenerator[dict[str, Any], No
     ]
     if not evidenced:
         tried = [k.split(":", 1)[0] for k in state["calls_made"]][:6]
-        state["analysis"] = (
-            "The research step came back empty, so there is nothing to report. "
-            "Ask again or ask something narrower."
-            + (f" Tried: {', '.join(tried)}." if tried else "")
-        )
+        errs = [f"{r.get('tool')}: {r.get('error')}"
+                for r in state["tool_results"]
+                if isinstance(r, dict) and r.get("error")][:3]
+        if errs:
+            state["analysis"] = (
+                "The data lookup reported a problem, so there is no table "
+                "to show. " + " ".join(errs)
+            )
+        else:
+            state["analysis"] = (
+                "The research step came back empty, so there is nothing to report. "
+                "Ask again or ask something narrower."
+                + (f" Tried: {', '.join(tried)}." if tried else "")
+            )
         yield _event(
             "custom_data", {"node": "analytics", "tables": _flatten_tables(state["tool_results"])}
         )

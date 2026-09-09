@@ -679,22 +679,37 @@ def get_wowy(
         try:
             tid = coerce_team_id(team_id) if team_id else None
             if not tid:
-                team_row = con.execute(
+                shared = con.execute(
                     """
-                    SELECT DISTINCT TEAM_ID, TEAM_ABBREVIATION FROM silver_lineups
-                    WHERE _season = ? 
-                      AND (GROUP_ID LIKE '%-' || ? || '-%' OR GROUP_ID LIKE '%-' || ? || '-%')
+                    SELECT TEAM_ID, TEAM_ABBREVIATION, COUNT(*) FROM silver_lineups
+                    WHERE _season = ?
+                      AND GROUP_ID LIKE '%-' || ? || '-%'
+                      AND GROUP_ID LIKE '%-' || ? || '-%'
                     GROUP BY TEAM_ID, TEAM_ABBREVIATION
                     ORDER BY COUNT(*) DESC LIMIT 1
                     """,
                     [season, str(pid_a), str(pid_b)],
                 ).fetchone()
-                if team_row:
-                    tid, tabbr = team_row[0], team_row[1]
-                else:
-                    tabbr = ""
+                if not shared:
+                    return {"tool": "get_wowy", "ok": False,
+                            "error": f"{raw_a} and {raw_b} never shared "
+                                     f"the court in {season}. WOWY needs teammates."}
+                tid, tabbr = shared[0], shared[1]
             else:
                 tabbr = str(tid)
+                both = con.execute(
+                    """
+                    SELECT COUNT(*) FROM silver_lineups
+                    WHERE _season = ? AND TEAM_ID = ?
+                      AND GROUP_ID LIKE '%-' || ? || '-%'
+                      AND GROUP_ID LIKE '%-' || ? || '-%'
+                    """,
+                    [season, tid, str(pid_a), str(pid_b)],
+                ).fetchone()
+                if not both or not both[0]:
+                    return {"tool": "get_wowy", "ok": False,
+                            "error": f"{raw_a} and {raw_b} never shared "
+                                     f"the court for team {tabbr} in {season}."}
 
             if tid:
                 df = con.execute(
