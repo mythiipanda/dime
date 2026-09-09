@@ -12,7 +12,7 @@ interface Props {
   onPlayerSelect?: (playerName: string) => void;
 }
 
-function asTable(rows: unknown, capCols: number): {
+function asTable(rows: unknown, capCols: number, showIds = false): {
   cols: string[];
   body: string[][];
   nums: (number | null)[][];
@@ -31,7 +31,13 @@ function asTable(rows: unknown, capCols: number): {
   if (!Array.isArray(list) || !list.length) return null;
   const first = (list as unknown[])[0] as Record<string, unknown>;
   if (typeof first !== "object" || first === null) return null;
-  const cols = Object.keys(first).slice(0, Math.max(1, Math.min(12, capCols)));
+  const allKeys = Object.keys(first);
+  const isIdCol = (k: string) => /(^id$|_id$)/i.test(k);
+  const ordered = [...allKeys.filter((k) => !isIdCol(k)), ...allKeys.filter((k) => isIdCol(k))];
+  const capped = ordered.slice(0, Math.max(1, Math.min(12, capCols)));
+  const cols = showIds
+    ? [...capped, ...ordered.filter((k) => isIdCol(k) && !capped.includes(k))]
+    : capped;
   const recs = (list as Record<string, unknown>[]).slice(0, 500);
   const body = recs.map((r) =>
     cols.map((c) => {
@@ -69,7 +75,8 @@ function asTable(rows: unknown, capCols: number): {
 
 export default function DataTable({ rows, capCols = 8, capRows = 25, heat = false, storeKey, onPlayerSelect }: Props) {
   const safeCapRows = Math.max(5, Math.min(100, capRows));
-  const t = useMemo(() => asTable(rows, capCols), [rows, capCols]);
+  const [showIds, setShowIds] = useState(false);
+  const t = useMemo(() => asTable(rows, capCols, showIds), [rows, capCols, showIds]);
   const [sortCol, setSortCol] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<1 | -1>(1);
   const [filter, setFilter] = useState("");
@@ -186,8 +193,16 @@ export default function DataTable({ rows, capCols = 8, capRows = 25, heat = fals
           Pct
         </button>
         <button
-          className="pill-ghost"
+          className={showIds ? "tab-active" : "pill-ghost"}
           style={{ fontSize: 11, padding: "2px 10px", marginLeft: "auto" }}
+          onClick={() => setShowIds((v) => !v)}
+          title="Show hidden ID columns"
+        >
+          IDs
+        </button>
+        <button
+          className="pill-ghost"
+          style={{ fontSize: 11, padding: "2px 10px" }}
           onClick={downloadCsv}
         >
           CSV

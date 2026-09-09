@@ -24,6 +24,33 @@ export default function ThreadRail({
     ? threads.filter((t) => (t.title || t.id).toLowerCase().includes(filterQuery.toLowerCase()))
     : threads;
 
+  const bucketFor = (updated: string): string => {
+    const d = new Date(updated);
+    if (isNaN(d.getTime())) return "Older";
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+    const weekAgo = new Date(today);
+    weekAgo.setDate(today.getDate() - 7);
+    if (d >= today) return "Today";
+    if (d >= yesterday) return "Yesterday";
+    if (d >= weekAgo) return "Previous 7 days";
+    return "Older";
+  };
+
+  const buckets: { label: string; items: ThreadInfo[] }[] = [
+    { label: "Today", items: [] },
+    { label: "Yesterday", items: [] },
+    { label: "Previous 7 days", items: [] },
+    { label: "Older", items: [] },
+  ];
+  for (const t of filtered) {
+    const label = bucketFor(t.updated || "");
+    buckets.find((b) => b.label === label)!.items.push(t);
+  }
+  const visibleBuckets = buckets.filter((b) => b.items.length > 0);
+
   return (
     <div
       style={{
@@ -174,40 +201,47 @@ export default function ThreadRail({
               paddingRight: 2,
             }}
           >
-            {filtered.map((t) => {
-              const isSelected = active === t.id;
-              return (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => onSelect(t.id)}
-                  className="interactive-tactile"
-                  style={{
-                    textAlign: "left",
-                    borderRadius: 6,
-                    padding: "6px 8px",
-                    fontSize: 13,
-                    background: isSelected ? "var(--color-pure-white)" : "transparent",
-                    border: isSelected ? "1px solid var(--color-stone-border)" : "1px solid transparent",
-                    boxShadow: isSelected ? "0 1px 2px rgba(0, 0, 0, 0.04)" : "none",
-                    cursor: "pointer",
-                    width: "100%",
-                    color: isSelected ? "var(--color-ink-black)" : "var(--color-warm-gray)",
-                  }}
-                >
-                  <div
-                    style={{
-                      fontWeight: isSelected ? 500 : 400,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {t.title || t.id}
-                  </div>
-                </button>
-              );
-            })}
+            {visibleBuckets.map((bucket) => (
+              <div key={bucket.label} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                <div style={{ fontSize: 11, fontWeight: 500, color: "var(--color-ash-gray)", padding: "8px 6px 4px" }}>
+                  {bucket.label}
+                </div>
+                {bucket.items.map((t) => {
+                  const isSelected = active === t.id;
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => onSelect(t.id)}
+                      className="interactive-tactile"
+                      style={{
+                        textAlign: "left",
+                        borderRadius: 6,
+                        padding: "6px 8px",
+                        fontSize: 13,
+                        background: isSelected ? "var(--color-pure-white)" : "transparent",
+                        border: isSelected ? "1px solid var(--color-stone-border)" : "1px solid transparent",
+                        boxShadow: isSelected ? "0 1px 2px rgba(0, 0, 0, 0.04)" : "none",
+                        cursor: "pointer",
+                        width: "100%",
+                        color: isSelected ? "var(--color-ink-black)" : "var(--color-warm-gray)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontWeight: isSelected ? 500 : 400,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {t.title || t.id}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
 
             {!filtered.length && (
               <div style={{ fontSize: 12, color: "var(--color-ash-gray)", padding: "12px 6px" }}>

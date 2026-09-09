@@ -27,6 +27,7 @@ export default function Home() {
   const [preset, setPreset] = useState<string | null>(null);
   const [exploreKey, setExploreKey] = useState(0);
   const [paletteKey, setPaletteKey] = useState(0);
+  const [activeSection, setActiveSection] = useState("leaders");
 
   useEffect(() => {
     const v = getQueryParam("tab");
@@ -261,9 +262,19 @@ export default function Home() {
                     ["lineups", "Lineups"],
                     ["playoffs", "Playoffs"],
                   ].map(([id, label]) => (
-                    <a key={id} href={`#explore-${id}`} className="pill-ghost" style={{ fontSize: 12, textDecoration: "none", padding: "5px 12px" }}>
+                    <button
+                      key={id}
+                      type="button"
+                      className={activeSection === id ? "tab-active" : "pill-ghost"}
+                      aria-selected={activeSection === id}
+                      style={{ fontSize: 12, padding: "5px 12px", border: "1px solid transparent", borderRadius: 6, cursor: "pointer" }}
+                      onClick={() => {
+                        setActiveSection(id);
+                        document.getElementById(`explore-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+                      }}
+                    >
                       {label}
-                    </a>
+                    </button>
                   ))}
                 </nav>
 

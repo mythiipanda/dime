@@ -181,7 +181,7 @@ def list_threads() -> list[dict[str, str]]:
             return []
         rows = con.execute(
             """SELECT thread, MAX(created_at), COUNT(*)
-            FROM chat_history GROUP BY thread ORDER BY MAX(created_at) DESC"""
+            FROM chat_history GROUP BY thread ORDER BY MAX(created_at) DESC LIMIT 100"""
         ).fetchall()
         out = []
         for r in rows:
@@ -191,7 +191,10 @@ def list_threads() -> list[dict[str, str]]:
                 ORDER BY created_at LIMIT 1""",
                 [r[0]],
             ).fetchone()
-            out.append({"id": r[0], "title": ((first[0] if first else "") or "")[:60],
+            title = ((first[0] if first else "") or "")[:60]
+            if not title.strip():
+                continue
+            out.append({"id": r[0], "title": title,
                         "updated": r[1], "turns": r[2]})
         return out
     finally:

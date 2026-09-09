@@ -458,6 +458,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                 key={item.title}
                 type="button"
                 onClick={() => sendText(item.prompt)}
+                disabled={busy}
                 className="interactive-tactile"
                 style={{
                   display: "flex",
@@ -469,8 +470,9 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                   background: "var(--color-pure-white)",
                   border: "1px solid var(--color-stone-border)",
                   boxShadow: "var(--shadow-subtle)",
-                  cursor: "pointer",
+                  cursor: busy ? "default" : "pointer",
                   textAlign: "left",
+                  opacity: busy ? 0.6 : 1,
                 }}
               >
                 <div style={{ color: "var(--color-ink-black)", fontWeight: 500, fontSize: 13 }}>

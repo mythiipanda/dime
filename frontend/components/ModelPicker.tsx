@@ -32,7 +32,14 @@ export default function ModelPicker({ models, value, onChange }: ModelPickerProp
     if (id.includes("gpt-oss")) return "GPT-OSS 20B";
     if (id.includes("gemma")) return "Gemma 31B";
     if (id.includes("nemotron")) return "Nemotron 120B";
-    return id.replace("openrouter:", "").replace("mistral:", "").replace("inception:", "").replace(":free", "");
+    let base = id.replace(/:free$/i, "").replace(/-free$/i, "");
+    const segments = base.split(/[/:]/).filter(Boolean);
+    const last = (segments.length ? segments[segments.length - 1] : base).replace(/:free$/i, "").replace(/-free$/i, "");
+    const tokens = last.split(/[-_]+/).filter(Boolean);
+    const filtered = tokens.filter((w) => !/^v\d+(\.\d+)*$/i.test(w) && !/^\d+\.\d+(\.\d+)*$/.test(w));
+    const kept = filtered.length ? filtered : tokens;
+    const pretty = kept.map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(" ");
+    return pretty || id;
   };
 
   return (
