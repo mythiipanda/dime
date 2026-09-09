@@ -27,6 +27,9 @@ TABLES = {
     "ratings": "silver_team_ratings",
     "playoffs": "silver_playoffs",
     "playoff_gamelogs": "silver_playoff_gamelogs",
+    "draft": "silver_hist_draft",
+    "raptor": "silver_raptor_player",
+    "player_seasons": "silver_hist_player_seasons",
 }
 
 
@@ -139,6 +142,10 @@ def dataset(
     if name not in TABLES:
         return {"ok": False, "error": f"unknown dataset, pick one of {sorted(TABLES)}"}
     table = TABLES[name]
+    if name == "leaders":
+        from .tools import clamp_stat
+
+        table = f"silver_leaders_{clamp_stat(stat).lower()}"
     entity_scoped = name in ("player_gamelogs", "team_games", "shots", "scoreboard", "lineups", "on_off", "wowy", "four_factors")
     frame = store.read_frame(table, "_season = ?", [season])
     if entity_scoped:

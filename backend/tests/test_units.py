@@ -72,6 +72,7 @@ def test_dataset_tables_allowlisted():
         "team_games", "scoreboard", "shots", "lineups",
         "on_off", "wowy", "four_factors", "hustle", "combine",
         "ratings", "playoffs", "playoff_gamelogs",
+        "draft", "raptor", "player_seasons",
     }
 
 

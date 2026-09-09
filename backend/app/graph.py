@@ -7,6 +7,7 @@ thought_stream, message, final_answer, suggestions, graph_end, error.
 import asyncio
 import json
 import re
+import unicodedata
 from collections.abc import AsyncGenerator
 from typing import Any, TypedDict
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -56,9 +57,15 @@ PLANNER_SYSTEM = (
     "every granular dataset, including text_to_sql. "
     "For custom math, statistical calculations, regression, or ad-hoc queries "
     "over warehouse tables, call run_python. "
+    "For supporting-cast questions, call run_python averaging teammate PPG "
+    "from silver_leaders_pts excluding the star, joined with NET_RATING "
+    "from silver_team_ratings. "
     "Delegate multi-part work (comparisons, previews, roundups) to one delegate per entity. "
     "Pass the user's question to the delegate unchanged as the task. "
     "For cross-season history delegate to the right desk and tell it to use text_to_sql. "
+    "For historical draft or all-time RAPTOR player impact, query silver_hist_draft "
+    "or silver_raptor_player via text_to_sql. Prefer text_to_sql over run_python "
+    "for single-fact warehouse lookups; use run_python only for math. "
     "For single-season leaders, standings, injuries, playoffs, ratings, "
     "clutch, ELO, or title odds, call delegate_league. "
     "For two-player compares call get_compare first, then one "
@@ -114,15 +121,22 @@ def _entity_lists() -> tuple[list[dict], list[dict]]:
 
 
 def _detect_entities(question: str) -> tuple[list[str], list[str]]:
+    import unicodedata as _ud
+
     from .tools._core import NICKNAMES
+
+    def _norm(s: str) -> str:
+        return "".join(c for c in _ud.normalize("NFKD", s or "")
+                       if not _ud.combining(c)).lower()
 
     q = question.lower()
     for nick, full in NICKNAMES.items():
-        if nick in q:
+        if re.search(r"\b" + re.escape(nick) + r"\b", q):
             q += " " + full.lower()
+    nq = _norm(q)
     players, teams = _entity_lists()
     found_p = [p["full_name"] for p in players
-               if p.get("full_name", "").lower() in q]
+               if p.get("full_name", "") and _norm(p["full_name"]) in nq]
     found_t = []
     race_words = re.search(
         r"magic number|standings|playoff race|\bseed\b|tanking|lottery",
@@ -252,8 +266,13 @@ async def _triage_seed(question: str, primary: str, model: str,
     is_compare = bool(_COMPARE_RX.search(question))
     is_trade = bool(re.search(r"\btrad(e|es|ed|ing)\b|sign-and-trade|\bswap\b|\bdeal\b",
                               question, re.IGNORECASE))
+    is_cast = bool(re.search(
+        r"supporting cast|\bcast\b|teammates?|rotation depth|"
+        r"around (him|her|them)|better team\b|deeper team\b",
+        question, re.IGNORECASE))
     if ((len(found_p) >= 2 or len(found_t) >= 2 or is_compare)
-            and not (is_trade and not is_compare)):
+            and not (is_trade and not is_compare)
+            and not (is_cast and not is_compare)):
         return
     if is_trade:
         season = "2025-26"
@@ -310,6 +329,101 @@ async def _triage_seed(question: str, primary: str, model: str,
         state["calls_made"].append("run_python:" + json.dumps(
             {"code": code[:120]}, sort_keys=True))
         return
+    if len(found_p) >= 1 and re.search(
+            r"supporting cast|\bcast\b|teammates?|rotation depth|"
+            r"around (him|her|them)|help (does|do|has|have)\b|"
+            r"better team\b|deeper team\b",
+            question, re.IGNORECASE):
+        from .tools._core import coerce_player_id as _cp2
+
+        sides = []
+        for p in found_p[:2]:
+            try:
+                _pid = _cp2(p)
+                _ab = _player_team_abbr(_pid, "2025-26") if _pid else ""
+            except Exception:
+                _pid, _ab = 0, ""
+            if _ab:
+                sides.append((p, _ab))
+        if sides:
+            from nba_api.stats.static import teams as _st
+
+            lines = ["print('Supporting cast comparison, 2025-26 regular season')"]
+            for p, ab in sides:
+                last = p.split()[-1].replace("'", "")
+                safe = "".join(
+                    c for c in unicodedata.normalize("NFKD", p)
+                    if not unicodedata.combining(c)).replace("'", "")
+                lines.append(f"print('{safe} plays for {ab} this season')")
+                full = next((t["full_name"] for t in _st.get_teams()
+                             if t["abbreviation"] == ab), ab)
+                nick = full.split()[-1].replace("'", "")
+                lines.append(
+                    f"_t_{ab} = con.execute(\"SELECT TEAM_NAME, NET_RATING FROM "
+                    f"silver_team_ratings WHERE _season='2025-26' AND "
+                    f"(TEAM_NAME = '{nick}' OR TEAM_NAME = '{full}') "
+                    f"LIMIT 1\").fetchall()")
+                lines.append(
+                    f"_mates_{ab} = con.execute(\"SELECT PLAYER, PTS, GP FROM "
+                    f"silver_leaders_pts WHERE _season='2025-26' AND TEAM='{ab}' "
+                    f"AND UPPER(PLAYER) NOT LIKE '%{last.upper()}%' "
+                    f"ORDER BY PTS DESC LIMIT 4\").fetchall()")
+                lines.append(
+                    f"print('{safe} ({ab}) team net: ' + str(_t_{ab}))")
+                lines.append(
+                    f"print('{ab} supporting mates (excluding {safe}):')")
+                lines.append(
+                    f"[print(f'  {{m[0]}}: {{m[1]/max(m[2],1):.1f}} ppg') "
+                    f"for m in _mates_{ab}]")
+                lines.append(
+                    f"_best_{ab} = max([m[1]/max(m[2],1) for m in _mates_{ab}] "
+                    f"+ [0])")
+                lines.append(
+                    f"print('Top {ab} supporting scorer ({safe} excluded): ' "
+                    f"+ str(round(_best_{ab}, 1)) + ' ppg')")
+        if sides:
+            lines.append("out = 'cast table printed'")
+            code = "\n".join(lines)
+            try:
+                from .tools import v1_tools as _vt2
+
+                fn2 = next((t for t in _vt2 if t.name == "run_python"), None)
+                out = await fn2.ainvoke({"code": code}) if fn2 is not None else {
+                    "tool": "run_python", "ok": False, "error": "no python tool"}
+            except Exception as exc:
+                out = {"tool": "run_python", "ok": False,
+                       "error": str(exc)[:160]}
+            state["tool_results"].append(
+                out if isinstance(out, dict) else {"tool": "run_python",
+                                                  "rows": out})
+            state["calls_made"].append("run_python:" + json.dumps(
+                {"code": code[:120]}, sort_keys=True))
+            return
+    if found_p and re.search(
+            r"\braptor\b|\bwar\b|peak|all-time|all time|greatest season|"
+            r"best season|career (year|season|high)",
+            question, re.IGNORECASE):
+        try:
+            from .tools import v1_tools as _vt3
+
+            fn3 = next((t for t in _vt3 if t.name == "get_raptor_history"),
+                       None)
+            for p in found_p[:2]:
+                try:
+                    out = await fn3.ainvoke({"player": p}) if fn3 is not None else {
+                        "tool": "get_raptor_history", "ok": False,
+                        "error": "no raptor tool"}
+                except Exception as exc:
+                    out = {"tool": "get_raptor_history", "ok": False,
+                           "error": str(exc)[:160]}
+                state["tool_results"].append(
+                    out if isinstance(out, dict) else {"tool": "get_raptor_history",
+                                                      "rows": out})
+                state["calls_made"].append("get_raptor_history:" + json.dumps(
+                    {"player": p}, sort_keys=True))
+            return
+        except Exception:
+            pass
     delegates = {t.name: t for t in delegate_tools(primary, model)}  # type: ignore[arg-type]
     if not found_p and not found_t and state.get("history"):
         carry_p, carry_t = [], []
@@ -444,6 +558,22 @@ async def data_retrieval_agent(
     tooled = client.bind_tools(_supervisor_tools(state))
     prior = ""
     carry: list[str] = []
+    qp, qt = _detect_entities(state["question"])
+    team_facts = []
+    if qp or qt:
+        try:
+            from .tools._core import coerce_player_id as _cp
+
+            for p in qp[:4]:
+                _pid = _cp(p)
+                _ab = _player_team_abbr(_pid, "2025-26") if _pid else ""
+                if _ab:
+                    team_facts.append(f"{p} plays for {_ab}")
+        except Exception:
+            pass
+    if team_facts:
+        prior += ("\nWarehouse team facts, trust these over memory: "
+                  + "; ".join(team_facts) + ".")
     if state["history"]:
         turns = state["history"][-6:]
         prior += "\nConversation so far:\n" + "\n".join(

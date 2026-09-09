@@ -335,6 +335,25 @@ def get_rotation_check(team: str = "", season: str = SEASON) -> dict[str, Any]:
                    if r.get("PLAYER_ID")]
         except Exception:
             ros = []
+    if not ros:
+        try:
+            from ..store import _read_df
+
+            w_ros = _read_df(
+                "SELECT PLAYER, PLAYER_ID, PTS, GP, MIN FROM silver_leaders_pts "
+                "WHERE _season = ? AND (TEAM = ? OR TEAM_ID = ?) ORDER BY PTS DESC LIMIT 15",
+                [season, abbr, tid],
+            )
+            if not w_ros:
+                w_ros = _read_df(
+                    "SELECT PLAYER, PLAYER_ID, PTS, GP, MIN FROM silver_leaders_pts "
+                    "WHERE TEAM = ? OR TEAM_ID = ? ORDER BY PTS DESC LIMIT 15",
+                    [abbr, tid],
+                )
+            if w_ros:
+                ros = w_ros
+        except Exception:
+            pass
     mcol = next((c for c in ("MIN", "MPG", "PTS", "EXP") if ros and c in ros[0]), "")
     if mcol:
         def _num(r: dict[str, Any]) -> float:

@@ -554,8 +554,31 @@ def get_trade_check(
             parts.append(f"{team_a.upper()}: {'; '.join(unk_a)}")
         if unk_b:
             parts.append(f"{team_b.upper()}: {'; '.join(unk_b)}")
-        return {"tool": "get_trade_check", "ok": False,
-                "error": "unknown players: " + " | ".join(parts)}
+        hints = []
+        try:
+            from .. import store as _store2
+
+            con2 = _store2.connect()
+            try:
+                for u in (unk_a + unk_b):
+                    base = u.split(" (suggestions")[0].strip()
+                    bits = [b for b in base.split() if len(b) > 1]
+                    like = "%" + "%".join(bits[:2]) + "%" if bits else base
+                    hit = con2.execute(
+                        """SELECT TEAM, PLAYER_NAME FROM silver_salaries
+                        WHERE PLAYER_NAME LIKE ? LIMIT 1""",
+                        [like],
+                    ).fetchone()
+                    if hit:
+                        hints.append(f"{base} is on {hit[0]} per salary data")
+            finally:
+                con2.close()
+        except Exception:
+            pass
+        msg = "unknown players: " + " | ".join(parts)
+        if hints:
+            msg += ". " + "; ".join(hints)
+        return {"tool": "get_trade_check", "ok": False, "error": msg}
     pay_a, _ = _payroll(team_a)
     pay_b, _ = _payroll(team_b)
     over2 = lambda p: p > CAP["apron2"]
@@ -682,7 +705,9 @@ async def text_to_sql(question: str) -> dict[str, Any]:
                "silver_lineups", "silver_shots", "silver_hustle_player",
                 "silver_hustle_team", "silver_injuries", "silver_hist_gamelogs",
                 "silver_hist_standings", "silver_hist_possessions",
-                "silver_hist_shots", "silver_hist_lineups", "silver_salaries"]
+                "silver_hist_shots", "silver_hist_lineups", "silver_salaries",
+                "silver_hist_draft", "silver_raptor_player", "silver_raptor_team",
+                "silver_hist_player_seasons"]
     con = _store.connect()
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
@@ -723,7 +748,21 @@ async def text_to_sql(question: str) -> dict[str, Any]:
         "AND l._season = '2025-26' AND l.GP >= 10\n"
         "Q: Who has the most playoff wins in 2025-26?\n"
         "SQL: SELECT TEAM_ABBREVIATION, COUNT(*) AS wins FROM silver_playoffs "
-        "WHERE WL = 'W' GROUP BY TEAM_ABBREVIATION ORDER BY wins DESC LIMIT 5"
+        "WHERE WL = 'W' GROUP BY TEAM_ABBREVIATION ORDER BY wins DESC LIMIT 5\n"
+        "Q: Who was drafted #1 overall in the June 2003 NBA draft?\n"
+        "Note: draft SEASON is the upcoming season end-year, so June 2003 = SEASON 2004.\n"
+        "SQL: SELECT OVERALL_PICK, PLAYER_NAME, TEAM_ABBREVIATION FROM silver_hist_draft "
+        "WHERE OVERALL_PICK = 1 AND SEASON = 2004\n"
+        "Q: What was Michael Jordan's peak RAPTOR season?\n"
+        "SQL: SELECT _season, RAPTOR_TOTAL, WAR_TOTAL FROM silver_raptor_player "
+        "WHERE PLAYER_NAME = 'Michael Jordan' ORDER BY RAPTOR_TOTAL DESC LIMIT 1\n"
+        "Q: What were LeBron James' per-game stats in 2023-24?\n"
+        "Note: silver_hist_player_seasons stores per-game averages already; "
+        "select PTS/MIN directly, never divide by GP. "
+        "Season ints are end-years, so 2023-24 = SEASON 2024 = _season '2023-24'.\n"
+        "SQL: SELECT PLAYER_NAME, TEAM_ABBREVIATION, GP, PTS, AST, TS_PCT, NET_RATING "
+        "FROM silver_hist_player_seasons WHERE PLAYER_NAME = 'LeBron James' "
+        "AND _season = '2023-24'"
     )
     feedback = ""
     for _ in range(3):

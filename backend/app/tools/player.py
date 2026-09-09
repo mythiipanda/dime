@@ -225,36 +225,42 @@ def get_playoff_intel(player_id: str | int, season: str = SEASON) -> dict[str, A
 def get_last_x(player_id: str | int, n: int = 10, season: str = SEASON) -> dict[str, Any]:
     """Last n games for one player id, most recent first."""
     player_id = coerce_player_id(player_id)
-    res = nba_stats.player_gamelog(player_id, season)
-    if not res.ok or res.frame.height == 0:
+    rows, meta = _warehouse_or_live(
+        "silver_player_gamelogs", "_season = ? AND _entity = ?",
+        [season, f"player:{player_id}"],
+        lambda: nba_stats.player_gamelog(player_id, season), season,
+        entity=f"player:{player_id}", live_first=True,
+    )
+    if not rows:
         return {"tool": "get_last_x", "ok": False,
-                "error": res.error or "empty upstream response"}
-    frame = res.frame
+                "error": meta.get("error") or "empty upstream response"}
+    import polars as _pl
+    frame = _pl.DataFrame(rows)
     try:
         frame = frame.with_columns(
-            pl.col("GAME_DATE").str.strptime(pl.Date, "%b %d, %Y").alias("_d")
+            _pl.col("GAME_DATE").str.strptime(_pl.Date, "%b %d, %Y").alias("_d")
         ).sort("_d", descending=True).drop("_d")
     except Exception:
         frame = frame.reverse()
-    rows = frame.head(min(max(n, 1), 25)).to_dicts()
-    store.save_frame("silver_player_gamelogs", res, f"player:{player_id}")
-    return {"tool": "get_last_x", "ok": True, "rows": rows,
-            "meta": {"source": res.meta.source, "fetched_at": res.meta.fetched_at,
-                     "rows": len(rows), "cached": False}}
+    out = frame.head(min(max(n, 1), 25)).to_dicts()
+    return {"tool": "get_last_x", "ok": True, "rows": out, "meta": meta}
 
 
 @tool
 def get_trend(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
     """Decay-weighted recent form versus season baseline. DARKO-lite."""
-    import math
-
     player_id = coerce_player_id(player_id)
-    res = nba_stats.player_gamelog(player_id, season)
-    if not res.ok or res.frame.height == 0:
+    rows, meta = _warehouse_or_live(
+        "silver_player_gamelogs", "_season = ? AND _entity = ?",
+        [season, f"player:{player_id}"],
+        lambda: nba_stats.player_gamelog(player_id, season), season,
+        entity=f"player:{player_id}", live_first=True,
+    )
+    if not rows:
         return {"tool": "get_trend", "ok": False,
-                "error": res.error or "empty upstream response"}
+                "error": meta.get("error") or "empty upstream response"}
     try:
-        pts = [float(r.get("PTS") or 0) for r in res.frame.to_dicts()]
+        pts = [float(r.get("PTS") or 0) for r in rows]
     except (TypeError, ValueError):
         return {"tool": "get_trend", "ok": False, "error": "bad points"}
     if len(pts) < 5:
@@ -272,7 +278,7 @@ def get_trend(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
                      "delta": round(form - base, 1),
                      "direction": "up" if form > base + 1 else (
                          "down" if form < base - 1 else "flat")},
-            "meta": {"source": res.meta.source, "season": season}}
+            "meta": meta}
 
 
 @tool

@@ -79,9 +79,10 @@ def save_frame(
             )
             have = [r[1] for r in con.execute(f"PRAGMA table_info({table})").fetchall()]
             incoming = frame.columns
-            if have != incoming:
+            if set(have) != set(incoming):
                 con.execute(f"DROP TABLE {table}")
                 con.execute(f"CREATE TABLE {table} AS SELECT * FROM _incoming")
+            cols = ", ".join(f'"{c}"' for c in have) if set(have) == set(incoming) else "*"
             if replace_season:
                 if entity:
                     con.execute(
@@ -94,7 +95,7 @@ def save_frame(
                         f"DELETE FROM {table} WHERE _season = ?",
                         [result.meta.season],
                     )
-            con.execute(f"INSERT INTO {table} SELECT * FROM _incoming")
+            con.execute(f"INSERT INTO {table} SELECT {cols} FROM _incoming")
             con.execute(
                 "INSERT INTO fetch_log VALUES (?,?,?,?,?,?)",
                 [
@@ -122,6 +123,28 @@ def read_frame(table: str, where: str = "", params: list[object] | None = None) 
         return pl.from_arrow(rel.fetch_arrow_table())
     finally:
         con.close()
+
+
+def _read_df(sql: str, params: list, tries: int = 5) -> list[dict[str, object]]:
+    """Warehouse read with retries. Concurrent writers briefly lock the file."""
+    import time as _time
+
+    last: Exception | None = None
+    for _ in range(tries):
+        try:
+            con = connect()
+            try:
+                return (
+                    con.execute(sql, params)
+                    .fetchdf()
+                    .to_dict(orient="records")
+                )
+            finally:
+                con.close()
+        except Exception as exc:
+            last = exc
+            _time.sleep(0.3)
+    raise last or RuntimeError("warehouse read failed")
 
 
 def last_fetch(table: str, season: str, entity: str = "") -> str:
@@ -191,7 +214,7 @@ def list_threads() -> list[dict[str, str]]:
                 ORDER BY created_at LIMIT 1""",
                 [r[0]],
             ).fetchone()
-            title = ((first[0] if first else "") or "")[:60]
+            title = ((first[0] if first else "") or "")[:90]
             if not title.strip():
                 continue
             out.append({"id": r[0], "title": title,

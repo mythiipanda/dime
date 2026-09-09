@@ -42,6 +42,7 @@ def clamp_scope(scope: str) -> str:
 
 NICKNAMES = {
     "sga": "Shai Gilgeous-Alexander",
+    "shai": "Shai Gilgeous-Alexander",
     "luka": "Luka Doncic",
     "joker": "Nikola Jokic",
     "jokic": "Nikola Jokic",
