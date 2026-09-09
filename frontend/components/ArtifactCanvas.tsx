@@ -91,7 +91,7 @@ export default function ArtifactCanvas({ artifact, onClose, onAsk }: ArtifactCan
             {rawTitle}
           </div>
           <div style={{ fontSize: 11, color: "var(--color-warm-gray)", marginTop: 1 }}>
-            {artifact.meta?.source ? `Source: ${artifact.meta.source}` : "Source: NBA Warehouse"}
+              {artifact.meta?.source ? `Source: ${artifact.meta.source}` : "Source: NBA data"}
             {artifact.meta?.fetched_at ? ` · ${String(artifact.meta.fetched_at).slice(0, 10)}` : ""}
           </div>
         </div>

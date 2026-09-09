@@ -1,1 +1,1 @@
-{"cooldown_ms": 10000, "enabled": true, "max_consecutive": 30, "message": "continue"}
+{"cooldown_ms": 60000, "enabled": false, "max_consecutive": 0, "message": "continue"}

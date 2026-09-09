@@ -358,11 +358,8 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
             boxSizing: "border-box",
           }}
         >
-          <div className="display" style={{ fontSize: 32, fontWeight: 500, color: "var(--color-ink-black)", marginBottom: 8, textAlign: "center" }}>
+          <div className="display" style={{ fontSize: 32, fontWeight: 500, color: "var(--color-ink-black)", marginBottom: 28, textAlign: "center" }}>
             What would you like to know?
-          </div>
-          <div style={{ fontSize: 13, color: "var(--color-warm-gray)", textAlign: "center", marginBottom: 28 }}>
-            NBA stats and analysis · 2025-26 season
           </div>
 
           {/* Centered Large Prompt Composer Card */}
@@ -452,9 +449,9 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                 prompt: "Show OKC Thunder playoff odds and ELO",
               },
               {
-                title: "Trade: Zach LaVine",
-                desc: "2024 CBA salary matching, aprons, and legal draft picks",
-                prompt: "Run a trade check: Zach LaVine for draft picks",
+                title: "SAC trades LaVine to LAL",
+                desc: "Salary matching for Reaves and Vanderbilt",
+                prompt: "Check if Sacramento can trade Zach LaVine to the Lakers for Austin Reaves and Jarred Vanderbilt",
               },
             ].map((item) => (
               <button

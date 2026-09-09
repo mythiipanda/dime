@@ -308,7 +308,7 @@ export default function NodeCards({
                   {rawTitle}
                 </div>
                 <div style={{ fontSize: 11, color: "var(--color-ash-gray)", marginTop: 2 }}>
-                  {table.meta?.source ? `Source: ${table.meta.source}` : "Source: NBA Warehouse"}
+                  {table.meta?.source ? `Source: ${table.meta.source}` : "Source: NBA data"}
                   {table.meta?.fetched_at ? ` · ${String(table.meta.fetched_at).slice(0, 10)}` : ""}
                   {table.meta?.links?.watch && (
                     <a

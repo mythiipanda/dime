@@ -23,7 +23,7 @@ export default function FreshnessPanel() {
   return (
     <div className="card" style={{ marginTop: 16 }}>
       <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
-        Warehouse freshness
+        Data freshness
       </div>
       {err && <div style={{ fontSize: 12, color: "var(--color-warm-gray)" }}>{err}</div>}
       <table style={{ fontSize: 12, width: "100%", borderCollapse: "collapse" }}>

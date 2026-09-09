@@ -131,11 +131,17 @@ def _expand_nicknames(question: str) -> str:
 async def _triage_seed(question: str, primary: str, model: str,
                        state: dict) -> None:
     found_p, found_t = _detect_entities(question)
-    if len(found_p) >= 2 or len(found_t) >= 2 or _COMPARE_RX.search(question):
+    is_compare = bool(_COMPARE_RX.search(question))
+    is_trade = bool(re.search(r"\btrade\b|sign-and-trade|\bswap\b|\bdeal\b",
+                              question, re.IGNORECASE))
+    if ((len(found_p) >= 2 or len(found_t) >= 2 or is_compare)
+            and not (is_trade and not is_compare)):
         return
     delegates = {t.name: t for t in delegate_tools(primary, model)}  # type: ignore[arg-type]
     pick = None
-    if found_p and not found_t:
+    if is_trade:
+        pick = "delegate_league"
+    elif found_p and not found_t:
         pick = "delegate_scout"
     elif found_t and not found_p:
         pick = "delegate_team"
