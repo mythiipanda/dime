@@ -146,6 +146,8 @@ SCOUT_BRIEF = (
     "PPG with FG_PCT from get_splits. "
     "Shot diet means zone eFG plus share from get_shot_zones. "
     "Two-player shot showdowns go to get_shot_compare. "
+    "Clutch production goes to get_clutch. "
+    "Usage, turnover rate, PIE, and rating ranks go to get_advanced. "
     "Career impact arcs go to get_raptor_history. "
     "Custom math over warehouse tables goes to run_python. "
     "Resolve names with resolve_entity first. Use returned ids verbatim. "
@@ -204,8 +206,8 @@ def delegate_tools(provider: ProviderName, model: str) -> list:
             ["resolve_entity", "search_nba",              "get_player_intel", "get_raptor_history",
              "get_on_off", "get_wowy", "get_four_factors",
              "get_last_x", "get_percentiles", "get_shot_zones",
-             "get_shot_compare", "get_trend", "get_comps", "run_python",
-             "text_to_sql"],
+             "get_shot_compare", "get_trend", "get_comps", "get_clutch",
+             "get_advanced", "run_python", "text_to_sql"],
         )
 
     @tool("delegate_team")

@@ -27,6 +27,7 @@ from .league import (
     text_to_sql,
 )
 from .player import (
+    get_advanced,
     get_compare,
     get_comps,
     get_four_factors,
@@ -89,6 +90,7 @@ v1_tools: list[BaseTool] = [
     get_combine,
     get_compare,
     get_comps,
+    get_advanced,
     get_rest,
     get_trend,
     get_win_prob,

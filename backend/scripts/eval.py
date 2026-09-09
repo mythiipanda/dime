@@ -133,7 +133,11 @@ def main() -> None:
     cmp_res = _asyncio.run(_cmp())
     check("compare composite sides",
           cmp_res["ok"] and cmp_res["rows"]["a"].get("ppg", 0) > 20
-          and cmp_res["rows"]["b"].get("ppg", 0) > 20,
+          and cmp_res["rows"]["b"].get("ppg", 0) > 20
+          and cmp_res["rows"]["a"].get("team") == "LAL"
+          and cmp_res["rows"]["b"].get("team") == "OKC"
+          and cmp_res["rows"]["a"].get("rpg", 0) > 0
+          and "on_off" not in cmp_res["rows"]["a"],
           str(cmp_res)[:200])
     prev_res = _asyncio.run(_prev())
     check("preview composite probs",
@@ -324,6 +328,11 @@ def main() -> None:
     check("wowy splits calculate minutes and ratings",
           res["ok"] and len(res["rows"]) == 4
           and all("net_rating" in r for r in res["rows"]), str(res)[:200])
+
+    res = tools.get_advanced.invoke({"player": "Shai Gilgeous-Alexander"})
+    check("advanced carries usage and pie",
+          res["ok"] and 0.2 < float(res["rows"].get("USG_PCT", 0)) < 0.5
+          and float(res["rows"].get("PIE", 0)) > 0.1, str(res)[:200])
 
     print(f"\neval: {PASS} pass, {FAIL} fail")
     sys.exit(1 if FAIL else 0)

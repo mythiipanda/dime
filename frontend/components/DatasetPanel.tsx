@@ -80,6 +80,8 @@ function Leaders() {
     if (v && CATS.includes(v)) {
       setCat(v);
       show(v);
+    } else {
+      show("PTS");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -90,7 +92,10 @@ function Leaders() {
         {CATS.map((c) => (
           <button
             key={c}
-            onClick={() => setCat(c)}
+            onClick={() => {
+              setCat(c);
+              show(c);
+            }}
             className={cat === c ? "tab-active" : "tab-idle"}
             style={{ fontSize: 12 }}
           >

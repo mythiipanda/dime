@@ -98,7 +98,7 @@ export default function ShotChart({
     <div className="card" style={{ marginTop: 16 }}>
       <div style={{ fontWeight: 500 }}>Shot chart</div>
       <div style={{ fontSize: 12, color: "var(--color-warm-gray)" }}>
-        {count} shots. Filled marks fell. Outlines missed.
+        {count} shots. Filled marks went in. Outlines missed.
       </div>
       {error && <div style={{ fontSize: 12, color: "var(--color-warm-gray)" }}>{error}</div>}
       <canvas ref={ref} width={500} height={475} style={{ width: "100%", marginTop: 8 }} />

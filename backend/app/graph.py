@@ -27,8 +27,20 @@ ANALYST_SYSTEM = (
     "Every number you state must appear in the evidence. "
     "Never invent streaks, averages, or ranks. "
     "Never list months, dates, or specifics absent from evidence. "
+    "Round every number to 1 decimal max. Write percentages with a "
+    "percent sign, never as raw decimals. Never print raw field names "
+    "like ts_pct or efg_pct. "
     "Name the tool output you used. Say when data is missing. "
-    "Keep answers short and specific with numbers."
+    "Keep answers short and specific with numbers. "
+    "For player comparisons: one markdown table with one row per metric, "
+    "then 2 to 4 takeaways each naming who leads and by how much, "
+    "then one verdict per dimension covering scoring, efficiency, shot "
+    "diet, clutch, impact, and team context, then one overall verdict. "
+    "Name each side's team and record when present. "
+    "State one number per fact, never ranges. "
+    "Only cite all-in-one metrics present in evidence: RAPM-lite, on-off "
+    "net, RAPTOR history. Label RAPM-lite and RAPTOR as estimates. "
+    "Never invent PER, BPM, EPM, WS, VORP, or LEBRON. Say EPM is unavailable."
 )
 
 PLANNER_SYSTEM = (
@@ -43,7 +55,9 @@ PLANNER_SYSTEM = (
     "For cross-season history delegate to the right desk and tell it to use text_to_sql. "
     "For single-season leaders, standings, injuries, playoffs, ratings, "
     "clutch, ELO, or title odds, call delegate_league. "
-    "For two-player compares call get_compare once and nothing else. "
+    "For two-player compares call get_compare first, then one "
+    "delegate_scout per player for shot diet, clutch, and advanced depth. "
+    "Synthesize dimension by dimension with a verdict per dimension."
     "For two-team previews call get_preview once and nothing else. "
     "If the question names a venue or home team (in, at, hosting, "
     "homestand), pass it as home_abbrev. "
@@ -55,7 +69,9 @@ PLANNER_SYSTEM = (
     "Id params also accept names directly and resolve internally. "
     "Use returned ids verbatim. Never invent or recall ids from memory. "
     "Plan the SMALLEST set of calls that answers the question. "
-    "Prefer one call. Never repeat a call with the same args. "
+    "Prefer one call, except comparisons, previews, and roundups, which "
+    "need one call per dimension. "
+    "Never repeat a call with the same args. "
     "Batch independent calls together. "
     "Call search_nba first when you lack an id. "
     "The current season is 2025-26. Pass season 2025-26 always, "
@@ -70,7 +86,7 @@ MAX_TOOL_CALLS = 8
 _LEAGUE_RX = re.compile(
     r"playoff|champion|finals|leader|standing|injur|clutch|\brating\b|"
     r"elo|title odds|streak|versus|power rank|net rating|"
-    r"\btrade\b|sign-and-trade|\bswap\b", re.IGNORECASE)
+    r"\btrad(e|es|ed|ing)\b|sign-and-trade|\bswap\b", re.IGNORECASE)
 _COMPARE_RX = re.compile(
     r"\bvs\.?\b|\bversus\b|\bcompare\b", re.IGNORECASE)
 
@@ -104,9 +120,12 @@ def _detect_entities(question: str) -> tuple[list[str], list[str]]:
     for t in teams:
         full = t.get("full_name", "")
         nick = full.split()[-1].lower() if full else ""
+        city = (t.get("city") or "").lower()
         if (full.lower() in q
                 or (nick and not race_words
                     and re.search(r"\b" + re.escape(nick) + r"\b", q))
+                or (city and not race_words
+                    and re.search(r"\b" + re.escape(city) + r"\b", q))
                 or re.search(r"\b" + re.escape(t.get("abbreviation", "")) + r"\b",
                              question, re.IGNORECASE)):
             found_t.append(full)
@@ -128,15 +147,127 @@ def _expand_nicknames(question: str) -> str:
     return out
 
 
+def _player_team_abbr(pid: int, season: str) -> str:
+    """Current team abbrev for a player from warehouse gamelog MATCHUP."""
+    import time as _time
+
+    from . import store
+
+    for _ in range(3):
+        try:
+            con = store.connect()
+            try:
+                rows = con.execute(
+                    "SELECT MATCHUP FROM silver_player_gamelogs"
+                    " WHERE _season = ? AND _entity = ? LIMIT 40",
+                    [season, f"player:{pid}"],
+                ).fetchall()
+            finally:
+                con.close()
+            from collections import Counter as _Counter
+
+            c = _Counter(str(r[0] or "").split(" ")[0] for r in rows)
+            c.pop("", None)
+            if c:
+                return c.most_common(1)[0][0]
+            return ""
+        except Exception:
+            _time.sleep(0.2)
+    return ""
+
+
+def _trade_sides(question: str, found_p: list[str], found_t: list[str],
+                 season: str) -> dict[str, str] | None:
+    """Deterministic trade sides: players grouped by current team abbrev."""
+    from nba_api.stats.static import teams as _static
+
+    from .tools._core import coerce_player_id
+
+    raw_q = question.lower()
+    named = []
+    for p in found_p:
+        low = p.lower()
+        last = low.split()[-1]
+        if low in raw_q or re.search(r"\b" + re.escape(last) + r"\b", raw_q):
+            named.append(p)
+    found_p = named
+    q = question.lower()
+    abbr_of = {t["full_name"]: t["abbreviation"] for t in _static.get_teams()}
+    nick_of = {t["full_name"].split()[-1].lower(): t["abbreviation"]
+               for t in _static.get_teams()}
+    order: list[str] = []
+
+    def _abbr(full: str) -> str:
+        if full in abbr_of:
+            return abbr_of[full]
+        return nick_of.get(full.split()[-1].lower(), "")
+
+    mentioned = [a for a in (_abbr(f) for f in found_t) if a]
+    by_team: dict[str, list[str]] = {}
+    for p in found_p:
+        try:
+            pid = coerce_player_id(p)
+        except Exception:
+            continue
+        ab = _player_team_abbr(pid, season) if pid else ""
+        if not ab:
+            continue
+        by_team.setdefault(ab, []).append(p)
+    for a in mentioned:
+        by_team.setdefault(a, [])
+        if a not in order:
+            order.append(a)
+    for a in by_team:
+        if a not in order:
+            order.append(a)
+    if len(order) < 2:
+        return None
+    side_a, side_b = order[0], order[1]
+    players_a = by_team.get(side_a, [])
+    players_b = by_team.get(side_b, [])
+    if not players_a or not players_b:
+        rest = [p for p in found_p
+                if p not in players_a and p not in players_b]
+        for i, p in enumerate(rest):
+            (players_a if i % 2 == 0 else players_b).append(p)
+    if not players_a or not players_b:
+        return None
+    return {"team_a": side_a, "players_a": ", ".join(players_a),
+            "team_b": side_b, "players_b": ", ".join(players_b)}
+
+
 async def _triage_seed(question: str, primary: str, model: str,
                        state: dict) -> None:
     found_p, found_t = _detect_entities(question)
     is_compare = bool(_COMPARE_RX.search(question))
-    is_trade = bool(re.search(r"\btrade\b|sign-and-trade|\bswap\b|\bdeal\b",
+    is_trade = bool(re.search(r"\btrad(e|es|ed|ing)\b|sign-and-trade|\bswap\b|\bdeal\b",
                               question, re.IGNORECASE))
     if ((len(found_p) >= 2 or len(found_t) >= 2 or is_compare)
             and not (is_trade and not is_compare)):
         return
+    if is_trade:
+        season = "2025-26"
+        m = re.search(r"(20\d\d)\s*-\s*(\d\d)", question)
+        if m:
+            season = f"{m.group(1)}-{m.group(2)}"
+        sides = _trade_sides(question, found_p, found_t, season)
+        if sides:
+            from .tools import v1_tools
+
+            fn = next((t for t in v1_tools if t.name == "get_trade_check"),
+                      None)
+            if fn is not None:
+                try:
+                    out = await fn.ainvoke(sides)
+                except Exception as exc:
+                    out = {"tool": "get_trade_check", "ok": False,
+                           "error": str(exc)[:160]}
+                state["tool_results"].append(
+                    out if isinstance(out, dict) else {"tool": "get_trade_check",
+                                                      "rows": out})
+                state["calls_made"].append("get_trade_check:" + json.dumps(
+                    sides, sort_keys=True))
+                return
     delegates = {t.name: t for t in delegate_tools(primary, model)}  # type: ignore[arg-type]
     pick = None
     if is_trade:
@@ -229,11 +360,23 @@ async def data_retrieval_agent(
         return
     tooled = client.bind_tools(_supervisor_tools(state))
     prior = ""
+    carry: list[str] = []
     if state["history"]:
         turns = state["history"][-6:]
         prior += "\nConversation so far:\n" + "\n".join(
             f"{t['role']}: {t['text'][:600]}" for t in turns
         )
+        carry_p, carry_t = [], []
+        for t in turns:
+            p, q = _detect_entities(t["text"] or "")
+            carry_p.extend(p)
+            carry_t.extend(q)
+        carry = sorted(set(carry_p) | set(carry_t))[:6]
+        if carry:
+            prior += ("\nEntities mentioned earlier this thread: "
+                      + ", ".join(carry) + ". Resolve pronouns like his, "
+                      "her, their, and both to these entities. Never ask "
+                      "which players the user means when entities exist.")
     if state["tool_results"]:
         prior += "\nPrior tool results this turn: " + str(state["tool_results"])[:4000]
     budget_left = MAX_TOOL_CALLS - len(state["calls_made"])
@@ -244,8 +387,13 @@ async def data_retrieval_agent(
         yield _event("node_update", {"node": "data_retrieval", "status": "complete"})
         return
     try:
+        question_for_planner = state["question"]
+        if carry and not _detect_entities(question_for_planner)[0] \
+                and not _detect_entities(question_for_planner)[1]:
+            question_for_planner = (
+                f"About {', '.join(carry)}: {question_for_planner}")
         resp = await tooled.ainvoke(
-            [SystemMessage(content=PLANNER_SYSTEM + prior), HumanMessage(content=state["question"])]
+            [SystemMessage(content=PLANNER_SYSTEM + prior), HumanMessage(content=question_for_planner)]
         )
     except Exception as exc:
         yield _event("error", {"node": "data_retrieval", "message": str(exc)[:200]})

@@ -10,16 +10,49 @@ from ..sources import nba_stats
 from ._core import SEASON, _warehouse_or_live, coerce_player_id, coerce_team_id
 
 
+def _read_df(sql: str, params: list, tries: int = 5) -> list[dict[str, Any]]:
+    """Warehouse read with retries. Concurrent writers briefly lock the file."""
+    import time as _time
+
+    last: Exception | None = None
+    for _ in range(tries):
+        try:
+            con = store.connect()
+            try:
+                return (
+                    con.execute(sql, params)
+                    .fetchdf()
+                    .to_dict(orient="records")
+                )
+            finally:
+                con.close()
+        except Exception as exc:
+            last = exc
+            _time.sleep(0.3)
+    raise last or RuntimeError("warehouse read failed")
+
+
 @tool
 async def get_compare(
     a: str, b: str, season: str = SEASON,
 ) -> dict[str, Any]:
     """Side-by-side compare of two players. Names or ids. One call."""
     async def one(who: str) -> dict[str, Any]:
+        from collections import Counter as _Counter
+
         pid = coerce_player_id(who)
-        intel = await get_player_intel.ainvoke(
-            {"player_id": pid, "season": season})
-        games = intel.get("rows", [])
+        try:
+            games = _read_df(
+                "SELECT * FROM silver_player_gamelogs"
+                " WHERE _season = ? AND _entity = ?",
+                [season, f"player:{pid}"],
+            )
+        except Exception:
+            games = []
+        if not games:
+            intel = await get_player_intel.ainvoke(
+                {"player_id": pid, "season": season})
+            games = intel.get("rows", [])
         team = 0
         try:
             from nba_api.stats.endpoints import CommonPlayerInfo
@@ -28,28 +61,105 @@ async def get_compare(
             team = int(info["TEAM_ID"].iloc[0])
         except Exception:
             team = 0
-        oo = {"rows": []}
-        if team:
-            oo = await get_on_off.ainvoke(
-                {"player_id": pid, "team_id": team, "season": season})
+        try:
+            oo = {"rows": _read_df(
+                "SELECT * FROM silver_on_off WHERE _season = ? AND _entity = ?",
+                [season, f"player:{pid}"],
+            )}
+        except Exception:
+            oo = {"rows": []}
+        if not any(isinstance(r, dict)
+                   and r.get("Stat") == "Pts per 100 Possessions"
+                   for r in oo.get("rows", []) or []):
+            if team:
+                oo = await get_on_off.ainvoke(
+                    {"player_id": pid, "team_id": team, "season": season})
         last = await get_last_x.ainvoke(
             {"player_id": pid, "n": 5, "season": season})
-        pts = [g.get("PTS", 0) for g in intel.get("rows", [])[:10]]
-        fgm = sum(g.get("FGM", 0) or 0 for g in games)
-        fga = sum(g.get("FGA", 0) or 0 for g in games)
-        fg3m = sum(g.get("FG3M", 0) or 0 for g in games)
-        fta = sum(g.get("FTA", 0) or 0 for g in games)
-        pts_total = sum(g.get("PTS", 0) or 0 for g in games)
+        adv = await get_advanced.ainvoke({"player": pid, "season": season})
+        adv_rows = adv.get("rows", {}) if adv.get("ok") else {}
+        gp = len(games)
+
+        def _sum(key: str) -> float:
+            return sum(float(g.get(key) or 0) for g in games)
+
+        def _avg(key: str) -> float:
+            return round(_sum(key) / max(gp, 1), 1)
+
+        fgm, fga = _sum("FGM"), _sum("FGA")
+        fg3m = _sum("FG3M")
+        ftm, fta = _sum("FTM"), _sum("FTA")
+        pts_total = _sum("PTS")
         ts = round(pts_total / max(2 * (fga + 0.44 * fta), 1), 3)
         efg = round((fgm + 0.5 * fg3m) / max(fga, 1), 3)
+        matchup = [str(g.get("MATCHUP") or "").split(" ")[0] for g in games]
+        team_abbr = (_Counter(m for m in matchup if m).most_common(1)
+                     or [("", 0)])[0][0]
+        record, net_onoff, rapm = "", None, None
+        if team_abbr:
+            try:
+                from nba_api.stats.static import teams as _static
+
+                full = next(
+                    (t["full_name"] for t in _static.get_teams()
+                     if t["abbreviation"] == team_abbr), "")
+                nick = full.split()[-1] if full else ""
+            except Exception:
+                full, nick = "", ""
+            try:
+                row = _read_df(
+                    "SELECT WINS, LOSSES FROM silver_standings"
+                    " WHERE _season = ? AND (TeamName = ? OR TeamName = ?)"
+                    " LIMIT 1",
+                    [season, nick, full],
+                )
+                if row and row[0].get("WINS") is not None:
+                    record = f"{row[0]['WINS']}-{row[0]['LOSSES']}"
+            except Exception:
+                pass
+            try:
+                rrows = _read_df(
+                    "SELECT rapm FROM silver_rapm"
+                    " WHERE _season = ? AND CAST(player_id AS VARCHAR)"
+                    " = CAST(? AS VARCHAR) AND rapm IS NOT NULL"
+                    " LIMIT 1",
+                    [season, str(pid)],
+                )
+                if rrows and rrows[0].get("rapm") is not None:
+                    rapm = round(float(rrows[0]["rapm"]), 2)
+            except Exception:
+                pass
+        for r in oo.get("rows", []) or []:
+            if isinstance(r, dict) and r.get("Stat") == "Pts per 100 Possessions":
+                try:
+                    net_onoff = round(float(r.get("On") or 0)
+                                      - float(r.get("Off") or 0), 1)
+                except (TypeError, ValueError):
+                    pass
+                break
         return {
             "name": who,
             "player_id": pid,
-            "gp": len(games),
-            "ppg": round(sum(pts) / max(len(pts), 1), 1),
+            "team": team_abbr,
+            "team_record": record,
+            "gp": gp,
+            "ppg": round(pts_total / max(gp, 1), 1),
+            "rpg": _avg("REB"),
+            "apg": _avg("AST"),
+            "spg": _avg("STL"),
+            "bpg": _avg("BLK"),
+            "mpg": _avg("MIN"),
+            "tov": _avg("TOV"),
+            "fg_pct": round(fgm / max(fga, 1), 3),
+            "fg3_pct": round(_sum("FG3M") / max(_sum("FG3A"), 1), 3),
+            "ft_pct": round(ftm / max(fta, 1), 3),
             "ts_pct": ts,
             "efg_pct": efg,
-            "on_off": (oo.get("rows", []) or [{}])[0],
+            "usg_pct": adv_rows.get("USG_PCT"),
+            "tov_pct": adv_rows.get("TM_TOV_PCT"),
+            "pie": adv_rows.get("PIE"),
+            "net_onoff": net_onoff,
+            "rapm": rapm,
             "last5": [g.get("PTS", 0) for g in last.get("rows", [])],
         }
 
@@ -236,6 +346,45 @@ def get_comps(player_id: str | int, season: str = SEASON, n: int = 5) -> dict[st
     return {"tool": "get_comps", "ok": True, "rows": rows,
             "meta": {"source": "nba_api", "season": season,
                      "raptor_coverage": f"{cov}/{len(rows)} neighbors with RAPTOR"}}
+
+
+ADVANCED_COLS = ["PLAYER_NAME", "TEAM_ABBREVIATION", "GP", "MIN",
+                 "USG_PCT", "TS_PCT", "EFG_PCT", "AST_PCT", "TM_TOV_PCT",
+                 "PIE", "OFF_RATING", "DEF_RATING", "NET_RATING",
+                 "USG_PCT_RANK", "TS_PCT_RANK", "PIE_RANK", "NET_RATING_RANK"]
+
+
+@tool
+def get_advanced(player: str | int, season: str = SEASON) -> dict[str, Any]:
+    """Advanced box metrics for one player: usage, efficiency, PIE, ratings."""
+    player_id = coerce_player_id(player)
+    rows: list[dict[str, Any]] = []
+    try:
+        rows = _read_df(
+            "SELECT * FROM silver_advanced"
+            " WHERE _season = ? AND CAST(PLAYER_ID AS VARCHAR)"
+            " = CAST(? AS VARCHAR)",
+            [season, str(player_id)],
+        )
+    except Exception:
+        rows = []
+    if not rows:
+        res = nba_stats.player_advanced(season)
+        if res.ok and res.frame.height:
+            try:
+                store.save_frame("silver_advanced", res, "player-advanced")
+            except Exception:
+                pass
+            rows = [r for r in res.frame.to_dicts()
+                    if str(r.get("PLAYER_ID")) == str(player_id)][:1]
+    else:
+        rows = rows[:1]
+    if not rows:
+        return {"tool": "get_advanced", "ok": False,
+                "error": f"no advanced row for player {player_id}"}
+    slim = {k: rows[0].get(k) for k in ADVANCED_COLS if k in rows[0]}
+    return {"tool": "get_advanced", "ok": True, "rows": slim,
+            "meta": {"source": "nba_api", "season": season}}
 
 
 @tool

@@ -90,6 +90,22 @@ def leaders(stat_category: str, season: str) -> FetchResult:
     return safe(SOURCE, season, run)
 
 
+def player_advanced(season: str) -> FetchResult:
+    from nba_api.stats.endpoints import LeagueDashPlayerStats
+
+    def run() -> pl.DataFrame:
+        frames = _frames(
+            LeagueDashPlayerStats(
+                season=season or None,
+                measure_type_detailed_defense="Advanced",
+                timeout=_t(),
+            )
+        )
+        return _pl(frames[0])
+
+    return safe(SOURCE, season, run)
+
+
 def boxscore_traditional(game_id: str, season: str) -> FetchResult:
     from nba_api.stats.endpoints import BoxScoreTraditionalV3
 
