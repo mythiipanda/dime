@@ -1416,6 +1416,17 @@ def _ensure_leaderboard_snapshots(con: Any) -> None:
         snapshot_date VARCHAR, player VARCHAR, team VARCHAR,
         pts INTEGER, rank INTEGER)"""
     )
+    cols = {r[0].lower() for r in con.execute(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_name = 'leaderboard_snapshots'").fetchall()}
+    if "season" not in cols:
+        con.execute("ALTER TABLE leaderboard_snapshots ADD COLUMN season VARCHAR")
+    # Backfill: rows captured before the season column existed belong to the
+    # current season.
+    con.execute(
+        "UPDATE leaderboard_snapshots SET season = ? WHERE season IS NULL",
+        [SEASON],
+    )
 
 
 @tool
@@ -1433,8 +1444,8 @@ def snapshot_leaderboard(season: str = SEASON) -> dict[str, Any]:
             _ensure_leaderboard_snapshots(con)
             hit = con.execute(
                 """SELECT COUNT(*) FROM leaderboard_snapshots
-                WHERE snapshot_date = ?""",
-                [today],
+                WHERE snapshot_date = ? AND season = ?""",
+                [today, season],
             ).fetchone()
             if hit and hit[0]:
                 return {"tool": "snapshot_leaderboard", "ok": True,
@@ -1451,13 +1462,13 @@ def snapshot_leaderboard(season: str = SEASON) -> dict[str, Any]:
                 return {"tool": "snapshot_leaderboard", "ok": False,
                         "error": f"no scoring leaders for {season}"}
             con.execute(
-                "DELETE FROM leaderboard_snapshots WHERE snapshot_date = ?",
-                [today],
+                "DELETE FROM leaderboard_snapshots WHERE snapshot_date = ? AND season = ?",
+                [today, season],
             )
             for player, team, pts, rank in leaders:
                 con.execute(
-                    "INSERT INTO leaderboard_snapshots VALUES (?,?,?,?,?)",
-                    [today, player, team, pts, rank],
+                    "INSERT INTO leaderboard_snapshots VALUES (?,?,?,?,?,?)",
+                    [today, player, team, pts, rank, season],
                 )
             captured = len(leaders)
     finally:
@@ -1489,7 +1500,8 @@ def get_leaderboard_deltas(season: str = SEASON, days: int = 7) -> dict[str, Any
                     "error": "not enough snapshots — run snapshot_leaderboard daily"}
         dates = [r[0] for r in con.execute(
             """SELECT DISTINCT snapshot_date FROM leaderboard_snapshots
-            ORDER BY snapshot_date DESC""").fetchall()]
+            WHERE season = ? ORDER BY snapshot_date DESC""",
+            [season]).fetchall()]
         if len(dates) < 2:
             return {"tool": "get_leaderboard_deltas", "ok": False,
                     "error": "not enough snapshots — run snapshot_leaderboard daily"}
@@ -1502,13 +1514,13 @@ def get_leaderboard_deltas(season: str = SEASON, days: int = 7) -> dict[str, Any
             base = dates[-1]
         now_rows = con.execute(
             """SELECT player, team, pts, rank FROM leaderboard_snapshots
-            WHERE snapshot_date = ?""",
-            [latest],
+            WHERE snapshot_date = ? AND season = ?""",
+            [latest, season],
         ).fetchall()
         base_rows = con.execute(
             """SELECT player, team, pts, rank FROM leaderboard_snapshots
-            WHERE snapshot_date = ?""",
-            [base],
+            WHERE snapshot_date = ? AND season = ?""",
+            [base, season],
         ).fetchall()
     finally:
         con.close()
