@@ -341,13 +341,14 @@ def _career_baseline(pid: int, stat: str) -> dict[str, Any]:
         if "silver_hist_player_seasons" not in tables:
             raise LookupError("missing")
         rows = _read_df(
-            "SELECT * FROM silver_hist_player_seasons WHERE _entity = ?",
-            [f"player:{pid}"],
+            "SELECT * FROM silver_hist_player_seasons"
+            " WHERE _entity = 'league' AND player_id = ?",
+            [pid],
         )
         if not rows:
             raise LookupError("empty")
         gp = len(rows)
-        vals = [_f(r.get(stat)) for r in rows]
+        vals = [_f(r.get(stat.lower())) for r in rows]
         per_game = round(sum(vals) / gp, 1) if gp else 0.0
         return {"available": True, "gp": gp, "per_game": per_game,
                 "stat": stat}

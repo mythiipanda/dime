@@ -289,7 +289,44 @@ def test_splits_regression_smoke():
     assert res["rows"]["stat"] == "PTS"
     assert res["rows"]["verdict"] in (
         "too early", "sustainable", "likely regresses")
-    assert res["rows"]["career"]["available"] is False
+    assert res["rows"]["career"]["available"] is True
+    assert res["rows"]["career"]["per_game"] > 0
+
+
+def _warehouse_has_hist_durant():
+    from app import store
+
+    con = store.connect()
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        if "silver_hist_player_seasons" not in tables:
+            return False
+        n = con.execute(
+            "SELECT COUNT(*) FROM silver_hist_player_seasons"
+            " WHERE _entity = 'league' AND player_id = 201142"
+        ).fetchone()[0]
+        return n and n > 0
+    finally:
+        con.close()
+
+
+def test_splits_career_baseline_hits_seeded_warehouse():
+    try:
+        if not _warehouse_has_hist_durant():
+            return
+    except Exception:
+        return
+    from app.tools.splits import _career_baseline
+
+    res = _career_baseline(201142, "PTS")
+    assert res["available"] is True
+    assert res["gp"] >= 1
+    assert res["stat"] == "PTS"
+    assert res["per_game"] > 0
+    res = _career_baseline(201142, "REB")
+    assert res["available"] is True
+    res = _career_baseline(99999999, "PTS")
+    assert res["available"] is False
 
 
 def test_splits_sort_null_dates_last():
