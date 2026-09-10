@@ -18,6 +18,14 @@ HEADERS = {
     "Referer": "https://www.basketball-reference.com/",
 }
 
+# Basketball-Reference franchise abbreviations differ from the nba_api scheme
+# used everywhere else in this app (silver_leaders_pts, silver_cap_players,
+# get_trade_check team args). Normalize at ingestion so TEAM joins match.
+# Without this, _payroll("BKN") matches zero salary rows and trade checks
+# silently fall back to estimated cap figures for Brooklyn/Charlotte/Phoenix.
+TEAM_ABBR = {"BRK": "BKN", "CHO": "CHA", "PHO": "PHX"}
+
+
 def _get(url: str) -> str:
     import httpx
     r = httpx.get(url, headers=HEADERS, timeout=30, follow_redirects=True)
@@ -48,7 +56,9 @@ def _run(season: list) -> pl.DataFrame:
             if not p or not s:
                 continue
             g = _csk(row, "remain_gtd")
-            rows.append({"PLAYER_NAME": p.group(1).strip(), "TEAM": a, "SALARY_2025_26": s, "GUARANTEED": g or s})
+            rows.append({"PLAYER_NAME": p.group(1).strip(),
+                         "TEAM": TEAM_ABBR.get(a, a),
+                         "SALARY_2025_26": s, "GUARANTEED": g or s})
     return pl.DataFrame(rows)
 
 def get_contracts() -> FetchResult:

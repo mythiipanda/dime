@@ -15,6 +15,7 @@ export interface DebateCardModalProps {
   initialA?: string;
   initialB?: string;
   season?: string;
+  topic?: string;
   onClose: () => void;
 }
 
@@ -37,10 +38,12 @@ export default function DebateCardModal({
   initialA = "",
   initialB = "",
   season = "2025-26",
+  topic = "",
   onClose,
 }: DebateCardModalProps) {
   const [a, setA] = useState(initialA);
   const [b, setB] = useState(initialB);
+  const debateTopic = topic.trim();
   const [status, setStatus] = useState<ModalState>("idle");
   const [error, setError] = useState("");
   const [rows, setRows] = useState<DebateCardRows | null>(null);
@@ -55,7 +58,7 @@ export default function DebateCardModal({
     setError("");
     setCopied(false);
     try {
-      const r = await getDebateCard(a.trim(), b.trim(), season);
+      const r = await getDebateCard(a.trim(), b.trim(), season, debateTopic || undefined);
       setRows(r);
       setStatus("ready");
     } catch (e) {
@@ -115,6 +118,9 @@ export default function DebateCardModal({
                 border: "none",
                 padding: "6px 10px",
                 fontSize: 13,
+                lineHeight: 1.5,
+                minHeight: 40,
+                color: "#0c0a09",
                 cursor: "pointer",
               }}
               onClick={() => {
@@ -144,6 +150,7 @@ export default function DebateCardModal({
         alignItems: "center",
         justifyContent: "center",
         padding: 16,
+        overflowY: "auto",
       }}
       onClick={onClose}
     >
@@ -152,20 +159,48 @@ export default function DebateCardModal({
           background: "#ffffff",
           border: "1px solid #e8e6e5",
           borderRadius: 10,
-          padding: 24,
+          padding: 20,
           maxWidth: 640,
           width: "100%",
+          maxHeight: "calc(100dvh - 32px)",
+          overflowY: "auto",
+          boxSizing: "border-box",
+          margin: "auto",
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="display" style={{ fontSize: 20, marginBottom: 4 }}>
+        <div className="display" style={{ fontSize: 20, color: "#0c0a09", marginBottom: 4 }}>
           Debate card
         </div>
-        <div style={{ fontSize: 14, color: "#78716c", marginBottom: 16 }}>
-          Pick two players and settle it with data.
-        </div>
-        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-          <div style={{ position: "relative", flex: 1 }}>
+        {debateTopic ? (
+          <div style={{ marginBottom: 16, maxWidth: "100%" }}>
+            <span
+              style={{
+                display: "inline-block",
+                fontSize: 11,
+                fontWeight: 500,
+                borderRadius: 9999,
+                padding: "2px 10px",
+                border: "1px solid #e8e6e5",
+                background: "var(--color-sky-wash)",
+                color: "var(--color-cyan-edge)",
+                whiteSpace: "nowrap",
+                maxWidth: "100%",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                verticalAlign: "top",
+              }}
+            >
+              {debateTopic}
+            </span>
+          </div>
+        ) : (
+          <div style={{ fontSize: 14, color: "#78716c", marginBottom: 16 }}>
+            Pick two players and settle it with data.
+          </div>
+        )}
+        <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+          <div style={{ position: "relative", flex: "1 1 160px", minWidth: 0 }}>
             <input
               className="field"
               style={{ width: "100%" }}
@@ -179,7 +214,7 @@ export default function DebateCardModal({
             />
             {renderSuggest(suggA, "a", setA)}
           </div>
-          <div style={{ position: "relative", flex: 1 }}>
+          <div style={{ position: "relative", flex: "1 1 160px", minWidth: 0 }}>
             <input
               className="field"
               style={{ width: "100%" }}
@@ -194,16 +229,17 @@ export default function DebateCardModal({
             {renderSuggest(suggB, "b", setB)}
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
           <button
             type="button"
             className="pill-cta"
+            style={{ minHeight: 40 }}
             disabled={!a.trim() || !b.trim() || status === "loading"}
             onClick={generate}
           >
             {status === "loading" ? "Building…" : "Generate"}
           </button>
-          <button type="button" className="pill-ghost" onClick={onClose}>
+          <button type="button" className="pill-ghost" style={{ minHeight: 40 }} onClick={onClose}>
             Close
           </button>
         </div>
@@ -219,18 +255,21 @@ export default function DebateCardModal({
               src={fileUrl}
               style={{
                 width: "100%",
-                height: 420,
+                height: 360,
+                maxHeight: "50dvh",
+                display: "block",
+                background: "#fafaf9",
                 border: "1px solid #e8e6e5",
                 borderRadius: 10,
               }}
             />
-            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-              <button type="button" className="pill-ghost" onClick={copyLink}>
+            <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+              <button type="button" className="pill-ghost" style={{ minHeight: 40 }} onClick={copyLink}>
                 {copied ? "Copied" : "Copy Link"}
               </button>
               <a
                 className="pill-ghost"
-                style={{ textDecoration: "none", fontSize: 13 }}
+                style={{ textDecoration: "none", fontSize: 13, minHeight: 40, display: "inline-flex", alignItems: "center" }}
                 href={fileUrl}
                 download={rows.path}
               >

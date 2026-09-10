@@ -5,7 +5,7 @@ import asyncio as _asyncio
 from langchain_core.tools import tool
 
 from ..sources import nba_stats
-from ._core import SEASON, _warehouse_or_live, coerce_team_id, trust_tier
+from ._core import SEASON, TTL_BOX, TTL_GAMELOG, TTL_PBPSTATS, TTL_ROSTER, TTL_SCOREBOARD_PAST, _warehouse_or_live, coerce_team_id, is_past_game_date, trust_tier
 
 
 def _abbrev(who: str) -> str:
@@ -138,13 +138,13 @@ def get_team_hub(team_id: str | int, season: str = SEASON) -> dict[str, Any]:
         "silver_team_games", "_season = ? AND _entity = ?",
         [season, f"team:{team_id}"],
         lambda: nba_stats.team_gamelog(team_id, season), season,
-        entity=f"team:{team_id}", live_first=True,
+        entity=f"team:{team_id}", ttl_s=TTL_GAMELOG,
     )
     roster, _ = _warehouse_or_live(
         "silver_rosters", "_season = ? AND _entity = ?",
         [season, f"team:{team_id}"],
         lambda: nba_stats.team_roster(team_id, season), season,
-        entity=f"team:{team_id}", live_first=True,
+        entity=f"team:{team_id}", ttl_s=TTL_ROSTER,
     )
     return {
         "tool": "get_team_hub", "ok": True,
@@ -159,11 +159,13 @@ def game_links(game_id: str) -> dict[str, str]:
 @tool
 def get_games_on_date(game_date: str, season: str = SEASON) -> dict[str, Any]:
     """Scoreboard for one date. Date format is MM/DD/YYYY."""
+    past = is_past_game_date(game_date)
     rows, meta = _warehouse_or_live(
         "silver_scoreboard", "_season = ? AND _entity = ?",
         [season, f"date:{game_date}"],
         lambda: nba_stats.scoreboard(game_date, season), season,
-        entity=f"date:{game_date}", live_first=True,
+        entity=f"date:{game_date}", live_first=(not past),
+        ttl_s=(TTL_SCOREBOARD_PAST if past else None),
     )
     for r in rows:
         gid = r.get("GAME_ID")
@@ -175,11 +177,12 @@ def get_games_on_date(game_date: str, season: str = SEASON) -> dict[str, Any]:
 @tool
 def get_boxscore(game_id: str, season: str = SEASON) -> dict[str, Any]:
     """Traditional boxscore player stats for one game id."""
+    # game_id carries no date so a 1h TTL keeps in-progress games reasonably fresh while repeat reads stay instant
     rows, meta = _warehouse_or_live(
         "silver_boxscores", "_season = ? AND _entity = ?",
         [season, f"game:{game_id}"],
         lambda: nba_stats.boxscore_traditional(game_id, season), season,
-        entity=f"game:{game_id}", live_first=True,
+        entity=f"game:{game_id}", ttl_s=TTL_BOX,
     )
     return {"tool": "get_boxscore", "ok": True, "rows": rows,
             "meta": {**meta, "links": game_links(game_id)}}
@@ -267,7 +270,7 @@ def get_lineups(team_id: str | int, season: str = SEASON) -> dict[str, Any]:
         "silver_lineups", "_season = ? AND _entity = ?",
         [season, f"team:{team_id}"],
         lambda: nba_stats.lineups(team_id, season), season,
-        entity=f"team:{team_id}", live_first=True,
+        entity=f"team:{team_id}", ttl_s=TTL_PBPSTATS,
     )
     for r in rows:
         tier, est = _trust_tier(r.get("MIN"))
@@ -332,13 +335,13 @@ def get_scouting_report(team_id: str | int, season: str = SEASON) -> dict[str, A
         "silver_team_games", "_season = ? AND _entity = ?",
         [season, f"team:{team_id}"],
         lambda: nba_stats.team_gamelog(team_id, season), season,
-        entity=f"team:{team_id}", live_first=True,
+        entity=f"team:{team_id}", ttl_s=TTL_GAMELOG,
     )
     lineups, _ = _warehouse_or_live(
         "silver_lineups", "_season = ? AND _entity = ?",
         [season, f"team:{team_id}"],
         lambda: nba_stats.lineups(team_id, season), season,
-        entity=f"team:{team_id}", live_first=True,
+        entity=f"team:{team_id}", ttl_s=TTL_PBPSTATS,
     )
     wins = sum(1 for g in games if g.get("WL") == "W")
     top_lineup = (lineups or [{}])[0]
@@ -432,102 +435,382 @@ async def get_scout_pack(team: str = "", opponent: str = "", season: str = SEASO
             "meta": {"source": "nba_api+warehouse", "season": season}}
 
 
-@tool
-def get_rotation_check(team: str = "", season: str = SEASON) -> dict[str, Any]:
-    """Rotation health in one call: roster plus cached on/off net per player."""
+def _slim_unit_row(u: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "GROUP_NAME": u.get("GROUP_NAME"),
+        "EST_MIN": u.get("EST_MIN"),
+        "GP": u.get("GP"),
+        "poss": u.get("poss"),
+        "OFF_RATING": u.get("OFF_RATING"),
+        "DEF_RATING": u.get("DEF_RATING"),
+        "NET_RATING": u.get("NET_RATING"),
+        "PLUS_MINUS": u.get("PLUS_MINUS"),
+        "is_best_net_unit": bool(u.get("is_best_net_unit")),
+        "flags": list(u.get("flags") or []),
+    }
+
+
+CORE_GP_FLOOR = 20
+
+
+def _tier_players(players: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    """Tier players by per-game role, not cumulative minutes.
+
+    Tiers sort by MPG (per-game role) instead of cumulative MIN = MPG x GP,
+    so a star who missed games (low GP) is never buried in "fringe". The GP
+    floor keeps cameo appearances out of "core": a player needs at least
+    CORE_GP_FLOOR games to be considered core. Below-floor players with real
+    MPG land in bench, never fringe.
+    """
+    def _gp(p: dict[str, Any]) -> int:
+        try:
+            return int(p.get("GP") or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    def _mpg(p: dict[str, Any]) -> float:
+        try:
+            return float(p.get("MPG") or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    by_mpg = sorted(players, key=_mpg, reverse=True)
+    core = [p for p in by_mpg if _gp(p) >= CORE_GP_FLOOR][:5]
+    core_ids = {id(p) for p in core}
+    rest = [p for p in by_mpg if id(p) not in core_ids]
+    return {
+        "core": core,
+        "bench": rest[:5],
+        "fringe": rest[5:10],
+    }
+
+
+def _thin_rotation_flags(
+    *,
+    players: list[dict[str, Any]],
+    most_used_share: float,
+    bench_diffs: list[float | None],
+    cached_onoff: int,
+) -> list[str]:
+    if not players:
+        return []
+    flags: list[str] = []
+    try:
+        deep15 = sum(1 for p in players if float(p.get("MPG") or 0) >= 15)
+    except (TypeError, ValueError):
+        deep15 = 0
+    try:
+        deep10 = sum(1 for p in players if float(p.get("MPG") or 0) >= 10)
+    except (TypeError, ValueError):
+        deep10 = 0
+    if deep15 < 8:
+        flags.append(
+            f"thin rotation: only {deep15} players at 15+ MPG"
+            " (a healthy rotation runs 8-10 deep)"
+        )
+    if deep10 < 10:
+        flags.append(f"short bench: only {deep10} players at 10+ MPG")
+    try:
+        share = float(most_used_share or 0)
+    except (TypeError, ValueError):
+        share = 0.0
+    if share >= 0.35:
+        flags.append(
+            "heavy reliance: the most-used unit takes"
+            f" {round(share * 100)}% of sampled lineup minutes"
+        )
+    diffs = [d for d in (bench_diffs or []) if isinstance(d, (int, float))]
+    if len(diffs) >= 3:
+        avg = sum(diffs) / len(diffs)
+        if avg <= -3:
+            flags.append(
+                "bench drag: rotation players 6-10 average"
+                f" {avg:+.1f} on/off"
+            )
+    try:
+        cached = int(cached_onoff or 0)
+    except (TypeError, ValueError):
+        cached = 0
+    if cached < 8:
+        flags.append(
+            f"on/off coverage thin: only {cached} of the top 10"
+            " have cached on/off"
+        )
+    return flags
+
+
+def _closing_candidates(
+    units: list[dict[str, Any]], top_units: int, min_possessions: int,
+) -> list[dict[str, Any]]:
+    # Defensive dedupe by GROUP_NAME: callers should pass already-deduped
+    # units (get_lineup_stats dedupes by GROUP_ID), but slimmed rows carry
+    # no GROUP_ID, so guard here too to keep one closing slot per unit.
+    seen: set[str] = set()
+    distinct: list[dict[str, Any]] = []
+    for u in units or []:
+        key = str(u.get("GROUP_NAME") or "")
+        if key in seen:
+            continue
+        seen.add(key)
+        distinct.append(u)
+    eligible = [u for u in distinct if (u.get("poss") or 0) >= min_possessions]
+    ordered = sorted(eligible, key=lambda u: float(u.get("NET_RATING") or 0), reverse=True)
+    return [_slim_unit_row(u) for u in ordered[:top_units]]
+
+
+def _avg_diff(rows: list[dict[str, Any]]) -> float | None:
+    diffs = [r.get("DIFF") for r in rows
+             if r.get("CACHED") and isinstance(r.get("DIFF"), (int, float))]
+    if not diffs:
+        return None
+    return round(sum(diffs) / len(diffs), 1)
+
+
+def _assemble_rotation_report(
+    *,
+    team_id: int,
+    abbrev: str,
+    season: str,
+    min_possessions: int,
+    top_units: int,
+    players: list[dict[str, Any]],
+    units: list[dict[str, Any]],
+    clutch_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    players = players or []
+    units = units or []
+    clutch_rows = clutch_rows or []
+    tiers = _tier_players(players)
+    top15 = (tiers["core"] + tiers["bench"] + tiers["fringe"])[:15]
+    try:
+        total_min = sum(float(p.get("MIN") or 0) for p in top15)
+        core_min = sum(float(p.get("MIN") or 0) for p in tiers["core"])
+        share = round(core_min / total_min, 3) if total_min > 0 else 0.0
+    except (TypeError, ValueError):
+        share = 0.0
+    bench_rows = tiers["bench"]
+    bench_cached = sum(1 for p in bench_rows if p.get("CACHED"))
+    bench_diffs = [p.get("DIFF") for p in bench_rows]
+    top10 = (tiers["core"] + tiers["bench"])[:10]
+    cached10 = sum(1 for p in top10 if p.get("CACHED"))
+    slimmed = [_slim_unit_row(u) for u in units]
+    most_used = slimmed[0] if slimmed else None
+    try:
+        total_est = sum(float(u.get("EST_MIN") or 0) for u in units)
+        top_est = float(units[0].get("EST_MIN") or 0) if units else 0.0
+        most_share = (top_est / total_est) if total_est > 0 else 0.0
+    except (TypeError, ValueError, IndexError):
+        most_share = 0.0
+    thin = _thin_rotation_flags(
+        players=players,
+        most_used_share=most_share,
+        bench_diffs=bench_diffs,
+        cached_onoff=cached10,
+    )
+    if not players and not units:
+        thin = []
+    closing = _closing_candidates(units, top_units, min_possessions)
+    try:
+        total_poss = sum(int(u.get("poss") or 0) for u in units)
+    except (TypeError, ValueError):
+        total_poss = 0
+    ids = {p.get("PLAYER_ID") for p in players if p.get("PLAYER_ID") is not None}
+    closers: list[dict[str, Any]] = []
+    for r in clutch_rows:
+        if ids and r.get("PLAYER_ID") not in ids:
+            continue
+        closers.append({
+            "PLAYER": r.get("PLAYER_NAME") or r.get("PLAYER"),
+            "PLAYER_ID": r.get("PLAYER_ID"),
+            "GP": r.get("GP"),
+            "W": r.get("W"),
+            "L": r.get("L"),
+            "MIN": r.get("MIN"),
+        })
+        if len(closers) >= 8:
+            break
+    clutch_note = (
+        "warehouse silver_clutch is player-scope only"
+        " (last 5 min, margin <=5); team-level clutch splits live"
+        " in get_clutch, not duplicated here"
+    )
+    if not closers:
+        clutch_note += "; no cached clutch minutes for this team's players"
+    return {
+        "tool": "get_rotation_check",
+        "ok": True,
+        "rows": {
+            "team": {"id": team_id, "abbrev": abbrev},
+            "coverage": {
+                "season": season,
+                "units": len(units),
+                "total_unit_poss": total_poss,
+                "minutes_basis": (
+                    "lineup EST_MIN = poss/2; lineup MIN is full-season"
+                    " 2025-26 (silver_lineups, sportsdataverse seeds);"
+                    " player MIN is season-to-date"
+                    " from silver_hist_player_seasons"
+                ),
+            },
+            "tiers": tiers,
+            "starter_bench_split": {
+                "starter_min_share": share,
+                "starter_avg_diff": _avg_diff(tiers["core"]),
+                "bench_avg_diff": _avg_diff(bench_rows),
+                "bench_cached": bench_cached,
+            },
+            "most_used_unit": most_used,
+            "closing_candidates": closing,
+            "thin_flags": thin,
+            "clutch_context": {"note": clutch_note, "closers": closers},
+        },
+        "meta": {
+            "source": "warehouse",
+            "season": season,
+            "team_id": team_id,
+            "sample_floor": f"{min_possessions} possessions",
+            "data_note": (
+                "warehouse-only; lineup EST_MIN = poss/2; silver_lineups"
+                " MIN is full-season 2025-26 (sportsdataverse seeds); units under the"
+                f" {min_possessions}-possession floor are hidden by"
+                " get_lineup_stats, never presented as signal; player MIN is"
+                " season-to-date from silver_hist_player_seasons and on/off"
+                " from silver_on_off; every number is labeled with its source"
+                " table and coverage in coverage/meta"
+            ),
+        },
+    }
+
+
+def _fetch_rotation_players(season: str, abbrev: str) -> list[dict[str, Any]]:
     from .. import store as _store
 
-    tid = coerce_team_id(team)
-    abbr = _abbrev(team)
-    ros: list[dict[str, Any]] = []
+    return _store._read_df(
+        "SELECT player_id, player_name, gp, min, pts"
+        " FROM silver_hist_player_seasons"
+        " WHERE _season = ? AND team_abbreviation = ?",
+        [season, abbrev],
+    )
+
+
+def _fetch_rotation_onoff(
+    season: str, pid: object,
+) -> tuple[float | None, float | None, float | None, bool]:
+    from .. import store as _store
+
     try:
-        from nba_api.stats.endpoints import CommonTeamRoster as _CTR
-        import polars as _pl
-
-        for _df in _CTR(team_id=tid, season=season, timeout=30).get_data_frames():
-            _p = _pl.from_pandas(_df)
-            if "PLAYER_ID" in _p.columns and _p.height:
-                ros = _p.to_dicts()
-                break
+        cached = _store._read_df(
+            'SELECT Stat, "On", "Off", "On-Off" FROM silver_on_off'
+            " WHERE _season = ? AND _entity = ?",
+            [season, f"player:{pid}"],
+        )
     except Exception:
-        ros = []
-    if not ros:
-        try:
-            res = nba_stats.team_roster(tid, season)
-            ros = [r for r in (res.frame.to_dicts() if res.ok else [])
-                   if r.get("PLAYER_ID")]
-        except Exception:
-            ros = []
-    if not ros:
-        try:
-            from ..store import _read_df
-
-            w_ros = _read_df(
-                "SELECT PLAYER, PLAYER_ID, PTS, GP, MIN FROM silver_leaders_pts "
-                "WHERE _season = ? AND (TEAM = ? OR TEAM_ID = ?) ORDER BY PTS DESC LIMIT 15",
-                [season, abbr, tid],
-            )
-            if not w_ros:
-                w_ros = _read_df(
-                    "SELECT PLAYER, PLAYER_ID, PTS, GP, MIN FROM silver_leaders_pts "
-                    "WHERE TEAM = ? OR TEAM_ID = ? ORDER BY PTS DESC LIMIT 15",
-                    [abbr, tid],
-                )
-            if w_ros:
-                ros = w_ros
-        except Exception:
-            pass
-    mcol = next((c for c in ("MIN", "MPG", "PTS", "EXP") if ros and c in ros[0]), "")
-    if mcol:
-        def _num(r: dict[str, Any]) -> float:
+        return None, None, None, False
+    if not cached:
+        return None, None, None, False
+    for r in cached:
+        if r.get("Stat") == "Pts per 100 Possessions":
             try:
-                return float(r.get(mcol) or 0)
+                return float(r.get("On")), float(r.get("Off")), float(r.get("On-Off")), True
             except (TypeError, ValueError):
-                return 0.0
-        ros = sorted(ros, key=_num, reverse=True)
-    ros = ros[:10]
-    players: list[dict[str, Any]] = []
-    for r in ros:
+                return None, None, None, True
+    return None, None, None, True
+
+
+def _fetch_rotation_clutch(season: str, team_id: int) -> list[dict[str, Any]]:
+    from .. import store as _store
+
+    try:
+        return _store._read_df(
+            "SELECT PLAYER_NAME, PLAYER_ID, GP, W, L, MIN FROM silver_clutch"
+            " WHERE _season = ? AND TEAM_ID = ? ORDER BY MIN DESC",
+            [season, team_id],
+        )
+    except Exception:
+        return []
+
+
+async def _fetch_rotation_units(
+    team: str | int, season: str, min_possessions: int,
+) -> list[dict[str, Any]]:
+    from .lineup import get_lineup_stats
+
+    res = await get_lineup_stats.ainvoke({
+        "team": team,
+        "season": season,
+        "min_possessions": min_possessions,
+        "include_small": False,
+        "limit": 25,
+    })
+    if not isinstance(res, dict) or not res.get("ok"):
+        return []
+    return res.get("rows") or []
+
+
+@tool
+async def get_rotation_check(
+    team: str | int = "", season: str = SEASON, min_possessions: int = 100,
+    top_units: int = 5,
+) -> dict[str, Any]:
+    """Rotation and closing-unit check from warehouse five-man units, minutes, and cached on/off."""
+    try:
+        tid = coerce_team_id(team)
+    except ValueError as exc:
+        return {"tool": "get_rotation_check", "ok": False,
+                "error": str(exc)[:160]}
+    abbr = _abbrev(team)
+    try:
+        raw_players = _fetch_rotation_players(season, abbr)
+    except Exception:
+        raw_players = []
+    enriched: list[dict[str, Any]] = []
+    for r in raw_players:
         try:
-            pid = r.get("PLAYER_ID")
-            name = r.get("PLAYER") or f"{r.get('FIRST_NAME', '')} {r.get('LAST_NAME', '')}".strip() or str(pid)
-            cached: list = []
+            pid = r.get("player_id", r.get("PLAYER_ID"))
+            name = r.get("player_name", r.get("PLAYER") or r.get("player"))
+            gp = r.get("gp", r.get("GP") or 0)
+            minutes = r.get("min", r.get("MIN") or 0)
+            pts = r.get("pts", r.get("PTS") or 0)
             try:
-                con = _store.connect()
-                try:
-                    cached = con.execute(
-                        'SELECT Stat, "On", "Off", "On-Off" FROM silver_on_off'
-                        " WHERE _season = ? AND _entity = ?",
-                        [season, f"player:{pid}"],
-                    ).fetchall()
-                finally:
-                    con.close()
-            except Exception:
-                cached = []
-            by_stat = {s: (o, f, d) for s, o, f, d in cached}
-            row: dict[str, Any] = {"PLAYER": name, "ON": None, "OFF": None,
-                                   "DIFF": None, "MIN": 0, "CACHED": bool(cached)}
+                gp_f = int(gp or 0)
+            except (TypeError, ValueError):
+                gp_f = 0
             try:
-                o, f, d = by_stat["Pts per 100 Possessions"]
-                row["ON"], row["OFF"], row["DIFF"] = float(o), float(f), float(d)
-            except (KeyError, TypeError, ValueError):
-                pass
+                mpg = float(minutes or 0)
+            except (TypeError, ValueError):
+                mpg = 0.0
             try:
-                m = next(v[0] for k, v in by_stat.items()
-                         if k.strip().lower() in ("minutes", "min", "possessions"))
-                row["MIN"] = float(m)
-            except (StopIteration, TypeError, ValueError):
-                pass
-            players.append(row)
+                ppg = float(pts or 0)
+            except (TypeError, ValueError):
+                ppg = 0.0
+            # Warehouse min/pts are per-game averages, so season totals
+            # are derived as per-game * gp; MPG keeps the warehouse value.
+            min_f = round(mpg * gp_f, 1) if gp_f > 0 else 0.0
+            pts_f = round(ppg * gp_f, 1) if gp_f > 0 else 0.0
+            on, off, diff, cached = _fetch_rotation_onoff(season, pid)
+            enriched.append({
+                "PLAYER": name, "PLAYER_ID": pid, "GP": gp_f, "MIN": min_f,
+                "MPG": round(mpg, 1), "PTS": pts_f, "ON": on, "OFF": off,
+                "DIFF": diff, "CACHED": cached,
+            })
         except Exception:
-            players.append({"PLAYER": "?", "ON": None, "OFF": None,
-                            "DIFF": None, "MIN": 0, "CACHED": False})
-    flag = ", ".join(p["PLAYER"] for p in players
-                     if isinstance(p.get("DIFF"), (int, float)) and p["DIFF"] < -5
-                     and isinstance(p.get("MIN"), (int, float)) and p["MIN"] > 100)
-    return {"tool": "get_rotation_check", "ok": True,
-            "rows": {"team": abbr, "players": players, "flag": flag},
-            "meta": {"source": "nba_api+warehouse", "season": season}}
+            continue
+    # Consider the top 15 by per-game minutes (MPG), not cumulative MIN:
+    # a star who missed games must stay in the tiering set rather than be
+    # squeezed out by cumulative-minutes sorting. Tiers then apply the GP
+    # floor in _tier_players.
+    enriched = sorted(enriched, key=lambda p: float(p.get("MPG") or 0),
+                      reverse=True)[:15]
+    try:
+        units = await _fetch_rotation_units(team, season, min_possessions)
+    except Exception:
+        units = []
+    clutch_rows = _fetch_rotation_clutch(season, tid)
+    return _assemble_rotation_report(
+        team_id=tid, abbrev=abbr, season=season,
+        min_possessions=min_possessions, top_units=top_units,
+        players=enriched, units=units, clutch_rows=clutch_rows,
+    )
 
 
 @tool

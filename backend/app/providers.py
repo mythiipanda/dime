@@ -5,6 +5,7 @@ Routes clamp the model id at the boundary before anything else runs.
 """
 
 from typing import Any, Literal
+import json
 from langchain_core.messages import BaseMessage
 from langchain_openai import ChatOpenAI
 
@@ -155,6 +156,64 @@ async def astream_with_fallback(
         except Exception as exc:
             errors.append(f"{name}: {str(exc)[:160]}")
     raise RuntimeError("all providers failed: " + " | ".join(errors))
+
+
+async def astream_chunks_with_fallback(
+    primary: ProviderName,
+    model: str,
+    messages: list[BaseMessage],
+    **kwargs: Any,
+):
+    """Yield raw LangChain chunks, trying providers in order.
+
+    Unlike astream_with_fallback this preserves tool_call_chunks so
+    tool-bound calls can stream text tokens live AND still collect
+    tool calls. Yields {"provider": name, "chunk": chunk}.
+    """
+    errors: list[str] = []
+    for name in fallback_order(primary):
+        client = get_llm(name, model if name == primary else None)
+        if client is None:
+            errors.append(f"{name}: missing key")
+            continue
+        try:
+            async for chunk in client.astream(messages, **kwargs):
+                yield {"provider": name, "chunk": chunk}
+            return
+        except Exception as exc:
+            errors.append(f"{name}: {str(exc)[:160]}")
+    raise RuntimeError("all providers failed: " + " | ".join(errors))
+
+
+def accumulate_tool_calls(tc_chunks: list[dict]) -> list[dict]:
+    """Reassemble LangChain tool_call_chunks into [{name, args, id}]."""
+    by_idx: dict[int, dict] = {}
+    for tc in tc_chunks:
+        if not isinstance(tc, dict):
+            continue
+        try:
+            idx = int(tc.get("index", 0) or 0)
+        except Exception:
+            idx = 0
+        e = by_idx.setdefault(idx, {"name": "", "args": "", "id": ""})
+        if tc.get("name"):
+            e["name"] = tc["name"]
+        if tc.get("id"):
+            e["id"] = tc["id"]
+        args = tc.get("args")
+        if args:
+            e["args"] += args if isinstance(args, str) else str(args)
+    out: list[dict] = []
+    for idx in sorted(by_idx):
+        e = by_idx[idx]
+        try:
+            args = json.loads(e["args"] or "{}")
+        except Exception:
+            args = {}
+        if not isinstance(args, dict):
+            args = {}
+        out.append({"name": e["name"], "args": args, "id": e["id"]})
+    return out
 
 
 def models_catalog() -> dict[str, Any]:

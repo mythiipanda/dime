@@ -32,14 +32,18 @@ def empty(source: str, season: str, error: str) -> FetchResult:
     )
 
 
-def safe(source: str, season: str, fn: Any, *args: Any, **kwargs: Any) -> FetchResult:
+def safe(source: str, season: str, fn: Any, *args: Any,
+         accept_empty: bool = False, **kwargs: Any) -> FetchResult:
+    """Retry wrapper. Empty-but-successful results are retried unless the
+    caller opts in to accept_empty (a valid empty answer, e.g. no games
+    on a scoreboard date, is not a failure)."""
     import time as _time
 
     last: Exception | None = None
     for attempt in range(3):
         try:
             frame = fn(*args, **kwargs)
-            if getattr(frame, "height", 0) > 0:
+            if getattr(frame, "height", 0) > 0 or accept_empty:
                 return FetchResult(frame=frame, meta=FetchMeta(source, season))
             last = RuntimeError("empty upstream response")
         except Exception as exc:

@@ -59,6 +59,8 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Benchmark result artifacts (local runs only, never commit)
+backend/bench/results/
 # local-only: agent config, plans, working docs (never on remote)
 .opencode/
 .taskmaster/

@@ -160,7 +160,9 @@ def scoreboard(game_date: str, season: str) -> FetchResult:
         except Exception:
             return header
 
-    return safe(SOURCE, season, run)
+    # A date with no games is a valid empty answer, not a failure:
+    # retrying it burns ~24s of backoff sleeps in safe().
+    return safe(SOURCE, season, run, accept_empty=True)
 
 
 def shot_chart(player_id: int, season: str, team_id: int = 0) -> FetchResult:

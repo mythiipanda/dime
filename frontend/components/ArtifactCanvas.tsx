@@ -1,12 +1,22 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { tableKind } from "../lib/api";
 import AutoChart from "./AutoChart";
+import AwardRaceView, { parseAwardRace } from "./AwardRaceView";
 import CompareView from "./CompareView";
+import CompsView, { parseCompsRows } from "./CompsView";
 import CourtHeatmap from "./CourtHeatmap";
 import DataTable from "./DataTable";
+import GameLogView, { parseGameLogs } from "./GameLogView";
+import MatchupPreviewView, { parsePreview } from "./MatchupPreviewView";
+import PredictionView, { parsePrediction } from "./PredictionView";
+import RegressionView, { parseRegression } from "./RegressionView";
+import RotationCheckView, { parseRotation } from "./RotationCheckView";
+import SplitsView, { parseSplits } from "./SplitsView";
+import StreaksView, { parseStreaks } from "./StreaksView";
+import TradeValueView, { parseTradeValue } from "./TradeValueView";
 import TrendChart, { isRaptorRows } from "./TrendChart";
+import { resolveToolName } from "./view-shared";
 import WowyCard from "./WowyCard";
 import ZoneBars, { isZoneRows } from "./ZoneBars";
 
@@ -15,6 +25,7 @@ export interface ArtifactItem {
   tool: string;
   title?: string;
   rows?: unknown;
+  player?: unknown;
   meta?: {
     source?: string;
     fetched_at?: string;
@@ -38,7 +49,26 @@ export default function ArtifactCanvas({ artifact, onClose, onAsk }: ArtifactCan
   const [viewMode, setViewMode] = useState<"court" | "table" | "chart">("table");
   const [heat, setHeat] = useState(false);
 
-  const isShotTool = tableKind((artifact || {}) as { kind?: string; tool?: string }) === "shots";
+  const toolName =
+    resolveToolName({ tool: artifact?.tool, title: artifact?.title }) ??
+    artifact?.tool;
+
+  const isShotTool = toolName === "get_shot_zones" || toolName === "get_shot_compare";
+
+  const isCustomView =
+    toolName === "get_compare" ||
+    toolName === "get_preview" ||
+    toolName === "get_wowy" ||
+    toolName === "get_comps" ||
+    toolName === "get_award_race" ||
+    toolName === "get_trade_value" ||
+    toolName === "get_matchup_splits" ||
+    toolName === "get_regression_check" ||
+    toolName === "get_matchup_preview" ||
+    toolName === "get_streaks" ||
+    toolName === "get_game_prediction" ||
+    toolName === "search_game_logs" ||
+    toolName === "get_rotation_check";
 
   const tableRows =
     (artifact?.rows as { rows?: unknown } | undefined)?.rows ?? artifact?.rows;
@@ -57,15 +87,13 @@ export default function ArtifactCanvas({ artifact, onClose, onAsk }: ArtifactCan
     } else {
       setViewMode("table");
     }
-  }, [artifact?.tool, isShotTool]);
+  }, [artifact?.id, toolName, isShotTool]);
 
   if (!artifact) return null;
 
   const autoTitle =
-    (typeof artifact.tool === "string"
-      ? artifact.tool.replace("get_", "").replace(/_/g, " ").toUpperCase() +
-        (artifact.meta?.stat_category ? ` · ${artifact.meta.stat_category}` : "")
-      : "Dataset");
+    (toolName || "dataset").replace("get_", "").replace(/_/g, " ").toUpperCase() +
+    (artifact.meta?.stat_category ? ` · ${artifact.meta.stat_category}` : "");
   const rawTitle = artifact.title || autoTitle;
   const playerName =
     artifact.title && artifact.title !== autoTitle ? artifact.title : undefined;
@@ -142,7 +170,7 @@ export default function ArtifactCanvas({ artifact, onClose, onAsk }: ArtifactCan
             >
               Table
             </button>
-            {!isShotTool && artifact.tool !== "get_wowy" && artifact.tool !== "get_compare" && (
+            {!isShotTool && !isCustomView && (
               <button
                 type="button"
                 className={viewMode === "chart" ? "tab-active" : "pill-ghost"}
@@ -208,13 +236,38 @@ export default function ArtifactCanvas({ artifact, onClose, onAsk }: ArtifactCan
         )}
 
         {/* View Mode Rendering */}
-        {tableKind(artifact) === "compare" ? (
+        {toolName === "get_compare" || toolName === "get_preview" ? (
           <CompareView rows={artifact.rows} />
-        ) : tableKind(artifact) === "wowy" ? (
+        ) : toolName === "get_wowy" ? (
           <WowyCard rows={artifact.rows} meta={artifact.meta} verdict={artifact.verdict} />
+        ) : toolName === "get_comps" && parseCompsRows(artifact.rows) ? (
+          <CompsView
+            rows={artifact.rows}
+            target={artifact.player}
+            meta={artifact.meta as { similarity?: string; season?: string } | undefined}
+          />
+        ) : toolName === "get_award_race" && parseAwardRace(artifact.rows) ? (
+          <AwardRaceView rows={artifact.rows} meta={artifact.meta} />
+        ) : toolName === "get_trade_value" && parseTradeValue(artifact.rows) ? (
+          <TradeValueView rows={artifact.rows} />
+        ) : toolName === "get_matchup_splits" && parseSplits(artifact.rows) ? (
+          <SplitsView rows={artifact.rows} meta={artifact.meta} />
+        ) : toolName === "get_regression_check" && parseRegression(artifact.rows) ? (
+          <RegressionView rows={artifact.rows} />
+        ) : toolName === "get_matchup_preview" && parsePreview(artifact.rows) ? (
+          <MatchupPreviewView rows={artifact.rows} meta={artifact.meta} />
+        ) : toolName === "get_streaks" && parseStreaks(artifact.rows) ? (
+          <StreaksView rows={artifact.rows} meta={artifact.meta} />
+        ) : toolName === "get_game_prediction" &&
+          parsePrediction(artifact.rows ?? artifact) ? (
+          <PredictionView rows={artifact.rows ?? artifact} meta={artifact.meta} />
+        ) : toolName === "search_game_logs" && parseGameLogs(artifact.rows) ? (
+          <GameLogView rows={artifact.rows} meta={artifact.meta} />
+        ) : toolName === "get_rotation_check" && parseRotation(artifact.rows) ? (
+          <RotationCheckView rows={artifact.rows} meta={artifact.meta} />
         ) : isShotTool && viewMode === "court" ? (
           <CourtHeatmap rows={artifact.rows} meta={artifact.meta} verdict={artifact.verdict} />
-        ) : tableKind(artifact) === "python" ? (
+        ) : toolName === "run_python" ? (
           <div
             style={{
               background: "var(--color-stone-canvas)",

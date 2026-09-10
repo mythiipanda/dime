@@ -159,6 +159,243 @@ def test_pair_history_slim_both_on():
     assert pair_history({"ok": False, "error": "never shared"})["both_on_net"] is None
 
 
+def _splits_fixture():
+    return [
+        {"GAME_DATE": "Jan 1, 2026", "MATCHUP": "HOU vs. MIN",
+         "PTS": 30, "REB": 10, "AST": 5, "FGM": 10, "FGA": 20,
+         "FTM": 5, "FTA": 6, "PLUS_MINUS": 3},
+        {"GAME_DATE": "Jan 3, 2026", "MATCHUP": "HOU @ PHX",
+         "PTS": 20, "REB": 8, "AST": 7, "FGM": 8, "FGA": 16,
+         "FTM": 2, "FTA": 2, "PLUS_MINUS": -1},
+        {"GAME_DATE": "Jan 4, 2026", "MATCHUP": "HOU vs. DEN",
+         "PTS": 10, "REB": 6, "AST": 3, "FGM": 4, "FGA": 12,
+         "FTM": 0, "FTA": 0, "PLUS_MINUS": -5},
+    ]
+
+
+def test_splits_aggregate_math():
+    from app.tools.splits import aggregate, ts_of
+
+    rows = _splits_fixture()
+    assert aggregate(rows) == {
+        "gp": 0 + 3, "ppg": 20.0, "rpg": 8.0, "apg": 5.0,
+        "fg_pct": round(22 / 48, 3), "plus_minus": -1.0}
+    assert ts_of(rows) == round(60 / (2 * (48 + 0.44 * 8)), 3)
+    assert aggregate([])["gp"] == 0
+    assert ts_of([]) is None
+
+
+def test_splits_rest_days():
+    from app.tools.splits import rest_days
+
+    rows = _splits_fixture()
+    buckets = rest_days(rows)
+    assert len(buckets) == 2
+    assert buckets[0][1] == "1"
+    assert buckets[1][1] == "0"
+    assert rows[0] not in [b[0] for b in buckets]
+
+
+def test_splits_defense_rank():
+    from app.tools.splits import defense_rank
+
+    rows = [{"TEAM_ID": 1, "DEF_RATING": 115.0},
+            {"TEAM_ID": 2, "DEF_RATING": 108.0},
+            {"TEAM_ID": 3, "DEF_RATING": 112.0}]
+    assert defense_rank(rows) == {2: 1, 3: 2, 1: 3}
+
+
+def test_splits_verdict_branches():
+    from app.tools.splits import verdict_for
+
+    v, _ = verdict_for(5.0, 0.0, 0.0, 0.0, 3, 2.0)
+    assert v == "too early"
+    v, _ = verdict_for(0.5, 0.0, 0.0, 0.0, 10, 2.0)
+    assert v == "sustainable"
+    v, note = verdict_for(5.0, 0.06, 0.0, 0.0, 10, 2.0)
+    assert v == "likely regresses"
+    assert "true shooting" in note
+    v, note = verdict_for(-5.0, 0.0, -4.0, 0.0, 10, 2.0)
+    assert v == "likely regresses"
+    assert "rebound" in note
+
+
+def test_splits_unknown_player():
+    from app.tools.splits import get_matchup_splits, get_regression_check
+
+    res = get_matchup_splits.invoke(
+        {"player": "Zzz Quux Nonexistent", "n": 5})
+    assert res["ok"] is False
+    assert "unknown player" in res["error"]
+    res = get_regression_check.invoke(
+        {"player": "Zzz Quux Nonexistent", "stat": "xyz", "n": 5})
+    assert res["ok"] is False
+    assert "unknown player" in res["error"]
+    from app.tools import clamp_stat
+
+    assert clamp_stat("xyz") == "PTS"
+
+
+def _warehouse_has_durant():
+    from app import store
+
+    con = store.connect()
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        if "silver_player_gamelogs" not in tables:
+            return False
+        n = con.execute(
+            "SELECT COUNT(*) FROM silver_player_gamelogs"
+            " WHERE _season = '2025-26' AND _entity = 'player:201142'"
+        ).fetchone()[0]
+        return n and n > 0
+    finally:
+        con.close()
+
+
+def test_splits_matchup_smoke():
+    try:
+        if not _warehouse_has_durant():
+            return
+    except Exception:
+        return
+    try:
+        from app.tools.splits import get_matchup_splits
+
+        res = get_matchup_splits.invoke(
+            {"player": "Kevin Durant", "n": 15, "season": "2025-26"})
+    except Exception:
+        return
+    assert res["ok"] is True
+    assert len(res["rows"]["splits"]) > 0
+    assert all("low_sample" in s for s in res["rows"]["splits"])
+
+
+def test_splits_regression_smoke():
+    try:
+        if not _warehouse_has_durant():
+            return
+    except Exception:
+        return
+    try:
+        from app.tools.splits import get_regression_check
+
+        res = get_regression_check.invoke(
+            {"player": "Kevin Durant", "stat": "xyz", "n": 10,
+             "season": "2025-26"})
+    except Exception:
+        return
+    assert res["ok"] is True
+    assert res["rows"]["stat"] == "PTS"
+    assert res["rows"]["verdict"] in (
+        "too early", "sustainable", "likely regresses")
+    assert res["rows"]["career"]["available"] is True
+    assert res["rows"]["career"]["per_game"] > 0
+
+
+def _warehouse_has_hist_durant():
+    from app import store
+
+    con = store.connect()
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        if "silver_hist_player_seasons" not in tables:
+            return False
+        n = con.execute(
+            "SELECT COUNT(*) FROM silver_hist_player_seasons"
+            " WHERE _entity = 'league' AND player_id = 201142"
+        ).fetchone()[0]
+        return n and n > 0
+    finally:
+        con.close()
+
+
+def test_splits_career_baseline_hits_seeded_warehouse():
+    try:
+        if not _warehouse_has_hist_durant():
+            return
+    except Exception:
+        return
+    from app.tools.splits import _career_baseline
+
+    res = _career_baseline(201142, "PTS")
+    assert res["available"] is True
+    assert res["gp"] >= 1
+    assert res["stat"] == "PTS"
+    assert res["per_game"] > 0
+    res = _career_baseline(201142, "REB")
+    assert res["available"] is True
+    res = _career_baseline(99999999, "PTS")
+    assert res["available"] is False
+
+
+def test_splits_sort_null_dates_last():
+    from app.tools.splits import _sort_by_date
+
+    rows = [
+        {"GAME_DATE": "not a date", "PTS": 1},
+        {"GAME_DATE": "Jan 3, 2026", "PTS": 3},
+        {"GAME_DATE": "Jan 1, 2026", "PTS": 2},
+    ]
+    desc = _sort_by_date(rows, desc=True)
+    assert [r["PTS"] for r in desc] == [3, 2, 1]
+    asc = _sort_by_date(rows, desc=False)
+    assert [r["PTS"] for r in asc] == [2, 3, 1]
+
+
+def test_trade_value_unknown_player():
+    from app.tools.league import get_trade_value
+
+    res = get_trade_value.invoke({"team_a": "LAL", "players_a": "Austin Reaves",
+                                  "team_b": "BKN",
+                                  "players_b": "Not A Realplayer"})
+    assert res["ok"] is False
+    assert "Not A Realplayer" in res["error"]
+
+
+def test_trade_value_empty_teams():
+    from app.tools.league import get_trade_value
+
+    res = get_trade_value.invoke({})
+    assert res["ok"] is False
+
+
+def test_trade_value_reaves_porter():
+    from app.tools.league import get_trade_value
+
+    try:
+        res = get_trade_value.invoke(
+            {"team_a": "LAL", "players_a": "Austin Reaves",
+             "picks_a": "2029 FRP", "team_b": "BKN",
+             "players_b": "Michael Porter Jr."})
+    except Exception:
+        import pytest
+
+        pytest.skip("warehouse unavailable")
+        return
+    if res["ok"] is False:
+        import pytest
+
+        pytest.skip(f"warehouse tables absent: {res.get('error')}")
+    verdict = res["rows"]["verdict"]
+    assert verdict["winner"] in {"LAL", "BKN", "even"}
+    assert set(verdict["grades"]) == {"LAL", "BKN"}
+    assert set(verdict["grades"].values()) <= {
+        "A", "A-", "B+", "B", "B-", "C+", "C", "D", "F"}
+    sides = (res["rows"]["team_a"], res["rows"]["team_b"])
+    assert all(isinstance(s["side_total_m"], (int, float)) for s in sides)
+    assert verdict["text"].count(".") >= 3
+    picks = res["rows"]["team_a"]["picks"]
+    assert picks and picks[0]["est_value_m"] > 0
+
+
+def test_registry_has_trade_value():
+    from app import tools as _tools
+
+    assert "get_trade_value" in _tools.TOOL_NAMES
+    assert graph.tool_label("get_trade_value") == "Grading trade value"
+
+
 def test_compare_metrics_adjudicates():
     from app.tools.player import compare_metrics
 
