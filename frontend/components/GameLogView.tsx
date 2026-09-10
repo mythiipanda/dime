@@ -163,10 +163,14 @@ export function parseGameLogs(rows: unknown): GameLogRows | null {
   };
 }
 
-function fmtDate(iso: string): string {
+function fmtDate(iso: string, withYear = false): string {
   const d = new Date(iso.length === 10 ? `${iso}T12:00:00` : iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    ...(withYear ? { year: "numeric" as const } : {}),
+  });
 }
 
 function LeadersBody({ g }: { g: GameLogLeaders }) {
@@ -281,11 +285,16 @@ export default function GameLogView({
         g.matches.length === 0 ? (
           <Caption>No games match these filters.</Caption>
         ) : (
+          <>
+            {(minPts !== null || minPra !== null || tdOnly) && (
+              <Caption>cyan = cleared the filter</Caption>
+            )}
           <div
             style={{
               background: "var(--color-pure-white)",
               border: "1px solid var(--color-stone-border)",
               borderRadius: 10,
+              marginTop: 8,
             }}
           >
             {g.matches.map((m, i) => {
@@ -295,6 +304,7 @@ export default function GameLogView({
               return (
                 <div
                   key={`${m.date}-${i}`}
+                  className="gamelog-row"
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -302,10 +312,11 @@ export default function GameLogView({
                     padding: "8px 14px",
                     borderTop: i === 0 ? "none" : "1px solid var(--color-stone-border)",
                     fontVariantNumeric: "tabular-nums",
+                    opacity: hit ? 1 : 0.55,
                   }}
                 >
                   <span style={{ width: 56, fontSize: 12, color: "var(--color-warm-gray)" }}>
-                    {fmtDate(m.date)}
+                    {fmtDate(m.date, !!meta?.season)}
                   </span>
                   <span style={{ width: 64, fontSize: 12, color: "var(--color-ink-black)" }}>
                     {m.home ? "vs " : "@ "}
@@ -333,18 +344,25 @@ export default function GameLogView({
                   <span style={{ fontSize: 11, color: "var(--color-ash-gray)" }}>
                     {showPra ? "PRA" : "PTS"}
                   </span>
-                  <span style={{ flex: 1, fontSize: 12, color: "var(--color-warm-gray)" }}>
-                    {m.pts.toFixed(0)} pts · {m.reb.toFixed(0)} reb · {m.ast.toFixed(0)} ast
+                  <span
+                    className="gamelog-details"
+                    style={{ flex: 1, minWidth: 0, fontSize: 12, color: "var(--color-warm-gray)" }}
+                  >
+                    {m.pts.toFixed(0)} pts · {m.reb.toFixed(0)} reb · {m.ast.toFixed(0)} ast ·{" "}
+                    {m.stl.toFixed(0)} stl · {m.blk.toFixed(0)} blk
                     {m.plusMinus !== null &&
-                      ` · ${m.plusMinus >= 0 ? "+" : ""}${m.plusMinus.toFixed(0)}`}
+                      ` · ${m.plusMinus >= 0 ? "+" : ""}${m.plusMinus.toFixed(0)} +/-`}
                   </span>
                   {(m.tripleDouble || tdOnly) && m.tripleDouble && (
-                    <Chip tone="accent">3x2</Chip>
+                    <Chip tone="accent" title="Triple-double">
+                      TD
+                    </Chip>
                   )}
                 </div>
               );
             })}
           </div>
+          </>
         )
       ) : (
         <div
@@ -361,8 +379,16 @@ export default function GameLogView({
       <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 4 }}>
         {g.total !== null && (
           <Caption>
-            {g.total} {g.kind === "games" ? (g.total === 1 ? "game" : "games") : "entries"}
-            {g.capped ? " (capped at limit)" : ""}
+            {(() => {
+              const shown = g.kind === "games" ? g.matches.length : g.leaders.length;
+              return (
+                <>
+                  {g.total !== shown ? `showing ${shown} of ${g.total} ` : `${g.total} `}
+                  {g.kind === "games" ? (g.total === 1 ? "game" : "games") : "entries"}
+                  {g.capped ? " (capped at limit)" : ""}
+                </>
+              );
+            })()}
           </Caption>
         )}
         {meta?.coverage_note && <Caption>{meta.coverage_note}</Caption>}

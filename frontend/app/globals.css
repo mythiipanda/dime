@@ -227,6 +227,36 @@ body {
 }
 
 @media (max-width: 768px) {
+  /* Game log rows: two lines on narrow screens (summary line, then details). */
+  .gamelog-row {
+    flex-wrap: wrap !important;
+    row-gap: 2px !important;
+  }
+  .gamelog-details {
+    flex: 1 1 100% !important;
+    min-width: 0;
+  }
+
+  /* Unit rows: name on its own line, metrics right-aligned below. */
+  .unit-row {
+    flex-wrap: wrap !important;
+    row-gap: 2px !important;
+  }
+  .unit-name {
+    flex: 1 1 100% !important;
+    min-width: 0;
+  }
+  .unit-chip {
+    order: 2;
+  }
+  .unit-net {
+    order: 3;
+    margin-left: auto;
+  }
+  .unit-poss {
+    order: 4;
+  }
+
   .sidebar-rail {
     display: none !important;
   }

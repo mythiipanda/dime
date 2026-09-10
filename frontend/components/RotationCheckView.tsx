@@ -166,7 +166,7 @@ function TierGroup({ label, players }: { label: string; players: RotationPlayer[
             {p.cached && p.diff !== null ? (
               <span
                 style={{
-                  width: 52,
+                  minWidth: 92,
                   textAlign: "right",
                   fontSize: 12,
                   fontWeight: 600,
@@ -175,7 +175,7 @@ function TierGroup({ label, players }: { label: string; players: RotationPlayer[
                 }}
               >
                 {p.diff >= 0 ? "+" : ""}
-                {p.diff.toFixed(1)}
+                {p.diff.toFixed(1)} net/100
               </span>
             ) : (
               <span style={{ fontSize: 11, color: "var(--color-ash-gray)" }}>no on/off</span>
@@ -187,9 +187,10 @@ function TierGroup({ label, players }: { label: string; players: RotationPlayer[
   );
 }
 
-function UnitRow({ u }: { u: RotationUnit }) {
+function UnitRow({ u, bestLabel }: { u: RotationUnit; bestLabel?: string }) {
   return (
     <div
+      className="unit-row"
       style={{
         display: "flex",
         alignItems: "center",
@@ -197,10 +198,17 @@ function UnitRow({ u }: { u: RotationUnit }) {
         fontVariantNumeric: "tabular-nums",
       }}
     >
-      <span style={{ flex: 1, fontSize: 12, color: "var(--color-ink-black)" }}>{u.name}</span>
-      {u.best && <Chip tone="accent">best net</Chip>}
+      <span className="unit-name" style={{ flex: 1, fontSize: 12, color: "var(--color-ink-black)" }}>
+        {u.name.split("-").join(", ")}
+      </span>
+      {u.best && (
+        <Chip tone="accent" className="unit-chip">
+          {bestLabel ?? "best net"}
+        </Chip>
+      )}
       {u.net !== null && (
         <span
+          className="unit-net"
           style={{
             fontSize: 13,
             fontWeight: 600,
@@ -212,7 +220,7 @@ function UnitRow({ u }: { u: RotationUnit }) {
         </span>
       )}
       {u.poss !== null && (
-        <span style={{ fontSize: 11, color: "var(--color-ash-gray)" }}>
+        <span className="unit-poss" style={{ fontSize: 11, color: "var(--color-ash-gray)" }}>
           {Math.round(u.poss)} poss
         </span>
       )}
@@ -244,22 +252,27 @@ export default function RotationCheckView({
         {(r.season || meta?.season) && <Chip>{r.season || meta?.season}</Chip>}
         {r.units !== null && (
           <Chip>
-            {r.units} {r.units === 1 ? "unit" : "units"}
+            {r.units} {r.units === 1 ? "lineup" : "lineups"}
           </Chip>
         )}
         {r.starterShare !== null && (
           <Chip tone="accent">starters {(r.starterShare * 100).toFixed(0)}% of minutes</Chip>
         )}
       </div>
+      <Caption>
+        on/off = net rating per 100 possessions, on-court minus off-court · mpg = minutes per
+        game · poss = possessions
+      </Caption>
 
       {r.flags.length > 0 ? (
         <div
           style={{
-            background: "var(--color-stone-canvas)",
+            background: "var(--color-pure-white)",
             border: "1px solid var(--color-stone-border)",
             borderRadius: 10,
             padding: "12px 16px",
             marginBottom: 12,
+            marginTop: 12,
             display: "flex",
             flexDirection: "column",
             gap: 6,
@@ -286,9 +299,9 @@ export default function RotationCheckView({
 
       {(r.starterDiff !== null || r.benchDiff !== null) && (
         <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginBottom: 12 }}>
-          Starters {r.starterDiff !== null ? `${r.starterDiff >= 0 ? "+" : ""}${r.starterDiff.toFixed(1)}` : "—"}
-          {" · "}bench {r.benchDiff !== null ? `${r.benchDiff >= 0 ? "+" : ""}${r.benchDiff.toFixed(1)}` : "—"}
-          {" avg on/off"}
+          Starters {r.starterDiff !== null ? `${r.starterDiff >= 0 ? "+" : ""}${r.starterDiff.toFixed(1)} net/100` : "—"}
+          {" · "}bench {r.benchDiff !== null ? `${r.benchDiff >= 0 ? "+" : ""}${r.benchDiff.toFixed(1)} net/100` : "—"}
+          {" (avg on/off)"}
         </div>
       )}
 
@@ -318,7 +331,7 @@ export default function RotationCheckView({
                 >
                   Most used
                 </div>
-                <UnitRow u={r.mostUsed} />
+                <UnitRow u={r.mostUsed} bestLabel="best net overall" />
               </div>
             )}
             {r.closing.length > 0 && (
@@ -335,7 +348,7 @@ export default function RotationCheckView({
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {r.closing.map((u, i) => (
-                    <UnitRow key={`${u.name}-${i}`} u={u} />
+                    <UnitRow key={`${u.name}-${i}`} u={u} bestLabel="best net closing" />
                   ))}
                 </div>
               </div>
@@ -351,7 +364,11 @@ export default function RotationCheckView({
               Clutch minutes:{" "}
               {r.closers
                 .slice(0, 5)
-                .map((c) => c.name)
+                .map((c) =>
+                  c.w !== null && c.l !== null
+                    ? `${c.name} ${c.w}-${c.l}${c.gp !== null ? ` (${c.gp} GP)` : ""}`
+                    : c.name,
+                )
                 .join(" · ")}
             </div>
           )}

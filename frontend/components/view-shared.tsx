@@ -57,12 +57,18 @@ export function Bar({
 export function Chip({
   children,
   tone = "neutral",
+  title,
+  className,
 }: {
   children: ReactNode;
   tone?: "neutral" | "accent";
+  title?: string;
+  className?: string;
 }) {
   return (
     <span
+      title={title}
+      className={className}
       style={{
         display: "inline-block",
         fontSize: 11,
