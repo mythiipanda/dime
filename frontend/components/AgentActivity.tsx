@@ -35,10 +35,12 @@ function liveThoughtsFor(ai: AiMessage): { node: NodeName; text: string; agent?:
   const out: { node: NodeName; text: string; agent?: string }[] = [];
   for (const n of AGENT_NODES) {
     const s = ai.nodes[n];
-    if (s?.liveThought) out.push({ node: n, text: s.liveThought, agent: s.liveThoughtAgent });
+    if (s?.liveThought) out.push({ node: n, text: stripMd(s.liveThought), agent: s.liveThoughtAgent });
   }
   return out;
 }
+
+const stripMd = (s: string) => s.replace(/\*\*|__|`/g, "");
 
 function fmtMs(ms?: number): string {
   if (ms === undefined || ms === null) return "";

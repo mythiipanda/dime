@@ -1152,7 +1152,18 @@ def _numbers(text: str) -> list[str]:
 
 
 def _event(kind: str, payload: Any) -> dict[str, Any]:
+    if kind == "tool_result" and isinstance(payload, dict) and payload.get("error"):
+        payload = {**payload, "error": _sanitize_error(str(payload["error"]))}
     return {"type": kind, "data": payload}
+
+
+_ABS_PATH_RX = re.compile(r"(?<![\w:/])(?:/[\w.\-]+)+")
+_PID_RX = re.compile(r"\bpid\b\s*[:=]?\s*\d+", re.IGNORECASE)
+
+
+def _sanitize_error(msg: str) -> str:
+    msg = _PID_RX.sub("pid", msg)
+    return _ABS_PATH_RX.sub(lambda m: m.group(0).rsplit("/", 1)[-1], msg)
 
 
 async def entry_node(state: DimeState) -> AsyncGenerator[dict[str, Any], None]:
