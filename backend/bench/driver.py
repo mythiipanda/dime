@@ -21,17 +21,6 @@ def _label_to_name() -> dict[str, str]:
 
 
 _LABEL_TO_NAME = _label_to_name()
-_LABELS_LONGEST_FIRST = sorted(_LABEL_TO_NAME, key=len, reverse=True)
-
-
-def _names_in_text(text: str) -> list[str]:
-    found = []
-    for label in _LABELS_LONGEST_FIRST:
-        if label and label in text:
-            name = _LABEL_TO_NAME[label]
-            if name not in found:
-                found.append(name)
-    return found
 
 
 async def _collect(task: Task, model: str | None) -> tuple[
@@ -50,17 +39,15 @@ async def _collect(task: Task, model: str | None) -> tuple[
     async for event in run_chat(task.question, model, []):
         kind = event.get("type", "")
         data = event.get("data", {}) or {}
-        if kind == "message" and data.get("label"):
-            name = _LABEL_TO_NAME.get(data["label"], data["label"])
-            tool_calls.append({"name": name, "args": {}})
-            _mark_ttft()
-        elif kind == "thought_stream" and data.get("text"):
-            seen = {c["name"] for c in tool_calls}
-            for name in _names_in_text(str(data["text"])):
-                if name not in seen:
-                    tool_calls.append({"name": name, "args": {}})
-                    seen.add(name)
-                    _mark_ttft()
+        # Stream carries exact tool names via tool_call events; arg
+        # summaries only (raw args are not emitted).
+        if kind == "tool_call":
+            name = data.get("name") or _LABEL_TO_NAME.get(
+                data.get("label", ""), data.get("label", ""))
+            if name:
+                tool_calls.append({"name": name, "args": {
+                    "summary": str(data.get("summary", ""))}})
+                _mark_ttft()
         elif kind == "node_update" and data.get("node") == "tools":
             _mark_ttft()
         elif kind == "custom_data" and data.get("tables") is not None:

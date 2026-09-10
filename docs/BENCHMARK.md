@@ -9,10 +9,10 @@ sampled fresh on each run.
 ## Methodology
 
 The agent entry point is `app.graph.run_chat(question, model_id, history)`,
-an async generator yielding `node_update`, `thought_stream`, `message`,
+an async generator yielding `node_update`, `thought_stream`, `tool_call`,
 `token`, `final_answer`, `suggestions`, `graph_end`, `error`, and
 `custom_data` events. The driver collects these events per task, records
-tool-call labels, captures the final answer text, and stops at `graph_end`.
+tool-call names from exact `tool_call` events, captures the final answer text, and stops at `graph_end`.
 
 Ground truth is computed from `app.store` (read-only DuckDB reads) and
 `app.sources` only. The benchmark never calls `app.tools` wrappers to build
@@ -55,15 +55,24 @@ the season moves. That drift is signal, not noise.
   small static `TOOL_FAMILY` table in `bench/scoring.py` (config, not a
   test case). Plumbing calls (`resolve_entity`, `search_nba`,
   `run_python`, `text_to_sql`, watchlist tools) are excluded. F1 of the
-  observed family set against the gold family set. Empty observation
+  observed family set against the gold family set. Observed calls are
+  captured from exact `tool_call` SSE events with arg summaries;
+  inference from progress text is removed. Empty observation
   scores 0.
 - `numeric_acc` — for each numeric ground-truth fact, 1 if the rounded
-  value (int, 1-decimal, comma, or raw form) or the entity's last name
-  appears in the final answer. Fraction matched over numeric facts.
-  Tasks with no numeric facts score 1.
-- `groundedness` — regex-extract numbers from the final answer, fraction
-  also present (after comma/percent normalization) in any observed tool
-  payload (`custom_data` tables). No numbers in the answer scores 1;
+  value (int, 1-decimal, comma, or raw form) appears in the final answer
+  with digit-boundary guards, so value 5 does not match inside 25.
+  The entity last-name fallback is removed: a name alone never counts
+  as a numeric hit. Season-shaped tokens (e.g. 2025-26) are stripped
+  before matching. Fraction matched over numeric facts. Tasks with no
+  numeric facts score 1.
+- `groundedness` — season-shaped tokens are excluded from numeric
+  extraction on both answer and payload sides. Remaining answer numbers
+  match payload numbers after comma/percent normalization, plus a
+  rounding-tolerant float comparison (|a - p| <= 0.051, covering
+  one-decimal rounding like 25.5 vs 25.47) and a reverse percent
+  conversion (non-percent answer number also tries cand*100, so 0.452
+  matches a 45.2% payload). No numbers in the answer scores 1;
   numbers with no payload evidence score 0.
 - `latency_ms` — wall clock per task. `ttft_ms` — time to the first tool
   call event; falls back to `latency_ms` when the agent calls no tools.
@@ -106,14 +115,9 @@ environment gaps, not agent failures.
 
 - The supervisor speaks mostly through delegates, so family attribution
   for delegate calls is approximate by construction.
-- Tool-call args are not visible in the event stream; `tool_calls`
-  records names only (`args` is `{}`).
 - Trade ground truth uses the simplified below-apron rule and ignores
   apron state, aggregation bans, and exceptions — same simplification as
   the tool, recomputed independently from raw rows.
-- `groundedness` counts season strings like 2025-26 as numbers, so answers
-  that state the season without season-stamped payload rows score lower.
-  Compare within families, not across, when the season is in the question.
 - Scores depend on the warehouse snapshot and the live LLM provider, so
   cross-run comparison needs the same seed plus a fresh warehouse.
 - The benchmark issues real LLM calls and can take minutes; it never

@@ -3,6 +3,11 @@
 import re
 
 NUM_RX = re.compile(r"-?\d+(?:,\d{3})*(?:\.\d+)?%?")
+SEASON_RX = re.compile(r"\b(?:19|20)\d\d-\d{2}(?:\d{2})?\b")
+
+
+def _strip_seasons(text: str) -> str:
+    return SEASON_RX.sub("", text or "")
 
 TOOL_FAMILY: dict[str, str | None] = {
     "get_leaders": "lookup",
@@ -105,16 +110,11 @@ def numeric_acc(facts: dict, answer: str) -> float:
             if isinstance(v, (int, float)) and not isinstance(v, bool)}
     if not nums:
         return 1.0
-    text = answer or ""
-    lowered = text.lower()
-    names = [str(v) for v in facts.values() if isinstance(v, str)]
+    text = _strip_seasons(answer or "")
     hits = 0
     for value in nums.values():
-        if any(f and f in text for f in _numeric_forms(value)):
-            hits += 1
-            continue
-        if any(len(n.split()[-1]) > 2 and n.split()[-1].lower() in lowered
-               for n in names if n.strip()):
+        if any(f and re.search(r"(?<![\d.,])" + re.escape(f) + r"(?![\d.])", text)
+               for f in _numeric_forms(value)):
             hits += 1
     return round(hits / len(nums), 3)
 
@@ -124,12 +124,19 @@ def _norm_num(raw: str) -> str:
 
 
 def groundedness(answer: str, payload_text: str) -> float:
-    found = NUM_RX.findall(answer or "")
+    found = NUM_RX.findall(_strip_seasons(answer or ""))
     if not found:
         return 1.0
-    pool = {_norm_num(n) for n in NUM_RX.findall(payload_text or "")}
+    pool = {_norm_num(n)
+            for n in NUM_RX.findall(_strip_seasons(payload_text or ""))}
     if not pool:
         return 0.0
+    pool_floats: list[float] = []
+    for p in pool:
+        try:
+            pool_floats.append(float(p))
+        except (TypeError, ValueError):
+            pass
     hits = 0
     for raw in found:
         cand = _norm_num(raw)
@@ -138,8 +145,18 @@ def groundedness(answer: str, payload_text: str) -> float:
             if raw.endswith("%"):
                 alts.add(str(round(float(cand) / 100, 4)))
                 alts.add(str(float(cand) / 100))
+            else:
+                alts.add(str(round(float(cand) * 100, 4)))
+                alts.add(str(float(cand) * 100))
         except (TypeError, ValueError):
             alts = {cand}
         if alts & pool:
+            hits += 1
+            continue
+        try:
+            a = float(cand)
+        except (TypeError, ValueError):
+            continue
+        if any(abs(a - p) <= 0.051 for p in pool_floats):
             hits += 1
     return round(hits / len(found), 3)
