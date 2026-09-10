@@ -65,10 +65,14 @@ def search_nba(query: str) -> dict[str, Any]:
 
 
 _CODE_BANNED = (
-    "import ", "import(", "__", "os.", "sys.", "open(",
+    "import ", "import(", "__", "open(",
     "exec(", "eval(", "compile(", "subprocess", "socket",
     "pathlib", "shutil", "globals(", "locals(", "vars(",
     "getattr(", "setattr(", "delattr(", "input(",
+)
+_CODE_BANNED_RX = (
+    r"(?<![a-z0-9_.])os\s*\.\s*[a-z]"
+    r"|(?<![a-z0-9_.])sys\s*\.\s*[a-z]"
 )
 
 
@@ -93,7 +97,8 @@ def run_python(code: str) -> dict[str, Any]:
     lowered = str(code or "").lower()
     if not code or not code.strip():
         return {"tool": "run_python", "ok": False, "error": "empty code"}
-    if any(b in lowered for b in _CODE_BANNED):
+    if (any(b in lowered for b in _CODE_BANNED)
+            or _re.search(_CODE_BANNED_RX, lowered)):
         return {"tool": "run_python", "ok": False,
                 "error": "That code pattern is unavailable. "
                          "con, pl, math, statistics are already preloaded; "

@@ -981,9 +981,15 @@ async def _triage_seed(question: str, primary: str, model: str,
             async for _e in _triage_terminal(question, state):
                 yield _e
         return
+    _cast_rx = (r"supporting cast|\bcast\b|teammates?|rotation depth|"
+                r"around (him|her|them)|help (does|do|has|have)\b|"
+                r"better team\b|deeper team\b")
+    _is_team_cast = (not found_p and len(_named) >= 2
+                     and bool(re.search(_cast_rx, question, re.IGNORECASE)))
     if ((len(found_p) >= 2 or len(found_t) >= 2 or is_compare)
             and not (is_trade and not is_compare)
-            and not (is_cast and not is_compare)):
+            and not (is_cast and not is_compare)
+            and not _is_team_cast):
         return
     if is_trade:
         season = "2025-26"
@@ -1070,7 +1076,7 @@ async def _triage_seed(question: str, primary: str, model: str,
         state["calls_made"].append("run_python:" + json.dumps(
             {"code": code[:120]}, sort_keys=True))
         return
-    if len(found_p) >= 1 and re.search(
+    if (len(found_p) >= 1 or _is_team_cast) and re.search(
             r"supporting cast|\bcast\b|teammates?|rotation depth|"
             r"around (him|her|them)|help (does|do|has|have)\b|"
             r"better team\b|deeper team\b",
@@ -1078,6 +1084,7 @@ async def _triage_seed(question: str, primary: str, model: str,
         from .tools._core import coerce_player_id as _cp2
 
         sides = []
+        sides_are_teams = False
         for p in found_p[:2]:
             try:
                 _pid = _cp2(p)
@@ -1086,16 +1093,33 @@ async def _triage_seed(question: str, primary: str, model: str,
                 _pid, _ab = 0, ""
             if _ab:
                 sides.append((p, _ab))
+        if not sides and _is_team_cast:
+            from nba_api.stats.static import teams as _st_teams
+
+            _abbr_by_full = {t["full_name"]: t["abbreviation"]
+                             for t in _st_teams.get_teams()}
+            for _tf in _named[:2]:
+                _ta = _abbr_by_full.get(_tf, "")
+                if _ta and all(_a != _ta for _, _a in sides):
+                    sides.append((_tf, _ta))
+            if len(sides) >= 2:
+                sides_are_teams = True
+            else:
+                sides = []
         if sides:
             from nba_api.stats.static import teams as _st
 
             lines = ["print('Supporting cast comparison, 2025-26 regular season')"]
             for p, ab in sides:
-                last = p.split()[-1].replace("'", "")
+                last = "" if sides_are_teams else p.split()[-1].replace("'", "")
                 safe = "".join(
                     c for c in unicodedata.normalize("NFKD", p)
                     if not unicodedata.combining(c)).replace("'", "")
-                lines.append(f"print('{safe} plays for {ab} this season')")
+                if sides_are_teams:
+                    lines.append(
+                        f"print('{safe} ({ab}) supporting cast, 2025-26 regular season')")
+                else:
+                    lines.append(f"print('{safe} plays for {ab} this season')")
                 full = next((t["full_name"] for t in _st.get_teams()
                              if t["abbreviation"] == ab), ab)
                 nick = full.split()[-1].replace("'", "")
@@ -1104,11 +1128,17 @@ async def _triage_seed(question: str, primary: str, model: str,
                     f"silver_team_ratings WHERE _season='2025-26' AND "
                     f"(TEAM_NAME = '{nick}' OR TEAM_NAME = '{full}') "
                     f"LIMIT 1\").fetchall()")
-                lines.append(
-                    f"_mates_{ab} = con.execute(\"SELECT PLAYER, PTS, GP FROM "
-                    f"silver_leaders_pts WHERE _season='2025-26' AND TEAM='{ab}' "
-                    f"AND UPPER(PLAYER) NOT LIKE '%{last.upper()}%' "
-                    f"ORDER BY PTS DESC LIMIT 4\").fetchall()")
+                if sides_are_teams:
+                    lines.append(
+                        f"_mates_{ab} = con.execute(\"SELECT PLAYER, PTS, GP FROM "
+                        f"silver_leaders_pts WHERE _season='2025-26' AND TEAM='{ab}' "
+                        f"ORDER BY PTS DESC LIMIT 4\").fetchall()")
+                else:
+                    lines.append(
+                        f"_mates_{ab} = con.execute(\"SELECT PLAYER, PTS, GP FROM "
+                        f"silver_leaders_pts WHERE _season='2025-26' AND TEAM='{ab}' "
+                        f"AND UPPER(PLAYER) NOT LIKE '%{last.upper()}%' "
+                        f"ORDER BY PTS DESC LIMIT 4\").fetchall()")
                 lines.append(
                     f"_adv_{ab} = con.execute(\"SELECT PLAYER_NAME, TS_PCT, "
                     f"NET_RATING FROM silver_advanced WHERE _season='2025-26' "
@@ -1118,27 +1148,52 @@ async def _triage_seed(question: str, primary: str, model: str,
                     f"for r in _adv_{ab}}}")
                 lines.append(
                     f"print('{safe} ({ab}) team net: ' + str(_t_{ab}))")
-                lines.append(
-                    f"print('{ab} supporting mates (excluding {safe}):')")
-                lines.append(
-                    f"for m in _mates_{ab}:\n"
-                    f"    _nm = str(m[0]).encode('ascii', 'ignore').decode()\n"
-                    f"    _ppg = m[1]/max(m[2], 1)\n"
-                    f"    _pair = _admap_{ab}.get(m[0], (None, None))\n"
-                    f"    _ts = _pair[0]\n"
-                    f"    _nr = _pair[1]\n"
-                    f"    _tss = f'{{_ts*100:.1f}}%' if _ts is not None else 'n/a'\n"
-                    f"    _nrs = f'{{_nr:+.1f}}' if _nr is not None else 'n/a'\n"
-                    f"    print(f'  {{_nm}}: {{_ppg:.1f}} ppg, TS {{_tss}} net {{_nrs}}')")
+                if sides_are_teams:
+                    lines.append(f"print('{ab} supporting mates:')")
+                else:
+                    lines.append(
+                        f"print('{ab} supporting mates (excluding {safe}):')")
+                if sides_are_teams:
+                    lines.append(
+                        f"for m in _mates_{ab}:\n"
+                        f"    _nm = str(m[0]).encode('ascii', 'ignore').decode()\n"
+                        f"    _ppg = m[1]/max(m[2], 1)\n"
+                        f"    _pair = dict.get(_admap_{ab}, m[0], (None, None))\n"
+                        f"    _ts = _pair[0]\n"
+                        f"    _nr = _pair[1]\n"
+                        f"    _tss = f'{{_ts*100:.1f}}%' if _ts is not None else 'n/a'\n"
+                        f"    _nrs = f'{{_nr:+.1f}}' if _nr is not None else 'n/a'\n"
+                        f"    print(f'  {{_nm}}: {{_ppg:.1f}} ppg, TS {{_tss}} net {{_nrs}}')")
+                else:
+                    lines.append(
+                        f"for m in _mates_{ab}:\n"
+                        f"    _nm = str(m[0]).encode('ascii', 'ignore').decode()\n"
+                        f"    _ppg = m[1]/max(m[2], 1)\n"
+                        f"    _pair = _admap_{ab}.get(m[0], (None, None))\n"
+                        f"    _ts = _pair[0]\n"
+                        f"    _nr = _pair[1]\n"
+                        f"    _tss = f'{{_ts*100:.1f}}%' if _ts is not None else 'n/a'\n"
+                        f"    _nrs = f'{{_nr:+.1f}}' if _nr is not None else 'n/a'\n"
+                        f"    print(f'  {{_nm}}: {{_ppg:.1f}} ppg, TS {{_tss}} net {{_nrs}}')")
                 lines.append(
                     f"_best_{ab} = max([m[1]/max(m[2],1) for m in _mates_{ab}] "
                     f"+ [0])")
-                lines.append(
-                    f"print('Top {ab} supporting scorer ({safe} excluded): ' "
-                    f"+ str(round(_best_{ab}, 1)) + ' ppg')")
-                lines.append(
-                    f"_tslist_{ab} = [_admap_{ab}.get(m[0], "
-                    f"(None, None))[0] for m in _mates_{ab}]")
+                if sides_are_teams:
+                    lines.append(
+                        f"print('Top {ab} scorer: ' "
+                        f"+ str(round(_best_{ab}, 1)) + ' ppg')")
+                else:
+                    lines.append(
+                        f"print('Top {ab} supporting scorer ({safe} excluded): ' "
+                        f"+ str(round(_best_{ab}, 1)) + ' ppg')")
+                if sides_are_teams:
+                    lines.append(
+                        f"_tslist_{ab} = [dict.get(_admap_{ab}, m[0], "
+                        f"(None, None))[0] for m in _mates_{ab}]")
+                else:
+                    lines.append(
+                        f"_tslist_{ab} = [_admap_{ab}.get(m[0], "
+                        f"(None, None))[0] for m in _mates_{ab}]")
                 lines.append(
                     f"_tsvals_{ab} = [v for v in _tslist_{ab} "
                     f"if v is not None]")
