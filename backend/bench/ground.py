@@ -1853,15 +1853,34 @@ _GLOG_TAIL = (" Give each game's date (YYYY-MM-DD), points, rebounds and "
               "assists, plus the total count.")
 
 
-def _glog_games(pid: int) -> list[dict]:
+def _glog_team_of(matchup) -> str:
+    # Verbatim mirror of the tool's team_wide grouping: first token of
+    # MATCHUP, uppercased, with UNK fallback.
+    return str(matchup or "").split(" ")[0].upper() or "UNK"
+
+
+def _glog_games(pid: int | None = None) -> list[dict]:
     # Verbatim mirror of the tool's _load_player_games: normalized rows,
     # most recent first. ISO date strings sort lexicographically, same
-    # as the tool's date-desc ordering.
+    # as the tool's date-desc ordering. pid None loads every player in
+    # a single query; each row carries player_id and team so the
+    # warehouse-wide mirrors can group exactly like the tool.
     games = []
-    for gdate, matchup, pts, reb, ast, stl, blk in _q(
+    if pid is None:
+        rows = _q(
+            "SELECT Player_ID, GAME_DATE, MATCHUP, PTS, REB, AST, STL, BLK "
+            "FROM silver_player_gamelogs WHERE _season = ?",
+            [SEASON])
+        normed = [(r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7])
+                  for r in rows]
+    else:
+        rows = _q(
             "SELECT GAME_DATE, MATCHUP, PTS, REB, AST, STL, BLK FROM "
             "silver_player_gamelogs WHERE Player_ID = ? AND _season = ?",
-            [pid, SEASON]):
+            [pid, SEASON])
+        normed = [(pid, r[0], r[1], r[2], r[3], r[4], r[5], r[6])
+                  for r in rows]
+    for prow, gdate, matchup, pts, reb, ast, stl, blk in normed:
         try:
             d = datetime.strptime(str(gdate or "").strip(),
                                   "%b %d, %Y").date()
@@ -1869,6 +1888,10 @@ def _glog_games(pid: int) -> list[dict]:
             continue
         mu = str(matchup or "")
         toks = mu.split()
+        try:
+            prow_id = int(prow) if prow is not None else 0
+        except (TypeError, ValueError):
+            continue
         games.append({
             "date": d.isoformat(),
             "opponent": toks[-1].upper() if toks else "",
@@ -1876,6 +1899,8 @@ def _glog_games(pid: int) -> list[dict]:
             "pts": _fnum(pts), "reb": _fnum(reb), "ast": _fnum(ast),
             "dd": sum(1 for v in (pts, reb, ast, stl, blk)
                       if _fnum(v) >= 10),
+            "player_id": prow_id,
+            "team": _glog_team_of(matchup),
         })
     games.sort(key=lambda g: g["date"], reverse=True)
     return games
@@ -1910,19 +1935,56 @@ def _glog_matches(g: dict, f: dict) -> bool:
     return True
 
 
+def _glog_league_leaders(games: list[dict], filters: dict,
+                         names: dict) -> list[dict]:
+    # Verbatim mirror of the tool's league_wide branch: per-player match
+    # counts sorted by (-count, resolved name).
+    counts: dict = {}
+    for g in games:
+        if _glog_matches(g, filters):
+            pid = g["player_id"]
+            counts[pid] = counts.get(pid, 0) + 1
+    return [
+        {"player_id": pid, "name": names.get(pid, str(pid)), "count": c}
+        for pid, c in sorted(
+            counts.items(),
+            key=lambda kv: (-kv[1], names.get(kv[0], str(kv[0]))))
+    ]
+
+
+def _glog_team_leaders(games: list[dict], filters: dict,
+                       fulls: dict) -> list[dict]:
+    # Verbatim mirror of the tool's team_wide branch: per-team-night
+    # match counts sorted by (-count, abbr), unknown abbrs fall back
+    # to the abbr itself like the tool's ValueError fallback.
+    counts: dict = {}
+    for g in games:
+        if _glog_matches(g, filters):
+            abbr = g["team"]
+            counts[abbr] = counts.get(abbr, 0) + 1
+    return [
+        {"abbr": abbr, "team": fulls.get(abbr, abbr), "count": c}
+        for abbr, c in sorted(counts.items(),
+                              key=lambda kv: (-kv[1], kv[0]))
+    ]
+
+
 def _glog_templates() -> list:
-    # Each template returns (question, ground-truth filters, tool kwargs)
-    # or None when it cannot be phrased for this player's games.
+    # Each template returns (question, ground-truth filters, tool kwargs,
+    # tail, detail) or None when it cannot be phrased for this player's
+    # games. detail True = list-style grading (1..8 matches); False =
+    # count-only grading (total only, 0 allowed).
     def _t_points(rng, games, name, full_of):
         thr = rng.choice([30, 40])
         return (f"List all of {name}'s {thr}-point games this season "
                 f"({SEASON}).",
-                {"min_points": thr}, {"min_points": thr})
+                {"min_points": thr}, {"min_points": thr}, _GLOG_TAIL, True)
 
     def _t_triple(rng, games, name, full_of):
         return (f"List all of {name}'s triple-doubles this season "
                 f"({SEASON}).",
-                {"triple_double": True}, {"triple_double": True})
+                {"triple_double": True}, {"triple_double": True},
+                _GLOG_TAIL, True)
 
     def _t_dd_vs(rng, games, name, full_of):
         opp = rng.choice(sorted({g["opponent"] for g in games
@@ -1933,7 +1995,7 @@ def _glog_templates() -> list:
         return (f"List all of {name}'s double-doubles against the {full} "
                 f"this season ({SEASON}).",
                 {"double_double": True, "opponent": opp},
-                {"double_double": True, "opponent": opp})
+                {"double_double": True, "opponent": opp}, _GLOG_TAIL, True)
 
     def _t_vs(rng, games, name, full_of):
         opp = rng.choice(sorted({g["opponent"] for g in games
@@ -1943,7 +2005,7 @@ def _glog_templates() -> list:
             return None
         return (f"How did {name} do against the {full} this season "
                 f"({SEASON})? List every game.",
-                {"opponent": opp}, {"opponent": opp})
+                {"opponent": opp}, {"opponent": opp}, _GLOG_TAIL, True)
 
     def _t_month(rng, games, name, full_of):
         m = rng.choice(sorted({int(g["date"][5:7]) for g in games}))
@@ -1952,7 +2014,7 @@ def _glog_templates() -> list:
         return (f"List all of {name}'s {thr}-point games in {mname} this "
                 f"season ({SEASON}).",
                 {"month": m, "min_points": thr},
-                {"month": m, "min_points": thr})
+                {"month": m, "min_points": thr}, _GLOG_TAIL, True)
 
     def _t_home(rng, games, name, full_of):
         ha = rng.choice(["home", "away"])
@@ -1960,23 +2022,26 @@ def _glog_templates() -> list:
         return (f"List all of {name}'s {thr}-point {ha} games this season "
                 f"({SEASON}).",
                 {"home_away": ha, "min_points": thr},
-                {"home_away": ha, "min_points": thr})
+                {"home_away": ha, "min_points": thr}, _GLOG_TAIL, True)
 
     def _t_pra(rng, games, name, full_of):
         thr = rng.choice([40, 45, 50])
         return (f"List all of {name}'s games with {thr}+ "
                 f"points+rebounds+assists (PRA) this season ({SEASON}).",
-                {"min_pra": thr}, {"min_pra": thr})
+                {"min_pra": thr}, {"min_pra": thr}, _GLOG_TAIL, True)
+
+    def _t_count(rng, games, name, full_of):
+        thr = rng.choice([30, 40, 50])
+        return (f"How many {thr}-point games did {name} have this season "
+                f"({SEASON})?",
+                {"min_points": thr}, {"min_points": thr},
+                " Give the count.", False)
 
     return [_t_points, _t_triple, _t_dd_vs, _t_vs, _t_month, _t_home,
-            _t_pra]
+            _t_pra, _t_count]
 
 
-def gen_gamelog(rng, ctx) -> tuple[Task, GroundTruth]:
-    ents = _q("SELECT DISTINCT Player_ID FROM silver_player_gamelogs "
-              "WHERE _season = ?", [SEASON])
-    if not ents:
-        raise SkipTask("no player gamelogs in warehouse")
+def _glog_static() -> tuple[dict, dict]:
     names: dict = {}
     fulls: dict = {}
     try:
@@ -1989,6 +2054,105 @@ def gen_gamelog(rng, ctx) -> tuple[Task, GroundTruth]:
                 t.get("full_name")
     except Exception:
         pass
+    return names, fulls
+
+
+def _gen_gamelog_existence(rng, ctx, names: dict) -> tuple[Task, GroundTruth]:
+    games = _glog_games(None)
+    kind = rng.choice(["points", "triple"])
+    tid = ctx["task_id"]
+    if kind == "points":
+        thr = rng.choice([60, 70, 85])
+        leaders = _glog_league_leaders(games, {"min_points": thr}, names)
+        if len(leaders) > 6:
+            raise SkipTask("too many 60+ game holders to grade")
+        question = rng.choice([
+            f"Did anyone score {thr} points in a game this season "
+            f"({SEASON})?",
+            f"Was there a {thr}-point game this season ({SEASON})?",
+            f"Has anyone dropped {thr} in a game this season ({SEASON})?",
+        ])
+        tail = (" Give the total count of such games and every player "
+                "who did it, with each player's count.")
+        graded = leaders
+    else:
+        leaders = _glog_league_leaders(games, {"triple_double": True},
+                                       names)
+        if len(leaders) < 5:
+            raise SkipTask("too few triple-double holders to grade")
+        graded = leaders[:5]
+        question = (f"Did anyone record a triple-double this season "
+                    f"({SEASON})?")
+        tail = (" Give the total count of such games and the five "
+                "players with the most triple-doubles, with each "
+                "player's count.")
+    facts: dict = {
+        "total": sum(l["count"] for l in leaders),
+        "names": {f"player_{i}": l["name"]
+                  for i, l in enumerate(graded, 1)},
+    }
+    for i, l in enumerate(graded, 1):
+        facts[f"player_{i}_count"] = l["count"]
+    task = Task(
+        task_id=tid, family="gamelog", question=question + tail,
+        entities=[], gold_tool_families=["gamelog"],
+        timeout_s=ctx["timeout_s"], seed=ctx["seed"],
+    )
+    truth = GroundTruth(
+        task_id=tid, facts=facts, computed_at=_now(),
+        source="nba_api via silver_player_gamelogs (same league-wide "
+               "grouping as search_game_logs)",
+    )
+    return task, truth
+
+
+def _gen_gamelog_team(rng, ctx, fulls: dict) -> tuple[Task, GroundTruth]:
+    games = _glog_games(None)
+    kind = rng.choice(["p40", "p50", "td"])
+    if kind == "p40":
+        filters, desc = {"min_points": 40}, "40-point games"
+    elif kind == "p50":
+        filters, desc = {"min_points": 50}, "50-point games"
+    else:
+        filters, desc = {"triple_double": True}, "triple-doubles"
+    leaders = _glog_team_leaders(games, filters, fulls)
+    if len(leaders) < 3:
+        raise SkipTask("too few teams to grade")
+    top3 = leaders[:3]
+    facts: dict = {
+        "names": {f"team_{i}": l["team"]
+                  for i, l in enumerate(top3, 1)},
+    }
+    for i, l in enumerate(top3, 1):
+        facts[f"team_{i}_count"] = l["count"]
+    tid = ctx["task_id"]
+    task = Task(
+        task_id=tid, family="gamelog",
+        question=(f"Which team had the most {desc} this season "
+                  f"({SEASON})? Give the top 3 teams and each team's "
+                  f"count."),
+        entities=[], gold_tool_families=["gamelog"],
+        timeout_s=ctx["timeout_s"], seed=ctx["seed"],
+    )
+    truth = GroundTruth(
+        task_id=tid, facts=facts, computed_at=_now(),
+        source="nba_api via silver_player_gamelogs (same team-night "
+               "grouping as search_game_logs team_wide)",
+    )
+    return task, truth
+
+
+def gen_gamelog(rng, ctx) -> tuple[Task, GroundTruth]:
+    names, fulls = _glog_static()
+    variant = rng.choice(["player", "player", "existence", "team_wide"])
+    if variant == "existence":
+        return _gen_gamelog_existence(rng, ctx, names)
+    if variant == "team_wide":
+        return _gen_gamelog_team(rng, ctx, fulls)
+    ents = _q("SELECT DISTINCT Player_ID FROM silver_player_gamelogs "
+              "WHERE _season = ?", [SEASON])
+    if not ents:
+        raise SkipTask("no player gamelogs in warehouse")
     templates = _glog_templates()
     for _ in range(40):
         pid = int(rng.choice(ents)[0])
@@ -2004,23 +2168,26 @@ def gen_gamelog(rng, ctx) -> tuple[Task, GroundTruth]:
         built = rng.choice(templates)(rng, games, name, fulls.get)
         if built is None:
             continue
-        question, filters, _kwargs = built
+        question, filters, _kwargs, tail, detail = built
         matches = [g for g in games if _glog_matches(g, filters)]
-        if not 1 <= len(matches) <= _GLOG_MAX_MATCHES:
-            continue
-        gnames = {"player": name}
-        facts: dict = {}
-        for i, g in enumerate(matches, 1):
-            gnames[f"game_{i}"] = g["date"]
-            facts[f"game_{i}_pts"] = round(g["pts"], 1)
-            facts[f"game_{i}_reb"] = round(g["reb"], 1)
-            facts[f"game_{i}_ast"] = round(g["ast"], 1)
-        facts["names"] = gnames
-        facts["total"] = len(matches)
+        if detail:
+            if not 1 <= len(matches) <= _GLOG_MAX_MATCHES:
+                continue
+            gnames = {"player": name}
+            facts = {}
+            for i, g in enumerate(matches, 1):
+                gnames[f"game_{i}"] = g["date"]
+                facts[f"game_{i}_pts"] = round(g["pts"], 1)
+                facts[f"game_{i}_reb"] = round(g["reb"], 1)
+                facts[f"game_{i}_ast"] = round(g["ast"], 1)
+            facts["names"] = gnames
+            facts["total"] = len(matches)
+        else:
+            facts = {"total": len(matches)}
         tid = ctx["task_id"]
         task = Task(
             task_id=tid, family="gamelog",
-            question=question + _GLOG_TAIL,
+            question=question + tail,
             entities=[name], gold_tool_families=["gamelog"],
             timeout_s=ctx["timeout_s"], seed=ctx["seed"],
         )
