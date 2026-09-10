@@ -30,6 +30,7 @@ TABLES = {
     "draft": "silver_hist_draft",
     "raptor": "silver_raptor_player",
     "player_seasons": "silver_hist_player_seasons",
+    "schedule": "silver_schedule",
 }
 
 

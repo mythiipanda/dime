@@ -1017,7 +1017,7 @@ async def text_to_sql(question: str) -> dict[str, Any]:
                 "silver_hist_standings", "silver_hist_possessions",
                 "silver_hist_shots", "silver_hist_lineups", "silver_salaries",
                 "silver_hist_draft", "silver_raptor_player", "silver_raptor_team",
-                "silver_hist_player_seasons"]
+                "silver_hist_player_seasons", "silver_schedule"]
     con = _store.connect()
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
@@ -1114,7 +1114,13 @@ async def text_to_sql(question: str) -> dict[str, Any]:
         "(PARTITION BY Player_ID, (PTS >= 20)::INT ORDER BY d) AS grp "
         "FROM g WHERE d IS NOT NULL) SELECT Player_ID, COUNT(*) AS streak "
         "FROM s WHERE PTS >= 20 GROUP BY Player_ID, grp "
-        "ORDER BY streak DESC LIMIT 5"
+        "ORDER BY streak DESC LIMIT 5\n"
+        "Q: What are the Lakers' first 5 games of the season?\n"
+        "Note silver_schedule team_abbreviation values follow ESPN "
+        "conventions and season_type_abbreviation is lowercase 'reg'.\n"
+        "SQL: SELECT date, name FROM silver_schedule "
+        "WHERE team_abbreviation = 'LAL' AND _season = '2025-26' "
+        "ORDER BY date LIMIT 5"
     )
     feedback = ""
     for _ in range(3):
