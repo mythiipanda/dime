@@ -596,6 +596,30 @@ async def _triage_seed(question: str, primary: str, model: str,
     if (found_p and not is_trade and not is_cast
             and not is_compare and not is_raptor
             and re.search(
+                r"overpaid|underpaid|contract value|good value|worth (it|his|her|the)|"
+                r"salary vs production|value (for|of the)|worth the (money|contract)",
+                question, re.IGNORECASE)):
+        try:
+            from .tools import v1_tools as _vtcv
+
+            fncv = next((t for t in _vtcv if t.name == "get_contract_value"),
+                        None)
+            out = await fncv.ainvoke(
+                {"player": found_p[0]}) if fncv is not None else {
+                "tool": "get_contract_value", "ok": False,
+                "error": "no contract tool"}
+        except Exception as exc:
+            out = {"tool": "get_contract_value", "ok": False,
+                   "error": str(exc)[:160]}
+        state["tool_results"].append(
+            out if isinstance(out, dict) else {"tool": "get_contract_value",
+                                              "rows": out})
+        state["calls_made"].append("get_contract_value:" + json.dumps(
+            {"player": found_p[0]}, sort_keys=True))
+        return
+    if (found_p and not is_trade and not is_cast
+            and not is_compare and not is_raptor
+            and re.search(
                 r"\bsplit|versus top|vs top|against top|last \d+|"
                 r"home\b|away\b|monthly|defense\b",
                 question, re.IGNORECASE)

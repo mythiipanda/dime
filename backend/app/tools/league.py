@@ -1211,7 +1211,8 @@ def get_playoff_sim(season: str = SEASON, sims: int = 2000) -> dict[str, Any]:
 
 
 @tool
-def get_contract_value(season: str = "2025-26", min_gp: int = 20) -> dict[str, Any]:
+def get_contract_value(season: str = "2025-26", min_gp: int = 20,
+                       player: str = "") -> dict[str, Any]:
     """Contract value residuals: 2026-27 salary vs OLS prediction from per-game production. Ten most overpaid plus ten most underpaid."""
     import unicodedata as _ud
 
@@ -1266,8 +1267,8 @@ def get_contract_value(season: str = "2025-26", min_gp: int = 20) -> dict[str, A
     for r in prod:
         by_name.setdefault(_norm(r[0]), r)
     fitted = []
-    for player, team, salary in cap:
-        r = by_name.get(_norm(player))
+    for cplayer, cteam, csal in cap:
+        r = by_name.get(_norm(cplayer))
         if r is None:
             continue
         _, lteam, gp, pts, reb, ast, stl, blk, tov = r
@@ -1277,8 +1278,8 @@ def get_contract_value(season: str = "2025-26", min_gp: int = 20) -> dict[str, A
         vals = {"PTS": pts or 0, "REB": reb or 0, "AST": ast or 0,
                 "STL": stl or 0, "BLK": blk or 0, "TOV": tov or 0}
         score = sum(vals[c] / gp * use_w[c] for c in use_w)
-        fitted.append({"PLAYER": player, "TEAM": team or lteam,
-                       "SALARY": salary or 0, "GP": gp, "SCORE": score})
+        fitted.append({"PLAYER": cplayer, "TEAM": cteam or lteam,
+                       "SALARY": csal or 0, "GP": gp, "SCORE": score})
     n = len(fitted)
     if n < 2:
         return {"tool": "get_contract_value", "ok": False,
@@ -1296,20 +1297,48 @@ def get_contract_value(season: str = "2025-26", min_gp: int = 20) -> dict[str, A
         f["PREDICTED"] = int(round(slope * f["SCORE"] + intercept))
         f["RESIDUAL"] = int(f["SALARY"]) - int(f["PREDICTED"])
         f["SCORE"] = round(f["SCORE"], 2)
-    over = sorted(fitted, key=lambda f: f["RESIDUAL"], reverse=True)[:10]
-    under = sorted(fitted, key=lambda f: f["RESIDUAL"])[:10]
-    rows = over + under
+    leaders = sorted(fitted, key=lambda f: f["RESIDUAL"], reverse=True)[:10]
+    laggards = sorted(fitted, key=lambda f: f["RESIDUAL"])[:10]
+    top20 = list(leaders) + list(laggards)
     formula = ("score = PTS + 1.2*REB + 1.5*AST + 2*STL + 2*BLK - 1.5*TOV "
                "(per game); salary_hat = slope*score + intercept (OLS by hand); "
                "residual = salary - salary_hat")
-    return {"tool": "get_contract_value", "ok": True, "rows": rows,
-            "meta": {"formula": formula, "weights": weights,
-                     "missing_columns_zero_weight": missing,
-                     "slope": round(slope, 2), "intercept": round(intercept, 2),
-                     "n_qualified": n, "min_gp": min_gp,
-                     "production_season": season, "salary_season": "2026-27",
-                     "production_date": prod_date, "salary_date": cap_date,
-                     "overpaid_first": True}}
+    meta = {"formula": formula, "weights": weights,
+            "missing_columns_zero_weight": missing,
+            "slope": round(slope, 2), "intercept": round(intercept, 2),
+            "n_qualified": n, "min_gp": min_gp,
+            "production_season": season, "salary_season": "2026-27",
+            "production_date": prod_date, "salary_date": cap_date,
+            "overpaid_first": True}
+    if player:
+        from ._core import coerce_player_id as _cp
+        from nba_api.stats.static import players as _sp
+
+        try:
+            _cp(player)
+        except ValueError as exc:
+            return {"tool": "get_contract_value", "ok": False,
+                    "error": str(exc)[:160]}
+        want = _norm(str(next(
+            (p.get("full_name", "") for p in _sp.get_players()
+             if _norm(p.get("full_name", "")) == _norm(player)), player)))
+        hit = next((f for f in fitted if _norm(f["PLAYER"]) == want), None)
+        if hit is not None:
+            return {"tool": "get_contract_value", "ok": True,
+                    "rows": [hit], "meta": {**meta, "player": hit["PLAYER"]}}
+        gp_note = ""
+        try:
+            prow = by_name.get(want)
+            if prow is not None:
+                gp_note = (f" Excluded by the {min_gp}-game minimum"
+                           f" ({prow[2] or 0} GP).")
+        except Exception:
+            pass
+        return {"tool": "get_contract_value", "ok": True, "rows": [],
+                "meta": {**meta, "player": player,
+                         "note": f"No qualified row for {player}." + gp_note}}
+    return {"tool": "get_contract_value", "ok": True, "rows": top20,
+            "meta": meta}
 
 
 @tool
