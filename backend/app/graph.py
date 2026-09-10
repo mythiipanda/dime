@@ -1098,6 +1098,10 @@ _DISPLAY_TITLES = {
     "get_shot_zones": "Shot zones",
     "get_matchup_splits": "Matchup splits",
     "get_regression_check": "Regression check",
+    "get_comps": "Comps",
+    "get_award_race": "Award race",
+    "get_trade_value": "Trade value",
+    "get_matchup_preview": "Matchup preview",
 }
 
 

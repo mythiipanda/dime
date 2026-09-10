@@ -1306,11 +1306,13 @@ def get_hustle_boards(season: str = SEASON, top: int = 10) -> dict[str, Any]:
 
 
 @tool
-def get_debate_card(a: str, b: str, season: str = SEASON) -> dict[str, Any]:
+def get_debate_card(a: str, b: str, season: str = SEASON,
+                    topic: str = "") -> dict[str, Any]:
     """Generate a shareable HTML debate card comparing two players.
 
     Returns a self-contained HTML file with side-by-side stats,
     styled for sharing. Saves to workspace and returns the path.
+    Optional topic labels the debate (e.g. "MVP race").
     """
     import html as _html
     from pathlib import Path as _Path
@@ -1374,6 +1376,11 @@ def get_debate_card(a: str, b: str, season: str = SEASON) -> dict[str, Any]:
 
     name_a = _html.escape(_stat(players[0], "name", "PLAYER", "player"))
     name_b = _html.escape(_stat(players[1], "name", "PLAYER", "player"))
+    topic_html = ""
+    if str(topic or "").strip():
+        topic_html = (
+            "<div class=\"topic\">" + _html.escape(str(topic).strip())
+            + "</div>")
 
     html_doc = f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8">
@@ -1385,6 +1392,9 @@ body {{ font-family: system-ui, -apple-system, sans-serif; background: #f5f5f4;
 .card {{ background: #fff; border-radius: 16px; padding: 32px; max-width: 520px;
   width: 100%; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }}
 .header {{ text-align: center; margin-bottom: 24px; }}
+.topic {{ display: inline-block; font-size: 12px; font-weight: 600;
+  color: #0891b2; border: 1px solid #0891b2; border-radius: 999px;
+  padding: 3px 12px; margin-bottom: 10px; letter-spacing: 1px; }}
 .vs {{ font-size: 13px; color: #78716c; letter-spacing: 2px; margin: 8px 0; }}
 h1 {{ font-size: 22px; margin: 0; color: #1c1917; }}
 .season {{ font-size: 13px; color: #a8a29e; margin-top: 4px; }}
@@ -1401,6 +1411,7 @@ h1 {{ font-size: 22px; margin: 0; color: #1c1917; }}
 </style></head><body>
 <div class="card">
 <div class="header">
+{topic_html}
 <h1>{name_a} <span class="accent">vs</span> {name_b}</h1>
 <div class="season">{_html.escape(season)} season · via Dime</div>
 </div>

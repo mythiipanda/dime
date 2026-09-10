@@ -341,6 +341,8 @@ LEAGUE_BRIEF = (
     "THEN call get_risers. "
     "IF the task mentions trade, swap, deal, or sign-and-trade, "
     "THEN call get_trade_check with team_abbrevs and player names. "
+    "IF the task asks who wins a trade, trade value, fair value, or grades, "
+    "THEN call get_trade_value. "
     "If a tool reports unknown players, stop and report them exactly. "
     "Never swap in a suggested name as the requested player. "
     "IF the task names one stat category, THEN call get_leaders. "
@@ -405,6 +407,7 @@ def _desk_spec(name: str, task: str):
                  "get_playoffs", "get_playoff_intel", "get_ratings", "get_clutch", "get_elo",
                  "get_playoff_sim", "get_contract_value", "get_draft_board",
                  "get_draft_model", "get_risers", "get_trade_check",
+                 "get_trade_value",
                  "get_award_race",
                  "run_python", "text_to_sql"],
                 force)
