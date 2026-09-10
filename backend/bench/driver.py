@@ -2,11 +2,13 @@
 
 import asyncio
 import json
+import re
 import time
 
 from app.graph import run_chat, tool_label
 from app.tools import TOOL_NAMES
 
+from . import ground
 from .schemas import GroundTruth, RunResult, Task
 from .scoring import groundedness, name_recall, numeric_acc, tool_f1
 
@@ -62,6 +64,69 @@ async def _collect(task: Task, model: str | None) -> tuple[
     return tool_calls, answer, " ".join(payloads), ttft_ms
 
 
+_PRED_ARGS_RX = re.compile(
+    r"(?:^|[,\s])a\s*=\s*([^,]+?)\s*,\s*b\s*=\s*([^,]+?)"
+    r"(?:\s*,|\s*$)")
+
+
+def _resolve_pred_abbr(token: str, teams: dict) -> str | None:
+    tok = str(token or "").strip()
+    if tok.upper() in teams:
+        return tok.upper()
+    low = tok.lower()
+    for abbr, t in teams.items():
+        if str(t.get("full_name", "")).lower() == low:
+            return abbr
+    return None
+
+
+def _observed_pred_args(tool_calls: list) -> tuple[str, str] | None:
+    # Recover the agent's get_game_prediction arg order from the captured
+    # arg summaries (raw args are not emitted by the stream). Last
+    # parseable call wins.
+    teams = ground._pred_team_table()
+    for call in reversed(tool_calls):
+        if call.get("name") != "get_game_prediction":
+            continue
+        summary = str((call.get("args") or {}).get("summary", ""))
+        m = _PRED_ARGS_RX.search(summary)
+        if not m:
+            continue
+        a = _resolve_pred_abbr(m.group(1), teams)
+        b = _resolve_pred_abbr(m.group(2), teams)
+        if a and b and a != b:
+            return a, b
+    return None
+
+
+def _rescored_pred_facts(task: Task, truth: GroundTruth,
+                         tool_calls: list) -> dict:
+    # Prediction-family-only score-time rescore: recompute facts from the
+    # replica with the agent's observed arg order. The tool assigns the
+    # neutral-site home/away roles by caller order (injury-penalty sides
+    # plus the away tie-break noise draw), so facts recomputed with the
+    # observed order match the tool's real output; the canonical
+    # (sorted) facts drift on flipped calls. Falls back to the
+    # precomputed canonical facts when the agent never called the tool,
+    # or asked about a different matchup.
+    facts = truth.facts
+    observed = _observed_pred_args(tool_calls)
+    if observed is None:
+        return facts
+    teams = ground._pred_team_table()
+    full2abbr = {str(t.get("full_name", "")).lower(): abbr
+                 for abbr, t in teams.items()}
+    task_pair = {full2abbr.get(str(e).strip().lower())
+                 for e in (task.entities or [])}
+    if set(observed) != task_pair or None in task_pair:
+        return facts
+    try:
+        recomputed = ground._pred_facts(*observed, preserve_order=True)
+    except ground.SkipTask:
+        return facts
+    return ground.pred_truth_facts(recomputed)
+
+
 async def run_task(task: Task, truth: GroundTruth,
                    model: str | None) -> RunResult:
     t0 = time.perf_counter()
@@ -77,12 +142,14 @@ async def run_task(task: Task, truth: GroundTruth,
         ok, error = False, str(exc)[:200]
     latency_ms = int((time.perf_counter() - t0) * 1000)
     if ok:
+        facts = (truth.facts if task.family != "prediction"
+                 else _rescored_pred_facts(task, truth, tool_calls))
         scores = {
             "tool_f1": tool_f1(
                 [c["name"] for c in tool_calls], task.gold_tool_families),
-            "numeric_acc": numeric_acc(truth.facts, answer),
+            "numeric_acc": numeric_acc(facts, answer),
             "groundedness": groundedness(answer, payloads),
-            "name_recall": name_recall(truth.facts, answer),
+            "name_recall": name_recall(facts, answer),
         }
     else:
         scores = {"tool_f1": 0.0, "numeric_acc": 0.0, "groundedness": 0.0,

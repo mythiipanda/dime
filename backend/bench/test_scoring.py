@@ -1,3 +1,4 @@
+from .driver import _observed_pred_args
 from .scoring import groundedness, numeric_acc, tool_f1
 
 
@@ -49,3 +50,35 @@ def test_tool_f1_lookup_match():
 
 def test_tool_f1_trade_mismatch():
     assert tool_f1(["get_trade_check"], ["lookup"]) == 0.0
+
+
+def test_observed_pred_args_abbrs():
+    calls = [{"name": "get_game_prediction",
+              "args": {"summary": "a=LAL, b=BOS"}}]
+    assert _observed_pred_args(calls) == ("LAL", "BOS")
+
+
+def test_observed_pred_args_last_call_wins():
+    calls = [{"name": "get_game_prediction",
+              "args": {"summary": "a=NYK, b=CHI"}},
+             {"name": "get_game_prediction",
+              "args": {"summary": "a=LAL, b=BOS"}}]
+    assert _observed_pred_args(calls) == ("LAL", "BOS")
+
+
+def test_observed_pred_args_full_names():
+    calls = [{"name": "get_game_prediction",
+              "args": {"summary": "a=Los Angeles Lakers, b=Boston Celtics"}}]
+    assert _observed_pred_args(calls) == ("LAL", "BOS")
+
+
+def test_observed_pred_args_none():
+    assert _observed_pred_args(
+        [{"name": "get_leaders",
+          "args": {"summary": "cat=PTS"}}]) is None
+    assert _observed_pred_args(
+        [{"name": "get_game_prediction",
+          "args": {"summary": "get_game_prediction"}}]) is None
+    assert _observed_pred_args(
+        [{"name": "get_game_prediction",
+          "args": {"summary": "a=ZZZ, b=BOS"}}]) is None
