@@ -316,6 +316,9 @@ SCOUT_BRIEF = (
     "a hot stat line go to get_regression_check. "
     "Streak questions (longest or active streaks, N-game streaks) go to "
     "get_streaks with the stat, threshold, and scope. "
+    "Head-to-head history for one player against one opponent team "
+    "(game logs, averages vs the season baseline, deltas, team record, "
+    "small-sample flag) goes to get_head_to_head. "
     "Resolve names with resolve_entity first. Use returned ids verbatim. "
     "Never invent ids. Season 2025-26 unless told otherwise."
 )
@@ -373,6 +376,8 @@ LEAGUE_BRIEF = (
     "THEN call get_draft_model. "
     "IF the task mentions streaks (longest or active, player or team), "
     "THEN call get_streaks. "
+    "IF the task asks how a player has done against one opponent team, "
+    "THEN call get_head_to_head. "
     "IF the task mentions form, risers, fallers, or who is hot, "
     "THEN call get_risers. "
     "IF the task mentions trade, swap, deal, or sign-and-trade, "
@@ -401,7 +406,7 @@ def _desk_spec(name: str, task: str):
                   "get_last_x", "get_percentiles", "get_shot_zones",
                   "get_shot_compare", "get_trend", "get_comps", "get_clutch",
                   "get_playoff_intel", "get_matchup_splits",
-                  "get_regression_check", "get_streaks",
+                  "get_regression_check", "get_streaks", "get_head_to_head",
                   "get_advanced", "run_python", "text_to_sql"],
                 None)
     if name == "delegate_team":
@@ -445,7 +450,8 @@ def _desk_spec(name: str, task: str):
                 ["get_standings", "get_leaders", "get_injuries", "get_rapm",
                  "get_playoffs", "get_playoff_intel", "get_ratings", "get_clutch", "get_elo",
                  "get_playoff_sim", "get_game_prediction", "get_contract_value", "get_draft_board",
-                 "get_draft_model", "get_risers", "get_streaks", "get_trade_check",
+                 "get_draft_model", "get_risers", "get_streaks", "get_head_to_head",
+                 "get_trade_check",
                  "get_trade_value",
                  "get_award_race",
                  "get_warehouse_freshness",

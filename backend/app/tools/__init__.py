@@ -55,6 +55,7 @@ from .player import (
 from .preview import get_matchup_preview
 from .prediction import get_game_prediction
 from .shared import resolve_entity, run_python, search_nba
+from .headtohead import get_head_to_head
 from .splits import get_matchup_splits, get_regression_check
 from .streaks import get_streaks
 from .team import (
@@ -144,6 +145,7 @@ v1_tools: list[BaseTool] = [
     get_watchlist,
     remove_watchlist_item,
     get_streaks,
+    get_head_to_head,
     get_game_prediction,
 ]
 
