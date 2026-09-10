@@ -11,6 +11,8 @@ import CourtHeatmap from "./CourtHeatmap";
 import DataTable from "./DataTable";
 import Skeleton from "./Skeleton";
 import GameLogView, { parseGameLogs } from "./GameLogView";
+import HeadToHeadView, { parseHeadToHead } from "./HeadToHeadView";
+import ImpactView, { parseImpact } from "./ImpactView";
 import MatchupPreviewView, { parsePreview } from "./MatchupPreviewView";
 import PredictionView, { parsePrediction } from "./PredictionView";
 import RegressionView, { parseRegression } from "./RegressionView";
@@ -118,7 +120,9 @@ export default function DataArtifacts({
       name === "get_streaks" ||
       name === "get_game_prediction" ||
       name === "search_game_logs" ||
-      name === "get_rotation_check"
+      name === "get_rotation_check" ||
+      name === "get_head_to_head" ||
+      name === "get_impact_estimate"
     );
   });
   const fallback = preferred >= 0 ? preferred : tables.length - 1;
@@ -415,6 +419,11 @@ export default function DataArtifacts({
         <GameLogView rows={table.rows} meta={table.meta} />
       ) : toolName === "get_rotation_check" && parseRotation(table.rows) ? (
         <RotationCheckView rows={table.rows} meta={table.meta} />
+      ) : toolName === "get_head_to_head" && parseHeadToHead(table.rows) ? (
+        <HeadToHeadView rows={table.rows} meta={table.meta} />
+      ) : toolName === "get_impact_estimate" &&
+        parseImpact(table.rows ?? table) ? (
+        <ImpactView rows={table.rows ?? table} meta={table.meta} />
       ) : isShotTool && viewMode === "court" ? (
         <CourtHeatmap
           rows={table.rows}
