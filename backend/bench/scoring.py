@@ -123,7 +123,7 @@ def name_recall(facts: dict, answer: str) -> float:
     return round(hits / total, 3)
 
 
-def _numeric_forms(value: float | int) -> set[str]:
+def _numeric_forms(value: float | int, key: str = "") -> set[str]:
     forms = set()
     try:
         forms.add(str(int(round(float(value)))))
@@ -132,6 +132,19 @@ def _numeric_forms(value: float | int) -> set[str]:
     forms.add(f"{float(value):.1f}")
     forms.add(f"{int(round(float(value))):,}")
     forms.add(str(value))
+    # Percent form, scoped tight: only for probability facts (win_prob_*
+    # keys holding a 0-1 value). Lets "76.6%" / "76.6 percent" match 0.766
+    # without letting e.g. an eFG of 0.5 match "50%" elsewhere.
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        v = None
+    if v is not None and 0.0 <= v <= 1.0 and str(key).startswith("win_prob"):
+        pct = v * 100
+        forms.add(f"{pct:.1f}%")
+        forms.add(f"{int(round(pct))}%")
+        forms.add(f"{pct:.1f} percent")
+        forms.add(f"{int(round(pct))} percent")
     return forms
 
 
@@ -142,12 +155,12 @@ def numeric_acc(facts: dict, answer: str) -> float:
         return 1.0
     text = _strip_seasons(answer or "")
     hits = 0
-    for value in nums.values():
+    for key, value in nums.items():
         # Trailing guard blocks a following digit or a decimal continuation
         # (".5" in "98.75") but allows a sentence-final period ("98.7.").
         if any(f and re.search(r"(?<![\d.,])" + re.escape(f) + r"(?!\d|\.\d)",
                               text)
-               for f in _numeric_forms(value)):
+               for f in _numeric_forms(value, key)):
             hits += 1
     return round(hits / len(nums), 3)
 

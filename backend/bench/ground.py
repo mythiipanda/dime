@@ -1097,7 +1097,10 @@ def gen_lineups(rng, ctx) -> tuple[Task, GroundTruth]:
 # tiny away tie-break noise. Win probability is the simulated home-win
 # share; projected scores/totals are the simulated means. The question
 # says "default settings" so the agent calls with the same defaults
-# (n_sims 10000, seed 7) the ground truth replicates.
+# (n_sims 10000, seed 7) the ground truth replicates. The pair is
+# canonicalized (sorted by abbreviation) for the question and the
+# replica alike, so the facts are a pure function of the unordered pair
+# and win probabilities are keyed by team abbreviation, not home/away.
 # ---------------------------------------------------------------------------
 
 _PRED_HOME_COURT_PTS = 3.0
@@ -1202,6 +1205,12 @@ def _pred_injury_penalty(full_name: str) -> float:
 
 def _pred_facts(abbr_a: str, abbr_b: str) -> dict:
     # Returns the estimate dict the tool reports, or raises SkipTask.
+    # Order-independent: the neutral-site home/away assignment (which side
+    # takes the injury penalty) must not depend on caller arg order, so the
+    # pair is canonicalized up front and the facts are a pure function of
+    # the unordered team pair. Win probabilities are keyed by team
+    # abbreviation, not by home/away role.
+    abbr_a, abbr_b = sorted([abbr_a.upper(), abbr_b.upper()])
     teams = _pred_team_table()
     ta, tb = teams.get(abbr_a), teams.get(abbr_b)
     if ta is None or tb is None:
@@ -1243,8 +1252,8 @@ def _pred_facts(abbr_a: str, abbr_b: str) -> dict:
     return {
         "home_abbr": home_abbr, "away_abbr": away_abbr,
         "neutral": neutral, "home_court_pts": hca,
-        "win_prob_home": round(p_home, 3),
-        "win_prob_away": round(1 - p_home, 3),
+        f"win_prob_{home_abbr}": round(p_home, 3),
+        f"win_prob_{away_abbr}": round(1 - p_home, 3),
         "proj_score_home": round(float(_np.mean(home)), 1),
         "proj_score_away": round(float(_np.mean(away)), 1),
         "projected_total": round(float(_np.mean(home + away)), 1),
@@ -1260,7 +1269,10 @@ def gen_prediction(rng, ctx) -> tuple[Task, GroundTruth]:
     if len(cands) < 2:
         raise SkipTask("too few rated teams for prediction")
     for _ in range(30):
-        a, b = rng.sample(cands, 2)
+        # Canonical order (matches _pred_facts' internal canonicalization)
+        # so the question's team order, the replica's role assignment, and
+        # the agent's most likely call order all agree.
+        a, b = sorted(rng.sample(cands, 2))
         try:
             facts = _pred_facts(a, b)
         except SkipTask:
@@ -1285,8 +1297,10 @@ def gen_prediction(rng, ctx) -> tuple[Task, GroundTruth]:
             task_id=tid,
             facts={"names": {"home": facts["home_abbr"],
                              "away": facts["away_abbr"]},
-                   "win_prob_home": facts["win_prob_home"],
-                   "win_prob_away": facts["win_prob_away"],
+                   f"win_prob_{facts['home_abbr']}":
+                       facts[f"win_prob_{facts['home_abbr']}"],
+                   f"win_prob_{facts['away_abbr']}":
+                       facts[f"win_prob_{facts['away_abbr']}"],
                    "proj_score_home": facts["proj_score_home"],
                    "proj_score_away": facts["proj_score_away"],
                    "projected_total": facts["projected_total"]},
