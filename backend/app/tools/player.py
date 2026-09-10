@@ -1100,14 +1100,21 @@ def get_debate_card(a: str, b: str, season: str = SEASON) -> dict[str, Any]:
     import html as _html
     from pathlib import Path as _Path
 
-    # Get comparison data
+    # Get comparison data — safe whether or not we're inside a running loop.
     import asyncio as _asyncio
-    try:
-        loop = _asyncio.get_event_loop()
-    except RuntimeError:
-        loop = _asyncio.new_event_loop()
-        _asyncio.set_event_loop(loop)
-    comp = loop.run_until_complete(get_compare(a, b, season))
+    import concurrent.futures as _cf
+
+    def _run(coro):
+        try:
+            _asyncio.get_running_loop()
+        except RuntimeError:
+            return _asyncio.run(coro)
+        # Already inside a loop: run the coroutine in a fresh loop on a
+        # worker thread to avoid "event loop is already running".
+        with _cf.ThreadPoolExecutor(max_workers=1) as ex:
+            return ex.submit(_asyncio.run, coro).result()
+
+    comp = _run(get_compare.ainvoke({"a": a, "b": b, "season": season}))
     if not comp.get("ok"):
         return {"tool": "get_debate_card", "ok": False,
                 "error": comp.get("error", "comparison failed")}
