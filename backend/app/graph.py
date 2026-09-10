@@ -209,7 +209,8 @@ _LEAGUE_RX = re.compile(
     r"elo|title odds|streak|versus|power rank|net rating|"
     r"\btrad(e|es|ed|ing)\b|sign-and-trade|\bswap\b", re.IGNORECASE)
 _COMPARE_RX = re.compile(
-    r"\bvs\.?\b|\bversus\b|\bcompare\b", re.IGNORECASE)
+    r"\bvs\.?\b(?!\s+top[-\s]?\d)|\bversus\b(?!\s+top[-\s]?\d)|\bcompare\b",
+    re.IGNORECASE)
 _LIST_RX = re.compile(
     r"which\s+(players|teams)|what\s+(players|teams)|top\s+\d+|"
     r"\bunder\s+\d+|\bover\s+\d+|\bage\b|"
@@ -577,6 +578,26 @@ async def _triage_seed(question: str, primary: str, model: str,
             out if isinstance(out, dict) else {"tool": "delegate_league",
                                                "rows": out})
         state["calls_made"].append("delegate_league:" + json.dumps(
+            {"task": task}, sort_keys=True))
+        return
+    if (found_p and not is_trade and not is_cast
+            and not is_compare and not is_raptor
+            and re.search(
+                r"\bsplit|versus top|vs top|against top|last \d+|"
+                r"home\b|away\b|monthly|defense\b",
+                question, re.IGNORECASE)
+            and "delegate_scout" in delegates):
+        task = (question + " Use get_splits (it carries vs-top-10-defense"
+                " and vs-rest rows) for matchup context.")
+        try:
+            out = await delegates["delegate_scout"].ainvoke({"task": task})
+        except Exception as exc:
+            out = {"tool": "delegate_scout", "ok": False,
+                   "error": str(exc)[:160]}
+        state["tool_results"].append(
+            out if isinstance(out, dict) else {"tool": "delegate_scout",
+                                               "rows": out})
+        state["calls_made"].append("delegate_scout:" + json.dumps(
             {"task": task}, sort_keys=True))
         return
     if (not found_p or not found_t) and state.get("history"):

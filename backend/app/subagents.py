@@ -143,7 +143,8 @@ async def _run_desk(
 SCOUT_BRIEF = (
     "You are the player scout. Report form, splits, and shot profile. "
     "Splits means home/away plus wins/losses plus last-10 plus monthly "
-    "PPG with FG_PCT from get_splits. "
+    "PPG with FG_PCT from get_splits. get_splits also carries "
+    "vs-top-10-defense and vs-rest rows for matchup context. "
     "Shot diet means zone eFG plus share from get_shot_zones. "
     "Two-player shot showdowns go to get_shot_compare. "
     "Clutch production goes to get_clutch. "
@@ -226,7 +227,7 @@ def delegate_tools(provider: ProviderName, model: str) -> list:
              "get_last_x", "get_percentiles", "get_shot_zones",
              "get_shot_compare", "get_trend", "get_comps", "get_clutch",
              "get_playoff_intel",
-              "get_advanced", "run_python", "text_to_sql"],
+              "get_advanced", "get_splits", "run_python", "text_to_sql"],
         )
 
     @tool("delegate_team")

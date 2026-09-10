@@ -814,16 +814,60 @@ def get_shot_zones(player_id: str | int, season: str = SEASON) -> dict[str, Any]
     return {"tool": "get_shot_zones", "ok": True, "rows": rows, "meta": meta}
 
 
+def _opp_tier_splits(frame: Any, season: str) -> list[dict[str, Any]]:
+    """Split games vs top-10 defenses vs the rest. Opponent from MATCHUP."""
+    import polars as _pl
+
+    if "MATCHUP" not in frame.columns or "PTS" not in frame.columns:
+        return []
+    ranks = {str(r.get("TEAM_NAME", "")): r.get("DEF_RATING_RANK")
+             for r in _read_df(
+                 "SELECT TEAM_NAME, DEF_RATING_RANK FROM silver_team_ratings"
+                 " WHERE _season = ?", [season])}
+    if not ranks:
+        return []
+    from nba_api.stats.static import teams as _static
+
+    abbr = {t["abbreviation"]: t["full_name"] for t in _static.get_teams()}
+    tiers: dict[str, list[float]] = {"vs top-10 defense": [], "vs rest": []}
+    for g in frame.to_dicts():
+        try:
+            opp = str(g.get("MATCHUP") or "").split()[-1].upper()
+            rank = ranks.get(abbr.get(opp, ""), None)
+            pts = float(g.get("PTS") or 0)
+            tiers["vs top-10 defense" if rank is not None and rank <= 10
+                   else "vs rest"].append(pts)
+        except (TypeError, ValueError, IndexError):
+            continue
+    out = []
+    for label, pts in tiers.items():
+        if not pts:
+            continue
+        out.append({"split": label, "GP": len(pts),
+                    "PPG": round(sum(pts) / len(pts), 1)})
+    return out
+
+
 @tool
 def get_splits(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
     """Home/away plus monthly, wins/losses, last-10, starter splits from the game log."""
     player_id = coerce_player_id(player_id)
-    res = nba_stats.player_gamelog(player_id, season)
-    if not res.ok or res.frame.height == 0:
+    rows_data, warehouse_meta = _warehouse_or_live(
+        "silver_player_gamelogs", "_season = ? AND _entity = ?",
+        [season, f"player:{player_id}"],
+        lambda: nba_stats.player_gamelog(player_id, season), season,
+        entity=f"player:{player_id}", live_first=True,
+    )
+    if not rows_data:
         return {"tool": "get_splits", "ok": False,
-                "error": res.error or "empty upstream response"}
+                "error": warehouse_meta.get("error") or "empty upstream response"}
+    import polars as _pl
+
+    frame = _pl.DataFrame(rows_data)
+    meta_source = warehouse_meta.get("source", "warehouse")
+    meta_fetched = warehouse_meta.get("fetched_at", "")
     try:
-        g = res.frame.with_columns(
+        g = frame.with_columns(
             pl.col("MATCHUP").str.contains("@").alias("away")
         )
         cols = g.columns
@@ -945,8 +989,12 @@ def get_splits(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
         rows = rows[:12]
     except Exception as exc:
         return {"tool": "get_splits", "ok": False, "error": str(exc)[:160]}
+    try:
+        rows.extend(_opp_tier_splits(frame, season))
+    except Exception:
+        pass
     return {"tool": "get_splits", "ok": True, "rows": rows,
-            "meta": {"source": res.meta.source, "fetched_at": res.meta.fetched_at,
+            "meta": {"source": meta_source, "fetched_at": meta_fetched,
                      "rows": len(rows), "cached": False}}
 
 
