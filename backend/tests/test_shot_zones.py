@@ -107,7 +107,7 @@ def test_build_rows_delta_arithmetic():
 
 
 def test_tool_rejects_season_with_no_rows():
-    out = get_team_shot_zones.invoke({"teams": "league", "season": "2015-16"})
+    out = get_team_shot_zones.invoke({"teams": "league", "season": "2010-11"})
     assert out["ok"] is False
     assert "no shot rows" in out["error"]
 

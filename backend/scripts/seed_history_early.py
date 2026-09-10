@@ -38,6 +38,37 @@ import polars as pl
 
 from app import store
 
+
+def unify(frames: list) -> list:
+    """Cross-season union that tolerates columns missing from frames[0].
+
+    The shared seed_history.unify indexes frames[0].schema, which throws
+    KeyError when an early-year parquet lacks a column a later year has
+    (seen: hustle return_to_play flags). Dtype for each column comes from
+    the first frame that carries it; numeric-only columns keep their
+    dtype, mixed ones fall back to String.
+    """
+    order: dict[str, list[str]] = {}
+    for f in frames:
+        for name, dtype in f.schema.items():
+            order.setdefault(name, []).append(str(dtype))
+    target: dict[str, object] = {}
+    for name, seen in order.items():
+        kinds = set()
+        for s in seen:
+            kinds.add("num" if s.startswith(("Int", "UInt", "Float", "Double")) else "other")
+        holder = next(f for f in frames if name in f.schema)
+        target[name] = holder.schema[name] if kinds == {"num"} else pl.String
+    out = []
+    for f in frames:
+        missing = [c for c in target if c not in f.columns]
+        g = f
+        for c in missing:
+            g = g.with_columns(pl.lit(None).cast(target[c]).alias(c))
+        out.append(g.select(list(target)).cast(
+            {c: t for c, t in target.items()}, strict=False))
+    return out
+
 EARLIEST = 2016
 LATEST = 2021
 FORBIDDEN = 2026
