@@ -299,3 +299,53 @@ def test_warehouse_team_ids_match_live_path(monkeypatch):
     assert fast["rows"] == live["rows"]
     assert fast["rows"]["a"]["team"] == "MIN"
     assert fast["rows"]["b"]["team"] == "LAL"
+
+
+class _FlakyLastStub:
+    """Fails once, then succeeds: a transient sub-call must be retried."""
+
+    def __init__(self):
+        self.calls = 0
+
+    async def ainvoke(self, args):
+        self.calls += 1
+        if self.calls == 1:
+            raise RuntimeError("transient boom")
+        return {"ok": True, "rows": [{"PTS": 30}, {"PTS": 28}]}
+
+
+class _BoomStub:
+    async def ainvoke(self, args):
+        raise RuntimeError("boom")
+
+
+def _patch_compare_stubs(monkeypatch, last_stub):
+    monkeypatch.setattr(pm, "get_last_x", last_stub)
+    monkeypatch.setattr(pm, "get_advanced", _EmptyDictStub())
+    monkeypatch.setattr(pm, "get_shot_zones", _EmptyStub())
+
+
+def test_last5_recovers_after_transient_failure(warehouse, monkeypatch):
+    """Ticket 4: a once-failing get_last_x is retried, so last5 populates
+    instead of silently coming back []."""
+    _patch_no_live(monkeypatch)
+    flaky = _FlakyLastStub()
+    _patch_compare_stubs(monkeypatch, flaky)
+    result = asyncio.run(pm.get_compare.ainvoke(
+        {"a": "1630162", "b": "1629029", "season": SEASON}))
+    assert result["ok"] is True
+    assert result["rows"]["a"]["last5"] == [30, 28]
+    assert result["meta"]["sub_call_errors"] == {}
+
+
+def test_last5_failure_surfaced_in_meta(warehouse, monkeypatch):
+    """Ticket 4: when a sub-call keeps failing, the failure is surfaced in
+    meta instead of being swallowed into last5: []."""
+    _patch_no_live(monkeypatch)
+    _patch_compare_stubs(monkeypatch, _BoomStub())
+    result = asyncio.run(pm.get_compare.ainvoke(
+        {"a": "1630162", "b": "1629029", "season": SEASON}))
+    assert result["ok"] is True
+    assert result["rows"]["a"]["last5"] == []
+    assert "a.last" in result["meta"]["sub_call_errors"]
+    assert "RuntimeError" in result["meta"]["sub_call_errors"]["a.last"]

@@ -51,6 +51,36 @@ def _flags(poss: int, blowout_share: float, min_possessions: int,
     return flags
 
 
+def _canon_row_key(r: dict[str, Any]) -> tuple[float, str]:
+    """Preference key for the canonical row of a GROUP_ID.
+
+    The total-MIN variant wins (largest MIN); exact ties break to the
+    latest _fetched_at. ISO timestamps compare correctly as strings.
+    """
+    try:
+        minutes = float(r.get("MIN") or 0)
+    except (TypeError, ValueError):
+        minutes = 0.0
+    return (minutes, str(r.get("_fetched_at") or ""))
+
+
+def _dedupe_lineup_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Collapse duplicate silver_lineups rows for the same GROUP_ID.
+
+    The sportsdataverse seed writes ~14 rows per GROUP_ID (per-game and
+    total variants plus exact dupes). Keep one canonical row per GROUP_ID:
+    the total-MIN variant, tie-broken by latest _fetched_at. Pure function;
+    kept testable so the dedupe can never silently regress.
+    """
+    canon: dict[str, dict[str, Any]] = {}
+    for r in rows or []:
+        gid = str(r.get("GROUP_ID") or r.get("GROUP_NAME") or "")
+        prev = canon.get(gid)
+        if prev is None or _canon_row_key(r) > _canon_row_key(prev):
+            canon[gid] = r
+    return list(canon.values())
+
+
 def _apply_sample_floor(
     units: list[dict[str, Any]], min_possessions: int, include_small: bool,
 ) -> tuple[list[dict[str, Any]], int, str]:
@@ -191,6 +221,10 @@ def get_lineup_stats(
                     f"no lineup data for team {team_id} in season {season} "
                     "in the warehouse or upstream; nothing estimated, "
                     "nothing fabricated")}}
+    rows_in = len(rows)
+    rows = _dedupe_lineup_rows(rows)
+    meta = {**meta, "rows_before_dedupe": rows_in,
+            "rows_after_dedupe": len(rows)}
     agg = None
     try:
         agg = _possession_aggs(team_id, season)

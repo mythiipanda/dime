@@ -2,12 +2,15 @@
 
 from typing import Any
 import asyncio as _asyncio
+import logging as _logging
 import polars as pl
 from langchain_core.tools import tool
 
 from .. import store
 from ..sources import nba_stats
 from ._core import SEASON, TTL_GAMELOG, TTL_LEADERS, TTL_PBPSTATS, _warehouse_or_live, coerce_player_id, coerce_team_id
+
+_logger = _logging.getLogger(__name__)
 
 
 def _num(value: object) -> float | None:
@@ -179,18 +182,46 @@ async def get_compare(
                 return []
 
         games = await loop.run_in_executor(None, _gamelogs)
-        jobs: dict[str, Any] = {}
+        # Sub-calls as (tool, args) defs so a failure can be retried with a
+        # fresh coroutine; a still-failing call is recorded in sub_errors
+        # instead of silently emitting empty sections (e.g. last5: []).
+        job_defs: dict[str, tuple[Any, dict[str, Any]]] = {}
         if not games:
-            jobs["intel"] = get_player_intel.ainvoke(
-                {"player_id": pid, "season": season})
-        jobs["last"] = get_last_x.ainvoke(
-            {"player_id": pid, "n": 5, "season": season})
-        jobs["adv"] = get_advanced.ainvoke({"player": pid, "season": season})
-        jobs["zones"] = get_shot_zones.ainvoke(
-            {"player_id": pid, "season": season})
-        results = await _asyncio.gather(*jobs.values(), return_exceptions=True)
-        res = {k: (v if isinstance(v, dict) else {})
-               for k, v in zip(jobs, results)}
+            job_defs["intel"] = (get_player_intel,
+                                 {"player_id": pid, "season": season})
+        job_defs["last"] = (get_last_x,
+                            {"player_id": pid, "n": 5, "season": season})
+        job_defs["adv"] = (get_advanced,
+                           {"player": pid, "season": season})
+        job_defs["zones"] = (get_shot_zones,
+                             {"player_id": pid, "season": season})
+
+        async def _invoke(label: str, subtool: Any,
+                          args: dict[str, Any]) -> Any:
+            try:
+                return await subtool.ainvoke(args)
+            except Exception as exc:  # noqa: BLE001 - transient sub-call, retry
+                _logger.warning(
+                    "get_compare sub-call %s failed for %s; retrying: %r",
+                    label, who, exc)
+            try:
+                return await subtool.ainvoke(args)
+            except Exception as exc:  # noqa: BLE001 - surfaced in sub_errors
+                _logger.warning(
+                    "get_compare sub-call %s failed twice for %s: %r",
+                    label, who, exc)
+                return exc
+
+        results = await _asyncio.gather(
+            *(_invoke(k, t, a) for k, (t, a) in job_defs.items()))
+        res: dict[str, Any] = {}
+        sub_errors: dict[str, str] = {}
+        for key, val in zip(job_defs, results):
+            if isinstance(val, BaseException):
+                res[key] = {}
+                sub_errors[key] = f"{type(val).__name__}: {str(val)[:160]}"
+            else:
+                res[key] = val if isinstance(val, dict) else {}
         if not games:
             games = res.get("intel", {}).get("rows", []) or []
         matchup = [str(g.get("MATCHUP") or "").split(" ")[0] for g in games]
@@ -314,6 +345,7 @@ async def get_compare(
             "rim_share": diet.get("rim_share"),
             "three_share": diet.get("three_share"),
             "last5": [g.get("PTS", 0) for g in last.get("rows", [])],
+            "sub_call_errors": sub_errors,
         }
 
     left, right = await _asyncio.gather(one(a), one(b))
@@ -330,12 +362,17 @@ async def get_compare(
     else:
         pair = {"teammates": False, "both_on_net": None,
                 "both_on_minutes": 0, "note": "Different teams, no shared court."}
+    sub_call_errors: dict[str, str] = {}
+    for side, player in (("a", left), ("b", right)):
+        for key, err in (player.get("sub_call_errors") or {}).items():
+            sub_call_errors[f"{side}.{key}"] = err
     return {"tool": "get_compare", "ok": True,
             "rows": {"a": left, "b": right, "fit": portability_fit(left, right),
                      "pair": pair},
             "meta": {"source": "nba_api+pbpstats", "season": season,
                      "fit_rule": "both usg>=30 risk; high usg plus low usg with ts>=0.60 scalable; on off gap>=5 leans driver; rim plus three shares append shot diet",
-                     "pair_rule": "same team abbrev runs wowy, Both ON net plus minutes"}}
+                     "pair_rule": "same team abbrev runs wowy, Both ON net plus minutes",
+                     "sub_call_errors": sub_call_errors}}
 
 
 @tool

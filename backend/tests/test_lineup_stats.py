@@ -15,6 +15,7 @@ from app import tools
 from app.tools.lineup import (
     _apply_sample_floor,
     _best_net_unit,
+    _dedupe_lineup_rows,
     _flags,
     _ratings,
     get_lineup_stats,
@@ -194,3 +195,55 @@ def test_best_net_unit_computed_past_warehouse_row_cap(monkeypatch):
     assert res["best_net_unit"]["GROUP_NAME"] == "best unit"
     assert res["best_net_unit"]["NET_RATING"] > 50.0
     assert len(res["rows"]) <= 25
+
+
+def _dup_rows():
+    """Mimic the sportsdataverse seed: 14 rows per GROUP_ID, per-game and
+    total variants plus exact dupes."""
+    rows = []
+    variants = [(7.1, "2026-09-09T18:00:00+00:00"),
+                (50.0, "2026-09-09T18:00:00+00:00"),
+                (30.1, "2026-09-10T18:08:33+00:00")] * 4 + [
+                (50.0, "2026-09-08T18:00:00+00:00"),
+                (50.0, "2026-09-10T19:00:00+00:00")]
+    for i, (minutes, fetched) in enumerate(variants):
+        rows.append({"GROUP_ID": "1-2-3-4-5", "GROUP_NAME": "unit-a",
+                     "GP": 10, "MIN": minutes, "PTS": 100.0 + i,
+                     "PLUS_MINUS": 5.0, "_fetched_at": fetched})
+    for i in range(3):
+        rows.append({"GROUP_ID": "6-7-8-9-10", "GROUP_NAME": "unit-b",
+                     "GP": 12, "MIN": 40.0, "PTS": 90.0,
+                     "PLUS_MINUS": -2.0,
+                     "_fetched_at": "2026-09-10T18:08:33+00:00"})
+    return rows
+
+
+def test_dedupe_lineup_rows_keeps_total_min_variant():
+    deduped = _dedupe_lineup_rows(_dup_rows())
+    assert len(deduped) == 2
+    by_name = {r["GROUP_NAME"]: r for r in deduped}
+    # largest MIN (the total variant) wins for unit-a
+    assert by_name["unit-a"]["MIN"] == 50.0
+    # exact-MIN tie breaks to the latest _fetched_at
+    assert by_name["unit-a"]["_fetched_at"] == "2026-09-10T19:00:00+00:00"
+    assert by_name["unit-b"]["MIN"] == 40.0
+
+
+def test_dedupe_lineup_rows_empty_no_crash():
+    assert _dedupe_lineup_rows([]) == []
+    assert _dedupe_lineup_rows(None) == []
+
+
+def test_get_lineup_stats_dedupes_before_limit(monkeypatch):
+    """Ticket 1: limit=25 must return distinct units, not 25 rows of 1 unit."""
+    monkeypatch.setattr("app.tools.lineup.coerce_team_id", lambda t: 20)
+    monkeypatch.setattr("app.tools.lineup._possession_aggs", lambda *a: None)
+    monkeypatch.setattr("app.tools.lineup._warehouse_or_live",
+                        _limit_aware_warehouse(_dup_rows()))
+    res = get_lineup_stats.invoke(
+        {"team": "SAC", "min_possessions": 10, "limit": 25})
+    assert res["ok"] is True
+    names = [u["GROUP_NAME"] for u in res["rows"]]
+    assert len(names) == len(set(names)) == 2
+    assert res["meta"]["rows_before_dedupe"] == 17
+    assert res["meta"]["rows_after_dedupe"] == 2

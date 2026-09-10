@@ -450,12 +450,38 @@ def _slim_unit_row(u: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+CORE_GP_FLOOR = 20
+
+
 def _tier_players(players: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
-    ordered = sorted(players, key=lambda p: float(p.get("MIN") or 0), reverse=True)
+    """Tier players by per-game role, not cumulative minutes.
+
+    Tiers sort by MPG (per-game role) instead of cumulative MIN = MPG x GP,
+    so a star who missed games (low GP) is never buried in "fringe". The GP
+    floor keeps cameo appearances out of "core": a player needs at least
+    CORE_GP_FLOOR games to be considered core. Below-floor players with real
+    MPG land in bench, never fringe.
+    """
+    def _gp(p: dict[str, Any]) -> int:
+        try:
+            return int(p.get("GP") or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    def _mpg(p: dict[str, Any]) -> float:
+        try:
+            return float(p.get("MPG") or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    by_mpg = sorted(players, key=_mpg, reverse=True)
+    core = [p for p in by_mpg if _gp(p) >= CORE_GP_FLOOR][:5]
+    core_ids = {id(p) for p in core}
+    rest = [p for p in by_mpg if id(p) not in core_ids]
     return {
-        "core": ordered[:5],
-        "bench": ordered[5:10],
-        "fringe": ordered[10:15],
+        "core": core,
+        "bench": rest[:5],
+        "fringe": rest[5:10],
     }
 
 
@@ -516,7 +542,18 @@ def _thin_rotation_flags(
 def _closing_candidates(
     units: list[dict[str, Any]], top_units: int, min_possessions: int,
 ) -> list[dict[str, Any]]:
-    eligible = [u for u in (units or []) if (u.get("poss") or 0) >= min_possessions]
+    # Defensive dedupe by GROUP_NAME: callers should pass already-deduped
+    # units (get_lineup_stats dedupes by GROUP_ID), but slimmed rows carry
+    # no GROUP_ID, so guard here too to keep one closing slot per unit.
+    seen: set[str] = set()
+    distinct: list[dict[str, Any]] = []
+    for u in units or []:
+        key = str(u.get("GROUP_NAME") or "")
+        if key in seen:
+            continue
+        seen.add(key)
+        distinct.append(u)
+    eligible = [u for u in distinct if (u.get("poss") or 0) >= min_possessions]
     ordered = sorted(eligible, key=lambda u: float(u.get("NET_RATING") or 0), reverse=True)
     return [_slim_unit_row(u) for u in ordered[:top_units]]
 
@@ -758,7 +795,11 @@ async def get_rotation_check(
             })
         except Exception:
             continue
-    enriched = sorted(enriched, key=lambda p: float(p.get("MIN") or 0),
+    # Consider the top 15 by per-game minutes (MPG), not cumulative MIN:
+    # a star who missed games must stay in the tiering set rather than be
+    # squeezed out by cumulative-minutes sorting. Tiers then apply the GP
+    # floor in _tier_players.
+    enriched = sorted(enriched, key=lambda p: float(p.get("MPG") or 0),
                       reverse=True)[:15]
     try:
         units = await _fetch_rotation_units(team, season, min_possessions)
