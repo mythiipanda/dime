@@ -457,6 +457,23 @@ async def _stream_planner(tooled, messages: list,
         holder["calls"] = getattr(resp, "tool_calls", None) or []
 
 
+def _spawn(coro, *, name=None):
+    """Schedule a coroutine as a background asyncio.Task.
+
+    asyncio.create_task() only accepts coroutines. Passing the Future
+    returned by asyncio.gather() raises "TypeError: a coroutine was
+    expected, got <_GatheringFuture pending>". Every spawn site in this
+    module goes through this helper so a Future can never leak into
+    create_task again.
+    """
+    if not asyncio.iscoroutine(coro):
+        raise TypeError(
+            "_spawn() requires a coroutine, got "
+            f"{type(coro).__name__}; wrap asyncio.gather(...) in an "
+            "'async def' or await the Future directly")
+    return asyncio.create_task(coro, name=name)
+
+
 async def _run_delegate_live(name: str, task: str, primary: str, model: str,
                              holder: dict[str, Any],
                              node: str = "data_retrieval") -> AsyncGenerator[dict[str, Any], None]:
@@ -483,7 +500,7 @@ async def _run_delegate_live(name: str, task: str, primary: str, model: str,
         finally:
             await q.put(None)
 
-    runner = asyncio.create_task(_runner())
+    runner = _spawn(_runner(), name="delegate-live")
     while True:
         tok = await q.get()
         if tok is None:
@@ -1327,7 +1344,10 @@ async def actual_tool_node(state: DimeState) -> AsyncGenerator[dict[str, Any], N
             "summary": _args_summary(name, args),
         })
     _tok_q: asyncio.Queue = asyncio.Queue()
-    _gather = asyncio.create_task(asyncio.gather(*(_run(c) for c in pending)))
+    async def _gather_all():
+        return await asyncio.gather(*(_run(c) for c in pending))
+
+    _gather = _spawn(_gather_all(), name="tool-gather")
     # Drain live desk tokens while the tools run; each _run posts one
     # None sentinel when it finishes.
     _remaining = len(pending)
