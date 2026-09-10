@@ -10,7 +10,7 @@ import re
 import time
 import unicodedata
 from collections.abc import AsyncGenerator
-from typing import Any, TypedDict
+from typing import Any, NotRequired, TypedDict
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from .providers import (
@@ -281,6 +281,11 @@ _PREDICT_TITLE_RX = re.compile(
 _IMPACT_RX = re.compile(
     r"\bestimat\w+.{0,48}\bimpact\b|\bimpact\b.{0,48}\bestimat\w+|"
     r"\bhow\s+good\s+(?:has|is|was)\b",
+    re.IGNORECASE)
+_MATCHUP_SPLITS_RX = re.compile(
+    r"\bmatchup\s+splits?\b|\bteam\s+splits?\b|"
+    r"\bsplits?\b.{0,24}\b(?:vs\.?|versus)\b|"
+    r"\b(?:vs\.?|versus)\b.{0,24}\bsplits?\b",
     re.IGNORECASE)
 _BRIEFING_RX = re.compile(r"\bbriefing\b", re.IGNORECASE)
 _BRIEFING_CONTEXT_RX = re.compile(
@@ -790,6 +795,31 @@ async def _triage_seed(question: str, primary: str, model: str,
                 async for _e in _triage_terminal(question, state):
                     yield _e
             return
+    _named = _direct_named_teams(question, found_t)
+    is_matchup_splits = (
+        len(_named) == 2
+        and _MATCHUP_SPLITS_RX.search(question)
+        and not is_trade
+        and not is_cast
+        and not _PREDICT_LIVE_RX.search(question)
+        and not state.get("history")
+    )
+    if is_matchup_splits:
+        # B2: planner-owned matchup-splits ask looped 5 rounds (188s turn)
+        # retrying a failing tool; answer straight from warehouse splits.
+        _decisive = True
+        for t in _named[:2]:
+            _mh: dict[str, Any] = {}
+            async for _e in _triage_tool(
+                    "get_team_splits", {"team": t}, state, _mh):
+                yield _e
+            _mout = _mh.get("out") or {}
+            if _result_status(_mout) != "ok" or not _result_rows(_mout):
+                _decisive = False
+        if _decisive:
+            async for _e in _triage_terminal(question, state):
+                yield _e
+        return
     if ((len(found_p) >= 2 or len(found_t) >= 2 or is_compare)
             and not (is_trade and not is_compare)
             and not (is_cast and not is_compare)):
@@ -1279,14 +1309,63 @@ class DimeState(TypedDict):
     history: list[dict[str, str]]
     analysis: str
     suggestions: list[str]
+    # Turn-level caches, reset per turn in run_chat.
+    # desk_cache: (desk, entity) -> first desk result, shared across rounds.
+    desk_cache: NotRequired[dict[str, dict[str, Any]]]
+    # entity_cache: normalized query -> resolve_entity result.
+    entity_cache: NotRequired[dict[str, dict[str, Any]]]
 
 
 def _call_key(name: str, args: dict[str, Any]) -> str:
     return name + ":" + json.dumps(args, sort_keys=True, default=str)
 
 
+def _desk_dedupe_key(name: str, args: dict[str, Any]) -> tuple | None:
+    """Turn-scoped dedupe key for a delegate desk: (desk, entities).
+
+    Returns None when no player/team entity is detectable in the desk
+    task, in which case the call is not dedupable (e.g. league-wide
+    scans whose tasks legitimately differ each round).
+    """
+    try:
+        task = args.get("task", "") if isinstance(args, dict) else ""
+        qp, qt = _detect_entities(str(task or ""))
+        ents = tuple(sorted(
+            {p.strip().casefold() for p in qp}
+            | {t.strip().casefold() for t in qt}))
+    except Exception:
+        return None
+    return (name, ents) if ents else None
+
+
 def _all_tools(state: DimeState) -> list:
     return list(v1_tools) + delegate_tools(state["primary"], state["model"])  # type: ignore[arg-type]
+
+
+# B2: text_to_sql failed x5 across 5 planner rounds (188s turn); cut a tool after 2 straight fails.
+_CIRCUIT_BREAKER_STRIKES = 2
+
+
+def _circuit_broken_tools(state: dict[str, Any]) -> set[str]:
+    try:
+        streaks: dict[str, int] = {}
+        for entry in state.get("tool_results") or []:
+            if not isinstance(entry, dict):
+                continue
+            name = entry.get("tool")
+            if not name:
+                continue
+            try:
+                failed = _result_status(entry) != "ok"
+            except Exception:
+                continue
+            if failed:
+                streaks[name] = streaks.get(name, 0) + 1
+            else:
+                streaks[name] = 0
+        return {n for n, s in streaks.items() if s >= _CIRCUIT_BREAKER_STRIKES}
+    except Exception:
+        return set()
 
 
 SUPERVISOR_TOOL_NAMES = frozenset({
@@ -1315,7 +1394,8 @@ def _is_deep_question(question: str) -> bool:
 
 
 def _supervisor_tools(state: DimeState) -> list:
-    return [t for t in _all_tools(state) if t.name in SUPERVISOR_TOOL_NAMES]
+    broken = _circuit_broken_tools(state)
+    return [t for t in _all_tools(state) if t.name in SUPERVISOR_TOOL_NAMES and t.name not in broken]
 
 
 _DISPLAY_TITLES = {
@@ -1550,7 +1630,15 @@ async def actual_tool_node(state: DimeState) -> AsyncGenerator[dict[str, Any], N
 
             args = {**args, "season": clamp_season(args.get("season"))}
         try:
+            desk_cache = state.setdefault("desk_cache", {})
+            entity_cache = state.setdefault("entity_cache", {})
             if name.startswith("delegate_"):
+                dkey = _desk_dedupe_key(
+                    name, args if isinstance(args, dict) else {})
+                if dkey is not None and dkey in desk_cache:
+                    elapsed[id(call)] = 0
+                    await _tok_q.put(None)
+                    return {**desk_cache[dkey], "deduped": True}
                 # Stream the desk's raw tokens live while it works.
                 async def _on_tok(t: str) -> None:
                     await _tok_q.put((name, t))
@@ -1559,6 +1647,19 @@ async def actual_tool_node(state: DimeState) -> AsyncGenerator[dict[str, Any], N
                     name, args.get("task", "") if isinstance(args, dict) else "",
                     state["primary"], state["model"],  # type: ignore[arg-type]
                     on_token=_on_tok)
+                if (isinstance(out, dict) and dkey is not None
+                        and _result_status(out) == "ok"):
+                    desk_cache[dkey] = out
+            elif name == "resolve_entity":
+                qnorm = (str(args.get("query", "") or "").strip().casefold()
+                         if isinstance(args, dict) else "")
+                if qnorm in entity_cache:
+                    elapsed[id(call)] = 0
+                    await _tok_q.put(None)
+                    return {**entity_cache[qnorm], "deduped": True}
+                out = await fn.ainvoke(args)
+                if isinstance(out, dict) and _result_status(out) == "ok":
+                    entity_cache[qnorm] = out
             else:
                 out = await fn.ainvoke(args)
             elapsed[id(call)] = int((time.time() - t0) * 1000)
@@ -1605,6 +1706,8 @@ async def actual_tool_node(state: DimeState) -> AsyncGenerator[dict[str, Any], N
         rdata = _tool_result_payload(
             "tools", name, res, elapsed.get(id(call), 0))
         yield _event("tool_result", rdata)
+        if res.get("deduped"):
+            continue  # deduped reuse: no second trace replay in the UI
         for _te in _trace_replay_events(res if isinstance(res, dict) else {}):
             _td = dict(_te.get("data", {}) or {})
             _td["node"] = "tools"
@@ -1871,16 +1974,36 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
         llm = get_llm(state["primary"], state["model"])  # type: ignore[arg-type]
     except Exception:
         llm = None
-    if llm:
-        state["suggestions"] = await _suggest_llm(
-            state["question"], state["tool_results"], state["calls_made"], llm
-        )
-    else:
-        state["suggestions"] = _suggest(
-            state["question"], state["tool_results"], state["calls_made"]
-        )
-    yield _event("suggestions", {"items": state["suggestions"]})
+    _q = state["question"]
+    _trs = state["tool_results"]
+    _cm = state["calls_made"]
+
+    async def _suggest_bg() -> list[str]:
+        if llm is None:
+            return _suggest(_q, _trs, _cm)
+        return await _suggest_llm(_q, _trs, _cm, llm)
+
+    state["_suggest_task"] = _spawn(_suggest_bg(), name="suggestions")  # type: ignore[typeddict-unknown-key]
     yield _event("node_update", {"node": "presentation", "status": "complete"})
+
+
+async def _finish_suggestions(state: DimeState) -> list[str]:
+    """Await the background suggestions task spawned by presentation_agent.
+
+    Runs after graph_end so the LLM call never delays the answer
+    stream. Falls back to the hardcoded _suggest on timeout or error.
+    """
+    task = state.pop("_suggest_task", None)  # type: ignore[typeddict-unknown-key]
+    items: Any = None
+    if task is not None:
+        try:
+            items = await asyncio.wait_for(task, timeout=20)
+        except Exception:
+            items = None
+    if not isinstance(items, list) or not items:
+        items = _suggest(state["question"], state["tool_results"],
+                         state["calls_made"])
+    return [str(i) for i in items][:3]
 
 
 async def run_chat(
@@ -1894,6 +2017,7 @@ async def run_chat(
         question=question, primary=primary, model=model, round=0,
         tool_results=[], calls_made=[], history=history or [],
         analysis="", suggestions=[],
+        desk_cache={}, entity_cache={},
     )
     async for e in entry_node(state):
         yield e
@@ -1919,3 +2043,5 @@ async def run_chat(
     async for e in presentation_agent(state):
         yield e
     yield _event("graph_end", {"ok": True})
+    state["suggestions"] = await _finish_suggestions(state)
+    yield _event("suggestions", {"items": state["suggestions"]})
