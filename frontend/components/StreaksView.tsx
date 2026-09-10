@@ -15,6 +15,12 @@ export interface StreaksRows {
   count: number | null;
 }
 
+function fmtDate(iso: string): string {
+  const d = new Date(iso.length === 10 ? `${iso}T12:00:00` : iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
 export function parseStreaks(rows: unknown): StreaksRows | null {
   if (!isObj(rows)) return null;
   const list = asList(rows.streaks);
@@ -53,6 +59,12 @@ export default function StreaksView({
   const maxStreak = Math.max(1, ...parsed.streaks.map((s) => s.streak));
   const mode = (meta?.mode || "longest").toLowerCase();
   const title = `${mode === "active" ? "Active" : "Longest"} ${meta?.stat || "stat"} streaks`;
+  // Name the stat in the threshold chip ("min 30 pts/game"), and drop the
+  // chip entirely when the title already carries the threshold ("30-pt").
+  const statWord =
+    meta?.stat && !/\d/.test(meta.stat) ? meta.stat : "pts";
+  const titleCarriesThreshold =
+    meta?.threshold != null && String(meta?.stat ?? "").includes(String(meta.threshold));
 
   return (
     <div>
@@ -68,11 +80,19 @@ export default function StreaksView({
         <SectionTitle>{title}</SectionTitle>
         {meta?.season && <Chip>{meta.season}</Chip>}
         {meta?.scope && <Chip>{meta.scope}</Chip>}
-        {meta?.threshold != null && <Chip>min {meta.threshold}/game</Chip>}
+        {meta?.threshold != null && !titleCarriesThreshold && (
+          <Chip>
+            min {meta.threshold} {statWord}/game
+          </Chip>
+        )}
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {parsed.streaks.map((s, i) => {
-          const dates = [s.startDate, s.endDate].filter(Boolean).join(" – ");
+          const dates = [s.startDate, s.endDate]
+            .filter(Boolean)
+            .map(fmtDate)
+            .join(" – ");
+          const barOpacity = i === 0 ? 1 : Math.max(0.3, 0.75 - i * 0.15);
           return (
             <div
               key={`${s.holder}-${i}`}
@@ -84,6 +104,7 @@ export default function StreaksView({
               }}
             >
               <div
+                className="streak-head"
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -118,6 +139,7 @@ export default function StreaksView({
                 </div>
                 {dates && (
                   <span
+                    className="streak-dates"
                     style={{ fontSize: 11, color: "var(--color-ash-gray)" }}
                   >
                     {dates}
@@ -144,9 +166,7 @@ export default function StreaksView({
                 <div style={{ flex: 1 }}>
                   <Bar
                     pct={(s.streak / maxStreak) * 100}
-                    color={
-                      i === 0 ? undefined : "var(--color-stone-muted)"
-                    }
+                    color={`rgba(59, 166, 241, ${barOpacity})`}
                   />
                 </div>
                 <span

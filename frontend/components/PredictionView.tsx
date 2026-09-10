@@ -1,6 +1,6 @@
 "use client";
 
-import { Bar, Caption, Chip, isObj, num, SectionTitle, str } from "./view-shared";
+import { Caption, Chip, isObj, num, SectionTitle, str } from "./view-shared";
 
 export interface PredictionRows {
   home: string;
@@ -98,24 +98,49 @@ function pct(v: number): string {
   return `${(v * 100).toFixed(1)}%`;
 }
 
-function ciPct(ci: [number, number] | null): string {
+function likelyRange(ci: [number, number] | null): string {
   if (!ci) return "";
-  return `90% CI ${pct(ci[0])}–${pct(ci[1])}`;
+  return `likely range ${pct(ci[0])}–${pct(ci[1])}`;
 }
 
-function ProbRow({
-  abbr,
-  prob,
-  ci,
-  accent,
-}: {
-  abbr: string;
-  prob: number;
-  ci: [number, number] | null;
-  accent: boolean;
-}) {
+/** "BOS by ~5.7 (range: BOS by 12.4 to NYK by 1.1)" from a home-minus-away CI. */
+function marginWords(p: PredictionRows): string | null {
+  if (!p.marginCi) return null;
+  const [lo, hi] = p.marginCi;
+  const side = (v: number) => (v >= 0 ? p.home : p.away);
+  const mid = (lo + hi) / 2;
+  if (Math.abs(mid) < 0.05) return "pick'em \u2014 margin range straddles zero";
+  const fav = mid >= 0 ? p.home : p.away;
+  return `${fav} by ~${Math.abs(mid).toFixed(1)} (range: ${side(lo)} by ${Math.abs(lo).toFixed(1)} to ${side(hi)} by ${Math.abs(hi).toFixed(1)})`;
+}
+
+function PairedProbBar({ p, favHome }: { p: PredictionRows; favHome: boolean }) {
+  const ciLine = [p.awayCi, p.homeCi].some(Boolean)
+    ? [
+        p.awayCi ? `${p.away} ${likelyRange(p.awayCi)}` : "",
+        p.homeCi ? `${p.home} ${likelyRange(p.homeCi)}` : "",
+      ]
+        .filter(Boolean)
+        .join(" \u00b7 ")
+    : "";
   return (
-    <div style={{ marginBottom: 10 }}>
+    <div style={{ marginBottom: 4 }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "baseline",
+          justifyContent: "space-between",
+          gap: 8,
+          marginBottom: 6,
+        }}
+      >
+        <span style={{ fontWeight: 600, fontSize: 13, color: "var(--color-ink-black)" }}>
+          {p.away}
+        </span>
+        <span style={{ fontWeight: 600, fontSize: 13, color: "var(--color-ink-black)" }}>
+          {p.home}
+        </span>
+      </div>
       <div
         style={{
           display: "flex",
@@ -127,28 +152,54 @@ function ProbRow({
       >
         <span
           style={{
+            fontSize: 20,
             fontWeight: 600,
-            fontSize: 13,
-            color: "var(--color-ink-black)",
+            color: !favHome ? "var(--color-cyan-edge)" : "var(--color-ink-black)",
+            fontVariantNumeric: "tabular-nums",
           }}
         >
-          {abbr}
+          {pct(p.awayProb)}
         </span>
         <span
           style={{
             fontSize: 20,
             fontWeight: 600,
-            color: accent
-              ? "var(--color-cyan-edge)"
-              : "var(--color-ink-black)",
+            color: favHome ? "var(--color-cyan-edge)" : "var(--color-ink-black)",
             fontVariantNumeric: "tabular-nums",
           }}
         >
-          {pct(prob)}
+          {pct(p.homeProb)}
         </span>
       </div>
-      <Bar pct={prob * 100} color={accent ? undefined : "var(--color-stone-muted)"} />
-      {ci && (
+      <div
+        style={{
+          height: 8,
+          background: "var(--color-stone-border)",
+          borderRadius: 4,
+          overflow: "hidden",
+          display: "flex",
+        }}
+      >
+        <div
+          style={{
+            width: `${Math.min(100, p.awayProb * 100)}%`,
+            height: "100%",
+            background: !favHome ? "var(--color-cyan-signal)" : "var(--color-stone-muted)",
+          }}
+        />
+        <div style={{ flex: 1 }} />
+        <div
+          style={{
+            width: `${Math.min(100, p.homeProb * 100)}%`,
+            height: "100%",
+            background: favHome ? "var(--color-cyan-signal)" : "var(--color-stone-muted)",
+          }}
+        />
+      </div>
+      <div style={{ fontSize: 11, color: "var(--color-ash-gray)", marginTop: 4 }}>
+        one 100% scale — bar lengths are directly comparable
+      </div>
+      {ciLine && (
         <div
           style={{
             fontSize: 11,
@@ -157,7 +208,7 @@ function ProbRow({
             fontVariantNumeric: "tabular-nums",
           }}
         >
-          {ciPct(ci)}
+          {ciLine}
         </div>
       )}
     </div>
@@ -176,12 +227,13 @@ export default function PredictionView({
   const favHome = p.homeProb >= p.awayProb;
   const simLine = [
     p.nSims !== null ? `${Math.round(p.nSims).toLocaleString()} simulations` : "",
-    p.seed !== null ? `seed ${Math.round(p.seed)}` : "",
-    p.pace !== null ? `pace ${p.pace.toFixed(1)}` : "",
+    p.pace !== null ? `pace ${p.pace.toFixed(1)} poss/48` : "",
   ]
     .filter(Boolean)
     .join(" · ");
-  const extras = [...p.assumptions, ...p.methodology, ...p.limitations];
+  const seedLine =
+    p.seed !== null ? `Random seed ${Math.round(p.seed)} — reruns with this seed reproduce these numbers.` : "";
+  const extras = [...p.assumptions, ...p.methodology, ...(seedLine ? [seedLine] : []), ...p.limitations];
 
   return (
     <div>
@@ -229,10 +281,7 @@ export default function PredictionView({
         >
           Win probability
         </div>
-        <ProbRow abbr={p.away} prob={p.awayProb} ci={p.awayCi} accent={!favHome} />
-        <div style={{ marginBottom: 0 }}>
-          <ProbRow abbr={p.home} prob={p.homeProb} ci={p.homeCi} accent={favHome} />
-        </div>
+        <PairedProbBar p={p} favHome={favHome} />
       </div>
       <div
         style={{
@@ -261,7 +310,7 @@ export default function PredictionView({
             fontVariantNumeric: "tabular-nums",
           }}
         >
-          {p.away} {p.awayScore.toFixed(1)} – {p.homeScore.toFixed(1)} {p.home}
+          {p.away} {Math.round(p.awayScore)} – {Math.round(p.homeScore)} {p.home}
         </div>
         <div
           style={{
@@ -271,10 +320,10 @@ export default function PredictionView({
             fontVariantNumeric: "tabular-nums",
           }}
         >
-          Total {p.total.toFixed(1)}
-          {p.totalCi ? ` (90%: ${p.totalCi[0].toFixed(1)}–${p.totalCi[1].toFixed(1)})` : ""}
+          Total {Math.round(p.total)}
+          {p.totalCi ? ` (likely range ${Math.round(p.totalCi[0])}–${Math.round(p.totalCi[1])})` : ""}
         </div>
-        {p.marginCi && (
+        {marginWords(p) && (
           <div
             style={{
               fontSize: 11,
@@ -283,8 +332,7 @@ export default function PredictionView({
               fontVariantNumeric: "tabular-nums",
             }}
           >
-            Margin 90%: {p.marginCi[0].toFixed(1)} to {p.marginCi[1].toFixed(1)} (home minus
-            away)
+            {marginWords(p)}
           </div>
         )}
       </div>

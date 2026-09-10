@@ -257,6 +257,15 @@ body {
     order: 4;
   }
 
+  /* Streak rows: dates drop to their own line under the holder on narrow. */
+  .streak-head {
+    flex-wrap: wrap !important;
+  }
+  .streak-dates {
+    flex: 1 1 100% !important;
+    white-space: nowrap;
+  }
+
   .sidebar-rail {
     display: none !important;
   }
