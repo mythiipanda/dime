@@ -332,3 +332,243 @@ def test_tool_performance_smoke():
     assert res["ok"] is True
     assert res["aggregate"]["attempts"] > 20000
     assert elapsed < 2.0, f"search_shots took {elapsed:.2f}s"
+
+
+# ---------------------------------------------------------------------------
+# Appended tests for the rewritten shots.py. Existing tests above are untouched.
+
+from app.tools.shots import (SMALL_SAMPLE_MIN, _AGG_SELECT, _three_sql,
+                             _where_sql, _zone_case_sql)
+
+
+def test_new_parse_group_by_variants():
+    assert parse_group_by("") == ""
+    assert parse_group_by("player") == "player"
+    assert parse_group_by("TEAM") == "team"
+    with pytest.raises(ValueError, match="invalid group_by"):
+        parse_group_by("coach")
+
+
+def test_new_parse_include_ot_variants():
+    assert parse_include_ot("auto", True) is True
+    assert parse_include_ot("auto", False) is False
+    assert parse_include_ot("yes", False) is True
+    assert parse_include_ot("no", True) is False
+    with pytest.raises(ValueError, match="invalid include_ot"):
+        parse_include_ot("maybe", True)
+
+
+def test_new_fold_ot_semantics():
+    assert fold_ot({4}, True) == {4, 5}
+    assert fold_ot({1, 2}, True) == {1, 2, 5}
+    assert fold_ot({4}, False) == {4}
+    assert fold_ot(None, True) is None
+    assert fold_ot(None, False) is None
+
+
+def test_new_group_row_values():
+    row = group_row(5, 3, 3)
+    assert row["attempts"] == 5
+    assert row["fg_pct"] == 0.6
+    assert row["efg_pct"] == 0.9
+    assert row["small_sample"] is True
+    assert row["points"] == 2 * 3 + 3
+    assert SMALL_SAMPLE_MIN == 10
+    assert group_row(100, 50, 10)["small_sample"] is False
+
+
+def test_new_where_sql_ot_late():
+    wanted = set(ZONE_KEYS)
+    sql_on, _ = _where_sql("2025-26", None, None, wanted, {4, 5}, 300,
+                           False, "any", True)
+    assert "PERIOD >= 4" in sql_on
+    assert "PERIOD >= 5" in sql_on
+    sql_off, _ = _where_sql("2025-26", None, None, wanted, {4}, 300,
+                            False, "any", False)
+    # With an explicit period filter the canonical late clause is PERIOD >= 4
+    # and the period clause pins the exact periods, so include_ot=no never
+    # produces PERIOD = 4 in the late clause when a filter is present...
+    assert "PERIOD >= 4" in sql_off
+    assert "PERIOD = 4" not in sql_off
+    assert "PERIOD >= 5" not in sql_off
+    # ...but with no explicit period filter, include_ot=no still narrows
+    # late to exactly the 4th quarter.
+    sql_none_off, _ = _where_sql("2025-26", None, None, wanted, None, 300,
+                                 False, "any", False)
+    assert "PERIOD = 4" in sql_none_off
+    assert "PERIOD >= 4" not in sql_none_off
+
+
+def test_new_sql_helpers_smoke():
+    assert "COUNT(*)" in _AGG_SELECT
+    zone_expr = _zone_case_sql()
+    assert "CASE" in zone_expr
+    assert "corner_3" in _three_sql(zone_expr)
+
+
+def test_group_by_team_leaderboard():
+    res = search_shots.invoke(
+        {"group_by": "team", "periods": "4th", "late_clock": "300"})
+    assert res["ok"] is True
+    assert "by_team" in res
+    rows = res["by_team"]
+    assert len(rows) <= 50
+    attempts = [r["attempts"] for r in rows]
+    assert attempts == sorted(attempts, reverse=True)
+    for r in rows:
+        assert "efg_pct" in r
+        assert "small_sample" in r
+    assert sum(attempts) == res["aggregate"]["attempts"]
+
+
+def test_group_by_player_small_sample():
+    res = search_shots.invoke(
+        {"player": "Tatum", "zones": "corner_3", "periods": "4th"})
+    assert res["ok"] is True
+    agg = res["aggregate"]
+    assert agg["attempts"] < 10
+    assert agg["small_sample"] is True
+    assert "sample_warning" in res["meta"]
+    assert [r["zone"] for r in res["by_zone"]] == ["corner_3"]
+
+
+def test_ot_included_by_default():
+    default = search_shots.invoke({"periods": "4th"})
+    explicit = search_shots.invoke({"periods": "4th,ot"})
+    no_ot = search_shots.invoke({"periods": "4th", "include_ot": "no"})
+    assert default["ok"] and explicit["ok"] and no_ot["ok"]
+    assert (default["aggregate"]["attempts"]
+            == explicit["aggregate"]["attempts"])
+    assert no_ot["aggregate"]["attempts"] < default["aggregate"]["attempts"]
+
+
+def test_late_clock_includes_ot_by_default():
+    default = search_shots.invoke({"late_clock": "300"})
+    no_ot = search_shots.invoke({"late_clock": "300", "include_ot": "no"})
+    assert default["ok"] and no_ot["ok"]
+    assert (default["aggregate"]["attempts"]
+            > no_ot["aggregate"]["attempts"])
+
+
+def test_disambiguation_returns_candidates():
+    res = search_shots.invoke({"player": "Williams"})
+    assert res["ok"] is True
+    assert "disambiguation" in res
+    cands = res["disambiguation"]["candidates"]
+    assert len(cands) > 0
+    for c in cands:
+        assert c["player_id"]
+        assert isinstance(c["player"], str) and c["player"]
+        assert isinstance(c["teams"], list) and len(c["teams"]) > 0
+
+
+def test_unknown_player_still_fails():
+    res = search_shots.invoke({"player": "Nobody XYZ"})
+    assert res["ok"] is False
+    assert "unknown player" in res["error"]
+
+
+def test_clutch_safe_flag():
+    res = search_shots.invoke({"periods": "4th"})
+    assert res["ok"] is True
+    assert res["meta"]["clutch_safe"] is False
+    assert res["meta"]["score_aware"] is False
+
+
+def test_heave_disabled_wording():
+    res = search_shots.invoke({"player": "Tatum", "exclude_heaves": False})
+    assert res["ok"] is True
+    assert "INCLUDED" in res["meta"]["data_note"]
+    assert res["meta"]["heaves_excluded"] == 0
+
+
+def test_conflicting_filters_note():
+    res = search_shots.invoke({"periods": "1h", "late_clock": "60"})
+    assert res["ok"] is True
+    assert res["aggregate"]["attempts"] == 0
+    assert "late_clock" in res["meta"]["note"]
+
+
+def test_zero_match_note():
+    res = search_shots.invoke(
+        {"player": "Tatum", "zones": "rim", "periods": "1", "made": "made"})
+    assert res["ok"] is True
+    if res["aggregate"]["attempts"] == 0:
+        assert "note" in res["meta"]
+
+
+def test_invalid_group_by():
+    res = search_shots.invoke({"group_by": "coach"})
+    assert res["ok"] is False
+
+
+def test_sample_rows_spread():
+    res = search_shots.invoke({"periods": "4th", "limit": 25})
+    assert res["ok"] is True
+    shots = res["shots"]
+    assert len(shots) <= 25
+    assert len({s["game_id"] for s in shots}) >= 5
+
+
+def test_performance_smoke():
+    search_shots.invoke(
+        {"group_by": "player", "periods": "4th", "late_clock": "300"})
+    start = time.perf_counter()
+    res = search_shots.invoke(
+        {"group_by": "player", "periods": "4th", "late_clock": "300"})
+    elapsed = time.perf_counter() - start
+    assert res["ok"] is True
+    assert elapsed < 2.0, f"search_shots took {elapsed:.2f}s"
+
+
+# ---------------------------------------------------------------------------
+# Regression tests: periods='ot' + late_clock (auto include_ot must stay on,
+# late filter must apply to the folded OT set, zero-row combos keep notes).
+
+
+def test_ot_late_clock_returns_rows_note_free():
+    res = search_shots.invoke({"periods": "ot", "late_clock": "60"})
+    assert res["ok"] is True
+    assert res["filters"]["include_ot"] is True
+    assert res["filters"]["periods"] == ["OT"]
+    assert res["aggregate"]["attempts"] > 0
+    assert "note" not in res["meta"]
+    # Every aggregate bucket and sample row is OT-only.
+    assert all(r["period"] == "OT" for r in res["by_period"])
+    assert all(s["period"] is not None and s["period"] >= 5
+               for s in res["shots"])
+
+
+def test_ot_explicit_include_ot_yes_late_clock():
+    res = search_shots.invoke(
+        {"periods": "ot", "include_ot": "yes", "late_clock": "60"})
+    assert res["ok"] is True
+    assert res["filters"]["include_ot"] is True
+    assert res["aggregate"]["attempts"] > 0
+    assert "note" not in res["meta"]
+
+
+def test_late_clock_applies_to_folded_set_no_ot_leak():
+    res = search_shots.invoke(
+        {"periods": "4th", "include_ot": "no", "late_clock": "60"})
+    assert res["ok"] is True
+    assert res["aggregate"]["attempts"] > 0
+    assert not any(r["period"] == "OT" for r in res["by_period"])
+    assert all(r["period"] == 4 for r in res["by_period"])
+
+
+def test_late_clock_ot_only_sql_targets_folded_set():
+    sql, _ = _where_sql("2025-26", None, None, set(ZONE_KEYS), {5}, 60,
+                        False, "any", True)
+    # OT is in the folded set, so the late filter must reach OT (PERIOD >= 5)
+    # and never pin PERIOD = 4.
+    assert "PERIOD >= 5" in sql
+    assert "PERIOD = 4" not in sql
+
+
+def test_non_late_period_late_clock_still_contradicts_with_note():
+    res = search_shots.invoke({"periods": "3", "late_clock": "60"})
+    assert res["ok"] is True
+    assert res["aggregate"]["attempts"] == 0
+    assert "note" in res["meta"]
+    assert "late_clock" in res["meta"]["note"]

@@ -24,6 +24,7 @@ disclosed in meta; with the scrub disabled the note says so explicitly.
 """
 
 from typing import Any
+import threading as _threading
 
 from langchain_core.tools import tool
 
@@ -58,7 +59,7 @@ ZONE_LEGEND = {
 # Period tokens: first (and only) matching expansion wins. 5 means OT (any
 # period >= 5); matching folds 5+ onto it. Whether 5 is folded onto a
 # 4th-quarter/2nd-half selection is decided by include_ot (auto = on when
-# the parsed set contains 4).
+# the parsed set contains 4, or explicitly contains 5 via the 'ot' token).
 _PERIOD_TOKEN_MAP = {
     "1": {1}, "2": {2}, "3": {3}, "4": {4},
     "4th": {4}, "ot": {5}, "1h": {1, 2}, "2h": {3, 4},
@@ -73,6 +74,7 @@ SMALL_SAMPLE_MIN = 10
 
 _TEAM_ABBR_BY_ID: dict[int, str] = {}
 _PLAYER_NAME_BY_ID: dict[int, str] = {}
+_STATIC_LOADED = {"teams": False, "players": False}
 
 
 def _team_abbr(team_id: object) -> str | None:
@@ -83,6 +85,8 @@ def _team_abbr(team_id: object) -> str | None:
         return None
     if tid in _TEAM_ABBR_BY_ID:
         return _TEAM_ABBR_BY_ID[tid]
+    if _STATIC_LOADED["teams"]:
+        return None
     try:
         from nba_api.stats.static import teams as _static_teams
 
@@ -93,6 +97,8 @@ def _team_abbr(team_id: object) -> str | None:
                 continue
     except Exception:
         return None
+    finally:
+        _STATIC_LOADED["teams"] = True
     return _TEAM_ABBR_BY_ID.get(tid)
 
 
@@ -104,6 +110,8 @@ def _player_full_name(player_id: object) -> str | None:
         return None
     if pid in _PLAYER_NAME_BY_ID:
         return _PLAYER_NAME_BY_ID[pid]
+    if _STATIC_LOADED["players"]:
+        return None
     try:
         from nba_api.stats.static import players as _static_players
 
@@ -114,6 +122,8 @@ def _player_full_name(player_id: object) -> str | None:
                 continue
     except Exception:
         return None
+    finally:
+        _STATIC_LOADED["players"] = True
     return _PLAYER_NAME_BY_ID.get(pid)
 
 
@@ -218,8 +228,10 @@ def parse_group_by(raw: str) -> str:
 def parse_include_ot(raw: str, default: bool) -> bool:
     """Parse the include_ot flag; 'auto'/'' resolves to default.
 
-    Pure function. default is True when the query selects a 4th-quarter (or
-    2nd-half) window, else False.
+    Pure function. default is computed by the caller: True when the query
+    selects a 4th-quarter (or 2nd-half) window, explicitly selects overtime
+    (periods='ot'), or gives late_clock without an explicit period filter;
+    False otherwise.
     """
     token = (raw or "").strip().lower()
     if token in ("", "auto"):
@@ -383,7 +395,21 @@ def disambiguate_last_name(raw: str,
 
 # ---------------------------------------------------------------------------
 # DuckDB SQL layer: filtering and aggregation run in the warehouse, not in a
-# Python loop over 233k rows.
+# Python loop over 233k rows. The read-only connection is cached per thread:
+# opening a fresh connection pays a ~2s cold-scan penalty on first use, so a
+# cached connection keeps repeat calls well under a second.
+
+
+_conn_local = _threading.local()
+
+
+def _warehouse_conn() -> Any:
+    """Per-thread cached read-only warehouse connection."""
+    con = getattr(_conn_local, "con", None)
+    if con is None:
+        con = _store.connect(read_only=True)
+        _conn_local.con = con
+    return con
 
 
 def _zone_case_sql() -> str:
@@ -408,7 +434,8 @@ def _heave_sql() -> str:
 def _where_sql(season: str, player_id: int | None, team_id: int | None,
                wanted_zones: set[str], allowed_periods: set[int] | None,
                late_seconds: int | None, three_only: bool,
-               made_filter: str) -> tuple[str, list[object]]:
+               made_filter: str, include_ot: bool = True
+               ) -> tuple[str, list[object]]:
     """Build the WHERE clause (without the heave filter) and its params."""
     zone_expr = _zone_case_sql()
     clauses = ["_season = ?"]
@@ -433,7 +460,15 @@ def _where_sql(season: str, player_id: int | None, team_id: int | None,
             parts.append("PERIOD >= 5")
         clauses.append("(" + " OR ".join(parts) + ")")
     if late_seconds is not None:
-        clauses.append("PERIOD >= 4")
+        # Late-game is canonical: periods 4+ (incl. overtime). With an
+        # explicit period filter the period clause above already intersects
+        # it, so periods='ot' + late_clock scans OT only while periods='1h'
+        # + late_clock stays a zero-row contradiction by construction. With
+        # no explicit period filter, include_ot decides whether OT counts
+        # as late.
+        clauses.append("PERIOD >= 4"
+                       if (include_ot or allowed_periods is not None)
+                       else "PERIOD = 4")
         clauses.append(
             "COALESCE(MINUTES_REMAINING * 60 + SECONDS_REMAINING, 999999) <= ?")
         params.append(late_seconds)
@@ -466,26 +501,62 @@ def _resolve_player(con: Any, season: str,
                     raw: str) -> tuple[int | None, str, Any]:
     """Resolve player text to a warehouse PLAYER_ID.
 
-    Full names, nicknames, and numeric ids go through coerce_player_id first
-    (required because warehouse PLAYER_NAME is last-name-only). A failed
-    lookup falls back to a case-insensitive last-name match against the
-    season's distinct players. Returns (player_id, status, payload) where
-    status is "none" (no player filter), "ok", "unknown" (payload: error
-    string), or "ambiguous" (payload: candidate list for the disambiguation
-    response instead of a hard failure).
+    Fast path first: a last-name match against the season's distinct players
+    is one cheap indexed-style scan and avoids coerce_player_id's full
+    nba_api static sweep (~1s+). Full names, nicknames, and numeric ids fall
+    through to coerce_player_id (required because warehouse PLAYER_NAME is
+    last-name-only); a failed lookup falls back to a last-name match, and
+    shared last names return "ambiguous" instead of a hard failure.
+    Returns (player_id, status, payload) where status is "none" (no player
+    filter), "ok", "unknown" (payload: error string), or "ambiguous"
+    (payload: candidate list for the disambiguation response).
     """
     text = (raw or "").strip()
     if not text:
         return None, "none", None
     try:
+        return int(text), "ok", None
+    except (TypeError, ValueError):
+        pass
+    pairs = [(r["PLAYER_NAME"], r["PLAYER_ID"]) for r in _qrows(
+        con,
+        "SELECT DISTINCT PLAYER_ID, PLAYER_NAME FROM silver_shots "
+        "WHERE _season = ? AND lower(PLAYER_NAME) = lower(?)",
+        [season, text])]
+    if len(pairs) == 1:
+        try:
+            return int(pairs[0][1]), "ok", None  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            pass
+    if len(pairs) > 1:
+        outcome = disambiguate_last_name(text, pairs)
+        return None, "ambiguous", outcome["candidates"]
+    last_token = text.split()[-1]
+    token_pairs = [(r["PLAYER_NAME"], r["PLAYER_ID"]) for r in _qrows(
+        con,
+        "SELECT DISTINCT PLAYER_ID, PLAYER_NAME FROM silver_shots "
+        "WHERE _season = ? AND lower(PLAYER_NAME) = lower(?)",
+        [season, last_token])]
+    if len(token_pairs) == 1 and last_token.lower() != text.lower():
+        # Unique last token (e.g. 'Jayson Tatum' -> 'Tatum'). Not applied to
+        # the full text itself (handled above); multi-hit tokens fall through
+        # to coerce_player_id so exact full names still win.
+        try:
+            return int(token_pairs[0][1]), "ok", None  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            pass
+    try:
         return coerce_player_id(text), "ok", None
     except ValueError:
         pass
+    if len(token_pairs) > 1:
+        outcome = disambiguate_last_name(last_token, token_pairs)
+        return None, "ambiguous", outcome["candidates"]
     rows = _qrows(con,
                   "SELECT DISTINCT PLAYER_ID, PLAYER_NAME FROM silver_shots "
                   "WHERE _season = ?", [season])
-    pairs = [(r["PLAYER_NAME"], r["PLAYER_ID"]) for r in rows]
-    outcome = disambiguate_last_name(text, pairs)
+    outcome = disambiguate_last_name(
+        text, [(r["PLAYER_NAME"], r["PLAYER_ID"]) for r in rows])
     if outcome["ambiguous"]:
         return None, "ambiguous", outcome["candidates"]
     if outcome["player_id"] is None:
@@ -562,8 +633,9 @@ def search_shots(player: str = "", team: str = "", zones: str = "",
     score-aware). group_by: "" | "player" | "team" -- per-player/per-team
     volume + efficiency leaderboards sorted by attempts (this is how you
     answer "who takes over fourth quarters"). include_ot: auto (default --
-    overtime is included when a 4th-quarter/2nd-half window is selected),
-    yes, no.
+    overtime is included when a 4th-quarter/2nd-half window is selected,
+    when overtime is explicitly selected (periods='ot'), or when late_clock
+    is given without an explicit period filter), yes, no.
     periods='4th' includes overtime by default; pass include_ot=no to get
     exactly the 4th quarter. Zero matches return ok True with empty
     aggregates and an explanatory note, never silent zeros. Results are
@@ -589,10 +661,16 @@ def search_shots(player: str = "", team: str = "", zones: str = "",
         lim = MAX_ROWS
     lim = max(1, min(MAX_ROWS, lim))
     # include_ot defaults to true when the query selects a 4th-quarter /
-    # 2nd-half window (canonical late-game def). It is NOT folded onto 1st-half
-    # or single early-period filters, so e.g. periods='1h' + late_clock stays
-    # a contradiction instead of silently matching OT.
-    ot_default = allowed_periods is not None and 4 in allowed_periods
+    # 2nd-half window, explicitly selects overtime (periods='ot' -- an
+    # explicit 'ot' token is a direct request for OT rows, so auto must not
+    # turn OT off there), or when a late_clock window is given without an
+    # explicit period filter (canonical late-game def, matching the legacy
+    # late_clock behavior). It is NOT folded onto 1st-half or single
+    # early-period filters, so e.g. periods='1h' + late_clock stays a
+    # contradiction instead of silently matching OT.
+    ot_default = ((allowed_periods is not None
+                   and (4 in allowed_periods or 5 in allowed_periods))
+                  or (allowed_periods is None and late_seconds is not None))
     try:
         ot = parse_include_ot(include_ot, ot_default)
     except ValueError as exc:
@@ -606,24 +684,21 @@ def search_shots(player: str = "", team: str = "", zones: str = "",
             return {"tool": "search_shots", "ok": False,
                     "error": f"unknown team: {team!r}"}
     try:
-        con = _store.connect(read_only=True)
+        con = _warehouse_conn()
     except Exception as exc:
         return {"tool": "search_shots", "ok": False,
                 "error": f"warehouse read failed: {exc}"}
-    try:
-        player_id, status, payload = _resolve_player(con, season, player)
-        if status == "unknown":
-            return {"tool": "search_shots", "ok": False, "error": payload}
-        if status == "ambiguous":
-            return _ambiguous_response(
-                con, season, player, payload, team_id, wanted_zones, folded,
-                three_only, made_filter, late_seconds, exclude_heaves, group)
-        return _run_search(
-            con, season, player, team, player_id, team_id, wanted_zones,
-            folded, three_only, made_filter, late_seconds, exclude_heaves,
-            lim, group, ot, periods, late_clock)
-    finally:
-        con.close()
+    player_id, status, payload = _resolve_player(con, season, player)
+    if status == "unknown":
+        return {"tool": "search_shots", "ok": False, "error": payload}
+    if status == "ambiguous":
+        return _ambiguous_response(
+            con, season, player, payload, team_id, wanted_zones, folded,
+            three_only, made_filter, late_seconds, exclude_heaves, group, ot)
+    return _run_search(
+        con, season, player, team, player_id, team_id, wanted_zones,
+        folded, three_only, made_filter, late_seconds, exclude_heaves,
+        lim, group, ot, periods, late_clock)
 
 
 def _ambiguous_response(con: Any, season: str, text: str,
@@ -631,13 +706,14 @@ def _ambiguous_response(con: Any, season: str, text: str,
                         team_id: int | None, wanted_zones: set[str],
                         folded: set[int] | None, three_only: bool,
                         made_filter: str, late_seconds: int | None,
-                        exclude_heaves: bool, group: str) -> dict[str, Any]:
+                        exclude_heaves: bool, group: str,
+                        include_ot: bool = True) -> dict[str, Any]:
     """ok=True disambiguation payload instead of a hard failure."""
     zone_expr = _zone_case_sql()
     heave_filter = "" if not exclude_heaves else f" AND NOT {_heave_sql()}"
     where_np, params_np = _where_sql(
         season, None, team_id, wanted_zones, folded, late_seconds,
-        three_only, made_filter)
+        three_only, made_filter, include_ot)
     enriched = _disambiguation_payload(
         con, season, text, candidates, where_np, params_np, heave_filter)
     filters = {
@@ -689,7 +765,7 @@ def _run_search(con: Any, season: str, player: str, team: str,
     heave = _heave_sql()
     where, params = _where_sql(
         season, player_id, team_id, wanted_zones, folded, late_seconds,
-        three_only, made_filter)
+        three_only, made_filter, ot)
     heave_filter = "" if not exclude_heaves else f" AND NOT {heave}"
     scanned = con.execute(
         "SELECT COUNT(*) FROM silver_shots WHERE _season = ?",
