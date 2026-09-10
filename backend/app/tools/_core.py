@@ -199,12 +199,15 @@ def coerce_team_id(value: object) -> int:
     from nba_api.stats.static import teams
 
     name = raw.lower()
+    all_t = teams.get_teams()
+    exact = [x for x in all_t
+             if name == x.get("abbreviation", "").lower()]
+    if exact:
+        return int(exact[0]["id"])
     found = teams.find_teams_by_full_name(raw)
     if not found:
-        all_t = teams.get_teams()
         found = [x for x in all_t
-                 if name in x.get("full_name", "").lower()
-                 or name == x.get("abbreviation", "").lower()]
+                 if name in x.get("full_name", "").lower()]
     if not found:
         raise ValueError(f"unknown team: {value}")
     return int(found[0]["id"])

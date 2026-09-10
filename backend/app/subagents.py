@@ -32,6 +32,7 @@ def _desk_tool_label(name: str) -> str:
         "get_trade_check": "Checking trade math",
         "get_trade_value": "Grading trade value",
         "get_award_race": "Ranking award races",
+        "get_matchup_preview": "Previewing the matchup",
     }
     if not name:
         return "Checking data"
@@ -300,6 +301,8 @@ TEAM_BRIEF = (
     "and five-man lineups by minutes with plus-minus. "
     "Use get_lineups for five-man units. Use get_wowy for two-player combinations or with-or-without-you impact. "
     "For next-opponent or matchup briefs call get_scout_pack once. "
+    "For a scheduled-game narrative preview (form, star matchups, injuries, "
+    "x-factors, why-watch) call get_matchup_preview once; it never predicts scores. "
     "For rotation health call get_rotation_check. "
     "For payroll, tax, or cap room call get_cap_ledger. "
     "For home/away or monthly team splits call get_team_splits. "
@@ -379,6 +382,7 @@ def _desk_spec(name: str, task: str):
         return ("team", TEAM_BRIEF,
                 ["resolve_entity", "search_nba", "get_team_hub", "get_games_on_date",
                  "get_boxscore", "get_lineups", "get_wowy", "get_injuries", "get_preview",
+                 "get_matchup_preview",
                  "get_scout_pack", "get_rotation_check", "get_cap_ledger",
                  "get_team_splits", "get_injury_impact", "run_python",
                  "text_to_sql"],

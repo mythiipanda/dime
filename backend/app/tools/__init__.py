@@ -50,6 +50,7 @@ from .player import (
     get_trend,
     get_wowy,
 )
+from .preview import get_matchup_preview
 from .shared import resolve_entity, run_python, search_nba
 from .splits import get_matchup_splits, get_regression_check
 from .team import (
@@ -110,6 +111,7 @@ v1_tools: list[BaseTool] = [
     get_trend,
     get_win_prob,
     get_preview,
+    get_matchup_preview,
     get_scout_pack,
     get_rotation_check,
     get_team_splits,

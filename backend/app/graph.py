@@ -136,6 +136,7 @@ TOOL_LABELS = {
     "get_trade_check": "Checking trade math",
     "get_trade_value": "Grading trade value",
     "get_award_race": "Ranking award races",
+    "get_matchup_preview": "Previewing the matchup",
 }
 
 
