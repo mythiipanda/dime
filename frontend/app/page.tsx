@@ -12,14 +12,20 @@ import FreshnessPanel from "../components/FreshnessPanel";
 import TradePanel from "../components/TradePanel";
 import ScoreStrip from "../components/ScoreStrip";
 import ThreadRail from "../components/ThreadRail";
+import TodayPanel from "../components/TodayPanel";
+import MoversPanel from "../components/MoversPanel";
+import WatchlistPanel from "../components/WatchlistPanel";
+import OnboardingModal from "../components/OnboardingModal";
 import { ThreadInfo, getQueryParam, getThreads, setQueryParam } from "../lib/api";
+
+type Tab = "chat" | "data" | "today";
 
 function newThreadId() {
   return "t-" + Math.random().toString(36).slice(2, 8);
 }
 
 export default function Home() {
-  const [tab, setTab] = useState<"chat" | "data">("chat");
+  const [tab, setTab] = useState<Tab>("chat");
   const [threads, setThreads] = useState<ThreadInfo[]>([]);
   const [active, setActive] = useState<string | null>(null);
   const [activeArtifact, setActiveArtifact] = useState<ArtifactItem | null>(null);
@@ -28,10 +34,11 @@ export default function Home() {
   const [exploreKey, setExploreKey] = useState(0);
   const [paletteKey, setPaletteKey] = useState(0);
   const [activeSection, setActiveSection] = useState("leaders");
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   useEffect(() => {
     const v = getQueryParam("tab");
-    if (v === "chat" || v === "data") setTab(v);
+    if (v === "chat" || v === "data" || v === "today") setTab(v);
     const t = getQueryParam("thread");
     if (t && /^[A-Za-z0-9-]{1,64}$/.test(t)) {
       setActive(t);
@@ -42,7 +49,29 @@ export default function Home() {
     }
   }, []);
 
-  const selectTab = (t: "chat" | "data") => {
+  useEffect(() => {
+    try {
+      if (!localStorage.getItem("dime_onboarded")) setShowOnboarding(true);
+    } catch {
+      setShowOnboarding(false);
+    }
+  }, []);
+
+  const finishOnboarding = () => {
+    try {
+      localStorage.setItem("dime_onboarded", "1");
+    } catch {}
+    setShowOnboarding(false);
+  };
+
+  const startFromOnboarding = (q: string) => {
+    setPreset(q);
+    setTab("chat");
+    setQueryParam("tab", "chat", true);
+    finishOnboarding();
+  };
+
+  const selectTab = (t: Tab) => {
     setTab(t);
     setQueryParam("tab", t, true);
   };
@@ -61,7 +90,7 @@ export default function Home() {
   useEffect(() => {
     const onPop = () => {
       const v = getQueryParam("tab");
-      if (v === "chat" || v === "data") setTab(v);
+      if (v === "chat" || v === "data" || v === "today") setTab(v);
       const t = getQueryParam("thread");
       if (t && /^[A-Za-z0-9-]{1,64}$/.test(t)) setActive(t);
       setExploreKey((k) => k + 1);
@@ -155,6 +184,19 @@ export default function Home() {
             }}
           >
             <button
+              onClick={() => selectTab("today")}
+              className={tab === "today" ? "tab-active" : "tab-idle"}
+              style={{
+                fontSize: 12,
+                border: "none",
+                padding: "3px 12px",
+                borderRadius: 6,
+                cursor: "pointer",
+              }}
+            >
+              Today
+            </button>
+            <button
               onClick={() => selectTab("chat")}
               className={tab === "chat" ? "tab-active" : "tab-idle"}
               style={{
@@ -247,6 +289,23 @@ export default function Home() {
                 </div>
               )}
             </div>
+          ) : tab === "today" ? (
+            <div style={{ height: "100%", overflowY: "auto" }}>
+              <div
+                style={{
+                  maxWidth: 1100,
+                  margin: "0 auto",
+                  padding: "24px 20px 80px",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 16,
+                }}
+              >
+                <TodayPanel />
+                <MoversPanel />
+                <WatchlistPanel />
+              </div>
+            </div>
           ) : (
             <div style={{ height: "100%", overflowY: "auto" }}>
               <div style={{ maxWidth: 1100, margin: "0 auto", padding: "24px 20px 80px" }}>
@@ -297,6 +356,9 @@ export default function Home() {
           )}
         </div>
       </div>
+      {showOnboarding && (
+        <OnboardingModal onFinish={finishOnboarding} onSelectPrompt={startFromOnboarding} />
+      )}
     </div>
   );
 }

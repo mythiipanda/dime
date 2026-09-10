@@ -1024,3 +1024,177 @@ def get_raptor_history(player: str, season: str = "") -> dict[str, Any]:
              "WAR": r.get("WAR_TOTAL")} for r in frame.to_dicts()]
     return {"tool": "get_raptor_history", "ok": True, "rows": rows,
             "meta": {"source": "fivethirtyeight:raptor", "seasons": len(rows)}}
+
+
+DPOY_MINUTES = 500
+UNSUNG_MIN_MINUTES = 200
+UNSUNG_MAX_MINUTES = 1000
+
+
+@tool
+def get_hustle_boards(season: str = SEASON, top: int = 10) -> dict[str, Any]:
+    """Hustle leaderboards from warehouse only: DPOY composite, screen-assist
+    kings, and unsung defenders with elite per-minute hustle in small roles."""
+    try:
+        top = max(1, min(int(top or 10), 25))
+    except (TypeError, ValueError):
+        top = 10
+    try:
+        dpoy = _read_df(
+            """SELECT PLAYER_NAME, TEAM_ABBREVIATION, G, MIN,
+            DEFLECTIONS, CHARGES_DRAWN, CONTESTED_SHOTS,
+            (DEFLECTIONS + CHARGES_DRAWN + CONTESTED_SHOTS) AS HUSTLE,
+            ROUND((DEFLECTIONS + CHARGES_DRAWN + CONTESTED_SHOTS)
+                / NULLIF(MIN, 0), 4) AS HUSTLE_PER_MIN
+            FROM silver_hustle_player
+            WHERE _season = ? AND MIN >= ?
+            ORDER BY HUSTLE_PER_MIN DESC LIMIT ?""",
+            [season, DPOY_MINUTES, top],
+        )
+        kings = _read_df(
+            "SELECT PLAYER_NAME, TEAM_ABBREVIATION, G, MIN,"
+            " SCREEN_ASSISTS, SCREEN_AST_PTS,"
+            " ROUND(SCREEN_ASSISTS * 1.0 / NULLIF(G, 0), 2) AS screen_ast_per_game"
+            " FROM silver_hustle_player WHERE _season = ?"
+            " ORDER BY SCREEN_ASSISTS DESC LIMIT ?",
+            [season, top],
+        )
+        unsung = _read_df(
+            "SELECT h.PLAYER_NAME, h.TEAM_ABBREVIATION, h.G, h.MIN,"
+            " h.DEFLECTIONS, h.CHARGES_DRAWN, h.CONTESTED_SHOTS,"
+            " h.BOX_OUTS, h.LOOSE_BALLS_RECOVERED,"
+            " ROUND((h.DEFLECTIONS + h.CHARGES_DRAWN + h.CONTESTED_SHOTS)"
+            " * 36.0 / NULLIF(h.MIN, 0), 2) AS hustle_per36,"
+            " ROUND(l.PTS * 1.0 / NULLIF(l.GP, 0), 1) AS ppg"
+            " FROM silver_hustle_player h"
+            " LEFT JOIN silver_leaders_pts l"
+            " ON CAST(l.PLAYER_ID AS VARCHAR) = CAST(h.PLAYER_ID AS VARCHAR)"
+            " AND l._season = h._season"
+            " WHERE h._season = ? AND h.MIN >= ? AND h.MIN < ? AND h.G >= 20"
+            " ORDER BY hustle_per36 DESC LIMIT ?",
+            [season, UNSUNG_MIN_MINUTES, UNSUNG_MAX_MINUTES, top],
+        )
+    except Exception as exc:
+        return {"tool": "get_hustle_boards", "ok": False,
+                "error": f"hustle warehouse not seeded: {str(exc)[:120]}"}
+    if not dpoy:
+        return {"tool": "get_hustle_boards", "ok": False,
+                "error": f"no hustle rows for {season}"}
+    return {"tool": "get_hustle_boards", "ok": True,
+            "rows": {"dpoy": dpoy, "screen_assist_kings": kings,
+                     "unsung_defenders": unsung},
+            "meta": {"source": "nba_api", "season": season, "top": top,
+                     "dpoy_formula": "(deflections + charges drawn"
+                     " + contested shots) per minute, 500+ minutes",
+                     "unsung_rule": "MIN 200-1000 with G >= 20,"
+                     " ranked by hustle per 36, ppg joined for usage context"}}
+
+
+@tool
+def get_debate_card(a: str, b: str, season: str = SEASON) -> dict[str, Any]:
+    """Generate a shareable HTML debate card comparing two players.
+
+    Returns a self-contained HTML file with side-by-side stats,
+    styled for sharing. Saves to workspace and returns the path.
+    """
+    import html as _html
+    from pathlib import Path as _Path
+
+    # Get comparison data
+    import asyncio as _asyncio
+    try:
+        loop = _asyncio.get_event_loop()
+    except RuntimeError:
+        loop = _asyncio.new_event_loop()
+        _asyncio.set_event_loop(loop)
+    comp = loop.run_until_complete(get_compare(a, b, season))
+    if not comp.get("ok"):
+        return {"tool": "get_debate_card", "ok": False,
+                "error": comp.get("error", "comparison failed")}
+
+    rows = comp.get("rows", {})
+    # Extract player data
+    players = []
+    for key in ["a", "b"]:
+        p = rows.get(key, {})
+        if isinstance(p, dict):
+            players.append(p)
+
+    if len(players) < 2:
+        return {"tool": "get_debate_card", "ok": False,
+                "error": "could not load both players"}
+
+    def _stat(p: dict, *keys: str) -> str:
+        for k in keys:
+            v = p.get(k)
+            if v is not None:
+                return str(v)
+        return "—"
+
+    # Build HTML card
+    def _row(label: str, va: str, vb: str) -> str:
+        return (
+            f'<div class="row"><span class="stat-a">{_html.escape(va)}</span>'
+            f'<span class="label">{_html.escape(label)}</span>'
+            f'<span class="stat-b">{_html.escape(vb)}</span></div>'
+        )
+
+    stats_html = ""
+    for label, keys in [
+        ("PPG", ("ppg", "PTS")),
+        ("RPG", ("rpg", "REB")),
+        ("APG", ("apg", "AST")),
+        ("FG%", ("fg_pct", "FG_PCT")),
+        ("3P%", ("fg3_pct", "FG3_PCT")),
+        ("Games", ("gp", "G", "GP")),
+    ]:
+        stats_html += _row(label, _stat(players[0], *keys), _stat(players[1], *keys))
+
+    name_a = _html.escape(_stat(players[0], "name", "PLAYER", "player"))
+    name_b = _html.escape(_stat(players[1], "name", "PLAYER", "player"))
+
+    html_doc = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{name_a} vs {name_b} — Dime Debate Card</title>
+<style>
+body {{ font-family: system-ui, -apple-system, sans-serif; background: #f5f5f4;
+  display: flex; justify-content: center; padding: 24px; margin: 0; }}
+.card {{ background: #fff; border-radius: 16px; padding: 32px; max-width: 520px;
+  width: 100%; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }}
+.header {{ text-align: center; margin-bottom: 24px; }}
+.vs {{ font-size: 13px; color: #78716c; letter-spacing: 2px; margin: 8px 0; }}
+h1 {{ font-size: 22px; margin: 0; color: #1c1917; }}
+.season {{ font-size: 13px; color: #a8a29e; margin-top: 4px; }}
+.row {{ display: flex; align-items: center; padding: 10px 0;
+  border-bottom: 1px solid #f5f5f4; }}
+.row:last-child {{ border-bottom: none; }}
+.stat-a, .stat-b {{ flex: 1; font-size: 17px; font-weight: 600; color: #1c1917; }}
+.stat-a {{ text-align: left; }}
+.stat-b {{ text-align: right; }}
+.label {{ flex: 1; text-align: center; font-size: 12px; color: #a8a29e;
+  letter-spacing: 1px; }}
+.footer {{ text-align: center; margin-top: 20px; font-size: 12px; color: #d6d3d1; }}
+.accent {{ color: #0891b2; }}
+</style></head><body>
+<div class="card">
+<div class="header">
+<h1>{name_a} <span class="accent">vs</span> {name_b}</h1>
+<div class="season">{_html.escape(season)} season · via Dime</div>
+</div>
+{stats_html}
+<div class="footer">Settle the debate with data</div>
+</div></body></html>"""
+
+    # Save to workspace
+    out_dir = _Path.home() / "workspace" / "dime" / "backend" / "data" / "cards"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    safe_a = "".join(c for c in name_a if c.isalnum())[:20]
+    safe_b = "".join(c for c in name_b if c.isalnum())[:20]
+    fname = f"debate_{safe_a}_vs_{safe_b}_{season.replace('-', '')}.html"
+    out_path = out_dir / fname
+    out_path.write_text(html_doc, encoding="utf-8")
+
+    return {"tool": "get_debate_card", "ok": True,
+            "rows": {"path": str(out_path), "players": [name_a, name_b]},
+            "meta": {"season": season, "format": "html"}}

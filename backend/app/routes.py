@@ -2,8 +2,11 @@
 
 import time
 from collections import defaultdict
+from pathlib import Path
+import os
+import re
 from fastapi import APIRouter, Query, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
 from .graph import run_chat
@@ -13,6 +16,10 @@ from .sse import emit_sse, with_heartbeat
 from .config import settings
 
 router = APIRouter()
+
+CARDS_DIR = Path(__file__).resolve().parent.parent / "data" / "cards"
+
+_DEBATE_FILE_RE = re.compile(r"^debate_[A-Za-z0-9]+_vs_[A-Za-z0-9]+_[0-9]+\.html$")
 
 _hits: dict[str, list[float]] = defaultdict(list)
 
@@ -179,4 +186,128 @@ async def chat_stream_post(request: Request, body: ChatBody):
     return StreamingResponse(
         _stream(body.q, body.model, body.thread, body.history),
         media_type="text/event-stream",
+    )
+
+
+# --- Today / Watchlist / Movers / Briefing endpoints for frontend ---
+
+@router.get("/today")
+async def api_today(season: str = Query("2025-26")):
+    from .tools.today import get_today
+    import json
+    res = get_today.invoke({"season": season})
+    return json.loads(res) if isinstance(res, str) else res
+
+
+@router.get("/watchlist")
+async def api_watchlist(season: str = Query("2025-26")):
+    from .tools.watchlist import get_watchlist
+    import json
+    res = get_watchlist.invoke({"season": season})
+    return json.loads(res) if isinstance(res, str) else res
+
+
+class WatchlistBody(BaseModel):
+    entity_type: str
+    entity_id: str
+    season: str = "2025-26"
+
+
+@router.post("/watchlist")
+async def api_watchlist_add(body: WatchlistBody):
+    from .tools.watchlist import add_watchlist_item
+    import json
+    res = add_watchlist_item.invoke({
+        "entity_type": body.entity_type,
+        "entity_id": body.entity_id,
+        "season": body.season,
+    })
+    return json.loads(res) if isinstance(res, str) else res
+
+
+@router.delete("/watchlist")
+async def api_watchlist_remove(
+    entity_type: str = Query(...),
+    entity_id: str = Query(...),
+):
+    from .tools.watchlist import remove_watchlist_item
+    import json
+    res = remove_watchlist_item.invoke({
+        "entity_type": entity_type,
+        "entity_id": entity_id,
+    })
+    return json.loads(res) if isinstance(res, str) else res
+
+
+@router.get("/movers")
+async def api_movers(
+    season: str = Query("2025-26"),
+    days: int = Query(7, ge=1, le=30),
+):
+    from .tools.league import get_leaderboard_deltas
+    import json
+    res = get_leaderboard_deltas.invoke({"season": season, "days": days})
+    return json.loads(res) if isinstance(res, str) else res
+
+
+@router.get("/briefing")
+async def api_briefing(season: str = Query("2025-26")):
+    from .tools.today import get_morning_briefing
+    import json
+    res = get_morning_briefing.invoke({"season": season})
+    return json.loads(res) if isinstance(res, str) else res
+
+
+@router.get("/debate-card")
+def api_debate_card(
+    a: str = Query(""),
+    b: str = Query(""),
+    season: str = Query("2025-26"),
+) -> dict:
+    from .tools import get_debate_card
+    from .tools._core import clamp_season
+
+    qa = (a or "").strip()[:80]
+    qb = (b or "").strip()[:80]
+    if not qa or not qb:
+        return {"ok": False, "error": "two player names required"}
+    clamped = clamp_season(season)
+    try:
+        res = get_debate_card.invoke({"a": qa, "b": qb, "season": clamped})
+    except Exception:
+        return {"ok": False, "error": "debate card failed"}
+    if not isinstance(res, dict) or not res.get("ok"):
+        err = res.get("error", "debate card failed") if isinstance(res, dict) else "debate card failed"
+        return {"ok": False, "error": err}
+    rows = res.get("rows", {}) if isinstance(res.get("rows"), dict) else {}
+    raw_path = str(rows.get("path", ""))
+    basename = os.path.basename(raw_path)
+    players = rows.get("players", [qa, qb])
+    return {
+        "ok": True,
+        "path": basename,
+        "players": players,
+        "url": f"/api/v1/debate-card/file?name={basename}",
+        "rows": {
+            "path": basename,
+            "players": players,
+            "url": f"/api/v1/debate-card/file?name={basename}",
+        },
+        "meta": {"season": clamped},
+    }
+
+
+@router.get("/debate-card/file")
+def api_debate_card_file(name: str = Query("")) -> FileResponse:
+    from fastapi import HTTPException
+
+    if not _DEBATE_FILE_RE.fullmatch(name or ""):
+        raise HTTPException(status_code=400, detail="invalid file name")
+    target = CARDS_DIR / name
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="not found")
+    return FileResponse(
+        target,
+        media_type="text/html",
+        headers={"Cache-Control": "public, max-age=3600"},
     )

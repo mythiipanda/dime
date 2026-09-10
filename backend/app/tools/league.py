@@ -41,6 +41,123 @@ def get_standings(season: str = SEASON) -> dict[str, Any]:
 
 
 @tool
+def get_standings_deep(season: str = SEASON, top: int = 5) -> dict[str, Any]:
+    """Standings deep cuts: clutch records, comeback kings, blown leads, monthly momentum."""
+    from .. import store as _store
+
+    season = str(season or SEASON).strip() or SEASON
+    try:
+        top = max(1, min(int(top or 5), 15))
+    except (TypeError, ValueError):
+        top = 5
+
+    def _split(rec: object) -> tuple[int, int] | None:
+        try:
+            w, loss = str(rec or "").strip().split("-")
+            return int(w), int(loss)
+        except (TypeError, ValueError):
+            return None
+
+    def _pct(w: int, loss: int) -> float:
+        return round(w / (w + loss), 3) if w + loss else 0.0
+
+    con = _store.connect()
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        if "silver_standings" not in tables:
+            return {"tool": "get_standings_deep", "ok": False,
+                    "error": "standings empty"}
+        rows = con.execute(
+            """SELECT TeamCity, TeamName, WinPCT,
+            "ThreePTSOrLess", "AheadAtHalf", "BehindAtHalf",
+            "L10", "strCurrentStreak",
+            "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr"
+            FROM silver_standings WHERE _season = ?""",
+            [season],
+        ).fetchall()
+    finally:
+        con.close()
+    if not rows:
+        return {"tool": "get_standings_deep", "ok": False,
+                "error": f"no standings for {season}"}
+    teams = []
+    for city, name, winpct, clutch, ahead, behind, l10, streak, *months in rows:
+        label = f"{city or ''} {name or ''}".strip()
+        teams.append({
+            "TEAM": label,
+            "SEASON_PCT": round(float(winpct or 0), 3),
+            "clutch": _split(clutch),
+            "ahead": _split(ahead),
+            "behind": _split(behind),
+            "L10": l10,
+            "STREAK": streak,
+            "months": months,
+        })
+    clutch_rank = sorted(
+        ({"TEAM": t["TEAM"], "W": t["clutch"][0], "L": t["clutch"][1],
+          "PCT": _pct(*t["clutch"]), "RECORD": f"{t['clutch'][0]}-{t['clutch'][1]}"}
+         for t in teams if t["clutch"]),
+        key=lambda d: (d["PCT"], d["W"]), reverse=True,
+    )
+    comeback = sorted(
+        ({"TEAM": t["TEAM"], "W": t["behind"][0], "L": t["behind"][1],
+          "PCT": _pct(*t["behind"])}
+         for t in teams if t["behind"]),
+        key=lambda d: (d["W"], d["PCT"]), reverse=True,
+    )[:top]
+    blown = sorted(
+        ({"TEAM": t["TEAM"], "W": t["ahead"][0], "L": t["ahead"][1],
+          "PCT": _pct(*t["ahead"])}
+         for t in teams if t["ahead"]),
+        key=lambda d: d["L"], reverse=True,
+    )[:top]
+    month_names = ["Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr"]
+    by_month = []
+    for i, month in enumerate(month_names):
+        entries = []
+        for t in teams:
+            parsed = _split(t["months"][i])
+            if parsed and parsed[0] + parsed[1] >= 3:
+                entries.append((t["TEAM"], parsed[0], parsed[1],
+                                _pct(*parsed)))
+        if not entries:
+            continue
+        best = max(entries, key=lambda e: (e[3], e[1]))
+        worst = min(entries, key=lambda e: (e[3], -e[1]))
+        by_month.append({"MONTH": month,
+                         "BEST_TEAM": best[0],
+                         "BEST_RECORD": f"{best[1]}-{best[2]}",
+                         "BEST_PCT": best[3],
+                         "WORST_TEAM": worst[0],
+                         "WORST_RECORD": f"{worst[1]}-{worst[2]}",
+                         "WORST_PCT": worst[3]})
+    momentum = []
+    for t in teams:
+        mar = _split(t["months"][5])
+        apr = _split(t["months"][6])
+        lw = (mar[0] if mar else 0) + (apr[0] if apr else 0)
+        ll = (mar[1] if mar else 0) + (apr[1] if apr else 0)
+        if lw + ll < 5:
+            continue
+        late = _pct(lw, ll)
+        momentum.append({"TEAM": t["TEAM"], "LATE": f"{lw}-{ll}",
+                         "LATE_PCT": late, "SEASON_PCT": t["SEASON_PCT"],
+                         "DELTA": round(late - t["SEASON_PCT"], 3),
+                         "L10": t["L10"], "STREAK": t["STREAK"]})
+    momentum.sort(key=lambda d: d["DELTA"], reverse=True)
+    return {"tool": "get_standings_deep", "ok": True,
+            "rows": {"clutch": clutch_rank[:top],
+                     "clutch_cold": clutch_rank[-top:][::-1],
+                     "comeback_kings": comeback,
+                     "blown_leads": blown,
+                     "monthly": {"by_month": by_month,
+                                 "surging": momentum[:top],
+                                 "fading": momentum[-top:][::-1]}},
+            "meta": {"source": "warehouse", "season": season, "top": top,
+                     "teams": len(teams)}}
+
+
+@tool
 def get_ratings(season: str = SEASON) -> dict[str, Any]:
     """Team offensive, defensive, and net ratings plus pace and ranks."""
     from nba_api.stats.static import teams as _teams
@@ -1291,3 +1408,143 @@ def get_risers(season: str = "2025-26", weeks: int = 4) -> dict[str, Any]:
             "rows": {"risers": table[:5], "fallers": table[-5:][::-1]},
             "meta": {"source": "warehouse", "season": season,
                      "window": n, "weeks": weeks}}
+
+
+def _ensure_leaderboard_snapshots(con: Any) -> None:
+    con.execute(
+        """CREATE TABLE IF NOT EXISTS leaderboard_snapshots(
+        snapshot_date VARCHAR, player VARCHAR, team VARCHAR,
+        pts INTEGER, rank INTEGER)"""
+    )
+
+
+@tool
+def snapshot_leaderboard(season: str = SEASON) -> dict[str, Any]:
+    """Capture today's top-50 scoring leaderboard. Idempotent per date."""
+    from datetime import datetime, timezone
+
+    from .. import store as _store
+
+    season = str(season or SEASON).strip() or SEASON
+    today = datetime.now(timezone.utc).date().isoformat()
+    con = _store.connect()
+    try:
+        with _store.write_guard():
+            _ensure_leaderboard_snapshots(con)
+            hit = con.execute(
+                """SELECT COUNT(*) FROM leaderboard_snapshots
+                WHERE snapshot_date = ?""",
+                [today],
+            ).fetchone()
+            if hit and hit[0]:
+                return {"tool": "snapshot_leaderboard", "ok": True,
+                        "rows": {"snapshot_date": today,
+                                 "captured": int(hit[0]), "added": False},
+                        "meta": {"source": "leaderboard_snapshots",
+                                 "season": season}}
+            leaders = con.execute(
+                """SELECT PLAYER, TEAM, PTS, RANK FROM silver_leaders_pts
+                WHERE _season = ? ORDER BY RANK ASC LIMIT 50""",
+                [season],
+            ).fetchall()
+            if not leaders:
+                return {"tool": "snapshot_leaderboard", "ok": False,
+                        "error": f"no scoring leaders for {season}"}
+            con.execute(
+                "DELETE FROM leaderboard_snapshots WHERE snapshot_date = ?",
+                [today],
+            )
+            for player, team, pts, rank in leaders:
+                con.execute(
+                    "INSERT INTO leaderboard_snapshots VALUES (?,?,?,?,?)",
+                    [today, player, team, pts, rank],
+                )
+            captured = len(leaders)
+    finally:
+        con.close()
+    return {"tool": "snapshot_leaderboard", "ok": True,
+            "rows": {"snapshot_date": today, "captured": captured,
+                     "added": True},
+            "meta": {"source": "leaderboard_snapshots", "season": season}}
+
+
+@tool
+def get_leaderboard_deltas(season: str = SEASON, days: int = 7) -> dict[str, Any]:
+    """Scoring leaderboard movers: latest snapshot vs the one from days ago."""
+    from datetime import date as _date
+    from datetime import timedelta as _td
+
+    from .. import store as _store
+
+    season = str(season or SEASON).strip() or SEASON
+    try:
+        days = max(1, int(days or 7))
+    except (TypeError, ValueError):
+        days = 7
+    con = _store.connect()
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        if "leaderboard_snapshots" not in tables:
+            return {"tool": "get_leaderboard_deltas", "ok": False,
+                    "error": "not enough snapshots — run snapshot_leaderboard daily"}
+        dates = [r[0] for r in con.execute(
+            """SELECT DISTINCT snapshot_date FROM leaderboard_snapshots
+            ORDER BY snapshot_date DESC""").fetchall()]
+        if len(dates) < 2:
+            return {"tool": "get_leaderboard_deltas", "ok": False,
+                    "error": "not enough snapshots — run snapshot_leaderboard daily"}
+        latest = dates[0]
+        try:
+            cutoff = _date.fromisoformat(str(latest)) - _td(days=days)
+            base = next((d for d in dates[1:]
+                         if _date.fromisoformat(str(d)) <= cutoff), dates[-1])
+        except (TypeError, ValueError):
+            base = dates[-1]
+        now_rows = con.execute(
+            """SELECT player, team, pts, rank FROM leaderboard_snapshots
+            WHERE snapshot_date = ?""",
+            [latest],
+        ).fetchall()
+        base_rows = con.execute(
+            """SELECT player, team, pts, rank FROM leaderboard_snapshots
+            WHERE snapshot_date = ?""",
+            [base],
+        ).fetchall()
+    finally:
+        con.close()
+    now = {str(r[0]).lower(): r for r in now_rows}
+    was = {str(r[0]).lower(): r for r in base_rows}
+    climbers, fallers, new_entries = [], [], []
+    for key, (player, team, pts, rank) in now.items():
+        old = was.get(key)
+        if old is None:
+            new_entries.append({"player": player, "team": team,
+                                "pts": pts, "rank": rank})
+            continue
+        change = (old[3] or 0) - (rank or 0)
+        if change > 0:
+            climbers.append({"player": player, "team": team,
+                             "rank_base": old[3], "rank_now": rank,
+                             "rank_change": change,
+                             "pts_base": old[2], "pts_now": pts,
+                             "pts_change": (pts or 0) - (old[2] or 0)})
+        elif change < 0:
+            fallers.append({"player": player, "team": team,
+                            "rank_base": old[3], "rank_now": rank,
+                            "rank_change": change,
+                            "pts_base": old[2], "pts_now": pts,
+                            "pts_change": (pts or 0) - (old[2] or 0)})
+    climbers.sort(key=lambda d: d["rank_change"], reverse=True)
+    fallers.sort(key=lambda d: d["rank_change"])
+    new_entries.sort(key=lambda d: d["rank"] or 999)
+    try:
+        span = (_date.fromisoformat(str(latest))
+                - _date.fromisoformat(str(base))).days
+    except (TypeError, ValueError):
+        span = 0
+    return {"tool": "get_leaderboard_deltas", "ok": True,
+            "rows": {"climbers": climbers[:10], "fallers": fallers[:10],
+                     "new_entries": new_entries},
+            "meta": {"source": "leaderboard_snapshots", "season": season,
+                     "current_date": latest, "base_date": base,
+                     "days_requested": days, "days_actual": span}}
