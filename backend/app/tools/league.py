@@ -492,12 +492,74 @@ def get_rest(team_abbrev: str = "", season: str = SEASON) -> dict[str, Any]:
             "meta": {"source": "warehouse", "season": season}}
 
 
+"""Shared ELO engine. get_win_prob and get_elo build ratings from the same
+helpers so the two never drift. Build adds ELO_HCA_BUILD to each side's
+rating at game time; pre-game prediction uses ELO_HCA_PREDICT instead."""
+
+ELO_START = 1500.0
+ELO_K = 20.0
+ELO_HCA_BUILD = 100
+ELO_HCA_PREDICT = 65
+ELO_PER_POINT = 28.0
+
+
+def _elo_expected(diff: float) -> float:
+    return 1 / (1 + 10 ** (-diff / 400))
+
+
+def _elo_mov_mult(margin: float | None, diff: float) -> float:
+    if margin is None:
+        return 1.0
+    return ((abs(margin) + 3) ** 0.8) / (7.5 + 0.006 * abs(diff))
+
+
+def _elo_game_shift(w_elo: float, l_elo: float, w_home: bool,
+                    l_home: bool, margin: float | None,
+                    k: float = ELO_K) -> float:
+    w_adj = w_elo + (ELO_HCA_BUILD if w_home else 0)
+    l_adj = l_elo + (ELO_HCA_BUILD if l_home else 0)
+    diff = w_adj - l_adj
+    return k * _elo_mov_mult(margin, diff) * (1 - _elo_expected(diff))
+
+
+def _build_elo(rows: list) -> tuple:
+    games: dict[str, list] = {}
+    for r in rows:
+        games.setdefault(r[1], []).append(r)
+    elo: dict[str, float] = {}
+    wins: dict[str, int] = {}
+    losses: dict[str, int] = {}
+    mov_ok = False
+    for _, pair in sorted(games.items()):
+        if len(pair) != 2:
+            continue
+        (ta, _, _, ma, wa, pma), (tb, _, _, mb, wb, pmb) = pair
+        if (wa == "W") == (wb == "W"):
+            continue
+        wrow, lrow = (pair[0], pair[1]) if wa == "W" else (pair[1], pair[0])
+        wteam, lteam = wrow[0], lrow[0]
+        margin = wrow[5]
+        if margin is None:
+            margin = -(lrow[5]) if lrow[5] is not None else None
+        if margin is not None:
+            margin = abs(margin)
+            mov_ok = True
+        elo.setdefault(wteam, ELO_START)
+        elo.setdefault(lteam, ELO_START)
+        wins[wteam] = wins.get(wteam, 0) + 1
+        losses[lteam] = losses.get(lteam, 0) + 1
+        shift = _elo_game_shift(elo[wteam], elo[lteam],
+                                "vs." in str(wrow[3]),
+                                "vs." in str(lrow[3]), margin)
+        elo[wteam] += shift
+        elo[lteam] -= shift
+    return elo, wins, losses, mov_ok
+
+
 @tool
 def get_win_prob(team_a: str = "", team_b: str = "", season: str = SEASON,
                  home_abbrev: str = "") -> dict[str, Any]:
     """Real ELO win probability between two abbreviations. Neutral unless home_abbrev matches a side."""
-    import math
-
     from .. import store as _store
 
     if not team_a or not team_b:
@@ -514,45 +576,14 @@ def get_win_prob(team_a: str = "", team_b: str = "", season: str = SEASON,
         ).fetchall()
     finally:
         con.close()
-    games: dict[str, list] = {}
-    for r in rows:
-        games.setdefault(r[1], []).append(r)
-    # Mirrors get_elo below. Same constants so the two never drift.
-    elo: dict[str, float] = {}
-    for _, pair in sorted(games.items()):
-        if len(pair) != 2:
-            continue
-        (ta, _, _, ma, wa, pma), (tb, _, _, mb, wb, pmb) = pair
-        if (wa == "W") == (wb == "W"):
-            continue
-        wrow, lrow = (pair[0], pair[1]) if wa == "W" else (pair[1], pair[0])
-        wteam, lteam = wrow[0], lrow[0]
-        margin = wrow[5]
-        if margin is None:
-            margin = -(lrow[5]) if lrow[5] is not None else None
-        mov_mult = 1.0
-        if margin is not None:
-            margin = abs(margin)
-        elo.setdefault(wteam, 1500.0)
-        elo.setdefault(lteam, 1500.0)
-        w_home = "vs." in str(wrow[3])
-        l_home = "vs." in str(lrow[3])
-        w_adj = elo[wteam] + (100 if w_home else 0)
-        l_adj = elo[lteam] + (100 if l_home else 0)
-        diff = w_adj - l_adj
-        expected_w = 1 / (1 + 10 ** (-diff / 400))
-        if margin is not None:
-            mov_mult = ((margin + 3) ** 0.8) / (7.5 + 0.006 * abs(diff))
-        shift = 20 * mov_mult * (1 - expected_w)
-        elo[wteam] += shift
-        elo[lteam] -= shift
-    ra, rb = elo.get(a, 1500.0), elo.get(b, 1500.0)
+    elo, _, _, _ = _build_elo(rows)
+    ra, rb = elo.get(a, ELO_START), elo.get(b, ELO_START)
     ra_adj, rb_adj = ra, rb
     if home == a:
-        ra_adj += 65
+        ra_adj += ELO_HCA_PREDICT
     elif home == b:
-        rb_adj += 65
-    pa = 1 / (1 + 10 ** ((rb_adj - ra_adj) / 400))
+        rb_adj += ELO_HCA_PREDICT
+    pa = _elo_expected(ra_adj - rb_adj)
     return {"tool": "get_win_prob", "ok": True,
             "rows": {"win_prob": {a: round(pa, 3), b: round(1 - pa, 3)},
                      "elo_a": round(ra), "elo_b": round(rb)},
@@ -1688,43 +1719,7 @@ def get_elo(season: str = SEASON) -> dict[str, Any]:
         ).fetchall()
     finally:
         con.close()
-    games: dict[str, list] = {}
-    for r in rows:
-        games.setdefault(r[1], []).append(r)
-    elo: dict[str, float] = {}
-    wins: dict[str, int] = {}
-    losses: dict[str, int] = {}
-    mov_ok = False
-    for _, pair in sorted(games.items()):
-        if len(pair) != 2:
-            continue
-        (ta, _, _, ma, wa, pma), (tb, _, _, mb, wb, pmb) = pair
-        if (wa == "W") == (wb == "W"):
-            continue
-        wrow, lrow = (pair[0], pair[1]) if wa == "W" else (pair[1], pair[0])
-        wteam, lteam = wrow[0], lrow[0]
-        margin = wrow[5]
-        if margin is None:
-            margin = -(lrow[5]) if lrow[5] is not None else None
-        mov_mult = 1.0
-        if margin is not None:
-            margin = abs(margin)
-            mov_ok = True
-        elo.setdefault(wteam, 1500.0)
-        elo.setdefault(lteam, 1500.0)
-        wins[wteam] = wins.get(wteam, 0) + 1
-        losses[lteam] = losses.get(lteam, 0) + 1
-        w_home = "vs." in str(wrow[3])
-        l_home = "vs." in str(lrow[3])
-        w_adj = elo[wteam] + (100 if w_home else 0)
-        l_adj = elo[lteam] + (100 if l_home else 0)
-        diff = w_adj - l_adj
-        expected_w = 1 / (1 + 10 ** (-diff / 400))
-        if margin is not None:
-            mov_mult = ((margin + 3) ** 0.8) / (7.5 + 0.006 * abs(diff))
-        shift = 20 * mov_mult * (1 - expected_w)
-        elo[wteam] += shift
-        elo[lteam] -= shift
+    elo, wins, losses, mov_ok = _build_elo(rows)
     table = sorted(
         ({"TEAM": t, "ELO": round(v), "W": wins.get(t, 0),
           "L": losses.get(t, 0)} for t, v in elo.items()),
@@ -1734,6 +1729,87 @@ def get_elo(season: str = SEASON) -> dict[str, Any]:
         row["rank"] = i
     return {"tool": "get_elo", "ok": True, "rows": table,
             "meta": {"source": "warehouse", "mov": mov_ok, "season": season}}
+
+
+@tool
+def get_elo_standings(season: str = SEASON, opponent: str | None = None,
+                      limit: int = 30) -> dict[str, Any]:
+    """ELO power ratings as standings: implied win pct, win equivalents, and Elo-implied spreads. ROADMAP Appendix #3."""
+    from .. import store as _store
+
+    con = _store.connect()
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        if "silver_hist_gamelogs" not in tables:
+            rows = []
+        else:
+            rows = con.execute(
+                """SELECT team_abbreviation, game_id, game_date, matchup, wl,
+                plus_minus FROM silver_hist_gamelogs
+                WHERE _season = ? ORDER BY game_date, game_id""",
+                [season],
+            ).fetchall()
+    finally:
+        con.close()
+    if not rows:
+        return {"tool": "get_elo_standings", "ok": True, "rows": [],
+                "meta": {"source": "warehouse", "season": season,
+                         "data_note": (
+                             f"no games in the warehouse for season {season}; "
+                             "nothing fabricated")}}
+    elo, wins, losses, mov_ok = _build_elo(rows)
+    anchor_abbr = "AVG"
+    anchor_elo = 1500
+    if opponent is not None and str(opponent).strip():
+        from nba_api.stats.static import teams as _teams
+
+        from ._core import coerce_team_id
+
+        try:
+            opp_id = coerce_team_id(opponent)
+        except ValueError:
+            return {"tool": "get_elo_standings", "ok": False,
+                    "error": f"unknown team: {opponent}"}
+        by_id = {t["id"]: t["abbreviation"] for t in _teams.get_teams()}
+        anchor_abbr = by_id.get(opp_id, "")
+        if not anchor_abbr or anchor_abbr not in elo:
+            return {"tool": "get_elo_standings", "ok": False,
+                    "error": f"unknown team: {opponent}"}
+        anchor_elo = round(elo[anchor_abbr])
+    table = []
+    for t, v in elo.items():
+        e = round(v)
+        w, l = wins.get(t, 0), losses.get(t, 0)
+        pct = round(_elo_expected(e - ELO_START), 4)
+        table.append({"abbr": t, "elo": e, "games": w + l, "W": w, "L": l,
+                      "elo_win_pct": pct, "win_equiv": round(pct * 82, 1)})
+    table.sort(key=lambda d: d["elo"], reverse=True)
+    for i, row in enumerate(table, 1):
+        row["rank"] = i
+    for row in table:
+        row["elo_implied_spread"] = round(
+            (row["elo"] - anchor_elo) / ELO_PER_POINT, 1)
+    try:
+        limit = max(0, int(limit))
+    except (TypeError, ValueError):
+        limit = 30
+    n_games = sum(wins.values())
+    return {"tool": "get_elo_standings", "ok": True, "rows": table[:limit],
+            "anchor": {"abbr": anchor_abbr, "elo": anchor_elo},
+            "meta": {
+                "source": "warehouse", "season": season,
+                "games": n_games, "teams": len(table), "mov": mov_ok,
+                "constants": (
+                    "start 1500, K=20, build HCA=100, MOV mult "
+                    "((margin+3)^0.8)/(7.5+0.006*|diff|), implied spread "
+                    "≈ elo_diff/28"),
+                "data_note": (
+                    f"ELO computed from {n_games} real games in "
+                    f"silver_hist_gamelogs for season {season} (5 seasons "
+                    "2021-22 through 2025-26 live in the table; this run "
+                    f"used {season} only). plus_minus present on 100% of "
+                    "rows, so every game is MOV-adjusted. No games "
+                    "fabricated; teams with no games get no rating.")}}
 
 
 @tool

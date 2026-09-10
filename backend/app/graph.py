@@ -159,6 +159,7 @@ TOOL_LABELS = {
     "get_head_to_head": "Checking head-to-head history",
     "get_team_shot_zones": "Mapping shot zones",
     "get_warehouse_freshness": "Checking warehouse freshness",
+    "get_elo_standings": "Computing ELO ratings",
     "get_impact_estimate": "Estimating impact",
 }
 

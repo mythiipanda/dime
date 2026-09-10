@@ -370,7 +370,8 @@ LEAGUE_BRIEF = (
     "IF the task mentions offense, defense, net rating, pace, or ranks, "
     "THEN call get_ratings. "
     "IF the task mentions ELO, power ranking, or true strength, "
-    "THEN call get_elo. "
+    "THEN call get_elo_standings (implied win pct, win equivalents, "
+    "Elo-implied spreads). "
     "IF the task mentions title odds, finals odds, or simulating the "
     "playoffs, THEN call get_playoff_sim. "
     "IF the task asks who wins an upcoming game, the win probability of a "
@@ -485,6 +486,7 @@ def _desk_spec(name: str, task: str):
                 ["get_standings", "get_leaders", "get_injuries", "get_rapm",
                  "get_impact_estimate",
                  "get_playoffs", "get_playoff_intel", "get_ratings", "get_clutch", "get_elo",
+                 "get_elo_standings",
                  "get_playoff_sim", "get_game_prediction", "get_contract_value", "get_draft_board",
                  "get_draft_model", "get_risers", "get_streaks", "get_head_to_head",
                  "get_trade_check",
