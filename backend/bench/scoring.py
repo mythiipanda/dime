@@ -1,6 +1,7 @@
 """Scoring for DimeBench. Static tool-to-family map is config, not test cases."""
 
 import re
+from decimal import Decimal, ROUND_HALF_UP
 
 NUM_RX = re.compile(r"-?\d+(?:,\d{3})*(?:\.\d+)?%?")
 SEASON_RX = re.compile(r"\b(?:19|20)\d\d-\d{2}(?:\d{2})?\b")
@@ -131,6 +132,16 @@ def _numeric_forms(value: float | int, key: str = "") -> set[str]:
     except (TypeError, ValueError):
         return forms
     forms.add(f"{float(value):.1f}")
+    # Float-repr artifact: f"{-3.15:.1f}" is "-3.1" because the float is
+    # really -3.1499999..., but the true -3.15 rounds half-up to "-3.2".
+    # When the decimal string of the value is exactly on a .x5 boundary at
+    # 2dp, also emit the half-up 1dp form so the correct answer matches.
+    try:
+        d = Decimal(str(value))
+        if d == d.quantize(Decimal("0.01")) and abs(d * 100) % 10 == 5:
+            forms.add(str(d.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)))
+    except (ArithmeticError, TypeError, ValueError):
+        pass
     forms.add(f"{int(round(float(value))):,}")
     forms.add(str(value))
     # Percent form, scoped tight: only for probability facts (win_prob_*

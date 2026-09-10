@@ -29,6 +29,21 @@ def test_sentence_final_period_matches():
         {"percentile": 98.7}, "His percentile rank is 98.75.") == 0.0
 
 
+def test_half_up_boundary_negative():
+    # -3.15 as a float is really -3.1499999..., so f"{v:.1f}" yields
+    # "-3.1"; a correct half-up answer of "-3.2" must still match.
+    assert numeric_acc({"net": -3.15}, "Net rating is -3.2") == 1.0
+
+
+def test_half_up_boundary_positive():
+    assert numeric_acc({"value": 2.25}, "The value is 2.3") == 1.0
+
+
+def test_half_up_boundary_does_not_broaden():
+    # 2.24 is not on a .x5 boundary, so "2.3" must not be emitted.
+    assert numeric_acc({"value": 2.24}, "The value is 2.3") == 0.0
+
+
 def test_groundedness_season_only():
     assert groundedness(
         "Shai leads in 2025-26", '{"_season": "2025-26"}') == 1.0
