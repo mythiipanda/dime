@@ -109,6 +109,7 @@ export default function DataArtifacts({
     return (
       name === "get_shot_compare" ||
       name === "get_shot_zones" ||
+      name === "get_team_shot_zones" ||
       name === "get_wowy" ||
       name === "get_compare" ||
       name === "get_preview" ||
@@ -137,7 +138,7 @@ export default function DataArtifacts({
   const setPage = (n: number) => setPageState(Math.max(0, Math.min(n, tables.length - 1)));
 
   const toolName = toolOf(table ?? {});
-  const isShotTool = toolName === "get_shot_zones" || toolName === "get_shot_compare";
+  const isShotTool = toolName === "get_shot_zones" || toolName === "get_shot_compare" || toolName === "get_team_shot_zones";
   useEffect(() => {
     if (isShotTool) {
       setViewMode("court");
