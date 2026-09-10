@@ -46,7 +46,14 @@ def _connect_once(read_only: bool) -> duckdb.DuckDBPyConnection:
         return duckdb.connect(str(DB_PATH), read_only=True)
     try:
         con = duckdb.connect(str(DB_PATH))
-    except duckdb.IOException:
+    except duckdb.IOException as exc:
+        # Lock contention ("Conflicting lock is held") is transient: re-raise
+        # so connect() retries instead of silently degrading to a read-only
+        # connection whose writes then fail with a confusing
+        # "attached in read-only mode" error. Only fall back to read-only
+        # for non-lock IO errors (e.g. read-only filesystem).
+        if "lock" in str(exc).lower() or "conflict" in str(exc).lower():
+            raise
         return duckdb.connect(str(DB_PATH), read_only=True)
     con.execute(
         """CREATE TABLE IF NOT EXISTS fetch_log(
