@@ -52,6 +52,7 @@ from .player import (
     get_wowy,
 )
 from .preview import get_matchup_preview
+from .prediction import get_game_prediction
 from .shared import resolve_entity, run_python, search_nba
 from .splits import get_matchup_splits, get_regression_check
 from .streaks import get_streaks
@@ -141,6 +142,7 @@ v1_tools: list[BaseTool] = [
     get_watchlist,
     remove_watchlist_item,
     get_streaks,
+    get_game_prediction,
 ]
 
 TOOL_NAMES = [t.name for t in v1_tools]

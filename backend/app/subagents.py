@@ -306,7 +306,10 @@ TEAM_BRIEF = (
     "minutes. Use get_wowy for two-player combinations or with-or-without-you impact. "
     "For next-opponent or matchup briefs call get_scout_pack once. "
     "For a scheduled-game narrative preview (form, star matchups, injuries, "
-    "x-factors, why-watch) call get_matchup_preview once; it never predicts scores. "
+    "x-factors, why-watch) call get_matchup_preview once; it never predicts "
+    "scores. For a pre-game prediction (win probability, projected score "
+    "and total) call get_game_prediction; its output is a model estimate "
+    "with documented methodology, never a betting pick. "
     "For rotation health call get_rotation_check. "
     "For payroll, tax, or cap room call get_cap_ledger. "
     "For home/away or monthly team splits call get_team_splits. "
@@ -335,6 +338,11 @@ LEAGUE_BRIEF = (
     "THEN call get_elo. "
     "IF the task mentions title odds, finals odds, or simulating the "
     "playoffs, THEN call get_playoff_sim. "
+    "IF the task asks who wins an upcoming game, the win probability of a "
+    "scheduled game, or a projected total, THEN call get_game_prediction "
+    "(pre-game estimates; it is not a betting pick). "
+    "IF the task asks for a live in-game win probability, "
+    "THEN call get_win_prob. "
     "IF the task mentions overpaid, underpaid, contract value, or "
     "salary vs production, THEN call get_contract_value. "
     "IF the task mentions draft, prospects, or rookies, "
@@ -391,6 +399,7 @@ def _desk_spec(name: str, task: str):
                 ["resolve_entity", "search_nba", "get_team_hub", "get_games_on_date",
                  "get_boxscore", "get_lineups", "get_lineup_stats", "get_wowy", "get_injuries", "get_preview",
                  "get_matchup_preview",
+                 "get_game_prediction",
                  "get_scout_pack", "get_rotation_check", "get_cap_ledger",
                  "get_team_splits", "get_injury_impact", "run_python",
                  "text_to_sql"],
@@ -411,7 +420,7 @@ def _desk_spec(name: str, task: str):
         return ("league", LEAGUE_BRIEF,
                 ["get_standings", "get_leaders", "get_injuries", "get_rapm",
                  "get_playoffs", "get_playoff_intel", "get_ratings", "get_clutch", "get_elo",
-                 "get_playoff_sim", "get_contract_value", "get_draft_board",
+                 "get_playoff_sim", "get_game_prediction", "get_contract_value", "get_draft_board",
                  "get_draft_model", "get_risers", "get_streaks", "get_trade_check",
                  "get_trade_value",
                  "get_award_race",
