@@ -13,9 +13,12 @@ import Skeleton from "./Skeleton";
 import GameLogView, { parseGameLogs } from "./GameLogView";
 import HeadToHeadView, { parseHeadToHead } from "./HeadToHeadView";
 import ImpactView, { parseImpact } from "./ImpactView";
+import LineupMatrixView, { parseLineupMatrix } from "./LineupMatrixView";
+import LineupStatsView, { parseLineupStats } from "./LineupStatsView";
 import MatchupPreviewView, { parsePreview } from "./MatchupPreviewView";
 import PredictionView, { parsePrediction } from "./PredictionView";
 import RegressionView, { parseRegression } from "./RegressionView";
+import RestAdvantageView, { parseRestAdvantage } from "./RestAdvantageView";
 import RotationCheckView, { parseRotation } from "./RotationCheckView";
 import SplitsView, { parseSplits } from "./SplitsView";
 import StreaksView, { parseStreaks } from "./StreaksView";
@@ -121,6 +124,9 @@ export default function DataArtifacts({
       name === "get_game_prediction" ||
       name === "search_game_logs" ||
       name === "get_rotation_check" ||
+      name === "get_lineup_stats" ||
+      name === "get_rest_advantage" ||
+      name === "get_lineup_matchup_matrix" ||
       name === "get_head_to_head" ||
       name === "get_impact_estimate"
     );
@@ -419,6 +425,12 @@ export default function DataArtifacts({
         <GameLogView rows={table.rows} meta={table.meta} />
       ) : toolName === "get_rotation_check" && parseRotation(table.rows) ? (
         <RotationCheckView rows={table.rows} meta={table.meta} />
+      ) : toolName === "get_lineup_stats" && parseLineupStats(table.rows) ? (
+        <LineupStatsView rows={table.rows} meta={table.meta} />
+      ) : toolName === "get_rest_advantage" && parseRestAdvantage(table.rows) ? (
+        <RestAdvantageView rows={table.rows} meta={table.meta} />
+      ) : toolName === "get_lineup_matchup_matrix" && parseLineupMatrix(table.rows) ? (
+        <LineupMatrixView rows={table.rows} meta={table.meta} />
       ) : toolName === "get_head_to_head" && parseHeadToHead(table.rows) ? (
         <HeadToHeadView rows={table.rows} meta={table.meta} />
       ) : toolName === "get_impact_estimate" &&
