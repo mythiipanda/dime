@@ -155,6 +155,7 @@ TOOL_LABELS = {
     "get_game_prediction": "Simulating the matchup",
     "get_briefing": "Briefing the slate",
     "get_lineup_stats": "Rating lineups",
+    "get_rotation_check": "Checking the rotation",
     "get_streaks": "Finding streaks",
     "get_head_to_head": "Checking head-to-head history",
     "get_team_shot_zones": "Mapping shot zones",
