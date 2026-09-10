@@ -15,6 +15,7 @@ import { ArtifactItem } from "./ArtifactCanvas";
 import DataArtifacts from "./DataArtifacts";
 import ModelPicker from "./ModelPicker";
 import AgentActivity from "./AgentActivity";
+import DebateCardModal from "./DebateCardModal";
 
 function applyEvent(ai: AiMessage, type: string, data: unknown): AiMessage {
   const d = data as Record<string, unknown>;
@@ -235,6 +236,61 @@ function LinkButton({ index }: { index: number }) {
   );
 }
 
+const NAME_WORD = "(?:[A-ZÀ-Þ][a-zà-ÿ'.\\-]*|[A-Z]{2,})";
+const LEADING_NAME = new RegExp(`^\\s*(${NAME_WORD}(?:\\s+${NAME_WORD}){0,2})`);
+const TRAILING_NAME = new RegExp(`(${NAME_WORD}(?:\\s+${NAME_WORD}){0,2})\\s*$`);
+const STOP_WORDS = new Set([
+  "who", "what", "which", "when", "where", "why", "how",
+  "show", "tell", "give", "check", "compare", "debate", "rank", "pit",
+  "league", "team", "teams", "season", "game", "games", "tonight",
+  "today", "yesterday", "stats", "stat", "odds", "elo", "playoff",
+  "playoffs", "mvp", "leaders", "leader", "top", "best", "most",
+  "rising", "stars", "the",
+]);
+
+function cleanCandidate(s: string): string {
+  return s.replace(/\s+/g, " ").trim().slice(0, 40);
+}
+
+function validName(s: string): string | null {
+  const c = cleanCandidate(s);
+  if (!c) return null;
+  if (!c.includes(" ") && STOP_WORDS.has(c.toLowerCase())) return null;
+  return c;
+}
+
+function leadingName(s: string): string | null {
+  const m = s.match(LEADING_NAME);
+  if (!m) return null;
+  return validName(m[1]);
+}
+
+function trailingName(s: string): string | null {
+  const m = s.match(TRAILING_NAME);
+  if (!m) return null;
+  return validName(m[1]);
+}
+
+function pairFromQuestion(q: string): { a: string; b: string } | null {
+  const text = q.trim();
+  if (!text) return null;
+  const patterns = [
+    /compare\s+(.+?)\s+(?:and|vs\.?|versus|v)\s+(.+)/i,
+    /(.+?)\s+(?:vs\.?|versus)\s+(.+)/i,
+    /(.+?)\s+and\s+(.+)/i,
+  ];
+  for (const pat of patterns) {
+    const m = text.match(pat);
+    if (!m) continue;
+    const left = m[1].replace(/^(compare|debate|pit|rank)\s+/i, "").trim();
+    const right = m[2].replace(/^the\s+/i, "").trim();
+    const a = trailingName(left);
+    const b = leadingName(right);
+    if (a && b && a.toLowerCase() !== b.toLowerCase()) return { a, b };
+  }
+  return null;
+}
+
 export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, activeArtifactId }: Props) {
   const [models, setModels] = useState<ModelOption[]>([]);
   const [model, setModel] = useState<string | null>(null);
@@ -243,6 +299,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
   const [busy, setBusy] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [atBottom, setAtBottom] = useState(true);
+  const [debate, setDebate] = useState<{ a: string; b: string } | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const abort = useRef<AbortController | null>(null);
@@ -635,6 +692,19 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                         <CopyButton text={m.text} />
                         <CiteButton text={m.text} meta={firstTableMeta(m.ai)} />
                         <LinkButton index={i} />
+                        <button
+                          type="button"
+                          className="pill-ghost"
+                          style={{ fontSize: 12 }}
+                          onClick={() => {
+                            const prev = i > 0 ? messages[i - 1] : undefined;
+                            const q = prev && prev.role === "human" ? prev.text : "";
+                            const pair = pairFromQuestion(q);
+                            setDebate(pair ?? { a: "", b: "" });
+                          }}
+                        >
+                          Debate
+                        </button>
                       </div>
                     )}
 
@@ -745,6 +815,14 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
             </div>
           </div>
         </div>
+      )}
+      {debate && (
+        <DebateCardModal
+          key={`${debate.a}|${debate.b}`}
+          initialA={debate.a}
+          initialB={debate.b}
+          onClose={() => setDebate(null)}
+        />
       )}
     </div>
   );

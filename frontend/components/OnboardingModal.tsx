@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface Props {
   onFinish: () => void;
@@ -21,6 +21,16 @@ const CAPABILITIES = [
 
 export default function OnboardingModal({ onFinish, onSelectPrompt }: Props) {
   const [step, setStep] = useState(0);
+  const skipRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    skipRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onFinish();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onFinish]);
 
   return (
     <div
@@ -61,6 +71,7 @@ export default function OnboardingModal({ onFinish, onSelectPrompt }: Props) {
           </div>
           <button
             type="button"
+            ref={skipRef}
             onClick={onFinish}
             style={{ background: "transparent", border: "none", fontSize: 12, color: "var(--color-warm-gray)", cursor: "pointer" }}
           >
