@@ -11,9 +11,11 @@ import CourtHeatmap from "./CourtHeatmap";
 import DataTable from "./DataTable";
 import GameLogView, { parseGameLogs } from "./GameLogView";
 import MatchupPreviewView, { parsePreview } from "./MatchupPreviewView";
+import PredictionView, { parsePrediction } from "./PredictionView";
 import RegressionView, { parseRegression } from "./RegressionView";
 import RotationCheckView, { parseRotation } from "./RotationCheckView";
 import SplitsView, { parseSplits } from "./SplitsView";
+import StreaksView, { parseStreaks } from "./StreaksView";
 import TradeValueView, { parseTradeValue } from "./TradeValueView";
 import TrendChart, { isRaptorRows } from "./TrendChart";
 import { resolveToolName } from "./view-shared";
@@ -110,6 +112,8 @@ export default function DataArtifacts({
       name === "get_matchup_splits" ||
       name === "get_regression_check" ||
       name === "get_matchup_preview" ||
+      name === "get_streaks" ||
+      name === "get_game_prediction" ||
       name === "search_game_logs" ||
       name === "get_rotation_check"
     );
@@ -382,6 +386,11 @@ export default function DataArtifacts({
         <RegressionView rows={table.rows} />
       ) : toolName === "get_matchup_preview" && parsePreview(table.rows) ? (
         <MatchupPreviewView rows={table.rows} meta={table.meta} />
+      ) : toolName === "get_streaks" && parseStreaks(table.rows) ? (
+        <StreaksView rows={table.rows} meta={table.meta} />
+      ) : toolName === "get_game_prediction" &&
+        parsePrediction(table.rows ?? table) ? (
+        <PredictionView rows={table.rows ?? table} meta={table.meta} />
       ) : toolName === "search_game_logs" && parseGameLogs(table.rows) ? (
         <GameLogView rows={table.rows} meta={table.meta} />
       ) : toolName === "get_rotation_check" && parseRotation(table.rows) ? (

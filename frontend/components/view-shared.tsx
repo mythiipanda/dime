@@ -126,6 +126,8 @@ const TITLE_TO_TOOL: Record<string, string> = {
   "Award race": "get_award_race",
   "Trade value": "get_trade_value",
   "Matchup preview": "get_matchup_preview",
+  Streaks: "get_streaks",
+  "Game Prediction": "get_game_prediction",
 };
 
 function forwardTitle(tool: string): string {
