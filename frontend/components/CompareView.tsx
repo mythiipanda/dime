@@ -1,5 +1,8 @@
 "use client";
 
+import { useState } from "react";
+import DebateCardModal from "./DebateCardModal";
+
 type Side = {
   player_id?: number;
   team_id?: number;
@@ -32,7 +35,8 @@ function fmt(v: unknown): string {
   return String(v).slice(0, 80);
 }
 
-export default function CompareView({ rows }: { rows: unknown }) {
+export default function CompareView({ rows, onDebate }: { rows: unknown; onDebate?: (a: string, b: string) => void }) {
+  const [debateOpen, setDebateOpen] = useState(false);
   if (!rows || typeof rows !== "object") return null;
   const r = rows as Record<string, unknown>;
   const a = r.a as Side | undefined;
@@ -49,6 +53,24 @@ export default function CompareView({ rows }: { rows: unknown }) {
   const pair = r.pair as { teammates?: boolean; both_on_net?: number | null; both_on_minutes?: number; note?: string } | undefined;
   return (
     <div style={{ marginTop: 8 }}>
+      <button
+        type="button"
+        className="pill-ghost"
+        style={{ fontSize: 12, marginBottom: 8 }}
+        onClick={() => {
+          if (onDebate) onDebate(labelA, labelB);
+          else setDebateOpen(true);
+        }}
+      >
+        Debate
+      </button>
+      {debateOpen && (
+        <DebateCardModal
+          initialA={labelA}
+          initialB={labelB}
+          onClose={() => setDebateOpen(false)}
+        />
+      )}
       {fit && fit.note && (
         <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginBottom: 8 }}>
           Fit {fit.fit}: {fit.note}
