@@ -31,6 +31,7 @@ def _desk_tool_label(name: str) -> str:
         "get_playoff_intel": "Pulling playoff logs",
         "get_trade_check": "Checking trade math",
         "get_trade_value": "Grading trade value",
+        "get_award_race": "Ranking award races",
     }
     if not name:
         return "Checking data"
@@ -400,6 +401,7 @@ def _desk_spec(name: str, task: str):
                  "get_playoffs", "get_playoff_intel", "get_ratings", "get_clutch", "get_elo",
                  "get_playoff_sim", "get_contract_value", "get_draft_board",
                  "get_draft_model", "get_risers", "get_trade_check",
+                 "get_award_race",
                  "run_python", "text_to_sql"],
                 force)
     raise ValueError(f"unknown desk: {name}")

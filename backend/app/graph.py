@@ -135,6 +135,7 @@ TOOL_LABELS = {
     "get_playoff_intel": "Pulling playoff logs",
     "get_trade_check": "Checking trade math",
     "get_trade_value": "Grading trade value",
+    "get_award_race": "Ranking award races",
 }
 
 

@@ -2,6 +2,7 @@
 
 from langchain_core.tools import BaseTool
 
+from .awards import get_award_race
 from .league import (
     get_briefing,
     get_cap_ledger,
@@ -102,6 +103,7 @@ v1_tools: list[BaseTool] = [
     get_combine,
     get_compare,
     get_debate_card,
+    get_award_race,
     get_comps,
     get_advanced,
     get_rest,
