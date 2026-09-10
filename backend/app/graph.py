@@ -162,6 +162,7 @@ TOOL_LABELS = {
     "get_warehouse_freshness": "Checking warehouse freshness",
     "get_elo_standings": "Computing ELO ratings",
     "get_impact_estimate": "Estimating impact",
+    "search_game_logs": "Searching game logs",
 }
 
 
@@ -287,6 +288,29 @@ _MATCHUP_SPLITS_RX = re.compile(
     r"\bsplits?\b.{0,24}\b(?:vs\.?|versus)\b|"
     r"\b(?:vs\.?|versus)\b.{0,24}\bsplits?\b",
     re.IGNORECASE)
+# Game-log questions are answerable straight from the warehouse:
+# "game logs", "40-point games", "triple-doubles", "scored 50 points".
+# The planner free-forms these through text_to_sql and hits
+# unknown-table/column errors on silver_player_gamelogs (caught red in
+# the demo recording), so the triage fast-path routes them to
+# search_game_logs, which owns the per-player log filter pipeline.
+_GAMELOG_RX = re.compile(
+    r"\bgame[\s-]*logs?\b|"
+    r"\btriple[\s-]*doubles?\b|\bdouble[\s-]*doubles?\b|"
+    r"\b\d{2}\s*[-–—]\s*points?\b|"           # "40-point games"
+    r"\b\d{1,2}\s*[-–—]\s*rebounds?\b|"       # "15-rebound games"
+    r"\b\d{1,2}\s*[-–—]\s*assists?\b|"        # "12-assist games"
+    r"(?:scored|had|dropped|posted|recorded)\s+\d{2}\s*(?:\+|or more)?"
+    r"\s*points?\b|"                          # "scored 50 points"
+    r"\bgames?\b.{0,16}\b(?:vs\.?|versus|against)\b|"  # "games vs the Lakers"
+    r"\b(?:vs\.?|versus|against)\b.{0,90}\bgames?\b",  # "against the Wizards... list every game"
+    re.IGNORECASE)
+# Season averages and career-history phrasing are NOT game-log
+# questions: the tool only covers 2025-26 warehouse logs.
+_GAMELOG_NO_RX = re.compile(
+    r"\baverag\w*|\bavg\b|\bppg\b|\bper game\b|"
+    r"\bcareer\b|\ball[\s-]*time\b|\blast season\b",
+    re.IGNORECASE)
 _BRIEFING_RX = re.compile(r"\bbriefing\b", re.IGNORECASE)
 _BRIEFING_CONTEXT_RX = re.compile(
     r"20\d\d[-/]\d{1,2}[-/]\d{1,2}|\bslate\b|\bmorning\b|"
@@ -382,6 +406,99 @@ def _direct_named_teams(question: str, found_t: list[str]) -> list[str]:
                                        q, re.IGNORECASE))):
             out.append(full)
     return out
+
+
+def _direct_named_players(question: str, found_p: list[str]) -> list[str]:
+    """Players named outright in the raw question text.
+
+    _detect_entities expands nicknames before matching, so a nickname
+    can surface a player the user never meant (e.g. a stray "Bron").
+    The game-log fast-path needs exactly the player asked about, so
+    re-match full names (or known nicknames) against the raw question,
+    mirroring what _direct_named_teams does for teams.
+    """
+    from .tools._core import NICKNAMES
+
+    def _norm(s: str) -> str:
+        import unicodedata as _ud
+
+        return "".join(c for c in _ud.normalize("NFKD", s or "")
+                       if not _ud.combining(c)).lower()
+
+    rev: dict[str, list[str]] = {}
+    for nick, full in NICKNAMES.items():
+        rev.setdefault(_norm(full), []).append(nick)
+    q = _norm(question)
+    out = []
+    for full in found_p:
+        nfull = _norm(full)
+        if nfull in q:
+            out.append(full)
+            continue
+        for nick in rev.get(nfull, []):
+            if re.search(r"\b" + re.escape(nick) + r"\b", q):
+                out.append(full)
+                break
+    return out
+
+
+def _gamelog_args(question: str, player: str,
+                  teams: list[str]) -> dict[str, Any]:
+    """Parse search_game_logs args from a triage-claimed question.
+
+    Conservative: only set what the regexes can see; everything else
+    keeps the tool default. Opponent prefers the re-matched team entity
+    over raw text extraction.
+    """
+    from .tools.gamelog import MONTH_NAMES
+
+    args: dict[str, Any] = {"player": player}
+    q = question or ""
+    m = (re.search(r"\b(\d{2})\s*[-–—]\s*points?\b", q, re.IGNORECASE)
+         or re.search(r"(?:scored|had|dropped|posted|recorded)\s+(\d{2})"
+                      r"\s*(?:\+|or more)?\s*points?\b", q, re.IGNORECASE))
+    if m:
+        args["min_points"] = int(m.group(1))
+    m = (re.search(r"\b(\d{1,2})\s*[-–—]\s*rebounds?\b", q, re.IGNORECASE)
+         or re.search(r"(?:with|had|posted|grabbed)\s+(\d{1,2})\+?"
+                      r"\s*rebounds?\b", q, re.IGNORECASE))
+    if m:
+        args["min_rebounds"] = int(m.group(1))
+    m = (re.search(r"\b(\d{1,2})\s*[-–—]\s*assists?\b", q, re.IGNORECASE)
+         or re.search(r"(?:with|had|posted|dished)\s+(\d{1,2})\+?"
+                      r"\s*assists?\b", q, re.IGNORECASE))
+    if m:
+        args["min_assists"] = int(m.group(1))
+    if re.search(r"\btriple[\s-]*doubles?\b", q, re.IGNORECASE):
+        args["triple_double"] = True
+    elif re.search(r"\bdouble[\s-]*doubles?\b", q, re.IGNORECASE):
+        args["double_double"] = True
+    if teams and re.search(r"\bvs\.?|\bversus\b|\bagainst\b", q,
+                           re.IGNORECASE):
+        args["opponent"] = teams[0]
+    else:
+        m = re.search(
+            r"(?:\bvs\.?|\bversus\b|\bagainst\b)\s+(?:the\s+)?"
+            r"([A-Za-z][A-Za-z.'&-]*(?:\s+[A-Za-z][A-Za-z.'&-]*)*)",
+            q, re.IGNORECASE)
+        if m:
+            toks = m.group(1).split()
+            stop = {"this", "last", "next", "season", "year", "games",
+                    "game", "at", "in", "on", "his", "her", "their",
+                    "a", "an", "the"}
+            while toks and toks[-1].lower() in stop:
+                toks.pop()
+            if toks:
+                args["opponent"] = " ".join(toks[:3])
+    for name in MONTH_NAMES:
+        if re.search(r"\b" + name + r"\b", q, re.IGNORECASE):
+            args["month"] = name
+            break
+    if re.search(r"\bat home\b|\bhome games?\b", q, re.IGNORECASE):
+        args["home_away"] = "home"
+    elif re.search(r"\bon the road\b|\baway games?\b", q, re.IGNORECASE):
+        args["home_away"] = "away"
+    return args
 
 
 def _player_team_abbr(pid: int, season: str) -> str:
@@ -817,6 +934,43 @@ async def _triage_seed(question: str, primary: str, model: str,
             if _result_status(_mout) != "ok" or not _result_rows(_mout):
                 _decisive = False
         if _decisive:
+            async for _e in _triage_terminal(question, state):
+                yield _e
+        return
+    _named_p = _direct_named_players(question, found_p)
+    is_gamelog = (
+        len(_named_p) == 1
+        and _GAMELOG_RX.search(question)
+        and not _GAMELOG_NO_RX.search(question)
+        and not is_trade
+        and not is_cast
+        and not _PREDICT_LIVE_RX.search(question)
+        and not state.get("history")
+    )
+    if is_gamelog:
+        # Demo bug: the planner free-formed a game-log question into
+        # text_to_sql, hit "unknown table or column" on
+        # silver_player_gamelogs, and streamed the red error row.
+        # search_game_logs owns the per-player log pipeline, so answer
+        # straight from the warehouse. Only on clean single-turn
+        # questions with exactly one named player; anything uncertain
+        # (no clear player, multi-player, averages/career phrasing)
+        # falls through to the planner.
+        _gh: dict[str, Any] = {}
+        async for _e in _triage_tool(
+                "search_game_logs",
+                _gamelog_args(question, _named_p[0], _named), state, _gh):
+            yield _e
+        _gout = _gh.get("out") or {}
+        if _result_status(_gout) == "ok":
+            # _triage_tool appended the raw tool dict. analytics_agent
+            # only treats tool_results entries with a non-empty "rows"
+            # key as evidence, so wrap it the same way the prediction
+            # fast-path does; otherwise the turn falls into the canned
+            # no-data branch and the LLM never runs.
+            if state["tool_results"] and state["tool_results"][-1] is _gout:
+                state["tool_results"][-1] = {
+                    "tool": "search_game_logs", "rows": [_gout]}
             async for _e in _triage_terminal(question, state):
                 yield _e
         return
