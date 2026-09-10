@@ -1398,6 +1398,10 @@ def get_briefing(game_date: str = "", season: str = SEASON) -> dict[str, Any]:
             "meta": gmeta}
 
 
+def _describe_warehouse_schema(cols: dict[str, list[str]]) -> str:
+    return "\n".join(f"{t}: {', '.join(c[:40])}" for t, c in cols.items())
+
+
 @tool
 async def text_to_sql(question: str) -> dict[str, Any]:
     """Answer a data question with SQL over warehouse tables. SELECT only."""
@@ -1425,12 +1429,12 @@ async def text_to_sql(question: str) -> dict[str, Any]:
         cols: dict[str, list[str]] = {}
         for t in present:
             cols[t] = [r[1] for r in
-                       con.execute(f"PRAGMA table_info({t})").fetchall()][:20]
+                       con.execute(f"PRAGMA table_info({t})").fetchall()][:40]
     finally:
         con.close()
     if not present:
         return {"tool": "text_to_sql", "ok": False, "error": "warehouse empty"}
-    schema = "\n".join(f"{t}: {', '.join(c)}" for t, c in cols.items())
+    schema = _describe_warehouse_schema(cols)
     examples = (
         "\nExamples.\nQ: Thunder record this season?\n"
         "SQL: SELECT WINS, LOSSES FROM silver_standings "
@@ -1478,7 +1482,12 @@ async def text_to_sql(question: str) -> dict[str, Any]:
         "columns and season end-year ints.\n"
         "SQL: SELECT PLAYER_NAME, TEAM_ABBREVIATION, AGE, GP, PTS, AST "
         "FROM silver_hist_player_seasons WHERE AGE < 24 AND PTS >= 15 AND AST >= 5 "
-        "AND SEASON = 2024 ORDER BY PTS DESC LIMIT 10"
+        "AND SEASON = 2024 ORDER BY PTS DESC LIMIT 10\n"
+        "Q: Who led the 2025-26 season in steals?\n"
+        "Note: season totals come from silver_leaders_* tables; "
+        "never aggregate silver_player_gamelogs for season totals.\n"
+        "SQL: SELECT PLAYER, STL FROM silver_leaders_stl "
+        "WHERE _season = '2025-26' ORDER BY STL DESC LIMIT 1"
     )
     feedback = ""
     for _ in range(3):
@@ -1487,9 +1496,14 @@ async def text_to_sql(question: str) -> dict[str, Any]:
                 "mistral", "ministral-8b-2512",
                 [SystemMessage(content="Reply with SQL only, no prose."),
                  HumanMessage(
-                     content="Write one SQLite SELECT using only these tables "
-                     "and columns. Match column case exactly as listed.\n"
-                     f"Schema:\n{schema}{examples}\nQuestion: {question}{feedback}")])
+                      content="Write one SQLite SELECT using only these tables "
+                      "and columns. Match column case exactly as listed.\n"
+                      "Rules. Season totals and season leaders questions MUST use "
+                      "the silver_leaders_* tables directly; they hold final official "
+                      "season totals. silver_player_gamelogs is an incomplete per-game "
+                      "sample: never SUM it to compute season totals, and never join "
+                      "per-game tables to leaders tables (fan-out inflates sums).\n"
+                      f"Schema:\n{schema}{examples}\nQuestion: {question}{feedback}")])
             sql = _re.sub(r"^```sql|```$", "", str(getattr(resp, "content", "") or ""),
                           flags=_re.MULTILINE).strip()
         except Exception as exc:
