@@ -157,6 +157,7 @@ TOOL_LABELS = {
     "get_lineup_stats": "Rating lineups",
     "get_streaks": "Finding streaks",
     "get_head_to_head": "Checking head-to-head history",
+    "get_team_shot_zones": "Mapping shot zones",
     "get_warehouse_freshness": "Checking warehouse freshness",
 }
 

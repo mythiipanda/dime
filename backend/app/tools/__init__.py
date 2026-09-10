@@ -58,6 +58,7 @@ from .shared import resolve_entity, run_python, search_nba
 from .headtohead import get_head_to_head
 from .splits import get_matchup_splits, get_regression_check
 from .streaks import get_streaks
+from .zone import get_team_shot_zones
 from .team import (
     get_boxscore,
     get_games_on_date,
@@ -147,6 +148,7 @@ v1_tools: list[BaseTool] = [
     get_streaks,
     get_head_to_head,
     get_game_prediction,
+    get_team_shot_zones,
 ]
 
 TOOL_NAMES = [t.name for t in v1_tools]

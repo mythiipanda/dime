@@ -378,6 +378,9 @@ LEAGUE_BRIEF = (
     "THEN call get_streaks. "
     "IF the task asks how a player has done against one opponent team, "
     "THEN call get_head_to_head. "
+    "IF the task mentions shot zones, shot diet, rim rate, corner threes, "
+    "or where teams shoot from, THEN call get_team_shot_zones with teams "
+    "or 'league'; its deltas are vs the league baseline in percentage points. "
     "IF the task mentions form, risers, fallers, or who is hot, "
     "THEN call get_risers. "
     "IF the task mentions trade, swap, deal, or sign-and-trade, "
@@ -454,6 +457,7 @@ def _desk_spec(name: str, task: str):
                  "get_trade_check",
                  "get_trade_value",
                  "get_award_race",
+                 "get_team_shot_zones",
                  "get_warehouse_freshness",
                  "run_python", "text_to_sql"],
                 force)
