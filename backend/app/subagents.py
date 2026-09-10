@@ -275,6 +275,10 @@ def delegate_tools(provider: ProviderName, model: str) -> list:
                 task, _re.IGNORECASE):
             force = ("text_to_sql", {"question": task.replace(
                 " Answer via text_to_sql (you own that tool).", "")})
+        elif _re.search(r"streak|longest.*gam|most.*consectutive",
+                        task, _re.IGNORECASE):
+            force = ("text_to_sql", {"question": task.replace(
+                " Answer via text_to_sql (you own that tool).", "")})
         return await _run_desk(
             "league", LEAGUE_BRIEF, task, provider, model,
             ["get_standings", "get_standings_deep", "get_leaders", "get_injuries", "get_rapm",
