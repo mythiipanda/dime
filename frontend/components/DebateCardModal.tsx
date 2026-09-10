@@ -118,6 +118,9 @@ export default function DebateCardModal({
                 border: "none",
                 padding: "6px 10px",
                 fontSize: 13,
+                lineHeight: 1.5,
+                minHeight: 40,
+                color: "#0c0a09",
                 cursor: "pointer",
               }}
               onClick={() => {
@@ -147,6 +150,7 @@ export default function DebateCardModal({
         alignItems: "center",
         justifyContent: "center",
         padding: 16,
+        overflowY: "auto",
       }}
       onClick={onClose}
     >
@@ -155,17 +159,21 @@ export default function DebateCardModal({
           background: "#ffffff",
           border: "1px solid #e8e6e5",
           borderRadius: 10,
-          padding: 24,
+          padding: 20,
           maxWidth: 640,
           width: "100%",
+          maxHeight: "calc(100dvh - 32px)",
+          overflowY: "auto",
+          boxSizing: "border-box",
+          margin: "auto",
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="display" style={{ fontSize: 20, marginBottom: 4 }}>
+        <div className="display" style={{ fontSize: 20, color: "#0c0a09", marginBottom: 4 }}>
           Debate card
         </div>
         {debateTopic ? (
-          <div style={{ marginBottom: 16 }}>
+          <div style={{ marginBottom: 16, maxWidth: "100%" }}>
             <span
               style={{
                 display: "inline-block",
@@ -173,9 +181,14 @@ export default function DebateCardModal({
                 fontWeight: 500,
                 borderRadius: 9999,
                 padding: "2px 10px",
+                border: "1px solid #e8e6e5",
                 background: "var(--color-sky-wash)",
                 color: "var(--color-cyan-edge)",
                 whiteSpace: "nowrap",
+                maxWidth: "100%",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                verticalAlign: "top",
               }}
             >
               {debateTopic}
@@ -216,16 +229,17 @@ export default function DebateCardModal({
             {renderSuggest(suggB, "b", setB)}
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
           <button
             type="button"
             className="pill-cta"
+            style={{ minHeight: 40 }}
             disabled={!a.trim() || !b.trim() || status === "loading"}
             onClick={generate}
           >
             {status === "loading" ? "Building…" : "Generate"}
           </button>
-          <button type="button" className="pill-ghost" onClick={onClose}>
+          <button type="button" className="pill-ghost" style={{ minHeight: 40 }} onClick={onClose}>
             Close
           </button>
         </div>
@@ -241,18 +255,21 @@ export default function DebateCardModal({
               src={fileUrl}
               style={{
                 width: "100%",
-                height: 420,
+                height: 360,
+                maxHeight: "50dvh",
+                display: "block",
+                background: "#fafaf9",
                 border: "1px solid #e8e6e5",
                 borderRadius: 10,
               }}
             />
-            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-              <button type="button" className="pill-ghost" onClick={copyLink}>
+            <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+              <button type="button" className="pill-ghost" style={{ minHeight: 40 }} onClick={copyLink}>
                 {copied ? "Copied" : "Copy Link"}
               </button>
               <a
                 className="pill-ghost"
-                style={{ textDecoration: "none", fontSize: 13 }}
+                style={{ textDecoration: "none", fontSize: 13, minHeight: 40, display: "inline-flex", alignItems: "center" }}
                 href={fileUrl}
                 download={rows.path}
               >
