@@ -1,0 +1,373 @@
+"use client";
+
+import { Caption, Chip, isObj, num, SectionTitle, str } from "./view-shared";
+
+export interface PredictionRows {
+  home: string;
+  away: string;
+  gameDate: string;
+  venue: string;
+  homeProb: number;
+  awayProb: number;
+  homeCi: [number, number] | null;
+  awayCi: [number, number] | null;
+  homeScore: number;
+  awayScore: number;
+  total: number;
+  totalCi: [number, number] | null;
+  marginCi: [number, number] | null;
+  nSims: number | null;
+  seed: number | null;
+  pace: number | null;
+  homeCourtPts: number | null;
+  note: string;
+  assumptions: string[];
+  methodology: string[];
+  limitations: string[];
+}
+
+function strList(v: unknown): string[] {
+  if (!Array.isArray(v)) return [];
+  return v.filter(
+    (x): x is string => typeof x === "string" && x.length > 0,
+  );
+}
+
+function pairNums(v: unknown): [number, number] | null {
+  if (!Array.isArray(v) || v.length < 2) return null;
+  const a = num(v[0]);
+  const b = num(v[1]);
+  return a === null || b === null ? null : [a, b];
+}
+
+function unwrap(v: unknown): unknown {
+  if (Array.isArray(v)) return v.length ? v[0] : null;
+  return v;
+}
+
+export function parsePrediction(input: unknown): PredictionRows | null {
+  let v = unwrap(input);
+  if (isObj(v) && !isObj(v.matchup) && !isObj(v.estimate) && v.rows !== undefined) {
+    v = unwrap(v.rows);
+  }
+  if (!isObj(v)) return null;
+  const matchup = isObj(v.matchup) ? v.matchup : null;
+  const estimate = isObj(v.estimate) ? v.estimate : null;
+  if (!matchup || !estimate) return null;
+  const home = str(matchup.home);
+  const away = str(matchup.away);
+  if (!home || !away) return null;
+  const probs = isObj(estimate.win_prob) ? estimate.win_prob : null;
+  const homeProb = probs ? num(probs[home]) : null;
+  const awayProb = probs ? num(probs[away]) : null;
+  if (homeProb === null || awayProb === null) return null;
+  const scores = isObj(estimate.projected_score) ? estimate.projected_score : null;
+  const homeScore = scores ? num(scores[home]) : null;
+  const awayScore = scores ? num(scores[away]) : null;
+  if (homeScore === null || awayScore === null) return null;
+  const total = num(estimate.projected_total);
+  if (total === null) return null;
+  const inputs = isObj(v.inputs) ? v.inputs : {};
+  const ci = isObj(estimate.win_prob_ci90) ? estimate.win_prob_ci90 : null;
+  return {
+    home,
+    away,
+    gameDate: str(matchup.game_date),
+    venue: str(matchup.venue),
+    homeProb,
+    awayProb,
+    homeCi: ci ? pairNums(ci[home]) : null,
+    awayCi: ci ? pairNums(ci[away]) : null,
+    homeScore,
+    awayScore,
+    total,
+    totalCi: pairNums(estimate.total_ci90),
+    marginCi: pairNums(estimate.margin_ci90),
+    nSims: num(inputs.n_sims),
+    seed: num(inputs.seed),
+    pace: num(inputs.game_pace),
+    homeCourtPts: num(inputs.home_court_pts),
+    note: str(estimate.note),
+    assumptions: strList(v.assumptions),
+    methodology: strList(v.methodology),
+    limitations: strList(v.limitations),
+  };
+}
+
+function pct(v: number): string {
+  return `${(v * 100).toFixed(1)}%`;
+}
+
+function likelyRange(ci: [number, number] | null): string {
+  if (!ci) return "";
+  return `likely range ${pct(ci[0])}–${pct(ci[1])}`;
+}
+
+/** "BOS by ~5.7 (range: BOS by 12.4 to NYK by 1.1)" from a home-minus-away CI. */
+function marginWords(p: PredictionRows): string | null {
+  if (!p.marginCi) return null;
+  const [lo, hi] = p.marginCi;
+  const side = (v: number) => (v >= 0 ? p.home : p.away);
+  const mid = (lo + hi) / 2;
+  if (Math.abs(mid) < 0.05) return "pick'em \u2014 margin range straddles zero";
+  const fav = mid >= 0 ? p.home : p.away;
+  return `${fav} by ~${Math.abs(mid).toFixed(1)} (range: ${side(lo)} by ${Math.abs(lo).toFixed(1)} to ${side(hi)} by ${Math.abs(hi).toFixed(1)})`;
+}
+
+function PairedProbBar({ p, favHome }: { p: PredictionRows; favHome: boolean }) {
+  const ciLine = [p.awayCi, p.homeCi].some(Boolean)
+    ? [
+        p.awayCi ? `${p.away} ${likelyRange(p.awayCi)}` : "",
+        p.homeCi ? `${p.home} ${likelyRange(p.homeCi)}` : "",
+      ]
+        .filter(Boolean)
+        .join(" \u00b7 ")
+    : "";
+  return (
+    <div style={{ marginBottom: 4 }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "baseline",
+          justifyContent: "space-between",
+          gap: 8,
+          marginBottom: 6,
+        }}
+      >
+        <span style={{ fontWeight: 600, fontSize: 13, color: "var(--color-ink-black)" }}>
+          {p.away}
+        </span>
+        <span style={{ fontWeight: 600, fontSize: 13, color: "var(--color-ink-black)" }}>
+          {p.home}
+        </span>
+      </div>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "baseline",
+          justifyContent: "space-between",
+          gap: 8,
+          marginBottom: 6,
+        }}
+      >
+        <span
+          style={{
+            fontSize: 20,
+            fontWeight: 600,
+            color: !favHome ? "var(--color-cyan-edge)" : "var(--color-ink-black)",
+            fontVariantNumeric: "tabular-nums",
+          }}
+        >
+          {pct(p.awayProb)}
+        </span>
+        <span
+          style={{
+            fontSize: 20,
+            fontWeight: 600,
+            color: favHome ? "var(--color-cyan-edge)" : "var(--color-ink-black)",
+            fontVariantNumeric: "tabular-nums",
+          }}
+        >
+          {pct(p.homeProb)}
+        </span>
+      </div>
+      <div
+        style={{
+          height: 8,
+          background: "var(--color-stone-border)",
+          borderRadius: 4,
+          overflow: "hidden",
+          display: "flex",
+        }}
+      >
+        <div
+          style={{
+            width: `${Math.min(100, p.awayProb * 100)}%`,
+            height: "100%",
+            background: !favHome ? "var(--color-cyan-signal)" : "var(--color-stone-muted)",
+          }}
+        />
+        <div style={{ flex: 1 }} />
+        <div
+          style={{
+            width: `${Math.min(100, p.homeProb * 100)}%`,
+            height: "100%",
+            background: favHome ? "var(--color-cyan-signal)" : "var(--color-stone-muted)",
+          }}
+        />
+      </div>
+      <div style={{ fontSize: 11, color: "var(--color-ash-gray)", marginTop: 4 }}>
+        one 100% scale — bar lengths are directly comparable
+      </div>
+      {ciLine && (
+        <div
+          style={{
+            fontSize: 11,
+            color: "var(--color-ash-gray)",
+            marginTop: 4,
+            fontVariantNumeric: "tabular-nums",
+          }}
+        >
+          {ciLine}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function PredictionView({
+  rows,
+  meta,
+}: {
+  rows: unknown;
+  meta?: { season?: string };
+}) {
+  const p = parsePrediction(rows);
+  if (!p) return null;
+  const favHome = p.homeProb >= p.awayProb;
+  const simLine = [
+    p.nSims !== null ? `${Math.round(p.nSims).toLocaleString()} simulations` : "",
+    p.pace !== null ? `pace ${p.pace.toFixed(1)} poss/48` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const seedLine =
+    p.seed !== null ? `Random seed ${Math.round(p.seed)} — reruns with this seed reproduce these numbers.` : "";
+  const extras = [...p.assumptions, ...p.methodology, ...(seedLine ? [seedLine] : []), ...p.limitations];
+
+  return (
+    <div>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          flexWrap: "wrap",
+          marginBottom: 4,
+        }}
+      >
+        <SectionTitle>
+          {p.away} @ {p.home}
+        </SectionTitle>
+        {meta?.season && <Chip>{meta.season}</Chip>}
+      </div>
+      {[p.gameDate, p.venue].filter(Boolean).length > 0 && (
+        <div
+          style={{
+            fontSize: 12,
+            color: "var(--color-warm-gray)",
+            marginBottom: 12,
+          }}
+        >
+          {[p.gameDate, p.venue].filter(Boolean).join(" · ")}
+        </div>
+      )}
+      <div
+        style={{
+          background: "var(--color-stone-canvas)",
+          border: "1px solid var(--color-stone-border)",
+          borderRadius: 10,
+          padding: "12px 16px",
+          marginBottom: 10,
+        }}
+      >
+        <div
+          style={{
+            fontSize: 11,
+            fontWeight: 600,
+            color: "var(--color-warm-gray)",
+            marginBottom: 10,
+          }}
+        >
+          Win probability
+        </div>
+        <PairedProbBar p={p} favHome={favHome} />
+      </div>
+      <div
+        style={{
+          background: "var(--color-pure-white)",
+          border: "1px solid var(--color-stone-border)",
+          borderRadius: 10,
+          padding: "12px 16px",
+          marginBottom: 10,
+        }}
+      >
+        <div
+          style={{
+            fontSize: 11,
+            fontWeight: 600,
+            color: "var(--color-warm-gray)",
+            marginBottom: 6,
+          }}
+        >
+          Projected score
+        </div>
+        <div
+          style={{
+            fontSize: 15,
+            fontWeight: 600,
+            color: "var(--color-ink-black)",
+            fontVariantNumeric: "tabular-nums",
+          }}
+        >
+          {p.away} {Math.round(p.awayScore)} – {Math.round(p.homeScore)} {p.home}
+        </div>
+        <div
+          style={{
+            fontSize: 12,
+            color: "var(--color-warm-gray)",
+            marginTop: 4,
+            fontVariantNumeric: "tabular-nums",
+          }}
+        >
+          Total {Math.round(p.total)}
+          {p.totalCi ? ` (likely range ${Math.round(p.totalCi[0])}–${Math.round(p.totalCi[1])})` : ""}
+        </div>
+        {marginWords(p) && (
+          <div
+            style={{
+              fontSize: 11,
+              color: "var(--color-ash-gray)",
+              marginTop: 2,
+              fontVariantNumeric: "tabular-nums",
+            }}
+          >
+            {marginWords(p)}
+          </div>
+        )}
+      </div>
+      {simLine && <Caption>{simLine}</Caption>}
+      {p.note && (
+        <div style={{ marginTop: 4 }}>
+          <Caption>{p.note}</Caption>
+        </div>
+      )}
+      {extras.length > 0 && (
+        <details
+          style={{
+            fontSize: 11,
+            color: "var(--color-warm-gray)",
+            marginTop: 10,
+          }}
+        >
+          <summary style={{ cursor: "pointer", fontWeight: 500 }}>
+            Methodology and assumptions
+          </summary>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 4,
+              marginTop: 6,
+              lineHeight: 1.55,
+            }}
+          >
+            {extras.map((t, i) => (
+              <div key={i}>{t}</div>
+            ))}
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}

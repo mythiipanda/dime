@@ -35,6 +35,7 @@ from .league import (
 )
 from .lineup import get_lineup_stats
 from .player import (
+    compare_metrics,
     get_advanced,
     get_compare,
     get_debate_card,
@@ -61,6 +62,10 @@ from .headtohead import get_head_to_head
 from .gamelog import search_game_logs
 from .splits import get_matchup_splits, get_regression_check
 from .streaks import get_streaks
+from .rest import get_rest_advantage
+from .competitive import get_competitive_ratings
+from .lineup_matrix import get_lineup_matchup_matrix
+from .shots import search_shots
 from .zone import get_team_shot_zones
 from .team import (
     get_boxscore,
@@ -113,6 +118,7 @@ v1_tools: list[BaseTool] = [
     get_rapm,
     get_combine,
     get_compare,
+    compare_metrics,
     get_debate_card,
     get_award_race,
     get_comps,
@@ -155,6 +161,10 @@ v1_tools: list[BaseTool] = [
     search_game_logs,
     get_game_prediction,
     get_team_shot_zones,
+    get_rest_advantage,
+    get_competitive_ratings,
+    get_lineup_matchup_matrix,
+    search_shots,
 ]
 
 TOOL_NAMES = [t.name for t in v1_tools]

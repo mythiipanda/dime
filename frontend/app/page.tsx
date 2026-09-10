@@ -111,7 +111,7 @@ export default function Home() {
   return (
     <div style={{ display: "flex", height: "100vh", width: "100vw", overflow: "hidden", background: "var(--color-stone-canvas)" }}>
       {/* Left Sidebar */}
-      <aside style={{ width: 260, flexShrink: 0, height: "100vh" }}>
+      <aside className="sidebar-rail" style={{ width: 260, flexShrink: 0, height: "100vh" }}>
         <ThreadRail
           threads={threads}
           active={active}
@@ -126,6 +126,7 @@ export default function Home() {
       <div style={{ flex: 1, minWidth: 0, height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
         {/* Top Header (shadcn / Linear style) */}
         <header
+          className="top-header"
           style={{
             height: 44,
             display: "flex",
@@ -225,7 +226,7 @@ export default function Home() {
           </div>
 
           {/* Right Status */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div className="season-badge" style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span
               style={{
                 fontSize: 11,
@@ -246,9 +247,10 @@ export default function Home() {
           <CommandPalette onAsk={(q) => setPreset(q)} onTab={selectTab} />
 
           {tab === "chat" ? (
-            <div style={{ height: "100%", display: "flex", overflow: "hidden" }}>
+            <div className="chat-split" style={{ height: "100%", display: "flex", overflow: "hidden" }}>
               {/* Chat Stream (expands to 100% when no artifact, 52% when artifact active) */}
               <div
+                className="chat-pane"
                 style={{
                   flex: activeArtifact ? "0 0 52%" : "1 1 100%",
                   height: "100%",
@@ -273,6 +275,7 @@ export default function Home() {
               {/* Right Artifact Canvas Pane (Claude / Manus Style) */}
               {activeArtifact && (
                 <div
+                  className="artifact-pane"
                   style={{
                     flex: "0 0 48%",
                     height: "100%",

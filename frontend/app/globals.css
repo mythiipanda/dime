@@ -180,30 +180,33 @@ body {
   animation: dime-caret 900ms steps(2) infinite;
 }
 
-@keyframes dime-shimmer {
-  from {
-    background-position: -200px 0;
-  }
-  to {
-    background-position: 200px 0;
-  }
-}
-
-.shimmer {
-  background: linear-gradient(
-    90deg,
-    var(--color-stone-border) 25%,
-    var(--color-sky-wash) 50%,
-    var(--color-stone-border) 75%
-  );
-  background-size: 400px 100%;
-  animation: dime-shimmer 1400ms linear infinite;
-}
-
 .skeleton-row {
   height: 12px;
   border-radius: 4px;
   margin: 6px 0;
+  background: var(--color-stone-border);
+}
+
+@keyframes dime-pulse-soft {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.skeleton-pulse {
+  animation: dime-pulse-soft 1400ms ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-pulse,
+  .pulse-dot,
+  .caret {
+    animation: none;
+  }
 }
 
 @keyframes dime-pulse-dot {
@@ -213,4 +216,94 @@ body {
 
 .pulse-dot {
   animation: dime-pulse-dot 1200ms ease-in-out infinite;
+}
+
+/* Responsive: usable at 390px width. Layout components opt in via
+   class names; inline desktop styles win above the breakpoint. */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  max-width: 100%;
+}
+
+@media (max-width: 768px) {
+  /* Game log rows: two lines on narrow screens (summary line, then details). */
+  .gamelog-row {
+    flex-wrap: wrap !important;
+    row-gap: 2px !important;
+  }
+  .gamelog-details {
+    flex: 1 1 100% !important;
+    min-width: 0;
+  }
+
+  /* Unit rows: name on its own line, metrics right-aligned below. */
+  .unit-row {
+    flex-wrap: wrap !important;
+    row-gap: 2px !important;
+  }
+  .unit-name {
+    flex: 1 1 100% !important;
+    min-width: 0;
+  }
+  .unit-chip {
+    order: 2;
+  }
+  .unit-net {
+    order: 3;
+    margin-left: auto;
+  }
+  .unit-poss {
+    order: 4;
+  }
+
+  /* Streak rows: dates drop to their own line under the holder on narrow. */
+  .streak-head {
+    flex-wrap: wrap !important;
+  }
+  .streak-dates {
+    flex: 1 1 100% !important;
+    white-space: nowrap;
+  }
+
+  .sidebar-rail {
+    display: none !important;
+  }
+  .top-header {
+    height: auto !important;
+    flex-wrap: wrap !important;
+    row-gap: 8px !important;
+    padding-top: 8px !important;
+    padding-bottom: 8px !important;
+  }
+  .season-badge {
+    display: none !important;
+  }
+  .chat-split {
+    flex-direction: column !important;
+  }
+  .chat-pane {
+    flex: 1 1 auto !important;
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+  .artifact-pane {
+    flex: 1 1 auto !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    border-left: none !important;
+    border-top: 1px solid var(--color-stone-border) !important;
+  }
+  .prompt-bar {
+    left: 0 !important;
+  }
+  .prompt-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .card {
+    padding: 16px;
+  }
+  button {
+    min-height: 40px;
+  }
 }

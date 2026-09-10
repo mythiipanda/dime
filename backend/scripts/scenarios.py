@@ -58,6 +58,11 @@ def main() -> None:
     check("compare has both gamelogs",
           len(rows(a)) > 0 and len(rows(b)) > 0, "")
 
+    met = safe_invoke(tools.compare_metrics, {"a": luka_id, "b": sga_id})
+    check("metrics adjudication agrees or splits",
+          met.get("ok") and rows(met).get("agreement") in (
+              "agree", "split", "none"), str(rows(met).get("verdict"))[:160])
+
     okc = safe_invoke(tools.resolve_entity, {"query": "Oklahoma City Thunder"})
     okc_id = (rows(okc)["teams"] or [{}])[0].get("id", 0)
     check("resolve finds okc id", okc_id == 1610612760, str(okc_id))

@@ -394,3 +394,18 @@ def test_registry_has_trade_value():
 
     assert "get_trade_value" in _tools.TOOL_NAMES
     assert graph.tool_label("get_trade_value") == "Grading trade value"
+
+
+def test_compare_metrics_adjudicates():
+    from app.tools.player import compare_metrics
+
+    res = compare_metrics.invoke(
+        {"a": "Luka Doncic", "b": "Shai Gilgeous-Alexander",
+         "season": "2025-26"})
+    assert res["ok"]
+    rows = res["rows"]
+    assert len(rows["metrics"]) == 8
+    assert rows["agreement"] in ("agree", "split", "none")
+    assert "EPM" in [u["metric"] for u in rows["unavailable"]]
+    leaders = {m["leader"] for m in rows["metrics"]}
+    assert leaders <= {"a", "b", "tie", "na"}

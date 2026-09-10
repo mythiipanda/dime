@@ -302,12 +302,15 @@ async def _run_desk(
 SCOUT_BRIEF = (
     "You are the player scout. Report form, splits, and shot profile. "
     "Splits means home/away plus wins/losses plus last-10 plus monthly "
-    "PPG with FG_PCT from get_splits. "
+    "PPG with FG_PCT from get_splits. get_splits also carries "
+    "vs-top-10-defense and vs-rest rows for matchup context. "
     "Shot diet means zone eFG plus share from get_shot_zones. "
     "Two-player shot showdowns go to get_shot_compare. "
     "Clutch production goes to get_clutch. "
     "Playoff performance for a named player goes to get_playoff_intel. "
     "Usage, turnover rate, PIE, and rating ranks go to get_advanced. "
+    "Four Factors questions (eFG%, turnover rate, rebound rate, free "
+    "throw rate) go to get_four_factors with player and team ids. "
     "Career impact arcs go to get_raptor_history. "
     "IF the task asks for a player's impact and no RAPTOR, RAPM, or BPM "
     "row covers them, THEN call get_impact_estimate; its output is always "
@@ -380,7 +383,8 @@ LEAGUE_BRIEF = (
     "IF the task asks for a live in-game win probability, "
     "THEN call get_win_prob. "
     "IF the task mentions overpaid, underpaid, contract value, or "
-    "salary vs production, THEN call get_contract_value. "
+    "salary vs production, THEN call get_contract_value, passing "
+    "the player name when one is named. "
     "IF the task mentions draft, prospects, or rookies, "
     "THEN call get_draft_board. "
     "IF the task mentions star probability or draft model, "
@@ -408,6 +412,14 @@ LEAGUE_BRIEF = (
     "IF the task asks for a player's impact and no RAPTOR, RAPM, or BPM row "
     "covers them, THEN call get_impact_estimate; its output is always an "
     "estimate, so say so and never present it as a measured metric. "
+    "IF the task mentions today, last night, tonight, or movers, "
+    "THEN call get_today. "
+    "IF the task asks for a morning briefing, daily recap, or brief me, "
+    "THEN call get_morning_briefing. "
+    "IF the task mentions hustle, deflections, screen assists, or DPOY, "
+    "THEN call get_hustle_boards. "
+    "IF the task mentions clutch standings, quarter splits, or bench scoring, "
+    "THEN call get_standings_deep. "
     "IF the task names one stat category, THEN call get_leaders. "
     "Otherwise call get_standings."
 )
@@ -484,6 +496,7 @@ def _desk_spec(name: str, task: str):
                 " Answer via text_to_sql (you own that tool).", "")})
         return ("league", LEAGUE_BRIEF,
                 ["get_standings", "get_leaders", "get_injuries", "get_rapm",
+                 "get_standings_deep", "get_hustle_boards",
                  "get_impact_estimate",
                  "get_playoffs", "get_playoff_intel", "get_ratings", "get_clutch", "get_elo",
                  "get_elo_standings",
@@ -494,6 +507,7 @@ def _desk_spec(name: str, task: str):
                  "get_award_race",
                  "get_team_shot_zones",
                  "get_warehouse_freshness",
+                 "get_today", "get_morning_briefing",
                  "run_python", "text_to_sql"],
                 force)
     raise ValueError(f"unknown desk: {name}")

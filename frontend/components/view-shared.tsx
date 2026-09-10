@@ -57,12 +57,18 @@ export function Bar({
 export function Chip({
   children,
   tone = "neutral",
+  title,
+  className,
 }: {
   children: ReactNode;
   tone?: "neutral" | "accent";
+  title?: string;
+  className?: string;
 }) {
   return (
     <span
+      title={title}
+      className={className}
       style={{
         display: "inline-block",
         fontSize: 11,
@@ -126,6 +132,11 @@ const TITLE_TO_TOOL: Record<string, string> = {
   "Award race": "get_award_race",
   "Trade value": "get_trade_value",
   "Matchup preview": "get_matchup_preview",
+  Streaks: "get_streaks",
+  "Game Prediction": "get_game_prediction",
+  "Game Logs": "search_game_logs",
+  "Search Game Logs": "search_game_logs",
+  "Rotation Check": "get_rotation_check",
 };
 
 function forwardTitle(tool: string): string {

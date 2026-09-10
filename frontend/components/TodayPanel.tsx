@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { GameRow, TodayMover, TeamStreak, TodayRows, getToday } from "../lib/api";
 import EmptyState from "./EmptyState";
+import Skeleton from "./Skeleton";
 
 function GameChip({ g }: { g: GameRow }) {
   return (
@@ -144,12 +145,7 @@ export default function TodayPanel() {
   if (loading) {
     return (
       <div className="card">
-        <div style={{ fontSize: 12, color: "var(--color-ash-gray)", marginBottom: 8 }}>
-          Loading today...
-        </div>
-        {[90, 70, 55].map((w, d) => (
-          <div key={d} className="shimmer skeleton-row" style={{ width: `${w}%` }} />
-        ))}
+        <Skeleton lines={3} label="Loading today..." />
       </div>
     );
   }

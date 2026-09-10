@@ -9,12 +9,17 @@ import {
   ToolResult,
   emptyNode,
 } from "../lib/chat";
-import { RunInfo, getModels, getRuns, postChatStream } from "../lib/api";
+import { RunInfo, buildCitation, getModels, getRuns, postChatStream } from "../lib/api";
 import AnswerText from "./AnswerText";
 import { ArtifactItem } from "./ArtifactCanvas";
 import DataArtifacts from "./DataArtifacts";
 import ModelPicker from "./ModelPicker";
 import AgentActivity from "./AgentActivity";
+import Skeleton from "./Skeleton";
+
+function aiHasTables(ai: AiMessage): boolean {
+  return Object.values(ai.nodes).some((n) => n.tables.length > 0);
+}
 
 function applyEvent(ai: AiMessage, type: string, data: unknown): AiMessage {
   const d = data as Record<string, unknown>;
@@ -163,6 +168,49 @@ function CopyButton({ text }: { text: string }) {
       {done ? "Copied" : "Copy"}
     </button>
   );
+}
+
+function CiteButton({ text, meta }: {
+  text: string;
+  meta?: { source?: string; fetched_at?: string; season?: string };
+}) {
+  const [done, setDone] = useState(false);
+  return (
+    <button
+      className="pill-ghost"
+      style={{ fontSize: 12 }}
+      title="Copy answer with a citable source line"
+      onClick={() => {
+        const line = buildCitation({
+          source: meta?.source,
+          fetchedAt: meta?.fetched_at,
+          season: meta?.season,
+        });
+        navigator.clipboard
+          .writeText(`${text}\n\n${line}`)
+          .then(() => {
+            setDone(true);
+            setTimeout(() => setDone(false), 1500);
+          })
+          .catch(() => {});
+      }}
+    >
+      {done ? "Copied" : "Cite"}
+    </button>
+  );
+}
+
+function firstTableMeta(ai: AiMessage | undefined): {
+  source?: string; fetched_at?: string; season?: string;
+} | undefined {
+  if (!ai) return undefined;
+  for (const n of Object.values(ai.nodes)) {
+    const t = n?.tables?.[0] as {
+      meta?: { source?: string; fetched_at?: string; season?: string };
+    } | undefined;
+    if (t?.meta) return t.meta;
+  }
+  return undefined;
 }
 
 function LinkButton({ index }: { index: number }) {
@@ -364,8 +412,8 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
     <div style={{ display: "flex", flexDirection: "column", height: "100%", position: "relative" }}>
       {!messages.length ? (
         /* Empty State: Centered Hero Layout (ChatGPT style) */
-        <div
-          style={{
+          <div
+            style={{
             flex: 1,
             display: "flex",
             flexDirection: "column",
@@ -451,7 +499,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
           </div>
 
           {/* Curated 2x2 Prompt Cards (Minimalist Frontier AI style) */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10, width: "100%", marginTop: 24 }}>
+          <div className="prompt-grid" style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10, width: "100%", marginTop: 24 }}>
             {[
               {
                 title: "Compare Luka & Shai",
@@ -578,9 +626,14 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                       <span className="caret" aria-hidden />
                     )}
 
+                    {m.ai && !m.ai.done && !m.ai.text && !aiHasTables(m.ai) && (
+                      <Skeleton lines={3} label="Thinking..." />
+                    )}
+
                     {m.ai && (
                       <DataArtifacts
                         ai={m.ai}
+                        loading={!m.ai.done}
                         onAsk={sendText}
                         onOpenArtifact={onOpenArtifact}
                         activeArtifactId={activeArtifactId}
@@ -590,6 +643,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                     {m.text && (
                       <div style={{ display: "flex", gap: 8, marginTop: 12, alignItems: "center" }}>
                         <CopyButton text={m.text} />
+                        <CiteButton text={m.text} meta={firstTableMeta(m.ai)} />
                         <LinkButton index={i} />
                       </div>
                     )}
@@ -617,12 +671,13 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
 
           {/* Fixed Floating Prompt Bar in Active Chat */}
           <div
+            className="prompt-bar"
             style={{
               position: "fixed",
               bottom: 0,
               left: 260,
               right: 0,
-              background: "linear-gradient(to top, var(--color-stone-canvas) 85%, transparent)",
+              background: "var(--color-stone-canvas)",
               padding: "16px 20px 24px",
               zIndex: 40,
               boxSizing: "border-box",

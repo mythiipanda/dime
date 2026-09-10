@@ -4,19 +4,61 @@ import { useEffect, useState } from "react";
 import { AiMessage, NodeName } from "../lib/chat";
 import { ArtifactItem } from "./ArtifactCanvas";
 import AutoChart from "./AutoChart";
+import { buildCitation } from "../lib/api";
 import AwardRaceView, { parseAwardRace } from "./AwardRaceView";
 import CompareView from "./CompareView";
 import CompsView, { parseCompsRows } from "./CompsView";
 import CourtHeatmap from "./CourtHeatmap";
 import DataTable from "./DataTable";
+import Skeleton from "./Skeleton";
+import GameLogView, { parseGameLogs } from "./GameLogView";
+import HeadToHeadView, { parseHeadToHead } from "./HeadToHeadView";
+import ImpactView, { parseImpact } from "./ImpactView";
+import LineupMatrixView, { parseLineupMatrix } from "./LineupMatrixView";
+import LineupStatsView, { parseLineupStats } from "./LineupStatsView";
 import MatchupPreviewView, { parsePreview } from "./MatchupPreviewView";
+import PredictionView, { parsePrediction } from "./PredictionView";
 import RegressionView, { parseRegression } from "./RegressionView";
+import RestAdvantageView, { parseRestAdvantage } from "./RestAdvantageView";
+import RotationCheckView, { parseRotation } from "./RotationCheckView";
 import SplitsView, { parseSplits } from "./SplitsView";
+import StreaksView, { parseStreaks } from "./StreaksView";
 import TradeValueView, { parseTradeValue } from "./TradeValueView";
 import TrendChart, { isRaptorRows } from "./TrendChart";
 import { resolveToolName } from "./view-shared";
 import WowyCard from "./WowyCard";
 import ZoneBars, { isZoneRows } from "./ZoneBars";
+
+function CitePill({ title, meta }: {
+  title: string;
+  meta?: { source?: string; fetched_at?: string; season?: string };
+}) {
+  const [done, setDone] = useState(false);
+  return (
+    <button
+      type="button"
+      className="pill-ghost"
+      style={{ fontSize: 11, padding: "3px 10px" }}
+      title="Copy a citable source line for this table"
+      onClick={() => {
+        navigator.clipboard
+          .writeText(buildCitation({
+            title,
+            source: meta?.source,
+            fetchedAt: meta?.fetched_at,
+            season: meta?.season,
+          }))
+          .then(() => {
+            setDone(true);
+            setTimeout(() => setDone(false), 1500);
+          })
+          .catch(() => {});
+      }}
+    >
+      {done ? "Copied" : "Cite"}
+    </button>
+  );
+}
 
 function InlineChart({ rows }: { rows: unknown }) {
   const trend = isRaptorRows(rows);
@@ -52,11 +94,13 @@ const ORDER: NodeName[] = ["entry", "data_retrieval", "tools", "analytics", "pre
 
 export default function DataArtifacts({
   ai,
+  loading,
   onAsk,
   onOpenArtifact,
   activeArtifactId,
 }: {
   ai: AiMessage;
+  loading?: boolean;
   onAsk?: (query: string) => void;
   onOpenArtifact?: (artifact: ArtifactItem) => void;
   activeArtifactId?: string;
@@ -97,6 +141,7 @@ export default function DataArtifacts({
     return (
       name === "get_shot_compare" ||
       name === "get_shot_zones" ||
+      name === "get_team_shot_zones" ||
       name === "get_wowy" ||
       name === "get_compare" ||
       name === "get_preview" ||
@@ -107,7 +152,16 @@ export default function DataArtifacts({
       name === "get_trade_value" ||
       name === "get_matchup_splits" ||
       name === "get_regression_check" ||
-      name === "get_matchup_preview"
+      name === "get_matchup_preview" ||
+      name === "get_streaks" ||
+      name === "get_game_prediction" ||
+      name === "search_game_logs" ||
+      name === "get_rotation_check" ||
+      name === "get_lineup_stats" ||
+      name === "get_rest_advantage" ||
+      name === "get_lineup_matchup_matrix" ||
+      name === "get_head_to_head" ||
+      name === "get_impact_estimate"
     );
   });
   const fallback = preferred >= 0 ? preferred : tables.length - 1;
@@ -116,7 +170,7 @@ export default function DataArtifacts({
   const setPage = (n: number) => setPageState(Math.max(0, Math.min(n, tables.length - 1)));
 
   const toolName = toolOf(table ?? {});
-  const isShotTool = toolName === "get_shot_zones" || toolName === "get_shot_compare";
+  const isShotTool = toolName === "get_shot_zones" || toolName === "get_shot_compare" || toolName === "get_team_shot_zones";
   useEffect(() => {
     if (isShotTool) {
       setViewMode("court");
@@ -125,7 +179,24 @@ export default function DataArtifacts({
     }
   }, [toolName, isShotTool]);
 
-  if (!table) return null;
+  if (!table) {
+    if (loading && ai.text) {
+      return (
+        <div
+          style={{
+            border: "1px solid var(--color-stone-border)",
+            borderRadius: 12,
+            padding: "16px",
+            background: "var(--color-pure-white)",
+            marginTop: 10,
+          }}
+        >
+          <Skeleton lines={3} label="Loading data..." />
+        </div>
+      );
+    }
+    return null;
+  }
 
   const artifactId = `${toolName || table.tool || "dataset"}-${page}`;
   const isCanvasOpen = activeArtifactId === artifactId;
@@ -208,6 +279,7 @@ export default function DataArtifacts({
         </div>
 
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <CitePill title={rawTitle} meta={table.meta} />
           {onOpenArtifact && (
             <button
               type="button"
@@ -378,6 +450,26 @@ export default function DataArtifacts({
         <RegressionView rows={table.rows} />
       ) : toolName === "get_matchup_preview" && parsePreview(table.rows) ? (
         <MatchupPreviewView rows={table.rows} meta={table.meta} />
+      ) : toolName === "get_streaks" && parseStreaks(table.rows) ? (
+        <StreaksView rows={table.rows} meta={table.meta} />
+      ) : toolName === "get_game_prediction" &&
+        parsePrediction(table.rows ?? table) ? (
+        <PredictionView rows={table.rows ?? table} meta={table.meta} />
+      ) : toolName === "search_game_logs" && parseGameLogs(table.rows) ? (
+        <GameLogView rows={table.rows} meta={table.meta} />
+      ) : toolName === "get_rotation_check" && parseRotation(table.rows) ? (
+        <RotationCheckView rows={table.rows} meta={table.meta} />
+      ) : toolName === "get_lineup_stats" && parseLineupStats(table.rows) ? (
+        <LineupStatsView rows={table.rows} meta={table.meta} />
+      ) : toolName === "get_rest_advantage" && parseRestAdvantage(table.rows) ? (
+        <RestAdvantageView rows={table.rows} meta={table.meta} />
+      ) : toolName === "get_lineup_matchup_matrix" && parseLineupMatrix(table.rows) ? (
+        <LineupMatrixView rows={table.rows} meta={table.meta} />
+      ) : toolName === "get_head_to_head" && parseHeadToHead(table.rows) ? (
+        <HeadToHeadView rows={table.rows} meta={table.meta} />
+      ) : toolName === "get_impact_estimate" &&
+        parseImpact(table.rows ?? table) ? (
+        <ImpactView rows={table.rows ?? table} meta={table.meta} />
       ) : isShotTool && viewMode === "court" ? (
         <CourtHeatmap
           rows={table.rows}

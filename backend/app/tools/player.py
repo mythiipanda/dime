@@ -375,6 +375,154 @@ async def get_compare(
                      "sub_call_errors": sub_call_errors}}
 
 
+def _metric_row(metric: str, label: str, method: str, a: object, b: object,
+                na: str, nb: str, higher_wins: bool = True,
+                ) -> dict[str, Any]:
+    def _f(v: object) -> float | None:
+        try:
+            return float(v) if v is not None else None
+        except (TypeError, ValueError):
+            return None
+    fa, fb = _f(a), _f(b)
+    if fa is None or fb is None:
+        leader = "na"
+    elif abs(fa - fb) < 1e-9:
+        leader = "tie"
+    elif (fa > fb) == higher_wins:
+        leader = "a"
+    else:
+        leader = "b"
+    who = na if leader == "a" else nb if leader == "b" else ""
+    return {"metric": metric, "label": label, "method": method,
+            "a": fa, "b": fb, "leader": leader,
+            "note": f"{who} leads {label}." if who else f"{label} tied or missing."}
+
+
+@tool
+def compare_metrics(a: str | int, b: str | int, season: str = SEASON) -> dict[str, Any]:
+    """Cross-metric adjudication for two players. Referees impact metrics.
+
+    Pulls RAPTOR, RAPM-lite, on-off net, and PIE/TS from the warehouse and
+    reports which metrics agree. EPM, LEBRON, DARKO, and DRIP are listed
+    as unavailable, never invented.
+    """
+    try:
+        pida = coerce_player_id(a)
+        pidb = coerce_player_id(b)
+    except ValueError as exc:
+        return {"tool": "compare_metrics", "ok": False, "error": str(exc)[:160]}
+    from nba_api.stats.static import players as _static_p
+
+    names = {p.get("id"): p.get("full_name", "") for p in _static_p.get_players()}
+    import unicodedata as _ud
+
+    def _ascii(s: str) -> str:
+        return "".join(c for c in _ud.normalize("NFKD", s or "")
+                       if not _ud.combining(c))
+    na = _ascii(str(names.get(pida, a)))
+    nb = _ascii(str(names.get(pidb, b)))
+
+    def _one(pid: int, name: str) -> dict[str, Any]:
+        out: dict[str, Any] = {}
+        try:
+            r = _read_df(
+                "SELECT RAPTOR_OFFENSE, RAPTOR_DEFENSE, RAPTOR_TOTAL,"
+                " WAR_TOTAL, _season FROM silver_raptor_player"
+                " WHERE LOWER(PLAYER_NAME) = LOWER(?)"
+                " ORDER BY _season DESC LIMIT 1",
+                [name],
+            )
+            if r:
+                out.update({k: r[0].get(k) for k in
+                            ("RAPTOR_OFFENSE", "RAPTOR_DEFENSE",
+                             "RAPTOR_TOTAL", "WAR_TOTAL")})
+                out["raptor_season"] = r[0].get("_season")
+        except Exception:
+            pass
+        try:
+            r = _read_df(
+                "SELECT rapm FROM silver_rapm"
+                " WHERE _season = ? AND CAST(player_id AS VARCHAR)"
+                " = CAST(? AS VARCHAR) AND rapm IS NOT NULL LIMIT 1",
+                [season, str(pid)],
+            )
+            if r and r[0].get("rapm") is not None:
+                out["rapm"] = round(float(r[0]["rapm"]), 2)
+        except Exception:
+            pass
+        try:
+            r = _read_df(
+                'SELECT "On", "Off" FROM silver_on_off'
+                " WHERE _season = ? AND _entity = ? AND Stat = ? LIMIT 1",
+                [season, f"player:{pid}", "Pts per 100 Possessions"],
+            )
+            if r:
+                out["onoff"] = round(float(r[0].get("On") or 0)
+                                     - float(r[0].get("Off") or 0), 1)
+        except Exception:
+            pass
+        try:
+            r = _read_df(
+                "SELECT PIE, TS_PCT, USG_PCT FROM silver_advanced"
+                " WHERE _season = ? AND CAST(PLAYER_ID AS VARCHAR)"
+                " = CAST(? AS VARCHAR) LIMIT 1",
+                [season, str(pid)],
+            )
+            if r:
+                out.update({k: r[0].get(k) for k in ("PIE", "TS_PCT", "USG_PCT")})
+        except Exception:
+            pass
+        return out
+
+    ma, mb = _one(pida, na), _one(pidb, nb)
+    vintage = {s for s in (ma.get("raptor_season"), mb.get("raptor_season")) if s}
+    stale = sorted(vintage)[-1] if vintage and sorted(vintage)[-1] != season else ""
+    rows = [
+        _metric_row("raptor", "RAPTOR", "box plus on-off, FiveThirtyEight",
+                    ma.get("RAPTOR_TOTAL"), mb.get("RAPTOR_TOTAL"), na, nb),
+        _metric_row("raptor_o", "RAPTOR offense", "box plus on-off",
+                    ma.get("RAPTOR_OFFENSE"), mb.get("RAPTOR_OFFENSE"), na, nb),
+        _metric_row("raptor_d", "RAPTOR defense", "box plus on-off",
+                    ma.get("RAPTOR_DEFENSE"), mb.get("RAPTOR_DEFENSE"), na, nb),
+        _metric_row("war", "WAR", "wins above replacement",
+                    ma.get("WAR_TOTAL"), mb.get("WAR_TOTAL"), na, nb),
+        _metric_row("rapm", "RAPM-lite", "ridge on stint differentials",
+                    ma.get("rapm"), mb.get("rapm"), na, nb),
+        _metric_row("onoff", "on-off net", "lineup splits, noisy",
+                    ma.get("onoff"), mb.get("onoff"), na, nb),
+        _metric_row("pie", "PIE", "box-score share",
+                    ma.get("PIE"), mb.get("PIE"), na, nb),
+        _metric_row("ts", "true shooting", "scoring efficiency",
+                    ma.get("TS_PCT"), mb.get("TS_PCT"), na, nb),
+    ]
+    decided = [r for r in rows if r["leader"] in ("a", "b")]
+    va = sum(1 for r in decided if r["leader"] == "a")
+    vb = sum(1 for r in decided if r["leader"] == "b")
+    if not decided:
+        agreement, verdict = "none", "No shared metrics cover both players."
+    elif va == len(decided):
+        agreement, verdict = "agree", f"Every metric favors {na}."
+    elif vb == len(decided):
+        agreement, verdict = "agree", f"Every metric favors {nb}."
+    else:
+        split = [r["label"] for r in decided if r["leader"] == ("a" if va >= vb else "b")]
+        agreement, verdict = (
+            "split",
+            f"Metrics split {va}-{vb}. "
+            f"{na if va >= vb else nb} leads {', '.join(split[:3])}; "
+            "check RAPTOR defense vs on-off noise before concluding.")
+    if stale:
+        verdict += f" RAPTOR rows are {stale} vintage."
+    return {"tool": "compare_metrics", "ok": True,
+            "rows": {"a": na, "b": nb, "metrics": rows,
+                     "agreement": agreement, "verdict": verdict,
+                     "unavailable": [
+                         {"metric": m, "note": "not in warehouse, never estimated"}
+                         for m in ("EPM", "LEBRON", "DARKO", "DRIP")]},
+            "meta": {"source": "warehouse", "season": season,
+                     "raptor_season_a": ma.get("raptor_season"),
+                     "raptor_season_b": mb.get("raptor_season")}}
+
 @tool
 def get_player_intel(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
     """Game log plus shot sample for one player id. Warehouse first."""
@@ -929,16 +1077,60 @@ def get_shot_zones(player_id: str | int, season: str = SEASON) -> dict[str, Any]
     return {"tool": "get_shot_zones", "ok": True, "rows": rows, "meta": meta}
 
 
+def _opp_tier_splits(frame: Any, season: str) -> list[dict[str, Any]]:
+    """Split games vs top-10 defenses vs the rest. Opponent from MATCHUP."""
+    import polars as _pl
+
+    if "MATCHUP" not in frame.columns or "PTS" not in frame.columns:
+        return []
+    ranks = {str(r.get("TEAM_NAME", "")): r.get("DEF_RATING_RANK")
+             for r in _read_df(
+                 "SELECT TEAM_NAME, DEF_RATING_RANK FROM silver_team_ratings"
+                 " WHERE _season = ?", [season])}
+    if not ranks:
+        return []
+    from nba_api.stats.static import teams as _static
+
+    abbr = {t["abbreviation"]: t["full_name"] for t in _static.get_teams()}
+    tiers: dict[str, list[float]] = {"vs top-10 defense": [], "vs rest": []}
+    for g in frame.to_dicts():
+        try:
+            opp = str(g.get("MATCHUP") or "").split()[-1].upper()
+            rank = ranks.get(abbr.get(opp, ""), None)
+            pts = float(g.get("PTS") or 0)
+            tiers["vs top-10 defense" if rank is not None and rank <= 10
+                   else "vs rest"].append(pts)
+        except (TypeError, ValueError, IndexError):
+            continue
+    out = []
+    for label, pts in tiers.items():
+        if not pts:
+            continue
+        out.append({"split": label, "GP": len(pts),
+                    "PPG": round(sum(pts) / len(pts), 1)})
+    return out
+
+
 @tool
 def get_splits(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
     """Home/away plus monthly, wins/losses, last-10, starter splits from the game log."""
     player_id = coerce_player_id(player_id)
-    res = nba_stats.player_gamelog(player_id, season)
-    if not res.ok or res.frame.height == 0:
+    rows_data, warehouse_meta = _warehouse_or_live(
+        "silver_player_gamelogs", "_season = ? AND _entity = ?",
+        [season, f"player:{player_id}"],
+        lambda: nba_stats.player_gamelog(player_id, season), season,
+        entity=f"player:{player_id}", live_first=True,
+    )
+    if not rows_data:
         return {"tool": "get_splits", "ok": False,
-                "error": res.error or "empty upstream response"}
+                "error": warehouse_meta.get("error") or "empty upstream response"}
+    import polars as _pl
+
+    frame = _pl.DataFrame(rows_data)
+    meta_source = warehouse_meta.get("source", "warehouse")
+    meta_fetched = warehouse_meta.get("fetched_at", "")
     try:
-        g = res.frame.with_columns(
+        g = frame.with_columns(
             pl.col("MATCHUP").str.contains("@").alias("away")
         )
         cols = g.columns
@@ -1060,8 +1252,12 @@ def get_splits(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
         rows = rows[:12]
     except Exception as exc:
         return {"tool": "get_splits", "ok": False, "error": str(exc)[:160]}
+    try:
+        rows.extend(_opp_tier_splits(frame, season))
+    except Exception:
+        pass
     return {"tool": "get_splits", "ok": True, "rows": rows,
-            "meta": {"source": res.meta.source, "fetched_at": res.meta.fetched_at,
+            "meta": {"source": meta_source, "fetched_at": meta_fetched,
                      "rows": len(rows), "cached": False}}
 
 
@@ -1641,21 +1837,26 @@ def get_debate_card(a: str, b: str, season: str = SEASON,
     import html as _html
     from pathlib import Path as _Path
 
-    # Get comparison data — safe whether or not we're inside a running loop.
+    # Get comparison data
     import asyncio as _asyncio
-    import concurrent.futures as _cf
 
-    def _run(coro):
+    async def _fetch() -> dict:
+        res = await get_compare.ainvoke(
+            {"a": a, "b": b, "season": season})
+        return res if isinstance(res, dict) else {"ok": False}
+    try:
         try:
             _asyncio.get_running_loop()
         except RuntimeError:
-            return _asyncio.run(coro)
-        # Already inside a loop: run the coroutine in a fresh loop on a
-        # worker thread to avoid "event loop is already running".
-        with _cf.ThreadPoolExecutor(max_workers=1) as ex:
-            return ex.submit(_asyncio.run, coro).result()
+            comp = _asyncio.run(_fetch())
+        else:
+            import concurrent.futures as _cf
 
-    comp = _run(get_compare.ainvoke({"a": a, "b": b, "season": season}))
+            with _cf.ThreadPoolExecutor(max_workers=1) as _ex:
+                comp = _ex.submit(lambda: _asyncio.run(_fetch())).result(
+                    timeout=120)
+    except Exception as exc:
+        comp = {"ok": False, "error": str(exc)[:160]}
     if not comp.get("ok"):
         return {"tool": "get_debate_card", "ok": False,
                 "error": comp.get("error", "comparison failed")}
@@ -1743,8 +1944,8 @@ h1 {{ font-size: 22px; margin: 0; color: #1c1917; }}
 <div class="footer">Settle the debate with data</div>
 </div></body></html>"""
 
-    # Save to workspace
-    out_dir = _Path.home() / "workspace" / "dime" / "backend" / "data" / "cards"
+    # Save where the file endpoint serves: backend/data/cards (git-ignored).
+    out_dir = _Path(__file__).resolve().parent.parent.parent / "data" / "cards"
     out_dir.mkdir(parents=True, exist_ok=True)
     safe_a = "".join(c for c in name_a if c.isalnum())[:20]
     safe_b = "".join(c for c in name_b if c.isalnum())[:20]
@@ -1752,6 +1953,17 @@ h1 {{ font-size: 22px; margin: 0; color: #1c1917; }}
     out_path = out_dir / fname
     out_path.write_text(html_doc, encoding="utf-8")
 
+    def _line(p: dict) -> dict:
+        return {"name": _stat(p, "name", "PLAYER", "player"),
+                "team": _stat(p, "team", "TEAM", "team"),
+                "ppg": _stat(p, "ppg", "PTS"), "rpg": _stat(p, "rpg", "REB"),
+                "apg": _stat(p, "apg", "AST"),
+                "fg_pct": _stat(p, "fg_pct", "FG_PCT"),
+                "fg3_pct": _stat(p, "fg3_pct", "FG3_PCT"),
+                "ts_pct": _stat(p, "ts_pct", "TS_PCT"),
+                "usg_pct": _stat(p, "usg_pct", "USG_PCT")}
+
     return {"tool": "get_debate_card", "ok": True,
-            "rows": {"path": str(out_path), "players": [name_a, name_b]},
+            "rows": {"path": str(out_path), "players": [name_a, name_b],
+                     "stats": [_line(p) for p in players]},
             "meta": {"season": season, "format": "html"}}
