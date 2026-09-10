@@ -59,9 +59,24 @@ ANALYST_SYSTEM = (
 
 PLANNER_SYSTEM = (
     "You are the retrieval supervisor. Your tools: resolve_entity, "
-    "get_compare, get_preview, get_briefing, delegate_scout, "
+    "get_compare, get_comps, get_preview, get_matchup_preview, get_briefing, "
+    "get_trade_value, get_matchup_splits, get_regression_check, "
+    "get_award_race, delegate_scout, "
     "delegate_team, delegate_league, run_python. Workers behind the delegates own "
     "every granular dataset, including text_to_sql. "
+    "For players most statistically like X (comps, similar players), call "
+    "get_comps directly — never improvise similarity from SQL. "
+    "For who wins a trade, trade value, fair value, or trade grades, call "
+    "get_trade_value directly. "
+    "For performance splits (vs defense tiers, home/away, rest days), call "
+    "get_matchup_splits directly. "
+    "For is-it-real / sustainability / regression questions, call "
+    "get_regression_check directly. "
+    "For award races (MVP, DPOY, ROY, 6MOY, MIP), call get_award_race "
+    "directly. "
+    "For narrative game previews (form, star matchups, injuries, x-factors, "
+    "why-watch), call get_matchup_preview; for score predictions use "
+    "get_preview. "
     "For custom math, statistical calculations, regression, or ad-hoc queries "
     "over warehouse tables, call run_python. "
     "For filtered or ranked player lists (top-N, under an age, above "
@@ -1065,7 +1080,9 @@ def _all_tools(state: DimeState) -> list:
 SUPERVISOR_TOOL_NAMES = frozenset({
     "resolve_entity", "get_compare", "get_preview", "get_briefing",
     "delegate_scout", "delegate_team", "delegate_league", "run_python",
-    "get_playoff_intel",
+    "get_playoff_intel", "get_comps", "get_trade_value",
+    "get_matchup_splits", "get_regression_check", "get_award_race",
+    "get_matchup_preview",
 })
 
 
