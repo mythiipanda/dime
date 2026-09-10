@@ -1,5 +1,6 @@
 """Shared warehouse-first fetch helper plus registry constants."""
 
+from functools import lru_cache
 from typing import Any
 import polars as pl
 
@@ -97,6 +98,28 @@ def _norm_name(s: object) -> str:
         if not _ud.combining(c)).strip()
 
 
+_PLAYER_ROWS: list[dict] = []
+_PLAYER_NORMS: list[str] = []
+
+
+def _build_player_index() -> None:
+    try:
+        from nba_api.stats.static import players as _players_mod
+
+        rows = _players_mod.get_players()
+    except Exception:
+        return
+    try:
+        norms = [_norm_name(r.get("full_name", "")) for r in rows]
+    except Exception:
+        return
+    _PLAYER_ROWS.extend(rows)
+    _PLAYER_NORMS.extend(norms)
+
+
+_build_player_index()
+
+
 def score_player_candidates(raw: str) -> list[tuple[float, dict]]:
     """Scored general matcher over static players. No network.
 
@@ -138,9 +161,10 @@ def score_player_candidates(raw: str) -> list[tuple[float, dict]]:
                 _add(x["id"], 0.9 if exact else 0.7, x)
         except Exception:
             pass
-    all_p = players.get_players()
-    for x in all_p:
-        name = _norm_name(x.get("full_name", ""))
+    all_p = _PLAYER_ROWS if _PLAYER_ROWS else players.get_players()
+    use_cache = bool(_PLAYER_ROWS and len(_PLAYER_NORMS) == len(_PLAYER_ROWS))
+    for _i, x in enumerate(all_p):
+        name = _PLAYER_NORMS[_i] if use_cache else _norm_name(x.get("full_name", ""))
         if not name or x.get("id") in scored:
             continue
         ntokens = name.split()
@@ -163,29 +187,52 @@ def score_player_candidates(raw: str) -> list[tuple[float, dict]]:
         elif nq and "".join(t[0] for t in ntokens if t) == nq.replace(" ", ""):
             _add(x["id"], 0.5, x)
     if nq:
-        norms = [_norm_name(x.get("full_name", "")) for x in all_p]
+        norms = _PLAYER_NORMS if use_cache else [_norm_name(x.get("full_name", "")) for x in all_p]
         for match in _dl.get_close_matches(nq, norms, n=5, cutoff=0.6):
-            for x in all_p:
-                if _norm_name(x.get("full_name", "")) == match:
+            for _j, x in enumerate(all_p):
+                xn = _PLAYER_NORMS[_j] if use_cache else _norm_name(x.get("full_name", ""))
+                if xn == match:
                     ratio = _dl.SequenceMatcher(None, nq, match).ratio()
                     _add(x["id"], round(min(ratio, 0.89), 2), x)
                     break
     return sorted(scored.values(), key=lambda t: -t[0])
 
 
+def _resolve_player_id_uncached(key: str) -> int:
+    ranked = score_player_candidates(key)
+    if ranked and ranked[0][0] >= 0.8 and (
+            len(ranked) < 2 or ranked[0][0] - ranked[1][0] >= 0.05):
+        return int(ranked[0][1]["id"])
+    hints = ", ".join(r[1].get("full_name", "?") for r in ranked[:3])
+    raise ValueError(f"unknown player: {key}" + (f" (did you mean {hints}?)" if hints else ""))
+
+
+_coerce_player_id_cached = lru_cache(maxsize=2048)(_resolve_player_id_uncached)
+
+
 def coerce_player_id(value: object) -> int:
-    """Accept an id or a name. Names resolve through scored static matching."""
+    """Accept an id or a name. Names resolve through scored static matching.
+
+    Name results are cached process-local by stripped lowercase input.
+    """
     raw = str(value).strip()
     try:
         return int(raw)
     except (TypeError, ValueError):
         pass
-    ranked = score_player_candidates(raw)
-    if ranked and ranked[0][0] >= 0.8 and (
-            len(ranked) < 2 or ranked[0][0] - ranked[1][0] >= 0.05):
-        return int(ranked[0][1]["id"])
-    hints = ", ".join(r[1].get("full_name", "?") for r in ranked[:3])
-    raise ValueError(f"unknown player: {value}" + (f" (did you mean {hints}?)" if hints else ""))
+    key = raw.lower()
+    try:
+        return _coerce_player_id_cached(key)
+    except ValueError as exc:
+        msg = str(exc)
+        prefix = f"unknown player: {key}"
+        if msg.startswith(prefix):
+            msg = f"unknown player: {value}" + msg[len(prefix):]
+        raise ValueError(msg) from None
+
+
+coerce_player_id.cache_info = _coerce_player_id_cached.cache_info  # type: ignore[attr-defined]
+coerce_player_id.cache_clear = _coerce_player_id_cached.cache_clear  # type: ignore[attr-defined]
 
 
 def coerce_team_id(value: object) -> int:
