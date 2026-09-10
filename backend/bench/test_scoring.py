@@ -21,6 +21,13 @@ def test_substring_guard():
     assert numeric_acc({"games": 5}, "He played 25 games") == 0.0
 
 
+def test_sentence_final_period_matches():
+    assert numeric_acc(
+        {"percentile": 98.7}, "His percentile rank is 98.7.") == 1.0
+    assert numeric_acc(
+        {"percentile": 98.7}, "His percentile rank is 98.75.") == 0.0
+
+
 def test_groundedness_season_only():
     assert groundedness(
         "Shai leads in 2025-26", '{"_season": "2025-26"}') == 1.0

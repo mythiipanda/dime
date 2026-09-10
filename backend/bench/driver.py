@@ -8,7 +8,7 @@ from app.graph import run_chat, tool_label
 from app.tools import TOOL_NAMES
 
 from .schemas import GroundTruth, RunResult, Task
-from .scoring import groundedness, numeric_acc, tool_f1
+from .scoring import groundedness, name_recall, numeric_acc, tool_f1
 
 _DELEGATES = ["delegate_scout", "delegate_team", "delegate_league"]
 
@@ -82,9 +82,11 @@ async def run_task(task: Task, truth: GroundTruth,
                 [c["name"] for c in tool_calls], task.gold_tool_families),
             "numeric_acc": numeric_acc(truth.facts, answer),
             "groundedness": groundedness(answer, payloads),
+            "name_recall": name_recall(truth.facts, answer),
         }
     else:
-        scores = {"tool_f1": 0.0, "numeric_acc": 0.0, "groundedness": 0.0}
+        scores = {"tool_f1": 0.0, "numeric_acc": 0.0, "groundedness": 0.0,
+                  "name_recall": 0.0}
     return RunResult(
         task_id=task.task_id, ok=ok, error=error, tool_calls=tool_calls,
         final_answer=answer, latency_ms=latency_ms,
@@ -102,7 +104,7 @@ async def run_all(pairs: list[tuple[Task, GroundTruth]],
                 error=str(truth.facts.get("__skipped__", "skipped") or
                           "skipped")[:200],
                 scores={"tool_f1": 0.0, "numeric_acc": 0.0,
-                        "groundedness": 0.0},
+                        "groundedness": 0.0, "name_recall": 0.0},
             ))
             continue
         results.append(await run_task(task, truth, model))
@@ -128,21 +130,24 @@ def summarize(results: list[RunResult]) -> tuple[str, dict]:
     lines = ["# DimeBench report", "",
              f"tasks: {len(results)} ok: {len(scored)} "
              f"failed: {len(failed)} skipped: {len(skipped)}", "",
-             "| family | n | ok | tool_f1 | numeric_acc | groundedness | "
-             "lat_p50 | lat_p95 |",
-             "| --- | --- | --- | --- | --- | --- | --- | --- |"]
+              "| family | n | ok | tool_f1 | numeric_acc | groundedness | "
+              "name_recall | lat_p50 | lat_p95 | ttft_p50 | ttft_p95 |",
+              "| --- | --- | --- | --- | --- | --- | --- | --- | --- | "
+              "--- | --- |"]
     for family in sorted(by_family):
         rows = by_family[family]
         ok_rows = [r for r in rows if r.ok]
         lat = [r.latency_ms for r in ok_rows]
+        ttft = [r.ttft_ms for r in ok_rows]
         mean = lambda k: (round(sum(r.scores.get(k, 0.0)
                                     for r in ok_rows) / len(ok_rows), 3)
                           if ok_rows else 0.0)
         lines.append(
             f"| {family} | {len(rows)} | {len(ok_rows)} | "
             f"{mean('tool_f1')} | {mean('numeric_acc')} | "
-            f"{mean('groundedness')} | "
-            f"{int(_pct(lat, 50))} | {int(_pct(lat, 95))} |")
+            f"{mean('groundedness')} | {mean('name_recall')} | "
+            f"{int(_pct(lat, 50))} | {int(_pct(lat, 95))} | "
+            f"{int(_pct(ttft, 50))} | {int(_pct(ttft, 95))} |")
     stats = {
         "tasks": len(results), "ok": len(scored),
         "failed": len(failed), "skipped": len(skipped),

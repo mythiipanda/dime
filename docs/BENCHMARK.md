@@ -31,23 +31,54 @@ the season moves. That drift is signal, not noise.
    context, asks who leads the league in a random stat category
    (PTS/REB/AST/STL/BLK). Gold: `get_leaders`.
 2. `compare` — two random players from the top 80 of a random category,
-   head-to-head on that stat. Gold: `get_compare`.
-3. `chain` — two hops. Samples a random player with cached gamelogs, takes
-   his latest game, then asks for that game's boxscore top scorer. Gold:
+   head-to-head on that stat. Ground truth is per-game from cached
+   gamelogs, `round(sum / gp, 1)`, exactly what `get_compare` reports
+   (not season totals). Gold: `get_compare`.
+3. `chain` — two hops. Finds players whose latest gamelog game has a
+   cached boxscore, takes his latest game, then asks for that game's
+   boxscore top scorer. Gold:
    `get_player_intel`/`get_last_x` plus `get_boxscore`.
 4. `adjudicate` — one player present in both leaders and on/off tables.
    Asks whether percentile rank and on/off net agree. Gold:
    `get_percentiles`/`get_on_off`.
-5. `trade` — two random players on different teams with real salaries from
-   the salary sheet. Asks if a one-for-one swap is legal. Ground truth
-   recomputes the 125pct-plus-250k rule from raw salary rows, below-apron
-   form only, no apron aggregation logic. Gold: `get_trade_check`.
+5. `trade` — two random players on different salary-sheet teams with
+   real salaries. Asks if a one-for-one swap is legal. Ground truth
+   recomputes the tool's salary-matching rule from raw salary rows:
+   125pct-plus-250k below the first apron ($209,661,000 payroll),
+   100pct above it. A 1-for-1 never trips the second-apron
+   aggregation ban. Teams come from the salary sheet so the tool's
+   payroll matching accepts them. Gold: `get_trade_check`.
 6. `brief` — slate briefing for a random cached scoreboard date. Ground
    truth is game count plus team abbreviations. Scores mainly coverage
-   and latency. Gold: `get_today`/`get_morning_briefing`.
+   and latency. Gold: `get_games_on_date` (the date-slate tool;
+   `get_today`/`get_morning_briefing` only cover the current day and
+   cannot answer arbitrary cached dates).
 7. `finder` — random team streak question from history tables. If no
    history tables exist, the task is skipped gracefully (`ok=False`,
    `error=skipped: ...`) instead of failing. Gold: `get_finder`.
+8. `comps` — nearest statistical neighbors of a top-50 scorer (400+
+   minutes) over the same 18-feature pipeline as `get_comps`: 8 counting
+   stats per-36, FG3%/FT%, 8 advanced; z-scored with mean-imputation for
+   missing values, zero-variance features dropped. Similarity is
+   round(100/(1+dist/20), 1). Ground truth is verified to match the
+   tool exactly. Gold: `get_comps`.
+9. `splits` — last-15 PPG split by top-10 defenses (lowest DEF_RATING)
+   for a player with 20+ gamelogs. Gold: `get_matchup_splits`.
+10. `trade_value` — which side wins a one-for-one trade on production
+    value vs salary. Ground truth replicates `get_trade_value`'s value
+    model exactly: production_score = round(sum(per-game stat *
+    weight), 2) with weights PTS 1.0 / REB 1.2 / AST 1.5 / STL 2.0 /
+    BLK 2.0 / TOV -1.5; dollars-per-point over qualified (GP>=20,
+    salaried) players; est_market_value_m = round(score * dpp / 1e6, 1);
+    winner by side delta >= 0.5. Players are sampled from the
+    salary-sheet roster so the tool's payroll matching accepts them.
+    Ground truth is verified to match the tool exactly.
+    Gold: `get_trade_value`.
+11. `awards` — top-3 MVP candidates by the same z-score model as
+    `get_award_race`: components PPG .35 / team win% .20 / net rating
+    .15 / APG .15 / RPG .15 over qualified candidates (GP>=20,
+    MIN>=500); candidate score = round(total, 2). Ground truth is
+    verified to match the tool exactly. Gold: `get_award_race`.
 
 ## Scoring formulas
 
@@ -65,7 +96,11 @@ the season moves. That drift is signal, not noise.
   The entity last-name fallback is removed: a name alone never counts
   as a numeric hit. Season-shaped tokens (e.g. 2025-26) are stripped
   before matching. Fraction matched over numeric facts. Tasks with no
-  numeric facts score 1.
+   numeric facts score 1.
+- `name_recall` — name-based families (comps, trade_value, awards)
+  score expected-name coverage: fraction of `names` values whose last
+  token appears in the answer, case-insensitive on word boundaries.
+  Families without a `names` dict score 1.
 - `groundedness` — season-shaped tokens are excluded from numeric
   extraction on both answer and payload sides. Remaining answer numbers
   match payload numbers after comma/percent normalization, plus a
@@ -77,7 +112,7 @@ the season moves. That drift is signal, not noise.
 - `latency_ms` — wall clock per task. `ttft_ms` — time to the first tool
   call event; falls back to `latency_ms` when the agent calls no tools.
 
-Failed tasks (`ok=False`) score 0 on all three metrics.
+Failed tasks (`ok=False`) score 0 on all four metrics.
 
 ## How to run
 
@@ -96,13 +131,13 @@ provider).
 
 Output goes to `backend/bench/results/`: `bench_<timestamp>.jsonl` (one
 RunResult per line) and `bench_<timestamp>.md` (per-family mean scores,
-latency p50/p95, ok/failed/skipped counts). The markdown is also printed
+latency p50/p95, ttft p50/p95, ok/failed/skipped counts). The markdown is also printed
 to stdout.
 
 ## How to read the report
 
 Each row is one family: task count, ok count, mean `tool_f1`,
-`numeric_acc`, `groundedness`, and latency p50/p95 over ok tasks.
+`numeric_acc`, `groundedness`, `name_recall`, and latency p50/p95 over ok tasks.
 `tool_f1` below 1 usually means the supervisor routed through a delegate
 (`delegate_scout` counts as `chain`, `delegate_team` as `brief`) rather
 than calling the gold tool directly — check the `tool_calls` column in
@@ -115,9 +150,9 @@ environment gaps, not agent failures.
 
 - The supervisor speaks mostly through delegates, so family attribution
   for delegate calls is approximate by construction.
-- Trade ground truth uses the simplified below-apron rule and ignores
-  apron state, aggregation bans, and exceptions — same simplification as
-  the tool, recomputed independently from raw rows.
+- Trade ground truth recomputes the tool's salary-matching rule from raw
+  rows, including the first-apron 100pct form and ignoring exceptions —
+  same rule as the tool. A 1-for-1 never trips the aggregation ban.
 - Scores depend on the warehouse snapshot and the live LLM provider, so
   cross-run comparison needs the same seed plus a fresh warehouse.
 - The benchmark issues real LLM calls and can take minutes; it never

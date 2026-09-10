@@ -30,15 +30,17 @@ TOOL_FAMILY: dict[str, str | None] = {
     "get_compare": "compare",
     "get_debate_card": "compare",
     "get_shot_compare": "compare",
-    "get_comps": "compare",
+    "get_comps": "comps",
     "get_player_intel": "chain",
     "get_last_x": "chain",
     "get_trend": "chain",
     "get_boxscore": "chain",
     "get_team_hub": "chain",
-    "get_games_on_date": "chain",
+    "get_games_on_date": "brief",
     "get_playoff_intel": "chain",
     "get_splits": "chain",
+    "get_matchup_splits": "splits",
+    "get_regression_check": "splits",
     "get_shot_zones": "chain",
     "get_lineups": "chain",
     "get_rotation_check": "chain",
@@ -53,13 +55,15 @@ TOOL_FAMILY: dict[str, str | None] = {
     "get_rapm": "adjudicate",
     "get_raptor_history": "adjudicate",
     "get_trade_check": "trade",
+    "get_trade_value": "trade_value",
     "get_cap_ledger": "trade",
-    "get_contract_value": "trade",
+    "get_contract_value": "trade_value",
     "get_today": "brief",
     "get_morning_briefing": "brief",
     "get_briefing": "brief",
     "delegate_team": "brief",
     "get_preview": "brief",
+    "get_matchup_preview": "brief",
     "get_recap": "brief",
     "get_win_prob": "brief",
     "get_playoff_sim": "brief",
@@ -67,6 +71,7 @@ TOOL_FAMILY: dict[str, str | None] = {
     "get_team_splits": "brief",
     "get_finder": "finder",
     "get_rest": "finder",
+    "get_award_race": "awards",
     "resolve_entity": None,
     "search_nba": None,
     "run_python": None,
@@ -93,6 +98,25 @@ def tool_f1(observed: list[str], gold: list[str]) -> float:
     return round(2 * precision * recall / (precision + recall), 3)
 
 
+def name_recall(facts: dict, answer: str) -> float:
+    names = facts.get("names") if isinstance(facts, dict) else None
+    if not isinstance(names, dict) or not names:
+        return 1.0
+    text = answer or ""
+    hits = total = 0
+    for expected in names.values():
+        toks = str(expected or "").split()
+        if not toks:
+            continue
+        total += 1
+        if re.search(r"\b" + re.escape(toks[-1]) + r"\b", text,
+                     re.IGNORECASE):
+            hits += 1
+    if not total:
+        return 1.0
+    return round(hits / total, 3)
+
+
 def _numeric_forms(value: float | int) -> set[str]:
     forms = set()
     try:
@@ -113,7 +137,10 @@ def numeric_acc(facts: dict, answer: str) -> float:
     text = _strip_seasons(answer or "")
     hits = 0
     for value in nums.values():
-        if any(f and re.search(r"(?<![\d.,])" + re.escape(f) + r"(?![\d.])", text)
+        # Trailing guard blocks a following digit or a decimal continuation
+        # (".5" in "98.75") but allows a sentence-final period ("98.7.").
+        if any(f and re.search(r"(?<![\d.,])" + re.escape(f) + r"(?!\d|\.\d)",
+                              text)
                for f in _numeric_forms(value)):
             hits += 1
     return round(hits / len(nums), 3)
