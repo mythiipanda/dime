@@ -134,6 +134,7 @@ TOOL_LABELS = {
     "text_to_sql": "Querying the warehouse",
     "get_playoff_intel": "Pulling playoff logs",
     "get_trade_check": "Checking trade math",
+    "get_trade_value": "Grading trade value",
 }
 
 

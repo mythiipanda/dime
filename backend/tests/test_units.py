@@ -290,3 +290,56 @@ def test_splits_regression_smoke():
     assert res["rows"]["verdict"] in (
         "too early", "sustainable", "likely regresses")
     assert res["rows"]["career"]["available"] is False
+
+
+def test_trade_value_unknown_player():
+    from app.tools.league import get_trade_value
+
+    res = get_trade_value.invoke({"team_a": "LAL", "players_a": "Austin Reaves",
+                                  "team_b": "BKN",
+                                  "players_b": "Not A Realplayer"})
+    assert res["ok"] is False
+    assert "Not A Realplayer" in res["error"]
+
+
+def test_trade_value_empty_teams():
+    from app.tools.league import get_trade_value
+
+    res = get_trade_value.invoke({})
+    assert res["ok"] is False
+
+
+def test_trade_value_reaves_porter():
+    from app.tools.league import get_trade_value
+
+    try:
+        res = get_trade_value.invoke(
+            {"team_a": "LAL", "players_a": "Austin Reaves",
+             "picks_a": "2029 FRP", "team_b": "BKN",
+             "players_b": "Michael Porter Jr."})
+    except Exception:
+        import pytest
+
+        pytest.skip("warehouse unavailable")
+        return
+    if res["ok"] is False:
+        import pytest
+
+        pytest.skip(f"warehouse tables absent: {res.get('error')}")
+    verdict = res["rows"]["verdict"]
+    assert verdict["winner"] in {"LAL", "BKN", "even"}
+    assert set(verdict["grades"]) == {"LAL", "BKN"}
+    assert set(verdict["grades"].values()) <= {
+        "A", "A-", "B+", "B", "B-", "C+", "C", "D", "F"}
+    sides = (res["rows"]["team_a"], res["rows"]["team_b"])
+    assert all(isinstance(s["side_total_m"], (int, float)) for s in sides)
+    assert verdict["text"].count(".") >= 3
+    picks = res["rows"]["team_a"]["picks"]
+    assert picks and picks[0]["est_value_m"] > 0
+
+
+def test_registry_has_trade_value():
+    from app import tools as _tools
+
+    assert "get_trade_value" in _tools.TOOL_NAMES
+    assert graph.tool_label("get_trade_value") == "Grading trade value"

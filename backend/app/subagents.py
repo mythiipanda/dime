@@ -30,6 +30,7 @@ def _desk_tool_label(name: str) -> str:
         "text_to_sql": "Warehouse query",
         "get_playoff_intel": "Pulling playoff logs",
         "get_trade_check": "Checking trade math",
+        "get_trade_value": "Grading trade value",
     }
     if not name:
         return "Checking data"

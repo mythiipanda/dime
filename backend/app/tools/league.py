@@ -783,6 +783,61 @@ def get_cap_ledger(team: str = "") -> dict[str, Any]:
                      **{k: v for k, v in CAP.items()}}}
 
 
+def _match_trade_players(team: str, names: str) -> tuple[int, list[str], list[str]]:
+    """Match comma-separated names against team's payroll roster.
+
+    Returns (salary_total, matched_display_names, unknown_entries).
+    """
+    import difflib as _dl
+
+    total, roster = _payroll(team)
+    want = [n.strip() for n in names.split(",") if n.strip()]
+    lows = [p["player"].lower() for p in roster]
+    by_low = {p["player"].lower(): p for p in roster}
+    disp = {p["player"].lower(): p["player"] for p in roster}
+    matched: list[str] = []
+    unknown: list[str] = []
+    total_out = 0
+    for orig in want:
+        w = orig.lower()
+        hit = next((p for p in roster if w in p["player"].lower()), None)
+        if hit is None:
+            fb = _dl.get_close_matches(w, lows, n=1, cutoff=0.8)
+            if fb and _dl.SequenceMatcher(
+                    None, w.split()[0], fb[0].split()[0]).ratio() >= 0.8:
+                hit = by_low[fb[0]]
+        if hit:
+            matched.append(hit["player"])
+            total_out += hit["salary"] or 0
+        else:
+            stale = _resolve_stale_trade_player(orig, team)
+            if stale:
+                matched.append(stale[0])
+                total_out += stale[1]
+            else:
+                sug = [disp[s] for s in _dl.get_close_matches(w, lows, n=2, cutoff=0.6)]
+                unknown.append(f"{orig} (suggestions: {', '.join(sug)})" if sug else orig)
+    return total_out, matched, unknown
+
+
+PICK_VALUE_M: dict[int, float] = {
+    1: 45.0, 2: 38.0, 3: 32.0, 4: 28.0, 5: 25.0,
+    6: 18.0, 7: 18.0, 8: 18.0, 9: 18.0, 10: 18.0,
+    11: 12.0, 12: 12.0, 13: 12.0, 14: 12.0,
+    15: 8.0, 16: 8.0, 17: 8.0, 18: 8.0, 19: 8.0, 20: 8.0,
+    21: 5.0, 22: 5.0, 23: 5.0, 24: 5.0, 25: 5.0,
+    26: 5.0, 27: 5.0, 28: 5.0, 29: 5.0, 30: 5.0,
+}
+
+
+def _pick_value_for_slot(slot: int, is_frp: bool) -> float:
+    if is_frp:
+        return PICK_VALUE_M.get(max(1, min(slot, 30)), 5.0)
+    if 31 <= slot <= 40:
+        return 2.5
+    return 1.0
+
+
 @tool
 def get_trade_check(
     team_a: str = "", players_a: str = "", team_b: str = "", players_b: str = "",
@@ -793,44 +848,12 @@ def get_trade_check(
     apron, 100 percent above it, no aggregation above the second apron.
     Picks and exceptions stay out of v1.
     """
-    import difflib as _dl
-    import math as _math
-
-    def salaries(team: str, names: str) -> tuple[int, list[str], list[str]]:
-        total, roster = _payroll(team)
-        want = [n.strip() for n in names.split(",") if n.strip()]
-        lows = [p["player"].lower() for p in roster]
-        by_low = {p["player"].lower(): p for p in roster}
-        disp = {p["player"].lower(): p["player"] for p in roster}
-        matched: list[str] = []
-        unknown: list[str] = []
-        total_out = 0
-        for orig in want:
-            w = orig.lower()
-            hit = next((p for p in roster if w in p["player"].lower()), None)
-            if hit is None:
-                fb = _dl.get_close_matches(w, lows, n=1, cutoff=0.8)
-                if fb and _dl.SequenceMatcher(
-                        None, w.split()[0], fb[0].split()[0]).ratio() >= 0.8:
-                    hit = by_low[fb[0]]
-            if hit:
-                matched.append(hit["player"])
-                total_out += hit["salary"] or 0
-            else:
-                stale = _resolve_stale_trade_player(orig, team)
-                if stale:
-                    matched.append(stale[0])
-                    total_out += stale[1]
-                else:
-                    sug = [disp[s] for s in _dl.get_close_matches(w, lows, n=2, cutoff=0.6)]
-                    unknown.append(f"{orig} (suggestions: {', '.join(sug)})" if sug else orig)
-        return total_out, matched, unknown
 
     if not team_a or not team_b:
         return {"tool": "get_trade_check", "ok": False,
                 "error": "two teams needed"}
-    out_a, names_a, unk_a = salaries(team_a, players_a)
-    out_b, names_b, unk_b = salaries(team_b, players_b)
+    out_a, names_a, unk_a = _match_trade_players(team_a, players_a)
+    out_b, names_b, unk_b = _match_trade_players(team_b, players_b)
     if unk_a or unk_b:
         parts = []
         if unk_a:
@@ -913,6 +936,380 @@ def get_trade_check(
                      "Confirm with a cap specialist."},
             "meta": {"source": _payroll_source(), "rules": "v1-simplified",
                      "salary_date": _salary_date()}}
+
+
+@tool
+def get_trade_value(
+    team_a: str = "", players_a: str = "", team_b: str = "",
+    players_b: str = "", picks_a: str = "", picks_b: str = "",
+) -> dict[str, Any]:
+    """Trade value grade: estimated production value vs salary per side, plus picks.
+
+    Reasoning layer on top of get_trade_check (which covers cap legality).
+    All dollar figures are rough estimates from 2025-26 production versus
+    2026-27 salaries. Picks like "2029 FRP" or "2030 FRP top-4 protected".
+    """
+    import re as _re
+    import unicodedata as _ud
+
+    from .. import store as _store
+
+    PROD_SEASON = "2025-26"
+    SAL_SEASON = "2026-27"
+    DISCLAIMER = ("All dollar figures are rough estimates from 2025-26 "
+                  "production vs 2026-27 salary data. Not cap-legality advice; "
+                  "pair with get_trade_check.")
+
+    def _norm(s: object) -> str:
+        return "".join(c for c in _ud.normalize("NFKD", str(s or ""))
+                        if not _ud.combining(c)).strip().lower()
+
+    if not team_a or not team_b:
+        return {"tool": "get_trade_value", "ok": False,
+                "error": "two teams needed"}
+    _, names_a, unk_a = _match_trade_players(team_a, players_a)
+    _, names_b, unk_b = _match_trade_players(team_b, players_b)
+    if unk_a or unk_b:
+        parts = []
+        if unk_a:
+            parts.append(f"{team_a.upper()}: {'; '.join(unk_a)}")
+        if unk_b:
+            parts.append(f"{team_b.upper()}: {'; '.join(unk_b)}")
+        return {"tool": "get_trade_value", "ok": False,
+                "error": "unknown players: " + " | ".join(parts)}
+
+    con = _store.connect()
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        cols = {t: {r[1] for r in con.execute(f"PRAGMA table_info({t})").fetchall()}
+                for t in tables if t.startswith("silver_")}
+
+        def _need(table: str, required: list[str]) -> list[str]:
+            return [c for c in required if c not in cols.get(table, set())]
+
+        data_gaps: list[str] = []
+        if "silver_leaders_pts" not in tables:
+            return {"tool": "get_trade_value", "ok": False,
+                    "error": "cannot value players: silver_leaders_pts missing "
+                             "from warehouse"}
+        leaders_missing = _need("silver_leaders_pts",
+                                ["PLAYER", "GP", "PTS", "REB", "AST", "STL",
+                                 "BLK", "TOV", "FG3M", "FG3_PCT"])
+        if leaders_missing:
+            data_gaps.append(
+                "silver_leaders_pts missing columns skipped at zero weight: "
+                + ", ".join(leaders_missing))
+        weights = {"PTS": 1.0, "REB": 1.2, "AST": 1.5,
+                   "STL": 2.0, "BLK": 2.0, "TOV": -1.5}
+        use_w = {c: (0.0 if c in leaders_missing else w)
+                 for c, w in weights.items()}
+
+        leaders: dict[str, dict] = {}
+        for r in con.execute(
+                "SELECT PLAYER, TEAM, GP, PTS, REB, AST, STL, BLK, TOV,"
+                " FG3M, FG3_PCT FROM silver_leaders_pts WHERE _season = ?",
+                [PROD_SEASON]).fetchall():
+            leaders.setdefault(_norm(r[0]), {
+                "name": r[0], "team": r[1], "gp": r[2] or 0,
+                "tot": {"PTS": r[3] or 0, "REB": r[4] or 0, "AST": r[5] or 0,
+                        "STL": r[6] or 0, "BLK": r[7] or 0, "TOV": r[8] or 0},
+                "fg3m": r[9] or 0, "fg3_pct": r[10]})
+
+        adv: dict[str, dict] = {}
+        if "silver_advanced" not in tables:
+            data_gaps.append("silver_advanced missing: age, TS_PCT, USG_PCT "
+                             "and NET_RATING unavailable")
+        else:
+            adv_missing = _need("silver_advanced",
+                                ["PLAYER_NAME", "AGE", "TS_PCT", "USG_PCT"])
+            if adv_missing:
+                data_gaps.append("silver_advanced missing columns: "
+                                 + ", ".join(adv_missing))
+            for r in con.execute(
+                    "SELECT PLAYER_NAME, AGE, TS_PCT, USG_PCT FROM "
+                    "silver_advanced WHERE _season = ?", [PROD_SEASON]).fetchall():
+                adv.setdefault(_norm(r[0]), {"age": r[1], "ts": r[2],
+                                             "usg": r[3]})
+
+        salaries: dict[str, int] = {}
+        if "silver_salaries" in tables:
+            scols = cols.get("silver_salaries", set())
+            scol = ("SALARY_2025_26" if "SALARY_2025_26" in scols
+                    else next((c for c in scols if "SALARY" in c.upper()), ""))
+            if scol:
+                q = (f"SELECT PLAYER_NAME, {scol} FROM silver_salaries "
+                     "WHERE _season = ?" if "_season" in scols
+                     else f"SELECT PLAYER_NAME, {scol} FROM silver_salaries")
+                params = [SAL_SEASON] if "_season" in scols else []
+                for r in con.execute(q, params).fetchall():
+                    if r[1] is not None:
+                        salaries.setdefault(_norm(r[0]), int(r[1]))
+        if "silver_cap_players" in tables:
+            ccols = cols.get("silver_cap_players", set())
+            q = ("SELECT player, salary FROM silver_cap_players "
+                 "WHERE _season = ?" if "_season" in ccols
+                 else "SELECT player, salary FROM silver_cap_players")
+            params = [SAL_SEASON] if "_season" in ccols else []
+            for r in con.execute(q, params).fetchall():
+                if r[1] is not None:
+                    salaries.setdefault(_norm(r[0]), int(r[1]))
+        if not salaries:
+            data_gaps.append("no 2026-27 salary rows: residuals unavailable")
+
+        ratings: dict[str, dict] = {}
+        if "silver_team_ratings" not in tables:
+            data_gaps.append("silver_team_ratings missing: pick slots assumed "
+                             "mid-first and team needs unavailable")
+        else:
+            rank_cols = ["OFF_RATING_RANK", "DEF_RATING_RANK",
+                         "NET_RATING_RANK", "TS_PCT_RANK", "AST_PCT_RANK",
+                         "REB_PCT_RANK"]
+            have_ranks = [c for c in rank_cols
+                          if c in cols.get("silver_team_ratings", set())]
+            if len(have_ranks) < len(rank_cols):
+                data_gaps.append("silver_team_ratings missing columns: " + ", ".join(
+                    c for c in rank_cols if c not in have_ranks))
+            sel = ", ".join(["TEAM_ID", "TEAM_NAME"] + have_ranks)
+            id_to_abbr = {}
+            try:
+                from nba_api.stats.static import teams as _static
+
+                id_to_abbr = {t["id"]: t["abbreviation"]
+                              for t in _static.get_teams()}
+            except Exception:
+                pass
+            for r in con.execute(
+                    f"SELECT {sel} FROM silver_team_ratings WHERE _season = ?",
+                    [PROD_SEASON]).fetchall():
+                row = dict(zip(["TEAM_ID", "TEAM_NAME"] + have_ranks, r))
+                abbr = id_to_abbr.get(row["TEAM_ID"], "")
+                if abbr:
+                    ratings[str(abbr).upper()] = row
+    finally:
+        con.close()
+
+    def _score(tot: dict, gp: int) -> float:
+        return sum(tot[c] / gp * use_w[c] for c in use_w)
+
+    dpp_total = dpp_score = 0.0
+    for key, lead in leaders.items():
+        gp = lead["gp"]
+        if gp < 20 or key not in salaries:
+            continue
+        dpp_total += salaries[key]
+        dpp_score += _score(lead["tot"], gp)
+    dollars_per_point = (dpp_total / dpp_score) if dpp_score > 0 else 0.0
+    if not dollars_per_point:
+        return {"tool": "get_trade_value", "ok": False,
+                "error": "cannot value players: no qualified salary plus "
+                         "production overlap in warehouse"}
+
+    def _value_player(display: str) -> dict:
+        lead = leaders.get(_norm(display))
+        a = adv.get(_norm(display), {})
+        gp = lead["gp"] if lead else 0
+        ppg = round(lead["tot"]["PTS"] / gp, 1) if lead and gp else 0.0
+        out: dict[str, Any] = {
+            "name": display, "salary_26_27": salaries.get(_norm(display)),
+            "age": a.get("age"), "gp": gp, "ppg": ppg,
+            "production_score": None, "est_market_value_m": "unknown",
+            "residual_m": "unknown", "archetypes": [],
+            "production_source": "2025-26 totals"}
+        if not lead or gp < 10:
+            data_gaps.append(
+                f"{display}: unknown value treated as 0 in side total "
+                "(GP < 10 or no 2025-26 production row)")
+            return out
+        score = round(_score(lead["tot"], gp), 2)
+        est_m = round(score * dollars_per_point / 1e6, 1)
+        out["production_score"] = score
+        out["est_market_value_m"] = est_m
+        if out["salary_26_27"] is not None:
+            out["residual_m"] = round((out["salary_26_27"] - est_m * 1e6) / 1e6, 1)
+        per = {c: lead["tot"][c] / gp for c in lead["tot"]}
+        tags = []
+        if (lead["fg3m"] or 0) / gp >= 2.0:
+            tags.append("spacer")
+        if per["AST"] >= 5.0:
+            tags.append("playmaker")
+        if per["STL"] + per["BLK"] >= 1.5:
+            tags.append("defensive playmaker")
+        if a.get("ts") is not None and a["ts"] >= 0.60:
+            tags.append("efficient scorer")
+        if a.get("usg") is not None and a["usg"] >= 0.28:
+            tags.append("high-usage creator")
+        out["archetypes"] = tags
+        return out
+
+    def _value_picks(raw: str, giving_abbr: str) -> list[dict]:
+        picks = []
+        for desc in [p.strip() for p in str(raw or "").split(",") if p.strip()]:
+            low = desc.lower()
+            year = _re.search(r"(\d{4})", desc)
+            is_frp = bool(_re.search(r"frp|first[\s-]?round", low))
+            is_srp = bool(_re.search(r"\bsrp\b|second[\s-]?round", low))
+            prot = _re.search(r"top[-\s]?(\d+)\s*protect", low)
+            entry: dict[str, Any] = {"desc": desc, "est_slot": None,
+                                     "est_value_m": 0.0, "assumptions": []}
+            if not year or (not is_frp and not is_srp):
+                entry["assumptions"].append("unparseable pick description")
+                data_gaps.append(f"{desc}: unparseable pick, valued at 0")
+                picks.append(entry)
+                continue
+            if is_frp:
+                net_rank = (ratings.get(giving_abbr.upper(), {}) or {}).get(
+                    "NET_RATING_RANK")
+                if net_rank is None:
+                    slot = 15
+                    entry["assumptions"].append(
+                        f"no ratings row for {giving_abbr.upper()}: assumed "
+                        "mid-first slot 15")
+                else:
+                    slot = max(1, min(round(31 - net_rank * 0.85), 30))
+                    entry["assumptions"].append(
+                        f"slot estimated from {giving_abbr.upper()} net rank "
+                        f"{net_rank}")
+                if prot:
+                    n = int(prot.group(1))
+                    slot = max(slot, n + 1)
+                    entry["assumptions"].append(
+                        f"top-{n} protected: conveyance risk applied")
+                value = _pick_value_for_slot(slot, True)
+                if prot:
+                    value = round(value * 0.8, 1)
+                entry.update(est_slot=slot, est_value_m=value)
+            else:
+                m = _re.search(r"\b([3-5]\d)\b", desc)
+                slot = int(m.group(1)) if m and 31 <= int(m.group(1)) <= 60 else 45
+                entry.update(est_slot=slot,
+                             est_value_m=_pick_value_for_slot(slot, False))
+                entry["assumptions"].append("second-round slot estimate")
+            picks.append(entry)
+        return picks
+
+    players_a = [_value_player(n) for n in names_a]
+    players_b = [_value_player(n) for n in names_b]
+    picks_list_a = _value_picks(picks_a, team_a)
+    picks_list_b = _value_picks(picks_b, team_b)
+
+    def _side_total(plist: list[dict], klist: list[dict]) -> float:
+        return round(sum(p["est_market_value_m"] for p in plist
+                         if isinstance(p["est_market_value_m"], (int, float)))
+                     + sum(k["est_value_m"] for k in klist), 1)
+
+    total_a = _side_total(players_a, picks_list_a)
+    total_b = _side_total(players_b, picks_list_b)
+    delta = round(total_a - total_b, 1)
+    abbr_a, abbr_b = team_a.upper(), team_b.upper()
+    winner = abbr_a if delta >= 0.5 else abbr_b if delta <= -0.5 else "even"
+
+    def _grades() -> dict[str, str]:
+        if winner == "even":
+            return {abbr_a: "B", abbr_b: "B"}
+        share = abs(delta) / max(total_a, total_b, 1)
+        w = abbr_a if winner == abbr_a else abbr_b
+        loser = abbr_b if w == abbr_a else abbr_a
+        wg = "A" if share >= 0.25 else "A-" if share >= 0.15 else "B+"
+        lg = ("F" if share >= 0.40 else "D" if share >= 0.25
+              else "C+" if share >= 0.15 else "B-")
+        return {w: wg, loser: lg}
+
+    need_cols = [("need_offense", "OFF_RATING_RANK"),
+                 ("need_defense", "DEF_RATING_RANK"),
+                 ("need_shooting", "TS_PCT_RANK"),
+                 ("need_playmaking", "AST_PCT_RANK"),
+                 ("need_rebounding", "REB_PCT_RANK")]
+    tag_to_need = {"spacer": "need_shooting",
+                   "playmaker": "need_playmaking",
+                   "defensive playmaker": "need_defense",
+                   "efficient scorer": "need_offense",
+                   "high-usage creator": "need_offense"}
+
+    def _fit(team_abbr: str, received: list[dict]) -> dict:
+        r = ratings.get(team_abbr.upper(), {})
+        needs = [name for name, col in need_cols
+                 if isinstance(r.get(col), (int, float)) and r[col] >= 20]
+        net_rank = r.get("NET_RATING_RANK")
+        timeline = ("unknown" if not isinstance(net_rank, (int, float))
+                    else "contender" if net_rank <= 8
+                    else "rebuilding" if net_rank >= 22 else "middle")
+        notes = []
+        for p in received:
+            for tag in p.get("archetypes", []):
+                need = tag_to_need.get(tag)
+                if need and need in needs:
+                    notes.append(f"{p['name']} fills {need} ({tag})")
+            age = p.get("age")
+            if (isinstance(age, (int, float)) and age >= 32
+                    and timeline == "rebuilding"):
+                notes.append(f"{p['name']}: timeline clash (age {age:g} "
+                             "joining a rebuild)")
+            if (isinstance(age, (int, float)) and age <= 23
+                    and timeline == "contender"):
+                notes.append(f"{p['name']}: developmental piece on a contender")
+        notes.append("positional logjam not assessed: no position data "
+                     "in warehouse")
+        return {"needs": needs, "timeline": timeline, "notes": notes}
+
+    fit = {abbr_a: _fit(abbr_a, players_b), abbr_b: _fit(abbr_b, players_a)}
+
+    valued = [p for p in players_a + players_b
+              if isinstance(p["est_market_value_m"], (int, float))]
+    driver = (max(valued, key=lambda p: (abs(p["residual_m"])
+                 if isinstance(p["residual_m"], (int, float)) else 0))
+              if valued else None)
+    win_side = players_b if winner == abbr_a else players_a
+    win_got = [p for p in win_side
+               if isinstance(p["est_market_value_m"], (int, float))]
+    key_add = max(win_got, key=lambda p: p["est_market_value_m"],
+                  default=None)
+    key_fit_note = ""
+    if key_add is not None and winner != "even":
+        wfit = fit[winner]
+        hit = next((n for n in wfit["notes"]
+                    if n.startswith(key_add["name"])), "")
+        key_fit_note = (f" {key_add['name']} {hit[len(key_add['name']) + 1:]} "
+                        f"for {winner}." if hit
+                        else f" {key_add['name']} headlines the return "
+                             f"for {winner} ({wfit['timeline']} timeline).")
+    if winner == "even":
+        s1 = (f"This grades as roughly even, with {abbr_a} at an estimated "
+              f"${total_a}M and {abbr_b} at an estimated ${total_b}M, "
+              f"a gap of about ${abs(delta)}M.")
+    else:
+        s1 = (f"{winner} wins on estimated value by about ${abs(delta)}M, "
+              f"${max(total_a, total_b)}M to ${min(total_a, total_b)}M.")
+    if driver is not None:
+        res = driver["residual_m"]
+        res_txt = ("the best value in the deal"
+                   if isinstance(res, (int, float)) and res < 0
+                   else "the largest gap between salary and production")
+        s2 = (f"The biggest driver is {driver['name']}, with an estimated "
+              f"${driver['est_market_value_m']}M market value against a "
+              f"${(driver['salary_26_27'] or 0) / 1e6:.1f}M salary, "
+              f"{res_txt}.")
+    else:
+        s2 = "No player had enough production data to name a value driver."
+    s3 = key_fit_note.strip() or "Fit notes are limited by missing team data."
+    s4 = ("All values are rough estimates from 2025-26 production versus "
+          "2026-27 salaries, so this is not cap-legality advice: pair it "
+          "with get_trade_check.")
+    text = " ".join([s1, s2, s3, s4])
+
+    return {"tool": "get_trade_value", "ok": True,
+            "rows": {"team_a": {"team": abbr_a, "players": players_a,
+                                "picks": picks_list_a, "side_total_m": total_a},
+                     "team_b": {"team": abbr_b, "players": players_b,
+                                "picks": picks_list_b, "side_total_m": total_b},
+                     "fit": fit,
+                     "verdict": {"winner": winner, "delta_m": delta,
+                                 "grades": _grades(), "text": text},
+                     "data_gaps": data_gaps,
+                     "disclaimer": DISCLAIMER},
+            "meta": {"source": _payroll_source(),
+                     "production_season": PROD_SEASON,
+                     "salary_season": "2026-27 (column SALARY_2025_26)",
+                     "estimates": True}}
 
 
 @tool
