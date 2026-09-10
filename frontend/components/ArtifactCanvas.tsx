@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { tableKind } from "../lib/api";
 import AutoChart from "./AutoChart";
 import CompareView from "./CompareView";
 import CourtHeatmap from "./CourtHeatmap";
@@ -37,8 +38,7 @@ export default function ArtifactCanvas({ artifact, onClose, onAsk }: ArtifactCan
   const [viewMode, setViewMode] = useState<"court" | "table" | "chart">("table");
   const [heat, setHeat] = useState(false);
 
-  const isShotTool =
-    artifact?.tool === "get_shot_zones" || artifact?.tool === "get_shot_compare";
+  const isShotTool = tableKind((artifact || {}) as { kind?: string; tool?: string }) === "shots";
 
   const tableRows =
     (artifact?.rows as { rows?: unknown } | undefined)?.rows ?? artifact?.rows;
@@ -208,13 +208,13 @@ export default function ArtifactCanvas({ artifact, onClose, onAsk }: ArtifactCan
         )}
 
         {/* View Mode Rendering */}
-        {artifact.tool === "get_compare" || artifact.tool === "compare_metrics" || artifact.tool === "get_preview" ? (
+        {tableKind(artifact) === "compare" ? (
           <CompareView rows={artifact.rows} />
-        ) : artifact.tool === "get_wowy" ? (
+        ) : tableKind(artifact) === "wowy" ? (
           <WowyCard rows={artifact.rows} meta={artifact.meta} verdict={artifact.verdict} />
         ) : isShotTool && viewMode === "court" ? (
           <CourtHeatmap rows={artifact.rows} meta={artifact.meta} verdict={artifact.verdict} />
-        ) : artifact.tool === "run_python" ? (
+        ) : tableKind(artifact) === "python" ? (
           <div
             style={{
               background: "var(--color-stone-canvas)",

@@ -737,6 +737,21 @@ _DISPLAY_TITLES = {
     "get_shot_zones": "Shot zones",
 }
 
+_KIND_FOR_TOOL = {
+    "run_python": "python",
+    "text_to_sql": "warehouse",
+    "get_compare": "compare",
+    "compare_metrics": "compare",
+    "get_preview": "compare",
+    "get_debate_card": "debate",
+    "get_wowy": "wowy",
+    "get_shot_zones": "shots",
+    "get_shot_compare": "shots",
+    "get_leaders": "leaders",
+    "get_lineups": "lineups",
+    "get_raptor_history": "raptor",
+}
+
 
 def _display_title(name: str, meta: dict[str, Any] | None = None) -> str:
     base = _DISPLAY_TITLES.get(name or "")
@@ -774,6 +789,7 @@ def _flatten_tables(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
             return None
         out = dict(rec)
         out.pop("tool", None)
+        out["kind"] = _KIND_FOR_TOOL.get(str(tool or ""), "dataset")
         if tool in _DISPLAY_TITLES:
             try:
                 meta = out.get("meta") if isinstance(out.get("meta"), dict) else None

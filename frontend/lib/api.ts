@@ -353,3 +353,7 @@ export function buildCitation(c: CitationInput): string {
   ].filter(Boolean);
   return `${bits.join(", ")} — Dime NBA Analyst`;
 }
+
+export function tableKind(t: { kind?: string; tool?: string }): string {
+  return t.kind || t.tool || "dataset";
+}

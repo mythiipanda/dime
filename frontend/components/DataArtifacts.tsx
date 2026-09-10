@@ -10,7 +10,7 @@ import DataTable from "./DataTable";
 import TrendChart, { isRaptorRows } from "./TrendChart";
 import WowyCard from "./WowyCard";
 import ZoneBars, { isZoneRows } from "./ZoneBars";
-import { buildCitation } from "../lib/api";
+import { buildCitation, tableKind } from "../lib/api";
 
 function CitePill({ title, meta }: {
   title: string;
@@ -94,6 +94,7 @@ export default function DataArtifacts({
 
   const tables: {
     tool?: string;
+    kind?: string;
     title?: string;
     rows?: unknown;
     verdict?: string;
@@ -114,23 +115,15 @@ export default function DataArtifacts({
     for (const t of ai.nodes[n]!.tables) tables.push(t);
   }
 
-  const preferred = tables.findIndex(
-    (t) =>
-      t.tool === "get_shot_compare" ||
-      t.tool === "get_shot_zones" ||
-      t.tool === "get_wowy" ||
-      t.tool === "get_compare" ||
-      t.tool === "compare_metrics" ||
-      t.tool === "get_preview" ||
-      t.tool === "get_rapm" ||
-      t.tool === "get_finder",
+  const preferred = tables.findIndex((t) =>
+    ["shots", "wowy", "compare", "raptor", "leaders"].includes(tableKind(t)),
   );
   const fallback = preferred >= 0 ? preferred : tables.length - 1;
   const table = tables[Math.min(pageState ?? fallback, Math.max(tables.length - 1, 0))];
   const page = Math.min(pageState ?? fallback, Math.max(tables.length - 1, 0));
   const setPage = (n: number) => setPageState(Math.max(0, Math.min(n, tables.length - 1)));
 
-  const isShotTool = table?.tool === "get_shot_zones" || table?.tool === "get_shot_compare";
+  const isShotTool = tableKind(table || {}) === "shots";
   useEffect(() => {
     if (isShotTool) {
       setViewMode("court");
@@ -371,9 +364,9 @@ export default function DataArtifacts({
         </details>
       )}
 
-      {table.tool === "get_compare" || table.tool === "compare_metrics" || table.tool === "get_preview" ? (
+      {tableKind(table) === "compare" ? (
         <CompareView rows={table.rows} />
-      ) : table.tool === "get_wowy" ? (
+      ) : tableKind(table) === "wowy" ? (
         <WowyCard
           rows={table.rows}
           meta={table.meta}
@@ -385,7 +378,7 @@ export default function DataArtifacts({
           meta={table.meta}
           verdict={table.verdict}
         />
-      ) : table.tool === "run_python" ? (
+      ) : tableKind(table) === "python" ? (
         <div
           style={{
             background: "var(--color-stone-canvas)",
