@@ -15,6 +15,11 @@ import { ArtifactItem } from "./ArtifactCanvas";
 import DataArtifacts from "./DataArtifacts";
 import ModelPicker from "./ModelPicker";
 import AgentActivity from "./AgentActivity";
+import Skeleton from "./Skeleton";
+
+function aiHasTables(ai: AiMessage): boolean {
+  return Object.values(ai.nodes).some((n) => n.tables.length > 0);
+}
 
 function applyEvent(ai: AiMessage, type: string, data: unknown): AiMessage {
   const d = data as Record<string, unknown>;
@@ -364,8 +369,8 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
     <div style={{ display: "flex", flexDirection: "column", height: "100%", position: "relative" }}>
       {!messages.length ? (
         /* Empty State: Centered Hero Layout (ChatGPT style) */
-        <div
-          style={{
+          <div
+            style={{
             flex: 1,
             display: "flex",
             flexDirection: "column",
@@ -451,7 +456,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
           </div>
 
           {/* Curated 2x2 Prompt Cards (Minimalist Frontier AI style) */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10, width: "100%", marginTop: 24 }}>
+          <div className="prompt-grid" style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10, width: "100%", marginTop: 24 }}>
             {[
               {
                 title: "Compare Luka & Shai",
@@ -578,9 +583,14 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                       <span className="caret" aria-hidden />
                     )}
 
+                    {m.ai && !m.ai.done && !m.ai.text && !aiHasTables(m.ai) && (
+                      <Skeleton lines={3} label="Thinking..." />
+                    )}
+
                     {m.ai && (
                       <DataArtifacts
                         ai={m.ai}
+                        loading={!m.ai.done}
                         onAsk={sendText}
                         onOpenArtifact={onOpenArtifact}
                         activeArtifactId={activeArtifactId}
@@ -617,12 +627,13 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
 
           {/* Fixed Floating Prompt Bar in Active Chat */}
           <div
+            className="prompt-bar"
             style={{
               position: "fixed",
               bottom: 0,
               left: 260,
               right: 0,
-              background: "linear-gradient(to top, var(--color-stone-canvas) 85%, transparent)",
+              background: "var(--color-stone-canvas)",
               padding: "16px 20px 24px",
               zIndex: 40,
               boxSizing: "border-box",

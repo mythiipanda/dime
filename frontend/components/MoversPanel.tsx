@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Mover, MoversRows, NewEntry, getMovers } from "../lib/api";
 import EmptyState from "./EmptyState";
+import Skeleton from "./Skeleton";
 
 const DAYS = [7, 14, 30];
 
@@ -160,11 +161,7 @@ export default function MoversPanel() {
       </div>
 
       {loading ? (
-        <div>
-          {[90, 70, 55].map((w, i) => (
-            <div key={i} className="shimmer skeleton-row" style={{ width: `${w}%` }} />
-          ))}
-        </div>
+        <Skeleton lines={3} />
       ) : err || !rows ? (
         <EmptyState
           title="No movers yet"

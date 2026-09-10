@@ -81,7 +81,8 @@ export default function CompareView({ rows, onDebate }: { rows: unknown; onDebat
           Together: {pair.note}
         </div>
       )}
-      <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12 }}>
+      <div className="table-scroll" style={{ overflowX: "auto" }}>
+      <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 480, fontSize: 12 }}>
         <thead>
           <tr>
             <th
@@ -131,10 +132,11 @@ export default function CompareView({ rows, onDebate }: { rows: unknown; onDebat
               <td style={{ borderBottom: "1px solid #e8e6e5", padding: "4px 8px" }}>
                 {fmt(b[k as keyof Side])}
               </td>
-            </tr>
-          ))}
+          </tr>
+        ))}
         </tbody>
       </table>
+      </div>
       {names.length === 2 && (
         <div style={{ marginTop: 8 }}>
           <div style={{ display: "flex", height: 10, borderRadius: 9999, overflow: "hidden" }}>

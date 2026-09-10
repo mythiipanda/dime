@@ -9,6 +9,7 @@ import {
   resolvePlayers,
 } from "../lib/api";
 import EmptyState from "./EmptyState";
+import Skeleton from "./Skeleton";
 
 function snapshotLabel(item: WatchItem): string {
   const s = item.snapshot || {};
@@ -132,11 +133,7 @@ export default function WatchlistPanel() {
       )}
 
       {loading ? (
-        <div>
-          {[90, 70].map((w, d) => (
-            <div key={d} className="shimmer skeleton-row" style={{ width: `${w}%` }} />
-          ))}
-        </div>
+        <Skeleton lines={2} />
       ) : err && !items.length ? (
         <div style={{ fontSize: 12, color: "var(--color-warm-gray)" }}>{err}</div>
       ) : !items.length ? (

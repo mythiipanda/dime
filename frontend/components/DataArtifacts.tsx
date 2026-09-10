@@ -9,6 +9,7 @@ import CompareView from "./CompareView";
 import CompsView, { parseCompsRows } from "./CompsView";
 import CourtHeatmap from "./CourtHeatmap";
 import DataTable from "./DataTable";
+import Skeleton from "./Skeleton";
 import GameLogView, { parseGameLogs } from "./GameLogView";
 import MatchupPreviewView, { parsePreview } from "./MatchupPreviewView";
 import PredictionView, { parsePrediction } from "./PredictionView";
@@ -56,11 +57,13 @@ const ORDER: NodeName[] = ["entry", "data_retrieval", "tools", "analytics", "pre
 
 export default function DataArtifacts({
   ai,
+  loading,
   onAsk,
   onOpenArtifact,
   activeArtifactId,
 }: {
   ai: AiMessage;
+  loading?: boolean;
   onAsk?: (query: string) => void;
   onOpenArtifact?: (artifact: ArtifactItem) => void;
   activeArtifactId?: string;
@@ -133,7 +136,24 @@ export default function DataArtifacts({
     }
   }, [toolName, isShotTool]);
 
-  if (!table) return null;
+  if (!table) {
+    if (loading && ai.text) {
+      return (
+        <div
+          style={{
+            border: "1px solid var(--color-stone-border)",
+            borderRadius: 12,
+            padding: "16px",
+            background: "var(--color-pure-white)",
+            marginTop: 10,
+          }}
+        >
+          <Skeleton lines={3} label="Loading data..." />
+        </div>
+      );
+    }
+    return null;
+  }
 
   const artifactId = `${toolName || table.tool || "dataset"}-${page}`;
   const isCanvasOpen = activeArtifactId === artifactId;
