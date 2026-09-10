@@ -44,6 +44,17 @@ def get_today(season: str = SEASON) -> dict[str, Any]:
         _last, _ton = list(_pool.map(_games, [yesterday, today]))
     last_night, tonight = _last, _ton
     try:
+        import asyncio as _aio
+
+        from .league import snapshot_leaderboard
+
+        try:
+            _aio.get_running_loop()
+        except RuntimeError:
+            _aio.run(snapshot_leaderboard.ainvoke({"season": season}))
+    except Exception:
+        pass
+    try:
         lead = get_leaders.invoke({"stat_category": "PTS", "season": season})
         movers = [
             {"PLAYER": r.get("PLAYER"), "TEAM": r.get("TEAM"), "PTS": r.get("PTS"),
