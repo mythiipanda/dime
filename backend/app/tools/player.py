@@ -1394,8 +1394,8 @@ h1 {{ font-size: 22px; margin: 0; color: #1c1917; }}
 <div class="footer">Settle the debate with data</div>
 </div></body></html>"""
 
-    # Save to workspace
-    out_dir = _Path.home() / "workspace" / "dime" / "backend" / "data" / "cards"
+    # Save where the file endpoint serves: backend/data/cards (git-ignored).
+    out_dir = _Path(__file__).resolve().parent.parent.parent / "data" / "cards"
     out_dir.mkdir(parents=True, exist_ok=True)
     safe_a = "".join(c for c in name_a if c.isalnum())[:20]
     safe_b = "".join(c for c in name_b if c.isalnum())[:20]
