@@ -107,6 +107,19 @@ PLANNER_SYSTEM = (
 
 MAX_TOOL_ROUNDS = 3
 MAX_TOOL_CALLS = 8
+DEEP_TOOL_ROUNDS = 5
+DEEP_TOOL_CALLS = 12
+
+# Patterns that trigger deep investigation mode: multi-entity comparisons,
+# open-ended research questions, and explicit depth requests.
+DEEP_TRIGGERS = [
+    r"\bdeep dive\b", r"\binvestigat\w*\b", r"\bcomprehensive\b",
+    r"\bthorough\b", r"\bcompare\b.*\b(and|vs|versus)\b.*\b(and|vs|versus)\b",
+    r"\bbreak down\b", r"\bfull (report|analysis|breakdown)\b",
+    r"\bwhy\b.*\b(and|also)\b.*\bhow\b",
+    r"\ball\b.*\b(teams|players)\b",
+    r"\brank\b.*\b(top|best)\b.*\b\d+\b",
+]
 
 TOOL_LABELS = {
     "resolve_entity": "Identifying players and teams",
@@ -655,6 +668,22 @@ SUPERVISOR_TOOL_NAMES = frozenset({
 })
 
 
+def _is_deep_question(question: str) -> bool:
+    """Detect questions that need deep investigation mode."""
+    q = (question or "").lower()
+    for pat in DEEP_TRIGGERS:
+        if re.search(pat, q):
+            return True
+    # 3+ entities also triggers deep mode
+    try:
+        qp, qt = _detect_entities(question)
+        if len(qp) + len(qt) >= 3:
+            return True
+    except Exception:
+        pass
+    return False
+
+
 def _supervisor_tools(state: DimeState) -> list:
     return [t for t in _all_tools(state) if t.name in SUPERVISOR_TOOL_NAMES]
 
@@ -795,11 +824,12 @@ async def data_retrieval_agent(
                       "which players the user means when entities exist.")
     if state["tool_results"]:
         prior += "\nPrior tool results this turn: " + str(state["tool_results"])[:4000]
-    budget_left = MAX_TOOL_CALLS - len(state["calls_made"])
+    max_calls = DEEP_TOOL_CALLS if _is_deep_question(state["question"]) else MAX_TOOL_CALLS
+    budget_left = max_calls - len(state["calls_made"])
     if budget_left <= 0:
         yield _event("thought_stream", {"node": "data_retrieval",
                                         "text": "Tool budget spent. Answering from evidence."})
-        state["round"] = MAX_TOOL_ROUNDS
+        state["round"] = DEEP_TOOL_ROUNDS if _is_deep_question(state["question"]) else MAX_TOOL_ROUNDS
         yield _event("node_update", {"node": "data_retrieval", "status": "complete"})
         return
     try:
@@ -822,7 +852,9 @@ async def data_retrieval_agent(
             continue
         state["calls_made"].append(key)
         fresh.append(call)
-        if len(state["calls_made"]) >= MAX_TOOL_CALLS:
+        _deep = _is_deep_question(state["question"])
+        _max = DEEP_TOOL_CALLS if _deep else MAX_TOOL_CALLS
+        if len(state["calls_made"]) >= _max:
             break
     if not fresh:
         made_names = _tool_names_from_calls_made(state["calls_made"])
@@ -837,7 +869,8 @@ async def data_retrieval_agent(
                          "tool now. No more identity calls."})
             state["_pending_calls"] = []  # type: ignore[typeddict-unknown-key]
         else:
-            state["round"] = MAX_TOOL_ROUNDS
+            _deep2 = _is_deep_question(state["question"])
+            state["round"] = DEEP_TOOL_ROUNDS if _deep2 else MAX_TOOL_ROUNDS
     else:
         for call in fresh:
             yield _event("message", {"node": "data_retrieval",
@@ -924,6 +957,68 @@ def _suggest(
         if s not in seen:
             seen.append(s)
     return seen[:3]
+
+
+async def _suggest_llm(
+    question: str,
+    results: list[dict[str, Any]],
+    calls_made: list[str],
+    llm: Any,
+) -> list[str]:
+    """Evidence-grounded follow-up suggestions via LLM.
+
+    Falls back to hardcoded _suggest on any failure. The LLM sees a
+    compact summary of what data came back, so suggestions reference
+    actual players, teams, and stats — not generic templates.
+    """
+    try:
+        # Compact evidence: tool names + first few row keys/values
+        evidence: list[str] = []
+        for r in results[:6]:
+            if not isinstance(r, dict):
+                continue
+            tool = r.get("tool", "?")
+            rows = r.get("rows", [])
+            if isinstance(rows, dict):
+                rows = [rows]
+            if not isinstance(rows, list):
+                rows = []
+            sample = []
+            for row in rows[:3]:
+                if isinstance(row, dict):
+                    keys = [k for k in row.keys() if not k.startswith("_")][:4]
+                    sample.append({k: row[k] for k in keys})
+            evidence.append(f"{tool}: {json.dumps(sample)[:400]}")
+        evidence_str = "\n".join(evidence) or "no data returned"
+
+        prompt = (
+            "You suggest follow-up questions for an NBA analytics chatbot. "
+            "Based on the user's question and the data retrieved, suggest exactly 3 "
+            "specific follow-up questions the user would likely want to ask next. "
+            "Reference actual player/team names and stats from the data. "
+            "Keep each suggestion under 12 words. "
+            "Return ONLY a JSON array of 3 strings, no other text.\n\n"
+            f"User question: {question}\n\n"
+            f"Data retrieved:\n{evidence_str}"
+        )
+        resp = await llm.ainvoke([
+            SystemMessage(content="You suggest follow-up questions. Return only JSON."),
+            HumanMessage(content=prompt),
+        ])
+        text = resp.content if hasattr(resp, "content") else str(resp)
+        # Extract JSON array
+        match = re.search(r"\[.*\]", text, re.DOTALL)
+        if not match:
+            raise ValueError("no JSON array in response")
+        suggestions = json.loads(match.group(0))
+        if not isinstance(suggestions, list):
+            raise ValueError("not a list")
+        out = [str(s).strip() for s in suggestions if str(s).strip()][:3]
+        if len(out) < 3:
+            raise ValueError("fewer than 3 suggestions")
+        return out
+    except Exception:
+        return _suggest(question, results, calls_made)
 
 
 def _sanitize_evidence(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1077,9 +1172,18 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
     yield _event("node_update", {"node": "presentation", "status": "running"})
     text = state.get("analysis", "") or "No data came back. Try a player or team name."
     yield _event("final_answer", {"text": text})
-    state["suggestions"] = _suggest(
-        state["question"], state["tool_results"], state["calls_made"]
-    )
+    try:
+        llm = get_llm(state["primary"], state["model"])  # type: ignore[arg-type]
+    except Exception:
+        llm = None
+    if llm:
+        state["suggestions"] = await _suggest_llm(
+            state["question"], state["tool_results"], state["calls_made"], llm
+        )
+    else:
+        state["suggestions"] = _suggest(
+            state["question"], state["tool_results"], state["calls_made"]
+        )
     yield _event("suggestions", {"items": state["suggestions"]})
     yield _event("node_update", {"node": "presentation", "status": "complete"})
 
@@ -1099,7 +1203,14 @@ async def run_chat(
     async for e in entry_node(state):
         yield e
     await _triage_seed(question, primary, model, state)
-    while state["round"] < MAX_TOOL_ROUNDS:
+    deep = _is_deep_question(question)
+    max_rounds = DEEP_TOOL_ROUNDS if deep else MAX_TOOL_ROUNDS
+    if deep:
+        yield _event("thought_stream", {
+            "node": "entry",
+            "text": "Deep investigation mode: expanded tool budget.",
+        })
+    while state["round"] < max_rounds:
         async for e in data_retrieval_agent(state):
             yield e
         if "_pending_calls" not in state:
