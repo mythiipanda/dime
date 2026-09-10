@@ -21,6 +21,7 @@ from app import graph  # noqa: E402
 from app.graph import (  # noqa: E402
     DEEP_TOOL_ROUNDS,
     MAX_TOOL_ROUNDS,
+    _flatten_tables,
     _triage_seed,
 )
 
@@ -88,11 +89,49 @@ def test_fastpath_runs_real_simulation():
     assert len(st["tool_results"]) == 1
     out = st["tool_results"][0]
     assert out["tool"] == "get_game_prediction"
-    assert out["ok"] is True
-    probs = out["estimate"]["win_prob"]
+    rows = out["rows"]
+    assert len(rows) == 1
+    inner = rows[0]
+    assert inner["tool"] == "get_game_prediction"
+    assert inner["ok"] is True
+    probs = inner["estimate"]["win_prob"]
     assert set(probs) == {"BOS", "LAL"}
     assert all(0.0 < p < 1.0 for p in probs.values())
-    assert out["estimate"]["projected_total"] > 0
+    assert inner["estimate"]["projected_total"] > 0
+
+
+def _has_rows(rows):
+    # Mirrors the analytics_agent evidence-gate predicate: the wrapped
+    # prediction result must count as evidence so the turn reaches the
+    # LLM instead of the canned no-data branch.
+    if isinstance(rows, list):
+        return len(rows) > 0
+    if isinstance(rows, dict):
+        return any(_has_rows(v) for v in rows.values())
+    return bool(rows)
+
+
+def test_fastpath_result_passes_analytics_evidence_gate():
+    # DimeBench regression: the raw get_game_prediction dict had no
+    # "rows" key, so analytics dropped it as evidence and answered from
+    # the canned no-data branch. The appended entry must carry the
+    # estimate inside a non-empty rows list that survives the real
+    # analytics evidence filter.
+    st = _drain("who wins the Lakers vs Celtics game tonight")
+    assert len(st["tool_results"]) == 1
+    entry = st["tool_results"][0]
+    rows = entry.get("rows")
+    assert isinstance(rows, list) and rows
+    inner = rows[0]
+    assert inner["ok"] is True
+    assert inner["estimate"]["projected_total"] > 0
+    assert set(inner["estimate"]["win_prob"]) == {"BOS", "LAL"}
+    evidenced = [
+        r for r in _flatten_tables(st["tool_results"])
+        if isinstance(r, dict) and _has_rows(r.get("rows"))
+        and r.get("tool", "") not in ("resolve_entity", "search_nba")
+    ]
+    assert len(evidenced) == 1
 
 
 def test_narrative_preview_not_hijacked():

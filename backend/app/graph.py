@@ -768,6 +768,14 @@ async def _triage_seed(question: str, primary: str, model: str,
                 yield _e
             _pout = _ph.get("out") or {}
             if _result_status(_pout) == "ok":
+                # _triage_tool appended the raw tool dict. analytics_agent
+                # only treats tool_results entries with a non-empty "rows"
+                # key as evidence, so wrap it the same way other triage
+                # paths do; otherwise the turn falls into the canned
+                # no-data branch and the LLM never runs.
+                if state["tool_results"] and state["tool_results"][-1] is _pout:
+                    state["tool_results"][-1] = {
+                        "tool": "get_game_prediction", "rows": [_pout]}
                 async for _e in _triage_terminal(question, state):
                     yield _e
             return
