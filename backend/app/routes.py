@@ -25,6 +25,10 @@ _hits: dict[str, list[float]] = defaultdict(list)
 
 
 def _sanitize_sse_event(etype: str, data: dict) -> dict:
+    if etype in ("tool_call", "tool_result", "thought_token"):
+        # Streaming contract: tool activity + live LLM token events pass
+        # through unchanged.
+        return data if isinstance(data, dict) else {}
     if etype == "error":
         node = data.get("node") if isinstance(data, dict) else None
         out: dict = {"status": "fail",

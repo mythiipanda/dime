@@ -7,19 +7,21 @@ thought_stream, message, final_answer, suggestions, graph_end, error.
 import asyncio
 import json
 import re
+import time
 import unicodedata
 from collections.abc import AsyncGenerator
 from typing import Any, TypedDict
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from .providers import (
+    accumulate_tool_calls,
     astream_with_fallback,
     get_llm,
     invoke_with_fallback,
     resolve_model_id,
 )
 from .skills import catalog as skills_catalog
-from .subagents import delegate_tools
+from .subagents import delegate_tools, run_desk_streaming
 from .tools import v1_tools
 
 ANALYST_SYSTEM = (
@@ -160,7 +162,21 @@ def _friendly_progress(names: list[str]) -> str:
             labels.append(label)
     if not labels:
         return "Reviewing evidence"
-    return "Checking " + " and ".join(sorted(labels))
+    return " and ".join(sorted(labels))
+
+
+def _args_summary(name: str, args: dict[str, Any] | None) -> str:
+    args = args or {}
+    if (name or "").startswith("delegate_"):
+        task = str(args.get("task", ""))
+        return task[:140] if task else name
+    if name in ("run_python", "text_to_sql"):
+        return "Warehouse query"
+    try:
+        parts = [f"{k}={v}" for k, v in args.items()]
+        return ", ".join(parts)[:140] or name
+    except Exception:
+        return name
 
 
 def _result_rows(result: dict[str, Any]) -> int:
@@ -363,9 +379,180 @@ def _trade_sides(question: str, found_p: list[str], found_t: list[str],
             "team_b": side_b, "players_b": ", ".join(players_b)}
 
 
+def _triage_plan_text(question: str, found_p: list[str],
+                        found_t: list[str], has_history: bool) -> str:
+    names = (found_p or []) + (found_t or [])
+    prefix = f"Found {', '.join(names[:3])} — " if names else ""
+    q = question or ""
+    is_trade = bool(re.search(r"\btrad(e|es|ed|ing)\b|sign-and-trade|\bswap\b|\bdeal\b",
+                              q, re.IGNORECASE))
+    is_cast = bool(re.search(
+        r"supporting cast|\bcast\b|teammates?|rotation depth|"
+        r"around (him|her|them)|better team\b|deeper team\b",
+        q, re.IGNORECASE))
+    is_raptor = bool(found_p and re.search(
+        r"\braptor\b|\bwar\b|peak|all-time|all time|greatest season|"
+        r"best season|career (arc|trajectory|history|impact)|"
+        r"\btrajectory\b|\barc\b|over time|aging|development curve",
+        q, re.IGNORECASE))
+    is_compare = bool(_COMPARE_RX.search(q))
+    if is_trade:
+        return prefix + "checking trade math in the warehouse."
+    if len(found_t) == 1 and re.search(
+            r"last \d+ seasons|each of the last|past \d+ seasons|"
+            r"across the last|last three seasons", q, re.IGNORECASE):
+        return prefix + "pulling recent seasons from the warehouse."
+    if found_p and is_cast:
+        return prefix + "comparing supporting casts in the warehouse."
+    if is_raptor:
+        return prefix + "pulling RAPTOR history from the warehouse."
+    if (_LIST_RX.search(q) and not is_trade and not is_cast
+            and not is_compare and not is_raptor):
+        return prefix + "asking the league desk to scan the warehouse."
+    if has_history and ((not found_p) or (not found_t)):
+        return prefix + "using thread context to seed scout and team desks."
+    if found_p and not found_t:
+        return prefix + "asking the scout desk to pull advanced metrics."
+    if found_t and not found_p:
+        return prefix + "asking the team desk to pull record and ratings."
+    if _LEAGUE_RX.search(q):
+        return prefix + "asking the league desk to scan the warehouse."
+    return prefix + "planning warehouse lookups."
+
+
+def _delegate_result_summary(out: dict[str, Any]) -> str | None:
+    try:
+        s = out.get("summary")
+        return str(s)[:200] if s else None
+    except Exception:
+        return None
+
+
+async def _stream_planner(tooled, messages: list,
+                         holder: dict[str, Any]) -> AsyncGenerator[dict[str, Any], None]:
+    """Stream the supervisor planner's raw tokens live as thought_token events.
+
+    The planner is tool-bound: text chunks stream immediately while
+    tool_call_chunks accumulate. The final tool-call list lands in
+    holder["calls"]. Falls back to blocking ainvoke if streaming fails.
+    """
+    tc_chunks: list[dict] = []
+    try:
+        async for chunk in tooled.astream(messages):
+            t = getattr(chunk, "content", "") or ""
+            if t:
+                yield _event("thought_token", {"node": "data_retrieval",
+                                               "text": str(t)})
+            for tc in getattr(chunk, "tool_call_chunks", None) or []:
+                tc_chunks.append(dict(tc) if isinstance(tc, dict) else tc)
+        holder["calls"] = accumulate_tool_calls(tc_chunks)
+    except Exception:
+        resp = await tooled.ainvoke(messages)
+        t = getattr(resp, "content", "") or ""
+        if t:
+            yield _event("thought_token", {"node": "data_retrieval",
+                                           "text": str(t)})
+        holder["calls"] = getattr(resp, "tool_calls", None) or []
+
+
+async def _run_delegate_live(name: str, task: str, primary: str, model: str,
+                             holder: dict[str, Any],
+                             node: str = "data_retrieval") -> AsyncGenerator[dict[str, Any], None]:
+    """Run a delegate desk, yielding thought_token SSE events live as the
+    desk's LLM generates text. The desk's final result dict is stored in
+    holder["result"] when the generator is exhausted.
+
+    Uses a queue + background task so tokens flow the moment they're
+    generated instead of going silent for the seconds the desk works.
+    """
+    q: asyncio.Queue = asyncio.Queue()
+    desk = name.replace("delegate_", "")
+
+    async def _on_tok(t: str) -> None:
+        await q.put(t)
+
+    async def _runner() -> None:
+        try:
+            holder["result"] = await run_desk_streaming(
+                name, task, primary, model, on_token=_on_tok)  # type: ignore[arg-type]
+        except Exception as exc:
+            holder["result"] = {"tool": name, "ok": False,
+                                "error": str(exc)[:200]}
+        finally:
+            await q.put(None)
+
+    runner = asyncio.create_task(_runner())
+    while True:
+        tok = await q.get()
+        if tok is None:
+            break
+        yield _event("thought_token", {"node": node, "text": tok,
+                                       "agent": desk})
+    await runner
+
+
+def _trace_replay_events(out: dict[str, Any]) -> list[dict[str, Any]]:
+    try:
+        trace = out.get("tool_trace") or []
+    except Exception:
+        return []
+    if not isinstance(trace, list):
+        return []
+    agent = ""
+    try:
+        agent = str(out.get("agent") or "")
+    except Exception:
+        agent = ""
+    events: list[dict[str, Any]] = []
+    for te in trace:
+        if not isinstance(te, dict):
+            continue
+        tname = str(te.get("name") or "")
+        if not tname:
+            continue
+        tlabel = str(te.get("label") or tool_label(tname))
+        tagent = str(te.get("agent") or agent or
+                     tname.replace("delegate_", ""))
+        events.append(_event("tool_call", {
+            "node": "data_retrieval", "name": tname,
+            "label": tlabel, "agent": tagent,
+        }))
+        tstatus = te.get("status") or "ok"
+        terr = None
+        try:
+            if tstatus != "ok" and te.get("error"):
+                terr = str(te.get("error"))[:160]
+        except Exception:
+            terr = None
+        rdata: dict[str, Any] = {
+            "node": "data_retrieval", "name": tname,
+            "label": tlabel, "status": tstatus,
+            "rows": te.get("rows", 0), "ms": te.get("ms", 0),
+            "agent": tagent,
+        }
+        if terr:
+            rdata["error"] = terr
+        events.append(_event("tool_result", rdata))
+    return events
+
+
+def _done_thought(label: str, out: dict[str, Any], ms: int) -> str:
+    try:
+        rows = _result_rows(out)
+    except Exception:
+        rows = 0
+    ok = _result_status(out) == "ok"
+    tail = f"{rows} row{'s' if rows != 1 else ''} in {ms}ms" if ok else "failed"
+    return f"{label} — {tail}."
+
+
 async def _triage_seed(question: str, primary: str, model: str,
-                       state: dict) -> None:
+                       state: dict) -> AsyncGenerator[dict[str, Any], None]:
     found_p, found_t = _detect_entities(question)
+    yield _event("thought_stream", {
+        "node": "data_retrieval",
+        "text": _triage_plan_text(question, found_p, found_t, bool(state.get("history"))),
+    })
     is_compare = bool(_COMPARE_RX.search(question))
     is_trade = bool(re.search(r"\btrad(e|es|ed|ing)\b|sign-and-trade|\bswap\b|\bdeal\b",
                               question, re.IGNORECASE))
@@ -389,14 +576,39 @@ async def _triage_seed(question: str, primary: str, model: str,
             fn = next((t for t in v1_tools if t.name == "get_trade_check"),
                       None)
             if fn is not None:
+                _tname = "get_trade_check"
+                _tlabel = tool_label(_tname)
+                _t0 = time.time()
+                yield _event("tool_call", {
+                    "node": "data_retrieval", "name": _tname,
+                    "label": _tlabel,
+                    "summary": _args_summary(_tname, sides),
+                })
                 try:
                     out = await fn.ainvoke(sides)
                 except Exception as exc:
                     out = {"tool": "get_trade_check", "ok": False,
                            "error": str(exc)[:160]}
-                state["tool_results"].append(
-                    out if isinstance(out, dict) else {"tool": "get_trade_check",
-                                                      "rows": out})
+                if not isinstance(out, dict):
+                    out = {"tool": "get_trade_check", "rows": out}
+                _ms = int((time.time() - _t0) * 1000)
+                _st = _result_status(out)
+                _rd: dict[str, Any] = {
+                    "node": "data_retrieval", "name": _tname,
+                    "label": _tlabel, "status": _st,
+                    "rows": _result_rows(out), "ms": _ms,
+                }
+                if _st != "ok":
+                    try:
+                        _rd["error"] = str(out.get("error"))[:160]
+                    except Exception:
+                        _rd["error"] = "failed"
+                yield _event("tool_result", _rd)
+                yield _event("thought_stream", {
+                    "node": "data_retrieval",
+                    "text": _done_thought(_tlabel, out, _ms),
+                })
+                state["tool_results"].append(out)
                 state["calls_made"].append("get_trade_check:" + json.dumps(
                     sides, sort_keys=True))
                 return
@@ -418,6 +630,13 @@ async def _triage_seed(question: str, primary: str, model: str,
             "out = [{\"season\": _s, \"wins\": _w, \"losses\": _l} "
             "for _s, _w, _l in rows]"
         )
+        _tp_args = {"code": code}
+        _t0 = time.time()
+        yield _event("tool_call", {
+            "node": "data_retrieval", "name": "run_python",
+            "label": tool_label("run_python"),
+            "summary": _args_summary("run_python", _tp_args),
+        })
         try:
             from .tools import v1_tools as _vt
 
@@ -426,9 +645,26 @@ async def _triage_seed(question: str, primary: str, model: str,
                 "tool": "run_python", "ok": False, "error": "no python tool"}
         except Exception as exc:
             out = {"tool": "run_python", "ok": False, "error": str(exc)[:160]}
-        state["tool_results"].append(
-            out if isinstance(out, dict) else {"tool": "run_python",
-                                              "rows": out})
+        if not isinstance(out, dict):
+            out = {"tool": "run_python", "rows": out}
+        _ms = int((time.time() - _t0) * 1000)
+        _st = _result_status(out)
+        _rd = {
+            "node": "data_retrieval", "name": "run_python",
+            "label": tool_label("run_python"), "status": _st,
+            "rows": _result_rows(out), "ms": _ms,
+        }
+        if _st != "ok":
+            try:
+                _rd["error"] = str(out.get("error"))[:160]
+            except Exception:
+                _rd["error"] = "failed"
+        yield _event("tool_result", _rd)
+        yield _event("thought_stream", {
+            "node": "data_retrieval",
+            "text": _done_thought(tool_label("run_python"), out, _ms),
+        })
+        state["tool_results"].append(out)
         state["calls_made"].append("run_python:" + json.dumps(
             {"code": code[:120]}, sort_keys=True))
         return
@@ -511,6 +747,13 @@ async def _triage_seed(question: str, primary: str, model: str,
         if sides:
             lines.append("out = 'cast table printed'")
             code = "\n".join(lines)
+            _cast_args = {"code": code}
+            _t0 = time.time()
+            yield _event("tool_call", {
+                "node": "data_retrieval", "name": "run_python",
+                "label": tool_label("run_python"),
+                "summary": _args_summary("run_python", _cast_args),
+            })
             try:
                 from .tools import v1_tools as _vt2
 
@@ -520,9 +763,26 @@ async def _triage_seed(question: str, primary: str, model: str,
             except Exception as exc:
                 out = {"tool": "run_python", "ok": False,
                        "error": str(exc)[:160]}
-            state["tool_results"].append(
-                out if isinstance(out, dict) else {"tool": "run_python",
-                                                  "rows": out})
+            if not isinstance(out, dict):
+                out = {"tool": "run_python", "rows": out}
+            _ms = int((time.time() - _t0) * 1000)
+            _st = _result_status(out)
+            _rd = {
+                "node": "data_retrieval", "name": "run_python",
+                "label": tool_label("run_python"), "status": _st,
+                "rows": _result_rows(out), "ms": _ms,
+            }
+            if _st != "ok":
+                try:
+                    _rd["error"] = str(out.get("error"))[:160]
+                except Exception:
+                    _rd["error"] = "failed"
+            yield _event("tool_result", _rd)
+            yield _event("thought_stream", {
+                "node": "data_retrieval",
+                "text": _done_thought(tool_label("run_python"), out, _ms),
+            })
+            state["tool_results"].append(out)
             state["calls_made"].append("run_python:" + json.dumps(
                 {"code": code[:120]}, sort_keys=True))
             return
@@ -537,6 +797,13 @@ async def _triage_seed(question: str, primary: str, model: str,
             fn3 = next((t for t in _vt3 if t.name == "get_raptor_history"),
                        None)
             for p in found_p[:2]:
+                _rh_args = {"player": p}
+                _t0 = time.time()
+                yield _event("tool_call", {
+                    "node": "data_retrieval", "name": "get_raptor_history",
+                    "label": tool_label("get_raptor_history"),
+                    "summary": _args_summary("get_raptor_history", _rh_args),
+                })
                 try:
                     out = await fn3.ainvoke({"player": p}) if fn3 is not None else {
                         "tool": "get_raptor_history", "ok": False,
@@ -544,9 +811,27 @@ async def _triage_seed(question: str, primary: str, model: str,
                 except Exception as exc:
                     out = {"tool": "get_raptor_history", "ok": False,
                            "error": str(exc)[:160]}
-                state["tool_results"].append(
-                    out if isinstance(out, dict) else {"tool": "get_raptor_history",
-                                                      "rows": out})
+                if not isinstance(out, dict):
+                    out = {"tool": "get_raptor_history", "rows": out}
+                _ms = int((time.time() - _t0) * 1000)
+                _st = _result_status(out)
+                _rd = {
+                    "node": "data_retrieval", "name": "get_raptor_history",
+                    "label": tool_label("get_raptor_history"), "status": _st,
+                    "rows": _result_rows(out), "ms": _ms,
+                }
+                if _st != "ok":
+                    try:
+                        _rd["error"] = str(out.get("error"))[:160]
+                    except Exception:
+                        _rd["error"] = "failed"
+                yield _event("tool_result", _rd)
+                yield _event("thought_stream", {
+                    "node": "data_retrieval",
+                    "text": _done_thought(
+                        tool_label("get_raptor_history"), out, _ms),
+                })
+                state["tool_results"].append(out)
                 state["calls_made"].append("get_raptor_history:" + json.dumps(
                     {"player": p}, sort_keys=True))
             return
@@ -562,14 +847,47 @@ async def _triage_seed(question: str, primary: str, model: str,
             and not is_compare and not is_raptor
             and "delegate_league" in delegates):
         task = (question + " Answer via text_to_sql (you own that tool).")
+        _dl_args = {"task": task}
+        _t0 = time.time()
+        yield _event("tool_call", {
+            "node": "data_retrieval", "name": "delegate_league",
+            "label": tool_label("delegate_league"),
+            "summary": _args_summary("delegate_league", _dl_args),
+        })
         try:
-            out = await delegates["delegate_league"].ainvoke({"task": task})
+            _holder: dict[str, Any] = {}
+            async for _e in _run_delegate_live(
+                    "delegate_league", task, primary, model, _holder):
+                yield _e
+            out = _holder.get("result") or {"tool": "delegate_league",
+                                            "ok": False, "error": "no result"}
         except Exception as exc:
             out = {"tool": "delegate_league", "ok": False,
                    "error": str(exc)[:160]}
-        state["tool_results"].append(
-            out if isinstance(out, dict) else {"tool": "delegate_league",
-                                               "rows": out})
+        if not isinstance(out, dict):
+            out = {"tool": "delegate_league", "rows": out}
+        _ms = int((time.time() - _t0) * 1000)
+        _st = _result_status(out)
+        _rd = {
+            "node": "data_retrieval", "name": "delegate_league",
+            "label": tool_label("delegate_league"), "status": _st,
+            "rows": _result_rows(out), "ms": _ms,
+            "summary": _delegate_result_summary(out),
+        }
+        if _st != "ok":
+            try:
+                _rd["error"] = str(out.get("error"))[:160]
+            except Exception:
+                _rd["error"] = "failed"
+        yield _event("tool_result", _rd)
+        for _te in _trace_replay_events(out):
+            yield _te
+        yield _event("thought_stream", {
+            "node": "data_retrieval",
+            "text": _done_thought(
+                tool_label("delegate_league"), out, _ms),
+        })
+        state["tool_results"].append(out)
         state["calls_made"].append("delegate_league:" + json.dumps(
             {"task": task}, sort_keys=True))
         return
@@ -608,12 +926,42 @@ async def _triage_seed(question: str, primary: str, model: str,
             for name, task in seeds[:3]:
                 if name not in delegates:
                     continue
+                _s_args = {"task": task}
+                _t0 = time.time()
+                yield _event("tool_call", {
+                    "node": "data_retrieval", "name": name,
+                    "label": tool_label(name),
+                    "summary": _args_summary(name, _s_args),
+                })
                 try:
-                    out = await delegates[name].ainvoke({"task": task})
+                    _holder2: dict[str, Any] = {}
+                    async for _e2 in _run_delegate_live(
+                            name, task, primary, model, _holder2):
+                        yield _e2
+                    out = _holder2.get("result") or {"tool": name,
+                                                     "ok": False,
+                                                     "error": "no result"}
                 except Exception as exc:
                     out = {"tool": name, "ok": False, "error": str(exc)[:160]}
-                state["tool_results"].append(
-                    out if isinstance(out, dict) else {"tool": name, "rows": out})
+                if not isinstance(out, dict):
+                    out = {"tool": name, "rows": out}
+                _ms = int((time.time() - _t0) * 1000)
+                _st = _result_status(out)
+                _rd = {
+                    "node": "data_retrieval", "name": name,
+                    "label": tool_label(name), "status": _st,
+                    "rows": _result_rows(out), "ms": _ms,
+                    "summary": _delegate_result_summary(out),
+                }
+                if _st != "ok":
+                    try:
+                        _rd["error"] = str(out.get("error"))[:160]
+                    except Exception:
+                        _rd["error"] = "failed"
+                yield _event("tool_result", _rd)
+                for _te in _trace_replay_events(out):
+                    yield _te
+                state["tool_results"].append(out)
                 state["calls_made"].append(name + ":" + json.dumps(
                     {"task": task}, sort_keys=True))
             if seeds:
@@ -631,12 +979,45 @@ async def _triage_seed(question: str, primary: str, model: str,
         pick = "delegate_league"
     if pick is None or pick not in delegates:
         return
+    _p_args = {"task": question}
+    _t0 = time.time()
+    yield _event("tool_call", {
+        "node": "data_retrieval", "name": pick,
+        "label": tool_label(pick),
+        "summary": _args_summary(pick, _p_args),
+    })
     try:
-        out = await delegates[pick].ainvoke({"task": question})
+        _holder3: dict[str, Any] = {}
+        async for _e3 in _run_delegate_live(
+                pick, question, primary, model, _holder3):
+            yield _e3
+        out = _holder3.get("result") or {"tool": pick, "ok": False,
+                                         "error": "no result"}
     except Exception as exc:
         out = {"tool": pick, "ok": False, "error": str(exc)[:160]}
-    state["tool_results"].append(
-        out if isinstance(out, dict) else {"tool": pick, "rows": out})
+    if not isinstance(out, dict):
+        out = {"tool": pick, "rows": out}
+    _ms = int((time.time() - _t0) * 1000)
+    _st = _result_status(out)
+    _rd = {
+        "node": "data_retrieval", "name": pick,
+        "label": tool_label(pick), "status": _st,
+        "rows": _result_rows(out), "ms": _ms,
+        "summary": _delegate_result_summary(out),
+    }
+    if _st != "ok":
+        try:
+            _rd["error"] = str(out.get("error"))[:160]
+        except Exception:
+            _rd["error"] = "failed"
+    yield _event("tool_result", _rd)
+    for _te in _trace_replay_events(out):
+        yield _te
+    yield _event("thought_stream", {
+        "node": "data_retrieval",
+        "text": _done_thought(tool_label(pick), out, _ms),
+    })
+    state["tool_results"].append(out)
     state["calls_made"].append(pick + ":" + json.dumps({"task": question},
                                                        sort_keys=True))
 
@@ -838,13 +1219,17 @@ async def data_retrieval_agent(
                 and not _detect_entities(question_for_planner)[1]:
             question_for_planner = (
                 f"About {', '.join(carry)}: {question_for_planner}")
-        resp = await tooled.ainvoke(
-            [SystemMessage(content=PLANNER_SYSTEM + prior), HumanMessage(content=question_for_planner)]
-        )
+        _pholder: dict[str, Any] = {}
+        async for _pe in _stream_planner(
+                tooled,
+                [SystemMessage(content=PLANNER_SYSTEM + prior),
+                 HumanMessage(content=question_for_planner)],
+                _pholder):
+            yield _pe
+        calls = _pholder.get("calls", [])
     except Exception as exc:
         yield _event("error", {"node": "data_retrieval", "message": str(exc)[:200]})
         return
-    calls = getattr(resp, "tool_calls", None) or []
     fresh = []
     for call in calls:
         key = _call_key(call.get("name", ""), call.get("args", {}) or {})
@@ -872,10 +1257,6 @@ async def data_retrieval_agent(
             _deep2 = _is_deep_question(state["question"])
             state["round"] = DEEP_TOOL_ROUNDS if _deep2 else MAX_TOOL_ROUNDS
     else:
-        for call in fresh:
-            yield _event("message", {"node": "data_retrieval",
-                                     "label": tool_label(call.get("name", "")),
-                                     "status": "started"})
         state["_pending_calls"] = fresh  # type: ignore[typeddict-unknown-key]
         names = sorted({c.get("name", "") for c in fresh})
         yield _event("thought_stream", {"node": "data_retrieval",
@@ -887,33 +1268,88 @@ async def actual_tool_node(state: DimeState) -> AsyncGenerator[dict[str, Any], N
     yield _event("node_update", {"node": "tools", "status": "running"})
     by_name = {t.name: t for t in _supervisor_tools(state)}
     pending = state.pop("_pending_calls", [])  # type: ignore[typeddict-unknown-key]
+    elapsed: dict[int, int] = {}
 
     async def _run(call: dict[str, Any]) -> dict[str, Any]:
+        t0 = time.time()
         name = call.get("name", "")
         args = call.get("args", {}) or {}
         fn = by_name.get(name)
         if fn is None:
+            elapsed[id(call)] = int((time.time() - t0) * 1000)
+            await _tok_q.put(None)
             return {"tool": name, "ok": False, "error": "unknown tool"}
         if isinstance(args, dict) and "season" in args:
             from .tools._core import clamp_season
 
             args = {**args, "season": clamp_season(args.get("season"))}
         try:
-            out = await fn.ainvoke(args)
+            if name.startswith("delegate_"):
+                # Stream the desk's raw tokens live while it works.
+                async def _on_tok(t: str) -> None:
+                    await _tok_q.put((name, t))
+
+                out = await run_desk_streaming(
+                    name, args.get("task", "") if isinstance(args, dict) else "",
+                    state["primary"], state["model"],  # type: ignore[arg-type]
+                    on_token=_on_tok)
+            else:
+                out = await fn.ainvoke(args)
+            elapsed[id(call)] = int((time.time() - t0) * 1000)
+            await _tok_q.put(None)
             return out if isinstance(out, dict) else {"tool": name, "rows": out}
         except Exception as exc:
+            elapsed[id(call)] = int((time.time() - t0) * 1000)
+            await _tok_q.put(None)
             return {"tool": name, "ok": False, "error": str(exc)[:200]}
 
-    results = await asyncio.gather(*(_run(c) for c in pending))
+    for call in pending:
+        name = call.get("name", "") if isinstance(call, dict) else ""
+        args = call.get("args", {}) or {} if isinstance(call, dict) else {}
+        yield _event("tool_call", {
+            "node": "tools", "name": name,
+            "label": tool_label(name),
+            "summary": _args_summary(name, args),
+        })
+    _tok_q: asyncio.Queue = asyncio.Queue()
+    _gather = asyncio.create_task(asyncio.gather(*(_run(c) for c in pending)))
+    # Drain live desk tokens while the tools run; each _run posts one
+    # None sentinel when it finishes.
+    _remaining = len(pending)
+    while _remaining > 0:
+        _item = await _tok_q.get()
+        if _item is None:
+            _remaining -= 1
+            continue
+        _tname, _ttext = _item
+        yield _event("thought_token", {
+            "node": "tools", "text": _ttext,
+            "agent": _tname.replace("delegate_", ""),
+        })
+    results = await _gather
     for call, result in zip(pending, results):
         state["tool_results"].append(result)
         name = call.get("name", "") if isinstance(call, dict) else ""
         if not name and isinstance(result, dict):
             name = str(result.get("tool", ""))
-        yield _event("message", {"node": "tools",
-                                 "label": tool_label(name),
-                                 "status": _result_status(result if isinstance(result, dict) else {}),
-                                 "rows": _result_rows(result if isinstance(result, dict) else {})})
+        res = result if isinstance(result, dict) else {}
+        status = _result_status(res)
+        rdata: dict[str, Any] = {
+            "node": "tools", "name": name,
+            "label": tool_label(name), "status": status,
+            "rows": _result_rows(res),
+            "ms": elapsed.get(id(call), 0),
+        }
+        if status != "ok":
+            try:
+                rdata["error"] = str(res.get("error"))[:160]
+            except Exception:
+                rdata["error"] = "failed"
+        yield _event("tool_result", rdata)
+        for _te in _trace_replay_events(res if isinstance(res, dict) else {}):
+            _td = dict(_te.get("data", {}) or {})
+            _td["node"] = "tools"
+            yield {"type": _te.get("type", "tool_call"), "data": _td}
     state["round"] += 1
     yield _event("node_update", {"node": "tools", "status": "complete"})
 
@@ -1202,7 +1638,9 @@ async def run_chat(
     )
     async for e in entry_node(state):
         yield e
-    await _triage_seed(question, primary, model, state)
+    yield _event("node_update", {"node": "data_retrieval", "status": "running"})
+    async for e in _triage_seed(question, primary, model, state):
+        yield e
     deep = _is_deep_question(question)
     max_rounds = DEEP_TOOL_ROUNDS if deep else MAX_TOOL_ROUNDS
     if deep:

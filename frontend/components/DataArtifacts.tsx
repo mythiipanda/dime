@@ -107,10 +107,10 @@ export default function DataArtifacts({
 
   if (!table) return null;
 
-  const artifactId = `${table.tool}-${page}`;
+  const artifactId = `${table.tool || "dataset"}-${page}`;
   const isCanvasOpen = activeArtifactId === artifactId;
   const rawTitle =
-    table.tool.replace("get_", "").replace(/_/g, " ").toUpperCase() +
+    (table.tool || "dataset").replace("get_", "").replace(/_/g, " ").toUpperCase() +
     (table.meta?.stat_category ? ` · ${table.meta.stat_category}` : "");
 
   if (isCanvasOpen && !showInline) {

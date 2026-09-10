@@ -7,13 +7,53 @@ stays lean. New desks need a decision row first.
 
 from typing import Any
 import re as _re
+import time as _time
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.tools import tool
 
-from .providers import ProviderName, get_llm
+from .providers import (ProviderName, get_llm, astream_chunks_with_fallback,
+                       accumulate_tool_calls, fallback_order)
 
 SEASON = "2025-26"
 WORKER_BUDGET = 3
+
+
+def _desk_tool_label(name: str) -> str:
+    labels = {
+        "resolve_entity": "Identifying players and teams",
+        "search_nba": "Searching league coverage",
+        "get_compare": "Comparing players",
+        "delegate_scout": "Scouting players",
+        "delegate_team": "Scouting teams",
+        "delegate_league": "Scanning league data",
+        "run_python": "Warehouse query",
+        "text_to_sql": "Warehouse query",
+        "get_playoff_intel": "Pulling playoff logs",
+        "get_trade_check": "Checking trade math",
+    }
+    if not name:
+        return "Checking data"
+    if name in labels:
+        return labels[name]
+    return name.replace("_", " ").strip().title() or "Checking data"
+
+
+def _trace_status(out: Any) -> str:
+    try:
+        if isinstance(out, dict) and (out.get("ok") is False or out.get("error")):
+            return "fail"
+    except Exception:
+        pass
+    return "ok"
+
+
+def _trace_error(out: Any) -> str | None:
+    try:
+        if isinstance(out, dict) and out.get("error"):
+            return str(out.get("error"))[:160]
+    except Exception:
+        pass
+    return None
 
 
 def _row_count(rows: Any) -> int:
@@ -24,6 +64,48 @@ def _row_count(rows: Any) -> int:
     return 1 if rows else 0
 
 
+async def _stream_text(provider: ProviderName, model: str,
+                       messages: list, on_token=None) -> str:
+    """Stream a plain LLM call, forwarding text chunks to on_token. Returns full text."""
+    parts: list[str] = []
+    async for item in astream_chunks_with_fallback(provider, model, messages):
+        t = getattr(item["chunk"], "content", "") or ""
+        if t:
+            parts.append(str(t))
+            if on_token is not None:
+                await on_token(str(t))
+    return "".join(parts)
+
+
+async def _stream_tooled(provider: ProviderName, model: str,
+                         messages: list, tools: list,
+                         on_token=None) -> tuple[str, list[dict]]:
+    """Stream a tool-bound LLM call. Forwards text chunks to on_token live,
+    returns (full_text, tool_calls). Tries providers in fallback order."""
+    text_parts: list[str] = []
+    tc_chunks: list[dict] = []
+    errors: list[str] = []
+    for name in fallback_order(provider):
+        client = get_llm(name, model if name == provider else None)
+        if client is None:
+            errors.append(f"{name}: missing key")
+            continue
+        try:
+            bound = client.bind_tools(tools)
+            async for chunk in bound.astream(messages):
+                t = getattr(chunk, "content", "") or ""
+                if t:
+                    text_parts.append(str(t))
+                    if on_token is not None:
+                        await on_token(str(t))
+                for tc in getattr(chunk, "tool_call_chunks", None) or []:
+                    tc_chunks.append(dict(tc) if isinstance(tc, dict) else tc)
+            return "".join(text_parts), accumulate_tool_calls(tc_chunks)
+        except Exception as exc:
+            errors.append(f"{name}: {str(exc)[:160]}")
+    raise RuntimeError("all providers failed: " + " | ".join(errors))
+
+
 async def _run_desk(
     desk: str,
     brief: str,
@@ -32,26 +114,43 @@ async def _run_desk(
     model: str,
     tool_names: list[str],
     force_tool: str | tuple[str, dict] | None = None,
+    on_token=None,
 ) -> dict[str, Any]:
+    """Run one desk. on_token, if given, is an async callable receiving each
+    LLM text chunk as it streams, so callers can pipe live tokens to SSE."""
     from . import tools as _tools
 
     by_name = {t.name: t for t in _tools.v1_tools}
     subset = [by_name[n] for n in tool_names if n in by_name]
     client = get_llm(provider, model)
     if client is None:
-        return {"agent": desk, "ok": False, "error": f"no key for {provider}"}
-    tooled = client.bind_tools(subset)
+        return {"agent": desk, "ok": False, "error": f"no key for {provider}",
+                "tool_trace": []}
     calls_made = 0
     collected: list[dict[str, Any]] = []
+    trace: list[dict[str, Any]] = []
     if force_tool:
         fname, fargs = (force_tool if isinstance(force_tool, tuple)
                         else (force_tool, {}))
         if fname in by_name:
+            _t0 = _time.time()
             try:
                 out = await by_name[fname].ainvoke(fargs)
                 collected.append(out if isinstance(out, dict) else {"rows": out})
             except Exception as exc:
-                collected.append({"tool": fname, "error": str(exc)[:160]})
+                out = {"tool": fname, "error": str(exc)[:160]}
+                collected.append(out)
+            _ms = int((_time.time() - _t0) * 1000)
+            _rows = _row_count(out.get("rows")) if isinstance(out, dict) else _row_count(out)
+            _st = _trace_status(out)
+            _te: dict[str, Any] = {
+                "name": fname, "label": _desk_tool_label(fname),
+                "ms": _ms, "rows": _rows, "status": _st,
+            }
+            _err = _trace_error(out)
+            if _err:
+                _te["error"] = _err
+            trace.append(_te)
             calls_made += 1
     attempts = [
         [SystemMessage(content=brief),
@@ -59,25 +158,41 @@ async def _run_desk(
         [SystemMessage(content=brief + " Call exactly one tool now. No prose."),
          HumanMessage(content=f"Season {SEASON}. Task: {task}")],
     ]
-    resp = None
+    tool_calls: list[dict] = []
     for attempt in attempts:
         try:
-            resp = await tooled.ainvoke(attempt)
+            _t, tool_calls = await _stream_tooled(
+                provider, model, attempt, subset, on_token)
         except Exception as exc:
-            return {"agent": desk, "ok": False, "error": str(exc)[:200]}
-        if getattr(resp, "tool_calls", None):
+            return {"agent": desk, "ok": False, "error": str(exc)[:200],
+                    "tool_trace": trace}
+        if tool_calls:
             break
-    for call in getattr(resp, "tool_calls", None) or []:
+    for call in tool_calls:
         if calls_made >= WORKER_BUDGET:
             break
-        fn = by_name.get(call.get("name", ""))
+        fname = call.get("name", "")
+        fn = by_name.get(fname)
         if fn is None:
             continue
+        _t0 = _time.time()
         try:
             out = await fn.ainvoke(call.get("args", {}) or {})
             collected.append(out if isinstance(out, dict) else {"rows": out})
         except Exception as exc:
-            collected.append({"tool": call.get("name"), "error": str(exc)[:160]})
+            out = {"tool": fname, "error": str(exc)[:160]}
+            collected.append(out)
+        _ms = int((_time.time() - _t0) * 1000)
+        _rows = _row_count(out.get("rows")) if isinstance(out, dict) else _row_count(out)
+        _st = _trace_status(out)
+        _te = {
+            "name": fname, "label": _desk_tool_label(fname),
+            "ms": _ms, "rows": _rows, "status": _st,
+        }
+        _err = _trace_error(out)
+        if _err:
+            _te["error"] = _err
+        trace.append(_te)
         calls_made += 1
     ran_data_tool = any(
         isinstance(c, dict) and c.get("tool", "") not in
@@ -87,32 +202,47 @@ async def _run_desk(
     if collected and not ran_data_tool and calls_made < WORKER_BUDGET:
         data_names = [t.name for t in subset
                       if t.name not in ("resolve_entity", "search_nba")]
-        data_only = client.bind_tools(
-            [t for t in subset
-             if t.name not in ("resolve_entity", "search_nba")])
+        data_tools = [t for t in subset
+                      if t.name not in ("resolve_entity", "search_nba")]
         try:
-            resp = await data_only.ainvoke(
+            _t2, tool_calls2 = await _stream_tooled(
+                provider, model,
                 [SystemMessage(content=brief + " Identity is settled, use "
                                "these ids verbatim. "
                                f"Call exactly one of these now: "
                                f"{', '.join(data_names)}. No prose."),
                  HumanMessage(content=f"Season {SEASON}. Task: {task}. "
-                              f"Resolved: {str(collected)[:600]}")]
+                              f"Resolved: {str(collected)[:600]}")],
+                data_tools, on_token,
             )
         except Exception as exc:
-            return {"agent": desk, "ok": False, "error": str(exc)[:200]}
-        for call in getattr(resp, "tool_calls", None) or []:
+            return {"agent": desk, "ok": False, "error": str(exc)[:200],
+                    "tool_trace": trace}
+        for call in tool_calls2:
             if calls_made >= WORKER_BUDGET:
                 break
             fn = by_name.get(call.get("name", ""))
             if fn is None:
                 continue
+            _t0 = _time.time()
+            _cname = str(call.get("name", ""))
             try:
                 out = await fn.ainvoke(call.get("args", {}) or {})
                 collected.append(out if isinstance(out, dict) else {"rows": out})
             except Exception as exc:
-                collected.append({"tool": call.get("name"),
-                                  "error": str(exc)[:160]})
+                out = {"tool": _cname, "error": str(exc)[:160]}
+                collected.append(out)
+            _ms = int((_time.time() - _t0) * 1000)
+            _te = {
+                "name": _cname, "label": _desk_tool_label(_cname),
+                "ms": _ms,
+                "rows": _row_count(out.get("rows")) if isinstance(out, dict) else 0,
+                "status": _trace_status(out),
+            }
+            _err = _trace_error(out)
+            if _err:
+                _te["error"] = _err
+            trace.append(_te)
             calls_made += 1
     has_data = any(
         isinstance(c, dict) and c.get("tool", "") not in
@@ -121,9 +251,11 @@ async def _run_desk(
     )
     if not has_data:
         return {"agent": desk, "ok": False,
-                "error": "no further detail available on that angle"}
+                "error": "no further detail available on that angle",
+                "tool_trace": trace}
     try:
-        summary = await client.ainvoke(
+        text = await _stream_text(
+            provider, model,
             [
                 SystemMessage(
                     content="Summarize these findings in 5 short sentences max. "
@@ -131,13 +263,14 @@ async def _run_desk(
                     "If the evidence has no data rows, reply exactly: NO DATA."
                 ),
                 HumanMessage(content=f"Task: {task}\nEvidence: {str(collected)[:8000]}"),
-            ]
+            ],
+            on_token,
         )
-        text = getattr(summary, "content", "") or ""
     except Exception as exc:
         text = ""
         collected.append({"error": str(exc)[:160]})
-    return {"agent": desk, "ok": True, "summary": text, "tables": collected}
+    return {"agent": desk, "ok": True, "summary": text, "tables": collected,
+            "tool_trace": trace}
 
 
 SCOUT_BRIEF = (
@@ -207,23 +340,22 @@ LEAGUE_BRIEF = (
 )
 
 
-def delegate_tools(provider: ProviderName, model: str) -> list:
-    @tool("delegate_scout")
-    async def delegate_scout(task: str) -> dict[str, Any]:
-        """Hand player research to the scout. One player per call."""
-        return await _run_desk(
-            "scout", SCOUT_BRIEF, task, provider, model,
-            ["resolve_entity", "search_nba",              "get_player_intel", "get_raptor_history",
-             "get_on_off", "get_wowy", "get_four_factors",
-             "get_last_x", "get_percentiles", "get_shot_zones",
-             "get_shot_compare", "get_trend", "get_comps", "get_clutch",
-             "get_playoff_intel",
-              "get_advanced", "run_python", "text_to_sql"],
-        )
+def _desk_spec(name: str, task: str):
+    """Shared desk configuration: (desk, brief, tool_names, force_tool).
 
-    @tool("delegate_team")
-    async def delegate_team(task: str) -> dict[str, Any]:
-        """Hand team research to the team desk. One team per call."""
+    Used by both the LangChain tool wrappers (delegate_tools) and the
+    live-streaming entry point (run_desk_streaming) so they can't drift.
+    """
+    if name == "delegate_scout":
+        return ("scout", SCOUT_BRIEF,
+                ["resolve_entity", "search_nba", "get_player_intel", "get_raptor_history",
+                 "get_on_off", "get_wowy", "get_four_factors",
+                 "get_last_x", "get_percentiles", "get_shot_zones",
+                 "get_shot_compare", "get_trend", "get_comps", "get_clutch",
+                 "get_playoff_intel",
+                 "get_advanced", "run_python", "text_to_sql"],
+                None)
+    if name == "delegate_team":
         force = None
         if _re.search(r"impact|how much|how bad|hurting|without|matter",
                        task, _re.IGNORECASE):
@@ -238,19 +370,14 @@ def delegate_tools(provider: ProviderName, model: str) -> list:
             )
             if abbr:
                 force = ("get_injury_impact", {"team": abbr})
-        return await _run_desk(
-            "team", TEAM_BRIEF, task, provider, model,
-            ["resolve_entity", "search_nba", "get_team_hub", "get_games_on_date",
-             "get_boxscore", "get_lineups", "get_wowy", "get_injuries", "get_preview",
-             "get_scout_pack", "get_rotation_check", "get_cap_ledger",
-             "get_team_splits", "get_injury_impact", "run_python",
-             "text_to_sql"],
-            force_tool=force,
-        )
-
-    @tool("delegate_league")
-    async def delegate_league(task: str) -> dict[str, Any]:
-        """Hand leaguewide questions to the league desk."""
+        return ("team", TEAM_BRIEF,
+                ["resolve_entity", "search_nba", "get_team_hub", "get_games_on_date",
+                 "get_boxscore", "get_lineups", "get_wowy", "get_injuries", "get_preview",
+                 "get_scout_pack", "get_rotation_check", "get_cap_ledger",
+                 "get_team_splits", "get_injury_impact", "run_python",
+                 "text_to_sql"],
+                force)
+    if name == "delegate_league":
         force = None
         if _re.search(r"playoff|champion|finals|\bring\b|title",
                        task, _re.IGNORECASE):
@@ -263,14 +390,43 @@ def delegate_tools(provider: ProviderName, model: str) -> list:
                 task, _re.IGNORECASE):
             force = ("text_to_sql", {"question": task.replace(
                 " Answer via text_to_sql (you own that tool).", "")})
-        return await _run_desk(
-            "league", LEAGUE_BRIEF, task, provider, model,
-            ["get_standings", "get_leaders", "get_injuries", "get_rapm",
-             "get_playoffs", "get_playoff_intel", "get_ratings", "get_clutch", "get_elo",
-             "get_playoff_sim", "get_contract_value", "get_draft_board",
-             "get_draft_model", "get_risers", "get_trade_check",
-             "run_python", "text_to_sql"],
-            force_tool=force,
-        )
+        return ("league", LEAGUE_BRIEF,
+                ["get_standings", "get_leaders", "get_injuries", "get_rapm",
+                 "get_playoffs", "get_playoff_intel", "get_ratings", "get_clutch", "get_elo",
+                 "get_playoff_sim", "get_contract_value", "get_draft_board",
+                 "get_draft_model", "get_risers", "get_trade_check",
+                 "run_python", "text_to_sql"],
+                force)
+    raise ValueError(f"unknown desk: {name}")
+
+
+async def run_desk_streaming(name: str, task: str, provider: ProviderName,
+                             model: str, on_token=None) -> dict[str, Any]:
+    """Direct desk entry point with live token streaming.
+
+    Same result contract as the LangChain delegate tools, but LLM text
+    chunks are forwarded to on_token (async callable) the moment they're
+    generated instead of going silent for seconds.
+    """
+    desk, brief, tool_names, force = _desk_spec(name, task)
+    return await _run_desk(desk, brief, task, provider, model, tool_names,
+                           force_tool=force, on_token=on_token)
+
+
+def delegate_tools(provider: ProviderName, model: str) -> list:
+    @tool("delegate_scout")
+    async def delegate_scout(task: str) -> dict[str, Any]:
+        """Hand player research to the scout. One player per call."""
+        return await run_desk_streaming("delegate_scout", task, provider, model)
+
+    @tool("delegate_team")
+    async def delegate_team(task: str) -> dict[str, Any]:
+        """Hand team research to the team desk. One team per call."""
+        return await run_desk_streaming("delegate_team", task, provider, model)
+
+    @tool("delegate_league")
+    async def delegate_league(task: str) -> dict[str, Any]:
+        """Hand leaguewide questions to the league desk."""
+        return await run_desk_streaming("delegate_league", task, provider, model)
 
     return [delegate_scout, delegate_team, delegate_league]
