@@ -79,6 +79,32 @@ the season moves. That drift is signal, not noise.
     .15 / APG .15 / RPG .15 over qualified candidates (GP>=20,
     MIN>=500); candidate score = round(total, 2). Ground truth is
     verified to match the tool exactly. Gold: `get_award_race`.
+12. `streaks` — longest streak question sampled from five configs:
+    30+ point / 10+ rebound / 10+ assist / 4+ three-pointer games
+    (player scope, from cached gamelogs) or win streak (team scope,
+    regular-season only from history tables). Ground truth mirrors
+    `get_streaks`' ranking exactly: per-holder runs, longest-run
+    tie-break to the later end date, cross-holder sort by streak
+    desc, end_date desc, holder name asc. Mode is always longest;
+    active streaks have multiple winners and are ungradeable.
+    Streaks under 2 games and unresolved holder names are skipped.
+    Gold: `get_streaks`.
+13. `lineups` — best net rating per 100 possessions among a random
+    team's five-man lineups (minimum 100 possessions). Ground truth
+    mirrors `get_lineup_stats` exactly: play-level possession
+    aggregates with reconstructed blowout margins, the MIN*2
+    estimated fallback when possession data is missing, ratings
+    round(x, 1), the 100-possession sample floor, sort by poss desc.
+    Ground truth is the best net rating over ALL floor-passing units
+    (the tool's default limit=10 is a display slice; the agent can page
+    deeper). Teams with fewer than 2 qualifying units or a tied
+    best net rating are skipped. No `names` dict: five-man GROUP_NAMEs
+    share surnames across units, so last-token name_recall
+    false-positives on wrong lineups; the four numeric facts (net/off/
+    def rating, possessions) uniquely identify the unit and carry the
+    grade. Gold: `get_lineup_stats` (the floor-aware tool; the older
+    `get_lineups` maps to `chain` and does not satisfy the sample-floor
+    requirement).
 
 ## Scoring formulas
 

@@ -1,8 +1,10 @@
 """Runtime task generators. Ground truth comes from the warehouse directly.
 
-Anti-circularity rule: this module imports app.store and app.sources only.
-It never imports app.tools, so the benchmark cannot reward the agent for
-agreeing with its own tool wrappers.
+Anti-circularity rule: this module imports app.store and app.sources only,
+plus nba_api static tables for player-name resolution (the same upstream
+source the streak tool reads for holder names). It never imports app.tools,
+so the benchmark cannot reward the agent for agreeing with its own tool
+wrappers.
 """
 
 from datetime import datetime, timezone
@@ -28,6 +30,16 @@ def _q(sql: str, params: list | None = None) -> list:
     con = store.connect(read_only=True)
     try:
         return con.execute(sql, params or []).fetchall()
+    finally:
+        con.close()
+
+
+def _qd(sql: str, params: list | None = None) -> list[dict]:
+    con = store.connect(read_only=True)
+    try:
+        cur = con.execute(sql, params or [])
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
     finally:
         con.close()
 
@@ -747,6 +759,333 @@ def gen_awards(rng, ctx) -> tuple[Task, GroundTruth]:
     )
     return task, truth
 
+# ---------------------------------------------------------------------------
+# streaks family: mirrors get_streaks' pipeline exactly (compute_streaks
+# over warehouse gamelogs: per-holder runs, longest-run tie-break to the
+# later end date, cross-holder ranking by streak desc, end_date desc,
+# holder name asc). Mode is always longest: active streaks have multiple
+# winners and are ungradeable. Quoting the tool's top row is the right play.
+# ---------------------------------------------------------------------------
+
+# (question noun, stat key, threshold, scope)
+_STREAK_CONFIGS = [
+    ("30+ point", "PTS", 30.0, "player"),
+    ("10+ rebound", "REB", 10.0, "player"),
+    ("10+ assist", "AST", 10.0, "player"),
+    ("4+ three-pointer", "FG3M", 4.0, "player"),
+    ("win", "W", None, "team"),
+]
+
+
+def _static_player_names() -> dict:
+    try:
+        from nba_api.stats.static import players as _players
+        return {p.get("id"): p.get("full_name")
+                for p in _players.get_players()}
+    except Exception:
+        return {}
+
+
+def _streak_player_games() -> list[dict]:
+    names = _static_player_names()
+    games = []
+    for pid, gdate, pts, reb, ast, stl, blk, fg3m in _q(
+            "SELECT Player_ID, GAME_DATE, PTS, REB, AST, STL, BLK, FG3M "
+            "FROM silver_player_gamelogs WHERE _season = ? "
+            "ORDER BY Player_ID, GAME_DATE", [SEASON]):
+        parsed = _parse_gamedate(gdate)
+        d = parsed[1].date() if parsed[0] == 0 else None
+        if d is None:
+            continue
+        try:
+            ipid = int(pid)
+        except (TypeError, ValueError):
+            continue
+        games.append({
+            "holder": names.get(ipid) or f"Player {ipid}",
+            "holder_id": ipid, "date": d,
+            "PTS": pts, "REB": reb, "AST": ast,
+            "STL": stl, "BLK": blk, "FG3M": fg3m,
+        })
+    return games
+
+
+def _streak_team_games() -> tuple[list[dict], dict]:
+    cols = {r[1] for r in _q("PRAGMA table_info(silver_hist_gamelogs)")}
+    q = ("SELECT team_abbreviation, team_name, game_date, wl FROM "
+         "silver_hist_gamelogs WHERE _season = ?")
+    if "season_type" in cols:
+        q += " AND season_type = 'regular-season'"
+    games, abbr2name = [], {}
+    for abbr, tname, gdate, wl in _q(q + " ORDER BY team_abbreviation, "
+                                     "game_date", [SEASON]):
+        try:
+            d = datetime.strptime(str(gdate or "").strip(),
+                                  "%Y-%m-%d").date()
+        except (TypeError, ValueError):
+            continue
+        key = str(abbr or "").upper()
+        abbr2name[key] = tname or key
+        games.append({"holder": key, "holder_id": key, "date": d,
+                      "WL": str(wl or "").upper()})
+    return games, abbr2name
+
+
+def _rank_streaks(games: list[dict], stat_key: str,
+                  threshold: float | None) -> list[dict]:
+    # Verbatim mirror of the tool's longest-mode ranking.
+    def _cond(g: dict) -> bool:
+        if stat_key == "W":
+            return str(g.get("WL") or "").upper() == "W"
+        return _fnum(g.get(stat_key)) >= (threshold or 0.0)
+
+    by_holder: dict = {}
+    for g in games:
+        if g.get("date") is None:
+            continue
+        by_holder.setdefault((g["holder_id"], g["holder"]), []).append(g)
+    out = []
+    for (hid, holder), gs in by_holder.items():
+        gs = sorted(gs, key=lambda g: g["date"])
+        runs: list = []
+        i = 0
+        while i < len(gs):
+            if not _cond(gs[i]):
+                i += 1
+                continue
+            j = i
+            while j + 1 < len(gs) and _cond(gs[j + 1]):
+                j += 1
+            runs.append((i, j))
+            i = j + 1
+        if not runs:
+            continue
+        best = max(ei - si for si, ei in runs)
+        si, ei = max((r for r in runs if r[1] - r[0] == best),
+                     key=lambda r: r[1])
+        out.append({"holder": holder, "holder_id": hid,
+                    "streak": ei - si + 1,
+                    "end_date": gs[ei]["date"].isoformat()})
+    out.sort(key=lambda s: str(s["holder"]))
+    out.sort(key=lambda s: s["end_date"], reverse=True)
+    out.sort(key=lambda s: -s["streak"])
+    return out[:10]
+
+
+def gen_streaks(rng, ctx) -> tuple[Task, GroundTruth]:
+    idx = int(ctx["task_id"].split("-")[1])
+    order = [_STREAK_CONFIGS[(idx + i) % len(_STREAK_CONFIGS)]
+             for i in range(len(_STREAK_CONFIGS))]
+    head, tail = order[0], order[1:]
+    rng.shuffle(tail)
+    for noun, stat_key, thr, scope in [head] + tail:
+        if scope == "player":
+            games = _streak_player_games()
+            abbr2name = {}
+        else:
+            games, abbr2name = _streak_team_games()
+        if not games:
+            continue
+        ranked = _rank_streaks(games, stat_key, thr)
+        if not ranked or ranked[0]["streak"] < 2:
+            continue
+        top = ranked[0]
+        if scope == "player":
+            if str(top["holder"]).startswith("Player "):
+                continue  # unresolved name: ungradeable
+            name = top["holder"]
+            question = (f"Who has the longest streak of {noun} games this "
+                        f"season, and how long is the streak?")
+            facts = {"names": {"streak_leader": name},
+                     "streak_games": top["streak"], "threshold": thr}
+        else:
+            name = abbr2name.get(top["holder"], top["holder"])
+            question = ("Which team has the longest win streak this season, "
+                        "and how long is it?")
+            facts = {"names": {"streak_leader": name},
+                     "streak_games": top["streak"]}
+        tid = ctx["task_id"]
+        task = Task(
+            task_id=tid, family="streaks", question=question,
+            entities=[name], gold_tool_families=["streaks"],
+            timeout_s=ctx["timeout_s"], seed=ctx["seed"],
+        )
+        truth = GroundTruth(
+            task_id=tid, facts=facts, computed_at=_now(),
+            source="nba_api via silver_player_gamelogs / "
+                   "silver_hist_gamelogs (same streak ranking as get_streaks)",
+        )
+        return task, truth
+    raise SkipTask("no gradeable streak in warehouse")
+
+
+# ---------------------------------------------------------------------------
+# lineups family: mirrors get_lineup_stats' pipeline exactly (play-level
+# possession aggregates with reconstructed blowout margins; estimated
+# MIN*2 fallback when possession data is missing; per-100 ratings
+# round(x,1); 100-possession sample floor). Ground truth is the best net
+# rating over ALL floor-passing units: the question asks for the best at
+# the 100-possession floor and the agent can page past the tool's
+# default limit-10 display slice.
+# ---------------------------------------------------------------------------
+
+_BLOWOUT_MARGIN = 20
+
+
+def _lineup_key_gid(gid) -> tuple | None:
+    try:
+        parts = [int(p) for p in str(gid).split("-")
+                 if p.strip().isdigit()]
+        if len(parts) == 5:
+            return tuple(sorted(parts))
+    except (TypeError, ValueError):
+        pass
+    return None
+
+
+def _lineup_possession_aggs(team_id: int) -> dict | None:
+    rows = _qd(
+        "SELECT game_id, possession_number, offense_team_id, "
+        "defense_team_id, points, "
+        "off_player_1, off_player_2, off_player_3, off_player_4, "
+        "off_player_5, def_player_1, def_player_2, def_player_3, "
+        "def_player_4, def_player_5 FROM silver_hist_possessions "
+        "WHERE _season = ? AND (offense_team_id = ? OR "
+        "defense_team_id = ?) AND count_as_possession = 'true'",
+        [SEASON, team_id, team_id])
+    if not rows:
+        return None
+    rows.sort(key=lambda r: (str(r.get("game_id")),
+                             int(r.get("possession_number") or 0)))
+    agg: dict = {}
+    runs: dict = {}
+    for r in rows:
+        try:
+            off_tid = int(r["offense_team_id"])
+            def_tid = int(r["defense_team_id"])
+            pts = int(r["points"] or 0)
+        except (TypeError, ValueError, KeyError):
+            continue
+        game = str(r.get("game_id"))
+        run = runs.setdefault(game, {})
+        off_run, def_run = run.get(off_tid, 0), run.get(def_tid, 0)
+        if off_tid == team_id:
+            margin = off_run - def_run
+            players = [r.get(f"off_player_{i}") for i in range(1, 6)]
+        elif def_tid == team_id:
+            margin = def_run - off_run
+            players = [r.get(f"def_player_{i}") for i in range(1, 6)]
+        else:
+            continue
+        if any(p is None for p in players):
+            continue
+        try:
+            unit = tuple(sorted(int(p) for p in players))
+        except (TypeError, ValueError):
+            continue
+        a = agg.setdefault(unit, {"off_poss": 0, "def_poss": 0, "pf": 0,
+                                  "pa": 0, "blowout": 0})
+        if off_tid == team_id:
+            a["off_poss"] += 1
+            a["pf"] += pts
+        else:
+            a["def_poss"] += 1
+            a["pa"] += pts
+        if abs(margin) >= _BLOWOUT_MARGIN:
+            a["blowout"] += 1
+        run[off_tid] = off_run + pts
+        run[def_tid] = def_run
+    return agg or None
+
+
+def _lineup_shown_units(team_id: int, min_poss: int = 100,
+                        limit: int | None = None) -> list[dict]:
+    rows = _qd("SELECT GROUP_NAME, GROUP_ID, GP, MIN, PTS, PLUS_MINUS "
+               "FROM silver_lineups WHERE _season = ? AND _entity = ?",
+               [SEASON, f"team:{team_id}"])
+    if not rows:
+        return []
+    agg = _lineup_possession_aggs(team_id)
+    units = []
+    for r in rows:
+        key = _lineup_key_gid(r.get("GROUP_ID"))
+        a = agg.get(key) if (agg is not None and key is not None) else None
+        if a is not None:
+            off_poss, def_poss = a["off_poss"], a["def_poss"]
+            pf, pa = float(a["pf"]), float(a["pa"])
+            poss = off_poss + def_poss
+        else:
+            poss = int(round(float(r.get("MIN") or 0) * 2))
+            off_poss = def_poss = poss // 2
+            pf = float(r.get("PTS") or 0)
+            pa = pf - float(r.get("PLUS_MINUS") or 0)
+        if off_poss <= 0 or def_poss <= 0:
+            off_r = def_r = net_r = 0.0
+        else:
+            off_r = round(pf / off_poss * 100, 1)
+            def_r = round(pa / def_poss * 100, 1)
+            net_r = round(off_r - def_r, 1)
+        units.append({"name": r.get("GROUP_NAME") or "unknown",
+                      "poss": poss, "OFF_RATING": off_r,
+                      "DEF_RATING": def_r, "NET_RATING": net_r})
+    units.sort(key=lambda u: u["poss"], reverse=True)
+    visible = [u for u in units if u["poss"] >= min_poss]
+    # Ground truth spans ALL floor-passing units, not the tool's default
+    # limit-10 display slice: the question asks for the best net rating at
+    # the 100-possession floor, and the agent can page deeper via limit.
+    return visible if limit is None else visible[:limit]
+
+
+def gen_lineups(rng, ctx) -> tuple[Task, GroundTruth]:
+    id2abbr: dict = {}
+    for tid, abbr in _q("SELECT TEAM_ID, TEAM FROM silver_leaders_pts "
+                        "WHERE _season = ?", [SEASON]):
+        id2abbr.setdefault(tid, abbr)
+        id2abbr.setdefault(str(tid), abbr)
+    cands = []
+    for (entity,) in _q("SELECT DISTINCT _entity FROM silver_lineups "
+                        "WHERE _season = ?", [SEASON]):
+        try:
+            tid = int(str(entity).split(":")[1])
+        except (IndexError, ValueError):
+            continue
+        abbr = id2abbr.get(tid) or id2abbr.get(str(tid))
+        if abbr:
+            cands.append((tid, abbr))
+    for tid, abbr in rng.sample(cands, len(cands)):
+        shown = _lineup_shown_units(tid)
+        if len(shown) < 2:
+            continue
+        nets = [u["NET_RATING"] for u in shown]
+        best = max(nets)
+        if nets.count(best) > 1:
+            continue  # tied best net is ungradeable
+        top = next(u for u in shown if u["NET_RATING"] == best)
+        tid2 = ctx["task_id"]
+        task = Task(
+            task_id=tid2, family="lineups",
+            question=(f"Which {abbr} five-man lineup has the best net "
+                      f"rating per 100 possessions this season (minimum 100 "
+                      f"possessions)? Give the lineup and its net rating."),
+            entities=[abbr], gold_tool_families=["lineups"],
+            timeout_s=ctx["timeout_s"], seed=ctx["seed"],
+        )
+        truth = GroundTruth(
+            task_id=tid2,
+            # No names dict: five-man GROUP_NAMEs share surnames across
+            # units, so last-token name_recall false-positives on wrong
+            # lineups. The four numeric facts uniquely identify the unit.
+            facts={"net_rating": top["NET_RATING"],
+                   "off_rating": top["OFF_RATING"],
+                   "def_rating": top["DEF_RATING"],
+                   "possessions": top["poss"]},
+            computed_at=_now(),
+            source="nba_api via silver_lineups plus silver_hist_possessions "
+                   "(same ratings plus sample floor as get_lineup_stats)",
+        )
+        return task, truth
+    raise SkipTask("no team with a unique best lineup net rating")
+
 
 GENERATORS = {
     "lookup": gen_lookup,
@@ -760,4 +1099,6 @@ GENERATORS = {
     "splits": gen_splits,
     "trade_value": gen_trade_value,
     "awards": gen_awards,
+    "streaks": gen_streaks,
+    "lineups": gen_lineups,
 }

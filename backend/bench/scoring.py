@@ -71,6 +71,8 @@ TOOL_FAMILY: dict[str, str | None] = {
     "get_team_splits": "brief",
     "get_finder": "finder",
     "get_rest": "finder",
+    "get_streaks": "streaks",
+    "get_lineup_stats": "lineups",
     "get_award_race": "awards",
     "resolve_entity": None,
     "search_nba": None,
