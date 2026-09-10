@@ -397,6 +397,9 @@ LEAGUE_BRIEF = (
     "Never swap in a suggested name as the requested player. "
     "IF the task mentions freshness, stale data, last updated, or data currency, "
     "THEN call get_warehouse_freshness. "
+    "IF the task asks for a player's impact and no RAPTOR, RAPM, or BPM row "
+    "covers them, THEN call get_impact_estimate; its output is always an "
+    "estimate, so say so and never present it as a measured metric. "
     "IF the task names one stat category, THEN call get_leaders. "
     "Otherwise call get_standings."
 )
@@ -457,6 +460,7 @@ def _desk_spec(name: str, task: str):
                 " Answer via text_to_sql (you own that tool).", "")})
         return ("league", LEAGUE_BRIEF,
                 ["get_standings", "get_leaders", "get_injuries", "get_rapm",
+                 "get_impact_estimate",
                  "get_playoffs", "get_playoff_intel", "get_ratings", "get_clutch", "get_elo",
                  "get_playoff_sim", "get_game_prediction", "get_contract_value", "get_draft_board",
                  "get_draft_model", "get_risers", "get_streaks", "get_head_to_head",

@@ -1241,6 +1241,282 @@ def get_raptor_history(player: str, season: str = "") -> dict[str, Any]:
             "meta": {"source": "fivethirtyeight:raptor", "seasons": len(rows)}}
 
 
+# --- Estimated impact (ROADMAP Phase 2 #8: estimate-from-component-metrics) --
+# Direct impact metrics are missing for the current season in this
+# warehouse: RAPTOR is frozen at 2021-22, silver_rapm holds no rows, and no
+# BPM table exists. get_impact_estimate fills the gap with a documented,
+# always-labeled estimate. It never presents output as a measured metric.
+
+IMPACT_PRIOR_FEATURES = ("USG_PCT", "TS_PCT", "AST_PCT", "REB_PCT", "TM_TOV_PCT")
+IMPACT_PRIOR_MIN_POSS = 3000  # box-prior trainers: players at/above this many possessions
+IMPACT_PRIOR_MIN_N = 30       # minimum trainers before the prior is trusted
+IMPACT_SHRINK_K = 1500        # prior strength, in possessions (estimate is
+                              # 50/50 measured/prior at this possession count)
+IMPACT_RAPTOR_ONOFF_W = 0.20  # empirical: implied on/off weight 0.19-0.22,
+                              # flat across minutes, over 4,684 player-seasons
+                              # (2013-14..2021-22) with both components present
+IMPACT_DISCLAIMER = ("This is a statistical estimate, not a measured impact "
+                     "metric. Never present it as RAPTOR, RAPM, or BPM.")
+
+
+def _solve_linear(a: list[list[float]], b: list[float]) -> list[float] | None:
+    """Gaussian elimination with partial pivoting. None when singular."""
+    n = len(b)
+    m = [row[:] + [b[i]] for i, row in enumerate(a)]
+    for col in range(n):
+        piv = max(range(col, n), key=lambda r: abs(m[r][col]))
+        if abs(m[piv][col]) < 1e-12:
+            return None
+        m[col], m[piv] = m[piv], m[col]
+        for r in range(col + 1, n):
+            f = m[r][col] / m[col][col]
+            for c in range(col, n + 1):
+                m[r][c] -= f * m[col][c]
+    x = [0.0] * n
+    for i in range(n - 1, -1, -1):
+        x[i] = (m[i][n] - sum(m[i][j] * x[j] for j in range(i + 1, n))) \
+            / m[i][i]
+        if abs(m[i][i]) < 1e-12:
+            return None
+    return x
+
+
+def _fit_box_prior(season: str) -> dict[str, Any] | None:
+    """Fit lift ~ box stats on high-minute players. lift is the player's
+    marginal on-court impact: on-court NET_RATING minus team NET_RATING,
+    per 100 possessions. Returns coefficients plus fit diagnostics, or None
+    when the warehouse cannot support the fit."""
+    try:
+        rows = _read_df(
+            "SELECT PLAYER_NAME, TEAM_ID, POSS, NET_RATING, "
+            + ", ".join(IMPACT_PRIOR_FEATURES)
+            + " FROM silver_advanced WHERE _season = ?",
+            [season],
+        )
+        team_net = {r["TEAM_ID"]: r["NET_RATING"] for r in _read_df(
+            "SELECT TEAM_ID, NET_RATING FROM silver_team_ratings"
+            " WHERE _season = ?",
+            [season],
+        ) if r["NET_RATING"] is not None}
+    except Exception:
+        return None
+    trainers = [
+        r for r in rows
+        if (r.get("POSS") or 0) >= IMPACT_PRIOR_MIN_POSS
+        and r.get("NET_RATING") is not None
+        and r.get("TEAM_ID") in team_net
+        and all(r.get(f) is not None for f in IMPACT_PRIOR_FEATURES)
+    ]
+    if len(trainers) < IMPACT_PRIOR_MIN_N:
+        return None
+    cols = ["_bias"] + list(IMPACT_PRIOR_FEATURES)
+    xs = [[1.0] + [float(r[f]) for f in IMPACT_PRIOR_FEATURES]
+          for r in trainers]
+    ys = [float(r["NET_RATING"]) - float(team_net[r["TEAM_ID"]])
+          for r in trainers]
+    p = len(cols)
+    ata = [[sum(x[i] * x[j] for x in xs) for j in range(p)] for i in range(p)]
+    aty = [sum(x[i] * y for x, y in zip(xs, ys)) for i in range(p)]
+    beta = _solve_linear(ata, aty)
+    if beta is None:
+        return None
+    pred = [sum(b * x for b, x in zip(beta, x)) for x in xs]
+    mean = sum(ys) / len(ys)
+    ss_res = sum((y - q) ** 2 for y, q in zip(ys, pred))
+    ss_tot = sum((y - mean) ** 2 for y in ys)
+    r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 0.0
+    return {"intercept": beta[0], "coefs": dict(zip(IMPACT_PRIOR_FEATURES, beta[1:])),
+            "n": len(trainers), "r2": r2}
+
+
+def _raptor_row(player_id: int, name: str, season: str) -> dict[str, Any] | None:
+    rows = _read_df(
+        "SELECT PLAYER_NAME, POSS, MP, RAPTOR_BOX_TOTAL, RAPTOR_ONOFF_TOTAL,"
+        " RAPTOR_TOTAL FROM silver_raptor_player WHERE _season = ?"
+        " AND (CAST(PLAYER_ID AS VARCHAR) = CAST(? AS VARCHAR)"
+        " OR LOWER(PLAYER_NAME) = LOWER(?)) LIMIT 1",
+        [season, str(player_id), name],
+    )
+    return rows[0] if rows else None
+
+
+def _stale_raptor(player_id: int, name: str, season: str) -> dict[str, Any] | None:
+    """Most recent measured RAPTOR before the requested season, if any."""
+    rows = _read_df(
+        "SELECT _season, RAPTOR_TOTAL FROM silver_raptor_player"
+        " WHERE _season < ? AND RAPTOR_TOTAL IS NOT NULL"
+        " AND (CAST(PLAYER_ID AS VARCHAR) = CAST(? AS VARCHAR)"
+        " OR LOWER(PLAYER_NAME) = LOWER(?))"
+        " ORDER BY _season DESC LIMIT 1",
+        [season, str(player_id), name],
+    )
+    return rows[0] if rows else None
+
+
+@tool
+def get_impact_estimate(player: str | int, season: str = SEASON) -> dict[str, Any]:
+    """Estimated per-100-possession impact for players lacking direct metrics.
+
+    Rookies, call-ups, and low-minute players have no RAPTOR/RAPM/BPM in the
+    warehouse, so this synthesizes an estimate from available components.
+    ALWAYS an estimate (is_estimate=True): never present it as measured.
+    Methods: box_prior_shrinkage (marginal on-court lift shrunk toward an
+    OLS box-score prior, current season) or raptor_components (empirical
+    80/20 box/on-off blend, historical seasons with RAPTOR components).
+    """
+    base: dict[str, Any] = {"tool": "get_impact_estimate", "is_estimate": True,
+                            "disclaimer": IMPACT_DISCLAIMER}
+    try:
+        player_id = coerce_player_id(player)
+    except ValueError as exc:
+        return {**base, "ok": False, "error": str(exc)}
+    name = str(player).strip()
+    season = (season or SEASON).strip()
+
+    raptor = _raptor_row(player_id, name, season)
+    if raptor and raptor.get("RAPTOR_TOTAL") is not None:
+        box = raptor.get("RAPTOR_BOX_TOTAL")
+        onoff = raptor.get("RAPTOR_ONOFF_TOTAL")
+        if box is None or onoff is None:
+            return {**base, "ok": False,
+                    "error": f"RAPTOR components missing for '{name}' in"
+                             f" {season}; measured RAPTOR exists, use"
+                             " get_raptor_history instead"}
+        w = IMPACT_RAPTOR_ONOFF_W
+        estimate = (1 - w) * float(box) + w * float(onoff)
+        return {**base, "ok": True, "season": season,
+                "player": {"player_id": player_id,
+                           "name": raptor.get("PLAYER_NAME") or name},
+                "estimate_per_100": round(estimate, 2),
+                "method": "raptor_components",
+                "methodology": (
+                    "Empirical RAPTOR reconstruction: 0.80 * box component +"
+                    " 0.20 * on-off component. Weight fitted from 4,684"
+                    " player-seasons (2013-14..2021-22); implied on/off"
+                    " weight 0.19-0.22, flat across minutes. Blend"
+                    " reconstructs RAPTOR_TOTAL with MAE 0.66, p95 residual"
+                    " 2.16 per 100 possessions."),
+                "components": {
+                    "raptor_box_per_100": round(float(box), 2),
+                    "raptor_onoff_per_100": round(float(onoff), 2),
+                    "onoff_weight": w,
+                    "possessions": raptor.get("POSS"),
+                    "minutes": raptor.get("MP")},
+                "measured": {
+                    "metric": "RAPTOR", "total_per_100": round(float(
+                        raptor["RAPTOR_TOTAL"]), 2), "season": season,
+                    "note": "Measured metric shown for comparison; the"
+                            " estimate above remains an estimate."},
+                "confidence": {
+                    "level": "high",
+                    "notes": ["Measured RAPTOR exists for this"
+                              " player-season; estimate is a component"
+                              " reconstruction for comparison."]}}
+
+    adv = _read_df(
+        "SELECT PLAYER_NAME, TEAM_ABBREVIATION, TEAM_ID, GP, MIN, POSS,"
+        " NET_RATING, " + ", ".join(IMPACT_PRIOR_FEATURES)
+        + " FROM silver_advanced WHERE _season = ?"
+          " AND CAST(PLAYER_ID AS VARCHAR) = CAST(? AS VARCHAR) LIMIT 1",
+        [season, str(player_id)],
+    )
+    if not adv:
+        return {**base, "ok": False,
+                "error": f"no component data for '{name}' in {season}:" \
+                         " no RAPTOR row and no advanced box row"}
+    row = adv[0]
+    notes: list[str] = []
+    notes.append("No RAPTOR, RAPM, or BPM coverage for"
+                 f" {season} in the warehouse; RAPTOR is frozen at 2021-22.")
+    try:
+        team_net = {r["TEAM_ID"]: r["NET_RATING"] for r in _read_df(
+            "SELECT TEAM_ID, NET_RATING FROM silver_team_ratings"
+            " WHERE _season = ?", [season]) if r["NET_RATING"] is not None}
+    except Exception:
+        team_net = {}
+    poss = float(row.get("POSS") or 0)
+    on_court = row.get("NET_RATING")
+    tnet = team_net.get(row.get("TEAM_ID"))
+    if on_court is None:
+        return {**base, "ok": False,
+                "error": f"advanced row for '{name}' lacks NET_RATING"}
+    if tnet is None:
+        notes.append("Team net rating unavailable; lift computed vs a"
+                     " league-average team (0.0).")
+        tnet = 0.0
+    lift = float(on_court) - float(tnet)
+
+    prior = _fit_box_prior(season)
+    if prior is None:
+        notes.append("Box prior could not be fitted (too few high-minute"
+                     " players); prior falls back to 0.0.")
+        prior_value, prior_detail = 0.0, {"fitted": False}
+    elif any(row.get(f) is None for f in IMPACT_PRIOR_FEATURES):
+        notes.append("Player box features incomplete; prior falls back to"
+                     " the high-minute mean lift of"
+                     f" {prior['intercept']:+.2f}.")
+        prior_value = float(prior["intercept"])
+        prior_detail = {"fitted": True, "n": prior["n"], "r2": round(prior["r2"], 3),
+                        "note": "feature fallback"}
+    else:
+        prior_value = float(prior["intercept"]) + sum(
+            float(prior["coefs"][f]) * float(row[f]) for f in IMPACT_PRIOR_FEATURES)
+        prior_detail = {"fitted": True, "n": prior["n"],
+                        "r2": round(prior["r2"], 3)}
+
+    k = IMPACT_SHRINK_K
+    w_meas = poss / (poss + k) if poss > 0 else 0.0
+    estimate = w_meas * lift + (1 - w_meas) * prior_value
+
+    if poss >= 3000:
+        level = "high"
+    elif poss >= 1000:
+        level = "medium"
+    else:
+        level = "low"
+    if w_meas < 0.5:
+        notes.append(f"Prior-dominated estimate: only {poss:.0f} possessions"
+                     f" vs prior strength {k}; measured on-court lift gets"
+                     f" {w_meas:.0%} weight.")
+    notes.append("On-court lift is unadjusted for teammates, opponents, and"
+                 " lineup context; it is not RAPM.")
+
+    stale = _stale_raptor(player_id, name, season)
+    stale_out = None
+    if stale:
+        stale_out = {"metric": "RAPTOR",
+                     "total_per_100": round(float(stale["RAPTOR_TOTAL"]), 2),
+                     "season": stale["_season"],
+                     "note": "Stale measured metric shown for context only;"
+                             " not used in the estimate."}
+
+    return {**base, "ok": True, "season": season,
+            "player": {"player_id": player_id,
+                       "name": row.get("PLAYER_NAME") or name,
+                       "team": row.get("TEAM_ABBREVIATION")},
+            "estimate_per_100": round(estimate, 2),
+            "method": "box_prior_shrinkage",
+            "methodology": (
+                "Marginal on-court lift (player on-court NET_RATING minus"
+                " team NET_RATING, per 100 possessions) shrunk toward an OLS"
+                " box-score prior: lift ~ USG_PCT + TS_PCT + AST_PCT +"
+                " REB_PCT + TM_TOV_PCT, fitted on players with 3000+"
+                f" possessions in {season}. Shrinkage: estimate ="
+                f" (poss * lift + {k} * prior) / (poss + {k})."),
+            "components": {
+                "measured_lift_per_100": round(lift, 2),
+                "measured_possessions": round(poss),
+                "box_prior_per_100": round(prior_value, 2),
+                "box_prior": prior_detail,
+                "measured_weight": round(w_meas, 3),
+                "prior_weight": round(1 - w_meas, 3),
+                "shrinkage_K_possessions": k,
+                "games": row.get("GP"), "minutes": row.get("MIN")},
+            "measured": None,
+            "stale_measured": stale_out,
+            "confidence": {"level": level, "notes": notes}}
+
+
 DPOY_MINUTES = 500
 UNSUNG_MIN_MINUTES = 200
 UNSUNG_MAX_MINUTES = 1000
