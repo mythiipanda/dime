@@ -343,6 +343,21 @@ _GAMELOG_NO_RX = re.compile(
     r"\baverag\w*|\bavg\b|\bppg\b|\bper game\b|"
     r"\bcareer\b|\ball[\s-]*time\b|\blast season\b",
     re.IGNORECASE)
+# League-wide leader questions have no named player, so the
+# player-scoped fast-path can't fire ("who had the most 50-point games
+# this season"). The planner free-forms these into text_to_sql and
+# improvises, so route them to search_game_logs with league_wide=True.
+# Conservative: requires a who/which + most + stat-games phrasing; the
+# multi-player compare ("who had more 40-point games, X or Y?") names
+# players and is excluded by the no-named-player gate in _triage_seed.
+_LEAGUE_LEADERS_RX = re.compile(
+    r"\b(?:who|which(?:\s+player)?)\b.{0,40}\bmost\b.{0,80}?"
+    r"(?:\b\d{2}\s*[-–—]?\s*points?\s+games?\b|"
+    r"\btriple[\s-]*doubles?\b|"
+    r"\bdouble[\s-]*doubles?\b|"
+    r"\b\d{1,2}\s*[-–—]?\s*rebounds?\s+games?\b|"
+    r"\b\d{1,2}\s*[-–—]?\s*assists?\s+games?\b)",
+    re.IGNORECASE)
 _BRIEFING_RX = re.compile(r"\bbriefing\b", re.IGNORECASE)
 _BRIEFING_CONTEXT_RX = re.compile(
     r"20\d\d[-/]\d{1,2}[-/]\d{1,2}|\bslate\b|\bmorning\b|"
@@ -474,17 +489,20 @@ def _direct_named_players(question: str, found_p: list[str]) -> list[str]:
     return out
 
 
-def _gamelog_args(question: str, player: str,
+def _gamelog_args(question: str, player: str | None,
                   teams: list[str]) -> dict[str, Any]:
     """Parse search_game_logs args from a triage-claimed question.
 
     Conservative: only set what the regexes can see; everything else
     keeps the tool default. Opponent prefers the re-matched team entity
-    over raw text extraction.
+    over raw text extraction. player None means league-wide mode: the
+    caller sets league_wide=True.
     """
     from .tools.gamelog import MONTH_NAMES
 
-    args: dict[str, Any] = {"player": player}
+    args: dict[str, Any] = {}
+    if player is not None:
+        args["player"] = player
     q = question or ""
     if _GAMELOG_BEST_RX.search(q):
         # "best game" / "career high" / "season high" / "most points":
@@ -536,6 +554,8 @@ def _gamelog_args(question: str, player: str,
         args["home_away"] = "home"
     elif re.search(r"\bon the road\b|\baway games?\b", q, re.IGNORECASE):
         args["home_away"] = "away"
+    if re.search(r"\bplayoffs?\b|\bpostseason\b", q, re.IGNORECASE):
+        args["playoffs"] = True
     return args
 
 
@@ -1012,6 +1032,38 @@ async def _triage_seed(question: str, primary: str, model: str,
             if state["tool_results"] and state["tool_results"][-1] is _gout:
                 state["tool_results"][-1] = {
                     "tool": "search_game_logs", "rows": [_gout]}
+            async for _e in _triage_terminal(question, state):
+                yield _e
+        return
+    is_league_leaders = (
+        not _named_p
+        and _LEAGUE_LEADERS_RX.search(question)
+        and not _GAMELOG_NO_RX.search(question)
+        and not is_trade
+        and not is_cast
+        and not _PREDICT_LIVE_RX.search(question)
+        and not state.get("history")
+    )
+    if is_league_leaders:
+        # Ticket B: "who had the most 50-point games this season" names
+        # no player, so the player-scoped fast-path can't fire and the
+        # planner improvises SQL. Answer from the warehouse instead via
+        # the league-wide mode of search_game_logs. Only on clean
+        # single-turn questions with no named player; anything
+        # uncertain falls through to the planner.
+        _largs = _gamelog_args(question, None, _named)
+        _largs["league_wide"] = True
+        _lh: dict[str, Any] = {}
+        async for _e in _triage_tool(
+                "search_game_logs", _largs, state, _lh):
+            yield _e
+        _lout = _lh.get("out") or {}
+        if _result_status(_lout) == "ok":
+            # Wrap like the player fast-path: analytics only treats
+            # entries with a non-empty "rows" key as evidence.
+            if state["tool_results"] and state["tool_results"][-1] is _lout:
+                state["tool_results"][-1] = {
+                    "tool": "search_game_logs", "rows": [_lout]}
             async for _e in _triage_terminal(question, state):
                 yield _e
         return

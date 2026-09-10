@@ -198,3 +198,107 @@ def test_integration_bad_month_clean_error():
                                    "month": "Smarch"})
     assert res["ok"] is False
     assert "month" in res["error"]
+
+
+# --- Ticket A: playoff scope -------------------------------------------------
+
+def test_integration_playoffs_brunson_no_rows_explicit():
+    # Jalen Brunson has no playoff rows in the warehouse. The old code
+    # silently answered 0 over regular-season games; now it must say so
+    # explicitly instead of returning a computed 0.
+    res = search_game_logs.invoke({"player": "Jalen Brunson",
+                                   "triple_double": True,
+                                   "playoffs": True})
+    assert res["ok"] is False
+    assert "playoff" in res["error"]
+    assert "Jalen Brunson" in res["error"]
+
+
+def test_integration_playoffs_reads_playoff_table():
+    # Jayson Tatum has 6 playoff games in 2025-26. Cross-check the
+    # tool's triple-double total against a direct count over
+    # silver_playoff_gamelogs to prove the playoff scope is honored.
+    from app import store as _store
+    from app.tools._core import coerce_player_id as _coerce
+    from app.tools.gamelog import _f as _ff
+
+    pid = _coerce("Jayson Tatum")
+    con = _store.connect(read_only=True)
+    try:
+        rows = con.execute(
+            "SELECT PTS, REB, AST, STL, BLK FROM silver_playoff_gamelogs"
+            " WHERE Player_ID = ? AND _season = '2025-26'",
+            [pid]).fetchall()
+    finally:
+        con.close()
+    expect = sum(1 for r in rows
+                 if sum(1 for v in r if _ff(v) >= 10) >= 3)
+    res = search_game_logs.invoke({"player": "Jayson Tatum",
+                                   "triple_double": True,
+                                   "playoffs": True})
+    assert res["ok"] is True
+    assert res["rows"]["scope"] == "playoffs"
+    assert "playoff" in res["rows"]["filters"]
+    assert res["rows"]["total"] == expect
+
+
+def test_integration_playoffs_player_team_present():
+    res = search_game_logs.invoke({"player": "Jayson Tatum",
+                                   "playoffs": True, "limit": 2})
+    assert res["ok"] is True
+    assert res["rows"]["total"] == 6
+    assert res["rows"]["returned"] == 2
+    assert res["rows"]["player_team"]
+
+
+# --- Ticket B: league-wide mode ----------------------------------------------
+
+def test_integration_league_wide_50pt_leaders():
+    res = search_game_logs.invoke({"league_wide": True, "min_points": 50})
+    assert res["ok"] is True
+    rows = res["rows"]
+    assert rows["league_wide"] is True
+    assert rows["scope"] == "regular"
+    assert rows["total_players"] >= 1
+    leaders = rows["leaders"]
+    counts = [l["count"] for l in leaders]
+    # Sorted by count desc, and the counts partition all 50-point games.
+    assert counts == sorted(counts, reverse=True)
+    assert all(c >= 1 for c in counts)
+    assert all(l["player"] and l["player_id"] for l in leaders)
+    from app import store as _store
+    con = _store.connect(read_only=True)
+    try:
+        total50 = con.execute(
+            "SELECT COUNT(*) FROM silver_player_gamelogs"
+            " WHERE _season = '2025-26' AND CAST(PTS AS DOUBLE) >= 50"
+        ).fetchone()[0]
+    finally:
+        con.close()
+    assert sum(counts) == total50
+
+
+def test_integration_league_wide_counts_match_player_path():
+    # League-wide counts must agree with the player-scoped tool for a
+    # named player.
+    wide = search_game_logs.invoke({"league_wide": True, "min_points": 40})
+    assert wide["ok"] is True
+    top = wide["rows"]["leaders"][0]
+    scoped = search_game_logs.invoke({"player": top["player"],
+                                      "min_points": 40})
+    assert scoped["ok"] is True
+    assert top["count"] == scoped["rows"]["total"]
+
+
+def test_integration_league_wide_playoffs_compose():
+    res = search_game_logs.invoke({"league_wide": True, "min_points": 30,
+                                   "playoffs": True})
+    assert res["ok"] is True
+    assert res["rows"]["scope"] == "playoffs"
+    assert "playoff" in res["rows"]["filters"]
+
+
+def test_player_required_unless_league_wide():
+    res = search_game_logs.invoke({"min_points": 50})
+    assert res["ok"] is False
+    assert "league_wide" in res["error"]

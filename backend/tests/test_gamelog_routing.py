@@ -78,11 +78,57 @@ def test_double_double_phrasing_sets_flag():
     assert "triple_double" not in args
 
 
-def test_no_clear_player_does_not_fire():
+def test_league_leaders_routes_to_search_game_logs():
+    # Ticket B: "who had the most 50-point games this season?" names no
+    # player, so the player-scoped fast-path can't fire; the
+    # league-wide fast-path must answer from the warehouse instead of
+    # letting the planner improvise SQL.
     st = _drain("who had the most 50-point games this season?")
-    assert "search_game_logs" not in _tool_names(st)
-    # Falls through: no triage claims, planner fallback owns it.
-    assert st["round"] == 0
+    args = _gamelog_args_of(st)
+    assert args is not None, "league-wide fast-path did not fire"
+    assert args.get("league_wide") is True
+    assert args["min_points"] == 50
+    assert "player" not in args
+    assert len(_tool_names(st)) == 1
+    # Decisive hit: planner rounds exhausted.
+    assert st["round"] in (MAX_TOOL_ROUNDS, DEEP_TOOL_ROUNDS)
+    # Leaders actually returned as evidence.
+    rows = st["tool_results"][0]["rows"][0]["rows"]
+    assert rows["league_wide"] is True
+    assert rows["total_players"] >= 1
+    assert rows["leaders"][0]["count"] >= 1
+
+
+def test_which_player_most_triple_doubles_routes_league_wide():
+    st = _drain("which player had the most triple-doubles this season?")
+    args = _gamelog_args_of(st)
+    assert args is not None, "league-wide fast-path did not fire"
+    assert args.get("league_wide") is True
+    assert args.get("triple_double") is True
+
+
+def test_playoff_phrasing_sets_playoffs_flag():
+    # Ticket A: the fast-path must not silently drop "in the playoffs".
+    q = "Did Jalen Brunson have any triple-doubles in the playoffs?"
+    args = _gamelog_args(q, "Jalen Brunson", [])
+    assert args.get("playoffs") is True
+    assert args.get("triple_double") is True
+    st = _drain(q)
+    args = _gamelog_args_of(st)
+    assert args is not None, "fast-path did not fire"
+    assert args.get("playoffs") is True
+    # Brunson has no playoff rows: explicit ok:False, never a silent 0.
+    out = st["tool_results"][-1]
+    assert out["ok"] is False
+    assert "playoff" in out["error"]
+
+
+def test_postseason_phrasing_sets_playoffs_flag():
+    args = _gamelog_args(
+        "Show me Jayson Tatum's 30-point games in the postseason",
+        "Jayson Tatum", [])
+    assert args.get("playoffs") is True
+    assert args["min_points"] == 30
 
 
 def test_multi_player_does_not_fire():
@@ -127,3 +173,83 @@ def test_fastpath_result_passes_analytics_evidence_gate():
         and r.get("tool", "") not in ("resolve_entity", "search_nba")
     ]
     assert len(evidenced) >= 1
+
+
+def test_best_game_phrasing_routes_to_search_game_logs():
+    st = _drain("how many points did ant score in his best game")
+    args = _gamelog_args_of(st)
+    assert args is not None, "fast-path did not fire"
+    assert args["player"] == "Anthony Edwards"
+    assert args.get("best_game") is True
+    assert st["round"] in (MAX_TOOL_ROUNDS, DEEP_TOOL_ROUNDS)
+
+
+def test_career_high_phrasing_routes_despite_no_rx():
+    # "career" trips _GAMELOG_NO_RX (meant for career averages); the
+    # best-game exemption must still route "career high".
+    st = _drain("what is lebron's career high in points")
+    args = _gamelog_args_of(st)
+    assert args is not None, "fast-path did not fire"
+    assert args["player"] == "LeBron James"
+    assert args.get("best_game") is True
+
+
+def test_season_high_and_most_points_phrasing_route():
+    for q in ("what was tatum's season high in points",
+              "how many points did curry score in his most points game"):
+        st = _drain(q)
+        args = _gamelog_args_of(st)
+        assert args is not None, f"fast-path did not fire for {q!r}"
+        assert args.get("best_game") is True
+
+
+def test_space_separated_point_threshold_routes():
+    st = _drain("lebron 40 point games")
+    args = _gamelog_args_of(st)
+    assert args is not None, "fast-path did not fire"
+    assert args["player"] == "LeBron James"
+    assert args["min_points"] == 40
+
+
+def test_pt_abbreviation_routes():
+    st = _drain("lebron 40pt games")
+    args = _gamelog_args_of(st)
+    assert args is not None, "fast-path did not fire"
+    assert args["min_points"] == 40
+
+
+def test_hyphenated_point_threshold_still_routes():
+    st = _drain("lebron 40-point games")
+    args = _gamelog_args_of(st)
+    assert args is not None, "fast-path did not fire"
+    assert args["min_points"] == 40
+
+
+def test_best_game_tool_returns_max_pts_row():
+    from app.tools.gamelog import _load_player_games, search_game_logs
+
+    out = search_game_logs.invoke({"player": "Anthony Edwards",
+                                   "best_game": True})
+    assert out["ok"] is True
+    rows = out["rows"]
+    assert rows["returned"] == 1
+    assert len(rows["matches"]) == 1
+    top = rows["matches"][0]
+    best = max(_load_player_games(out["rows"]["player_id"], "2025-26"),
+               key=lambda g: g["pts"])
+    assert top["pts"] == best["pts"]
+    assert top["date"] == best["date"].isoformat()
+
+
+def test_result_rows_counts_game_rows_not_metadata_keys():
+    from app.graph import _result_rows
+
+    out = {"tool": "search_game_logs", "ok": True, "rows": {
+        "player": "LeBron James", "player_id": 2544,
+        "player_team": "LAL", "filters": "40+ points",
+        "total": 2, "returned": 2, "capped": False,
+        "matches": [{"pts": 42}, {"pts": 40}],
+    }}
+    assert _result_rows(out) == 2
+    out["rows"]["matches"] = [{"pts": 42}]
+    assert _result_rows(out) == 1

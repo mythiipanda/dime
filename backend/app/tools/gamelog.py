@@ -1,12 +1,13 @@
 """Player game-log search. One flexible filter over the warehouse logs.
 
 Answers "show me all 40-point games by X this season", "X's games vs
-BOS", "X's triple-doubles in March". Warehouse only, read-only.
+BOS", "X's triple-doubles in March", and league-wide asks like "who
+had the most 50-point games this season". Warehouse only, read-only.
 
-Scope is deliberately player-scoped: silver_player_gamelogs holds
-2025-26 logs for 57 seeded players, so there is no league-wide mode
-and no historical seasons. Triple-doubles and double-doubles are
-counted the Stathead way: 10+ in three (or two) of
+Scope: silver_player_gamelogs holds 2025-26 regular-season logs for 57
+seeded players; silver_playoff_gamelogs holds the playoff logs
+(playoffs=True). No historical seasons. Triple-doubles and
+double-doubles are counted the Stathead way: 10+ in three (or two) of
 PTS/REB/AST/STL/BLK."""
 
 import datetime as _dt
@@ -91,31 +92,46 @@ def _clamp_limit(value: object) -> int:
         return MAX_LIMIT
 
 
-def _load_player_games(pid: int, season: str) -> list[dict[str, Any]]:
-    """Normalized game rows, most recent first. Read-only connect."""
+def _table_for(playoffs: bool) -> str:
+    return "silver_playoff_gamelogs" if playoffs else "silver_player_gamelogs"
+
+
+def _load_games(table: str, season: str,
+                pid: int | None = None) -> list[dict[str, Any]]:
+    """Normalized game rows, most recent first. Read-only connect.
+
+    pid None loads every player (league-wide mode); otherwise one player.
+    Each row carries player_id so callers can group.
+    """
     cols = ("GAME_DATE", "MATCHUP", "WL", "MIN", "FGM", "FGA", "FG3M",
             "FG3A", "FTM", "FTA", "OREB", "DREB", "REB", "AST", "STL",
             "BLK", "TOV", "PF", "PTS", "PLUS_MINUS")
     con = store.connect(read_only=True)
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
-        if "silver_player_gamelogs" not in tables:
+        if table not in tables:
             return []
+        where = "_season = ?"
+        params: list[object] = [season]
+        if pid is not None:
+            where = "Player_ID = ? AND " + where
+            params = [pid, season]
         fetched = con.execute(
-            "SELECT " + ", ".join(cols) + " FROM silver_player_gamelogs"
-            " WHERE Player_ID = ? AND _season = ?",
-            [pid, season],
+            "SELECT Player_ID, " + ", ".join(cols) + f" FROM {table}"
+            " WHERE " + where,
+            params,
         ).fetchall()
     finally:
         con.close()
     games = []
     for raw in fetched:
-        r = dict(zip(cols, raw))
+        r = dict(zip(("Player_ID",) + cols, raw))
         d = parse_game_date(r.get("GAME_DATE"))
         if d is None:
             continue
         matchup = str(r.get("MATCHUP") or "")
         games.append({
+            "player_id": r.get("Player_ID"),
             "date": d,
             "matchup": matchup,
             "opponent": opponent_abbr(matchup),
@@ -138,6 +154,30 @@ def _load_player_games(pid: int, season: str) -> list[dict[str, Any]]:
         })
     games.sort(key=lambda g: g["date"], reverse=True)
     return games
+
+
+def _load_player_games(pid: int, season: str) -> list[dict[str, Any]]:
+    """Regular-season logs for one player (kept for callers/tests)."""
+    return _load_games(_table_for(False), season, pid)
+
+
+def _playoff_coverage() -> str:
+    """Seasons present in the playoff table, for explicit no-data errors."""
+    try:
+        con = store.connect(read_only=True)
+        try:
+            seasons = sorted(
+                r[0] for r in con.execute(
+                    "SELECT DISTINCT _season FROM silver_playoff_gamelogs"
+                ).fetchall() if r[0]
+            )
+        finally:
+            con.close()
+    except Exception:
+        seasons = []
+    if not seasons:
+        return "no playoff seasons stored yet"
+    return "playoff coverage: " + ", ".join(seasons)
 
 
 def _matches(g: dict[str, Any], f: dict[str, Any]) -> bool:
@@ -167,8 +207,12 @@ def _matches(g: dict[str, Any], f: dict[str, Any]) -> bool:
     return True
 
 
-def _describe_filters(f: dict[str, Any]) -> str:
+def _describe_filters(f: dict[str, Any], playoffs: bool = False) -> str:
     bits = []
+    if playoffs:
+        bits.append("in the playoffs")
+    if f.get("best_game"):
+        bits.append("best game (most points)")
     if f["min_points"] is not None:
         bits.append(f"{f['min_points']:g}+ points")
     if f["min_rebounds"] is not None:
@@ -217,24 +261,33 @@ def _row_out(g: dict[str, Any]) -> dict[str, Any]:
 
 @tool
 def search_game_logs(
-    player: str,
+    player: str | None = None,
+    league_wide: bool = False,
     min_points: float | None = None,
     min_rebounds: float | None = None,
     min_assists: float | None = None,
     min_pra: float | None = None,
     triple_double: bool = False,
     double_double: bool = False,
+    best_game: bool = False,
     opponent: str | None = None,
     month: str | int | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
     home_away: str | None = None,
+    playoffs: bool = False,
     season: str = SEASON,
     limit: int = 50,
 ) -> dict[str, Any]:
-    """Filter one player's game logs by stat thresholds, opponent, time, or home/away.
+    """Filter game logs by stat thresholds, opponent, time, or home/away.
 
     player: name, nickname, or id (same resolution as every other tool).
+    Required unless league_wide=True.
+    league_wide: when True, ignore player and return per-player match
+    counts across the whole warehouse (answers "who had the most
+    50-point games this season").
+    playoffs: when True, read silver_playoff_gamelogs instead of the
+    regular-season table.
     min_points / min_rebounds / min_assists: per-game stat floors
     (e.g. min_points=40 for 40-point games). min_pra: points + rebounds
     + assists floor. triple_double / double_double: keep only games
@@ -242,15 +295,28 @@ def search_game_logs(
     abbreviation, e.g. "Knicks" or "NYK". month: name, number, or
     YYYY-MM. start_date / end_date: YYYY-MM-DD, inclusive. home_away:
     "home" or "away". season: 2025-26 only in the warehouse.
+    best_game: when True, ignore the limit and return only the single
+    highest-scoring game (answers "best game" / "career high" phrasing).
     Returns matching games, most recent first, with the total match
-    count (rows beyond limit are counted, not returned).
-    Warehouse only; player-scoped, no league-wide mode.
+    count (rows beyond limit are counted, not returned). A player with
+    no rows in the chosen scope is an explicit ok:False error, never a
+    silent 0.
+    Warehouse only; 2025-26 only.
     """
     season = clamp_season(season)
-    try:
-        pid = coerce_player_id(player)
-    except ValueError as exc:
-        return {"tool": "search_game_logs", "ok": False, "error": str(exc)}
+    table = _table_for(bool(playoffs))
+    scope = "playoff" if playoffs else "regular-season"
+    league_wide = bool(league_wide)
+    pid: int | None = None
+    if not league_wide:
+        if player is None or str(player).strip() == "":
+            return {"tool": "search_game_logs", "ok": False,
+                    "error": "player is required unless league_wide=True"}
+        try:
+            pid = coerce_player_id(player)
+        except ValueError as exc:
+            return {"tool": "search_game_logs", "ok": False,
+                    "error": str(exc)}
     try:
         thr_points = _positive(min_points, "min_points")
         thr_rebounds = _positive(min_rebounds, "min_rebounds")
@@ -291,17 +357,61 @@ def search_game_logs(
         "min_assists": thr_assists, "min_pra": thr_pra,
         "double_double": bool(double_double),
         "triple_double": bool(triple_double),
+        "best_game": bool(best_game),
         "opponent": abbr, "month": mon,
         "start_date": lo, "end_date": hi, "home_away": ha,
     }
-    games = _load_player_games(pid, season)
+    games = _load_games(table, season, pid)
     if not games:
-        return {"tool": "search_game_logs", "ok": False,
-                "error": f"no gamelog data for {player} in the warehouse"
-                         f" ({season})"}
-    name = _resolve_name(pid, str(player))
+        if league_wide:
+            return {"tool": "search_game_logs", "ok": False,
+                    "error": f"no {scope} gamelog data in the warehouse"
+                             f" ({season})"
+                             + (f"; {_playoff_coverage()}" if playoffs
+                                else "")}
+        label = player if player is not None else f"player {pid}"
+        err = (f"no {scope} gamelog data for {label} in the warehouse"
+               f" ({season})")
+        if playoffs:
+            err += f"; {_playoff_coverage()}"
+        return {"tool": "search_game_logs", "ok": False, "error": err}
     matched = [g for g in games if _matches(g, filters)]
     lim = _clamp_limit(limit)
+    if league_wide:
+        counts: dict[int, int] = {}
+        for g in matched:
+            counts[g["player_id"]] = counts.get(g["player_id"], 0) + 1
+        leaders = [
+            {"player": _resolve_name(p, str(p)), "player_id": p,
+             "count": c}
+            for p, c in sorted(
+                counts.items(),
+                key=lambda kv: (-kv[1],
+                                _resolve_name(kv[0], str(kv[0]))))
+        ]
+        return {
+            "tool": "search_game_logs",
+            "ok": True,
+            "rows": {
+                "league_wide": True,
+                "scope": "playoffs" if playoffs else "regular",
+                "filters": _describe_filters(filters, playoffs),
+                "total_players": len(leaders),
+                "returned": min(len(leaders), lim),
+                "capped": len(leaders) > lim,
+                "leaders": leaders[:lim],
+            },
+            "meta": {
+                "source": "warehouse",
+                "season": season,
+                "coverage_note": _coverage_note(table),
+            },
+        }
+    assert pid is not None
+    name = _resolve_name(pid, str(player))
+    if best_game:
+        # "best game" / "career high": the single max-points game.
+        matched = sorted(matched, key=lambda g: g["pts"], reverse=True)[:1]
     capped = len(matched) > lim
     return {
         "tool": "search_game_logs",
@@ -310,7 +420,8 @@ def search_game_logs(
             "player": name,
             "player_id": pid,
             "player_team": games[0]["matchup"].split(" ")[0],
-            "filters": _describe_filters(filters),
+            "scope": "playoffs" if playoffs else "regular",
+            "filters": _describe_filters(filters, playoffs),
             "total": len(matched),
             "returned": min(len(matched), lim),
             "capped": capped,
@@ -319,8 +430,16 @@ def search_game_logs(
         "meta": {
             "source": "warehouse",
             "season": season,
-            "coverage_note": "silver_player_gamelogs covers 2025-26 only"
-                             " (57 seeded players); date filters use game"
-                             " dates within that season",
+            "coverage_note": _coverage_note(table),
         },
     }
+
+
+def _coverage_note(table: str) -> str:
+    if table == "silver_playoff_gamelogs":
+        return ("silver_playoff_gamelogs covers playoff logs for seeded"
+                " players only; date filters use game dates within the"
+                f" season ({_playoff_coverage()})")
+    return ("silver_player_gamelogs covers 2025-26 regular season only"
+            " (57 seeded players); date filters use game dates within"
+            " that season")
