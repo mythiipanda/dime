@@ -584,6 +584,9 @@ def _trace_replay_events(out: dict[str, Any]) -> list[dict[str, Any]]:
             "rows": te.get("rows", 0), "ms": te.get("ms", 0),
             "agent": tagent,
         }
+        tsql = te.get("sql")
+        if isinstance(tsql, str) and tsql.strip():
+            rdata["sql"] = tsql.strip()
         if terr:
             rdata["error"] = terr
         events.append(_event("tool_result", rdata))
@@ -598,6 +601,37 @@ def _done_thought(label: str, out: dict[str, Any], ms: int) -> str:
     ok = _result_status(out) == "ok"
     tail = f"{rows} row{'s' if rows != 1 else ''} in {ms}ms" if ok else "failed"
     return f"{label} — {tail}."
+
+
+def _tool_result_payload(node: str, name: str, out: dict[str, Any], ms: int,
+                         summary: str | None = None) -> dict[str, Any]:
+    """Build the SSE tool_result payload for one tool execution.
+
+    Lifts the executed SQL off the tool output (top-level ``sql``, falling
+    back to ``meta.sql``) so the UI can show the exact query behind a number.
+    """
+    status = _result_status(out)
+    payload: dict[str, Any] = {
+        "node": node, "name": name, "label": tool_label(name),
+        "status": status, "rows": _result_rows(out), "ms": ms,
+    }
+    if summary:
+        payload["summary"] = summary
+    try:
+        sql = out.get("sql")
+        if not sql and isinstance(out.get("meta"), dict):
+            sql = out["meta"].get("sql")
+        sql = str(sql or "").strip()
+    except Exception:
+        sql = ""
+    if sql:
+        payload["sql"] = sql
+    if status != "ok":
+        try:
+            payload["error"] = str(out.get("error"))[:160]
+        except Exception:
+            payload["error"] = "failed"
+    return payload
 
 
 async def _triage_tool(name: str, args: dict[str, Any], state: dict,
@@ -624,16 +658,7 @@ async def _triage_tool(name: str, args: dict[str, Any], state: dict,
     if not isinstance(out, dict):
         out = {"tool": name, "rows": out}
     ms = int((time.time() - t0) * 1000)
-    st = _result_status(out)
-    rd: dict[str, Any] = {
-        "node": "data_retrieval", "name": name, "label": label,
-        "status": st, "rows": _result_rows(out), "ms": ms,
-    }
-    if st != "ok":
-        try:
-            rd["error"] = str(out.get("error"))[:160]
-        except Exception:
-            rd["error"] = "failed"
+    rd = _tool_result_payload("data_retrieval", name, out, ms)
     yield _event("tool_result", rd)
     yield _event("thought_stream", {
         "node": "data_retrieval",
@@ -704,17 +729,8 @@ async def _triage_seed(question: str, primary: str, model: str,
                 if not isinstance(out, dict):
                     out = {"tool": "get_trade_check", "rows": out}
                 _ms = int((time.time() - _t0) * 1000)
-                _st = _result_status(out)
-                _rd: dict[str, Any] = {
-                    "node": "data_retrieval", "name": _tname,
-                    "label": _tlabel, "status": _st,
-                    "rows": _result_rows(out), "ms": _ms,
-                }
-                if _st != "ok":
-                    try:
-                        _rd["error"] = str(out.get("error"))[:160]
-                    except Exception:
-                        _rd["error"] = "failed"
+                _rd: dict[str, Any] = _tool_result_payload(
+                    "data_retrieval", _tname, out, _ms)
                 yield _event("tool_result", _rd)
                 yield _event("thought_stream", {
                     "node": "data_retrieval",
@@ -760,17 +776,7 @@ async def _triage_seed(question: str, primary: str, model: str,
         if not isinstance(out, dict):
             out = {"tool": "run_python", "rows": out}
         _ms = int((time.time() - _t0) * 1000)
-        _st = _result_status(out)
-        _rd = {
-            "node": "data_retrieval", "name": "run_python",
-            "label": tool_label("run_python"), "status": _st,
-            "rows": _result_rows(out), "ms": _ms,
-        }
-        if _st != "ok":
-            try:
-                _rd["error"] = str(out.get("error"))[:160]
-            except Exception:
-                _rd["error"] = "failed"
+        _rd = _tool_result_payload("data_retrieval", "run_python", out, _ms)
         yield _event("tool_result", _rd)
         yield _event("thought_stream", {
             "node": "data_retrieval",
@@ -878,17 +884,7 @@ async def _triage_seed(question: str, primary: str, model: str,
             if not isinstance(out, dict):
                 out = {"tool": "run_python", "rows": out}
             _ms = int((time.time() - _t0) * 1000)
-            _st = _result_status(out)
-            _rd = {
-                "node": "data_retrieval", "name": "run_python",
-                "label": tool_label("run_python"), "status": _st,
-                "rows": _result_rows(out), "ms": _ms,
-            }
-            if _st != "ok":
-                try:
-                    _rd["error"] = str(out.get("error"))[:160]
-                except Exception:
-                    _rd["error"] = "failed"
+            _rd = _tool_result_payload("data_retrieval", "run_python", out, _ms)
             yield _event("tool_result", _rd)
             yield _event("thought_stream", {
                 "node": "data_retrieval",
@@ -926,17 +922,8 @@ async def _triage_seed(question: str, primary: str, model: str,
                 if not isinstance(out, dict):
                     out = {"tool": "get_raptor_history", "rows": out}
                 _ms = int((time.time() - _t0) * 1000)
-                _st = _result_status(out)
-                _rd = {
-                    "node": "data_retrieval", "name": "get_raptor_history",
-                    "label": tool_label("get_raptor_history"), "status": _st,
-                    "rows": _result_rows(out), "ms": _ms,
-                }
-                if _st != "ok":
-                    try:
-                        _rd["error"] = str(out.get("error"))[:160]
-                    except Exception:
-                        _rd["error"] = "failed"
+                _rd = _tool_result_payload(
+                    "data_retrieval", "get_raptor_history", out, _ms)
                 yield _event("tool_result", _rd)
                 yield _event("thought_stream", {
                     "node": "data_retrieval",
@@ -1018,18 +1005,10 @@ async def _triage_seed(question: str, primary: str, model: str,
         if not isinstance(out, dict):
             out = {"tool": "delegate_league", "rows": out}
         _ms = int((time.time() - _t0) * 1000)
-        _st = _result_status(out)
-        _rd = {
-            "node": "data_retrieval", "name": "delegate_league",
-            "label": tool_label("delegate_league"), "status": _st,
-            "rows": _result_rows(out), "ms": _ms,
-            "summary": _delegate_result_summary(out),
-        }
-        if _st != "ok":
-            try:
-                _rd["error"] = str(out.get("error"))[:160]
-            except Exception:
-                _rd["error"] = "failed"
+        _rd = _tool_result_payload(
+            "data_retrieval", "delegate_league", out, _ms,
+            summary=_delegate_result_summary(out),
+        )
         yield _event("tool_result", _rd)
         for _te in _trace_replay_events(out):
             yield _te
@@ -1105,18 +1084,10 @@ async def _triage_seed(question: str, primary: str, model: str,
                 if not isinstance(out, dict):
                     out = {"tool": name, "rows": out}
                 _ms = int((time.time() - _t0) * 1000)
-                _st = _result_status(out)
-                _rd = {
-                    "node": "data_retrieval", "name": name,
-                    "label": tool_label(name), "status": _st,
-                    "rows": _result_rows(out), "ms": _ms,
-                    "summary": _delegate_result_summary(out),
-                }
-                if _st != "ok":
-                    try:
-                        _rd["error"] = str(out.get("error"))[:160]
-                    except Exception:
-                        _rd["error"] = "failed"
+                _rd = _tool_result_payload(
+                    "data_retrieval", name, out, _ms,
+                    summary=_delegate_result_summary(out),
+                )
                 yield _event("tool_result", _rd)
                 for _te in _trace_replay_events(out):
                     yield _te
@@ -1157,18 +1128,10 @@ async def _triage_seed(question: str, primary: str, model: str,
     if not isinstance(out, dict):
         out = {"tool": pick, "rows": out}
     _ms = int((time.time() - _t0) * 1000)
-    _st = _result_status(out)
-    _rd = {
-        "node": "data_retrieval", "name": pick,
-        "label": tool_label(pick), "status": _st,
-        "rows": _result_rows(out), "ms": _ms,
-        "summary": _delegate_result_summary(out),
-    }
-    if _st != "ok":
-        try:
-            _rd["error"] = str(out.get("error"))[:160]
-        except Exception:
-            _rd["error"] = "failed"
+    _rd = _tool_result_payload(
+        "data_retrieval", pick, out, _ms,
+        summary=_delegate_result_summary(out),
+    )
     yield _event("tool_result", _rd)
     for _te in _trace_replay_events(out):
         yield _te
@@ -1514,18 +1477,8 @@ async def actual_tool_node(state: DimeState) -> AsyncGenerator[dict[str, Any], N
         if not name and isinstance(result, dict):
             name = str(result.get("tool", ""))
         res = result if isinstance(result, dict) else {}
-        status = _result_status(res)
-        rdata: dict[str, Any] = {
-            "node": "tools", "name": name,
-            "label": tool_label(name), "status": status,
-            "rows": _result_rows(res),
-            "ms": elapsed.get(id(call), 0),
-        }
-        if status != "ok":
-            try:
-                rdata["error"] = str(res.get("error"))[:160]
-            except Exception:
-                rdata["error"] = "failed"
+        rdata = _tool_result_payload(
+            "tools", name, res, elapsed.get(id(call), 0))
         yield _event("tool_result", rdata)
         for _te in _trace_replay_events(res if isinstance(res, dict) else {}):
             _td = dict(_te.get("data", {}) or {})

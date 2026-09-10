@@ -50,6 +50,19 @@ def _trace_status(out: Any) -> str:
     return "ok"
 
 
+def _trace_sql(out: Any) -> str | None:
+    """Lift the executed SQL off a tool output into the desk trace."""
+    try:
+        if not isinstance(out, dict):
+            return None
+        sql = out.get("sql")
+        if not sql and isinstance(out.get("meta"), dict):
+            sql = out["meta"].get("sql")
+        sql = str(sql or "").strip()
+        return sql or None
+    except Exception:
+        return None
+
 def _trace_error(out: Any) -> str | None:
     try:
         if isinstance(out, dict) and out.get("error"):
@@ -150,6 +163,9 @@ async def _run_desk(
                 "name": fname, "label": _desk_tool_label(fname),
                 "ms": _ms, "rows": _rows, "status": _st,
             }
+            _sql = _trace_sql(out)
+            if _sql:
+                _te["sql"] = _sql
             _err = _trace_error(out)
             if _err:
                 _te["error"] = _err
@@ -192,6 +208,9 @@ async def _run_desk(
             "name": fname, "label": _desk_tool_label(fname),
             "ms": _ms, "rows": _rows, "status": _st,
         }
+        _sql = _trace_sql(out)
+        if _sql:
+            _te["sql"] = _sql
         _err = _trace_error(out)
         if _err:
             _te["error"] = _err
@@ -242,6 +261,9 @@ async def _run_desk(
                 "rows": _row_count(out.get("rows")) if isinstance(out, dict) else 0,
                 "status": _trace_status(out),
             }
+            _sql = _trace_sql(out)
+            if _sql:
+                _te["sql"] = _sql
             _err = _trace_error(out)
             if _err:
                 _te["error"] = _err

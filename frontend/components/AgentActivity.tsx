@@ -58,6 +58,7 @@ function metaLine(c: ToolCall): string {
 
 function ToolRow({ c }: { c: ToolCall }) {
   const [open, setOpen] = useState(false);
+  const [sqlOpen, setSqlOpen] = useState(false);
   const dotColor =
     c.status === "running"
       ? "var(--color-cyan-signal)"
@@ -142,6 +143,48 @@ function ToolRow({ c }: { c: ToolCall }) {
           }}
         >
           {c.summary && <div style={{ marginBottom: 4 }}>{c.summary}</div>}
+          {c.sql && (
+            <div style={{ marginBottom: 4 }}>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSqlOpen((o) => !o);
+                }}
+                style={{
+                  background: "none",
+                  border: "none",
+                  padding: 0,
+                  cursor: "pointer",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: "var(--color-cyan-edge)",
+                }}
+              >
+                SQL {sqlOpen ? "▾" : "▸"}
+              </button>
+              {sqlOpen && (
+                <pre
+                  style={{
+                    fontFamily: "ui-monospace, monospace",
+                    fontSize: 11,
+                    lineHeight: 1.5,
+                    background: "var(--color-stone-canvas)",
+                    border: "1px solid var(--color-stone-border)",
+                    borderRadius: 6,
+                    padding: 8,
+                    overflowX: "auto",
+                    margin: "4px 0 0",
+                    color: "var(--color-ink-black)",
+                    whiteSpace: "pre-wrap",
+                    wordBreak: "break-word",
+                  }}
+                >
+                  {c.sql}
+                </pre>
+              )}
+            </div>
+          )}
           {c.args && Object.keys(c.args).length > 0 && (
             <pre
               style={{

@@ -1549,6 +1549,7 @@ async def text_to_sql(question: str) -> dict[str, Any]:
             continue
         return {"tool": "text_to_sql", "ok": True,
                 "rows": [dict(zip(names, r)) for r in rows[:25]],
+                "sql": sql,
                 "meta": {"sql": sql[:500], "source": "warehouse"}}
     return {"tool": "text_to_sql", "ok": False,
             "error": "sql failed after retries" + feedback[-160:]}

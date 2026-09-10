@@ -15,6 +15,7 @@ export interface ToolCall {
   rows?: number;
   error?: string;
   agent?: string;
+  sql?: string;
 }
 
 export interface ToolResult {

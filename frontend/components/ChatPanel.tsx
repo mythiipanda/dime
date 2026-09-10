@@ -60,6 +60,7 @@ function applyEvent(ai: AiMessage, type: string, data: unknown): AiMessage {
         if (typeof d.ms === "number") c.ms = d.ms;
         if (d.error) c.error = String(d.error);
         if (d.summary) c.summary = String(d.summary);
+        if (typeof d.sql === "string" && d.sql.trim()) c.sql = d.sql;
         break;
       }
     }
