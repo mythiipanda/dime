@@ -6,7 +6,7 @@ before doing anything.
 ## What Dime Is
 
 Dime is a chat interface over a DuckDB data warehouse of NBA stats. Users ask natural
-language questions ("who's the most clutch player?"), the agent calls 63+ backend tools,
+language questions ("who's the most clutch player?"), the agent calls 60 backend tools,
 reasons over the evidence, and answers with cited numbers.
 
 **The thesis:** Every competitor is a database with a query UI, a metric with a dashboard,
@@ -17,7 +17,7 @@ or a lookup bot. Nobody is an analyst. Dime is the analyst.
 1. Read `ROADMAP.md` — product strategy, market positioning, priority stack.
 2. Read `research/nba-analyst-market-brief.md` — competitive landscape, pain points.
 3. Read `DESIGN.MD` — visual design law (warm stone, no gradients, no emojis).
-4. Check `backend/app/tools/__init__.py` — the 63 registered tools. Don't duplicate.
+4. Check `backend/app/tools/__init__.py` — the 60 registered tools. Don't duplicate.
 
 ## Repository Rules (non-negotiable)
 
@@ -81,4 +81,6 @@ Work on the highest priority unbuilt item from ROADMAP.md:
 
 - Check if the tool already exists before building a new one.
 - Check `research/nba-analyst-market-brief.md` for market context.
-- The user (Tony) is the product owner. Ask him for product decisions, not technical ones.
+- The user (Tony) is the product owner. Only ask him about genuinely new or high-impact
+  product decisions (new feature direction, killing a feature, monetization). For
+  reversible implementation choices, decide yourself and note it in decisions.tsv.

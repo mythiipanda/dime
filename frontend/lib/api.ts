@@ -10,11 +10,12 @@ export interface GameRow {
   GAME_STATUS_TEXT?: string;
 }
 
-export interface ScoringLeader {
+export interface TodayMover {
   PLAYER?: string;
   TEAM?: string;
-  PTS?: number;
-  GP?: number;
+  RANK_CHANGE?: string;
+  PTS_CHANGE?: number;
+  note?: string;
 }
 
 export interface TeamStreak {
@@ -28,7 +29,7 @@ export interface TeamStreak {
 export interface TodayRows {
   last_night: GameRow[];
   tonight: GameRow[];
-  movers: ScoringLeader[];
+  movers: TodayMover[];
   streaks: TeamStreak[];
 }
 

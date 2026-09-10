@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { GameRow, ScoringLeader, TeamStreak, TodayRows, getToday } from "../lib/api";
+import { GameRow, TodayMover, TeamStreak, TodayRows, getToday } from "../lib/api";
 import EmptyState from "./EmptyState";
 
 function GameChip({ g }: { g: GameRow }) {
@@ -43,7 +43,14 @@ function GameRowList({ games, emptyTitle, emptyDescription }: { games: GameRow[]
   );
 }
 
-function LeaderRow({ l, rank }: { l: ScoringLeader; rank: number }) {
+function MoverRow({ m }: { m: TodayMover }) {
+  if (m.note) {
+    return (
+      <div style={{ fontSize: 13, color: "var(--color-warm-gray)", padding: "6px 0" }}>
+        {m.note}
+      </div>
+    );
+  }
   return (
     <div
       style={{
@@ -51,29 +58,28 @@ function LeaderRow({ l, rank }: { l: ScoringLeader; rank: number }) {
         alignItems: "center",
         gap: 10,
         padding: "6px 0",
-        borderTop: rank > 1 ? "1px solid var(--color-stone-border)" : "none",
+        borderTop: "1px solid var(--color-stone-border)",
         fontSize: 13,
       }}
     >
       <span
         style={{
-          width: 20,
-          fontSize: 12,
-          fontWeight: rank === 1 ? 600 : 400,
-          color: rank === 1 ? "var(--color-cyan-edge)" : "var(--color-ash-gray)",
+          fontSize: 11,
+          fontWeight: 600,
+          minWidth: 36,
+          color: "var(--color-cyan-edge)",
         }}
       >
-        {rank}
+        {m.RANK_CHANGE}
       </span>
       <span style={{ flex: 1, fontWeight: 500, color: "var(--color-ink-black)" }}>
-        {l.PLAYER || "Unknown"}
+        {m.PLAYER || "Unknown"}
       </span>
-      <span style={{ fontSize: 12, color: "var(--color-warm-gray)" }}>{l.TEAM}</span>
-      <span style={{ fontSize: 12, color: "var(--color-warm-gray)" }}>
-        {l.GP ? `${l.GP} GP` : ""}
-      </span>
-      <span style={{ fontWeight: 600, minWidth: 40, textAlign: "right" }}>
-        {typeof l.PTS === "number" ? l.PTS.toFixed(1) : "-"}
+      <span style={{ fontSize: 12, color: "var(--color-warm-gray)" }}>{m.TEAM}</span>
+      <span style={{ fontSize: 12, color: "var(--color-warm-gray)", minWidth: 56, textAlign: "right" }}>
+        {typeof m.PTS_CHANGE === "number"
+          ? `${m.PTS_CHANGE > 0 ? "+" : ""}${m.PTS_CHANGE.toFixed(1)} pts`
+          : ""}
       </span>
     </div>
   );
@@ -206,17 +212,17 @@ export default function TodayPanel() {
       >
         <div>
           <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginBottom: 4 }}>
-            Scoring leaders
+            Leaderboard movers (7d)
           </div>
           {(rows.movers || []).length ? (
-            rows.movers.slice(0, 5).map((l, i) => (
-              <LeaderRow key={l.PLAYER || i} l={l} rank={i + 1} />
+            rows.movers.slice(0, 6).map((m, i) => (
+              <MoverRow key={m.PLAYER || i} m={m} />
             ))
           ) : (
             <EmptyState
               icon="📈"
-              title="Leaders unavailable"
-              description="Season leaders haven't loaded yet. Check back soon."
+              title="Movers unavailable"
+              description="Leaderboard movement hasn't loaded yet. Check back soon."
             />
           )}
         </div>
