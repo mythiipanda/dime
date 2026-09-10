@@ -63,10 +63,42 @@ def log(msg: str) -> None:
         fh.write(line + "\n")
 
 
+def strip_suffix(name: str) -> str:
+    """Remove a trailing generational suffix (Jr, Sr, II, III, IV, optional period)."""
+    return re.sub(r"\s+(jr|sr|ii|iii|iv)\.?$", "", name.strip(), flags=re.IGNORECASE)
+
+
 def norm_name(name: str) -> str:
     nfkd = unicodedata.normalize("NFKD", name)
     ascii_only = "".join(c for c in nfkd if not unicodedata.combining(c))
     return re.sub(r"[^a-z0-9]", "", ascii_only.lower())
+
+
+# bbref display name -> warehouse canonical name (both resolved suffix-stripped).
+ALIAS_TARGETS = {
+    "Jimmy Butler": "Jimmy Butler III",
+    "Bobby Portis": "Bobby Portis Jr.",
+    "Ron Holland": "Ronald Holland II",
+    "DaRon Holmes": "DaRon Holmes II",
+    "Trey Jemison": "Trey Jemison III",
+    "Walter Clayton": "Walter Clayton Jr.",
+    "Xavier Tillman Sr.": "Xavier Tillman",
+    "Tre Scott": "Trevon Scott",
+    "Adama-Alpha Bal": "Adama Bal",
+}
+
+
+def build_alias_map(name_map: dict) -> dict:
+    """Resolve ALIAS_TARGETS to warehouse Player_IDs via the suffix-stripped map."""
+    alias_map: dict = {}
+    for alias, target in ALIAS_TARGETS.items():
+        pid = name_map.get(norm_name(strip_suffix(target)))
+        if pid is None:
+            log(f"WARN alias target not in warehouse map: {target!r} (alias {alias!r}), skipping")
+            continue
+        alias_map[norm_name(strip_suffix(alias))] = pid
+    log(f"alias map: {len(alias_map)} entries")
+    return alias_map
 
 
 def load_name_map() -> dict:
@@ -86,7 +118,7 @@ def load_name_map() -> dict:
         con.close()
     mapping: dict = {}
     for pid, name in rows:
-        key = norm_name(name or "")
+        key = norm_name(strip_suffix(name or ""))
         if not key:
             continue
         if key in mapping and mapping[key] != pid:
@@ -256,6 +288,7 @@ def main() -> None:
         player_paths = player_paths[:limit]
 
     name_map = load_name_map()
+    alias_map = build_alias_map(name_map)
     prog = load_progress()
     done = set(prog.get("done", []))
     failed = prog.get("failed", {})
@@ -285,7 +318,9 @@ def main() -> None:
                 counts["no_name_match"] += 1
                 log(f"[{i}/{len(player_paths)}] {pid}: no player name found, skipping")
                 continue
-            nba_id = name_map.get(norm_name(pname))
+            nba_id = name_map.get(norm_name(strip_suffix(pname)))
+            if nba_id is None:
+                nba_id = alias_map.get(norm_name(strip_suffix(pname)))
             if nba_id is None:
                 failed[pid] = f"name mismatch: {pname!r}"
                 counts["no_name_match"] += 1
