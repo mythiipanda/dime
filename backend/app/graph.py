@@ -357,10 +357,14 @@ def _trade_sides(question: str, found_p: list[str], found_t: list[str],
 
     from .tools._core import coerce_player_id
 
-    raw_q = question.lower()
+    def _fold(s: str) -> str:
+        return "".join(c for c in unicodedata.normalize("NFKD", s or "")
+                       if not unicodedata.combining(c)).lower()
+
+    raw_q = _fold(question)
     named = []
     for p in found_p:
-        low = p.lower()
+        low = _fold(p)
         last = low.split()[-1]
         if low in raw_q or re.search(r"\b" + re.escape(last) + r"\b", raw_q):
             named.append(p)
