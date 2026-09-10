@@ -176,6 +176,26 @@ the season moves. That drift is signal, not noise.
     that reports the number without saying it is an estimate loses it).
     Names with suffixes (Jr/II/III) are skipped to keep last-token
     name_recall clean. Gold: `get_impact_estimate`.
+19. `gamelog` — filter one player's game logs: sampled filter combos
+    are 40/30-point games, triple-doubles, double-doubles vs one
+    opponent, all games vs one opponent, 20/25-point games in one
+    month, 25/30-point home or away games, and 40/45/50+ PRA games.
+    Ground truth mirrors `search_game_logs`' filter pipeline exactly:
+    strptime-parsed game dates, opponent from the last MATCHUP token,
+    home = "vs." in MATCHUP, Stathead 10+ counting over
+    PTS/REB/AST/STL/BLK, ANDed filters, most-recent-first ordering.
+    Verified 30/30 exact against the tool across the full filter
+    spread. Only 1..8-match combos are sampled so the agent can list
+    every game. Grading: the matching game set — each game's date
+    (YYYY-MM-DD) goes through the `names` mechanism, so the exact SET
+    of dates must appear in the answer; the total match count and each
+    game's points/rebounds/assists are numeric facts. The question
+    asks for ISO dates explicitly, but an agent that reformats dates
+    ("Apr 12, 2026") loses the date points — a known grading gap, not
+    a knowledge gap. Numeric stats are position-blind (a quoted value
+    matches anywhere), so stats are not bound to their dates in
+    grading. Names with suffixes (Jr/II/III) are skipped to keep
+    last-token name_recall clean. Gold: `search_game_logs`.
 
 ## Scoring formulas
 

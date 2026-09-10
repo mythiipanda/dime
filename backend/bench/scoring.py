@@ -78,6 +78,7 @@ TOOL_FAMILY: dict[str, str | None] = {
     "get_game_prediction": "prediction",
     "get_warehouse_freshness": "freshness",
     "get_head_to_head": "headtohead",
+    "search_game_logs": "gamelog",
     "get_team_shot_zones": "zones",
     "get_impact_estimate": "impact",
     "resolve_entity": None,

@@ -1834,6 +1834,205 @@ def gen_impact(rng, ctx) -> tuple[Task, GroundTruth]:
     return task, truth
 
 
+# ---------------------------------------------------------------------------
+# gamelog family: mirrors search_game_logs' filter pipeline exactly
+# (per-player gamelog rows from silver_player_gamelogs, Stathead 10+
+# counting over PTS/REB/AST/STL/BLK for double/triple-doubles, opponent
+# from the last MATCHUP token, home = "vs." in MATCHUP, month and
+# date-range filters on strptime-parsed game dates, most-recent-first
+# ordering). Ground truth is the matching game set: each game's date
+# (YYYY-MM-DD) is graded through the names mechanism, so the exact SET
+# of dates must appear in the answer; the total match count and each
+# game's points/rebounds/assists are numeric facts (the scorer's
+# tolerance covers agent-side rounding). Only 1..8-match filter combos
+# are sampled so the agent can plausibly list every game.
+# ---------------------------------------------------------------------------
+
+_GLOG_MAX_MATCHES = 8
+_GLOG_TAIL = (" Give each game's date (YYYY-MM-DD), points, rebounds and "
+              "assists, plus the total count.")
+
+
+def _glog_games(pid: int) -> list[dict]:
+    # Verbatim mirror of the tool's _load_player_games: normalized rows,
+    # most recent first. ISO date strings sort lexicographically, same
+    # as the tool's date-desc ordering.
+    games = []
+    for gdate, matchup, pts, reb, ast, stl, blk in _q(
+            "SELECT GAME_DATE, MATCHUP, PTS, REB, AST, STL, BLK FROM "
+            "silver_player_gamelogs WHERE Player_ID = ? AND _season = ?",
+            [pid, SEASON]):
+        try:
+            d = datetime.strptime(str(gdate or "").strip(),
+                                  "%b %d, %Y").date()
+        except (TypeError, ValueError):
+            continue
+        mu = str(matchup or "")
+        toks = mu.split()
+        games.append({
+            "date": d.isoformat(),
+            "opponent": toks[-1].upper() if toks else "",
+            "home": "vs." in mu,
+            "pts": _fnum(pts), "reb": _fnum(reb), "ast": _fnum(ast),
+            "dd": sum(1 for v in (pts, reb, ast, stl, blk)
+                      if _fnum(v) >= 10),
+        })
+    games.sort(key=lambda g: g["date"], reverse=True)
+    return games
+
+
+def _glog_matches(g: dict, f: dict) -> bool:
+    # Verbatim mirror of the tool's _matches: every filter ANDs.
+    if f.get("min_points") is not None and g["pts"] < f["min_points"]:
+        return False
+    if f.get("min_rebounds") is not None and g["reb"] < f["min_rebounds"]:
+        return False
+    if f.get("min_assists") is not None and g["ast"] < f["min_assists"]:
+        return False
+    if f.get("min_pra") is not None and \
+            g["pts"] + g["reb"] + g["ast"] < f["min_pra"]:
+        return False
+    if f.get("double_double") and g["dd"] < 2:
+        return False
+    if f.get("triple_double") and g["dd"] < 3:
+        return False
+    if f.get("opponent") is not None and g["opponent"] != f["opponent"]:
+        return False
+    if f.get("month") is not None and int(g["date"][5:7]) != f["month"]:
+        return False
+    if f.get("start_date") is not None and g["date"] < f["start_date"]:
+        return False
+    if f.get("end_date") is not None and g["date"] > f["end_date"]:
+        return False
+    if f.get("home_away") is not None and \
+            g["home"] != (f["home_away"] == "home"):
+        return False
+    return True
+
+
+def _glog_templates() -> list:
+    # Each template returns (question, ground-truth filters, tool kwargs)
+    # or None when it cannot be phrased for this player's games.
+    def _t_points(rng, games, name, full_of):
+        thr = rng.choice([30, 40])
+        return (f"List all of {name}'s {thr}-point games this season "
+                f"({SEASON}).",
+                {"min_points": thr}, {"min_points": thr})
+
+    def _t_triple(rng, games, name, full_of):
+        return (f"List all of {name}'s triple-doubles this season "
+                f"({SEASON}).",
+                {"triple_double": True}, {"triple_double": True})
+
+    def _t_dd_vs(rng, games, name, full_of):
+        opp = rng.choice(sorted({g["opponent"] for g in games
+                                 if g["opponent"]}))
+        full = full_of(opp)
+        if not full:
+            return None
+        return (f"List all of {name}'s double-doubles against the {full} "
+                f"this season ({SEASON}).",
+                {"double_double": True, "opponent": opp},
+                {"double_double": True, "opponent": opp})
+
+    def _t_vs(rng, games, name, full_of):
+        opp = rng.choice(sorted({g["opponent"] for g in games
+                                 if g["opponent"]}))
+        full = full_of(opp)
+        if not full:
+            return None
+        return (f"How did {name} do against the {full} this season "
+                f"({SEASON})? List every game.",
+                {"opponent": opp}, {"opponent": opp})
+
+    def _t_month(rng, games, name, full_of):
+        m = rng.choice(sorted({int(g["date"][5:7]) for g in games}))
+        thr = rng.choice([20, 25])
+        mname = datetime(2000, m, 1).strftime("%B")
+        return (f"List all of {name}'s {thr}-point games in {mname} this "
+                f"season ({SEASON}).",
+                {"month": m, "min_points": thr},
+                {"month": m, "min_points": thr})
+
+    def _t_home(rng, games, name, full_of):
+        ha = rng.choice(["home", "away"])
+        thr = rng.choice([25, 30])
+        return (f"List all of {name}'s {thr}-point {ha} games this season "
+                f"({SEASON}).",
+                {"home_away": ha, "min_points": thr},
+                {"home_away": ha, "min_points": thr})
+
+    def _t_pra(rng, games, name, full_of):
+        thr = rng.choice([40, 45, 50])
+        return (f"List all of {name}'s games with {thr}+ "
+                f"points+rebounds+assists (PRA) this season ({SEASON}).",
+                {"min_pra": thr}, {"min_pra": thr})
+
+    return [_t_points, _t_triple, _t_dd_vs, _t_vs, _t_month, _t_home,
+            _t_pra]
+
+
+def gen_gamelog(rng, ctx) -> tuple[Task, GroundTruth]:
+    ents = _q("SELECT DISTINCT Player_ID FROM silver_player_gamelogs "
+              "WHERE _season = ?", [SEASON])
+    if not ents:
+        raise SkipTask("no player gamelogs in warehouse")
+    names: dict = {}
+    fulls: dict = {}
+    try:
+        from nba_api.stats.static import players as _players, \
+            teams as _teams
+        for p in _players.get_players():
+            names[p.get("id")] = p.get("full_name")
+        for t in _teams.get_teams():
+            fulls[str(t.get("abbreviation", "")).upper()] = \
+                t.get("full_name")
+    except Exception:
+        pass
+    templates = _glog_templates()
+    for _ in range(40):
+        pid = int(rng.choice(ents)[0])
+        name = names.get(pid)
+        if not name or str(name).split()[-1].rstrip(".") in \
+                _IMPACT_NAME_SUFFIXES:
+            # Suffix names (Jr/II/III) break name_recall's last-token
+            # match; the impact family skips them for the same reason.
+            continue
+        games = _glog_games(pid)
+        if len(games) < 10:
+            continue
+        built = rng.choice(templates)(rng, games, name, fulls.get)
+        if built is None:
+            continue
+        question, filters, _kwargs = built
+        matches = [g for g in games if _glog_matches(g, filters)]
+        if not 1 <= len(matches) <= _GLOG_MAX_MATCHES:
+            continue
+        gnames = {"player": name}
+        facts: dict = {}
+        for i, g in enumerate(matches, 1):
+            gnames[f"game_{i}"] = g["date"]
+            facts[f"game_{i}_pts"] = round(g["pts"], 1)
+            facts[f"game_{i}_reb"] = round(g["reb"], 1)
+            facts[f"game_{i}_ast"] = round(g["ast"], 1)
+        facts["names"] = gnames
+        facts["total"] = len(matches)
+        tid = ctx["task_id"]
+        task = Task(
+            task_id=tid, family="gamelog",
+            question=question + _GLOG_TAIL,
+            entities=[name], gold_tool_families=["gamelog"],
+            timeout_s=ctx["timeout_s"], seed=ctx["seed"],
+        )
+        truth = GroundTruth(
+            task_id=tid, facts=facts, computed_at=_now(),
+            source="nba_api via silver_player_gamelogs "
+                   "(same filter pipeline as search_game_logs)",
+        )
+        return task, truth
+    raise SkipTask("no gradeable gamelog filter combo found")
+
+
 GENERATORS = {
     "lookup": gen_lookup,
     "compare": gen_compare,
@@ -1853,4 +2052,5 @@ GENERATORS = {
     "headtohead": gen_headtohead,
     "zones": gen_zones,
     "impact": gen_impact,
+    "gamelog": gen_gamelog,
 }
