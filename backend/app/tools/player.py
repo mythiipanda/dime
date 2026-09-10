@@ -147,7 +147,20 @@ async def get_compare(
             except Exception:
                 return []
 
-        def _team_id() -> int:
+        def _team_id(abbr: str) -> int:
+            # Warehouse-first team resolution. The warehouse gamelog MATCHUP
+            # column already carries the player's team abbreviation, and the
+            # offline nba_api static table maps it to a team id with zero
+            # HTTP, so the hot path never touches the network.
+            # FALLBACK: the live CommonPlayerInfo call below only fires when
+            # the warehouse has no team data for this player at all. On that
+            # path there is no warehouse row to go stale, so the live
+            # TEAM_ID wins outright by construction.
+            if abbr:
+                try:
+                    return coerce_team_id(abbr)
+                except Exception:
+                    pass
             try:
                 from nba_api.stats.endpoints import CommonPlayerInfo
 
@@ -165,10 +178,7 @@ async def get_compare(
             except Exception:
                 return []
 
-        games, team = await _asyncio.gather(
-            loop.run_in_executor(None, _gamelogs),
-            loop.run_in_executor(None, _team_id),
-        )
+        games = await loop.run_in_executor(None, _gamelogs)
         jobs: dict[str, Any] = {}
         if not games:
             jobs["intel"] = get_player_intel.ainvoke(
@@ -183,6 +193,10 @@ async def get_compare(
                for k, v in zip(jobs, results)}
         if not games:
             games = res.get("intel", {}).get("rows", []) or []
+        matchup = [str(g.get("MATCHUP") or "").split(" ")[0] for g in games]
+        team_abbr = (_Counter(m for m in matchup if m).most_common(1)
+                     or [("", 0)])[0][0]
+        team = await loop.run_in_executor(None, _team_id, team_abbr)
         oo = {"rows": _onoff_rows()}
         if not any(isinstance(r, dict)
                    and r.get("Stat") == "Pts per 100 Possessions"
@@ -215,10 +229,7 @@ async def get_compare(
         pts_total = _sum("PTS")
         ts = round(pts_total / max(2 * (fga + 0.44 * fta), 1), 3)
         efg = round((fgm + 0.5 * fg3m) / max(fga, 1), 3)
-        matchup = [str(g.get("MATCHUP") or "").split(" ")[0] for g in games]
-        team_abbr = (_Counter(m for m in matchup if m).most_common(1)
-                     or [("", 0)])[0][0]
-        record, net_onoff, rapm = "", None, None
+        record, net_onoff, rapm, clutch_pts = "", None, None, None
         if team_abbr:
             try:
                 from nba_api.stats.static import teams as _static
