@@ -373,6 +373,17 @@ def _trade_sides(question: str, found_p: list[str], found_t: list[str],
 async def _triage_seed(question: str, primary: str, model: str,
                        state: dict) -> None:
     found_p, found_t = _detect_entities(question)
+    if state.get("history") and re.search(
+            r"\b(him|her|them|they|his|hers|theirs|it|that team|that player)\b",
+            question, re.IGNORECASE):
+        for t in state["history"][-6:]:
+            hp, ht = _detect_entities(t.get("text") or "")
+            for p in hp:
+                if p not in found_p and len(found_p) < 3:
+                    found_p.append(p)
+            for tm in ht:
+                if tm not in found_t and len(found_t) < 2:
+                    found_t.append(tm)
     is_compare = bool(_COMPARE_RX.search(question))
     is_trade = bool(re.search(r"\btrad(e|es|ed|ing)\b|sign-and-trade|\bswap\b|\bdeal\b",
                               question, re.IGNORECASE))
