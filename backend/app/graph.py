@@ -67,7 +67,8 @@ PLANNER_SYSTEM = (
     "For players most statistically like X (comps, similar players), call "
     "get_comps directly — never improvise similarity from SQL. "
     "For who wins a trade, trade value, fair value, or trade grades, call "
-    "get_trade_value directly. "
+    "get_trade_value directly — it resolves player names itself, so skip "
+    "resolve_entity for trade questions. "
     "For performance splits (vs defense tiers, home/away, rest days), call "
     "get_matchup_splits directly. "
     "For is-it-real / sustainability / regression questions, call "
@@ -213,6 +214,12 @@ def _result_rows(result: dict[str, Any]) -> int:
     if isinstance(rows, list):
         return len(rows)
     if isinstance(rows, dict):
+        # Game-log results nest the actual game rows under "matches"
+        # alongside metadata keys (player, filters, totals); count the
+        # games, not the keys ("7 rows" for 1 game otherwise).
+        matches = rows.get("matches")
+        if isinstance(matches, list):
+            return len(matches)
         total = 0
         for value in rows.values():
             if isinstance(value, list):
@@ -249,6 +256,21 @@ _LEAGUE_RX = re.compile(
     r"\btrad(e|es|ed|ing)\b|sign-and-trade|\bswap\b", re.IGNORECASE)
 _COMPARE_RX = re.compile(
     r"\bvs\.?\b|\bversus\b|\bcompare\b", re.IGNORECASE)
+# Trade-value phrasing that get_trade_value answers on its own: the planner
+# used to spend two LLM rounds (resolve_entity, then the value call) before
+# calling it, but the tool resolves names itself.
+_TRADE_VALUE_RX = re.compile(
+    r"who wins|win(?:s|ner)? (?:this|that|the) trade|trade value|"
+    r"fair value|grade[sd]? (?:this|that|the) trade|"
+    r"value of (?:this|that|the) trade|production value vs salary|"
+    r"who (?:got|gets) the better (?:deal|end)", re.IGNORECASE)
+# Compound trade questions the value fast-path must NOT swallow: legality,
+# cap math, or picks need the planner (or the get_trade_check path).
+_TRADE_VALUE_NO_RX = re.compile(
+    r"\blegal\b|salary cap|under the cap|\bapron\b|luxury tax|"
+    r"salary match|trade exception|\bcba\b|"
+    r"\bpicks?\b|\bfrp\b|\bsrp\b|first[\s-]?round pick|second[\s-]?round pick",
+    re.IGNORECASE)
 _LIST_RX = re.compile(
     r"which\s+(players|teams)|what\s+(players|teams)|top\s+\d+|"
     r"\bunder\s+\d+|\bover\s+\d+|\bage\b|"
@@ -294,14 +316,24 @@ _MATCHUP_SPLITS_RX = re.compile(
 # unknown-table/column errors on silver_player_gamelogs (caught red in
 # the demo recording), so the triage fast-path routes them to
 # search_game_logs, which owns the per-player log filter pipeline.
+# Best-game phrasing ("best game", "career high", "season high", "most
+# points") is a game-log question answered with the max-points game from
+# the warehouse logs. Kept as its own regex because "career high" trips
+# _GAMELOG_NO_RX's "career" guard, which is meant for career averages,
+# not single-game highs.
+_GAMELOG_BEST_RX = re.compile(
+    r"\bbest game\b|\bcareer[\s-]*high\b|\bseason[\s-]*high\b|"
+    r"\bmost points\b",
+    re.IGNORECASE)
 _GAMELOG_RX = re.compile(
     r"\bgame[\s-]*logs?\b|"
     r"\btriple[\s-]*doubles?\b|\bdouble[\s-]*doubles?\b|"
-    r"\b\d{2}\s*[-–—]\s*points?\b|"           # "40-point games"
+    + _GAMELOG_BEST_RX.pattern + r"|"
+    r"\b\d{2}\s*[-–—\s]?\s*(?:points?|pts?)\b|"  # "40-point games" / "40 point games" / "40pt games"
     r"\b\d{1,2}\s*[-–—]\s*rebounds?\b|"       # "15-rebound games"
     r"\b\d{1,2}\s*[-–—]\s*assists?\b|"        # "12-assist games"
     r"(?:scored|had|dropped|posted|recorded)\s+\d{2}\s*(?:\+|or more)?"
-    r"\s*points?\b|"                          # "scored 50 points"
+    r"\s*(?:points?|pts?)\b|"                 # "scored 50 points"
     r"\bgames?\b.{0,16}\b(?:vs\.?|versus|against)\b|"  # "games vs the Lakers"
     r"\b(?:vs\.?|versus|against)\b.{0,90}\bgames?\b",  # "against the Wizards... list every game"
     re.IGNORECASE)
@@ -454,9 +486,15 @@ def _gamelog_args(question: str, player: str,
 
     args: dict[str, Any] = {"player": player}
     q = question or ""
-    m = (re.search(r"\b(\d{2})\s*[-–—]\s*points?\b", q, re.IGNORECASE)
+    if _GAMELOG_BEST_RX.search(q):
+        # "best game" / "career high" / "season high" / "most points":
+        # answer with the single max-points game, not a filtered list.
+        args["best_game"] = True
+    m = (re.search(r"\b(\d{2})\s*[-–—\s]?\s*(?:points?|pts?)\b", q,
+                   re.IGNORECASE)
          or re.search(r"(?:scored|had|dropped|posted|recorded)\s+(\d{2})"
-                      r"\s*(?:\+|or more)?\s*points?\b", q, re.IGNORECASE))
+                      r"\s*(?:\+|or more)?\s*(?:points?|pts?)\b", q,
+                      re.IGNORECASE))
     if m:
         args["min_points"] = int(m.group(1))
     m = (re.search(r"\b(\d{1,2})\s*[-–—]\s*rebounds?\b", q, re.IGNORECASE)
@@ -941,7 +979,10 @@ async def _triage_seed(question: str, primary: str, model: str,
     is_gamelog = (
         len(_named_p) == 1
         and _GAMELOG_RX.search(question)
-        and not _GAMELOG_NO_RX.search(question)
+        # "career high" trips _GAMELOG_NO_RX's "career" guard, which is
+        # meant for career averages, not single-game highs.
+        and (_GAMELOG_BEST_RX.search(question)
+             or not _GAMELOG_NO_RX.search(question))
         and not is_trade
         and not is_cast
         and not _PREDICT_LIVE_RX.search(question)
@@ -974,6 +1015,38 @@ async def _triage_seed(question: str, primary: str, model: str,
             async for _e in _triage_terminal(question, state):
                 yield _e
         return
+    if (is_trade and not state.get("history")
+            and _TRADE_VALUE_RX.search(question)
+            and not _TRADE_VALUE_NO_RX.search(question)
+            and len(found_t) == 2):
+        # B3: "who wins this trade on value" used to go through two planner
+        # LLM rounds (resolve_entity, then the value call) before reaching
+        # get_trade_value, which resolves names itself. Parse sides
+        # deterministically and answer straight from the warehouse.
+        # Exactly two teams only: three-team trades fall to the planner.
+        _vseason = "2025-26"
+        _vm = re.search(r"(20\d\d)\s*-\s*(\d\d)", question)
+        if _vm:
+            _vseason = f"{_vm.group(1)}-{_vm.group(2)}"
+        _vsides = _trade_sides(question, found_p, found_t, _vseason)
+        if _vsides:
+            _vh: dict[str, Any] = {}
+            async for _e in _triage_tool(
+                    "get_trade_value", _vsides, state, _vh):
+                yield _e
+            _vout = _vh.get("out") or {}
+            if _result_status(_vout) == "ok":
+                # Wrap like the prediction/gamelog fast-paths: analytics
+                # only treats entries with a non-empty "rows" as evidence.
+                if state["tool_results"] and state["tool_results"][-1] is _vout:
+                    state["tool_results"][-1] = {
+                        "tool": "get_trade_value", "rows": [_vout]}
+                async for _e in _triage_terminal(question, state):
+                    yield _e
+                return
+            # Unknown players or missing data: fall through to the planner
+            # so it can self-correct with resolve_entity. The tool's hints
+            # are already in state["tool_results"].
     if ((len(found_p) >= 2 or len(found_t) >= 2 or is_compare)
             and not (is_trade and not is_compare)
             and not (is_cast and not is_compare)):

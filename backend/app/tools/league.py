@@ -598,17 +598,22 @@ CAP = {"cap": 165_000_000, "tax": 201_048_000,
 
 def _current_team_for_player(
     player_name: str, player_id: object = None, fallback: str = "",
+    con: object = None,
 ) -> str:
     """Current-season team for one player, else fallback.
 
     Prefers silver_leaders_pts TEAM for SEASON, then the most recent
     silver_player_gamelogs MATCHUP, then the salary-sheet TEAM.
+    Pass con to reuse the caller's connection (latency); otherwise opens
+    and closes its own.
     """
     from .. import store as _store
 
     name = str(player_name or "").strip()
+    own = con is None
     try:
-        con = _store.connect()
+        if own:
+            con = _store.connect()
     except Exception:
         return fallback
     try:
@@ -659,14 +664,16 @@ def _current_team_for_player(
             except Exception:
                 pass
     finally:
-        try:
-            con.close()
-        except Exception:
-            pass
+        if own:
+            try:
+                con.close()
+            except Exception:
+                pass
     return fallback
 
 
-def _resolve_stale_trade_player(want: str, team: str) -> tuple[str, int] | None:
+def _resolve_stale_trade_player(want: str, team: str,
+                                con: object = None) -> tuple[str, int] | None:
     """Salary-sheet row for want whose current team is team, else None."""
     import difflib as _dl
 
@@ -676,8 +683,10 @@ def _resolve_stale_trade_player(want: str, team: str) -> tuple[str, int] | None:
     w = str(want or "").strip()
     if not w or not target:
         return None
+    own = con is None
     try:
-        con = _store.connect()
+        if own:
+            con = _store.connect()
     except Exception:
         return None
     try:
@@ -691,10 +700,11 @@ def _resolve_stale_trade_player(want: str, team: str) -> tuple[str, int] | None:
         except Exception:
             return None
     finally:
-        try:
-            con.close()
-        except Exception:
-            pass
+        if own:
+            try:
+                con.close()
+            except Exception:
+                pass
     wl = w.lower()
     exact = [r for r in rows if str(r[0]).lower() == wl]
     subs = [r for r in rows if wl in str(r[0]).lower() and r not in exact]
@@ -710,7 +720,7 @@ def _resolve_stale_trade_player(want: str, team: str) -> tuple[str, int] | None:
     for cand in exact + subs + fuzzy:
         cname, csal, cteam = str(cand[0]), cand[1] or 0, str(cand[2] or "")
         try:
-            cur = _current_team_for_player(cname, None, cteam)
+            cur = _current_team_for_player(cname, None, cteam, con)
         except Exception:
             cur = cteam
         if str(cur).upper() == target:
@@ -718,10 +728,12 @@ def _resolve_stale_trade_player(want: str, team: str) -> tuple[str, int] | None:
     return None
 
 
-def _payroll(team: str) -> tuple[int, list[dict]]:
+def _payroll(team: str, con: object = None) -> tuple[int, list[dict]]:
     from .. import store as _store
 
-    con = _store.connect()
+    own = con is None
+    if own:
+        con = _store.connect()
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if "silver_salaries" in tables:
@@ -739,7 +751,8 @@ def _payroll(team: str) -> tuple[int, list[dict]]:
             [team.upper()],
         ).fetchall()
     finally:
-        con.close()
+        if own:
+            con.close()
     players = [{"player": r[0], "salary": r[1]} for r in rows]
     return sum(r[1] or 0 for r in rows), players
 
@@ -760,10 +773,12 @@ def _allowed_incoming(outgoing: int, over_apron1: bool) -> tuple[int, str]:
     return int(outgoing * 1.25 + 250_000), "125pct plus 250k below first apron"
 
 
-def _payroll_source() -> str:
+def _payroll_source(con: object = None) -> str:
     from .. import store as _store
 
-    con = _store.connect()
+    own = con is None
+    if own:
+        con = _store.connect()
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if "silver_salaries" in tables:
@@ -771,14 +786,17 @@ def _payroll_source() -> str:
             if n > 300:
                 return "basketball-reference contracts (real 2026-27 salaries)"
     finally:
-        con.close()
+        if own:
+            con.close()
     return "orojas119/nba-salary-cap (estimated)"
 
 
-def _salary_date() -> str | None:
+def _salary_date(con: object = None) -> str | None:
     from .. import store as _store
 
-    con = _store.connect()
+    own = con is None
+    if own:
+        con = _store.connect()
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         for table in ("silver_salaries", "silver_cap_players"):
@@ -793,7 +811,8 @@ def _salary_date() -> str | None:
     except Exception:
         return None
     finally:
-        con.close()
+        if own:
+            con.close()
     return None
 
 
@@ -802,66 +821,90 @@ def get_cap_ledger(team: str = "") -> dict[str, Any]:
     """Payroll plus apron room for one abbreviation. 2026-27 thresholds."""
     if not team:
         return {"tool": "get_cap_ledger", "ok": False, "error": "abbreviation needed"}
-    total, players = _payroll(team)
+    from .. import store as _store
+
+    con = _store.connect()
+    try:
+        total, players = _payroll(team, con)
+        source = _payroll_source(con)
+        salary_date = _salary_date(con)
+    finally:
+        con.close()
     return {"tool": "get_cap_ledger", "ok": True,
             "rows": {"team": team.upper(), "payroll": total,
                      "players": sorted(players, key=lambda p: p["salary"] or 0,
                                        reverse=True)[:15],
                      "room_under_apron2": CAP["apron2"] - total,
                      "over_tax": total > CAP["tax"]},
-            "meta": {"source": _payroll_source(), "season": "2026-27",
-                     "salary_date": _salary_date(),
+            "meta": {"source": source, "season": "2026-27",
+                     "salary_date": salary_date,
                      **{k: v for k, v in CAP.items()}}}
 
 
-def _match_trade_players(team: str, names: str) -> tuple[int, list[str], list[str]]:
+def _match_trade_players(team: str, names: str,
+                         con: object = None) -> tuple[int, list[str], list[str]]:
     """Match comma-separated names against team's payroll roster.
 
     Returns (salary_total, matched_display_names, unknown_entries).
+    Pass con to reuse the caller's connection (latency); otherwise opens
+    and closes its own.
     """
     import difflib as _dl
 
-    total, roster = _payroll(team)
-    want = [n.strip() for n in names.split(",") if n.strip()]
-    lows = [p["player"].lower() for p in roster]
-    by_low = {p["player"].lower(): p for p in roster}
-    disp = {p["player"].lower(): p["player"] for p in roster}
-    matched: list[str] = []
-    unknown: list[str] = []
-    total_out = 0
-    for orig in want:
-        w = orig.lower()
-        hit = next((p for p in roster if w in p["player"].lower()), None)
-        if hit is None:
-            fb = _dl.get_close_matches(w, lows, n=1, cutoff=0.8)
-            if fb and _dl.SequenceMatcher(
-                    None, w.split()[0], fb[0].split()[0]).ratio() >= 0.8:
-                hit = by_low[fb[0]]
-        if hit:
-            matched.append(hit["player"])
-            total_out += hit["salary"] or 0
-        else:
-            stale = _resolve_stale_trade_player(orig, team)
-            if stale:
-                matched.append(stale[0])
-                total_out += stale[1]
+    from .. import store as _store
+
+    own = con is None
+    if own:
+        con = _store.connect()
+    try:
+        total, roster = _payroll(team, con)
+        want = [n.strip() for n in names.split(",") if n.strip()]
+        lows = [p["player"].lower() for p in roster]
+        by_low = {p["player"].lower(): p for p in roster}
+        disp = {p["player"].lower(): p["player"] for p in roster}
+        matched: list[str] = []
+        unknown: list[str] = []
+        total_out = 0
+        for orig in want:
+            w = orig.lower()
+            hit = next((p for p in roster if w in p["player"].lower()), None)
+            if hit is None:
+                fb = _dl.get_close_matches(w, lows, n=1, cutoff=0.8)
+                if fb and _dl.SequenceMatcher(
+                        None, w.split()[0], fb[0].split()[0]).ratio() >= 0.8:
+                    hit = by_low[fb[0]]
+            if hit:
+                matched.append(hit["player"])
+                total_out += hit["salary"] or 0
             else:
-                sug = [disp[s] for s in _dl.get_close_matches(w, lows, n=2, cutoff=0.6)]
-                unknown.append(f"{orig} (suggestions: {', '.join(sug)})" if sug else orig)
+                stale = _resolve_stale_trade_player(orig, team, con)
+                if stale:
+                    matched.append(stale[0])
+                    total_out += stale[1]
+                else:
+                    sug = [disp[s] for s in _dl.get_close_matches(w, lows, n=2, cutoff=0.6)]
+                    unknown.append(f"{orig} (suggestions: {', '.join(sug)})" if sug else orig)
+    finally:
+        if own:
+            con.close()
     return total_out, matched, unknown
 
 
-def _unknown_player_hints(unknown: list[str]) -> list[str]:
+def _unknown_player_hints(unknown: list[str], con: object = None) -> list[str]:
     """'X is on BKN per salary data' hints for names missing from a roster.
 
     Lets the planner self-correct when its team attribution is stale
     (e.g. a player moved in the 2026 offseason).
     """
     hints: list[str] = []
-    try:
-        from .. import store as _store2
+    from .. import store as _store2
 
-        con2 = _store2.connect()
+    own = con is None
+    try:
+        if own:
+            con2 = _store2.connect()
+        else:
+            con2 = con
         try:
             for u in unknown:
                 base = u.split(" (suggestions")[0].strip()
@@ -875,12 +918,13 @@ def _unknown_player_hints(unknown: list[str]) -> list[str]:
                 if hit:
                     try:
                         cur = _current_team_for_player(
-                            str(hit[1]), None, str(hit[0]))
+                            str(hit[1]), None, str(hit[0]), con2)
                     except Exception:
                         cur = hit[0]
                     hints.append(f"{base} is on {cur} per salary data")
         finally:
-            con2.close()
+            if own:
+                con2.close()
     except Exception:
         pass
     return hints
@@ -918,21 +962,29 @@ def get_trade_check(
     if not team_a or not team_b:
         return {"tool": "get_trade_check", "ok": False,
                 "error": "two teams needed"}
-    out_a, names_a, unk_a = _match_trade_players(team_a, players_a)
-    out_b, names_b, unk_b = _match_trade_players(team_b, players_b)
-    if unk_a or unk_b:
-        parts = []
-        if unk_a:
-            parts.append(f"{team_a.upper()}: {'; '.join(unk_a)}")
-        if unk_b:
-            parts.append(f"{team_b.upper()}: {'; '.join(unk_b)}")
-        hints = _unknown_player_hints(unk_a + unk_b)
-        msg = "unknown players: " + " | ".join(parts)
-        if hints:
-            msg += ". " + "; ".join(hints)
-        return {"tool": "get_trade_check", "ok": False, "error": msg}
-    pay_a, _ = _payroll(team_a)
-    pay_b, _ = _payroll(team_b)
+    from .. import store as _store
+
+    con = _store.connect()
+    try:
+        out_a, names_a, unk_a = _match_trade_players(team_a, players_a, con)
+        out_b, names_b, unk_b = _match_trade_players(team_b, players_b, con)
+        if unk_a or unk_b:
+            parts = []
+            if unk_a:
+                parts.append(f"{team_a.upper()}: {'; '.join(unk_a)}")
+            if unk_b:
+                parts.append(f"{team_b.upper()}: {'; '.join(unk_b)}")
+            hints = _unknown_player_hints(unk_a + unk_b, con)
+            msg = "unknown players: " + " | ".join(parts)
+            if hints:
+                msg += ". " + "; ".join(hints)
+            return {"tool": "get_trade_check", "ok": False, "error": msg}
+        pay_a, _ = _payroll(team_a, con)
+        pay_b, _ = _payroll(team_b, con)
+        salary_date = _salary_date(con)
+        source = _payroll_source(con)
+    finally:
+        con.close()
     state_a = _apron_state(pay_a)
     state_b = _apron_state(pay_b)
     allow_a, rule_a = _allowed_incoming(out_a, bool(state_a["over_apron1"]))
@@ -970,13 +1022,13 @@ def get_trade_check(
                                 "allowed_in": allow_b, "match_rule": rule_b,
                                 **{k: v for k, v in state_b.items()}},
                      "legal": not issues, "issues": issues, "checks": checks,
-                     "salary_date": _salary_date(),
+                     "salary_date": salary_date,
                      "disclaimer": "Estimate only, rules simplified. Skips cash, "
                      "prior trade exceptions, taxpayer midlevel, frozen pick, Stepien, "
                      "base-year, trade-kicker, minimum-salary, and sign-and-trade rules. "
                      "Confirm with a cap specialist."},
-            "meta": {"source": _payroll_source(), "rules": "v1-simplified",
-                     "salary_date": _salary_date()}}
+            "meta": {"source": source, "rules": "v1-simplified",
+                     "salary_date": salary_date}}
 
 
 @tool
@@ -1008,22 +1060,22 @@ def get_trade_value(
     if not team_a or not team_b:
         return {"tool": "get_trade_value", "ok": False,
                 "error": "two teams needed"}
-    _, names_a, unk_a = _match_trade_players(team_a, players_a)
-    _, names_b, unk_b = _match_trade_players(team_b, players_b)
-    if unk_a or unk_b:
-        parts = []
-        if unk_a:
-            parts.append(f"{team_a.upper()}: {'; '.join(unk_a)}")
-        if unk_b:
-            parts.append(f"{team_b.upper()}: {'; '.join(unk_b)}")
-        hints = _unknown_player_hints(unk_a + unk_b)
-        msg = "unknown players: " + " | ".join(parts)
-        if hints:
-            msg += ". " + "; ".join(hints)
-        return {"tool": "get_trade_value", "ok": False, "error": msg}
-
     con = _store.connect()
     try:
+        _, names_a, unk_a = _match_trade_players(team_a, players_a, con)
+        _, names_b, unk_b = _match_trade_players(team_b, players_b, con)
+        if unk_a or unk_b:
+            parts = []
+            if unk_a:
+                parts.append(f"{team_a.upper()}: {'; '.join(unk_a)}")
+            if unk_b:
+                parts.append(f"{team_b.upper()}: {'; '.join(unk_b)}")
+            hints = _unknown_player_hints(unk_a + unk_b, con)
+            msg = "unknown players: " + " | ".join(parts)
+            if hints:
+                msg += ". " + "; ".join(hints)
+            return {"tool": "get_trade_value", "ok": False, "error": msg}
+
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         cols = {t: {r[1] for r in con.execute(f"PRAGMA table_info({t})").fetchall()}
                 for t in tables if t.startswith("silver_")}
@@ -1129,6 +1181,7 @@ def get_trade_value(
                 abbr = id_to_abbr.get(row["TEAM_ID"], "")
                 if abbr:
                     ratings[str(abbr).upper()] = row
+        payroll_source = _payroll_source(con)
     finally:
         con.close()
 
@@ -1350,7 +1403,7 @@ def get_trade_value(
                                  "grades": _grades(), "text": text},
                      "data_gaps": data_gaps,
                      "disclaimer": DISCLAIMER},
-            "meta": {"source": _payroll_source(),
+            "meta": {"source": payroll_source,
                      "production_season": PROD_SEASON,
                      "salary_season": "2026-27 (column SALARY_2025_26)",
                      "estimates": True}}
