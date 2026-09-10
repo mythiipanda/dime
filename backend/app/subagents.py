@@ -323,6 +323,9 @@ SCOUT_BRIEF = (
     "Head-to-head history for one player against one opponent team "
     "(game logs, averages vs the season baseline, deltas, team record, "
     "small-sample flag) goes to get_head_to_head. "
+    "Filtered game-log searches (40-point games, games vs an opponent, "
+    "triple-doubles in a month, home/away or date windows) go to "
+    "search_game_logs. "
     "Resolve names with resolve_entity first. Use returned ids verbatim. "
     "Never invent ids. Season 2025-26 unless told otherwise."
 )
@@ -424,7 +427,7 @@ def _desk_spec(name: str, task: str):
                   "get_shot_compare", "get_trend", "get_comps", "get_clutch",
                   "get_playoff_intel", "get_matchup_splits",
                   "get_regression_check", "get_streaks", "get_head_to_head",
-                  "get_advanced", "run_python", "text_to_sql"],
+                  "search_game_logs", "get_advanced", "run_python", "text_to_sql"],
                 None)
     if name == "delegate_team":
         force = None
