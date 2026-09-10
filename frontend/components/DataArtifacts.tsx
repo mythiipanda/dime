@@ -4,44 +4,19 @@ import { useEffect, useState } from "react";
 import { AiMessage, NodeName } from "../lib/chat";
 import { ArtifactItem } from "./ArtifactCanvas";
 import AutoChart from "./AutoChart";
+import AwardRaceView, { parseAwardRace } from "./AwardRaceView";
 import CompareView from "./CompareView";
+import CompsView, { parseCompsRows } from "./CompsView";
 import CourtHeatmap from "./CourtHeatmap";
 import DataTable from "./DataTable";
+import MatchupPreviewView, { parsePreview } from "./MatchupPreviewView";
+import RegressionView, { parseRegression } from "./RegressionView";
+import SplitsView, { parseSplits } from "./SplitsView";
+import TradeValueView, { parseTradeValue } from "./TradeValueView";
 import TrendChart, { isRaptorRows } from "./TrendChart";
+import { resolveToolName } from "./view-shared";
 import WowyCard from "./WowyCard";
 import ZoneBars, { isZoneRows } from "./ZoneBars";
-import { buildCitation, tableKind } from "../lib/api";
-
-function CitePill({ title, meta }: {
-  title: string;
-  meta?: { source?: string; fetched_at?: string; season?: string };
-}) {
-  const [done, setDone] = useState(false);
-  return (
-    <button
-      type="button"
-      className="pill-ghost"
-      style={{ fontSize: 11, padding: "3px 10px" }}
-      title="Copy a citable source line for this table"
-      onClick={() => {
-        navigator.clipboard
-          .writeText(buildCitation({
-            title,
-            source: meta?.source,
-            fetchedAt: meta?.fetched_at,
-            season: meta?.season,
-          }))
-          .then(() => {
-            setDone(true);
-            setTimeout(() => setDone(false), 1500);
-          })
-          .catch(() => {});
-      }}
-    >
-      {done ? "Copied" : "Cite"}
-    </button>
-  );
-}
 
 function InlineChart({ rows }: { rows: unknown }) {
   const trend = isRaptorRows(rows);
@@ -93,8 +68,7 @@ export default function DataArtifacts({
   const [showInline, setShowInline] = useState(false);
 
   const tables: {
-    tool?: string;
-    kind?: string;
+    tool: string;
     title?: string;
     rows?: unknown;
     verdict?: string;
@@ -115,33 +89,49 @@ export default function DataArtifacts({
     for (const t of ai.nodes[n]!.tables) tables.push(t);
   }
 
-  const preferred = tables.findIndex((t) =>
-    ["shots", "wowy", "compare", "raptor", "leaders"].includes(tableKind(t)),
-  );
+  const toolOf = (t: { tool?: string; title?: string }) =>
+    resolveToolName(t) ?? t.tool;
+
+  const preferred = tables.findIndex((t) => {
+    const name = toolOf(t);
+    return (
+      name === "get_shot_compare" ||
+      name === "get_shot_zones" ||
+      name === "get_wowy" ||
+      name === "get_compare" ||
+      name === "get_preview" ||
+      name === "get_rapm" ||
+      name === "get_finder" ||
+      name === "get_comps" ||
+      name === "get_award_race" ||
+      name === "get_trade_value" ||
+      name === "get_matchup_splits" ||
+      name === "get_regression_check" ||
+      name === "get_matchup_preview"
+    );
+  });
   const fallback = preferred >= 0 ? preferred : tables.length - 1;
   const table = tables[Math.min(pageState ?? fallback, Math.max(tables.length - 1, 0))];
   const page = Math.min(pageState ?? fallback, Math.max(tables.length - 1, 0));
   const setPage = (n: number) => setPageState(Math.max(0, Math.min(n, tables.length - 1)));
 
-  const isShotTool = tableKind(table || {}) === "shots";
+  const toolName = toolOf(table ?? {});
+  const isShotTool = toolName === "get_shot_zones" || toolName === "get_shot_compare";
   useEffect(() => {
     if (isShotTool) {
       setViewMode("court");
     } else {
       setViewMode("table");
     }
-  }, [table?.tool, isShotTool]);
+  }, [toolName, isShotTool]);
 
   if (!table) return null;
 
-  const artifactId = `${table.tool || table.title || "table"}-${page}`;
+  const artifactId = `${toolName || table.tool || "dataset"}-${page}`;
   const isCanvasOpen = activeArtifactId === artifactId;
   const rawTitle =
-    table.title ||
-    (typeof table.tool === "string"
-      ? table.tool.replace("get_", "").replace(/_/g, " ").toUpperCase() +
-        (table.meta?.stat_category ? ` · ${table.meta.stat_category}` : "")
-      : "Dataset");
+    (toolName || table.tool || "dataset").replace("get_", "").replace(/_/g, " ").toUpperCase() +
+    (table.meta?.stat_category ? ` · ${table.meta.stat_category}` : "");
 
   if (isCanvasOpen && !showInline) {
     return (
@@ -234,9 +224,10 @@ export default function DataArtifacts({
               onClick={() => {
                 onOpenArtifact({
                   id: artifactId,
-                  tool: table.tool || "dataset",
+                  tool: toolName || table.tool,
                   title: rawTitle,
                   rows: table.rows,
+                  player: (table as { player?: unknown }).player,
                   meta: table.meta,
                   verdict: table.verdict,
                 });
@@ -293,7 +284,6 @@ export default function DataArtifacts({
               Heat
             </button>
           )}
-          <CitePill title={rawTitle} meta={table.meta} />
           {isCanvasOpen && (
             <button
               type="button"
@@ -364,21 +354,37 @@ export default function DataArtifacts({
         </details>
       )}
 
-      {tableKind(table) === "compare" ? (
+      {toolName === "get_compare" || toolName === "compare_metrics" || toolName === "get_preview" ? (
         <CompareView rows={table.rows} />
-      ) : tableKind(table) === "wowy" ? (
+      ) : toolName === "get_wowy" ? (
         <WowyCard
           rows={table.rows}
           meta={table.meta}
           verdict={table.verdict}
         />
+      ) : toolName === "get_comps" && parseCompsRows(table.rows) ? (
+        <CompsView
+          rows={table.rows}
+          target={(table as { player?: unknown }).player}
+          meta={table.meta as { similarity?: string; season?: string } | undefined}
+        />
+      ) : toolName === "get_award_race" && parseAwardRace(table.rows) ? (
+        <AwardRaceView rows={table.rows} meta={table.meta} />
+      ) : toolName === "get_trade_value" && parseTradeValue(table.rows) ? (
+        <TradeValueView rows={table.rows} />
+      ) : toolName === "get_matchup_splits" && parseSplits(table.rows) ? (
+        <SplitsView rows={table.rows} meta={table.meta} />
+      ) : toolName === "get_regression_check" && parseRegression(table.rows) ? (
+        <RegressionView rows={table.rows} />
+      ) : toolName === "get_matchup_preview" && parsePreview(table.rows) ? (
+        <MatchupPreviewView rows={table.rows} meta={table.meta} />
       ) : isShotTool && viewMode === "court" ? (
         <CourtHeatmap
           rows={table.rows}
           meta={table.meta}
           verdict={table.verdict}
         />
-      ) : tableKind(table) === "python" ? (
+      ) : toolName === "run_python" ? (
         <div
           style={{
             background: "var(--color-stone-canvas)",

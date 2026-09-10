@@ -66,4 +66,5 @@ DESIGN.MD
 ROADMAP.md
 OPENCODE.md
 backend/app/data/
-OPENCODE.md
+# Benchmark result artifacts (local runs only, never commit)
+backend/bench/results/

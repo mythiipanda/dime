@@ -8,12 +8,14 @@ from pathlib import Path
 from contextlib import contextmanager
 import duckdb
 import fcntl
+import os
 import polars as pl
 import time
 
 from .sources.base import FetchResult
 
-DB_PATH = Path(__file__).resolve().parent.parent / "data" / "warehouse.duckdb"
+DB_PATH = Path(os.environ.get("DIME_WAREHOUSE") or
+               (Path(__file__).resolve().parent.parent / "data" / "warehouse.duckdb"))
 LOCK_PATH = DB_PATH.parent / ".write.lock"
 
 PROVENANCE_COLS = ["_source", "_season", "_fetched_at"]

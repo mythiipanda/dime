@@ -7,19 +7,21 @@ thought_stream, message, final_answer, suggestions, graph_end, error.
 import asyncio
 import json
 import re
+import time
 import unicodedata
 from collections.abc import AsyncGenerator
-from typing import Any, TypedDict
+from typing import Any, NotRequired, TypedDict
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from .providers import (
+    accumulate_tool_calls,
     astream_with_fallback,
     get_llm,
     invoke_with_fallback,
     resolve_model_id,
 )
 from .skills import catalog as skills_catalog
-from .subagents import delegate_tools
+from .subagents import delegate_tools, run_desk_streaming, _SHOT_ZONE_RX
 from .tools import v1_tools
 
 ANALYST_SYSTEM = (
@@ -48,8 +50,6 @@ ANALYST_SYSTEM = (
     "diet, clutch, impact, and team context, then one overall verdict. "
     "Name each side's team and record when present. "
     "State one number per fact, never ranges. "
-    "For ranking questions, narrate the full order including the middle, "
-    "not just the top and bottom; the table carries every row. "
     "Only cite all-in-one metrics present in evidence: RAPM-lite, on-off "
     "net, RAPTOR history. Label RAPM-lite and RAPTOR as estimates. "
     "Never invent PER, BPM, EPM, WS, VORP, or LEBRON. Say EPM is unavailable. "
@@ -59,9 +59,24 @@ ANALYST_SYSTEM = (
 
 PLANNER_SYSTEM = (
     "You are the retrieval supervisor. Your tools: resolve_entity, "
-    "get_compare, get_preview, get_briefing, delegate_scout, "
+    "get_compare, compare_metrics, get_debate_card, get_comps, get_preview, get_matchup_preview, get_briefing, "
+    "get_trade_value, get_matchup_splits, get_regression_check, "
+    "get_award_race, delegate_scout, "
     "delegate_team, delegate_league, run_python. Workers behind the delegates own "
     "every granular dataset, including text_to_sql. "
+    "For players most statistically like X (comps, similar players), call "
+    "get_comps directly — never improvise similarity from SQL. "
+    "For who wins a trade, trade value, fair value, or trade grades, call "
+    "get_trade_value directly. "
+    "For performance splits (vs defense tiers, home/away, rest days), call "
+    "get_matchup_splits directly. "
+    "For is-it-real / sustainability / regression questions, call "
+    "get_regression_check directly. "
+    "For award races (MVP, DPOY, ROY, 6MOY, MIP), call get_award_race "
+    "directly. "
+    "For narrative game previews (form, star matchups, injuries, x-factors, "
+    "why-watch), call get_matchup_preview; for score predictions use "
+    "get_preview. "
     "For custom math, statistical calculations, regression, or ad-hoc queries "
     "over warehouse tables, call run_python. "
     "For filtered or ranked player lists (top-N, under an age, above "
@@ -77,8 +92,7 @@ PLANNER_SYSTEM = (
     "or silver_raptor_player via text_to_sql. Prefer text_to_sql over run_python "
     "for single-fact warehouse lookups; use run_python only for math. "
     "For single-season leaders, standings, injuries, playoffs, ratings, "
-    "clutch, ELO, title odds, today games, briefings, hustle boards, "
-    "or deep standings splits, call delegate_league. "
+    "clutch, ELO, or title odds, call delegate_league. "
     "For two-player compares call get_compare first, then one "
     "delegate_scout per player for shot diet, clutch, and advanced depth. "
     "If the question asks which metric is right, whether metrics agree, "
@@ -133,6 +147,8 @@ TOOL_LABELS = {
     "resolve_entity": "Identifying players and teams",
     "search_nba": "Searching league coverage",
     "get_compare": "Comparing players",
+    "compare_metrics": "Adjudicating metrics",
+    "get_debate_card": "Building debate card",
     "delegate_scout": "Scouting players",
     "delegate_team": "Scouting teams",
     "delegate_league": "Scanning league data",
@@ -140,6 +156,20 @@ TOOL_LABELS = {
     "text_to_sql": "Querying the warehouse",
     "get_playoff_intel": "Pulling playoff logs",
     "get_trade_check": "Checking trade math",
+    "get_trade_value": "Grading trade value",
+    "get_award_race": "Ranking award races",
+    "get_matchup_preview": "Previewing the matchup",
+    "get_game_prediction": "Simulating the matchup",
+    "get_briefing": "Briefing the slate",
+    "get_lineup_stats": "Rating lineups",
+    "get_rotation_check": "Checking the rotation",
+    "get_streaks": "Finding streaks",
+    "get_head_to_head": "Checking head-to-head history",
+    "get_team_shot_zones": "Mapping shot zones",
+    "get_warehouse_freshness": "Checking warehouse freshness",
+    "get_elo_standings": "Computing ELO ratings",
+    "get_impact_estimate": "Estimating impact",
+    "search_game_logs": "Searching game logs",
 }
 
 
@@ -168,7 +198,21 @@ def _friendly_progress(names: list[str]) -> str:
             labels.append(label)
     if not labels:
         return "Reviewing evidence"
-    return "Checking " + " and ".join(sorted(labels))
+    return " and ".join(sorted(labels))
+
+
+def _args_summary(name: str, args: dict[str, Any] | None) -> str:
+    args = args or {}
+    if (name or "").startswith("delegate_"):
+        task = str(args.get("task", ""))
+        return task[:140] if task else name
+    if name in ("run_python", "text_to_sql"):
+        return "Warehouse query"
+    try:
+        parts = [f"{k}={v}" for k, v in args.items()]
+        return ", ".join(parts)[:140] or name
+    except Exception:
+        return name
 
 
 def _result_rows(result: dict[str, Any]) -> int:
@@ -211,13 +255,74 @@ _LEAGUE_RX = re.compile(
     r"elo|title odds|streak|versus|power rank|net rating|"
     r"\btrad(e|es|ed|ing)\b|sign-and-trade|\bswap\b", re.IGNORECASE)
 _COMPARE_RX = re.compile(
-    r"\bvs\.?\b(?!\s+top[-\s]?\d)|\bversus\b(?!\s+top[-\s]?\d)|\bcompare\b",
-    re.IGNORECASE)
+    r"\bvs\.?\b|\bversus\b|\bcompare\b", re.IGNORECASE)
 _LIST_RX = re.compile(
     r"which\s+(players|teams)|what\s+(players|teams)|top\s+\d+|"
     r"\bunder\s+\d+|\bover\s+\d+|\bage\b|"
     r"\baverag\w*\b|\bat least\b|"
     r"leads?\s+the\s+league|who\s+leads\b", re.IGNORECASE)
+_COMPS_RX = re.compile(
+    r"\bmost\s+like\b|\bplays?\s+like\b|\bstatistically\s+similar\b|"
+    r"\bsimilar\s+players?\b|\bclosest\s+comps?\b|"
+    r"\bcomparable\s+players?\b|\bplayer\s+comps?\b",
+    re.IGNORECASE)
+_PREDICT_RX = re.compile(
+    r"who\s+(wins|will\s+win|is\s+going\s+to\s+win)|"
+    r"who\s+do\s+you\s+(have|like)|"
+    r"\bwin\s+prob\w*\b|"
+    r"\bprojected\s+(total|score)\b|"
+    r"\bpre[\s-]?game\s+(monte\s*carlo|prediction|estimate)|"
+    r"\bmonte\s*carlo\b|"
+    r"\bpredict(?:s|ed|ing)?\s+(?:the\s+)?(?:score|winner|game|matchup)\b|"
+    r"\bchances?\s+of\s+winning\b|"
+    r"\bfavor\w*\b",
+    re.IGNORECASE)
+# Live in-game probability and season-title questions are not pre-game
+# predictions: they belong to get_win_prob / the league desk.
+_PREDICT_LIVE_RX = re.compile(r"\blive\b|\bin[\s-]*game\b", re.IGNORECASE)
+_PREDICT_TITLE_RX = re.compile(
+    r"championship|\btitle\b|\bfinals\b|\bring\b", re.IGNORECASE)
+# Unambiguous impact-estimate phrasing: an estimate/impact pairing
+# within one clause ("estimate X's impact", "his estimated per-100
+# impact"), or "how good has/is [player]". RAPTOR/WAR/peak/career-arc
+# phrasing is deliberately NOT here: the raptor fast-path claims those.
+_IMPACT_RX = re.compile(
+    r"\bestimat\w+.{0,48}\bimpact\b|\bimpact\b.{0,48}\bestimat\w+|"
+    r"\bhow\s+good\s+(?:has|is|was)\b",
+    re.IGNORECASE)
+_MATCHUP_SPLITS_RX = re.compile(
+    r"\bmatchup\s+splits?\b|\bteam\s+splits?\b|"
+    r"\bsplits?\b.{0,24}\b(?:vs\.?|versus)\b|"
+    r"\b(?:vs\.?|versus)\b.{0,24}\bsplits?\b",
+    re.IGNORECASE)
+# Game-log questions are answerable straight from the warehouse:
+# "game logs", "40-point games", "triple-doubles", "scored 50 points".
+# The planner free-forms these through text_to_sql and hits
+# unknown-table/column errors on silver_player_gamelogs (caught red in
+# the demo recording), so the triage fast-path routes them to
+# search_game_logs, which owns the per-player log filter pipeline.
+_GAMELOG_RX = re.compile(
+    r"\bgame[\s-]*logs?\b|"
+    r"\btriple[\s-]*doubles?\b|\bdouble[\s-]*doubles?\b|"
+    r"\b\d{2}\s*[-–—]\s*points?\b|"           # "40-point games"
+    r"\b\d{1,2}\s*[-–—]\s*rebounds?\b|"       # "15-rebound games"
+    r"\b\d{1,2}\s*[-–—]\s*assists?\b|"        # "12-assist games"
+    r"(?:scored|had|dropped|posted|recorded)\s+\d{2}\s*(?:\+|or more)?"
+    r"\s*points?\b|"                          # "scored 50 points"
+    r"\bgames?\b.{0,16}\b(?:vs\.?|versus|against)\b|"  # "games vs the Lakers"
+    r"\b(?:vs\.?|versus|against)\b.{0,90}\bgames?\b",  # "against the Wizards... list every game"
+    re.IGNORECASE)
+# Season averages and career-history phrasing are NOT game-log
+# questions: the tool only covers 2025-26 warehouse logs.
+_GAMELOG_NO_RX = re.compile(
+    r"\baverag\w*|\bavg\b|\bppg\b|\bper game\b|"
+    r"\bcareer\b|\ball[\s-]*time\b|\blast season\b",
+    re.IGNORECASE)
+_BRIEFING_RX = re.compile(r"\bbriefing\b", re.IGNORECASE)
+_BRIEFING_CONTEXT_RX = re.compile(
+    r"20\d\d[-/]\d{1,2}[-/]\d{1,2}|\bslate\b|\bmorning\b|"
+    r"\btoday\b|\byesterday\b|\btomorrow\b",
+    re.IGNORECASE)
 
 _entity_cache: dict[str, Any] | None = None
 
@@ -283,6 +388,126 @@ def _expand_nicknames(question: str) -> str:
     return out
 
 
+def _direct_named_teams(question: str, found_t: list[str]) -> list[str]:
+    """Teams named outright in the question text.
+
+    _detect_entities expands nicknames before matching, so a city word
+    in the expansion can pull in a same-city rival the user never named
+    ("Lakers" -> "Los Angeles" -> Clippers). The prediction fast-path
+    needs exactly the two teams the user asked about, so re-match
+    against the raw question.
+    """
+    from nba_api.stats.static import teams as _static_teams
+
+    abbr_of = {t["full_name"]: t["abbreviation"]
+               for t in _static_teams.get_teams()}
+    q = question or ""
+    out = []
+    for full in found_t:
+        nick = full.split()[-1].lower()
+        abbr = (abbr_of.get(full) or "").lower()
+        if (full.lower() in q.lower()
+                or re.search(r"\b" + re.escape(nick) + r"\b", q,
+                             re.IGNORECASE)
+                or (abbr and re.search(r"\b" + re.escape(abbr) + r"\b",
+                                       q, re.IGNORECASE))):
+            out.append(full)
+    return out
+
+
+def _direct_named_players(question: str, found_p: list[str]) -> list[str]:
+    """Players named outright in the raw question text.
+
+    _detect_entities expands nicknames before matching, so a nickname
+    can surface a player the user never meant (e.g. a stray "Bron").
+    The game-log fast-path needs exactly the player asked about, so
+    re-match full names (or known nicknames) against the raw question,
+    mirroring what _direct_named_teams does for teams.
+    """
+    from .tools._core import NICKNAMES
+
+    def _norm(s: str) -> str:
+        import unicodedata as _ud
+
+        return "".join(c for c in _ud.normalize("NFKD", s or "")
+                       if not _ud.combining(c)).lower()
+
+    rev: dict[str, list[str]] = {}
+    for nick, full in NICKNAMES.items():
+        rev.setdefault(_norm(full), []).append(nick)
+    q = _norm(question)
+    out = []
+    for full in found_p:
+        nfull = _norm(full)
+        if nfull in q:
+            out.append(full)
+            continue
+        for nick in rev.get(nfull, []):
+            if re.search(r"\b" + re.escape(nick) + r"\b", q):
+                out.append(full)
+                break
+    return out
+
+
+def _gamelog_args(question: str, player: str,
+                  teams: list[str]) -> dict[str, Any]:
+    """Parse search_game_logs args from a triage-claimed question.
+
+    Conservative: only set what the regexes can see; everything else
+    keeps the tool default. Opponent prefers the re-matched team entity
+    over raw text extraction.
+    """
+    from .tools.gamelog import MONTH_NAMES
+
+    args: dict[str, Any] = {"player": player}
+    q = question or ""
+    m = (re.search(r"\b(\d{2})\s*[-–—]\s*points?\b", q, re.IGNORECASE)
+         or re.search(r"(?:scored|had|dropped|posted|recorded)\s+(\d{2})"
+                      r"\s*(?:\+|or more)?\s*points?\b", q, re.IGNORECASE))
+    if m:
+        args["min_points"] = int(m.group(1))
+    m = (re.search(r"\b(\d{1,2})\s*[-–—]\s*rebounds?\b", q, re.IGNORECASE)
+         or re.search(r"(?:with|had|posted|grabbed)\s+(\d{1,2})\+?"
+                      r"\s*rebounds?\b", q, re.IGNORECASE))
+    if m:
+        args["min_rebounds"] = int(m.group(1))
+    m = (re.search(r"\b(\d{1,2})\s*[-–—]\s*assists?\b", q, re.IGNORECASE)
+         or re.search(r"(?:with|had|posted|dished)\s+(\d{1,2})\+?"
+                      r"\s*assists?\b", q, re.IGNORECASE))
+    if m:
+        args["min_assists"] = int(m.group(1))
+    if re.search(r"\btriple[\s-]*doubles?\b", q, re.IGNORECASE):
+        args["triple_double"] = True
+    elif re.search(r"\bdouble[\s-]*doubles?\b", q, re.IGNORECASE):
+        args["double_double"] = True
+    if teams and re.search(r"\bvs\.?|\bversus\b|\bagainst\b", q,
+                           re.IGNORECASE):
+        args["opponent"] = teams[0]
+    else:
+        m = re.search(
+            r"(?:\bvs\.?|\bversus\b|\bagainst\b)\s+(?:the\s+)?"
+            r"([A-Za-z][A-Za-z.'&-]*(?:\s+[A-Za-z][A-Za-z.'&-]*)*)",
+            q, re.IGNORECASE)
+        if m:
+            toks = m.group(1).split()
+            stop = {"this", "last", "next", "season", "year", "games",
+                    "game", "at", "in", "on", "his", "her", "their",
+                    "a", "an", "the"}
+            while toks and toks[-1].lower() in stop:
+                toks.pop()
+            if toks:
+                args["opponent"] = " ".join(toks[:3])
+    for name in MONTH_NAMES:
+        if re.search(r"\b" + name + r"\b", q, re.IGNORECASE):
+            args["month"] = name
+            break
+    if re.search(r"\bat home\b|\bhome games?\b", q, re.IGNORECASE):
+        args["home_away"] = "home"
+    elif re.search(r"\bon the road\b|\baway games?\b", q, re.IGNORECASE):
+        args["home_away"] = "away"
+    return args
+
+
 def _player_team_abbr(pid: int, season: str) -> str:
     """Current team abbrev for a player from warehouse gamelog MATCHUP."""
     import time as _time
@@ -319,10 +544,14 @@ def _trade_sides(question: str, found_p: list[str], found_t: list[str],
 
     from .tools._core import coerce_player_id
 
-    raw_q = question.lower()
+    def _fold(s: str) -> str:
+        return "".join(c for c in unicodedata.normalize("NFKD", s or "")
+                       if not unicodedata.combining(c)).lower()
+
+    raw_q = _fold(question)
     named = []
     for p in found_p:
-        low = p.lower()
+        low = _fold(p)
         last = low.split()[-1]
         if low in raw_q or re.search(r"\b" + re.escape(last) + r"\b", raw_q):
             named.append(p)
@@ -372,20 +601,280 @@ def _trade_sides(question: str, found_p: list[str], found_t: list[str],
             "team_b": side_b, "players_b": ", ".join(players_b)}
 
 
+def _triage_plan_text(question: str, found_p: list[str],
+                        found_t: list[str], has_history: bool) -> str:
+    names = (found_p or []) + (found_t or [])
+    prefix = f"Found {', '.join(names[:3])} — " if names else ""
+    q = question or ""
+    is_trade = bool(re.search(r"\btrad(e|es|ed|ing)\b|sign-and-trade|\bswap\b|\bdeal\b",
+                              q, re.IGNORECASE))
+    is_cast = bool(re.search(
+        r"supporting cast|\bcast\b|teammates?|rotation depth|"
+        r"around (him|her|them)|better team\b|deeper team\b",
+        q, re.IGNORECASE))
+    is_raptor = bool(found_p and re.search(
+        r"\braptor\b|\bwar\b|peak|all-time|all time|greatest season|"
+        r"best season|career (arc|trajectory|history|impact)|"
+        r"\btrajectory\b|\barc\b|over time|aging|development curve",
+        q, re.IGNORECASE))
+    is_compare = bool(_COMPARE_RX.search(q))
+    if is_trade:
+        return prefix + "checking trade math in the warehouse."
+    if len(found_t) == 1 and re.search(
+            r"last \d+ seasons|each of the last|past \d+ seasons|"
+            r"across the last|last three seasons", q, re.IGNORECASE):
+        return prefix + "pulling recent seasons from the warehouse."
+    if found_p and is_cast:
+        return prefix + "comparing supporting casts in the warehouse."
+    if is_raptor:
+        return prefix + "pulling RAPTOR history from the warehouse."
+    if (_LIST_RX.search(q) and not is_trade and not is_cast
+            and not is_compare and not is_raptor):
+        return prefix + "asking the league desk to scan the warehouse."
+    if has_history and ((not found_p) or (not found_t)):
+        return prefix + "using thread context to seed scout and team desks."
+    if found_p and not found_t:
+        return prefix + "asking the scout desk to pull advanced metrics."
+    if found_t and not found_p:
+        return prefix + "asking the team desk to pull record and ratings."
+    if _LEAGUE_RX.search(q):
+        return prefix + "asking the league desk to scan the warehouse."
+    return prefix + "planning warehouse lookups."
+
+
+def _delegate_result_summary(out: dict[str, Any]) -> str | None:
+    try:
+        s = out.get("summary")
+        return str(s)[:200] if s else None
+    except Exception:
+        return None
+
+
+async def _stream_planner(tooled, messages: list,
+                         holder: dict[str, Any]) -> AsyncGenerator[dict[str, Any], None]:
+    """Stream the supervisor planner's raw tokens live as thought_token events.
+
+    The planner is tool-bound: text chunks stream immediately while
+    tool_call_chunks accumulate. The final tool-call list lands in
+    holder["calls"]. Falls back to blocking ainvoke if streaming fails.
+    """
+    tc_chunks: list[dict] = []
+    try:
+        async for chunk in tooled.astream(messages):
+            t = getattr(chunk, "content", "") or ""
+            if t:
+                yield _event("thought_token", {"node": "data_retrieval",
+                                               "text": str(t)})
+            for tc in getattr(chunk, "tool_call_chunks", None) or []:
+                tc_chunks.append(dict(tc) if isinstance(tc, dict) else tc)
+        holder["calls"] = accumulate_tool_calls(tc_chunks)
+    except Exception:
+        resp = await tooled.ainvoke(messages)
+        t = getattr(resp, "content", "") or ""
+        if t:
+            yield _event("thought_token", {"node": "data_retrieval",
+                                           "text": str(t)})
+        holder["calls"] = getattr(resp, "tool_calls", None) or []
+
+
+def _spawn(coro, *, name=None):
+    """Schedule a coroutine as a background asyncio.Task.
+
+    asyncio.create_task() only accepts coroutines. Passing the Future
+    returned by asyncio.gather() raises "TypeError: a coroutine was
+    expected, got <_GatheringFuture pending>". Every spawn site in this
+    module goes through this helper so a Future can never leak into
+    create_task again.
+    """
+    if not asyncio.iscoroutine(coro):
+        raise TypeError(
+            "_spawn() requires a coroutine, got "
+            f"{type(coro).__name__}; wrap asyncio.gather(...) in an "
+            "'async def' or await the Future directly")
+    return asyncio.create_task(coro, name=name)
+
+
+async def _run_delegate_live(name: str, task: str, primary: str, model: str,
+                             holder: dict[str, Any],
+                             node: str = "data_retrieval") -> AsyncGenerator[dict[str, Any], None]:
+    """Run a delegate desk, yielding thought_token SSE events live as the
+    desk's LLM generates text. The desk's final result dict is stored in
+    holder["result"] when the generator is exhausted.
+
+    Uses a queue + background task so tokens flow the moment they're
+    generated instead of going silent for the seconds the desk works.
+    """
+    q: asyncio.Queue = asyncio.Queue()
+    desk = name.replace("delegate_", "")
+
+    async def _on_tok(t: str) -> None:
+        await q.put(t)
+
+    async def _runner() -> None:
+        try:
+            holder["result"] = await run_desk_streaming(
+                name, task, primary, model, on_token=_on_tok)  # type: ignore[arg-type]
+        except Exception as exc:
+            holder["result"] = {"tool": name, "ok": False,
+                                "error": str(exc)[:200]}
+        finally:
+            await q.put(None)
+
+    runner = _spawn(_runner(), name="delegate-live")
+    while True:
+        tok = await q.get()
+        if tok is None:
+            break
+        yield _event("thought_token", {"node": node, "text": tok,
+                                       "agent": desk})
+    await runner
+
+
+def _trace_replay_events(out: dict[str, Any]) -> list[dict[str, Any]]:
+    try:
+        trace = out.get("tool_trace") or []
+    except Exception:
+        return []
+    if not isinstance(trace, list):
+        return []
+    agent = ""
+    try:
+        agent = str(out.get("agent") or "")
+    except Exception:
+        agent = ""
+    events: list[dict[str, Any]] = []
+    for te in trace:
+        if not isinstance(te, dict):
+            continue
+        tname = str(te.get("name") or "")
+        if not tname:
+            continue
+        tlabel = str(te.get("label") or tool_label(tname))
+        tagent = str(te.get("agent") or agent or
+                     tname.replace("delegate_", ""))
+        events.append(_event("tool_call", {
+            "node": "data_retrieval", "name": tname,
+            "label": tlabel, "agent": tagent,
+        }))
+        tstatus = te.get("status") or "ok"
+        terr = None
+        try:
+            if tstatus != "ok" and te.get("error"):
+                terr = str(te.get("error"))[:160]
+        except Exception:
+            terr = None
+        rdata: dict[str, Any] = {
+            "node": "data_retrieval", "name": tname,
+            "label": tlabel, "status": tstatus,
+            "rows": te.get("rows", 0), "ms": te.get("ms", 0),
+            "agent": tagent,
+        }
+        tsql = te.get("sql")
+        if isinstance(tsql, str) and tsql.strip():
+            rdata["sql"] = tsql.strip()
+        if terr:
+            rdata["error"] = terr
+        events.append(_event("tool_result", rdata))
+    return events
+
+
+def _done_thought(label: str, out: dict[str, Any], ms: int) -> str:
+    try:
+        rows = _result_rows(out)
+    except Exception:
+        rows = 0
+    ok = _result_status(out) == "ok"
+    tail = f"{rows} row{'s' if rows != 1 else ''} in {ms}ms" if ok else "failed"
+    return f"{label} — {tail}."
+
+
+def _tool_result_payload(node: str, name: str, out: dict[str, Any], ms: int,
+                         summary: str | None = None) -> dict[str, Any]:
+    """Build the SSE tool_result payload for one tool execution.
+
+    Lifts the executed SQL off the tool output (top-level ``sql``, falling
+    back to ``meta.sql``) so the UI can show the exact query behind a number.
+    """
+    status = _result_status(out)
+    payload: dict[str, Any] = {
+        "node": node, "name": name, "label": tool_label(name),
+        "status": status, "rows": _result_rows(out), "ms": ms,
+    }
+    if summary:
+        payload["summary"] = summary
+    try:
+        sql = out.get("sql")
+        if not sql and isinstance(out.get("meta"), dict):
+            sql = out["meta"].get("sql")
+        sql = str(sql or "").strip()
+    except Exception:
+        sql = ""
+    if sql:
+        payload["sql"] = sql
+    if status != "ok":
+        try:
+            payload["error"] = str(out.get("error"))[:160]
+        except Exception:
+            payload["error"] = "failed"
+    return payload
+
+
+async def _triage_tool(name: str, args: dict[str, Any], state: dict,
+                       holder: dict[str, Any]) -> AsyncGenerator[dict[str, Any], None]:
+    """Run one v1 tool from triage, emitting tool_call/tool_result/thought_stream.
+
+    Appends the result to state and stashes it in holder["out"]. Every
+    status is grounded in the real tool result; nothing is canned.
+    """
+    from .tools import v1_tools
+
+    fn = next((t for t in v1_tools if t.name == name), None)
+    label = tool_label(name)
+    t0 = time.time()
+    yield _event("tool_call", {
+        "node": "data_retrieval", "name": name, "label": label,
+        "summary": _args_summary(name, args),
+    })
+    try:
+        out = await fn.ainvoke(args) if fn is not None else {
+            "tool": name, "ok": False, "error": "unknown tool"}
+    except Exception as exc:
+        out = {"tool": name, "ok": False, "error": str(exc)[:160]}
+    if not isinstance(out, dict):
+        out = {"tool": name, "rows": out}
+    ms = int((time.time() - t0) * 1000)
+    rd = _tool_result_payload("data_retrieval", name, out, ms)
+    yield _event("tool_result", rd)
+    yield _event("thought_stream", {
+        "node": "data_retrieval",
+        "text": _done_thought(label, out, ms),
+    })
+    state["tool_results"].append(out)
+    state["calls_made"].append(name + ":" + json.dumps(args, sort_keys=True))
+    holder["out"] = out
+
+
+async def _triage_terminal(question: str,
+                           state: dict) -> AsyncGenerator[dict[str, Any], None]:
+    """End retrieval after a decisive triage hit.
+
+    Marks planner rounds exhausted so run_chat skips the supervisor loop,
+    and closes the data_retrieval window run_chat opened. Call only when
+    the evidence already answers the question; the planner fallback stays
+    for anything uncertain.
+    """
+    state["round"] = (DEEP_TOOL_ROUNDS if _is_deep_question(question)
+                      else MAX_TOOL_ROUNDS)
+    yield _event("node_update", {"node": "data_retrieval", "status": "complete"})
+
+
 async def _triage_seed(question: str, primary: str, model: str,
-                       state: dict) -> None:
+                       state: dict) -> AsyncGenerator[dict[str, Any], None]:
     found_p, found_t = _detect_entities(question)
-    if state.get("history") and re.search(
-            r"\b(him|her|them|they|his|hers|theirs|it|that team|that player)\b",
-            question, re.IGNORECASE):
-        for t in state["history"][-6:]:
-            hp, ht = _detect_entities(t.get("text") or "")
-            for p in hp:
-                if p not in found_p and len(found_p) < 3:
-                    found_p.append(p)
-            for tm in ht:
-                if tm not in found_t and len(found_t) < 2:
-                    found_t.append(tm)
+    yield _event("thought_stream", {
+        "node": "data_retrieval",
+        "text": _triage_plan_text(question, found_p, found_t, bool(state.get("history"))),
+    })
     is_compare = bool(_COMPARE_RX.search(question))
     is_trade = bool(re.search(r"\btrad(e|es|ed|ing)\b|sign-and-trade|\bswap\b|\bdeal\b",
                               question, re.IGNORECASE))
@@ -393,6 +882,105 @@ async def _triage_seed(question: str, primary: str, model: str,
         r"supporting cast|\bcast\b|teammates?|rotation depth|"
         r"around (him|her|them)|better team\b|deeper team\b",
         question, re.IGNORECASE))
+    is_predict = (
+        len(found_t) >= 2
+        and _PREDICT_RX.search(question)
+        and not is_trade
+        and not is_cast
+        and not _PREDICT_LIVE_RX.search(question)
+        and not _PREDICT_TITLE_RX.search(question)
+        and not state.get("history")
+    )
+    if is_predict:
+        # Pre-game prediction phrasing ("who wins", "win probability",
+        # "projected total"): get_game_prediction owns the Monte Carlo.
+        # The supervisor's toolset exposes get_preview ("Side-by-side
+        # preview of two teams") but not get_game_prediction, so without
+        # this the routing detours to get_preview and the desk briefs'
+        # IF/THEN lines never get a vote. Only on clean single-turn
+        # questions; anything uncertain falls through to the planner.
+        _named = _direct_named_teams(question, found_t)
+        if len(_named) == 2:
+            _ph: dict[str, Any] = {}
+            async for _e in _triage_tool(
+                    "get_game_prediction",
+                    {"a": _named[0], "b": _named[1]}, state, _ph):
+                yield _e
+            _pout = _ph.get("out") or {}
+            if _result_status(_pout) == "ok":
+                # _triage_tool appended the raw tool dict. analytics_agent
+                # only treats tool_results entries with a non-empty "rows"
+                # key as evidence, so wrap it the same way other triage
+                # paths do; otherwise the turn falls into the canned
+                # no-data branch and the LLM never runs.
+                if state["tool_results"] and state["tool_results"][-1] is _pout:
+                    state["tool_results"][-1] = {
+                        "tool": "get_game_prediction", "rows": [_pout]}
+                async for _e in _triage_terminal(question, state):
+                    yield _e
+            return
+    _named = _direct_named_teams(question, found_t)
+    is_matchup_splits = (
+        len(_named) == 2
+        and _MATCHUP_SPLITS_RX.search(question)
+        and not is_trade
+        and not is_cast
+        and not _PREDICT_LIVE_RX.search(question)
+        and not state.get("history")
+    )
+    if is_matchup_splits:
+        # B2: planner-owned matchup-splits ask looped 5 rounds (188s turn)
+        # retrying a failing tool; answer straight from warehouse splits.
+        _decisive = True
+        for t in _named[:2]:
+            _mh: dict[str, Any] = {}
+            async for _e in _triage_tool(
+                    "get_team_splits", {"team": t}, state, _mh):
+                yield _e
+            _mout = _mh.get("out") or {}
+            if _result_status(_mout) != "ok" or not _result_rows(_mout):
+                _decisive = False
+        if _decisive:
+            async for _e in _triage_terminal(question, state):
+                yield _e
+        return
+    _named_p = _direct_named_players(question, found_p)
+    is_gamelog = (
+        len(_named_p) == 1
+        and _GAMELOG_RX.search(question)
+        and not _GAMELOG_NO_RX.search(question)
+        and not is_trade
+        and not is_cast
+        and not _PREDICT_LIVE_RX.search(question)
+        and not state.get("history")
+    )
+    if is_gamelog:
+        # Demo bug: the planner free-formed a game-log question into
+        # text_to_sql, hit "unknown table or column" on
+        # silver_player_gamelogs, and streamed the red error row.
+        # search_game_logs owns the per-player log pipeline, so answer
+        # straight from the warehouse. Only on clean single-turn
+        # questions with exactly one named player; anything uncertain
+        # (no clear player, multi-player, averages/career phrasing)
+        # falls through to the planner.
+        _gh: dict[str, Any] = {}
+        async for _e in _triage_tool(
+                "search_game_logs",
+                _gamelog_args(question, _named_p[0], _named), state, _gh):
+            yield _e
+        _gout = _gh.get("out") or {}
+        if _result_status(_gout) == "ok":
+            # _triage_tool appended the raw tool dict. analytics_agent
+            # only treats tool_results entries with a non-empty "rows"
+            # key as evidence, so wrap it the same way the prediction
+            # fast-path does; otherwise the turn falls into the canned
+            # no-data branch and the LLM never runs.
+            if state["tool_results"] and state["tool_results"][-1] is _gout:
+                state["tool_results"][-1] = {
+                    "tool": "search_game_logs", "rows": [_gout]}
+            async for _e in _triage_terminal(question, state):
+                yield _e
+        return
     if ((len(found_p) >= 2 or len(found_t) >= 2 or is_compare)
             and not (is_trade and not is_compare)
             and not (is_cast and not is_compare)):
@@ -409,14 +997,30 @@ async def _triage_seed(question: str, primary: str, model: str,
             fn = next((t for t in v1_tools if t.name == "get_trade_check"),
                       None)
             if fn is not None:
+                _tname = "get_trade_check"
+                _tlabel = tool_label(_tname)
+                _t0 = time.time()
+                yield _event("tool_call", {
+                    "node": "data_retrieval", "name": _tname,
+                    "label": _tlabel,
+                    "summary": _args_summary(_tname, sides),
+                })
                 try:
                     out = await fn.ainvoke(sides)
                 except Exception as exc:
                     out = {"tool": "get_trade_check", "ok": False,
                            "error": str(exc)[:160]}
-                state["tool_results"].append(
-                    out if isinstance(out, dict) else {"tool": "get_trade_check",
-                                                      "rows": out})
+                if not isinstance(out, dict):
+                    out = {"tool": "get_trade_check", "rows": out}
+                _ms = int((time.time() - _t0) * 1000)
+                _rd: dict[str, Any] = _tool_result_payload(
+                    "data_retrieval", _tname, out, _ms)
+                yield _event("tool_result", _rd)
+                yield _event("thought_stream", {
+                    "node": "data_retrieval",
+                    "text": _done_thought(_tlabel, out, _ms),
+                })
+                state["tool_results"].append(out)
                 state["calls_made"].append("get_trade_check:" + json.dumps(
                     sides, sort_keys=True))
                 return
@@ -438,6 +1042,13 @@ async def _triage_seed(question: str, primary: str, model: str,
             "out = [{\"season\": _s, \"wins\": _w, \"losses\": _l} "
             "for _s, _w, _l in rows]"
         )
+        _tp_args = {"code": code}
+        _t0 = time.time()
+        yield _event("tool_call", {
+            "node": "data_retrieval", "name": "run_python",
+            "label": tool_label("run_python"),
+            "summary": _args_summary("run_python", _tp_args),
+        })
         try:
             from .tools import v1_tools as _vt
 
@@ -446,9 +1057,16 @@ async def _triage_seed(question: str, primary: str, model: str,
                 "tool": "run_python", "ok": False, "error": "no python tool"}
         except Exception as exc:
             out = {"tool": "run_python", "ok": False, "error": str(exc)[:160]}
-        state["tool_results"].append(
-            out if isinstance(out, dict) else {"tool": "run_python",
-                                              "rows": out})
+        if not isinstance(out, dict):
+            out = {"tool": "run_python", "rows": out}
+        _ms = int((time.time() - _t0) * 1000)
+        _rd = _tool_result_payload("data_retrieval", "run_python", out, _ms)
+        yield _event("tool_result", _rd)
+        yield _event("thought_stream", {
+            "node": "data_retrieval",
+            "text": _done_thought(tool_label("run_python"), out, _ms),
+        })
+        state["tool_results"].append(out)
         state["calls_made"].append("run_python:" + json.dumps(
             {"code": code[:120]}, sort_keys=True))
         return
@@ -531,6 +1149,13 @@ async def _triage_seed(question: str, primary: str, model: str,
         if sides:
             lines.append("out = 'cast table printed'")
             code = "\n".join(lines)
+            _cast_args = {"code": code}
+            _t0 = time.time()
+            yield _event("tool_call", {
+                "node": "data_retrieval", "name": "run_python",
+                "label": tool_label("run_python"),
+                "summary": _args_summary("run_python", _cast_args),
+            })
             try:
                 from .tools import v1_tools as _vt2
 
@@ -540,9 +1165,16 @@ async def _triage_seed(question: str, primary: str, model: str,
             except Exception as exc:
                 out = {"tool": "run_python", "ok": False,
                        "error": str(exc)[:160]}
-            state["tool_results"].append(
-                out if isinstance(out, dict) else {"tool": "run_python",
-                                                  "rows": out})
+            if not isinstance(out, dict):
+                out = {"tool": "run_python", "rows": out}
+            _ms = int((time.time() - _t0) * 1000)
+            _rd = _tool_result_payload("data_retrieval", "run_python", out, _ms)
+            yield _event("tool_result", _rd)
+            yield _event("thought_stream", {
+                "node": "data_retrieval",
+                "text": _done_thought(tool_label("run_python"), out, _ms),
+            })
+            state["tool_results"].append(out)
             state["calls_made"].append("run_python:" + json.dumps(
                 {"code": code[:120]}, sort_keys=True))
             return
@@ -557,6 +1189,13 @@ async def _triage_seed(question: str, primary: str, model: str,
             fn3 = next((t for t in _vt3 if t.name == "get_raptor_history"),
                        None)
             for p in found_p[:2]:
+                _rh_args = {"player": p}
+                _t0 = time.time()
+                yield _event("tool_call", {
+                    "node": "data_retrieval", "name": "get_raptor_history",
+                    "label": tool_label("get_raptor_history"),
+                    "summary": _args_summary("get_raptor_history", _rh_args),
+                })
                 try:
                     out = await fn3.ainvoke({"player": p}) if fn3 is not None else {
                         "tool": "get_raptor_history", "ok": False,
@@ -564,117 +1203,147 @@ async def _triage_seed(question: str, primary: str, model: str,
                 except Exception as exc:
                     out = {"tool": "get_raptor_history", "ok": False,
                            "error": str(exc)[:160]}
-                state["tool_results"].append(
-                    out if isinstance(out, dict) else {"tool": "get_raptor_history",
-                                                      "rows": out})
+                if not isinstance(out, dict):
+                    out = {"tool": "get_raptor_history", "rows": out}
+                _ms = int((time.time() - _t0) * 1000)
+                _rd = _tool_result_payload(
+                    "data_retrieval", "get_raptor_history", out, _ms)
+                yield _event("tool_result", _rd)
+                yield _event("thought_stream", {
+                    "node": "data_retrieval",
+                    "text": _done_thought(
+                        tool_label("get_raptor_history"), out, _ms),
+                })
+                state["tool_results"].append(out)
                 state["calls_made"].append("get_raptor_history:" + json.dumps(
                     {"player": p}, sort_keys=True))
             return
         except Exception:
             pass
+    is_impact = bool(
+        found_p and _IMPACT_RX.search(question)
+        and not is_compare and not is_trade and not is_cast
+        and not state.get("history"))
+    if is_impact:
+        # Unambiguous impact-estimate phrasing ("estimate X's impact",
+        # "how good has [player] been"): get_impact_estimate answers it
+        # directly. Without this the question detours to delegate_scout,
+        # whose brief only routes impact to get_raptor_history, and the
+        # desk improvises impact numbers from raw net ratings.
+        # RAPTOR/WAR/peak/career phrasing is claimed by the raptor
+        # fast-path above and never reaches this block. Only on clean
+        # single-turn questions; anything uncertain falls through to the
+        # planner.
+        _ih: dict[str, Any] = {}
+        async for _e in _triage_tool(
+                "get_impact_estimate", {"player": found_p[0]}, state, _ih):
+            yield _e
+        _iout = _ih.get("out") or {}
+        if _result_status(_iout) == "ok":
+            # _triage_tool appended the raw tool dict. analytics_agent
+            # only treats tool_results entries with a non-empty "rows"
+            # key as evidence, so wrap it the same way the prediction
+            # fast-path does; otherwise the turn falls into the canned
+            # no-data branch and the LLM never runs.
+            if state["tool_results"] and state["tool_results"][-1] is _iout:
+                state["tool_results"][-1] = {
+                    "tool": "get_impact_estimate", "rows": [_iout]}
+            async for _e in _triage_terminal(question, state):
+                yield _e
+        return
+    is_comps = bool(found_p and _COMPS_RX.search(question))
+    if is_comps and not is_trade and not is_cast and not is_compare:
+        # "players like X" phrasing: get_comps answers directly. Routing
+        # through delegate_league first wastes a desk plus planner rounds
+        # improvising similarity from SQL.
+        _decisive = True
+        for p in found_p[:2]:
+            _ch: dict[str, Any] = {}
+            async for _e in _triage_tool(
+                    "get_comps", {"player_id": p}, state, _ch):
+                yield _e
+            _cout = _ch.get("out") or {}
+            if _result_status(_cout) != "ok" or not _result_rows(_cout):
+                _decisive = False
+        if _decisive:
+            async for _e in _triage_terminal(question, state):
+                yield _e
+        return
+    if (_BRIEFING_RX.search(question) and _BRIEFING_CONTEXT_RX.search(question)
+            and not is_trade and not is_cast and not is_compare):
+        # Slate/morning briefing: get_briefing owns the scoreboard. A date
+        # in the question pins the day; otherwise the tool defaults to
+        # yesterday.
+        _bm = re.search(r"(20\d\d)[-/](\d{1,2})[-/](\d{1,2})", question)
+        _bdate = ""
+        if _bm:
+            _bdate = (f"{int(_bm.group(2)):02d}/"
+                      f"{int(_bm.group(3)):02d}/{_bm.group(1)}")
+        _bh: dict[str, Any] = {}
+        async for _e in _triage_tool(
+                "get_briefing", {"game_date": _bdate}, state, _bh):
+            yield _e
+        _bout = _bh.get("out") or {}
+        _brows = _bout.get("rows") if isinstance(_bout, dict) else None
+        _bgames = _brows.get("games") if isinstance(_brows, dict) else None
+        if _result_status(_bout) == "ok" and _bgames:
+            async for _e in _triage_terminal(question, state):
+                yield _e
+        return
     delegates = {t.name: t for t in delegate_tools(primary, model)}  # type: ignore[arg-type]
     is_raptor = bool(found_p and re.search(
         r"\braptor\b|\bwar\b|peak|all-time|all time|greatest season|"
         r"best season|career (arc|trajectory|history|impact)|"
         r"\btrajectory\b|\barc\b|over time|aging|development curve",
         question, re.IGNORECASE))
-    _sm = re.search(r"(\d+)[- ]point", question, re.IGNORECASE)
-    if (_sm and not is_trade and not is_cast
-            and not is_compare and not is_raptor
-            and re.search(r"streak|longest|consecutive", question,
-                          re.IGNORECASE)):
-        _thresh = max(1, min(int(_sm.group(1)), 60))
-        _code = (
-            "rows = con.execute(\"WITH g AS (SELECT Player_ID, PTS, "
-            "TRY_STRPTIME(GAME_DATE, '%b %d, %Y') AS d "
-            "FROM silver_player_gamelogs WHERE _season = '2025-26'), "
-            "s AS (SELECT Player_ID, d, PTS, ROW_NUMBER() OVER "
-            "(PARTITION BY Player_ID ORDER BY d) - ROW_NUMBER() OVER "
-            f"(PARTITION BY Player_ID, (PTS >= {_thresh})::INT ORDER BY d) "
-            "AS grp FROM g WHERE d IS NOT NULL), "
-            "agg AS (SELECT Player_ID, COUNT(*) AS streak FROM s WHERE PTS >= "
-            f"{_thresh} GROUP BY Player_ID, grp) "
-            "SELECT MAX(l.PLAYER), MAX(a.streak) FROM agg a LEFT JOIN "
-            "(SELECT DISTINCT PLAYER, PLAYER_ID FROM silver_leaders_pts) l "
-            "ON CAST(l.PLAYER_ID AS VARCHAR) = CAST(a.Player_ID AS VARCHAR) "
-            "GROUP BY a.Player_ID "
-            "ORDER BY MAX(a.streak) DESC LIMIT 5\").fetchall()\n"
-            "[print(f'{r[0]}: {r[1]} games') for r in rows]\n"
-            "out = rows"
-        )
-        try:
-            from .tools import v1_tools as _vtsq
-
-            _fn = next((t for t in _vtsq if t.name == "run_python"), None)
-            out = await _fn.ainvoke({"code": _code}) if _fn is not None else {
-                "tool": "run_python", "ok": False, "error": "no python tool"}
-        except Exception as exc:
-            out = {"tool": "run_python", "ok": False,
-                   "error": str(exc)[:160]}
-        state["tool_results"].append(
-            out if isinstance(out, dict) else {"tool": "run_python",
-                                              "rows": out})
-        state["calls_made"].append("run_python:" + json.dumps(
-            {"code": _code[:120]}, sort_keys=True))
-        return
     if (_LIST_RX.search(question) and not is_trade and not is_cast
             and not is_compare and not is_raptor
+            and not _SHOT_ZONE_RX.search(question)
             and "delegate_league" in delegates):
         task = (question + " Answer via text_to_sql (you own that tool).")
+        _dl_args = {"task": task}
+        _t0 = time.time()
+        yield _event("tool_call", {
+            "node": "data_retrieval", "name": "delegate_league",
+            "label": tool_label("delegate_league"),
+            "summary": _args_summary("delegate_league", _dl_args),
+        })
         try:
-            out = await delegates["delegate_league"].ainvoke({"task": task})
+            _holder: dict[str, Any] = {}
+            async for _e in _run_delegate_live(
+                    "delegate_league", task, primary, model, _holder):
+                yield _e
+            out = _holder.get("result") or {"tool": "delegate_league",
+                                            "ok": False, "error": "no result"}
         except Exception as exc:
             out = {"tool": "delegate_league", "ok": False,
                    "error": str(exc)[:160]}
-        state["tool_results"].append(
-            out if isinstance(out, dict) else {"tool": "delegate_league",
-                                               "rows": out})
+        if not isinstance(out, dict):
+            out = {"tool": "delegate_league", "rows": out}
+        _ms = int((time.time() - _t0) * 1000)
+        _rd = _tool_result_payload(
+            "data_retrieval", "delegate_league", out, _ms,
+            summary=_delegate_result_summary(out),
+        )
+        yield _event("tool_result", _rd)
+        for _te in _trace_replay_events(out):
+            yield _te
+        yield _event("thought_stream", {
+            "node": "data_retrieval",
+            "text": _done_thought(
+                tool_label("delegate_league"), out, _ms),
+        })
+        state["tool_results"].append(out)
         state["calls_made"].append("delegate_league:" + json.dumps(
             {"task": task}, sort_keys=True))
-        return
-    if (found_p and not is_trade and not is_cast
-            and not is_compare and not is_raptor
-            and re.search(
-                r"overpaid|underpaid|contract value|good value|worth (it|his|her|the)|"
-                r"salary vs production|value (for|of the)|worth the (money|contract)",
-                question, re.IGNORECASE)):
-        try:
-            from .tools import v1_tools as _vtcv
-
-            fncv = next((t for t in _vtcv if t.name == "get_contract_value"),
-                        None)
-            out = await fncv.ainvoke(
-                {"player": found_p[0]}) if fncv is not None else {
-                "tool": "get_contract_value", "ok": False,
-                "error": "no contract tool"}
-        except Exception as exc:
-            out = {"tool": "get_contract_value", "ok": False,
-                   "error": str(exc)[:160]}
-        state["tool_results"].append(
-            out if isinstance(out, dict) else {"tool": "get_contract_value",
-                                              "rows": out})
-        state["calls_made"].append("get_contract_value:" + json.dumps(
-            {"player": found_p[0]}, sort_keys=True))
-        return
-    if (found_p and not is_trade and not is_cast
-            and not is_compare and not is_raptor
-            and re.search(
-                r"\bsplit|versus top|vs top|against top|last \d+|"
-                r"home\b|away\b|monthly|defense\b",
-                question, re.IGNORECASE)
-            and "delegate_scout" in delegates):
-        task = (question + " Use get_splits (it carries vs-top-10-defense"
-                " and vs-rest rows) for matchup context.")
-        try:
-            out = await delegates["delegate_scout"].ainvoke({"task": task})
-        except Exception as exc:
-            out = {"tool": "delegate_scout", "ok": False,
-                   "error": str(exc)[:160]}
-        state["tool_results"].append(
-            out if isinstance(out, dict) else {"tool": "delegate_scout",
-                                               "rows": out})
-        state["calls_made"].append("delegate_scout:" + json.dumps(
-            {"task": task}, sort_keys=True))
+        if (_result_status(out) == "ok" and not state.get("history")
+                and not _is_deep_question(question)):
+            # Desk answered a list question decisively. The planner's
+            # follow-up round adds nothing here, and with thread history
+            # it would inject carry context the desk never saw, so only
+            # skip on a clean single-turn hit.
+            async for _e in _triage_terminal(question, state):
+                yield _e
         return
     if (not found_p or not found_t) and state.get("history"):
         carry_p, carry_t = [], []
@@ -711,12 +1380,34 @@ async def _triage_seed(question: str, primary: str, model: str,
             for name, task in seeds[:3]:
                 if name not in delegates:
                     continue
+                _s_args = {"task": task}
+                _t0 = time.time()
+                yield _event("tool_call", {
+                    "node": "data_retrieval", "name": name,
+                    "label": tool_label(name),
+                    "summary": _args_summary(name, _s_args),
+                })
                 try:
-                    out = await delegates[name].ainvoke({"task": task})
+                    _holder2: dict[str, Any] = {}
+                    async for _e2 in _run_delegate_live(
+                            name, task, primary, model, _holder2):
+                        yield _e2
+                    out = _holder2.get("result") or {"tool": name,
+                                                     "ok": False,
+                                                     "error": "no result"}
                 except Exception as exc:
                     out = {"tool": name, "ok": False, "error": str(exc)[:160]}
-                state["tool_results"].append(
-                    out if isinstance(out, dict) else {"tool": name, "rows": out})
+                if not isinstance(out, dict):
+                    out = {"tool": name, "rows": out}
+                _ms = int((time.time() - _t0) * 1000)
+                _rd = _tool_result_payload(
+                    "data_retrieval", name, out, _ms,
+                    summary=_delegate_result_summary(out),
+                )
+                yield _event("tool_result", _rd)
+                for _te in _trace_replay_events(out):
+                    yield _te
+                state["tool_results"].append(out)
                 state["calls_made"].append(name + ":" + json.dumps(
                     {"task": task}, sort_keys=True))
             if seeds:
@@ -734,12 +1425,37 @@ async def _triage_seed(question: str, primary: str, model: str,
         pick = "delegate_league"
     if pick is None or pick not in delegates:
         return
+    _p_args = {"task": question}
+    _t0 = time.time()
+    yield _event("tool_call", {
+        "node": "data_retrieval", "name": pick,
+        "label": tool_label(pick),
+        "summary": _args_summary(pick, _p_args),
+    })
     try:
-        out = await delegates[pick].ainvoke({"task": question})
+        _holder3: dict[str, Any] = {}
+        async for _e3 in _run_delegate_live(
+                pick, question, primary, model, _holder3):
+            yield _e3
+        out = _holder3.get("result") or {"tool": pick, "ok": False,
+                                         "error": "no result"}
     except Exception as exc:
         out = {"tool": pick, "ok": False, "error": str(exc)[:160]}
-    state["tool_results"].append(
-        out if isinstance(out, dict) else {"tool": pick, "rows": out})
+    if not isinstance(out, dict):
+        out = {"tool": pick, "rows": out}
+    _ms = int((time.time() - _t0) * 1000)
+    _rd = _tool_result_payload(
+        "data_retrieval", pick, out, _ms,
+        summary=_delegate_result_summary(out),
+    )
+    yield _event("tool_result", _rd)
+    for _te in _trace_replay_events(out):
+        yield _te
+    yield _event("thought_stream", {
+        "node": "data_retrieval",
+        "text": _done_thought(tool_label(pick), out, _ms),
+    })
+    state["tool_results"].append(out)
     state["calls_made"].append(pick + ":" + json.dumps({"task": question},
                                                        sort_keys=True))
 
@@ -754,20 +1470,72 @@ class DimeState(TypedDict):
     history: list[dict[str, str]]
     analysis: str
     suggestions: list[str]
+    # Turn-level caches, reset per turn in run_chat.
+    # desk_cache: (desk, entity) -> first desk result, shared across rounds.
+    desk_cache: NotRequired[dict[str, dict[str, Any]]]
+    # entity_cache: normalized query -> resolve_entity result.
+    entity_cache: NotRequired[dict[str, dict[str, Any]]]
 
 
 def _call_key(name: str, args: dict[str, Any]) -> str:
     return name + ":" + json.dumps(args, sort_keys=True, default=str)
 
 
+def _desk_dedupe_key(name: str, args: dict[str, Any]) -> tuple | None:
+    """Turn-scoped dedupe key for a delegate desk: (desk, entities).
+
+    Returns None when no player/team entity is detectable in the desk
+    task, in which case the call is not dedupable (e.g. league-wide
+    scans whose tasks legitimately differ each round).
+    """
+    try:
+        task = args.get("task", "") if isinstance(args, dict) else ""
+        qp, qt = _detect_entities(str(task or ""))
+        ents = tuple(sorted(
+            {p.strip().casefold() for p in qp}
+            | {t.strip().casefold() for t in qt}))
+    except Exception:
+        return None
+    return (name, ents) if ents else None
+
+
 def _all_tools(state: DimeState) -> list:
     return list(v1_tools) + delegate_tools(state["primary"], state["model"])  # type: ignore[arg-type]
 
 
+# B2: text_to_sql failed x5 across 5 planner rounds (188s turn); cut a tool after 2 straight fails.
+_CIRCUIT_BREAKER_STRIKES = 2
+
+
+def _circuit_broken_tools(state: dict[str, Any]) -> set[str]:
+    try:
+        streaks: dict[str, int] = {}
+        for entry in state.get("tool_results") or []:
+            if not isinstance(entry, dict):
+                continue
+            name = entry.get("tool")
+            if not name:
+                continue
+            try:
+                failed = _result_status(entry) != "ok"
+            except Exception:
+                continue
+            if failed:
+                streaks[name] = streaks.get(name, 0) + 1
+            else:
+                streaks[name] = 0
+        return {n for n, s in streaks.items() if s >= _CIRCUIT_BREAKER_STRIKES}
+    except Exception:
+        return set()
+
+
 SUPERVISOR_TOOL_NAMES = frozenset({
-    "resolve_entity", "get_compare", "compare_metrics", "get_debate_card", "get_preview", "get_briefing",
+    "resolve_entity", "get_compare", "compare_metrics", "get_debate_card",
+    "get_preview", "get_briefing",
     "delegate_scout", "delegate_team", "delegate_league", "run_python",
-    "get_playoff_intel",
+    "get_playoff_intel", "get_comps", "get_trade_value",
+    "get_matchup_splits", "get_regression_check", "get_award_race",
+    "get_matchup_preview",
 })
 
 
@@ -788,7 +1556,8 @@ def _is_deep_question(question: str) -> bool:
 
 
 def _supervisor_tools(state: DimeState) -> list:
-    return [t for t in _all_tools(state) if t.name in SUPERVISOR_TOOL_NAMES]
+    broken = _circuit_broken_tools(state)
+    return [t for t in _all_tools(state) if t.name in SUPERVISOR_TOOL_NAMES and t.name not in broken]
 
 
 _DISPLAY_TITLES = {
@@ -800,6 +1569,12 @@ _DISPLAY_TITLES = {
     "get_leaders": "League leaders",
     "get_lineups": "Lineups",
     "get_shot_zones": "Shot zones",
+    "get_matchup_splits": "Matchup splits",
+    "get_regression_check": "Regression check",
+    "get_comps": "Comps",
+    "get_award_race": "Award race",
+    "get_trade_value": "Trade value",
+    "get_matchup_preview": "Matchup preview",
 }
 
 _KIND_FOR_TOOL = {
@@ -892,7 +1667,18 @@ def _numbers(text: str) -> list[str]:
 
 
 def _event(kind: str, payload: Any) -> dict[str, Any]:
+    if kind == "tool_result" and isinstance(payload, dict) and payload.get("error"):
+        payload = {**payload, "error": _sanitize_error(str(payload["error"]))}
     return {"type": kind, "data": payload}
+
+
+_ABS_PATH_RX = re.compile(r"(?<![\w:/])(?:/[\w.\-]+)+")
+_PID_RX = re.compile(r"\bpid\b\s*[:=]?\s*\d+", re.IGNORECASE)
+
+
+def _sanitize_error(msg: str) -> str:
+    msg = _PID_RX.sub("pid", msg)
+    return _ABS_PATH_RX.sub(lambda m: m.group(0).rsplit("/", 1)[-1], msg)
 
 
 async def entry_node(state: DimeState) -> AsyncGenerator[dict[str, Any], None]:
@@ -959,13 +1745,17 @@ async def data_retrieval_agent(
                 and not _detect_entities(question_for_planner)[1]:
             question_for_planner = (
                 f"About {', '.join(carry)}: {question_for_planner}")
-        resp = await tooled.ainvoke(
-            [SystemMessage(content=PLANNER_SYSTEM + prior), HumanMessage(content=question_for_planner)]
-        )
+        _pholder: dict[str, Any] = {}
+        async for _pe in _stream_planner(
+                tooled,
+                [SystemMessage(content=PLANNER_SYSTEM + prior),
+                 HumanMessage(content=question_for_planner)],
+                _pholder):
+            yield _pe
+        calls = _pholder.get("calls", [])
     except Exception as exc:
         yield _event("error", {"node": "data_retrieval", "message": str(exc)[:200]})
         return
-    calls = getattr(resp, "tool_calls", None) or []
     fresh = []
     for call in calls:
         key = _call_key(call.get("name", ""), call.get("args", {}) or {})
@@ -993,10 +1783,6 @@ async def data_retrieval_agent(
             _deep2 = _is_deep_question(state["question"])
             state["round"] = DEEP_TOOL_ROUNDS if _deep2 else MAX_TOOL_ROUNDS
     else:
-        for call in fresh:
-            yield _event("message", {"node": "data_retrieval",
-                                     "label": tool_label(call.get("name", "")),
-                                     "status": "started"})
         state["_pending_calls"] = fresh  # type: ignore[typeddict-unknown-key]
         names = sorted({c.get("name", "") for c in fresh})
         yield _event("thought_stream", {"node": "data_retrieval",
@@ -1008,33 +1794,104 @@ async def actual_tool_node(state: DimeState) -> AsyncGenerator[dict[str, Any], N
     yield _event("node_update", {"node": "tools", "status": "running"})
     by_name = {t.name: t for t in _supervisor_tools(state)}
     pending = state.pop("_pending_calls", [])  # type: ignore[typeddict-unknown-key]
+    elapsed: dict[int, int] = {}
 
     async def _run(call: dict[str, Any]) -> dict[str, Any]:
+        t0 = time.time()
         name = call.get("name", "")
         args = call.get("args", {}) or {}
         fn = by_name.get(name)
         if fn is None:
+            elapsed[id(call)] = int((time.time() - t0) * 1000)
+            await _tok_q.put(None)
             return {"tool": name, "ok": False, "error": "unknown tool"}
         if isinstance(args, dict) and "season" in args:
             from .tools._core import clamp_season
 
             args = {**args, "season": clamp_season(args.get("season"))}
         try:
-            out = await fn.ainvoke(args)
+            desk_cache = state.setdefault("desk_cache", {})
+            entity_cache = state.setdefault("entity_cache", {})
+            if name.startswith("delegate_"):
+                dkey = _desk_dedupe_key(
+                    name, args if isinstance(args, dict) else {})
+                if dkey is not None and dkey in desk_cache:
+                    elapsed[id(call)] = 0
+                    await _tok_q.put(None)
+                    return {**desk_cache[dkey], "deduped": True}
+                # Stream the desk's raw tokens live while it works.
+                async def _on_tok(t: str) -> None:
+                    await _tok_q.put((name, t))
+
+                out = await run_desk_streaming(
+                    name, args.get("task", "") if isinstance(args, dict) else "",
+                    state["primary"], state["model"],  # type: ignore[arg-type]
+                    on_token=_on_tok)
+                if (isinstance(out, dict) and dkey is not None
+                        and _result_status(out) == "ok"):
+                    desk_cache[dkey] = out
+            elif name == "resolve_entity":
+                qnorm = (str(args.get("query", "") or "").strip().casefold()
+                         if isinstance(args, dict) else "")
+                if qnorm in entity_cache:
+                    elapsed[id(call)] = 0
+                    await _tok_q.put(None)
+                    return {**entity_cache[qnorm], "deduped": True}
+                out = await fn.ainvoke(args)
+                if isinstance(out, dict) and _result_status(out) == "ok":
+                    entity_cache[qnorm] = out
+            else:
+                out = await fn.ainvoke(args)
+            elapsed[id(call)] = int((time.time() - t0) * 1000)
+            await _tok_q.put(None)
             return out if isinstance(out, dict) else {"tool": name, "rows": out}
         except Exception as exc:
+            elapsed[id(call)] = int((time.time() - t0) * 1000)
+            await _tok_q.put(None)
             return {"tool": name, "ok": False, "error": str(exc)[:200]}
 
-    results = await asyncio.gather(*(_run(c) for c in pending))
+    for call in pending:
+        name = call.get("name", "") if isinstance(call, dict) else ""
+        args = call.get("args", {}) or {} if isinstance(call, dict) else {}
+        yield _event("tool_call", {
+            "node": "tools", "name": name,
+            "label": tool_label(name),
+            "summary": _args_summary(name, args),
+        })
+    _tok_q: asyncio.Queue = asyncio.Queue()
+    async def _gather_all():
+        return await asyncio.gather(*(_run(c) for c in pending))
+
+    _gather = _spawn(_gather_all(), name="tool-gather")
+    # Drain live desk tokens while the tools run; each _run posts one
+    # None sentinel when it finishes.
+    _remaining = len(pending)
+    while _remaining > 0:
+        _item = await _tok_q.get()
+        if _item is None:
+            _remaining -= 1
+            continue
+        _tname, _ttext = _item
+        yield _event("thought_token", {
+            "node": "tools", "text": _ttext,
+            "agent": _tname.replace("delegate_", ""),
+        })
+    results = await _gather
     for call, result in zip(pending, results):
         state["tool_results"].append(result)
         name = call.get("name", "") if isinstance(call, dict) else ""
         if not name and isinstance(result, dict):
             name = str(result.get("tool", ""))
-        yield _event("message", {"node": "tools",
-                                 "label": tool_label(name),
-                                 "status": _result_status(result if isinstance(result, dict) else {}),
-                                 "rows": _result_rows(result if isinstance(result, dict) else {})})
+        res = result if isinstance(result, dict) else {}
+        rdata = _tool_result_payload(
+            "tools", name, res, elapsed.get(id(call), 0))
+        yield _event("tool_result", rdata)
+        if res.get("deduped"):
+            continue  # deduped reuse: no second trace replay in the UI
+        for _te in _trace_replay_events(res if isinstance(res, dict) else {}):
+            _td = dict(_te.get("data", {}) or {})
+            _td["node"] = "tools"
+            yield {"type": _te.get("type", "tool_call"), "data": _td}
     state["round"] += 1
     yield _event("node_update", {"node": "tools", "status": "complete"})
 
@@ -1297,16 +2154,36 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
         llm = get_llm(state["primary"], state["model"])  # type: ignore[arg-type]
     except Exception:
         llm = None
-    if llm:
-        state["suggestions"] = await _suggest_llm(
-            state["question"], state["tool_results"], state["calls_made"], llm
-        )
-    else:
-        state["suggestions"] = _suggest(
-            state["question"], state["tool_results"], state["calls_made"]
-        )
-    yield _event("suggestions", {"items": state["suggestions"]})
+    _q = state["question"]
+    _trs = state["tool_results"]
+    _cm = state["calls_made"]
+
+    async def _suggest_bg() -> list[str]:
+        if llm is None:
+            return _suggest(_q, _trs, _cm)
+        return await _suggest_llm(_q, _trs, _cm, llm)
+
+    state["_suggest_task"] = _spawn(_suggest_bg(), name="suggestions")  # type: ignore[typeddict-unknown-key]
     yield _event("node_update", {"node": "presentation", "status": "complete"})
+
+
+async def _finish_suggestions(state: DimeState) -> list[str]:
+    """Await the background suggestions task spawned by presentation_agent.
+
+    Runs after graph_end so the LLM call never delays the answer
+    stream. Falls back to the hardcoded _suggest on timeout or error.
+    """
+    task = state.pop("_suggest_task", None)  # type: ignore[typeddict-unknown-key]
+    items: Any = None
+    if task is not None:
+        try:
+            items = await asyncio.wait_for(task, timeout=20)
+        except Exception:
+            items = None
+    if not isinstance(items, list) or not items:
+        items = _suggest(state["question"], state["tool_results"],
+                         state["calls_made"])
+    return [str(i) for i in items][:3]
 
 
 async def run_chat(
@@ -1320,10 +2197,13 @@ async def run_chat(
         question=question, primary=primary, model=model, round=0,
         tool_results=[], calls_made=[], history=history or [],
         analysis="", suggestions=[],
+        desk_cache={}, entity_cache={},
     )
     async for e in entry_node(state):
         yield e
-    await _triage_seed(question, primary, model, state)
+    yield _event("node_update", {"node": "data_retrieval", "status": "running"})
+    async for e in _triage_seed(question, primary, model, state):
+        yield e
     deep = _is_deep_question(question)
     max_rounds = DEEP_TOOL_ROUNDS if deep else MAX_TOOL_ROUNDS
     if deep:
@@ -1343,3 +2223,5 @@ async def run_chat(
     async for e in presentation_agent(state):
         yield e
     yield _event("graph_end", {"ok": True})
+    state["suggestions"] = await _finish_suggestions(state)
+    yield _event("suggestions", {"items": state["suggestions"]})

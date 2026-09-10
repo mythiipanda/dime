@@ -14,9 +14,7 @@ import AnswerText from "./AnswerText";
 import { ArtifactItem } from "./ArtifactCanvas";
 import DataArtifacts from "./DataArtifacts";
 import ModelPicker from "./ModelPicker";
-import PlanSteps from "./PlanSteps";
-import ThinkingBlock from "./ThinkingBlock";
-import { ToolCallGroup } from "./ToolCallRow";
+import AgentActivity from "./AgentActivity";
 
 function applyEvent(ai: AiMessage, type: string, data: unknown): AiMessage {
   const d = data as Record<string, unknown>;
@@ -31,25 +29,44 @@ function applyEvent(ai: AiMessage, type: string, data: unknown): AiMessage {
   if (type === "node_update") {
     const node = d.node as NodeName;
     touch(node).status = d.status === "complete" ? "complete" : "running";
+  } else if (type === "thought_token") {
+    // Live LLM tokens: planner reasoning and desk subagent thinking,
+    // streamed token-by-token as the model generates them.
+    const node = touch(d.node as NodeName);
+    node.liveThought = (node.liveThought || "") + String(d.text || "");
+    if (d.agent && !node.liveThoughtAgent) node.liveThoughtAgent = String(d.agent);
   } else if (type === "thought_stream") {
     if (!next.thoughtStarted) next.thoughtStarted = Date.now();
     touch(d.node as NodeName).thoughts.push(String(d.text || ""));
-  } else if (type === "message") {
+  } else if (type === "tool_call") {
     const node = touch(d.node as NodeName);
-    if (d.tool_call) {
-      const c = d.tool_call as { name: string; args: Record<string, unknown> };
-      node.toolCalls.push({ name: c.name, args: c.args || {} });
+    node.toolCalls.push({
+      name: String(d.name || ""),
+      args: (d.args as Record<string, unknown>) || {},
+      label: d.label as string | undefined,
+      summary: d.summary as string | undefined,
+      agent: d.agent as string | undefined,
+      status: "running",
+    });
+  } else if (type === "tool_result") {
+    const node = touch(d.node as NodeName);
+    const name = String(d.name || "");
+    const agent = d.agent as string | undefined;
+    for (let i = node.toolCalls.length - 1; i >= 0; i--) {
+      const c = node.toolCalls[i];
+      if (c.name === name && c.agent === agent && c.status === "running") {
+        c.status = d.status === "ok" ? "ok" : "fail";
+        if (typeof d.rows === "number") c.rows = d.rows;
+        if (typeof d.ms === "number") c.ms = d.ms;
+        if (d.error) c.error = String(d.error);
+        if (d.summary) c.summary = String(d.summary);
+        if (typeof d.sql === "string" && d.sql.trim()) c.sql = d.sql;
+        break;
+      }
     }
-    if (d.tool_result) {
-      const r = d.tool_result as {
-        tool: string;
-        ok?: boolean;
-        rows?: unknown;
-        meta?: { source?: string; fetched_at?: string };
-        error?: string;
-      };
-      node.toolResults.push(r);
-    }
+  } else if (type === "message") {
+    // Legacy event type; tool_call/tool_result carry tool activity now.
+    // Kept for backward compatibility with older streams.
   } else if (type === "custom_data") {
     const node = touch(d.node as NodeName);
     const tables = (d.tables as unknown[]) || [];
@@ -216,17 +233,6 @@ function LinkButton({ index }: { index: number }) {
       {done ? "Copied" : "Link"}
     </button>
   );
-}
-
-const AGENT_NODES: NodeName[] = ["entry", "data_retrieval", "tools", "analytics", "presentation"];
-
-function thoughtsFor(ai: AiMessage): string[] {
-  const out: string[] = [];
-  for (const n of AGENT_NODES) {
-    const s = ai.nodes[n];
-    if (s) out.push(...s.thoughts);
-  }
-  return out;
 }
 
 export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, activeArtifactId }: Props) {
@@ -597,47 +603,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                     </span>
                   </div>
 
-                  {m.ai && <PlanSteps ai={m.ai} />}
-
-                  {m.ai && (
-                    <ThinkingBlock
-                      thoughts={thoughtsFor(m.ai)}
-                      running={!m.ai.done}
-                      thoughtMs={m.ai.thoughtMs}
-                      answerStarted={m.text.length > 0}
-                    />
-                  )}
-
-                  {m.ai &&
-                    AGENT_NODES.filter(
-                      (n) =>
-                        m.ai!.nodes[n] &&
-                        (m.ai!.nodes[n]!.toolCalls.length > 0 ||
-                          m.ai!.nodes[n]!.toolResults.length > 0),
-                    ).map((n) => (
-                      <ToolCallGroup
-                        key={n}
-                        node={n}
-                        calls={m.ai!.nodes[n]!.toolCalls}
-                        results={m.ai!.nodes[n]!.toolResults}
-                        running={m.ai!.nodes[n]!.status === "running" && !m.ai!.done}
-                      />
-                    ))}
-
-                  {m.ai && !m.ai.done && !m.text && Object.keys(m.ai.nodes).length === 0 && (
-                    <div style={{ marginBottom: 8 }}>
-                      <div style={{ fontSize: 12, color: "var(--color-ash-gray)", marginBottom: 8 }}>
-                        Looking up stats...
-                      </div>
-                      {[90, 70, 55].map((w, d) => (
-                        <div
-                          key={d}
-                          className="shimmer skeleton-row"
-                          style={{ width: `${w}%` }}
-                        />
-                      ))}
-                    </div>
-                  )}
+                  {m.ai && <AgentActivity ai={m.ai} />}
 
                     {m.ai?.error && (
                       <div style={{ color: "#e11d48", fontSize: 13, marginBottom: 8 }}>Error: {m.ai.error}</div>

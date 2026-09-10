@@ -2,6 +2,7 @@
 
 from langchain_core.tools import BaseTool
 
+from .awards import get_award_race
 from .league import (
     get_briefing,
     get_cap_ledger,
@@ -11,6 +12,7 @@ from .league import (
     get_draft_board,
     get_draft_model,
     get_elo,
+    get_elo_standings,
     get_finder,
     get_hustle,
     get_injuries,
@@ -24,11 +26,14 @@ from .league import (
     get_standings,
     get_standings_deep,
     get_trade_check,
+    get_trade_value,
+    get_warehouse_freshness,
     get_win_prob,
     get_leaderboard_deltas,
     snapshot_leaderboard,
     text_to_sql,
 )
+from .lineup import get_lineup_stats
 from .player import (
     compare_metrics,
     get_advanced,
@@ -37,6 +42,7 @@ from .player import (
     get_comps,
     get_four_factors,
     get_hustle_boards,
+    get_impact_estimate,
     get_last_x,
     get_on_off,
     get_percentiles,
@@ -49,7 +55,14 @@ from .player import (
     get_trend,
     get_wowy,
 )
+from .preview import get_matchup_preview
+from .prediction import get_game_prediction
 from .shared import resolve_entity, run_python, search_nba
+from .headtohead import get_head_to_head
+from .gamelog import search_game_logs
+from .splits import get_matchup_splits, get_regression_check
+from .streaks import get_streaks
+from .zone import get_team_shot_zones
 from .team import (
     get_boxscore,
     get_games_on_date,
@@ -81,6 +94,7 @@ v1_tools: list[BaseTool] = [
     get_playoffs,
     get_leaders,
     get_lineups,
+    get_lineup_stats,
     get_on_off,
     get_wowy,
     get_four_factors,
@@ -91,6 +105,8 @@ v1_tools: list[BaseTool] = [
     get_hustle,
     get_injuries,
     get_splits,
+    get_matchup_splits,
+    get_regression_check,
     get_scouting_report,
     get_recap,
     text_to_sql,
@@ -100,21 +116,25 @@ v1_tools: list[BaseTool] = [
     get_compare,
     compare_metrics,
     get_debate_card,
+    get_award_race,
     get_comps,
     get_advanced,
     get_rest,
     get_trend,
     get_win_prob,
     get_preview,
+    get_matchup_preview,
     get_scout_pack,
     get_rotation_check,
     get_team_splits,
     get_injury_impact,
     get_cap_ledger,
     get_trade_check,
+    get_trade_value,
     get_ratings,
     get_clutch,
     get_elo,
+    get_elo_standings,
     get_playoff_sim,
     get_contract_value,
     get_draft_board,
@@ -122,13 +142,21 @@ v1_tools: list[BaseTool] = [
     get_risers,
     get_standings_deep,
     get_hustle_boards,
+    get_impact_estimate,
+    get_warehouse_freshness,
     get_today,
     get_morning_briefing,
+    get_briefing,
     get_leaderboard_deltas,
     snapshot_leaderboard,
     add_watchlist_item,
     get_watchlist,
     remove_watchlist_item,
+    get_streaks,
+    get_head_to_head,
+    search_game_logs,
+    get_game_prediction,
+    get_team_shot_zones,
 ]
 
 TOOL_NAMES = [t.name for t in v1_tools]

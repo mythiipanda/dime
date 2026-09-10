@@ -6,56 +6,44 @@ from langchain_core.tools import tool
 from ._core import SEASON
 
 
-@tool
-def get_today(season: str = SEASON) -> dict[str, Any]:
-    """Today home view: last night's results, tonight's games, leaderboard movers, streaks."""
-    from zoneinfo import ZoneInfo
-    from datetime import datetime, timedelta as _td
+def _games(date_str: str, season: str) -> list:
+    """Fetch games with a hard timeout — live API can hang."""
+    import concurrent.futures
 
-    from .league import get_leaders, get_leaderboard_deltas
     from .team import get_games_on_date
 
-    now = datetime.now(ZoneInfo("America/New_York"))
-    today = now.strftime("%m/%d/%Y")
-    yesterday = (now - _td(days=1)).strftime("%m/%d/%Y")
-
-    def _games(date_str: str) -> list:
-        """Fetch games with a hard timeout — live API can hang."""
-        import concurrent.futures
-
-        ex = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-        try:
-            fut = ex.submit(
-                get_games_on_date.invoke,
-                {"game_date": date_str, "season": season},
-            )
-            res = fut.result(timeout=8)
-            return res.get("rows", []) or []
-        except Exception:
-            return []
-        finally:
-            # Don't wait for the worker — that's what makes the timeout real.
-            # The orphaned thread dies on its own; we don't block on it.
-            ex.shutdown(wait=False)
-
-    import concurrent.futures as _cf
-
-    with _cf.ThreadPoolExecutor(max_workers=2) as _pool:
-        _last, _ton = list(_pool.map(_games, [yesterday, today]))
-    last_night, tonight = _last, _ton
+    ex = concurrent.futures.ThreadPoolExecutor(max_workers=1)
     try:
-        import asyncio as _aio
-
-        from .league import snapshot_leaderboard
-
-        try:
-            _aio.get_running_loop()
-        except RuntimeError:
-            _aio.run(snapshot_leaderboard.ainvoke({"season": season}))
+        fut = ex.submit(
+            get_games_on_date.invoke,
+            {"game_date": date_str, "season": season},
+        )
+        res = fut.result(timeout=8)
+        return res.get("rows", []) or []
     except Exception:
-        pass
+        return []
+    finally:
+        # Don't wait for the worker — that's what makes the timeout real.
+        # The orphaned thread dies on its own; we don't block on it.
+        ex.shutdown(wait=False)
+
+
+def _scoreboards(season: str) -> tuple[list, list]:
+    import concurrent.futures
+    from datetime import datetime, timedelta as _td
+    from zoneinfo import ZoneInfo
+
+    now = datetime.now(ZoneInfo("America/New_York"))
+    yesterday = (now - _td(days=1)).strftime("%m/%d/%Y")
+    today = now.strftime("%m/%d/%Y")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
+        last = ex.submit(_games, yesterday, season)
+        tonight = ex.submit(_games, today, season)
+        return last.result(), tonight.result()
+
+
+def _movers_from_delta(delta: Any) -> list:
     try:
-        delta = get_leaderboard_deltas.invoke({"season": season, "days": 7})
         drows = delta.get("rows", {}) if delta.get("ok") else {}
         climbers = (drows.get("climbers", []) or [])[:3]
         fallers = (drows.get("fallers", []) or [])[:3]
@@ -71,14 +59,22 @@ def get_today(season: str = SEASON) -> dict[str, Any]:
             for f in fallers
         ]
         if not movers:
-            lead = get_leaders.invoke({"stat_category": "PTS", "season": season})
-            movers = [
-                {"PLAYER": r.get("PLAYER"), "TEAM": r.get("TEAM"),
-                 "PTS": r.get("PTS"), "GP": r.get("GP")}
-                for r in (lead.get("rows", []) or [])[:5]
-            ] or [{"note": "no leaderboard movement in the last 7 days"}]
+            from .league import get_leaders
+            try:
+                lead = get_leaders.invoke({"stat_category": "PTS", "season": season})
+                movers = [
+                    {"PLAYER": r.get("PLAYER"), "TEAM": r.get("TEAM"),
+                     "PTS": r.get("PTS"), "GP": r.get("GP")}
+                    for r in (lead.get("rows", []) or [])[:5]
+                ] or [{"note": "no leaderboard movement in the last 7 days"}]
+            except Exception:
+                movers = [{"note": "no leaderboard movement in the last 7 days"}]
     except Exception:
         movers = []
+    return movers
+
+
+def _streaks(season: str) -> list[dict[str, Any]]:
     streaks: list[dict[str, Any]] = []
     try:
         from .. import store as _store
@@ -111,9 +107,39 @@ def get_today(season: str = SEASON) -> dict[str, Any]:
         streaks.sort(key=lambda d: d["GAMES"], reverse=True)
     except Exception:
         streaks = []
+    return streaks
+
+
+@tool
+def get_today(season: str = SEASON) -> dict[str, Any]:
+    """Today home view: last night's results, tonight's games, leaderboard movers, streaks."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from .league import get_leaderboard_deltas
+
+    now = datetime.now(ZoneInfo("America/New_York"))
+    today = now.strftime("%m/%d/%Y")
+    try:
+        import asyncio as _aio
+
+        from .league import snapshot_leaderboard
+
+        try:
+            _aio.get_running_loop()
+        except RuntimeError:
+            _aio.run(snapshot_leaderboard.ainvoke({"season": season}))
+    except Exception:
+        pass
+    try:
+        delta = get_leaderboard_deltas.invoke({"season": season, "days": 7})
+    except Exception:
+        delta = None
+    last_night, tonight = _scoreboards(season)
     return {"tool": "get_today", "ok": True,
             "rows": {"last_night": last_night, "tonight": tonight,
-                     "movers": movers, "streaks": streaks},
+                     "movers": _movers_from_delta(delta),
+                     "streaks": _streaks(season)},
             "meta": {"date": today, "source": "nba_api+warehouse"}}
 
 
@@ -124,47 +150,57 @@ def get_morning_briefing(season: str = SEASON) -> dict[str, Any]:
     Deterministic pipeline for app open. Combines get_today, get_watchlist,
     and get_leaderboard_deltas into one response.
     """
-    from .watchlist import get_watchlist
+    import concurrent.futures as _cf
+
     from .league import get_leaderboard_deltas
+    from .watchlist import get_watchlist
 
     briefing: dict[str, Any] = {
         "tool": "get_morning_briefing", "ok": True, "rows": {}, "meta": {"season": season}
     }
-
-    # Today's games and streaks
-    try:
-        today_res = get_today.invoke({"season": season})
-        if isinstance(today_res, str):
-            import json as _json
-            today_res = _json.loads(today_res)
-        if today_res.get("ok"):
-            briefing["rows"]["today"] = today_res["rows"]
-    except Exception as e:
-        briefing["rows"]["today"] = {"error": str(e)[:100]}
-
-    # Watchlist
-    try:
-        wl_res = get_watchlist.invoke({"season": season})
-        if isinstance(wl_res, str):
-            import json as _json
-            wl_res = _json.loads(wl_res)
-        if wl_res.get("ok"):
-            briefing["rows"]["watchlist"] = wl_res["rows"]
-            briefing["meta"]["watchlist_count"] = wl_res["meta"].get("count", 0)
-    except Exception as e:
-        briefing["rows"]["watchlist"] = {"error": str(e)[:100]}
-
-    # Leaderboard movers
-    try:
-        delta_res = get_leaderboard_deltas.invoke({"season": season, "days": 7})
+    with _cf.ThreadPoolExecutor(max_workers=3) as ex:
+        f_sb = ex.submit(_scoreboards, season)
+        f_wl = ex.submit(get_watchlist.invoke, {"season": season})
+        f_delta = ex.submit(
+            get_leaderboard_deltas.invoke, {"season": season, "days": 7})
+        try:
+            delta_res = f_delta.result(timeout=40)
+        except Exception as e:
+            delta_res = {"error": str(e)[:100]}
         if isinstance(delta_res, str):
-            import json as _json
-            delta_res = _json.loads(delta_res)
-        if delta_res.get("ok"):
-            briefing["rows"]["movers"] = delta_res["rows"]
-        else:
-            briefing["rows"]["movers"] = {"note": delta_res.get("error", "no deltas")}
-    except Exception as e:
-        briefing["rows"]["movers"] = {"error": str(e)[:100]}
+            try:
+                import json as _json
 
+                delta_res = _json.loads(delta_res)
+            except Exception as e:
+                delta_res = {"error": str(e)[:100]}
+        try:
+            last_night, tonight = f_sb.result(timeout=40)
+            briefing["rows"]["today"] = {
+                "last_night": last_night, "tonight": tonight,
+                "movers": _movers_from_delta(delta_res),
+                "streaks": _streaks(season),
+            }
+        except Exception as e:
+            briefing["rows"]["today"] = {"error": str(e)[:100]}
+        try:
+            wl_res = f_wl.result(timeout=40)
+            if isinstance(wl_res, str):
+                import json as _json
+                wl_res = _json.loads(wl_res)
+            if wl_res.get("ok"):
+                briefing["rows"]["watchlist"] = wl_res["rows"]
+                briefing["meta"]["watchlist_count"] = wl_res["meta"].get("count", 0)
+        except Exception as e:
+            briefing["rows"]["watchlist"] = {"error": str(e)[:100]}
+        try:
+            if isinstance(delta_res, str):
+                import json as _json
+                delta_res = _json.loads(delta_res)
+            if delta_res.get("ok"):
+                briefing["rows"]["movers"] = delta_res["rows"]
+            else:
+                briefing["rows"]["movers"] = {"note": delta_res.get("error", "no deltas")}
+        except Exception as e:
+            briefing["rows"]["movers"] = {"error": str(e)[:100]}
     return briefing

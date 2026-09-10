@@ -7,7 +7,7 @@ from langchain_core.tools import tool
 
 from .. import store
 from ..sources import nba_stats
-from ._core import SEASON, _warehouse_or_live, coerce_player_id, coerce_team_id
+from ._core import SEASON, TTL_GAMELOG, TTL_LEADERS, TTL_PBPSTATS, _warehouse_or_live, coerce_player_id, coerce_team_id
 
 
 def _num(value: object) -> float | None:
@@ -135,45 +135,82 @@ async def get_compare(
         from collections import Counter as _Counter
 
         pid = coerce_player_id(who)
-        try:
-            games = _read_df(
-                "SELECT * FROM silver_player_gamelogs"
-                " WHERE _season = ? AND _entity = ?",
-                [season, f"player:{pid}"],
-            )
-        except Exception:
-            games = []
-        if not games:
-            intel = await get_player_intel.ainvoke(
-                {"player_id": pid, "season": season})
-            games = intel.get("rows", [])
-        team = 0
-        try:
-            from nba_api.stats.endpoints import CommonPlayerInfo
+        loop = _asyncio.get_running_loop()
 
-            info = CommonPlayerInfo(player_id=pid, timeout=10).get_data_frames()[0]
-            team = int(info["TEAM_ID"].iloc[0])
-        except Exception:
-            team = 0
-        try:
-            oo = {"rows": _read_df(
-                "SELECT * FROM silver_on_off WHERE _season = ? AND _entity = ?",
-                [season, f"player:{pid}"],
-            )}
-        except Exception:
-            oo = {"rows": []}
+        def _gamelogs() -> list:
+            try:
+                return _read_df(
+                    "SELECT * FROM silver_player_gamelogs"
+                    " WHERE _season = ? AND _entity = ?",
+                    [season, f"player:{pid}"],
+                )
+            except Exception:
+                return []
+
+        def _team_id(abbr: str) -> int:
+            # Warehouse-first team resolution. The warehouse gamelog MATCHUP
+            # column already carries the player's team abbreviation, and the
+            # offline nba_api static table maps it to a team id with zero
+            # HTTP, so the hot path never touches the network.
+            # FALLBACK: the live CommonPlayerInfo call below only fires when
+            # the warehouse has no team data for this player at all. On that
+            # path there is no warehouse row to go stale, so the live
+            # TEAM_ID wins outright by construction.
+            if abbr:
+                try:
+                    return coerce_team_id(abbr)
+                except Exception:
+                    pass
+            try:
+                from nba_api.stats.endpoints import CommonPlayerInfo
+
+                info = CommonPlayerInfo(player_id=pid, timeout=10).get_data_frames()[0]
+                return int(info["TEAM_ID"].iloc[0])
+            except Exception:
+                return 0
+
+        def _onoff_rows() -> list:
+            try:
+                return _read_df(
+                    "SELECT * FROM silver_on_off WHERE _season = ? AND _entity = ?",
+                    [season, f"player:{pid}"],
+                )
+            except Exception:
+                return []
+
+        games = await loop.run_in_executor(None, _gamelogs)
+        jobs: dict[str, Any] = {}
+        if not games:
+            jobs["intel"] = get_player_intel.ainvoke(
+                {"player_id": pid, "season": season})
+        jobs["last"] = get_last_x.ainvoke(
+            {"player_id": pid, "n": 5, "season": season})
+        jobs["adv"] = get_advanced.ainvoke({"player": pid, "season": season})
+        jobs["zones"] = get_shot_zones.ainvoke(
+            {"player_id": pid, "season": season})
+        results = await _asyncio.gather(*jobs.values(), return_exceptions=True)
+        res = {k: (v if isinstance(v, dict) else {})
+               for k, v in zip(jobs, results)}
+        if not games:
+            games = res.get("intel", {}).get("rows", []) or []
+        matchup = [str(g.get("MATCHUP") or "").split(" ")[0] for g in games]
+        team_abbr = (_Counter(m for m in matchup if m).most_common(1)
+                     or [("", 0)])[0][0]
+        team = await loop.run_in_executor(None, _team_id, team_abbr)
+        oo = {"rows": _onoff_rows()}
         if not any(isinstance(r, dict)
                    and r.get("Stat") == "Pts per 100 Possessions"
                    for r in oo.get("rows", []) or []):
             if team:
-                oo = await get_on_off.ainvoke(
+                cand = await get_on_off.ainvoke(
                     {"player_id": pid, "team_id": team, "season": season})
-        last = await get_last_x.ainvoke(
-            {"player_id": pid, "n": 5, "season": season})
-        adv = await get_advanced.ainvoke({"player": pid, "season": season})
+                if isinstance(cand, dict):
+                    oo = cand
+        last = res.get("last", {})
+        adv = res.get("adv", {})
         adv_rows = adv.get("rows", {}) if adv.get("ok") else {}
         try:
-            zones = await get_shot_zones.ainvoke({"player_id": pid, "season": season})
+            zones = res.get("zones", {})
             diet = zone_diet(zones.get("rows", [])) if zones.get("ok") else {
                 "rim_share": None, "three_share": None}
         except Exception:
@@ -192,10 +229,7 @@ async def get_compare(
         pts_total = _sum("PTS")
         ts = round(pts_total / max(2 * (fga + 0.44 * fta), 1), 3)
         efg = round((fgm + 0.5 * fg3m) / max(fga, 1), 3)
-        matchup = [str(g.get("MATCHUP") or "").split(" ")[0] for g in games]
-        team_abbr = (_Counter(m for m in matchup if m).most_common(1)
-                     or [("", 0)])[0][0]
-        record, net_onoff, rapm = "", None, None
+        record, net_onoff, rapm, clutch_pts = "", None, None, None
         if team_abbr:
             try:
                 from nba_api.stats.static import teams as _static
@@ -460,7 +494,7 @@ def get_player_intel(player_id: str | int, season: str = SEASON) -> dict[str, An
         "silver_player_gamelogs", "_season = ? AND _entity = ?",
         [season, f"player:{player_id}"],
         lambda: nba_stats.player_gamelog(player_id, season), season,
-        entity=f"player:{player_id}", live_first=True,
+        entity=f"player:{player_id}", ttl_s=TTL_GAMELOG,
     )
     return {"tool": "get_player_intel", "ok": True, "rows": rows, "meta": meta}
 
@@ -477,7 +511,7 @@ def get_playoff_intel(player_id: str | int, season: str = SEASON) -> dict[str, A
         "silver_playoff_gamelogs", "_season = ? AND _entity = ?",
         [season, f"player:{pid}"],
         lambda: nba_stats.player_playoff_gamelog(pid, season), season,
-        entity=f"player:{pid}", live_first=True,
+        entity=f"player:{pid}", ttl_s=TTL_GAMELOG,
     )
     if not rows:
         try:
@@ -517,7 +551,7 @@ def get_last_x(player_id: str | int, n: int = 10, season: str = SEASON) -> dict[
         "silver_player_gamelogs", "_season = ? AND _entity = ?",
         [season, f"player:{player_id}"],
         lambda: nba_stats.player_gamelog(player_id, season), season,
-        entity=f"player:{player_id}", live_first=True,
+        entity=f"player:{player_id}", ttl_s=TTL_GAMELOG,
     )
     if not rows:
         return {"tool": "get_last_x", "ok": False,
@@ -542,7 +576,7 @@ def get_trend(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
         "silver_player_gamelogs", "_season = ? AND _entity = ?",
         [season, f"player:{player_id}"],
         lambda: nba_stats.player_gamelog(player_id, season), season,
-        entity=f"player:{player_id}", live_first=True,
+        entity=f"player:{player_id}", ttl_s=TTL_GAMELOG,
     )
     if not rows:
         return {"tool": "get_trend", "ok": False,
@@ -580,7 +614,7 @@ def get_percentiles(player_id: str | int, season: str = SEASON) -> dict[str, Any
         rows, _ = _warehouse_or_live(
             table, "_season = ?",
             [season], lambda c=cat: nba_stats.leaders(c, season), season,
-            limit=600,
+            limit=600, ttl_s=TTL_LEADERS,
         )
         hit = next((r for r in rows if r.get("PLAYER_ID") == player_id), None)
         if hit and hit.get("RANK"):
@@ -594,91 +628,283 @@ def get_percentiles(player_id: str | int, season: str = SEASON) -> dict[str, Any
 
 
 @tool
-def get_comps(player_id: str | int, season: str = SEASON, n: int = 5) -> dict[str, Any]:
-    """Nearest statistical neighbors by per-game shape. Development comps."""
-    player_id = coerce_player_id(player_id)
+def get_comps(player_id: str | int, season: str = SEASON, k: int = 5) -> dict[str, Any]:
+    """Nearest statistical neighbors by per-36 + advanced shape. Same-season only."""
     import math
 
-    base, _ = _warehouse_or_live(
-        "silver_player_gamelogs", "_season = ? AND _entity = ?",
-        [season, f"player:{player_id}"],
-        lambda: nba_stats.player_gamelog(player_id, season), season,
-        entity=f"player:{player_id}", live_first=True,
-    )
-    if not base:
-        return {"tool": "get_comps", "ok": False, "error": "no baseline games"}
-    dims = ["PTS", "REB", "AST", "FG_PCT", "FG3_PCT", "MIN"]
+    from ._core import clamp_season
+
+    season = clamp_season(season)
     try:
-        avgs = {d: sum(float(r.get(d) or 0) for r in base) / len(base) for d in dims}
+        k = max(1, min(int(k or 5), 15))
     except (TypeError, ValueError):
-        return {"tool": "get_comps", "ok": False, "error": "bad baseline"}
-    cands, _ = _warehouse_or_live(
-        "silver_leaders_pts", "_season = ?",
-        [season], lambda: nba_stats.leaders("PTS", season), season,
-        limit=600,
-    )
-    per_game = []
-    for r in cands:
-        try:
-            gp = float(r.get("GP") or 0)
-            if gp <= 0:
-                continue
-            per_game.append((
-                r,
-                {d: float(r.get(d) or 0) / (gp if d in ("PTS", "REB", "AST", "MIN") else 1)
-                 for d in dims},
-            ))
-        except (TypeError, ValueError):
-            continue
-    scales: dict[str, float] = {}
-    for d in dims:
-        vals = [p[d] for _, p in per_game]
-        mean = sum(vals) / max(len(vals), 1)
-        var = sum((v - mean) ** 2 for v in vals) / max(len(vals), 1)
-        scales[d] = var ** 0.5 or 1.0
-    scored = []
-    for r, per in per_game:
-        try:
-            v = [(per[d] - avgs[d]) / scales[d] for d in dims]
-            dist = math.sqrt(sum(x * x for x in v))
-            if r.get("PLAYER_ID") != player_id:
-                scored.append((dist, r.get("PLAYER"), r.get("TEAM")))
-        except (TypeError, ValueError):
-            continue
-    scored.sort()
-    rows = [{"PLAYER": name, "TEAM": team, "distance": round(d, 2)}
-            for d, name, team in scored[:n]]
-    latest: dict[str, dict] = {}
+        k = 5
     try:
-        names = [r["PLAYER"] for r in rows]
-        if names:
-            con = store.connect()
-            try:
-                ph = ",".join("?" for _ in names)
-                up = [str(x).upper() for x in names]
-                q = ("SELECT PLAYER_NAME,_season,RAPTOR_TOTAL,WAR_TOTAL "
-                     "FROM silver_raptor_player "
-                     f"WHERE UPPER(PLAYER_NAME) IN ({ph}) ORDER BY _season DESC")
-                try:
-                    rf = pl.from_arrow(con.execute(q, up).fetch_arrow_table())
-                except Exception:
-                    rf = pl.DataFrame([])
-                for d in rf.to_dicts():
-                    k = str(d.get("PLAYER_NAME") or "").upper()
-                    if k and k not in latest:
-                        latest[k] = d
-            finally:
-                con.close()
+        pid = coerce_player_id(player_id)
+    except ValueError as exc:
+        return {"tool": "get_comps", "ok": False, "error": str(exc)}
+
+    try:
+        leaders = _read_df(
+            "SELECT * FROM silver_leaders_pts WHERE _season = ?", [season])
     except Exception:
-        latest = {}
-    for r in rows:
-        hit = latest.get(str(r.get("PLAYER")).upper())
-        r["RAPTOR"] = hit.get("RAPTOR_TOTAL") if hit else None
-        r["WAR"] = hit.get("WAR_TOTAL") if hit else None
-    cov = sum(1 for r in rows if r.get("RAPTOR") is not None)
-    return {"tool": "get_comps", "ok": True, "rows": rows,
-            "meta": {"source": "nba_api", "season": season,
-                     "raptor_coverage": f"{cov}/{len(rows)} neighbors with RAPTOR"}}
+        leaders = []
+    try:
+        adv = _read_df(
+            "SELECT * FROM silver_advanced WHERE _season = ?", [season])
+    except Exception:
+        adv = []
+
+    BOX = [("PTS", "PTS36"), ("REB", "REB36"), ("AST", "AST36"),
+           ("STL", "STL36"), ("BLK", "BLK36"), ("FG3A", "FG3A36"),
+           ("FTA", "FTA36"), ("TOV", "TOV36")]
+    PCTS = ["FG3_PCT", "FT_PCT"]
+    ADVS = ["USG_PCT", "TS_PCT", "AST_PCT", "TM_TOV_PCT", "PIE",
+            "OFF_RATING", "DEF_RATING", "NET_RATING"]
+    LABELS = {
+        "PTS36": "scoring volume (PTS/36)",
+        "REB36": "rebounding (REB/36)",
+        "AST36": "playmaking (AST/36)",
+        "STL36": "steals (STL/36)",
+        "BLK36": "blocks (BLK/36)",
+        "FG3A36": "three-point volume (3PA/36)",
+        "FTA36": "foul drawing (FTA/36)",
+        "TOV36": "turnovers (TOV/36)",
+        "FG3_PCT": "three-point efficiency",
+        "FT_PCT": "free-throw efficiency",
+        "USG_PCT": "usage rate",
+        "TS_PCT": "true shooting",
+        "AST_PCT": "assist rate",
+        "TM_TOV_PCT": "turnover rate",
+        "PIE": "player impact estimate",
+        "OFF_RATING": "offensive rating",
+        "DEF_RATING": "defensive rating",
+        "NET_RATING": "net rating",
+    }
+
+    def _archetype(feats: dict[str, Any]) -> str:
+        def _f(key: str) -> float | None:
+            try:
+                v = feats.get(key)
+                return None if v is None else float(v)
+            except (TypeError, ValueError):
+                return None
+
+        usg = _f("USG_PCT")
+        if usg is not None and usg <= 1:
+            usg *= 100  # warehouse stores usage-class stats as ratios
+        ap = _f("AST_PCT")
+        if ap is not None and ap <= 1:
+            ap *= 100
+        ts = _f("TS_PCT")
+        if ts is not None and ts > 1:
+            ts /= 100
+        ast36 = _f("AST36")
+        reb36 = _f("REB36")
+        blk36 = _f("BLK36")
+        fg3a36 = _f("FG3A36")
+        pts36 = _f("PTS36")
+        if usg is not None and usg >= 30 and ast36 is not None and ast36 >= 7:
+            return "high-usage creator"
+        if usg is not None and usg >= 30:
+            return "high-usage scorer"
+        if ap is not None and ap >= 32:
+            return "floor general"
+        if ast36 is not None and ast36 >= 7.5:
+            return "playmaker"
+        if reb36 is not None and reb36 >= 11:
+            if blk36 is not None and blk36 >= 1.8:
+                return "rim protector"
+            if ts is not None and ts >= 0.60:
+                return "rim-running big"
+            return "rebounding big"
+        if fg3a36 is not None and fg3a36 >= 8:
+            return "movement shooter"
+        if usg is not None and usg >= 25:
+            return "secondary creator"
+        if pts36 is not None and pts36 >= 24:
+            return "volume scorer"
+        return "rotation player"
+
+    notes = ("cross-era comps unavailable: "
+             "warehouse holds player stat profiles for 2025-26 only")
+    pool: list[dict[str, Any]] = []
+    use_adv = bool(adv)
+    if leaders:
+        adv_by_id: dict[str, dict[str, Any]] = {}
+        for row in adv:
+            if isinstance(row, dict) and row.get("PLAYER_ID") is not None:
+                adv_by_id[str(row.get("PLAYER_ID"))] = row
+        for row in leaders:
+            if not isinstance(row, dict):
+                continue
+            total_min = _num(row.get("MIN"))
+            if total_min is None or total_min < 400:
+                continue
+            feats: dict[str, float | None] = {}
+            for col, feat in BOX:
+                v = _num(row.get(col))
+                feats[feat] = 36 * v / total_min if v is not None else None
+            for feat in PCTS:
+                feats[feat] = _num(row.get(feat))
+            arow = adv_by_id.get(str(row.get("PLAYER_ID")), {})
+            for feat in ADVS:
+                feats[feat] = _num(arow.get(feat)) if use_adv else None
+            try:
+                entry_pid = int(row.get("PLAYER_ID"))
+            except (TypeError, ValueError):
+                continue
+            pool.append({"sid": str(row.get("PLAYER_ID")),
+                         "pid": entry_pid,
+                         "name": row.get("PLAYER"),
+                         "team": row.get("TEAM"),
+                         "feats": feats})
+        if not use_adv:
+            notes += "; advanced metrics unavailable, box-score features only"
+    else:
+        def _mins(v: object) -> float | None:
+            m = _num(v)
+            if m is not None:
+                return m
+            s = str(v or "").strip()  # gamelog MIN may be clock "MM:SS"
+            if ":" in s:
+                try:
+                    mm, ss = s.split(":")[:2]
+                    return float(mm) + float(ss) / 60
+                except (TypeError, ValueError):
+                    return None
+            return None
+
+        try:
+            games = _read_df(
+                "SELECT _entity, MIN, PTS, REB, AST, STL, BLK, TOV,"
+                " FG3A, FTA, FG3_PCT, FT_PCT"
+                " FROM silver_player_gamelogs WHERE _season = ?", [season])
+        except Exception:
+            games = []
+        by_ent: dict[str, list[dict[str, Any]]] = {}
+        for g in games:
+            if isinstance(g, dict) and g.get("_entity"):
+                by_ent.setdefault(str(g.get("_entity")), []).append(g)
+        for ent, gs in by_ent.items():
+            if len(gs) < 10:
+                continue
+            mins = [_mins(g.get("MIN")) for g in gs]
+            mins = [m for m in mins if m is not None]
+            if not mins or sum(mins) < 400:
+                continue
+            avg_min = sum(mins) / len(mins)
+            feats = {}
+            for col, feat in BOX:
+                vals = [_num(g.get(col)) for g in gs]
+                vals = [v for v in vals if v is not None]
+                feats[feat] = 36 * (sum(vals) / len(vals)) / avg_min if vals else None
+            for feat in PCTS:
+                vals = [_num(g.get(feat)) for g in gs]
+                vals = [v for v in vals if v is not None]
+                feats[feat] = sum(vals) / len(vals) if vals else None
+            for feat in ADVS:
+                feats[feat] = None
+            ent_pid = ent.split(":", 1)[-1] if ":" in ent else ent
+            try:
+                entry_pid = int(ent_pid)
+            except (TypeError, ValueError):
+                continue
+            pool.append({"sid": str(entry_pid), "pid": entry_pid,
+                         "name": None, "team": None, "feats": feats})
+        notes += "; leaders missing, estimated from gamelogs"
+    if not pool:
+        return {"tool": "get_comps", "ok": False,
+                "error": f"no player stat profiles for season {season}"}
+
+    target = next((e for e in pool if e["sid"] == str(pid)), None)
+    if target is None:
+        try:
+            from nba_api.stats.static import players as _players
+            tname = next((p.get("full_name", str(player_id))
+                          for p in _players.get_players()
+                          if str(p.get("id")) == str(pid)), str(player_id))
+        except Exception:
+            tname = str(player_id)
+        return {"tool": "get_comps", "ok": False,
+                "error": f"no stat profile for {tname} in {season}"}
+
+    features = [f for _, f in BOX] + PCTS + (ADVS if use_adv else [])
+    stats: dict[str, tuple[float, float]] = {}
+    dropped: list[str] = []
+    for feat in features:
+        vals = [e["feats"][feat] for e in pool
+                if isinstance(e["feats"].get(feat), (int, float))]
+        if len(vals) < 2:
+            dropped.append(feat)
+            continue
+        mean = sum(vals) / len(vals)
+        var = sum((v - mean) ** 2 for v in vals) / len(vals)
+        if var <= 0:
+            dropped.append(feat)
+            continue
+        stats[feat] = (mean, math.sqrt(var))
+    kept = [f for f in features if f in stats]
+    if not kept:
+        return {"tool": "get_comps", "ok": False,
+                "error": f"no comparable features for season {season}"}
+
+    zvec: dict[str, dict[str, float]] = {}
+    for e in pool:
+        z: dict[str, float] = {}
+        for feat in kept:
+            mean, std = stats[feat]
+            v = e["feats"].get(feat)
+            z[feat] = ((v - mean) / std if isinstance(v, (int, float))
+                       else 0.0)  # mean-imputed when missing
+        zvec[e["sid"]] = z
+    zt = zvec[target["sid"]]
+    scored: list[tuple[float, dict[str, Any]]] = []
+    for e in pool:
+        if e["sid"] == target["sid"]:
+            continue
+        ze = zvec[e["sid"]]
+        dist = math.sqrt(sum((zt[f] - ze[f]) ** 2 for f in kept))
+        scored.append((dist, e))
+    scored.sort(key=lambda t: t[0])
+
+    pct_round = {f for f in kept if f.endswith("_PCT")}
+    target_arch = _archetype(target["feats"])
+    rows: list[dict[str, Any]] = []
+    for dist, e in scored[:k]:
+        ze = zvec[e["sid"]]
+        order = sorted(kept, key=lambda f: abs(zt[f] - ze[f]))[:3]
+        drivers = []
+        for feat in order:
+            tv, cv = target["feats"].get(feat), e["feats"].get(feat)
+            nd = 3 if feat in pct_round else 1
+            try:
+                t_round = round(float(tv), nd) if tv is not None else None
+            except (TypeError, ValueError):
+                t_round = None
+            try:
+                c_round = round(float(cv), nd) if cv is not None else None
+            except (TypeError, ValueError):
+                c_round = None
+            drivers.append({"stat": LABELS[feat],
+                            "target": t_round, "comp": c_round})
+        arch = _archetype(e["feats"])
+        rows.append({"PLAYER": e["name"], "PLAYER_ID": e["pid"],
+                     "TEAM": e["team"], "season": season, "era": season,
+                     "similarity": round(100 / (1 + dist / 20), 1),
+                     "archetype": arch,
+                     "shared_archetype": arch == target_arch,
+                     "drivers": drivers})
+    return {"tool": "get_comps", "ok": True,
+            "player": {"name": target["name"], "id": pid,
+                       "season": season, "archetype": target_arch},
+            "rows": rows,
+            "meta": {"source": "warehouse", "season": season,
+                     "features": kept, "candidates": len(pool),
+                     "dropped_features": dropped,
+                     "similarity": "100/(1+d/20); d = standardized "
+                                   "Euclidean distance over kept features",
+                     "notes": notes}}
 
 
 ADVANCED_COLS = ["PLAYER_NAME", "TEAM_ABBREVIATION", "GP", "MIN",
@@ -1009,7 +1235,7 @@ def get_on_off(player_id: str | int, team_id: str | int, season: str = SEASON) -
         "silver_on_off", "_season = ? AND _entity = ?",
         [season, f"player:{player_id}"],
         lambda: pbpstats.on_off(player_id, team_id, season), season,
-        entity=f"player:{player_id}", live_first=True,
+        entity=f"player:{player_id}", ttl_s=TTL_PBPSTATS,
     )
     return {"tool": "get_on_off", "ok": True, "rows": rows, "meta": meta}
 
@@ -1131,7 +1357,7 @@ def get_wowy(
         "silver_wowy", "_season = ? AND _entity = ?",
         [season, entity_key],
         lambda: pbpstats.wowy(ids, resolved_team, season), season,
-        entity=entity_key, live_first=True,
+        entity=entity_key, ttl_s=TTL_PBPSTATS,
     )
     return {"tool": "get_wowy", "ok": True, "rows": rows, "meta": meta}
 
@@ -1147,7 +1373,7 @@ def get_four_factors(player_id: str | int, team_id: str | int, season: str = SEA
         "silver_four_factors", "_season = ? AND _entity = ?",
         [season, f"player:{player_id}"],
         lambda: pbpstats.four_factors(player_id, team_id, season), season,
-        entity=f"player:{player_id}", live_first=True,
+        entity=f"player:{player_id}", ttl_s=TTL_PBPSTATS,
     )
     return {"tool": "get_four_factors", "ok": True, "rows": rows, "meta": meta}
 
@@ -1222,6 +1448,282 @@ def get_raptor_history(player: str, season: str = "") -> dict[str, Any]:
             "meta": {"source": "fivethirtyeight:raptor", "seasons": len(rows)}}
 
 
+# --- Estimated impact (ROADMAP Phase 2 #8: estimate-from-component-metrics) --
+# Direct impact metrics are missing for the current season in this
+# warehouse: RAPTOR is frozen at 2021-22, silver_rapm holds no rows, and no
+# BPM table exists. get_impact_estimate fills the gap with a documented,
+# always-labeled estimate. It never presents output as a measured metric.
+
+IMPACT_PRIOR_FEATURES = ("USG_PCT", "TS_PCT", "AST_PCT", "REB_PCT", "TM_TOV_PCT")
+IMPACT_PRIOR_MIN_POSS = 3000  # box-prior trainers: players at/above this many possessions
+IMPACT_PRIOR_MIN_N = 30       # minimum trainers before the prior is trusted
+IMPACT_SHRINK_K = 1500        # prior strength, in possessions (estimate is
+                              # 50/50 measured/prior at this possession count)
+IMPACT_RAPTOR_ONOFF_W = 0.20  # empirical: implied on/off weight 0.19-0.22,
+                              # flat across minutes, over 4,684 player-seasons
+                              # (2013-14..2021-22) with both components present
+IMPACT_DISCLAIMER = ("This is a statistical estimate, not a measured impact "
+                     "metric. Never present it as RAPTOR, RAPM, or BPM.")
+
+
+def _solve_linear(a: list[list[float]], b: list[float]) -> list[float] | None:
+    """Gaussian elimination with partial pivoting. None when singular."""
+    n = len(b)
+    m = [row[:] + [b[i]] for i, row in enumerate(a)]
+    for col in range(n):
+        piv = max(range(col, n), key=lambda r: abs(m[r][col]))
+        if abs(m[piv][col]) < 1e-12:
+            return None
+        m[col], m[piv] = m[piv], m[col]
+        for r in range(col + 1, n):
+            f = m[r][col] / m[col][col]
+            for c in range(col, n + 1):
+                m[r][c] -= f * m[col][c]
+    x = [0.0] * n
+    for i in range(n - 1, -1, -1):
+        x[i] = (m[i][n] - sum(m[i][j] * x[j] for j in range(i + 1, n))) \
+            / m[i][i]
+        if abs(m[i][i]) < 1e-12:
+            return None
+    return x
+
+
+def _fit_box_prior(season: str) -> dict[str, Any] | None:
+    """Fit lift ~ box stats on high-minute players. lift is the player's
+    marginal on-court impact: on-court NET_RATING minus team NET_RATING,
+    per 100 possessions. Returns coefficients plus fit diagnostics, or None
+    when the warehouse cannot support the fit."""
+    try:
+        rows = _read_df(
+            "SELECT PLAYER_NAME, TEAM_ID, POSS, NET_RATING, "
+            + ", ".join(IMPACT_PRIOR_FEATURES)
+            + " FROM silver_advanced WHERE _season = ?",
+            [season],
+        )
+        team_net = {r["TEAM_ID"]: r["NET_RATING"] for r in _read_df(
+            "SELECT TEAM_ID, NET_RATING FROM silver_team_ratings"
+            " WHERE _season = ?",
+            [season],
+        ) if r["NET_RATING"] is not None}
+    except Exception:
+        return None
+    trainers = [
+        r for r in rows
+        if (r.get("POSS") or 0) >= IMPACT_PRIOR_MIN_POSS
+        and r.get("NET_RATING") is not None
+        and r.get("TEAM_ID") in team_net
+        and all(r.get(f) is not None for f in IMPACT_PRIOR_FEATURES)
+    ]
+    if len(trainers) < IMPACT_PRIOR_MIN_N:
+        return None
+    cols = ["_bias"] + list(IMPACT_PRIOR_FEATURES)
+    xs = [[1.0] + [float(r[f]) for f in IMPACT_PRIOR_FEATURES]
+          for r in trainers]
+    ys = [float(r["NET_RATING"]) - float(team_net[r["TEAM_ID"]])
+          for r in trainers]
+    p = len(cols)
+    ata = [[sum(x[i] * x[j] for x in xs) for j in range(p)] for i in range(p)]
+    aty = [sum(x[i] * y for x, y in zip(xs, ys)) for i in range(p)]
+    beta = _solve_linear(ata, aty)
+    if beta is None:
+        return None
+    pred = [sum(b * x for b, x in zip(beta, x)) for x in xs]
+    mean = sum(ys) / len(ys)
+    ss_res = sum((y - q) ** 2 for y, q in zip(ys, pred))
+    ss_tot = sum((y - mean) ** 2 for y in ys)
+    r2 = 1 - ss_res / ss_tot if ss_tot > 0 else 0.0
+    return {"intercept": beta[0], "coefs": dict(zip(IMPACT_PRIOR_FEATURES, beta[1:])),
+            "n": len(trainers), "r2": r2}
+
+
+def _raptor_row(player_id: int, name: str, season: str) -> dict[str, Any] | None:
+    rows = _read_df(
+        "SELECT PLAYER_NAME, POSS, MP, RAPTOR_BOX_TOTAL, RAPTOR_ONOFF_TOTAL,"
+        " RAPTOR_TOTAL FROM silver_raptor_player WHERE _season = ?"
+        " AND (CAST(PLAYER_ID AS VARCHAR) = CAST(? AS VARCHAR)"
+        " OR LOWER(PLAYER_NAME) = LOWER(?)) LIMIT 1",
+        [season, str(player_id), name],
+    )
+    return rows[0] if rows else None
+
+
+def _stale_raptor(player_id: int, name: str, season: str) -> dict[str, Any] | None:
+    """Most recent measured RAPTOR before the requested season, if any."""
+    rows = _read_df(
+        "SELECT _season, RAPTOR_TOTAL FROM silver_raptor_player"
+        " WHERE _season < ? AND RAPTOR_TOTAL IS NOT NULL"
+        " AND (CAST(PLAYER_ID AS VARCHAR) = CAST(? AS VARCHAR)"
+        " OR LOWER(PLAYER_NAME) = LOWER(?))"
+        " ORDER BY _season DESC LIMIT 1",
+        [season, str(player_id), name],
+    )
+    return rows[0] if rows else None
+
+
+@tool
+def get_impact_estimate(player: str | int, season: str = SEASON) -> dict[str, Any]:
+    """Estimated per-100-possession impact for players lacking direct metrics.
+
+    Rookies, call-ups, and low-minute players have no RAPTOR/RAPM/BPM in the
+    warehouse, so this synthesizes an estimate from available components.
+    ALWAYS an estimate (is_estimate=True): never present it as measured.
+    Methods: box_prior_shrinkage (marginal on-court lift shrunk toward an
+    OLS box-score prior, current season) or raptor_components (empirical
+    80/20 box/on-off blend, historical seasons with RAPTOR components).
+    """
+    base: dict[str, Any] = {"tool": "get_impact_estimate", "is_estimate": True,
+                            "disclaimer": IMPACT_DISCLAIMER}
+    try:
+        player_id = coerce_player_id(player)
+    except ValueError as exc:
+        return {**base, "ok": False, "error": str(exc)}
+    name = str(player).strip()
+    season = (season or SEASON).strip()
+
+    raptor = _raptor_row(player_id, name, season)
+    if raptor and raptor.get("RAPTOR_TOTAL") is not None:
+        box = raptor.get("RAPTOR_BOX_TOTAL")
+        onoff = raptor.get("RAPTOR_ONOFF_TOTAL")
+        if box is None or onoff is None:
+            return {**base, "ok": False,
+                    "error": f"RAPTOR components missing for '{name}' in"
+                             f" {season}; measured RAPTOR exists, use"
+                             " get_raptor_history instead"}
+        w = IMPACT_RAPTOR_ONOFF_W
+        estimate = (1 - w) * float(box) + w * float(onoff)
+        return {**base, "ok": True, "season": season,
+                "player": {"player_id": player_id,
+                           "name": raptor.get("PLAYER_NAME") or name},
+                "estimate_per_100": round(estimate, 2),
+                "method": "raptor_components",
+                "methodology": (
+                    "Empirical RAPTOR reconstruction: 0.80 * box component +"
+                    " 0.20 * on-off component. Weight fitted from 4,684"
+                    " player-seasons (2013-14..2021-22); implied on/off"
+                    " weight 0.19-0.22, flat across minutes. Blend"
+                    " reconstructs RAPTOR_TOTAL with MAE 0.66, p95 residual"
+                    " 2.16 per 100 possessions."),
+                "components": {
+                    "raptor_box_per_100": round(float(box), 2),
+                    "raptor_onoff_per_100": round(float(onoff), 2),
+                    "onoff_weight": w,
+                    "possessions": raptor.get("POSS"),
+                    "minutes": raptor.get("MP")},
+                "measured": {
+                    "metric": "RAPTOR", "total_per_100": round(float(
+                        raptor["RAPTOR_TOTAL"]), 2), "season": season,
+                    "note": "Measured metric shown for comparison; the"
+                            " estimate above remains an estimate."},
+                "confidence": {
+                    "level": "high",
+                    "notes": ["Measured RAPTOR exists for this"
+                              " player-season; estimate is a component"
+                              " reconstruction for comparison."]}}
+
+    adv = _read_df(
+        "SELECT PLAYER_NAME, TEAM_ABBREVIATION, TEAM_ID, GP, MIN, POSS,"
+        " NET_RATING, " + ", ".join(IMPACT_PRIOR_FEATURES)
+        + " FROM silver_advanced WHERE _season = ?"
+          " AND CAST(PLAYER_ID AS VARCHAR) = CAST(? AS VARCHAR) LIMIT 1",
+        [season, str(player_id)],
+    )
+    if not adv:
+        return {**base, "ok": False,
+                "error": f"no component data for '{name}' in {season}:" \
+                         " no RAPTOR row and no advanced box row"}
+    row = adv[0]
+    notes: list[str] = []
+    notes.append("No RAPTOR, RAPM, or BPM coverage for"
+                 f" {season} in the warehouse; RAPTOR is frozen at 2021-22.")
+    try:
+        team_net = {r["TEAM_ID"]: r["NET_RATING"] for r in _read_df(
+            "SELECT TEAM_ID, NET_RATING FROM silver_team_ratings"
+            " WHERE _season = ?", [season]) if r["NET_RATING"] is not None}
+    except Exception:
+        team_net = {}
+    poss = float(row.get("POSS") or 0)
+    on_court = row.get("NET_RATING")
+    tnet = team_net.get(row.get("TEAM_ID"))
+    if on_court is None:
+        return {**base, "ok": False,
+                "error": f"advanced row for '{name}' lacks NET_RATING"}
+    if tnet is None:
+        notes.append("Team net rating unavailable; lift computed vs a"
+                     " league-average team (0.0).")
+        tnet = 0.0
+    lift = float(on_court) - float(tnet)
+
+    prior = _fit_box_prior(season)
+    if prior is None:
+        notes.append("Box prior could not be fitted (too few high-minute"
+                     " players); prior falls back to 0.0.")
+        prior_value, prior_detail = 0.0, {"fitted": False}
+    elif any(row.get(f) is None for f in IMPACT_PRIOR_FEATURES):
+        notes.append("Player box features incomplete; prior falls back to"
+                     " the high-minute mean lift of"
+                     f" {prior['intercept']:+.2f}.")
+        prior_value = float(prior["intercept"])
+        prior_detail = {"fitted": True, "n": prior["n"], "r2": round(prior["r2"], 3),
+                        "note": "feature fallback"}
+    else:
+        prior_value = float(prior["intercept"]) + sum(
+            float(prior["coefs"][f]) * float(row[f]) for f in IMPACT_PRIOR_FEATURES)
+        prior_detail = {"fitted": True, "n": prior["n"],
+                        "r2": round(prior["r2"], 3)}
+
+    k = IMPACT_SHRINK_K
+    w_meas = poss / (poss + k) if poss > 0 else 0.0
+    estimate = w_meas * lift + (1 - w_meas) * prior_value
+
+    if poss >= 3000:
+        level = "high"
+    elif poss >= 1000:
+        level = "medium"
+    else:
+        level = "low"
+    if w_meas < 0.5:
+        notes.append(f"Prior-dominated estimate: only {poss:.0f} possessions"
+                     f" vs prior strength {k}; measured on-court lift gets"
+                     f" {w_meas:.0%} weight.")
+    notes.append("On-court lift is unadjusted for teammates, opponents, and"
+                 " lineup context; it is not RAPM.")
+
+    stale = _stale_raptor(player_id, name, season)
+    stale_out = None
+    if stale:
+        stale_out = {"metric": "RAPTOR",
+                     "total_per_100": round(float(stale["RAPTOR_TOTAL"]), 2),
+                     "season": stale["_season"],
+                     "note": "Stale measured metric shown for context only;"
+                             " not used in the estimate."}
+
+    return {**base, "ok": True, "season": season,
+            "player": {"player_id": player_id,
+                       "name": row.get("PLAYER_NAME") or name,
+                       "team": row.get("TEAM_ABBREVIATION")},
+            "estimate_per_100": round(estimate, 2),
+            "method": "box_prior_shrinkage",
+            "methodology": (
+                "Marginal on-court lift (player on-court NET_RATING minus"
+                " team NET_RATING, per 100 possessions) shrunk toward an OLS"
+                " box-score prior: lift ~ USG_PCT + TS_PCT + AST_PCT +"
+                " REB_PCT + TM_TOV_PCT, fitted on players with 3000+"
+                f" possessions in {season}. Shrinkage: estimate ="
+                f" (poss * lift + {k} * prior) / (poss + {k})."),
+            "components": {
+                "measured_lift_per_100": round(lift, 2),
+                "measured_possessions": round(poss),
+                "box_prior_per_100": round(prior_value, 2),
+                "box_prior": prior_detail,
+                "measured_weight": round(w_meas, 3),
+                "prior_weight": round(1 - w_meas, 3),
+                "shrinkage_K_possessions": k,
+                "games": row.get("GP"), "minutes": row.get("MIN")},
+            "measured": None,
+            "stale_measured": stale_out,
+            "confidence": {"level": level, "notes": notes}}
+
+
 DPOY_MINUTES = 500
 UNSUNG_MIN_MINUTES = 200
 UNSUNG_MAX_MINUTES = 1000
@@ -1287,35 +1789,32 @@ def get_hustle_boards(season: str = SEASON, top: int = 10) -> dict[str, Any]:
 
 
 @tool
-def get_debate_card(a: str, b: str, season: str = SEASON) -> dict[str, Any]:
+def get_debate_card(a: str, b: str, season: str = SEASON,
+                    topic: str = "") -> dict[str, Any]:
     """Generate a shareable HTML debate card comparing two players.
 
     Returns a self-contained HTML file with side-by-side stats,
     styled for sharing. Saves to workspace and returns the path.
+    Optional topic labels the debate (e.g. "MVP race").
     """
     import html as _html
     from pathlib import Path as _Path
 
-    # Get comparison data
+    # Get comparison data — safe whether or not we're inside a running loop.
     import asyncio as _asyncio
+    import concurrent.futures as _cf
 
-    async def _fetch() -> dict:
-        res = await get_compare.ainvoke(
-            {"a": a, "b": b, "season": season})
-        return res if isinstance(res, dict) else {"ok": False}
-    try:
+    def _run(coro):
         try:
             _asyncio.get_running_loop()
         except RuntimeError:
-            comp = _asyncio.run(_fetch())
-        else:
-            import concurrent.futures as _cf
+            return _asyncio.run(coro)
+        # Already inside a loop: run the coroutine in a fresh loop on a
+        # worker thread to avoid "event loop is already running".
+        with _cf.ThreadPoolExecutor(max_workers=1) as ex:
+            return ex.submit(_asyncio.run, coro).result()
 
-            with _cf.ThreadPoolExecutor(max_workers=1) as _ex:
-                comp = _ex.submit(lambda: _asyncio.run(_fetch())).result(
-                    timeout=120)
-    except Exception as exc:
-        comp = {"ok": False, "error": str(exc)[:160]}
+    comp = _run(get_compare.ainvoke({"a": a, "b": b, "season": season}))
     if not comp.get("ok"):
         return {"tool": "get_debate_card", "ok": False,
                 "error": comp.get("error", "comparison failed")}
@@ -1360,6 +1859,11 @@ def get_debate_card(a: str, b: str, season: str = SEASON) -> dict[str, Any]:
 
     name_a = _html.escape(_stat(players[0], "name", "PLAYER", "player"))
     name_b = _html.escape(_stat(players[1], "name", "PLAYER", "player"))
+    topic_html = ""
+    if str(topic or "").strip():
+        topic_html = (
+            "<div class=\"topic\">" + _html.escape(str(topic).strip())
+            + "</div>")
 
     html_doc = f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8">
@@ -1371,6 +1875,9 @@ body {{ font-family: system-ui, -apple-system, sans-serif; background: #f5f5f4;
 .card {{ background: #fff; border-radius: 16px; padding: 32px; max-width: 520px;
   width: 100%; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }}
 .header {{ text-align: center; margin-bottom: 24px; }}
+.topic {{ display: inline-block; font-size: 12px; font-weight: 600;
+  color: #0891b2; border: 1px solid #0891b2; border-radius: 999px;
+  padding: 3px 12px; margin-bottom: 10px; letter-spacing: 1px; }}
 .vs {{ font-size: 13px; color: #78716c; letter-spacing: 2px; margin: 8px 0; }}
 h1 {{ font-size: 22px; margin: 0; color: #1c1917; }}
 .season {{ font-size: 13px; color: #a8a29e; margin-top: 4px; }}
@@ -1387,6 +1894,7 @@ h1 {{ font-size: 22px; margin: 0; color: #1c1917; }}
 </style></head><body>
 <div class="card">
 <div class="header">
+{topic_html}
 <h1>{name_a} <span class="accent">vs</span> {name_b}</h1>
 <div class="season">{_html.escape(season)} season · via Dime</div>
 </div>

@@ -8,6 +8,14 @@ export type NodeName =
 export interface ToolCall {
   name: string;
   args: Record<string, unknown>;
+  label?: string;
+  summary?: string;
+  status?: "running" | "ok" | "fail";
+  ms?: number;
+  rows?: number;
+  error?: string;
+  agent?: string;
+  sql?: string;
 }
 
 export interface ToolResult {
@@ -21,6 +29,8 @@ export interface ToolResult {
 export interface NodeState {
   status: "running" | "complete" | "error";
   thoughts: string[];
+  liveThought?: string;
+  liveThoughtAgent?: string;
   toolCalls: ToolCall[];
   toolResults: ToolResult[];
   tables: ToolResult[];

@@ -205,3 +205,12 @@ body {
   border-radius: 4px;
   margin: 6px 0;
 }
+
+@keyframes dime-pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.pulse-dot {
+  animation: dime-pulse-dot 1200ms ease-in-out infinite;
+}
