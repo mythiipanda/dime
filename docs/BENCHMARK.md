@@ -105,6 +105,48 @@ the season moves. That drift is signal, not noise.
     grade. Gold: `get_lineup_stats` (the floor-aware tool; the older
     `get_lineups` maps to `chain` and does not satisfy the sample-floor
     requirement).
+14. `prediction` — pre-game Monte Carlo estimate for two random rated
+    teams. Ground truth replicates `get_game_prediction`'s pipeline
+    exactly: team ratings from `silver_team_ratings`, league-average
+    off/def ratings over per-team season means, per-100 scoring
+    adjusted for opponent strength and scaled by average pace,
+    home-court 3.0 split into both teams' projected scoring when the
+    warehouse cache holds a scheduled meeting in the next 14 days
+    (neutral site with zero home-court adjustment otherwise), injury
+    penalties from `silver_injuries`, then a seeded Monte Carlo
+    (`np.random.default_rng(7)`, 10,000 sims, sd 12.5, the tool's tiny
+    away tie-break noise). Win probability is the simulated home-win
+    share; projected scores and total are the simulated means. The
+    question says "default settings" so the agent calls with the same
+    defaults the ground truth replicates. Ground truth is verified to
+    match the tool exactly. Gold: `get_game_prediction`.
+15. `freshness` — warehouse freshness panel. Ground truth replicates
+    `get_warehouse_freshness` exactly: per-table row count plus
+    `MAX(_fetched_at)` over every `silver_*` table, expected cadence
+    and stale flag from the same freshness-rules table, daily-in-season
+    downgraded to weekly off-season. Facts are the panel meta (table,
+    stale, unknown counts) plus row counts for `silver_team_ratings`
+    and `silver_leaders_pts`. The generator runs at benchmark time and
+    the agent calls minutes later, so clock-driven stale flips are
+    possible but only at exact threshold boundaries. Gold:
+    `get_warehouse_freshness`.
+16. `headtohead` — one player with 15+ gamelogs against a random
+    opponent he faced 5+ times. Ground truth replicates
+    `get_head_to_head`'s domain model exactly: `summarize` (per-game
+    means plus W/L over a game-log set) for the vs-opponent line and
+    the season baseline, `deltas` as the rounded-line difference.
+    Only 5+ game samples are sampled, so the small-sample flag stays
+    off and the averages are gradeable. Gold: `get_head_to_head`.
+17. `zones` — which team takes the largest share of its attempts at the
+    rim in 2025-26. Ground truth mirrors `get_team_shot_zones`
+    exactly: the five-zone taxonomy classified from `x_legacy` /
+    `y_legacy` in tenths of a foot (same rule order as the tool),
+    pooled league baselines, deltas in percentage points, shares
+    rounded to 4dp and pp deltas to 2dp. The question grades the pp
+    delta and total shots, not the 0.xxxx share fraction (agents quote
+    the delta verbatim; fractions risk percent-reformatting misses).
+    Tied best rim-share deltas are skipped. Gold:
+    `get_team_shot_zones`.
 
 ## Scoring formulas
 

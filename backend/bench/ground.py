@@ -1087,6 +1087,560 @@ def gen_lineups(rng, ctx) -> tuple[Task, GroundTruth]:
     raise SkipTask("no team with a unique best lineup net rating")
 
 
+# ---------------------------------------------------------------------------
+# prediction family: mirrors get_game_prediction's pipeline exactly. Team
+# ratings and league averages from silver_team_ratings, home-court 3.0
+# split into both teams' projected scoring when the warehouse cache holds
+# a scheduled meeting in the next 14 days (neutral site otherwise),
+# injury penalties from silver_injuries, then a seeded Monte Carlo with
+# np.random.default_rng(seed): normal draws, sd 12.5, plus the tool's
+# tiny away tie-break noise. Win probability is the simulated home-win
+# share; projected scores/totals are the simulated means. The question
+# says "default settings" so the agent calls with the same defaults
+# (n_sims 10000, seed 7) the ground truth replicates.
+# ---------------------------------------------------------------------------
+
+_PRED_HOME_COURT_PTS = 3.0
+_PRED_SCORING_SD = 12.5
+_PRED_N_SIMS = 10_000
+_PRED_SEED = 7
+_PRED_STATUS_PENALTY = {
+    "OUT": 1.0, "IR": 1.0, "SEASON": 1.0,
+    "DOUBTFUL": 0.6, "QUESTIONABLE": 0.3, "DAY-TO-DAY": 0.3,
+}
+_PRED_MAX_INJURY_PENALTY = 3.0
+
+
+def _pred_team_table() -> dict[str, dict]:
+    try:
+        from nba_api.stats.static import teams as _teams
+        return {str(t.get("abbreviation", "")).upper(): t
+                for t in _teams.get_teams()}
+    except Exception:
+        return {}
+
+
+def _pred_rating_row(tid: int) -> dict | None:
+    rows = _q("SELECT OFF_RATING, DEF_RATING, NET_RATING, PACE, GP, W, L "
+              "FROM silver_team_ratings WHERE TEAM_ID = ? AND _season = ?",
+              [tid, SEASON])
+    if not rows:
+        return None
+    off, dfn, net, pace = (float(v) for v in rows[0][:4]) \
+        if all(v is not None for v in rows[0][:4]) else (None,) * 4
+    if off is None:
+        return None
+    return {"off": off, "def": dfn, "net": net, "pace": pace}
+
+
+def _pred_league_means() -> tuple[float, float]:
+    rows = _q("SELECT AVG(OFF_RATING), AVG(DEF_RATING) FROM "
+              "silver_team_ratings WHERE _season = ? GROUP BY TEAM_ID",
+              [SEASON])
+    vals = [(float(r[0]), float(r[1])) for r in rows
+            if r[0] is not None and r[1] is not None]
+    if not vals:
+        raise SkipTask("no team ratings for league means")
+    return (sum(v[0] for v in vals) / len(vals),
+            sum(v[1] for v in vals) / len(vals))
+
+
+def _pred_meeting(ida: int, idb: int) -> tuple:
+    # Verbatim mirror of the tool's _find_meeting: next-14-days scoreboard
+    # scan, first row matching the pair sorted by the entity date string.
+    from datetime import timedelta as _td
+    from datetime import datetime as _dt
+    from zoneinfo import ZoneInfo
+    now = _dt.now(ZoneInfo("America/New_York"))
+    days = [(now + _td(days=i)).strftime("%m/%d/%Y") for i in range(14)]
+    ents = [f"date:{d}" for d in days]
+    rows = _qd(
+        "SELECT _entity, HOME_TEAM_ID, VISITOR_TEAM_ID FROM "
+        "silver_scoreboard WHERE _season = ? AND _entity IN ("
+        + ",".join("?" for _ in ents) + ")",
+        [SEASON, *ents])
+    cands = sorted(
+        (r for r in rows
+         if r["HOME_TEAM_ID"] is not None
+         and r["VISITOR_TEAM_ID"] is not None
+         and {int(r["HOME_TEAM_ID"]), int(r["VISITOR_TEAM_ID"])}
+         == {ida, idb}),
+        key=lambda r: (str(r["_entity"] or "")[5:]
+                       if str(r["_entity"] or "").startswith("date:")
+                       else ""))
+    if not cands:
+        return None, None, ""
+    row = cands[0]
+    return (int(row["HOME_TEAM_ID"]), int(row["VISITOR_TEAM_ID"]),
+            str(row["_entity"] or "")[5:])
+
+
+def _pred_injury_penalty(full_name: str) -> float:
+    try:
+        import ast as _ast
+        rows = _q("SELECT injuries FROM silver_injuries "
+                  "WHERE display_name = ? AND _season = ?",
+                  [full_name, SEASON])
+    except Exception:
+        return 0.0
+    if not rows or rows[0][0] is None:
+        return 0.0
+    try:
+        items = _ast.literal_eval(str(rows[0][0]))
+    except (ValueError, SyntaxError):
+        return 0.0
+    penalty = 0.0
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        status = str(item.get("status") or "").strip().upper()
+        name = str((item.get("athlete") or {}).get("displayName") or "")
+        if _PRED_STATUS_PENALTY.get(status, 0.0) > 0 and name:
+            penalty += _PRED_STATUS_PENALTY[status]
+    return round(min(penalty, _PRED_MAX_INJURY_PENALTY), 2)
+
+
+def _pred_facts(abbr_a: str, abbr_b: str) -> dict:
+    # Returns the estimate dict the tool reports, or raises SkipTask.
+    teams = _pred_team_table()
+    ta, tb = teams.get(abbr_a), teams.get(abbr_b)
+    if ta is None or tb is None:
+        raise SkipTask("team abbr not in static table")
+    ida, idb = int(ta["id"]), int(tb["id"])
+    ra, rb = _pred_rating_row(ida), _pred_rating_row(idb)
+    if ra is None or rb is None:
+        raise SkipTask("ratings missing for prediction pair")
+    lg_off, lg_def = _pred_league_means()
+    home_id, away_id, resolved = _pred_meeting(ida, idb)
+    neutral = home_id is None
+    h_id, aw_id = (home_id or ida), (away_id or idb)
+    ha = next((t for t in teams.values() if int(t["id"]) == h_id), None)
+    wa = next((t for t in teams.values() if int(t["id"]) == aw_id), None)
+    if ha is None or wa is None:
+        raise SkipTask("home/away abbr lookup failed")
+    home_abbr, away_abbr = (str(ha["abbreviation"]).upper(),
+                            str(wa["abbreviation"]).upper())
+    hp = _pred_injury_penalty(str(ha.get("full_name", "")))
+    ap = _pred_injury_penalty(str(wa.get("full_name", "")))
+    hr = _pred_rating_row(h_id)
+    ar = _pred_rating_row(aw_id)
+    if hr is None or ar is None:
+        raise SkipTask("ratings missing for home/away team")
+    pace = (hr["pace"] + ar["pace"]) / 2
+    home_per100 = lg_off + (hr["off"] - lg_off) + (ar["def"] - lg_def)
+    away_per100 = lg_off + (ar["off"] - lg_off) + (hr["def"] - lg_def)
+    home_ppg = home_per100 * pace / 100
+    away_ppg = away_per100 * pace / 100
+    hca = 0.0 if neutral else _PRED_HOME_COURT_PTS
+    home_ppg = home_ppg + hca / 2 - hp / 2 + ap / 2
+    away_ppg = away_ppg - hca / 2 + hp / 2 - ap / 2
+    import numpy as _np
+    rng = _np.random.default_rng(_PRED_SEED)
+    home = rng.normal(home_ppg, _PRED_SCORING_SD, _PRED_N_SIMS)
+    away = (rng.normal(away_ppg, _PRED_SCORING_SD, _PRED_N_SIMS)
+            + rng.normal(0, 0.5, _PRED_N_SIMS))
+    p_home = float(_np.mean(home > away))
+    return {
+        "home_abbr": home_abbr, "away_abbr": away_abbr,
+        "neutral": neutral, "home_court_pts": hca,
+        "win_prob_home": round(p_home, 3),
+        "win_prob_away": round(1 - p_home, 3),
+        "proj_score_home": round(float(_np.mean(home)), 1),
+        "proj_score_away": round(float(_np.mean(away)), 1),
+        "projected_total": round(float(_np.mean(home + away)), 1),
+    }
+
+
+def gen_prediction(rng, ctx) -> tuple[Task, GroundTruth]:
+    teams = _pred_team_table()
+    rated = {r[0] for r in _q(
+        "SELECT TEAM_ID FROM silver_team_ratings WHERE _season = ?",
+        [SEASON])}
+    cands = [a for a, t in teams.items() if int(t["id"]) in rated]
+    if len(cands) < 2:
+        raise SkipTask("too few rated teams for prediction")
+    for _ in range(30):
+        a, b = rng.sample(cands, 2)
+        try:
+            facts = _pred_facts(a, b)
+        except SkipTask:
+            continue
+        ta = next(t for t in teams.values()
+                  if str(t["abbreviation"]).upper() == a)
+        tb = next(t for t in teams.values()
+                  if str(t["abbreviation"]).upper() == b)
+        tid = ctx["task_id"]
+        task = Task(
+            task_id=tid, family="prediction",
+            question=(f"Give me the pre-game Monte Carlo estimate for the "
+                      f"{ta['full_name']} vs the {tb['full_name']} "
+                      f"({SEASON} season): who is favored, each team's win "
+                      f"probability, and the projected score and total. "
+                      f"Use default simulation settings."),
+            entities=[ta["full_name"], tb["full_name"]],
+            gold_tool_families=["prediction"],
+            timeout_s=ctx["timeout_s"], seed=ctx["seed"],
+        )
+        truth = GroundTruth(
+            task_id=tid,
+            facts={"names": {"home": facts["home_abbr"],
+                             "away": facts["away_abbr"]},
+                   "win_prob_home": facts["win_prob_home"],
+                   "win_prob_away": facts["win_prob_away"],
+                   "proj_score_home": facts["proj_score_home"],
+                   "proj_score_away": facts["proj_score_away"],
+                   "projected_total": facts["projected_total"]},
+            computed_at=_now(),
+            source="warehouse via silver_team_ratings plus silver_injuries "
+                   "(same Monte Carlo pipeline as get_game_prediction)",
+        )
+        return task, truth
+    raise SkipTask("no usable prediction pair found")
+
+
+# ---------------------------------------------------------------------------
+# freshness family: mirrors get_warehouse_freshness exactly (per-table row
+# count plus MAX(_fetched_at), expected cadence and stale flag from the
+# FRESHNESS_RULES table, daily-in-season downgraded to weekly off-season).
+# Ground truth is the panel meta plus row counts for two sampled tables;
+# stale flags move with the clock, but the benchmark generates tasks at
+# run time and the agent calls minutes later, so the window is tiny.
+# ---------------------------------------------------------------------------
+
+_FRESH_DAY = 24 * 3600
+_FRESH_IN_SEASON = frozenset({10, 11, 12, 1, 2, 3, 4, 5, 6})
+# Mirrors FRESHNESS_RULES in app/tools/league.py.
+_FRESH_RULES: dict[str, tuple[str, float | None]] = {
+    "silver_scoreboard": ("daily in season", 36 * 3600),
+    "silver_standings": ("daily in season", 36 * 3600),
+    "silver_injuries": ("daily in season", 36 * 3600),
+    "silver_leaders_pts": ("daily in season", 36 * 3600),
+    "silver_leaders_ast": ("daily in season", 36 * 3600),
+    "silver_leaders_reb": ("daily in season", 36 * 3600),
+    "silver_leaders_stl": ("daily in season", 36 * 3600),
+    "silver_leaders_blk": ("daily in season", 36 * 3600),
+    "silver_player_gamelogs": ("daily in season", 36 * 3600),
+    "silver_team_games": ("daily in season", 36 * 3600),
+    "silver_boxscores": ("daily in season", 36 * 3600),
+    "silver_hustle_player": ("daily in season", 36 * 3600),
+    "silver_advanced": ("daily in season", 36 * 3600),
+    "silver_four_factors": ("daily in season", 36 * 3600),
+    "silver_clutch": ("daily in season", 36 * 3600),
+    "silver_team_ratings": ("daily in season", 36 * 3600),
+    "silver_on_off": ("daily in season", 36 * 3600),
+    "silver_lineups": ("daily in season", 36 * 3600),
+    "silver_rosters": ("daily in season", 36 * 3600),
+    "silver_salaries": ("weekly", 7 * _FRESH_DAY),
+    "silver_cap_players": ("weekly", 7 * _FRESH_DAY),
+    "silver_combine": ("weekly", 7 * _FRESH_DAY),
+    "silver_playoffs": ("seasonal", 400 * _FRESH_DAY),
+    "silver_playoff_gamelogs": ("seasonal", 400 * _FRESH_DAY),
+    "silver_hist_gamelogs": ("static", None),
+    "silver_hist_hustle": ("static", None),
+    "silver_hist_lineups": ("static", None),
+    "silver_hist_possessions": ("static", None),
+    "silver_hist_shots": ("static", None),
+    "silver_hist_standings": ("static", None),
+    "silver_raptor_player": ("static", None),
+    "silver_raptor_team": ("static", None),
+}
+
+
+def _fresh_parse_ts(raw):
+    from datetime import datetime as _dt
+    try:
+        ts = _dt.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return ts
+
+
+def _fresh_panel() -> tuple[list[dict], dict]:
+    now = datetime.now(timezone.utc)
+    tables = sorted(r[0] for r in _q("SHOW TABLES")
+                    if r[0].startswith("silver_"))
+    rows_out = []
+    for t in tables:
+        has_ts = any(r[1] == "_fetched_at"
+                     for r in _q(f"PRAGMA table_info({t})"))
+        mx = "MAX(_fetched_at)" if has_ts else "CAST(NULL AS VARCHAR)"
+        n, last = _q(f"SELECT COUNT(*), {mx} FROM {t}")[0]
+        label, max_age = _FRESH_RULES.get(t, ("unknown", None))
+        expected, threshold = label, max_age
+        if label == "daily in season" and now.month not in _FRESH_IN_SEASON:
+            expected, threshold = "weekly (offseason)", 7 * _FRESH_DAY
+        ts = _fresh_parse_ts(last) if last else None
+        age_hours = (round((now - ts).total_seconds() / 3600, 1)
+                     if ts is not None else None)
+        stale = (threshold is not None and age_hours * 3600 > threshold
+                 if (ts is not None and t in _FRESH_RULES) else None)
+        rows_out.append({"table": t, "rows": n, "stale": stale,
+                         "expected": expected})
+    meta = {"tables": len(rows_out),
+            "stale": sum(1 for r in rows_out if r["stale"]),
+            "unknown": sum(1 for r in rows_out if r["stale"] is None),
+            "in_season": now.month in _FRESH_IN_SEASON}
+    return rows_out, meta
+
+
+def gen_freshness(rng, ctx) -> tuple[Task, GroundTruth]:
+    rows_out, meta = _fresh_panel()
+    if not rows_out:
+        raise SkipTask("no silver tables in warehouse")
+    by_table = {r["table"]: r["rows"] for r in rows_out}
+    for pick in ("silver_team_ratings", "silver_leaders_pts"):
+        if pick not in by_table:
+            raise SkipTask(f"{pick} missing from warehouse")
+    tid = ctx["task_id"]
+    task = Task(
+        task_id=tid, family="freshness",
+        question=("Give me the warehouse freshness panel: how many silver "
+                  "tables are tracked, how many are stale, how many have "
+                  "unknown freshness, and the row counts for "
+                  "silver_team_ratings and silver_leaders_pts."),
+        entities=["silver_team_ratings", "silver_leaders_pts"],
+        gold_tool_families=["freshness"],
+        timeout_s=ctx["timeout_s"], seed=ctx["seed"],
+    )
+    truth = GroundTruth(
+        task_id=tid,
+        facts={"table_count": meta["tables"], "stale_count": meta["stale"],
+               "unknown_count": meta["unknown"],
+               "rows_team_ratings": by_table["silver_team_ratings"],
+               "rows_leaders_pts": by_table["silver_leaders_pts"]},
+        computed_at=_now(),
+        source="warehouse silver_* tables "
+               "(same freshness rules as get_warehouse_freshness)",
+    )
+    return task, truth
+
+
+# ---------------------------------------------------------------------------
+# headtohead family: mirrors get_head_to_head's domain model exactly
+# (summarize: per-game means plus W/L over a game-log set; deltas: the
+# vs-opponent line minus the season baseline). Only pairs with 5+ games
+# are sampled so the small-sample flag stays off and the averages are
+# gradeable.
+# ---------------------------------------------------------------------------
+
+_H2H_COLS = ("GAME_DATE", "Game_ID", "MATCHUP", "WL", "MIN", "FGM", "FGA",
+             "FG3M", "FG3A", "FTM", "FTA", "REB", "AST", "STL", "BLK",
+             "TOV", "PTS", "PLUS_MINUS")
+
+
+def _h2h_games(pid: int) -> list[dict]:
+    rows = _q("SELECT " + ", ".join(_H2H_COLS) + " FROM "
+              "silver_player_gamelogs WHERE Player_ID = ? AND _season = ?",
+              [pid, SEASON])
+    out = [dict(zip(_H2H_COLS, r)) for r in rows]
+    out.sort(key=lambda r: _parse_gamedate(r.get("GAME_DATE"))[1]
+             if _parse_gamedate(r.get("GAME_DATE"))[0] == 0
+             else datetime.min, reverse=True)
+    return out
+
+
+def _h2h_summarize(rows: list[dict]) -> dict:
+    def _f(v):
+        try:
+            return float(v or 0)
+        except (TypeError, ValueError):
+            return 0.0
+    gp = len(rows)
+    if gp == 0:
+        return {"gp": 0, "ppg": 0.0, "rpg": 0.0, "apg": 0.0,
+                "fg_pct": 0.0, "ts_pct": 0.0, "w": 0, "l": 0}
+    fgm = sum(_f(r.get("FGM")) for r in rows)
+    fga = sum(_f(r.get("FGA")) for r in rows)
+    pts = sum(_f(r.get("PTS")) for r in rows)
+    fta = sum(_f(r.get("FTA")) for r in rows)
+    ts_den = 2 * (fga + 0.44 * fta)
+    return {
+        "gp": gp,
+        "ppg": round(pts / gp, 1),
+        "rpg": round(sum(_f(r.get("REB")) for r in rows) / gp, 1),
+        "apg": round(sum(_f(r.get("AST")) for r in rows) / gp, 1),
+        "fg_pct": round(fgm / fga, 3) if fga else 0.0,
+        "ts_pct": round(pts / ts_den, 3) if ts_den > 0 else 0.0,
+        "w": sum(1 for r in rows if str(r.get("WL") or "").upper() == "W"),
+        "l": sum(1 for r in rows if str(r.get("WL") or "").upper() == "L"),
+    }
+
+
+def _h2h_facts(pid: int, abbr: str) -> dict:
+    games = _h2h_games(pid)
+    if not games:
+        raise SkipTask("no gamelogs for head-to-head player")
+    opp_games = [g for g in games if _opp_abbrev(g.get("MATCHUP")) == abbr]
+    base = _h2h_summarize(games)
+    opp = _h2h_summarize(opp_games)
+    return {
+        "vs_gp": opp["gp"], "vs_ppg": opp["ppg"],
+        "base_ppg": base["ppg"],
+        "delta_ppg": round(opp["ppg"] - base["ppg"], 1),
+        "w": opp["w"], "l": opp["l"],
+        "small_sample": opp["gp"] < 5,
+    }
+
+
+def gen_headtohead(rng, ctx) -> tuple[Task, GroundTruth]:
+    teams = _pred_team_table()
+    ents = _q("SELECT _entity FROM silver_player_gamelogs WHERE _season = ? "
+              "GROUP BY _entity HAVING COUNT(*) >= 15", [SEASON])
+    if not ents:
+        raise SkipTask("no player gamelogs in warehouse")
+    for _ in range(30):
+        entity = rng.choice(ents)[0]
+        try:
+            pid = int(str(entity).split(":")[1])
+        except (IndexError, ValueError):
+            continue
+        name_rows = _q("SELECT PLAYER FROM silver_leaders_pts WHERE "
+                       "_season = ? AND PLAYER_ID = ? LIMIT 1",
+                       [SEASON, pid])
+        if not name_rows:
+            continue
+        name = name_rows[0][0]
+        games = _h2h_games(pid)
+        counts: dict = {}
+        for g in games:
+            abbr = _opp_abbrev(g.get("MATCHUP"))
+            if abbr:
+                counts[abbr] = counts.get(abbr, 0) + 1
+        opps = [a for a, c in counts.items()
+                if c >= 5 and a in teams]
+        if not opps:
+            continue
+        abbr = rng.choice(opps)
+        facts = _h2h_facts(pid, abbr)
+        opp_full = teams[abbr]["full_name"]
+        tid = ctx["task_id"]
+        task = Task(
+            task_id=tid, family="headtohead",
+            question=(f"How has {name} performed against the {opp_full} "
+                      f"this season? Give his vs-opponent PPG, his season "
+                      f"baseline PPG, the delta, the number of games in the "
+                      f"sample, and his team's W-L record in those games."),
+            entities=[name, opp_full], gold_tool_families=["headtohead"],
+            timeout_s=ctx["timeout_s"], seed=ctx["seed"],
+        )
+        truth = GroundTruth(
+            task_id=tid,
+            facts={"names": {"player": name},
+                   "vs_ppg": facts["vs_ppg"], "base_ppg": facts["base_ppg"],
+                   "delta_ppg": facts["delta_ppg"],
+                   "vs_gp": facts["vs_gp"], "team_w": facts["w"],
+                   "team_l": facts["l"]},
+            computed_at=_now(),
+            source="nba_api via silver_player_gamelogs "
+                   "(same summarize/deltas model as get_head_to_head)",
+        )
+        return task, truth
+    raise SkipTask("no head-to-head pair with 5+ games found")
+
+
+# ---------------------------------------------------------------------------
+# zones family: mirrors get_team_shot_zones exactly. The five-zone
+# taxonomy (rim / short_mid / long_mid / corner_3 / atb_3) is classified
+# from x_legacy/y_legacy in tenths of a foot, same rule order as the
+# tool; baselines are pooled across all teams for the season; deltas are
+# in percentage points. Aggregation runs in SQL; shares round to 4dp and
+# pp deltas to 2dp exactly like the tool. Raw shares are fractions, so
+# the question grades the pp delta (agents quote it verbatim) plus the
+# total shots, not the 0.xxxx fraction.
+# ---------------------------------------------------------------------------
+
+_ZONE_YEAR = int(SEASON[:4]) + 1
+
+
+def _zone_rows() -> list[dict]:
+    sql = """
+    WITH z AS (
+        SELECT team_id, team_tricode,
+               CASE
+                 WHEN COALESCE(x_legacy * x_legacy + y_legacy * y_legacy,
+                              99999999) < 6400 THEN 'rim'
+                 WHEN shot_value = 3 AND ABS(x_legacy) >= 220 THEN 'corner_3'
+                 WHEN shot_value = 3 THEN 'atb_3'
+                 WHEN COALESCE(x_legacy * x_legacy + y_legacy * y_legacy,
+                              99999999) < 19600 THEN 'short_mid'
+                 ELSE 'long_mid'
+               END AS zone,
+               CASE WHEN LOWER(shot_result) = 'made' THEN 1 ELSE 0 END AS made,
+               CASE WHEN LOWER(shot_result) = 'made' AND shot_value = 3
+                    THEN 1 ELSE 0 END AS three_made
+        FROM silver_hist_shots WHERE season = ?
+    )
+    SELECT team_id, team_tricode, zone,
+           COUNT(*) AS fga, SUM(made) AS fgm, SUM(three_made) AS three_made
+    FROM z GROUP BY team_id, team_tricode, zone
+    """
+    return _qd(sql, [_ZONE_YEAR])
+
+
+def _zone_leader_rows() -> list[dict]:
+    agg: dict = {}
+    for r in _zone_rows():
+        tid = int(r["team_id"])
+        entry = agg.setdefault(tid, {"abbr": r["team_tricode"],
+                                     "zones": {}})
+        entry["zones"][r["zone"]] = {"fga": int(r["fga"]),
+                                     "fgm": int(r["fgm"]),
+                                     "three_made": int(r["three_made"])}
+    keys = ["rim", "short_mid", "long_mid", "corner_3", "atb_3"]
+    total_fga = sum(z["fga"] for t in agg.values()
+                    for z in t["zones"].values())
+    if not total_fga:
+        raise SkipTask("no shot rows for zones season")
+    base_share = {}
+    for key in keys:
+        fga = sum(t["zones"].get(key, {}).get("fga", 0)
+                  for t in agg.values())
+        base_share[key] = round(fga / total_fga, 4)
+    rows = []
+    for tid, t in agg.items():
+        team_fga = sum(z["fga"] for z in t["zones"].values())
+        row = {"abbr": t["abbr"], "shots": team_fga}
+        for key in keys:
+            z = t["zones"].get(key, {"fga": 0, "fgm": 0, "three_made": 0})
+            share = z["fga"] / team_fga if team_fga else 0.0
+            row[f"{key}_share_delta_pp"] = round(
+                (share - base_share[key]) * 100, 2)
+        rows.append(row)
+    return rows
+
+
+def gen_zones(rng, ctx) -> tuple[Task, GroundTruth]:
+    rows = _zone_leader_rows()
+    if not rows:
+        raise SkipTask("no zone rows for season")
+    top = max(rows, key=lambda r: r["rim_share_delta_pp"])
+    if sum(1 for r in rows
+           if r["rim_share_delta_pp"] == top["rim_share_delta_pp"]) > 1:
+        raise SkipTask("tied best rim-share delta is ungradeable")
+    tid = ctx["task_id"]
+    task = Task(
+        task_id=tid, family="zones",
+        question=(f"Across the {SEASON} season, which team takes the "
+                  f"largest share of its shot attempts at the rim? Name "
+                  f"the team, its rim share delta vs the league baseline "
+                  f"in percentage points, and its total shots."),
+        entities=[top["abbr"]], gold_tool_families=["zones"],
+        timeout_s=ctx["timeout_s"], seed=ctx["seed"],
+    )
+    truth = GroundTruth(
+        task_id=tid,
+        facts={"names": {"zone_leader": top["abbr"]},
+               "rim_share_delta_pp": top["rim_share_delta_pp"],
+               "shots": top["shots"]},
+        computed_at=_now(),
+        source="sportsdataverse via silver_hist_shots "
+               "(same zone taxonomy plus pp deltas as get_team_shot_zones)",
+    )
+    return task, truth
+
+
 GENERATORS = {
     "lookup": gen_lookup,
     "compare": gen_compare,
@@ -1101,4 +1655,8 @@ GENERATORS = {
     "awards": gen_awards,
     "streaks": gen_streaks,
     "lineups": gen_lineups,
+    "prediction": gen_prediction,
+    "freshness": gen_freshness,
+    "headtohead": gen_headtohead,
+    "zones": gen_zones,
 }
