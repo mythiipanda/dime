@@ -6,6 +6,7 @@ Idempotent: skips already-seeded entities; save_frame replaces per entity/season
 
 Usage: python3 scripts/seed_on_off_league.py (run from backend/)
 """
+import argparse
 import sys
 import time
 from pathlib import Path
@@ -24,6 +25,11 @@ ABORT_AFTER_TOTAL_FAILS = 60
 
 
 def main() -> None:
+    args = argparse.ArgumentParser()
+    args.add_argument("--limit", type=int, default=0,
+                      help="max players to seed this run (0 = all)")
+    ns = args.parse_args()
+
     con = store.connect()
     try:
         seeded = {r[0] for r in con.execute(
@@ -42,6 +48,9 @@ def main() -> None:
 
     done = fails = consec = 0
     for pid, name, tid in todo:
+        if ns.limit and done + fails >= ns.limit:
+            print(f"  batch limit {ns.limit} reached", flush=True)
+            break
         ent = f"player:{pid}"
         try:
             res = pbpstats.on_off(int(pid), int(tid), SEASON)
