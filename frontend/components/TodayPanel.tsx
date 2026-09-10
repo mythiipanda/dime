@@ -31,7 +31,7 @@ function GameChip({ g }: { g: GameRow }) {
 function GameRowList({ games, emptyTitle, emptyDescription }: { games: GameRow[]; emptyTitle: string; emptyDescription: string }) {
   if (!games.length) {
     return (
-      <EmptyState icon="🏀" title={emptyTitle} description={emptyDescription} />
+      <EmptyState title={emptyTitle} description={emptyDescription} />
     );
   }
   return (
@@ -159,7 +159,6 @@ export default function TodayPanel() {
       <div className="card">
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Today</div>
         <EmptyState
-          icon="📊"
           title="Today is unavailable"
           description={err || "We couldn't load today's slate. Try again in a bit."}
         />
@@ -176,7 +175,6 @@ export default function TodayPanel() {
 
       {noGames ? (
         <EmptyState
-          icon="🏀"
           title="No games today"
           description="It's the offseason. Check back in October, or explore season leaders below."
         />
@@ -220,7 +218,6 @@ export default function TodayPanel() {
             ))
           ) : (
             <EmptyState
-              icon="📈"
               title="Movers unavailable"
               description="Leaderboard movement hasn't loaded yet. Check back soon."
             />
@@ -234,7 +231,6 @@ export default function TodayPanel() {
             rows.streaks.map((s, i) => <StreakRow key={s.TEAM || i} s={s} />)
           ) : (
             <EmptyState
-              icon="🔥"
               title="No active 3+ game streaks"
               description="No team is on a run right now. Check back after the next slate."
             />

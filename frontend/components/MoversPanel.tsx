@@ -97,7 +97,7 @@ function Column({
         {title}
       </div>
       {!count ? (
-        <EmptyState icon="📈" title={empty} description="Check back after the next slate of games." />
+        <EmptyState title={empty} description="Check back after the next slate of games." />
       ) : (
         children
       )}
@@ -167,7 +167,6 @@ export default function MoversPanel() {
         </div>
       ) : err || !rows ? (
         <EmptyState
-          icon="📈"
           title="No movers yet"
           description={err || "Rankings need another slate of games before movers appear."}
         />

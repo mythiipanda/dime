@@ -141,7 +141,6 @@ export default function WatchlistPanel() {
         <div style={{ fontSize: 12, color: "var(--color-warm-gray)" }}>{err}</div>
       ) : !items.length ? (
         <EmptyState
-          icon="👁"
           title="Your watchlist is empty"
           description="Track players and teams to see them here."
           actionLabel="Add your first player"

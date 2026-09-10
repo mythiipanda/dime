@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 
 interface Props {
-  icon: ReactNode;
+  icon?: ReactNode;
   title: string;
   description: string;
   actionLabel?: string;
@@ -22,9 +22,11 @@ export default function EmptyState({ icon, title, description, actionLabel, onAc
         padding: "20px 16px",
       }}
     >
-      <div style={{ fontSize: 24, lineHeight: 1 }} aria-hidden>
-        {icon}
-      </div>
+      {icon && (
+        <div style={{ fontSize: 24, lineHeight: 1 }} aria-hidden>
+          {icon}
+        </div>
+      )}
       <div style={{ fontSize: 13, fontWeight: 600, color: "var(--color-ink-black)" }}>
         {title}
       </div>
