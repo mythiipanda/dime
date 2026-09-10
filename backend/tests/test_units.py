@@ -292,6 +292,20 @@ def test_splits_regression_smoke():
     assert res["rows"]["career"]["available"] is False
 
 
+def test_splits_sort_null_dates_last():
+    from app.tools.splits import _sort_by_date
+
+    rows = [
+        {"GAME_DATE": "not a date", "PTS": 1},
+        {"GAME_DATE": "Jan 3, 2026", "PTS": 3},
+        {"GAME_DATE": "Jan 1, 2026", "PTS": 2},
+    ]
+    desc = _sort_by_date(rows, desc=True)
+    assert [r["PTS"] for r in desc] == [3, 2, 1]
+    asc = _sort_by_date(rows, desc=False)
+    assert [r["PTS"] for r in asc] == [2, 3, 1]
+
+
 def test_trade_value_unknown_player():
     from app.tools.league import get_trade_value
 

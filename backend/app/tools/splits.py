@@ -212,9 +212,10 @@ def _sort_by_date(rows: list[dict[str, Any]],
                   desc: bool = True) -> list[dict[str, Any]]:
     dated = [(parse_game_date(r.get("GAME_DATE")), i, r)
              for i, r in enumerate(rows)]
-    dated.sort(key=lambda t: (t[0] is None, t[0] or _dt.date.min,
-                              t[1]), reverse=desc)
-    return [r for _, _, r in dated]
+    valid = sorted((t for t in dated if t[0] is not None),
+                   key=lambda t: (t[0], t[1]), reverse=desc)
+    nulls = [t for t in dated if t[0] is None]
+    return [r for _, _, r in valid + nulls]
 
 
 def _defense_lookup(season: str) -> tuple[dict[str, Any] | None, str | None]:
@@ -400,8 +401,8 @@ def get_regression_check(player: str, stat: str = "PTS", n: int = 10,
         {"factor": "opponent_defense", "window": opp_rank_avg,
          "baseline": 15.5, "delta": opp_delta},
     ]
-    scales = {"true_shooting": 20.0, "minutes": 4.0, "shot_volume": 3.0,
-              "opponent_defense": 4.0}
+    scales = {"true_shooting": 20.0, "minutes": 0.25, "shot_volume": 1.0 / 3.0,
+              "opponent_defense": 0.25}
     drivers = sorted(drivers_all,
                      key=lambda d: abs(_f(d.get("delta"))
                                        * scales.get(d.get("factor"), 1.0)),
