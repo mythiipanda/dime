@@ -41,8 +41,7 @@ def write_guard(timeout_s: float = 60.0):
             fcntl.flock(fh, fcntl.LOCK_UN)
 
 
-def connect(read_only: bool = False) -> duckdb.DuckDBPyConnection:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+def _connect_once(read_only: bool) -> duckdb.DuckDBPyConnection:
     if read_only:
         return duckdb.connect(str(DB_PATH), read_only=True)
     try:
@@ -55,6 +54,39 @@ def connect(read_only: bool = False) -> duckdb.DuckDBPyConnection:
         source VARCHAR, fetched_at VARCHAR, rows INTEGER)"""
     )
     return con
+
+
+# Transient lock signals: cross-process "Conflicting lock is held"
+# arrives as IOException; same-process read_only-vs-read-write config
+# clash arrives as ConnectionException. Both clear once the transient
+# writer closes its connection, so both are worth retrying.
+_LOCK_ERRORS = (duckdb.IOException, duckdb.ConnectionException)
+_CONNECT_RETRIES = 6
+_CONNECT_BACKOFF_S = 0.2
+
+
+def connect(read_only: bool = False) -> duckdb.DuckDBPyConnection:
+    """Open the warehouse, retrying transient file-lock contention.
+
+    DuckDB holds an exclusive file lock while any process keeps a
+    read-write connection open (even idle; read-only opens fail with
+    "Conflicting lock is held" until the writer's connection closes).
+    Seed scripts and the app server both open short-lived write
+    connections, so transient lock contention is normal; retry instead
+    of failing the read. No WAL-mode toggle exists in DuckDB (it is
+    always WAL/MVCC internally); a read replica would be a storage
+    redesign.
+    """
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    last: Exception | None = None
+    for attempt in range(_CONNECT_RETRIES):
+        try:
+            return _connect_once(read_only)
+        except _LOCK_ERRORS as exc:
+            last = exc
+            time.sleep(_CONNECT_BACKOFF_S * (2 ** attempt))
+    assert last is not None
+    raise last
 
 
 def save_frame(
