@@ -2203,7 +2203,7 @@ async def analytics_agent(state: DimeState) -> AsyncGenerator[dict[str, Any], No
 
 async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any], None]:
     yield _event("node_update", {"node": "presentation", "status": "running"})
-    text = state.get("analysis", "") or "No data came back. Try a player or team name."
+    text = (state.get("analysis", "") or "No data came back. Try a player or team name.").lstrip("\n")
     yield _event("final_answer", {"text": text})
     try:
         llm = get_llm(state["primary"], state["model"])  # type: ignore[arg-type]
