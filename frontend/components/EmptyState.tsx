@@ -37,7 +37,7 @@ export default function EmptyState({ icon, title, description, actionLabel, onAc
         <button
           type="button"
           className="pill-cta"
-          style={{ fontSize: 12, marginTop: 6, cursor: "pointer" }}
+          style={{ fontSize: 13, marginTop: 6, minHeight: 44, padding: "12px 20px", maxWidth: "100%", cursor: "pointer" }}
           onClick={onAction}
         >
           {actionLabel}

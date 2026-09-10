@@ -35,7 +35,7 @@ function GameRowList({ games, emptyTitle, emptyDescription }: { games: GameRow[]
     );
   }
   return (
-    <div style={{ display: "flex", gap: 8, overflowX: "auto", padding: "4px 0" }}>
+    <div style={{ display: "flex", gap: 8, overflowX: "auto", maxWidth: "100%", padding: "4px 2px 8px", WebkitOverflowScrolling: "touch" }}>
       {games.map((g, i) => (
         <GameChip key={i} g={g} />
       ))}
@@ -72,7 +72,7 @@ function MoverRow({ m }: { m: TodayMover }) {
       >
         {m.RANK_CHANGE}
       </span>
-      <span style={{ flex: 1, fontWeight: 500, color: "var(--color-ink-black)" }}>
+      <span style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere", fontWeight: 500, color: "var(--color-ink-black)" }}>
         {m.PLAYER || "Unknown"}
       </span>
       <span style={{ fontSize: 12, color: "var(--color-warm-gray)" }}>{m.TEAM}</span>
@@ -111,7 +111,7 @@ function StreakRow({ s }: { s: TeamStreak }) {
       >
         {s.STREAK || `${s.GAMES} streak`}
       </span>
-      <span style={{ flex: 1, fontWeight: 500 }}>{s.TEAM}</span>
+      <span style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere", fontWeight: 500 }}>{s.TEAM}</span>
       <span style={{ fontSize: 12, color: "var(--color-warm-gray)" }}>
         {s.W ?? "-"}-{s.L ?? "-"}
       </span>
@@ -203,7 +203,7 @@ export default function TodayPanel() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))",
           gap: 16,
           marginTop: 16,
         }}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import type { CSSProperties } from "react";
 import DebateCardModal from "./DebateCardModal";
 
 type Side = {
@@ -50,6 +51,29 @@ function num(v: number | null | undefined): string {
   return String(Math.round(v * 10) / 10);
 }
 
+const thStyle: CSSProperties = {
+  textAlign: "left",
+  borderBottom: "1px solid var(--color-stone-border)",
+  padding: "8px",
+  color: "var(--color-warm-gray)",
+  fontWeight: 500,
+  whiteSpace: "nowrap",
+};
+
+const tdStyle: CSSProperties = {
+  borderBottom: "1px solid var(--color-stone-border)",
+  padding: "8px",
+  overflowWrap: "anywhere",
+};
+
+const tableWrapStyle: CSSProperties = {
+  overflowX: "auto",
+  maxWidth: "100%",
+  margin: "0 -4px",
+  padding: "0 4px",
+  WebkitOverflowScrolling: "touch",
+};
+
 function MetricsView({ rows }: { rows: Record<string, unknown> }) {
   const metrics = (rows.metrics || []) as MetricRow[];
   const labelA = String(rows.a || "A");
@@ -62,16 +86,17 @@ function MetricsView({ rows }: { rows: Record<string, unknown> }) {
       <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginBottom: 8 }}>
         Metrics {agreement}: {verdict}
       </div>
-      <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12 }}>
+      <div style={tableWrapStyle}>
+      <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 280, fontSize: 13 }}>
         <thead>
           <tr>
-            <th style={{ textAlign: "left", borderBottom: "1px solid #e8e6e5", padding: "4px 8px", color: "#78716c", fontWeight: 500 }}>
+            <th style={thStyle}>
               Metric
             </th>
-            <th style={{ textAlign: "left", borderBottom: "1px solid #e8e6e5", padding: "4px 8px", color: "#78716c", fontWeight: 500 }}>
+            <th style={thStyle}>
               {labelA}
             </th>
-            <th style={{ textAlign: "left", borderBottom: "1px solid #e8e6e5", padding: "4px 8px", color: "#78716c", fontWeight: 500 }}>
+            <th style={thStyle}>
               {labelB}
             </th>
           </tr>
@@ -79,19 +104,20 @@ function MetricsView({ rows }: { rows: Record<string, unknown> }) {
         <tbody>
           {metrics.map((m) => (
             <tr key={String(m.metric)}>
-              <td style={{ borderBottom: "1px solid #e8e6e5", padding: "4px 8px", color: "#78716c" }}>
+              <td style={{ ...tdStyle, color: "var(--color-warm-gray)" }}>
                 {String(m.label)}
               </td>
-              <td style={{ borderBottom: "1px solid #e8e6e5", padding: "4px 8px", fontWeight: m.leader === "a" ? 600 : 400 }}>
+              <td style={{ ...tdStyle, fontWeight: m.leader === "a" ? 600 : 400 }}>
                 {num(m.a)}
               </td>
-              <td style={{ borderBottom: "1px solid #e8e6e5", padding: "4px 8px", fontWeight: m.leader === "b" ? 600 : 400 }}>
+              <td style={{ ...tdStyle, fontWeight: m.leader === "b" ? 600 : 400 }}>
                 {num(m.b)}
               </td>
             </tr>
           ))}
         </tbody>
       </table>
+      </div>
       {unavailable.length > 0 && (
         <div style={{ fontSize: 11, color: "var(--color-warm-gray)", marginTop: 8 }}>
           Not in warehouse: {unavailable.map((u) => String(u.metric)).join(", ")}
@@ -123,7 +149,7 @@ export default function CompareView({ rows, onDebate }: { rows: unknown; onDebat
       <button
         type="button"
         className="pill-ghost"
-        style={{ fontSize: 12, marginBottom: 8 }}
+        style={{ fontSize: 13, marginBottom: 8, minHeight: 44, padding: "10px 20px" }}
         onClick={() => {
           if (onDebate) onDebate(labelA, labelB);
           else setDebateOpen(true);
@@ -148,40 +174,17 @@ export default function CompareView({ rows, onDebate }: { rows: unknown; onDebat
           Together: {pair.note}
         </div>
       )}
-      <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12 }}>
+      <div style={tableWrapStyle}>
+      <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 280, fontSize: 13 }}>
         <thead>
           <tr>
-            <th
-              style={{
-                textAlign: "left",
-                borderBottom: "1px solid #e8e6e5",
-                padding: "4px 8px",
-                color: "#78716c",
-                fontWeight: 500,
-              }}
-            >
+            <th style={thStyle}>
               Metric
             </th>
-            <th
-              style={{
-                textAlign: "left",
-                borderBottom: "1px solid #e8e6e5",
-                padding: "4px 8px",
-                color: "#78716c",
-                fontWeight: 500,
-              }}
-            >
+            <th style={thStyle}>
               {labelA}
             </th>
-            <th
-              style={{
-                textAlign: "left",
-                borderBottom: "1px solid #e8e6e5",
-                padding: "4px 8px",
-                color: "#78716c",
-                fontWeight: 500,
-              }}
-            >
+            <th style={thStyle}>
               {labelB}
             </th>
           </tr>
@@ -189,26 +192,27 @@ export default function CompareView({ rows, onDebate }: { rows: unknown; onDebat
         <tbody>
           {keys.map((k) => (
             <tr key={k}>
-              <td style={{ borderBottom: "1px solid #e8e6e5", padding: "4px 8px", color: "#78716c" }}>
+              <td style={{ ...tdStyle, color: "var(--color-warm-gray)" }}>
                 {k}
               </td>
-              <td style={{ borderBottom: "1px solid #e8e6e5", padding: "4px 8px" }}>
+              <td style={tdStyle}>
                 {fmt(a[k as keyof Side])}
               </td>
-              <td style={{ borderBottom: "1px solid #e8e6e5", padding: "4px 8px" }}>
+              <td style={tdStyle}>
                 {fmt(b[k as keyof Side])}
               </td>
             </tr>
           ))}
         </tbody>
       </table>
+      </div>
       {names.length === 2 && (
         <div style={{ marginTop: 8 }}>
           <div style={{ display: "flex", height: 10, borderRadius: 9999, overflow: "hidden" }}>
-            <div style={{ width: `${(prob[names[0]] || 0) * 100}%`, background: "#0c0a09" }} />
-            <div style={{ flex: 1, background: "#e8e6e5" }} />
+            <div style={{ width: `${(prob[names[0]] || 0) * 100}%`, background: "var(--color-ink-black)" }} />
+            <div style={{ flex: 1, background: "var(--color-stone-border)" }} />
           </div>
-          <div style={{ fontSize: 11, color: "#78716c", marginTop: 4 }}>
+          <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginTop: 4, lineHeight: 1.5 }}>
             {names[0]} {Math.round((prob[names[0]] || 0) * 100)} pct vs {names[1]}{" "}
             {Math.round((prob[names[1]] || 0) * 100)} pct
           </div>
