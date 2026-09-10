@@ -411,6 +411,20 @@ LEAGUE_BRIEF = (
     "Otherwise call get_standings."
 )
 
+# Shot-zone phrasing the league desk brief routes to get_team_shot_zones.
+# The list-question force regexes below (and the _LIST_RX fast-path in
+# graph.py) would otherwise hijack these into text_to_sql: the SQL answer
+# is correct but takes ~30s vs the fast tool, and the purpose-built
+# zone_leaders never run. Guard both force sites with this regex so the
+# task falls through to the LLM brief, which already owns the routing.
+_SHOT_ZONE_RX = _re.compile(
+    r"shot\s*zones?|shot\s*diet|rim\s*rate|\bat\s+the\s+rim\b|"
+    r"corner\s*threes?|corner\s*3s?|"
+    r"efg\s*(by|per|in|across|within)\s*zones?|zone.{0,16}\befg\b|"
+    r"where\s+teams?\s+shoot\s+from",
+    _re.IGNORECASE,
+)
+
 
 def _desk_spec(name: str, task: str):
     """Shared desk configuration: (desk, brief, tool_names, force_tool).
@@ -458,12 +472,13 @@ def _desk_spec(name: str, task: str):
         if _re.search(r"playoff|champion|finals|\bring\b|title",
                        task, _re.IGNORECASE):
             force = "get_playoffs"
-        elif _re.search(
-                r"which\s+(players|teams)|what\s+(players|teams)|"
-                r"top\s+\d+|\bunder\s+\d+|\bover\s+\d+|\bage\b|"
-                r"\baverag\w*\b|\bat least\b|"
-                r"leads?\s+the\s+league|who\s+leads\b",
-                task, _re.IGNORECASE):
+        elif (not _SHOT_ZONE_RX.search(task)
+              and _re.search(
+                  r"which\s+(players|teams)|what\s+(players|teams)|"
+                  r"top\s+\d+|\bunder\s+\d+|\bover\s+\d+|\bage\b|"
+                  r"\baverag\w*\b|\bat least\b|"
+                  r"leads?\s+the\s+league|who\s+leads\b",
+                  task, _re.IGNORECASE)):
             force = ("text_to_sql", {"question": task.replace(
                 " Answer via text_to_sql (you own that tool).", "")})
         return ("league", LEAGUE_BRIEF,
