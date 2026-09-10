@@ -1,12 +1,15 @@
-"""Competitive ratings over warehouse game logs. Padding check before trust.
+"""Competitive ratings over warehouse game logs. Descriptive, not judgmental.
 
-Full-season margin-of-victory mixes close games with blowouts, so a
-team's net rating can flatter it (or hide grit) when a few lopsided
-games dominate the average. This tool recomputes MOV after excluding
-blowout games (final margin above a threshold) and reports the gap as
-padding_delta. Warehouse only; nothing is estimated or fabricated.
+Full-season margin-of-victory mixes close games with blowouts. This tool
+recomputes MOV after excluding blowout games (final margin above a
+threshold) and reports the gap as padding_delta -- a "what happens if you
+drop the tails" lens over the numbers. It ships the numbers and their
+sensitivity to the threshold; it does not label teams padded/gritty or
+assert causal stories about garbage time. Warehouse only; nothing is
+estimated or fabricated.
 """
 
+from collections import Counter
 from typing import Any
 
 import duckdb
@@ -16,18 +19,32 @@ from ._core import SEASON, clamp_season
 
 _TOOL_NAME = "get_competitive_ratings"
 
+# Thresholds at which padding_delta is re-reported so the output itself
+# shows how threshold-dependent the number is.
+_MARGIN_SWEEP = (10, 20, 30)
+
 _DEFINITION = (
     "Competitive MOV is a team's average margin of victory after "
     "excluding blowout games (final margin above the threshold); "
-    "padding_delta is full-season MOV minus competitive MOV."
+    "padding_delta is full-season MOV minus competitive MOV. The tool is "
+    "descriptive only: it reports the numbers, the win/loss split of the "
+    "excluded games, and padding_delta's sensitivity to the threshold. It "
+    "does not judge whether a team's rating is 'real'."
 )
 
 _CAVEATS = (
     "Game-level exclusion, not possession-level scrubbing: garbage time "
-    "within competitive games is NOT removed. MOV per game approximates "
-    "net rating but is not pace-adjusted. Cleaning the Glass's exact "
-    "garbage-time scrub needs play-by-play score progression and "
-    "starters-on-floor data, which this warehouse does not carry."
+    "within competitive games is NOT removed, and the final-margin proxy "
+    "misclassifies in both directions -- a hard-fought game that ends +21 "
+    "on a late free-throw parade is excluded as a 'blowout', while a game "
+    "that was decided early but finished +18 stays in. Exclusion is a "
+    "lens, not purification: blowout wins carry real dominance signal "
+    "(consistently beating weak teams by 25 is evidence of strength), so "
+    "competitive MOV systematically underrates teams that dominate weak "
+    "opponents. MOV per game approximates net rating but is not "
+    "pace-adjusted. Cleaning the Glass's exact garbage-time scrub needs "
+    "play-by-play score progression and starters-on-floor data, which this "
+    "warehouse does not carry."
 )
 
 
@@ -75,45 +92,79 @@ def map_season_type(raw: object, distinct: list[str]) -> str | None:
     return None
 
 
-def summarize_team(
-    abbr: str,
-    movs: list[float],
-    blowout_margin: float,
-) -> dict[str, Any]:
-    """One padding line over a team's game MOVs. Pure: no warehouse access.
-
-    Games with abs(mov) > margin are blowouts and leave the competitive
-    set; abs(mov) == margin stays in. padding_delta is full MOV minus
-    competitive MOV, so positive means blowouts inflate the rating.
-    """
-    margin = clamp_blowout_margin(blowout_margin)
-    movs = [float(m) for m in (movs or [])]
+def _scope_stats(movs: list[float], margin: float) -> dict[str, Any]:
+    """MOV numbers at one blowout threshold. Pure: no warehouse access."""
     gp = len(movs)
-    mov_full = round(sum(movs) / gp, 2) if gp else 0.0
+    mov_full = round(sum(movs) / gp, 2) if gp else None
     comp = [m for m in movs if abs(m) <= margin]
     gp_comp = len(comp)
-    mov_comp = round(sum(comp) / gp_comp, 2) if gp_comp else 0.0
-    padding_delta = round(mov_full - mov_comp, 2)
-    blowout_gp = gp - gp_comp
-    blowout_share = round(blowout_gp / gp, 3) if gp else 0.0
-    wins = sum(1 for m in comp if m > 0)
-    if padding_delta > 0.5:
-        verdict = "padded"
-    elif padding_delta < -0.5:
-        verdict = "gritty"
-    else:
-        verdict = "neutral"
+    mov_comp = round(sum(comp) / gp_comp, 2) if gp_comp else None
+    padding_delta = (
+        round(mov_full - mov_comp, 2)
+        if mov_full is not None and mov_comp is not None
+        else None
+    )
     return {
-        "team": str(abbr or "").upper(),
+        "blowout_margin": margin,
         "gp": gp,
         "mov_full": mov_full,
         "gp_comp": gp_comp,
         "mov_comp": mov_comp,
         "padding_delta": padding_delta,
-        "blowout_gp": blowout_gp,
-        "blowout_share": blowout_share,
-        "comp_record": {"w": wins, "l": gp_comp - wins},
-        "verdict": verdict,
+    }
+
+
+def summarize_team(
+    abbr: str,
+    movs: list[float],
+    blowout_margin: float,
+    min_games: int = 10,
+) -> dict[str, Any]:
+    """One descriptive padding line over a team's game MOVs.
+
+    Pure: no warehouse access. Games with abs(mov) > margin are blowouts
+    and leave the competitive set; abs(mov) == margin stays in.
+    competitive_record is the W-L record over competitive games ONLY, not
+    the team's full record. When competitive games fall below min_games
+    the row is flagged low_sample and carries no interpretation. An empty
+    competitive set yields null mov_comp/padding_delta, never zeros.
+    sensitivity re-reports the numbers at margins 10/20/30 so
+    threshold-dependence is visible in the output itself.
+    """
+    margin = clamp_blowout_margin(blowout_margin)
+    movs = [float(m) for m in (movs or [])]
+    try:
+        floor = int(min_games)
+    except (TypeError, ValueError):
+        floor = 10
+    floor = max(0, floor)
+    gp = len(movs)
+    main = _scope_stats(movs, margin)
+    blowout_wins_gp = sum(1 for m in movs if m > margin)
+    blowout_losses_gp = sum(1 for m in movs if m < -margin)
+    comp = [m for m in movs if abs(m) <= margin]
+    wins = sum(1 for m in comp if m > 0)
+    sensitivity = [
+        {k: v for k, v in _scope_stats(movs, float(m)).items()
+         if k in ("blowout_margin", "gp_comp", "mov_comp", "padding_delta")}
+        for m in _MARGIN_SWEEP
+    ]
+    return {
+        "team": str(abbr or "").upper(),
+        "gp": gp,
+        "mov_full": main["mov_full"],
+        "gp_comp": main["gp_comp"],
+        "mov_comp": main["mov_comp"],
+        "padding_delta": main["padding_delta"],
+        "blowout_gp": blowout_wins_gp + blowout_losses_gp,
+        "blowout_wins_gp": blowout_wins_gp,
+        "blowout_losses_gp": blowout_losses_gp,
+        "blowout_wins_share": round(blowout_wins_gp / gp, 3) if gp else 0.0,
+        "blowout_losses_share": (
+            round(blowout_losses_gp / gp, 3) if gp else 0.0),
+        "competitive_record": {"w": wins, "l": len(comp) - wins},
+        "low_sample": main["gp_comp"] < floor,
+        "sensitivity": sensitivity,
     }
 
 
@@ -143,41 +194,50 @@ def _resolve_team_abbr(raw: object) -> str | None:
     return None
 
 
-def _takeaway(row: dict[str, Any], margin: float) -> str:
-    verdict = row.get("verdict")
-    if verdict == "padded":
+def _read(row: dict[str, Any], margin: float) -> str | None:
+    """Plain descriptive read of one row. None when there is nothing
+    to describe (low-sample or degenerate inputs get numbers only)."""
+    if row.get("low_sample"):
+        return None
+    delta = row.get("padding_delta")
+    if delta is None:
+        return None
+    if delta > 0:
         return (
-            f"{row['team']} are padded: {row['mov_full']:+} full MOV falls "
-            f"to {row['mov_comp']:+} without blowouts "
-            f"(>{margin:g}-pt games excluded).")
-    if verdict == "gritty":
+            f"competitive MOV is {delta:g} pts lower than full-season MOV "
+            f"(margin threshold {margin:g})")
+    if delta < 0:
         return (
-            f"{row['team']} are gritty: {row['mov_comp']:+} in competitive "
-            f"games beats their {row['mov_full']:+} full MOV "
-            f"(>{margin:g}-pt games excluded).")
+            f"competitive MOV is {abs(delta):g} pts higher than full-season "
+            f"MOV (margin threshold {margin:g})")
     return (
-        f"{row['team']} are what their record says: {row['mov_comp']:+} "
-        f"in competitive games vs {row['mov_full']:+} overall.")
+        f"competitive MOV matches full-season MOV "
+        f"(margin threshold {margin:g})")
 
 
 @tool
 def get_competitive_ratings(
     team: str = "league",
     season: str = SEASON,
-    season_type: str = "all",
+    season_type: str = "regular",
     blowout_margin: float = 20,
     min_games: int = 10,
 ) -> dict[str, Any]:
-    """Competitive MOV: is this team's net rating real or padded by blowouts.
+    """Competitive MOV: what happens to a team's MOV when blowouts are dropped.
 
     team: 3-letter abbrev, full name, nickname, city, or "league"/"" for
-    all teams. season: "YYYY-YY" or "all" for every warehouse season.
-    season_type: regular, playoffs, or all; matched against the actual
-    distinct warehouse values before aggregating. blowout_margin: games
-    with abs(plus_minus) above this are excluded from the competitive
-    set (clamped to [1, 40]). min_games: league-mode floor on
-    competitive games; clubs below it move to below_floor with counts.
-    Warehouse only; plus_minus is each team's own MOV per game.
+    all teams. season: "YYYY-YY" or "all" for every warehouse season
+    (multi-season output is pooled across seasons, not a single
+    team-season -- see meta.season_note). season_type: regular (default),
+    playoffs, or all; matched against the actual distinct warehouse values
+    before aggregating. NOTE: the default changed from "all" to "regular"
+    on 2026-09-10 so season-scoped queries no longer silently mix playoff
+    games in; pass "all" explicitly to include playoffs.
+    blowout_margin: games with abs(plus_minus) above this are excluded from
+    the competitive set (clamped to [1, 40]). min_games: floor on
+    competitive games; rows below it are flagged low_sample and carry
+    numbers with no interpretation. Warehouse only; plus_minus is each
+    team's own MOV per game.
     """
     margin = clamp_blowout_margin(blowout_margin)
     try:
@@ -267,41 +327,65 @@ def get_competitive_ratings(
     if not by_team:
         return {"tool": _TOOL_NAME, "ok": False,
                 "error": "no usable MOV rows in scope"}
+    type_split = dict(Counter(str(r[4] or "unknown") for r in fetched))
+    n_seasons = len(seasons) if seasons else 0
+    if n_seasons > 1:
+        season_scope = "pooled"
+        season_note = (
+            f"pooled across {n_seasons} seasons "
+            f"({seasons[0]}-{seasons[-1]}), not a single team-season")
+    elif n_seasons == 1:
+        season_scope = "single"
+        season_note = f"single season {seasons[0]}"
+    else:
+        season_scope = "unknown"
+        season_note = "no seasons in scope"
     meta: dict[str, Any] = {
         "source": "warehouse",
         "seasons": seasons if seasons is not None else [],
+        "season_scope": season_scope,
+        "season_note": season_note,
         "season_type": mapped,
+        "season_type_split": type_split,
         "blowout_margin": margin,
         "min_games": floor,
     }
     if want_all:
         rows: list[dict[str, Any]] = []
-        below: list[dict[str, Any]] = []
         for key in sorted(by_team):
             slot = by_team[key]
-            row = summarize_team(key, slot["movs"], margin)
+            row = summarize_team(key, slot["movs"], margin, floor)
             row["team_name"] = slot["name"]
-            if row["gp_comp"] >= floor:
-                rows.append(row)
-            else:
-                below.append({"team": key,
-                              "team_name": slot["name"],
-                              "gp": row["gp"],
-                              "gp_comp": row["gp_comp"]})
-        rows.sort(key=lambda r: r["padding_delta"], reverse=True)
-        note = (f"{len(below)} team(s) below the {floor}-game "
-                "competitive floor; see below_floor.") if below else ""
+            rows.append(row)
+        rows.sort(key=lambda r: (r["padding_delta"] is None,
+                                 -(r["padding_delta"] or 0.0)))
+        low_n = sum(1 for r in rows if r["low_sample"])
+        note = (f"{low_n} team(s) below the {floor}-game competitive "
+                "floor; flagged low_sample with no interpretation."
+                if low_n else "")
         return {"tool": _TOOL_NAME, "ok": True, "rows": rows,
-                "below_floor": below, "note": note,
-                "definition": _DEFINITION, "caveats": _CAVEATS,
-                "meta": meta}
+                "note": note, "definition": _DEFINITION,
+                "caveats": _CAVEATS, "meta": meta}
     assert abbr is not None
     slot = by_team.get(abbr)
     if slot is None:
         return {"tool": _TOOL_NAME, "ok": False,
                 "error": f"no games for {abbr} in scope"}
-    row = summarize_team(abbr, slot["movs"], margin)
+    row = summarize_team(abbr, slot["movs"], margin, floor)
     row["team_name"] = slot["name"]
-    return {"tool": _TOOL_NAME, "ok": True, "rows": [row],
-            "takeaway": _takeaway(row, margin),
-            "definition": _DEFINITION, "caveats": _CAVEATS, "meta": meta}
+    read = _read(row, margin)
+    if row["gp_comp"] == 0:
+        note = (f"no competitive games at margin threshold {margin:g}; "
+                "mov_comp and padding_delta are null")
+    elif row["low_sample"]:
+        note = (f"low-sample: {row['gp_comp']} competitive game(s), below "
+                f"the {floor}-game floor; numbers reported with no "
+                "interpretation")
+    elif (row["blowout_wins_share"] + row["blowout_losses_share"]) > 0.5:
+        note = ("over half of this team's games were excluded as blowouts; "
+                "the 'competitive' set is a minority of the schedule")
+    else:
+        note = ""
+    return {"tool": _TOOL_NAME, "ok": True, "rows": [row], "read": read,
+            "note": note, "definition": _DEFINITION, "caveats": _CAVEATS,
+            "meta": meta}
