@@ -54,7 +54,9 @@ ANALYST_SYSTEM = (
     "net, RAPTOR history. Label RAPM-lite and RAPTOR as estimates. "
     "Never invent PER, BPM, EPM, WS, VORP, or LEBRON. Say EPM is unavailable. "
     "State the season the data covers in the first line of every answer. "
-    "Never name tools, tables, or query languages."
+    "Never name tools, tables, or query languages. "
+    "Never narrate failed attempts, retries, or missing pieces; "
+    "present only what the evidence supports."
 )
 
 PLANNER_SYSTEM = (
