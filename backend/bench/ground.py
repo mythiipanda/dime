@@ -2201,18 +2201,28 @@ def gen_elo(rng, ctx) -> tuple[Task, GroundTruth]:
 # exactly. Players come from silver_hist_player_seasons (season totals are
 # per-game MIN * GP; MPG keeps the warehouse per-game value), on/off DIFF
 # from the "Pts per 100 Possessions" row of silver_on_off (entity
-# f"player:{pid}"), and tiers are the top 15 by total MIN split into core
-# (top 5), bench (next 5), fringe (next 5). Four question variants:
-# thin (15+/10+ MPG counts, the thin-rotation flags' core facts),
-# closing (best net rating among the same top-25-by-possessions,
-# 100+ possession display slice the tool shows), split (starter/bench
-# average on/off plus the starters' minutes share), and clutch (top
-# clutch-minute rotation players from silver_clutch). The tool calls
-# get_lineup_stats with min_possessions=100 and limit=25 for its units,
-# so the closing ground truth reuses the lineups family's
-# _lineup_shown_units with the same floor and limit. Never imports
+# f"player:{pid}"). The enriched list is the top 15 by MPG (per-game
+# role, not cumulative minutes); tiers sort by MPG desc with core = the
+# top 5 at 20+ GP, bench = next 5 of the rest, fringe = next 5
+# (CORE_GP_FLOOR = 20, same as the tool's _tier_players). Five question
+# variants: thin (15+/10+ MPG counts, the thin-rotation flags' core
+# facts), closing (best net rating among the same top-25-by-possessions,
+# 100+ possession display slice the tool shows, deduped by lineup name
+# since the re-seeded silver_lineups carries duplicate rows per unit),
+# starter_onoff (average on/off of the MPG core; bench players 6-10 have
+# near-zero on/off coverage warehouse-wide, so the starter-vs-bench
+# comparison is ungradeable on current data), minutes (core players'
+# share of the top-15 rotation's minutes), and clutch (top clutch-minute
+# rotation players from silver_clutch). The tool calls get_lineup_stats
+# with min_possessions=100 and limit=25 for its units, so the closing
+# ground truth re-implements that unit pipeline (_rot_shown_units):
+# dedupe to one canonical row per GROUP_ID (largest MIN, tie-break
+# latest _fetched_at), per-100 ratings from the same play-level
+# possession aggs, 100-possession floor, top-25 slice. Never imports
 # app.tools (anti-circularity).
 # ---------------------------------------------------------------------------
+
+_ROT_CORE_GP_FLOOR = 20
 
 
 def _rot_onoff(pid) -> tuple[float | None, bool]:
@@ -2256,8 +2266,25 @@ def _rot_enriched(abbr: str) -> list[dict]:
         enriched.append({"PLAYER": name, "PLAYER_ID": pid, "GP": gp_f,
                          "MIN": min_f, "MPG": round(mpg, 1),
                          "DIFF": diff, "CACHED": cached})
-    enriched.sort(key=lambda p: float(p.get("MIN") or 0), reverse=True)
+    # Top 15 by per-game minutes (MPG), mirroring the tool: a star who
+    # missed games stays in the tiering set instead of being squeezed
+    # out by cumulative-minutes sorting.
+    enriched.sort(key=lambda p: float(p.get("MPG") or 0), reverse=True)
     return enriched[:15]
+
+
+def _rot_tiers(players: list[dict]) -> tuple[list[dict], list[dict],
+                                             list[dict]]:
+    # Verbatim mirror of the tool's _tier_players: tiers sort by MPG
+    # (per-game role); core is the top 5 at CORE_GP_FLOOR+ games, bench
+    # and fringe are the next 5 each of the remainder.
+    by_mpg = sorted(players, key=lambda p: float(p.get("MPG") or 0),
+                    reverse=True)
+    core = [p for p in by_mpg
+            if (p.get("GP") or 0) >= _ROT_CORE_GP_FLOOR][:5]
+    core_ids = {id(p) for p in core}
+    rest = [p for p in by_mpg if id(p) not in core_ids]
+    return core, rest[:5], rest[5:10]
 
 
 def _rot_avg_diff(players: list[dict]) -> float | None:
@@ -2270,12 +2297,68 @@ def _rot_avg_diff(players: list[dict]) -> float | None:
     return round(sum(diffs) / len(diffs), 1)
 
 
+def _rot_shown_units(tid: int, min_poss: int = 100,
+                     limit: int = 25) -> list[dict]:
+    # Mirrors get_lineup_stats' unit pipeline exactly as the rotation
+    # tool consumes it: collapse silver_lineups to one canonical row per
+    # GROUP_ID (largest MIN wins; ties break to the latest _fetched_at,
+    # compared as ISO strings), build per-100 ratings from the
+    # play-level possession aggs (MIN*2 estimated fallback), sort by
+    # possessions desc, apply the sample floor, take the limit slice.
+    rows = _qd("SELECT GROUP_NAME, GROUP_ID, GP, MIN, PTS, PLUS_MINUS, "
+               "_fetched_at FROM silver_lineups "
+               "WHERE _season = ? AND _entity = ?",
+               [SEASON, f"team:{tid}"])
+    if not rows:
+        return []
+
+    def _canon_key(r: dict) -> tuple:
+        try:
+            minutes = float(r.get("MIN") or 0)
+        except (TypeError, ValueError):
+            minutes = 0.0
+        return (minutes, str(r.get("_fetched_at") or ""))
+
+    canon: dict[str, dict] = {}
+    for r in rows:
+        gid = str(r.get("GROUP_ID") or r.get("GROUP_NAME") or "")
+        prev = canon.get(gid)
+        if prev is None or _canon_key(r) > _canon_key(prev):
+            canon[gid] = r
+    agg = _lineup_possession_aggs(tid)
+    units = []
+    for r in canon.values():
+        key = _lineup_key_gid(r.get("GROUP_ID"))
+        a = agg.get(key) if (agg is not None and key is not None) else None
+        if a is not None:
+            off_poss, def_poss = a["off_poss"], a["def_poss"]
+            pf, pa = float(a["pf"]), float(a["pa"])
+            poss = off_poss + def_poss
+        else:
+            poss = int(round(float(r.get("MIN") or 0) * 2))
+            off_poss = def_poss = poss // 2
+            pf = float(r.get("PTS") or 0)
+            pa = pf - float(r.get("PLUS_MINUS") or 0)
+        if off_poss <= 0 or def_poss <= 0:
+            off_r = def_r = net_r = 0.0
+        else:
+            off_r = round(pf / off_poss * 100, 1)
+            def_r = round(pa / def_poss * 100, 1)
+            net_r = round(off_r - def_r, 1)
+        units.append({"name": r.get("GROUP_NAME") or "unknown",
+                      "poss": poss, "OFF_RATING": off_r,
+                      "DEF_RATING": def_r, "NET_RATING": net_r})
+    units.sort(key=lambda u: u["poss"], reverse=True)
+    visible = [u for u in units if u["poss"] >= min_poss]
+    return visible[:limit]
+
+
 def _rot_closing(tid: int) -> dict | None:
-    # Same units the tool's _fetch_rotation_units surfaces: the
-    # top-25-by-possessions display slice at the 100-possession floor.
-    # The closing pick is the highest NET_RATING; a tied best net is
+    # The tool's _closing_candidates takes the highest-NET_RATING units
+    # of that same 25-row display slice (top 5). The closing pick is the
+    # slice's max net; a tied best net across distinct units is
     # ungradeable (the agent cannot know the tool's tie order).
-    units = _lineup_shown_units(tid, min_poss=100, limit=25)
+    units = _rot_shown_units(tid, min_poss=100, limit=25)
     if not units:
         return None
     nets = [u["NET_RATING"] for u in units]
@@ -2285,10 +2368,13 @@ def _rot_closing(tid: int) -> dict | None:
     return next(u for u in units if u["NET_RATING"] == best)
 
 
-def _rot_closers(tid: int, ids: set) -> list[dict]:
-    # Mirrors the tool's clutch_context: silver_clutch (player-scope,
-    # last 5 min, margin <= 5) ordered by MIN desc, limited to rotation
-    # player ids, top 3.
+def _rot_closers(tid: int, ids: set) -> list[dict] | None:
+    # Mirrors the tool's clutch_context exactly: silver_clutch MIN desc,
+    # rotation player ids only, top 3. Returns None when fewer than 2
+    # closers exist, or when any of the top closers has a suffix name
+    # (Jr/II/...) — last-token name_recall cannot match those even on a
+    # verbatim answer, so the variant is skipped (same rule as the
+    # gamelog/impact families).
     rows = _qd("SELECT PLAYER_ID, PLAYER_NAME, MIN FROM silver_clutch "
                "WHERE _season = ? AND TEAM_ID = ? ORDER BY MIN DESC",
                [SEASON, tid])
@@ -2297,9 +2383,6 @@ def _rot_closers(tid: int, ids: set) -> list[dict]:
         if ids and r.get("PLAYER_ID") not in ids:
             continue
         name = r.get("PLAYER_NAME") or ""
-        last = str(name).split()[-1].rstrip(".") if name else ""
-        if last in _IMPACT_NAME_SUFFIXES:
-            continue  # suffix names break name_recall's last-token match
         try:
             mins = round(float(r.get("MIN") or 0), 2)
         except (TypeError, ValueError):
@@ -2307,6 +2390,12 @@ def _rot_closers(tid: int, ids: set) -> list[dict]:
         out.append({"name": name, "min": mins})
         if len(out) >= 3:
             break
+    if len(out) < 2:
+        return None
+    for c in out:
+        last = str(c["name"]).split()[-1].rstrip(".") if c["name"] else ""
+        if last in _IMPACT_NAME_SUFFIXES:
+            return None
     return out
 
 
@@ -2330,7 +2419,8 @@ def gen_rotation(rng, ctx) -> tuple[Task, GroundTruth]:
         players = _rot_enriched(abbr)
         if len(players) < 10:
             continue
-        core, bench = players[:5], players[5:10]
+        core, bench, fringe = _rot_tiers(players)
+        top15 = (core + bench + fringe)[:15]
         ids = {p.get("PLAYER_ID") for p in players
                if p.get("PLAYER_ID") is not None}
         variants = ["thin"]
@@ -2338,16 +2428,22 @@ def gen_rotation(rng, ctx) -> tuple[Task, GroundTruth]:
         if closing is not None:
             variants.append("closing")
         starter_avg = _rot_avg_diff(core)
-        bench_avg = _rot_avg_diff(bench)
+        if starter_avg is not None:
+            # Bench (players 6-10) on/off coverage is near-zero
+            # warehouse-wide, so the starter-vs-bench comparison is
+            # ungradeable on current data; the core's side and the
+            # minutes share each get their own variant instead.
+            variants.append("starter_onoff")
         share = None
-        total_min = sum(p["MIN"] for p in players)
+        total_min = sum(p["MIN"] for p in top15)
         if total_min > 0:
-            share = round(sum(p["MIN"] for p in core) / total_min * 100, 1)
-        if starter_avg is not None and bench_avg is not None \
-                and share is not None:
-            variants.append("split")
+            # Verbatim mirror of the tool: the 0-1 ratio is rounded to
+            # 3dp first, then expressed as a percent for the question.
+            share = round(round(sum(p["MIN"] for p in core) / total_min, 3)
+                          * 100, 1)
+            variants.append("minutes")
         closers = _rot_closers(tid, ids)
-        if len(closers) >= 2:
+        if closers is not None:
             variants.append("clutch")
         variant = rng.choice(variants)
         tid2 = ctx["task_id"]
@@ -2403,25 +2499,39 @@ def gen_rotation(rng, ctx) -> tuple[Task, GroundTruth]:
                        "get_rotation_check's closing candidates)",
             )
             return task, truth
-        if variant == "split":
+        if variant == "starter_onoff":
             task = Task(
                 **base,
-                question=(f"How do the {abbr} starters compare to the "
-                          f"bench this season? Give the average on/off "
-                          f"(points per 100 possessions) of the top-5 "
-                          f"minute players, the average on/off of the "
-                          f"next 5 players, and the starters' share of the "
-                          f"top-15 rotation's total minutes as a percent."),
+                question=(f"What is the average on/off (points per 100 "
+                          f"possessions) of the {abbr} core rotation "
+                          f"players this season (top 5 by minutes per "
+                          f"game, at least 20 games played)?"),
             )
             truth = GroundTruth(
                 task_id=tid2,
-                facts={"starter_avg_onoff": starter_avg,
-                       "bench_avg_onoff": bench_avg,
-                       "starter_min_share_pct": share},
+                facts={"starter_avg_onoff": starter_avg},
                 computed_at=_now(),
                 source="nba_api via silver_hist_player_seasons plus "
-                       "silver_on_off (same tier split and on/off "
+                       "silver_on_off (same core tier and on/off "
                        "averaging as get_rotation_check's "
+                       "starter_bench_split)",
+            )
+            return task, truth
+        if variant == "minutes":
+            task = Task(
+                **base,
+                question=(f"How top-heavy is the {abbr} rotation this "
+                          f"season? Give the percent of the top-15 "
+                          f"rotation's total minutes taken by the core "
+                          f"rotation players (top 5 by minutes per game, "
+                          f"at least 20 games played)."),
+            )
+            truth = GroundTruth(
+                task_id=tid2,
+                facts={"starter_min_share_pct": share},
+                computed_at=_now(),
+                source="nba_api via silver_hist_player_seasons (same "
+                       "starter minutes share as get_rotation_check's "
                        "starter_bench_split)",
             )
             return task, truth

@@ -196,6 +196,29 @@ the season moves. That drift is signal, not noise.
     matches anywhere), so stats are not bound to their dates in
     grading. Names with suffixes (Jr/II/III) are skipped to keep
     last-token name_recall clean. Gold: `search_game_logs`.
+20. `rotation` — five rotation-question variants for a random team:
+    `thin` (counts of rotation players at 15+ and 10+ MPG, the
+    thin-rotation flags' core facts), `closing` (best net rating per 100
+    possessions among the same top-25-by-possessions, 100+ possession
+    display slice the tool shows; deduped by lineup name because the
+    re-seeded `silver_lineups` carries duplicate rows per unit; tied
+    best nets across distinct units are skipped), `starter_onoff`
+    (average on/off of the MPG core — top 5 by minutes per game at
+    20+ GP; bench players 6-10 have near-zero on/off coverage
+    warehouse-wide, so the starter-vs-bench comparison is ungradeable
+    on current data),
+    `minutes` (core players' share of the top-15 rotation's minutes as a
+    percent), and `clutch` (top 2-3 clutch-minute rotation players from
+    silver_clutch, names plus minutes). Ground truth mirrors
+    `get_rotation_check` exactly: season totals from per-game MIN * GP
+    in `silver_hist_player_seasons`, the "Pts per 100 Possessions" row of
+    `silver_on_off`, MPG-desc tiering with the 20-game core floor, and
+    `get_lineup_stats`' unit pipeline (per-GROUP_ID dedupe to the
+    largest-MIN row, play-level possession ratings, 100-possession
+    floor, top-25 slice) re-implemented warehouse-side.
+    Suffix names are skipped for name_recall. Gold:
+    `get_rotation_check` (remapped from `chain` in the tool-family
+    table so this family scores attribution on its own tool).
 
 ## Scoring formulas
 
