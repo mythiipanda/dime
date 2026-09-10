@@ -1403,6 +1403,17 @@ h1 {{ font-size: 22px; margin: 0; color: #1c1917; }}
     out_path = out_dir / fname
     out_path.write_text(html_doc, encoding="utf-8")
 
+    def _line(p: dict) -> dict:
+        return {"name": _stat(p, "name", "PLAYER", "player"),
+                "team": _stat(p, "team", "TEAM", "team"),
+                "ppg": _stat(p, "ppg", "PTS"), "rpg": _stat(p, "rpg", "REB"),
+                "apg": _stat(p, "apg", "AST"),
+                "fg_pct": _stat(p, "fg_pct", "FG_PCT"),
+                "fg3_pct": _stat(p, "fg3_pct", "FG3_PCT"),
+                "ts_pct": _stat(p, "ts_pct", "TS_PCT"),
+                "usg_pct": _stat(p, "usg_pct", "USG_PCT")}
+
     return {"tool": "get_debate_card", "ok": True,
-            "rows": {"path": str(out_path), "players": [name_a, name_b]},
+            "rows": {"path": str(out_path), "players": [name_a, name_b],
+                     "stats": [_line(p) for p in players]},
             "meta": {"season": season, "format": "html"}}
