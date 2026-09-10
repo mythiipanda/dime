@@ -9,7 +9,7 @@ import {
   ToolResult,
   emptyNode,
 } from "../lib/chat";
-import { RunInfo, getModels, getRuns, postChatStream } from "../lib/api";
+import { RunInfo, buildCitation, getModels, getRuns, postChatStream } from "../lib/api";
 import AnswerText from "./AnswerText";
 import { ArtifactItem } from "./ArtifactCanvas";
 import DataArtifacts from "./DataArtifacts";
@@ -146,6 +146,49 @@ function CopyButton({ text }: { text: string }) {
       {done ? "Copied" : "Copy"}
     </button>
   );
+}
+
+function CiteButton({ text, meta }: {
+  text: string;
+  meta?: { source?: string; fetched_at?: string; season?: string };
+}) {
+  const [done, setDone] = useState(false);
+  return (
+    <button
+      className="pill-ghost"
+      style={{ fontSize: 12 }}
+      title="Copy answer with a citable source line"
+      onClick={() => {
+        const line = buildCitation({
+          source: meta?.source,
+          fetchedAt: meta?.fetched_at,
+          season: meta?.season,
+        });
+        navigator.clipboard
+          .writeText(`${text}\n\n${line}`)
+          .then(() => {
+            setDone(true);
+            setTimeout(() => setDone(false), 1500);
+          })
+          .catch(() => {});
+      }}
+    >
+      {done ? "Copied" : "Cite"}
+    </button>
+  );
+}
+
+function firstTableMeta(ai: AiMessage | undefined): {
+  source?: string; fetched_at?: string; season?: string;
+} | undefined {
+  if (!ai) return undefined;
+  for (const n of Object.values(ai.nodes)) {
+    const t = n?.tables?.[0] as {
+      meta?: { source?: string; fetched_at?: string; season?: string };
+    } | undefined;
+    if (t?.meta) return t.meta;
+  }
+  return undefined;
 }
 
 function LinkButton({ index }: { index: number }) {
@@ -624,6 +667,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                     {m.text && (
                       <div style={{ display: "flex", gap: 8, marginTop: 12, alignItems: "center" }}>
                         <CopyButton text={m.text} />
+                        <CiteButton text={m.text} meta={firstTableMeta(m.ai)} />
                         <LinkButton index={i} />
                       </div>
                     )}

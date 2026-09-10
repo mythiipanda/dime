@@ -336,3 +336,20 @@ export function setQueryParam(key: string, value: string, push = false) {
   if (url === cur) return;
   window.history[push ? "pushState" : "replaceState"](null, "", url);
 }
+
+export interface CitationInput {
+  title?: string;
+  source?: string;
+  fetchedAt?: string;
+  season?: string;
+}
+
+export function buildCitation(c: CitationInput): string {
+  const bits = [
+    c.title || "NBA data",
+    `via ${c.source || "Dime warehouse"}`,
+    c.season ? `covering ${c.season}` : "",
+    c.fetchedAt ? `fetched ${String(c.fetchedAt).slice(0, 10)}` : "",
+  ].filter(Boolean);
+  return `${bits.join(", ")} — Dime NBA Analyst`;
+}

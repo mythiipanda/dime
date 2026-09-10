@@ -10,6 +10,38 @@ import DataTable from "./DataTable";
 import TrendChart, { isRaptorRows } from "./TrendChart";
 import WowyCard from "./WowyCard";
 import ZoneBars, { isZoneRows } from "./ZoneBars";
+import { buildCitation } from "../lib/api";
+
+function CitePill({ title, meta }: {
+  title: string;
+  meta?: { source?: string; fetched_at?: string; season?: string };
+}) {
+  const [done, setDone] = useState(false);
+  return (
+    <button
+      type="button"
+      className="pill-ghost"
+      style={{ fontSize: 11, padding: "3px 10px" }}
+      title="Copy a citable source line for this table"
+      onClick={() => {
+        navigator.clipboard
+          .writeText(buildCitation({
+            title,
+            source: meta?.source,
+            fetchedAt: meta?.fetched_at,
+            season: meta?.season,
+          }))
+          .then(() => {
+            setDone(true);
+            setTimeout(() => setDone(false), 1500);
+          })
+          .catch(() => {});
+      }}
+    >
+      {done ? "Copied" : "Cite"}
+    </button>
+  );
+}
 
 function InlineChart({ rows }: { rows: unknown }) {
   const trend = isRaptorRows(rows);
@@ -61,7 +93,8 @@ export default function DataArtifacts({
   const [showInline, setShowInline] = useState(false);
 
   const tables: {
-    tool: string;
+    tool?: string;
+    title?: string;
     rows?: unknown;
     verdict?: string;
     meta?: {
@@ -108,11 +141,14 @@ export default function DataArtifacts({
 
   if (!table) return null;
 
-  const artifactId = `${table.tool}-${page}`;
+  const artifactId = `${table.tool || table.title || "table"}-${page}`;
   const isCanvasOpen = activeArtifactId === artifactId;
   const rawTitle =
-    table.tool.replace("get_", "").replace(/_/g, " ").toUpperCase() +
-    (table.meta?.stat_category ? ` · ${table.meta.stat_category}` : "");
+    table.title ||
+    (typeof table.tool === "string"
+      ? table.tool.replace("get_", "").replace(/_/g, " ").toUpperCase() +
+        (table.meta?.stat_category ? ` · ${table.meta.stat_category}` : "")
+      : "Dataset");
 
   if (isCanvasOpen && !showInline) {
     return (
@@ -205,7 +241,7 @@ export default function DataArtifacts({
               onClick={() => {
                 onOpenArtifact({
                   id: artifactId,
-                  tool: table.tool,
+                  tool: table.tool || "dataset",
                   title: rawTitle,
                   rows: table.rows,
                   meta: table.meta,
@@ -264,6 +300,7 @@ export default function DataArtifacts({
               Heat
             </button>
           )}
+          <CitePill title={rawTitle} meta={table.meta} />
           {isCanvasOpen && (
             <button
               type="button"

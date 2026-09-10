@@ -62,8 +62,10 @@ export default function ArtifactCanvas({ artifact, onClose, onAsk }: ArtifactCan
   if (!artifact) return null;
 
   const autoTitle =
-    artifact.tool.replace("get_", "").replace(/_/g, " ").toUpperCase() +
-    (artifact.meta?.stat_category ? ` · ${artifact.meta.stat_category}` : "");
+    (typeof artifact.tool === "string"
+      ? artifact.tool.replace("get_", "").replace(/_/g, " ").toUpperCase() +
+        (artifact.meta?.stat_category ? ` · ${artifact.meta.stat_category}` : "")
+      : "Dataset");
   const rawTitle = artifact.title || autoTitle;
   const playerName =
     artifact.title && artifact.title !== autoTitle ? artifact.title : undefined;
