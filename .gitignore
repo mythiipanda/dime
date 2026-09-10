@@ -58,3 +58,11 @@ logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# local-only: agent config, plans, working docs (never on remote)
+.opencode/
+.taskmaster/
+DESIGN.MD
+ROADMAP.md
+OPENCODE.md
+backend/app/data/

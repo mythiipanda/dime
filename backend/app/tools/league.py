@@ -41,6 +41,123 @@ def get_standings(season: str = SEASON) -> dict[str, Any]:
 
 
 @tool
+def get_standings_deep(season: str = SEASON, top: int = 5) -> dict[str, Any]:
+    """Standings deep cuts: clutch records, comeback kings, blown leads, monthly momentum."""
+    from .. import store as _store
+
+    season = str(season or SEASON).strip() or SEASON
+    try:
+        top = max(1, min(int(top or 5), 15))
+    except (TypeError, ValueError):
+        top = 5
+
+    def _split(rec: object) -> tuple[int, int] | None:
+        try:
+            w, loss = str(rec or "").strip().split("-")
+            return int(w), int(loss)
+        except (TypeError, ValueError):
+            return None
+
+    def _pct(w: int, loss: int) -> float:
+        return round(w / (w + loss), 3) if w + loss else 0.0
+
+    con = _store.connect()
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        if "silver_standings" not in tables:
+            return {"tool": "get_standings_deep", "ok": False,
+                    "error": "standings empty"}
+        rows = con.execute(
+            """SELECT TeamCity, TeamName, WinPCT,
+            "ThreePTSOrLess", "AheadAtHalf", "BehindAtHalf",
+            "L10", "strCurrentStreak",
+            "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr"
+            FROM silver_standings WHERE _season = ?""",
+            [season],
+        ).fetchall()
+    finally:
+        con.close()
+    if not rows:
+        return {"tool": "get_standings_deep", "ok": False,
+                "error": f"no standings for {season}"}
+    teams = []
+    for city, name, winpct, clutch, ahead, behind, l10, streak, *months in rows:
+        label = f"{city or ''} {name or ''}".strip()
+        teams.append({
+            "TEAM": label,
+            "SEASON_PCT": round(float(winpct or 0), 3),
+            "clutch": _split(clutch),
+            "ahead": _split(ahead),
+            "behind": _split(behind),
+            "L10": l10,
+            "STREAK": streak,
+            "months": months,
+        })
+    clutch_rank = sorted(
+        ({"TEAM": t["TEAM"], "W": t["clutch"][0], "L": t["clutch"][1],
+          "PCT": _pct(*t["clutch"]), "RECORD": f"{t['clutch'][0]}-{t['clutch'][1]}"}
+         for t in teams if t["clutch"]),
+        key=lambda d: (d["PCT"], d["W"]), reverse=True,
+    )
+    comeback = sorted(
+        ({"TEAM": t["TEAM"], "W": t["behind"][0], "L": t["behind"][1],
+          "PCT": _pct(*t["behind"])}
+         for t in teams if t["behind"]),
+        key=lambda d: (d["W"], d["PCT"]), reverse=True,
+    )[:top]
+    blown = sorted(
+        ({"TEAM": t["TEAM"], "W": t["ahead"][0], "L": t["ahead"][1],
+          "PCT": _pct(*t["ahead"])}
+         for t in teams if t["ahead"]),
+        key=lambda d: d["L"], reverse=True,
+    )[:top]
+    month_names = ["Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr"]
+    by_month = []
+    for i, month in enumerate(month_names):
+        entries = []
+        for t in teams:
+            parsed = _split(t["months"][i])
+            if parsed and parsed[0] + parsed[1] >= 3:
+                entries.append((t["TEAM"], parsed[0], parsed[1],
+                                _pct(*parsed)))
+        if not entries:
+            continue
+        best = max(entries, key=lambda e: (e[3], e[1]))
+        worst = min(entries, key=lambda e: (e[3], -e[1]))
+        by_month.append({"MONTH": month,
+                         "BEST_TEAM": best[0],
+                         "BEST_RECORD": f"{best[1]}-{best[2]}",
+                         "BEST_PCT": best[3],
+                         "WORST_TEAM": worst[0],
+                         "WORST_RECORD": f"{worst[1]}-{worst[2]}",
+                         "WORST_PCT": worst[3]})
+    momentum = []
+    for t in teams:
+        mar = _split(t["months"][5])
+        apr = _split(t["months"][6])
+        lw = (mar[0] if mar else 0) + (apr[0] if apr else 0)
+        ll = (mar[1] if mar else 0) + (apr[1] if apr else 0)
+        if lw + ll < 5:
+            continue
+        late = _pct(lw, ll)
+        momentum.append({"TEAM": t["TEAM"], "LATE": f"{lw}-{ll}",
+                         "LATE_PCT": late, "SEASON_PCT": t["SEASON_PCT"],
+                         "DELTA": round(late - t["SEASON_PCT"], 3),
+                         "L10": t["L10"], "STREAK": t["STREAK"]})
+    momentum.sort(key=lambda d: d["DELTA"], reverse=True)
+    return {"tool": "get_standings_deep", "ok": True,
+            "rows": {"clutch": clutch_rank[:top],
+                     "clutch_cold": clutch_rank[-top:][::-1],
+                     "comeback_kings": comeback,
+                     "blown_leads": blown,
+                     "monthly": {"by_month": by_month,
+                                 "surging": momentum[:top],
+                                 "fading": momentum[-top:][::-1]}},
+            "meta": {"source": "warehouse", "season": season, "top": top,
+                     "teams": len(teams)}}
+
+
+@tool
 def get_ratings(season: str = SEASON) -> dict[str, Any]:
     """Team offensive, defensive, and net ratings plus pace and ranks."""
     from nba_api.stats.static import teams as _teams
@@ -907,13 +1024,37 @@ async def text_to_sql(question: str) -> dict[str, Any]:
         present = [t for t in allowed if t in tables]
         cols: dict[str, list[str]] = {}
         for t in present:
-            cols[t] = [r[1] for r in
+            cols[t] = [f"{r[1]} {r[2]}" for r in
                        con.execute(f"PRAGMA table_info({t})").fetchall()][:20]
     finally:
         con.close()
     if not present:
         return {"tool": "text_to_sql", "ok": False, "error": "warehouse empty"}
-    schema = "\n".join(f"{t}: {', '.join(c)}" for t, c in cols.items())
+    qtokens = set(_re.findall(r"[a-z]+", question.lower()))
+    syn = {"points": {"pts"}, "assists": {"ast"}, "rebounds": {"reb"},
+           "steals": {"stl"}, "blocks": {"blk"}, "streak": {"game_date"},
+           "games": {"game_date", "gp"}, "season": {"season", "_season"},
+           "player": {"player"}, "team": {"team"},
+           "draft": {"draft"}, "salary": {"salary"}, "payroll": {"salary"}}
+    expanded = set(qtokens)
+    for tok in qtokens:
+        expanded |= syn.get(tok, set())
+
+    def _tabscore(t: str) -> tuple[int, int]:
+        parts = set(_re.findall(r"[a-z]+", t.lower()))
+        cols_l = [c.lower() for c in cols[t]]
+        hit_t = len(parts & expanded)
+        hit_c = sum(1 for c in cols_l
+                    if set(_re.findall(r"[a-z]+", c)) & expanded)
+        return (hit_t * 3 + min(hit_c, 6), -len(cols[t]))
+
+    ranked = sorted(present, key=_tabscore, reverse=True)
+    keep = set(ranked[:10])
+    for must in ("silver_player_gamelogs", "silver_standings"):
+        if must in cols:
+            keep.add(must)
+    schema = "\n".join(f"{t}: {', '.join(cols[t])}"
+                       for t in ranked if t in keep)
     examples = (
         "\nExamples.\nQ: Thunder record this season?\n"
         "SQL: SELECT WINS, LOSSES FROM silver_standings "
@@ -961,28 +1102,49 @@ async def text_to_sql(question: str) -> dict[str, Any]:
         "columns and season end-year ints.\n"
         "SQL: SELECT PLAYER_NAME, TEAM_ABBREVIATION, AGE, GP, PTS, AST "
         "FROM silver_hist_player_seasons WHERE AGE < 24 AND PTS >= 15 AND AST >= 5 "
-        "AND SEASON = 2024 ORDER BY PTS DESC LIMIT 10"
+        "AND SEASON = 2024 ORDER BY PTS DESC LIMIT 10\n"
+        "Q: Who has the longest 20-point game streak this season?\n"
+        "Note GAME_DATE is text like 'Apr 02, 2026'; parse with "
+        "TRY_STRPTIME(GAME_DATE, '%b %d, %Y'). Use gaps-and-islands.\n"
+        "SQL: WITH g AS (SELECT Player_ID, PTS, "
+        "TRY_STRPTIME(GAME_DATE, '%b %d, %Y') AS d "
+        "FROM silver_player_gamelogs WHERE _season = '2025-26'), "
+        "s AS (SELECT Player_ID, d, PTS, ROW_NUMBER() OVER "
+        "(PARTITION BY Player_ID ORDER BY d) - ROW_NUMBER() OVER "
+        "(PARTITION BY Player_ID, (PTS >= 20)::INT ORDER BY d) AS grp "
+        "FROM g WHERE d IS NOT NULL) SELECT Player_ID, COUNT(*) AS streak "
+        "FROM s WHERE PTS >= 20 GROUP BY Player_ID, grp "
+        "ORDER BY streak DESC LIMIT 5"
     )
     feedback = ""
     for _ in range(3):
         try:
             resp = await invoke_with_fallback(
                 "mistral", "ministral-8b-2512",
-                [SystemMessage(content="Reply with SQL only, no prose."),
-                 HumanMessage(
-                     content="Write one SQLite SELECT using only these tables "
-                     "and columns. Match column case exactly as listed.\n"
+                 [SystemMessage(content="Reply with SQL only, no prose."),
+                  HumanMessage(
+                      content="Write one SQLite SELECT using only these tables "
+                      "and columns. Match column case exactly as listed.\n"
+                      "Always filter _season = '2025-26' unless the question "
+                      "asks about other seasons.\n"
                      f"Schema:\n{schema}{examples}\nQuestion: {question}{feedback}")])
             sql = _re.sub(r"^```sql|```$", "", str(getattr(resp, "content", "") or ""),
                           flags=_re.MULTILINE).strip()
+            m = _re.search(r"(?i)\b(select|with)\b", sql)
+            if m and m.start() > 0:
+                sql = sql[m.start():].strip()
+            sql = _re.sub(r"```$", "", sql).strip()
         except Exception as exc:
             return {"tool": "text_to_sql", "ok": False, "error": str(exc)[:160]}
-        if not _re.match(r"(?i)^\s*select\b", sql) or _re.search(
+        if not _re.match(r"(?i)^\s*(select|with)\b", sql) or _re.search(
                 r"(?i)\b(insert|update|delete|drop|alter|create|pragma|attach|copy)\b", sql):
             feedback = "\nPrevious reply was not a single SELECT. Reply with SQL only."
             continue
         used = set(_re.findall(r"(?i)from\s+(\w+)|join\s+(\w+)", sql))
         used_tables = {a or b for a, b in used}
+        ctes = set(_re.findall(r"(?i)(?:with|,)\s*(\w+)\s+as\s*\(", sql))
+        used_tables -= {c for c in ctes if c.lower() not in
+                        {t.lower() for t in present}}
         if not used_tables or not used_tables.issubset(set(present)):
             feedback = "\nPrevious reply used unknown tables. Use only listed tables."
             continue
@@ -1094,7 +1256,8 @@ def get_playoff_sim(season: str = SEASON, sims: int = 2000) -> dict[str, Any]:
 
 
 @tool
-def get_contract_value(season: str = "2025-26", min_gp: int = 20) -> dict[str, Any]:
+def get_contract_value(season: str = "2025-26", min_gp: int = 20,
+                       player: str = "") -> dict[str, Any]:
     """Contract value residuals: 2026-27 salary vs OLS prediction from per-game production. Ten most overpaid plus ten most underpaid."""
     import unicodedata as _ud
 
@@ -1149,8 +1312,8 @@ def get_contract_value(season: str = "2025-26", min_gp: int = 20) -> dict[str, A
     for r in prod:
         by_name.setdefault(_norm(r[0]), r)
     fitted = []
-    for player, team, salary in cap:
-        r = by_name.get(_norm(player))
+    for cplayer, cteam, csal in cap:
+        r = by_name.get(_norm(cplayer))
         if r is None:
             continue
         _, lteam, gp, pts, reb, ast, stl, blk, tov = r
@@ -1160,8 +1323,8 @@ def get_contract_value(season: str = "2025-26", min_gp: int = 20) -> dict[str, A
         vals = {"PTS": pts or 0, "REB": reb or 0, "AST": ast or 0,
                 "STL": stl or 0, "BLK": blk or 0, "TOV": tov or 0}
         score = sum(vals[c] / gp * use_w[c] for c in use_w)
-        fitted.append({"PLAYER": player, "TEAM": team or lteam,
-                       "SALARY": salary or 0, "GP": gp, "SCORE": score})
+        fitted.append({"PLAYER": cplayer, "TEAM": cteam or lteam,
+                       "SALARY": csal or 0, "GP": gp, "SCORE": score})
     n = len(fitted)
     if n < 2:
         return {"tool": "get_contract_value", "ok": False,
@@ -1179,20 +1342,48 @@ def get_contract_value(season: str = "2025-26", min_gp: int = 20) -> dict[str, A
         f["PREDICTED"] = int(round(slope * f["SCORE"] + intercept))
         f["RESIDUAL"] = int(f["SALARY"]) - int(f["PREDICTED"])
         f["SCORE"] = round(f["SCORE"], 2)
-    over = sorted(fitted, key=lambda f: f["RESIDUAL"], reverse=True)[:10]
-    under = sorted(fitted, key=lambda f: f["RESIDUAL"])[:10]
-    rows = over + under
+    leaders = sorted(fitted, key=lambda f: f["RESIDUAL"], reverse=True)[:10]
+    laggards = sorted(fitted, key=lambda f: f["RESIDUAL"])[:10]
+    top20 = list(leaders) + list(laggards)
     formula = ("score = PTS + 1.2*REB + 1.5*AST + 2*STL + 2*BLK - 1.5*TOV "
                "(per game); salary_hat = slope*score + intercept (OLS by hand); "
                "residual = salary - salary_hat")
-    return {"tool": "get_contract_value", "ok": True, "rows": rows,
-            "meta": {"formula": formula, "weights": weights,
-                     "missing_columns_zero_weight": missing,
-                     "slope": round(slope, 2), "intercept": round(intercept, 2),
-                     "n_qualified": n, "min_gp": min_gp,
-                     "production_season": season, "salary_season": "2026-27",
-                     "production_date": prod_date, "salary_date": cap_date,
-                     "overpaid_first": True}}
+    meta = {"formula": formula, "weights": weights,
+            "missing_columns_zero_weight": missing,
+            "slope": round(slope, 2), "intercept": round(intercept, 2),
+            "n_qualified": n, "min_gp": min_gp,
+            "production_season": season, "salary_season": "2026-27",
+            "production_date": prod_date, "salary_date": cap_date,
+            "overpaid_first": True}
+    if player:
+        from ._core import coerce_player_id as _cp
+        from nba_api.stats.static import players as _sp
+
+        try:
+            _cp(player)
+        except ValueError as exc:
+            return {"tool": "get_contract_value", "ok": False,
+                    "error": str(exc)[:160]}
+        want = _norm(str(next(
+            (p.get("full_name", "") for p in _sp.get_players()
+             if _norm(p.get("full_name", "")) == _norm(player)), player)))
+        hit = next((f for f in fitted if _norm(f["PLAYER"]) == want), None)
+        if hit is not None:
+            return {"tool": "get_contract_value", "ok": True,
+                    "rows": [hit], "meta": {**meta, "player": hit["PLAYER"]}}
+        gp_note = ""
+        try:
+            prow = by_name.get(want)
+            if prow is not None:
+                gp_note = (f" Excluded by the {min_gp}-game minimum"
+                           f" ({prow[2] or 0} GP).")
+        except Exception:
+            pass
+        return {"tool": "get_contract_value", "ok": True, "rows": [],
+                "meta": {**meta, "player": player,
+                         "note": f"No qualified row for {player}." + gp_note}}
+    return {"tool": "get_contract_value", "ok": True, "rows": top20,
+            "meta": meta}
 
 
 @tool
@@ -1291,3 +1482,143 @@ def get_risers(season: str = "2025-26", weeks: int = 4) -> dict[str, Any]:
             "rows": {"risers": table[:5], "fallers": table[-5:][::-1]},
             "meta": {"source": "warehouse", "season": season,
                      "window": n, "weeks": weeks}}
+
+
+def _ensure_leaderboard_snapshots(con: Any) -> None:
+    con.execute(
+        """CREATE TABLE IF NOT EXISTS leaderboard_snapshots(
+        snapshot_date VARCHAR, player VARCHAR, team VARCHAR,
+        pts INTEGER, rank INTEGER)"""
+    )
+
+
+@tool
+def snapshot_leaderboard(season: str = SEASON) -> dict[str, Any]:
+    """Capture today's top-50 scoring leaderboard. Idempotent per date."""
+    from datetime import datetime, timezone
+
+    from .. import store as _store
+
+    season = str(season or SEASON).strip() or SEASON
+    today = datetime.now(timezone.utc).date().isoformat()
+    con = _store.connect()
+    try:
+        with _store.write_guard():
+            _ensure_leaderboard_snapshots(con)
+            hit = con.execute(
+                """SELECT COUNT(*) FROM leaderboard_snapshots
+                WHERE snapshot_date = ?""",
+                [today],
+            ).fetchone()
+            if hit and hit[0]:
+                return {"tool": "snapshot_leaderboard", "ok": True,
+                        "rows": {"snapshot_date": today,
+                                 "captured": int(hit[0]), "added": False},
+                        "meta": {"source": "leaderboard_snapshots",
+                                 "season": season}}
+            leaders = con.execute(
+                """SELECT PLAYER, TEAM, PTS, RANK FROM silver_leaders_pts
+                WHERE _season = ? ORDER BY RANK ASC LIMIT 50""",
+                [season],
+            ).fetchall()
+            if not leaders:
+                return {"tool": "snapshot_leaderboard", "ok": False,
+                        "error": f"no scoring leaders for {season}"}
+            con.execute(
+                "DELETE FROM leaderboard_snapshots WHERE snapshot_date = ?",
+                [today],
+            )
+            for player, team, pts, rank in leaders:
+                con.execute(
+                    "INSERT INTO leaderboard_snapshots VALUES (?,?,?,?,?)",
+                    [today, player, team, pts, rank],
+                )
+            captured = len(leaders)
+    finally:
+        con.close()
+    return {"tool": "snapshot_leaderboard", "ok": True,
+            "rows": {"snapshot_date": today, "captured": captured,
+                     "added": True},
+            "meta": {"source": "leaderboard_snapshots", "season": season}}
+
+
+@tool
+def get_leaderboard_deltas(season: str = SEASON, days: int = 7) -> dict[str, Any]:
+    """Scoring leaderboard movers: latest snapshot vs the one from days ago."""
+    from datetime import date as _date
+    from datetime import timedelta as _td
+
+    from .. import store as _store
+
+    season = str(season or SEASON).strip() or SEASON
+    try:
+        days = max(1, int(days or 7))
+    except (TypeError, ValueError):
+        days = 7
+    con = _store.connect()
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        if "leaderboard_snapshots" not in tables:
+            return {"tool": "get_leaderboard_deltas", "ok": False,
+                    "error": "not enough snapshots — run snapshot_leaderboard daily"}
+        dates = [r[0] for r in con.execute(
+            """SELECT DISTINCT snapshot_date FROM leaderboard_snapshots
+            ORDER BY snapshot_date DESC""").fetchall()]
+        if len(dates) < 2:
+            return {"tool": "get_leaderboard_deltas", "ok": False,
+                    "error": "not enough snapshots — run snapshot_leaderboard daily"}
+        latest = dates[0]
+        try:
+            cutoff = _date.fromisoformat(str(latest)) - _td(days=days)
+            base = next((d for d in dates[1:]
+                         if _date.fromisoformat(str(d)) <= cutoff), dates[-1])
+        except (TypeError, ValueError):
+            base = dates[-1]
+        now_rows = con.execute(
+            """SELECT player, team, pts, rank FROM leaderboard_snapshots
+            WHERE snapshot_date = ?""",
+            [latest],
+        ).fetchall()
+        base_rows = con.execute(
+            """SELECT player, team, pts, rank FROM leaderboard_snapshots
+            WHERE snapshot_date = ?""",
+            [base],
+        ).fetchall()
+    finally:
+        con.close()
+    now = {str(r[0]).lower(): r for r in now_rows}
+    was = {str(r[0]).lower(): r for r in base_rows}
+    climbers, fallers, new_entries = [], [], []
+    for key, (player, team, pts, rank) in now.items():
+        old = was.get(key)
+        if old is None:
+            new_entries.append({"player": player, "team": team,
+                                "pts": pts, "rank": rank})
+            continue
+        change = (old[3] or 0) - (rank or 0)
+        if change > 0:
+            climbers.append({"player": player, "team": team,
+                             "rank_base": old[3], "rank_now": rank,
+                             "rank_change": change,
+                             "pts_base": old[2], "pts_now": pts,
+                             "pts_change": (pts or 0) - (old[2] or 0)})
+        elif change < 0:
+            fallers.append({"player": player, "team": team,
+                            "rank_base": old[3], "rank_now": rank,
+                            "rank_change": change,
+                            "pts_base": old[2], "pts_now": pts,
+                            "pts_change": (pts or 0) - (old[2] or 0)})
+    climbers.sort(key=lambda d: d["rank_change"], reverse=True)
+    fallers.sort(key=lambda d: d["rank_change"])
+    new_entries.sort(key=lambda d: d["rank"] or 999)
+    try:
+        span = (_date.fromisoformat(str(latest))
+                - _date.fromisoformat(str(base))).days
+    except (TypeError, ValueError):
+        span = 0
+    return {"tool": "get_leaderboard_deltas", "ok": True,
+            "rows": {"climbers": climbers[:10], "fallers": fallers[:10],
+                     "new_entries": new_entries},
+            "meta": {"source": "leaderboard_snapshots", "season": season,
+                     "current_date": latest, "base_date": base,
+                     "days_requested": days, "days_actual": span}}

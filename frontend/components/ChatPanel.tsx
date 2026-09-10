@@ -9,11 +9,14 @@ import {
   ToolResult,
   emptyNode,
 } from "../lib/chat";
-import { RunInfo, getModels, getRuns, postChatStream } from "../lib/api";
+import { RunInfo, buildCitation, getModels, getRuns, postChatStream } from "../lib/api";
 import AnswerText from "./AnswerText";
 import { ArtifactItem } from "./ArtifactCanvas";
+import DataArtifacts from "./DataArtifacts";
 import ModelPicker from "./ModelPicker";
-import NodeCards from "./NodeCards";
+import PlanSteps from "./PlanSteps";
+import ThinkingBlock from "./ThinkingBlock";
+import { ToolCallGroup } from "./ToolCallRow";
 
 function applyEvent(ai: AiMessage, type: string, data: unknown): AiMessage {
   const d = data as Record<string, unknown>;
@@ -145,6 +148,49 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
+function CiteButton({ text, meta }: {
+  text: string;
+  meta?: { source?: string; fetched_at?: string; season?: string };
+}) {
+  const [done, setDone] = useState(false);
+  return (
+    <button
+      className="pill-ghost"
+      style={{ fontSize: 12 }}
+      title="Copy answer with a citable source line"
+      onClick={() => {
+        const line = buildCitation({
+          source: meta?.source,
+          fetchedAt: meta?.fetched_at,
+          season: meta?.season,
+        });
+        navigator.clipboard
+          .writeText(`${text}\n\n${line}`)
+          .then(() => {
+            setDone(true);
+            setTimeout(() => setDone(false), 1500);
+          })
+          .catch(() => {});
+      }}
+    >
+      {done ? "Copied" : "Cite"}
+    </button>
+  );
+}
+
+function firstTableMeta(ai: AiMessage | undefined): {
+  source?: string; fetched_at?: string; season?: string;
+} | undefined {
+  if (!ai) return undefined;
+  for (const n of Object.values(ai.nodes)) {
+    const t = n?.tables?.[0] as {
+      meta?: { source?: string; fetched_at?: string; season?: string };
+    } | undefined;
+    if (t?.meta) return t.meta;
+  }
+  return undefined;
+}
+
 function LinkButton({ index }: { index: number }) {
   const [done, setDone] = useState(false);
   return (
@@ -172,144 +218,15 @@ function LinkButton({ index }: { index: number }) {
   );
 }
 
-type StepState = "pending" | "running" | "complete";
+const AGENT_NODES: NodeName[] = ["entry", "data_retrieval", "tools", "analytics", "presentation"];
 
-interface ProgressStep {
-  label: string;
-  state: StepState;
-  detail: string | null;
-}
-
-function progressFor(ai: AiMessage): ProgressStep[] {
-  const entry = ai.nodes.entry;
-  const retrieval = ai.nodes.data_retrieval;
-  const tools = ai.nodes.tools;
-  const analytics = ai.nodes.analytics;
-  const presentation = ai.nodes.presentation;
-  const anyNode = Boolean(entry || retrieval || tools || analytics || presentation);
-  const textOf = (n: typeof entry): string | null => {
-    if (!n) return null;
-    const last = n.thoughts[n.thoughts.length - 1];
-    if (typeof last !== "string") return null;
-    const t = last.trim();
-    if (!t) return null;
-    if (t.startsWith("{") || t.startsWith("[")) return null;
-    return t.slice(0, 160);
-  };
-
-  let planning: StepState;
-  if (entry) planning = entry.status === "complete" ? "complete" : "running";
-  else planning = anyNode || ai.done ? "complete" : "running";
-
-  let gathering: StepState;
-  if (retrieval?.status === "running" || tools?.status === "running") gathering = "running";
-  else if (retrieval?.status === "complete" || tools?.status === "complete") gathering = "complete";
-  else if (ai.done) gathering = "complete";
-  else if (planning === "complete") gathering = "running";
-  else gathering = "pending";
-
-  let analyzing: StepState;
-  if (analytics) analyzing = analytics.status === "complete" ? "complete" : "running";
-  else if (ai.done) analyzing = "complete";
-  else if (ai.streaming || (ai.text && ai.text.length > 0)) analyzing = "running";
-  else if (gathering === "complete") analyzing = "running";
-  else analyzing = "pending";
-
-  let writing: StepState;
-  if (presentation) writing = presentation.status === "complete" ? "complete" : "running";
-  else if (ai.done) writing = "complete";
-  else if (ai.streaming || (ai.text && ai.text.length > 0)) writing = "running";
-  else writing = "pending";
-
-  const gatherThought = textOf(retrieval) || textOf(tools);
-  const analyzeThought = textOf(analytics);
-  const liveTail =
-    ai.streaming && ai.text
-      ? ai.text.slice(-140).trim().slice(-140)
-      : null;
-  const analyzeDetail = liveTail || analyzeThought;
-
-  return [
-    { label: "Planning", state: planning, detail: textOf(entry) },
-    { label: "Gathering data", state: gathering, detail: gatherThought },
-    { label: "Analyzing stats", state: analyzing, detail: analyzeDetail },
-    { label: "Writing answer", state: writing, detail: null },
-  ];
-}
-
-function ProgressSteps({ ai }: { ai: AiMessage }) {
-  const steps = progressFor(ai);
-  const active = steps.some((s) => s.state === "running");
-  if (ai.done && steps.every((s) => s.state !== "running")) return null;
-  if (!active && !ai.text) return null;
-  return (
-    <div style={{ marginBottom: 10 }}>
-      {steps.map((s) => (
-        <div key={s.label} style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "3px 0" }}>
-          <span
-            aria-hidden
-            style={{
-              width: 14,
-              height: 14,
-              borderRadius: "50%",
-              marginTop: 2,
-              flexShrink: 0,
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: 10,
-              fontWeight: 600,
-              background:
-                s.state === "complete"
-                  ? "var(--color-ink-black)"
-                  : s.state === "running"
-                    ? "var(--color-cyan-signal)"
-                    : "transparent",
-              color: "var(--color-pure-white)",
-              border:
-                s.state === "pending"
-                  ? "1px solid var(--color-stone-border)"
-                  : "1px solid transparent",
-              animation:
-                s.state === "running" ? "dime-caret 900ms steps(2) infinite" : undefined,
-            }}
-          >
-            {s.state === "complete" ? "✓" : ""}
-          </span>
-          <div style={{ minWidth: 0 }}>
-            <div
-              style={{
-                fontSize: 12,
-                fontWeight: s.state === "running" ? 600 : 400,
-                color:
-                  s.state === "pending"
-                    ? "var(--color-ash-gray)"
-                    : "var(--color-ink-black)",
-              }}
-            >
-              {s.label}
-              {s.state === "running" ? "..." : ""}
-            </div>
-            {s.detail && (
-              <div
-                style={{
-                  fontSize: 12,
-                  color: "var(--color-warm-gray)",
-                  lineHeight: 1.4,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                  maxWidth: 560,
-                }}
-              >
-                {s.detail}
-              </div>
-            )}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
+function thoughtsFor(ai: AiMessage): string[] {
+  const out: string[] = [];
+  for (const n of AGENT_NODES) {
+    const s = ai.nodes[n];
+    if (s) out.push(...s.thoughts);
+  }
+  return out;
 }
 
 export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, activeArtifactId }: Props) {
@@ -680,9 +597,32 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                     </span>
                   </div>
 
-                  {m.ai && !m.ai.done && (
-                    <ProgressSteps ai={m.ai} />
+                  {m.ai && <PlanSteps ai={m.ai} />}
+
+                  {m.ai && (
+                    <ThinkingBlock
+                      thoughts={thoughtsFor(m.ai)}
+                      running={!m.ai.done}
+                      thoughtMs={m.ai.thoughtMs}
+                      answerStarted={m.text.length > 0}
+                    />
                   )}
+
+                  {m.ai &&
+                    AGENT_NODES.filter(
+                      (n) =>
+                        m.ai!.nodes[n] &&
+                        (m.ai!.nodes[n]!.toolCalls.length > 0 ||
+                          m.ai!.nodes[n]!.toolResults.length > 0),
+                    ).map((n) => (
+                      <ToolCallGroup
+                        key={n}
+                        node={n}
+                        calls={m.ai!.nodes[n]!.toolCalls}
+                        results={m.ai!.nodes[n]!.toolResults}
+                        running={m.ai!.nodes[n]!.status === "running" && !m.ai!.done}
+                      />
+                    ))}
 
                   {m.ai && !m.ai.done && !m.text && Object.keys(m.ai.nodes).length === 0 && (
                     <div style={{ marginBottom: 8 }}>
@@ -716,7 +656,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                     )}
 
                     {m.ai && (
-                      <NodeCards
+                      <DataArtifacts
                         ai={m.ai}
                         onAsk={sendText}
                         onOpenArtifact={onOpenArtifact}
@@ -727,6 +667,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                     {m.text && (
                       <div style={{ display: "flex", gap: 8, marginTop: 12, alignItems: "center" }}>
                         <CopyButton text={m.text} />
+                        <CiteButton text={m.text} meta={firstTableMeta(m.ai)} />
                         <LinkButton index={i} />
                       </div>
                     )}

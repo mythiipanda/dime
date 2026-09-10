@@ -304,6 +304,154 @@ async def get_compare(
                      "pair_rule": "same team abbrev runs wowy, Both ON net plus minutes"}}
 
 
+def _metric_row(metric: str, label: str, method: str, a: object, b: object,
+                na: str, nb: str, higher_wins: bool = True,
+                ) -> dict[str, Any]:
+    def _f(v: object) -> float | None:
+        try:
+            return float(v) if v is not None else None
+        except (TypeError, ValueError):
+            return None
+    fa, fb = _f(a), _f(b)
+    if fa is None or fb is None:
+        leader = "na"
+    elif abs(fa - fb) < 1e-9:
+        leader = "tie"
+    elif (fa > fb) == higher_wins:
+        leader = "a"
+    else:
+        leader = "b"
+    who = na if leader == "a" else nb if leader == "b" else ""
+    return {"metric": metric, "label": label, "method": method,
+            "a": fa, "b": fb, "leader": leader,
+            "note": f"{who} leads {label}." if who else f"{label} tied or missing."}
+
+
+@tool
+def compare_metrics(a: str | int, b: str | int, season: str = SEASON) -> dict[str, Any]:
+    """Cross-metric adjudication for two players. Referees impact metrics.
+
+    Pulls RAPTOR, RAPM-lite, on-off net, and PIE/TS from the warehouse and
+    reports which metrics agree. EPM, LEBRON, DARKO, and DRIP are listed
+    as unavailable, never invented.
+    """
+    try:
+        pida = coerce_player_id(a)
+        pidb = coerce_player_id(b)
+    except ValueError as exc:
+        return {"tool": "compare_metrics", "ok": False, "error": str(exc)[:160]}
+    from nba_api.stats.static import players as _static_p
+
+    names = {p.get("id"): p.get("full_name", "") for p in _static_p.get_players()}
+    import unicodedata as _ud
+
+    def _ascii(s: str) -> str:
+        return "".join(c for c in _ud.normalize("NFKD", s or "")
+                       if not _ud.combining(c))
+    na = _ascii(str(names.get(pida, a)))
+    nb = _ascii(str(names.get(pidb, b)))
+
+    def _one(pid: int, name: str) -> dict[str, Any]:
+        out: dict[str, Any] = {}
+        try:
+            r = _read_df(
+                "SELECT RAPTOR_OFFENSE, RAPTOR_DEFENSE, RAPTOR_TOTAL,"
+                " WAR_TOTAL, _season FROM silver_raptor_player"
+                " WHERE LOWER(PLAYER_NAME) = LOWER(?)"
+                " ORDER BY _season DESC LIMIT 1",
+                [name],
+            )
+            if r:
+                out.update({k: r[0].get(k) for k in
+                            ("RAPTOR_OFFENSE", "RAPTOR_DEFENSE",
+                             "RAPTOR_TOTAL", "WAR_TOTAL")})
+                out["raptor_season"] = r[0].get("_season")
+        except Exception:
+            pass
+        try:
+            r = _read_df(
+                "SELECT rapm FROM silver_rapm"
+                " WHERE _season = ? AND CAST(player_id AS VARCHAR)"
+                " = CAST(? AS VARCHAR) AND rapm IS NOT NULL LIMIT 1",
+                [season, str(pid)],
+            )
+            if r and r[0].get("rapm") is not None:
+                out["rapm"] = round(float(r[0]["rapm"]), 2)
+        except Exception:
+            pass
+        try:
+            r = _read_df(
+                'SELECT "On", "Off" FROM silver_on_off'
+                " WHERE _season = ? AND _entity = ? AND Stat = ? LIMIT 1",
+                [season, f"player:{pid}", "Pts per 100 Possessions"],
+            )
+            if r:
+                out["onoff"] = round(float(r[0].get("On") or 0)
+                                     - float(r[0].get("Off") or 0), 1)
+        except Exception:
+            pass
+        try:
+            r = _read_df(
+                "SELECT PIE, TS_PCT, USG_PCT FROM silver_advanced"
+                " WHERE _season = ? AND CAST(PLAYER_ID AS VARCHAR)"
+                " = CAST(? AS VARCHAR) LIMIT 1",
+                [season, str(pid)],
+            )
+            if r:
+                out.update({k: r[0].get(k) for k in ("PIE", "TS_PCT", "USG_PCT")})
+        except Exception:
+            pass
+        return out
+
+    ma, mb = _one(pida, na), _one(pidb, nb)
+    vintage = {s for s in (ma.get("raptor_season"), mb.get("raptor_season")) if s}
+    stale = sorted(vintage)[-1] if vintage and sorted(vintage)[-1] != season else ""
+    rows = [
+        _metric_row("raptor", "RAPTOR", "box plus on-off, FiveThirtyEight",
+                    ma.get("RAPTOR_TOTAL"), mb.get("RAPTOR_TOTAL"), na, nb),
+        _metric_row("raptor_o", "RAPTOR offense", "box plus on-off",
+                    ma.get("RAPTOR_OFFENSE"), mb.get("RAPTOR_OFFENSE"), na, nb),
+        _metric_row("raptor_d", "RAPTOR defense", "box plus on-off",
+                    ma.get("RAPTOR_DEFENSE"), mb.get("RAPTOR_DEFENSE"), na, nb),
+        _metric_row("war", "WAR", "wins above replacement",
+                    ma.get("WAR_TOTAL"), mb.get("WAR_TOTAL"), na, nb),
+        _metric_row("rapm", "RAPM-lite", "ridge on stint differentials",
+                    ma.get("rapm"), mb.get("rapm"), na, nb),
+        _metric_row("onoff", "on-off net", "lineup splits, noisy",
+                    ma.get("onoff"), mb.get("onoff"), na, nb),
+        _metric_row("pie", "PIE", "box-score share",
+                    ma.get("PIE"), mb.get("PIE"), na, nb),
+        _metric_row("ts", "true shooting", "scoring efficiency",
+                    ma.get("TS_PCT"), mb.get("TS_PCT"), na, nb),
+    ]
+    decided = [r for r in rows if r["leader"] in ("a", "b")]
+    va = sum(1 for r in decided if r["leader"] == "a")
+    vb = sum(1 for r in decided if r["leader"] == "b")
+    if not decided:
+        agreement, verdict = "none", "No shared metrics cover both players."
+    elif va == len(decided):
+        agreement, verdict = "agree", f"Every metric favors {na}."
+    elif vb == len(decided):
+        agreement, verdict = "agree", f"Every metric favors {nb}."
+    else:
+        split = [r["label"] for r in decided if r["leader"] == ("a" if va >= vb else "b")]
+        agreement, verdict = (
+            "split",
+            f"Metrics split {va}-{vb}. "
+            f"{na if va >= vb else nb} leads {', '.join(split[:3])}; "
+            "check RAPTOR defense vs on-off noise before concluding.")
+    if stale:
+        verdict += f" RAPTOR rows are {stale} vintage."
+    return {"tool": "compare_metrics", "ok": True,
+            "rows": {"a": na, "b": nb, "metrics": rows,
+                     "agreement": agreement, "verdict": verdict,
+                     "unavailable": [
+                         {"metric": m, "note": "not in warehouse, never estimated"}
+                         for m in ("EPM", "LEBRON", "DARKO", "DRIP")]},
+            "meta": {"source": "warehouse", "season": season,
+                     "raptor_season_a": ma.get("raptor_season"),
+                     "raptor_season_b": mb.get("raptor_season")}}
+
 @tool
 def get_player_intel(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
     """Game log plus shot sample for one player id. Warehouse first."""
@@ -666,16 +814,60 @@ def get_shot_zones(player_id: str | int, season: str = SEASON) -> dict[str, Any]
     return {"tool": "get_shot_zones", "ok": True, "rows": rows, "meta": meta}
 
 
+def _opp_tier_splits(frame: Any, season: str) -> list[dict[str, Any]]:
+    """Split games vs top-10 defenses vs the rest. Opponent from MATCHUP."""
+    import polars as _pl
+
+    if "MATCHUP" not in frame.columns or "PTS" not in frame.columns:
+        return []
+    ranks = {str(r.get("TEAM_NAME", "")): r.get("DEF_RATING_RANK")
+             for r in _read_df(
+                 "SELECT TEAM_NAME, DEF_RATING_RANK FROM silver_team_ratings"
+                 " WHERE _season = ?", [season])}
+    if not ranks:
+        return []
+    from nba_api.stats.static import teams as _static
+
+    abbr = {t["abbreviation"]: t["full_name"] for t in _static.get_teams()}
+    tiers: dict[str, list[float]] = {"vs top-10 defense": [], "vs rest": []}
+    for g in frame.to_dicts():
+        try:
+            opp = str(g.get("MATCHUP") or "").split()[-1].upper()
+            rank = ranks.get(abbr.get(opp, ""), None)
+            pts = float(g.get("PTS") or 0)
+            tiers["vs top-10 defense" if rank is not None and rank <= 10
+                   else "vs rest"].append(pts)
+        except (TypeError, ValueError, IndexError):
+            continue
+    out = []
+    for label, pts in tiers.items():
+        if not pts:
+            continue
+        out.append({"split": label, "GP": len(pts),
+                    "PPG": round(sum(pts) / len(pts), 1)})
+    return out
+
+
 @tool
 def get_splits(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
     """Home/away plus monthly, wins/losses, last-10, starter splits from the game log."""
     player_id = coerce_player_id(player_id)
-    res = nba_stats.player_gamelog(player_id, season)
-    if not res.ok or res.frame.height == 0:
+    rows_data, warehouse_meta = _warehouse_or_live(
+        "silver_player_gamelogs", "_season = ? AND _entity = ?",
+        [season, f"player:{player_id}"],
+        lambda: nba_stats.player_gamelog(player_id, season), season,
+        entity=f"player:{player_id}", live_first=True,
+    )
+    if not rows_data:
         return {"tool": "get_splits", "ok": False,
-                "error": res.error or "empty upstream response"}
+                "error": warehouse_meta.get("error") or "empty upstream response"}
+    import polars as _pl
+
+    frame = _pl.DataFrame(rows_data)
+    meta_source = warehouse_meta.get("source", "warehouse")
+    meta_fetched = warehouse_meta.get("fetched_at", "")
     try:
-        g = res.frame.with_columns(
+        g = frame.with_columns(
             pl.col("MATCHUP").str.contains("@").alias("away")
         )
         cols = g.columns
@@ -797,8 +989,12 @@ def get_splits(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
         rows = rows[:12]
     except Exception as exc:
         return {"tool": "get_splits", "ok": False, "error": str(exc)[:160]}
+    try:
+        rows.extend(_opp_tier_splits(frame, season))
+    except Exception:
+        pass
     return {"tool": "get_splits", "ok": True, "rows": rows,
-            "meta": {"source": res.meta.source, "fetched_at": res.meta.fetched_at,
+            "meta": {"source": meta_source, "fetched_at": meta_fetched,
                      "rows": len(rows), "cached": False}}
 
 
@@ -1024,3 +1220,200 @@ def get_raptor_history(player: str, season: str = "") -> dict[str, Any]:
              "WAR": r.get("WAR_TOTAL")} for r in frame.to_dicts()]
     return {"tool": "get_raptor_history", "ok": True, "rows": rows,
             "meta": {"source": "fivethirtyeight:raptor", "seasons": len(rows)}}
+
+
+DPOY_MINUTES = 500
+UNSUNG_MIN_MINUTES = 200
+UNSUNG_MAX_MINUTES = 1000
+
+
+@tool
+def get_hustle_boards(season: str = SEASON, top: int = 10) -> dict[str, Any]:
+    """Hustle leaderboards from warehouse only: DPOY composite, screen-assist
+    kings, and unsung defenders with elite per-minute hustle in small roles."""
+    try:
+        top = max(1, min(int(top or 10), 25))
+    except (TypeError, ValueError):
+        top = 10
+    try:
+        dpoy = _read_df(
+            """SELECT PLAYER_NAME, TEAM_ABBREVIATION, G, MIN,
+            DEFLECTIONS, CHARGES_DRAWN, CONTESTED_SHOTS,
+            (DEFLECTIONS + CHARGES_DRAWN + CONTESTED_SHOTS) AS HUSTLE,
+            ROUND((DEFLECTIONS + CHARGES_DRAWN + CONTESTED_SHOTS)
+                / NULLIF(MIN, 0), 4) AS HUSTLE_PER_MIN
+            FROM silver_hustle_player
+            WHERE _season = ? AND MIN >= ?
+            ORDER BY HUSTLE_PER_MIN DESC LIMIT ?""",
+            [season, DPOY_MINUTES, top],
+        )
+        kings = _read_df(
+            "SELECT PLAYER_NAME, TEAM_ABBREVIATION, G, MIN,"
+            " SCREEN_ASSISTS, SCREEN_AST_PTS,"
+            " ROUND(SCREEN_ASSISTS * 1.0 / NULLIF(G, 0), 2) AS screen_ast_per_game"
+            " FROM silver_hustle_player WHERE _season = ?"
+            " ORDER BY SCREEN_ASSISTS DESC LIMIT ?",
+            [season, top],
+        )
+        unsung = _read_df(
+            "SELECT h.PLAYER_NAME, h.TEAM_ABBREVIATION, h.G, h.MIN,"
+            " h.DEFLECTIONS, h.CHARGES_DRAWN, h.CONTESTED_SHOTS,"
+            " h.BOX_OUTS, h.LOOSE_BALLS_RECOVERED,"
+            " ROUND((h.DEFLECTIONS + h.CHARGES_DRAWN + h.CONTESTED_SHOTS)"
+            " * 36.0 / NULLIF(h.MIN, 0), 2) AS hustle_per36,"
+            " ROUND(l.PTS * 1.0 / NULLIF(l.GP, 0), 1) AS ppg"
+            " FROM silver_hustle_player h"
+            " LEFT JOIN silver_leaders_pts l"
+            " ON CAST(l.PLAYER_ID AS VARCHAR) = CAST(h.PLAYER_ID AS VARCHAR)"
+            " AND l._season = h._season"
+            " WHERE h._season = ? AND h.MIN >= ? AND h.MIN < ? AND h.G >= 20"
+            " ORDER BY hustle_per36 DESC LIMIT ?",
+            [season, UNSUNG_MIN_MINUTES, UNSUNG_MAX_MINUTES, top],
+        )
+    except Exception as exc:
+        return {"tool": "get_hustle_boards", "ok": False,
+                "error": f"hustle warehouse not seeded: {str(exc)[:120]}"}
+    if not dpoy:
+        return {"tool": "get_hustle_boards", "ok": False,
+                "error": f"no hustle rows for {season}"}
+    return {"tool": "get_hustle_boards", "ok": True,
+            "rows": {"dpoy": dpoy, "screen_assist_kings": kings,
+                     "unsung_defenders": unsung},
+            "meta": {"source": "nba_api", "season": season, "top": top,
+                     "dpoy_formula": "(deflections + charges drawn"
+                     " + contested shots) per minute, 500+ minutes",
+                     "unsung_rule": "MIN 200-1000 with G >= 20,"
+                     " ranked by hustle per 36, ppg joined for usage context"}}
+
+
+@tool
+def get_debate_card(a: str, b: str, season: str = SEASON) -> dict[str, Any]:
+    """Generate a shareable HTML debate card comparing two players.
+
+    Returns a self-contained HTML file with side-by-side stats,
+    styled for sharing. Saves to workspace and returns the path.
+    """
+    import html as _html
+    from pathlib import Path as _Path
+
+    # Get comparison data
+    import asyncio as _asyncio
+
+    async def _fetch() -> dict:
+        res = await get_compare.ainvoke(
+            {"a": a, "b": b, "season": season})
+        return res if isinstance(res, dict) else {"ok": False}
+    try:
+        try:
+            _asyncio.get_running_loop()
+        except RuntimeError:
+            comp = _asyncio.run(_fetch())
+        else:
+            import concurrent.futures as _cf
+
+            with _cf.ThreadPoolExecutor(max_workers=1) as _ex:
+                comp = _ex.submit(lambda: _asyncio.run(_fetch())).result(
+                    timeout=120)
+    except Exception as exc:
+        comp = {"ok": False, "error": str(exc)[:160]}
+    if not comp.get("ok"):
+        return {"tool": "get_debate_card", "ok": False,
+                "error": comp.get("error", "comparison failed")}
+
+    rows = comp.get("rows", {})
+    # Extract player data
+    players = []
+    for key in ["a", "b"]:
+        p = rows.get(key, {})
+        if isinstance(p, dict):
+            players.append(p)
+
+    if len(players) < 2:
+        return {"tool": "get_debate_card", "ok": False,
+                "error": "could not load both players"}
+
+    def _stat(p: dict, *keys: str) -> str:
+        for k in keys:
+            v = p.get(k)
+            if v is not None:
+                return str(v)
+        return "—"
+
+    # Build HTML card
+    def _row(label: str, va: str, vb: str) -> str:
+        return (
+            f'<div class="row"><span class="stat-a">{_html.escape(va)}</span>'
+            f'<span class="label">{_html.escape(label)}</span>'
+            f'<span class="stat-b">{_html.escape(vb)}</span></div>'
+        )
+
+    stats_html = ""
+    for label, keys in [
+        ("PPG", ("ppg", "PTS")),
+        ("RPG", ("rpg", "REB")),
+        ("APG", ("apg", "AST")),
+        ("FG%", ("fg_pct", "FG_PCT")),
+        ("3P%", ("fg3_pct", "FG3_PCT")),
+        ("Games", ("gp", "G", "GP")),
+    ]:
+        stats_html += _row(label, _stat(players[0], *keys), _stat(players[1], *keys))
+
+    name_a = _html.escape(_stat(players[0], "name", "PLAYER", "player"))
+    name_b = _html.escape(_stat(players[1], "name", "PLAYER", "player"))
+
+    html_doc = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{name_a} vs {name_b} — Dime Debate Card</title>
+<style>
+body {{ font-family: system-ui, -apple-system, sans-serif; background: #f5f5f4;
+  display: flex; justify-content: center; padding: 24px; margin: 0; }}
+.card {{ background: #fff; border-radius: 16px; padding: 32px; max-width: 520px;
+  width: 100%; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }}
+.header {{ text-align: center; margin-bottom: 24px; }}
+.vs {{ font-size: 13px; color: #78716c; letter-spacing: 2px; margin: 8px 0; }}
+h1 {{ font-size: 22px; margin: 0; color: #1c1917; }}
+.season {{ font-size: 13px; color: #a8a29e; margin-top: 4px; }}
+.row {{ display: flex; align-items: center; padding: 10px 0;
+  border-bottom: 1px solid #f5f5f4; }}
+.row:last-child {{ border-bottom: none; }}
+.stat-a, .stat-b {{ flex: 1; font-size: 17px; font-weight: 600; color: #1c1917; }}
+.stat-a {{ text-align: left; }}
+.stat-b {{ text-align: right; }}
+.label {{ flex: 1; text-align: center; font-size: 12px; color: #a8a29e;
+  letter-spacing: 1px; }}
+.footer {{ text-align: center; margin-top: 20px; font-size: 12px; color: #d6d3d1; }}
+.accent {{ color: #0891b2; }}
+</style></head><body>
+<div class="card">
+<div class="header">
+<h1>{name_a} <span class="accent">vs</span> {name_b}</h1>
+<div class="season">{_html.escape(season)} season · via Dime</div>
+</div>
+{stats_html}
+<div class="footer">Settle the debate with data</div>
+</div></body></html>"""
+
+    # Save where the file endpoint serves: backend/data/cards (git-ignored).
+    out_dir = _Path(__file__).resolve().parent.parent.parent / "data" / "cards"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    safe_a = "".join(c for c in name_a if c.isalnum())[:20]
+    safe_b = "".join(c for c in name_b if c.isalnum())[:20]
+    fname = f"debate_{safe_a}_vs_{safe_b}_{season.replace('-', '')}.html"
+    out_path = out_dir / fname
+    out_path.write_text(html_doc, encoding="utf-8")
+
+    def _line(p: dict) -> dict:
+        return {"name": _stat(p, "name", "PLAYER", "player"),
+                "team": _stat(p, "team", "TEAM", "team"),
+                "ppg": _stat(p, "ppg", "PTS"), "rpg": _stat(p, "rpg", "REB"),
+                "apg": _stat(p, "apg", "AST"),
+                "fg_pct": _stat(p, "fg_pct", "FG_PCT"),
+                "fg3_pct": _stat(p, "fg3_pct", "FG3_PCT"),
+                "ts_pct": _stat(p, "ts_pct", "TS_PCT"),
+                "usg_pct": _stat(p, "usg_pct", "USG_PCT")}
+
+    return {"tool": "get_debate_card", "ok": True,
+            "rows": {"path": str(out_path), "players": [name_a, name_b],
+                     "stats": [_line(p) for p in players]},
+            "meta": {"season": season, "format": "html"}}

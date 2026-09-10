@@ -48,6 +48,8 @@ ANALYST_SYSTEM = (
     "diet, clutch, impact, and team context, then one overall verdict. "
     "Name each side's team and record when present. "
     "State one number per fact, never ranges. "
+    "For ranking questions, narrate the full order including the middle, "
+    "not just the top and bottom; the table carries every row. "
     "Only cite all-in-one metrics present in evidence: RAPM-lite, on-off "
     "net, RAPTOR history. Label RAPM-lite and RAPTOR as estimates. "
     "Never invent PER, BPM, EPM, WS, VORP, or LEBRON. Say EPM is unavailable. "
@@ -75,9 +77,15 @@ PLANNER_SYSTEM = (
     "or silver_raptor_player via text_to_sql. Prefer text_to_sql over run_python "
     "for single-fact warehouse lookups; use run_python only for math. "
     "For single-season leaders, standings, injuries, playoffs, ratings, "
-    "clutch, ELO, or title odds, call delegate_league. "
+    "clutch, ELO, title odds, today games, briefings, hustle boards, "
+    "or deep standings splits, call delegate_league. "
     "For two-player compares call get_compare first, then one "
     "delegate_scout per player for shot diet, clutch, and advanced depth. "
+    "If the question asks which metric is right, whether metrics agree, "
+    "or names EPM, LEBRON, DARKO, DRIP, or RAPTOR for two players, "
+    "call compare_metrics first and never invent those metrics. "
+    "If the question asks to debate, settle an argument, or make a "
+    "shareable card for two players, call get_debate_card. "
     "If the question asks how players did in the playoffs, call "
     "get_playoff_intel per player first. "
     "Synthesize dimension by dimension with a verdict per dimension."
@@ -107,6 +115,19 @@ PLANNER_SYSTEM = (
 
 MAX_TOOL_ROUNDS = 3
 MAX_TOOL_CALLS = 8
+DEEP_TOOL_ROUNDS = 5
+DEEP_TOOL_CALLS = 12
+
+# Patterns that trigger deep investigation mode: multi-entity comparisons,
+# open-ended research questions, and explicit depth requests.
+DEEP_TRIGGERS = [
+    r"\bdeep dive\b", r"\binvestigat\w*\b", r"\bcomprehensive\b",
+    r"\bthorough\b", r"\bcompare\b.*\b(and|vs|versus)\b.*\b(and|vs|versus)\b",
+    r"\bbreak down\b", r"\bfull (report|analysis|breakdown)\b",
+    r"\bwhy\b.*\b(and|also)\b.*\bhow\b",
+    r"\ball\b.*\b(teams|players)\b",
+    r"\brank\b.*\b(top|best)\b.*\b\d+\b",
+]
 
 TOOL_LABELS = {
     "resolve_entity": "Identifying players and teams",
@@ -190,7 +211,8 @@ _LEAGUE_RX = re.compile(
     r"elo|title odds|streak|versus|power rank|net rating|"
     r"\btrad(e|es|ed|ing)\b|sign-and-trade|\bswap\b", re.IGNORECASE)
 _COMPARE_RX = re.compile(
-    r"\bvs\.?\b|\bversus\b|\bcompare\b", re.IGNORECASE)
+    r"\bvs\.?\b(?!\s+top[-\s]?\d)|\bversus\b(?!\s+top[-\s]?\d)|\bcompare\b",
+    re.IGNORECASE)
 _LIST_RX = re.compile(
     r"which\s+(players|teams)|what\s+(players|teams)|top\s+\d+|"
     r"\bunder\s+\d+|\bover\s+\d+|\bage\b|"
@@ -353,6 +375,17 @@ def _trade_sides(question: str, found_p: list[str], found_t: list[str],
 async def _triage_seed(question: str, primary: str, model: str,
                        state: dict) -> None:
     found_p, found_t = _detect_entities(question)
+    if state.get("history") and re.search(
+            r"\b(him|her|them|they|his|hers|theirs|it|that team|that player)\b",
+            question, re.IGNORECASE):
+        for t in state["history"][-6:]:
+            hp, ht = _detect_entities(t.get("text") or "")
+            for p in hp:
+                if p not in found_p and len(found_p) < 3:
+                    found_p.append(p)
+            for tm in ht:
+                if tm not in found_t and len(found_t) < 2:
+                    found_t.append(tm)
     is_compare = bool(_COMPARE_RX.search(question))
     is_trade = bool(re.search(r"\btrad(e|es|ed|ing)\b|sign-and-trade|\bswap\b|\bdeal\b",
                               question, re.IGNORECASE))
@@ -545,6 +578,45 @@ async def _triage_seed(question: str, primary: str, model: str,
         r"best season|career (arc|trajectory|history|impact)|"
         r"\btrajectory\b|\barc\b|over time|aging|development curve",
         question, re.IGNORECASE))
+    _sm = re.search(r"(\d+)[- ]point", question, re.IGNORECASE)
+    if (_sm and not is_trade and not is_cast
+            and not is_compare and not is_raptor
+            and re.search(r"streak|longest|consecutive", question,
+                          re.IGNORECASE)):
+        _thresh = max(1, min(int(_sm.group(1)), 60))
+        _code = (
+            "rows = con.execute(\"WITH g AS (SELECT Player_ID, PTS, "
+            "TRY_STRPTIME(GAME_DATE, '%b %d, %Y') AS d "
+            "FROM silver_player_gamelogs WHERE _season = '2025-26'), "
+            "s AS (SELECT Player_ID, d, PTS, ROW_NUMBER() OVER "
+            "(PARTITION BY Player_ID ORDER BY d) - ROW_NUMBER() OVER "
+            f"(PARTITION BY Player_ID, (PTS >= {_thresh})::INT ORDER BY d) "
+            "AS grp FROM g WHERE d IS NOT NULL), "
+            "agg AS (SELECT Player_ID, COUNT(*) AS streak FROM s WHERE PTS >= "
+            f"{_thresh} GROUP BY Player_ID, grp) "
+            "SELECT MAX(l.PLAYER), MAX(a.streak) FROM agg a LEFT JOIN "
+            "(SELECT DISTINCT PLAYER, PLAYER_ID FROM silver_leaders_pts) l "
+            "ON CAST(l.PLAYER_ID AS VARCHAR) = CAST(a.Player_ID AS VARCHAR) "
+            "GROUP BY a.Player_ID "
+            "ORDER BY MAX(a.streak) DESC LIMIT 5\").fetchall()\n"
+            "[print(f'{r[0]}: {r[1]} games') for r in rows]\n"
+            "out = rows"
+        )
+        try:
+            from .tools import v1_tools as _vtsq
+
+            _fn = next((t for t in _vtsq if t.name == "run_python"), None)
+            out = await _fn.ainvoke({"code": _code}) if _fn is not None else {
+                "tool": "run_python", "ok": False, "error": "no python tool"}
+        except Exception as exc:
+            out = {"tool": "run_python", "ok": False,
+                   "error": str(exc)[:160]}
+        state["tool_results"].append(
+            out if isinstance(out, dict) else {"tool": "run_python",
+                                              "rows": out})
+        state["calls_made"].append("run_python:" + json.dumps(
+            {"code": _code[:120]}, sort_keys=True))
+        return
     if (_LIST_RX.search(question) and not is_trade and not is_cast
             and not is_compare and not is_raptor
             and "delegate_league" in delegates):
@@ -558,6 +630,50 @@ async def _triage_seed(question: str, primary: str, model: str,
             out if isinstance(out, dict) else {"tool": "delegate_league",
                                                "rows": out})
         state["calls_made"].append("delegate_league:" + json.dumps(
+            {"task": task}, sort_keys=True))
+        return
+    if (found_p and not is_trade and not is_cast
+            and not is_compare and not is_raptor
+            and re.search(
+                r"overpaid|underpaid|contract value|good value|worth (it|his|her|the)|"
+                r"salary vs production|value (for|of the)|worth the (money|contract)",
+                question, re.IGNORECASE)):
+        try:
+            from .tools import v1_tools as _vtcv
+
+            fncv = next((t for t in _vtcv if t.name == "get_contract_value"),
+                        None)
+            out = await fncv.ainvoke(
+                {"player": found_p[0]}) if fncv is not None else {
+                "tool": "get_contract_value", "ok": False,
+                "error": "no contract tool"}
+        except Exception as exc:
+            out = {"tool": "get_contract_value", "ok": False,
+                   "error": str(exc)[:160]}
+        state["tool_results"].append(
+            out if isinstance(out, dict) else {"tool": "get_contract_value",
+                                              "rows": out})
+        state["calls_made"].append("get_contract_value:" + json.dumps(
+            {"player": found_p[0]}, sort_keys=True))
+        return
+    if (found_p and not is_trade and not is_cast
+            and not is_compare and not is_raptor
+            and re.search(
+                r"\bsplit|versus top|vs top|against top|last \d+|"
+                r"home\b|away\b|monthly|defense\b",
+                question, re.IGNORECASE)
+            and "delegate_scout" in delegates):
+        task = (question + " Use get_splits (it carries vs-top-10-defense"
+                " and vs-rest rows) for matchup context.")
+        try:
+            out = await delegates["delegate_scout"].ainvoke({"task": task})
+        except Exception as exc:
+            out = {"tool": "delegate_scout", "ok": False,
+                   "error": str(exc)[:160]}
+        state["tool_results"].append(
+            out if isinstance(out, dict) else {"tool": "delegate_scout",
+                                               "rows": out})
+        state["calls_made"].append("delegate_scout:" + json.dumps(
             {"task": task}, sort_keys=True))
         return
     if (not found_p or not found_t) and state.get("history"):
@@ -649,10 +765,26 @@ def _all_tools(state: DimeState) -> list:
 
 
 SUPERVISOR_TOOL_NAMES = frozenset({
-    "resolve_entity", "get_compare", "get_preview", "get_briefing",
+    "resolve_entity", "get_compare", "compare_metrics", "get_debate_card", "get_preview", "get_briefing",
     "delegate_scout", "delegate_team", "delegate_league", "run_python",
     "get_playoff_intel",
 })
+
+
+def _is_deep_question(question: str) -> bool:
+    """Detect questions that need deep investigation mode."""
+    q = (question or "").lower()
+    for pat in DEEP_TRIGGERS:
+        if re.search(pat, q):
+            return True
+    # 3+ entities also triggers deep mode
+    try:
+        qp, qt = _detect_entities(question)
+        if len(qp) + len(qt) >= 3:
+            return True
+    except Exception:
+        pass
+    return False
 
 
 def _supervisor_tools(state: DimeState) -> list:
@@ -663,9 +795,26 @@ _DISPLAY_TITLES = {
     "run_python": "Warehouse query",
     "text_to_sql": "Warehouse query",
     "get_compare": "Player comparison",
+    "compare_metrics": "Metric adjudication",
+    "get_debate_card": "Debate card",
     "get_leaders": "League leaders",
     "get_lineups": "Lineups",
     "get_shot_zones": "Shot zones",
+}
+
+_KIND_FOR_TOOL = {
+    "run_python": "python",
+    "text_to_sql": "warehouse",
+    "get_compare": "compare",
+    "compare_metrics": "compare",
+    "get_preview": "compare",
+    "get_debate_card": "debate",
+    "get_wowy": "wowy",
+    "get_shot_zones": "shots",
+    "get_shot_compare": "shots",
+    "get_leaders": "leaders",
+    "get_lineups": "lineups",
+    "get_raptor_history": "raptor",
 }
 
 
@@ -705,6 +854,7 @@ def _flatten_tables(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
             return None
         out = dict(rec)
         out.pop("tool", None)
+        out["kind"] = _KIND_FOR_TOOL.get(str(tool or ""), "dataset")
         if tool in _DISPLAY_TITLES:
             try:
                 meta = out.get("meta") if isinstance(out.get("meta"), dict) else None
@@ -795,11 +945,12 @@ async def data_retrieval_agent(
                       "which players the user means when entities exist.")
     if state["tool_results"]:
         prior += "\nPrior tool results this turn: " + str(state["tool_results"])[:4000]
-    budget_left = MAX_TOOL_CALLS - len(state["calls_made"])
+    max_calls = DEEP_TOOL_CALLS if _is_deep_question(state["question"]) else MAX_TOOL_CALLS
+    budget_left = max_calls - len(state["calls_made"])
     if budget_left <= 0:
         yield _event("thought_stream", {"node": "data_retrieval",
                                         "text": "Tool budget spent. Answering from evidence."})
-        state["round"] = MAX_TOOL_ROUNDS
+        state["round"] = DEEP_TOOL_ROUNDS if _is_deep_question(state["question"]) else MAX_TOOL_ROUNDS
         yield _event("node_update", {"node": "data_retrieval", "status": "complete"})
         return
     try:
@@ -822,7 +973,9 @@ async def data_retrieval_agent(
             continue
         state["calls_made"].append(key)
         fresh.append(call)
-        if len(state["calls_made"]) >= MAX_TOOL_CALLS:
+        _deep = _is_deep_question(state["question"])
+        _max = DEEP_TOOL_CALLS if _deep else MAX_TOOL_CALLS
+        if len(state["calls_made"]) >= _max:
             break
     if not fresh:
         made_names = _tool_names_from_calls_made(state["calls_made"])
@@ -837,7 +990,8 @@ async def data_retrieval_agent(
                          "tool now. No more identity calls."})
             state["_pending_calls"] = []  # type: ignore[typeddict-unknown-key]
         else:
-            state["round"] = MAX_TOOL_ROUNDS
+            _deep2 = _is_deep_question(state["question"])
+            state["round"] = DEEP_TOOL_ROUNDS if _deep2 else MAX_TOOL_ROUNDS
     else:
         for call in fresh:
             yield _event("message", {"node": "data_retrieval",
@@ -924,6 +1078,68 @@ def _suggest(
         if s not in seen:
             seen.append(s)
     return seen[:3]
+
+
+async def _suggest_llm(
+    question: str,
+    results: list[dict[str, Any]],
+    calls_made: list[str],
+    llm: Any,
+) -> list[str]:
+    """Evidence-grounded follow-up suggestions via LLM.
+
+    Falls back to hardcoded _suggest on any failure. The LLM sees a
+    compact summary of what data came back, so suggestions reference
+    actual players, teams, and stats — not generic templates.
+    """
+    try:
+        # Compact evidence: tool names + first few row keys/values
+        evidence: list[str] = []
+        for r in results[:6]:
+            if not isinstance(r, dict):
+                continue
+            tool = r.get("tool", "?")
+            rows = r.get("rows", [])
+            if isinstance(rows, dict):
+                rows = [rows]
+            if not isinstance(rows, list):
+                rows = []
+            sample = []
+            for row in rows[:3]:
+                if isinstance(row, dict):
+                    keys = [k for k in row.keys() if not k.startswith("_")][:4]
+                    sample.append({k: row[k] for k in keys})
+            evidence.append(f"{tool}: {json.dumps(sample)[:400]}")
+        evidence_str = "\n".join(evidence) or "no data returned"
+
+        prompt = (
+            "You suggest follow-up questions for an NBA analytics chatbot. "
+            "Based on the user's question and the data retrieved, suggest exactly 3 "
+            "specific follow-up questions the user would likely want to ask next. "
+            "Reference actual player/team names and stats from the data. "
+            "Keep each suggestion under 12 words. "
+            "Return ONLY a JSON array of 3 strings, no other text.\n\n"
+            f"User question: {question}\n\n"
+            f"Data retrieved:\n{evidence_str}"
+        )
+        resp = await llm.ainvoke([
+            SystemMessage(content="You suggest follow-up questions. Return only JSON."),
+            HumanMessage(content=prompt),
+        ])
+        text = resp.content if hasattr(resp, "content") else str(resp)
+        # Extract JSON array
+        match = re.search(r"\[.*\]", text, re.DOTALL)
+        if not match:
+            raise ValueError("no JSON array in response")
+        suggestions = json.loads(match.group(0))
+        if not isinstance(suggestions, list):
+            raise ValueError("not a list")
+        out = [str(s).strip() for s in suggestions if str(s).strip()][:3]
+        if len(out) < 3:
+            raise ValueError("fewer than 3 suggestions")
+        return out
+    except Exception:
+        return _suggest(question, results, calls_made)
 
 
 def _sanitize_evidence(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1077,9 +1293,18 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
     yield _event("node_update", {"node": "presentation", "status": "running"})
     text = state.get("analysis", "") or "No data came back. Try a player or team name."
     yield _event("final_answer", {"text": text})
-    state["suggestions"] = _suggest(
-        state["question"], state["tool_results"], state["calls_made"]
-    )
+    try:
+        llm = get_llm(state["primary"], state["model"])  # type: ignore[arg-type]
+    except Exception:
+        llm = None
+    if llm:
+        state["suggestions"] = await _suggest_llm(
+            state["question"], state["tool_results"], state["calls_made"], llm
+        )
+    else:
+        state["suggestions"] = _suggest(
+            state["question"], state["tool_results"], state["calls_made"]
+        )
     yield _event("suggestions", {"items": state["suggestions"]})
     yield _event("node_update", {"node": "presentation", "status": "complete"})
 
@@ -1099,7 +1324,14 @@ async def run_chat(
     async for e in entry_node(state):
         yield e
     await _triage_seed(question, primary, model, state)
-    while state["round"] < MAX_TOOL_ROUNDS:
+    deep = _is_deep_question(question)
+    max_rounds = DEEP_TOOL_ROUNDS if deep else MAX_TOOL_ROUNDS
+    if deep:
+        yield _event("thought_stream", {
+            "node": "entry",
+            "text": "Deep investigation mode: expanded tool budget.",
+        })
+    while state["round"] < max_rounds:
         async for e in data_retrieval_agent(state):
             yield e
         if "_pending_calls" not in state:

@@ -4,6 +4,35 @@ Goal: the chat Tyrese Haliburton Twitter nerds and team analysts open daily.
 Free public data only. No odds (killed). No deploy until approved.
 Each unit ships only after real runs: pytest, eval, scenarios, browser beta.
 
+## Market Strategy (added 2026-09-09)
+
+**Source:** `research/nba-analyst-market-brief.md` — full competitive analysis.
+
+**Thesis:** Every incumbent is a database with a query UI (Stathead), a metric with a
+dashboard (Dunks & Threes, Cleaning the Glass), or a lookup bot (StatMuse). Nobody is
+an **analyst**: nobody takes a question, gathers evidence across sources, reasons about
+it, and answers with receipts. That's the gap.
+
+**Target:** The Ringer's working NBA writer — 12 tabs open, $25-40/mo across subscriptions.
+If Dime answers the CTG question AND the Stathead question AND the EPM question in one
+chat, subscriptions lapse.
+
+**Wedges (priority order):**
+1. **Cross-metric adjudication** — "EPM says X, LEBRON says Y — who's right and why?"
+   No tool does this. Most differentiated query class.
+2. **Citable artifacts** — Analysts' currency is credibility. Every answer needs
+   source + timestamp. Screenshots should work without added context.
+3. **Bettor-adjacent Q&A** — "Last 15 vs top-10 defenses" in seconds, not hours of
+   `nba_api` wrangling. Analysis tool, never picks.
+4. **Freshness as feature** — Real-time feel during season vs opaque update schedules.
+5. **Free-tier wedge** — Undercut $25-40/mo subscription fatigue with generous free NL.
+
+**Don't build:** Betting picks, video/film (Synergy owns it), social beyond debate cards,
+trying to replace EPM/LEBRON (referee them instead).
+
+**Risks:** Data licensing (BRef scraping policy), NBA+AWS "Inside the Game" coming
+downmarket, StatMuse adding LLMs (Dime's window is depth before they move).
+
 ## Phase 0 — Done
 
 Chat over DuckDB warehouse, supervisor plus scout/team/league workers,

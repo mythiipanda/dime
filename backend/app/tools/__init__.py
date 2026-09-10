@@ -22,15 +22,21 @@ from .league import (
     get_risers,
     get_rest,
     get_standings,
+    get_standings_deep,
     get_trade_check,
     get_win_prob,
+    get_leaderboard_deltas,
+    snapshot_leaderboard,
     text_to_sql,
 )
 from .player import (
+    compare_metrics,
     get_advanced,
     get_compare,
+    get_debate_card,
     get_comps,
     get_four_factors,
+    get_hustle_boards,
     get_last_x,
     get_on_off,
     get_percentiles,
@@ -57,6 +63,8 @@ from .team import (
     get_team_hub,
     get_team_splits,
 )
+from .today import get_today, get_morning_briefing
+from .watchlist import add_watchlist_item, get_watchlist, remove_watchlist_item
 from ._core import MAX_ROWS, SEASON, STAT_CATEGORIES, clamp_stat
 
 v1_tools: list[BaseTool] = [
@@ -78,7 +86,6 @@ v1_tools: list[BaseTool] = [
     get_four_factors,
     get_last_x,
     get_percentiles,
-    get_briefing,
     get_shot_compare,
     get_shot_zones,
     get_hustle,
@@ -91,6 +98,8 @@ v1_tools: list[BaseTool] = [
     get_rapm,
     get_combine,
     get_compare,
+    compare_metrics,
+    get_debate_card,
     get_comps,
     get_advanced,
     get_rest,
@@ -111,6 +120,15 @@ v1_tools: list[BaseTool] = [
     get_draft_board,
     get_draft_model,
     get_risers,
+    get_standings_deep,
+    get_hustle_boards,
+    get_today,
+    get_morning_briefing,
+    get_leaderboard_deltas,
+    snapshot_leaderboard,
+    add_watchlist_item,
+    get_watchlist,
+    remove_watchlist_item,
 ]
 
 TOOL_NAMES = [t.name for t in v1_tools]
