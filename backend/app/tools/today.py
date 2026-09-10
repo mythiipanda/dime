@@ -29,7 +29,7 @@ def get_today(season: str = SEASON) -> dict[str, Any]:
                 get_games_on_date.invoke,
                 {"game_date": date_str, "season": season},
             )
-            res = fut.result(timeout=15)
+            res = fut.result(timeout=8)
             return res.get("rows", []) or []
         except Exception:
             return []
@@ -38,8 +38,11 @@ def get_today(season: str = SEASON) -> dict[str, Any]:
             # The orphaned thread dies on its own; we don't block on it.
             ex.shutdown(wait=False)
 
-    last_night = _games(yesterday)
-    tonight = _games(today)
+    import concurrent.futures as _cf
+
+    with _cf.ThreadPoolExecutor(max_workers=2) as _pool:
+        _last, _ton = list(_pool.map(_games, [yesterday, today]))
+    last_night, tonight = _last, _ton
     try:
         lead = get_leaders.invoke({"stat_category": "PTS", "season": season})
         movers = [
