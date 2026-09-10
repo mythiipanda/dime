@@ -33,6 +33,7 @@ def _desk_tool_label(name: str) -> str:
         "get_trade_value": "Grading trade value",
         "get_award_race": "Ranking award races",
         "get_matchup_preview": "Previewing the matchup",
+        "get_impact_estimate": "Estimating impact",
     }
     if not name:
         return "Checking data"
@@ -308,6 +309,9 @@ SCOUT_BRIEF = (
     "Playoff performance for a named player goes to get_playoff_intel. "
     "Usage, turnover rate, PIE, and rating ranks go to get_advanced. "
     "Career impact arcs go to get_raptor_history. "
+    "IF the task asks for a player's impact and no RAPTOR, RAPM, or BPM "
+    "row covers them, THEN call get_impact_estimate; its output is always "
+    "an estimate, so say so and never present it as a measured metric. "
     "Custom math over warehouse tables goes to run_python. "
     "Confirm a player's current team from get_advanced TEAM_ABBREVIATION "
     "before any team claim. Never take a team from memory. "
@@ -414,6 +418,7 @@ def _desk_spec(name: str, task: str):
     if name == "delegate_scout":
         return ("scout", SCOUT_BRIEF,
                  ["resolve_entity", "search_nba", "get_player_intel", "get_raptor_history",
+                  "get_impact_estimate",
                   "get_on_off", "get_wowy", "get_four_factors",
                   "get_last_x", "get_percentiles", "get_shot_zones",
                   "get_shot_compare", "get_trend", "get_comps", "get_clutch",

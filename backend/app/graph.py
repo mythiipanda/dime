@@ -159,6 +159,7 @@ TOOL_LABELS = {
     "get_head_to_head": "Checking head-to-head history",
     "get_team_shot_zones": "Mapping shot zones",
     "get_warehouse_freshness": "Checking warehouse freshness",
+    "get_impact_estimate": "Estimating impact",
 }
 
 
@@ -271,6 +272,14 @@ _PREDICT_RX = re.compile(
 _PREDICT_LIVE_RX = re.compile(r"\blive\b|\bin[\s-]*game\b", re.IGNORECASE)
 _PREDICT_TITLE_RX = re.compile(
     r"championship|\btitle\b|\bfinals\b|\bring\b", re.IGNORECASE)
+# Unambiguous impact-estimate phrasing: an estimate/impact pairing
+# within one clause ("estimate X's impact", "his estimated per-100
+# impact"), or "how good has/is [player]". RAPTOR/WAR/peak/career-arc
+# phrasing is deliberately NOT here: the raptor fast-path claims those.
+_IMPACT_RX = re.compile(
+    r"\bestimat\w+.{0,48}\bimpact\b|\bimpact\b.{0,48}\bestimat\w+|"
+    r"\bhow\s+good\s+(?:has|is|was)\b",
+    re.IGNORECASE)
 _BRIEFING_RX = re.compile(r"\bbriefing\b", re.IGNORECASE)
 _BRIEFING_CONTEXT_RX = re.compile(
     r"20\d\d[-/]\d{1,2}[-/]\d{1,2}|\bslate\b|\bmorning\b|"
@@ -1018,6 +1027,37 @@ async def _triage_seed(question: str, primary: str, model: str,
             return
         except Exception:
             pass
+    is_impact = bool(
+        found_p and _IMPACT_RX.search(question)
+        and not is_compare and not is_trade and not is_cast
+        and not state.get("history"))
+    if is_impact:
+        # Unambiguous impact-estimate phrasing ("estimate X's impact",
+        # "how good has [player] been"): get_impact_estimate answers it
+        # directly. Without this the question detours to delegate_scout,
+        # whose brief only routes impact to get_raptor_history, and the
+        # desk improvises impact numbers from raw net ratings.
+        # RAPTOR/WAR/peak/career phrasing is claimed by the raptor
+        # fast-path above and never reaches this block. Only on clean
+        # single-turn questions; anything uncertain falls through to the
+        # planner.
+        _ih: dict[str, Any] = {}
+        async for _e in _triage_tool(
+                "get_impact_estimate", {"player": found_p[0]}, state, _ih):
+            yield _e
+        _iout = _ih.get("out") or {}
+        if _result_status(_iout) == "ok":
+            # _triage_tool appended the raw tool dict. analytics_agent
+            # only treats tool_results entries with a non-empty "rows"
+            # key as evidence, so wrap it the same way the prediction
+            # fast-path does; otherwise the turn falls into the canned
+            # no-data branch and the LLM never runs.
+            if state["tool_results"] and state["tool_results"][-1] is _iout:
+                state["tool_results"][-1] = {
+                    "tool": "get_impact_estimate", "rows": [_iout]}
+            async for _e in _triage_terminal(question, state):
+                yield _e
+        return
     is_comps = bool(found_p and _COMPS_RX.search(question))
     if is_comps and not is_trade and not is_cast and not is_compare:
         # "players like X" phrasing: get_comps answers directly. Routing
