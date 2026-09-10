@@ -53,6 +53,7 @@ from .player import (
 from .preview import get_matchup_preview
 from .shared import resolve_entity, run_python, search_nba
 from .splits import get_matchup_splits, get_regression_check
+from .streaks import get_streaks
 from .team import (
     get_boxscore,
     get_games_on_date,
@@ -136,6 +137,7 @@ v1_tools: list[BaseTool] = [
     add_watchlist_item,
     get_watchlist,
     remove_watchlist_item,
+    get_streaks,
 ]
 
 TOOL_NAMES = [t.name for t in v1_tools]

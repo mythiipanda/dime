@@ -292,6 +292,8 @@ SCOUT_BRIEF = (
     "Situational matchup splits (defense tier, home/away, rest days) over "
     "the last N games go to get_matchup_splits. Sustainability checks on "
     "a hot stat line go to get_regression_check. "
+    "Streak questions (longest or active streaks, N-game streaks) go to "
+    "get_streaks with the stat, threshold, and scope. "
     "Resolve names with resolve_entity first. Use returned ids verbatim. "
     "Never invent ids. Season 2025-26 unless told otherwise."
 )
@@ -337,7 +339,9 @@ LEAGUE_BRIEF = (
     "THEN call get_draft_board. "
     "IF the task mentions star probability or draft model, "
     "THEN call get_draft_model. "
-    "IF the task mentions form, streaks, risers, fallers, or who is hot, "
+    "IF the task mentions streaks (longest or active, player or team), "
+    "THEN call get_streaks. "
+    "IF the task mentions form, risers, fallers, or who is hot, "
     "THEN call get_risers. "
     "IF the task mentions trade, swap, deal, or sign-and-trade, "
     "THEN call get_trade_check with team_abbrevs and player names. "
@@ -363,7 +367,7 @@ def _desk_spec(name: str, task: str):
                   "get_last_x", "get_percentiles", "get_shot_zones",
                   "get_shot_compare", "get_trend", "get_comps", "get_clutch",
                   "get_playoff_intel", "get_matchup_splits",
-                  "get_regression_check",
+                  "get_regression_check", "get_streaks",
                   "get_advanced", "run_python", "text_to_sql"],
                 None)
     if name == "delegate_team":
@@ -406,7 +410,7 @@ def _desk_spec(name: str, task: str):
                 ["get_standings", "get_leaders", "get_injuries", "get_rapm",
                  "get_playoffs", "get_playoff_intel", "get_ratings", "get_clutch", "get_elo",
                  "get_playoff_sim", "get_contract_value", "get_draft_board",
-                 "get_draft_model", "get_risers", "get_trade_check",
+                 "get_draft_model", "get_risers", "get_streaks", "get_trade_check",
                  "get_trade_value",
                  "get_award_race",
                  "run_python", "text_to_sql"],
