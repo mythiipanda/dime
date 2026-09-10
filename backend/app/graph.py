@@ -48,6 +48,8 @@ ANALYST_SYSTEM = (
     "diet, clutch, impact, and team context, then one overall verdict. "
     "Name each side's team and record when present. "
     "State one number per fact, never ranges. "
+    "For ranking questions, narrate the full order including the middle, "
+    "not just the top and bottom; the table carries every row. "
     "Only cite all-in-one metrics present in evidence: RAPM-lite, on-off "
     "net, RAPTOR history. Label RAPM-lite and RAPTOR as estimates. "
     "Never invent PER, BPM, EPM, WS, VORP, or LEBRON. Say EPM is unavailable. "
