@@ -152,6 +152,7 @@ TOOL_LABELS = {
     "get_trade_value": "Grading trade value",
     "get_award_race": "Ranking award races",
     "get_matchup_preview": "Previewing the matchup",
+    "get_briefing": "Briefing the slate",
     "get_lineup_stats": "Rating lineups",
     "get_streaks": "Finding streaks",
 }
@@ -245,6 +246,16 @@ _LIST_RX = re.compile(
     r"\bunder\s+\d+|\bover\s+\d+|\bage\b|"
     r"\baverag\w*\b|\bat least\b|"
     r"leads?\s+the\s+league|who\s+leads\b", re.IGNORECASE)
+_COMPS_RX = re.compile(
+    r"\bmost\s+like\b|\bplays?\s+like\b|\bstatistically\s+similar\b|"
+    r"\bsimilar\s+players?\b|\bclosest\s+comps?\b|"
+    r"\bcomparable\s+players?\b|\bplayer\s+comps?\b",
+    re.IGNORECASE)
+_BRIEFING_RX = re.compile(r"\bbriefing\b", re.IGNORECASE)
+_BRIEFING_CONTEXT_RX = re.compile(
+    r"20\d\d[-/]\d{1,2}[-/]\d{1,2}|\bslate\b|\bmorning\b|"
+    r"\btoday\b|\byesterday\b|\btomorrow\b",
+    re.IGNORECASE)
 
 _entity_cache: dict[str, Any] | None = None
 
@@ -583,6 +594,64 @@ def _done_thought(label: str, out: dict[str, Any], ms: int) -> str:
     return f"{label} — {tail}."
 
 
+async def _triage_tool(name: str, args: dict[str, Any], state: dict,
+                       holder: dict[str, Any]) -> AsyncGenerator[dict[str, Any], None]:
+    """Run one v1 tool from triage, emitting tool_call/tool_result/thought_stream.
+
+    Appends the result to state and stashes it in holder["out"]. Every
+    status is grounded in the real tool result; nothing is canned.
+    """
+    from .tools import v1_tools
+
+    fn = next((t for t in v1_tools if t.name == name), None)
+    label = tool_label(name)
+    t0 = time.time()
+    yield _event("tool_call", {
+        "node": "data_retrieval", "name": name, "label": label,
+        "summary": _args_summary(name, args),
+    })
+    try:
+        out = await fn.ainvoke(args) if fn is not None else {
+            "tool": name, "ok": False, "error": "unknown tool"}
+    except Exception as exc:
+        out = {"tool": name, "ok": False, "error": str(exc)[:160]}
+    if not isinstance(out, dict):
+        out = {"tool": name, "rows": out}
+    ms = int((time.time() - t0) * 1000)
+    st = _result_status(out)
+    rd: dict[str, Any] = {
+        "node": "data_retrieval", "name": name, "label": label,
+        "status": st, "rows": _result_rows(out), "ms": ms,
+    }
+    if st != "ok":
+        try:
+            rd["error"] = str(out.get("error"))[:160]
+        except Exception:
+            rd["error"] = "failed"
+    yield _event("tool_result", rd)
+    yield _event("thought_stream", {
+        "node": "data_retrieval",
+        "text": _done_thought(label, out, ms),
+    })
+    state["tool_results"].append(out)
+    state["calls_made"].append(name + ":" + json.dumps(args, sort_keys=True))
+    holder["out"] = out
+
+
+async def _triage_terminal(question: str,
+                           state: dict) -> AsyncGenerator[dict[str, Any], None]:
+    """End retrieval after a decisive triage hit.
+
+    Marks planner rounds exhausted so run_chat skips the supervisor loop,
+    and closes the data_retrieval window run_chat opened. Call only when
+    the evidence already answers the question; the planner fallback stays
+    for anything uncertain.
+    """
+    state["round"] = (DEEP_TOOL_ROUNDS if _is_deep_question(question)
+                      else MAX_TOOL_ROUNDS)
+    yield _event("node_update", {"node": "data_retrieval", "status": "complete"})
+
+
 async def _triage_seed(question: str, primary: str, model: str,
                        state: dict) -> AsyncGenerator[dict[str, Any], None]:
     found_p, found_t = _detect_entities(question)
@@ -874,6 +943,45 @@ async def _triage_seed(question: str, primary: str, model: str,
             return
         except Exception:
             pass
+    is_comps = bool(found_p and _COMPS_RX.search(question))
+    if is_comps and not is_trade and not is_cast and not is_compare:
+        # "players like X" phrasing: get_comps answers directly. Routing
+        # through delegate_league first wastes a desk plus planner rounds
+        # improvising similarity from SQL.
+        _decisive = True
+        for p in found_p[:2]:
+            _ch: dict[str, Any] = {}
+            async for _e in _triage_tool(
+                    "get_comps", {"player_id": p}, state, _ch):
+                yield _e
+            _cout = _ch.get("out") or {}
+            if _result_status(_cout) != "ok" or not _result_rows(_cout):
+                _decisive = False
+        if _decisive:
+            async for _e in _triage_terminal(question, state):
+                yield _e
+        return
+    if (_BRIEFING_RX.search(question) and _BRIEFING_CONTEXT_RX.search(question)
+            and not is_trade and not is_cast and not is_compare):
+        # Slate/morning briefing: get_briefing owns the scoreboard. A date
+        # in the question pins the day; otherwise the tool defaults to
+        # yesterday.
+        _bm = re.search(r"(20\d\d)[-/](\d{1,2})[-/](\d{1,2})", question)
+        _bdate = ""
+        if _bm:
+            _bdate = (f"{int(_bm.group(2)):02d}/"
+                      f"{int(_bm.group(3)):02d}/{_bm.group(1)}")
+        _bh: dict[str, Any] = {}
+        async for _e in _triage_tool(
+                "get_briefing", {"game_date": _bdate}, state, _bh):
+            yield _e
+        _bout = _bh.get("out") or {}
+        _brows = _bout.get("rows") if isinstance(_bout, dict) else None
+        _bgames = _brows.get("games") if isinstance(_brows, dict) else None
+        if _result_status(_bout) == "ok" and _bgames:
+            async for _e in _triage_terminal(question, state):
+                yield _e
+        return
     delegates = {t.name: t for t in delegate_tools(primary, model)}  # type: ignore[arg-type]
     is_raptor = bool(found_p and re.search(
         r"\braptor\b|\bwar\b|peak|all-time|all time|greatest season|"
@@ -927,6 +1035,14 @@ async def _triage_seed(question: str, primary: str, model: str,
         state["tool_results"].append(out)
         state["calls_made"].append("delegate_league:" + json.dumps(
             {"task": task}, sort_keys=True))
+        if (_result_status(out) == "ok" and not state.get("history")
+                and not _is_deep_question(question)):
+            # Desk answered a list question decisively. The planner's
+            # follow-up round adds nothing here, and with thread history
+            # it would inject carry context the desk never saw, so only
+            # skip on a clean single-turn hit.
+            async for _e in _triage_terminal(question, state):
+                yield _e
         return
     if (not found_p or not found_t) and state.get("history"):
         carry_p, carry_t = [], []

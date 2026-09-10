@@ -134,6 +134,7 @@ v1_tools: list[BaseTool] = [
     get_hustle_boards,
     get_today,
     get_morning_briefing,
+    get_briefing,
     get_leaderboard_deltas,
     snapshot_leaderboard,
     add_watchlist_item,
