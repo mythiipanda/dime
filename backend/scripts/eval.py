@@ -164,6 +164,13 @@ def main() -> None:
           and "EPM" in [u.get("metric") for u in met_rows.get("unavailable", [])],
           safe(met_res))
 
+    deb_res = tools.get_debate_card.invoke(
+        {"a": "Luka Doncic", "b": "Shai Gilgeous-Alexander"})
+    deb_rows = deb_res.get("rows", {}) if isinstance(deb_res.get("rows"), dict) else {}
+    check("debate card renders shareable file",
+          deb_res.get("ok") and str(deb_rows.get("path", "")).endswith(".html"),
+          safe(deb_res))
+
     res = tools.get_trend.invoke({"player_id": 2544})
     check("trend reports direction",
           res["ok"] and res["rows"].get("direction") in ("up", "down", "flat"),

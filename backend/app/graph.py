@@ -81,6 +81,8 @@ PLANNER_SYSTEM = (
     "If the question asks which metric is right, whether metrics agree, "
     "or names EPM, LEBRON, DARKO, DRIP, or RAPTOR for two players, "
     "call compare_metrics first and never invent those metrics. "
+    "If the question asks to debate, settle an argument, or make a "
+    "shareable card for two players, call get_debate_card. "
     "If the question asks how players did in the playoffs, call "
     "get_playoff_intel per player first. "
     "Synthesize dimension by dimension with a verdict per dimension."
@@ -665,7 +667,7 @@ def _all_tools(state: DimeState) -> list:
 
 
 SUPERVISOR_TOOL_NAMES = frozenset({
-    "resolve_entity", "get_compare", "compare_metrics", "get_preview", "get_briefing",
+    "resolve_entity", "get_compare", "compare_metrics", "get_debate_card", "get_preview", "get_briefing",
     "delegate_scout", "delegate_team", "delegate_league", "run_python",
     "get_playoff_intel",
 })
@@ -696,6 +698,7 @@ _DISPLAY_TITLES = {
     "text_to_sql": "Warehouse query",
     "get_compare": "Player comparison",
     "compare_metrics": "Metric adjudication",
+    "get_debate_card": "Debate card",
     "get_leaders": "League leaders",
     "get_lineups": "Lineups",
     "get_shot_zones": "Shot zones",

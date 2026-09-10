@@ -1250,12 +1250,24 @@ def get_debate_card(a: str, b: str, season: str = SEASON) -> dict[str, Any]:
 
     # Get comparison data
     import asyncio as _asyncio
+
+    async def _fetch() -> dict:
+        res = await get_compare.ainvoke(
+            {"a": a, "b": b, "season": season})
+        return res if isinstance(res, dict) else {"ok": False}
     try:
-        loop = _asyncio.get_event_loop()
-    except RuntimeError:
-        loop = _asyncio.new_event_loop()
-        _asyncio.set_event_loop(loop)
-    comp = loop.run_until_complete(get_compare(a, b, season))
+        try:
+            _asyncio.get_running_loop()
+        except RuntimeError:
+            comp = _asyncio.run(_fetch())
+        else:
+            import concurrent.futures as _cf
+
+            with _cf.ThreadPoolExecutor(max_workers=1) as _ex:
+                comp = _ex.submit(lambda: _asyncio.run(_fetch())).result(
+                    timeout=120)
+    except Exception as exc:
+        comp = {"ok": False, "error": str(exc)[:160]}
     if not comp.get("ok"):
         return {"tool": "get_debate_card", "ok": False,
                 "error": comp.get("error", "comparison failed")}
