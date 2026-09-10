@@ -820,6 +820,41 @@ def _match_trade_players(team: str, names: str) -> tuple[int, list[str], list[st
     return total_out, matched, unknown
 
 
+def _unknown_player_hints(unknown: list[str]) -> list[str]:
+    """'X is on BKN per salary data' hints for names missing from a roster.
+
+    Lets the planner self-correct when its team attribution is stale
+    (e.g. a player moved in the 2026 offseason).
+    """
+    hints: list[str] = []
+    try:
+        from .. import store as _store2
+
+        con2 = _store2.connect()
+        try:
+            for u in unknown:
+                base = u.split(" (suggestions")[0].strip()
+                bits = [b for b in base.split() if len(b) > 1]
+                like = "%" + "%".join(bits[:2]) + "%" if bits else base
+                hit = con2.execute(
+                    """SELECT TEAM, PLAYER_NAME FROM silver_salaries
+                    WHERE PLAYER_NAME LIKE ? LIMIT 1""",
+                    [like],
+                ).fetchone()
+                if hit:
+                    try:
+                        cur = _current_team_for_player(
+                            str(hit[1]), None, str(hit[0]))
+                    except Exception:
+                        cur = hit[0]
+                    hints.append(f"{base} is on {cur} per salary data")
+        finally:
+            con2.close()
+    except Exception:
+        pass
+    return hints
+
+
 PICK_VALUE_M: dict[int, float] = {
     1: 45.0, 2: 38.0, 3: 32.0, 4: 28.0, 5: 25.0,
     6: 18.0, 7: 18.0, 8: 18.0, 9: 18.0, 10: 18.0,
@@ -860,32 +895,7 @@ def get_trade_check(
             parts.append(f"{team_a.upper()}: {'; '.join(unk_a)}")
         if unk_b:
             parts.append(f"{team_b.upper()}: {'; '.join(unk_b)}")
-        hints = []
-        try:
-            from .. import store as _store2
-
-            con2 = _store2.connect()
-            try:
-                for u in (unk_a + unk_b):
-                    base = u.split(" (suggestions")[0].strip()
-                    bits = [b for b in base.split() if len(b) > 1]
-                    like = "%" + "%".join(bits[:2]) + "%" if bits else base
-                    hit = con2.execute(
-                        """SELECT TEAM, PLAYER_NAME FROM silver_salaries
-                        WHERE PLAYER_NAME LIKE ? LIMIT 1""",
-                        [like],
-                    ).fetchone()
-                    if hit:
-                        try:
-                            cur = _current_team_for_player(
-                                str(hit[1]), None, str(hit[0]))
-                        except Exception:
-                            cur = hit[0]
-                        hints.append(f"{base} is on {cur} per salary data")
-            finally:
-                con2.close()
-        except Exception:
-            pass
+        hints = _unknown_player_hints(unk_a + unk_b)
         msg = "unknown players: " + " | ".join(parts)
         if hints:
             msg += ". " + "; ".join(hints)
@@ -975,8 +985,11 @@ def get_trade_value(
             parts.append(f"{team_a.upper()}: {'; '.join(unk_a)}")
         if unk_b:
             parts.append(f"{team_b.upper()}: {'; '.join(unk_b)}")
-        return {"tool": "get_trade_value", "ok": False,
-                "error": "unknown players: " + " | ".join(parts)}
+        hints = _unknown_player_hints(unk_a + unk_b)
+        msg = "unknown players: " + " | ".join(parts)
+        if hints:
+            msg += ". " + "; ".join(hints)
+        return {"tool": "get_trade_value", "ok": False, "error": msg}
 
     con = _store.connect()
     try:
