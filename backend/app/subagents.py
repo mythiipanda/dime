@@ -150,6 +150,8 @@ SCOUT_BRIEF = (
     "Clutch production goes to get_clutch. "
     "Playoff performance for a named player goes to get_playoff_intel. "
     "Usage, turnover rate, PIE, and rating ranks go to get_advanced. "
+    "Four Factors questions (eFG%, turnover rate, rebound rate, free "
+    "throw rate) go to get_four_factors with player and team ids. "
     "Career impact arcs go to get_raptor_history. "
     "Custom math over warehouse tables goes to run_python. "
     "Confirm a player's current team from get_advanced TEAM_ABBREVIATION "
