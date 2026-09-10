@@ -75,6 +75,24 @@ def _apply_sample_floor(
     return visible, hidden, warning
 
 
+def _best_net_unit(units: list[dict[str, Any]],
+                   min_possessions: int) -> dict[str, Any] | None:
+    """Best five-man unit among sample-floor-passing units.
+
+    Pure function; kept testable so "best lineup" can never silently drift
+    back to "most-used lineup". Selection rule: highest NET_RATING among
+    units with poss >= min_possessions (tiny-sample/override units never
+    win); ties broken by higher possessions (larger sample = more reliable),
+    then by order (units are poss-sorted, so a full tie keeps the first).
+    """
+    eligible = [u for u in units if u.get("poss", 0) >= min_possessions]
+    if not eligible:
+        return None
+    return max(eligible,
+               key=lambda u: (u.get("NET_RATING", 0.0),
+                              u.get("poss", 0)))
+
+
 def _possession_aggs(team_id: int, season: str) -> dict[tuple[int, ...], dict] | None:
     """Per-lineup possession counts, points for/against, and blowout share.
 
@@ -147,6 +165,9 @@ def get_lineup_stats(
 
     Units under min_possessions (default 100) are hidden; blowout-heavy
     units are flagged. Ratings are per 100 possessions, warehouse-first.
+    The best lineup (highest NET_RATING among units meeting the floor) is
+    returned in the top-level best_net_unit field and flagged per-row as
+    is_best_net_unit, so it is never the most-used unit by default.
     """
     try:
         team_id = coerce_team_id(team)
@@ -199,6 +220,9 @@ def get_lineup_stats(
     units.sort(key=lambda u: u["poss"], reverse=True)
     visible, hidden, warning = _apply_sample_floor(units, min_possessions,
                                                   include_small)
+    best = _best_net_unit(visible, min_possessions)
+    for u in visible:
+        u["is_best_net_unit"] = u is best
     visible = visible[:limit]
     meta_out = {**meta,
                 "sample_floor": f"{min_possessions} possessions",
@@ -216,4 +240,4 @@ def get_lineup_stats(
                     "play-level data missing; ratings estimated from "
                     "lineup minutes") + (f"; {warning}" if warning else "")}
     return {"tool": "get_lineup_stats", "ok": True, "rows": visible,
-            "meta": meta_out}
+            "best_net_unit": best, "meta": meta_out}

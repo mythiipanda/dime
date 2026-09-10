@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app import tools
 from app.tools.lineup import (
     _apply_sample_floor,
+    _best_net_unit,
     _flags,
     _ratings,
     get_lineup_stats,
@@ -92,3 +93,68 @@ def test_invalid_team_fails_cleanly():
     res = get_lineup_stats.invoke({"team": "Not A Real Team XYZ"})
     assert res["ok"] is False
     assert "error" in res
+
+
+def test_best_net_unit_is_not_the_most_used():
+    units = [
+        {"GROUP_NAME": "starters", "poss": 420, "NET_RATING": 3.2},
+        {"GROUP_NAME": "bench mob", "poss": 120, "NET_RATING": 12.4},
+        {"GROUP_NAME": "40-min wonder", "poss": 80, "NET_RATING": 25.0},
+    ]
+    best = _best_net_unit(units, 100)
+    assert best["GROUP_NAME"] == "bench mob"
+
+
+def test_best_net_unit_tie_break_prefers_larger_sample():
+    units = [
+        {"GROUP_NAME": "hot streak", "poss": 150, "NET_RATING": 8.5},
+        {"GROUP_NAME": "steady", "poss": 200, "NET_RATING": 8.5},
+    ]
+    best = _best_net_unit(units, 100)
+    assert best["GROUP_NAME"] == "steady"
+
+
+def test_best_net_unit_none_when_everything_under_floor():
+    units = [{"GROUP_NAME": "tiny", "poss": 40, "NET_RATING": 99.0}]
+    assert _best_net_unit(units, 100) is None
+
+
+def _fake_warehouse(rows):
+    return lambda *a, **k: (rows, {"source": "test"})
+
+
+def _fake_rows():
+    # starters: 420 poss, net 10.0; bench mob: 120 poss, net 50.0
+    return [
+        {"GROUP_ID": "1-2-3-4-5", "GROUP_NAME": "starters", "GP": 40,
+         "MIN": 210.0, "PTS": 2310.0, "PLUS_MINUS": 21.0},
+        {"GROUP_ID": "6-7-8-9-10", "GROUP_NAME": "bench mob", "GP": 12,
+         "MIN": 60.0, "PTS": 660.0, "PLUS_MINUS": 30.0},
+    ]
+
+
+def test_tool_marks_best_unit_not_most_used(monkeypatch):
+    monkeypatch.setattr("app.tools.lineup.coerce_team_id", lambda t: 20)
+    monkeypatch.setattr("app.tools.lineup._possession_aggs",
+                        lambda *a: None)
+    monkeypatch.setattr("app.tools.lineup._warehouse_or_live",
+                        _fake_warehouse(_fake_rows()))
+    res = get_lineup_stats.invoke({"team": "NYK"})
+    assert res["ok"] is True
+    assert res["best_net_unit"]["GROUP_NAME"] == "bench mob"
+    assert res["best_net_unit"]["NET_RATING"] == 50.0
+    flags = {r["GROUP_NAME"]: r["is_best_net_unit"] for r in res["rows"]}
+    assert flags == {"starters": False, "bench mob": True}
+    assert res["rows"][0]["GROUP_NAME"] == "starters"
+
+
+def test_tool_best_unit_named_even_below_limit(monkeypatch):
+    monkeypatch.setattr("app.tools.lineup.coerce_team_id", lambda t: 20)
+    monkeypatch.setattr("app.tools.lineup._possession_aggs",
+                        lambda *a: None)
+    monkeypatch.setattr("app.tools.lineup._warehouse_or_live",
+                        _fake_warehouse(_fake_rows()))
+    res = get_lineup_stats.invoke({"team": "NYK", "limit": 1})
+    assert res["ok"] is True
+    assert [r["GROUP_NAME"] for r in res["rows"]] == ["starters"]
+    assert res["best_net_unit"]["GROUP_NAME"] == "bench mob"
