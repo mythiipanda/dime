@@ -304,6 +304,154 @@ async def get_compare(
                      "pair_rule": "same team abbrev runs wowy, Both ON net plus minutes"}}
 
 
+def _metric_row(metric: str, label: str, method: str, a: object, b: object,
+                na: str, nb: str, higher_wins: bool = True,
+                ) -> dict[str, Any]:
+    def _f(v: object) -> float | None:
+        try:
+            return float(v) if v is not None else None
+        except (TypeError, ValueError):
+            return None
+    fa, fb = _f(a), _f(b)
+    if fa is None or fb is None:
+        leader = "na"
+    elif abs(fa - fb) < 1e-9:
+        leader = "tie"
+    elif (fa > fb) == higher_wins:
+        leader = "a"
+    else:
+        leader = "b"
+    who = na if leader == "a" else nb if leader == "b" else ""
+    return {"metric": metric, "label": label, "method": method,
+            "a": fa, "b": fb, "leader": leader,
+            "note": f"{who} leads {label}." if who else f"{label} tied or missing."}
+
+
+@tool
+def compare_metrics(a: str, b: str, season: str = SEASON) -> dict[str, Any]:
+    """Cross-metric adjudication for two players. Referees impact metrics.
+
+    Pulls RAPTOR, RAPM-lite, on-off net, and PIE/TS from the warehouse and
+    reports which metrics agree. EPM, LEBRON, DARKO, and DRIP are listed
+    as unavailable, never invented.
+    """
+    try:
+        pida = coerce_player_id(a)
+        pidb = coerce_player_id(b)
+    except ValueError as exc:
+        return {"tool": "compare_metrics", "ok": False, "error": str(exc)[:160]}
+    from nba_api.stats.static import players as _static_p
+
+    names = {p.get("id"): p.get("full_name", "") for p in _static_p.get_players()}
+    import unicodedata as _ud
+
+    def _ascii(s: str) -> str:
+        return "".join(c for c in _ud.normalize("NFKD", s or "")
+                       if not _ud.combining(c))
+    na = _ascii(str(names.get(pida, a)))
+    nb = _ascii(str(names.get(pidb, b)))
+
+    def _one(pid: int, name: str) -> dict[str, Any]:
+        out: dict[str, Any] = {}
+        try:
+            r = _read_df(
+                "SELECT RAPTOR_OFFENSE, RAPTOR_DEFENSE, RAPTOR_TOTAL,"
+                " WAR_TOTAL, _season FROM silver_raptor_player"
+                " WHERE LOWER(PLAYER_NAME) = LOWER(?)"
+                " ORDER BY _season DESC LIMIT 1",
+                [name],
+            )
+            if r:
+                out.update({k: r[0].get(k) for k in
+                            ("RAPTOR_OFFENSE", "RAPTOR_DEFENSE",
+                             "RAPTOR_TOTAL", "WAR_TOTAL")})
+                out["raptor_season"] = r[0].get("_season")
+        except Exception:
+            pass
+        try:
+            r = _read_df(
+                "SELECT rapm FROM silver_rapm"
+                " WHERE _season = ? AND CAST(player_id AS VARCHAR)"
+                " = CAST(? AS VARCHAR) AND rapm IS NOT NULL LIMIT 1",
+                [season, str(pid)],
+            )
+            if r and r[0].get("rapm") is not None:
+                out["rapm"] = round(float(r[0]["rapm"]), 2)
+        except Exception:
+            pass
+        try:
+            r = _read_df(
+                'SELECT "On", "Off" FROM silver_on_off'
+                " WHERE _season = ? AND _entity = ? AND Stat = ? LIMIT 1",
+                [season, f"player:{pid}", "Pts per 100 Possessions"],
+            )
+            if r:
+                out["onoff"] = round(float(r[0].get("On") or 0)
+                                     - float(r[0].get("Off") or 0), 1)
+        except Exception:
+            pass
+        try:
+            r = _read_df(
+                "SELECT PIE, TS_PCT, USG_PCT FROM silver_advanced"
+                " WHERE _season = ? AND CAST(PLAYER_ID AS VARCHAR)"
+                " = CAST(? AS VARCHAR) LIMIT 1",
+                [season, str(pid)],
+            )
+            if r:
+                out.update({k: r[0].get(k) for k in ("PIE", "TS_PCT", "USG_PCT")})
+        except Exception:
+            pass
+        return out
+
+    ma, mb = _one(pida, na), _one(pidb, nb)
+    vintage = {s for s in (ma.get("raptor_season"), mb.get("raptor_season")) if s}
+    stale = sorted(vintage)[-1] if vintage and sorted(vintage)[-1] != season else ""
+    rows = [
+        _metric_row("raptor", "RAPTOR", "box plus on-off, FiveThirtyEight",
+                    ma.get("RAPTOR_TOTAL"), mb.get("RAPTOR_TOTAL"), na, nb),
+        _metric_row("raptor_o", "RAPTOR offense", "box plus on-off",
+                    ma.get("RAPTOR_OFFENSE"), mb.get("RAPTOR_OFFENSE"), na, nb),
+        _metric_row("raptor_d", "RAPTOR defense", "box plus on-off",
+                    ma.get("RAPTOR_DEFENSE"), mb.get("RAPTOR_DEFENSE"), na, nb),
+        _metric_row("war", "WAR", "wins above replacement",
+                    ma.get("WAR_TOTAL"), mb.get("WAR_TOTAL"), na, nb),
+        _metric_row("rapm", "RAPM-lite", "ridge on stint differentials",
+                    ma.get("rapm"), mb.get("rapm"), na, nb),
+        _metric_row("onoff", "on-off net", "lineup splits, noisy",
+                    ma.get("onoff"), mb.get("onoff"), na, nb),
+        _metric_row("pie", "PIE", "box-score share",
+                    ma.get("PIE"), mb.get("PIE"), na, nb),
+        _metric_row("ts", "true shooting", "scoring efficiency",
+                    ma.get("TS_PCT"), mb.get("TS_PCT"), na, nb),
+    ]
+    decided = [r for r in rows if r["leader"] in ("a", "b")]
+    va = sum(1 for r in decided if r["leader"] == "a")
+    vb = sum(1 for r in decided if r["leader"] == "b")
+    if not decided:
+        agreement, verdict = "none", "No shared metrics cover both players."
+    elif va == len(decided):
+        agreement, verdict = "agree", f"Every metric favors {na}."
+    elif vb == len(decided):
+        agreement, verdict = "agree", f"Every metric favors {nb}."
+    else:
+        split = [r["label"] for r in decided if r["leader"] == ("a" if va >= vb else "b")]
+        agreement, verdict = (
+            "split",
+            f"Metrics split {va}-{vb}. "
+            f"{na if va >= vb else nb} leads {', '.join(split[:3])}; "
+            "check RAPTOR defense vs on-off noise before concluding.")
+    if stale:
+        verdict += f" RAPTOR rows are {stale} vintage."
+    return {"tool": "compare_metrics", "ok": True,
+            "rows": {"a": na, "b": nb, "metrics": rows,
+                     "agreement": agreement, "verdict": verdict,
+                     "unavailable": [
+                         {"metric": m, "note": "not in warehouse, never estimated"}
+                         for m in ("EPM", "LEBRON", "DARKO", "DRIP")]},
+            "meta": {"source": "warehouse", "season": season,
+                     "raptor_season_a": ma.get("raptor_season"),
+                     "raptor_season_b": mb.get("raptor_season")}}
+
 @tool
 def get_player_intel(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
     """Game log plus shot sample for one player id. Warehouse first."""

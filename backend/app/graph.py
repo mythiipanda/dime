@@ -662,7 +662,7 @@ def _all_tools(state: DimeState) -> list:
 
 
 SUPERVISOR_TOOL_NAMES = frozenset({
-    "resolve_entity", "get_compare", "get_preview", "get_briefing",
+    "resolve_entity", "get_compare", "compare_metrics", "get_preview", "get_briefing",
     "delegate_scout", "delegate_team", "delegate_league", "run_python",
     "get_playoff_intel",
 })
@@ -692,6 +692,7 @@ _DISPLAY_TITLES = {
     "run_python": "Warehouse query",
     "text_to_sql": "Warehouse query",
     "get_compare": "Player comparison",
+    "compare_metrics": "Metric adjudication",
     "get_leaders": "League leaders",
     "get_lineups": "Lineups",
     "get_shot_zones": "Shot zones",

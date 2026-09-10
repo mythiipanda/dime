@@ -30,6 +30,7 @@ from .league import (
     text_to_sql,
 )
 from .player import (
+    compare_metrics,
     get_advanced,
     get_compare,
     get_debate_card,
@@ -97,6 +98,7 @@ v1_tools: list[BaseTool] = [
     get_rapm,
     get_combine,
     get_compare,
+    compare_metrics,
     get_debate_card,
     get_comps,
     get_advanced,
