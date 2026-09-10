@@ -31,6 +31,7 @@ from .league import (
     snapshot_leaderboard,
     text_to_sql,
 )
+from .lineup import get_lineup_stats
 from .player import (
     get_advanced,
     get_compare,
@@ -85,6 +86,7 @@ v1_tools: list[BaseTool] = [
     get_playoffs,
     get_leaders,
     get_lineups,
+    get_lineup_stats,
     get_on_off,
     get_wowy,
     get_four_factors,

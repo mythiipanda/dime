@@ -301,7 +301,9 @@ SCOUT_BRIEF = (
 TEAM_BRIEF = (
     "You are the team desk. Report record, roster, recent games, rotations, "
     "and five-man lineups by minutes with plus-minus. "
-    "Use get_lineups for five-man units. Use get_wowy for two-player combinations or with-or-without-you impact. "
+    "Use get_lineups for five-man units. Use get_lineup_stats for lineup "
+    "ratings: it hides units under 100 possessions and flags blowout-heavy "
+    "minutes. Use get_wowy for two-player combinations or with-or-without-you impact. "
     "For next-opponent or matchup briefs call get_scout_pack once. "
     "For a scheduled-game narrative preview (form, star matchups, injuries, "
     "x-factors, why-watch) call get_matchup_preview once; it never predicts scores. "
@@ -387,7 +389,7 @@ def _desk_spec(name: str, task: str):
                 force = ("get_injury_impact", {"team": abbr})
         return ("team", TEAM_BRIEF,
                 ["resolve_entity", "search_nba", "get_team_hub", "get_games_on_date",
-                 "get_boxscore", "get_lineups", "get_wowy", "get_injuries", "get_preview",
+                 "get_boxscore", "get_lineups", "get_lineup_stats", "get_wowy", "get_injuries", "get_preview",
                  "get_matchup_preview",
                  "get_scout_pack", "get_rotation_check", "get_cap_ledger",
                  "get_team_splits", "get_injury_impact", "run_python",
