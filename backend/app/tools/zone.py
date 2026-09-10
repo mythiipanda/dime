@@ -144,6 +144,34 @@ def build_rows(teams: dict[int, dict[str, Any]],
     return rows
 
 
+def _zone_leaders(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Leader per zone: the team the league desk should name for "who leads
+    this zone" questions.
+
+    Pure function; kept testable so a zone leader can never silently drift
+    back to "the first row scanned". Selection rule: highest
+    {zone}_share_delta_pp among team rows (the LEAGUE baseline row is not
+    eligible). share_delta is the criterion because zone questions are
+    about shot diet (who shoots the most at the rim / from the corner),
+    not efficiency. Ties broken by higher {zone}_share (more of the diet
+    at that zone), then by output order (rows are abbr-sorted, so a full
+    tie keeps the first team alphabetically).
+    """
+    out: dict[str, dict[str, Any]] = {}
+    for key in ZONE_KEYS:
+        best = max(rows,
+                   key=lambda r: (r.get(f"{key}_share_delta_pp", 0.0),
+                                  r.get(f"{key}_share", 0.0)))
+        out[key] = {
+            "team": best["team"],
+            "team_id": best["team_id"],
+            "share": best[f"{key}_share"],
+            "share_delta_pp": best[f"{key}_share_delta_pp"],
+            "shots": best["shots"],
+        }
+    return out
+
+
 def _parse_teams(raw: str, frame_team_ids: set[int]) -> tuple[set[int], list[str]]:
     wanted: set[int] = set()
     unknown: list[str] = []
@@ -192,6 +220,11 @@ def get_team_shot_zones(teams: str = "league",
         return {"tool": "get_team_shot_zones", "ok": False,
                 "error": f"no shot rows matched teams {teams!r} for {season}"}
     rows = build_rows(agg, baselines)
+    leaders = _zone_leaders(rows[1:])
+    for key, leader in leaders.items():
+        for row in rows[1:]:
+            row[f"is_{key}_share_leader"] = row["team_id"] == leader["team_id"]
+    rows[0].update({f"is_{key}_share_leader": False for key in ZONE_KEYS})
     fetched = [str(v) for v in frame.select("_fetched_at").to_series()
                .to_list() if v]
     meta = {
@@ -215,4 +248,5 @@ def get_team_shot_zones(teams: str = "league",
     }
     if unknown:
         meta["unknown_teams"] = unknown
-    return {"tool": "get_team_shot_zones", "ok": True, "rows": rows, "meta": meta}
+    return {"tool": "get_team_shot_zones", "ok": True, "rows": rows,
+            "zone_leaders": leaders, "meta": meta}

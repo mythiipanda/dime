@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.tools.zone import (ZONE_KEYS, aggregate_zones, build_rows,
                             get_team_shot_zones, league_baselines,
-                            season_year, zone_of)
+                            season_year, zone_of, _zone_leaders)
 
 
 def _shot(team_id, x, y, value, made, abbr="TST"):
@@ -138,3 +138,64 @@ def test_tool_mixes_known_and_unknown_teams():
     assert out["ok"] is True
     assert out["meta"]["unknown_teams"] == ["Not A Real Team"]
     assert [r["team"] for r in out["rows"][1:]] == ["BOS"]
+
+
+def _leader_rows():
+    # ZZZ sorts after AAA but leads rim on share delta: the leader must be
+    # the max-delta team, never the first row scanned.
+    shots = ([_shot(1, 0, 50, 2, True, "AAA")]
+             + [_shot(1, 0, 250, 3, True, "AAA")] * 3
+             + [_shot(2, 0, 50, 2, True, "ZZZ")] * 4)
+    agg = aggregate_zones(shots)
+    rows = build_rows(agg, league_baselines(agg))
+    return rows
+
+
+def test_zone_leader_is_max_delta_not_first_row():
+    leaders = _zone_leaders(_leader_rows()[1:])
+    assert leaders["rim"]["team"] == "ZZZ"
+    assert leaders["rim"]["share_delta_pp"] == max(
+        r["rim_share_delta_pp"] for r in _leader_rows()[1:])
+
+
+def _tie_rows():
+    rows = []
+    for team, tid, share, delta in (("AAA", 1, 0.60, 10.0),
+                                    ("ZZZ", 2, 0.62, 10.0),
+                                    ("MMM", 3, 0.60, 10.0)):
+        row = {"team": team, "team_id": tid, "shots": 100}
+        for key in ZONE_KEYS:
+            row[f"{key}_share"] = share if key == "rim" else 0.0
+            row[f"{key}_share_delta_pp"] = delta if key == "rim" else 0.0
+            row[f"{key}_efg"] = 0.0
+            row[f"{key}_efg_delta_pp"] = 0.0
+        rows.append(row)
+    return rows
+
+
+def test_zone_leader_tie_breaks_on_higher_share():
+    # Equal delta on rim: ZZZ (0.62 share) beats AAA/MMM (0.60).
+    assert _zone_leaders(_tie_rows())["rim"]["team"] == "ZZZ"
+
+
+def test_zone_leader_full_tie_keeps_first_team():
+    rows = _tie_rows()
+    rows[1]["rim_share"] = 0.60  # now AAA, ZZZ, MMM tie fully
+    assert _zone_leaders(rows)["rim"]["team"] == "AAA"
+
+
+def test_tool_league_output_marks_rim_leader_nop():
+    # DimeBench 2026-09-10 regression: rim share_delta_pp leader is NOP
+    # +10.55, not runner-up DET +8.77.
+    out = get_team_shot_zones.invoke({"teams": "league", "season": "2025-26"})
+    assert out["ok"] is True
+    leaders = out["zone_leaders"]
+    assert leaders["rim"]["team"] == "NOP"
+    assert leaders["rim"]["share_delta_pp"] == 10.55
+    rows = out["rows"]
+    for key, leader in leaders.items():
+        flagged = [r for r in rows if r[f"is_{key}_share_leader"]]
+        assert len(flagged) == 1
+        assert flagged[0]["team"] == leader["team"]
+        assert flagged[0][f"{key}_share_delta_pp"] == max(
+            r[f"{key}_share_delta_pp"] for r in rows[1:])
