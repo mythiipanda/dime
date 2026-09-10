@@ -609,8 +609,9 @@ def _assemble_rotation_report(
                 "units": len(units),
                 "total_unit_poss": total_poss,
                 "minutes_basis": (
-                    "lineup EST_MIN = poss/2 (silver_lineups MIN is a partial"
-                    " ~16-game upstream fetch); player MIN is season-to-date"
+                    "lineup EST_MIN = poss/2; lineup MIN is full-season"
+                    " 2025-26 (silver_lineups, sportsdataverse seeds);"
+                    " player MIN is season-to-date"
                     " from silver_hist_player_seasons"
                 ),
             },
@@ -632,8 +633,8 @@ def _assemble_rotation_report(
             "team_id": team_id,
             "sample_floor": f"{min_possessions} possessions",
             "data_note": (
-                "warehouse-only; lineup EST_MIN = poss/2 because silver_lineups"
-                " MIN is a partial ~16-game upstream fetch; units under the"
+                "warehouse-only; lineup EST_MIN = poss/2; silver_lineups"
+                " MIN is full-season 2025-26 (sportsdataverse seeds); units under the"
                 f" {min_possessions}-possession floor are hidden by"
                 " get_lineup_stats, never presented as signal; player MIN is"
                 " season-to-date from silver_hist_player_seasons and on/off"
