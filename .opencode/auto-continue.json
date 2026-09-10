@@ -1,1 +1,0 @@
-{"cooldown_ms": 300000, "enabled": true, "max_consecutive": 200, "message": "continue", "ignoreAgents": ["poteto-agent", "explore", "general", "comment-sicko"]}
