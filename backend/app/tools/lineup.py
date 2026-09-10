@@ -13,10 +13,15 @@ from langchain_core.tools import tool
 from .. import store as _store
 from .team import _lineup_key
 from ..sources import nba_stats
-from ._core import SEASON, TTL_PBPSTATS, _warehouse_or_live, coerce_team_id
+from ._core import MAX_ROWS, SEASON, TTL_PBPSTATS, _warehouse_or_live, coerce_team_id
 
 BLOWOUT_MARGIN = 20
 BLOWOUT_SHARE_FLAG = 0.5
+# Full-frame fetch for the best-unit computation. _warehouse_or_live caps
+# returned rows at MAX_ROWS for display/payload size; the docstring
+# promises the best unit "among units meeting the floor", so best_net_unit
+# must be computed over every floor-passing unit, not the display slice.
+_ALL_ROWS = 100_000
 
 
 def _ratings(pf: float, off_poss: int, pa: float,
@@ -178,7 +183,7 @@ def get_lineup_stats(
         "silver_lineups", "_season = ? AND _entity = ?",
         [season, f"team:{team_id}"],
         lambda: nba_stats.lineups(team_id, season), season,
-        entity=f"team:{team_id}", ttl_s=TTL_PBPSTATS,
+        entity=f"team:{team_id}", ttl_s=TTL_PBPSTATS, limit=_ALL_ROWS,
     )
     if not rows:
         return {"tool": "get_lineup_stats", "ok": True, "rows": [],
@@ -223,7 +228,9 @@ def get_lineup_stats(
     best = _best_net_unit(visible, min_possessions)
     for u in visible:
         u["is_best_net_unit"] = u is best
-    visible = visible[:limit]
+    # Response rows stay capped: the tool never returns more than the
+    # MAX_ROWS display slice, whatever limit the caller passes.
+    visible = visible[: min(limit, MAX_ROWS)]
     meta_out = {**meta,
                 "sample_floor": f"{min_possessions} possessions",
                 "blowout_rule": (f"flagged at {round(BLOWOUT_SHARE_FLAG * 100)}% "

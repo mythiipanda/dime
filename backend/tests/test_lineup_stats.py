@@ -158,3 +158,39 @@ def test_tool_best_unit_named_even_below_limit(monkeypatch):
     assert res["ok"] is True
     assert [r["GROUP_NAME"] for r in res["rows"]] == ["starters"]
     assert res["best_net_unit"]["GROUP_NAME"] == "bench mob"
+
+
+def _limit_aware_warehouse(rows):
+    def fake(*a, **k):
+        return rows[: k.get("limit", 25)], {"source": "test"}
+    return fake
+
+
+def _truncation_fixture_rows():
+    rows = []
+    for i in range(25):
+        rows.append({"GROUP_ID": f"1-2-3-4-{100 + i}",
+                     "GROUP_NAME": f"unit-{i}", "GP": 20,
+                     "MIN": 100.0, "PTS": 210.0, "PLUS_MINUS": 5.0})
+    for i in range(25, 29):
+        rows.append({"GROUP_ID": f"1-2-3-4-{100 + i}",
+                     "GROUP_NAME": f"unit-{i}", "GP": 20,
+                     "MIN": 100.0, "PTS": 210.0, "PLUS_MINUS": 6.0})
+    rows.append({"GROUP_ID": "1-2-3-4-999", "GROUP_NAME": "best unit",
+                 "GP": 25, "MIN": 90.5, "PTS": 207.0, "PLUS_MINUS": 51.0})
+    return rows
+
+
+def test_best_net_unit_computed_past_warehouse_row_cap(monkeypatch):
+    """Regression: best_net_unit must consider every floor-passing unit, not
+    just the head-25 warehouse slice. The true best sits beyond row 25."""
+    monkeypatch.setattr("app.tools.lineup.coerce_team_id", lambda t: 20)
+    monkeypatch.setattr("app.tools.lineup._possession_aggs",
+                        lambda *a: None)
+    monkeypatch.setattr("app.tools.lineup._warehouse_or_live",
+                        _limit_aware_warehouse(_truncation_fixture_rows()))
+    res = get_lineup_stats.invoke({"team": "NYK"})
+    assert res["ok"] is True
+    assert res["best_net_unit"]["GROUP_NAME"] == "best unit"
+    assert res["best_net_unit"]["NET_RATING"] > 50.0
+    assert len(res["rows"]) <= 25
