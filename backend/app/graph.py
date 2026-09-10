@@ -1076,6 +1076,8 @@ _DISPLAY_TITLES = {
     "get_leaders": "League leaders",
     "get_lineups": "Lineups",
     "get_shot_zones": "Shot zones",
+    "get_matchup_splits": "Matchup splits",
+    "get_regression_check": "Regression check",
 }
 
 

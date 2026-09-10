@@ -286,6 +286,9 @@ SCOUT_BRIEF = (
     "Custom math over warehouse tables goes to run_python. "
     "Confirm a player's current team from get_advanced TEAM_ABBREVIATION "
     "before any team claim. Never take a team from memory. "
+    "Situational matchup splits (defense tier, home/away, rest days) over "
+    "the last N games go to get_matchup_splits. Sustainability checks on "
+    "a hot stat line go to get_regression_check. "
     "Resolve names with resolve_entity first. Use returned ids verbatim. "
     "Never invent ids. Season 2025-26 unless told otherwise."
 )
@@ -348,12 +351,13 @@ def _desk_spec(name: str, task: str):
     """
     if name == "delegate_scout":
         return ("scout", SCOUT_BRIEF,
-                ["resolve_entity", "search_nba", "get_player_intel", "get_raptor_history",
-                 "get_on_off", "get_wowy", "get_four_factors",
-                 "get_last_x", "get_percentiles", "get_shot_zones",
-                 "get_shot_compare", "get_trend", "get_comps", "get_clutch",
-                 "get_playoff_intel",
-                 "get_advanced", "run_python", "text_to_sql"],
+                 ["resolve_entity", "search_nba", "get_player_intel", "get_raptor_history",
+                  "get_on_off", "get_wowy", "get_four_factors",
+                  "get_last_x", "get_percentiles", "get_shot_zones",
+                  "get_shot_compare", "get_trend", "get_comps", "get_clutch",
+                  "get_playoff_intel", "get_matchup_splits",
+                  "get_regression_check",
+                  "get_advanced", "run_python", "text_to_sql"],
                 None)
     if name == "delegate_team":
         force = None

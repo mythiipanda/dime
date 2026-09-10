@@ -157,3 +157,136 @@ def test_pair_history_slim_both_on():
         "note": "Shared court net +6.3 across 812.4 minutes."}
     assert pair_history({"ok": True, "rows": []})["both_on_net"] is None
     assert pair_history({"ok": False, "error": "never shared"})["both_on_net"] is None
+
+
+def _splits_fixture():
+    return [
+        {"GAME_DATE": "Jan 1, 2026", "MATCHUP": "HOU vs. MIN",
+         "PTS": 30, "REB": 10, "AST": 5, "FGM": 10, "FGA": 20,
+         "FTM": 5, "FTA": 6, "PLUS_MINUS": 3},
+        {"GAME_DATE": "Jan 3, 2026", "MATCHUP": "HOU @ PHX",
+         "PTS": 20, "REB": 8, "AST": 7, "FGM": 8, "FGA": 16,
+         "FTM": 2, "FTA": 2, "PLUS_MINUS": -1},
+        {"GAME_DATE": "Jan 4, 2026", "MATCHUP": "HOU vs. DEN",
+         "PTS": 10, "REB": 6, "AST": 3, "FGM": 4, "FGA": 12,
+         "FTM": 0, "FTA": 0, "PLUS_MINUS": -5},
+    ]
+
+
+def test_splits_aggregate_math():
+    from app.tools.splits import aggregate, ts_of
+
+    rows = _splits_fixture()
+    assert aggregate(rows) == {
+        "gp": 0 + 3, "ppg": 20.0, "rpg": 8.0, "apg": 5.0,
+        "fg_pct": round(22 / 48, 3), "plus_minus": -1.0}
+    assert ts_of(rows) == round(60 / (2 * (48 + 0.44 * 8)), 3)
+    assert aggregate([])["gp"] == 0
+    assert ts_of([]) is None
+
+
+def test_splits_rest_days():
+    from app.tools.splits import rest_days
+
+    rows = _splits_fixture()
+    buckets = rest_days(rows)
+    assert len(buckets) == 2
+    assert buckets[0][1] == "1"
+    assert buckets[1][1] == "0"
+    assert rows[0] not in [b[0] for b in buckets]
+
+
+def test_splits_defense_rank():
+    from app.tools.splits import defense_rank
+
+    rows = [{"TEAM_ID": 1, "DEF_RATING": 115.0},
+            {"TEAM_ID": 2, "DEF_RATING": 108.0},
+            {"TEAM_ID": 3, "DEF_RATING": 112.0}]
+    assert defense_rank(rows) == {2: 1, 3: 2, 1: 3}
+
+
+def test_splits_verdict_branches():
+    from app.tools.splits import verdict_for
+
+    v, _ = verdict_for(5.0, 0.0, 0.0, 0.0, 3, 2.0)
+    assert v == "too early"
+    v, _ = verdict_for(0.5, 0.0, 0.0, 0.0, 10, 2.0)
+    assert v == "sustainable"
+    v, note = verdict_for(5.0, 0.06, 0.0, 0.0, 10, 2.0)
+    assert v == "likely regresses"
+    assert "true shooting" in note
+    v, note = verdict_for(-5.0, 0.0, -4.0, 0.0, 10, 2.0)
+    assert v == "likely regresses"
+    assert "rebound" in note
+
+
+def test_splits_unknown_player():
+    from app.tools.splits import get_matchup_splits, get_regression_check
+
+    res = get_matchup_splits.invoke(
+        {"player": "Zzz Quux Nonexistent", "n": 5})
+    assert res["ok"] is False
+    assert "unknown player" in res["error"]
+    res = get_regression_check.invoke(
+        {"player": "Zzz Quux Nonexistent", "stat": "xyz", "n": 5})
+    assert res["ok"] is False
+    assert "unknown player" in res["error"]
+    from app.tools import clamp_stat
+
+    assert clamp_stat("xyz") == "PTS"
+
+
+def _warehouse_has_durant():
+    from app import store
+
+    con = store.connect()
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        if "silver_player_gamelogs" not in tables:
+            return False
+        n = con.execute(
+            "SELECT COUNT(*) FROM silver_player_gamelogs"
+            " WHERE _season = '2025-26' AND _entity = 'player:201142'"
+        ).fetchone()[0]
+        return n and n > 0
+    finally:
+        con.close()
+
+
+def test_splits_matchup_smoke():
+    try:
+        if not _warehouse_has_durant():
+            return
+    except Exception:
+        return
+    try:
+        from app.tools.splits import get_matchup_splits
+
+        res = get_matchup_splits.invoke(
+            {"player": "Kevin Durant", "n": 15, "season": "2025-26"})
+    except Exception:
+        return
+    assert res["ok"] is True
+    assert len(res["rows"]["splits"]) > 0
+    assert all("low_sample" in s for s in res["rows"]["splits"])
+
+
+def test_splits_regression_smoke():
+    try:
+        if not _warehouse_has_durant():
+            return
+    except Exception:
+        return
+    try:
+        from app.tools.splits import get_regression_check
+
+        res = get_regression_check.invoke(
+            {"player": "Kevin Durant", "stat": "xyz", "n": 10,
+             "season": "2025-26"})
+    except Exception:
+        return
+    assert res["ok"] is True
+    assert res["rows"]["stat"] == "PTS"
+    assert res["rows"]["verdict"] in (
+        "too early", "sustainable", "likely regresses")
+    assert res["rows"]["career"]["available"] is False

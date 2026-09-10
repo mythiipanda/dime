@@ -49,6 +49,7 @@ from .player import (
     get_wowy,
 )
 from .shared import resolve_entity, run_python, search_nba
+from .splits import get_matchup_splits, get_regression_check
 from .team import (
     get_boxscore,
     get_games_on_date,
@@ -90,6 +91,8 @@ v1_tools: list[BaseTool] = [
     get_hustle,
     get_injuries,
     get_splits,
+    get_matchup_splits,
+    get_regression_check,
     get_scouting_report,
     get_recap,
     text_to_sql,
