@@ -87,6 +87,7 @@ export default function DataArtifacts({
       t.tool === "get_shot_zones" ||
       t.tool === "get_wowy" ||
       t.tool === "get_compare" ||
+      t.tool === "compare_metrics" ||
       t.tool === "get_preview" ||
       t.tool === "get_rapm" ||
       t.tool === "get_finder",
@@ -333,7 +334,7 @@ export default function DataArtifacts({
         </details>
       )}
 
-      {table.tool === "get_compare" || table.tool === "get_preview" ? (
+      {table.tool === "get_compare" || table.tool === "compare_metrics" || table.tool === "get_preview" ? (
         <CompareView rows={table.rows} />
       ) : table.tool === "get_wowy" ? (
         <WowyCard

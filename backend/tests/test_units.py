@@ -157,3 +157,18 @@ def test_pair_history_slim_both_on():
         "note": "Shared court net +6.3 across 812.4 minutes."}
     assert pair_history({"ok": True, "rows": []})["both_on_net"] is None
     assert pair_history({"ok": False, "error": "never shared"})["both_on_net"] is None
+
+
+def test_compare_metrics_adjudicates():
+    from app.tools.player import compare_metrics
+
+    res = compare_metrics.invoke(
+        {"a": "Luka Doncic", "b": "Shai Gilgeous-Alexander",
+         "season": "2025-26"})
+    assert res["ok"]
+    rows = res["rows"]
+    assert len(rows["metrics"]) == 8
+    assert rows["agreement"] in ("agree", "split", "none")
+    assert "EPM" in [u["metric"] for u in rows["unavailable"]]
+    leaders = {m["leader"] for m in rows["metrics"]}
+    assert leaders <= {"a", "b", "tie", "na"}

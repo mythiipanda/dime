@@ -155,6 +155,15 @@ def main() -> None:
           prev_res["ok"] and abs(sum(prev_res["rows"]["win_prob"].values()) - 1.0) < 0.01,
           str(prev_res)[:200])
 
+    met_res = tools.compare_metrics.invoke(
+        {"a": "Luka Doncic", "b": "Shai Gilgeous-Alexander"})
+    met_rows = met_res.get("rows", {}) if isinstance(met_res.get("rows"), dict) else {}
+    check("metrics adjudication names agreement",
+          met_res.get("ok") and len(met_rows.get("metrics", [])) == 8
+          and met_rows.get("agreement") in ("agree", "split", "none")
+          and "EPM" in [u.get("metric") for u in met_rows.get("unavailable", [])],
+          safe(met_res))
+
     res = tools.get_trend.invoke({"player_id": 2544})
     check("trend reports direction",
           res["ok"] and res["rows"].get("direction") in ("up", "down", "flat"),

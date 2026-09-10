@@ -206,7 +206,7 @@ export default function ArtifactCanvas({ artifact, onClose, onAsk }: ArtifactCan
         )}
 
         {/* View Mode Rendering */}
-        {artifact.tool === "get_compare" || artifact.tool === "get_preview" ? (
+        {artifact.tool === "get_compare" || artifact.tool === "compare_metrics" || artifact.tool === "get_preview" ? (
           <CompareView rows={artifact.rows} />
         ) : artifact.tool === "get_wowy" ? (
           <WowyCard rows={artifact.rows} meta={artifact.meta} verdict={artifact.verdict} />

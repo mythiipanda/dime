@@ -328,7 +328,7 @@ def _metric_row(metric: str, label: str, method: str, a: object, b: object,
 
 
 @tool
-def compare_metrics(a: str, b: str, season: str = SEASON) -> dict[str, Any]:
+def compare_metrics(a: str | int, b: str | int, season: str = SEASON) -> dict[str, Any]:
     """Cross-metric adjudication for two players. Referees impact metrics.
 
     Pulls RAPTOR, RAPM-lite, on-off net, and PIE/TS from the warehouse and
