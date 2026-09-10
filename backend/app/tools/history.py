@@ -1,6 +1,7 @@
 """Historical league leaders from warehouse season totals only."""
 
-from typing import Any
+import difflib as _dl
+from typing import Any, Union
 
 from langchain_core.tools import tool
 
@@ -40,23 +41,62 @@ MODE_ALIASES = {
     "campaigns": "best",
 }
 
+CATEGORY_ALIASES: dict[str, str] = {
+    "scoring": "pts", "points": "pts", "point": "pts", "pts": "pts",
+    "rebounds": "reb", "rebound": "reb", "boards": "reb", "board": "reb",
+    "reb": "reb",
+    "assists": "ast", "assist": "ast", "dimes": "ast", "dime": "ast",
+    "ast": "ast",
+    "steals": "stl", "steal": "stl", "stl": "stl",
+    "blocks": "blk", "block": "blk", "blk": "blk",
+    "threes": "fg3m", "three": "fg3m", "three_pointers": "fg3m",
+    "three_pointer": "fg3m", "fg3m": "fg3m",
+    "field_goal_pct": "fg_pct", "fg_percentage": "fg_pct",
+    "field_goal_percentage": "fg_pct", "fg_pct": "fg_pct",
+    "free_throw_pct": "ft_pct", "ft_percentage": "ft_pct",
+    "free_throw_percentage": "ft_pct", "ft_pct": "ft_pct",
+    "minutes": "min", "minute": "min", "mins": "min", "min": "min",
+}
+
+
+def season_label(end_year: object) -> str:
+    y = int(str(end_year).strip()[:4])
+    return f"{y - 1}-{str(y)[-2:]}"
+
 
 def normalize_category(name: object) -> str | None:
-    key = str(name or "").strip().lower().replace(" ", "_")
-    return key if key in CATEGORIES else None
+    key = str(name or "").strip().lower().replace("-", "_").replace(" ", "_")
+    while "__" in key:
+        key = key.replace("__", "_")
+    if key in CATEGORIES:
+        return key
+    return CATEGORY_ALIASES.get(key)
+
+
+def closest_category(name: object) -> str | None:
+    key = str(name or "").strip().lower().replace("-", "_").replace(" ", "_")
+    pool = sorted(set(CATEGORIES) | set(CATEGORY_ALIASES))
+    hit = _dl.get_close_matches(key, pool, n=1, cutoff=0.6)
+    if not hit:
+        return None
+    return CATEGORY_ALIASES.get(hit[0], hit[0])
+
+
+def _parse_year_raw(value: object, fallback: int) -> tuple[int, bool]:
+    try:
+        return int(str(value).strip()[:4]), True
+    except (TypeError, ValueError, AttributeError):
+        return fallback, False
 
 
 def _clamp_year(value: object, fallback: int) -> int:
-    try:
-        year = int(str(value).strip()[:4])
-    except (TypeError, ValueError):
-        return fallback
+    year, _ = _parse_year_raw(value, fallback)
     return max(MIN_YEAR, min(MAX_YEAR, year))
 
 
 def _clamp_limit(value: object) -> int:
     try:
-        return max(1, min(25, int(value)))
+        return max(1, min(25, int(value)))  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return 10
 
@@ -89,12 +129,19 @@ def _round_value(decimals: int, value: object) -> float | None:
 
 def _row(spec: dict[str, Any], raw: dict[str, Any]) -> dict[str, Any]:
     value = _round_value(spec["decimals"], raw.get("value"))
+    season = raw.get("season")
+    try:
+        label = season_label(season) if season is not None else None
+    except (TypeError, ValueError):
+        label = None
     out: dict[str, Any] = {
         "player": raw.get("player_name"),
         "team": raw.get("team_abbreviation"),
-        "season": raw.get("season"),
+        "season": season,
+        "season_label": label,
         "gp": raw.get("gp"),
         "value": value,
+        "display": f"{value:.{spec['decimals']}f}" if value is not None else None,
     }
     raptor = _round_value(2, raw.get("raptor"))
     if raptor is not None:
@@ -131,10 +178,12 @@ def _query(spec: dict[str, Any], where: str, params: list,
 
 
 @tool
-def get_historical_leaders(category: str = "pts", start_season: int = 2015,
-                           end_season: int = 2025, limit: int = 10,
+def get_historical_leaders(category: str = "pts",
+                           start_season: Union[int, str, None] = 2015,
+                           end_season: Union[int, str, None] = 2025,
+                           limit: Union[int, str, None] = 10,
                            mode: str = "leaders") -> dict[str, Any]:
-    """League leaders per season or best single seasons from history.
+    """League leaders per season or best single seasons from history. Seasons are end-years (2025 means 2024-25), clamped to 2015..2025.
 
     Seasons are end-years clamped to 2015..2025. Values are per-game
     warehouse estimates. Empty ranges report honestly, never fabricated.
@@ -142,14 +191,47 @@ def get_historical_leaders(category: str = "pts", start_season: int = 2015,
     canon = normalize_category(category)
     if canon is None:
         valid = ", ".join(sorted(CATEGORIES))
+        hint = closest_category(category)
+        err = f"unknown category '{category}'; valid categories: {valid}"
+        if hint:
+            err += f"; did you mean '{hint}'?"
         return {"tool": "get_historical_leaders", "ok": False, "rows": {},
-                "meta": {}, "error": f"unknown category '{category}'; valid categories: {valid}"}
+                "meta": {}, "error": err}
     spec = CATEGORIES[canon]
-    start = _clamp_year(start_season, MIN_YEAR)
-    end = _clamp_year(end_season, MAX_YEAR)
+    warnings: list[str] = []
+    raw_start, start_ok = _parse_year_raw(start_season, MIN_YEAR)
+    raw_end, end_ok = _parse_year_raw(end_season, MAX_YEAR)
+    if not start_ok:
+        warnings.append(f"start_season '{start_season}' invalid, using {MIN_YEAR}")
+    if not end_ok:
+        warnings.append(f"end_season '{end_season}' invalid, using {MAX_YEAR}")
+    if min(raw_start, raw_end) > MAX_YEAR or max(raw_start, raw_end) < MIN_YEAR:
+        return {"tool": "get_historical_leaders", "ok": False, "rows": {},
+                "meta": {"category": canon,
+                         "requested_range": [raw_start, raw_end]},
+                "error": f"no {spec['label']} coverage for seasons {raw_start}..{raw_end}"}
+    start, end = raw_start, raw_end
     if start > end:
         start, end = end, start
-    limit = _clamp_limit(limit)
+        warnings.append(f"reversed range swapped to {start}..{end}")
+    clamped_start = max(MIN_YEAR, min(MAX_YEAR, start))
+    clamped_end = max(MIN_YEAR, min(MAX_YEAR, end))
+    if clamped_start != start:
+        warnings.append(f"start_season {start} clamped to {clamped_start}")
+    if clamped_end != end:
+        warnings.append(f"end_season {end} clamped to {clamped_end}")
+    start, end = clamped_start, clamped_end
+    try:
+        raw_limit = int(limit)  # type: ignore[arg-type]
+        limit_ok = True
+    except (TypeError, ValueError):
+        raw_limit = 10
+        limit_ok = False
+    if not limit_ok:
+        warnings.append(f"limit '{limit}' invalid, using 10")
+    limit = max(1, min(25, raw_limit))
+    if limit_ok and limit != raw_limit:
+        warnings.append(f"limit {raw_limit} clamped to {limit}")
     mode = normalize_mode(mode)
     try:
         tables = _tables()
@@ -185,9 +267,12 @@ def get_historical_leaders(category: str = "pts", start_season: int = 2015,
     meta: dict[str, Any] = {
         "category": canon, "label": spec["label"], "mode": mode,
         "start_season": start, "end_season": end, "limit": limit,
+        "display_range": f"{season_label(start)} to {season_label(end)}",
         "qualification": qual,
         "source": "warehouse (documented estimates)",
         "values": "per-game season averages; RAPTOR from five-year-old model, not current form",
         "raptor_available": raptor,
     }
+    if warnings:
+        meta["warning"] = "; ".join(warnings)
     return {"tool": "get_historical_leaders", "ok": True, "rows": payload, "meta": meta}

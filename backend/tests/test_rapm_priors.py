@@ -102,3 +102,20 @@ def test_get_rapm_prior_registered():
     from app import tools
 
     assert "get_rapm_prior" in tools.TOOL_NAMES
+
+
+def test_get_rapm_prior_single_identity_no_blend():
+    tables = _tables()
+    if "silver_rapm_prior" not in tables or "silver_rapm" not in tables:
+        return
+    from app.tools.priors import get_rapm_prior
+
+    res = get_rapm_prior.invoke({"player": "bron"})
+    assert res["ok"] is True
+    pid = res["rows"]["player_id"]
+    assert res["rows"]["player"] == "LeBron James"
+    priors = res["rows"]["priors"]
+    assert priors
+    assert {p["player_id"] for p in priors} == {pid}
+    assert all("Bronny" not in p["name"] for p in priors)
+    assert res["rows"]["current"]["player_id"] == pid

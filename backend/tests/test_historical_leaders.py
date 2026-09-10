@@ -123,3 +123,93 @@ def test_registered():
     from app import tools
 
     assert "get_historical_leaders" in tools.TOOL_NAMES
+
+
+def test_future_range_outside_coverage_is_honest():
+    from app.tools.history import get_historical_leaders
+
+    res = get_historical_leaders.invoke({
+        "category": "pts", "start_season": 2030,
+        "end_season": 2035, "limit": 5, "mode": "best",
+    })
+    assert res["ok"] is False
+    assert "no PTS coverage" in res["error"]
+
+
+def test_partial_overlap_clamps_with_warning():
+    if not _warehouse_has_history():
+        return
+    from app.tools.history import get_historical_leaders
+
+    res = get_historical_leaders.invoke({
+        "category": "pts", "start_season": 2024,
+        "end_season": 2030, "limit": 2, "mode": "best",
+    })
+    assert res["ok"] is True
+    assert res["meta"]["end_season"] == 2025
+    assert "warning" in res["meta"]
+
+
+def test_reversed_range_swaps_with_warning():
+    if not _warehouse_has_history():
+        return
+    from app.tools.history import get_historical_leaders
+
+    res = get_historical_leaders.invoke({
+        "category": "pts", "start_season": 2025,
+        "end_season": 2023, "limit": 2, "mode": "leaders",
+    })
+    assert res["ok"] is True
+    assert res["meta"]["start_season"] <= res["meta"]["end_season"]
+    assert "warning" in res["meta"]
+
+
+def test_string_inputs_never_traceback():
+    from app.tools.history import get_historical_leaders
+
+    res = get_historical_leaders.invoke({
+        "category": "pts", "start_season": "banana",
+        "end_season": "zzz", "limit": "abc", "mode": "leaders",
+    })
+    assert isinstance(res, dict)
+    assert "ok" in res
+
+
+def test_category_aliases_resolve():
+    if not _warehouse_has_history():
+        return
+    from app.tools.history import get_historical_leaders
+
+    for alias, canon in [("scoring", "pts"), ("dimes", "ast"),
+                         ("boards", "reb"), ("threes", "fg3m"),
+                         ("minutes", "min")]:
+        res = get_historical_leaders.invoke({
+            "category": alias, "start_season": 2024,
+            "end_season": 2025, "limit": 2, "mode": "best",
+        })
+        assert res["ok"] is True
+        assert res["meta"]["category"] == canon
+
+
+def test_unknown_category_hint():
+    from app.tools.history import get_historical_leaders
+
+    res = get_historical_leaders.invoke({"category": "asists"})
+    assert res["ok"] is False
+    assert "did you mean" in res["error"]
+
+
+def test_rows_carry_season_label_and_display():
+    if not _warehouse_has_history():
+        return
+    from app.tools.history import get_historical_leaders
+
+    res = get_historical_leaders.invoke({
+        "category": "fg_pct", "start_season": 2024,
+        "end_season": 2025, "limit": 2, "mode": "best",
+    })
+    assert res["ok"] is True
+    row = res["rows"]["leaders"][0]
+    assert row["season_label"] == f"{row['season'] - 1}-{str(row['season'])[-2:]}"
+    assert row["display"] == f"{row['value']:.3f}"
+    assert res["meta"]["display_range"] == "2023-24 to 2024-25"

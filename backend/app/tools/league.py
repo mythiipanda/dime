@@ -2280,6 +2280,7 @@ FRESHNESS_RULES: dict[str, tuple[str, float | None]] = {
     "silver_raptor_player": ("static", None),
     "silver_raptor_team": ("static", None),
     "silver_rapm": ("static", None),
+    "silver_rapm_prior": ("static", None),
 }
 
 

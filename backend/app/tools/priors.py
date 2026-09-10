@@ -71,6 +71,7 @@ def get_rapm_prior(player: str = "", seasons: object = None) -> dict[str, Any]:
                     "error": "rapm priors not seeded yet"}
         like = f"%{name.lower()}%"
         cur = None
+        pid: str | None = None
         if "silver_rapm" in tables:
             row = con.execute(
                 """SELECT player_id, name, rapm, possessions FROM silver_rapm
@@ -82,14 +83,28 @@ def get_rapm_prior(player: str = "", seasons: object = None) -> dict[str, Any]:
                 cur = {"player_id": str(row[0]), "name": row[1],
                        "rapm": row[2], "possessions": row[3] or 0,
                        "season": SEASON}
+                pid = str(row[0])
         placeholders = ", ".join("?" * len(labels))
-        prior_rows = con.execute(
-            f"""SELECT player_id, name, rapm, possessions, _season
-            FROM silver_rapm_prior
-            WHERE LOWER(name) LIKE ? AND _season IN ({placeholders})
-            ORDER BY _season""",
-            [like, *labels],
-        ).fetchall()
+        if pid is None:
+            top = con.execute(
+                f"""SELECT player_id FROM silver_rapm_prior
+                WHERE LOWER(name) LIKE ? AND _season IN ({placeholders})
+                ORDER BY possessions DESC LIMIT 1""",
+                [like, *labels],
+            ).fetchone()
+            if top:
+                pid = str(top[0])
+        if pid is None:
+            prior_rows = []
+        else:
+            prior_rows = con.execute(
+                f"""SELECT player_id, name, rapm, possessions, _season
+                FROM silver_rapm_prior
+                WHERE LOWER(name) LIKE ? AND _season IN ({placeholders})
+                AND CAST(player_id AS VARCHAR) = CAST(? AS VARCHAR)
+                ORDER BY _season""",
+                [like, *labels, pid],
+            ).fetchall()
     finally:
         con.close()
     priors = [{"player_id": str(r[0]), "name": r[1], "rapm": r[2],

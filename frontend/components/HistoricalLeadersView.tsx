@@ -6,8 +6,10 @@ export interface HistoricalLeader {
   player: string;
   team: string;
   season: number | null;
+  season_label: string;
   gp: number | null;
   value: number | null;
+  display: string | null;
   raptor: number | null;
 }
 
@@ -34,8 +36,10 @@ function parseLeader(r: Record<string, unknown>): HistoricalLeader | null {
     player,
     team: str(r.team),
     season: num(r.season),
+    season_label: str(r.season_label),
     gp: num(r.gp),
     value,
+    display: str(r.display) || null,
     raptor: num(r.raptor),
   };
 }
@@ -70,6 +74,8 @@ function LeaderCard({
   maxValue: number;
   unit: string;
 }) {
+  const shown =
+    leader.display ?? (leader.value !== null ? leader.value.toFixed(1) : "—");
   return (
     <div
       style={{
@@ -135,7 +141,7 @@ function LeaderCard({
             fontVariantNumeric: "tabular-nums",
           }}
         >
-          {leader.value !== null ? leader.value.toFixed(1) : "—"}
+          {leader.value !== null ? shown : "—"}
         </span>
       </div>
       <Bar pct={((leader.value ?? 0) / Math.max(maxValue, 1)) * 100} />
@@ -143,7 +149,7 @@ function LeaderCard({
         style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}
       >
         <Chip>
-          {unit} {leader.value !== null ? leader.value.toFixed(1) : "—"}
+          {unit} {leader.value !== null ? shown : "—"}
         </Chip>
         {leader.gp !== null && <Chip>GP {leader.gp}</Chip>}
         {leader.raptor !== null && (
