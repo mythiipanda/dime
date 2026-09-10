@@ -1415,6 +1415,53 @@ def _describe_warehouse_schema(cols: dict[str, list[str]]) -> str:
     return "\n".join(f"{t}: {', '.join(c[:40])}" for t, c in cols.items())
 
 
+# Tables the warehouse read path (text_to_sql, rerun_sql) may query.
+_SQL_TABLES = [
+    "silver_standings", "silver_playoffs", "silver_team_ratings",
+    "silver_clutch", "silver_player_gamelogs", "silver_team_games",
+    "silver_leaders_pts", "silver_leaders_reb", "silver_leaders_ast",
+    "silver_leaders_stl", "silver_leaders_blk", "silver_boxscores",
+    "silver_lineups", "silver_shots", "silver_hustle_player",
+    "silver_hustle_team", "silver_injuries", "silver_hist_gamelogs",
+    "silver_hist_standings", "silver_hist_possessions",
+    "silver_hist_shots", "silver_hist_lineups", "silver_salaries",
+    "silver_hist_draft", "silver_raptor_player", "silver_raptor_team",
+    "silver_hist_player_seasons",
+]
+
+# One-click re-run limits: matches text_to_sql's rows[:25] slice.
+RERUN_ROW_CAP = 25
+RERUN_TIMEOUT_S = 30
+
+import re as _re_mod
+
+
+_SELECT_RE = _re_mod.compile(r"(?i)^\s*(select|with)\b")
+_WRITE_RE = _re_mod.compile(
+    r"(?i)\b(insert|update|delete|drop|alter|create|pragma|attach|copy|"
+    r"vacuum|detach)\b")
+_TABLE_REF_RE = _re_mod.compile(r"(?i)from\s+(\w+)|join\s+(\w+)")
+
+
+def _validate_readonly_sql(sql: str, present: set[str]) -> str:
+    """Normalize a user-supplied SQL string for read-only execution.
+
+    Raises ValueError unless it is one SELECT/WITH statement over the
+    allowlisted warehouse tables. Shared by text_to_sql and rerun_sql.
+    """
+    sql = (sql or "").strip().rstrip(";").strip()
+    if not _SELECT_RE.match(sql):
+        raise ValueError("only SELECT/WITH queries are allowed")
+    if ";" in sql:
+        raise ValueError("stacked statements are not allowed")
+    if _WRITE_RE.search(sql):
+        raise ValueError("write operations are not allowed")
+    used = {a or b for a, b in _TABLE_REF_RE.findall(sql)}
+    if not used or not used.issubset(set(present)):
+        raise ValueError("unknown or unavailable tables")
+    return sql
+
+
 @tool
 async def text_to_sql(question: str) -> dict[str, Any]:
     """Answer a data question with SQL over warehouse tables. SELECT only."""
@@ -1425,16 +1472,7 @@ async def text_to_sql(question: str) -> dict[str, Any]:
     from .. import store as _store
     from ..providers import invoke_with_fallback
 
-    allowed = ["silver_standings", "silver_playoffs", "silver_team_ratings",
-               "silver_clutch", "silver_player_gamelogs", "silver_team_games",
-               "silver_leaders_pts", "silver_leaders_reb", "silver_leaders_ast",
-               "silver_leaders_stl", "silver_leaders_blk", "silver_boxscores",
-               "silver_lineups", "silver_shots", "silver_hustle_player",
-                "silver_hustle_team", "silver_injuries", "silver_hist_gamelogs",
-                "silver_hist_standings", "silver_hist_possessions",
-                "silver_hist_shots", "silver_hist_lineups", "silver_salaries",
-                "silver_hist_draft", "silver_raptor_player", "silver_raptor_team",
-                "silver_hist_player_seasons"]
+    allowed = _SQL_TABLES
     con = _store.connect()
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
@@ -1525,10 +1563,10 @@ async def text_to_sql(question: str) -> dict[str, Any]:
                 r"(?i)\b(insert|update|delete|drop|alter|create|pragma|attach|copy)\b", sql):
             feedback = "\nPrevious reply was not a single SELECT. Reply with SQL only."
             continue
-        used = set(_re.findall(r"(?i)from\s+(\w+)|join\s+(\w+)", sql))
-        used_tables = {a or b for a, b in used}
-        if not used_tables or not used_tables.issubset(set(present)):
-            feedback = "\nPrevious reply used unknown tables. Use only listed tables."
+        try:
+            sql = _validate_readonly_sql(sql, set(present))
+        except ValueError as vexc:
+            feedback = f"\nPrevious reply was rejected: {vexc}. Reply with SQL only."
             continue
         con = _store.connect()
         try:
@@ -1553,6 +1591,83 @@ async def text_to_sql(question: str) -> dict[str, Any]:
                 "meta": {"sql": sql[:500], "source": "warehouse"}}
     return {"tool": "text_to_sql", "ok": False,
             "error": "sql failed after retries" + feedback[-160:]}
+
+
+def _execute_with_timeout(con, sql: str, timeout_s: float):
+    """Run con.execute(sql) in a worker thread; close the connection to abort
+    on timeout. Returns (column names, rows)."""
+    import threading as _threading
+
+    out: dict[str, Any] = {}
+
+    def _run() -> None:
+        try:
+            rel = con.execute(sql)
+            out["result"] = ([d[0] for d in con.description], rel.fetchall())
+        except Exception as exc:  # noqa: BLE001 - surfaced to caller
+            out["error"] = exc
+
+    th = _threading.Thread(target=_run, daemon=True)
+    th.start()
+    th.join(timeout_s)
+    if th.is_alive():
+        try:
+            con.close()
+        except Exception:
+            pass
+        raise TimeoutError(f"query exceeded {timeout_s:g}s")
+    if "error" in out:
+        raise out["error"]
+    return out["result"]
+
+
+async def rerun_sql(sql: str) -> dict[str, Any]:
+    """One-click re-run of the exact SQL shown behind a text_to_sql answer.
+
+    Read-only: validated by _validate_readonly_sql (single SELECT/WITH over
+    the silver_* allowlist), executed through the same warehouse read path as
+    text_to_sql with a row cap and a timeout. Not an agent tool; called from
+    the HTTP boundary.
+    """
+    import time as _time
+
+    from .. import store as _store
+
+    sql = (sql or "").strip()
+    con = _store.connect(read_only=True)
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+    except Exception as exc:
+        return {"tool": "rerun_sql", "ok": False,
+                "error": str(exc)[:160]}
+    finally:
+        con.close()
+    present = tables & set(_SQL_TABLES)
+    if not present:
+        return {"tool": "rerun_sql", "ok": False,
+                "error": "warehouse empty"}
+    try:
+        sql = _validate_readonly_sql(sql, present)
+    except ValueError as vexc:
+        return {"tool": "rerun_sql", "ok": False, "error": str(vexc)[:160]}
+    t0 = _time.time()
+    con = _store.connect(read_only=True)
+    try:
+        names, rows = _execute_with_timeout(con, sql, RERUN_TIMEOUT_S)
+    except Exception as exc:
+        return {"tool": "rerun_sql", "ok": False, "error": str(exc)[:160],
+                "sql": sql}
+    finally:
+        try:
+            con.close()
+        except Exception:
+            pass
+    capped = len(rows) > RERUN_ROW_CAP
+    return {"tool": "rerun_sql", "ok": True,
+            "columns": names,
+            "rows": [dict(zip(names, r)) for r in rows[:RERUN_ROW_CAP]],
+            "sql": sql, "capped": capped,
+            "ms": int((_time.time() - t0) * 1000)}
 
 
 @tool

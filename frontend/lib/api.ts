@@ -164,6 +164,29 @@ export async function getModels(): Promise<ModelsResponse> {
   return res.json();
 }
 
+export interface SqlRerunRows {
+  columns: string[];
+  rows: Record<string, unknown>[];
+  ms: number;
+  capped: boolean;
+}
+
+export async function rerunSql(sql: string): Promise<SqlRerunRows> {
+  const res = await fetch(`${BACKEND}/api/v1/sql/rerun`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sql }),
+  });
+  if (!res.ok) throw new Error(`re-run failed: ${res.status}`);
+  const data = (await res.json()) as {
+    ok?: boolean;
+    rows?: SqlRerunRows;
+    error?: string;
+  };
+  if (data && data.ok === false) throw new Error(data.error || "re-run failed");
+  return (data.rows ?? { columns: [], rows: [], ms: 0, capped: false }) as SqlRerunRows;
+}
+
 export interface StreamHandlers {
   onEvent: (type: string, data: unknown) => void;
   onDone: () => void;

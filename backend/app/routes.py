@@ -142,6 +142,34 @@ def trade_check(body: TradeBody) -> dict:
     })
 
 
+class SqlRerunBody(BaseModel):
+    sql: str = ""
+
+
+@router.post("/sql/rerun")
+async def api_sql_rerun(body: SqlRerunBody) -> dict:
+    """One-click re-run of a warehouse SQL shown by text_to_sql.
+
+    Boundary: parse and clamp here; read-only validation lives in the
+    shared league._validate_readonly_sql used by text_to_sql.
+    """
+    from .tools.league import rerun_sql
+
+    sql = (body.sql or "").strip()
+    if not sql:
+        return {"ok": False, "error": "sql required", "rows": {}}
+    if len(sql) > 8000:
+        return {"ok": False, "error": "sql too long", "rows": {}}
+    out = await rerun_sql(sql)
+    if not out.get("ok"):
+        return {"ok": False, "error": out.get("error", "rerun failed"),
+                "rows": {}}
+    return {"ok": True, "rows": {
+        "columns": out["columns"], "rows": out["rows"],
+        "ms": out.get("ms", 0), "capped": out.get("capped", False),
+    }}
+
+
 @router.get("/threads/{thread_id}/runs")
 def thread_runs(thread_id: str) -> dict:
     return {"runs": store.list_runs(thread_id)}

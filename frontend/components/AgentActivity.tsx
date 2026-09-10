@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { AiMessage, NodeName, ToolCall } from "../lib/chat";
+import { rerunSql, type SqlRerunRows } from "../lib/api";
 
 const AGENT_NODES: NodeName[] = ["entry", "data_retrieval", "tools", "analytics"];
 
@@ -59,6 +60,11 @@ function metaLine(c: ToolCall): string {
 function ToolRow({ c }: { c: ToolCall }) {
   const [open, setOpen] = useState(false);
   const [sqlOpen, setSqlOpen] = useState(false);
+  const [rerun, setRerun] = useState<
+    | null
+    | { loading: true }
+    | { loading: false; data?: SqlRerunRows; error?: string }
+  >(null);
   const dotColor =
     c.status === "running"
       ? "var(--color-cyan-signal)"
@@ -163,6 +169,38 @@ function ToolRow({ c }: { c: ToolCall }) {
               >
                 SQL {sqlOpen ? "▾" : "▸"}
               </button>
+              <button
+                type="button"
+                disabled={rerun?.loading === true}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (rerun?.loading) return;
+                  const sql = c.sql as string;
+                  setRerun({ loading: true });
+                  rerunSql(sql).then(
+                    (data) => setRerun({ loading: false, data }),
+                    (err) =>
+                      setRerun({
+                        loading: false,
+                        error:
+                          err instanceof Error ? err.message : "re-run failed",
+                      }),
+                  );
+                }}
+                style={{
+                  background: "none",
+                  border: "none",
+                  padding: 0,
+                  marginLeft: 10,
+                  cursor: "pointer",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: "var(--color-cyan-edge)",
+                  opacity: rerun?.loading ? 0.5 : 1,
+                }}
+              >
+                {rerun?.loading ? "Re-running…" : "Re-run"}
+              </button>
               {sqlOpen && (
                 <pre
                   style={{
@@ -182,6 +220,70 @@ function ToolRow({ c }: { c: ToolCall }) {
                 >
                   {c.sql}
                 </pre>
+              )}
+              {rerun && !rerun.loading && rerun.error && (
+                <div style={{ marginTop: 4, color: "#e11d48" }}>
+                  {rerun.error.slice(0, 160)}
+                </div>
+              )}
+              {rerun && !rerun.loading && rerun.data && (
+                <div style={{ marginTop: 4 }}>
+                  <div style={{ marginBottom: 2 }}>
+                    Re-ran · {rerun.data.rows.length} row
+                    {rerun.data.rows.length === 1 ? "" : "s"}
+                    {rerun.data.capped ? " (capped)" : ""} ·{" "}
+                    {fmtMs(rerun.data.ms)}
+                  </div>
+                  <div style={{ overflowX: "auto" }}>
+                    <table
+                      style={{
+                        borderCollapse: "collapse",
+                        fontFamily: "ui-monospace, monospace",
+                        fontSize: 11,
+                        color: "var(--color-ink-black)",
+                      }}
+                    >
+                      <thead>
+                        <tr>
+                          {rerun.data.columns.map((col) => (
+                            <th
+                              key={col}
+                              style={{
+                                textAlign: "left",
+                                fontWeight: 600,
+                                padding: "3px 8px 3px 0",
+                                borderBottom:
+                                  "1px solid var(--color-stone-border)",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {col}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rerun.data.rows.map((row, i) => (
+                          <tr key={i}>
+                            {rerun.data!.columns.map((col) => (
+                              <td
+                                key={col}
+                                style={{
+                                  padding: "3px 8px 3px 0",
+                                  borderBottom:
+                                    "1px solid var(--color-stone-border)",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {String(row[col] ?? "")}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               )}
             </div>
           )}
