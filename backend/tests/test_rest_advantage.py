@@ -10,21 +10,29 @@ import duckdb
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import app.tools.rest as rest_mod
 from app.tools import get_rest_advantage
-from app.tools.rest import TeamGame, build_schedule, summarize_team
+from app.tools.rest import (
+    TeamGame,
+    _classify_scoreboard_rows,
+    build_schedule,
+    summarize_team,
+)
 
 
-def _invoke_retry(args, tries=10, sleep_s=10):
-    """Invoke the tool, riding out transient DuckDB write locks.
+def _connect_retry(tries=10, sleep_s=10):
+    """Open the warehouse for the test's own direct SQL verification.
 
     Seed jobs hold the warehouse write lock for minutes at a time;
-    only lock-conflict IOErrors are retried, everything else raises.
+    only lock-conflict errors are retried, everything else raises.
     """
     last: Exception | None = None
     for _ in range(tries):
         try:
-            return get_rest_advantage.invoke(args)
-        except duckdb.IOException as exc:
+            from app import store as _store
+
+            return _store.connect(read_only=True)
+        except (duckdb.IOException, duckdb.ConnectionException) as exc:
             if ("lock" not in str(exc).lower()
                     and "conflict" not in str(exc).lower()):
                 raise
@@ -56,6 +64,33 @@ def _aaa_schedule():
     ]
     sched = build_schedule(rows)
     return [g for g in sched if g.team == "AAA"]
+
+
+def _aaa_rows():
+    return [
+        _row(1, "AAA", "BBB", 110, 100),
+        _row(2, "CCC", "AAA", 105, 100),
+        _row(5, "AAA", "BBB", 120, 115),
+    ]
+
+
+def _preview_rows():
+    # AAA last played Jan 5, BBB last played Jan 1.
+    return [
+        _row(1, "AAA", "BBB", 110, 100),
+        _row(2, "CCC", "AAA", 105, 100),
+        _row(5, "AAA", "CCC", 120, 115),
+    ]
+
+
+def _hermetic(monkeypatch, rows):
+    dropped = {"null_score": 0, "unknown_game_type": 0,
+               "unparseable_date": 0}
+    monkeypatch.setattr(
+        rest_mod, "_load_scoreboard", lambda season: (rows, dropped, ""))
+    monkeypatch.setattr(
+        rest_mod, "_resolve_team",
+        lambda raw: str(raw or "").strip().upper() or None)
 
 
 def test_back_to_back_detection():
@@ -132,6 +167,121 @@ def test_rest_diff_sign_buckets_and_record_splits():
     assert summary["record_at_disadvantage"] == "1-1"
     assert summary["games_with_edge_measured"] == 6
     assert summary["avg_rest_diff"] == round((2 + 1 + 0 + 0 - 1 - 3) / 6, 2)
+    assert summary["quotable"] == (
+        "1-1 with a rest edge vs 1-1 at a rest disadvantage"
+        " (1-1 on even rest)")
+
+
+def test_classify_scoreboard_rows_counts_drops():
+    fetched = [
+        ("2026-01-05", "0022500001", "AAA", "BBB", 110, 100),
+        ("2026-01-06", "0022500002", "AAA", "BBB", None, 100),
+        ("2026-01-07", "0012600001", "AAA", "BBB", 110, 100),
+        ("not-a-date", "0022500003", "AAA", "BBB", 110, 100),
+    ]
+    rows, dropped = _classify_scoreboard_rows(fetched)
+    assert len(rows) == 1
+    assert rows[0]["date"] == _dt.date(2026, 1, 5)
+    assert dropped == {"null_score": 1, "unknown_game_type": 1,
+                       "unparseable_date": 1}
+
+
+def test_date_returns_single_game_row(monkeypatch):
+    _hermetic(monkeypatch, _aaa_rows())
+    res = get_rest_advantage.invoke({"team": "AAA", "season": "2025-26",
+                                     "season_type": "all",
+                                     "date": "2026-01-05"})
+    assert res["ok"] is True
+    assert len(res["rows"]["games"]) == 1
+    assert res["rows"]["games"][0]["date"] == "2026-01-05"
+    assert res["rows"]["games"][0]["rest_diff"] == -1
+    assert res["meta"]["date"] == "2026-01-05"
+    # Summary still covers the full season as quotable context.
+    assert res["rows"]["summary"]["games"] == 3
+
+
+def test_date_with_no_game_errors(monkeypatch):
+    _hermetic(monkeypatch, _aaa_rows())
+    res = get_rest_advantage.invoke({"team": "AAA", "season": "2025-26",
+                                     "date": "2026-01-03"})
+    assert res["ok"] is False
+    assert "no game for" in res["error"]
+
+
+def test_bad_date_format_rejected(monkeypatch):
+    _hermetic(monkeypatch, _aaa_rows())
+    res = get_rest_advantage.invoke({"team": "AAA", "season": "2025-26",
+                                     "date": "01/05/2026"})
+    assert res["ok"] is False
+    assert "bad date" in res["error"]
+
+
+def test_league_with_date_rejected(monkeypatch):
+    _hermetic(monkeypatch, _aaa_rows())
+    res = get_rest_advantage.invoke({"team": "league", "season": "2025-26",
+                                     "date": "2026-01-05"})
+    assert res["ok"] is False
+    assert "require a specific team" in res["error"]
+
+
+def test_league_with_opponent_rejected(monkeypatch):
+    _hermetic(monkeypatch, _aaa_rows())
+    res = get_rest_advantage.invoke({"team": "league", "season": "2025-26",
+                                     "opponent": "BBB"})
+    assert res["ok"] is False
+    assert "require a specific team" in res["error"]
+
+
+def test_opponent_preview_rest_math(monkeypatch):
+    _hermetic(monkeypatch, _preview_rows())
+    res = get_rest_advantage.invoke({"team": "AAA", "season": "2025-26",
+                                     "opponent": "BBB",
+                                     "date": "2026-01-10"})
+    assert res["ok"] is True
+    preview = res["rows"]["preview"]
+    assert preview["team_rest_days"] == 4
+    assert preview["opp_rest_days"] == 8
+    assert preview["rest_diff"] == -4
+    assert preview["team_last_game"] == "2026-01-05"
+    assert preview["opp_last_game"] == "2026-01-01"
+
+
+def test_opponent_preview_no_baseline_errors(monkeypatch):
+    _hermetic(monkeypatch, _preview_rows())
+    res = get_rest_advantage.invoke({"team": "AAA", "season": "2025-26",
+                                     "opponent": "ZZZ",
+                                     "date": "2026-01-10"})
+    assert res["ok"] is False
+    assert "cannot establish a rest baseline" in res["error"]
+
+
+def test_opponent_completed_matchup_on_date(monkeypatch):
+    _hermetic(monkeypatch, _aaa_rows())
+    res = get_rest_advantage.invoke({"team": "AAA", "season": "2025-26",
+                                     "opponent": "BBB",
+                                     "date": "2026-01-05"})
+    assert res["ok"] is True
+    assert len(res["rows"]["games"]) == 1
+    assert res["rows"]["games"][0]["date"] == "2026-01-05"
+    assert res["rows"]["opponent"] == "BBB"
+
+
+def test_opponent_no_date_returns_most_recent_matchup(monkeypatch):
+    _hermetic(monkeypatch, _aaa_rows())
+    res = get_rest_advantage.invoke({"team": "AAA", "season": "2025-26",
+                                     "opponent": "BBB"})
+    assert res["ok"] is True
+    assert len(res["rows"]["games"]) == 1
+    assert res["rows"]["games"][0]["date"] == "2026-01-05"
+    assert res["rows"]["opponent"] == "BBB"
+
+
+def test_opponent_no_matchup_errors(monkeypatch):
+    _hermetic(monkeypatch, _aaa_rows())
+    res = get_rest_advantage.invoke({"team": "AAA", "season": "2025-26",
+                                     "opponent": "ZZZ"})
+    assert res["ok"] is False
+    assert "no completed games between" in res["error"]
 
 
 def test_unknown_team_rejected():
@@ -159,8 +309,8 @@ def test_team_name_resolution():
 
 
 def test_integration_regular_season_invariants_real_warehouse():
-    league = _invoke_retry({"team": "league", "season": "2025-26",
-                            "season_type": "regular"})
+    league = get_rest_advantage.invoke({"team": "league", "season": "2025-26",
+                                        "season_type": "regular"})
     assert league["ok"] is True
     assert league["rows"]["count"] == 30
     assert len(league["rows"]["teams"]) == 30
@@ -172,9 +322,11 @@ def test_integration_regular_season_invariants_real_warehouse():
     assert league["meta"]["source"] == "warehouse"
     assert league["meta"]["season"] == "2025-26"
     assert league["meta"]["season_type"] == "regular"
+    assert league["meta"]["coverage"]["games_dropped"] >= 0
+    assert "games_dropped_detail" in league["meta"]["coverage"]
     # Team mode agrees with league mode on one club's line.
-    lal = _invoke_retry({"team": "LAL", "season": "2025-26",
-                         "season_type": "regular"})
+    lal = get_rest_advantage.invoke({"team": "LAL", "season": "2025-26",
+                                     "season_type": "regular"})
     assert lal["ok"] is True
     assert lal["rows"]["team"] == "LAL"
     assert len(lal["rows"]["games"]) == 82
@@ -183,18 +335,16 @@ def test_integration_regular_season_invariants_real_warehouse():
                                       if k != "team"}
     # Every club's rest gaps, recomputed from one warehouse read: each
     # team plays exactly 82 scored games and rest never goes negative.
-    from app import store as _store
-
-    con = _store.connect(read_only=True)
+    con = _connect_retry()
     try:
         fetched = con.execute(
             """SELECT GAME_DATE_EST, GAME_ID, HOME_TEAM_ABBREVIATION,
                       VISITOR_TEAM_ABBREVIATION, HOME_TEAM_PTS,
                       VISITOR_TEAM_PTS
-               FROM silver_scoreboard
-               WHERE _season = '2025-26'
-                 AND HOME_TEAM_PTS IS NOT NULL
-                 AND VISITOR_TEAM_PTS IS NOT NULL""").fetchall()
+                FROM silver_scoreboard
+                WHERE _season = '2025-26'
+                  AND HOME_TEAM_PTS IS NOT NULL
+                  AND VISITOR_TEAM_PTS IS NOT NULL""").fetchall()
     finally:
         con.close()
     rows = []

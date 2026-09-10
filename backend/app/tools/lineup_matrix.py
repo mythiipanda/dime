@@ -194,8 +194,45 @@ def _pair_row(
     }
 
 
-def _fallback_name(key: UnitKey) -> str:
-    return "unit " + "-".join(str(i) for i in key)
+def _truncate_note(total: int, shown: int) -> str:
+    return (f"showing {shown} of {total} pairs "
+            f"(top by estimated minutes)")
+
+
+def _surname_map(season: str) -> dict[int, str]:
+    """Map player id -> surname for one season. Warehouse nicety only."""
+    try:
+        rows = _store._read_df(
+            "SELECT player_id, player_name FROM silver_hist_player_seasons"
+            " WHERE _season = ?",
+            [season],
+        )
+    except Exception:
+        return {}
+    out: dict[int, str] = {}
+    try:
+        for r in rows or []:
+            try:
+                pid = int(r.get("player_id"))  # type: ignore[arg-type]
+            except (TypeError, ValueError):
+                continue
+            name = str(r.get("player_name") or "").strip()
+            if not name:
+                continue
+            out[pid] = name.split()[-1]
+    except Exception:
+        return {}
+    return out
+
+
+def _fallback_name(key: UnitKey, surnames: dict[int, str] | None = None) -> str:
+    if surnames:
+        try:
+            if all(i in surnames for i in key):
+                return ", ".join(surnames[i] for i in key)
+        except (TypeError, KeyError):
+            pass
+    return "unit " + str(key[0])[:6] + "…"
 
 
 def _build_matrix(
@@ -203,14 +240,18 @@ def _build_matrix(
     qual_a: set[UnitKey] | dict[UnitKey, int],
     qual_b: set[UnitKey] | dict[UnitKey, int],
     names_a: dict[UnitKey, str], names_b: dict[UnitKey, str],
+    surnames_a: dict[int, str] | None = None,
+    surnames_b: dict[int, str] | None = None,
 ) -> list[dict[str, Any]]:
     ordered = sorted(poss_rows or [],
                      key=lambda r: (str(r.get("game_id")), _poss_num(r)))
     acc = _accumulate_pairs(ordered, team_a, team_b, set(qual_a), set(qual_b))
     rows = [
         _pair_row(key_a, key_b, a,
-                  (names_a or {}).get(key_a) or _fallback_name(key_a),
-                  (names_b or {}).get(key_b) or _fallback_name(key_b))
+                  (names_a or {}).get(key_a)
+                  or _fallback_name(key_a, surnames_a),
+                  (names_b or {}).get(key_b)
+                  or _fallback_name(key_b, surnames_b))
         for (key_a, key_b), a in acc.items()
     ]
     rows.sort(key=lambda r: r["est_minutes"], reverse=True)
@@ -248,7 +289,9 @@ def _lineup_names(team_id: int, season: str) -> tuple[dict[UnitKey, str], dict[s
         key = _lineup_key(r)
         if key is None:
             continue
-        names[key] = r.get("GROUP_NAME") or _fallback_name(key)
+        gn = r.get("GROUP_NAME")
+        if gn:
+            names[key] = gn
     return names, meta
 
 
@@ -296,13 +339,17 @@ def get_lineup_matchup_matrix(
                 "meta": {**base_meta, "data_note": _NO_DATA_NOTE}}
     matchup_rows.sort(key=lambda r: (str(r.get("game_id")), _poss_num(r)))
     qual_a, qual_b = _qualifying_lineups(season_rows, aid, bid, min_minutes)
+    surnames = _surname_map(season)
     pairs = _build_matrix(matchup_rows, aid, bid, qual_a, qual_b,
-                          names_a, names_b)
+                          names_a, names_b, surnames, surnames)
+    shown_rows = pairs[:MAX_ROWS]
     meta = {
         **base_meta,
         "team_a_lineups": len(qual_a),
         "team_b_lineups": len(qual_b),
         "pairs": len(pairs),
+        "rows_returned": len(shown_rows),
+        "truncation_note": _truncate_note(len(pairs), len(shown_rows)),
         "matchup_games": len({str(r.get("game_id")) for r in matchup_rows}),
         "minutes_note": (
             "shared minutes estimated from possessions (~2 per minute);"
@@ -316,4 +363,4 @@ def get_lineup_matchup_matrix(
         "small_sample_floor": f"{SMALL_PAIR_POSS} shared possessions",
     }
     return {"tool": "get_lineup_matchup_matrix", "ok": True,
-            "rows": pairs[:MAX_ROWS], "meta": meta}
+            "rows": shown_rows, "meta": meta}

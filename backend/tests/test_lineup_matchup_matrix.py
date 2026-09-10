@@ -17,10 +17,12 @@ from app.tools.lineup_matrix import (  # noqa: E402
     SMALL_PAIR_POSS,
     _accumulate_pairs,
     _build_matrix,
+    _fallback_name,
     _pair_flags,
     _pair_row,
     _qualifying_lineups,
     _season_lineup_minutes,
+    _truncate_note,
     _unit_key,
     get_lineup_matchup_matrix,
 )
@@ -185,8 +187,35 @@ def test_build_matrix_sorts_by_est_minutes_desc():
 def test_build_matrix_falls_back_to_unit_name():
     rows = [_prow("g1", 1, A, B, 2, A1, B1)]
     out = _build_matrix(rows, A, B, {A1}, {B1}, {}, {})
-    assert out[0]["team_a_lineup"] == "unit 1-2-3-4-5"
-    assert out[0]["team_b_lineup"] == "unit 11-12-13-14-15"
+    assert out[0]["team_a_lineup"] == "unit " + str(A1[0])[:6] + "…"
+    assert out[0]["team_b_lineup"] == "unit " + str(B1[0])[:6] + "…"
+
+
+def test_fallback_name_all_surnames():
+    surnames = {1: "Alpha", 2: "Beta", 3: "Gamma", 4: "Delta",
+                5: "Epsilon"}
+    assert _fallback_name(A1, surnames) == (
+        "Alpha, Beta, Gamma, Delta, Epsilon")
+
+
+def test_fallback_name_partial_surnames():
+    assert _fallback_name(A1, {1: "Alpha"}) == (
+        "unit " + str(A1[0])[:6] + "…")
+    assert _fallback_name(A1, None) == "unit " + str(A1[0])[:6] + "…"
+
+
+def test_build_matrix_uses_surname_labels():
+    rows = [_prow("g1", 1, A, B, 2, A1, B1)]
+    surnames_a = {1: "Alpha", 2: "Beta", 3: "Gamma", 4: "Delta",
+                  5: "Epsilon"}
+    out = _build_matrix(rows, A, B, {A1}, {B1}, {}, {},
+                        surnames_a=surnames_a)
+    assert out[0]["team_a_lineup"] == "Alpha, Beta, Gamma, Delta, Epsilon"
+
+
+def test_truncate_note_literal():
+    assert _truncate_note(174, 25) == (
+        "showing 25 of 174 pairs (top by estimated minutes)")
 
 
 def test_tool_rejects_same_team():
@@ -234,5 +263,13 @@ def test_tool_end_to_end_warehouse_structural():
         assert any(f.startswith("estimated-minutes") for f in r["flags"])
     for key in ("team_a_lineups", "team_b_lineups", "pairs",
                 "matchup_games", "minutes_note", "qualification_note",
-                "blowout_rule", "small_sample_floor"):
+                "blowout_rule", "small_sample_floor",
+                "truncation_note", "rows_returned"):
         assert key in res["meta"]
+    assert res["meta"]["truncation_note"].startswith("showing ")
+    assert res["meta"]["rows_returned"] == len(rows)
+    for r in rows:
+        assert r["team_a_lineup"] != (
+            "unit " + "-".join(str(i) for i in r["team_a_ids"]))
+        assert r["team_b_lineup"] != (
+            "unit " + "-".join(str(i) for i in r["team_b_ids"]))

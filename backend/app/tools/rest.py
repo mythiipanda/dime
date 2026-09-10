@@ -11,6 +11,7 @@ import datetime as _dt
 from dataclasses import dataclass
 from typing import Any
 
+import duckdb
 from langchain_core.tools import tool
 
 from ._core import SEASON, clamp_season
@@ -141,6 +142,9 @@ def summarize_team(games: list[TeamGame]) -> dict[str, Any]:
         "record_even": _record(even),
         "record_at_disadvantage": _record(disadvantage),
         "games_with_edge_measured": len(diffs),
+        "quotable": f"{_record(edge)} with a rest edge vs "
+                    f"{_record(disadvantage)} at a rest disadvantage "
+                    f"({_record(even)} on even rest)",
     }
 
 
@@ -177,32 +181,26 @@ def _resolve_team(raw: object) -> str | None:
     return None
 
 
-def _load_scoreboard(season: str) -> tuple[list[dict[str, Any]], str]:
-    from .. import store as _store
+def _classify_scoreboard_rows(
+    fetched: list[tuple],
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """Split raw scoreboard tuples into classified rows plus drop counts.
 
-    # Read-only connect: this tool never writes, and it must not grab a
-    # write lock while seed jobs run against the same warehouse file.
-    con = _store.connect(read_only=True)
-    try:
-        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
-        if "silver_scoreboard" not in tables:
-            return [], "warehouse is empty (silver_scoreboard missing)"
-        fetched = con.execute(
-            """SELECT GAME_DATE_EST, GAME_ID, HOME_TEAM_ABBREVIATION,
-                      VISITOR_TEAM_ABBREVIATION, HOME_TEAM_PTS,
-                      VISITOR_TEAM_PTS
-               FROM silver_scoreboard
-               WHERE _season = ?
-                 AND HOME_TEAM_PTS IS NOT NULL
-                 AND VISITOR_TEAM_PTS IS NOT NULL""",
-            [season],
-        ).fetchall()
-    finally:
-        con.close()
+    Pure: no warehouse access. fetched are raw SQL tuples
+    (GAME_DATE_EST, GAME_ID, home, vis, hp, vp). Rows with NULL scores
+    (unscored preseason games), unknown game_id prefixes, or unparseable
+    dates are dropped and counted, never entering rest math.
+    """
     rows: list[dict[str, Any]] = []
+    dropped = {"null_score": 0, "unknown_game_type": 0,
+               "unparseable_date": 0}
     for gdate, gid, home, vis, hp, vp in fetched:
+        if hp is None or vp is None:
+            dropped["null_score"] += 1
+            continue
         d = _parse_scoreboard_date(gdate)
         if d is None:
+            dropped["unparseable_date"] += 1
             continue
         prefix = str(gid or "")[:3]
         if prefix == "002":
@@ -210,6 +208,7 @@ def _load_scoreboard(season: str) -> tuple[list[dict[str, Any]], str]:
         elif prefix == "004":
             st = "playoffs"
         else:
+            dropped["unknown_game_type"] += 1
             continue
         rows.append({
             "date": d,
@@ -219,7 +218,35 @@ def _load_scoreboard(season: str) -> tuple[list[dict[str, Any]], str]:
             "visitor_pts": vp,
             "season_type": st,
         })
-    return rows, ""
+    return rows, dropped
+
+
+def _load_scoreboard(
+    season: str,
+) -> tuple[list[dict[str, Any]], dict[str, int], str]:
+    from .. import store as _store
+
+    # Read-only connect: this tool never writes, and it must not grab a
+    # write lock while seed jobs run against the same warehouse file.
+    con = _store.connect(read_only=True)
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        if "silver_scoreboard" not in tables:
+            return [], {"null_score": 0, "unknown_game_type": 0,
+                        "unparseable_date": 0}, \
+                "warehouse is empty (silver_scoreboard missing)"
+        fetched = con.execute(
+            """SELECT GAME_DATE_EST, GAME_ID, HOME_TEAM_ABBREVIATION,
+                      VISITOR_TEAM_ABBREVIATION, HOME_TEAM_PTS,
+                      VISITOR_TEAM_PTS
+                FROM silver_scoreboard
+                WHERE _season = ?""",
+            [season],
+        ).fetchall()
+    finally:
+        con.close()
+    rows, dropped = _classify_scoreboard_rows(fetched)
+    return rows, dropped, ""
 
 
 def _game_row(g: TeamGame) -> dict[str, Any]:
@@ -238,7 +265,8 @@ def _game_row(g: TeamGame) -> dict[str, Any]:
 
 @tool
 def get_rest_advantage(team: str = "league", season: str = SEASON,
-                       season_type: str = "all") -> dict[str, Any]:
+                       season_type: str = "all", date: str = "",
+                       opponent: str = "") -> dict[str, Any]:
     """Rest advantage: who had the fresher legs before each game.
 
     team: 3-letter abbrev, full team name, or "league"/"" for all 30
@@ -246,6 +274,15 @@ def get_rest_advantage(team: str = "league", season: str = SEASON,
     filtered to the season_type BEFORE rest gaps are computed, so rest
     never leaks across the filter boundary. Warehouse only; the first
     game in scope has no rest baseline and reports None.
+    date: optional YYYY-MM-DD; team mode only. With date and no
+    opponent, returns the team's single game on that date (summary
+    still covers the full season as quotable context). opponent:
+    optional second team; team mode only. Team + opponent + date
+    returns the completed matchup on that date when one exists, else a
+    pre-tip-off preview projecting each side's rest from its last
+    completed game before that date (preview mode: not a warehouse
+    game record). Team + opponent with no date returns their most
+    recent completed matchup.
     """
     season = clamp_season(season)
     st = str(season_type or "all").strip().lower()
@@ -255,13 +292,37 @@ def get_rest_advantage(team: str = "league", season: str = SEASON,
                          " (use regular, playoffs, or all)"}
     want_all = (not str(team or "").strip()
                 or str(team).strip().lower() == "league")
+    date_str = str(date or "").strip()
+    opp_raw = str(opponent or "").strip()
+    if want_all and (date_str or opp_raw):
+        return {"tool": "get_rest_advantage", "ok": False,
+                "error": "date and opponent require a specific team"
+                         " (not league)"}
+    day: _dt.date | None = None
+    if date_str:
+        try:
+            day = _dt.datetime.strptime(date_str, "%Y-%m-%d").date()
+        except (TypeError, ValueError):
+            return {"tool": "get_rest_advantage", "ok": False,
+                    "error": f"bad date: {date_str} (use YYYY-MM-DD)"}
     abbr: str | None = None
     if not want_all:
         abbr = _resolve_team(team)
         if abbr is None:
             return {"tool": "get_rest_advantage", "ok": False,
                     "error": f"unknown team: {team}"}
-    rows, error = _load_scoreboard(season)
+    opp_abbr: str | None = None
+    if opp_raw:
+        opp_abbr = _resolve_team(opp_raw)
+        if opp_abbr is None:
+            return {"tool": "get_rest_advantage", "ok": False,
+                    "error": f"unknown team: {opponent}"}
+    try:
+        rows, dropped, error = _load_scoreboard(season)
+    except (duckdb.IOException, duckdb.ConnectionException, duckdb.Error):
+        return {"tool": "get_rest_advantage", "ok": False,
+                "error": "warehouse temporarily unavailable "
+                         "(file lock contention); retry shortly"}
     if error:
         return {"tool": "get_rest_advantage", "ok": False, "error": error}
     if st != "all":
@@ -280,10 +341,16 @@ def get_rest_advantage(team: str = "league", season: str = SEASON,
         "season": season,
         "season_type": st,
         "coverage": {"games_scanned": games_scanned,
-                     "teams": len(by_team)},
+                      "teams": len(by_team),
+                      "games_dropped": sum(dropped.values()),
+                      "games_dropped_detail": dict(dropped)},
         "note": _REST_NOTE + f" Games filtered to '{st}' before"
-                " computing rest gaps.",
+                " computing rest gaps. Dropped scoreboard rows (null"
+                " scores, unknown game types, unparseable dates) never"
+                " enter rest math.",
     }
+    if date_str:
+        meta["date"] = date_str
     if want_all:
         teams = [{"team": t, **summarize_team(gs)}
                  for t, gs in sorted(by_team.items())]
@@ -295,6 +362,72 @@ def get_rest_advantage(team: str = "league", season: str = SEASON,
     if not games:
         return {"tool": "get_rest_advantage", "ok": False,
                 "error": f"no {st} games for {abbr} in {season}"}
+    summary = summarize_team(games)
+    if opp_abbr is not None and day is not None:
+        # (a) completed matchup on the exact date.
+        on_date = [g for g in games
+                   if g.date == day and g.opponent == opp_abbr]
+        if on_date:
+            g = on_date[0]
+            return {"tool": "get_rest_advantage", "ok": True,
+                    "rows": {"team": abbr, "opponent": opp_abbr,
+                             "summary": summary,
+                             "games": [_game_row(g)]}, "meta": meta}
+        # (b) preview mode: rest from each side's last completed game
+        # strictly before D, within the season_type filter.
+        assert day is not None
+        own_prior = [g for g in games if g.date < day]
+        opp_prior = [g for g in by_team.get(opp_abbr, [])
+                     if g.date < day]
+        if not own_prior:
+            return {"tool": "get_rest_advantage", "ok": False,
+                    "error": f"no completed games for {abbr} before "
+                             f"{date_str} — cannot establish a rest "
+                             "baseline"}
+        if not opp_prior:
+            return {"tool": "get_rest_advantage", "ok": False,
+                    "error": f"no completed games for {opp_abbr} before "
+                             f"{date_str} — cannot establish a rest "
+                             "baseline"}
+        last_own = own_prior[-1]
+        last_opp = opp_prior[-1]
+        rest_own = (day - last_own.date).days - 1
+        rest_opp = (day - last_opp.date).days - 1
+        meta["note"] = meta["note"] + " Pre-tip-off projection computed" \
+            " from each team's last completed game; not a warehouse" \
+            " game record."
+        return {"tool": "get_rest_advantage", "ok": True,
+                "rows": {"team": abbr, "opponent": opp_abbr,
+                         "summary": summary,
+                         "preview": {"date": date_str,
+                                     "team_rest_days": rest_own,
+                                     "team_last_game":
+                                         last_own.date.isoformat(),
+                                     "opp_rest_days": rest_opp,
+                                     "opp_last_game":
+                                         last_opp.date.isoformat(),
+                                     "rest_diff": rest_own - rest_opp}},
+                "meta": meta}
+    if opp_abbr is not None:
+        matchups = [g for g in games if g.opponent == opp_abbr]
+        if not matchups:
+            return {"tool": "get_rest_advantage", "ok": False,
+                    "error": f"no completed games between {abbr} and "
+                             f"{opp_abbr} in {season}"}
+        g = matchups[-1]
+        return {"tool": "get_rest_advantage", "ok": True,
+                "rows": {"team": abbr, "opponent": opp_abbr,
+                         "summary": summary,
+                         "games": [_game_row(g)]}, "meta": meta}
+    if day is not None:
+        on_date = [g for g in games if g.date == day]
+        if not on_date:
+            return {"tool": "get_rest_advantage", "ok": False,
+                    "error": f"no game for {abbr} on {date_str} in "
+                             f"{season}"}
+        return {"tool": "get_rest_advantage", "ok": True,
+                "rows": {"team": abbr, "summary": summary,
+                         "games": [_game_row(on_date[0])]}, "meta": meta}
     return {"tool": "get_rest_advantage", "ok": True,
-            "rows": {"team": abbr, "summary": summarize_team(games),
+            "rows": {"team": abbr, "summary": summary,
                      "games": [_game_row(g) for g in games]}, "meta": meta}
