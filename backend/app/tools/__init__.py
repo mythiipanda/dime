@@ -63,6 +63,7 @@ from .splits import get_matchup_splits, get_regression_check
 from .streaks import get_streaks
 from .rest import get_rest_advantage
 from .lineup_matrix import get_lineup_matchup_matrix
+from .shots import search_shots
 from .zone import get_team_shot_zones
 from .team import (
     get_boxscore,
@@ -159,6 +160,7 @@ v1_tools: list[BaseTool] = [
     get_team_shot_zones,
     get_rest_advantage,
     get_lineup_matchup_matrix,
+    search_shots,
 ]
 
 TOOL_NAMES = [t.name for t in v1_tools]
