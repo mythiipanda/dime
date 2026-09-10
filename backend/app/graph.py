@@ -255,6 +255,22 @@ _COMPS_RX = re.compile(
     r"\bsimilar\s+players?\b|\bclosest\s+comps?\b|"
     r"\bcomparable\s+players?\b|\bplayer\s+comps?\b",
     re.IGNORECASE)
+_PREDICT_RX = re.compile(
+    r"who\s+(wins|will\s+win|is\s+going\s+to\s+win)|"
+    r"who\s+do\s+you\s+(have|like)|"
+    r"\bwin\s+prob\w*\b|"
+    r"\bprojected\s+(total|score)\b|"
+    r"\bpre[\s-]?game\s+(monte\s*carlo|prediction|estimate)|"
+    r"\bmonte\s*carlo\b|"
+    r"\bpredict(?:s|ed|ing)?\s+(?:the\s+)?(?:score|winner|game|matchup)\b|"
+    r"\bchances?\s+of\s+winning\b|"
+    r"\bfavor\w*\b",
+    re.IGNORECASE)
+# Live in-game probability and season-title questions are not pre-game
+# predictions: they belong to get_win_prob / the league desk.
+_PREDICT_LIVE_RX = re.compile(r"\blive\b|\bin[\s-]*game\b", re.IGNORECASE)
+_PREDICT_TITLE_RX = re.compile(
+    r"championship|\btitle\b|\bfinals\b|\bring\b", re.IGNORECASE)
 _BRIEFING_RX = re.compile(r"\bbriefing\b", re.IGNORECASE)
 _BRIEFING_CONTEXT_RX = re.compile(
     r"20\d\d[-/]\d{1,2}[-/]\d{1,2}|\bslate\b|\bmorning\b|"
@@ -322,6 +338,33 @@ def _expand_nicknames(question: str) -> str:
         out = re.sub(r"\b" + re.escape(nick) + r"\b", full, out,
                      flags=re.IGNORECASE)
         lowered = out.lower()
+    return out
+
+
+def _direct_named_teams(question: str, found_t: list[str]) -> list[str]:
+    """Teams named outright in the question text.
+
+    _detect_entities expands nicknames before matching, so a city word
+    in the expansion can pull in a same-city rival the user never named
+    ("Lakers" -> "Los Angeles" -> Clippers). The prediction fast-path
+    needs exactly the two teams the user asked about, so re-match
+    against the raw question.
+    """
+    from nba_api.stats.static import teams as _static_teams
+
+    abbr_of = {t["full_name"]: t["abbreviation"]
+               for t in _static_teams.get_teams()}
+    q = question or ""
+    out = []
+    for full in found_t:
+        nick = full.split()[-1].lower()
+        abbr = (abbr_of.get(full) or "").lower()
+        if (full.lower() in q.lower()
+                or re.search(r"\b" + re.escape(nick) + r"\b", q,
+                             re.IGNORECASE)
+                or (abbr and re.search(r"\b" + re.escape(abbr) + r"\b",
+                                       q, re.IGNORECASE))):
+            out.append(full)
     return out
 
 
@@ -699,6 +742,35 @@ async def _triage_seed(question: str, primary: str, model: str,
         r"supporting cast|\bcast\b|teammates?|rotation depth|"
         r"around (him|her|them)|better team\b|deeper team\b",
         question, re.IGNORECASE))
+    is_predict = (
+        len(found_t) >= 2
+        and _PREDICT_RX.search(question)
+        and not is_trade
+        and not is_cast
+        and not _PREDICT_LIVE_RX.search(question)
+        and not _PREDICT_TITLE_RX.search(question)
+        and not state.get("history")
+    )
+    if is_predict:
+        # Pre-game prediction phrasing ("who wins", "win probability",
+        # "projected total"): get_game_prediction owns the Monte Carlo.
+        # The supervisor's toolset exposes get_preview ("Side-by-side
+        # preview of two teams") but not get_game_prediction, so without
+        # this the routing detours to get_preview and the desk briefs'
+        # IF/THEN lines never get a vote. Only on clean single-turn
+        # questions; anything uncertain falls through to the planner.
+        _named = _direct_named_teams(question, found_t)
+        if len(_named) == 2:
+            _ph: dict[str, Any] = {}
+            async for _e in _triage_tool(
+                    "get_game_prediction",
+                    {"a": _named[0], "b": _named[1]}, state, _ph):
+                yield _e
+            _pout = _ph.get("out") or {}
+            if _result_status(_pout) == "ok":
+                async for _e in _triage_terminal(question, state):
+                    yield _e
+            return
     if ((len(found_p) >= 2 or len(found_t) >= 2 or is_compare)
             and not (is_trade and not is_compare)
             and not (is_cast and not is_compare)):
