@@ -4,7 +4,7 @@ from typing import Any
 from langchain_core.tools import tool
 
 from ..sources import nba_stats
-from ._core import SEASON, clamp_stat, _warehouse_or_live
+from ._core import SEASON, TTL_LEADERS, TTL_SCOREBOARD_PAST, clamp_stat, _warehouse_or_live, is_past_game_date
 
 
 @tool
@@ -979,15 +979,18 @@ def get_briefing(game_date: str = "", season: str = SEASON) -> dict[str, Any]:
     day = game_date.strip()
     if not day:
         day = (datetime.now() - timedelta(days=1)).strftime("%m/%d/%Y")
+    past = is_past_game_date(day)
     games, gmeta = _warehouse_or_live(
         "silver_scoreboard", "_season = ? AND _entity = ?",
         [season, f"date:{day}"],
         lambda: nba_stats.scoreboard(day, season), season,
-        entity=f"date:{day}", live_first=True,
+        entity=f"date:{day}", live_first=(not past),
+        ttl_s=(TTL_SCOREBOARD_PAST if past else None),
     )
     leaders, _ = _warehouse_or_live(
         "silver_leaders_pts", "_season = ?",
         [season], lambda: nba_stats.leaders("PTS", season), season,
+        ttl_s=TTL_LEADERS,
     )
     top = [
         {"PLAYER": r.get("PLAYER"), "TEAM": r.get("TEAM"), "PTS": r.get("PTS")}

@@ -7,7 +7,7 @@ from langchain_core.tools import tool
 
 from .. import store
 from ..sources import nba_stats
-from ._core import SEASON, _warehouse_or_live, coerce_player_id, coerce_team_id
+from ._core import SEASON, TTL_GAMELOG, TTL_LEADERS, TTL_PBPSTATS, _warehouse_or_live, coerce_player_id, coerce_team_id
 
 
 def _num(value: object) -> float | None:
@@ -135,45 +135,68 @@ async def get_compare(
         from collections import Counter as _Counter
 
         pid = coerce_player_id(who)
-        try:
-            games = _read_df(
-                "SELECT * FROM silver_player_gamelogs"
-                " WHERE _season = ? AND _entity = ?",
-                [season, f"player:{pid}"],
-            )
-        except Exception:
-            games = []
-        if not games:
-            intel = await get_player_intel.ainvoke(
-                {"player_id": pid, "season": season})
-            games = intel.get("rows", [])
-        team = 0
-        try:
-            from nba_api.stats.endpoints import CommonPlayerInfo
+        loop = _asyncio.get_running_loop()
 
-            info = CommonPlayerInfo(player_id=pid, timeout=10).get_data_frames()[0]
-            team = int(info["TEAM_ID"].iloc[0])
-        except Exception:
-            team = 0
-        try:
-            oo = {"rows": _read_df(
-                "SELECT * FROM silver_on_off WHERE _season = ? AND _entity = ?",
-                [season, f"player:{pid}"],
-            )}
-        except Exception:
-            oo = {"rows": []}
+        def _gamelogs() -> list:
+            try:
+                return _read_df(
+                    "SELECT * FROM silver_player_gamelogs"
+                    " WHERE _season = ? AND _entity = ?",
+                    [season, f"player:{pid}"],
+                )
+            except Exception:
+                return []
+
+        def _team_id() -> int:
+            try:
+                from nba_api.stats.endpoints import CommonPlayerInfo
+
+                info = CommonPlayerInfo(player_id=pid, timeout=10).get_data_frames()[0]
+                return int(info["TEAM_ID"].iloc[0])
+            except Exception:
+                return 0
+
+        def _onoff_rows() -> list:
+            try:
+                return _read_df(
+                    "SELECT * FROM silver_on_off WHERE _season = ? AND _entity = ?",
+                    [season, f"player:{pid}"],
+                )
+            except Exception:
+                return []
+
+        games, team = await _asyncio.gather(
+            loop.run_in_executor(None, _gamelogs),
+            loop.run_in_executor(None, _team_id),
+        )
+        jobs: dict[str, Any] = {}
+        if not games:
+            jobs["intel"] = get_player_intel.ainvoke(
+                {"player_id": pid, "season": season})
+        jobs["last"] = get_last_x.ainvoke(
+            {"player_id": pid, "n": 5, "season": season})
+        jobs["adv"] = get_advanced.ainvoke({"player": pid, "season": season})
+        jobs["zones"] = get_shot_zones.ainvoke(
+            {"player_id": pid, "season": season})
+        results = await _asyncio.gather(*jobs.values(), return_exceptions=True)
+        res = {k: (v if isinstance(v, dict) else {})
+               for k, v in zip(jobs, results)}
+        if not games:
+            games = res.get("intel", {}).get("rows", []) or []
+        oo = {"rows": _onoff_rows()}
         if not any(isinstance(r, dict)
                    and r.get("Stat") == "Pts per 100 Possessions"
                    for r in oo.get("rows", []) or []):
             if team:
-                oo = await get_on_off.ainvoke(
+                cand = await get_on_off.ainvoke(
                     {"player_id": pid, "team_id": team, "season": season})
-        last = await get_last_x.ainvoke(
-            {"player_id": pid, "n": 5, "season": season})
-        adv = await get_advanced.ainvoke({"player": pid, "season": season})
+                if isinstance(cand, dict):
+                    oo = cand
+        last = res.get("last", {})
+        adv = res.get("adv", {})
         adv_rows = adv.get("rows", {}) if adv.get("ok") else {}
         try:
-            zones = await get_shot_zones.ainvoke({"player_id": pid, "season": season})
+            zones = res.get("zones", {})
             diet = zone_diet(zones.get("rows", [])) if zones.get("ok") else {
                 "rim_share": None, "three_share": None}
         except Exception:
@@ -312,7 +335,7 @@ def get_player_intel(player_id: str | int, season: str = SEASON) -> dict[str, An
         "silver_player_gamelogs", "_season = ? AND _entity = ?",
         [season, f"player:{player_id}"],
         lambda: nba_stats.player_gamelog(player_id, season), season,
-        entity=f"player:{player_id}", live_first=True,
+        entity=f"player:{player_id}", ttl_s=TTL_GAMELOG,
     )
     return {"tool": "get_player_intel", "ok": True, "rows": rows, "meta": meta}
 
@@ -329,7 +352,7 @@ def get_playoff_intel(player_id: str | int, season: str = SEASON) -> dict[str, A
         "silver_playoff_gamelogs", "_season = ? AND _entity = ?",
         [season, f"player:{pid}"],
         lambda: nba_stats.player_playoff_gamelog(pid, season), season,
-        entity=f"player:{pid}", live_first=True,
+        entity=f"player:{pid}", ttl_s=TTL_GAMELOG,
     )
     if not rows:
         try:
@@ -369,7 +392,7 @@ def get_last_x(player_id: str | int, n: int = 10, season: str = SEASON) -> dict[
         "silver_player_gamelogs", "_season = ? AND _entity = ?",
         [season, f"player:{player_id}"],
         lambda: nba_stats.player_gamelog(player_id, season), season,
-        entity=f"player:{player_id}", live_first=True,
+        entity=f"player:{player_id}", ttl_s=TTL_GAMELOG,
     )
     if not rows:
         return {"tool": "get_last_x", "ok": False,
@@ -394,7 +417,7 @@ def get_trend(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
         "silver_player_gamelogs", "_season = ? AND _entity = ?",
         [season, f"player:{player_id}"],
         lambda: nba_stats.player_gamelog(player_id, season), season,
-        entity=f"player:{player_id}", live_first=True,
+        entity=f"player:{player_id}", ttl_s=TTL_GAMELOG,
     )
     if not rows:
         return {"tool": "get_trend", "ok": False,
@@ -432,7 +455,7 @@ def get_percentiles(player_id: str | int, season: str = SEASON) -> dict[str, Any
         rows, _ = _warehouse_or_live(
             table, "_season = ?",
             [season], lambda c=cat: nba_stats.leaders(c, season), season,
-            limit=600,
+            limit=600, ttl_s=TTL_LEADERS,
         )
         hit = next((r for r in rows if r.get("PLAYER_ID") == player_id), None)
         if hit and hit.get("RANK"):
@@ -455,7 +478,7 @@ def get_comps(player_id: str | int, season: str = SEASON, n: int = 5) -> dict[st
         "silver_player_gamelogs", "_season = ? AND _entity = ?",
         [season, f"player:{player_id}"],
         lambda: nba_stats.player_gamelog(player_id, season), season,
-        entity=f"player:{player_id}", live_first=True,
+        entity=f"player:{player_id}", ttl_s=TTL_GAMELOG,
     )
     if not base:
         return {"tool": "get_comps", "ok": False, "error": "no baseline games"}
@@ -813,7 +836,7 @@ def get_on_off(player_id: str | int, team_id: str | int, season: str = SEASON) -
         "silver_on_off", "_season = ? AND _entity = ?",
         [season, f"player:{player_id}"],
         lambda: pbpstats.on_off(player_id, team_id, season), season,
-        entity=f"player:{player_id}", live_first=True,
+        entity=f"player:{player_id}", ttl_s=TTL_PBPSTATS,
     )
     return {"tool": "get_on_off", "ok": True, "rows": rows, "meta": meta}
 
@@ -935,7 +958,7 @@ def get_wowy(
         "silver_wowy", "_season = ? AND _entity = ?",
         [season, entity_key],
         lambda: pbpstats.wowy(ids, resolved_team, season), season,
-        entity=entity_key, live_first=True,
+        entity=entity_key, ttl_s=TTL_PBPSTATS,
     )
     return {"tool": "get_wowy", "ok": True, "rows": rows, "meta": meta}
 
@@ -951,7 +974,7 @@ def get_four_factors(player_id: str | int, team_id: str | int, season: str = SEA
         "silver_four_factors", "_season = ? AND _entity = ?",
         [season, f"player:{player_id}"],
         lambda: pbpstats.four_factors(player_id, team_id, season), season,
-        entity=f"player:{player_id}", live_first=True,
+        entity=f"player:{player_id}", ttl_s=TTL_PBPSTATS,
     )
     return {"tool": "get_four_factors", "ok": True, "rows": rows, "meta": meta}
 

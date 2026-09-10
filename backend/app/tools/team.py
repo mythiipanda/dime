@@ -5,7 +5,7 @@ import asyncio as _asyncio
 from langchain_core.tools import tool
 
 from ..sources import nba_stats
-from ._core import SEASON, _warehouse_or_live, coerce_team_id, trust_tier
+from ._core import SEASON, TTL_BOX, TTL_GAMELOG, TTL_PBPSTATS, TTL_ROSTER, TTL_SCOREBOARD_PAST, _warehouse_or_live, coerce_team_id, is_past_game_date, trust_tier
 
 
 def _abbrev(who: str) -> str:
@@ -138,13 +138,13 @@ def get_team_hub(team_id: str | int, season: str = SEASON) -> dict[str, Any]:
         "silver_team_games", "_season = ? AND _entity = ?",
         [season, f"team:{team_id}"],
         lambda: nba_stats.team_gamelog(team_id, season), season,
-        entity=f"team:{team_id}", live_first=True,
+        entity=f"team:{team_id}", ttl_s=TTL_GAMELOG,
     )
     roster, _ = _warehouse_or_live(
         "silver_rosters", "_season = ? AND _entity = ?",
         [season, f"team:{team_id}"],
         lambda: nba_stats.team_roster(team_id, season), season,
-        entity=f"team:{team_id}", live_first=True,
+        entity=f"team:{team_id}", ttl_s=TTL_ROSTER,
     )
     return {
         "tool": "get_team_hub", "ok": True,
@@ -159,11 +159,13 @@ def game_links(game_id: str) -> dict[str, str]:
 @tool
 def get_games_on_date(game_date: str, season: str = SEASON) -> dict[str, Any]:
     """Scoreboard for one date. Date format is MM/DD/YYYY."""
+    past = is_past_game_date(game_date)
     rows, meta = _warehouse_or_live(
         "silver_scoreboard", "_season = ? AND _entity = ?",
         [season, f"date:{game_date}"],
         lambda: nba_stats.scoreboard(game_date, season), season,
-        entity=f"date:{game_date}", live_first=True,
+        entity=f"date:{game_date}", live_first=(not past),
+        ttl_s=(TTL_SCOREBOARD_PAST if past else None),
     )
     for r in rows:
         gid = r.get("GAME_ID")
@@ -175,11 +177,12 @@ def get_games_on_date(game_date: str, season: str = SEASON) -> dict[str, Any]:
 @tool
 def get_boxscore(game_id: str, season: str = SEASON) -> dict[str, Any]:
     """Traditional boxscore player stats for one game id."""
+    # game_id carries no date so a 1h TTL keeps in-progress games reasonably fresh while repeat reads stay instant
     rows, meta = _warehouse_or_live(
         "silver_boxscores", "_season = ? AND _entity = ?",
         [season, f"game:{game_id}"],
         lambda: nba_stats.boxscore_traditional(game_id, season), season,
-        entity=f"game:{game_id}", live_first=True,
+        entity=f"game:{game_id}", ttl_s=TTL_BOX,
     )
     return {"tool": "get_boxscore", "ok": True, "rows": rows,
             "meta": {**meta, "links": game_links(game_id)}}
@@ -267,7 +270,7 @@ def get_lineups(team_id: str | int, season: str = SEASON) -> dict[str, Any]:
         "silver_lineups", "_season = ? AND _entity = ?",
         [season, f"team:{team_id}"],
         lambda: nba_stats.lineups(team_id, season), season,
-        entity=f"team:{team_id}", live_first=True,
+        entity=f"team:{team_id}", ttl_s=TTL_PBPSTATS,
     )
     for r in rows:
         tier, est = _trust_tier(r.get("MIN"))
@@ -332,13 +335,13 @@ def get_scouting_report(team_id: str | int, season: str = SEASON) -> dict[str, A
         "silver_team_games", "_season = ? AND _entity = ?",
         [season, f"team:{team_id}"],
         lambda: nba_stats.team_gamelog(team_id, season), season,
-        entity=f"team:{team_id}", live_first=True,
+        entity=f"team:{team_id}", ttl_s=TTL_GAMELOG,
     )
     lineups, _ = _warehouse_or_live(
         "silver_lineups", "_season = ? AND _entity = ?",
         [season, f"team:{team_id}"],
         lambda: nba_stats.lineups(team_id, season), season,
-        entity=f"team:{team_id}", live_first=True,
+        entity=f"team:{team_id}", ttl_s=TTL_PBPSTATS,
     )
     wins = sum(1 for g in games if g.get("WL") == "W")
     top_lineup = (lineups or [{}])[0]

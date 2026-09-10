@@ -8,6 +8,12 @@ from ..sources.base import FetchResult
 
 SEASON = "2025-26"
 MAX_ROWS = 25
+TTL_SCOREBOARD_PAST = 12 * 3600
+TTL_GAMELOG = 6 * 3600
+TTL_PBPSTATS = 24 * 3600
+TTL_ROSTER = 24 * 3600
+TTL_BOX = 3600
+TTL_LEADERS = 12 * 3600
 
 STAT_CATEGORIES = frozenset({
     "PTS", "REB", "AST", "STL", "BLK", "MIN", "FGM", "FGA",
@@ -204,6 +210,39 @@ def coerce_team_id(value: object) -> int:
     return int(found[0]["id"])
 
 
+def _cache_age_s(frame) -> float | None:
+    if "_fetched_at" not in frame.columns:
+        return None
+    try:
+        vals = [v for v in frame["_fetched_at"].to_list() if v]
+    except Exception:
+        return None
+    if not vals:
+        return None
+    from datetime import datetime as _dt
+    from datetime import timezone as _tz
+
+    try:
+        newest = max(
+            _dt.fromisoformat(str(v).replace("Z", "+00:00")) for v in vals)
+    except (TypeError, ValueError):
+        return None
+    if newest.tzinfo is None:
+        newest = newest.replace(tzinfo=_tz.utc)
+    return (_dt.now(_tz.utc) - newest).total_seconds()
+
+
+def is_past_game_date(game_date: str) -> bool:
+    try:
+        from zoneinfo import ZoneInfo
+        from datetime import datetime as _dt
+
+        day = _dt.strptime(str(game_date).strip(), "%m/%d/%Y").date()
+        return day < _dt.now(ZoneInfo("America/New_York")).date()
+    except (TypeError, ValueError):
+        return False
+
+
 def _warehouse_or_live(
     table: str,
     where: str,
@@ -213,24 +252,28 @@ def _warehouse_or_live(
     entity: str = "",
     limit: int = MAX_ROWS,
     live_first: bool = False,
+    ttl_s: float | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     frame = None
     if not live_first:
         frame = store.read_frame(table, where, params)
+        if frame is not None and frame.height > 0 and ttl_s is not None:
+            age = _cache_age_s(frame)
+            if age is not None and age > ttl_s:
+                frame = None
     if frame is None or frame.height == 0:
         live: FetchResult = fetch()
         if not live.ok or live.frame.height == 0:
-            if live_first:
-                frame = store.read_frame(table, where, params)
-                if frame is not None and frame.height > 0:
-                    meta: dict[str, Any] = {
-                        "rows": frame.height, "cached": True, "stale": True,
-                        "live_error": live.error or "empty upstream response",
-                    }
-                    if "_source" in frame.columns:
-                        meta["source"] = frame["_source"][0]
-                        meta["fetched_at"] = frame["_fetched_at"][0]
-                    return frame.head(limit).to_dicts(), meta
+            frame = store.read_frame(table, where, params)
+            if frame is not None and frame.height > 0:
+                meta: dict[str, Any] = {
+                    "rows": frame.height, "cached": True, "stale": True,
+                    "live_error": live.error or "empty upstream response",
+                }
+                if "_source" in frame.columns:
+                    meta["source"] = frame["_source"][0]
+                    meta["fetched_at"] = frame["_fetched_at"][0]
+                return frame.head(limit).to_dicts(), meta
             return [], {"source": live.meta.source,
                         "error": live.error or "empty upstream response"}
         store.save_frame(table, live, entity)
