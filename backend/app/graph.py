@@ -578,6 +578,45 @@ async def _triage_seed(question: str, primary: str, model: str,
         r"best season|career (arc|trajectory|history|impact)|"
         r"\btrajectory\b|\barc\b|over time|aging|development curve",
         question, re.IGNORECASE))
+    _sm = re.search(r"(\d+)[- ]point", question, re.IGNORECASE)
+    if (_sm and not is_trade and not is_cast
+            and not is_compare and not is_raptor
+            and re.search(r"streak|longest|consecutive", question,
+                          re.IGNORECASE)):
+        _thresh = max(1, min(int(_sm.group(1)), 60))
+        _code = (
+            "rows = con.execute(\"WITH g AS (SELECT Player_ID, PTS, "
+            "TRY_STRPTIME(GAME_DATE, '%b %d, %Y') AS d "
+            "FROM silver_player_gamelogs WHERE _season = '2025-26'), "
+            "s AS (SELECT Player_ID, d, PTS, ROW_NUMBER() OVER "
+            "(PARTITION BY Player_ID ORDER BY d) - ROW_NUMBER() OVER "
+            f"(PARTITION BY Player_ID, (PTS >= {_thresh})::INT ORDER BY d) "
+            "AS grp FROM g WHERE d IS NOT NULL), "
+            "agg AS (SELECT Player_ID, COUNT(*) AS streak FROM s WHERE PTS >= "
+            f"{_thresh} GROUP BY Player_ID, grp) "
+            "SELECT MAX(l.PLAYER), MAX(a.streak) FROM agg a LEFT JOIN "
+            "(SELECT DISTINCT PLAYER, PLAYER_ID FROM silver_leaders_pts) l "
+            "ON CAST(l.PLAYER_ID AS VARCHAR) = CAST(a.Player_ID AS VARCHAR) "
+            "GROUP BY a.Player_ID "
+            "ORDER BY MAX(a.streak) DESC LIMIT 5\").fetchall()\n"
+            "[print(f'{r[0]}: {r[1]} games') for r in rows]\n"
+            "out = rows"
+        )
+        try:
+            from .tools import v1_tools as _vtsq
+
+            _fn = next((t for t in _vtsq if t.name == "run_python"), None)
+            out = await _fn.ainvoke({"code": _code}) if _fn is not None else {
+                "tool": "run_python", "ok": False, "error": "no python tool"}
+        except Exception as exc:
+            out = {"tool": "run_python", "ok": False,
+                   "error": str(exc)[:160]}
+        state["tool_results"].append(
+            out if isinstance(out, dict) else {"tool": "run_python",
+                                              "rows": out})
+        state["calls_made"].append("run_python:" + json.dumps(
+            {"code": _code[:120]}, sort_keys=True))
+        return
     if (_LIST_RX.search(question) and not is_trade and not is_cast
             and not is_compare and not is_raptor
             and "delegate_league" in delegates):

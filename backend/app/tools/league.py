@@ -1024,13 +1024,37 @@ async def text_to_sql(question: str) -> dict[str, Any]:
         present = [t for t in allowed if t in tables]
         cols: dict[str, list[str]] = {}
         for t in present:
-            cols[t] = [r[1] for r in
+            cols[t] = [f"{r[1]} {r[2]}" for r in
                        con.execute(f"PRAGMA table_info({t})").fetchall()][:20]
     finally:
         con.close()
     if not present:
         return {"tool": "text_to_sql", "ok": False, "error": "warehouse empty"}
-    schema = "\n".join(f"{t}: {', '.join(c)}" for t, c in cols.items())
+    qtokens = set(_re.findall(r"[a-z]+", question.lower()))
+    syn = {"points": {"pts"}, "assists": {"ast"}, "rebounds": {"reb"},
+           "steals": {"stl"}, "blocks": {"blk"}, "streak": {"game_date"},
+           "games": {"game_date", "gp"}, "season": {"season", "_season"},
+           "player": {"player"}, "team": {"team"},
+           "draft": {"draft"}, "salary": {"salary"}, "payroll": {"salary"}}
+    expanded = set(qtokens)
+    for tok in qtokens:
+        expanded |= syn.get(tok, set())
+
+    def _tabscore(t: str) -> tuple[int, int]:
+        parts = set(_re.findall(r"[a-z]+", t.lower()))
+        cols_l = [c.lower() for c in cols[t]]
+        hit_t = len(parts & expanded)
+        hit_c = sum(1 for c in cols_l
+                    if set(_re.findall(r"[a-z]+", c)) & expanded)
+        return (hit_t * 3 + min(hit_c, 6), -len(cols[t]))
+
+    ranked = sorted(present, key=_tabscore, reverse=True)
+    keep = set(ranked[:10])
+    for must in ("silver_player_gamelogs", "silver_standings"):
+        if must in cols:
+            keep.add(must)
+    schema = "\n".join(f"{t}: {', '.join(cols[t])}"
+                       for t in ranked if t in keep)
     examples = (
         "\nExamples.\nQ: Thunder record this season?\n"
         "SQL: SELECT WINS, LOSSES FROM silver_standings "
@@ -1078,28 +1102,49 @@ async def text_to_sql(question: str) -> dict[str, Any]:
         "columns and season end-year ints.\n"
         "SQL: SELECT PLAYER_NAME, TEAM_ABBREVIATION, AGE, GP, PTS, AST "
         "FROM silver_hist_player_seasons WHERE AGE < 24 AND PTS >= 15 AND AST >= 5 "
-        "AND SEASON = 2024 ORDER BY PTS DESC LIMIT 10"
+        "AND SEASON = 2024 ORDER BY PTS DESC LIMIT 10\n"
+        "Q: Who has the longest 20-point game streak this season?\n"
+        "Note GAME_DATE is text like 'Apr 02, 2026'; parse with "
+        "TRY_STRPTIME(GAME_DATE, '%b %d, %Y'). Use gaps-and-islands.\n"
+        "SQL: WITH g AS (SELECT Player_ID, PTS, "
+        "TRY_STRPTIME(GAME_DATE, '%b %d, %Y') AS d "
+        "FROM silver_player_gamelogs WHERE _season = '2025-26'), "
+        "s AS (SELECT Player_ID, d, PTS, ROW_NUMBER() OVER "
+        "(PARTITION BY Player_ID ORDER BY d) - ROW_NUMBER() OVER "
+        "(PARTITION BY Player_ID, (PTS >= 20)::INT ORDER BY d) AS grp "
+        "FROM g WHERE d IS NOT NULL) SELECT Player_ID, COUNT(*) AS streak "
+        "FROM s WHERE PTS >= 20 GROUP BY Player_ID, grp "
+        "ORDER BY streak DESC LIMIT 5"
     )
     feedback = ""
     for _ in range(3):
         try:
             resp = await invoke_with_fallback(
                 "mistral", "ministral-8b-2512",
-                [SystemMessage(content="Reply with SQL only, no prose."),
-                 HumanMessage(
-                     content="Write one SQLite SELECT using only these tables "
-                     "and columns. Match column case exactly as listed.\n"
+                 [SystemMessage(content="Reply with SQL only, no prose."),
+                  HumanMessage(
+                      content="Write one SQLite SELECT using only these tables "
+                      "and columns. Match column case exactly as listed.\n"
+                      "Always filter _season = '2025-26' unless the question "
+                      "asks about other seasons.\n"
                      f"Schema:\n{schema}{examples}\nQuestion: {question}{feedback}")])
             sql = _re.sub(r"^```sql|```$", "", str(getattr(resp, "content", "") or ""),
                           flags=_re.MULTILINE).strip()
+            m = _re.search(r"(?i)\b(select|with)\b", sql)
+            if m and m.start() > 0:
+                sql = sql[m.start():].strip()
+            sql = _re.sub(r"```$", "", sql).strip()
         except Exception as exc:
             return {"tool": "text_to_sql", "ok": False, "error": str(exc)[:160]}
-        if not _re.match(r"(?i)^\s*select\b", sql) or _re.search(
+        if not _re.match(r"(?i)^\s*(select|with)\b", sql) or _re.search(
                 r"(?i)\b(insert|update|delete|drop|alter|create|pragma|attach|copy)\b", sql):
             feedback = "\nPrevious reply was not a single SELECT. Reply with SQL only."
             continue
         used = set(_re.findall(r"(?i)from\s+(\w+)|join\s+(\w+)", sql))
         used_tables = {a or b for a, b in used}
+        ctes = set(_re.findall(r"(?i)(?:with|,)\s*(\w+)\s+as\s*\(", sql))
+        used_tables -= {c for c in ctes if c.lower() not in
+                        {t.lower() for t in present}}
         if not used_tables or not used_tables.issubset(set(present)):
             feedback = "\nPrevious reply used unknown tables. Use only listed tables."
             continue
