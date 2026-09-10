@@ -284,8 +284,10 @@ export async function getDebateCard(
   a: string,
   b: string,
   season = SEASON,
+  topic?: string,
 ): Promise<DebateCardRows> {
   const q = new URLSearchParams({ a, b, season });
+  if (topic) q.set("topic", topic);
   const res = await fetch(`${BACKEND}/api/v1/debate-card?${q.toString()}`);
   if (!res.ok) throw new Error(`debate card failed: ${res.status}`);
   const data = (await res.json()) as {

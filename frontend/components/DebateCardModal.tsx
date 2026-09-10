@@ -15,6 +15,7 @@ export interface DebateCardModalProps {
   initialA?: string;
   initialB?: string;
   season?: string;
+  topic?: string;
   onClose: () => void;
 }
 
@@ -37,10 +38,12 @@ export default function DebateCardModal({
   initialA = "",
   initialB = "",
   season = "2025-26",
+  topic = "",
   onClose,
 }: DebateCardModalProps) {
   const [a, setA] = useState(initialA);
   const [b, setB] = useState(initialB);
+  const debateTopic = topic.trim();
   const [status, setStatus] = useState<ModalState>("idle");
   const [error, setError] = useState("");
   const [rows, setRows] = useState<DebateCardRows | null>(null);
@@ -55,7 +58,7 @@ export default function DebateCardModal({
     setError("");
     setCopied(false);
     try {
-      const r = await getDebateCard(a.trim(), b.trim(), season);
+      const r = await getDebateCard(a.trim(), b.trim(), season, debateTopic || undefined);
       setRows(r);
       setStatus("ready");
     } catch (e) {
@@ -161,11 +164,30 @@ export default function DebateCardModal({
         <div className="display" style={{ fontSize: 20, marginBottom: 4 }}>
           Debate card
         </div>
-        <div style={{ fontSize: 14, color: "#78716c", marginBottom: 16 }}>
-          Pick two players and settle it with data.
-        </div>
-        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-          <div style={{ position: "relative", flex: 1 }}>
+        {debateTopic ? (
+          <div style={{ marginBottom: 16 }}>
+            <span
+              style={{
+                display: "inline-block",
+                fontSize: 11,
+                fontWeight: 500,
+                borderRadius: 9999,
+                padding: "2px 10px",
+                background: "var(--color-sky-wash)",
+                color: "var(--color-cyan-edge)",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {debateTopic}
+            </span>
+          </div>
+        ) : (
+          <div style={{ fontSize: 14, color: "#78716c", marginBottom: 16 }}>
+            Pick two players and settle it with data.
+          </div>
+        )}
+        <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+          <div style={{ position: "relative", flex: "1 1 160px", minWidth: 0 }}>
             <input
               className="field"
               style={{ width: "100%" }}
@@ -179,7 +201,7 @@ export default function DebateCardModal({
             />
             {renderSuggest(suggA, "a", setA)}
           </div>
-          <div style={{ position: "relative", flex: 1 }}>
+          <div style={{ position: "relative", flex: "1 1 160px", minWidth: 0 }}>
             <input
               className="field"
               style={{ width: "100%" }}

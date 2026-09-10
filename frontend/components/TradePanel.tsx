@@ -17,7 +17,7 @@ function millions(n: number): string {
   return `$${(n / 1_000_000).toFixed(1)}M`;
 }
 
-export default function TradePanel() {
+export default function TradePanel({ onAskValue }: { onAskValue?: (q: string) => void }) {
   const [a, setA] = useState("LAL");
   const [pa, setPa] = useState("");
   const [b, setB] = useState("DEN");
@@ -62,10 +62,26 @@ export default function TradePanel() {
         <input className="field" value={b} onChange={(e) => setB(e.target.value)} placeholder="team B" style={{ width: 80 }} />
         <input className="field" value={pb} onChange={(e) => setPb(e.target.value)} placeholder="players out, comma separated" style={{ flex: 1, minWidth: 200 }} />
       </div>
-      <div style={{ marginTop: 12 }}>
+      <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button className="pill-cta" style={{ fontSize: 12 }} disabled={busy} onClick={check}>
           {busy ? "Checking" : "Check legality"}
         </button>
+        {onAskValue && (
+          <button
+            type="button"
+            className="pill-ghost"
+            style={{ fontSize: 12 }}
+            disabled={!a.trim() || !b.trim() || (!pa.trim() && !pb.trim())}
+            title="Ask the analyst to grade this trade's value"
+            onClick={() =>
+              onAskValue(
+                `Grade the trade value: ${a.trim().toUpperCase()} sends ${pa.trim()} to ${b.trim().toUpperCase()} for ${pb.trim()}`,
+              )
+            }
+          >
+            Grade value
+          </button>
+        )}
       </div>
       {error && <div style={{ color: "var(--color-warm-gray)", marginTop: 8 }}>{error}</div>}
       {out && (

@@ -339,7 +339,7 @@ export default function Home() {
 
                 <DatasetPanel key={exploreKey} />
                 <div id="explore-trade" style={{ marginTop: 24, scrollMarginTop: 24 }}>
-                  <TradePanel />
+                  <TradePanel onAskValue={startFromOnboarding} />
                 </div>
                 <div style={{ marginTop: 24 }}>
                   <DraftPanel />
