@@ -1987,3 +1987,133 @@ def get_leaderboard_deltas(season: str = SEASON, days: int = 7) -> dict[str, Any
             "meta": {"source": "leaderboard_snapshots", "season": season,
                      "current_date": latest, "base_date": base,
                      "days_requested": days, "days_actual": span}}
+
+
+_DAY = 24 * 3600
+_IN_SEASON_MONTHS = frozenset({10, 11, 12, 1, 2, 3, 4, 5, 6})
+
+# table -> (expected-cadence label, max age seconds; None = static, never stale)
+FRESHNESS_RULES: dict[str, tuple[str, float | None]] = {
+    "silver_scoreboard": ("daily in season", 36 * 3600),
+    "silver_standings": ("daily in season", 36 * 3600),
+    "silver_injuries": ("daily in season", 36 * 3600),
+    "silver_leaders_pts": ("daily in season", 36 * 3600),
+    "silver_leaders_ast": ("daily in season", 36 * 3600),
+    "silver_leaders_reb": ("daily in season", 36 * 3600),
+    "silver_leaders_stl": ("daily in season", 36 * 3600),
+    "silver_leaders_blk": ("daily in season", 36 * 3600),
+    "silver_player_gamelogs": ("daily in season", 36 * 3600),
+    "silver_team_games": ("daily in season", 36 * 3600),
+    "silver_boxscores": ("daily in season", 36 * 3600),
+    "silver_hustle_player": ("daily in season", 36 * 3600),
+    "silver_advanced": ("daily in season", 36 * 3600),
+    "silver_four_factors": ("daily in season", 36 * 3600),
+    "silver_clutch": ("daily in season", 36 * 3600),
+    "silver_team_ratings": ("daily in season", 36 * 3600),
+    "silver_on_off": ("daily in season", 36 * 3600),
+    "silver_lineups": ("daily in season", 36 * 3600),
+    "silver_rosters": ("daily in season", 36 * 3600),
+    "silver_salaries": ("weekly", 7 * _DAY),
+    "silver_cap_players": ("weekly", 7 * _DAY),
+    "silver_combine": ("weekly", 7 * _DAY),
+    "silver_playoffs": ("seasonal", 400 * _DAY),
+    "silver_playoff_gamelogs": ("seasonal", 400 * _DAY),
+    "silver_hist_gamelogs": ("static", None),
+    "silver_hist_hustle": ("static", None),
+    "silver_hist_lineups": ("static", None),
+    "silver_hist_possessions": ("static", None),
+    "silver_hist_shots": ("static", None),
+    "silver_hist_standings": ("static", None),
+    "silver_raptor_player": ("static", None),
+    "silver_raptor_team": ("static", None),
+}
+
+
+def _parse_ts(raw: object):
+    from datetime import datetime as _dt, timezone as _tz
+
+    try:
+        ts = _dt.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=_tz.utc)
+    return ts
+
+
+def _freshness_row(table: str, rows: int, last_fetch: object,
+                   now) -> dict[str, Any]:
+    """One freshness panel row. Unknown timestamps stay unknown, never invented."""
+    label, max_age = FRESHNESS_RULES.get(table, ("unknown", None))
+    known = table in FRESHNESS_RULES
+    expected, threshold = label, max_age
+    if label == "daily in season" and now.month not in _IN_SEASON_MONTHS:
+        expected, threshold = "weekly (offseason)", 7 * _DAY
+    ts = _parse_ts(last_fetch) if last_fetch else None
+    age_hours: float | None = None
+    stale: bool | None = None
+    if ts is not None:
+        age_hours = round((now - ts).total_seconds() / 3600, 1)
+        if known:
+            stale = threshold is not None and age_hours * 3600 > threshold
+    return {"table": table, "rows": rows,
+            "last_fetch": str(last_fetch) if ts is not None else "unknown",
+            "age_hours": age_hours, "expected": expected, "stale": stale}
+
+
+def _warehouse_table_meta() -> list[tuple[str, int, str | None]]:
+    """Read-only scan: (table, row count, max _fetched_at) per silver_* table."""
+    from .. import store as _store
+
+    import duckdb
+
+    last: Exception | None = None
+    for _ in range(5):
+        try:
+            con = duckdb.connect(str(_store.DB_PATH), read_only=True)
+            break
+        except Exception as exc:
+            last = exc
+            import time as _time
+
+            _time.sleep(0.3)
+    else:
+        raise last or RuntimeError("warehouse read failed")
+    try:
+        tables = sorted(
+            r[0] for r in con.execute("SHOW TABLES").fetchall()
+            if r[0].startswith("silver_"))
+        if not tables:
+            return []
+        has_ts = {}
+        for t in tables:
+            has_ts[t] = any(
+                r[1] == "_fetched_at"
+                for r in con.execute(f"PRAGMA table_info({t})").fetchall())
+        parts = []
+        for t in tables:
+            mx = "MAX(_fetched_at)" if has_ts[t] else "CAST(NULL AS VARCHAR)"
+            parts.append(f"SELECT '{t}' AS t, COUNT(*) AS n, {mx} AS mx FROM {t}")
+        return [(r[0], r[1], r[2]) for r in
+                con.execute(" UNION ALL ".join(parts)).fetchall()]
+    finally:
+        con.close()
+
+
+@tool
+def get_warehouse_freshness() -> dict[str, Any]:
+    """Warehouse freshness panel: every silver table, row count, last fetch, stale flag."""
+    from datetime import datetime as _dt, timezone as _tz
+
+    now = _dt.now(_tz.utc)
+    try:
+        meta = _warehouse_table_meta()
+    except Exception as exc:
+        return {"tool": "get_warehouse_freshness", "ok": False,
+                "error": str(exc)[:200]}
+    rows = [_freshness_row(t, n, last, now) for t, n, last in meta]
+    stale_n = sum(1 for r in rows if r["stale"])
+    unknown_n = sum(1 for r in rows if r["stale"] is None)
+    return {"tool": "get_warehouse_freshness", "ok": True, "rows": rows,
+            "meta": {"tables": len(rows), "stale": stale_n, "unknown": unknown_n,
+                     "in_season": now.month in _IN_SEASON_MONTHS}}

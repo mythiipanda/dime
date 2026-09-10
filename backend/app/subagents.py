@@ -359,6 +359,8 @@ LEAGUE_BRIEF = (
     "THEN call get_trade_value. "
     "If a tool reports unknown players, stop and report them exactly. "
     "Never swap in a suggested name as the requested player. "
+    "IF the task mentions freshness, stale data, last updated, or data currency, "
+    "THEN call get_warehouse_freshness. "
     "IF the task names one stat category, THEN call get_leaders. "
     "Otherwise call get_standings."
 )
@@ -424,6 +426,7 @@ def _desk_spec(name: str, task: str):
                  "get_draft_model", "get_risers", "get_streaks", "get_trade_check",
                  "get_trade_value",
                  "get_award_race",
+                 "get_warehouse_freshness",
                  "run_python", "text_to_sql"],
                 force)
     raise ValueError(f"unknown desk: {name}")
