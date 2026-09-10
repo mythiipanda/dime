@@ -7,9 +7,13 @@ import CompareView from "./CompareView";
 import CompsView, { parseCompsRows } from "./CompsView";
 import CourtHeatmap from "./CourtHeatmap";
 import DataTable from "./DataTable";
+import GameLogView, { parseGameLogs } from "./GameLogView";
 import MatchupPreviewView, { parsePreview } from "./MatchupPreviewView";
+import PredictionView, { parsePrediction } from "./PredictionView";
 import RegressionView, { parseRegression } from "./RegressionView";
+import RotationCheckView, { parseRotation } from "./RotationCheckView";
 import SplitsView, { parseSplits } from "./SplitsView";
+import StreaksView, { parseStreaks } from "./StreaksView";
 import TradeValueView, { parseTradeValue } from "./TradeValueView";
 import TrendChart, { isRaptorRows } from "./TrendChart";
 import { resolveToolName } from "./view-shared";
@@ -60,7 +64,11 @@ export default function ArtifactCanvas({ artifact, onClose, onAsk }: ArtifactCan
     toolName === "get_trade_value" ||
     toolName === "get_matchup_splits" ||
     toolName === "get_regression_check" ||
-    toolName === "get_matchup_preview";
+    toolName === "get_matchup_preview" ||
+    toolName === "get_streaks" ||
+    toolName === "get_game_prediction" ||
+    toolName === "search_game_logs" ||
+    toolName === "get_rotation_check";
 
   const tableRows =
     (artifact?.rows as { rows?: unknown } | undefined)?.rows ?? artifact?.rows;
@@ -248,6 +256,15 @@ export default function ArtifactCanvas({ artifact, onClose, onAsk }: ArtifactCan
           <RegressionView rows={artifact.rows} />
         ) : toolName === "get_matchup_preview" && parsePreview(artifact.rows) ? (
           <MatchupPreviewView rows={artifact.rows} meta={artifact.meta} />
+        ) : toolName === "get_streaks" && parseStreaks(artifact.rows) ? (
+          <StreaksView rows={artifact.rows} meta={artifact.meta} />
+        ) : toolName === "get_game_prediction" &&
+          parsePrediction(artifact.rows ?? artifact) ? (
+          <PredictionView rows={artifact.rows ?? artifact} meta={artifact.meta} />
+        ) : toolName === "search_game_logs" && parseGameLogs(artifact.rows) ? (
+          <GameLogView rows={artifact.rows} meta={artifact.meta} />
+        ) : toolName === "get_rotation_check" && parseRotation(artifact.rows) ? (
+          <RotationCheckView rows={artifact.rows} meta={artifact.meta} />
         ) : isShotTool && viewMode === "court" ? (
           <CourtHeatmap rows={artifact.rows} meta={artifact.meta} verdict={artifact.verdict} />
         ) : toolName === "run_python" ? (
