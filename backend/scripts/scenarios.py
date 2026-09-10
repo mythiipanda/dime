@@ -25,104 +25,128 @@ def check(name: str, cond: bool, detail: str = "") -> None:
         print(f"FAIL {name} :: {detail[:200]}")
 
 
+def rows(res: object, default: object = None) -> object:
+    """Crash-proof rows accessor."""
+    if not isinstance(res, dict):
+        return default if default is not None else []
+    r = res.get("rows")
+    if r is not None:
+        return r
+    return default if default is not None else []
+
+
+def safe_invoke(tool, payload: dict) -> dict:
+    """Invoke a tool, converting exceptions to error dicts."""
+    try:
+        res = tool.invoke(payload)
+        return res if isinstance(res, dict) else {"ok": False, "error": "non-dict result"}
+    except Exception as e:
+        return {"ok": False, "error": f"tool crashed: {e}"}
+
+
 def main() -> None:
-    luka = tools.resolve_entity.invoke({"query": "Luka Doncic"})
-    luka_id = (luka["rows"]["players"] or [{}])[0].get("id", 0)
+    luka = safe_invoke(tools.resolve_entity, {"query": "Luka Doncic"})
+    luka_id = (rows(luka)["players"] or [{}])[0].get("id", 0)
     check("resolve finds luka id", luka_id == 1629029, str(luka_id))
 
-    sga = tools.resolve_entity.invoke({"query": "Shai Gilgeous-Alexander"})
-    sga_id = (sga["rows"]["players"] or [{}])[0].get("id", 0)
+    sga = safe_invoke(tools.resolve_entity, {"query": "Shai Gilgeous-Alexander"})
+    sga_id = (rows(sga)["players"] or [{}])[0].get("id", 0)
     check("resolve finds sga id", sga_id == 1628983, str(sga_id))
 
-    a = tools.get_player_intel.invoke({"player_id": luka_id})
-    b = tools.get_player_intel.invoke({"player_id": sga_id})
+    a = safe_invoke(tools.get_player_intel, {"player_id": luka_id})
+    b = safe_invoke(tools.get_player_intel, {"player_id": sga_id})
     check("compare has both gamelogs",
-          len(a["rows"]) > 0 and len(b["rows"]) > 0, "")
+          len(rows(a)) > 0 and len(rows(b)) > 0, "")
 
-    met = tools.compare_metrics.invoke({"a": luka_id, "b": sga_id})
+    met = safe_invoke(tools.compare_metrics, {"a": luka_id, "b": sga_id})
     check("metrics adjudication agrees or splits",
-          met.get("ok") and met.get("rows", {}).get("agreement") in (
-              "agree", "split", "none"), str(met.get("rows", {}).get("verdict"))[:160])
+          met.get("ok") and rows(met).get("agreement") in (
+              "agree", "split", "none"), str(rows(met).get("verdict"))[:160])
 
-    okc = tools.resolve_entity.invoke({"query": "Oklahoma City Thunder"})
-    okc_id = (okc["rows"]["teams"] or [{}])[0].get("id", 0)
+    okc = safe_invoke(tools.resolve_entity, {"query": "Oklahoma City Thunder"})
+    okc_id = (rows(okc)["teams"] or [{}])[0].get("id", 0)
     check("resolve finds okc id", okc_id == 1610612760, str(okc_id))
 
-    hub = tools.get_team_hub.invoke({"team_id": okc_id})
+    hub = safe_invoke(tools.get_team_hub, {"team_id": okc_id})
     check("preview hub has games plus roster",
-          len(hub["rows"]["games"]) > 0, str(hub)[:200])
+          len(rows(hub)["games"]) > 0, str(hub)[:200])
 
-    form = tools.get_last_x.invoke({"player_id": luka_id, "n": 10})
-    pts = [r.get("PTS", 0) for r in form["rows"]]
+    form = safe_invoke(tools.get_last_x, {"player_id": luka_id, "n": 10})
+    pts = [r.get("PTS", 0) for r in rows(form)]
     check("form averages sane",
           len(pts) == 10 and sum(pts) / 10 > 10, str(pts[:4]))
 
-    pct = tools.get_percentiles.invoke({"player_id": luka_id})
-    check("percentiles cover five cats", len(pct["rows"]) == 5, str(pct["rows"]))
+    pct = safe_invoke(tools.get_percentiles, {"player_id": luka_id})
+    check("percentiles cover five cats", len(rows(pct)) == 5, str(rows(pct)))
 
-    oo = tools.get_on_off.invoke({"player_id": luka_id, "team_id": 1610612747})
+    oo = safe_invoke(tools.get_on_off, {"player_id": luka_id, "team_id": 1610612747})
     check("on-off has deltas",
-          any("On-Off" in r for r in oo["rows"]), str(oo["rows"][:1]))
+          any("On-Off" in r for r in rows(oo)), str(rows(oo)[:1]))
 
-    zones = tools.get_shot_zones.invoke({"player_id": luka_id})
-    share = sum(r.get("share", 0) for r in zones["rows"])
+    zones = safe_invoke(tools.get_shot_zones, {"player_id": luka_id})
+    share = sum(r.get("share", 0) for r in rows(zones))
     check("zones shares sum to one", abs(share - 1.0) < 0.05, str(share))
 
-    brief = tools.get_briefing.invoke({})
+    brief = safe_invoke(tools.get_briefing, {})
     check("briefing carries games",
-          isinstance(brief["rows"], dict) and "games" in brief["rows"], "")
+          isinstance(rows(brief), dict) and "games" in rows(brief), "")
 
-    box = tools.get_boxscore.invoke(
-        {"game_id": str(a["rows"][0].get("Game_ID", ""))})
+    box = safe_invoke(tools.get_boxscore, 
+        {"game_id": str(rows(a)[0].get("Game_ID", ""))})
     check("boxscore chains from intel",
-          len(box["rows"]) > 0, str(box)[:200])
+          len(rows(box)) > 0, str(box)[:200])
 
-    comp = tools.get_comps.invoke({"player_id": 2544})
+    comp = safe_invoke(tools.get_comps, {"player_id": 2544})
     check("comps return neighbors",
-          len(comp["rows"]) == 5, str(comp["rows"][:1]))
+          len(rows(comp)) == 5, str(rows(comp)[:1]))
 
-    rest = tools.get_rest.invoke({"team_abbrev": "OKC"})
+    rest = safe_invoke(tools.get_rest, {"team_abbrev": "OKC"})
     check("rest splits read history",
-          "back_to_back" in rest["rows"], str(rest["rows"]))
+          "back_to_back" in rows(rest, {}), str(rows(rest, {})))
 
-    wp = tools.get_win_prob.invoke({"team_a": "OKC", "team_b": "DEN"})
+    wp = safe_invoke(tools.get_win_prob, {"team_a": "OKC", "team_b": "DEN"})
+    wp_rows = rows(wp, {})
+    wp_probs = wp_rows.get("win_prob", {}) if isinstance(wp_rows, dict) else {}
     check("win prob favors better record",
-          wp["rows"]["win_prob"]["OKC"] > wp["rows"]["win_prob"]["DEN"]
-          and wp["rows"]["elo_a"] > wp["rows"]["elo_b"], str(wp["rows"]))
+          wp_probs.get("OKC", 0) > wp_probs.get("DEN", 0)
+          and wp_rows.get("elo_a", 0) > wp_rows.get("elo_b", 0), str(rows(wp)))
 
-    zones = tools.get_shot_zones.invoke({"player_id": 2544})
+    zones = safe_invoke(tools.get_shot_zones, {"player_id": 2544})
     check("shot zones sum shares",
-          abs(sum(r.get("share", 0) for r in zones["rows"]) - 1.0) < 0.05, "")
+          abs(sum(r.get("share", 0) for r in rows(zones)) - 1.0) < 0.05, "")
 
     import asyncio as _asyncio
 
     async def _prev2():
-        return await tools.get_preview.ainvoke(
-            {"a": "Thunder", "b": "Celtics"})
+        try:
+            return await tools.get_preview.ainvoke(
+                {"a": "Thunder", "b": "Celtics"})
+        except Exception as e:
+            return {"ok": False, "error": f"preview crashed: {e}"}
 
     prev = _asyncio.run(_prev2())
-    pa = prev["rows"].get("a", {})
-    pb = prev["rows"].get("b", {})
-    wp = prev["rows"].get("win_prob", {})
+    pa = rows(prev, {}).get("a", {})
+    pb = rows(prev, {}).get("b", {})
+    wp = rows(prev, {}).get("win_prob", {})
     check("preview carries both teams plus odds",
           prev["ok"] and pa.get("team_id") == 1610612760
           and "top_lineup" in pa and "top_lineup" in pb
           and abs(sum(wp.values()) - 1.0) < 0.01, str(prev)[:200])
 
-    rs = tools.get_finder.invoke({"mode": "player_streak",
+    rs = safe_invoke(tools.get_finder, {"mode": "player_streak",
                                   "team_abbrev": "LeBron James",
                                   "season": "2024-25"})
-    rh = tools.get_finder.invoke({"mode": "head2head",
+    rh = safe_invoke(tools.get_finder, {"mode": "head2head",
                                   "team_abbrev": "LeBron James",
                                   "opponent": "2544",
                                   "season": "2024-25"})
     check("finder player modes streak plus head2head",
-          rs["ok"] and rs["rows"].get("longest_20pt_streak", 0) >= 1
-          and rh["ok"] and 5 < rh["rows"]["a"].get("ppg", 0) < 40
-          and 5 < rh["rows"]["b"].get("ppg", 0) < 40,
+          rs["ok"] and rows(rs, {}).get("longest_20pt_streak", 0) >= 1
+          and rh["ok"] and 5 < rows(rh, {}).get("a", {}).get("ppg", 0) < 40
+          and 5 < rows(rh, {}).get("b", {}).get("ppg", 0) < 40,
           str((rs, rh))[:200])
 
-    cast = tools.run_python.invoke({
+    cast = safe_invoke(tools.run_python, {
         "code": "rows = con.execute(\"SELECT AVG(PTS * 1.0 / GP) FROM "
                 "silver_leaders_pts WHERE TEAM = 'OKC' AND "
                 "PLAYER <> 'Shai Gilgeous-Alexander' AND "

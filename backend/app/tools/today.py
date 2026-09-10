@@ -8,11 +8,11 @@ from ._core import SEASON
 
 @tool
 def get_today(season: str = SEASON) -> dict[str, Any]:
-    """Today home view: last night's results, tonight's games, scoring leaders, streaks."""
+    """Today home view: last night's results, tonight's games, leaderboard movers, streaks."""
     from zoneinfo import ZoneInfo
     from datetime import datetime, timedelta as _td
 
-    from .league import get_leaders
+    from .league import get_leaders, get_leaderboard_deltas
     from .team import get_games_on_date
 
     now = datetime.now(ZoneInfo("America/New_York"))
@@ -55,12 +55,28 @@ def get_today(season: str = SEASON) -> dict[str, Any]:
     except Exception:
         pass
     try:
-        lead = get_leaders.invoke({"stat_category": "PTS", "season": season})
+        delta = get_leaderboard_deltas.invoke({"season": season, "days": 7})
+        drows = delta.get("rows", {}) if delta.get("ok") else {}
+        climbers = (drows.get("climbers", []) or [])[:3]
+        fallers = (drows.get("fallers", []) or [])[:3]
         movers = [
-            {"PLAYER": r.get("PLAYER"), "TEAM": r.get("TEAM"), "PTS": r.get("PTS"),
-             "GP": r.get("GP")}
-            for r in (lead.get("rows", []) or [])[:5]
+            {"PLAYER": c.get("player"), "TEAM": c.get("team"),
+             "RANK_CHANGE": f"+{c.get('rank_change')}",
+             "PTS_CHANGE": c.get("pts_change")}
+            for c in climbers
+        ] + [
+            {"PLAYER": f.get("player"), "TEAM": f.get("team"),
+             "RANK_CHANGE": str(f.get("rank_change")),
+             "PTS_CHANGE": f.get("pts_change")}
+            for f in fallers
         ]
+        if not movers:
+            lead = get_leaders.invoke({"stat_category": "PTS", "season": season})
+            movers = [
+                {"PLAYER": r.get("PLAYER"), "TEAM": r.get("TEAM"),
+                 "PTS": r.get("PTS"), "GP": r.get("GP")}
+                for r in (lead.get("rows", []) or [])[:5]
+            ] or [{"note": "no leaderboard movement in the last 7 days"}]
     except Exception:
         movers = []
     streaks: list[dict[str, Any]] = []

@@ -25,6 +25,17 @@ def check(name: str, cond: bool, detail: str = "") -> None:
         print(f"FAIL {name} :: {detail[:160]}")
 
 
+def rows(res: object, default: object = None) -> object:
+    """Crash-proof rows accessor. Returns the rows value when present,
+    otherwise the default ([] unless specified)."""
+    if not isinstance(res, dict):
+        return default if default is not None else []
+    r = res.get("rows")
+    if r is not None:
+        return r
+    return default if default is not None else []
+
+
 def safe(res: object) -> str:
     """Crash-proof detail string. Live tools fail without rows."""
     try:
@@ -38,33 +49,33 @@ def safe(res: object) -> str:
 def main() -> None:
     res = tools.search_nba.invoke({"query": "LeBron James"})
     check("search finds lebron id 2544",
-          any(p.get("id") == 2544 for p in res["rows"]["players"]), str(res))
+          any(p.get("id") == 2544 for p in rows(res)["players"]), str(res))
 
     res = tools.get_player_intel.invoke({"player_id": 2544})
     check("intel returns rows with provenance",
-          len(res["rows"]) > 0 and "source" in res["meta"], str(res)[:200])
-    game_id = res["rows"][0].get("Game_ID", "") if res["rows"] else ""
-    game_date = res["rows"][0].get("GAME_DATE", "") if res["rows"] else ""
+          len(rows(res)) > 0 and "source" in res["meta"], str(res)[:200])
+    game_id = rows(res)[0].get("Game_ID", "") if rows(res) else ""
+    game_date = rows(res)[0].get("GAME_DATE", "") if rows(res) else ""
 
     res = tools.get_team_hub.invoke({"team_id": 1610612747})
     check("team hub returns games",
-          len(res["rows"]["games"]) > 0, str(res)[:200])
+          len(rows(res)["games"]) > 0, str(res)[:200])
 
     res = tools.get_standings.invoke({})
-    check("standings returns 30 teams", len(res["rows"]) == 30, str(len(res["rows"])))
+    check("standings returns 30 teams", len(rows(res)) == 30, str(len(rows(res))))
 
     res = tools.get_leaders.invoke({"stat_category": "PTS"})
     check("leaders carry PTS column",
-          res["rows"] and "PTS" in res["rows"][0], str(res)[:200])
+          rows(res) and "PTS" in rows(res)[0], str(res)[:200])
 
     res = tools.get_leaders.invoke({"stat_category": "AST"})
     check("second category caches separately",
-          res["rows"] and "AST" in res["rows"][0], str(res)[:200])
+          rows(res) and "AST" in rows(res)[0], str(res)[:200])
 
     if game_id:
         res = tools.get_boxscore.invoke({"game_id": str(game_id)})
         check("boxscore chains from gamelog",
-              len(res["rows"]) > 0, str(res)[:200])
+              len(rows(res)) > 0, str(res)[:200])
     if game_date:
         from datetime import datetime
 
@@ -74,57 +85,57 @@ def main() -> None:
             day = game_date
         res = tools.get_games_on_date.invoke({"game_date": day})
         check("scoreboard chains from gamelog date",
-              len(res["rows"]) > 0, str(res)[:200])
+              len(rows(res)) > 0, str(res)[:200])
 
     res = tools.get_lineups.invoke({"team_id": 1610612760})
     check("lineups carry group plus minus",
-          res["rows"] and "GROUP_NAME" in res["rows"][0]
-          and "PLUS_MINUS" in res["rows"][0], str(res)[:200])
+          rows(res) and "GROUP_NAME" in rows(res)[0]
+          and "PLUS_MINUS" in rows(res)[0], str(res)[:200])
 
     res = tools.get_on_off.invoke({"player_id": 2544, "team_id": 1610612747})
     check("on-off returns splits",
-          res["rows"] and "On-Off" in res["rows"][0], str(res)[:200])
+          rows(res) and "On-Off" in rows(res)[0], str(res)[:200])
 
     res = tools.get_four_factors.invoke({"player_id": 2544, "team_id": 1610612747})
     check("four factors return rows",
-          len(res["rows"]) > 0, str(res)[:200])
+          len(rows(res)) > 0, str(res)[:200])
 
     res = tools.get_last_x.invoke({"player_id": 2544, "n": 5})
     check("last-x returns 5 recent first",
-          len(res["rows"]) == 5, str(res)[:200])
+          len(rows(res)) == 5, str(res)[:200])
 
     res = tools.get_percentiles.invoke({"player_id": 203999})
     check("percentiles cover five cats",
-          len(res["rows"]) == 5, str(res)[:200])
+          len(rows(res)) == 5, str(res)[:200])
 
     res = tools.get_hustle.invoke({})
     check("hustle returns rows",
-          len(res["rows"]) > 0, str(res)[:200])
+          len(rows(res)) > 0, str(res)[:200])
 
     res = tools.get_splits.invoke({"player_id": 2544})
     check("splits home away",
-          {r["split"] for r in res["rows"]} >= {"home", "away", "last10"}
-          and all(r["GP"] > 0 for r in res["rows"]), str(res)[:200])
+          {r["split"] for r in rows(res)} >= {"home", "away", "last10"}
+          and all(r["GP"] > 0 for r in rows(res)), str(res)[:200])
 
     res = tools.get_scouting_report.invoke({"team_id": 1610612760})
     check("scouting has record",
-          "record" in res["rows"], str(res)[:200])
+          "record" in rows(res), str(res)[:200])
 
     res = tools.get_recap.invoke({"game_id": str(game_id)})
     check("recap names top scorer",
-          res["rows"] and "PLAYER" in res["rows"][0], str(res)[:200])
+          rows(res) and "PLAYER" in rows(res)[0], str(res)[:200])
 
     res = tools.get_finder.invoke({"mode": "streak", "team_abbrev": "OKC"})
     check("finder streak reads history",
-          res["rows"].get("longest_win_streak", 0) >= 10, str(res)[:200])
+          rows(res, {}).get("longest_win_streak", 0) >= 10, str(res)[:200])
 
     res = tools.get_playoffs.invoke({})
     check("playoffs name champion",
-          res["rows"].get("champion", "") != "", str(res)[:200])
+          rows(res, {}).get("champion", "") != "", str(res)[:200])
 
     res = tools.get_player_intel.invoke({"player_id": "Luka Doncic"})
     check("intel accepts names",
-          len(res["rows"]) > 0, str(res)[:200])
+          len(rows(res)) > 0, str(res)[:200])
 
     from app.tools._core import coerce_player_id
     check("nicknames resolve",
@@ -141,7 +152,7 @@ def main() -> None:
             {"a": "Thunder", "b": "Celtics"})
 
     cmp_res = _asyncio.run(_cmp())
-    cmp_sides = cmp_res["rows"] if isinstance(cmp_res["rows"], dict) else {}
+    cmp_sides = rows(cmp_res, {}) if isinstance(rows(cmp_res, {}), dict) else {}
     check("compare composite sides",
           cmp_res["ok"] and (cmp_sides.get("a", {}) or {}).get("ppg", 0) > 20
           and (cmp_sides.get("b", {}) or {}).get("ppg", 0) > 20
@@ -150,9 +161,12 @@ def main() -> None:
           and (cmp_sides.get("a", {}) or {}).get("rpg", 0) > 0
           and "on_off" not in (cmp_sides.get("a", {}) or {}),
           str(cmp_res)[:200])
-    prev_res = _asyncio.run(_prev())
+    try:
+        prev_res = _asyncio.run(_prev())
+    except Exception as e:
+        prev_res = {"ok": False, "error": f"preview crashed: {e}"}
     check("preview composite probs",
-          prev_res["ok"] and abs(sum(prev_res["rows"]["win_prob"].values()) - 1.0) < 0.01,
+          prev_res.get("ok") and abs(sum(rows(prev_res, {}).get("win_prob", {}).values()) - 1.0) < 0.01,
           str(prev_res)[:200])
 
     met_res = tools.compare_metrics.invoke(
@@ -193,43 +207,43 @@ def main() -> None:
 
     res = tools.get_trend.invoke({"player_id": 2544})
     check("trend reports direction",
-          res["ok"] and res["rows"].get("direction") in ("up", "down", "flat"),
+          res["ok"] and rows(res, {}).get("direction") in ("up", "down", "flat"),
           str(res)[:200])
 
     res = tools.get_cap_ledger.invoke({"team": "OKC"})
     check("cap ledger reports payroll",
-          res["ok"] and res["rows"].get("payroll", 0) > 10**8
-          and isinstance(res["rows"].get("room_under_apron2"), int),
+          res["ok"] and rows(res, {}).get("payroll", 0) > 10**8
+          and isinstance(rows(res, {}).get("room_under_apron2"), int),
           safe(res))
 
     res = tools.get_trade_check.invoke({"team_a": "OKC", "players_a": "Shai Gilgeous-Alexander",
                                         "team_b": "DEN", "players_b": "Nikola Jokic"})
     check("trade check returns verdict",
-          res["ok"] and "legal" in res["rows"], str(res)[:200])
+          res["ok"] and "legal" in rows(res), str(res)[:200])
     check("trade check carries disclaimer",
-          "simplified" in res["rows"].get("disclaimer", "").lower(), safe(res))
+          "simplified" in rows(res, {}).get("disclaimer", "").lower(), safe(res))
 
     res = tools.get_trade_check.invoke({"team_a": "LAL", "players_a": "LeBron James",
                                         "team_b": "BOS", "players_b": "Jayson Tatum"})
     check("trade check fails loud on unknown names",
           (not res["ok"] and "LeBron James" in str(res.get("error", "")))
-          or (res["ok"] and "legal" in res["rows"]), str(res)[:160])
+          or (res["ok"] and "legal" in rows(res)), str(res)[:160])
 
     res = tools.get_injuries.invoke({"team": "ATL"})
     check("injuries filter by team",
           res["ok"] and all("Atlanta" in r.get("display_name", "")
-                            for r in res["rows"]), str(res)[:160])
+                            for r in rows(res)), str(res)[:160])
 
     res = tools.get_ratings.invoke({})
     check("ratings carry ranks",
-          res["ok"] and len(res["rows"]) == 30
-          and res["rows"][0].get("NET_RATING_RANK") is not None
-          and all(r.get("TEAM") for r in res["rows"]), str(res)[:160])
+          res["ok"] and len(rows(res)) == 30
+          and rows(res)[0].get("NET_RATING_RANK") is not None
+          and all(r.get("TEAM") for r in rows(res)), str(res)[:160])
 
     res = tools.get_clutch.invoke({"scope": "player"})
     check("clutch names a leader",
-          res["ok"] and len(res["rows"]) > 0
-          and res["rows"][0].get("PTS", 0) > 50, str(res)[:160])
+          res["ok"] and len(rows(res)) > 0
+          and rows(res)[0].get("PTS", 0) > 50, str(res)[:160])
 
     res = tools.get_boxscore.invoke({"game_id": "0042500405"})
     check("boxscore carries watch link",
@@ -238,8 +252,8 @@ def main() -> None:
 
     res = tools.get_elo.invoke({})
     check("elo ranks thirty teams",
-          res["ok"] and len(res["rows"]) == 30
-          and abs(sum(r["ELO"] for r in res["rows"]) - 45000) < 5,
+          res["ok"] and len(rows(res)) == 30
+          and abs(sum(r["ELO"] for r in rows(res)) - 45000) < 5,
           safe(res))
 
     async def _sim():
@@ -248,19 +262,19 @@ def main() -> None:
     sim_res = _asyncio.run(_sim())
     check("playoff sim odds sum",
           sim_res["ok"] and abs(sum(
-              sim_res["rows"]["title_probs"].values()) - 100) < 2,
-          str(sim_res["rows"].get("meta"))[:160])
+              rows(sim_res, {}).get("title_probs", {}).values()) - 100) < 2,
+          str(rows(sim_res, {}).get("meta"))[:160])
 
     res = tools.get_contract_value.invoke({})
     check("contract value both signs",
-          res["ok"] and len(res["rows"]) == 20
-          and res["rows"][0].get("RESIDUAL", 0) > 0
-          and res["rows"][-1].get("RESIDUAL", 0) < 0, safe(res))
+          res["ok"] and len(rows(res)) == 20
+          and rows(res)[0].get("RESIDUAL", 0) > 0
+          and rows(res)[-1].get("RESIDUAL", 0) < 0, safe(res))
 
     res = tools.get_shot_zones.invoke({"player_id": 2544})
     check("shot zones carry efg and share",
-          res["ok"] and abs(sum(r.get("SHARE", 0) for r in res["rows"]) - 1.0) < 0.01
-          and all(0 <= r.get("eFG_PCT", -1) <= 1.5 for r in res["rows"]),
+          res["ok"] and abs(sum(r.get("SHARE", 0) for r in rows(res)) - 1.0) < 0.01
+          and all(0 <= r.get("eFG_PCT", -1) <= 1.5 for r in rows(res)),
           safe(res))
 
     import asyncio as _aio2
@@ -270,8 +284,8 @@ def main() -> None:
 
     board_res = _aio2.run(_board())
     check("draft board ranks scorers",
-          board_res["ok"] and len(board_res["rows"]) == 30
-          and board_res["rows"][0].get("SCORE", 0) > 80,
+          board_res["ok"] and len(rows(board_res)) == 30
+          and rows(board_res)[0].get("SCORE", 0) > 80,
           safe(board_res))
 
     async def _model():
@@ -279,10 +293,10 @@ def main() -> None:
 
     model_res = _aio2.run(_model())
     check("draft model probabilities sane",
-          model_res["ok"] and len(model_res["rows"]) == 20
-          and all(0 <= r.get("STAR_P", -1) <= 1 for r in model_res["rows"])
+          model_res["ok"] and len(rows(model_res)) == 20
+          and all(0 <= r.get("STAR_P", -1) <= 1 for r in rows(model_res))
           and "proxy" in str(model_res.get("meta", {})).lower(),
-          str(model_res["rows"][:1])[:160])
+          str(rows(model_res)[:1])[:160])
 
     async def _shotcmp():
         return await tools.get_shot_compare.ainvoke(
@@ -290,21 +304,21 @@ def main() -> None:
 
     cmp_res = _aio2.run(_shotcmp())
     check("shot compare aligns zones",
-          cmp_res["ok"] and len(cmp_res["rows"]) == 6
+          cmp_res["ok"] and len(rows(cmp_res, {})) == 6
           and cmp_res.get("verdict", "") != "",
           str(cmp_res.get("verdict"))[:160])
 
     res = tools.get_risers.invoke({})
     check("risers name hot teams",
-          res["ok"] and len(res["rows"].get("risers", [])) == 5
-          and len(res["rows"].get("fallers", [])) == 5,
+          res["ok"] and len(rows(res, {}).get("risers", [])) == 5
+          and len(rows(res, {}).get("fallers", [])) == 5,
           safe(res))
 
     res = tools.get_team_splits.invoke({"team": "OKC"})
     check("team splits balance",
-          res["ok"] and sum(r["GP"] for r in res["rows"]
+          res["ok"] and sum(r["GP"] for r in rows(res)
                             if r["split"] in ("home", "away")) == 82
-          and {"home", "away", "last10"} <= {r["split"] for r in res["rows"]},
+          and {"home", "away", "last10"} <= {r["split"] for r in rows(res)},
           safe(res))
 
     async def _inj():
@@ -312,21 +326,21 @@ def main() -> None:
 
     inj_res = _aio2.run(_inj())
     check("injury impact grades",
-          inj_res["ok"] and inj_res["rows"].get("impact") in
+          inj_res["ok"] and rows(inj_res, {}).get("impact") in
           ("high", "moderate", "low")
-          and isinstance(inj_res["rows"].get("out"), list),
+          and isinstance(rows(inj_res, {}).get("out"), list),
           safe(inj_res))
 
     res = tools.get_raptor_history.invoke({"player": "LeBron James"})
     check("raptor history spans seasons",
-          res["ok"] and len(res["rows"]) >= 5
-          and res["rows"][0].get("RAPTOR", 0) > 0,
+          res["ok"] and len(rows(res)) >= 5
+          and rows(res)[0].get("RAPTOR", 0) > 0,
           safe(res))
 
     res = tools.run_python.invoke(
         {"code": "out = con.execute(\"SELECT COUNT(*) FROM silver_standings\").fetchall()[0][0]"})
     check("python sandbox reads warehouse",
-          res["ok"] and int(res["rows"].get("out") or 0) > 0,
+          res["ok"] and int(rows(res, {}).get("out") or 0) > 0,
           safe(res))
     res = tools.run_python.invoke({"code": "import os"})
     check("python sandbox blocks imports", not res["ok"], str(res)[:80])
@@ -337,9 +351,9 @@ def main() -> None:
 
     pack_res = _aio2.run(_pack())
     check("scout pack briefs both sides",
-          pack_res["ok"] and pack_res["rows"]["team"].get("net_rating", 0) > 5
-          and len(pack_res["rows"]["team"].get("top_lineups", [])) > 0
-          and "net gap" in pack_res["rows"].get("edge", ""),
+          pack_res["ok"] and rows(pack_res, {})["team"].get("net_rating", 0) > 5
+          and len(rows(pack_res, {})["team"].get("top_lineups", [])) > 0
+          and "net gap" in rows(pack_res, {}).get("edge", ""),
           safe(pack_res))
 
     async def _rot():
@@ -347,8 +361,8 @@ def main() -> None:
 
     rot_res = _aio2.run(_rot())
     check("rotation check lists players",
-          rot_res["ok"] and len(rot_res["rows"].get("players", [])) >= 8
-          and "flag" in rot_res["rows"],
+          rot_res["ok"] and len(rows(rot_res, {}).get("players", [])) >= 8
+          and "flag" in rows(rot_res, {}),
           safe(rot_res))
 
     res = tools.get_cap_ledger.invoke({"team": "DEN"})
@@ -360,26 +374,26 @@ def main() -> None:
                                    "team_abbrev": "LeBron James",
                                    "season": "2024-25"})
     check("finder player streak sane",
-          res["ok"] and res["rows"].get("longest_20pt_streak", 0) >= 1
-          and res["rows"].get("games", 0) > 0, str(res)[:200])
+          res["ok"] and rows(res, {}).get("longest_20pt_streak", 0) >= 1
+          and rows(res, {}).get("games", 0) > 0, str(res)[:200])
 
     res = tools.get_finder.invoke({"mode": "head2head",
                                    "team_abbrev": "2544",
                                    "opponent": "LeBron James",
                                    "season": "2024-25"})
     check("finder head2head ppg sane",
-          res["ok"] and 5 < res["rows"]["a"].get("ppg", 0) < 40
-          and 5 < res["rows"]["b"].get("ppg", 0) < 40, str(res)[:200])
+          res["ok"] and 5 < rows(res)["a"].get("ppg", 0) < 40
+          and 5 < rows(res)["b"].get("ppg", 0) < 40, str(res)[:200])
 
     res = tools.get_wowy.invoke({"player_a": "Luka", "player_b": "LeBron"})
     check("wowy splits calculate minutes and ratings",
-          res["ok"] and len(res["rows"]) == 4
-          and all("net_rating" in r for r in res["rows"]), str(res)[:200])
+          res["ok"] and len(rows(res)) == 4
+          and all("net_rating" in r for r in rows(res)), str(res)[:200])
 
     res = tools.get_advanced.invoke({"player": "Shai Gilgeous-Alexander"})
     check("advanced carries usage and pie",
-          res["ok"] and 0.2 < float(res["rows"].get("USG_PCT", 0)) < 0.5
-          and float(res["rows"].get("PIE", 0)) > 0.1, str(res)[:200])
+          res["ok"] and 0.2 < float(rows(res, {}).get("USG_PCT", 0)) < 0.5
+          and float(rows(res, {}).get("PIE", 0)) > 0.1, str(res)[:200])
 
     check("compare carries clutch points",
           (cmp_sides.get("b", {}) or {}).get("clutch_pts", 0) == 175
@@ -389,7 +403,7 @@ def main() -> None:
     res = tools.get_playoff_intel.invoke(
         {"player_id": 1628983, "season": "2024-25"})
     check("playoff intel returns 10+ rows",
-          res["ok"] and len(res["rows"]) >= 10, str(res)[:200])
+          res["ok"] and len(rows(res)) >= 10, str(res)[:200])
 
     print(f"\neval: {PASS} pass, {FAIL} fail")
     sys.exit(1 if FAIL else 0)
