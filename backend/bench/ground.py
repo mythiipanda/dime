@@ -2033,6 +2033,419 @@ def gen_gamelog(rng, ctx) -> tuple[Task, GroundTruth]:
     raise SkipTask("no gradeable gamelog filter combo found")
 
 
+# ---------------------------------------------------------------------------
+# elo family: mirrors get_elo_standings exactly. The ELO math is replicated
+# here as pure functions (same constants: start 1500, K=20, build HCA=100,
+# MOV multiplier ((|margin|+3)^0.8)/(7.5+0.006*|diff|)), over the same
+# silver_hist_gamelogs rows, ordered by game_date/game_id with games sorted
+# by game_id -- but this module never imports app.tools, so the benchmark
+# cannot reward the agent for agreeing with its own tool wrappers.
+# Question flavors: league ELO rank, 82-game win equivalents, and the
+# ELO-implied neutral-court spread between two teams.
+# ---------------------------------------------------------------------------
+
+_ELO_START = 1500.0
+_ELO_K = 20.0
+_ELO_HCA_BUILD = 100
+_ELO_PER_POINT = 28.0
+
+
+def _elo_expected(diff: float) -> float:
+    return 1 / (1 + 10 ** (-diff / 400))
+
+
+def _elo_mov_mult(margin: float | None, diff: float) -> float:
+    if margin is None:
+        return 1.0
+    return ((abs(margin) + 3) ** 0.8) / (7.5 + 0.006 * abs(diff))
+
+
+def _elo_build_table(season: str) -> list[dict]:
+    rows = _q(
+        """SELECT team_abbreviation, game_id, game_date, matchup, wl,
+        plus_minus FROM silver_hist_gamelogs
+        WHERE _season = ? ORDER BY game_date, game_id""",
+        [season],
+    )
+    if not rows:
+        raise SkipTask(f"no hist gamelogs for season {season}")
+    games: dict[str, list] = {}
+    for r in rows:
+        games.setdefault(r[1], []).append(r)
+    elo: dict[str, float] = {}
+    for _, pair in sorted(games.items()):
+        if len(pair) != 2:
+            continue
+        wa, wb = pair[0][4], pair[1][4]
+        if (wa == "W") == (wb == "W"):
+            continue
+        wrow, lrow = (pair[0], pair[1]) if wa == "W" else (pair[1], pair[0])
+        margin = wrow[5]
+        if margin is None:
+            margin = -(lrow[5]) if lrow[5] is not None else None
+        if margin is not None:
+            margin = abs(margin)
+        wteam, lteam = wrow[0], lrow[0]
+        elo.setdefault(wteam, _ELO_START)
+        elo.setdefault(lteam, _ELO_START)
+        w_adj = elo[wteam] + (_ELO_HCA_BUILD if "vs." in str(wrow[3]) else 0)
+        l_adj = elo[lteam] + (_ELO_HCA_BUILD if "vs." in str(lrow[3]) else 0)
+        diff = w_adj - l_adj
+        shift = (_ELO_K * _elo_mov_mult(margin, diff)
+                 * (1 - _elo_expected(diff)))
+        elo[wteam] += shift
+        elo[lteam] -= shift
+    table = []
+    for t, v in elo.items():
+        e = round(v)
+        pct = round(_elo_expected(e - _ELO_START), 4)
+        table.append({"abbr": t, "elo": e, "elo_win_pct": pct,
+                      "win_equiv": round(pct * 82, 1)})
+    table.sort(key=lambda d: d["elo"], reverse=True)
+    for i, row in enumerate(table, 1):
+        row["rank"] = i
+        row["spread_vs_avg"] = round((row["elo"] - _ELO_START)
+                                     / _ELO_PER_POINT, 1)
+    return table
+
+
+def _elo_implied_spread(elo_a: int, elo_b: int) -> float:
+    return round((elo_a - elo_b) / _ELO_PER_POINT, 1)
+
+
+def gen_elo(rng, ctx) -> tuple[Task, GroundTruth]:
+    table = _elo_build_table(SEASON)
+    if len(table) < 2:
+        raise SkipTask("elo table has fewer than 2 teams")
+    teams = _pred_team_table()
+    by_abbr = {t["abbr"]: t for t in table}
+    named = [t for t in table
+             if teams.get(t["abbr"], {}).get("full_name")]
+    if not named:
+        raise SkipTask("no team names resolvable for elo table")
+    variant = rng.choice(["rank", "rank", "wins", "spread"])
+    tid = ctx["task_id"]
+    if variant == "spread":
+        for _ in range(20):
+            a, b = rng.sample(named, 2)
+            spread = _elo_implied_spread(a["elo"], b["elo"])
+            if spread == 0:
+                continue  # a pick-em is ungradeable on direction
+            full_a = teams[a["abbr"]]["full_name"]
+            full_b = teams[b["abbr"]]["full_name"]
+            task = Task(
+                task_id=tid, family="elo",
+                question=(f"If the {full_a} played the {full_b} on a "
+                          f"neutral court this season, what would the "
+                          f"ELO-implied spread be from the {full_a} "
+                          f"perspective? Give the spread (negative means "
+                          f"{full_a} are underdogs) and each team's ELO "
+                          f"rating."),
+                entities=[a["abbr"], b["abbr"]],
+                gold_tool_families=["elo"],
+                timeout_s=ctx["timeout_s"], seed=ctx["seed"],
+            )
+            truth = GroundTruth(
+                task_id=tid,
+                facts={"names": {"team_a": full_a, "team_b": full_b},
+                       "spread": spread,
+                       "elo_a": a["elo"], "elo_b": b["elo"]},
+                computed_at=_now(),
+                source="silver_hist_gamelogs (same 538-style ELO math as "
+                       "get_elo_standings: K=20, HCA=100, MOV-adjusted, "
+                       "spread = elo_diff / 28)",
+            )
+            return task, truth
+        raise SkipTask("no elo spread pair with a nonzero spread found")
+    row = rng.choice(named)
+    full = teams[row["abbr"]]["full_name"]
+    if variant == "wins":
+        task = Task(
+            task_id=tid, family="elo",
+            question=(f"How many wins is the {full} ELO rating worth over "
+                      f"an 82-game season? Give the win-equivalent number "
+                      f"and the team's ELO rating."),
+            entities=[row["abbr"]], gold_tool_families=["elo"],
+            timeout_s=ctx["timeout_s"], seed=ctx["seed"],
+        )
+        truth = GroundTruth(
+            task_id=tid,
+            facts={"names": {"team": full}, "win_equiv": row["win_equiv"],
+                   "elo": row["elo"]},
+            computed_at=_now(),
+            source="silver_hist_gamelogs (same 538-style ELO math as "
+                   "get_elo_standings: win_equiv = round(win_pct * 82, 1))",
+        )
+        return task, truth
+    task = Task(
+        task_id=tid, family="elo",
+        question=(f"Where do the {full} rank in the ELO power ratings "
+                  f"for the {SEASON} season? Give the rank and the team's "
+                  f"ELO rating."),
+        entities=[row["abbr"]], gold_tool_families=["elo"],
+        timeout_s=ctx["timeout_s"], seed=ctx["seed"],
+    )
+    truth = GroundTruth(
+        task_id=tid,
+        facts={"names": {"team": full}, "rank": row["rank"],
+               "elo": row["elo"]},
+        computed_at=_now(),
+        source="silver_hist_gamelogs (same 538-style ELO math as "
+               "get_elo_standings)",
+    )
+    return task, truth
+
+
+# ---------------------------------------------------------------------------
+# rotation family: mirrors get_rotation_check's warehouse-first pipeline
+# exactly. Players come from silver_hist_player_seasons (season totals are
+# per-game MIN * GP; MPG keeps the warehouse per-game value), on/off DIFF
+# from the "Pts per 100 Possessions" row of silver_on_off (entity
+# f"player:{pid}"), and tiers are the top 15 by total MIN split into core
+# (top 5), bench (next 5), fringe (next 5). Four question variants:
+# thin (15+/10+ MPG counts, the thin-rotation flags' core facts),
+# closing (best net rating among the same top-25-by-possessions,
+# 100+ possession display slice the tool shows), split (starter/bench
+# average on/off plus the starters' minutes share), and clutch (top
+# clutch-minute rotation players from silver_clutch). The tool calls
+# get_lineup_stats with min_possessions=100 and limit=25 for its units,
+# so the closing ground truth reuses the lineups family's
+# _lineup_shown_units with the same floor and limit. Never imports
+# app.tools (anti-circularity).
+# ---------------------------------------------------------------------------
+
+
+def _rot_onoff(pid) -> tuple[float | None, bool]:
+    # Verbatim mirror of the tool's _fetch_rotation_onoff: DIFF is the
+    # "Pts per 100 Possessions" row's "On-Off" column; CACHED is True
+    # whenever any on/off row exists for the player (even without a
+    # parseable Pts-per-100 row), exactly as the tool reports it.
+    try:
+        rows = _qd('SELECT Stat, "On-Off" FROM silver_on_off '
+                   'WHERE _season = ? AND _entity = ?',
+                   [SEASON, f"player:{pid}"])
+    except Exception:
+        return None, False
+    if not rows:
+        return None, False
+    for r in rows:
+        if r.get("Stat") == "Pts per 100 Possessions":
+            try:
+                return float(r.get("On-Off")), True
+            except (TypeError, ValueError):
+                return None, True
+    return None, True
+
+
+def _rot_enriched(abbr: str) -> list[dict]:
+    rows = _qd("SELECT player_id, player_name, gp, min "
+               "FROM silver_hist_player_seasons "
+               "WHERE _season = ? AND team_abbreviation = ?",
+               [SEASON, abbr])
+    enriched = []
+    for r in rows:
+        try:
+            pid = r.get("player_id")
+            name = r.get("player_name") or ""
+            gp_f = int(r.get("gp") or 0)
+            mpg = float(r.get("min") or 0)
+        except (TypeError, ValueError):
+            continue
+        min_f = round(mpg * gp_f, 1) if gp_f > 0 else 0.0
+        diff, cached = _rot_onoff(pid)
+        enriched.append({"PLAYER": name, "PLAYER_ID": pid, "GP": gp_f,
+                         "MIN": min_f, "MPG": round(mpg, 1),
+                         "DIFF": diff, "CACHED": cached})
+    enriched.sort(key=lambda p: float(p.get("MIN") or 0), reverse=True)
+    return enriched[:15]
+
+
+def _rot_avg_diff(players: list[dict]) -> float | None:
+    # Verbatim mirror of the tool's _avg_diff: average of cached DIFFs,
+    # rounded to 1dp; None when no cached rows.
+    diffs = [p.get("DIFF") for p in players
+             if p.get("CACHED") and isinstance(p.get("DIFF"), (int, float))]
+    if not diffs:
+        return None
+    return round(sum(diffs) / len(diffs), 1)
+
+
+def _rot_closing(tid: int) -> dict | None:
+    # Same units the tool's _fetch_rotation_units surfaces: the
+    # top-25-by-possessions display slice at the 100-possession floor.
+    # The closing pick is the highest NET_RATING; a tied best net is
+    # ungradeable (the agent cannot know the tool's tie order).
+    units = _lineup_shown_units(tid, min_poss=100, limit=25)
+    if not units:
+        return None
+    nets = [u["NET_RATING"] for u in units]
+    best = max(nets)
+    if nets.count(best) > 1:
+        return None
+    return next(u for u in units if u["NET_RATING"] == best)
+
+
+def _rot_closers(tid: int, ids: set) -> list[dict]:
+    # Mirrors the tool's clutch_context: silver_clutch (player-scope,
+    # last 5 min, margin <= 5) ordered by MIN desc, limited to rotation
+    # player ids, top 3.
+    rows = _qd("SELECT PLAYER_ID, PLAYER_NAME, MIN FROM silver_clutch "
+               "WHERE _season = ? AND TEAM_ID = ? ORDER BY MIN DESC",
+               [SEASON, tid])
+    out = []
+    for r in rows:
+        if ids and r.get("PLAYER_ID") not in ids:
+            continue
+        name = r.get("PLAYER_NAME") or ""
+        last = str(name).split()[-1].rstrip(".") if name else ""
+        if last in _IMPACT_NAME_SUFFIXES:
+            continue  # suffix names break name_recall's last-token match
+        try:
+            mins = round(float(r.get("MIN") or 0), 2)
+        except (TypeError, ValueError):
+            continue
+        out.append({"name": name, "min": mins})
+        if len(out) >= 3:
+            break
+    return out
+
+
+def gen_rotation(rng, ctx) -> tuple[Task, GroundTruth]:
+    id2abbr: dict = {}
+    for tid, abbr in _q("SELECT TEAM_ID, TEAM FROM silver_leaders_pts "
+                        "WHERE _season = ?", [SEASON]):
+        id2abbr.setdefault(tid, abbr)
+        id2abbr.setdefault(str(tid), abbr)
+    cands = []
+    for (entity,) in _q("SELECT DISTINCT _entity FROM silver_lineups "
+                        "WHERE _season = ?", [SEASON]):
+        try:
+            tid = int(str(entity).split(":")[1])
+        except (IndexError, ValueError):
+            continue
+        abbr = id2abbr.get(tid) or id2abbr.get(str(tid))
+        if abbr:
+            cands.append((tid, abbr))
+    for tid, abbr in rng.sample(cands, len(cands)):
+        players = _rot_enriched(abbr)
+        if len(players) < 10:
+            continue
+        core, bench = players[:5], players[5:10]
+        ids = {p.get("PLAYER_ID") for p in players
+               if p.get("PLAYER_ID") is not None}
+        variants = ["thin"]
+        closing = _rot_closing(tid)
+        if closing is not None:
+            variants.append("closing")
+        starter_avg = _rot_avg_diff(core)
+        bench_avg = _rot_avg_diff(bench)
+        share = None
+        total_min = sum(p["MIN"] for p in players)
+        if total_min > 0:
+            share = round(sum(p["MIN"] for p in core) / total_min * 100, 1)
+        if starter_avg is not None and bench_avg is not None \
+                and share is not None:
+            variants.append("split")
+        closers = _rot_closers(tid, ids)
+        if len(closers) >= 2:
+            variants.append("clutch")
+        variant = rng.choice(variants)
+        tid2 = ctx["task_id"]
+        base = dict(task_id=tid2, family="rotation", entities=[abbr],
+                    gold_tool_families=["rotation"],
+                    timeout_s=ctx["timeout_s"], seed=ctx["seed"])
+        if variant == "thin":
+            task = Task(
+                **base,
+                question=(f"How thin is the {abbr} rotation this season? "
+                          f"Give the number of rotation players averaging "
+                          f"15+ minutes per game and the number averaging "
+                          f"10+ minutes per game."),
+            )
+            truth = GroundTruth(
+                task_id=tid2,
+                facts={
+                    "players_15plus_mpg": sum(
+                        1 for p in players if p["MPG"] >= 15),
+                    "players_10plus_mpg": sum(
+                        1 for p in players if p["MPG"] >= 10),
+                },
+                computed_at=_now(),
+                source="nba_api via silver_hist_player_seasons (same MPG "
+                       "counts as get_rotation_check's thin-rotation "
+                       "flags)",
+            )
+            return task, truth
+        if variant == "closing":
+            task = Task(
+                **base,
+                question=(f"Which {abbr} five-man lineup is the best "
+                          f"closing candidate this season (minimum 100 "
+                          f"possessions)? Give its net rating per 100 "
+                          f"possessions, offensive rating, defensive "
+                          f"rating, and possessions."),
+            )
+            truth = GroundTruth(
+                task_id=tid2,
+                # No names dict: five-man GROUP_NAMEs share surnames
+                # across units, so last-token name_recall
+                # false-positives on wrong lineups (same reason as the
+                # lineups family). The four numeric facts uniquely
+                # identify the unit.
+                facts={"net_rating": closing["NET_RATING"],
+                       "off_rating": closing["OFF_RATING"],
+                       "def_rating": closing["DEF_RATING"],
+                       "possessions": closing["poss"]},
+                computed_at=_now(),
+                source="nba_api via silver_lineups plus "
+                       "silver_hist_possessions (same 100-possession "
+                       "floor and top-25 display slice as "
+                       "get_rotation_check's closing candidates)",
+            )
+            return task, truth
+        if variant == "split":
+            task = Task(
+                **base,
+                question=(f"How do the {abbr} starters compare to the "
+                          f"bench this season? Give the average on/off "
+                          f"(points per 100 possessions) of the top-5 "
+                          f"minute players, the average on/off of the "
+                          f"next 5 players, and the starters' share of the "
+                          f"top-15 rotation's total minutes as a percent."),
+            )
+            truth = GroundTruth(
+                task_id=tid2,
+                facts={"starter_avg_onoff": starter_avg,
+                       "bench_avg_onoff": bench_avg,
+                       "starter_min_share_pct": share},
+                computed_at=_now(),
+                source="nba_api via silver_hist_player_seasons plus "
+                       "silver_on_off (same tier split and on/off "
+                       "averaging as get_rotation_check's "
+                       "starter_bench_split)",
+            )
+            return task, truth
+        # clutch
+        facts = {"names": {f"closer_{i}": c["name"]
+                           for i, c in enumerate(closers, 1)}}
+        for i, c in enumerate(closers, 1):
+            facts[f"closer_{i}_min"] = c["min"]
+        task = Task(
+            **base,
+            question=(f"Who are the {abbr} top clutch-minute players "
+                      f"this season (clutch = last 5 minutes, margin "
+                      f"5 or less)? Give the names and clutch minutes "
+                      f"of the top {len(closers)}."),
+        )
+        truth = GroundTruth(
+            task_id=tid2, facts=facts, computed_at=_now(),
+            source="nba_api via silver_clutch (same player-scope "
+                   "clutch context as get_rotation_check)",
+        )
+        return task, truth
+    raise SkipTask("no team with a gradeable rotation variant")
+
+
 GENERATORS = {
     "lookup": gen_lookup,
     "compare": gen_compare,
@@ -2053,4 +2466,6 @@ GENERATORS = {
     "zones": gen_zones,
     "impact": gen_impact,
     "gamelog": gen_gamelog,
+    "elo": gen_elo,
+    "rotation": gen_rotation,
 }
