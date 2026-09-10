@@ -158,6 +158,34 @@ export function getBriefing(season = SEASON): Promise<BriefingRows> {
   );
 }
 
+export interface HistoricalLeadersParams {
+  category?: string;
+  startSeason?: number;
+  endSeason?: number;
+  limit?: number;
+  mode?: "leaders" | "best";
+}
+
+export function requestHistoricalLeaders(
+  params: HistoricalLeadersParams,
+  model: string | null,
+  handlers: StreamHandlers,
+  signal?: AbortSignal,
+): Promise<void> {
+  const {
+    category = "pts",
+    startSeason = 2015,
+    endSeason = 2025,
+    limit = 5,
+    mode = "leaders",
+  } = params;
+  const q =
+    mode === "best"
+      ? `Top ${limit} single-season ${category} campaigns from ${startSeason} to ${endSeason}.`
+      : `Who led the league in ${category} in each season from ${startSeason} to ${endSeason}?`;
+  return postChatStream(q, model, handlers, signal);
+}
+
 export async function getModels(): Promise<ModelsResponse> {
   const res = await fetch(`${BACKEND}/api/v1/models`);
   if (!res.ok) throw new Error(`models failed: ${res.status}`);

@@ -2723,6 +2723,86 @@ def gen_rotation(rng, ctx) -> tuple[Task, GroundTruth]:
     raise SkipTask("no team with a gradeable rotation variant")
 
 
+# ---------------------------------------------------------------------------
+# historical_leaders family: mirrors get_historical_leaders exactly
+# (end-year seasons clamped to 2015..2025, GP>=20 qualification, per-game
+# values rounded to 1dp, leaders mode = top-1 per season, best mode =
+# top campaigns across the range). Ground truth reads the warehouse
+# directly and never imports app.tools (anti-circularity).
+# ---------------------------------------------------------------------------
+
+_HIST_CATS = ["PTS", "REB", "AST", "STL", "BLK"]
+
+
+def _hist_top(col: str, lo: int, hi: int, limit: int) -> list[dict]:
+    return _qd(
+        f"SELECT player_name, team_abbreviation, season, gp, {col} AS value "
+        "FROM silver_hist_player_seasons WHERE season BETWEEN ? AND ? "
+        f"AND gp >= 20 AND {col} IS NOT NULL "
+        f"ORDER BY {col} DESC LIMIT {limit}",
+        [lo, hi])
+
+
+def gen_historical_leaders(rng, ctx) -> tuple[Task, GroundTruth]:
+    if "silver_hist_player_seasons" not in _tables():
+        raise SkipTask("no history player seasons in warehouse")
+    cat = rng.choice(_HIST_CATS)
+    col = cat.lower()
+    lo = rng.randint(2015, 2023)
+    hi = min(2025, lo + rng.randint(1, 3))
+    variant = rng.choice(["leaders", "best"])
+    tid = ctx["task_id"]
+    if variant == "leaders":
+        seasons = []
+        for year in range(lo, hi + 1):
+            top = _hist_top(col, year, year, 1)
+            if not top:
+                raise SkipTask(f"no {cat} coverage for season {year}")
+            seasons.append(top[0])
+        facts: dict = {"names": {
+            f"leader_{r['season']}": r["player_name"] for r in seasons}}
+        for r in seasons:
+            facts[f"value_{r['season']}"] = round(float(r["value"]), 1)
+        task = Task(
+            task_id=tid, family="historical_leaders",
+            question=(f"Who led the league in {cat} per game in each "
+                      f"season from {lo} to {hi} (end-years)? Name each "
+                      f"season's leader and his average."),
+            entities=[r["player_name"] for r in seasons],
+            gold_tool_families=["historical_leaders"],
+            timeout_s=ctx["timeout_s"], seed=ctx["seed"],
+        )
+        truth = GroundTruth(
+            task_id=tid, facts=facts, computed_at=_now(),
+            source="warehouse via silver_hist_player_seasons "
+                   "(same per-season leaders as get_historical_leaders)",
+        )
+        return task, truth
+    top = _hist_top(col, lo, hi, 3)
+    if len(top) < 3:
+        raise SkipTask(f"too few {cat} campaigns in range")
+    facts = {"names": {f"campaign_{i}": r["player_name"]
+                       for i, r in enumerate(top, 1)}}
+    for i, r in enumerate(top, 1):
+        facts[f"campaign_{i}_value"] = round(float(r["value"]), 1)
+        facts[f"campaign_{i}_season"] = r["season"]
+    task = Task(
+        task_id=tid, family="historical_leaders",
+        question=(f"What are the top 3 single-season {cat} per-game "
+                  f"campaigns from {lo} to {hi} (end-years)? Name each "
+                  f"player, his season, and his average."),
+        entities=[r["player_name"] for r in top],
+        gold_tool_families=["historical_leaders"],
+        timeout_s=ctx["timeout_s"], seed=ctx["seed"],
+    )
+    truth = GroundTruth(
+        task_id=tid, facts=facts, computed_at=_now(),
+        source="warehouse via silver_hist_player_seasons "
+               "(same single-season best as get_historical_leaders)",
+    )
+    return task, truth
+
+
 GENERATORS = {
     "lookup": gen_lookup,
     "compare": gen_compare,
@@ -2745,4 +2825,5 @@ GENERATORS = {
     "gamelog": gen_gamelog,
     "elo": gen_elo,
     "rotation": gen_rotation,
+    "historical_leaders": gen_historical_leaders,
 }
