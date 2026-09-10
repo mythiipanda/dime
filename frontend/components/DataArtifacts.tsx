@@ -9,8 +9,10 @@ import CompareView from "./CompareView";
 import CompsView, { parseCompsRows } from "./CompsView";
 import CourtHeatmap from "./CourtHeatmap";
 import DataTable from "./DataTable";
+import GameLogView, { parseGameLogs } from "./GameLogView";
 import MatchupPreviewView, { parsePreview } from "./MatchupPreviewView";
 import RegressionView, { parseRegression } from "./RegressionView";
+import RotationCheckView, { parseRotation } from "./RotationCheckView";
 import SplitsView, { parseSplits } from "./SplitsView";
 import TradeValueView, { parseTradeValue } from "./TradeValueView";
 import TrendChart, { isRaptorRows } from "./TrendChart";
@@ -107,7 +109,9 @@ export default function DataArtifacts({
       name === "get_trade_value" ||
       name === "get_matchup_splits" ||
       name === "get_regression_check" ||
-      name === "get_matchup_preview"
+      name === "get_matchup_preview" ||
+      name === "search_game_logs" ||
+      name === "get_rotation_check"
     );
   });
   const fallback = preferred >= 0 ? preferred : tables.length - 1;
@@ -378,6 +382,10 @@ export default function DataArtifacts({
         <RegressionView rows={table.rows} />
       ) : toolName === "get_matchup_preview" && parsePreview(table.rows) ? (
         <MatchupPreviewView rows={table.rows} meta={table.meta} />
+      ) : toolName === "search_game_logs" && parseGameLogs(table.rows) ? (
+        <GameLogView rows={table.rows} meta={table.meta} />
+      ) : toolName === "get_rotation_check" && parseRotation(table.rows) ? (
+        <RotationCheckView rows={table.rows} meta={table.meta} />
       ) : isShotTool && viewMode === "court" ? (
         <CourtHeatmap
           rows={table.rows}
