@@ -107,6 +107,103 @@ def test_which_player_most_triple_doubles_routes_league_wide():
     assert args.get("triple_double") is True
 
 
+def test_existence_did_anyone_score_routes_league_wide():
+    # Gap A: existence phrasing names no player, so the player-scoped
+    # fast-path can't fire; it must take the league-wide fast-path
+    # instead of falling through to the planner.
+    st = _drain("did anyone score 60 points this season?")
+    args = _gamelog_args_of(st)
+    assert args is not None, "league-wide fast-path did not fire"
+    assert args.get("league_wide") is True
+    assert args["min_points"] == 60
+    assert "player" not in args
+    assert len(_tool_names(st)) == 1
+    # Decisive hit: planner rounds exhausted.
+    assert st["round"] in (MAX_TOOL_ROUNDS, DEEP_TOOL_ROUNDS)
+
+
+def test_existence_was_there_game_routes_league_wide():
+    st = _drain("was there a 60-point game this season?")
+    args = _gamelog_args_of(st)
+    assert args is not None, "league-wide fast-path did not fire"
+    assert args.get("league_wide") is True
+    assert args["min_points"] == 60
+    assert len(_tool_names(st)) == 1
+    assert st["round"] in (MAX_TOOL_ROUNDS, DEEP_TOOL_ROUNDS)
+
+
+def test_existence_bare_dropped_number_sets_min_points():
+    # "has anyone dropped 50 this season?" has no "points" word; the
+    # arg parser must still extract the floor from the scoring verb.
+    args = _gamelog_args("has anyone dropped 50 this season?", None, [])
+    assert args["min_points"] == 50
+
+
+def test_team_most_50pt_games_routes_team_wide():
+    # Gap B: team-population phrasing must group by team, not player.
+    st = _drain("which team had the most 50-point games this season?")
+    args = _gamelog_args_of(st)
+    assert args is not None, "team fast-path did not fire"
+    assert args.get("team_wide") is True
+    assert args["min_points"] == 50
+    assert "player" not in args
+    assert len(_tool_names(st)) == 1
+    # Decisive hit: planner rounds exhausted.
+    assert st["round"] in (MAX_TOOL_ROUNDS, DEEP_TOOL_ROUNDS)
+    rows = st["tool_results"][0]["rows"][0]["rows"]
+    assert rows["team_wide"] is True
+    leaders = rows["leaders"]
+    assert len(leaders) >= 1
+    assert all({"team_abbr", "team", "count"} <= set(l)
+               for l in leaders)
+    counts = [l["count"] for l in leaders]
+    assert counts == sorted(counts, reverse=True)
+    assert all(c >= 1 for c in counts)
+
+
+def test_league_leaders_still_player_grouped_not_team_wide():
+    # Negative: the plain leaders ask keeps per-player grouping.
+    st = _drain("who had the most 50-point games this season?")
+    args = _gamelog_args_of(st)
+    assert args is not None, "league-wide fast-path did not fire"
+    assert args.get("league_wide") is True
+    assert args.get("team_wide") is not True
+    rows = st["tool_results"][0]["rows"][0]["rows"]
+    assert rows["league_wide"] is True
+    assert rows.get("team_wide") is not True
+
+
+def _rs_only_player():
+    """A (name, id) with 2025-26 regular-season rows but no playoff rows.
+
+    The background scrape keeps filling silver_playoff_gamelogs, so no
+    specific player's playoff emptiness can be hardcoded. The name is
+    verified to coerce back to the same warehouse id.
+    """
+    from app import store as _store
+    from app.tools._core import coerce_player_id as _coerce
+    con = _store.connect(read_only=True)
+    try:
+        rows = con.execute(
+            """SELECT DISTINCT rs.Player_ID FROM silver_player_gamelogs rs
+               WHERE rs._season = '2025-26'
+               AND NOT EXISTS (
+                   SELECT 1 FROM silver_playoff_gamelogs po
+                   WHERE po._season = '2025-26'
+                     AND po.Player_ID = rs.Player_ID)
+               LIMIT 25""").fetchall()
+        for (pid,) in rows:
+            name = con.execute(
+                "SELECT player_name FROM silver_hist_player_seasons "
+                "WHERE player_id = ? AND season = 2026 LIMIT 1",
+                [pid]).fetchone()
+            if name and _coerce(name[0]) == pid:
+                return name[0], pid
+    finally:
+        con.close()
+    return None
+
+
 def test_playoff_phrasing_sets_playoffs_flag():
     # Ticket A: the fast-path must not silently drop "in the playoffs".
     q = "Did Jalen Brunson have any triple-doubles in the playoffs?"
@@ -117,7 +214,13 @@ def test_playoff_phrasing_sets_playoffs_flag():
     args = _gamelog_args_of(st)
     assert args is not None, "fast-path did not fire"
     assert args.get("playoffs") is True
-    # Brunson has no playoff rows: explicit ok:False, never a silent 0.
+    # A player with no playoff rows gets an explicit refusal, never a
+    # silent regular-season 0. The player is picked dynamically (see
+    # _rs_only_player) because the scrape keeps filling the playoff table.
+    found = _rs_only_player()
+    assert found is not None, "no regular-season-only player in warehouse"
+    pname, _pid = found
+    st = _drain(f"Did {pname} have any triple-doubles in the playoffs?")
     out = st["tool_results"][-1]
     assert out["ok"] is False
     assert "playoff" in out["error"]

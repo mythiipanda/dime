@@ -202,16 +202,51 @@ def test_integration_bad_month_clean_error():
 
 # --- Ticket A: playoff scope -------------------------------------------------
 
-def test_integration_playoffs_brunson_no_rows_explicit():
-    # Jalen Brunson has no playoff rows in the warehouse. The old code
-    # silently answered 0 over regular-season games; now it must say so
-    # explicitly instead of returning a computed 0.
-    res = search_game_logs.invoke({"player": "Jalen Brunson",
+def _rs_only_player():
+    """A (name, id) with 2025-26 regular-season rows but no playoff rows.
+
+    The background scrape keeps filling silver_playoff_gamelogs, so no
+    specific player's playoff emptiness can be hardcoded. The name is
+    verified to coerce back to the same warehouse id.
+    """
+    from app import store as _store
+    from app.tools._core import coerce_player_id as _coerce
+    con = _store.connect(read_only=True)
+    try:
+        rows = con.execute(
+            """SELECT DISTINCT rs.Player_ID FROM silver_player_gamelogs rs
+               WHERE rs._season = '2025-26'
+               AND NOT EXISTS (
+                   SELECT 1 FROM silver_playoff_gamelogs po
+                   WHERE po._season = '2025-26'
+                     AND po.Player_ID = rs.Player_ID)
+               LIMIT 25""").fetchall()
+        for (pid,) in rows:
+            name = con.execute(
+                "SELECT player_name FROM silver_hist_player_seasons "
+                "WHERE player_id = ? AND season = 2026 LIMIT 1",
+                [pid]).fetchone()
+            if name and _coerce(name[0]) == pid:
+                return name[0], pid
+    finally:
+        con.close()
+    return None
+
+
+def test_integration_playoffs_no_rows_explicit():
+    # A player with regular-season rows but no playoff rows: the old code
+    # silently answered 0 over regular-season games; now it must refuse
+    # explicitly instead of returning a computed 0. The player is picked
+    # dynamically because the scrape keeps filling the playoff table.
+    found = _rs_only_player()
+    assert found is not None, "no regular-season-only player in warehouse"
+    pname, _pid = found
+    res = search_game_logs.invoke({"player": pname,
                                    "triple_double": True,
                                    "playoffs": True})
     assert res["ok"] is False
     assert "playoff" in res["error"]
-    assert "Jalen Brunson" in res["error"]
+    assert pname in res["error"]
 
 
 def test_integration_playoffs_reads_playoff_table():

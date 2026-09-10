@@ -263,6 +263,7 @@ def _row_out(g: dict[str, Any]) -> dict[str, Any]:
 def search_game_logs(
     player: str | None = None,
     league_wide: bool = False,
+    team_wide: bool = False,
     min_points: float | None = None,
     min_rebounds: float | None = None,
     min_assists: float | None = None,
@@ -282,10 +283,16 @@ def search_game_logs(
     """Filter game logs by stat thresholds, opponent, time, or home/away.
 
     player: name, nickname, or id (same resolution as every other tool).
-    Required unless league_wide=True.
+    Required unless league_wide=True or team_wide=True.
     league_wide: when True, ignore player and return per-player match
     counts across the whole warehouse (answers "who had the most
     50-point games this season").
+    team_wide: when True, ignore player and return per-team match
+    counts across the whole warehouse (answers "which team had the
+    most 50-point games this season"). Each matched game counts for
+    the team the player was on that night (first token of MATCHUP,
+    e.g. "LAL vs. BOS" -> "LAL"), so a mid-season trade attributes
+    each game to the team at game time, not the current team.
     playoffs: when True, read silver_playoff_gamelogs instead of the
     regular-season table.
     min_points / min_rebounds / min_assists: per-game stat floors
@@ -307,11 +314,13 @@ def search_game_logs(
     table = _table_for(bool(playoffs))
     scope = "playoff" if playoffs else "regular-season"
     league_wide = bool(league_wide)
+    team_wide = bool(team_wide)
     pid: int | None = None
-    if not league_wide:
+    if not league_wide and not team_wide:
         if player is None or str(player).strip() == "":
             return {"tool": "search_game_logs", "ok": False,
-                    "error": "player is required unless league_wide=True"}
+                    "error": "player is required unless league_wide=True"
+                             " or team_wide=True"}
         try:
             pid = coerce_player_id(player)
         except ValueError as exc:
@@ -363,7 +372,7 @@ def search_game_logs(
     }
     games = _load_games(table, season, pid)
     if not games:
-        if league_wide:
+        if league_wide or team_wide:
             return {"tool": "search_game_logs", "ok": False,
                     "error": f"no {scope} gamelog data in the warehouse"
                              f" ({season})"
@@ -400,6 +409,42 @@ def search_game_logs(
                 "returned": min(len(leaders), lim),
                 "capped": len(leaders) > lim,
                 "leaders": leaders[:lim],
+            },
+            "meta": {
+                "source": "warehouse",
+                "season": season,
+                "coverage_note": _coverage_note(table),
+            },
+        }
+    if team_wide:
+        # Group by the player's own team that night: first token of
+        # MATCHUP ("LAL vs. BOS" -> "LAL", "LAL @ BOS" -> "LAL"). A
+        # mid-season trade attributes each game to the team the player
+        # was on that night, not their current team.
+        counts_t: dict[str, int] = {}
+        for g in matched:
+            tabbr = str(g.get("matchup") or "").split(" ")[0].upper() or "UNK"
+            counts_t[tabbr] = counts_t.get(tabbr, 0) + 1
+        leaders_t = []
+        for tabbr, c in sorted(counts_t.items(),
+                               key=lambda kv: (-kv[1], kv[0])):
+            try:
+                _a, _full = _team_abbr(tabbr)
+            except ValueError:
+                _a, _full = tabbr, tabbr
+            leaders_t.append({"team_abbr": _a, "team": _full,
+                              "count": c})
+        return {
+            "tool": "search_game_logs",
+            "ok": True,
+            "rows": {
+                "team_wide": True,
+                "scope": "playoffs" if playoffs else "regular",
+                "filters": _describe_filters(filters, playoffs),
+                "total_teams": len(leaders_t),
+                "returned": min(len(leaders_t), lim),
+                "capped": len(leaders_t) > lim,
+                "leaders": leaders_t[:lim],
             },
             "meta": {
                 "source": "warehouse",

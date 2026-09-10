@@ -358,6 +358,37 @@ _LEAGUE_LEADERS_RX = re.compile(
     r"\b\d{1,2}\s*[-–—]?\s*rebounds?\s+games?\b|"
     r"\b\d{1,2}\s*[-–—]?\s*assists?\s+games?\b)",
     re.IGNORECASE)
+# Existence phrasing of the same league-wide ask ("did anyone score 60
+# points this season?", "was there a 60-point game this season?") also
+# has no named player, so it needs the same league-wide fast-path
+# instead of the planner. Conservative: requires a two-digit points
+# number with points/game wording, or a scoring verb + two-digit
+# number ("has anyone dropped 50 this season?"). Player-scoped asks
+# name a player and stay on the player path via the no-named-player
+# gate in _triage_seed.
+_LEAGUE_EXISTENCE_RX = re.compile(
+    r"(?:\b(?:did|has|have)\b.{0,40}?\banyone\b.{0,60}?"
+    r"(?:\b\d{2}\s*[-–—\s]?\s*(?:points?|pts?)\b|"
+    r"(?:scored|dropped|posted|recorded)\s+\d{2}\b)|"
+    r"\b(?:was|were|is|are)\b.{0,20}?\bthere\b.{0,40}?"
+    r"\b\d{2}\s*[-–—\s]?\s*(?:points?|pts?)\s+games?\b|"
+    r"\bany\b.{0,10}?\b\d{2}\s*[-–—\s]?\s*(?:points?|pts?)"
+    r"\s+games?\b)",
+    re.IGNORECASE)
+# Team-population phrasing ("which team had the most 50-point games
+# this season?") matches _LEAGUE_LEADERS_RX (which + most +
+# stat-games) but must not answer per-player: it needs the team_wide
+# mode of search_game_logs. Same stat alternation as _LEAGUE_LEADERS_RX.
+# Player-scoped asks name a player and stay on the player path via the
+# no-named-player gate in _triage_seed.
+_LEAGUE_TEAM_RX = re.compile(
+    r"\b(?:which|what)\b.{0,40}\bteams?\b.{0,80}?"
+    r"(?:\b\d{2}\s*[-–—]?\s*points?\s+games?\b|"
+    r"\btriple[\s-]*doubles?\b|"
+    r"\bdouble[\s-]*doubles?\b|"
+    r"\b\d{1,2}\s*[-–—]?\s*rebounds?\s+games?\b|"
+    r"\b\d{1,2}\s*[-–—]?\s*assists?\s+games?\b)",
+    re.IGNORECASE)
 _BRIEFING_RX = re.compile(r"\bbriefing\b", re.IGNORECASE)
 _BRIEFING_CONTEXT_RX = re.compile(
     r"20\d\d[-/]\d{1,2}[-/]\d{1,2}|\bslate\b|\bmorning\b|"
@@ -512,7 +543,12 @@ def _gamelog_args(question: str, player: str | None,
                    re.IGNORECASE)
          or re.search(r"(?:scored|had|dropped|posted|recorded)\s+(\d{2})"
                       r"\s*(?:\+|or more)?\s*(?:points?|pts?)\b", q,
-                      re.IGNORECASE))
+                      re.IGNORECASE)
+         # Bare "dropped 50" / "scored 60" (existence phrasing like "has
+         # anyone dropped 50 this season?"). "had" is excluded: "had 12
+         # rebounds" is a rebound ask, not a points floor.
+         or re.search(r"(?:scored|dropped|posted|recorded)\s+(\d{2})\b",
+                      q, re.IGNORECASE))
     if m:
         args["min_points"] = int(m.group(1))
     m = (re.search(r"\b(\d{1,2})\s*[-–—]\s*rebounds?\b", q, re.IGNORECASE)
@@ -1035,9 +1071,41 @@ async def _triage_seed(question: str, primary: str, model: str,
             async for _e in _triage_terminal(question, state):
                 yield _e
         return
+    is_league_team = (
+        not _named_p
+        and _LEAGUE_TEAM_RX.search(question)
+        and not _GAMELOG_NO_RX.search(question)
+        and not is_trade
+        and not is_cast
+        and not _PREDICT_LIVE_RX.search(question)
+        and not state.get("history")
+    )
+    if is_league_team:
+        # "which team had the most 50-point games this season" also
+        # matches _LEAGUE_LEADERS_RX, so this runs first: answering it
+        # per-player would silently group by the wrong population.
+        # team_wide groups matched games by the player's own team that
+        # night instead. Same clean single-turn guards as below.
+        _targs = _gamelog_args(question, None, _named)
+        _targs["team_wide"] = True
+        _th: dict[str, Any] = {}
+        async for _e in _triage_tool(
+                "search_game_logs", _targs, state, _th):
+            yield _e
+        _tout = _th.get("out") or {}
+        if _result_status(_tout) == "ok":
+            # Wrap like the player fast-path: analytics only treats
+            # entries with a non-empty "rows" key as evidence.
+            if state["tool_results"] and state["tool_results"][-1] is _tout:
+                state["tool_results"][-1] = {
+                    "tool": "search_game_logs", "rows": [_tout]}
+            async for _e in _triage_terminal(question, state):
+                yield _e
+        return
     is_league_leaders = (
         not _named_p
-        and _LEAGUE_LEADERS_RX.search(question)
+        and (_LEAGUE_LEADERS_RX.search(question)
+             or _LEAGUE_EXISTENCE_RX.search(question))
         and not _GAMELOG_NO_RX.search(question)
         and not is_trade
         and not is_cast
