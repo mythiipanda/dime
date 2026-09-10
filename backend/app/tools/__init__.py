@@ -62,6 +62,7 @@ from .gamelog import search_game_logs
 from .splits import get_matchup_splits, get_regression_check
 from .streaks import get_streaks
 from .rest import get_rest_advantage
+from .competitive import get_competitive_ratings
 from .lineup_matrix import get_lineup_matchup_matrix
 from .shots import search_shots
 from .zone import get_team_shot_zones
@@ -159,6 +160,7 @@ v1_tools: list[BaseTool] = [
     get_game_prediction,
     get_team_shot_zones,
     get_rest_advantage,
+    get_competitive_ratings,
     get_lineup_matchup_matrix,
     search_shots,
 ]
