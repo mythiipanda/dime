@@ -171,6 +171,26 @@ def main() -> None:
           deb_res.get("ok") and str(deb_rows.get("path", "")).endswith(".html"),
           safe(deb_res))
 
+    import asyncio as _aio3
+
+    async def _today():
+        return await tools.get_today.ainvoke({})
+
+    today_res = _aio3.run(_today())
+    check("today board loads movers",
+          today_res.get("ok") and len(today_res.get("rows", {}).get("movers", [])) > 0,
+          safe(today_res))
+
+    hus_res = tools.get_hustle_boards.invoke({})
+    check("hustle boards name defenders",
+          hus_res.get("ok") and len(hus_res.get("rows", {}).get("dpoy", [])) > 0,
+          safe(hus_res))
+
+    deep_res = tools.get_standings_deep.invoke({})
+    check("deep standings carry clutch splits",
+          deep_res.get("ok") and len(deep_res.get("rows", {}).get("clutch", [])) > 0,
+          safe(deep_res))
+
     res = tools.get_trend.invoke({"player_id": 2544})
     check("trend reports direction",
           res["ok"] and res["rows"].get("direction") in ("up", "down", "flat"),

@@ -202,6 +202,14 @@ LEAGUE_BRIEF = (
     "THEN call get_trade_check with team_abbrevs and player names. "
     "If a tool reports unknown players, stop and report them exactly. "
     "Never swap in a suggested name as the requested player. "
+    "IF the task mentions today, last night, tonight, or movers, "
+    "THEN call get_today. "
+    "IF the task asks for a morning briefing, daily recap, or brief me, "
+    "THEN call get_morning_briefing. "
+    "IF the task mentions hustle, deflections, screen assists, or DPOY, "
+    "THEN call get_hustle_boards. "
+    "IF the task mentions clutch standings, quarter splits, or bench scoring, "
+    "THEN call get_standings_deep. "
     "IF the task names one stat category, THEN call get_leaders. "
     "Otherwise call get_standings."
 )
@@ -265,10 +273,11 @@ def delegate_tools(provider: ProviderName, model: str) -> list:
                 " Answer via text_to_sql (you own that tool).", "")})
         return await _run_desk(
             "league", LEAGUE_BRIEF, task, provider, model,
-            ["get_standings", "get_leaders", "get_injuries", "get_rapm",
+            ["get_standings", "get_standings_deep", "get_leaders", "get_injuries", "get_rapm",
              "get_playoffs", "get_playoff_intel", "get_ratings", "get_clutch", "get_elo",
              "get_playoff_sim", "get_contract_value", "get_draft_board",
-             "get_draft_model", "get_risers", "get_trade_check",
+             "get_draft_model", "get_risers", "get_trade_check", "get_hustle_boards",
+             "get_today", "get_morning_briefing",
              "run_python", "text_to_sql"],
             force_tool=force,
         )
