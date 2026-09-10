@@ -1203,14 +1203,25 @@ def _pred_injury_penalty(full_name: str) -> float:
     return round(min(penalty, _PRED_MAX_INJURY_PENALTY), 2)
 
 
-def _pred_facts(abbr_a: str, abbr_b: str) -> dict:
+def _pred_facts(abbr_a: str, abbr_b: str,
+                preserve_order: bool = False) -> dict:
     # Returns the estimate dict the tool reports, or raises SkipTask.
-    # Order-independent: the neutral-site home/away assignment (which side
-    # takes the injury penalty) must not depend on caller arg order, so the
-    # pair is canonicalized up front and the facts are a pure function of
-    # the unordered team pair. Win probabilities are keyed by team
-    # abbreviation, not by home/away role.
-    abbr_a, abbr_b = sorted([abbr_a.upper(), abbr_b.upper()])
+    # Order-independent by default: the neutral-site home/away assignment
+    # (which side takes the injury penalty) must not depend on caller arg
+    # order, so the pair is canonicalized up front and the facts are a pure
+    # function of the unordered team pair. Win probabilities are keyed by
+    # team abbreviation, not by home/away role.
+    #
+    # preserve_order=True mirrors the product tool exactly: in the neutral
+    # case get_game_prediction assigns the home role to its FIRST arg
+    # (h_id = home_id or ida), so injury-penalty sides and the away
+    # tie-break noise draw order follow caller order. Score-time grading
+    # uses this with the agent's observed args; the stored (canonical)
+    # truth keeps the default.
+    if preserve_order:
+        abbr_a, abbr_b = abbr_a.upper(), abbr_b.upper()
+    else:
+        abbr_a, abbr_b = sorted([abbr_a.upper(), abbr_b.upper()])
     teams = _pred_team_table()
     ta, tb = teams.get(abbr_a), teams.get(abbr_b)
     if ta is None or tb is None:
@@ -1260,6 +1271,22 @@ def _pred_facts(abbr_a: str, abbr_b: str) -> dict:
     }
 
 
+def pred_truth_facts(facts: dict) -> dict:
+    # Maps the replica's estimate dict to the graded facts shape (shared
+    # by gen_prediction's canonical truth and the score-time rescore path).
+    return {
+        "names": {"home": facts["home_abbr"],
+                  "away": facts["away_abbr"]},
+        f"win_prob_{facts['home_abbr']}":
+            facts[f"win_prob_{facts['home_abbr']}"],
+        f"win_prob_{facts['away_abbr']}":
+            facts[f"win_prob_{facts['away_abbr']}"],
+        "proj_score_home": facts["proj_score_home"],
+        "proj_score_away": facts["proj_score_away"],
+        "projected_total": facts["projected_total"],
+    }
+
+
 def gen_prediction(rng, ctx) -> tuple[Task, GroundTruth]:
     teams = _pred_team_table()
     rated = {r[0] for r in _q(
@@ -1295,15 +1322,7 @@ def gen_prediction(rng, ctx) -> tuple[Task, GroundTruth]:
         )
         truth = GroundTruth(
             task_id=tid,
-            facts={"names": {"home": facts["home_abbr"],
-                             "away": facts["away_abbr"]},
-                   f"win_prob_{facts['home_abbr']}":
-                       facts[f"win_prob_{facts['home_abbr']}"],
-                   f"win_prob_{facts['away_abbr']}":
-                       facts[f"win_prob_{facts['away_abbr']}"],
-                   "proj_score_home": facts["proj_score_home"],
-                   "proj_score_away": facts["proj_score_away"],
-                   "projected_total": facts["projected_total"]},
+            facts=pred_truth_facts(facts),
             computed_at=_now(),
             source="warehouse via silver_team_ratings plus silver_injuries "
                    "(same Monte Carlo pipeline as get_game_prediction)",
@@ -1655,6 +1674,166 @@ def gen_zones(rng, ctx) -> tuple[Task, GroundTruth]:
     return task, truth
 
 
+# ---------------------------------------------------------------------------
+# impact family: mirrors get_impact_estimate's box_prior_shrinkage pipeline
+# exactly. 2025-26 has zero RAPTOR rows in the warehouse, so every sampled
+# player takes the shrinkage path: marginal on-court lift (player on-court
+# NET_RATING minus team NET_RATING) shrunk toward an OLS box-score prior
+# (lift ~ USG_PCT + TS_PCT + AST_PCT + REB_PCT + TM_TOV_PCT, fitted on
+# 3000+ possession trainers) with shrinkage K=1500 possessions, rounded to
+# 2dp. The linear solver is a verbatim copy of the tool's own Gaussian
+# elimination; all data comes from warehouse reads, so anti-circularity
+# holds. Facts grade the 2dp estimate (numeric_acc already tolerates
+# agent-side rounding: fact 2.47 matches a quoted "2.5" or "2") and the
+# estimate disclosure through the names mechanism ("estimate" must appear
+# in the answer; the tool always labels its output an estimate).
+# ---------------------------------------------------------------------------
+
+_IMPACT_FEATURES = ("USG_PCT", "TS_PCT", "AST_PCT", "REB_PCT", "TM_TOV_PCT")
+_IMPACT_PRIOR_MIN_POSS = 3000
+_IMPACT_SHRINK_K = 1500
+_IMPACT_NAME_SUFFIXES = ("Jr", "II", "III", "IV", "V")
+
+
+def _impact_solve(a: list[list[float]],
+                  b: list[float]) -> list[float] | None:
+    # Verbatim mirror of the tool's Gaussian elimination solver (pure
+    # math; the warehouse data it runs on comes from ground truth reads).
+    n = len(b)
+    m = [row[:] + [b[i]] for i, row in enumerate(a)]
+    for col in range(n):
+        piv = max(range(col, n), key=lambda r: abs(m[r][col]))
+        if abs(m[piv][col]) < 1e-12:
+            return None
+        m[col], m[piv] = m[piv], m[col]
+        for r in range(col + 1, n):
+            f = m[r][col] / m[col][col]
+            for c in range(col, n + 1):
+                m[r][c] -= f * m[col][c]
+    x = [0.0] * n
+    for i in range(n - 1, -1, -1):
+        x[i] = (m[i][n] - sum(m[i][j] * x[j] for j in range(i + 1, n))) \
+            / m[i][i]
+        if abs(m[i][i]) < 1e-12:
+            return None
+    return x
+
+
+def _impact_box_prior() -> tuple[float, dict[str, float]] | None:
+    # Mirror of the tool's _fit_box_prior: OLS of lift on the five box
+    # features over 3000+ possession trainers. Returns
+    # (intercept, {feature: coef}).
+    rows = _qd("SELECT TEAM_ID, POSS, NET_RATING, " +
+               ", ".join(_IMPACT_FEATURES) +
+               " FROM silver_advanced WHERE _season = ?", [SEASON])
+    team_net: dict = {}
+    for tid, net in _q("SELECT TEAM_ID, NET_RATING FROM silver_team_ratings"
+                       " WHERE _season = ?", [SEASON]):
+        if net is not None:
+            team_net[tid] = net
+    trainers = [
+        r for r in rows
+        if (r.get("POSS") or 0) >= _IMPACT_PRIOR_MIN_POSS
+        and r.get("NET_RATING") is not None
+        and r.get("TEAM_ID") in team_net
+        and all(r.get(f) is not None for f in _IMPACT_FEATURES)
+    ]
+    if len(trainers) < 30:
+        return None
+    xs = [[1.0] + [float(r[f]) for f in _IMPACT_FEATURES]
+          for r in trainers]
+    ys = [float(r["NET_RATING"]) - float(team_net[r["TEAM_ID"]])
+          for r in trainers]
+    p = 6
+    ata = [[sum(x[i] * x[j] for x in xs) for j in range(p)]
+           for i in range(p)]
+    aty = [sum(x[i] * y for x, y in zip(xs, ys)) for i in range(p)]
+    beta = _impact_solve(ata, aty)
+    if beta is None:
+        return None
+    return beta[0], dict(zip(_IMPACT_FEATURES, beta[1:]))
+
+
+def _impact_estimate(pid: int) -> tuple[str, str, float, float, float]:
+    # Mirror of the box_prior_shrinkage path. Returns (player_name,
+    # team_abbr, estimate_per_100, lift_per_100, prior_per_100).
+    rows = _qd("SELECT PLAYER_NAME, TEAM_ABBREVIATION, TEAM_ID, POSS, "
+               "NET_RATING, " + ", ".join(_IMPACT_FEATURES) +
+               " FROM silver_advanced WHERE _season = ?"
+               " AND CAST(PLAYER_ID AS VARCHAR) = CAST(? AS VARCHAR)"
+               " LIMIT 1", [SEASON, str(pid)])
+    if not rows:
+        raise SkipTask("player has no advanced row for season")
+    row = rows[0]
+    team_net: dict = {}
+    for tid, net in _q("SELECT TEAM_ID, NET_RATING FROM silver_team_ratings"
+                       " WHERE _season = ?", [SEASON]):
+        if net is not None:
+            team_net[tid] = net
+    lift = (float(row["NET_RATING"])
+            - float(team_net.get(row["TEAM_ID"], 0.0)))
+    prior = _impact_box_prior()
+    if prior is None:
+        raise SkipTask("box prior could not be fitted")
+    if any(row.get(f) is None for f in _IMPACT_FEATURES):
+        # The tool falls back to the intercept here; the warehouse has no
+        # NULL features for 2025-26, so this is unreachable in practice.
+        raise SkipTask("player box features incomplete")
+    intercept, coefs = prior
+    prior_value = float(intercept) + sum(
+        float(coefs[f]) * float(row[f]) for f in _IMPACT_FEATURES)
+    poss = float(row.get("POSS") or 0)
+    k = _IMPACT_SHRINK_K
+    w_meas = poss / (poss + k) if poss > 0 else 0.0
+    estimate = w_meas * lift + (1 - w_meas) * prior_value
+    return (row["PLAYER_NAME"], row["TEAM_ABBREVIATION"],
+            round(estimate, 2), round(lift, 2), round(prior_value, 2))
+
+
+def gen_impact(rng, ctx) -> tuple[Task, GroundTruth]:
+    rows = _q("SELECT PLAYER_ID, PLAYER_NAME, TEAM_ABBREVIATION FROM "
+              "silver_advanced WHERE _season = ? AND GP >= 5", [SEASON])
+    rows = [r for r in rows
+            if str(r[1]).split()[-1].rstrip(".") not in
+            _IMPACT_NAME_SUFFIXES]
+    if not rows:
+        raise SkipTask("no advanced rows for impact season")
+    picked = None
+    for _ in range(30):
+        pid = rng.choice(rows)[0]
+        try:
+            picked = _impact_estimate(int(pid))
+            break
+        except (SkipTask, TypeError, ValueError):
+            continue
+    if picked is None:
+        raise SkipTask("no gradeable impact estimate found")
+    name, team, est, _lift, _prior = picked
+    templates = [
+        f"How good has {name} been this season? Give me his estimated "
+        f"per-100 impact.",
+        f"Estimate {name}'s impact per 100 possessions for the {SEASON} "
+        f"season. What's the number?",
+        f"What is {name}'s ({team}) estimated on-court impact this season, "
+        f"per 100 possessions?",
+    ]
+    tid = ctx["task_id"]
+    task = Task(
+        task_id=tid, family="impact", question=rng.choice(templates),
+        entities=[name], gold_tool_families=["impact"],
+        timeout_s=ctx["timeout_s"], seed=ctx["seed"],
+    )
+    truth = GroundTruth(
+        task_id=tid,
+        facts={"names": {"player": name, "disclosure": "estimate"},
+               "estimate_per_100": est},
+        computed_at=_now(),
+        source="nba_api via silver_advanced plus silver_team_ratings "
+               "(same box-prior shrinkage pipeline as get_impact_estimate)",
+    )
+    return task, truth
+
+
 GENERATORS = {
     "lookup": gen_lookup,
     "compare": gen_compare,
@@ -1673,4 +1852,5 @@ GENERATORS = {
     "freshness": gen_freshness,
     "headtohead": gen_headtohead,
     "zones": gen_zones,
+    "impact": gen_impact,
 }

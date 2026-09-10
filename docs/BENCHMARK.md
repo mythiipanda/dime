@@ -120,6 +120,15 @@ the season moves. That drift is signal, not noise.
     question says "default settings" so the agent calls with the same
     defaults the ground truth replicates. Ground truth is verified to
     match the tool exactly. Gold: `get_game_prediction`.
+    Score-time rescore: at grading time the driver recovers the agent's
+    actual `get_game_prediction` arg order from the captured arg
+    summaries and recomputes the facts with the replica's
+    `preserve_order=True` path, because the tool assigns neutral-site
+    home/away roles by caller order (injury-penalty sides plus the away
+    tie-break noise draw), which drifts ~0.002 vs the canonical
+    (sorted) facts on flipped calls. Falls back to the canonical facts
+    when the agent never called the tool or asked about a different
+    matchup.
 15. `freshness` — warehouse freshness panel. Ground truth replicates
     `get_warehouse_freshness` exactly: per-table row count plus
     `MAX(_fetched_at)` over every `silver_*` table, expected cadence
@@ -147,6 +156,26 @@ the season moves. That drift is signal, not noise.
     the delta verbatim; fractions risk percent-reformatting misses).
     Tied best rim-share deltas are skipped. Gold:
     `get_team_shot_zones`.
+18. `impact` — estimated per-100 impact for a random 2025-26 player
+    (GP>=5). 2025-26 has zero RAPTOR rows, so every sampled player takes
+    `get_impact_estimate`'s box-prior-shrinkage path. Ground truth mirrors
+    the pipeline exactly: the OLS box prior (lift ~ USG_PCT + TS_PCT +
+    AST_PCT + REB_PCT + TM_TOV_PCT over 3000+ possession trainers,
+    normal equations plus the tool's Gaussian-elimination solver
+    copied verbatim), marginal on-court lift (player on-court NET_RATING
+    minus team NET_RATING), and the shrinkage blend estimate =
+    (poss * lift + 1500 * prior) / (poss + 1500), rounded to 2dp.
+    Verified 21/21 exact against the tool across low/mid/high possession
+    strata. Grading is tolerance-shaped by design: the fact is the 2dp
+    replica, and `numeric_acc` already matches agent-side rounding
+    (fact 2.47 matches a quoted "2.5" or "2"), while `groundedness`
+    allows |a - p| <= 0.051 against the payload. The estimate disclosure
+    is graded through the `names` mechanism: the facts carry
+    `disclosure: "estimate"`, so the answer must use the word to earn
+    the point (the tool always labels its output an estimate; an agent
+    that reports the number without saying it is an estimate loses it).
+    Names with suffixes (Jr/II/III) are skipped to keep last-token
+    name_recall clean. Gold: `get_impact_estimate`.
 
 ## Scoring formulas
 
@@ -165,10 +194,12 @@ the season moves. That drift is signal, not noise.
   as a numeric hit. Season-shaped tokens (e.g. 2025-26) are stripped
   before matching. Fraction matched over numeric facts. Tasks with no
    numeric facts score 1.
-- `name_recall` — name-based families (comps, trade_value, awards)
-  score expected-name coverage: fraction of `names` values whose last
-  token appears in the answer, case-insensitive on word boundaries.
-  Families without a `names` dict score 1.
+- `name_recall` — name-based families (comps, trade_value, awards,
+  impact) score expected-name coverage: fraction of `names` values whose
+  last token appears in the answer, case-insensitive on word boundaries.
+  The impact family also carries a `disclosure: "estimate"` entry, so the
+  answer must use the word "estimate" to earn full recall. Families
+  without a `names` dict score 1.
 - `groundedness` — season-shaped tokens are excluded from numeric
   extraction on both answer and payload sides. Remaining answer numbers
   match payload numbers after comma/percent normalization, plus a
