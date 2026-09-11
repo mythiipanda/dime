@@ -76,3 +76,5 @@ docs/
 backend/app/data/
 .agents/
 skills-lock.json
+.claude/
+agent/
