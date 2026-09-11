@@ -104,7 +104,7 @@ def _load_games(table: str, season: str,
     pid None loads every player (league-wide mode); otherwise one player.
     Each row carries player_id so callers can group.
     """
-    cols = ("GAME_DATE", "MATCHUP", "WL", "MIN", "FGM", "FGA", "FG3M",
+    cols = ("GAME_DATE", "Game_ID", "MATCHUP", "WL", "MIN", "FGM", "FGA", "FG3M",
             "FG3A", "FTM", "FTA", "OREB", "DREB", "REB", "AST", "STL",
             "BLK", "TOV", "PF", "PTS", "PLUS_MINUS")
     con = store.connect(read_only=True)
@@ -133,6 +133,7 @@ def _load_games(table: str, season: str,
         matchup = str(r.get("MATCHUP") or "")
         games.append({
             "player_id": r.get("Player_ID"),
+            "game_id": r.get("Game_ID"),
             "date": d,
             "matchup": matchup,
             "opponent": opponent_abbr(matchup),
@@ -208,6 +209,51 @@ def _matches(g: dict[str, Any], f: dict[str, Any]) -> bool:
     return True
 
 
+def _dedupe_games(games: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Collapse duplicate Game_ID rows, keeping the first occurrence.
+
+    The warehouse is append-seeded, so a re-seed can store one game
+    twice. The record must count distinct games, not rows. Rows with
+    no Game_ID are kept as-is.
+    """
+    seen: set = set()
+    unique: list[dict[str, Any]] = []
+    for g in games:
+        gid = g.get("game_id")
+        if gid is None or gid == "":
+            unique.append(g)
+            continue
+        if gid in seen:
+            continue
+        seen.add(gid)
+        unique.append(g)
+    return unique
+
+
+def _record_for_scope(games: list[dict[str, Any]], scope: str) -> dict[str, Any]:
+    """W/L aggregate over distinct games with its scope attached.
+
+    The scope label rides the record so a caller holding a regular
+    output and a playoff output cannot sum them silently.
+    """
+    wl = Counter(str(g.get("wl") or "").upper() for g in games)
+    w, l = wl.get("W", 0), wl.get("L", 0)
+    return {"w": w, "l": l, "games": w + l, "scope": scope}
+
+
+def _record_note(record_games: int, total: int, scope: str) -> str | None:
+    """Explain a record that covers fewer games than matched.
+
+    Rows without a W/L result count toward the total but not toward
+    wins/losses. None when every matched game has a result.
+    """
+    if record_games == total:
+        return None
+    return (f"record covers {record_games} of {total} matched {scope}"
+            " games; games without a W/L result are excluded"
+            " from wins/losses")
+
+
 def _describe_filters(f: dict[str, Any], playoffs: bool = False) -> str:
     bits = []
     if playoffs:
@@ -242,6 +288,7 @@ def _describe_filters(f: dict[str, Any], playoffs: bool = False) -> str:
 def _row_out(g: dict[str, Any]) -> dict[str, Any]:
     return {
         "date": g["date"].isoformat(),
+        "game_id": g.get("game_id"),
         "opponent": g["opponent"],
         "matchup": g["matchup"],
         "home": g["home"],
@@ -455,13 +502,21 @@ def search_game_logs(
         }
     assert pid is not None
     name = _resolve_name(pid, str(player))
+    matched = _dedupe_games(matched)
     if best_game:
         # "best game" / "career high": the single max-points game.
         matched = sorted(matched, key=lambda g: g["pts"], reverse=True)[:1]
     capped = len(matched) > lim
-    wl = Counter(str(g.get("wl") or "").upper() for g in matched)
-    record = {"w": wl.get("W", 0), "l": wl.get("L", 0),
-              "games": wl.get("W", 0) + wl.get("L", 0)}
+    scope_label = "playoffs" if playoffs else "regular"
+    record = _record_for_scope(matched, scope_label)
+    meta: dict[str, Any] = {
+        "source": "warehouse",
+        "season": season,
+        "coverage_note": _coverage_note(table),
+    }
+    note = _record_note(record["games"], len(matched), scope_label)
+    if note is not None:
+        meta["record_note"] = note
     return {
         "tool": "search_game_logs",
         "ok": True,
@@ -477,11 +532,7 @@ def search_game_logs(
             "record": record,
             "matches": [_row_out(g) for g in matched[:lim]],
         },
-        "meta": {
-            "source": "warehouse",
-            "season": season,
-            "coverage_note": _coverage_note(table),
-        },
+        "meta": meta,
     }
 
 

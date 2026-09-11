@@ -79,12 +79,11 @@ def test_live_evidence_past_tense_not_forced():
     assert _HISTORICAL_RX.search(q)
 
 
-def test_plain_who_leads_still_forced_to_sql():
+def test_plain_who_leads_forces_fast_leaders_tool():
     q = "who leads the league in scoring"
     _desk, _brief, _tools, force = _league_spec(q)
     assert force is not None
-    assert force[0] == "text_to_sql"
-    assert force[1]["question"] == q
+    assert force[0] == "get_leaders"
     assert _LIST_RX.search(q)
     assert not _HISTORICAL_RX.search(q)
 

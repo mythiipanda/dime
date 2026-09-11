@@ -481,6 +481,56 @@ _HISTORICAL_RX = _re.compile(
 )
 
 
+# Single-stat leaders phrasing the league brief routes to get_leaders.
+# The list-question force regex below would otherwise hijack these into
+# text_to_sql (~30s) before the brief runs, and summaries omit per-game
+# numbers. Check this before the list force so the task goes to the
+# purpose-built tool with both totals and per-game rows.
+_LEADERS_PHRASE_RX = _re.compile(
+    r"leads?\s+the\s+league\s+in\b|"
+    r"most\s+.+?\s+per\s+game|"
+    r"scoring\s+title|"
+    r"leaders?\s+in\b",
+    _re.IGNORECASE,
+)
+
+_LEADERS_STAT_PATTERNS: tuple[tuple[str, str], ...] = (
+    (r"offensive\s*reb", "OREB"),
+    (r"defensive\s*reb", "DREB"),
+    (r"field\s*goal\s*(pct|percent|%)|fg\s*(pct|%)|\befg\b", "FG_PCT"),
+    (r"three\s*point\s*(pct|percent|%)|3\s*point\s*(pct|%)|fg3\s*(pct|%)", "FG3_PCT"),
+    (r"free\s*throw\s*(pct|percent|%)|ft\s*(pct|%)", "FT_PCT"),
+    (r"three\s*point(ers?|s)?|3\s*point(ers?|s)?|\bthrees\b|fg3m\b", "FG3M"),
+    (r"free\s*throws?\s*made|\bftm\b", "FTM"),
+    (r"free\s*throws?\s*attempt|\bfta\b", "FTA"),
+    (r"rebounds?|boards?|\breb\b|\brpg\b", "REB"),
+    (r"assists?|dimes?|\bast\b|\bapg\b", "AST"),
+    (r"steals?|\bstl\b|\bspg\b", "STL"),
+    (r"blocks?|\bblk\b|\bbpg\b", "BLK"),
+    (r"points?|scoring|\bpts\b|\bppg\b", "PTS"),
+    (r"turnovers?|\btov\b", "TOV"),
+    (r"minutes?|\bmpg\b|\bmin\b", "MIN"),
+    (r"triple\s*doubles?|\btd3\b", "TD3"),
+    (r"double\s*doubles?|\bdd2\b", "DD2"),
+    (r"efficiency|\beff\b", "EFF"),
+    (r"usage|\busg\b", "USG_PCT"),
+    (r"fouls?|\bpf\b", "PF"),
+    (r"\bpie\b", "PIE"),
+)
+
+
+def _leaders_category(task: str) -> str | None:
+    t = task or ""
+    if _re.search(r"scoring\s+title", t, _re.IGNORECASE):
+        return "PTS"
+    if not _LEADERS_PHRASE_RX.search(t):
+        return None
+    for pat, cat in _LEADERS_STAT_PATTERNS:
+        if _re.search(pat, t, _re.IGNORECASE):
+            return cat
+    return None
+
+
 def _desk_spec(name: str, task: str):
     """Shared desk configuration: (desk, brief, tool_names, force_tool).
 
@@ -526,8 +576,16 @@ def _desk_spec(name: str, task: str):
                 force)
     if name == "delegate_league":
         force = None
-        if _re.search(r"playoff|champion|finals|\bring\b|title",
-                       task, _re.IGNORECASE):
+        _leaders_cat = (
+            _leaders_category(task)
+            if (not _SHOT_ZONE_RX.search(task)
+                and not _HISTORICAL_RX.search(task))
+            else None
+        )
+        if _leaders_cat:
+            force = ("get_leaders", {"stat_category": _leaders_cat})
+        elif _re.search(r"playoff|champion|finals|\bring\b|title",
+                        task, _re.IGNORECASE):
             force = "get_playoffs"
         elif (not _SHOT_ZONE_RX.search(task)
               and not _HISTORICAL_RX.search(task)

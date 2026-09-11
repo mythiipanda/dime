@@ -19,7 +19,7 @@ pytestmark = pytest.mark.skipif(
     not HAS_KEY, reason="no provider key in backend/.env"
 )
 
-TURN_TIMEOUT_S = 40
+TURN_TIMEOUT_S = 150  # full-suite contention slows live LLM turns; solo runs take ~30s
 SNIP = 500
 
 
