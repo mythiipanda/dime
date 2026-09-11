@@ -20,7 +20,7 @@ from .providers import (
     invoke_with_fallback,
     resolve_model_id,
 )
-from .skills import catalog as skills_catalog
+from .skills import catalog as skills_catalog, load_skill as skills_load_skill
 from .subagents import delegate_tools, run_desk_streaming, _SHOT_ZONE_RX, _HISTORICAL_RX
 from .tools import v1_tools
 
@@ -57,7 +57,7 @@ ANALYST_SYSTEM = (
     "Never name tools, tables, or query languages."
 )
 
-PLANNER_SYSTEM = (
+_PLANNER_PREFIX = (
     "You are the retrieval supervisor. Your tools: resolve_entity, "
     "get_compare, get_comps, get_preview, get_matchup_preview, get_briefing, "
     "get_trade_value, get_matchup_splits, get_regression_check, "
@@ -120,6 +120,74 @@ PLANNER_SYSTEM = (
     "The current season is 2025-26. Pass season 2025-26 always, "
     "unless the user names a different season explicitly."
     "\n\nAnalyst skills. Match the question to one skill and follow it:\n"
+)
+
+
+SKILL_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
+    ("compare_players", ("compare", "comparing", "comparison", "versus",
+                         " vs ", " vs.", "better than", "who is better",
+                         "which is better", "rank them", "head-to-head",
+                         "head to head")),
+    ("form_check", ("slump", "hot streak", "cold streak", "recent form",
+                    "last 10", "last ten", "heating up", "in form",
+                    "out of form")),
+    ("game_preview", ("preview", "matchup", "tonight",
+                      "projected score", "projected total")),
+    ("impact_check", ("impact", "on-off", "on/off", "carrying",
+                      "how good has", "how good is", "career arc",
+                      "raptor", "lebron", "estimated per-100",
+                      "per-100 impact")),
+    ("lineup_wowy", ("wowy", "plays well together", "play well together",
+                     "best lineup", "lineup")),
+    ("morning_briefing", ("briefing", "recap", "last night", "standouts")),
+    ("shot_profile", ("shot chart", "shot zones", "shot profile", "shooting",
+                      "shot diet", "zones", "corner three", "true shooting")),
+    ("standings_read", ("standings", "playoff race", "clinch", "magic number",
+                        "lottery", "tanking", "seed")),
+    ("leaders_read", ("scoring title", "leads the league", "who leads",
+                      "league leaders", "leaders", "leading scorer",
+                      "points leader", "leads in")),
+    ("record_when_plays", ("record when", "when he plays", "when she plays",
+                           "when they play", "when plays", "record with",
+                           "record without", "with and without", "when sits",
+                           "when he sits", "sits", "without him", "without her",
+                           "with him")),
+    ("historical_leaders", ("each season", "every season", "all-time",
+                            "all time", "single-season", "single season",
+                            "career leaders", "season leaders",
+                            "multi-season", "per season", "by season",
+                            "decade", "best single", "greatest season")),
+]
+
+MAX_SKILLS_PER_TURN = 2
+
+
+def match_skills(question: str,
+                 limit: int = MAX_SKILLS_PER_TURN) -> list[str]:
+    q = (question or "").lower()
+    matched: list[str] = []
+    for name, keywords in SKILL_KEYWORDS:
+        if any(kw in q for kw in keywords):
+            matched.append(name)
+            if len(matched) >= limit:
+                break
+    return matched
+
+
+def build_planner_prompt(question: str) -> str:
+    prompt = _PLANNER_PREFIX + skills_catalog()
+    for name in match_skills(question):
+        try:
+            body = skills_load_skill(name) or ""
+        except Exception:
+            body = ""
+        if body.strip():
+            prompt += "\n\n" + body.strip()
+    return prompt
+
+
+PLANNER_SYSTEM = (
+    _PLANNER_PREFIX
     + skills_catalog()
 )
 
@@ -2027,7 +2095,7 @@ async def data_retrieval_agent(
         _pholder: dict[str, Any] = {}
         async for _pe in _stream_planner(
                 tooled,
-                [SystemMessage(content=PLANNER_SYSTEM + prior),
+                [SystemMessage(content=build_planner_prompt(question_for_planner) + prior),
                  HumanMessage(content=question_for_planner)],
                 _pholder):
             yield _pe

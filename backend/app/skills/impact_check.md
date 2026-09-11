@@ -1,3 +1,7 @@
+---
+name: impact_check
+description: On-off impact and value, which factors move with a player on court.
+---
 # impact_check
 
 Use when the user asks about impact, value, on-off, or carrying a team.

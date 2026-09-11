@@ -1,3 +1,7 @@
+---
+name: morning_briefing
+description: Overnight recaps, finals, top scorers, and one surprise.
+---
 # morning_briefing
 
 Use when the user asks for a briefing, recap, last night, or standouts.

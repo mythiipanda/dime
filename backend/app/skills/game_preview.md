@@ -1,3 +1,7 @@
+---
+name: game_preview
+description: Preview a matchup between two teams with records, form, and a pick.
+---
 # game_preview
 
 Use when the user names two teams with preview, matchup, tonight, or who wins.
