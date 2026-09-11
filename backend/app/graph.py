@@ -2537,7 +2537,15 @@ async def run_chat(
     question: str,
     model_id: str | None,
     history: list[dict[str, str]] | None = None,
+    thread: str | None = None,
 ) -> AsyncGenerator[dict[str, Any], None]:
+    if thread:
+        try:
+            from . import store as _store
+
+            _store.compact_thread(thread)
+        except Exception:
+            pass
     primary, model = resolve_model_id(model_id)
     question = _expand_nicknames(question or "")
     state = DimeState(
