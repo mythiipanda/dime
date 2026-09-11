@@ -245,9 +245,7 @@ def get_leaders(stat_category: str = "PTS", season: str = SEASON) -> dict[str, A
     )
     meta["stat_category"] = stat_category
     try:
-        from .. import store as _store
-
-        total = len(_store.read_frame(table, "_season = ?", [season]))
+        total = int(meta.get("rows") or len(rows) or 0)
         for r in rows:
             rank = r.get("RANK") or 0
             if rank and total:
@@ -1517,6 +1515,53 @@ _SQL_TABLES = [
 RERUN_ROW_CAP = 25
 RERUN_TIMEOUT_S = 30
 
+_SCHEMA_TTL_S = 3600.0
+_schema_cache: dict[str, object] = {"at": 0.0, "present": [], "cols": {}}
+_schema_cache_stats: dict[str, int] = {"hits": 0, "misses": 0}
+
+
+def _clear_warehouse_schema_cache() -> None:
+    _schema_cache["at"] = 0.0
+    _schema_cache["present"] = []
+    _schema_cache["cols"] = {}
+    _schema_cache_stats["hits"] = 0
+    _schema_cache_stats["misses"] = 0
+
+
+def _warehouse_schema_cache_info() -> dict[str, float]:
+    return {"hits": _schema_cache_stats["hits"],
+            "misses": _schema_cache_stats["misses"],
+            "at": _schema_cache["at"]}
+
+
+def _get_warehouse_schema() -> tuple[list[str], dict[str, list[str]]]:
+    import time as _time
+
+    from .. import store as _store
+
+    now = _time.monotonic()
+    at = float(_schema_cache.get("at") or 0.0)
+    if now - at < _SCHEMA_TTL_S and _schema_cache.get("present"):
+        _schema_cache_stats["hits"] += 1
+        return (list(_schema_cache["present"]),  # type: ignore[arg-type]
+                {k: list(v) for k, v in  # type: ignore[attr-defined]
+                 _schema_cache["cols"].items()})  # type: ignore[attr-defined]
+    _schema_cache_stats["misses"] += 1
+    con = _store.connect()
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        present = [t for t in _SQL_TABLES if t in tables]
+        cols: dict[str, list[str]] = {}
+        for t in present:
+            cols[t] = [r[1] for r in
+                       con.execute(f"PRAGMA table_info({t})").fetchall()][:40]
+    finally:
+        con.close()
+    _schema_cache["at"] = now
+    _schema_cache["present"] = present
+    _schema_cache["cols"] = cols
+    return (list(present), {k: list(v) for k, v in cols.items()})
+
 import re as _re_mod
 
 
@@ -1556,17 +1601,7 @@ async def text_to_sql(question: str) -> dict[str, Any]:
     from .. import store as _store
     from ..providers import invoke_with_fallback
 
-    allowed = _SQL_TABLES
-    con = _store.connect()
-    try:
-        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
-        present = [t for t in allowed if t in tables]
-        cols: dict[str, list[str]] = {}
-        for t in present:
-            cols[t] = [r[1] for r in
-                       con.execute(f"PRAGMA table_info({t})").fetchall()][:40]
-    finally:
-        con.close()
+    present, cols = _get_warehouse_schema()
     if not present:
         return {"tool": "text_to_sql", "ok": False, "error": "warehouse empty"}
     schema = _describe_warehouse_schema(cols)
