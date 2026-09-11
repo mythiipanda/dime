@@ -54,6 +54,24 @@ def _parse_score(raw: object) -> int | None:
         return None
 
 
+def _display_name(person_id: object, fallback: str) -> str:
+    try:
+        from nba_api.stats.static import players as _players
+    except Exception:
+        return fallback
+    try:
+        pid = int(str(person_id))
+    except (TypeError, ValueError):
+        return fallback
+    try:
+        for row in _players.get_players():
+            if int(row.get("id")) == pid:
+                return str(row.get("full_name") or fallback)
+    except (TypeError, ValueError):
+        pass
+    return fallback
+
+
 def _credit(players: dict[str, dict[str, Any]], gid: str,
             evt: tuple, home: str, delta: float) -> None:
     _, _, _, _, tri, pid, name, loc, _, _, _ = evt
@@ -219,15 +237,18 @@ def get_wpa_leaders(season: Union[int, str, None] = 2025,
         if entry["events"] < floor:
             continue
         teams = entry["teams"]
+        games = len(entry["games"])
+        wpa = round(entry["wpa"], 3)
         leaders.append({
-            "player": entry["player"],
+            "player": _display_name(entry["player_id"], entry["player"]),
             "player_id": entry["player_id"],
             "team": teams.most_common(1)[0][0] if teams else "",
-            "wpa": round(entry["wpa"], 3),
+            "wpa": wpa,
+            "wpa_g": round(entry["wpa"] / games, 3) if games else 0.0,
             "events": entry["events"],
             "plus_events": entry["plus_events"],
             "minus_events": entry["minus_events"],
-            "games": len(entry["games"]),
+            "games": games,
         })
     leaders.sort(key=lambda r: r["wpa"], reverse=True)
     if not leaders:
@@ -244,10 +265,14 @@ def get_wpa_leaders(season: Union[int, str, None] = 2025,
         "games": len({str(r[0]) for r in rows}),
         "events": len(rows),
         "model": "fitted WP sigmoid(B0+B1*lead/sqrt(sec+360)); "
-                 "delta credited to the acting player",
+                 "delta credited to the acting player; no steal/block credit, "
+                 "paired rows share one action_number credited to shooter/committer only",
         "source": "warehouse silver_hist_pbp (documented estimates)",
-        "values": "WPA sums credit makers and debit missers; "
-                  "paired details share one action_number",
+        "values": "WPA sums credit makers and debit missers with no opponent "
+                  "or teammate adjustment; totals are cumulative volume "
+                  "rewarding games played",
+        "limits": "no steal or block credit; no opponent or teammate "
+                  "adjustment; cumulative totals reward games played",
     }
     if warnings:
         meta["warning"] = "; ".join(warnings)

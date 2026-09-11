@@ -110,18 +110,40 @@ def get_zone_deltas(player: str, season: int = MAX_SEASON,
     pooled league-average FG% for the same season, with delta in
     percentage points. Zones below min_attempts (default 50, clamped
     10..200) are excluded. Season is the end year (2010..2025)."""
+    warnings: list[str] = []
     year = clamp_season_year(season)
+    try:
+        raw_year = int(str(season).strip()[:4])
+        year_ok = True
+    except (TypeError, ValueError, AttributeError):
+        raw_year, year_ok = MAX_SEASON, False
+    if not year_ok:
+        warnings.append(f"season '{season}' invalid, using {MAX_SEASON}")
+    elif raw_year != year:
+        warnings.append(f"season {raw_year} clamped to {year}")
     floor = clamp_floor(min_attempts)
+    try:
+        raw_floor = int(min_attempts)  # type: ignore[arg-type]
+        floor_ok = True
+    except (TypeError, ValueError):
+        raw_floor, floor_ok = DEFAULT_FLOOR, False
+    if not floor_ok:
+        warnings.append(
+            f"min_attempts '{min_attempts}' invalid, using {DEFAULT_FLOOR}")
+    elif raw_floor != floor:
+        warnings.append(f"min_attempts {raw_floor} clamped to {floor}")
     try:
         person_id = coerce_player_id(player)
     except ValueError as exc:
         return {"tool": "get_zone_deltas", "ok": False,
-                "rows": {}, "meta": {"season": year},
+                "rows": {}, "meta": {"season": year,
+                                     "season_label": season_label(year)},
                 "error": str(exc)}
     frame = _store.read_frame(TABLE, "season = ?", [year])
     if frame.height == 0:
         return {"tool": "get_zone_deltas", "ok": False, "rows": {},
-                "meta": {"season": year},
+                "meta": {"season": year,
+                         "season_label": season_label(year)},
                 "error": f"no shot rows for season {season_label(year)} "
                          f"in {TABLE}"}
     all_shots = [{
@@ -171,6 +193,8 @@ def get_zone_deltas(player: str, season: int = MAX_SEASON,
     if not zones:
         meta["note"] = (f"{name} has {total} tracked shots but no zone "
                         f"reaches the {floor}-attempt floor")
+    if warnings:
+        meta["warning"] = "; ".join(warnings)
     return {"tool": "get_zone_deltas", "ok": True,
             "rows": {"player": name, "person_id": person_id,
                      "season": year, "season_label": season_label(year),

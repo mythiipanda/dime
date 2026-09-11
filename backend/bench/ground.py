@@ -2997,10 +2997,16 @@ def _wpa_table(year: int) -> list[dict]:
     if grows:
         _wpa_score_game(str(game), grows, players)
     out = []
+    try:
+        from nba_api.stats.static import players as _static
+        _full = {str(p.get("id")): str(p.get("full_name"))
+                 for p in _static.get_players()}
+    except Exception:
+        _full = {}
     for key, entry in players.items():
         if entry["events"] < _WPA_FLOOR:
             continue
-        out.append({"name": entry["player"],
+        out.append({"name": _full.get(str(key), entry["player"]),
                     "wpa": round(entry["wpa"], 3)})
     out.sort(key=lambda r: r["wpa"], reverse=True)
     return out

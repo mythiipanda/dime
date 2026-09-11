@@ -8,6 +8,7 @@ export interface WpaLeader {
   playerId: number | null;
   team: string;
   wpa: number | null;
+  wpaG: number | null;
   events: number | null;
   plusEvents: number | null;
   minusEvents: number | null;
@@ -24,6 +25,7 @@ export interface WpaMeta {
   model?: string;
   source?: string;
   values?: string;
+  limits?: string;
 }
 
 function parseLeader(r: Record<string, unknown>): WpaLeader | null {
@@ -36,6 +38,7 @@ function parseLeader(r: Record<string, unknown>): WpaLeader | null {
     playerId: num(r.player_id),
     team: str(r.team),
     wpa,
+    wpaG: num(r.wpa_g),
     events: num(r.events),
     plusEvents: num(r.plus_events),
     minusEvents: num(r.minus_events),
@@ -139,6 +142,7 @@ function WpaCard({
         style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}
       >
         <Chip tone="accent">WPA {fmtWpa(leader.wpa)}</Chip>
+        {leader.wpaG !== null && <Chip>{fmtWpa(leader.wpaG)}/game</Chip>}
         {leader.events !== null && <Chip>{leader.events} plays</Chip>}
         {leader.plusEvents !== null && leader.minusEvents !== null && (
           <Chip>
@@ -180,7 +184,8 @@ export default function WpaView({
       {(meta?.minEvents !== undefined ||
         meta?.model ||
         meta?.source ||
-        meta?.values) && (
+        meta?.values ||
+        meta?.limits) && (
         <div
           style={{
             marginTop: 10,
@@ -195,6 +200,7 @@ export default function WpaView({
           {meta?.model && <Caption>{meta.model}</Caption>}
           {meta?.source && <Caption>{meta.source}</Caption>}
           {meta?.values && <Caption>{meta.values}</Caption>}
+          {meta?.limits && <Caption>{meta.limits}</Caption>}
         </div>
       )}
     </div>

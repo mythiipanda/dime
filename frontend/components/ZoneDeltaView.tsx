@@ -18,6 +18,8 @@ export interface ZoneDeltasMeta {
   excludedZones?: string[];
   source?: string;
   dataNote?: string;
+  note?: string;
+  warning?: string;
 }
 
 const ZONE_LABELS: Record<string, string> = {
@@ -51,10 +53,10 @@ export function parseZoneDeltas(
   rows: unknown,
 ): { player: string; seasonLabel: string; zones: ZoneDelta[] } | null {
   if (!isObj(rows)) return null;
+  if (!Array.isArray(rows.zones)) return null;
   const zones = asList(rows.zones)
     .map(parseDelta)
     .filter((z): z is ZoneDelta => z !== null);
-  if (!zones.length) return null;
   return {
     player: str(rows.player),
     seasonLabel: str(rows.season_label),
@@ -172,16 +174,18 @@ export default function ZoneDeltaView({
   const title = parsed.player
     ? `${parsed.player} vs league average${parsed.seasonLabel ? ` ${parsed.seasonLabel}` : ""}`.trim()
     : "Zone efficiency deltas";
+  const showEmpty = parsed.zones.length === 0;
 
   return (
     <div>
       <SectionTitle>{title}</SectionTitle>
+      {showEmpty && meta?.note && <Caption>{meta.note}</Caption>}
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {parsed.zones.map((z, i) => (
           <DeltaCard key={z.zone} delta={z} rank={i + 1} />
         ))}
       </div>
-      {(meta?.minAttempts || meta?.excludedZones?.length || meta?.source || meta?.dataNote) && (
+      {(meta?.minAttempts || meta?.excludedZones?.length || meta?.source || meta?.dataNote || meta?.note || meta?.warning) && (
         <div
           style={{
             marginTop: 10,
@@ -200,6 +204,8 @@ export default function ZoneDeltaView({
           )}
           {meta?.source && <Caption>{meta.source}</Caption>}
           {meta?.dataNote && <Caption>{meta.dataNote}</Caption>}
+          {meta?.note && !showEmpty && <Caption>{meta.note}</Caption>}
+          {meta?.warning && <Caption>{meta.warning}</Caption>}
         </div>
       )}
     </div>

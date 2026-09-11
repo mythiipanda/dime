@@ -102,8 +102,8 @@ def test_star_sanity():
     out = get_wpa_leaders.invoke({"season": 2025, "limit": 10})
     assert out["ok"] is True
     names = [r["player"] for r in out["rows"]["leaders"]]
-    assert "Gilgeous-Alexander" in names[:5]
-    assert "Jokić" in names
+    assert any("Gilgeous-Alexander" in n for n in names[:5])
+    assert any("Jokić" in n for n in names)
     assert out["rows"]["leaders"][0]["wpa"] > 0
 
 
@@ -148,6 +148,37 @@ def test_season_timing_gate():
     out = get_wpa_leaders.invoke({"season": 2025, "limit": 10})
     assert out["ok"] is True
     assert time.time() - start < 5
+
+
+def test_meta_disclosure_keys_present():
+    out = get_wpa_leaders.invoke({"season": 2025, "limit": 3})
+    assert out["ok"] is True
+    for key in ("model", "values", "limits"):
+        assert key in out["meta"]
+    blob = " ".join(str(out["meta"][k]) for k in ("model", "values", "limits")).lower()
+    assert "steal" in blob and "block" in blob
+    assert "no opponent" in blob or "teammate" in blob
+    assert "cumulative" in blob and "games played" in blob
+
+
+def test_wpa_g_math():
+    out = get_wpa_leaders.invoke({"season": 2025, "limit": 10})
+    assert out["ok"] is True
+    for row in out["rows"]["leaders"]:
+        assert "wpa_g" in row
+        assert row["games"] >= 1
+        assert row["wpa_g"] == pytest.approx(row["wpa"] / row["games"], abs=0.001)
+
+
+def test_full_names_on_james_rows():
+    out = get_wpa_leaders.invoke({"season": 2025, "limit": 25})
+    assert out["ok"] is True
+    james = [r for r in out["rows"]["leaders"] if "James" in r["player"]]
+    assert len(james) >= 1
+    for row in james:
+        assert " " in row["player"].strip()
+        assert row["player"].strip() != "James"
+        assert row["player_id"] is not None
 
 
 def test_tool_registered():
