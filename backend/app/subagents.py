@@ -408,6 +408,15 @@ LEAGUE_BRIEF = (
     "IF the task asks for a player's impact and no RAPTOR, RAPM, or BPM row "
     "covers them, THEN call get_impact_estimate; its output is always an "
     "estimate, so say so and never present it as a measured metric. "
+    "IF the task asks for prior-informed impact or RAPM priors, "
+    "THEN call get_rapm_prior. "
+    "IF the task asks for leaders across multiple seasons, each or every "
+    "season, year-by-year, since a year, from one year to another, "
+    "all-time, or single-season campaigns, THEN call get_historical_leaders. "
+    "IF the task asks for a player's zone efficiency vs the league average, "
+    "THEN call get_zone_deltas. "
+    "IF the task mentions WPA, win probability added, or clutch-play-value "
+    "leaders, THEN call get_wpa_leaders. "
     "IF the task names one stat category, THEN call get_leaders. "
     "Otherwise call get_standings."
 )
@@ -423,6 +432,22 @@ _SHOT_ZONE_RX = _re.compile(
     r"corner\s*threes?|corner\s*3s?|"
     r"efg\s*(by|per|in|across|within)\s*zones?|zone.{0,16}\befg\b|"
     r"where\s+teams?\s+shoot\s+from",
+    _re.IGNORECASE,
+)
+
+# Multi-season or all-time leaders phrasing the league desk brief routes
+# to get_historical_leaders. Same hijack as _SHOT_ZONE_RX above: the
+# list-question force regexes would otherwise push these into text_to_sql
+# (~30s) before the brief runs, and the agent falls back to calling
+# get_leaders once per season. Guard both force sites so the task falls
+# through to the LLM brief, which already owns the routing.
+_HISTORICAL_RX = _re.compile(
+    r"each\s+season|every\s+season|"
+    r"since\s+(?:19|20)\d\d|"
+    r"from\s+(?:19|20)\d\d(?:\s*-\s*\d\d)?\s+to\b|"
+    r"all[\s-]*time|"
+    r"single[\s-]*season\s+campaigns?|"
+    r"year[\s-]*by[\s-]*year",
     _re.IGNORECASE,
 )
 
@@ -474,6 +499,7 @@ def _desk_spec(name: str, task: str):
                        task, _re.IGNORECASE):
             force = "get_playoffs"
         elif (not _SHOT_ZONE_RX.search(task)
+              and not _HISTORICAL_RX.search(task)
               and _re.search(
                   r"which\s+(players|teams)|what\s+(players|teams)|"
                   r"top\s+\d+|\bunder\s+\d+|\bover\s+\d+|\bage\b|"
@@ -493,6 +519,10 @@ def _desk_spec(name: str, task: str):
                  "get_trade_value",
                  "get_award_race",
                  "get_team_shot_zones",
+                 "get_historical_leaders",
+                 "get_zone_deltas",
+                 "get_wpa_leaders",
+                 "get_rapm_prior",
                  "get_warehouse_freshness",
                  "run_python", "text_to_sql"],
                 force)

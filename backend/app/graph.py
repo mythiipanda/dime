@@ -21,7 +21,7 @@ from .providers import (
     resolve_model_id,
 )
 from .skills import catalog as skills_catalog
-from .subagents import delegate_tools, run_desk_streaming, _SHOT_ZONE_RX
+from .subagents import delegate_tools, run_desk_streaming, _SHOT_ZONE_RX, _HISTORICAL_RX
 from .tools import v1_tools
 
 ANALYST_SYSTEM = (
@@ -1535,6 +1535,7 @@ async def _triage_seed(question: str, primary: str, model: str,
     if (_LIST_RX.search(question) and not is_trade and not is_cast
             and not is_compare and not is_raptor
             and not _SHOT_ZONE_RX.search(question)
+            and not _HISTORICAL_RX.search(question)
             and "delegate_league" in delegates):
         task = (question + " Answer via text_to_sql (you own that tool).")
         _dl_args = {"task": task}
