@@ -1,0 +1,30 @@
+name: build-backend
+on:
+  workflow_dispatch:
+  push:
+    branches: [dev]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/build-backend.yml'
+permissions:
+  packages: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch warehouse data (release asset)
+        run: |
+          curl -L -o /tmp/dime_data.zip https://github.com/mythiipanda/dime/releases/download/tony-features-pack-20260911/dime_data.zip
+          unzip -q /tmp/dime_data.zip -d backend
+          ls -la backend/data | head
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: backend
+          push: true
+          tags: ghcr.io/mythiipanda/dime-backend:latest
