@@ -656,12 +656,62 @@ def _trade_sides(question: str, found_p: list[str], found_t: list[str],
 
     mentioned = [a for a in (_abbr(f) for f in found_t) if a]
     by_team: dict[str, list[str]] = {}
+    resolved: list[tuple[str, int]] = []
     for p in found_p:
         try:
             pid = coerce_player_id(p)
         except Exception:
             continue
-        ab = _player_team_abbr(pid, season) if pid else ""
+        if pid:
+            resolved.append((p, pid))
+    team_of: dict[int, str] = {}
+    if resolved:
+        import time as _time
+
+        from collections import Counter as _Counter
+
+        from . import store
+
+        entities = [f"player:{pid}" for _, pid in resolved]
+        placeholders = ", ".join(["?"] * len(entities))
+        batched: dict[int, str] = {}
+        batched_ok = False
+        for _ in range(3):
+            try:
+                con = store.connect()
+                try:
+                    rows = con.execute(
+                        "SELECT _entity, MATCHUP FROM (SELECT _entity, MATCHUP,"
+                        " ROW_NUMBER() OVER (PARTITION BY _entity) AS _rn"
+                        " FROM silver_player_gamelogs"
+                        " WHERE _season = ? AND _entity IN (" + placeholders + "))"
+                        " WHERE _rn <= 40",
+                        [season, *entities],
+                    ).fetchall()
+                finally:
+                    con.close()
+                per: dict[str, list] = {}
+                for ent, matchup in rows:
+                    per.setdefault(ent, []).append(matchup)
+                for _, pid in resolved:
+                    c = _Counter(str(m or "").split(" ")[0]
+                                 for m in per.get(f"player:{pid}", []))
+                    c.pop("", None)
+                    if c:
+                        batched[pid] = c.most_common(1)[0][0]
+                batched_ok = True
+                break
+            except Exception:
+                _time.sleep(0.2)
+        if batched_ok:
+            team_of = batched
+        else:
+            for p, pid in resolved:
+                ab = _player_team_abbr(pid, season) if pid else ""
+                if ab:
+                    team_of[pid] = ab
+    for p, pid in resolved:
+        ab = team_of.get(pid, "")
         if not ab:
             continue
         by_team.setdefault(ab, []).append(p)
