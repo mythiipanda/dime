@@ -178,27 +178,26 @@ def _rs_only_player():
 
     The background scrape keeps filling silver_playoff_gamelogs, so no
     specific player's playoff emptiness can be hardcoded. The name is
-    verified to coerce back to the same warehouse id.
+    resolved via the static player list and verified to coerce back to
+    the same warehouse id.
     """
     from app import store as _store
     from app.tools._core import coerce_player_id as _coerce
+    from app.tools.splits import _resolve_name as _rname
     con = _store.connect(read_only=True)
     try:
         rows = con.execute(
             """SELECT DISTINCT rs.Player_ID FROM silver_player_gamelogs rs
                WHERE rs._season = '2025-26'
                AND NOT EXISTS (
-                   SELECT 1 FROM silver_playoff_gamelogs po
-                   WHERE po._season = '2025-26'
-                     AND po.Player_ID = rs.Player_ID)
-               LIMIT 25""").fetchall()
+                    SELECT 1 FROM silver_playoff_gamelogs po
+                    WHERE po._season = '2025-26'
+                      AND po.Player_ID = rs.Player_ID)
+                LIMIT 25""").fetchall()
         for (pid,) in rows:
-            name = con.execute(
-                "SELECT player_name FROM silver_hist_player_seasons "
-                "WHERE player_id = ? AND season = 2026 LIMIT 1",
-                [pid]).fetchone()
-            if name and _coerce(name[0]) == pid:
-                return name[0], pid
+            name = _rname(pid, "")
+            if name and _coerce(name) == pid:
+                return name, pid
     finally:
         con.close()
     return None
@@ -218,7 +217,9 @@ def test_playoff_phrasing_sets_playoffs_flag():
     # silent regular-season 0. The player is picked dynamically (see
     # _rs_only_player) because the scrape keeps filling the playoff table.
     found = _rs_only_player()
-    assert found is not None, "no regular-season-only player in warehouse"
+    if found is None:
+        import pytest as _pt
+        _pt.skip("no regular-season-only player in warehouse")
     pname, _pid = found
     st = _drain(f"Did {pname} have any triple-doubles in the playoffs?")
     out = st["tool_results"][-1]

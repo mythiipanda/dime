@@ -98,7 +98,7 @@ async def _stream(
         tables: list[dict] = []
         suggestions: list[str] = []
         async for event in run_chat(
-            question[:2000], (model or "")[:200], history
+            question[:2000], (model or "")[:200], history, thread
         ):
             if event["type"] == "final_answer":
                 final = str(event["data"].get("text", ""))

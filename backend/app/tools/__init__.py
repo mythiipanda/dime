@@ -3,6 +3,7 @@
 from langchain_core.tools import BaseTool
 
 from .awards import get_award_race
+from .history import get_historical_leaders
 from .league import (
     get_briefing,
     get_cap_ledger,
@@ -57,6 +58,7 @@ from .player import (
 )
 from .preview import get_matchup_preview
 from .prediction import get_game_prediction
+from .priors import get_rapm_prior
 from .shared import resolve_entity, run_python, search_nba
 from .headtohead import get_head_to_head
 from .gamelog import search_game_logs
@@ -67,6 +69,7 @@ from .competitive import get_competitive_ratings
 from .lineup_matrix import get_lineup_matchup_matrix
 from .shots import search_shots
 from .zone import get_team_shot_zones
+from .zonedelta import get_zone_deltas
 from .team import (
     get_boxscore,
     get_games_on_date,
@@ -82,6 +85,7 @@ from .team import (
 )
 from .today import get_today, get_morning_briefing
 from .watchlist import add_watchlist_item, get_watchlist, remove_watchlist_item
+from .wpa import get_wpa_leaders
 from ._core import MAX_ROWS, SEASON, STAT_CATEGORIES, clamp_stat
 
 v1_tools: list[BaseTool] = [
@@ -121,6 +125,7 @@ v1_tools: list[BaseTool] = [
     compare_metrics,
     get_debate_card,
     get_award_race,
+    get_historical_leaders,
     get_comps,
     get_advanced,
     get_rest,
@@ -165,6 +170,9 @@ v1_tools: list[BaseTool] = [
     get_competitive_ratings,
     get_lineup_matchup_matrix,
     search_shots,
+    get_zone_deltas,
+    get_rapm_prior,
+    get_wpa_leaders,
 ]
 
 TOOL_NAMES = [t.name for t in v1_tools]

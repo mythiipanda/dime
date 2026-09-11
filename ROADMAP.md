@@ -105,6 +105,25 @@ Data + bench (on `dev`):
 - Synergy play types (only if answerable without subscription)
 - Morning-file briefs stay file-only; no push channels, per owner
 
+## Phase 5 — Interface polish (added 2026-09-11)
+
+19. Cleaner chat UI with built-in micro-interactions. Study the
+    subtleties in https://tldraw-chat-app-example.tldraw.workers.dev/
+    (streaming caret behavior, message transitions, input focus states,
+    loading skeletons that match content shape). Do not copy it; adapt
+    the calm, text-first feel to DESIGN.MD (stone neutrals, one cyan
+    accent, no gradients, no glassmorphism, no emojis).
+20. Component library survey before building new views. Candidate
+    sources, cheapest-first: https://ui.spectrumhq.in (expensive-looking
+    components), http://21st.dev (community library), 
+    https://shadcnblocks.com (shadcn blocks), http://reactbits.dev
+    (animated React bits), https://8bitcn.com (retro pixel),
+    https://evilcharts.com (animated SVG charts), https://coss.com/ui,
+    https://rareui.com, https://beui.dev (animated components).
+    Adopt patterns, not dependencies: keep the frontend dependency
+    footprint flat and every new view behind a screenshot spot-check
+    (1280px and 390px).
+
 ## Rules of the loop
 
 V1 tools only, new tools need a decision row. Verify each unit before

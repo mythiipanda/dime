@@ -179,15 +179,21 @@ async def _run_desk(
          HumanMessage(content=f"Season {SEASON}. Task: {task}")],
     ]
     tool_calls: list[dict] = []
-    for attempt in attempts:
-        try:
-            _t, tool_calls = await _stream_tooled(
-                provider, model, attempt, subset, on_token)
-        except Exception as exc:
-            return {"agent": desk, "ok": False, "error": str(exc)[:200],
-                    "tool_trace": trace}
-        if tool_calls:
-            break
+    _force_ready = bool(collected) and any(
+        isinstance(c, dict) and c.get("tool", "") not in
+        ("resolve_entity", "search_nba") and _row_count(c.get("rows")) > 0
+        for c in collected
+    )
+    if not _force_ready:
+        for attempt in attempts:
+            try:
+                _t, tool_calls = await _stream_tooled(
+                    provider, model, attempt, subset, on_token)
+            except Exception as exc:
+                return {"agent": desk, "ok": False, "error": str(exc)[:200],
+                        "tool_trace": trace}
+            if tool_calls:
+                break
     for call in tool_calls:
         if calls_made >= WORKER_BUDGET:
             break
@@ -312,6 +318,12 @@ SCOUT_BRIEF = (
     "Four Factors questions (eFG%, turnover rate, rebound rate, free "
     "throw rate) go to get_four_factors with player and team ids. "
     "Career impact arcs go to get_raptor_history. "
+    "Player zone efficiency vs the league average (where does X beat "
+    "league average, by how many points) goes to get_zone_deltas, "
+    "never hand-rolled SQL. "
+    "Prior-informed impact blending current RAPM with past seasons goes "
+    "to get_rapm_prior; its output is a documented estimate. "
+    "Win probability added leaders go to get_wpa_leaders. "
     "IF the task asks for a player's impact and no RAPTOR, RAPM, or BPM "
     "row covers them, THEN call get_impact_estimate; its output is always "
     "an estimate, so say so and never present it as a measured metric. "
@@ -329,6 +341,9 @@ SCOUT_BRIEF = (
     "Filtered game-log searches (40-point games, games vs an opponent, "
     "triple-doubles in a month, home/away or date windows) go to "
     "search_game_logs. "
+    "Record-when-a-player-plays questions go to search_game_logs with "
+    "no filters; read rows.record (wins/losses over ALL matches, not "
+    "the capped list) and report it verbatim. "
     "Resolve names with resolve_entity first. Use returned ids verbatim. "
     "Never invent ids. Season 2025-26 unless told otherwise."
 )
@@ -354,6 +369,9 @@ TEAM_BRIEF = (
     "For injury impact (how much do injuries matter) call get_injury_impact, "
     "not get_injuries. State its impact grade, team net rating and rank, "
     "and last-10 record verbatim in the summary. "
+    "For a team's record when a named player plays, call "
+    "search_game_logs with that player and no filters; read rows.record "
+    "and report it verbatim. "
     "When the task names a player, resolve their current team from "
     "warehouse gamelog MATCHUP or get_advanced first. Never trust a team "
     "from memory. "
@@ -420,7 +438,21 @@ LEAGUE_BRIEF = (
     "THEN call get_hustle_boards. "
     "IF the task mentions clutch standings, quarter splits, or bench scoring, "
     "THEN call get_standings_deep. "
+    "IF the task asks for prior-informed impact or RAPM priors, "
+    "THEN call get_rapm_prior. "
+    "IF the task asks for leaders across multiple seasons, each or every "
+    "season, year-by-year, since a year, from one year to another, "
+    "all-time, or single-season campaigns, THEN call get_historical_leaders. "
+    "IF the task asks for a player's zone efficiency vs the league average, "
+    "THEN call get_zone_deltas. "
+    "IF the task mentions WPA, win probability added, or clutch-play-value "
+    "leaders, THEN call get_wpa_leaders. "
     "IF the task names one stat category, THEN call get_leaders. "
+    "Leaders answers state BOTH the totals leader and the per-game "
+    "leader in one answer with GP alongside, values verbatim from tool "
+    "rows. Never multiply per-game averages by games played to make a "
+    "total, never compare totals against per-game ranks, and never "
+    "present a computed number as a warehouse row. "
     "Otherwise call get_standings."
 )
 
@@ -438,6 +470,78 @@ _SHOT_ZONE_RX = _re.compile(
     _re.IGNORECASE,
 )
 
+# Multi-season or all-time leaders phrasing the league desk brief routes
+# to get_historical_leaders. Same hijack as _SHOT_ZONE_RX above: the
+# list-question force regexes would otherwise push these into text_to_sql
+# (~30s) before the brief runs, and the agent falls back to calling
+# get_leaders once per season. Guard both force sites so the task falls
+# through to the LLM brief, which already owns the routing.
+_HISTORICAL_RX = _re.compile(
+    r"each\s+season|every\s+season|"
+    r"since\s+(?:19|20)\d\d|"
+    r"from\s+(?:19|20)\d\d(?:\s*-\s*\d\d)?\s+to\b|"
+    r"all[\s-]*time|"
+    r"single[\s-]*season\s+campaigns?|"
+    r"year[\s-]*by[\s-]*year|"
+    r"\bWPA\b|win\s+probability\s+added|"
+    r"zone\s+(efficiency|deltas?)|efficiency\s+(by|per|across)\s+zone|"
+    r"vs\.?\s+(league|average)|versus\s+(league|average)|"
+    r"beat\s+(league\s+)?average|"
+    r"historical\s+leaders?|leaders?\s+since|"
+    r"prior[\s-]*informed|RAPM\s+prior",
+    _re.IGNORECASE,
+)
+
+
+# Single-stat leaders phrasing the league brief routes to get_leaders.
+# The list-question force regex below would otherwise hijack these into
+# text_to_sql (~30s) before the brief runs, and summaries omit per-game
+# numbers. Check this before the list force so the task goes to the
+# purpose-built tool with both totals and per-game rows.
+_LEADERS_PHRASE_RX = _re.compile(
+    r"leads?\s+the\s+league\s+in\b|"
+    r"most\s+.+?\s+per\s+game|"
+    r"scoring\s+title|"
+    r"leaders?\s+in\b",
+    _re.IGNORECASE,
+)
+
+_LEADERS_STAT_PATTERNS: tuple[tuple[str, str], ...] = (
+    (r"offensive\s*reb", "OREB"),
+    (r"defensive\s*reb", "DREB"),
+    (r"field\s*goal\s*(pct|percent|%)|fg\s*(pct|%)|\befg\b", "FG_PCT"),
+    (r"three\s*point\s*(pct|percent|%)|3\s*point\s*(pct|%)|fg3\s*(pct|%)", "FG3_PCT"),
+    (r"free\s*throw\s*(pct|percent|%)|ft\s*(pct|%)", "FT_PCT"),
+    (r"three\s*point(ers?|s)?|3\s*point(ers?|s)?|\bthrees\b|fg3m\b", "FG3M"),
+    (r"free\s*throws?\s*made|\bftm\b", "FTM"),
+    (r"free\s*throws?\s*attempt|\bfta\b", "FTA"),
+    (r"rebounds?|boards?|\breb\b|\brpg\b", "REB"),
+    (r"assists?|dimes?|\bast\b|\bapg\b", "AST"),
+    (r"steals?|\bstl\b|\bspg\b", "STL"),
+    (r"blocks?|\bblk\b|\bbpg\b", "BLK"),
+    (r"points?|scoring|\bpts\b|\bppg\b", "PTS"),
+    (r"turnovers?|\btov\b", "TOV"),
+    (r"minutes?|\bmpg\b|\bmin\b", "MIN"),
+    (r"triple\s*doubles?|\btd3\b", "TD3"),
+    (r"double\s*doubles?|\bdd2\b", "DD2"),
+    (r"efficiency|\beff\b", "EFF"),
+    (r"usage|\busg\b", "USG_PCT"),
+    (r"fouls?|\bpf\b", "PF"),
+    (r"\bpie\b", "PIE"),
+)
+
+
+def _leaders_category(task: str) -> str | None:
+    t = task or ""
+    if _re.search(r"scoring\s+title", t, _re.IGNORECASE):
+        return "PTS"
+    if not _LEADERS_PHRASE_RX.search(t):
+        return None
+    for pat, cat in _LEADERS_STAT_PATTERNS:
+        if _re.search(pat, t, _re.IGNORECASE):
+            return cat
+    return None
+
 
 def _desk_spec(name: str, task: str):
     """Shared desk configuration: (desk, brief, tool_names, force_tool).
@@ -448,6 +552,7 @@ def _desk_spec(name: str, task: str):
     if name == "delegate_scout":
         return ("scout", SCOUT_BRIEF,
                  ["resolve_entity", "search_nba", "get_player_intel", "get_raptor_history",
+                  "get_rapm_prior", "get_wpa_leaders", "get_zone_deltas",
                   "get_impact_estimate",
                   "get_on_off", "get_wowy", "get_four_factors",
                   "get_last_x", "get_percentiles", "get_shot_zones",
@@ -477,15 +582,25 @@ def _desk_spec(name: str, task: str):
                  "get_matchup_preview",
                  "get_game_prediction",
                  "get_scout_pack", "get_rotation_check", "get_cap_ledger",
-                 "get_team_splits", "get_injury_impact", "run_python",
+                 "get_team_splits", "get_injury_impact", "search_game_logs",
+                 "run_python",
                  "text_to_sql"],
                 force)
     if name == "delegate_league":
         force = None
-        if _re.search(r"playoff|champion|finals|\bring\b|title",
-                       task, _re.IGNORECASE):
+        _leaders_cat = (
+            _leaders_category(task)
+            if (not _SHOT_ZONE_RX.search(task)
+                and not _HISTORICAL_RX.search(task))
+            else None
+        )
+        if _leaders_cat:
+            force = ("get_leaders", {"stat_category": _leaders_cat})
+        elif _re.search(r"playoff|champion|finals|\bring\b|title",
+                        task, _re.IGNORECASE):
             force = "get_playoffs"
         elif (not _SHOT_ZONE_RX.search(task)
+              and not _HISTORICAL_RX.search(task)
               and _re.search(
                   r"which\s+(players|teams)|what\s+(players|teams)|"
                   r"top\s+\d+|\bunder\s+\d+|\bover\s+\d+|\bage\b|"
@@ -506,6 +621,10 @@ def _desk_spec(name: str, task: str):
                  "get_trade_value",
                  "get_award_race",
                  "get_team_shot_zones",
+                 "get_historical_leaders",
+                 "get_zone_deltas",
+                 "get_wpa_leaders",
+                 "get_rapm_prior",
                  "get_warehouse_freshness",
                  "get_today", "get_morning_briefing",
                  "run_python", "text_to_sql"],

@@ -2723,6 +2723,464 @@ def gen_rotation(rng, ctx) -> tuple[Task, GroundTruth]:
     raise SkipTask("no team with a gradeable rotation variant")
 
 
+# ---------------------------------------------------------------------------
+# historical_leaders family: mirrors get_historical_leaders exactly
+# (end-year seasons clamped to 2015..2025, GP>=20 qualification, per-game
+# values rounded to 1dp, leaders mode = top-1 per season, best mode =
+# top campaigns across the range). Ground truth reads the warehouse
+# directly and never imports app.tools (anti-circularity).
+# ---------------------------------------------------------------------------
+
+_HIST_CATS = ["PTS", "REB", "AST", "STL", "BLK"]
+
+
+def _hist_top(col: str, lo: int, hi: int, limit: int) -> list[dict]:
+    return _qd(
+        f"SELECT player_name, team_abbreviation, season, gp, {col} AS value "
+        "FROM silver_hist_player_seasons WHERE season BETWEEN ? AND ? "
+        f"AND gp >= 20 AND {col} IS NOT NULL "
+        f"ORDER BY {col} DESC LIMIT {limit}",
+        [lo, hi])
+
+
+def gen_historical_leaders(rng, ctx) -> tuple[Task, GroundTruth]:
+    if "silver_hist_player_seasons" not in _tables():
+        raise SkipTask("no history player seasons in warehouse")
+    cat = rng.choice(_HIST_CATS)
+    col = cat.lower()
+    lo = rng.randint(2015, 2023)
+    hi = min(2025, lo + rng.randint(1, 3))
+    variant = rng.choice(["leaders", "best"])
+    tid = ctx["task_id"]
+    if variant == "leaders":
+        seasons = []
+        for year in range(lo, hi + 1):
+            top = _hist_top(col, year, year, 1)
+            if not top:
+                raise SkipTask(f"no {cat} coverage for season {year}")
+            seasons.append(top[0])
+        facts: dict = {"names": {
+            f"leader_{r['season']}": r["player_name"] for r in seasons}}
+        for r in seasons:
+            facts[f"value_{r['season']}"] = round(float(r["value"]), 1)
+        task = Task(
+            task_id=tid, family="historical_leaders",
+            question=(f"Who led the league in {cat} per game in each "
+                      f"season from {lo} to {hi} (end-years)? Name each "
+                      f"season's leader and his average."),
+            entities=[r["player_name"] for r in seasons],
+            gold_tool_families=["historical_leaders"],
+            timeout_s=ctx["timeout_s"], seed=ctx["seed"],
+        )
+        truth = GroundTruth(
+            task_id=tid, facts=facts, computed_at=_now(),
+            source="warehouse via silver_hist_player_seasons "
+                   "(same per-season leaders as get_historical_leaders)",
+        )
+        return task, truth
+    top = _hist_top(col, lo, hi, 3)
+    if len(top) < 3:
+        raise SkipTask(f"too few {cat} campaigns in range")
+    facts = {"names": {f"campaign_{i}": r["player_name"]
+                       for i, r in enumerate(top, 1)}}
+    for i, r in enumerate(top, 1):
+        facts[f"campaign_{i}_value"] = round(float(r["value"]), 1)
+        facts[f"campaign_{i}_season"] = r["season"]
+    task = Task(
+        task_id=tid, family="historical_leaders",
+        question=(f"What are the top 3 single-season {cat} per-game "
+                  f"campaigns from {lo} to {hi} (end-years)? Name each "
+                  f"player, his season, and his average."),
+        entities=[r["player_name"] for r in top],
+        gold_tool_families=["historical_leaders"],
+        timeout_s=ctx["timeout_s"], seed=ctx["seed"],
+    )
+    truth = GroundTruth(
+        task_id=tid, facts=facts, computed_at=_now(),
+        source="warehouse via silver_hist_player_seasons "
+               "(same single-season best as get_historical_leaders)",
+    )
+    return task, truth
+
+
+# ---------------------------------------------------------------------------
+# zone_deltas family: mirrors get_zone_deltas' pipeline exactly (five-zone
+# geometric taxonomy over silver_hist_shots x_legacy/y_legacy plus
+# shot_value; made = shot_result 'Made'; per-zone FG% vs pooled league FG%
+# for the same end-year season; pp deltas round(x, 2); 50-attempt floor;
+# rows sorted by delta desc). Season is sampled from 2023..2025 because the
+# tool clamps end-years to 2010..2025. The warehouse stores surnames only,
+# so the player is named through the nba_api static id table (the same
+# upstream source the streak family uses). Quoting the tool's best zone is
+# the right play.
+# ---------------------------------------------------------------------------
+
+_ZONE_DELTA_FLOOR = 50
+_ZONE_DELTA_KEYS = ("rim", "short_mid", "long_mid", "corner_3", "atb_3")
+
+_ZONE_DELTA_CTE = """
+WITH z AS (
+    SELECT person_id,
+           CASE
+             WHEN COALESCE(x_legacy * x_legacy + y_legacy * y_legacy,
+                          99999999) < 6400 THEN 'rim'
+             WHEN shot_value = 3 AND ABS(x_legacy) >= 220 THEN 'corner_3'
+             WHEN shot_value = 3 THEN 'atb_3'
+             WHEN COALESCE(x_legacy * x_legacy + y_legacy * y_legacy,
+                          99999999) < 19600 THEN 'short_mid'
+             ELSE 'long_mid'
+           END AS zone,
+           CASE WHEN LOWER(shot_result) = 'made' THEN 1 ELSE 0 END AS made
+    FROM silver_hist_shots WHERE season = ?%s
+)
+SELECT zone, COUNT(*) AS fga, SUM(made) AS fgm FROM z GROUP BY zone
+"""
+
+_ZONE_DELTA_LABELS = {
+    "rim": "at the rim",
+    "short_mid": "from short midrange",
+    "long_mid": "from long midrange",
+    "corner_3": "from the corner three",
+    "atb_3": "from above-the-break three",
+}
+
+
+def _zone_delta_rows(year: int, person_id: int | None = None) -> dict:
+    if person_id is None:
+        return {r["zone"]: (int(r["fga"]), int(r["fgm"]))
+                for r in _qd(_ZONE_DELTA_CTE % "", [year])}
+    return {r["zone"]: (int(r["fga"]), int(r["fgm"]))
+            for r in _qd(_ZONE_DELTA_CTE % " AND person_id = ?",
+                         [year, person_id])}
+
+
+def gen_zone_deltas(rng, ctx) -> tuple[Task, GroundTruth]:
+    year = rng.choice([2023, 2024, 2025])
+    label = f"{year - 1}-{str(year)[-2:]}"
+    cands = _q("SELECT person_id, COUNT(*) AS c FROM silver_hist_shots "
+               "WHERE season = ? AND person_id IS NOT NULL "
+               "GROUP BY person_id ORDER BY c DESC LIMIT 25", [year])
+    if not cands:
+        raise SkipTask(f"no shot rows for season {year}")
+    names = _static_player_names()
+    order = list(cands)
+    rng.shuffle(order)
+    for pid, _ in order:
+        try:
+            pid = int(pid)
+        except (TypeError, ValueError):
+            continue
+        name = names.get(pid)
+        if not name:
+            continue
+        mine = _zone_delta_rows(year, pid)
+        if sum(fga for fga, _ in mine.values()) == 0:
+            continue
+        base = _zone_delta_rows(year)
+        rows = []
+        for key in _ZONE_DELTA_KEYS:
+            fga, fgm = mine.get(key, (0, 0))
+            if fga < _ZONE_DELTA_FLOOR:
+                continue
+            bfga, bfgm = base.get(key, (0, 0))
+            if not bfga:
+                continue
+            fg = fgm / fga
+            lg = bfgm / bfga
+            rows.append({"zone": key, "attempts": fga,
+                         "fg_pct": round(fg, 3),
+                         "league_fg_pct": round(lg, 3),
+                         "delta_pp": round((fg - lg) * 100, 2)})
+        if len(rows) < 2:
+            continue
+        rows.sort(key=lambda r: r["delta_pp"], reverse=True)
+        top = rows[0]
+        if sum(1 for r in rows
+               if r["delta_pp"] == top["delta_pp"]) > 1:
+            continue  # tied best delta is ungradeable
+        tid = ctx["task_id"]
+        task = Task(
+            task_id=tid, family="zone_deltas",
+            question=(f"Where does {name} beat league average by the most "
+                      f"in {label}? Name the shooting zone, his FG% edge "
+                      f"in percentage points, and his attempts there."),
+            entities=[name], gold_tool_families=["zone_deltas"],
+            timeout_s=ctx["timeout_s"], seed=ctx["seed"],
+        )
+        truth = GroundTruth(
+            task_id=tid,
+            facts={"names": {"player": name, "best_zone": top["zone"]},
+                   "best_delta_pp": top["delta_pp"],
+                   "best_attempts": top["attempts"],
+                   "best_fg_pct": top["fg_pct"],
+                   "league_fg_pct": top["league_fg_pct"]},
+            computed_at=_now(),
+            source="sportsdataverse via silver_hist_shots "
+                   "(same zone taxonomy plus pp deltas as get_zone_deltas)",
+        )
+        return task, truth
+    raise SkipTask(f"no gradeable zone-delta player for season {year}")
+
+
+# ---------------------------------------------------------------------------
+# wpa family: mirrors get_wpa_leaders exactly (end-year seasons 2021..2025,
+# one deduped event per (game_id, action_number) preferring the row with
+# an action_type, forward-filled score state per game, fitted WP
+# sigmoid(B0+B1*lead/sqrt(sec+360)) before/after each event credited to
+# the acting player from his team's perspective, 100-event floor, WPA
+# rounded to 3dp). Pure-math replica over warehouse reads; never imports
+# app.tools (anti-circularity).
+# ---------------------------------------------------------------------------
+
+_WPA_B0 = 0.159694
+_WPA_B1 = 5.853395
+_WPA_SMOOTH = 360.0
+_WPA_TIPOFF = 2880.0
+_WPA_FLOOR = 100
+
+
+def _wpa_prob(lead: float, sec: float) -> float:
+    import math as _m
+    z = _WPA_B0 + _WPA_B1 * float(lead) / _m.sqrt(max(0.0, float(sec)) + _WPA_SMOOTH)
+    if z >= 0:
+        return 1.0 / (1.0 + _m.exp(-z))
+    e = _m.exp(z)
+    return e / (1.0 + e)
+
+
+def _wpa_sec(clock, period) -> float | None:
+    try:
+        s = str(clock)
+        if not s.startswith("PT") or not s.endswith("S"):
+            return None
+        m = s.index("M")
+        left = int(s[2:m]) * 60.0 + float(s[m + 1:-1])
+    except (ValueError, AttributeError):
+        return None
+    try:
+        p = int(period)
+    except (TypeError, ValueError):
+        return None
+    if p < 1:
+        return None
+    if p <= 4:
+        return left + 720.0 * (4 - p)
+    return left
+
+
+def _wpa_table(year: int) -> list[dict]:
+    from collections import Counter as _C
+    label = f"{year - 1}-{str(year)[-2:]}"
+    rows = _qd(
+        "SELECT game_id, action_number, clock, period, team_tricode,"
+        " person_id, player_name, location, score_home, score_away,"
+        " action_type FROM silver_hist_pbp WHERE _season = ?"
+        " ORDER BY game_id, action_number",
+        [label])
+    players: dict = {}
+    game = None
+    grows: list = []
+    for row in rows:
+        if isinstance(row, dict):
+            row = (row.get("game_id"), row.get("action_number"),
+                   row.get("clock"), row.get("period"),
+                   row.get("team_tricode"), row.get("person_id"),
+                   row.get("player_name"), row.get("location"),
+                   row.get("score_home"), row.get("score_away"),
+                   row.get("action_type"))
+        if row[0] != game:
+            if grows:
+                _wpa_score_game(str(game), grows, players)
+            game, grows = row[0], [row]
+        else:
+            grows.append(row)
+    if grows:
+        _wpa_score_game(str(game), grows, players)
+    out = []
+    try:
+        from nba_api.stats.static import players as _static
+        _full = {str(p.get("id")): str(p.get("full_name"))
+                 for p in _static.get_players()}
+    except Exception:
+        _full = {}
+    for key, entry in players.items():
+        if entry["events"] < _WPA_FLOOR:
+            continue
+        out.append({"name": _full.get(str(key), entry["player"]),
+                    "wpa": round(entry["wpa"], 3)})
+    out.sort(key=lambda r: r["wpa"], reverse=True)
+    return out
+
+
+def _wpa_score_game(gid: str, grows: list, players: dict) -> None:
+    from collections import Counter as _C
+    votes: dict = {}
+    for row in grows:
+        if (row[7] or "") == "h" and row[4]:
+            votes[str(row[4])] = votes.get(str(row[4]), 0) + 1
+    if not votes:
+        return
+    home = max(votes, key=lambda k: votes[k])
+    seen: dict = {}
+    for row in grows:
+        an = row[1]
+        if an not in seen:
+            seen[an] = row
+        elif not seen[an][10] and row[10]:
+            seen[an] = row
+    lead_home, lead_away = 0, 0
+    before = _wpa_prob(0, _WPA_TIPOFF)
+    for an in sorted(seen):
+        evt = seen[an]
+        try:
+            lead_home = int(str(evt[8]))
+        except (TypeError, ValueError):
+            pass
+        try:
+            lead_away = int(str(evt[9]))
+        except (TypeError, ValueError):
+            pass
+        sec = _wpa_sec(evt[2], evt[3])
+        if sec is None:
+            continue
+        after = _wpa_prob(lead_home - lead_away, sec)
+        delta = after - before
+        before = after
+        pid, name, loc, tri = evt[5], evt[6], evt[7] or "", evt[4] or ""
+        if not pid or not name:
+            continue
+        if loc == "h":
+            is_home = True
+        elif loc == "v":
+            is_home = False
+        elif tri:
+            is_home = tri == home
+        else:
+            continue
+        signed = delta if is_home else -delta
+        key = str(pid)
+        entry = players.setdefault(key, {"player": name, "wpa": 0.0,
+                                         "events": 0})
+        entry["wpa"] += signed
+        entry["events"] += 1
+
+
+def gen_wpa(rng, ctx) -> tuple[Task, GroundTruth]:
+    if "silver_hist_pbp" not in _tables():
+        raise SkipTask("no play-by-play in warehouse")
+    year = rng.choice([2023, 2024, 2025])
+    label = f"{year - 1}-{str(year)[-2:]}"
+    table = _wpa_table(year)
+    if len(table) < 3:
+        raise SkipTask(f"too few WPA qualifiers for season {year}")
+    top3 = table[:3]
+    if top3[2]["wpa"] == table[3]["wpa"]:
+        raise SkipTask("tied third-place WPA is ungradeable")
+    facts: dict = {"names": {f"wpa_{i}": r["name"]
+                             for i, r in enumerate(top3, 1)}}
+    for i, r in enumerate(top3, 1):
+        facts[f"wpa_{i}_value"] = r["wpa"]
+    tid = ctx["task_id"]
+    task = Task(
+        task_id=tid, family="wpa",
+        question=(f"Who leads the {label} season in win probability added "
+                  f"(WPA) by play? Name the top 3 and each player's WPA."),
+        entities=[r["name"] for r in top3],
+        gold_tool_families=["wpa"],
+        timeout_s=ctx["timeout_s"], seed=ctx["seed"],
+    )
+    truth = GroundTruth(
+        task_id=tid, facts=facts, computed_at=_now(),
+        source="warehouse via silver_hist_pbp "
+               "(same actor-perspective WPA pipeline as get_wpa_leaders)",
+    )
+    return task, truth
+
+
+# ---------------------------------------------------------------------------
+# rapm_prior family: mirrors get_rapm_prior exactly (current-season
+# silver_rapm plus silver_rapm_prior labels 2021-22..2024-25, pid pinned
+# via the tool's LOWER(name) LIKE plus CAST(player_id) match, estimate =
+# round(possession-weighted mean, 2)). Quoting the tool is the right play.
+# ---------------------------------------------------------------------------
+
+_RAPM_PRIOR_LABELS = ["2021-22", "2022-23", "2023-24", "2024-25"]
+
+
+def gen_rapm_prior(rng, ctx) -> tuple[Task, GroundTruth]:
+    if "silver_rapm_prior" not in _tables():
+        raise SkipTask("no rapm priors in warehouse")
+    cands = _q("SELECT player_id, name, COUNT(*) FROM silver_rapm_prior "
+               "GROUP BY player_id, name HAVING COUNT(*) >= 3")
+    if not cands:
+        raise SkipTask("no rapm-prior player with 3+ seasons")
+    order = list(cands)
+    rng.shuffle(order)
+    placeholders = ", ".join("?" * len(_RAPM_PRIOR_LABELS))
+    for _pid, _name in [(r[0], r[1]) for r in order]:
+        like = f"%{str(_name or '').lower()}%"
+        cur = _q("SELECT player_id, name, rapm, possessions FROM silver_rapm "
+                 "WHERE _season = ? AND LOWER(name) LIKE ? "
+                 "ORDER BY possessions DESC LIMIT 1", [SEASON, like])
+        curd = ({"player_id": str(cur[0][0]), "name": cur[0][1],
+                 "rapm": cur[0][2], "possessions": cur[0][3] or 0,
+                 "season": SEASON} if cur else None)
+        if curd is not None:
+            pid = str(curd["player_id"])
+        else:
+            top = _q("SELECT player_id FROM silver_rapm_prior "
+                     f"WHERE LOWER(name) LIKE ? AND _season IN ({placeholders}) "
+                     "ORDER BY possessions DESC LIMIT 1",
+                     [like, *_RAPM_PRIOR_LABELS])
+            if not top:
+                continue
+            pid = str(top[0][0])
+        prior_rows = _q("SELECT player_id, name, rapm, possessions, _season "
+                        "FROM silver_rapm_prior "
+                        f"WHERE LOWER(name) LIKE ? AND _season IN ({placeholders}) "
+                        "AND CAST(player_id AS VARCHAR) = CAST(? AS VARCHAR) "
+                        "ORDER BY _season",
+                        [like, *_RAPM_PRIOR_LABELS, pid])
+        priors = [{"player_id": str(r[0]), "name": r[1], "rapm": r[2],
+                   "possessions": r[3] or 0, "season": r[4]}
+                  for r in prior_rows]
+        if curd is None and not priors:
+            continue
+        if len(priors) < 3:
+            continue
+        parts = ([curd] if curd else []) + priors
+        weighted = [(float(p["rapm"]), int(p["possessions"])) for p in parts
+                    if p.get("rapm") is not None
+                    and (p.get("possessions") or 0) > 0]
+        if not weighted:
+            continue
+        total = sum(w for _, w in weighted)
+        estimate = round(sum(r * w for r, w in weighted) / total, 2)
+        head = curd or (priors[-1] if priors else {})
+        name = head.get("name") or _name
+        facts: dict = {"names": {"player": name}, "estimate": estimate,
+                       "total_possessions": total}
+        if curd is not None:
+            facts["current_rapm"] = curd["rapm"]
+            facts["current_poss"] = int(curd["possessions"] or 0)
+        tid = ctx["task_id"]
+        task = Task(
+            task_id=tid, family="rapm_prior",
+            question=f"What is {name}'s prior-informed RAPM estimate? "
+                     f"Give the estimate, the current-season RAPM, and total "
+                     f"possessions behind it.",
+            entities=[name], gold_tool_families=["rapm_prior"],
+            timeout_s=ctx["timeout_s"], seed=ctx["seed"],
+        )
+        truth = GroundTruth(
+            task_id=tid, facts=facts, computed_at=_now(),
+            source="rapm-lite via silver_rapm plus silver_rapm_prior "
+                   "(same possession-weighted mean as get_rapm_prior)",
+        )
+        return task, truth
+    raise SkipTask("no gradeable rapm-prior player found")
+
+
 GENERATORS = {
     "lookup": gen_lookup,
     "compare": gen_compare,
@@ -2745,4 +3203,8 @@ GENERATORS = {
     "gamelog": gen_gamelog,
     "elo": gen_elo,
     "rotation": gen_rotation,
+    "historical_leaders": gen_historical_leaders,
+    "zone_deltas": gen_zone_deltas,
+    "wpa": gen_wpa,
+    "rapm_prior": gen_rapm_prior,
 }

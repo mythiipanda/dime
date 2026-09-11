@@ -320,3 +320,78 @@ def list_runs(thread: str) -> list[dict]:
         return out
     finally:
         con.close()
+
+
+def compact_thread(thread: str, keep_recent: int = 4,
+                   threshold: int = 12) -> dict:
+    """Fold old turns of a thread into one summary memo row.
+
+    When the thread holds more than `threshold` rows, the oldest rows
+    (all but the newest `keep_recent`) are summarized by the cheapest
+    configured LLM into entities, Q&A pairs, and open items. The
+    summarized rows are deleted and replaced with a single
+    role='summary' row prefixed 'THREAD SUMMARY: '. Prior memo rows
+    age into the summarized set, so a second compact folds the old
+    memo into the new one instead of losing it. LLM failure leaves
+    history untouched and reports compacted False.
+    """
+    con = connect()
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        if "chat_history" not in tables:
+            return {"compacted": False, "kept": 0, "dropped": 0}
+        rows = con.execute(
+            """SELECT rowid, role, text FROM chat_history
+            WHERE thread = ? ORDER BY created_at, rowid""",
+            [thread],
+        ).fetchall()
+    finally:
+        con.close()
+    if len(rows) <= threshold:
+        return {"compacted": False, "kept": len(rows), "dropped": 0}
+    keep = rows[-keep_recent:] if keep_recent > 0 else []
+    older = rows[:len(rows) - len(keep)]
+    transcript = "\n".join(
+        f"{r[1]}: {(r[2] or '')[:1000]}" for r in older
+    )
+    try:
+        from .providers import get_llm, resolve_model_id
+        from langchain_core.messages import HumanMessage, SystemMessage
+
+        primary, model = resolve_model_id(None)
+        client = get_llm(primary, model)
+        if client is None:
+            return {"compacted": False, "kept": len(rows), "dropped": 0}
+        resp = client.invoke([
+            SystemMessage(content="You compress chat threads into short memos."),
+            HumanMessage(content=(
+                "Summarize these older chat turns for an NBA analyst "
+                "assistant. Produce three sections: entities discussed, "
+                "Q&A pairs (question plus one-line answer each), "
+                "open/unresolved items. Keep every entity name and number. "
+                "Be concise.\n\n" + transcript
+            )),
+        ])
+        memo = str(getattr(resp, "content", "") or "").strip()
+        if not memo:
+            return {"compacted": False, "kept": len(rows), "dropped": 0}
+    except Exception:
+        return {"compacted": False, "kept": len(rows), "dropped": 0}
+    con = connect()
+    try:
+        with write_guard():
+            from datetime import datetime, timezone
+
+            ids = [r[0] for r in older]
+            con.execute(
+                "DELETE FROM chat_history WHERE rowid IN (%s)"
+                % ",".join(["?"] * len(ids)), ids,
+            )
+            con.execute(
+                "INSERT INTO chat_history VALUES (?,?,?,?)",
+                [thread, "summary", ("THREAD SUMMARY: " + memo)[:4000],
+                 datetime.now(timezone.utc).isoformat()],
+            )
+    finally:
+        con.close()
+    return {"compacted": True, "kept": len(keep), "dropped": len(older)}

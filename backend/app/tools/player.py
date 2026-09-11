@@ -198,19 +198,20 @@ async def get_compare(
 
         async def _invoke(label: str, subtool: Any,
                           args: dict[str, Any]) -> Any:
-            try:
-                return await subtool.ainvoke(args)
-            except Exception as exc:  # noqa: BLE001 - transient sub-call, retry
-                _logger.warning(
-                    "get_compare sub-call %s failed for %s; retrying: %r",
-                    label, who, exc)
-            try:
-                return await subtool.ainvoke(args)
-            except Exception as exc:  # noqa: BLE001 - surfaced in sub_errors
-                _logger.warning(
-                    "get_compare sub-call %s failed twice for %s: %r",
-                    label, who, exc)
-                return exc
+            last: Exception | None = None
+            for attempt in range(4):
+                try:
+                    return await subtool.ainvoke(args)
+                except Exception as exc:  # noqa: BLE001 - transient contention
+                    last = exc
+                    _logger.warning(
+                        "get_compare sub-call %s failed for %s (try %d/4): %r",
+                        label, who, attempt + 1, exc)
+                    await _asyncio.sleep(0.2 * (attempt + 1))
+            _logger.warning(
+                "get_compare sub-call %s failed 4 times for %s: %r",
+                label, who, last)
+            return last
 
         results = await _asyncio.gather(
             *(_invoke(k, t, a) for k, (t, a) in job_defs.items()))

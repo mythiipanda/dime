@@ -245,9 +245,7 @@ def get_leaders(stat_category: str = "PTS", season: str = SEASON) -> dict[str, A
     )
     meta["stat_category"] = stat_category
     try:
-        from .. import store as _store
-
-        total = len(_store.read_frame(table, "_season = ?", [season]))
+        total = int(meta.get("rows") or len(rows) or 0)
         for r in rows:
             rank = r.get("RANK") or 0
             if rank and total:
@@ -773,6 +771,31 @@ def _allowed_incoming(outgoing: int, over_apron1: bool) -> tuple[int, str]:
     return int(outgoing * 1.25 + 250_000), "125pct plus 250k below first apron"
 
 
+def _salary_vintage(con: object = None) -> tuple[str, int, str | None]:
+    """Stored salary vintage: (season, rows, fetched_at) from silver_salaries."""
+    from .. import store as _store
+
+    own = con is None
+    if own:
+        con = _store.connect()
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        if "silver_salaries" not in tables:
+            return "", 0, None
+        row = con.execute(
+            "SELECT _season, COUNT(*), MAX(_fetched_at) FROM silver_salaries "
+            "GROUP BY _season ORDER BY COUNT(*) DESC LIMIT 1"
+        ).fetchone()
+        if not row:
+            return "", 0, None
+        return str(row[0] or ""), int(row[1] or 0), row[2]
+    except Exception:
+        return "", 0, None
+    finally:
+        if own:
+            con.close()
+
+
 def _payroll_source(con: object = None) -> str:
     from .. import store as _store
 
@@ -782,9 +805,11 @@ def _payroll_source(con: object = None) -> str:
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if "silver_salaries" in tables:
-            n = con.execute("SELECT COUNT(*) FROM silver_salaries").fetchone()[0]
-            if n > 300:
-                return "basketball-reference contracts (real 2026-27 salaries)"
+            season, n, fetched = _salary_vintage(con)
+            if n > 300 and season:
+                date = f", fetched {str(fetched)[:10]}" if fetched else ""
+                return (f"basketball-reference contracts "
+                        f"(real {season} salaries{date})")
     finally:
         if own:
             con.close()
@@ -828,6 +853,7 @@ def get_cap_ledger(team: str = "") -> dict[str, Any]:
         total, players = _payroll(team, con)
         source = _payroll_source(con)
         salary_date = _salary_date(con)
+        season, _, _ = _salary_vintage(con)
     finally:
         con.close()
     return {"tool": "get_cap_ledger", "ok": True,
@@ -836,7 +862,7 @@ def get_cap_ledger(team: str = "") -> dict[str, Any]:
                                        reverse=True)[:15],
                      "room_under_apron2": CAP["apron2"] - total,
                      "over_tax": total > CAP["tax"]},
-            "meta": {"source": source, "season": "2026-27",
+            "meta": {"source": source, "season": season or "2026-27",
                      "salary_date": salary_date,
                      **{k: v for k, v in CAP.items()}}}
 
@@ -1517,6 +1543,53 @@ _SQL_TABLES = [
 RERUN_ROW_CAP = 25
 RERUN_TIMEOUT_S = 30
 
+_SCHEMA_TTL_S = 3600.0
+_schema_cache: dict[str, object] = {"at": 0.0, "present": [], "cols": {}}
+_schema_cache_stats: dict[str, int] = {"hits": 0, "misses": 0}
+
+
+def _clear_warehouse_schema_cache() -> None:
+    _schema_cache["at"] = 0.0
+    _schema_cache["present"] = []
+    _schema_cache["cols"] = {}
+    _schema_cache_stats["hits"] = 0
+    _schema_cache_stats["misses"] = 0
+
+
+def _warehouse_schema_cache_info() -> dict[str, float]:
+    return {"hits": _schema_cache_stats["hits"],
+            "misses": _schema_cache_stats["misses"],
+            "at": _schema_cache["at"]}
+
+
+def _get_warehouse_schema() -> tuple[list[str], dict[str, list[str]]]:
+    import time as _time
+
+    from .. import store as _store
+
+    now = _time.monotonic()
+    at = float(_schema_cache.get("at") or 0.0)
+    if now - at < _SCHEMA_TTL_S and _schema_cache.get("present"):
+        _schema_cache_stats["hits"] += 1
+        return (list(_schema_cache["present"]),  # type: ignore[arg-type]
+                {k: list(v) for k, v in  # type: ignore[attr-defined]
+                 _schema_cache["cols"].items()})  # type: ignore[attr-defined]
+    _schema_cache_stats["misses"] += 1
+    con = _store.connect()
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        present = [t for t in _SQL_TABLES if t in tables]
+        cols: dict[str, list[str]] = {}
+        for t in present:
+            cols[t] = [r[1] for r in
+                       con.execute(f"PRAGMA table_info({t})").fetchall()][:40]
+    finally:
+        con.close()
+    _schema_cache["at"] = now
+    _schema_cache["present"] = present
+    _schema_cache["cols"] = cols
+    return (list(present), {k: list(v) for k, v in cols.items()})
+
 import re as _re_mod
 
 
@@ -1556,44 +1629,10 @@ async def text_to_sql(question: str) -> dict[str, Any]:
     from .. import store as _store
     from ..providers import invoke_with_fallback
 
-    allowed = _SQL_TABLES
-    con = _store.connect()
-    try:
-        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
-        present = [t for t in allowed if t in tables]
-        cols: dict[str, list[str]] = {}
-        for t in present:
-            cols[t] = [f"{r[1]} {r[2]}" for r in
-                       con.execute(f"PRAGMA table_info({t})").fetchall()][:20]
-    finally:
-        con.close()
+    present, cols = _get_warehouse_schema()
     if not present:
         return {"tool": "text_to_sql", "ok": False, "error": "warehouse empty"}
-    qtokens = set(_re.findall(r"[a-z]+", question.lower()))
-    syn = {"points": {"pts"}, "assists": {"ast"}, "rebounds": {"reb"},
-           "steals": {"stl"}, "blocks": {"blk"}, "streak": {"game_date"},
-           "games": {"game_date", "gp"}, "season": {"season", "_season"},
-           "player": {"player"}, "team": {"team"},
-           "draft": {"draft"}, "salary": {"salary"}, "payroll": {"salary"}}
-    expanded = set(qtokens)
-    for tok in qtokens:
-        expanded |= syn.get(tok, set())
-
-    def _tabscore(t: str) -> tuple[int, int]:
-        parts = set(_re.findall(r"[a-z]+", t.lower()))
-        cols_l = [c.lower() for c in cols[t]]
-        hit_t = len(parts & expanded)
-        hit_c = sum(1 for c in cols_l
-                    if set(_re.findall(r"[a-z]+", c)) & expanded)
-        return (hit_t * 3 + min(hit_c, 6), -len(cols[t]))
-
-    ranked = sorted(present, key=_tabscore, reverse=True)
-    keep = set(ranked[:10])
-    for must in ("silver_player_gamelogs", "silver_standings"):
-        if must in cols:
-            keep.add(must)
-    schema = "\n".join(f"{t}: {', '.join(cols[t])}"
-                       for t in ranked if t in keep)
+    schema = _describe_warehouse_schema(cols)
     examples = (
         "\nExamples.\nQ: Thunder record this season?\n"
         "SQL: SELECT WINS, LOSSES FROM silver_standings "
@@ -1647,18 +1686,6 @@ async def text_to_sql(question: str) -> dict[str, Any]:
         "never aggregate silver_player_gamelogs for season totals.\n"
         "SQL: SELECT PLAYER, STL FROM silver_leaders_stl "
         "WHERE _season = '2025-26' ORDER BY STL DESC LIMIT 1"
-        "Q: Who has the longest 20-point game streak this season?\n"
-        "Note GAME_DATE is text like 'Apr 02, 2026'; parse with "
-        "TRY_STRPTIME(GAME_DATE, '%b %d, %Y'). Use gaps-and-islands.\n"
-        "SQL: WITH g AS (SELECT Player_ID, PTS, "
-        "TRY_STRPTIME(GAME_DATE, '%b %d, %Y') AS d "
-        "FROM silver_player_gamelogs WHERE _season = '2025-26'), "
-        "s AS (SELECT Player_ID, d, PTS, ROW_NUMBER() OVER "
-        "(PARTITION BY Player_ID ORDER BY d) - ROW_NUMBER() OVER "
-        "(PARTITION BY Player_ID, (PTS >= 20)::INT ORDER BY d) AS grp "
-        "FROM g WHERE d IS NOT NULL) SELECT Player_ID, COUNT(*) AS streak "
-        "FROM s WHERE PTS >= 20 GROUP BY Player_ID, grp "
-        "ORDER BY streak DESC LIMIT 5"
     )
     feedback = ""
     for _ in range(3):
@@ -1669,8 +1696,6 @@ async def text_to_sql(question: str) -> dict[str, Any]:
                  HumanMessage(
                       content="Write one SQLite SELECT using only these tables "
                       "and columns. Match column case exactly as listed.\n"
-                      "Always filter _season = '2025-26' unless the question "
-                      "asks about other seasons.\n"
                       "Rules. Season totals and season leaders questions MUST use "
                       "the silver_leaders_* tables directly; they hold final official "
                       "season totals. silver_player_gamelogs is an incomplete per-game "
@@ -1679,13 +1704,9 @@ async def text_to_sql(question: str) -> dict[str, Any]:
                       f"Schema:\n{schema}{examples}\nQuestion: {question}{feedback}")])
             sql = _re.sub(r"^```sql|```$", "", str(getattr(resp, "content", "") or ""),
                           flags=_re.MULTILINE).strip()
-            m = _re.search(r"(?i)\b(select|with)\b", sql)
-            if m and m.start() > 0:
-                sql = sql[m.start():].strip()
-            sql = _re.sub(r"```$", "", sql).strip()
         except Exception as exc:
             return {"tool": "text_to_sql", "ok": False, "error": str(exc)[:160]}
-        if not _re.match(r"(?i)^\s*(select|with)\b", sql) or _re.search(
+        if not _re.match(r"(?i)^\s*select\b", sql) or _re.search(
                 r"(?i)\b(insert|update|delete|drop|alter|create|pragma|attach|copy)\b", sql):
             feedback = "\nPrevious reply was not a single SELECT. Reply with SQL only."
             continue
@@ -1693,14 +1714,6 @@ async def text_to_sql(question: str) -> dict[str, Any]:
             sql = _validate_readonly_sql(sql, set(present))
         except ValueError as vexc:
             feedback = f"\nPrevious reply was rejected: {vexc}. Reply with SQL only."
-            continue
-        used = set(_re.findall(r"(?i)from\s+(\w+)|join\s+(\w+)", sql))
-        used_tables = {a or b for a, b in used}
-        ctes = set(_re.findall(r"(?i)(?:with|,)\s*(\w+)\s+as\s*\(", sql))
-        used_tables -= {c for c in ctes if c.lower() not in
-                        {t.lower() for t in present}}
-        if not used_tables or not used_tables.issubset(set(present)):
-            feedback = "\nPrevious reply used unknown tables. Use only listed tables."
             continue
         con = _store.connect()
         try:
@@ -1933,8 +1946,7 @@ def get_playoff_sim(season: str = SEASON, sims: int = 2000) -> dict[str, Any]:
 
 
 @tool
-def get_contract_value(season: str = "2025-26", min_gp: int = 20,
-                       player: str = "") -> dict[str, Any]:
+def get_contract_value(season: str = "2025-26", min_gp: int = 20) -> dict[str, Any]:
     """Contract value residuals: 2026-27 salary vs OLS prediction from per-game production. Ten most overpaid plus ten most underpaid."""
     import unicodedata as _ud
 
@@ -1989,8 +2001,8 @@ def get_contract_value(season: str = "2025-26", min_gp: int = 20,
     for r in prod:
         by_name.setdefault(_norm(r[0]), r)
     fitted = []
-    for cplayer, cteam, csal in cap:
-        r = by_name.get(_norm(cplayer))
+    for player, team, salary in cap:
+        r = by_name.get(_norm(player))
         if r is None:
             continue
         _, lteam, gp, pts, reb, ast, stl, blk, tov = r
@@ -2000,8 +2012,8 @@ def get_contract_value(season: str = "2025-26", min_gp: int = 20,
         vals = {"PTS": pts or 0, "REB": reb or 0, "AST": ast or 0,
                 "STL": stl or 0, "BLK": blk or 0, "TOV": tov or 0}
         score = sum(vals[c] / gp * use_w[c] for c in use_w)
-        fitted.append({"PLAYER": cplayer, "TEAM": cteam or lteam,
-                       "SALARY": csal or 0, "GP": gp, "SCORE": score})
+        fitted.append({"PLAYER": player, "TEAM": team or lteam,
+                       "SALARY": salary or 0, "GP": gp, "SCORE": score})
     n = len(fitted)
     if n < 2:
         return {"tool": "get_contract_value", "ok": False,
@@ -2019,48 +2031,20 @@ def get_contract_value(season: str = "2025-26", min_gp: int = 20,
         f["PREDICTED"] = int(round(slope * f["SCORE"] + intercept))
         f["RESIDUAL"] = int(f["SALARY"]) - int(f["PREDICTED"])
         f["SCORE"] = round(f["SCORE"], 2)
-    leaders = sorted(fitted, key=lambda f: f["RESIDUAL"], reverse=True)[:10]
-    laggards = sorted(fitted, key=lambda f: f["RESIDUAL"])[:10]
-    top20 = list(leaders) + list(laggards)
+    over = sorted(fitted, key=lambda f: f["RESIDUAL"], reverse=True)[:10]
+    under = sorted(fitted, key=lambda f: f["RESIDUAL"])[:10]
+    rows = over + under
     formula = ("score = PTS + 1.2*REB + 1.5*AST + 2*STL + 2*BLK - 1.5*TOV "
                "(per game); salary_hat = slope*score + intercept (OLS by hand); "
                "residual = salary - salary_hat")
-    meta = {"formula": formula, "weights": weights,
-            "missing_columns_zero_weight": missing,
-            "slope": round(slope, 2), "intercept": round(intercept, 2),
-            "n_qualified": n, "min_gp": min_gp,
-            "production_season": season, "salary_season": "2026-27",
-            "production_date": prod_date, "salary_date": cap_date,
-            "overpaid_first": True}
-    if player:
-        from ._core import coerce_player_id as _cp
-        from nba_api.stats.static import players as _sp
-
-        try:
-            _cp(player)
-        except ValueError as exc:
-            return {"tool": "get_contract_value", "ok": False,
-                    "error": str(exc)[:160]}
-        want = _norm(str(next(
-            (p.get("full_name", "") for p in _sp.get_players()
-             if _norm(p.get("full_name", "")) == _norm(player)), player)))
-        hit = next((f for f in fitted if _norm(f["PLAYER"]) == want), None)
-        if hit is not None:
-            return {"tool": "get_contract_value", "ok": True,
-                    "rows": [hit], "meta": {**meta, "player": hit["PLAYER"]}}
-        gp_note = ""
-        try:
-            prow = by_name.get(want)
-            if prow is not None:
-                gp_note = (f" Excluded by the {min_gp}-game minimum"
-                           f" ({prow[2] or 0} GP).")
-        except Exception:
-            pass
-        return {"tool": "get_contract_value", "ok": True, "rows": [],
-                "meta": {**meta, "player": player,
-                         "note": f"No qualified row for {player}." + gp_note}}
-    return {"tool": "get_contract_value", "ok": True, "rows": top20,
-            "meta": meta}
+    return {"tool": "get_contract_value", "ok": True, "rows": rows,
+            "meta": {"formula": formula, "weights": weights,
+                     "missing_columns_zero_weight": missing,
+                     "slope": round(slope, 2), "intercept": round(intercept, 2),
+                     "n_qualified": n, "min_gp": min_gp,
+                     "production_season": season, "salary_season": "2026-27",
+                     "production_date": prod_date, "salary_date": cap_date,
+                     "overpaid_first": True}}
 
 
 @tool
@@ -2326,9 +2310,13 @@ FRESHNESS_RULES: dict[str, tuple[str, float | None]] = {
     "silver_leaders_reb": ("daily in season", 36 * 3600),
     "silver_leaders_stl": ("daily in season", 36 * 3600),
     "silver_leaders_blk": ("daily in season", 36 * 3600),
+    "silver_leaders_dreb": ("daily in season", 36 * 3600),
+    "silver_leaders_fg_pct": ("daily in season", 36 * 3600),
     "silver_player_gamelogs": ("daily in season", 36 * 3600),
     "silver_team_games": ("daily in season", 36 * 3600),
     "silver_boxscores": ("daily in season", 36 * 3600),
+    "silver_shots": ("daily in season", 36 * 3600),
+    "silver_schedule": ("daily in season", 36 * 3600),
     "silver_hustle_player": ("daily in season", 36 * 3600),
     "silver_hustle_team": ("daily in season", 36 * 3600),
     "silver_advanced": ("daily in season", 36 * 3600),
@@ -2337,15 +2325,15 @@ FRESHNESS_RULES: dict[str, tuple[str, float | None]] = {
     "silver_team_ratings": ("daily in season", 36 * 3600),
     "silver_on_off": ("daily in season", 36 * 3600),
     "silver_lineups": ("daily in season", 36 * 3600),
+    "silver_wowy": ("daily in season", 36 * 3600),
     "silver_rosters": ("daily in season", 36 * 3600),
     "silver_salaries": ("weekly", 7 * _DAY),
     "silver_cap_players": ("weekly", 7 * _DAY),
     "silver_combine": ("weekly", 7 * _DAY),
     "silver_playoffs": ("seasonal", 400 * _DAY),
     "silver_playoff_gamelogs": ("seasonal", 400 * _DAY),
-    "silver_rapm": ("seasonal", 400 * _DAY),
-    "silver_shots": ("seasonal", 400 * _DAY),
     "silver_hist_gamelogs": ("static", None),
+    "silver_hist_draft": ("static", None),
     "silver_hist_hustle": ("static", None),
     "silver_hist_lineups": ("static", None),
     "silver_hist_possessions": ("static", None),
@@ -2354,6 +2342,10 @@ FRESHNESS_RULES: dict[str, tuple[str, float | None]] = {
     "silver_hist_player_seasons": ("static", None),
     "silver_raptor_player": ("static", None),
     "silver_raptor_team": ("static", None),
+    "silver_rapm": ("static", None),
+    "silver_rapm_prior": ("static", None),
+    "silver_hist_pbp": ("static", None),
+    "silver_bbref_gamelogs_2024_25": ("static", None),
 }
 
 

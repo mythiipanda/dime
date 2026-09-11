@@ -158,6 +158,73 @@ export function getBriefing(season = SEASON): Promise<BriefingRows> {
   );
 }
 
+export interface HistoricalLeadersParams {
+  category?: string;
+  startSeason?: number;
+  endSeason?: number;
+  limit?: number;
+  mode?: "leaders" | "best";
+}
+
+export function requestHistoricalLeaders(
+  params: HistoricalLeadersParams,
+  model: string | null,
+  handlers: StreamHandlers,
+  signal?: AbortSignal,
+): Promise<void> {
+  const {
+    category = "pts",
+    startSeason = 2015,
+    endSeason = 2025,
+    limit = 5,
+    mode = "leaders",
+  } = params;
+  const q =
+    mode === "best"
+      ? `Top ${limit} single-season ${category} campaigns from ${startSeason} to ${endSeason}.`
+      : `Who led the league in ${category} in each season from ${startSeason} to ${endSeason}?`;
+  return postChatStream(q, model, handlers, signal);
+}
+
+export interface WpaLeadersParams {
+  season?: number;
+  limit?: number;
+  minEvents?: number;
+}
+
+export function requestWpaLeaders(
+  params: WpaLeadersParams,
+  model: string | null,
+  handlers: StreamHandlers,
+  signal?: AbortSignal,
+): Promise<void> {
+  const { season = 2025, limit = 10, minEvents = 100 } = params;
+  const q =
+    `Who leads the ${season} season (end-year) in win probability added ` +
+    `by play? Give the top ${limit} with a ${minEvents}-play floor.`;
+  return postChatStream(q, model, handlers, signal);
+}
+
+export interface ZoneDeltasParams {
+  player: string;
+  season?: number;
+  minAttempts?: number;
+}
+
+export function requestZoneDeltas(
+  params: ZoneDeltasParams,
+  model: string | null,
+  handlers: StreamHandlers,
+  signal?: AbortSignal,
+): Promise<void> {
+  const { player, season = 2025, minAttempts = 50 } = params;
+  const q =
+    `Where does ${player} beat league average by the most in ${season} ` +
+    `(end-year)? Give per-zone FG% vs league average with a ` +
+    `${minAttempts}-attempt floor.`;
+  return postChatStream(q, model, handlers, signal);
+}
+
 export async function getModels(): Promise<ModelsResponse> {
   const res = await fetch(`${BACKEND}/api/v1/models`);
   if (!res.ok) throw new Error(`models failed: ${res.status}`);
