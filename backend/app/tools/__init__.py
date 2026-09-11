@@ -80,6 +80,7 @@ from .team import (
 )
 from .today import get_today, get_morning_briefing
 from .watchlist import add_watchlist_item, get_watchlist, remove_watchlist_item
+from .wpa import get_wpa_leaders
 from ._core import MAX_ROWS, SEASON, STAT_CATEGORIES, clamp_stat
 
 v1_tools: list[BaseTool] = [
@@ -161,6 +162,7 @@ v1_tools: list[BaseTool] = [
     get_team_shot_zones,
     get_zone_deltas,
     get_rapm_prior,
+    get_wpa_leaders,
 ]
 
 TOOL_NAMES = [t.name for t in v1_tools]

@@ -2922,6 +2922,175 @@ def gen_zone_deltas(rng, ctx) -> tuple[Task, GroundTruth]:
     raise SkipTask(f"no gradeable zone-delta player for season {year}")
 
 
+# ---------------------------------------------------------------------------
+# wpa family: mirrors get_wpa_leaders exactly (end-year seasons 2021..2025,
+# one deduped event per (game_id, action_number) preferring the row with
+# an action_type, forward-filled score state per game, fitted WP
+# sigmoid(B0+B1*lead/sqrt(sec+360)) before/after each event credited to
+# the acting player from his team's perspective, 100-event floor, WPA
+# rounded to 3dp). Pure-math replica over warehouse reads; never imports
+# app.tools (anti-circularity).
+# ---------------------------------------------------------------------------
+
+_WPA_B0 = 0.159694
+_WPA_B1 = 5.853395
+_WPA_SMOOTH = 360.0
+_WPA_TIPOFF = 2880.0
+_WPA_FLOOR = 100
+
+
+def _wpa_prob(lead: float, sec: float) -> float:
+    import math as _m
+    z = _WPA_B0 + _WPA_B1 * float(lead) / _m.sqrt(max(0.0, float(sec)) + _WPA_SMOOTH)
+    if z >= 0:
+        return 1.0 / (1.0 + _m.exp(-z))
+    e = _m.exp(z)
+    return e / (1.0 + e)
+
+
+def _wpa_sec(clock, period) -> float | None:
+    try:
+        s = str(clock)
+        if not s.startswith("PT") or not s.endswith("S"):
+            return None
+        m = s.index("M")
+        left = int(s[2:m]) * 60.0 + float(s[m + 1:-1])
+    except (ValueError, AttributeError):
+        return None
+    try:
+        p = int(period)
+    except (TypeError, ValueError):
+        return None
+    if p < 1:
+        return None
+    if p <= 4:
+        return left + 720.0 * (4 - p)
+    return left
+
+
+def _wpa_table(year: int) -> list[dict]:
+    from collections import Counter as _C
+    label = f"{year - 1}-{str(year)[-2:]}"
+    rows = _qd(
+        "SELECT game_id, action_number, clock, period, team_tricode,"
+        " person_id, player_name, location, score_home, score_away,"
+        " action_type FROM silver_hist_pbp WHERE _season = ?"
+        " ORDER BY game_id, action_number",
+        [label])
+    players: dict = {}
+    game = None
+    grows: list = []
+    for row in rows:
+        if isinstance(row, dict):
+            row = (row.get("game_id"), row.get("action_number"),
+                   row.get("clock"), row.get("period"),
+                   row.get("team_tricode"), row.get("person_id"),
+                   row.get("player_name"), row.get("location"),
+                   row.get("score_home"), row.get("score_away"),
+                   row.get("action_type"))
+        if row[0] != game:
+            if grows:
+                _wpa_score_game(str(game), grows, players)
+            game, grows = row[0], [row]
+        else:
+            grows.append(row)
+    if grows:
+        _wpa_score_game(str(game), grows, players)
+    out = []
+    for key, entry in players.items():
+        if entry["events"] < _WPA_FLOOR:
+            continue
+        out.append({"name": entry["player"],
+                    "wpa": round(entry["wpa"], 3)})
+    out.sort(key=lambda r: r["wpa"], reverse=True)
+    return out
+
+
+def _wpa_score_game(gid: str, grows: list, players: dict) -> None:
+    from collections import Counter as _C
+    votes: dict = {}
+    for row in grows:
+        if (row[7] or "") == "h" and row[4]:
+            votes[str(row[4])] = votes.get(str(row[4]), 0) + 1
+    if not votes:
+        return
+    home = max(votes, key=lambda k: votes[k])
+    seen: dict = {}
+    for row in grows:
+        an = row[1]
+        if an not in seen:
+            seen[an] = row
+        elif not seen[an][10] and row[10]:
+            seen[an] = row
+    lead_home, lead_away = 0, 0
+    before = _wpa_prob(0, _WPA_TIPOFF)
+    for an in sorted(seen):
+        evt = seen[an]
+        try:
+            lead_home = int(str(evt[8]))
+        except (TypeError, ValueError):
+            pass
+        try:
+            lead_away = int(str(evt[9]))
+        except (TypeError, ValueError):
+            pass
+        sec = _wpa_sec(evt[2], evt[3])
+        if sec is None:
+            continue
+        after = _wpa_prob(lead_home - lead_away, sec)
+        delta = after - before
+        before = after
+        pid, name, loc, tri = evt[5], evt[6], evt[7] or "", evt[4] or ""
+        if not pid or not name:
+            continue
+        if loc == "h":
+            is_home = True
+        elif loc == "v":
+            is_home = False
+        elif tri:
+            is_home = tri == home
+        else:
+            continue
+        signed = delta if is_home else -delta
+        key = str(pid)
+        entry = players.setdefault(key, {"player": name, "wpa": 0.0,
+                                         "events": 0})
+        entry["wpa"] += signed
+        entry["events"] += 1
+
+
+def gen_wpa(rng, ctx) -> tuple[Task, GroundTruth]:
+    if "silver_hist_pbp" not in _tables():
+        raise SkipTask("no play-by-play in warehouse")
+    year = rng.choice([2023, 2024, 2025])
+    label = f"{year - 1}-{str(year)[-2:]}"
+    table = _wpa_table(year)
+    if len(table) < 3:
+        raise SkipTask(f"too few WPA qualifiers for season {year}")
+    top3 = table[:3]
+    if top3[2]["wpa"] == table[3]["wpa"]:
+        raise SkipTask("tied third-place WPA is ungradeable")
+    facts: dict = {"names": {f"wpa_{i}": r["name"]
+                             for i, r in enumerate(top3, 1)}}
+    for i, r in enumerate(top3, 1):
+        facts[f"wpa_{i}_value"] = r["wpa"]
+    tid = ctx["task_id"]
+    task = Task(
+        task_id=tid, family="wpa",
+        question=(f"Who leads the {label} season in win probability added "
+                  f"(WPA) by play? Name the top 3 and each player's WPA."),
+        entities=[r["name"] for r in top3],
+        gold_tool_families=["wpa"],
+        timeout_s=ctx["timeout_s"], seed=ctx["seed"],
+    )
+    truth = GroundTruth(
+        task_id=tid, facts=facts, computed_at=_now(),
+        source="warehouse via silver_hist_pbp "
+               "(same actor-perspective WPA pipeline as get_wpa_leaders)",
+    )
+    return task, truth
+
+
 GENERATORS = {
     "lookup": gen_lookup,
     "compare": gen_compare,
@@ -2946,4 +3115,5 @@ GENERATORS = {
     "rotation": gen_rotation,
     "historical_leaders": gen_historical_leaders,
     "zone_deltas": gen_zone_deltas,
+    "wpa": gen_wpa,
 }

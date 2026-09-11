@@ -186,6 +186,25 @@ export function requestHistoricalLeaders(
   return postChatStream(q, model, handlers, signal);
 }
 
+export interface WpaLeadersParams {
+  season?: number;
+  limit?: number;
+  minEvents?: number;
+}
+
+export function requestWpaLeaders(
+  params: WpaLeadersParams,
+  model: string | null,
+  handlers: StreamHandlers,
+  signal?: AbortSignal,
+): Promise<void> {
+  const { season = 2025, limit = 10, minEvents = 100 } = params;
+  const q =
+    `Who leads the ${season} season (end-year) in win probability added ` +
+    `by play? Give the top ${limit} with a ${minEvents}-play floor.`;
+  return postChatStream(q, model, handlers, signal);
+}
+
 export interface ZoneDeltasParams {
   player: string;
   season?: number;
