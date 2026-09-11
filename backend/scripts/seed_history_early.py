@@ -1,6 +1,6 @@
 """Append-only early-history backfill for seasons 2015-16..2020-21.
 
-Usage: python -m scripts.seed_history_early [--seasons 2016,2017,2018,2019,2020,2021]
+Usage: python -m scripts.seed_history_early [--seasons 2010,...,2021]
 End-year keys: 2021 means 2020-21. Reuses the URL scheme, unify() logic,
 and save pattern from seed_history.py without dropping any table.
 
@@ -69,9 +69,11 @@ def unify(frames: list) -> list:
             {c: t for c, t in target.items()}, strict=False))
     return out
 
-EARLIEST = 2016
+EARLIEST = 2010
 LATEST = 2021
 FORBIDDEN = 2026
+HUSTLE_EARLIEST = 2016  # tracking data starts 2015-16; earlier years 404 upstream
+KNOWN_GAPS = {("silver_hist_hustle", y) for y in range(EARLIEST, HUSTLE_EARLIEST)}
 META_COLS = ("_source", "_season", "_fetched_at", "_entity")
 
 
@@ -171,7 +173,7 @@ def align_to_live(table: str, frame: pl.DataFrame) -> pl.DataFrame:
 def main() -> None:
     args = argparse.ArgumentParser()
     args.add_argument(
-        "--seasons", default="2016,2017,2018,2019,2020,2021"
+        "--seasons", default="2010,2011,2012,2013,2014,2015,2016,2017,2018,2019,2020,2021"
     )
     ns = args.parse_args()
     years = parse_seasons(ns.seasons)
@@ -181,12 +183,17 @@ def main() -> None:
 
     counts: dict[tuple[str, str], int] = {}
     problems: list[str] = []
+    documented: list[str] = []
     total = 0
     for table, (tag, pattern) in FILES.items():
         staged: list[tuple] = []
         for y in years:
             label = season_label(y)
             assert y != FORBIDDEN and label != "2025-26", label
+            if (table, y) in KNOWN_GAPS:
+                documented.append(f"{table} {label}: no upstream tracking data before 2015-16")
+                counts[(table, label)] = 0
+                continue
             name = pattern.format(y=y)
             dest = DATA / f"{table}_{y}.parquet"
             if not fetch(f"{BASE}/{tag}/{name}", dest):
@@ -232,7 +239,12 @@ def main() -> None:
         for table in FILES
         for y in years
         if counts.get((table, season_label(y)), 0) <= 0
+        and (table, y) not in KNOWN_GAPS
     ]
+    if documented:
+        print("DOCUMENTED GAPS (expected, non-failing):")
+        for item in documented:
+            print(f"  gap {item}")
     if missing or problems:
         print("COVERAGE GAPS:", file=sys.stderr)
         for item in problems + [
