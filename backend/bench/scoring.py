@@ -81,7 +81,7 @@ TOOL_FAMILY: dict[str, str | None] = {
     "get_head_to_head": "headtohead",
     "search_game_logs": "gamelog",
     "get_team_shot_zones": "zones",
-    "get_zone_deltas": "zones",
+    "get_zone_deltas": "zone_deltas",
     "get_historical_leaders": "historical_leaders",
     "get_wpa_leaders": "wpa",
     "get_rapm_prior": "adjudicate",

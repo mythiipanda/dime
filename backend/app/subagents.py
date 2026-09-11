@@ -309,6 +309,12 @@ SCOUT_BRIEF = (
     "Playoff performance for a named player goes to get_playoff_intel. "
     "Usage, turnover rate, PIE, and rating ranks go to get_advanced. "
     "Career impact arcs go to get_raptor_history. "
+    "Player zone efficiency vs the league average (where does X beat "
+    "league average, by how many points) goes to get_zone_deltas, "
+    "never hand-rolled SQL. "
+    "Prior-informed impact blending current RAPM with past seasons goes "
+    "to get_rapm_prior; its output is a documented estimate. "
+    "Win probability added leaders go to get_wpa_leaders. "
     "IF the task asks for a player's impact and no RAPTOR, RAPM, or BPM "
     "row covers them, THEN call get_impact_estimate; its output is always "
     "an estimate, so say so and never present it as a measured metric. "
@@ -467,6 +473,7 @@ def _desk_spec(name: str, task: str):
     if name == "delegate_scout":
         return ("scout", SCOUT_BRIEF,
                  ["resolve_entity", "search_nba", "get_player_intel", "get_raptor_history",
+                  "get_rapm_prior", "get_wpa_leaders", "get_zone_deltas",
                   "get_impact_estimate",
                   "get_on_off", "get_wowy", "get_four_factors",
                   "get_last_x", "get_percentiles", "get_shot_zones",

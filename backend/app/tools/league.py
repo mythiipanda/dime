@@ -2317,6 +2317,7 @@ FRESHNESS_RULES: dict[str, tuple[str, float | None]] = {
     "silver_rapm": ("static", None),
     "silver_rapm_prior": ("static", None),
     "silver_hist_pbp": ("static", None),
+    "silver_bbref_gamelogs_2024_25": ("static", None),
 }
 
 
