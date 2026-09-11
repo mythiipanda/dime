@@ -265,12 +265,10 @@ def get_wpa_leaders(season: Union[int, str, None] = 2025,
         "games": len({str(r[0]) for r in rows}),
         "events": len(rows),
         "model": "fitted WP sigmoid(B0+B1*lead/sqrt(sec+360)); "
-                 "delta credited to the acting player; no steal/block credit, "
-                 "paired rows share one action_number credited to shooter/committer only",
+                 "delta credited to the acting player; paired rows share one "
+                 "action_number credited to shooter/committer only",
         "source": "warehouse silver_hist_pbp (documented estimates)",
-        "values": "WPA sums credit makers and debit missers with no opponent "
-                  "or teammate adjustment; totals are cumulative volume "
-                  "rewarding games played",
+        "values": "WPA sums credit makers and debit missers",
         "limits": "no steal or block credit; no opponent or teammate "
                   "adjustment; cumulative totals reward games played",
     }
