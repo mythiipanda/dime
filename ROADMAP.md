@@ -4,10 +4,6 @@ Goal: the chat Tyrese Haliburton Twitter nerds and team analysts open daily.
 Free public data only. No odds (killed). No deploy until approved.
 Each unit ships only after real runs: pytest, eval, scenarios, browser beta.
 
-**Status as of Sep 10, 2026.** `main` = Sep 9 night-shift promotion (P0s shipped).
-`dev` + `muse/backend` + `muse/frontend` + `tony/features` = Sep 10 day shift,
-integrating ~10pm ET.
-
 ## Market Strategy (added 2026-09-09)
 
 **Source:** `research/nba-analyst-market-brief.md` — full competitive analysis.
@@ -22,14 +18,13 @@ If Dime answers the CTG question AND the Stathead question AND the EPM question 
 chat, subscriptions lapse.
 
 **Wedges (priority order):**
-1. **Cross-metric adjudication** — SHIPPED Sep 10 (`compare_metrics` + MetricsView).
-   "EPM says X, LEBRON says Y — who's right and why?"
-2. **Citable artifacts** — SHIPPED Sep 10 (CitePill, buildCitation). Every answer
-   carries source + timestamp; screenshots work without added context.
-3. **Bettor-adjacent Q&A** — SHIPPED Sep 10 (splits finder, opponent-tier matchup
-   rows, game predictions). Analysis tool, never picks.
-4. **Freshness as feature** — SHIPPED Sep 10 (warehouse freshness registry +
-   panel). Real-time feel during season vs opaque update schedules.
+1. **Cross-metric adjudication** — "EPM says X, LEBRON says Y — who's right and why?"
+   No tool does this. Most differentiated query class.
+2. **Citable artifacts** — Analysts' currency is credibility. Every answer needs
+   source + timestamp. Screenshots should work without added context.
+3. **Bettor-adjacent Q&A** — "Last 15 vs top-10 defenses" in seconds, not hours of
+   `nba_api` wrangling. Analysis tool, never picks.
+4. **Freshness as feature** — Real-time feel during season vs opaque update schedules.
 5. **Free-tier wedge** — Undercut $25-40/mo subscription fatigue with generous free NL.
 
 **Don't build:** Betting picks, video/film (Synergy owns it), social beyond debate cards,
@@ -38,72 +33,58 @@ trying to replace EPM/LEBRON (referee them instead).
 **Risks:** Data licensing (BRef scraping policy), NBA+AWS "Inside the Game" coming
 downmarket, StatMuse adding LLMs (Dime's window is depth before they move).
 
-## Phase 0 — Done (Sep 9 and earlier)
+## Phase 0 — Done
 
 Chat over DuckDB warehouse, supervisor plus scout/team/league workers,
-70+ tools, compare/preview composites, trade checker, draft combine panel,
+34 tools, compare/preview composites, trade checker, draft combine panel,
 team ratings, clutch splits, NBA.com watch links, shot charts, heat maps,
-threads plus runs plus export, debate cards, watchlist, ThinkingBlock UI,
-real SSE streaming.
+threads plus runs plus export. Suites: 10 + 27 + 16, browser 5/5.
 
-## Phase 1 — Done Sep 10 (night shift, on `main`)
+## Phase 1 — Trust (team-buyer blockers)
 
-1. **Cross-metric adjudication** (`compare_metrics` tool + MetricsView UI).
-   Registry of metric disagreements, supervisor wiring, eval cases.
-2. **Citable artifacts** (CitePill on tables and answers, title-safe stream tables).
-3. **text-to-SQL reliability** — synonym expansion, streak SQL examples,
-   deterministic streak leaders, warehouse-first game logs.
-4. **Splits + matchup history** — opponent-tier matchup rows, warehouse-first splits.
-5. Verification: backend suite green, tsc clean, frontend build ok, Playwright
-   smoke (load, chat SSE, today/movers/watchlist, no emoji).
+1. Verification surfacing. Every insight shows SQL or tool args, row
+   count, source, fetch timestamp. UI already shows source plus date.
+   Missing: SQL text for text_to_sql answers.
+2. Sample floors. Lineups and on/off hide units under 100 possessions
+   and flag blowout-heavy minutes. No more +12 in 40 minutes as signal.
+3. Cap honesty. Trade output labeled estimate, lists omitted CBA rules,
+   links source and salary date.
+4. Freshness panel. Explore tab table: every warehouse table, row
+   count, last fetch, stale flag.
 
-## Phase 2 — Day shift Sep 10 (on `dev` + crew branches, integrating 10pm ET)
+## Phase 2 — Analyst currency (unused nba_api depth, 274 endpoints)
+5. Splits finder. General/game/last-N/shooting splits per player and
+   team. Partly exists (get_splits) — widen coverage, force-route it.
+6. Shot locations league-wide. LeagueDashPlayerShotLocations and
+   TeamShotLocations for zone diet tables.
+7. Stathead core. Streak finders plus PlayerVsPlayer and TeamVsPlayer
+   head-to-head. One game-log search tool over DuckDB logs.
+8. Estimated metrics. Player and TeamEstimatedMetrics for
+   EPM-adjacent efficiency numbers.
+9. Draft depth. DraftBoard plus DraftHistory enrich the combine panel
+   with pick slots and past classes.
+10. Play types. SynergyPlayTypes if it answers without a subscription,
+    else cut it fast.
 
-Backend (`muse/backend`, 11 commits):
-- Rest advantage + lineup matchup matrix tools
-- Competitive ratings (blowout-excluded MOV, padding delta)
-- Conversational shot finder (`search_shots`: zones, late-game, heave-free)
-- Freshness registry (hustle, RAPM, shots coverage)
-- 2025-26 season data audit; bbref game-log scrape hardening (588-player target)
+## Phase 3 — New sources (ranked, free)
 
-Frontend (`muse/frontend`, 9 commits):
-- GameLogView, RotationCheckView, StreaksView, PredictionView, HeadToHeadView,
-  ImpactView, LineupStatsView, RestAdvantageView, LineupMatrixView
-- Debate modal polish, CompareView mobile, artifact surfacing, 390px mobile pass,
-  loading skeletons, CourtHeatmap routing for shot zones
-- 23/23 consultant UX tickets fixed
+11. NBA CDN liveData. No key, no Akamai pain. Live scores, boxscore
+    and play-by-play JSON. Replaces fragile stats.nba.com paths.
+12. hoopR and sportsdataverse. Full-season history in one pull for
+    multi-season depth.
+13. Real salaries. Basketball-Reference contracts at low rate plus
+    cache. Turns the cap ledger from estimated to sourced.
+14. RAPTOR historical CSV. Frozen 2023, fine as model priors.
+15. DARKO and EPM boards. UI-only, scrape-hostile. Park unless a
+    stable path appears.
 
-Data + bench (on `dev`):
-- 2025-26: silver_scoreboard (in-warehouse), silver_hustle_team (30 teams),
-  team_games + lineups promoted from hist tables, 2024-25 player seasons
-- DimeBench families: rotation, ELO, gamelog, search_game_logs, impact_estimate
-- `get_elo_standings` (538-style), `search_game_logs`, `get_impact_estimate`,
-  `get_game_prediction` + triage fast-paths, rotation check rebuild
-- Latency cuts (trade checker, Today endpoint 30s → 8s)
-- Docs: `docs/PRESEASON_2026_27.md`, `docs/SEASON_ROLLOVER.md`
+## Phase 4 — Loop polish
 
-## Phase 3 — Next (priority order)
-
-1. **2026-27 season readiness.** Preseason starts Oct 3, 2026. Daily ingestion
-   pipelines, season rollover runbook execution. Owner: data desk.
-2. **Data completeness.** Full 2025-26 regular-season + playoff coverage:
-   player/team game logs, season stats, shots. Real sources only
-   (basketball-reference, NBA API). Finish the 588-player bbref scrape.
-   Never fabricate; disclose gaps.
-3. **Latency.** Agent paths still slow. Profile, cut worst offenders.
-4. **New analyst tools.** Full-stack slices (tool + view + DimeBench family
-   in the same commit) an analyst can't get from Stathead.
-5. **Consultant tickets.** Keep the outside-persona loop running (beat writer,
-   fantasy grinder, casual fan); triage like customer tickets.
-
-## Phase 4 — Parked / later
-
-- Historical depth backfill to 2010 (`get_historical_leaders`)
-- Multi-season RAPM priors; WPA-by-play leaders from PBP
-- Draft model v2 (BartTorvik college stats + classifier)
-- Real salaries from BRef contracts (contract value currently honest minimums)
-- Synergy play types (only if answerable without subscription)
-- Morning-file briefs stay file-only; no push channels, per owner
+16. Canned briefs. Next-opponent scout and rotation check as one-call
+    composites plus skills, not generic chat.
+17. Eval growth. Every new tool gets eval and scenario cases the same
+    commit it lands.
+18. Morning file brief stays file-only. No push channels, per owner.
 
 ## Phase 5 — Interface polish (added 2026-09-11)
 
@@ -123,27 +104,47 @@ Data + bench (on `dev`):
     Adopt patterns, not dependencies: keep the frontend dependency
     footprint flat and every new view behind a screenshot spot-check
     (1280px and 390px).
+21. Multiturn conversation testing. Single-turn bench is green while
+    real sessions repeat the same question dozens of times. Every
+    release candidate must survive a scripted multiturn gauntlet before
+    merge: (a) follow-up resolution ("Denver's record when Jokic plays?"
+    after a Jokic thread), (b) repeated-question consistency (same
+    answer twice, totals-vs-rate disambiguation stated up front),
+    (c)Totals-vs-rate honesty ("leads in assists" must say totals and
+    per-game in one answer, never contradict across turns),
+    (d) compositional questions (record-when-player-plays, on/off
+    differentials with both halves present or an honest gap).
+    Track repeat-question rate as the release metric: if a user asks
+    the same thing 5+ times, the product failed, not the user.
 
 ## Rules of the loop
 
 V1 tools only, new tools need a decision row. Verify each unit before
-the next with real runs, not summaries. Crew branches only; no pushes to
-`main` without Tony's direct approval each time. Never log keys. Never
-fabricate data or proprietary metrics.
+the next with real runs, not summaries. Local commits only, no pushes,
+no deploys without approval. Never log keys.
 
 ## Appendix — Analyst scenarios from public repos and notebooks
 
-Status as of Sep 10, 2026.
+Each scenario maps to a tool or workflow. Status as of this writing.
 
-1. RAPM player impact. Have RAPM-lite + `get_impact_estimate`. Next: multi-season priors.
-2. Win probability plus WPA. Have `get_win_prob`. Next: WPA-by-play leaders from PBP.
-3. ELO power ratings. HAVE `get_elo_standings` (538-style).
-4. Game predictor via Monte Carlo. HAVE `get_game_prediction`.
-5. Playoff simulator. HAVE `get_playoff_sim` (10k best-of-7 sims).
-6. Shot hexmaps. Have shot charts and zones. Next: zone efficiency deltas vs league avg.
-7. DFS optimizer. Out of scope, gambling-adjacent. Skip.
-8. Trade checker. Have v1 with disclaimer + honest-minimum contract values.
-   Next: real salaries from BRef contracts.
-9. Draft model. Have combine panel + draft board. Next: BartTorvik + classifier.
-10. Contract value and referee bias. Value residual fits `get_compare` later.
-    Officiating needs L2M reports, no stable feed. Park officiating.
+1. RAPM player impact (Dianjeol stint-data, rd11490 tutorials). Ridge
+   on stint differentials. Have RAPM-lite. Next: multi-season priors.
+2. Win probability plus WPA (tbukic, colekev). Have get_win_prob.
+   Next: WPA-by-play leaders from PBP.
+3. ELO power ratings (538 nba-elo). Missing. Tool: standings
+   extension with ELO, win-equiv, Elo-implied spread.
+4. Game predictor via Monte Carlo (norrisja, badariayush). Missing.
+   Tool: preview extension with win percent, projected total,
+   confidence interval from ratings plus injuries.
+5. Playoff simulator (PRODHOSH, NHX87). Missing. Workflow: bracket
+   plus net ratings, 10k best-of-7 sims, series and title odds.
+6. Shot hexmaps (hkair, ManoSegr). Have shot charts and zones. Next:
+   zone efficiency deltas vs league average.
+7. DFS optimizer (owenauch). Out of scope, gambling-adjacent. Skip.
+8. Trade checker (HP2324). Have v1-simplified with disclaimer. Next:
+   real salaries from BRef contracts (Phase 3.13).
+9. Draft model (JasonG7234, AggieSportsAnalytics). Have combine
+   panel. Next: BartTorvik college stats plus classifier.
+10. Contract value and referee bias (dribbleanalytics, kpelechrinis).
+    Value residual fits get_compare later. Officiating needs L2M
+    reports, no stable feed. Park officiating, keep value residual.
