@@ -179,15 +179,21 @@ async def _run_desk(
          HumanMessage(content=f"Season {SEASON}. Task: {task}")],
     ]
     tool_calls: list[dict] = []
-    for attempt in attempts:
-        try:
-            _t, tool_calls = await _stream_tooled(
-                provider, model, attempt, subset, on_token)
-        except Exception as exc:
-            return {"agent": desk, "ok": False, "error": str(exc)[:200],
-                    "tool_trace": trace}
-        if tool_calls:
-            break
+    _force_ready = bool(collected) and any(
+        isinstance(c, dict) and c.get("tool", "") not in
+        ("resolve_entity", "search_nba") and _row_count(c.get("rows")) > 0
+        for c in collected
+    )
+    if not _force_ready:
+        for attempt in attempts:
+            try:
+                _t, tool_calls = await _stream_tooled(
+                    provider, model, attempt, subset, on_token)
+            except Exception as exc:
+                return {"agent": desk, "ok": False, "error": str(exc)[:200],
+                        "tool_trace": trace}
+            if tool_calls:
+                break
     for call in tool_calls:
         if calls_made >= WORKER_BUDGET:
             break

@@ -1,9 +1,15 @@
 """Real NBA salaries off Basketball-Reference contracts (keyless).
-Index + 30 team pages, 4s gaps; y1 is current season (2026-27 on 2026-09-08,
-kept under spec column SALARY_2025_26). ESPN roster API: 403 on 2026-09-08,
-no salary fields. SOURCE bref_contracts."""
+Index + 30 team pages, 4s gaps; y1 is the current season observed at
+scrape time (2026-27 on 2026-09-08 and 2026-09-11 probes).
+
+Frozen spec column SALARY_2025_26 holds the observed y1 money for
+whatever vintage was scraped. The column name never changes. The
+vintage lives in _season plus the fetch_log season, both set from the
+observed y1 header, never from a hardcoded default. ESPN roster API:
+403 on 2026-09-08, no salary fields. SOURCE bref_contracts."""
 import re
 import time
+import unicodedata
 
 import polars as pl
 
@@ -26,11 +32,25 @@ HEADERS = {
 TEAM_ABBR = {"BRK": "BKN", "CHO": "CHA", "PHO": "PHX"}
 
 
+def _fold(name: str) -> str:
+    return "".join(
+        c for c in unicodedata.normalize("NFKD", str(name or ""))
+        if not unicodedata.combining(c)
+    ).strip()
+
+
 def _get(url: str) -> str:
     import httpx
-    r = httpx.get(url, headers=HEADERS, timeout=30, follow_redirects=True)
-    r.raise_for_status()
-    return r.text
+    last: Exception | None = None
+    for attempt in range(4):
+        r = httpx.get(url, headers=HEADERS, timeout=30, follow_redirects=True)
+        if r.status_code == 429:
+            last = RuntimeError(f"429 for {url}")
+            time.sleep(8 * (attempt + 1))
+            continue
+        r.raise_for_status()
+        return r.text
+    raise last or RuntimeError(f"failed fetching {url}")
 
 def _csk(row: str, stat: str) -> int:
     m = re.search(r'data-stat="%s"[^>]*csk="(\d+)"' % stat, row)
@@ -39,14 +59,20 @@ def _csk(row: str, stat: str) -> int:
 def _run(season: list) -> pl.DataFrame:
     html = _get(URL)
     m = re.search(r'data-stat="y1"[^>]*>([\d-]+)', html)
-    season.append(m.group(1) if m else "")
+    observed = (m.group(1).strip() if m else "")
+    season.append(observed)
     rows = []
+    consecutive_failures = 0
     for a in sorted(set(re.findall(r"/contracts/([A-Z]{2,3})\.html", html))):
         time.sleep(4)
         try:
             page = _get(URL + a + ".html")
         except Exception:
+            consecutive_failures += 1
+            if consecutive_failures >= 3:
+                break
             continue
+        consecutive_failures = 0
         t = re.search(r'id="contracts".*?</thead>(.*?)</table>', page, re.S)
         if not t:
             continue
@@ -56,14 +82,19 @@ def _run(season: list) -> pl.DataFrame:
             if not p or not s:
                 continue
             g = _csk(row, "remain_gtd")
-            rows.append({"PLAYER_NAME": p.group(1).strip(),
+            rows.append({"PLAYER_NAME": _fold(p.group(1)),
                          "TEAM": TEAM_ABBR.get(a, a),
                          "SALARY_2025_26": s, "GUARANTEED": g or s})
     return pl.DataFrame(rows)
 
 def get_contracts() -> FetchResult:
     season: list = []
-    res = safe(SOURCE, "2026-27", lambda: _run(season))
-    if season and season[0]:
-        res.meta.season = season[0]
+    res = safe(SOURCE, "unknown", lambda: _run(season))
+    observed = season[0] if season and season[0] else ""
+    if observed:
+        res.meta.season = observed
+    else:
+        res.meta.season = "unknown"
+        res.ok = False
+        res.error = (res.error or "y1 header not observed")[:300]
     return res

@@ -1217,6 +1217,67 @@ async def _triage_seed(question: str, primary: str, model: str,
             # Unknown players or missing data: fall through to the planner
             # so it can self-correct with resolve_entity. The tool's hints
             # are already in state["tool_results"].
+    is_compare_fast = (
+        is_compare
+        and len(_named_p) == 2
+        and not is_trade
+        and not is_cast
+        and not re.search(r"\bimpact\b", question, re.IGNORECASE)
+        and not state.get("history")
+    )
+    if is_compare_fast:
+        # Two-player compare turns burned 4 planner LLM rounds (10.3s)
+        # on deterministic routing: get_compare, then one scout per
+        # player. The tool resolves names itself, so answer straight
+        # from the warehouse. Exactly two players only; 1- and 3-player
+        # asks fall to the planner.
+        _cseason = "2025-26"
+        _cm = re.search(r"(20\d\d)\s*-\s*(\d\d)", question)
+        if _cm:
+            _cseason = f"{_cm.group(1)}-{_cm.group(2)}"
+        _chh: dict[str, Any] = {}
+        async for _e in _triage_tool(
+                "get_compare",
+                {"a": _named_p[0], "b": _named_p[1], "season": _cseason},
+                state, _chh):
+            yield _e
+        if _result_status(_chh.get("out") or {}) == "ok":
+            for _cp in _named_p[:2]:
+                _ctask = (f"Player focus: {_cp}. "
+                          f"Original question: {question}")
+                _cargs = {"task": _ctask}
+                yield _event("tool_call", {
+                    "node": "data_retrieval", "name": "delegate_scout",
+                    "label": tool_label("delegate_scout"),
+                    "summary": _args_summary("delegate_scout", _cargs),
+                })
+                _ct0 = time.time()
+                try:
+                    _cholder: dict[str, Any] = {}
+                    async for _ce in _run_delegate_live(
+                            "delegate_scout", _ctask, primary, model,
+                            _cholder):
+                        yield _ce
+                    _cout2 = _cholder.get("result") or {
+                        "tool": "delegate_scout", "ok": False,
+                        "error": "no result"}
+                except Exception as exc:
+                    _cout2 = {"tool": "delegate_scout", "ok": False,
+                              "error": str(exc)[:160]}
+                if not isinstance(_cout2, dict):
+                    _cout2 = {"tool": "delegate_scout", "rows": _cout2}
+                _cms = int((time.time() - _ct0) * 1000)
+                yield _event("tool_result", _tool_result_payload(
+                    "data_retrieval", "delegate_scout", _cout2, _cms,
+                    summary=_delegate_result_summary(_cout2)))
+                for _cte in _trace_replay_events(_cout2):
+                    yield _cte
+                state["tool_results"].append(_cout2)
+                state["calls_made"].append("delegate_scout:" + json.dumps(
+                    _cargs, sort_keys=True))
+            async for _e in _triage_terminal(question, state):
+                yield _e
+            return
     if ((len(found_p) >= 2 or len(found_t) >= 2 or is_compare)
             and not (is_trade and not is_compare)
             and not (is_cast and not is_compare)):

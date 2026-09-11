@@ -2,6 +2,10 @@
 LEARNINGS.MD
 AGENTS.md
 decisions.tsv
+SHIFT_LOG.md
+backend/scripts/*_progress.json
+backend/scripts/*_player_ids.txt
+backend/scripts/*.log
 .env
 .env.local
 backend/.env

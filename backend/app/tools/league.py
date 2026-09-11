@@ -771,6 +771,31 @@ def _allowed_incoming(outgoing: int, over_apron1: bool) -> tuple[int, str]:
     return int(outgoing * 1.25 + 250_000), "125pct plus 250k below first apron"
 
 
+def _salary_vintage(con: object = None) -> tuple[str, int, str | None]:
+    """Stored salary vintage: (season, rows, fetched_at) from silver_salaries."""
+    from .. import store as _store
+
+    own = con is None
+    if own:
+        con = _store.connect()
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        if "silver_salaries" not in tables:
+            return "", 0, None
+        row = con.execute(
+            "SELECT _season, COUNT(*), MAX(_fetched_at) FROM silver_salaries "
+            "GROUP BY _season ORDER BY COUNT(*) DESC LIMIT 1"
+        ).fetchone()
+        if not row:
+            return "", 0, None
+        return str(row[0] or ""), int(row[1] or 0), row[2]
+    except Exception:
+        return "", 0, None
+    finally:
+        if own:
+            con.close()
+
+
 def _payroll_source(con: object = None) -> str:
     from .. import store as _store
 
@@ -780,9 +805,11 @@ def _payroll_source(con: object = None) -> str:
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if "silver_salaries" in tables:
-            n = con.execute("SELECT COUNT(*) FROM silver_salaries").fetchone()[0]
-            if n > 300:
-                return "basketball-reference contracts (real 2026-27 salaries)"
+            season, n, fetched = _salary_vintage(con)
+            if n > 300 and season:
+                date = f", fetched {str(fetched)[:10]}" if fetched else ""
+                return (f"basketball-reference contracts "
+                        f"(real {season} salaries{date})")
     finally:
         if own:
             con.close()
@@ -826,6 +853,7 @@ def get_cap_ledger(team: str = "") -> dict[str, Any]:
         total, players = _payroll(team, con)
         source = _payroll_source(con)
         salary_date = _salary_date(con)
+        season, _, _ = _salary_vintage(con)
     finally:
         con.close()
     return {"tool": "get_cap_ledger", "ok": True,
@@ -834,7 +862,7 @@ def get_cap_ledger(team: str = "") -> dict[str, Any]:
                                        reverse=True)[:15],
                      "room_under_apron2": CAP["apron2"] - total,
                      "over_tax": total > CAP["tax"]},
-            "meta": {"source": source, "season": "2026-27",
+            "meta": {"source": source, "season": season or "2026-27",
                      "salary_date": salary_date,
                      **{k: v for k, v in CAP.items()}}}
 
