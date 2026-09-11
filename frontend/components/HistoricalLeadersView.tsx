@@ -128,7 +128,7 @@ function LeaderCard({
             {leader.player}
           </div>
           <div style={{ fontSize: 11, color: "var(--color-ash-gray)" }}>
-            {[leader.team, leader.season ? `Season ${leader.season}` : ""]
+            {[leader.team, leader.season_label || (leader.season ? `Season ${leader.season}` : "")]
               .filter(Boolean)
               .join(" · ")}
           </div>
