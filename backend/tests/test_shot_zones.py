@@ -107,7 +107,7 @@ def test_build_rows_delta_arithmetic():
 
 
 def test_tool_rejects_season_with_no_rows():
-    out = get_team_shot_zones.invoke({"teams": "league", "season": "2010-11"})
+    out = get_team_shot_zones.invoke({"teams": "league", "season": "2030-31"})
     assert out["ok"] is False
     assert "no shot rows" in out["error"]
 
@@ -130,7 +130,7 @@ def test_tool_single_team_carries_league_baseline_row():
     shares = [bos[f"{k}_share"] for k in ZONE_KEYS]
     assert abs(sum(shares) - 1.0) < 0.01
     assert "data_note" in out["meta"]
-    assert "2021-22 through 2025-26" in out["meta"]["data_note"]
+    assert "2009-10 through 2025-26" in out["meta"]["data_note"]
 
 
 def test_tool_mixes_known_and_unknown_teams():

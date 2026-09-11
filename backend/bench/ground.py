@@ -2803,6 +2803,125 @@ def gen_historical_leaders(rng, ctx) -> tuple[Task, GroundTruth]:
     return task, truth
 
 
+# ---------------------------------------------------------------------------
+# zone_deltas family: mirrors get_zone_deltas' pipeline exactly (five-zone
+# geometric taxonomy over silver_hist_shots x_legacy/y_legacy plus
+# shot_value; made = shot_result 'Made'; per-zone FG% vs pooled league FG%
+# for the same end-year season; pp deltas round(x, 2); 50-attempt floor;
+# rows sorted by delta desc). Season is sampled from 2023..2025 because the
+# tool clamps end-years to 2010..2025. The warehouse stores surnames only,
+# so the player is named through the nba_api static id table (the same
+# upstream source the streak family uses). Quoting the tool's best zone is
+# the right play.
+# ---------------------------------------------------------------------------
+
+_ZONE_DELTA_FLOOR = 50
+_ZONE_DELTA_KEYS = ("rim", "short_mid", "long_mid", "corner_3", "atb_3")
+
+_ZONE_DELTA_CTE = """
+WITH z AS (
+    SELECT person_id,
+           CASE
+             WHEN COALESCE(x_legacy * x_legacy + y_legacy * y_legacy,
+                          99999999) < 6400 THEN 'rim'
+             WHEN shot_value = 3 AND ABS(x_legacy) >= 220 THEN 'corner_3'
+             WHEN shot_value = 3 THEN 'atb_3'
+             WHEN COALESCE(x_legacy * x_legacy + y_legacy * y_legacy,
+                          99999999) < 19600 THEN 'short_mid'
+             ELSE 'long_mid'
+           END AS zone,
+           CASE WHEN LOWER(shot_result) = 'made' THEN 1 ELSE 0 END AS made
+    FROM silver_hist_shots WHERE season = ?%s
+)
+SELECT zone, COUNT(*) AS fga, SUM(made) AS fgm FROM z GROUP BY zone
+"""
+
+_ZONE_DELTA_LABELS = {
+    "rim": "at the rim",
+    "short_mid": "from short midrange",
+    "long_mid": "from long midrange",
+    "corner_3": "from the corner three",
+    "atb_3": "from above-the-break three",
+}
+
+
+def _zone_delta_rows(year: int, person_id: int | None = None) -> dict:
+    if person_id is None:
+        return {r["zone"]: (int(r["fga"]), int(r["fgm"]))
+                for r in _qd(_ZONE_DELTA_CTE % "", [year])}
+    return {r["zone"]: (int(r["fga"]), int(r["fgm"]))
+            for r in _qd(_ZONE_DELTA_CTE % " AND person_id = ?",
+                         [year, person_id])}
+
+
+def gen_zone_deltas(rng, ctx) -> tuple[Task, GroundTruth]:
+    year = rng.choice([2023, 2024, 2025])
+    label = f"{year - 1}-{str(year)[-2:]}"
+    cands = _q("SELECT person_id, COUNT(*) AS c FROM silver_hist_shots "
+               "WHERE season = ? AND person_id IS NOT NULL "
+               "GROUP BY person_id ORDER BY c DESC LIMIT 25", [year])
+    if not cands:
+        raise SkipTask(f"no shot rows for season {year}")
+    names = _static_player_names()
+    order = list(cands)
+    rng.shuffle(order)
+    for pid, _ in order:
+        try:
+            pid = int(pid)
+        except (TypeError, ValueError):
+            continue
+        name = names.get(pid)
+        if not name:
+            continue
+        mine = _zone_delta_rows(year, pid)
+        if sum(fga for fga, _ in mine.values()) == 0:
+            continue
+        base = _zone_delta_rows(year)
+        rows = []
+        for key in _ZONE_DELTA_KEYS:
+            fga, fgm = mine.get(key, (0, 0))
+            if fga < _ZONE_DELTA_FLOOR:
+                continue
+            bfga, bfgm = base.get(key, (0, 0))
+            if not bfga:
+                continue
+            fg = fgm / fga
+            lg = bfgm / bfga
+            rows.append({"zone": key, "attempts": fga,
+                         "fg_pct": round(fg, 3),
+                         "league_fg_pct": round(lg, 3),
+                         "delta_pp": round((fg - lg) * 100, 2)})
+        if len(rows) < 2:
+            continue
+        rows.sort(key=lambda r: r["delta_pp"], reverse=True)
+        top = rows[0]
+        if sum(1 for r in rows
+               if r["delta_pp"] == top["delta_pp"]) > 1:
+            continue  # tied best delta is ungradeable
+        tid = ctx["task_id"]
+        task = Task(
+            task_id=tid, family="zone_deltas",
+            question=(f"Where does {name} beat league average by the most "
+                      f"in {label}? Name the shooting zone, his FG% edge "
+                      f"in percentage points, and his attempts there."),
+            entities=[name], gold_tool_families=["zone_deltas"],
+            timeout_s=ctx["timeout_s"], seed=ctx["seed"],
+        )
+        truth = GroundTruth(
+            task_id=tid,
+            facts={"names": {"player": name, "best_zone": top["zone"]},
+                   "best_delta_pp": top["delta_pp"],
+                   "best_attempts": top["attempts"],
+                   "best_fg_pct": top["fg_pct"],
+                   "league_fg_pct": top["league_fg_pct"]},
+            computed_at=_now(),
+            source="sportsdataverse via silver_hist_shots "
+                   "(same zone taxonomy plus pp deltas as get_zone_deltas)",
+        )
+        return task, truth
+    raise SkipTask(f"no gradeable zone-delta player for season {year}")
+
+
 GENERATORS = {
     "lookup": gen_lookup,
     "compare": gen_compare,
@@ -2826,4 +2945,5 @@ GENERATORS = {
     "elo": gen_elo,
     "rotation": gen_rotation,
     "historical_leaders": gen_historical_leaders,
+    "zone_deltas": gen_zone_deltas,
 }

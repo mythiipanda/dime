@@ -186,6 +186,26 @@ export function requestHistoricalLeaders(
   return postChatStream(q, model, handlers, signal);
 }
 
+export interface ZoneDeltasParams {
+  player: string;
+  season?: number;
+  minAttempts?: number;
+}
+
+export function requestZoneDeltas(
+  params: ZoneDeltasParams,
+  model: string | null,
+  handlers: StreamHandlers,
+  signal?: AbortSignal,
+): Promise<void> {
+  const { player, season = 2025, minAttempts = 50 } = params;
+  const q =
+    `Where does ${player} beat league average by the most in ${season} ` +
+    `(end-year)? Give per-zone FG% vs league average with a ` +
+    `${minAttempts}-attempt floor.`;
+  return postChatStream(q, model, handlers, signal);
+}
+
 export async function getModels(): Promise<ModelsResponse> {
   const res = await fetch(`${BACKEND}/api/v1/models`);
   if (!res.ok) throw new Error(`models failed: ${res.status}`);

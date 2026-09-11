@@ -64,6 +64,7 @@ from .gamelog import search_game_logs
 from .splits import get_matchup_splits, get_regression_check
 from .streaks import get_streaks
 from .zone import get_team_shot_zones
+from .zonedelta import get_zone_deltas
 from .team import (
     get_boxscore,
     get_games_on_date,
@@ -158,6 +159,7 @@ v1_tools: list[BaseTool] = [
     search_game_logs,
     get_game_prediction,
     get_team_shot_zones,
+    get_zone_deltas,
     get_rapm_prior,
 ]
 
