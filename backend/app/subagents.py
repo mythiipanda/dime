@@ -338,6 +338,9 @@ SCOUT_BRIEF = (
     "Filtered game-log searches (40-point games, games vs an opponent, "
     "triple-doubles in a month, home/away or date windows) go to "
     "search_game_logs. "
+    "Record-when-a-player-plays questions go to search_game_logs with "
+    "no filters; read rows.record (wins/losses over ALL matches, not "
+    "the capped list) and report it verbatim. "
     "Resolve names with resolve_entity first. Use returned ids verbatim. "
     "Never invent ids. Season 2025-26 unless told otherwise."
 )
@@ -363,6 +366,9 @@ TEAM_BRIEF = (
     "For injury impact (how much do injuries matter) call get_injury_impact, "
     "not get_injuries. State its impact grade, team net rating and rank, "
     "and last-10 record verbatim in the summary. "
+    "For a team's record when a named player plays, call "
+    "search_game_logs with that player and no filters; read rows.record "
+    "and report it verbatim. "
     "When the task names a player, resolve their current team from "
     "warehouse gamelog MATCHUP or get_advanced first. Never trust a team "
     "from memory. "
@@ -430,6 +436,11 @@ LEAGUE_BRIEF = (
     "IF the task mentions WPA, win probability added, or clutch-play-value "
     "leaders, THEN call get_wpa_leaders. "
     "IF the task names one stat category, THEN call get_leaders. "
+    "Leaders answers state BOTH the totals leader and the per-game "
+    "leader in one answer with GP alongside, values verbatim from tool "
+    "rows. Never multiply per-game averages by games played to make a "
+    "total, never compare totals against per-game ranks, and never "
+    "present a computed number as a warehouse row. "
     "Otherwise call get_standings."
 )
 
@@ -509,7 +520,8 @@ def _desk_spec(name: str, task: str):
                  "get_matchup_preview",
                  "get_game_prediction",
                  "get_scout_pack", "get_rotation_check", "get_cap_ledger",
-                 "get_team_splits", "get_injury_impact", "run_python",
+                 "get_team_splits", "get_injury_impact", "search_game_logs",
+                 "run_python",
                  "text_to_sql"],
                 force)
     if name == "delegate_league":

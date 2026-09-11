@@ -11,6 +11,7 @@ double-doubles are counted the Stathead way: 10+ in three (or two) of
 PTS/REB/AST/STL/BLK."""
 
 import datetime as _dt
+from collections import Counter
 from typing import Any
 
 from langchain_core.tools import tool
@@ -458,6 +459,9 @@ def search_game_logs(
         # "best game" / "career high": the single max-points game.
         matched = sorted(matched, key=lambda g: g["pts"], reverse=True)[:1]
     capped = len(matched) > lim
+    wl = Counter(str(g.get("wl") or "").upper() for g in matched)
+    record = {"w": wl.get("W", 0), "l": wl.get("L", 0),
+              "games": wl.get("W", 0) + wl.get("L", 0)}
     return {
         "tool": "search_game_logs",
         "ok": True,
@@ -470,6 +474,7 @@ def search_game_logs(
             "total": len(matched),
             "returned": min(len(matched), lim),
             "capped": capped,
+            "record": record,
             "matches": [_row_out(g) for g in matched[:lim]],
         },
         "meta": {
