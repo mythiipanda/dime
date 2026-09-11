@@ -31,6 +31,7 @@ Usage: ./backend/.venv/bin/python backend/scripts/seed_bbref_gamelogs_2024_25.py
 """
 
 import json
+import re
 import sys
 import time
 from datetime import datetime
@@ -82,6 +83,18 @@ def log(msg: str) -> None:
         fh.write(line + "\n")
 
 
+def strip_suffix(name: str) -> str:
+    """Drop generational suffixes bbref omits (Butler vs Butler III)."""
+    return re.sub(r"\s+(jr|sr|ii|iii|iv|v)\.?$", "", name or "", flags=re.IGNORECASE)
+
+
+def lookup_id(name_map: dict, pname: str):
+    hit = name_map.get(norm_name(pname))
+    if hit is None:
+        hit = name_map.get(norm_name(strip_suffix(pname)))
+    return hit
+
+
 def load_name_map_2024_25() -> dict:
     """NBA Player_ID lookup from silver_hist_player_seasons season 2025.
 
@@ -97,13 +110,13 @@ def load_name_map_2024_25() -> dict:
         con.close()
     mapping: dict = {}
     for pid, name in rows:
-        key = norm_name(name or "")
-        if not key:
-            continue
-        if key in mapping and mapping[key] != pid:
-            log(f"WARN duplicate normalized name {name!r} -> {pid} (kept {mapping[key]})")
-            continue
-        mapping[key] = pid
+        for variant in {norm_name(name or ""), norm_name(strip_suffix(name or ""))}:
+            if not variant:
+                continue
+            if variant in mapping and mapping[variant] != pid:
+                log(f"WARN duplicate normalized name {name!r} -> {pid} (kept {mapping[variant]})")
+                continue
+            mapping[variant] = pid
     log(f"name map: {len(mapping)} entries")
     return mapping
 
@@ -314,7 +327,7 @@ def main() -> None:
                 counts["no_name_match"] += 1
                 log(f"[{i}/{len(player_paths)}] {pid}: no player name found, skipping")
                 continue
-            nba_id = name_map.get(norm_name(pname))
+            nba_id = lookup_id(name_map, pname)
             if nba_id is None:
                 failed[pid] = f"name mismatch: {pname!r}"
                 counts["no_name_match"] += 1
