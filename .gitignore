@@ -74,3 +74,5 @@ OPENCODE.md
 README.md
 docs/
 backend/app/data/
+.agents/
+skills-lock.json
