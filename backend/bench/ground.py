@@ -3097,6 +3097,90 @@ def gen_wpa(rng, ctx) -> tuple[Task, GroundTruth]:
     return task, truth
 
 
+# ---------------------------------------------------------------------------
+# rapm_prior family: mirrors get_rapm_prior exactly (current-season
+# silver_rapm plus silver_rapm_prior labels 2021-22..2024-25, pid pinned
+# via the tool's LOWER(name) LIKE plus CAST(player_id) match, estimate =
+# round(possession-weighted mean, 2)). Quoting the tool is the right play.
+# ---------------------------------------------------------------------------
+
+_RAPM_PRIOR_LABELS = ["2021-22", "2022-23", "2023-24", "2024-25"]
+
+
+def gen_rapm_prior(rng, ctx) -> tuple[Task, GroundTruth]:
+    if "silver_rapm_prior" not in _tables():
+        raise SkipTask("no rapm priors in warehouse")
+    cands = _q("SELECT player_id, name, COUNT(*) FROM silver_rapm_prior "
+               "GROUP BY player_id, name HAVING COUNT(*) >= 3")
+    if not cands:
+        raise SkipTask("no rapm-prior player with 3+ seasons")
+    order = list(cands)
+    rng.shuffle(order)
+    placeholders = ", ".join("?" * len(_RAPM_PRIOR_LABELS))
+    for _pid, _name in [(r[0], r[1]) for r in order]:
+        like = f"%{str(_name or '').lower()}%"
+        cur = _q("SELECT player_id, name, rapm, possessions FROM silver_rapm "
+                 "WHERE _season = ? AND LOWER(name) LIKE ? "
+                 "ORDER BY possessions DESC LIMIT 1", [SEASON, like])
+        curd = ({"player_id": str(cur[0][0]), "name": cur[0][1],
+                 "rapm": cur[0][2], "possessions": cur[0][3] or 0,
+                 "season": SEASON} if cur else None)
+        if curd is not None:
+            pid = str(curd["player_id"])
+        else:
+            top = _q("SELECT player_id FROM silver_rapm_prior "
+                     f"WHERE LOWER(name) LIKE ? AND _season IN ({placeholders}) "
+                     "ORDER BY possessions DESC LIMIT 1",
+                     [like, *_RAPM_PRIOR_LABELS])
+            if not top:
+                continue
+            pid = str(top[0][0])
+        prior_rows = _q("SELECT player_id, name, rapm, possessions, _season "
+                        "FROM silver_rapm_prior "
+                        f"WHERE LOWER(name) LIKE ? AND _season IN ({placeholders}) "
+                        "AND CAST(player_id AS VARCHAR) = CAST(? AS VARCHAR) "
+                        "ORDER BY _season",
+                        [like, *_RAPM_PRIOR_LABELS, pid])
+        priors = [{"player_id": str(r[0]), "name": r[1], "rapm": r[2],
+                   "possessions": r[3] or 0, "season": r[4]}
+                  for r in prior_rows]
+        if curd is None and not priors:
+            continue
+        if len(priors) < 3:
+            continue
+        parts = ([curd] if curd else []) + priors
+        weighted = [(float(p["rapm"]), int(p["possessions"])) for p in parts
+                    if p.get("rapm") is not None
+                    and (p.get("possessions") or 0) > 0]
+        if not weighted:
+            continue
+        total = sum(w for _, w in weighted)
+        estimate = round(sum(r * w for r, w in weighted) / total, 2)
+        head = curd or (priors[-1] if priors else {})
+        name = head.get("name") or _name
+        facts: dict = {"names": {"player": name}, "estimate": estimate,
+                       "total_possessions": total}
+        if curd is not None:
+            facts["current_rapm"] = curd["rapm"]
+            facts["current_poss"] = int(curd["possessions"] or 0)
+        tid = ctx["task_id"]
+        task = Task(
+            task_id=tid, family="rapm_prior",
+            question=f"What is {name}'s prior-informed RAPM estimate? "
+                     f"Give the estimate, the current-season RAPM, and total "
+                     f"possessions behind it.",
+            entities=[name], gold_tool_families=["rapm_prior"],
+            timeout_s=ctx["timeout_s"], seed=ctx["seed"],
+        )
+        truth = GroundTruth(
+            task_id=tid, facts=facts, computed_at=_now(),
+            source="rapm-lite via silver_rapm plus silver_rapm_prior "
+                   "(same possession-weighted mean as get_rapm_prior)",
+        )
+        return task, truth
+    raise SkipTask("no gradeable rapm-prior player found")
+
+
 GENERATORS = {
     "lookup": gen_lookup,
     "compare": gen_compare,
@@ -3122,4 +3206,5 @@ GENERATORS = {
     "historical_leaders": gen_historical_leaders,
     "zone_deltas": gen_zone_deltas,
     "wpa": gen_wpa,
+    "rapm_prior": gen_rapm_prior,
 }

@@ -84,7 +84,7 @@ TOOL_FAMILY: dict[str, str | None] = {
     "get_zone_deltas": "zone_deltas",
     "get_historical_leaders": "historical_leaders",
     "get_wpa_leaders": "wpa",
-    "get_rapm_prior": "adjudicate",
+    "get_rapm_prior": "rapm_prior",
     "get_impact_estimate": "impact",
     "resolve_entity": None,
     "search_nba": None,
