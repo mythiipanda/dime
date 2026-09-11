@@ -447,7 +447,13 @@ _HISTORICAL_RX = _re.compile(
     r"from\s+(?:19|20)\d\d(?:\s*-\s*\d\d)?\s+to\b|"
     r"all[\s-]*time|"
     r"single[\s-]*season\s+campaigns?|"
-    r"year[\s-]*by[\s-]*year",
+    r"year[\s-]*by[\s-]*year|"
+    r"\bWPA\b|win\s+probability\s+added|"
+    r"zone\s+(efficiency|deltas?)|efficiency\s+(by|per|across)\s+zone|"
+    r"vs\.?\s+(league|average)|versus\s+(league|average)|"
+    r"beat\s+(league\s+)?average|"
+    r"historical\s+leaders?|leaders?\s+since|"
+    r"prior[\s-]*informed|RAPM\s+prior",
     _re.IGNORECASE,
 )
 
