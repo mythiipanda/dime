@@ -572,6 +572,11 @@ def _season_line(player_id: object, season: str) -> dict[str, Any] | None:
             [season, str(player_id)])
         if frame is not None and frame.height > 0:
             row = frame.to_dicts()[0]
+            # P3: bbref marks traded players 2TM/3TM - never leak the
+            # code into the narrative.
+            if str(row.get("TEAM") or "").endswith("TM"):
+                n = str(row["TEAM"])[:-2]
+                row["TEAM"] = (f"traded mid-season ({n} teams)")
             return {k: v for k, v in row.items() if not k.startswith("_")}
     except Exception:
         pass
