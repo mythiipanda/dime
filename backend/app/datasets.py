@@ -65,6 +65,19 @@ def _envelope(table: str, season: str, frame: object, cached: bool) -> dict:
         meta["source"] = frame["_source"][0]
         meta["fetched_at"] = frame["_fetched_at"][0]
     rows = frame.to_dicts()
+    if table.startswith("silver_leaders_"):
+        # Pin the stat column after the identity columns so capped table
+        # renderers (12-col cap) keep it visible (QA F8, Explore tab).
+        stat_col = table.rsplit("_", 1)[-1].upper()
+        if stat_col == "FG":
+            stat_col = "FG_PCT"
+        pin = ["RANK", "PLAYER", "TEAM", stat_col, "GP", "MIN"]
+        pinned = []
+        for r in rows:
+            keyed = {k: r[k] for k in pin if k in r}
+            keyed.update({k: v for k, v in r.items() if k not in keyed})
+            pinned.append(keyed)
+        rows = pinned
     if table == "silver_lineups":
         from .tools._core import trust_tier
 

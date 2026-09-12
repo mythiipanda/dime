@@ -1666,6 +1666,8 @@ async def get_shot_compare(a: str, b: str, season: str = SEASON) -> dict[str, An
         ra, rb = ma.get(z, {}), mb.get(z, {})
         ae = _f(ra, "eFG_PCT")
         be = _f(rb, "eFG_PCT")
+        afg = _f(ra, "FG_PCT", "fg_pct")
+        bfg = _f(rb, "FG_PCT", "fg_pct")
         ash = _f(ra, "SHARE", "share")
         bsh = _f(rb, "SHARE", "share")
         if ae is None or be is None or ash is None or bsh is None:
@@ -1675,6 +1677,7 @@ async def get_shot_compare(a: str, b: str, season: str = SEASON) -> dict[str, An
         else:
             edge = a if ae > be else b
         rows.append({"zone": z, "a_eFG": ae, "b_eFG": be,
+                     "a_fg": afg, "b_fg": bfg,
                      "a_share": ash, "b_share": bsh, "edge": edge})
     rim = next((r for r in rows if r["zone"] == "Restricted Area"), None)
     if (not rim or rim["a_eFG"] is None or rim["b_eFG"] is None

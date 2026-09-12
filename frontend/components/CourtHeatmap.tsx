@@ -164,17 +164,23 @@ export default function CourtHeatmap({ rows, meta, verdict }: CourtHeatmapProps)
                 }
               }
             } else if (rec) {
-              const delta = rec.LEAGUE_DELTA ?? 0;
+              // Missing delta means "no baseline", never "neutral": render
+              // it like no-data instead of faking a league-average zone.
+              const delta = rec.LEAGUE_DELTA ?? null;
               const efg = rec.eFG_PCT ?? 0;
 
-              if (delta > 0.03 || efg >= 0.58) {
+              if (delta === null) {
+                fill = isHover ? "rgba(0, 0, 0, 0.05)" : "rgba(0, 0, 0, 0.02)";
+              } else if (delta > 0.03 || efg >= 0.58) {
                 fill = isHover ? "rgba(59, 166, 241, 0.42)" : "rgba(59, 166, 241, 0.22)";
                 stroke = "var(--color-cyan-signal)";
                 strokeWidth = isHover ? 2 : 1.2;
               } else if (delta < -0.03) {
                 fill = isHover ? "rgba(168, 162, 158, 0.3)" : "rgba(168, 162, 158, 0.14)";
               } else {
-                fill = isHover ? "rgba(0, 0, 0, 0.06)" : "rgba(0, 0, 0, 0.02)";
+                // League-average WITH data must read differently from an
+                // empty zone (QA F2): subtle tint + dashed outline.
+                fill = isHover ? "rgba(59, 166, 241, 0.14)" : "rgba(59, 166, 241, 0.07)";
               }
             }
 

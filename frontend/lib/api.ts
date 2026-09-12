@@ -392,10 +392,72 @@ export interface ThreadInfo {
   turns: number;
 }
 
+// --- Local session persistence (QA F22) -------------------------------
+// The backend session store is ephemeral container state: every deploy
+// wipes it. The rail is per-browser by design, so localStorage is the
+// durable source of truth for this browser's history; the server copy
+// is a cache. Merge on read, write on every successful fetch.
+const THREADS_KEY = () => `dime_threads_${getClientId()}`;
+const RUNS_KEY = (id: string) => `dime_runs_${getClientId()}_${id}`;
+const MAX_CACHED_THREADS = 50;
+const MAX_CACHED_RUNS = 40;
+
+function lsGet(key: string): unknown {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function lsSet(key: string, value: unknown): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* storage full or blocked - persistence is best-effort */
+  }
+}
+
+export function loadCachedThreads(): ThreadInfo[] {
+  const v = lsGet(THREADS_KEY());
+  return Array.isArray(v) ? (v as ThreadInfo[]) : [];
+}
+
+function saveThreads(list: ThreadInfo[]): void {
+  const sorted = [...list].sort((a, b) =>
+    String(b.updated).localeCompare(String(a.updated)),
+  );
+  lsSet(THREADS_KEY(), sorted.slice(0, MAX_CACHED_THREADS));
+}
+
+function mergeThreads(server: ThreadInfo[]): ThreadInfo[] {
+  const byId = new Map<string, ThreadInfo>();
+  for (const t of loadCachedThreads()) byId.set(t.id, t);
+  for (const t of server) byId.set(t.id, t); // server copy wins
+  const merged = [...byId.values()];
+  saveThreads(merged);
+  return merged;
+}
+
+function cacheRuns(thread: string, runs: RunInfo[]): void {
+  if (runs.length) lsSet(RUNS_KEY(thread), runs.slice(-MAX_CACHED_RUNS));
+}
+
+export function loadCachedRuns(thread: string): RunInfo[] {
+  const v = lsGet(RUNS_KEY(thread));
+  return Array.isArray(v) ? (v as RunInfo[]) : [];
+}
+
 export async function getThreads(): Promise<ThreadInfo[]> {
-  const res = await fetch(`${BACKEND}/api/v1/threads?client=${encodeURIComponent(getClientId())}`);
-  if (!res.ok) return [];
-  return ((await res.json()).threads || []) as ThreadInfo[];
+  try {
+    const res = await fetch(`${BACKEND}/api/v1/threads?client=${encodeURIComponent(getClientId())}`);
+    if (!res.ok) return loadCachedThreads();
+    const server = ((await res.json()).threads || []) as ThreadInfo[];
+    return mergeThreads(server);
+  } catch {
+    return loadCachedThreads();
+  }
 }
 
 export interface RunInfo {
@@ -407,9 +469,19 @@ export interface RunInfo {
 }
 
 export async function getRuns(thread: string): Promise<RunInfo[]> {
-  const res = await fetch(`${BACKEND}/api/v1/threads/${thread}/runs`);
-  if (!res.ok) return [];
-  return ((await res.json()).runs || []) as RunInfo[];
+  try {
+    const res = await fetch(`${BACKEND}/api/v1/threads/${thread}/runs`);
+    if (!res.ok) return loadCachedRuns(thread);
+    const runs = ((await res.json()).runs || []) as RunInfo[];
+    if (runs.length) {
+      cacheRuns(thread, runs);
+      return runs;
+    }
+    // Server has no rows for a thread this browser knows: deploy wipe.
+    return loadCachedRuns(thread);
+  } catch {
+    return loadCachedRuns(thread);
+  }
 }
 
 export function exportUrl(thread: string): string {

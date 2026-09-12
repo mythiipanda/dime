@@ -311,6 +311,12 @@ async def _run_desk(
                 SystemMessage(
                     content="Summarize these findings in 5 short sentences max. "
                     "Use only numbers present in the evidence. "
+                    "Never mix FG% and eFG%: cite each with its label, and "
+                    "when both exist prefer eFG% for zone accuracy. "
+                    "Never contradict the evidence numbers: if a share is "
+                    "0.606 vs 0.445, the 0.606 side is higher. "
+                    "Never mention agents, desks, tools, or orchestration; "
+                    "speak as one analyst. "
                     "If a tool in the evidence returned an error or ok:false, "
                     "name that metric as unavailable in one short clause; "
                     "never silently drop it. If a result's meta has "
