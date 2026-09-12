@@ -3464,6 +3464,45 @@ def _scrub_final_text(text: str) -> str:
         for _i, m in enumerate(reversed(_run)):
             cleaned = (cleaned[:m.start(1)]
                        + str(len(_run) - _i) + cleaned[m.end(1):])
+    # QA nit batch (Sep 12 overnight chain): internal arithmetic
+    # narration never ships. "Dividing 2143 by 64 gives 33.5 points
+    # per game." keeps the value and drops the scratch work;
+    # "(509 \u00f7 19)" and "130/5 = 26 PPG" lose the long division.
+    cleaned = re.sub(
+        r"[Dd]ividing \d[\d,]*(?:\.\d+)? by \d[\d,]*(?:\.\d+)? "
+        r"gives ", "", cleaned)
+    cleaned = re.sub(
+        r"\(\s*\d[\d,]*(?:\.\d+)?\s*[\u00f7/]\s*\d[\d,]*"
+        r"(?:\.\d+)?\s*\)", "", cleaned)
+    cleaned = re.sub(
+        r"\b\d[\d,]*(?:\.\d+)?\s*/\s*\d[\d,]*(?:\.\d+)?"
+        r"\s*=\s*", "", cleaned)
+    # "a 48 and 30 record" -> "a 48-30 record" (HOU-with-KD chain).
+    cleaned = re.sub(r"\b(\d{1,3}) and (\d{1,3}) record\b",
+                     r"\1-\2 record", cleaned)
+    # "the LAL franchise" - abbreviations are table shorthand, never
+    # prose (T7 ambiguity answer shipped it live).
+    try:
+        from nba_api.stats.static import teams as _static_teams
+        _abbr_map = {t["abbreviation"]: t["full_name"]
+                     for t in _static_teams.get_teams()}
+    except Exception:
+        _abbr_map = {}
+    if _abbr_map:
+        def _franchise(m: "re.Match[str]") -> str:
+            return (f"the {_abbr_map.get(m.group(1), m.group(1))} "
+                    f"franchise")
+        cleaned = re.sub(r"\bthe ([A-Z]{3}) franchise\b",
+                         _franchise, cleaned)
+    # Scrub-collision leftover: "Data provided by the data and split
+    # records" (league-agent rewrite landed next to "provided by").
+    cleaned = re.sub(r"\bprovided by the data\b",
+                     "provided by the dataset", cleaned,
+                     flags=re.IGNORECASE)
+    # Strip-induced fragment: "And playoff logs, Jalen ..." - the
+    # based-on strip ate the sentence head and left a dangling And.
+    cleaned = re.sub(r"(^|[.!?]\s+)And (?=(?:playoff |game )?logs\b)",
+                     r"\1From the ", cleaned)
     # Sentence-start capitalization after lead-in strips ("Based on
     # scout summary, the team" -> "The team"), keeping stat acronyms.
     _KEEP_LOWER = {"efg", "ts", "usg", "ast", "stl", "blk", "tov",
