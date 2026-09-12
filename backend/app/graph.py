@@ -1012,6 +1012,18 @@ async def _run_delegate_live(name: str, task: str, primary: str, model: str,
         # labeled tool_call events; drain the queue, emit nothing raw.
         continue
     await runner
+    # NOTE: without a yield this compiles as a coroutine and every
+    # 'async for' caller dies with "requires an object with aiter
+    # method, got coroutine" - the exact text that leaked as a final
+    # answer in F46's blowout probe. Emit one sanitized desk-done
+    # status instead of the raw token stream.
+    _res = holder.get("result") or {}
+    _ok = not (isinstance(_res, dict) and _res.get("ok") is False)
+    yield _event("thought_stream", {
+        "node": node,
+        "text": (f"{desk.title()} desk finished." if _ok
+                 else f"{desk.title()} desk hit a snag; checking the rest of the evidence."),
+    })
 
 
 def _trace_replay_events(out: dict[str, Any]) -> list[dict[str, Any]]:

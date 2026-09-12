@@ -906,6 +906,21 @@ def _locate_player_team(name: str, con: object) -> tuple[str, str, int] | None:
     return None
 
 
+def _norm_trade_teams(team_a: str, team_b: str) -> tuple[str, str] | None:
+    """Resolve abbrev/city/nickname to canonical abbreviations.
+
+    F47: 'LAL' vs 'LAKERS' graded as two franchises with an empty side.
+    Returns None when both sides resolve to the same team.
+    """
+    from .competitive import _resolve_team_abbr
+
+    a = _resolve_team_abbr(team_a) or str(team_a or "").strip().upper()
+    b = _resolve_team_abbr(team_b) or str(team_b or "").strip().upper()
+    if a and b and a == b:
+        return None
+    return a, b
+
+
 def _auto_correct_side(unks: list[str], old_team: str, plist: str,
                        con: object):
     """Re-attribute a side whose players are unknown on old_team.
@@ -1203,6 +1218,13 @@ def get_trade_check(
     if not team_a or not team_b:
         return {"tool": "get_trade_check", "ok": False,
                 "error": "two teams needed"}
+    _norm = _norm_trade_teams(team_a, team_b)
+    if _norm is None:
+        return {"tool": "get_trade_check", "ok": False,
+                "error": (f"both sides resolve to the same team "
+                          f"({team_a} / {team_b}) - a trade needs two "
+                          f"different teams; check the team names")}
+    team_a, team_b = _norm
     from .. import store as _store
 
     con = _store.connect()
@@ -1235,6 +1257,14 @@ def get_trade_check(
             if hints:
                 msg += ". " + "; ".join(hints)
             return {"tool": "get_trade_check", "ok": False, "error": msg}
+        if not names_a or not names_b:
+            # F47: never grade a ghost trade with an empty side.
+            empty = team_a.upper() if not names_a else team_b.upper()
+            return {"tool": "get_trade_check", "ok": False,
+                    "error": (f"no players matched on the {empty} side - "
+                              f"not grading a one-sided 'trade'. If you "
+                              f"meant a past real-world trade, say which "
+                              f"teams and players were in it.")}
         pay_a, _ = _payroll(team_a, con)
         pay_b, _ = _payroll(team_b, con)
         salary_date = _salary_date(con)
@@ -1305,6 +1335,14 @@ def get_trade_value(
 
     from .. import store as _store
 
+    if team_a and team_b:
+        _norm = _norm_trade_teams(team_a, team_b)
+        if _norm is None:
+            return {"tool": "get_trade_value", "ok": False,
+                    "error": (f"both sides resolve to the same team "
+                              f"({team_a} / {team_b}) - check the team "
+                              f"names")}
+        team_a, team_b = _norm
     PROD_SEASON = "2025-26"
     SAL_SEASON = "2026-27"
     DISCLAIMER = ("All dollar figures are rough estimates from 2025-26 "
@@ -1342,6 +1380,17 @@ def get_trade_value(
             if hints:
                 msg += ". " + "; ".join(hints)
             return {"tool": "get_trade_value", "ok": False, "error": msg}
+        if not names_a or not names_b:
+            # F47: 'Did the Lakers win the Luka trade?' graded Dallas's
+            # empty side an F. What a past trade's other side received
+            # is not in the data - refuse, don't manufacture a zero.
+            empty = team_a.upper() if not names_a else team_b.upper()
+            return {"tool": "get_trade_value", "ok": False,
+                    "error": (f"the {empty} side has no assets in the "
+                              f"data - I can only grade proposed trades "
+                              f"where both sides name players. What a "
+                              f"past trade's other side actually "
+                              f"received is not in this dataset.")}
 
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         cols = {t: {r[1] for r in con.execute(f"PRAGMA table_info({t})").fetchall()}
@@ -1493,6 +1542,13 @@ def get_trade_value(
             # bargain). Flip to surplus value: positive = outperforming
             # the contract, negative = overpaid.
             out["residual_m"] = round((est_m * 1e6 - out["salary_26_27"]) / 1e6, 1)
+            _rv = out["residual_m"]
+            # QA #47: direction must be readable without a card legend.
+            out["residual_note"] = (
+                f"surplus value of about ${_rv}M (outperforming the "
+                f"contract)" if _rv >= 0 else
+                f"overpaid by an estimated ${abs(_rv)}M on this "
+                f"production")
         per = {c: lead["tot"][c] / gp for c in lead["tot"]}
         tags = []
         if (lead["fg3m"] or 0) / gp >= 2.0:
