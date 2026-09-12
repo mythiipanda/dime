@@ -3370,6 +3370,13 @@ def _scrub_final_text(text: str) -> str:
     if _hits and _covered >= 0.6 * len(text):
         return _COMPUTE_FALLBACK
     cleaned = _DEV_TEXT_RX.sub("that data pull did not complete", text)
+    # P3/F66-chain: "Based on the get_X tool output" / display-name
+    # variants ("Based on the Get Standings output") are orchestration,
+    # never prose. Must run BEFORE the QA #60/#61 sentence drops, which
+    # otherwise nuke the whole sentence for containing "tool".
+    cleaned = re.sub(
+        r"[Bb]ased on the [Gg]et[_ ][A-Za-z]+(?: tool)? output,?", "",
+        cleaned)
     # QA #60: the model sometimes NARRATES a tool error in prose
     # ("A query for the award returned an error stating 'Finals MVP'
     # is not a valid award key"). Internal plumbing is never the
@@ -3554,7 +3561,6 @@ def _scrub_final_text(text: str) -> str:
     cleaned = re.sub(r"(^|[.!?]\s+)([a-z][a-zA-Z%]*)", _cap, cleaned)
     # P3: tool names and desk identities are orchestration, never prose
     # ("Based on the get_injuries tool output", "the league agent").
-    cleaned = re.sub(r"Based on the get_\w+ tool output,?", "", cleaned)
     cleaned = re.sub(r"\bthe get_\w+ tool\b", "the data", cleaned)
     cleaned = re.sub(r"\bget_\w+\b", "", cleaned)
     cleaned = re.sub(r"\bfrom the (league|scout|team) (agent|desk)\b",
@@ -3665,6 +3671,36 @@ def _extract_ledger_facts(state: dict) -> list[str]:
                 da = (tr.get("meta") or {}).get("deterministic_answer")
                 if da:
                     facts.append(da[0].upper() + da[1:])
+            elif tname == "get_standings" and isinstance(rows, list):
+                # QA F67: "Which team had the best record?" answered OKC
+                # 64-18, but the ledger carried nothing, so the next
+                # turn ("their best player") resolved to a false
+                # absence. Persist the best-record team as trusted
+                # evidence for pronoun carry. LeagueRank 1 row wins;
+                # fall back to max WINS.
+                best = None
+                for r in rows:
+                    if isinstance(r, dict) and r.get("LeagueRank") == 1.0:
+                        best = r
+                        break
+                if best is None:
+                    def _w(row: dict) -> float:
+                        try:
+                            return float(row.get("WINS"))
+                        except (TypeError, ValueError):
+                            return -1.0
+                    cands = [r for r in rows if isinstance(r, dict)]
+                    best = max(cands, key=_w, default=None)
+                    if best is not None and _w(best) < 0:
+                        best = None
+                if best is not None and best.get("team"):
+                    line = f"Best record: {best['team']}"
+                    rec = best.get("Record")
+                    if rec:
+                        line += f" ({rec})"
+                    if best.get("abbrev"):
+                        line += f" [{best['abbrev']}]"
+                    facts.append(line)
             elif tname == "search_game_logs" and isinstance(rows, dict):
                 matches = rows.get("matches") or []
                 player = rows.get("player")

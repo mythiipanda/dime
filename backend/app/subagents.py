@@ -340,8 +340,10 @@ async def _run_desk(
         else:
             # QA F13 residue: read as an honest user-safe sentence if
             # this ever leaks into a final answer.
-            err = ("no data on that angle in the dataset "
-                   "(coverage: 2024-25 and 2025-26 seasons)")
+            # QA F67: no coverage parenthetical - the season line
+            # already states coverage, and a second span read as
+            # season drift next to it.
+            err = "no data on that angle in the dataset"
         return {"agent": desk, "ok": False, "error": err,
                 "tool_trace": trace}
     try:
