@@ -400,16 +400,14 @@ def disambiguate_last_name(raw: str,
 # cached connection keeps repeat calls well under a second.
 
 
-_conn_local = _threading.local()
 
 
 def _warehouse_conn() -> Any:
-    """Per-thread cached read-only warehouse connection."""
-    con = getattr(_conn_local, "con", None)
-    if con is None:
-        con = _store.connect(read_only=True)
-        _conn_local.con = con
-    return con
+    """Fresh read-only warehouse connection. Never cached: a held read-only
+    connection makes any later write-mode connect() in this process fail
+    with 'different configuration' (DuckDB single-config-per-process rule),
+    which was the batch-test contention flake. Caller must close()."""
+    return _store.connect(read_only=True)
 
 
 def _zone_case_sql() -> str:
@@ -688,17 +686,20 @@ def search_shots(player: str = "", team: str = "", zones: str = "",
     except Exception as exc:
         return {"tool": "search_shots", "ok": False,
                 "error": f"warehouse read failed: {exc}"}
-    player_id, status, payload = _resolve_player(con, season, player)
-    if status == "unknown":
-        return {"tool": "search_shots", "ok": False, "error": payload}
-    if status == "ambiguous":
-        return _ambiguous_response(
-            con, season, player, payload, team_id, wanted_zones, folded,
-            three_only, made_filter, late_seconds, exclude_heaves, group, ot)
-    return _run_search(
-        con, season, player, team, player_id, team_id, wanted_zones,
-        folded, three_only, made_filter, late_seconds, exclude_heaves,
-        lim, group, ot, periods, late_clock)
+    try:
+        player_id, status, payload = _resolve_player(con, season, player)
+        if status == "unknown":
+            return {"tool": "search_shots", "ok": False, "error": payload}
+        if status == "ambiguous":
+            return _ambiguous_response(
+                con, season, player, payload, team_id, wanted_zones, folded,
+                three_only, made_filter, late_seconds, exclude_heaves, group, ot)
+        return _run_search(
+            con, season, player, team, player_id, team_id, wanted_zones,
+            folded, three_only, made_filter, late_seconds, exclude_heaves,
+            lim, group, ot, periods, late_clock)
+    finally:
+        con.close()
 
 
 def _ambiguous_response(con: Any, season: str, text: str,

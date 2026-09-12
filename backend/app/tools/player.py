@@ -1016,6 +1016,17 @@ def get_advanced(player: str | int, season: str = SEASON) -> dict[str, Any]:
             "meta": {"source": "nba_api", "season": season}}
 
 
+# bbref distance buckets -> canonical court zones (approximate; corner
+# threes cannot be separated from above-the-break in bucket data).
+_BUCKET_TO_ZONE = {
+    "0-3ft": "Restricted Area",
+    "3-10ft": "In The Paint (Non-RA)",
+    "10-16ft": "Mid-Range",
+    "16ft-3P": "Mid-Range",
+    "3P": "Above the Break 3",
+}
+
+
 @tool
 def get_shot_zones(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
     """Zone splits for one player id: rim, midrange, three with shares.
@@ -1060,16 +1071,39 @@ def get_shot_zones(player_id: str | int, season: str = SEASON) -> dict[str, Any]
                     if lz is not None and lz.height > 0:
                         agg: dict[str, list] = {}
                         for lr in lz.to_dicts():
-                            a = agg.setdefault(str(lr.get("ZONE")), [0.0, 0.0])
-                            a[0] += float(lr.get("FGM") or 0)
-                            a[1] += float(lr.get("FGA") or 0)
+                            zone = _BUCKET_TO_ZONE.get(str(lr.get("ZONE")))
+                            if zone is None:
+                                continue
+                            m_v = float(lr.get("FGM") or 0)
+                            a_v = float(lr.get("FGA") or 0)
+                            if not (math.isfinite(m_v) and math.isfinite(a_v)):
+                                continue  # NaN rows (per-100 sections) poison sums
+                            a = agg.setdefault(zone, [0.0, 0.0])
+                            a[0] += m_v
+                            a[1] += a_v
                         for zone, (m, a) in agg.items():
                             if a >= 50:
                                 league_fg[zone] = round(m / a, 3)
                 except Exception:
                     pass
-                out_rows = []
+                # Distance buckets map onto the canonical viz zones so the
+                # court heatmap and compare paths can read them. Buckets are
+                # approximate: 3-10ft counts as paint, 10-16ft and 16ft-3P
+                # merge into mid-range, all threes land in above-the-break
+                # (corners cannot be separated from bucket data).
+                merged: dict[str, list[float]] = {}
                 for r in zb.to_dicts():
+                    zone = _BUCKET_TO_ZONE.get(str(r.get("ZONE")))
+                    if zone is None:
+                        continue
+                    slot = merged.setdefault(zone, [0.0, 0.0])
+                    slot[0] += float(r.get("FGM") or 0)
+                    slot[1] += float(r.get("FGA") or 0)
+                bucket_rows = [{"ZONE": z, "FGM": m, "FGA": a}
+                               for z, (m, a) in merged.items()]
+                zb_rows = bucket_rows
+                out_rows = []
+                for r in zb_rows:
                     fga = float(r.get("FGA") or 0)
                     fgm = float(r.get("FGM") or 0)
                     fgp = round(fgm / fga, 3) if fga else 0.0
@@ -1091,9 +1125,10 @@ def get_shot_zones(player_id: str | int, season: str = SEASON) -> dict[str, Any]
                 meta = {"source": "basketball-reference",
                         "season": season, "rows": len(out_rows),
                         "cached": True,
-                        "note": "distance buckets (0-3ft, 3-10ft, "
-                                "10-16ft, 16ft-3P, 3P), not exact "
-                                "NBA zones"}
+                        "note": "distance buckets mapped onto court zones "
+                                "(3-10ft counts as paint, both mid buckets "
+                                "merge, corner threes included in "
+                                "above-the-break), not exact NBA zones"}
                 if league_fg:
                     meta["baseline"] = "silver_zone_splits league bucket FG%"
                 return {"tool": "get_shot_zones", "ok": True, "rows": out_rows,
@@ -1171,10 +1206,39 @@ def get_shot_zones(player_id: str | int, season: str = SEASON) -> dict[str, Any]
             baseline_detail = "silver_shots empty or missing zone/made columns"
     except Exception as exc:
         baseline_detail = str(exc)[:120]
+    bucket_fg: dict[str, float] = {}
     if baseline_missing:
-        baseline_detail = ("league baseline unavailable: shot-level data "
-                           "seeded for few players; bucket table used for "
-                           "league-wide coverage instead")
+        # Fall back to the league-wide bucket table (551 players) mapped
+        # onto canonical zones; corner zones reuse the all-threes baseline.
+        try:
+            lz = store.read_frame("silver_zone_splits", "_season = ?", [season])
+            if lz is not None and lz.height > 0:
+                agg_b: dict[str, list] = {}
+                for lr in lz.to_dicts():
+                    zone = _BUCKET_TO_ZONE.get(str(lr.get("ZONE")))
+                    if zone is None:
+                        continue
+                    m_v = float(lr.get("FGM") or 0)
+                    a_v = float(lr.get("FGA") or 0)
+                    if not (math.isfinite(m_v) and math.isfinite(a_v)):
+                        continue  # NaN rows (per-100 sections) poison sums
+                    slot = agg_b.setdefault(zone, [0.0, 0.0])
+                    slot[0] += m_v
+                    slot[1] += a_v
+                for zone, (m, a) in agg_b.items():
+                    if a >= 50:
+                        bucket_fg[zone] = round(m / a, 3)
+                if "Above the Break 3" in bucket_fg:
+                    bucket_fg.setdefault("Left Corner 3",
+                                         bucket_fg["Above the Break 3"])
+                    bucket_fg.setdefault("Right Corner 3",
+                                         bucket_fg["Above the Break 3"])
+        except Exception:
+            bucket_fg = {}
+        if not bucket_fg:
+            baseline_detail = ("league baseline unavailable: shot-level data "
+                               "seeded for few players and bucket table "
+                               "missing for this season")
     rows = []
     for z, (m, a, t) in sorted(zones.items()):
         fgp = round(m / a, 3) if a else 0.0
@@ -1187,11 +1251,15 @@ def get_shot_zones(player_id: str | int, season: str = SEASON) -> dict[str, Any]
                                "freq_pct": shr}
         if not baseline_missing and z in league_efg:
             row["LEAGUE_DELTA"] = round(efg - league_efg[z], 3)
+        elif z in bucket_fg:
+            row["LEAGUE_DELTA"] = round(fgp - bucket_fg[z], 3)
         rows.append(row)
     meta: dict[str, Any] = {"source": shot_source, "fetched_at": shot_fetched,
                             "rows": len(rows), "season": season,
                             "cached": shot_source.startswith("warehouse")}
-    if baseline_missing:
+    if baseline_missing and bucket_fg:
+        meta["baseline"] = "silver_zone_splits league bucket FG% (mapped)"
+    elif baseline_missing:
         meta["baseline_missing"] = True
         if baseline_detail:
             meta["baseline_detail"] = baseline_detail
