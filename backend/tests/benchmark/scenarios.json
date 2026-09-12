@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "notes": "Dime benchmark pack v1. Axes: capability (content assertions) + efficiency (wall seconds, tool calls, streamed chars). Chains share one thread id per run to test context carry. xfail scenarios are known-open findings; they report but never fail the pack.",
+  "banned_everywhere": ["try a narrower", "did not run", "warehouse query", "based on warehouse"],
+  "scenarios": [
+    {
+      "id": "canon-team-ast",
+      "chain": ["Which team had the most total assists this season?"],
+      "expect": {"contains": ["2462", "Atlanta"]},
+      "budget": {"max_seconds": 30}
+    },
+    {
+      "id": "canon-team-pts",
+      "chain": ["Which team scored the most total points?"],
+      "expect": {"contains": ["10010", "Denver"]},
+      "budget": {"max_seconds": 30}
+    },
+    {
+      "id": "canon-team-reb",
+      "chain": ["Which team grabbed the most total rebounds?"],
+      "expect": {"contains": ["3946", "Houston"]},
+      "budget": {"max_seconds": 30}
+    },
+    {
+      "id": "canon-finals",
+      "chain": ["Who won the 2026 Finals and what was the series score?"],
+      "expect": {"contains": ["Knicks", "4-1"]},
+      "budget": {"max_seconds": 30}
+    },
+    {
+      "id": "f61-hang-class",
+      "chain": ["What is the all-time record for most points by a team in one game?"],
+      "expect": {"contains": ["2025-26"], "not_contains": ["try a narrower", "did not run", "hang"]},
+      "budget": {"max_seconds": 95},
+      "comment": "Out-of-coverage ask: must end honestly naming coverage, never hang, never user-blame."
+    },
+    {
+      "id": "f62-evidence-carry",
+      "chain": [
+        "How did Jalen Brunson do in Game 5 of the Finals?",
+        "How many points did he score in that game?"
+      ],
+      "expect_turns": [
+        {"contains": ["45"]},
+        {"contains": ["45"], "not_contains": ["do not show", "does not contain", "no record"]}
+      ],
+      "budget": {"max_seconds_per_turn": 60}
+    },
+    {
+      "id": "f63-switch-back",
+      "chain": [
+        "Who won the 2026 Finals?",
+        "Which team had the best regular season record?",
+        "Back to the Finals - who did the winner beat and what was the series?"
+      ],
+      "expect_turns": [
+        {"contains": ["Knicks", "4-1"]},
+        {"contains": ["Thunder", "64"]},
+        {"contains": ["Spurs", "4-1"], "not_contains": ["do not show", "no record", "not in the Finals"]}
+      ],
+      "budget": {"max_seconds_per_turn": 60}
+    },
+    {
+      "id": "f64-team-scope-logs",
+      "chain": ["Show me the Spurs last 5 games"],
+      "expect": {"contains": ["Spurs"]},
+      "xfail": true,
+      "comment": "Known open: team-scope search_game_logs payload lacks player names in narrative."
+    },
+    {
+      "id": "efficiency-simple",
+      "chain": ["How many games did the Nuggets win?"],
+      "expect": {"contains": ["54"]},
+      "budget": {"max_seconds": 20, "max_tool_calls": 5}
+    },
+    {
+      "id": "efficiency-player",
+      "chain": ["How many assists did Jokic average?"],
+      "expect": {"contains": ["Jokic"]},
+      "budget": {"max_seconds": 25, "max_tool_calls": 6}
+    }
+  ]
+}
