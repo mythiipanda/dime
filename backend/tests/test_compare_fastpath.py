@@ -126,12 +126,16 @@ def test_impact_compare_stays_with_planner(monkeypatch):
     assert st["round"] == 0
 
 
-def test_history_disables_compare_fastpath(monkeypatch):
+def test_history_still_fastpaths_two_player_compare(monkeypatch):
+    """Follow-up chips name both players again; the old history gate
+    pushed those to the LLM planner, which could answer with zero
+    tools and no data (F28). Exactly-two-player compares fast-path
+    even inside a thread."""
     monkeypatch.setattr(graph_mod, "_run_delegate_live", _fake_delegate)
     st = _drain(Q2, history=[{"role": "user", "text": "hi"},
                              {"role": "assistant", "text": "hey"}])
-    assert "get_compare" not in _tool_names(st)
-    assert st["round"] == 0
+    assert _tool_names(st) == ["get_compare", "delegate_scout",
+                               "delegate_scout"]
 
 
 class _FakeTool:

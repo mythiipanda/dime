@@ -2216,8 +2216,14 @@ h1 {{ font-size: 22px; margin: 0; color: #1c1917; }}
     # Save where the file endpoint serves: backend/data/cards (git-ignored).
     out_dir = _Path(__file__).resolve().parent.parent.parent / "data" / "cards"
     out_dir.mkdir(parents=True, exist_ok=True)
-    safe_a = "".join(c for c in name_a if c.isalnum())[:20]
-    safe_b = "".join(c for c in name_b if c.isalnum())[:20]
+    import unicodedata as _ud
+
+    def _slug(s: str) -> str:
+        folded = _ud.normalize("NFKD", s).encode("ascii", "ignore").decode()
+        return "".join(c for c in folded if c.isalnum())[:20] or "player"
+
+    safe_a = _slug(name_a)
+    safe_b = _slug(name_b)
     fname = f"debate_{safe_a}_vs_{safe_b}_{season.replace('-', '')}.html"
     out_path = out_dir / fname
     out_path.write_text(html_doc, encoding="utf-8")

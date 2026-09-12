@@ -848,7 +848,7 @@ def _triage_plan_text(question: str, found_p: list[str],
     names = (found_p or []) + (found_t or [])
     prefix = f"Found {', '.join(names[:3])} — " if names else ""
     q = question or ""
-    is_trade = bool(re.search(r"\btrad(e|es|ed|ing)\b|sign-and-trade|\bswap\b|\bdeal\b",
+    is_trade = bool(re.search(r"\btrad(e|es|ed|ing)\b|sign-and-trade|\bswap\b|\bdeal\b|\blegal(?:ity)?\b",
                               q, re.IGNORECASE))
     is_cast = bool(re.search(
         r"supporting cast|\bcast\b|teammates?|rotation depth|"
@@ -1129,7 +1129,7 @@ async def _triage_seed(question: str, primary: str, model: str,
         "text": _triage_plan_text(question, found_p, found_t, bool(state.get("history"))),
     })
     is_compare = bool(_COMPARE_RX.search(question))
-    is_trade = bool(re.search(r"\btrad(e|es|ed|ing)\b|sign-and-trade|\bswap\b|\bdeal\b",
+    is_trade = bool(re.search(r"\btrad(e|es|ed|ing)\b|sign-and-trade|\bswap\b|\bdeal\b|\blegal(?:ity)?\b",
                               question, re.IGNORECASE))
     is_cast = bool(re.search(
         r"supporting cast|\bcast\b|teammates?|rotation depth|"
@@ -1339,7 +1339,9 @@ async def _triage_seed(question: str, primary: str, model: str,
         and not is_trade
         and not is_cast
         and not re.search(r"\bimpact\b", question, re.IGNORECASE)
-        and not state.get("history")
+        # Chips and follow-ups name both players again; the history gate
+        # used to push those to the LLM planner, which could answer with
+        # zero tools and no data.
     )
     if is_compare_fast:
         # Two-player compare turns burned 4 planner LLM rounds (10.3s)
