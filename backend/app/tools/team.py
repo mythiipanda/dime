@@ -143,6 +143,107 @@ def _series_date_key(s: object) -> str:
 
 
 @tool
+def get_team_game_log(team: str, limit: int = 10,
+                      playoffs: bool = False,
+                      season: str = SEASON) -> dict[str, Any]:
+    """A team's recent games, most recent first: date, matchup, W/L,
+    team and opponent points, plus team REB/AST/STL/BLK/TOV. Use for
+    "show me the <team> last N games" asks - this is the TEAM game log,
+    never search_game_logs (that tool is per-player and its team_wide
+    mode returns match counts, not games). team: name, nickname,
+    abbreviation, or id. limit: 1-30. playoffs: read silver_playoffs
+    (team-level playoff rows) instead of the regular-season table.
+    Warehouse only; 2025-26 only.
+    """
+    from .. import store as _store
+
+    try:
+        tid = coerce_team_id(team)
+    except ValueError as exc:
+        return {"tool": "get_team_game_log", "ok": False, "error": str(exc)}
+    try:
+        limit = max(1, min(int(limit or 10), 30))
+    except (TypeError, ValueError):
+        limit = 10
+    abbr = _abbrev(team)
+
+    con = _store.connect()
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        games: list[dict[str, Any]] = []
+        if not playoffs and "silver_team_games" in tables:
+            rows = con.execute(
+                """SELECT g.Game_ID, g.GAME_DATE, g.MATCHUP, g.WL,
+                          g.PTS, o.PTS, g.REB, g.AST, g.STL, g.BLK, g.TOV
+                   FROM silver_team_games g
+                   LEFT JOIN silver_team_games o
+                     ON o._season = g._season AND o.Game_ID = g.Game_ID
+                    AND o._entity != g._entity
+                   WHERE g._season = ? AND g._entity = ?
+                   ORDER BY strptime(g.GAME_DATE, '%b %d, %Y') DESC
+                   LIMIT ?""",
+                [season, f"team:{tid}", limit * 4],
+            ).fetchall()
+            seen: set[str] = set()
+            for (gid, gdate, matchup, wl, pts, opp_pts, reb, ast, stl,
+                 blk, tov) in rows:
+                if str(gid) in seen:
+                    continue
+                seen.add(str(gid))
+                games.append({
+                    "game_id": str(gid), "date": str(gdate),
+                    "matchup": str(matchup),
+                    "wl": str(wl).upper() if wl else None,
+                    "pts": pts, "opp_pts": opp_pts, "reb": reb,
+                    "ast": ast, "stl": stl, "blk": blk, "tov": tov,
+                })
+                if len(games) >= limit:
+                    break
+        elif playoffs and "silver_playoffs" in tables:
+            rows = con.execute(
+                """SELECT g.GAME_ID, g.GAME_DATE, g.MATCHUP, g.WL,
+                          g.PTS, o.PTS, g.REB, g.AST, g.STL, g.BLK, g.TOV
+                   FROM silver_playoffs g
+                   LEFT JOIN silver_playoffs o
+                     ON o._season = g._season AND o.GAME_ID = g.GAME_ID
+                    AND o.TEAM_ABBREVIATION != g.TEAM_ABBREVIATION
+                   WHERE g._season = ? AND g.TEAM_ABBREVIATION = ?
+                   ORDER BY coalesce(try_strptime(g.GAME_DATE, '%b %d, %Y'),
+                                     try_strptime(g.GAME_DATE, '%Y-%m-%d')) DESC
+                   LIMIT ?""",
+                [season, abbr, limit * 4],
+            ).fetchall()
+            seen2: set[str] = set()
+            for (gid, gdate, matchup, wl, pts, opp_pts, reb, ast, stl,
+                 blk, tov) in rows:
+                if str(gid) in seen2:
+                    continue
+                seen2.add(str(gid))
+                games.append({
+                    "game_id": str(gid), "date": str(gdate),
+                    "matchup": str(matchup),
+                    "wl": str(wl).upper() if wl else None,
+                    "pts": pts, "opp_pts": opp_pts, "reb": reb,
+                    "ast": ast, "stl": stl, "blk": blk, "tov": tov,
+                })
+                if len(games) >= limit:
+                    break
+        else:
+            return {"tool": "get_team_game_log", "ok": False,
+                    "error": "team game table not present in warehouse"}
+    finally:
+        con.close()
+    if not games:
+        return {"tool": "get_team_game_log", "ok": False,
+                "error": f"no {'playoff' if playoffs else 'regular-season'} "
+                         f"games found for {abbr} in {season}"}
+    return {"tool": "get_team_game_log", "ok": True,
+            "team": abbr, "games": games, "rows": games,
+            "meta": {"season": season,
+                     "scope": "playoffs" if playoffs else "regular season"}}
+
+
+@tool
 def get_season_series(team_a: str, team_b: str,
                       season: str = SEASON) -> dict[str, Any]:
     """Head-to-head between two TEAMS: every meeting this season, regular

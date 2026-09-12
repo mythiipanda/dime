@@ -324,6 +324,7 @@ TOOL_LABELS = {
     "get_elo_standings": "Computing ELO ratings",
     "get_impact_estimate": "Estimating impact",
     "search_game_logs": "Searching game logs",
+    "get_team_game_log": "Pulling the team game log",
 }
 
 

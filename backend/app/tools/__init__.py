@@ -86,6 +86,7 @@ from .team import (
     get_rotation_check,
     get_scout_pack,
     get_scouting_report,
+    get_team_game_log,
     get_team_hub,
     get_team_splits,
 )
@@ -103,6 +104,7 @@ v1_tools: list[BaseTool] = [
     get_playoff_intel,
     get_raptor_history,
     get_team_hub,
+    get_team_game_log,
     get_games_on_date,
     get_boxscore,
     get_standings,

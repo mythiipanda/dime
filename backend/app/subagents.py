@@ -778,7 +778,8 @@ def _desk_spec(name: str, task: str):
             if abbr:
                 force = ("get_injury_impact", {"team": abbr})
         return ("team", TEAM_BRIEF,
-                ["resolve_entity", "search_nba", "get_team_hub", "get_games_on_date",
+                ["resolve_entity", "search_nba", "get_team_hub", "get_team_game_log",
+                 "get_games_on_date",
                  "get_boxscore", "get_lineups", "get_lineup_stats", "get_wowy", "get_injuries", "get_preview",
                  "get_matchup_preview",
                  "get_game_prediction",
