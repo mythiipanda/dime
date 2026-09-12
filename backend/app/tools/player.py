@@ -579,6 +579,25 @@ def get_player_intel(player_id: str | int, season: str = SEASON) -> dict[str, An
 
 
 @tool
+def get_season_averages(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
+    """Per-game season averages (PPG, RPG, APG, SPG, BPG, percentages,
+    games played) for one player. Names or ids. Warehouse only, seeded
+    from basketball-reference; no game-by-game detail."""
+    try:
+        pid = coerce_player_id(player_id)
+    except ValueError:
+        return {"tool": "get_season_averages", "ok": False,
+                "error": f"unknown player: {player_id}"}
+    line = _season_line(pid, season)
+    if not line:
+        return {"tool": "get_season_averages", "ok": False,
+                "error": f"no season line on file for {season}"}
+    return {"tool": "get_season_averages", "ok": True, "rows": [line],
+            "meta": {"source": "basketball-reference", "season": season,
+                     "coverage": "season_line"}}
+
+
+@tool
 def get_playoff_intel(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
     """Playoff game log for one player. Names or ids. Warehouse first."""
     try:

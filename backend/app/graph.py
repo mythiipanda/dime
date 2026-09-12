@@ -115,6 +115,10 @@ _PLANNER_PREFIX = (
     "For single-season leaders, standings, injuries, playoffs, ratings, "
     "clutch, ELO, title odds, today games, briefings, hustle boards, "
     "or deep standings splits, call delegate_league. "
+    "For one player's season averages (ppg, rpg, apg, per-game asks, "
+    "how many X per game, what does X average), call "
+    "get_season_averages first - never delegate_league or text_to_sql "
+    "for a single player's season line. "
     "For two-player compares call get_compare first, then one "
     "delegate_scout per player for shot diet, clutch, and advanced depth. "
     "For shot charts, shot zones, shot diet, or shooting-location "
@@ -446,6 +450,17 @@ _GAMELOG_RX = re.compile(
 # questions: the tool only covers 2025-26 warehouse logs.
 _GAMELOG_NO_RX = re.compile(
     r"\baverag\w*|\bavg\b|\bppg\b|\bper game\b|"
+    r"\bcareer\b|\ball[\s-]*time\b|\blast season\b",
+    re.IGNORECASE)
+# Single-player season-average asks ("how many assists per game does
+# Jokic average") are not game-log questions and not league questions:
+# route them to get_season_averages. Career/all-time/last-season stay
+# with the planner (season resolution lives there).
+_SEASON_AVG_RX = re.compile(
+    r"\baverag\w*|\bavg\b|\bper game\b|\b[prs]pg\b|\bapg\b|"
+    r"\bbpg\b|\bspg\b|\bmpg\b",
+    re.IGNORECASE)
+_SEASON_AVG_NO_RX = re.compile(
     r"\bcareer\b|\ball[\s-]*time\b|\blast season\b",
     re.IGNORECASE)
 # League-wide leader questions have no named player, so the
@@ -1237,6 +1252,40 @@ async def _triage_seed(question: str, primary: str, model: str,
             async for _e in _triage_terminal(question, state):
                 yield _e
         return
+    is_season_avg = (
+        len(_named_p) == 1
+        and _SEASON_AVG_RX.search(question)
+        and not _SEASON_AVG_NO_RX.search(question)
+        and not is_compare
+        and not is_trade
+        and not is_cast
+        and not _PREDICT_LIVE_RX.search(question)
+    )
+    if is_season_avg:
+        # Single-stat asks used to fall through to the planner, which
+        # sent them to delegate_league -> text_to_sql and dead-ended on
+        # a null (F26). The season line is seeded for every rostered
+        # player, so answer straight from the warehouse. No history
+        # gate: follow-up chips restate the player and stat.
+        _sseason = "2025-26"
+        _sm = re.search(r"(20\d\d)\s*-\s*(\d\d)", question)
+        if _sm:
+            _sseason = f"{_sm.group(1)}-{_sm.group(2)}"
+        _sh: dict[str, Any] = {}
+        async for _e in _triage_tool(
+                "get_season_averages",
+                {"player_id": _named_p[0], "season": _sseason},
+                state, _sh):
+            yield _e
+        _sout = _sh.get("out") or {}
+        if _result_status(_sout) == "ok":
+            if state["tool_results"] and state["tool_results"][-1] is _sout:
+                state["tool_results"][-1] = {
+                    "tool": "get_season_averages", "rows": [_sout]}
+            async for _e in _triage_terminal(question, state):
+                yield _e
+            return
+        # Unknown player or missing line: fall through to the planner.
     is_league_team = (
         not _named_p
         and _LEAGUE_TEAM_RX.search(question)
@@ -1506,36 +1555,37 @@ async def _triage_seed(question: str, primary: str, model: str,
 
             lines = ["print('Supporting cast comparison, 2025-26 regular season')"]
             for p, ab in sides:
+                block: list[str] = []
                 last = p.split()[-1].replace("'", "")
                 safe = "".join(
                     c for c in unicodedata.normalize("NFKD", p)
                     if not unicodedata.combining(c)).replace("'", "")
-                lines.append(f"print('{safe} plays for {ab} this season')")
+                block.append(f"print('{safe} plays for {ab} this season')")
                 full = next((t["full_name"] for t in _st.get_teams()
                              if t["abbreviation"] == ab), ab)
                 nick = full.split()[-1].replace("'", "")
-                lines.append(
+                block.append(
                     f"_t_{ab} = con.execute(\"SELECT TEAM_NAME, NET_RATING FROM "
                     f"silver_team_ratings WHERE _season='2025-26' AND "
                     f"(TEAM_NAME = '{nick}' OR TEAM_NAME = '{full}') "
                     f"LIMIT 1\").fetchall()")
-                lines.append(
+                block.append(
                     f"_mates_{ab} = con.execute(\"SELECT PLAYER, PTS, GP FROM "
                     f"silver_leaders_pts WHERE _season='2025-26' AND TEAM='{ab}' "
                     f"AND UPPER(PLAYER) NOT LIKE '%{last.upper()}%' "
                     f"ORDER BY PTS DESC LIMIT 4\").fetchall()")
-                lines.append(
+                block.append(
                     f"_adv_{ab} = con.execute(\"SELECT PLAYER_NAME, TS_PCT, "
                     f"NET_RATING FROM silver_advanced WHERE _season='2025-26' "
                     f"AND TEAM_ABBREVIATION='{ab}'\").fetchall()")
-                lines.append(
+                block.append(
                     f"_admap_{ab} = {{str(r[0]): (r[1], r[2]) "
                     f"for r in _adv_{ab}}}")
-                lines.append(
+                block.append(
                     f"print('{safe} ({ab}) team net: ' + str(_t_{ab}))")
-                lines.append(
+                block.append(
                     f"print('{ab} supporting mates (excluding {safe}):')")
-                lines.append(
+                block.append(
                     f"for m in _mates_{ab}:\n"
                     f"    _nm = str(m[0]).encode('ascii', 'ignore').decode()\n"
                     f"    _ppg = m[1]/max(m[2], 1)\n"
@@ -1545,22 +1595,31 @@ async def _triage_seed(question: str, primary: str, model: str,
                     f"    _tss = f'{{_ts*100:.1f}}%' if _ts is not None else 'n/a'\n"
                     f"    _nrs = f'{{_nr:+.1f}}' if _nr is not None else 'n/a'\n"
                     f"    print(f'  {{_nm}}: {{_ppg:.1f}} ppg, TS {{_tss}} net {{_nrs}}')")
-                lines.append(
+                block.append(
                     f"_best_{ab} = max([m[1]/max(m[2],1) for m in _mates_{ab}] "
                     f"+ [0])")
-                lines.append(
+                block.append(
                     f"print('Top {ab} supporting scorer ({safe} excluded): ' "
                     f"+ str(round(_best_{ab}, 1)) + ' ppg')")
-                lines.append(
+                block.append(
                     f"_tslist_{ab} = [_admap_{ab}.get(m[0], "
                     f"(None, None))[0] for m in _mates_{ab}]")
-                lines.append(
+                block.append(
                     f"_tsvals_{ab} = [v for v in _tslist_{ab} "
                     f"if v is not None]")
-                lines.append(
+                block.append(
                     f"print('{ab} cast-average TS%: ' + "
                     f"(f'{{sum(_tsvals_{ab})/len(_tsvals_{ab})*100:.1f}}%' "
                     f"if _tsvals_{ab} else 'n/a'))")
+                # A missing table, empty roster, or codegen slip must
+                # degrade to an honest line, never a raw NameError in
+                # the user's answer (QA F34).
+                lines.append("try:")
+                lines.extend("    " + bl for bl in
+                             "\n".join(block).split("\n") if bl.strip())
+                lines.append("except Exception:")
+                lines.append(
+                    f"    print('{safe}: cast data unavailable right now')")
         if sides:
             lines.append("out = 'cast table printed'")
             code = "\n".join(lines)
@@ -2644,10 +2703,32 @@ async def analytics_agent(state: DimeState) -> AsyncGenerator[dict[str, Any], No
     yield _event("node_update", {"node": "analytics", "status": "complete"})
 
 
+_DEV_TEXT_RX = re.compile(
+    r"Traceback \(most recent call last\)[^\n]*|"
+    r"line \d+, in <module>|"
+    r"name '[A-Za-z_][\w.]*' is not defined|"
+    r"\b[A-Za-z]*(?:Error|Exception|Warning): [^\n]*|"
+    r"File \"[^\n]*\", line \d+",
+    re.IGNORECASE)
+
+
+def _scrub_final_text(text: str) -> str:
+    """Exception text is for logs, never for the narrative (QA F34).
+
+    A synthesis pass that quotes a raw NameError or Traceback makes the
+    product look broken; swap the fragment for an honest plain-English
+    admission instead."""
+    if not text:
+        return text
+    cleaned = _DEV_TEXT_RX.sub("that data pull did not complete", text)
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+    return cleaned.strip()
+
+
 async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any], None]:
     yield _event("node_update", {"node": "presentation", "status": "running"})
     text = state.get("analysis", "") or "No data came back. Try a player or team name."
-    yield _event("final_answer", {"text": text})
+    yield _event("final_answer", {"text": _scrub_final_text(text)})
     try:
         llm = get_llm(state["primary"], state["model"])  # type: ignore[arg-type]
     except Exception:
