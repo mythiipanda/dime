@@ -2826,6 +2826,33 @@ def _scrub_final_text(text: str) -> str:
         _seen = True
         return m.group(1)
     cleaned = _sfx.sub(_dedupe_season, cleaned)
+    # Whole-paragraph / long-sentence repeats: two evidence streams can
+    # each yield the same analysis block (seen live: the full Derik
+    # Queen verdict twice). Paragraph keys diverge once the season line
+    # is stripped from the second copy, so dedupe long sentences too.
+    paras = cleaned.split("\n\n")
+    if len(paras) > 1:
+        seen_paras: set[str] = set()
+        kept: list[str] = []
+        for para in paras:
+            key = re.sub(r"\s+", " ", para).strip().lower()
+            if len(key) >= 80 and key in seen_paras:
+                continue
+            seen_paras.add(key)
+            kept.append(para)
+        cleaned = "\n\n".join(kept)
+    sentences = re.split(r"(?<=[.!?])\s+", cleaned)
+    if len(sentences) > 1:
+        seen_s: set[str] = set()
+        kept_s: list[str] = []
+        for s in sentences:
+            key = re.sub(r"\s+", " ", s).strip().lower()
+            if len(key) >= 60 and key in seen_s:
+                continue
+            seen_s.add(key)
+            kept_s.append(s)
+        cleaned = " ".join(kept_s)
+        cleaned = re.sub(r" \n", "\n", cleaned)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     return cleaned.strip()
 

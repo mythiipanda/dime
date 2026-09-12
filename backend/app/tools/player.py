@@ -1071,8 +1071,17 @@ def get_advanced(player: str | int, season: str = SEASON) -> dict[str, Any]:
         return {"tool": "get_advanced", "ok": False,
                 "error": f"no advanced row for player {player_id}"}
     slim = {k: rows[0].get(k) for k in ADVANCED_COLS if k in rows[0]}
+    # Units honesty: nba_api ships these pct fields as 0-1 decimals while
+    # TM_TOV_PCT is already 0-100. The mix made the model print PIE as
+    # "0.1" next to "54.6%" TS in the same answer. Normalize everything
+    # to the 0-100 scale the _PCT names imply.
+    for k in ("USG_PCT", "TS_PCT", "EFG_PCT", "AST_PCT", "PIE"):
+        v = slim.get(k)
+        if isinstance(v, (int, float)) and v <= 1.0:
+            slim[k] = round(v * 100, 1)
     return {"tool": "get_advanced", "ok": True, "rows": slim,
-            "meta": {"source": "nba_api", "season": season}}
+            "meta": {"source": "nba_api", "season": season,
+                     "units": "percentages on 0-100 scale"}}
 
 
 # bbref distance buckets -> canonical court zones (approximate; corner
