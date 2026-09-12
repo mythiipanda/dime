@@ -123,9 +123,9 @@ _PLANNER_PREFIX = (
     "stat thresholds, draft queries), call delegate_league and tell it "
     "to answer via text_to_sql. "
     "For top-N team comparisons across several stats (top 3 scoring teams "
-    "with wins, best defenses by rating and record), call delegate_league "
-    "and tell it to answer from get_team_leaders for each stat PLUS "
-    "get_standings for records - never text_to_sql anonymous aggregates "
+    "with wins, best defenses by rating and record), call get_team_compare "
+    "- it joins the deduped team-totals board with standings records in "
+    "one deterministic payload. Never text_to_sql anonymous aggregates "
     "(they ship nameless tables). "
     "For supporting-cast questions, call run_python averaging teammate PPG "
     "from silver_leaders_pts excluding the star, joined with NET_RATING "
@@ -1408,6 +1408,49 @@ async def _triage_seed(question: str, primary: str, model: str,
         async for _e in _triage_terminal(question, state):
             yield _e
         return
+    # F66: multi-metric "top N teams" compares ("compare the top 3
+    # scoring teams: total points, per-game average, and how many games
+    # each won") escaped every pin, fanned out through delegate_league,
+    # and shipped a NAMELESS table with empty cells and invented
+    # numbers. Deterministic lane: get_team_compare joins the deduped
+    # team-totals board with standings records; compose ships
+    # meta.deterministic_answer verbatim. Guards: a named player or
+    # named teams keep their own routes; single-stat totals asks keep
+    # the team-totals pin below.
+    _dc_top = re.search(r"\btop\s*(\d+)\b", question, re.IGNORECASE)
+    _dc_stat = re.search(
+        r"\b(scoring|points?|rebounding|rebounds?|assists?|steals?|"
+        r"blocks?)\b", question, re.IGNORECASE)
+    _dc_metrics = sum(
+        bool(re.search(p, question, re.IGNORECASE)) for p in (
+            r"\btotals?\b", r"per[\s-]*game|\baverages?\b|\bavg\b",
+            r"\bwins?\b|\bwon\b|\brecord\b"))
+    if (_dc_top and _dc_stat and _dc_metrics >= 2
+            and not found_p and not found_t
+            and re.search(r"\bteams?\b", question, re.IGNORECASE)):
+        _dc_stat_map = {
+            "scoring": "PTS", "point": "PTS", "points": "PTS",
+            "rebounding": "REB", "rebound": "REB", "rebounds": "REB",
+            "assist": "AST", "assists": "AST",
+            "steal": "STL", "steals": "STL",
+            "block": "BLK", "blocks": "BLK"}
+        _dcseason = "2025-26"
+        _dsm = re.search(r"(20\d\d)\s*-\s*(\d\d)", question)
+        if _dsm:
+            _dcseason = f"{_dsm.group(1)}-{_dsm.group(2)}"
+        _dch: dict[str, Any] = {}
+        async for _e in _triage_tool(
+                "get_team_compare",
+                {"stat_category": _dc_stat_map.get(
+                     _dc_stat.group(1).lower(), "PTS"),
+                 "top": int(_dc_top.group(1)), "season": _dcseason},
+                state, _dch):
+            yield _e
+        _dcout = _dch.get("out") or {}
+        if _result_status(_dcout) == "ok":
+            async for _e in _triage_terminal(question, state):
+                yield _e
+        return
     # Tony live find (11:54 AM): team-TOTAL counting-stat asks ("which
     # team leads in total assists this season?") dead-ended honestly -
     # get_leaders is player-level and the league desk said team totals
@@ -2531,6 +2574,7 @@ _DISPLAY_TITLES = {
     "compare_metrics": "Metric adjudication",
     "get_debate_card": "Debate card",
     "get_leaders": "League leaders",
+    "get_team_compare": "Team compare",
     "get_team_leaders": "Team totals",
     "get_lineups": "Lineups",
     "get_shot_zones": "Shot zones",
@@ -2554,6 +2598,7 @@ _KIND_FOR_TOOL = {
     "get_shot_zones": "shots",
     "get_shot_compare": "shots",
     "get_leaders": "leaders",
+    "get_team_compare": "leaders",
     "get_team_leaders": "leaders",
     "get_lineups": "lineups",
     "get_raptor_history": "raptor",
@@ -3538,6 +3583,10 @@ def _extract_ledger_facts(state: dict) -> list[str]:
                 ll = (tr.get("meta") or {}).get("leader_line")
                 if ll:
                     facts.append(ll[0].upper() + ll[1:])
+            elif tname == "get_team_compare":
+                da = (tr.get("meta") or {}).get("deterministic_answer")
+                if da:
+                    facts.append(da[0].upper() + da[1:])
             elif tname == "search_game_logs" and isinstance(rows, dict):
                 matches = rows.get("matches") or []
                 player = rows.get("player")
@@ -3734,6 +3783,22 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
     _scrubbed = _scrub_final_text(text)
     _scrubbed = _strip_false_absence(_scrubbed,
                                  state.get("tool_results") or [])
+    # F66: multi-metric team compare ships deterministic - the payload
+    # built the sentence, the LLM narrative is ignored (v67 design
+    # law: LLM-composed numerals are untrusted on pinned lanes).
+    for _tr in state.get("tool_results") or []:
+        if (isinstance(_tr, dict)
+                and isinstance(_tr.get("meta"), dict)
+                and _tr["meta"].get("deterministic_answer")):
+            _det = str(_tr["meta"]["deterministic_answer"])
+            try:
+                from .tools._core import SEASON as _CUR_SEASON
+                _det = (f"This data covers the {_CUR_SEASON} season.\n"
+                        + _det)
+            except Exception:
+                pass
+            _scrubbed = _det
+            break
     # v67 (v66 live smoke, 12:32 PM): team-totals answers paraphrased
     # away the leader's total - "scored the most total points with PTS
     # (122.1 per game)". meta.note already tells the LLM to cite

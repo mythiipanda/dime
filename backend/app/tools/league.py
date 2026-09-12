@@ -441,32 +441,25 @@ def get_leaders(stat_category: str = "PTS", season: str = SEASON) -> dict[str, A
 _TEAM_TOTAL_STATS = ("PTS", "REB", "AST", "STL", "BLK", "FG3M", "TOV")
 
 
-@tool
-def get_team_leaders(stat_category: str = "AST",
-                     season: str = SEASON) -> dict[str, Any]:
-    """Team totals leaderboard for a counting stat (PTS, REB, AST, STL,
-    BLK): player game logs summed by team, with per-game averages.
-    Use for "which team leads in total assists" - get_leaders is
-    player-level only.
+def _deduped_team_totals(stat: str, season: str):
+    """Deduped team-totals query shared by get_team_leaders and
+    get_team_compare. Returns (abbrev, total, gp, per_game) rows
+    ordered by total desc, or None when the game-logs table is absent.
+
+    Dedupe: HOU shipped with 77 games seeded twice (nba_api partial
+    rows alongside full basketball-reference rows, keyed by different
+    Game_IDs) - naive sums doubled HOU's totals and crowned them false
+    leaders. One row per (date, matchup, player), preferring the full
+    bbref seed. Sources disagree on three abbrevs (nba_api PHX/CHA/BKN
+    vs bbref PHO/CHO/BRK) - normalize or game-level dedupe misses
+    cross-source dupes.
     """
-    stat = clamp_stat(stat_category)
-    if stat not in _TEAM_TOTAL_STATS:
-        stat = "AST"
     con = store.connect(read_only=True)
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if "silver_player_gamelogs" not in tables:
-            return {"tool": "get_team_leaders", "ok": False,
-                    "error": "no player game logs table in the warehouse"}
-        # Dedupe: HOU shipped with 77 games seeded twice (nba_api
-        # partial rows alongside full basketball-reference rows, keyed
-        # by different Game_IDs) - naive sums doubled HOU's totals and
-        # crowned them false leaders. One row per (date, matchup,
-        # player), preferring the full bbref seed.
-        fetched = con.execute(
-            # Sources disagree on three abbrevs (nba_api PHX/CHA/BKN vs
-            # bbref PHO/CHO/BRK) - normalize or game-level dedupe
-            # misses cross-source dupes.
+            return None
+        return con.execute(
             "WITH norm AS ("
             "SELECT *, TRY_STRPTIME(GAME_DATE, '%b %d, %Y') AS d, "
             "REPLACE(REPLACE(REPLACE(MATCHUP, 'PHX', 'PHO'), "
@@ -487,6 +480,25 @@ def get_team_leaders(stat_category: str = "AST",
             [season]).fetchall()
     finally:
         con.close()
+
+
+
+
+@tool
+def get_team_leaders(stat_category: str = "AST",
+                     season: str = SEASON) -> dict[str, Any]:
+    """Team totals leaderboard for a counting stat (PTS, REB, AST, STL,
+    BLK): player game logs summed by team, with per-game averages.
+    Use for "which team leads in total assists" - get_leaders is
+    player-level only.
+    """
+    stat = clamp_stat(stat_category)
+    if stat not in _TEAM_TOTAL_STATS:
+        stat = "AST"
+    fetched = _deduped_team_totals(stat, season)
+    if fetched is None:
+        return {"tool": "get_team_leaders", "ok": False,
+                "error": "no player game logs table in the warehouse"}
     from nba_api.stats.static import teams as _static
     names = {t["abbreviation"]: t["full_name"]
              for t in _static.get_teams()}
@@ -516,6 +528,93 @@ def get_team_leaders(stat_category: str = "AST",
                     "'scored the most points with total points and "
                     "122.1 per game', value missing)."}
     return {"tool": "get_team_leaders", "ok": True, "rows": rows,
+            "meta": meta}
+
+
+@tool
+def get_team_compare(stat_category: str = "PTS", top: int = 3,
+                     season: str = SEASON) -> dict[str, Any]:
+    """Top-N team compare on one counting stat: total, per-game, games
+    played, and the win-loss record joined from standings, in one
+    board. Use for multi-metric team compares ("compare the top 3
+    scoring teams: totals, per-game, and wins") - get_team_leaders has
+    no records and a delegate fan-out composes nameless tables with
+    empty cells or invented numbers (F66). The answer is built
+    deterministically from the rows into meta.deterministic_answer;
+    compose ships it verbatim (v67 design law)."""
+    stat = clamp_stat(stat_category)
+    if stat not in _TEAM_TOTAL_STATS:
+        stat = "PTS"
+    try:
+        top = max(2, min(int(top or 3), 10))
+    except (TypeError, ValueError):
+        top = 3
+    fetched = _deduped_team_totals(stat, season)
+    if fetched is None:
+        return {"tool": "get_team_compare", "ok": False,
+                "error": "no player game logs table in the warehouse"}
+    con = store.connect(read_only=True)
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        records: dict[str, tuple[int, int]] = {}
+        if "silver_standings" in tables:
+            for city, name, w, loss in con.execute(
+                    "SELECT TeamCity, TeamName, WINS, LOSSES "
+                    "FROM silver_standings WHERE _season = ?",
+                    [season]).fetchall():
+                records[f"{city or ''} {name or ''}".strip()] = (
+                    int(w or 0), int(loss or 0))
+    finally:
+        con.close()
+    from nba_api.stats.static import teams as _static
+    names = {t["abbreviation"]: t["full_name"]
+             for t in _static.get_teams()}
+    # warehouse normalized bbref abbrevs back to nba_api for display
+    _alias = {"PHO": "PHX", "CHO": "CHA", "BRK": "BKN"}
+    rows = []
+    for i, (abbrev, total, gp, per_game) in enumerate(
+            fetched[:top], 1):
+        team = names.get(_alias.get(abbrev, abbrev), abbrev)
+        w, loss = records.get(team, (None, None))
+        rows.append({
+            "RANK": i,
+            "TEAM": team,
+            "ABBREV": abbrev,
+            stat: int(total),
+            "GP": int(gp),
+            "PER_GAME": per_game,
+            "W": w,
+            "L": loss,
+            "RECORD": f"{w}-{loss}" if w is not None else "",
+        })
+    if not rows:
+        return {"tool": "get_team_compare", "ok": False,
+                "error": f"no team totals for {season}"}
+    leader = rows[0]
+    answer = (f"{leader['TEAM']} lead with {leader[stat]} total {stat} "
+              f"({leader['PER_GAME']} per game over {leader['GP']} "
+              f"games)")
+    if leader.get("RECORD"):
+        answer += f" and a {leader['RECORD']} record"
+    answer += "."
+    if len(rows) > 1:
+        parts = []
+        for r in rows[1:]:
+            part = (f"{r['TEAM']}: {r[stat]} total {stat} "
+                    f"({r['PER_GAME']} per game)")
+            if r.get("RECORD"):
+                part += f", {r['RECORD']}"
+            parts.append(part)
+        answer += " " + "; ".join(parts) + "."
+    meta = {"stat_category": stat, "season": season,
+            "source": "warehouse", "rows": len(rows),
+            "deterministic_answer": answer,
+            "note": "deterministic deep-compare lane (F66): ship "
+                    "deterministic_answer verbatim - totals and "
+                    "per-game come from deduped player game logs, "
+                    "records from standings. Never recompose these "
+                    "numbers from scratch."}
+    return {"tool": "get_team_compare", "ok": True, "rows": rows,
             "meta": meta}
 
 
