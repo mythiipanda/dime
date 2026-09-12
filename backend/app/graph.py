@@ -999,8 +999,11 @@ async def _run_delegate_live(name: str, task: str, primary: str, model: str,
         tok = await q.get()
         if tok is None:
             break
-        yield _event("thought_token", {"node": node, "text": tok,
-                                       "agent": desk})
+        # F43: desk reasoning tokens streamed raw into the expanded
+        # progress UI ("I need to query the warehouse...", sandbox
+        # errors with '!' markers). Progress now comes only from
+        # labeled tool_call events; drain the queue, emit nothing raw.
+        continue
     await runner
 
 
@@ -2826,7 +2829,13 @@ _DEV_TEXT_RX = re.compile(
     r"line \d+, in <module>|"
     r"name '[A-Za-z_][\w.]*' is not defined|"
     r"\b[A-Za-z]*(?:Error|Exception|Warning): [^\n]*|"
-    r"File \"[^\n]*\", line \d+",
+    r"File \"[^\n]*\", line \d+|"
+    # F43: run_python sandbox rejections must never BE the answer
+    r"That code pattern is unavailable[^\n]*|"
+    r"[^\n]*already preloaded[^\n]*|"
+    r"imports/IO/writes[^\n]*|"
+    r"[^\n]*con\.execute\([^\n]*|"
+    r"[^\n]*rows\s*=\s*con\.[^\n]*",
     re.IGNORECASE)
 
 
@@ -2838,6 +2847,15 @@ def _scrub_final_text(text: str) -> str:
     admission instead."""
     if not text:
         return text
+    # F43: an answer that IS a tool/sandbox error must not ship. When
+    # internal-error patterns cover most of the text, replace the whole
+    # thing with one honest sentence.
+    _hits = _DEV_TEXT_RX.findall(text)
+    _covered = sum(len(h) for h in _hits)
+    if _hits and _covered >= 0.6 * len(text):
+        return ("I could not compute that from the dataset - the "
+                "warehouse query for it did not run. Try a narrower "
+                "ask (one player, one stat) or a different angle.")
     cleaned = _DEV_TEXT_RX.sub("that data pull did not complete", text)
     cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
     # The season-first-line guard fires once; when two evidence streams
