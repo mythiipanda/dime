@@ -125,7 +125,11 @@ function aiFromRun(r: RunInfo): AiMessage {
       if (
         typeof t === "object" &&
         t !== null &&
-        typeof (t as { tool?: unknown }).tool === "string"
+        // Live stream records carry kind/rows (the backend strips tool);
+        // accept any of the shapes the live path renders.
+        (typeof (t as { tool?: unknown }).tool === "string" ||
+          typeof (t as { kind?: unknown }).kind === "string" ||
+          Array.isArray((t as { rows?: unknown }).rows))
       ) {
         tables.push(t as ToolResult);
       }
