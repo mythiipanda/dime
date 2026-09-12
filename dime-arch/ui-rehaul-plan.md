@@ -34,16 +34,23 @@ per-component rewrites. No new cross-cutting CSS files.
 - Skeletons pulse at 1.2s; no spinners beside streaming answers.
 - Respect prefers-reduced-motion.
 
-## Frozen commit batch (already on instinct/features, awaiting deploy)
+## Frontend batch for the ~11:12 PM window
 
-1. 15a9826 - compare-card debug rows filtered (QA #71)
-2. F39 markdown pipes - literal `|` pipes no longer leak into rendered
-   answers (verify in AnswerText.tsx)
-3. F29 restore-strips-cards - 410a7bd
-4. F2 shot-chart render - court viz zone mapping
-5. F27 empty chrome - empty panels render nothing
-6. Thought-process panel dupe/jargon scrub - from Tony's screenshot
-7. Leaders chart sort - 136cf4d (verify against list at deploy)
+Committed on instinct/features (verified 3:31 PM): 15a9826 compare-card
+debug rows, 410a7bd F29 restore evidence cards, 136cf4d leaders chart
+sort, 123c10b F18 percent-aware tables, e33822f heat gradient,
+6ebe895 3P% labels + card copy.
+
+NOT committed (queued only - implement at the window, then deploy):
+- F39 markdown pipes - literal `|` leaks into rendered answers.
+  AnswerText.tsx already runs remark-gfm; suspect malformed table rows
+  from the backend compose or stray pipes in prose. Reproduce against
+  prod, then fix at the source (backend scrub if compose emits them,
+  AnswerText fallback if malformed GFM).
+- F2 shot-chart render - court viz zone-name mapping (QA round 1-3
+  find: shades only the restricted area).
+- F27 empty chrome - empty panels render nothing.
+- Thought-process panel dupe/jargon scrub - from Tony's screenshot.
 
 ## Deploy gate (standing)
 
