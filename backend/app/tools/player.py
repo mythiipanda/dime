@@ -716,7 +716,14 @@ def get_trend(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
                      "form_ppg": round(form, 1),
                      "delta": round(form - base, 1),
                      "direction": "up" if form > base + 1 else (
-                         "down" if form < base - 1 else "flat")},
+                         "down" if form < base - 1 else "flat"),
+                     # Coverage honesty: name the actual windows so the
+                     # narrative can say which dates "form" covers instead
+                     # of implying an unverified recent stretch.
+                     "log_from": rows[0].get("GAME_DATE"),
+                     "log_to": rows[-1].get("GAME_DATE"),
+                     "form_from": rows[-len(recent)].get("GAME_DATE"),
+                     "form_games": len(recent)},
             "meta": meta}
 
 
