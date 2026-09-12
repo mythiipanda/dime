@@ -119,6 +119,50 @@ def _build_player_index() -> None:
 
 _build_player_index()
 
+_ID_NAME: dict[int, str] = {int(r["id"]): r.get("full_name", "")
+                            for r in _PLAYER_ROWS if r.get("id")}
+
+
+def attach_names(rows: object) -> object:
+    """Rows keyed only by player_id/team_id get a readable name column
+    (QA #66: after *_id stripping the model could only say 'one
+    player'). Name stays, id is stripped downstream."""
+    if not isinstance(rows, list):
+        return rows
+    team_by_id: dict[int, str] = {}
+    out = []
+    for r in rows:
+        if isinstance(r, dict):
+            has_name = any(k in r for k in ("name", "player", "PLAYER",
+                                            "team", "TEAM"))
+            if not has_name:
+                pid = r.get("player_id")
+                if pid is not None:
+                    try:
+                        nm = _ID_NAME.get(int(pid))
+                    except (TypeError, ValueError):
+                        nm = None
+                    if nm:
+                        r = {"name": nm, **r}
+                tid = r.get("team_id")
+                if tid is not None and "name" not in r:
+                    if not team_by_id:
+                        try:
+                            from nba_api.stats.static import teams as _t
+                            team_by_id = {int(x["id"]): x.get(
+                                "abbreviation", "") for x in
+                                _t.get_teams()}
+                        except Exception:
+                            team_by_id = {}
+                    try:
+                        ab = team_by_id.get(int(tid))
+                    except (TypeError, ValueError):
+                        ab = None
+                    if ab:
+                        r = {"team": ab, **r}
+        out.append(r)
+    return out
+
 
 def score_player_candidates(raw: str) -> list[tuple[float, dict]]:
     """Scored general matcher over static players. No network.

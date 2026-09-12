@@ -2372,6 +2372,14 @@ def _flatten_tables(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
             if isinstance(inner_meta, dict):
                 meta = out.get("meta") if isinstance(out.get("meta"), dict) else {}
                 out["meta"] = {**inner_meta, **meta}
+        # QA #66: rows keyed ONLY by an id get a readable name first -
+        # otherwise the id strip below leaves the model with "one
+        # player" and no name to cite.
+        try:
+            from .tools._core import attach_names as _attach_names
+            out["rows"] = _attach_names(out.get("rows"))
+        except Exception:
+            pass
         # QA #62: raw ids are plumbing, never user-facing table
         # columns. Frontend references no *_id field (verified by
         # grep), so strip them centrally at the emit point.
