@@ -182,6 +182,12 @@ def dataset(
     elif ids:
         entity = f"wowy:{ids}"
     frame = store.read_frame(table, "_season = ?", [season])
+    if name == "leaders" and frame.height > 0:
+        # Warehouse storage order is arbitrary; leaders must come back
+        # ranked or the Top-10 chart and table drop or bury leaders.
+        stat_col = clamp_stat(stat)
+        if stat_col in frame.columns:
+            frame = frame.sort(stat_col, descending=True, nulls_last=True)
     if entity_scoped:
         # Warehouse-first per entity; never force a live call when seeded.
         if entity:

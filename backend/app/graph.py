@@ -61,7 +61,9 @@ ANALYST_SYSTEM = (
     "Only cite all-in-one metrics present in evidence: RAPM-lite, on-off "
     "net, RAPTOR history. Label RAPM-lite and RAPTOR as estimates. "
     "Never invent PER, BPM, EPM, WS, VORP, or LEBRON. Say EPM is unavailable. "
-    "State the season the data covers in the first line of every answer. "
+    "State the season the data covers in the first line of every answer; "
+    "write it exactly like 'This data covers the 2025-26 season.' and "
+    "never duplicate the word season. "
     "Never name tools, tables, or query languages."
 )
 
