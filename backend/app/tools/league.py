@@ -293,6 +293,37 @@ def get_playoffs(season: str = SEASON) -> dict[str, Any]:
             "wins": [{"team": t, "w": w, "l": losses.get(t, 0)}
                      for t, w in table[:16]],
             "games_total": games // 2}
+    # F49 residual: a generic "who won the Finals / series score" ask
+    # has no team names to route to get_season_series, so the Finals
+    # series must be visible HERE: round 4 games from the real NBA
+    # Game_IDs (004 YY 0 R MM GG -> R at index 7).
+    finals = [r for r in rows if str(r.get("GAME_ID") or "")[7:8] == "4"]
+    if finals:
+        fteams = sorted({str(r.get("TEAM_ABBREVIATION") or "")
+                         for r in finals} - {""})
+        fwins: dict[str, int] = {}
+        for r in finals:
+            t = str(r.get("TEAM_ABBREVIATION") or "")
+            if r.get("WL") == "W":
+                fwins[t] = fwins.get(t, 0) + 1
+        if len(fteams) == 2:
+            ta, tb = fteams[0], fteams[1]
+            rows_out["finals"] = {
+                "round": "NBA Finals",
+                "teams": [ta, tb],
+                "series_score": (f"{ta} {fwins.get(ta, 0)} - "
+                                 f"{fwins.get(tb, 0)} {tb}"),
+                "winner": max(fwins, key=fwins.get) if fwins else "",
+                "games": [
+                    {"game_id": str(g.get("GAME_ID")),
+                     "date": str(g.get("GAME_DATE")),
+                     "matchup": str(g.get("MATCHUP")),
+                     "winner": (ta if g.get("WL") == "W"
+                                and str(g.get("TEAM_ABBREVIATION")) == ta
+                                else tb)}
+                    for g in finals
+                    if str(g.get("TEAM_ABBREVIATION")) == ta],
+            }
     from ._core import season_static as _season_static
     if _season_static(season):
         # QA F36: subagent paths answer "simulate the playoffs" from
@@ -1810,34 +1841,45 @@ def get_rookie_leaders(stat: str = "ppg", min_value: float = 0,
         return {"tool": "get_rookie_leaders", "ok": False,
                 "error": f"stat must be one of {sorted(allowed)}"}
     sql = f"""
-        WITH cur AS (
-          SELECT PLAYER_ID, PLAYER, TEAM, AGE, GP, MPG, PPG, RPG, APG,
-                 SPG, BPG, FG_PCT, FG3_PCT, FT_PCT
-          FROM silver_player_season WHERE _season = ?
-        ),
-        hist AS (
-          SELECT DISTINCT PLAYER_ID FROM silver_hist_player_seasons
-          UNION
-          SELECT DISTINCT PLAYER_ID FROM silver_player_season
-          WHERE _season <> ?
-        )
-        SELECT c.PLAYER, c.TEAM, c.AGE, c.GP, c.MPG, c.PPG, c.RPG,
-               c.APG, c.SPG, c.BPG, c.FG_PCT, c.FG3_PCT, c.FT_PCT
-        FROM cur c LEFT JOIN hist h ON c.PLAYER_ID = h.PLAYER_ID
-        WHERE h.PLAYER_ID IS NULL AND c.GP >= ? AND c.{col} >= ?
-        ORDER BY c.{col} DESC LIMIT ?
+        SELECT PLAYER_ID, PLAYER, TEAM, AGE, GP, MPG, PPG, RPG, APG,
+               SPG, BPG, FG_PCT, FG3_PCT, FT_PCT
+        FROM silver_player_season
+        WHERE _season = ? AND GP >= ? AND {col} >= ?
+        ORDER BY {col} DESC
     """
     try:
         con = duckdb.connect(str(_store.DB_PATH), read_only=True)
         try:
-            rows = con.execute(
-                sql, [season, season, int(min_gp), float(min_value),
-                      int(limit)]).fetchdf().to_dict("records")
+            cur_rows = con.execute(
+                sql, [season, int(min_gp), float(min_value)]
+            ).fetchdf().to_dict("records")
+            hist_names = {r[0] for r in con.execute(
+                "SELECT DISTINCT player_name FROM "
+                "silver_hist_player_seasons").fetchall()}
+            hist_names |= {r[0] for r in con.execute(
+                "SELECT DISTINCT PLAYER FROM silver_player_season "
+                "WHERE _season <> ?", [season]).fetchall()}
         finally:
             con.close()
     except Exception as exc:
         return {"tool": "get_rookie_leaders", "ok": False,
                 "error": f"warehouse read failed: {str(exc)[:160]}"}
+    # Name-keyed match (ids are namespace-mixed across sources), with
+    # accents and generational suffixes stripped: 'Sengun' matches
+    # 'Şengün', 'GG Jackson II' matches 'GG Jackson'. Matching only
+    # ever EXCLUDES non-rookies, so over-matching is the safe side.
+    import re as _re
+    import unicodedata as _ud
+
+    def _nkey(name: object) -> str:
+        n = "".join(c for c in _ud.normalize("NFKD", str(name or ""))
+                    if not _ud.combining(c)).lower()
+        n = _re.sub(r"\s+(jr|sr|ii|iii|iv|v)\.?$", "", n).strip()
+        return _re.sub(r"[^a-z ]", "", n).strip()
+
+    hist_keys = {_nkey(n) for n in hist_names}
+    rows = [r for r in cur_rows
+            if _nkey(r.get("PLAYER")) not in hist_keys][:int(limit)]
     return {
         "tool": "get_rookie_leaders", "ok": True, "rows": rows,
         "meta": {
