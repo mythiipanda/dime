@@ -242,6 +242,58 @@ def chat_history(thread: str, limit: int = 6) -> list[dict[str, str]]:
         con.close()
 
 
+def save_facts(thread: str, facts: list[str], owner: str = "") -> None:
+    """Thread evidence ledger (v2 step 2): verified facts extracted from
+    tool payloads at ship time. Deduped per thread; read back into state
+    on later turns so follow-ups resolve evidence, not just entities."""
+    if not thread or not facts:
+        return
+    con = connect()
+    try:
+        with write_guard():
+            con.execute(
+                """CREATE TABLE IF NOT EXISTS thread_facts(
+                thread VARCHAR, fact VARCHAR, created_at VARCHAR,
+                owner VARCHAR)"""
+            )
+            from datetime import datetime, timezone
+
+            for f in facts:
+                f = str(f)[:500]
+                dupe = con.execute(
+                    "SELECT 1 FROM thread_facts WHERE thread=? AND fact=? "
+                    "LIMIT 1", [thread, f]).fetchone()
+                if not dupe:
+                    con.execute(
+                        "INSERT INTO thread_facts VALUES (?,?,?,?)",
+                        [thread, f,
+                         datetime.now(timezone.utc).isoformat(),
+                         owner[:80]],
+                    )
+    finally:
+        con.close()
+
+
+def thread_facts(thread: str, limit: int = 20) -> list[str]:
+    if not thread:
+        return []
+    con = connect()
+    try:
+        tables = {r[0] for r in con.execute(
+            "SELECT table_name FROM information_schema.tables").fetchall()}
+        if "thread_facts" not in tables:
+            return []
+        rows = con.execute(
+            """SELECT fact FROM thread_facts WHERE thread = ?
+            ORDER BY created_at DESC LIMIT ?""",
+            [thread, limit]).fetchall()
+        return [r[0] for r in reversed(rows)]
+    except Exception:
+        return []
+    finally:
+        con.close()
+
+
 def list_threads(owner: str = "") -> list[dict[str, str]]:
     con = connect()
     try:

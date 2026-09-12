@@ -103,6 +103,14 @@ async def _stream(
         ):
             if event["type"] == "final_answer":
                 final = str(event["data"].get("text", ""))
+            elif event["type"] == "ledger_facts":
+                _lf = event["data"].get("facts")
+                if thread and isinstance(_lf, list):
+                    try:
+                        store.save_facts(thread, [str(f) for f in _lf],
+                                         owner=client[:80])
+                    except Exception:
+                        pass
             elif event["type"] == "custom_data":
                 data = event["data"]
                 if isinstance(data.get("tables"), list):
@@ -111,6 +119,8 @@ async def _stream(
                 items = event["data"].get("items", [])
                 if isinstance(items, list):
                     suggestions = [str(i) for i in items]
+            if event["type"] == "ledger_facts":
+                continue  # internal plumbing - persisted above, not streamed
             yield emit_sse(event["type"],
                            _sanitize_sse_event(event["type"], event["data"]))
         if thread and final:

@@ -2419,6 +2419,9 @@ class DimeState(TypedDict):
     # Turn-level caches, reset per turn in run_chat.
     # desk_cache: (desk, entity) -> first desk result, shared across rounds.
     desk_cache: NotRequired[dict[str, dict[str, Any]]]
+    # ledger: thread evidence facts (v2 step 2), loaded from store per
+    # turn; extraction at ship time emits a ledger_facts event.
+    ledger: NotRequired[list[str]]
     # entity_cache: normalized query -> resolve_entity result.
     entity_cache: NotRequired[dict[str, dict[str, Any]]]
 
@@ -2696,6 +2699,12 @@ async def data_retrieval_agent(
     if team_facts:
         prior += ("\nWarehouse team facts, trust these over memory: "
                   + "; ".join(team_facts) + ".")
+    if state.get("ledger"):
+        prior += ("\nEstablished facts from earlier in this "
+                  "conversation (verified from tool data - trust them, "
+                  "never contradict them, and do not re-fetch what they "
+                  "already answer): " + " | ".join(
+                      state["ledger"][-_LEDGER_MAX:]) + ".")
     if state["history"]:
         turns = state["history"][-6:]
         prior += "\nConversation so far:\n" + "\n".join(
@@ -3144,7 +3153,16 @@ async def analytics_agent(state: DimeState) -> AsyncGenerator[dict[str, Any], No
             [
                 SystemMessage(content=ANALYST_SYSTEM),
                 HumanMessage(
-                    content=f"Question: {state['question']}\nEvidence: {evidence}"
+                    content=(
+                        f"Question: {state['question']}"
+                        + (("\nEstablished facts from earlier in this "
+                            "conversation (verified from tool data - trust "
+                            "them, never contradict them, and use them "
+                            "when this turn's evidence is thin): "
+                            + " | ".join(state["ledger"][-_LEDGER_MAX:])
+                            + ".") if state.get("ledger") else "")
+                        + f"\nEvidence: {evidence}"
+                    )
                 ),
             ],
         ):
@@ -3423,6 +3441,66 @@ def _scrub_final_text(text: str) -> str:
     return cleaned.strip()
 
 
+_LEDGER_MAX = 20
+
+
+def _extract_ledger_facts(state: dict) -> list[str]:
+    """Thread evidence ledger (v2 step 2): facts extracted from tool
+    PAYLOADS at ship time - never from LLM text (v67 lesson). Persisted
+    per-thread so follow-ups resolve evidence, not just entities
+    (F62/F63: the thread produced Brunson's Game 5 line and the NYK-SAS
+    Finals matchup, then later turns claimed the dataset lacked them).
+    """
+    facts: list[str] = []
+    for tr in state.get("tool_results") or []:
+        if not isinstance(tr, dict) or tr.get("ok") is not True:
+            continue
+        try:
+            tname = tr.get("tool")
+            rows = tr.get("rows")
+            if tname == "get_playoffs" and isinstance(rows, dict):
+                fin = rows.get("finals") or {}
+                score = fin.get("series_score")
+                if score:
+                    facts.append(f"NBA Finals result: {score}")
+                champ = rows.get("champion")
+                rec = rows.get("champion_record") or {}
+                if champ:
+                    line = f"NBA champion: {champ}"
+                    if rec.get("w") is not None:
+                        line += f" ({rec['w']}-{rec['l']} playoffs)"
+                    facts.append(line)
+            elif tname == "get_team_leaders":
+                ll = (tr.get("meta") or {}).get("leader_line")
+                if ll:
+                    facts.append(ll[0].upper() + ll[1:])
+            elif tname == "search_game_logs" and isinstance(rows, dict):
+                matches = rows.get("matches") or []
+                player = rows.get("player")
+                # single-game context only: exactly one match, or an
+                # explicit game-number/date filter narrowed it
+                filt = str(rows.get("filters") or "")
+                if (player and matches and (len(matches) == 1 or re.search(
+                        r"game \d", filt, re.IGNORECASE))):
+                    m0 = matches[0]
+                    def _i(v: object) -> int:
+                        try:
+                            return int(float(v))  # type: ignore[arg-type]
+                        except (TypeError, ValueError):
+                            return 0
+                    facts.append(
+                        f"{player} on {m0.get('date')} "
+                        f"({m0.get('matchup')}): {_i(m0.get('pts'))} pts, "
+                        f"{_i(m0.get('reb'))} reb, {_i(m0.get('ast'))} ast")
+        except Exception:
+            continue
+    out: list[str] = []
+    for f in facts:
+        if f and f not in out:
+            out.append(f)
+    return out[:_LEDGER_MAX]
+
+
 def _verify_draft_numerals(state: dict, text: str) -> list[str]:
     """Verify node v0: numeral provenance (telemetry only).
 
@@ -3437,11 +3515,12 @@ def _verify_draft_numerals(state: dict, text: str) -> list[str]:
     def _norm(n: str) -> str:
         return n[:-2] if n.endswith(".0") else n
 
-    if not state.get("tool_results"):
+    if not state.get("tool_results") and not state.get("ledger"):
         state["_verify"] = {"numeral_violations": []}
         return []
     try:
         raw = _json.dumps(state.get("tool_results") or [])
+        raw += _json.dumps(state.get("ledger") or [])
         allowed = {_norm(n) for n in re.findall(r"\d+(?:\.\d+)?", raw)}
         try:
             from .tools._core import SEASON as _S
@@ -3642,6 +3721,9 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
                              "game logs, standings, playoffs and the "
                              "Finals - try one of those.")
     _verify_draft_numerals(state, _scrubbed)
+    _new_facts = _extract_ledger_facts(state)
+    if _new_facts:
+        yield _event("ledger_facts", {"facts": _new_facts})
     yield _event("final_answer", {"text": _scrubbed})
     try:
         llm = get_llm(state["primary"], state["model"])  # type: ignore[arg-type]
@@ -3700,6 +3782,13 @@ async def run_chat(
         analysis="", suggestions=[],
         desk_cache={}, entity_cache={},
     )
+    if thread:
+        try:
+            from . import store as _store2
+
+            state["ledger"] = _store2.thread_facts(thread)
+        except Exception:
+            pass
     async for e in entry_node(state):
         yield e
     yield _event("node_update", {"node": "data_retrieval", "status": "running"})
