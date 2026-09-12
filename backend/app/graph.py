@@ -3057,6 +3057,10 @@ def _scrub_final_text(text: str) -> str:
                      flags=re.IGNORECASE)
     # scrub collisions: "the data data", "the dataset and the dataset"
     cleaned = re.sub(r"\b[Tt]he data data\b", "the data", cleaned)
+    cleaned = re.sub(r"\bthe the\b", "the", cleaned,
+                     flags=re.IGNORECASE)
+    cleaned = re.sub(r"\bcomeback_kings\b", "comeback wins", cleaned,
+                     flags=re.IGNORECASE)
     cleaned = re.sub(r"\bthe dataset(?:,? and|,)? the dataset\b",
                      "the dataset", cleaned, flags=re.IGNORECASE)
     # Raw ids are plumbing (QA #65: "Their unique identifier is
