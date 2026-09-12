@@ -113,7 +113,17 @@ export default function CompareView({ rows, onDebate }: { rows: unknown; onDebat
   const labelB = (b as Record<string, unknown>).name as string || "B";
   const keys = Array.from(
     new Set([...Object.keys(a), ...Object.keys(b)]),
-  ).filter((k) => k !== "player_id" && k !== "team_id" && k !== "name");
+  ).filter(
+    (k) =>
+      // QA #71: internal bookkeeping keys are not user-facing metrics.
+      // "missing" lists stats the warehouse lacks for a side;
+      // "sub_call_errors" is debug machinery for failed sub-calls.
+      k !== "player_id" &&
+      k !== "team_id" &&
+      k !== "name" &&
+      k !== "missing" &&
+      k !== "sub_call_errors",
+  );
   const prob = (r.win_prob || {}) as Record<string, number>;
   const names = Object.keys(prob);
   const fit = r.fit as { fit?: string; note?: string } | undefined;
