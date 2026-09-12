@@ -2991,8 +2991,8 @@ def _scrub_final_text(text: str) -> str:
     # honest whole-answer fallback returns before this pass, so its
     # own wording is unaffected.)
     cleaned = re.sub(
-        r"[^.!?\n]*\b(?:tools?|errors?|unknown tables?)\b"
-        r"[^.!?\n]*[.!?]", " ", cleaned)
+        r"[^.!?\n]*\b(?:tools?|errors?|unknown tables?|"
+        r"warehouse quer\w*)\b[^.!?\n]*[.!?]", " ", cleaned)
     # "Based on scout summary and league data" - same class as
     # "per the scout summary".
     cleaned = re.sub(
@@ -3179,7 +3179,15 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
         text = _gap or ("I could not find that in the dataset. "
                         "Try a player, team, or stat that the season "
                         "data covers.")
-    yield _event("final_answer", {"text": _scrub_final_text(text)})
+    _scrubbed = _scrub_final_text(text)
+    # A named known-gap beats the generic compute-failure fallback:
+    # "contract types are not tracked" informs; "the query did not
+    # run" only mystifies (QA #65 F54).
+    if _scrubbed.startswith("I could not compute that from the dataset"):
+        _gap = _gap_note(state.get("question", "") or "")
+        if _gap:
+            _scrubbed = _gap
+    yield _event("final_answer", {"text": _scrubbed})
     try:
         llm = get_llm(state["primary"], state["model"])  # type: ignore[arg-type]
     except Exception:
