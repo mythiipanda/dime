@@ -402,7 +402,7 @@ def _result_status(result: dict[str, Any]) -> str:
 
 _LEAGUE_RX = re.compile(
     r"playoff|champion|finals|leader|standing|injur|clutch|\brating\b|"
-    r"elo|title odds|streak|versus|power rank|net rating|"
+    r"elo|title odds|streak|versus|power rank|net rating|comeback|"
     r"\btrad(e|es|ed|ing)\b|sign-and-trade|\bswap\b", re.IGNORECASE)
 _COMPARE_RX = re.compile(
     r"\bvs\.?\b(?!\s+top[-\s]?\d)|\bversus\b(?!\s+top[-\s]?\d)|\bcompare\b",
@@ -3012,6 +3012,12 @@ def _scrub_final_text(text: str) -> str:
     cleaned = re.sub(r"\b[Tt]he data data\b", "the data", cleaned)
     cleaned = re.sub(r"\bthe dataset(?:,? and|,)? the dataset\b",
                      "the dataset", cleaned, flags=re.IGNORECASE)
+    # Raw ids are plumbing (QA #65: "Their unique identifier is
+    # 1610612760"). Kill id-narration sentences, then lone long runs.
+    cleaned = re.sub(
+        r"[^.!?\n]*\b(?:unique identifier|does not include the "
+        r"(?:team |player )?name)\b[^.!?\n]*[.!?]", " ", cleaned)
+    cleaned = re.sub(r"\b\d{5,}\b", " ", cleaned)
     # QA #61c: integer-valued stats carry decimal noise ("32.0
     # minutes", "15.0 games"). Strip trailing .0 everywhere.
     cleaned = re.sub(r"\b(\d+)\.0\b", r"\1", cleaned)
@@ -3180,13 +3186,19 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
                         "Try a player, team, or stat that the season "
                         "data covers.")
     _scrubbed = _scrub_final_text(text)
-    # A named known-gap beats the generic compute-failure fallback:
-    # "contract types are not tracked" informs; "the query did not
-    # run" only mystifies (QA #65 F54).
-    if _scrubbed.startswith("I could not compute that from the dataset"):
-        _gap = _gap_note(state.get("question", "") or "")
-        if _gap:
-            _scrubbed = _gap
+    # A named known-gap beats any no-data outcome: the generic
+    # compute-failure fallback AND model-worded admissions ("the query
+    # did not succeed", "no data is available", "I cannot rank").
+    # "Contract types are not tracked" informs; failure narration
+    # only mystifies (QA #65 F54).
+    _gap = _gap_note(state.get("question", "") or "")
+    if _gap and (
+            _scrubbed.startswith("I could not compute that from the dataset")
+            or re.search(
+                r"did not succeed|no data is available|"
+                r"i cannot|can't rank|not available|"
+                r"does not include", _scrubbed, re.IGNORECASE)):
+        _scrubbed = _gap
     yield _event("final_answer", {"text": _scrubbed})
     try:
         llm = get_llm(state["primary"], state["model"])  # type: ignore[arg-type]
