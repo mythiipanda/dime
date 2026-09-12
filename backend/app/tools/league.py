@@ -1787,8 +1787,13 @@ def get_draft_board(season: str = "2025") -> dict[str, Any]:
 
     prod = _cbb.get_player_stats(2025 if season == "2025" else int(season))
     if not prod.ok or prod.frame.height == 0:
+        # F53: prod.error is a raw httpx message with the external URL -
+        # never hand it to the narrative. Facts only.
         return {"tool": "get_draft_board", "ok": False,
-                "error": prod.error or "college stats empty"}
+                "error": (f"{season} college stats are unavailable "
+                          "(upstream source blocked). Draft data covers "
+                          "through the 2025 draft; the 2026 lottery and "
+                          "class are not in the dataset.")}
     rows, meta = _warehouse_or_live(
         "silver_combine", "_season = ?",
         [season], lambda: nba_stats.combine(season), season,

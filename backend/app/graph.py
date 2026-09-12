@@ -2787,6 +2787,9 @@ def _collect_seasons(results: list[dict[str, Any]]) -> list[str]:
 def _clean_error_text(text: str) -> str:
     s = text or ""
     s = re.sub(r"\b(get_\w+|delegate_\w+|resolve_entity|search_nba|run_python|text_to_sql)\b", "", s, flags=re.IGNORECASE)
+    s = re.sub(r"Client error '\d{3}[^']*' for url\s*'[^']*'\.?", " ", s)
+    s = re.sub(r"For more information check:[^\n]*", " ", s)
+    s = re.sub(r"https?://\S+", " ", s)
     s = re.sub(r"\bsilver_\w+\b", "", s, flags=re.IGNORECASE)
     s = re.sub(r"`[^`]*`", " ", s)
     s = re.sub(r"(?is)\bselect\b.*?(;|$)", " ", s)
@@ -2813,7 +2816,17 @@ async def analytics_agent(state: DimeState) -> AsyncGenerator[dict[str, Any], No
         if isinstance(r, dict) and _has_rows(r.get("rows"))
         and r.get("tool", "") not in ("resolve_entity", "search_nba")
     ]
-    if not evidenced:
+    # F45: a delegate whose answer is a NOTE (injury miss / playoff
+    # inactive listing) carries it in a real summary with zero rows.
+    # That is evidence; without this the compose collapses it to
+    # "No <player> data found" over a correct desk answer.
+    _delegate_ok = any(
+        isinstance(r, dict) and r.get("agent") and r.get("ok")
+        and isinstance(r.get("summary"), str)
+        and len(r["summary"].strip()) >= 40
+        for r in state["tool_results"]
+    )
+    if not evidenced and not _delegate_ok:
         raw_errs = [str(r.get("error", ""))
                     for r in state["tool_results"]
                     if isinstance(r, dict) and r.get("error")][:3]
@@ -2901,6 +2914,11 @@ _DEV_TEXT_RX = re.compile(
     r"name '[A-Za-z_][\w.]*' is not defined|"
     r"\b[A-Za-z]*(?:Error|Exception|Warning): [^\n]*|"
     r"File \"[^\n]*\", line \d+|"
+    # F53: httpx client errors (403/404/5xx with the external URL) are
+    # tool internals, never an answer
+    r"Client error '\d{3}[^']*' for url[^\n]*|"
+    r"For more information check:[^\n]*|"
+    r"https?://developer\.mozilla\.org[^\n]*|"
     # F43: run_python sandbox rejections must never BE the answer
     r"That code pattern is unavailable[^\n]*|"
     r"[^\n]*already preloaded[^\n]*|"
