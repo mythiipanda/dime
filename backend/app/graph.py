@@ -48,6 +48,9 @@ ANALYST_SYSTEM = (
     "Derive per-game numbers when totals and games are both present, "
     "showing the division. "
     "Keep answers short and specific with numbers. "
+    "Use one Takeaways block and one Verdict block at most; never "
+    "repeat a heading or restate the same numbers in two sections. "
+    "Use a numbered list only when the user asked for a ranking. "
     "For player comparisons: one markdown table with 8 or more metric rows "
     "covering scoring, rebounds, assists, shooting splits, efficiency, "
     "usage, impact, and team record, "
@@ -2956,6 +2959,14 @@ def _scrub_final_text(text: str) -> str:
                 "warehouse query for it did not run. Try a narrower "
                 "ask (one player, one stat) or a different angle.")
     cleaned = _DEV_TEXT_RX.sub("that data pull did not complete", text)
+    # QA #60: the model sometimes NARRATES a tool error in prose
+    # ("A query for the award returned an error stating 'Finals MVP'
+    # is not a valid award key"). Internal plumbing is never the
+    # user's business - strip the whole sentence, not the fragment.
+    cleaned = re.sub(
+        r"[^.!?\n]*\b(?:returned an error|error stating|"
+        r"not a valid [A-Za-z' ]*? key)\b[^.!?\n]*[.!?]",
+        " ", cleaned)
     # P3: tool names and desk identities are orchestration, never prose
     # ("Based on the get_injuries tool output", "the league agent").
     cleaned = re.sub(r"Based on the get_\w+ tool output,?", "", cleaned)

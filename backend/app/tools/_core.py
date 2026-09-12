@@ -200,6 +200,25 @@ def score_player_candidates(raw: str) -> list[tuple[float, dict]]:
 
 def _resolve_player_id_uncached(key: str) -> int:
     ranked = score_player_candidates(key)
+    # QA #59/#60: a loose SINGLE-TOKEN name must not silently pick one
+    # active namesake ("James" -> LeBron, ignoring James Harden). Match
+    # on whole name tokens only - fuzzy scorer noise (Jaylen Brown for
+    # "lebron") is not ambiguity. Multi-word and single-active names
+    # resolve as before.
+    if " " not in key.strip():
+        nq = _norm_name(key)
+        act: list[str] = []
+        for _sc, r in ranked:
+            fn = r.get("full_name", "")
+            if (r.get("is_active") and fn and nq
+                    and nq in _norm_name(fn).split()
+                    and fn not in act):
+                act.append(fn)
+        if len(act) >= 2:
+            names = ", ".join(act[:3])
+            raise ValueError(
+                f"ambiguous name '{key}' - several active players match "
+                f"({names}); ask which one or use a full name")
     if ranked and ranked[0][0] >= 0.8 and (
             len(ranked) < 2 or ranked[0][0] - ranked[1][0] >= 0.05):
         return int(ranked[0][1]["id"])
