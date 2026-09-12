@@ -223,14 +223,28 @@ def get_playoffs(season: str = SEASON) -> dict[str, Any]:
     table = sorted(
         ((t, w) for t, w in wins.items()), key=lambda x: x[1], reverse=True)
     champ = table[0][0] if table and table[0][1] >= 12 else ""
+    rows_out: dict[str, Any] = {"champion": champ,
+            "champion_record":
+                {"w": wins.get(champ, 0), "l": losses.get(champ, 0)}
+                if champ else {},
+            "wins": [{"team": t, "w": w, "l": losses.get(t, 0)}
+                     for t, w in table[:16]],
+            "games_total": games // 2}
+    from ._core import season_static as _season_static
+    if _season_static(season):
+        # QA F36: subagent paths answer "simulate the playoffs" from
+        # get_playoffs directly and the model framed these actuals as
+        # simulation output. Label them AT THE SOURCE so every path is
+        # honest: these are final results, not a Monte Carlo run.
+        rows_out["result_kind"] = "ACTUAL_RESULTS_NOT_SIMULATION"
+        rows_out["summary"] = (
+            f"These are the ACTUAL final {season} playoff results"
+            + (f" ({champ} champions)" if champ else "")
+            + ", recorded games - not a simulation or prediction. "
+              "If the ask was to simulate, say simulated odds are "
+              "unavailable for a completed season.")
     return {"tool": "get_playoffs", "ok": True,
-            "rows": {"champion": champ,
-                     "champion_record":
-                         {"w": wins.get(champ, 0), "l": losses.get(champ, 0)}
-                         if champ else {},
-                     "wins": [{"team": t, "w": w, "l": losses.get(t, 0)}
-                              for t, w in table[:16]],
-                     "games_total": games // 2},
+            "rows": rows_out,
             "meta": meta}
 
 
