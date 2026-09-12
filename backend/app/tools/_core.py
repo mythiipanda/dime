@@ -293,6 +293,28 @@ def is_past_game_date(game_date: str) -> bool:
         return False
 
 
+def season_static(season: str) -> bool:
+    """True when the season is complete and its tables never change again.
+
+    NBA seasons end in June; give a grace buffer to July 15 of the end
+    year. In the 2026 offseason, 2025-26 is static: live refetch only
+    multiplies blocked-endpoint timeouts without fresher data.
+    """
+    import datetime as _dt
+
+    m = _re_match(r"^20(\d{2})-(\d{2})$", str(season or ""))
+    if not m:
+        return False
+    end_year = 2000 + int(m.group(2))
+    return _dt.date.today() > _dt.date(end_year, 7, 15)
+
+
+def _re_match(pattern: str, text: str):
+    import re as _re
+
+    return _re.match(pattern, text)
+
+
 def _warehouse_or_live(
     table: str,
     where: str,
@@ -312,6 +334,19 @@ def _warehouse_or_live(
             if age is not None and age > ttl_s:
                 frame = None
     if frame is None or frame.height == 0:
+        if season_static(season):
+            # Static season: never burn ~24s on a blocked live refetch.
+            frame = store.read_frame(table, where, params)
+            if frame is not None and frame.height > 0:
+                meta: dict[str, Any] = {"rows": frame.height, "cached": True,
+                                        "static_season": True}
+                if "_source" in frame.columns:
+                    meta["source"] = frame["_source"][0]
+                    meta["fetched_at"] = frame["_fetched_at"][0]
+                return frame.head(limit).to_dicts(), meta
+            return [], {"source": "warehouse", "static_season": True,
+                        "error": f"no seeded rows for {table} ({season}); "
+                                 "season complete, live refetch disabled"}
         live: FetchResult = fetch()
         if not live.ok or live.frame.height == 0:
             frame = store.read_frame(table, where, params)
