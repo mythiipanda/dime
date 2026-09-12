@@ -2124,6 +2124,11 @@ async def _triage_seed(question: str, primary: str, model: str,
     pick = None
     if is_trade:
         pick = "delegate_league"
+    elif re.search(r"injur|healthy|available|\bstatus\b", question,
+                   re.IGNORECASE):
+        # F45: scout-only routes cannot see the injury report or the
+        # playoff inactive listings; league owns both.
+        pick = "delegate_league"
     elif found_p and not found_t:
         pick = "delegate_scout"
     elif found_t and not found_p:

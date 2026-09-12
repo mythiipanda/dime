@@ -363,9 +363,11 @@ async def _run_desk(
                     "never silently drop it. If a result's meta has "
                     "coverage=season_line, say the game-by-game log is not "
                     "seeded yet and you are showing the season line. "
+                    "Never cite raw field names or flags (is_active, WL, "
+                    "ok:true) - say them in plain analyst words (F25-class). "
                     "If the evidence has no data rows, reply exactly: NO DATA."
                 ),
-                HumanMessage(content=f"Task: {task}\nEvidence: {str(collected)[:8000]}"),
+                HumanMessage(content=f"Task: {task}\nEvidence: {_evidence_text(collected)}"),
             ],
             on_token,
             ),
@@ -664,6 +666,29 @@ def _leaders_category(task: str) -> str | None:
         if _re.search(pat, t, _re.IGNORECASE):
             return cat
     return None
+
+
+def _evidence_text(collected: list, cap: int = 8000) -> str:
+    """Serialize desk evidence notes-first.
+
+    F45: str(collected)[:8000] puts big row lists first, so a trailing
+    player_note / inactive_note / error on a fat result (64-row game
+    log) was truncated out of the summarizer's view. Hoist the notes
+    and errors of every result ahead of the rows so they always
+    survive the cap.
+    """
+    notes = []
+    for c in collected:
+        if not isinstance(c, dict):
+            continue
+        for key in ("player_note", "inactive_note", "error"):
+            v = c.get(key)
+            if isinstance(v, str) and v.strip():
+                notes.append(f"{c.get('tool', '?')} {key}: {v.strip()}")
+    head = ""
+    if notes:
+        head = "KEY NOTES (authoritative, cite these): " + " | ".join(notes) + "\n"
+    return head + str(collected)[:cap]
 
 
 def _is_answer(c: Any) -> bool:
