@@ -324,6 +324,53 @@ def get_playoffs(season: str = SEASON) -> dict[str, Any]:
                     for g in finals
                     if str(g.get("TEAM_ABBREVIATION")) == ta],
             }
+            # F52: the Finals MVP award itself is not recorded anywhere
+            # in the dataset. Say that, then give the honest statistical
+            # read: the leading Finals scorer, per-game, over the series.
+            try:
+                from datetime import datetime as _dt
+
+                fdates = set()
+                for g in finals:
+                    try:
+                        fdates.add(_dt.strptime(
+                            str(g.get("GAME_DATE")), "%Y-%m-%d"
+                        ).strftime("%b %-d, %Y"))
+                    except (TypeError, ValueError):
+                        pass
+                if fdates:
+                    from .. import store as _store
+
+                    import duckdb as _ddb
+
+                    _con = _ddb.connect(str(_store.DB_PATH), read_only=True)
+                    try:
+                        _ph = ",".join("?" * len(fdates))
+                        _sc = _con.execute(
+                            f"SELECT _entity, COUNT(*), "
+                            f"ROUND(AVG(PTS), 1) FROM "
+                            f"silver_playoff_gamelogs WHERE _season = ? "
+                            f"AND GAME_DATE IN ({_ph}) GROUP BY 1 "
+                            f"ORDER BY 3 DESC LIMIT 1",
+                            [season, *sorted(fdates)]).fetchone()
+                        if _sc and _sc[1]:
+                            _pid = str(_sc[0]).replace("player:", "")
+                            _nm = _con.execute(
+                                "SELECT DISTINCT PLAYER FROM "
+                                "silver_leaders_pts WHERE "
+                                "CAST(PLAYER_ID AS VARCHAR) = ?",
+                                [_pid]).fetchone()
+                            _name = _nm[0] if _nm else _pid
+                            rows_out["finals"]["finals_mvp_note"] = (
+                                "The Finals MVP award is not recorded in "
+                                "this dataset. The leading Finals scorer "
+                                f"was {_name} at {_sc[2]} points per "
+                                f"game over the {len(fdates)}-game "
+                                "series.")
+                    finally:
+                        _con.close()
+            except Exception:
+                pass
     from ._core import season_static as _season_static
     if _season_static(season):
         # QA F36: subagent paths answer "simulate the playoffs" from

@@ -2953,9 +2953,13 @@ def _scrub_final_text(text: str) -> str:
     cleaned = re.sub(r"\bget_\w+\b", "", cleaned)
     cleaned = re.sub(r"\bfrom the (league|scout|team) (agent|desk)\b",
                      "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"[Pp]er the (league|scout|team|\w+ desk) summary,?",
+                     "", cleaned)
     cleaned = re.sub(r"\bthe (league|scout|team) (agent|desk)\b",
                      "the data", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"\bseason([.,]?) season\b", r"season\1", cleaned)
+    cleaned = re.sub(r"\bper game([.,]?)\s+per game\b", r"per game\1",
+                     cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
     # The season-first-line guard fires once; when two evidence streams
     # each pulled it in, the sentence lands twice. Keep the first.
