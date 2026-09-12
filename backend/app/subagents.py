@@ -194,11 +194,8 @@ async def _run_desk(
          HumanMessage(content=f"Season {SEASON}. Task: {task}")],
     ]
     tool_calls: list[dict] = []
-    _force_ready = bool(collected) and any(
-        isinstance(c, dict) and c.get("tool", "") not in
-        ("resolve_entity", "search_nba") and _row_count(c.get("rows")) > 0
-        for c in collected
-    )
+    _force_ready = bool(collected) and any(_is_answer(c)
+                                           for c in collected)
     if not _force_ready:
         for attempt in attempts:
             try:
@@ -255,11 +252,7 @@ async def _run_desk(
             _te["error"] = _err
         trace.append(_te)
         calls_made += 1
-    ran_data_tool = any(
-        isinstance(c, dict) and c.get("tool", "") not in
-        ("resolve_entity", "search_nba") and _row_count(c.get("rows")) > 0
-        for c in collected
-    )
+    ran_data_tool = any(_is_answer(c) for c in collected)
     if (collected and not ran_data_tool and calls_made < WORKER_BUDGET
             and _time.time() - _desk_t0 < DESK_DEADLINE_S):
         data_names = [t.name for t in subset
@@ -322,11 +315,7 @@ async def _run_desk(
                 _te["error"] = _err
             trace.append(_te)
             calls_made += 1
-    has_data = any(
-        isinstance(c, dict) and c.get("tool", "") not in
-        ("resolve_entity", "search_nba")
-        and _row_count(c.get("rows")) > 0 for c in collected
-    )
+    has_data = any(_is_answer(c) for c in collected)
     if not has_data:
         # QA #31: the generic message swallowed the one informative
         # error in the trace - "How did Luka do in the 2026 playoffs?"
@@ -675,6 +664,17 @@ def _leaders_category(task: str) -> str | None:
         if _re.search(pat, t, _re.IGNORECASE):
             return cat
     return None
+
+
+def _is_answer(c: Any) -> bool:
+    """A tool result that answers the ask: data rows, or a named-player
+    note (injury miss / playoff inactive) that IS the answer (F45)."""
+    if not isinstance(c, dict):
+        return False
+    if c.get("tool", "") in ("resolve_entity", "search_nba"):
+        return False
+    return bool(_row_count(c.get("rows")) > 0
+                or c.get("player_note") or c.get("inactive_note"))
 
 
 def _player_mentioned(task: str) -> str:
