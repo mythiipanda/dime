@@ -607,7 +607,21 @@ def get_player_intel(player_id: str | int, season: str = SEASON) -> dict[str, An
                           f"covers 2024-25 and 2025-26 only, so a "
                           f"retired or out-of-era player has no "
                           f"current-season data.")}
-    return {"tool": "get_player_intel", "ok": True, "rows": rows, "meta": meta}
+    out = {"tool": "get_player_intel", "ok": True, "rows": rows,
+           "meta": meta}
+    try:
+        from .gamelog import playoff_inactive_note as _pin
+        from .splits import _resolve_name as _rname4
+
+        _note = _pin(int(player_id), season,
+                     _rname4(int(player_id), str(player_id)))
+        if _note:
+            # F45: a scout-only injury ask must still surface the
+            # playoff inactive listing.
+            out["inactive_note"] = _note
+    except Exception:
+        pass
+    return out
 
 
 @tool
