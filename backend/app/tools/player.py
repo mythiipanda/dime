@@ -1,4 +1,5 @@
 """Player desk. Intel, form, comps, zones, splits, possession splits."""
+import datetime as _dt
 
 from typing import Any
 import asyncio as _asyncio
@@ -686,6 +687,10 @@ def get_trend(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
     if not rows:
         return {"tool": "get_trend", "ok": False,
                 "error": meta.get("error") or "empty upstream response"}
+    # Warehouse storage order is not guaranteed chronological; form must
+    # be computed on real dates or "recent" quietly means December (F19).
+    from .splits import parse_game_date as _pgd
+    rows = sorted(rows, key=lambda r: _pgd(r.get("GAME_DATE")) or _dt.min)
     try:
         pts = [float(r.get("PTS") or 0) for r in rows]
     except (TypeError, ValueError):

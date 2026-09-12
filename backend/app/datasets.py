@@ -182,6 +182,26 @@ def dataset(
     elif ids:
         entity = f"wowy:{ids}"
     frame = store.read_frame(table, "_season = ?", [season])
+    if (name in ("player_gamelogs", "team_games", "playoff_gamelogs")
+            and frame.height > 0 and "GAME_DATE" in frame.columns):
+        # Warehouse storage order is arbitrary; game logs must come back
+        # newest-first by REAL date or the panel's "recent" slice quietly
+        # shows December string-sort order (QA F19).
+        for fmt_s in ("%b %d, %Y", "%Y-%m-%d"):
+            try:
+                frame = frame.with_columns(
+                    pl.col("GAME_DATE").str.strptime(
+                        pl.Date, fmt_s, strict=False).alias("_d"))
+                if frame["_d"].null_count() < frame.height:
+                    frame = frame.sort("_d", descending=True,
+                                       nulls_last=True).drop("_d")
+                else:
+                    frame = frame.drop("_d")
+                    continue
+                break
+            except Exception:
+                frame = frame.drop("_d") if "_d" in frame.columns else frame
+                continue
     if name == "leaders" and frame.height > 0:
         # Warehouse storage order is arbitrary; leaders must come back
         # ranked or the Top-10 chart and table drop or bury leaders.

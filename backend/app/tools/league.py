@@ -496,10 +496,19 @@ def get_rest(team_abbrev: str = "", season: str = SEASON) -> dict[str, Any]:
                 rest_w += w == "W"
                 rest_l += w != "W"
         prev = (t, d)
+    _rmeta: dict[str, Any] = {"source": "warehouse", "season": season}
+    from ._core import season_static as _season_static
+    if _season_static(season):
+        # QA F17: in the offseason there are no upcoming back-to-backs;
+        # these are FINAL 2025-26 splits, and the next games are preseason.
+        _rmeta["offseason"] = True
+        _rmeta["note"] = (f"{season} is complete; these are final "
+                          "splits. No NBA games until preseason, so no "
+                          "upcoming back-to-backs exist right now.")
     return {"tool": "get_rest", "ok": True,
             "rows": {"back_to_back": f"{b2b_w}-{b2b_l}",
                      "three_plus_rest": f"{rest_w}-{rest_l}"},
-            "meta": {"source": "warehouse", "season": season}}
+            "meta": _rmeta}
 
 
 """Shared ELO engine. get_win_prob and get_elo build ratings from the same
@@ -2211,7 +2220,8 @@ def get_player_risers(season: str = "2025-26", n: int = 10) -> dict[str, Any]:
             """SELECT g._entity, g.GAME_DATE, g.PTS, g.FG_PCT, g.FG3_PCT
                FROM silver_player_gamelogs g
                WHERE g._season = ?
-               ORDER BY g._entity, g.GAME_DATE""",
+               ORDER BY g._entity,
+                        strptime(g.GAME_DATE, '%b %d, %Y')""",
             [season]).fetchall()
         names = {}
         try:

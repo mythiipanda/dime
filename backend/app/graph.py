@@ -61,6 +61,8 @@ ANALYST_SYSTEM = (
     "Only cite all-in-one metrics present in evidence: RAPM-lite, on-off "
     "net, RAPTOR history. Label RAPM-lite and RAPTOR as estimates. "
     "Never invent PER, BPM, EPM, WS, VORP, or LEBRON. Say EPM is unavailable. "
+    "For three-point zones (corner, above the break) quote 3P% (the fg "
+    "fields), never the 1.5x eFG; use eFG only for two-point zones. "
     "When shot-zone or shot-compare evidence is present, never claim "
     "shot charts or visual courts are unavailable; the evidence card "
     "renders the court. "
@@ -1314,6 +1316,30 @@ async def _triage_seed(question: str, primary: str, model: str,
             if state["tool_results"] and state["tool_results"][-1] is _rout:
                 state["tool_results"][-1] = {
                     "tool": _rtool, "rows": [_rout]}
+            async for _e in _triage_terminal(question, state):
+                yield _e
+            return
+    if re.search(r"back-to-backs?|back to backs?|\bb2b\b|rest days?|"
+                 r"days? of rest|rest advantage", question, re.IGNORECASE) \
+            and not is_trade and not is_cast:
+        # QA F17: back-to-back asks fell to the planner, which substituted
+        # an irrelevant win-streak table. Route to the rest splits tool;
+        # its offseason note makes "no games until preseason" explicit.
+        _rest_args: dict[str, Any] = {"season": "2025-26"}
+        if found_t:
+            from .tools._core import coerce_team_id as _ctid
+            from nba_api.stats.static import teams as _tteams
+            try:
+                _tid = _ctid(found_t[0])
+                _rest_args["team_abbrev"] = {
+                    t["id"]: t["abbreviation"]
+                    for t in _tteams.get_teams()}.get(_tid, "")
+            except Exception:
+                pass
+        _rh4: dict[str, Any] = {}
+        async for _e in _triage_tool("get_rest", _rest_args, state, _rh4):
+            yield _e
+        if _result_status(_rh4.get("out") or {}) == "ok":
             async for _e in _triage_terminal(question, state):
                 yield _e
             return

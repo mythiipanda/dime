@@ -137,7 +137,18 @@ def compute_streaks(
     out.sort(key=lambda s: str(s["holder"]))
     out.sort(key=lambda s: s["end_date"], reverse=True)
     out.sort(key=lambda s: -s["streak"])
-    return out[: max(1, min(int(top or 10), 25))]
+    # One row per holder, always: duplicate (holder_id, holder) keys from
+    # mixed-name source rows must never surface the same team twice
+    # (QA F17: Thunder appeared twice in the top 10).
+    seen: set = set()
+    deduped: list[dict[str, Any]] = []
+    for s in out:
+        key = s["holder_id"]
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(s)
+    return deduped[: max(1, min(int(top or 10), 25))]
 
 
 def _load_player_games(season: str) -> tuple[list[dict], dict]:
