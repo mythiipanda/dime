@@ -2816,6 +2816,19 @@ def _scrub_final_text(text: str) -> str:
         return text
     cleaned = _DEV_TEXT_RX.sub("that data pull did not complete", text)
     cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+    # The season-first-line guard fires once; when two evidence streams
+    # each pulled it in, the sentence lands twice. Keep the first.
+    _sfx = re.compile(
+        r"(This data covers the \d{4}-\d{2} season\.)", re.IGNORECASE)
+    _seen = False
+    def _dedupe_season(m: "re.Match[str]") -> str:
+        nonlocal _seen
+        if _seen:
+            return ""
+        _seen = True
+        return m.group(1)
+    cleaned = _sfx.sub(_dedupe_season, cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     return cleaned.strip()
 
 
