@@ -523,6 +523,9 @@ _SEASON_AVG_RX = re.compile(
     r"\bhow (?:is|has|'s)\b.{0,40}\bplay(?:ing|ed)\b|"
     r"\bhow['’]?s\b.{0,30}\bthis season\b",
     re.IGNORECASE)
+_SEASON_LINE_RX = re.compile(
+    r"\bseason (?:average|averages|avg|line|numbers|stats?|"
+    r"performance)\b", re.IGNORECASE)
 _SEASON_AVG_NO_RX = re.compile(
     r"\bcareer\b|\ball[\s-]*time\b|\blast season\b|"
     r"\blast \d+ games?\b|\blately\b|\brecent(?:ly)?\b",
@@ -1608,6 +1611,42 @@ async def _triage_seed(question: str, primary: str, model: str,
             if state["tool_results"] and state["tool_results"][-1] is _sout:
                 state["tool_results"][-1] = {
                     "tool": "get_season_averages", "rows": [_sout]}
+            async for _e in _triage_terminal(question, state):
+                yield _e
+            return
+        # Unknown player or missing line: fall through to the planner.
+    # F64: cross-turn "compare that to his season average" - the name
+    # arrives by pronoun carry, so the direct-name pin above never
+    # fires, and the planner free-styles a run_python average over a
+    # PARTIAL game-log window (live, 5:17 PM: Brunson "28 PPG across
+    # 13 complete games" labeled as his season average while the full
+    # season line exists). One player carried from history + an
+    # explicit season-line ask routes to get_season_averages; the
+    # ledger/history supplies the "that" side. Playoff-average asks
+    # stay with the playoff lanes; career/last-N stay out via
+    # _SEASON_AVG_NO_RX.
+    if (not is_season_avg
+            and len(found_p) == 1
+            and state.get("history")
+            and _SEASON_LINE_RX.search(question)
+            and not _SEASON_AVG_NO_RX.search(question)
+            and not re.search(r"\bplayoffs?\b", question, re.IGNORECASE)
+            and not is_trade and not is_cast):
+        _cseason = "2025-26"
+        _cm2 = re.search(r"(20\d\d)\s*-\s*(\d\d)", question)
+        if _cm2:
+            _cseason = f"{_cm2.group(1)}-{_cm2.group(2)}"
+        _ch2: dict[str, Any] = {}
+        async for _e in _triage_tool(
+                "get_season_averages",
+                {"player_id": found_p[0], "season": _cseason},
+                state, _ch2):
+            yield _e
+        _cout2 = _ch2.get("out") or {}
+        if _result_status(_cout2) == "ok":
+            if state["tool_results"] and state["tool_results"][-1] is _cout2:
+                state["tool_results"][-1] = {
+                    "tool": "get_season_averages", "rows": [_cout2]}
             async for _e in _triage_terminal(question, state):
                 yield _e
             return
