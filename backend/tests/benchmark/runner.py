@@ -76,6 +76,10 @@ def run_pack(base: str, pack: dict, only: str | None) -> dict:
         results.append(evaluate_scenario(s, turns, banned))
         results[-1]["thread"] = thread
         results[-1]["answers"] = [t["text"] for t in turns]
+        mark = ("PASS" if results[-1]["pass"]
+                else ("XFAIL" if results[-1]["xfail"] else "FAIL"))
+        print(f"[{mark}] {s['id']} "
+              f"({results[-1].get('seconds', 0)}s)", flush=True)
     graded = [r for r in results if not r["xfail"]]
     known = [r for r in results if r["xfail"]]
     return {

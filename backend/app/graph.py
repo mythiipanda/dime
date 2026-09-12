@@ -3121,6 +3121,25 @@ async def analytics_agent(state: DimeState) -> AsyncGenerator[dict[str, Any], No
         for r in state["tool_results"]
     )
     if not evidenced and not _delegate_ok:
+        # F63-T3 class: fresh evidence failed, but the thread ledger
+        # holds payload-extracted facts from earlier turns. "No New
+        # York Knicks data found" shipped live while the ledger knew
+        # 'NBA Finals result: NYK 4 - 1 SAS'. The ledger is
+        # provenance-valid; answer from it instead of false no-data.
+        _led = [f for f in (state.get("ledger") or []) if isinstance(f, str)]
+        if _led:
+            from .tools._core import SEASON as _CUR_SEASON
+            state["analysis"] = (
+                f"This data covers the {_CUR_SEASON} season.\n"
+                "From earlier in this conversation: "
+                + "; ".join(_led[-_LEDGER_MAX:]) + ".")
+            yield _event(
+                "custom_data",
+                {"node": "analytics",
+                 "tables": _flatten_tables(state["tool_results"])})
+            yield _event("node_update",
+                         {"node": "analytics", "status": "complete"})
+            return
         raw_errs = [str(r.get("error", ""))
                     for r in state["tool_results"]
                     if isinstance(r, dict) and r.get("error")][:3]

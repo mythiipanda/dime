@@ -211,6 +211,9 @@
         "Compare the top 3 scoring teams: total points, per-game average, and how many games each won"
       ],
       "expect": {
+        "contains": [
+          "10010"
+        ],
         "contains_any": [
           [
             "Nuggets",
@@ -219,7 +222,8 @@
         ],
         "not_contains": [
           "not specified",
-          "|  |",
+          "| |",
+          "with .",
           "missing"
         ]
       },
@@ -227,7 +231,7 @@
         "max_seconds": 120
       },
       "xfail": true,
-      "comment": "F66: deep multi-stat compare ships nameless tables or invented numbers. xfail until the deterministic lane lands; flip when it passes twice."
+      "comment": "F66: deep multi-stat compare ships nameless tables, empty cells, or invented numbers. Requires DEN's real total (10010), no empty table cells, no broken 'with .' sentences. xfail until it passes twice."
     }
   ]
 }
