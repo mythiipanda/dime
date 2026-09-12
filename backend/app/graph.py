@@ -1640,6 +1640,15 @@ async def _triage_seed(question: str, primary: str, model: str,
                 async for _e in _triage_terminal(question, state):
                     yield _e
                 return
+            # QA #70: the F47 both-sides refusal is terminal - the
+            # planner's resolve_entity self-correction cannot fill a
+            # side the question never named, and the extra 5+ tools
+            # (60-100s) only re-arrive at the same answer. Ship the
+            # refusal via the no-evidence compose branch.
+            if _vout.get("terminal"):
+                async for _e in _triage_terminal(question, state):
+                    yield _e
+                return
             # Unknown players or missing data: fall through to the planner
             # so it can self-correct with resolve_entity. The tool's hints
             # are already in state["tool_results"].

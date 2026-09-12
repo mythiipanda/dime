@@ -1478,6 +1478,10 @@ def get_trade_value(
             # empty side an F. What a past trade's other side received
             # is not in the data - refuse, don't manufacture a zero.
             return {"tool": "get_trade_value", "ok": False,
+                    # QA #70: terminal refusal - the triage pin ships
+                    # this straight to compose instead of spending 5+
+                    # planner tools (60-100s) to land on the same answer.
+                    "terminal": True,
                     "error": ("I can only grade proposed trades where "
                               "both sides name players. What a past "
                               "trade's other side actually received is "
