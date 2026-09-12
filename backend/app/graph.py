@@ -3453,8 +3453,14 @@ def _extract_ledger_facts(state: dict) -> list[str]:
     """
     facts: list[str] = []
     for tr in state.get("tool_results") or []:
-        if not isinstance(tr, dict) or tr.get("ok") is not True:
+        if not isinstance(tr, dict) or _result_status(tr) != "ok":
             continue
+        # Pins wrap payloads as {"tool": t, "rows": [raw_tool_dict]};
+        # the planner path stores the raw dict directly. Unify.
+        _r = tr.get("rows")
+        if (isinstance(_r, list) and len(_r) == 1
+                and isinstance(_r[0], dict) and "rows" in _r[0]):
+            tr = _r[0]
         try:
             tname = tr.get("tool")
             rows = tr.get("rows")

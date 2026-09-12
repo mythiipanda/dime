@@ -102,3 +102,14 @@ def test_presentation_emits_ledger_facts_event():
     ev = asyncio.run(_go())
     assert "ledger_facts" in ev
     assert any("NYK 4 - 1 SAS" in f for f in ev["ledger_facts"]["facts"])
+
+
+def test_extract_handles_pin_wrapped_payloads():
+    # The finals/gamelog pins store {"tool": t, "rows": [raw]} - the
+    # v71 extractor only read the raw shape and saw nothing live.
+    wrapped = {"tool": "get_playoffs", "rows": [dict(PLAYOFFS)]}
+    facts = _extract_ledger_facts({"tool_results": [wrapped]})
+    assert "NBA Finals result: NYK 4 - 1 SAS" in facts
+    wrapped_g = {"tool": "search_game_logs", "rows": [dict(GAMELOG_SINGLE)]}
+    facts = _extract_ledger_facts({"tool_results": [wrapped_g]})
+    assert facts and "45 pts" in facts[0]
