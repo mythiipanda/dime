@@ -1,0 +1,86 @@
+"""F63/F67 carry-route pins.
+
+F63 (6:22 PM QA, 0/3): "How did he do in the playoffs?" names nobody,
+so player-level lanes never fired and the planner settled for TEAM
+tables (injuries, team game logs) and dead-ended honestly. One carried
+player + a playoff/Finals ask pins that player's playoff game log.
+
+F67 (6:22 PM QA): "Who was their best player?" resolved "their" to
+team-scoring totals and gave up, though the named-team control works.
+One resolved team + a best-player ask reads the team's top scorers
+from the leaders table.
+"""
+
+import asyncio
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from app.graph import _triage_seed  # noqa: E402
+
+OKC_HIST = [
+    {"text": "Which team had the best record this season?"},
+    {"text": "The Oklahoma City Thunder had the best record at 64-18."},
+]
+WEMBY_HIST = [
+    {"text": "How is Wembanyama playing?"},
+    {"text": "Victor Wembanyama is averaging 24 points this season."},
+]
+
+
+def _drain(question, history=None):
+    async def _go():
+        state = {"question": question, "history": history or [],
+                 "tool_results": [], "calls_made": [], "round": 0}
+        async for _e in _triage_seed(question, "primary", "model", state):
+            pass
+        return state
+
+    return asyncio.run(_go())
+
+
+def _tool_names(state):
+    return [c.split(":")[0] for c in state["calls_made"]]
+
+
+def test_playoff_carry_pins_playoff_intel():
+    st = _drain("How did he do in the playoffs?", WEMBY_HIST)
+    assert "get_playoff_intel" in _tool_names(st), _tool_names(st)
+
+
+def test_playoff_carry_named_player_keeps_own_lane():
+    # Player named in the question: the carry pin must NOT fire.
+    st = _drain("How did Brunson do in the playoffs?", WEMBY_HIST)
+    assert st["tool_results"] == [] or all(
+        "pin_" not in c for c in _tool_names(st))
+
+
+def test_playoff_carry_two_players_no_pin():
+    hist = WEMBY_HIST + [{"text": "Jalen Brunson is at 32.6."}]
+    st = _drain("How did he do in the playoffs?", hist)
+    assert "get_playoff_intel" not in _tool_names(st)
+
+
+def test_playoff_carry_no_history_no_pin():
+    st = _drain("How did he do in the playoffs?")
+    assert "get_playoff_intel" not in _tool_names(st)
+
+
+def test_best_player_carry_reads_team_scorers():
+    st = _drain("Who was their best player?", OKC_HIST)
+    assert "pin_team_best_player" in _tool_names(st), _tool_names(st)
+    rows = st["tool_results"][-1].get("rows") or []
+    assert rows, "pin must return scorer rows"
+    assert "Shai Gilgeous-Alexander" in str(rows), rows
+    assert all("PPG" in r for r in rows)
+
+
+def test_best_player_no_team_no_pin():
+    st = _drain("Who is the best player in the league?", OKC_HIST)
+    assert "pin_team_best_player" not in _tool_names(st)
+
+
+def test_best_player_named_player_no_pin():
+    st = _drain("Is Brunson their best player?", OKC_HIST)
+    assert "pin_team_best_player" not in _tool_names(st)

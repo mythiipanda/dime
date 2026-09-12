@@ -625,8 +625,15 @@ def _detect_entities(question: str) -> tuple[list[str], list[str]]:
                     and re.search(r"\b" + re.escape(nick) + r"\b", q))
                 or (city and not race_words
                     and re.search(r"\b" + re.escape(city) + r"\b", q))
+                # F68/F69: abbreviations match case-SENSITIVELY -
+                # case-insensitive matching read the word "was" as WAS
+                # (Washington Wizards) and silently derailed carry
+                # chains ("Who was their best player?" -> Wizards
+                # thought line + wrong-team pull). Real abbreviations
+                # arrive uppercase; lowercase intent is caught by the
+                # city/nickname branches.
                 or re.search(r"\b" + re.escape(t.get("abbreviation", "")) + r"\b",
-                             question, re.IGNORECASE)):
+                             question)):
             found_t.append(full)
     return found_p, found_t
 
@@ -1271,7 +1278,8 @@ async def _triage_seed(question: str, primary: str, model: str,
                        state: dict) -> AsyncGenerator[dict[str, Any], None]:
     found_p, found_t = _detect_entities(question)
     if state.get("history") and re.search(
-            r"\b(him|her|them|they|his|hers|their|theirs|it|that team|that player)\b",
+            r"\b(him|her|them|they|his|hers|their|theirs|it|he|she|"
+            r"that team|that player)\b",
             question, re.IGNORECASE):
         for t in state["history"][-6:]:
             hp, ht = _detect_entities(t.get("text") or "")
@@ -1651,6 +1659,93 @@ async def _triage_seed(question: str, primary: str, model: str,
                 yield _e
             return
         # Unknown player or missing line: fall through to the planner.
+    # F63: cross-turn playoff/Finals carry - "How did he do in the
+    # playoffs?" names nobody, so player-level lanes never fire and the
+    # planner settles for TEAM-level tables (live, 6:22 PM: injuries +
+    # team game logs, honest dead-end 0/3). One player carried from
+    # history + an explicit playoff/Finals ask pins that player's
+    # playoff game log. Named-player playoff asks keep their own lanes.
+    if (not _named_p
+            and len(found_p) == 1
+            and state.get("history")
+            and re.search(r"\bplayoffs?\b|\bpostseason\b|\bfinals\b",
+                          question, re.IGNORECASE)
+            and not is_trade and not is_cast and not is_compare):
+        _pseason = "2025-26"
+        _pm = re.search(r"(20\d\d)\s*-\s*(\d\d)", question)
+        if _pm:
+            _pseason = f"{_pm.group(1)}-{_pm.group(2)}"
+        _ph: dict[str, Any] = {}
+        async for _e in _triage_tool(
+                "get_playoff_intel",
+                {"player_id": found_p[0], "season": _pseason},
+                state, _ph):
+            yield _e
+        _pout = _ph.get("out") or {}
+        if _result_status(_pout) == "ok":
+            async for _e in _triage_terminal(question, state):
+                yield _e
+            return
+        # Unknown player / no playoff log: fall through to the planner.
+    # F67: "their best player" carry - the planner resolved "their" to
+    # team-scoring TOTALS and gave up (live, 6:22 PM chain retest),
+    # though the control ask with the team named outright works. One
+    # team resolved (named or carried) + a best-player ask reads the
+    # team's top scorers straight from the leaders table.
+    if (not found_p and not _named_p and len(found_t) == 1
+            and state.get("history")
+            and re.search(r"\bbest players?\b|\bstar players?\b|"
+                          r"\btop players?\b", question, re.IGNORECASE)
+            # a mid-sentence capitalized token is a name the static
+            # list did not catch ("Is Brunson their best player?") -
+            # leave those to the planner.
+            and not re.search(r"(?<!^)\b[A-Z][a-z]{2,}\b", question)
+            and not is_trade and not is_cast and not is_compare):
+        try:
+            from .tools.gamelog import _team_abbr as _tabbr
+            _babbr, _bfull = _tabbr(found_t[0])
+        except Exception:
+            _babbr, _bfull = "", found_t[0]
+        _brows: list[dict[str, Any]] = []
+        if _babbr:
+            import time as _btime
+
+            from . import store as _bstore
+            for _try in range(3):
+                try:
+                    _bcon = _bstore.connect()
+                    try:
+                        _cur = _bcon.execute(
+                            "SELECT PLAYER, GP, PTS, "
+                            "ROUND(PTS * 1.0 / NULLIF(GP, 0), 1) AS PPG "
+                            "FROM silver_leaders_pts "
+                            "WHERE TEAM = ? AND _season = ? AND GP >= 20 "
+                            "ORDER BY PTS * 1.0 / NULLIF(GP, 0) DESC "
+                            "LIMIT 3", [_babbr, "2025-26"])
+                        _bcols = [d[0] for d in _bcon.description]
+                        _brows = [dict(zip(_bcols, r))
+                                  for r in _cur.fetchall()]
+                    finally:
+                        _bcon.close()
+                    break
+                except Exception:
+                    _btime.sleep(0.2)
+        if _brows:
+            yield _event("thought_stream", {
+                "node": "data_retrieval",
+                "text": f"Reading {_bfull} scoring leaders from the "
+                        "warehouse."})
+            state["tool_results"].append({
+                "tool": "pin_team_best_player", "ok": True,
+                "rows": _brows,
+                "meta": {"source": "warehouse", "season": "2025-26",
+                         "note": (f"top {_bfull} scorers by per-game "
+                                  "points (20+ games); 'best player' "
+                                  "read as the team's leading scorers")}})
+            state["calls_made"].append("pin_team_best_player")
+            async for _e in _triage_terminal(question, state):
+                yield _e
+            return
     if re.search(r"\bris(?:ers?|ing)\b|\bfall(?:ers?|ing)\b",
                  question, re.IGNORECASE) and not found_p and not is_trade:
         # Player-level risers used to fall to the planner, which burned
