@@ -1052,29 +1052,52 @@ def get_shot_zones(player_id: str | int, season: str = SEASON) -> dict[str, Any]
                 "_season = ? AND CAST(PLAYER_ID AS VARCHAR) = CAST(? AS VARCHAR)",
                 [season, str(player_id)])
             if zb is not None and zb.height > 0:
+                # League baseline from the same bucket table (league-wide seed).
+                league_fg: dict[str, float] = {}
+                try:
+                    lz = store.read_frame(
+                        "silver_zone_splits", "_season = ?", [season])
+                    if lz is not None and lz.height > 0:
+                        agg: dict[str, list] = {}
+                        for lr in lz.to_dicts():
+                            a = agg.setdefault(str(lr.get("ZONE")), [0.0, 0.0])
+                            a[0] += float(lr.get("FGM") or 0)
+                            a[1] += float(lr.get("FGA") or 0)
+                        for zone, (m, a) in agg.items():
+                            if a >= 50:
+                                league_fg[zone] = round(m / a, 3)
+                except Exception:
+                    pass
                 out_rows = []
                 for r in zb.to_dicts():
                     fga = float(r.get("FGA") or 0)
                     fgm = float(r.get("FGM") or 0)
-                    out_rows.append({
+                    fgp = round(fgm / fga, 3) if fga else 0.0
+                    row = {
                         "zone": r.get("ZONE"), "FGM": int(fgm), "FGA": int(fga),
-                        "FG_PCT": round(fgm / fga, 3) if fga else 0.0,
+                        "FG_PCT": fgp,
                         "share": round(float(r.get("FGA_PCT") or 0), 3),
                         "fgm": int(fgm), "fga": int(fga),
-                        "fg_pct": round(fgm / fga, 3) if fga else 0.0,
+                        "fg_pct": fgp,
                         "freq_pct": round(float(r.get("FGA_PCT") or 0), 3),
-                    })
+                    }
+                    if str(r.get("ZONE")) in league_fg:
+                        row["LEAGUE_DELTA"] = round(fgp - league_fg[str(r.get("ZONE"))], 3)
+                    out_rows.append(row)
                 total = sum(r["FGA"] for r in out_rows) or 1
                 for r in out_rows:
                     r["share"] = round(r["FGA"] / total, 3)
                     r["freq_pct"] = r["share"]
+                meta = {"source": "basketball-reference",
+                        "season": season, "rows": len(out_rows),
+                        "cached": True,
+                        "note": "distance buckets (0-3ft, 3-10ft, "
+                                "10-16ft, 16ft-3P, 3P), not exact "
+                                "NBA zones"}
+                if league_fg:
+                    meta["baseline"] = "silver_zone_splits league bucket FG%"
                 return {"tool": "get_shot_zones", "ok": True, "rows": out_rows,
-                        "meta": {"source": "basketball-reference",
-                                 "season": season, "rows": len(out_rows),
-                                 "cached": True,
-                                 "note": "distance buckets (0-3ft, 3-10ft, "
-                                         "10-16ft, 16ft-3P, 3P), not exact "
-                                         "NBA zones"}}
+                        "meta": meta}
         except Exception:
             pass
     if not shot_dicts:
@@ -1148,6 +1171,10 @@ def get_shot_zones(player_id: str | int, season: str = SEASON) -> dict[str, Any]
             baseline_detail = "silver_shots empty or missing zone/made columns"
     except Exception as exc:
         baseline_detail = str(exc)[:120]
+    if baseline_missing:
+        baseline_detail = ("league baseline unavailable: shot-level data "
+                           "seeded for few players; bucket table used for "
+                           "league-wide coverage instead")
     rows = []
     for z, (m, a, t) in sorted(zones.items()):
         fgp = round(m / a, 3) if a else 0.0
@@ -1162,7 +1189,7 @@ def get_shot_zones(player_id: str | int, season: str = SEASON) -> dict[str, Any]
             row["LEAGUE_DELTA"] = round(efg - league_efg[z], 3)
         rows.append(row)
     meta: dict[str, Any] = {"source": shot_source, "fetched_at": shot_fetched,
-                            "rows": len(rows),
+                            "rows": len(rows), "season": season,
                             "cached": shot_source.startswith("warehouse")}
     if baseline_missing:
         meta["baseline_missing"] = True

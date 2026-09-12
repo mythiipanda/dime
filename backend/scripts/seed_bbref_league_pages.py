@@ -45,6 +45,7 @@ def name_map() -> dict:
 def fetch(page: str) -> pd.DataFrame:
     r = requests.get(BASE % (BBREF_YEAR, page), headers=HEADERS, timeout=30)
     r.raise_for_status()
+    r.encoding = "utf-8"  # bbref omits charset; default latin-1 mangles diacritics (Doncic, Jokic)
     df = pd.read_html(io.StringIO(r.text))[0]
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = ["|".join(str(x) for x in tup if "Unnamed" not in str(x))
