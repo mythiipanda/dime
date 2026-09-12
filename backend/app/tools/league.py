@@ -2013,7 +2013,10 @@ async def text_to_sql(question: str) -> dict[str, Any]:
                  HumanMessage(
                       content="Write one SQLite SELECT using only these tables "
                       "and columns. Match column case exactly as listed.\n"
-                      "Rules. Season totals and season leaders questions MUST use "
+                      "Rules. Ratio/percentage leaderboards MUST add a "
+                      "minimum-volume floor (AST/TOV: AST >= 300; shooting "
+                      "pct: attempts >= 300) or the top row is a junk "
+                      "small-sample slice. Season totals and season leaders questions MUST use "
                       "the silver_leaders_* tables directly; they hold final official "
                       "season totals. silver_player_gamelogs is an incomplete per-game "
                       "sample: never SUM it to compute season totals, and never join "
