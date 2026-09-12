@@ -30,7 +30,9 @@ ANALYST_SYSTEM = (
     "Every number you state must appear in the evidence. "
     "Never invent streaks, averages, or ranks. "
     "Never list months, dates, or specifics absent from evidence. "
-    "Round every number to 1 decimal max. Write percentages with a "
+    "Round every number to 1 decimal max - except small-scale "
+    "ratings (RAPM, net/off/def rating under 10), which keep 2 "
+    "decimals so close values never read as ties. Write percentages with a "
     "percent sign, never as raw decimals. Never print raw field names "
     "like ts_pct or efg_pct. "
     "Name the tool output you used. Say when data is missing. "
@@ -2364,6 +2366,17 @@ def _flatten_tables(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
             if isinstance(inner_meta, dict):
                 meta = out.get("meta") if isinstance(out.get("meta"), dict) else {}
                 out["meta"] = {**inner_meta, **meta}
+        # QA #62: raw ids are plumbing, never user-facing table
+        # columns. Frontend references no *_id field (verified by
+        # grep), so strip them centrally at the emit point.
+        _rows = out.get("rows")
+        if isinstance(_rows, list):
+            out["rows"] = [
+                {k: v for k, v in r.items()
+                 if not (k == "id" or k.endswith("_id"))}
+                if isinstance(r, dict) else r
+                for r in _rows
+            ]
         out["kind"] = _KIND_FOR_TOOL.get(str(tool or ""), "dataset")
         if tool in _DISPLAY_TITLES:
             try:
@@ -2979,6 +2992,12 @@ def _scrub_final_text(text: str) -> str:
     cleaned = re.sub(
         r"[Bb]ased on (?:the )?(?:scout|league|team|\w+ desk)"
         r" (?:summary|data),?", "", cleaned)
+    # Field-name parrots: the model quotes evidence keys ("ambiguity
+    # note") and summary wording ("scout summary") as prose.
+    cleaned = re.sub(r"\bambiguity[_ ]note\b", "note", cleaned,
+                     flags=re.IGNORECASE)
+    cleaned = re.sub(r"\b(?:the )?(?:scout|league|team) summary\b",
+                     "the data", cleaned, flags=re.IGNORECASE)
     # QA #61c: integer-valued stats carry decimal noise ("32.0
     # minutes", "15.0 games"). Strip trailing .0 everywhere.
     cleaned = re.sub(r"\b(\d+)\.0\b", r"\1", cleaned)

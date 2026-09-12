@@ -55,7 +55,7 @@ def resolve_entity(query: str) -> dict[str, Any]:
             names = ", ".join(n for _, n in _act[:3])
             out["ambiguity_note"] = (
                 f"'{raw}' loosely matches several active players "
-                f"({names}). State which one you assumed in one clause.")
+                f"({names}).")
         return out
     except Exception as exc:
         return {"tool": "resolve_entity", "ok": False, "error": str(exc)[:200]}

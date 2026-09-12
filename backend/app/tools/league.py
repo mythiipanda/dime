@@ -460,10 +460,14 @@ def get_rapm(player: str = "", top: int = 10, season: str = SEASON) -> dict[str,
             ).fetchall()
     finally:
         con.close()
-    out = [{"player_id": r[0], "name": r[1], "rapm": r[2], "possessions": r[3]}
+    out = [{"player_id": r[0], "name": r[1],
+            "rapm": round(float(r[2] or 0), 2), "possessions": r[3]}
            for r in rows]
     return {"tool": "get_rapm", "ok": True, "rows": out,
-            "meta": {"source": "rapm-lite", "season": season}}
+            "meta": {"source": "rapm-lite (estimate)", "season": season,
+                     "qualification": "players under 500 possessions "
+                                      "excluded; estimates shrink "
+                                      "toward the prior"}}
 
 
 @tool
