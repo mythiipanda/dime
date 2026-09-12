@@ -1433,6 +1433,41 @@ async def _triage_seed(question: str, primary: str, model: str,
             async for _e in _triage_terminal(question, state):
                 yield _e
         return
+    # QA #74 (F60): "Who won the 2026 Finals?" - the marquee phrasing -
+    # dead-ended to the generic fallback under planner variance (8s/2
+    # tools) while the long phrasing worked. The playoffs payload
+    # carries the finals block deterministically; pin it. Guards: no
+    # MVP (award known-gap owns that), no future/prediction phrasing,
+    # no named player, clean single-turn only.
+    if (((re.search(r"\bfinals\b", question, re.IGNORECASE)
+          and re.search(r"\bwho (?:won|wins|took)\b|\bwinner\b|"
+                        r"\bchampions?(?:ship)?\s+(?:winner|result)|"
+                        r"\bchampions?\b", question, re.IGNORECASE))
+         or (re.search(r"\bchampions?\b|\btitle\b", question, re.IGNORECASE)
+             and re.search(r"\b20\d\d\b|\bnba\b|\bthis (?:year|season)\b",
+                           question, re.IGNORECASE)
+             and re.search(r"\bwho\b|\bwinner\b|\bchampions?\b",
+                           question, re.IGNORECASE)))
+            and not re.search(r"\bmvp\b|\bwill\b|\bgoing to\b|\bodds\b|"
+                              r"\bpredict", question, re.IGNORECASE)
+            and not found_p and not state.get("history")):
+        _fseason = "2025-26"
+        _fm = re.search(r"\b(20\d\d)\b", question)
+        if _fm:
+            _fy = int(_fm.group(1))
+            _fseason = f"{_fy - 1}-{str(_fy)[2:]}"
+        _fh: dict[str, Any] = {}
+        async for _e in _triage_tool(
+                "get_playoffs", {"season": _fseason}, state, _fh):
+            yield _e
+        _fout = _fh.get("out") or {}
+        if _result_status(_fout) == "ok":
+            if state["tool_results"] and state["tool_results"][-1] is _fout:
+                state["tool_results"][-1] = {
+                    "tool": "get_playoffs", "rows": [_fout]}
+            async for _e in _triage_terminal(question, state):
+                yield _e
+        return
     _GAP_PIN_RX = re.compile(
         r"\btwo[\s-]*way\b|\b10[\s-]*day\b|\bg[\s-]?league\b|"
         r"\bcontract (?:types?|status|kinds?)\b|"
@@ -3449,8 +3484,9 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
         _gap = (_gap_note(state.get("question", "") or "")
                 or _memory_ack(state.get("question", "") or ""))
         text = _gap or ("I could not find that in the dataset. "
-                        "Try a player, team, or stat that the season "
-                        "data covers.")
+                        "It covers 2025-26 player and team stats, "
+                        "game logs, standings, playoffs and the "
+                        "Finals - try one of those.")
     _scrubbed = _scrub_final_text(text)
     # QA #67 (F55): with no explicit season context in the question,
     # the season line must say the CURRENT season - a stray 2024-25
@@ -3501,8 +3537,9 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
     _words2 = re.findall(r"[A-Za-z]+", _core2)
     if len(_words2) < 5 and not re.search(r"\d", _core2):
         _scrubbed = _gap or ("I could not find that in the dataset. "
-                             "Try a player, team, or stat that the "
-                             "season data covers.")
+                             "It covers 2025-26 player and team stats, "
+                             "game logs, standings, playoffs and the "
+                             "Finals - try one of those.")
     yield _event("final_answer", {"text": _scrubbed})
     try:
         llm = get_llm(state["primary"], state["model"])  # type: ignore[arg-type]
