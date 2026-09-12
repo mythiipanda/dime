@@ -351,11 +351,25 @@ def _career_baseline(pid: int, stat: str) -> dict[str, Any]:
         )
         if not rows:
             raise LookupError("empty")
-        gp = len(rows)
-        vals = [_f(r.get(stat.lower())) for r in rows]
-        per_game = round(sum(vals) / gp, 1) if gp else 0.0
-        return {"available": True, "gp": gp, "per_game": per_game,
-                "stat": stat}
+        # QA #31b: len(rows) is SEASONS, not games - the card printed
+        # "22.9 PTS/game over 2 games" for a 2-season baseline. Use the
+        # real gp column for games, weight the average by it, and flag
+        # thin samples so a 2-season career is not presented as signal.
+        seasons = len(rows)
+        key = stat.lower()
+        games = int(sum(_f(r.get("gp")) for r in rows)) or seasons
+        wsum = sum(_f(r.get(key)) * max(_f(r.get("gp")), 1.0) for r in rows)
+        wgp = sum(max(_f(r.get("gp")), 1.0) for r in rows)
+        per_game = round(wsum / wgp, 1) if wgp else 0.0
+        out = {"available": True, "gp": games, "seasons": seasons,
+               "per_game": per_game, "stat": stat}
+        if games < 82 or seasons < 3:
+            out["small_sample"] = True
+            out["note"] = (
+                f"Thin career baseline ({games} games over {seasons} "
+                f"season{'s' if seasons != 1 else ''}); treat as "
+                f"directional, not a settled norm.")
+        return out
     except Exception:
         return {"available": False, "note": CAREER_UNAVAILABLE_NOTE}
 
@@ -434,7 +448,16 @@ def get_regression_check(player: str, stat: str = "PTS", n: int = 10,
     meta.update({"season": season, "stat": stat,
                  "verdict_rules": VERDICT_RULES,
                  "driver_scaling": "ts*20, minutes/4, fga/3, opponent/4"
-                 " so factors are comparable; drivers ranked by scaled |delta|"})
+                 " so factors are comparable; drivers ranked by scaled |delta|",
+                 # QA #31b: QA's narrative listed per-game ranges instead
+                 # of using the verdict, and misread the defense rank.
+                 "opponent_defense_meaning":
+                 "average defensive rank of opponents faced, 1 = best "
+                 "defense, 30 = worst; negative delta = tougher slate",
+                 "narrative_guidance":
+                 "lead with the verdict and verdict_note, cite the top "
+                 "drivers with their units, and honor any career-baseline "
+                 "small_sample note; do not just list per-game ranges"})
     return {"tool": "get_regression_check", "ok": True,
             "rows": {"player": _resolve_name(pid, str(player)),
                      "player_id": pid, "stat": stat,
