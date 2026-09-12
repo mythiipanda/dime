@@ -411,7 +411,7 @@ _COMPARE_RX = re.compile(
 # used to spend two LLM rounds (resolve_entity, then the value call) before
 # calling it, but the tool resolves names itself.
 _TRADE_VALUE_RX = re.compile(
-    r"who wins|win(?:s|ner)? (?:this|that|the) trade|trade value|"
+    r"who wins|win(?:s|ner|ning)?\b[^.?!]{0,25}\btrades?\b|trade value|"
     r"fair value|grade[sd]? (?:this|that|the) trade|"
     r"value of (?:this|that|the) trade|production value vs salary|"
     r"who (?:got|gets) the better (?:deal|end)", re.IGNORECASE)
@@ -1588,7 +1588,12 @@ async def _triage_seed(question: str, primary: str, model: str,
     if (is_trade and not state.get("history")
             and _TRADE_VALUE_RX.search(question)
             and not _TRADE_VALUE_NO_RX.search(question)
-            and len(found_t) == 2):
+            # F56: "Did the Mavericks win the Luka trade?" names ONE
+            # team + the player - _trade_sides resolves the player's
+            # team into the second side. Requiring two named teams
+            # let one-sided phrasings escape to the planner, which
+            # answered a two-sided question from one roster.
+            and (len(found_t) == 2 or (found_t and found_p))):
         # B3: "who wins this trade on value" used to go through two planner
         # LLM rounds (resolve_entity, then the value call) before reaching
         # get_trade_value, which resolves names itself. Parse sides
