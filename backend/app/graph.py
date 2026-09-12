@@ -3506,41 +3506,40 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
     # away the leader's total - "scored the most total points with PTS
     # (122.1 per game)". meta.note already tells the LLM to cite
     # leader_line verbatim; it still drops the value under variance.
-    # Patch deterministically from the tool payload.
+    # v67 repair-regex rounds then chased four degenerate with-clause
+    # shapes ("with PTS (", "with PTS,", "with .", "with ,") and the
+    # LLM kept inventing more. Whack-a-mole lost: when get_team_leaders
+    # is the evidence, the answer ships deterministic - leader_line
+    # plus runner-ups from rows, no LLM narrative at all.
     for _tr in state.get("tool_results") or []:
         if (isinstance(_tr, dict)
                 and _tr.get("tool") == "get_team_leaders"
                 and _tr.get("rows") and isinstance(_tr.get("meta"), dict)):
             _tm = _tr["meta"]
             _tstat = _tm.get("stat_category")
-            _ttot = _tr["rows"][0].get(_tstat) if _tstat else None
-            if _tstat and _ttot is not None:
-                # v67 smokes caught three degenerate shapes: "with PTS
-                # (", "with PTS, averaging", "lead with total PTS (",
-                # and "with . They averaged". Repair each; prepend
-                # leader_line only when the value is truly absent.
-                _patched = re.sub(
-                    rf"\bwith (?:total )?{_tstat}(?= \()",
-                    f"with {_ttot} total {_tstat}", _scrubbed)
-                _patched = re.sub(
-                    rf"\bwith (?:total )?{_tstat}(?=,)",
-                    f"with {_ttot} total {_tstat}", _patched)
-                _patched = re.sub(
-                    rf"\bwith\s+\.",
-                    f"with {_ttot} total {_tstat}.", _patched)
-                if _patched != _scrubbed:
-                    _scrubbed = _patched
-                if str(_ttot) not in _scrubbed and _tm.get("leader_line"):
-                    _ll = _tm["leader_line"]
-                    _ll = _ll[0].upper() + _ll[1:] + "."
-                    _sm = re.match(
-                        r"(This data covers the \d{4}-\d{2} season\.?\s*)",
-                        _scrubbed)
-                    if _sm:
-                        _scrubbed = (_sm.group(1) + _ll + " "
-                                     + _scrubbed[_sm.end():])
-                    else:
-                        _scrubbed = _ll + " " + _scrubbed
+            _trows = _tr["rows"]
+            if _tstat and _trows[0].get(_tstat) is not None \
+                    and _tm.get("leader_line"):
+                _ll = _tm["leader_line"]
+                _ll = _ll[0].upper() + _ll[1:] + "."
+                _stat_word = {"PTS": "points", "REB": "rebounds",
+                              "AST": "assists", "STL": "steals",
+                              "BLK": "blocks"}.get(_tstat, _tstat)
+                _runners = "; ".join(
+                    f"{r['TEAM']} {r[_tstat]} ({r['PER_GAME']} per game)"
+                    for r in _trows[1:4]
+                    if r.get(_tstat) is not None)
+                _det = _ll
+                if _runners:
+                    _det += (f" Next in total {_stat_word}: "
+                             f"{_runners}.")
+                try:
+                    from .tools._core import SEASON as _CUR_SEASON
+                    _det = (f"This data covers the {_CUR_SEASON} "
+                            f"season.\n" + _det)
+                except Exception:
+                    pass
+                _scrubbed = _det
             break
     # QA #67 (F55): with no explicit season context in the question,
     # the season line must say the CURRENT season - a stray 2024-25

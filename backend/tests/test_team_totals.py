@@ -90,7 +90,7 @@ def test_league_summary_scrub_no_data_collision():
     assert "the dataset" in out
 
 
-# --- v67: deterministic value patch + scrub widening (v66 live smoke) ---
+# --- v67: deterministic team-totals lane + scrub widening (v66 live smoke) ---
 
 from app.graph import _scrub_final_text, presentation_agent  # noqa: E402
 
@@ -111,41 +111,29 @@ def _present(question, analysis, tool_results):
 
 _TT_TR = [{"tool": "get_team_leaders",
            "rows": [{"RANK": 1, "TEAM": "Denver Nuggets", "ABBREV": "DEN",
-                     "PTS": 10010, "GP": 82, "PER_GAME": 122.1}],
+                     "PTS": 10010, "GP": 82, "PER_GAME": 122.1},
+                    {"RANK": 2, "TEAM": "Atlanta Hawks", "ABBREV": "ATL",
+                     "PTS": 9900, "GP": 82, "PER_GAME": 120.7}],
            "meta": {"stat_category": "PTS", "season": "2025-26",
                     "leader_line": "Denver Nuggets lead with 10010 total "
                                    "PTS (122.1 per game over 82 games)"}}]
 
 
-def test_team_totals_value_patch_with_stat_token():
-    # v66 live failure shape: value dropped, stat token left behind.
+def test_team_totals_deterministic_lane():
+    # LLM analysis text is IGNORED for this lane - the answer is built
+    # from leader_line + rows. Feed it a degenerate narrative; the
+    # final must still ship clean.
     out = _present(
         "which team scored the most total points this season?",
-        "This data covers the 2025-26 season.\nBased on warehouse data, "
-        "the Denver Nuggets scored the most total points with PTS "
-        "(122.1 per game).", list(_TT_TR))
-    assert "10010" in out
-    assert "with PTS (" not in out
+        "Based on warehouse data, the Denver Nuggets scored the most "
+        "total points with , averaging stuff.", list(_TT_TR))
+    assert ("Denver Nuggets lead with 10010 total PTS "
+            "(122.1 per game over 82 games).") in out
     assert "warehouse" not in out.lower()
-    # "Based on warehouse data" opened a sentence -> capitalized fix.
-    assert "from the dataset" in out.lower()
-
-
-def test_team_totals_value_prepend_when_missing():
-    out = _present(
-        "which team scored the most total points this season?",
-        "This data covers the 2025-26 season.\nDenver took the scoring "
-        "crown this season at 122.1 per game.", list(_TT_TR))
-    assert "Denver Nuggets lead with 10010 total PTS" in out
-
-
-def test_team_totals_value_untouched_when_present():
-    out = _present(
-        "which team scored the most total points this season?",
-        "This data covers the 2025-26 season.\nThe Denver Nuggets lead "
-        "with 10010 total PTS (122.1 per game over 82 games).",
-        list(_TT_TR))
+    assert "with ," not in out and "with PTS" not in out
     assert out.count("10010") == 1
+    assert "Atlanta Hawks 9900 (120.7 per game)" in out
+    assert out.startswith("This data covers the 2025-26 season.")
 
 
 def test_scrub_nba_api_league_data_collision():
@@ -159,23 +147,3 @@ def test_scrub_based_on_warehouse_data():
                             "That holds, according to the warehouse data.")
     assert "warehouse" not in out.lower()
     assert "From the dataset, Denver leads." in out
-
-
-def test_team_totals_value_patch_variants():
-    # v67 live-smoke shapes, each must ship the value exactly once.
-    shapes = [
-        "This data covers the 2025-26 season.\nThe Denver Nuggets "
-        "scored the most total points with PTS, averaging 122.1 "
-        "per game.",
-        "This data covers the 2025-26 season.\nThe Denver Nuggets "
-        "scored the most total points with . They averaged 122.1 "
-        "points per game over 82 games.",
-        "This data covers the 2025-26 season.\nThe Denver Nuggets "
-        "lead with total PTS (122.1 per game over 82 games).",
-    ]
-    for a in shapes:
-        out = _present("which team scored the most total points "
-                       "this season?", a, list(_TT_TR))
-        assert "10010" in out, a
-        assert "with PTS" not in out, a
-        assert "with ." not in out, a
