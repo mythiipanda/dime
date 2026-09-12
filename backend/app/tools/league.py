@@ -29,6 +29,39 @@ def get_injuries(team: str = "", season: str = SEASON) -> dict[str, Any]:
     return {"tool": "get_injuries", "ok": True, "rows": rows, "meta": meta}
 
 
+_STANDINGS_KEEP = ("TeamID", "team", "abbrev", "Conference", "WINS",
+                   "LOSSES", "WinPCT", "Record", "PlayoffRank",
+                   "LeagueRank", "L10", "HOME", "ROAD", "PointsPG",
+                   "OppPointsPG", "DiffPointsPG", "CurrentStreak")
+
+
+def _slim_standings(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Compact standing rows.
+
+    QA #40: the raw 70-column row set overran the 12k-char evidence
+    window after ~8 teams, so the LLM truthfully reported 'Lakers not
+    in the evidence' while the card below rendered the full table.
+    Slim rows keep all 30 teams inside the window, and team/abbrev
+    give the narrative the full-name tokens it grounds on.
+    """
+    from nba_api.stats.static import teams as _static
+
+    abbr_by_id = {t.get("id"): str(t.get("abbreviation") or "")
+                  for t in _static.get_teams()}
+    out = []
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        tid = r.get("TeamID")
+        full = f"{r.get('TeamCity') or ''} {r.get('TeamName') or ''}".strip()
+        slim = {k: r.get(k) for k in _STANDINGS_KEEP
+                if k in r and k not in ("team", "abbrev")}
+        slim["team"] = full
+        slim["abbrev"] = abbr_by_id.get(tid, "")
+        out.append(slim)
+    return out
+
+
 @tool
 def get_standings(season: str = SEASON) -> dict[str, Any]:
     """League standings for one season like 2025-26."""
@@ -37,7 +70,8 @@ def get_standings(season: str = SEASON) -> dict[str, Any]:
         [season], lambda: nba_stats.standings(season), season,
         limit=30,
     )
-    return {"tool": "get_standings", "ok": True, "rows": rows, "meta": meta}
+    return {"tool": "get_standings", "ok": True,
+            "rows": _slim_standings(rows), "meta": meta}
 
 
 @tool
