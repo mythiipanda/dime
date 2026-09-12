@@ -300,6 +300,60 @@ def page_player_name(doc) -> str | None:
     return name or None
 
 
+def parse_inactive_rows(table, nba_id: int) -> list:
+    """Inactive/DNP listings from a playoff gamelog table (QA F33).
+
+    These are real facts (the player was listed inactive for that playoff
+    game), stored separately from gamelog stats so no-stat rows never
+    read as 0.0 or fake-neutral performances.
+    """
+    out = []
+    for row in table.xpath("./tbody/tr"):
+        if row.get("class") != "partial_table":
+            continue
+        iso = cell(row, "date")
+        if not iso:
+            continue
+        team = cell(row, "team_name_abbr")
+        loc = cell(row, "game_location")
+        opp = cell(row, "opp_name_abbr")
+        matchup = f"{team} @ {opp}" if loc == "@" else f"{team} vs. {opp}"
+        reason = cell(row, "reason") or "Inactive"
+        out.append({
+            "SEASON_ID": SEASON_ID, "Player_ID": nba_id,
+            "GAME_DATE": nba_date(iso), "MATCHUP": matchup,
+            "REASON": reason,
+        })
+    return out
+
+
+def save_inactive(rows: list, nba_id: int) -> int:
+    if not rows:
+        return 0
+    import duckdb
+    from app import store as _store
+    from app.store import DB_PATH as _DB
+    con = duckdb.connect(str(_DB))
+    try:
+        con.execute(
+            "CREATE TABLE IF NOT EXISTS silver_playoff_inactive ("
+            "SEASON_ID VARCHAR, Player_ID BIGINT, GAME_DATE VARCHAR,"
+            " MATCHUP VARCHAR, REASON VARCHAR, _season VARCHAR,"
+            " _entity VARCHAR)")
+        con.execute(
+            "DELETE FROM silver_playoff_inactive"
+            " WHERE _season = ? AND _entity = ?",
+            [SEASON, f"player:{nba_id}"])
+        con.executemany(
+            "INSERT INTO silver_playoff_inactive VALUES (?,?,?,?,?,?,?)",
+            [(r["SEASON_ID"], r["Player_ID"], r["GAME_DATE"],
+              r["MATCHUP"], r["REASON"], SEASON, f"player:{nba_id}")
+             for r in rows])
+    finally:
+        con.close()
+    return len(rows)
+
+
 def save_rows(rows: list, table: str, nba_id: int, season: str) -> int:
     if not rows:
         return 0
@@ -370,6 +424,8 @@ def main() -> None:
             po_rows = parse_gamelog_table(po_tables[0], nba_id) if po_tables else []
             n_rs = save_rows(rs_rows, "silver_player_gamelogs", nba_id, SEASON)
             n_po = save_rows(po_rows, "silver_playoff_gamelogs", nba_id, SEASON)
+            if po_tables:
+                save_inactive(parse_inactive_rows(po_tables[0], nba_id), nba_id)
             counts["ok"] += 1
             counts["rs_rows"] += n_rs
             counts["po_rows"] += n_po

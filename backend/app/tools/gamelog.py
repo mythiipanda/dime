@@ -182,6 +182,52 @@ def _playoff_coverage() -> str:
     return "playoff coverage: " + ", ".join(seasons)
 
 
+def playoff_inactive_note(pid: int, season: str, name: str | None = None) -> str | None:
+    """Explain a playoff-gamelog miss when the player was listed inactive.
+
+    QA F33: Luka's 2026 playoff lookup returned a bare "no data" while he
+    was in fact inactive (injured) for LAL's entire run - the bare message
+    reads like a coverage gap and contradicts teammates having rows. The
+    seeded silver_playoff_inactive table (bbref inactive listings) turns
+    the error into the true story.
+    """
+    try:
+        con = store.connect(read_only=True)
+        try:
+            tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+            if "silver_playoff_inactive" not in tables:
+                return None
+            rows = con.execute(
+                "SELECT GAME_DATE, MATCHUP, REASON FROM silver_playoff_inactive"
+                " WHERE _season = ? AND _entity = ?",
+                [season, f"player:{pid}"],
+            ).fetchall()
+        finally:
+            con.close()
+    except Exception:
+        return None
+    if not rows:
+        return None
+    from datetime import datetime as _dt
+
+    def _pd(d: str):
+        try:
+            return _dt.strptime(d, "%b %d, %Y")
+        except (TypeError, ValueError):
+            return None
+
+    dates = sorted(d for d in (_pd(r[0]) for r in rows) if d)
+    team = (rows[0][1] or "").split(" ")[0]
+    reason = (rows[0][2] or "inactive").strip().lower()
+    span = ""
+    if dates:
+        span = (f" ({dates[0].strftime('%b %-d')}"
+                f"-{dates[-1].strftime('%b %-d, %Y')})")
+    who = name or f"player {pid}"
+    return (f"{who} was listed {reason} for all {len(rows)} "
+            f"{team} playoff games{span}")
+
+
 def _matches(g: dict[str, Any], f: dict[str, Any]) -> bool:
     """One predicate over a normalized game row. Filters AND together."""
     if f["min_points"] is not None and g["pts"] < f["min_points"]:
@@ -430,7 +476,9 @@ def search_game_logs(
         err = (f"no {scope} gamelog data for {label} in the warehouse"
                f" ({season})")
         if playoffs:
-            err += f"; {_playoff_coverage()}"
+            note = (playoff_inactive_note(pid, season, label)
+                    if pid is not None else None)
+            err += f"; {note}" if note else f"; {_playoff_coverage()}"
         return {"tool": "search_game_logs", "ok": False, "error": err}
     matched = [g for g in games if _matches(g, filters)]
     lim = _clamp_limit(limit)

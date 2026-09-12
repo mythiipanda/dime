@@ -631,7 +631,12 @@ def get_playoff_intel(player_id: str | int, season: str = SEASON) -> dict[str, A
                 con.close()
         except Exception:
             seasons = []
-        if seasons:
+        from .gamelog import playoff_inactive_note as _pin
+        note = _pin(pid, season, str(player_id))
+        if note:
+            err = (f"No playoff games found for {player_id} in {season}: "
+                   f"{note}.")
+        elif seasons:
             coverage = ", ".join(seasons)
             err = (f"No playoff games found for {player_id} in {season} "
                    f"(playoff coverage: {coverage}).")
