@@ -277,14 +277,44 @@ export async function postChatStream(
   signal?: AbortSignal,
   thread?: string | null,
 ): Promise<void> {
-  const res = await fetch(`${BACKEND}/api/v1/chat/stream`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ q, model, thread, client: getClientId() }),
-    signal,
-  });
+  // Stall watchdog: if the stream goes silent for 90s (or the request
+  // itself never starts), surface an error instead of spinning forever.
+  const STALL_MS = 90_000;
+  const ctrl = new AbortController();
+  let lastActivity = Date.now();
+  let stalled = false;
+  const watchdog = setInterval(() => {
+    if (Date.now() - lastActivity > STALL_MS) {
+      stalled = true;
+      ctrl.abort();
+    }
+  }, 5_000);
+  if (signal) {
+    if (signal.aborted) ctrl.abort();
+    else signal.addEventListener("abort", () => ctrl.abort(), { once: true });
+  }
+  let res: Response;
+  try {
+    res = await fetch(`${BACKEND}/api/v1/chat/stream`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ q, model, thread, client: getClientId() }),
+      signal: ctrl.signal,
+    });
+  } catch (e) {
+    clearInterval(watchdog);
+    if (stalled) {
+      handlers.onError("No response from the server for 90s. The backend may be down - try again in a moment.");
+    } else if ((e as Error)?.name === "AbortError") {
+      handlers.onError("Request cancelled.");
+    } else {
+      handlers.onError("Could not reach the Dime backend. Check your connection and try again.");
+    }
+    return;
+  }
   const contentType = res.headers.get("content-type") || "";
   if (!res.ok || !res.body || !contentType.includes("text/event-stream")) {
+    clearInterval(watchdog);
     if (res.status === 429) {
       handlers.onError("Too many requests. Wait a minute and try again.");
     } else {
@@ -295,9 +325,23 @@ export async function postChatStream(
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buf = "";
+  try {
   for (;;) {
-    const { done, value } = await reader.read();
+    let read: ReadableStreamReadResult<Uint8Array>;
+    try {
+      read = await reader.read();
+    } catch (e) {
+      clearInterval(watchdog);
+      if (stalled) {
+        handlers.onError("The stream went quiet for 90s - the backend may be stuck. Try again.");
+      } else if ((e as Error)?.name !== "AbortError") {
+        handlers.onError("Connection to the backend dropped. Try again.");
+      }
+      return;
+    }
+    const { done, value } = read;
     if (done) break;
+    lastActivity = Date.now();
     buf += decoder.decode(value, { stream: true });
     const parts = buf.split("\n\n");
     buf = parts.pop() || "";
@@ -317,6 +361,9 @@ export async function postChatStream(
         continue;
       }
     }
+  }
+  } finally {
+    clearInterval(watchdog);
   }
   handlers.onDone();
 }

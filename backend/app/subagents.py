@@ -6,6 +6,7 @@ stays lean. New desks need a decision row first.
 """
 
 from typing import Any
+import asyncio as _asyncio
 import re as _re
 import time as _time
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -16,6 +17,19 @@ from .providers import (ProviderName, get_llm, astream_chunks_with_fallback,
 
 SEASON = "2025-26"
 WORKER_BUDGET = 3
+TOOL_TIMEOUT_S = 75   # hard cap per tool call inside a desk
+LLM_ROUND_TIMEOUT_S = 100  # hard cap per streamed LLM round
+DESK_DEADLINE_S = 170      # overall wall-clock budget per desk
+
+
+async def _invoke_capped(fn, args: dict, name: str) -> Any:
+    """ainvoke with a hard timeout; a stuck live fetch must not hang a desk."""
+    try:
+        return await _asyncio.wait_for(fn.ainvoke(args), timeout=TOOL_TIMEOUT_S)
+    except _asyncio.TimeoutError:
+        return {"tool": name, "ok": False,
+                "error": f"timed out after {TOOL_TIMEOUT_S}s"}
+
 
 
 def _desk_tool_label(name: str) -> str:
@@ -144,6 +158,7 @@ async def _run_desk(
         return {"agent": desk, "ok": False, "error": f"no key for {provider}",
                 "tool_trace": []}
     calls_made = 0
+    _desk_t0 = _time.time()
     collected: list[dict[str, Any]] = []
     trace: list[dict[str, Any]] = []
     if force_tool:
@@ -152,7 +167,7 @@ async def _run_desk(
         if fname in by_name:
             _t0 = _time.time()
             try:
-                out = await by_name[fname].ainvoke(fargs)
+                out = await _invoke_capped(by_name[fname], fargs, fname)
                 collected.append(out if isinstance(out, dict) else {"rows": out})
             except Exception as exc:
                 out = {"tool": fname, "error": str(exc)[:160]}
@@ -187,8 +202,9 @@ async def _run_desk(
     if not _force_ready:
         for attempt in attempts:
             try:
-                _t, tool_calls = await _stream_tooled(
-                    provider, model, attempt, subset, on_token)
+                _t, tool_calls = await _asyncio.wait_for(
+                    _stream_tooled(provider, model, attempt, subset, on_token),
+                    timeout=LLM_ROUND_TIMEOUT_S)
             except Exception as exc:
                 return {"agent": desk, "ok": False, "error": str(exc)[:200],
                         "tool_trace": trace}
@@ -203,7 +219,7 @@ async def _run_desk(
             continue
         _t0 = _time.time()
         try:
-            out = await fn.ainvoke(call.get("args", {}) or {})
+            out = await _invoke_capped(fn, call.get("args", {}) or {}, fname)
             collected.append(out if isinstance(out, dict) else {"rows": out})
         except Exception as exc:
             out = {"tool": fname, "error": str(exc)[:160]}
@@ -228,22 +244,24 @@ async def _run_desk(
         ("resolve_entity", "search_nba") and _row_count(c.get("rows")) > 0
         for c in collected
     )
-    if collected and not ran_data_tool and calls_made < WORKER_BUDGET:
+    if (collected and not ran_data_tool and calls_made < WORKER_BUDGET
+            and _time.time() - _desk_t0 < DESK_DEADLINE_S):
         data_names = [t.name for t in subset
                       if t.name not in ("resolve_entity", "search_nba")]
         data_tools = [t for t in subset
                       if t.name not in ("resolve_entity", "search_nba")]
         try:
-            _t2, tool_calls2 = await _stream_tooled(
-                provider, model,
-                [SystemMessage(content=brief + " Identity is settled, use "
-                               "these ids verbatim. "
-                               f"Call exactly one of these now: "
-                               f"{', '.join(data_names)}. No prose."),
-                 HumanMessage(content=f"Season {SEASON}. Task: {task}. "
-                              f"Resolved: {str(collected)[:600]}")],
-                data_tools, on_token,
-            )
+            _t2, tool_calls2 = await _asyncio.wait_for(
+                _stream_tooled(
+                    provider, model,
+                    [SystemMessage(content=brief + " Identity is settled, use "
+                                   "these ids verbatim. "
+                                   f"Call exactly one of these now: "
+                                   f"{', '.join(data_names)}. No prose."),
+                     HumanMessage(content=f"Season {SEASON}. Task: {task}. "
+                                  f"Resolved: {str(collected)[:600]}")],
+                    data_tools, on_token),
+                timeout=LLM_ROUND_TIMEOUT_S)
         except Exception as exc:
             return {"agent": desk, "ok": False, "error": str(exc)[:200],
                     "tool_trace": trace}
@@ -256,7 +274,7 @@ async def _run_desk(
             _t0 = _time.time()
             _cname = str(call.get("name", ""))
             try:
-                out = await fn.ainvoke(call.get("args", {}) or {})
+                out = await _invoke_capped(fn, call.get("args", {}) or {}, str(call.get("name", "")))
                 collected.append(out if isinstance(out, dict) else {"rows": out})
             except Exception as exc:
                 out = {"tool": _cname, "error": str(exc)[:160]}
@@ -286,7 +304,8 @@ async def _run_desk(
                 "error": "no further detail available on that angle",
                 "tool_trace": trace}
     try:
-        text = await _stream_text(
+        text = await _asyncio.wait_for(
+            _stream_text(
             provider, model,
             [
                 SystemMessage(
@@ -302,6 +321,8 @@ async def _run_desk(
                 HumanMessage(content=f"Task: {task}\nEvidence: {str(collected)[:8000]}"),
             ],
             on_token,
+            ),
+            timeout=60,
         )
     except Exception as exc:
         text = ""
