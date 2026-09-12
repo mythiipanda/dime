@@ -1107,9 +1107,15 @@ def get_shot_zones(player_id: str | int, season: str = SEASON) -> dict[str, Any]
                     fga = float(r.get("FGA") or 0)
                     fgm = float(r.get("FGM") or 0)
                     fgp = round(fgm / fga, 3) if fga else 0.0
+                    zone_name = str(r.get("ZONE"))
+                    # Buckets carry no made-threes split; on canonical zones
+                    # eFG = FG% for twos, 1.5x FG% for the all-threes bucket.
+                    efgp = (round(fgp * 1.5, 3) if _is_three_zone(zone_name)
+                            else fgp)
                     row = {
-                        "zone": r.get("ZONE"), "FGM": int(fgm), "FGA": int(fga),
+                        "zone": zone_name, "FGM": int(fgm), "FGA": int(fga),
                         "FG_PCT": fgp,
+                        "eFG_PCT": efgp,
                         "share": round(float(r.get("FGA_PCT") or 0), 3),
                         "fgm": int(fgm), "fga": int(fga),
                         "fg_pct": fgp,
