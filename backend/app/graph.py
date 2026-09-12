@@ -1371,8 +1371,23 @@ async def _triage_seed(question: str, primary: str, model: str,
         _cout = _ch.get("out") or {}
         if _result_status(_cout) == "ok":
             if state["tool_results"] and state["tool_results"][-1] is _cout:
+                # QA #68: the pin must carry ONLY the comeback board -
+                # the full deep payload let the frontend render the
+                # clutch grid next to a comeback narrative, orphaned
+                # from any label.
+                _crows = _cout.get("rows")
+                _cb = (_crows.get("comeback_kings")
+                       if isinstance(_crows, dict) else None) or []
                 state["tool_results"][-1] = {
-                    "tool": "get_standings_deep", "rows": [_cout]}
+                    "tool": "get_standings_deep",
+                    "rows": _cb,
+                    "meta": {
+                        "source": "warehouse", "season": _cseason,
+                        "stat_category": "record when trailing at "
+                                         "halftime (comeback proxy)",
+                        "note": "behind-at-halftime record is the "
+                                "comeback proxy; play-by-play margin "
+                                "data is not in the dataset"}}
             async for _e in _triage_terminal(question, state):
                 yield _e
             return
