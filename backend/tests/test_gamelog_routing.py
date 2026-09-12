@@ -357,3 +357,65 @@ def test_result_rows_counts_game_rows_not_metadata_keys():
     assert _result_rows(out) == 2
     out["rows"]["matches"] = [{"pts": 42}]
     assert _result_rows(out) == 1
+
+
+# ---------------------------------------------------------------- F57
+
+def test_under_points_is_a_ceiling_not_a_floor():
+    # F57: "under 20 points" used to set min_points=20 - the exact
+    # inversion QA #73 caught live (returned every 20+ game, then the
+    # narrative honestly reported the wrong set as empty).
+    args = _gamelog_args(
+        "Show me games where Luka scored under 20 points this season",
+        "Luka Dončić", [])
+    assert args["max_points"] == 20
+    assert "min_points" not in args
+
+
+def test_fewer_than_and_below_point_phrasings():
+    for phrasing in ("games where he scored fewer than 15 points",
+                     "games where he scored less than 10 points",
+                     "games below 30 points"):
+        args = _gamelog_args(phrasing, "Luka Dončić", [])
+        assert "min_points" not in args, phrasing
+        assert args.get("max_points", 0) > 0, phrasing
+
+
+def test_at_most_is_inclusive_ceiling():
+    # "no more than 20" includes a 20-point game: exclusive ceiling 21.
+    args = _gamelog_args("games where he scored no more than 20 points",
+                         "Luka Dončić", [])
+    assert args["max_points"] == 21
+
+
+def test_over_phrasings_stay_floors():
+    for phrasing, floor in (("40-point games", 40),
+                            ("games where he scored 35 or more points", 35),
+                            ("dropped 50", 50)):
+        args = _gamelog_args(phrasing, "Luka Dončić", [])
+        assert args.get("min_points") == floor, phrasing
+        assert "max_points" not in args, phrasing
+
+
+def test_under_rebounds_and_assists():
+    args = _gamelog_args("games under 5 rebounds", "Luka Dončić", [])
+    assert args.get("max_rebounds") == 5
+    assert "min_rebounds" not in args
+    args = _gamelog_args("games with under 3 assists", "Luka Dončić", [])
+    assert args.get("max_assists") == 3
+    assert "min_assists" not in args
+
+
+def test_max_points_predicate_and_description():
+    from app.tools.gamelog import _matches, _describe_filters
+    game = {"pts": 19, "reb": 8, "ast": 7, "dd_count": 0,
+            "opponent": None, "date": None, "home": True}
+    f = {"min_points": None, "min_rebounds": None, "min_assists": None,
+         "min_pra": None, "max_points": 20, "max_rebounds": None,
+         "max_assists": None, "double_double": False,
+         "triple_double": False, "opponent": None, "month": None,
+         "start_date": None, "end_date": None, "home_away": None}
+    assert _matches(game, f) is True
+    game["pts"] = 20  # exclusive ceiling: 20 is not "under 20"
+    assert _matches(game, f) is False
+    assert "under 20 points" in _describe_filters(f)

@@ -707,28 +707,56 @@ def _gamelog_args(question: str, player: str | None,
         # "best game" / "career high" / "season high" / "most points":
         # answer with the single max-points game, not a filtered list.
         args["best_game"] = True
-    m = (re.search(r"\b(\d{2})\s*[-–—\s]?\s*(?:points?|pts?)\b", q,
-                   re.IGNORECASE)
-         or re.search(r"(?:scored|had|dropped|posted|recorded)\s+(\d{2})"
-                      r"\s*(?:\+|or more)?\s*(?:points?|pts?)\b", q,
-                      re.IGNORECASE)
-         # Bare "dropped 50" / "scored 60" (existence phrasing like "has
-         # anyone dropped 50 this season?"). "had" is excluded: "had 12
-         # rebounds" is a rebound ask, not a points floor.
-         or re.search(r"(?:scored|dropped|posted|recorded)\s+(\d{2})\b",
-                      q, re.IGNORECASE))
-    if m:
-        args["min_points"] = int(m.group(1))
-    m = (re.search(r"\b(\d{1,2})\s*[-–—]\s*rebounds?\b", q, re.IGNORECASE)
-         or re.search(r"(?:with|had|posted|grabbed)\s+(\d{1,2})\+?"
-                      r"\s*rebounds?\b", q, re.IGNORECASE))
-    if m:
-        args["min_rebounds"] = int(m.group(1))
-    m = (re.search(r"\b(\d{1,2})\s*[-–—]\s*assists?\b", q, re.IGNORECASE)
-         or re.search(r"(?:with|had|posted|dished)\s+(\d{1,2})\+?"
-                      r"\s*assists?\b", q, re.IGNORECASE))
-    if m:
-        args["min_assists"] = int(m.group(1))
+    # F57: "under 20 points" is a CEILING, not a floor - mapping it to
+    # min_points inverted the filter (returned every 20+ game, then the
+    # narrative honestly reported the wrong set as empty). Detect
+    # under/at-most qualifiers before the floor regexes see the digits.
+    _mu = (re.search(r"\b(?:under|below|fewer\s+than|less\s+than)"
+                     r"\s+(\d{1,3})\s*[-–—\s]?\s*(?:points?|pts?)\b",
+                     q, re.IGNORECASE)
+           or re.search(r"(?:scored|dropped|posted|recorded)\s+"
+                        r"(?:under|below|fewer\s+than|less\s+than)"
+                        r"\s+(\d{1,3})\b", q, re.IGNORECASE))
+    _ma = re.search(r"\b(?:no\s+more\s+than|at\s+most|not\s+more\s+than)"
+                    r"\s+(\d{1,3})\s*[-–—\s]?\s*(?:points?|pts?)\b",
+                    q, re.IGNORECASE)
+    if _mu:
+        args["max_points"] = int(_mu.group(1))
+    elif _ma:
+        # "no more than 20" includes 20: exclusive ceiling N+1.
+        args["max_points"] = int(_ma.group(1)) + 1
+    else:
+        m = (re.search(r"\b(\d{2})\s*[-–—\s]?\s*(?:points?|pts?)\b", q,
+                       re.IGNORECASE)
+             or re.search(r"(?:scored|had|dropped|posted|recorded)\s+(\d{2})"
+                          r"\s*(?:\+|or more)?\s*(?:points?|pts?)\b", q,
+                          re.IGNORECASE)
+             # Bare "dropped 50" / "scored 60" (existence phrasing like "has
+             # anyone dropped 50 this season?"). "had" is excluded: "had 12
+             # rebounds" is a rebound ask, not a points floor.
+             or re.search(r"(?:scored|dropped|posted|recorded)\s+(\d{2})\b",
+                          q, re.IGNORECASE))
+        if m:
+            args["min_points"] = int(m.group(1))
+    for _cap, _key in (("rebounds?", "max_rebounds"),
+                       ("assists?", "max_assists")):
+        _mu2 = re.search(r"\b(?:under|below|fewer\s+than|less\s+than)"
+                         r"\s+(\d{1,2})\s*" + _cap + r"\b",
+                         q, re.IGNORECASE)
+        if _mu2:
+            args[_key] = int(_mu2.group(1))
+    if "max_rebounds" not in args:
+        m = (re.search(r"\b(\d{1,2})\s*[-–—]\s*rebounds?\b", q, re.IGNORECASE)
+             or re.search(r"(?:with|had|posted|grabbed)\s+(\d{1,2})\+?"
+                          r"\s*rebounds?\b", q, re.IGNORECASE))
+        if m:
+            args["min_rebounds"] = int(m.group(1))
+    if "max_assists" not in args:
+        m = (re.search(r"\b(\d{1,2})\s*[-–—]\s*assists?\b", q, re.IGNORECASE)
+             or re.search(r"(?:with|had|posted|dished)\s+(\d{1,2})\+?"
+                          r"\s*assists?\b", q, re.IGNORECASE))
+        if m:
+            args["min_assists"] = int(m.group(1))
     if re.search(r"\btriple[\s-]*doubles?\b", q, re.IGNORECASE):
         args["triple_double"] = True
     elif re.search(r"\bdouble[\s-]*doubles?\b", q, re.IGNORECASE):

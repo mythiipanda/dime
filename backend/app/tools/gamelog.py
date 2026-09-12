@@ -238,6 +238,12 @@ def _matches(g: dict[str, Any], f: dict[str, Any]) -> bool:
         return False
     if f["min_pra"] is not None and g["pts"] + g["reb"] + g["ast"] < f["min_pra"]:
         return False
+    if f.get("max_points") is not None and g["pts"] >= f["max_points"]:
+        return False
+    if f.get("max_rebounds") is not None and g["reb"] >= f["max_rebounds"]:
+        return False
+    if f.get("max_assists") is not None and g["ast"] >= f["max_assists"]:
+        return False
     if f["double_double"] and g["dd_count"] < 2:
         return False
     if f["triple_double"] and g["dd_count"] < 3:
@@ -314,6 +320,12 @@ def _describe_filters(f: dict[str, Any], playoffs: bool = False) -> str:
         bits.append(f"{f['min_assists']:g}+ assists")
     if f["min_pra"] is not None:
         bits.append(f"{f['min_pra']:g}+ points+rebounds+assists")
+    if f.get("max_points") is not None:
+        bits.append(f"under {f['max_points']:g} points")
+    if f.get("max_rebounds") is not None:
+        bits.append(f"under {f['max_rebounds']:g} rebounds")
+    if f.get("max_assists") is not None:
+        bits.append(f"under {f['max_assists']:g} assists")
     if f["triple_double"]:
         bits.append("triple-doubles")
     elif f["double_double"]:
@@ -362,6 +374,9 @@ def search_game_logs(
     min_rebounds: float | None = None,
     min_assists: float | None = None,
     min_pra: float | None = None,
+    max_points: float | None = None,
+    max_rebounds: float | None = None,
+    max_assists: float | None = None,
     triple_double: bool = False,
     double_double: bool = False,
     best_game: bool = False,
@@ -391,7 +406,9 @@ def search_game_logs(
     regular-season table.
     min_points / min_rebounds / min_assists: per-game stat floors
     (e.g. min_points=40 for 40-point games). min_pra: points + rebounds
-    + assists floor. triple_double / double_double: keep only games
+    + assists floor. max_points / max_rebounds / max_assists: per-game
+    stat ceilings, exclusive (max_points=20 keeps 0-19 games -
+    "under 20"). triple_double / double_double: keep only games
     with 10+ in 3 (or 2) of PTS/REB/AST/STL/BLK. opponent: team name or
     abbreviation, e.g. "Knicks" or "NYK". month: name, number, or
     YYYY-MM. start_date / end_date: YYYY-MM-DD, inclusive. home_away:
@@ -425,6 +442,9 @@ def search_game_logs(
         thr_rebounds = _positive(min_rebounds, "min_rebounds")
         thr_assists = _positive(min_assists, "min_assists")
         thr_pra = _positive(min_pra, "min_pra")
+        cap_points = _positive(max_points, "max_points")
+        cap_rebounds = _positive(max_rebounds, "max_rebounds")
+        cap_assists = _positive(max_assists, "max_assists")
     except ValueError as exc:
         return {"tool": "search_game_logs", "ok": False, "error": str(exc)}
     abbr: str | None = None
@@ -458,6 +478,8 @@ def search_game_logs(
     filters = {
         "min_points": thr_points, "min_rebounds": thr_rebounds,
         "min_assists": thr_assists, "min_pra": thr_pra,
+        "max_points": cap_points, "max_rebounds": cap_rebounds,
+        "max_assists": cap_assists,
         "double_double": bool(double_double),
         "triple_double": bool(triple_double),
         "best_game": bool(best_game),
