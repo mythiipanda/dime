@@ -1337,6 +1337,45 @@ async def _triage_seed(question: str, primary: str, model: str,
             async for _e in _triage_terminal(question, state):
                 yield _e
         return
+    # QA #67 route pins - the planner is non-deterministic, so known
+    # phrasing classes get deterministic routes BEFORE it runs.
+    # (a) truly-unanswerable known gaps (contract types, bench splits):
+    # never run tools; inject the named-gap message as the sole error
+    # so the no-evidence branch ships it verbatim.
+    _GAP_PIN_RX = re.compile(
+        r"\btwo[\s-]*way\b|\b10[\s-]*day\b|\bg[\s-]?league\b|"
+        r"\bcontract (?:types?|status|kinds?)\b|"
+        r"\bbench (?:scoring|points|production|minutes|unit)|"
+        r"second unit|starters? vs\b", re.IGNORECASE)
+    _gap_pin = _gap_note(question)
+    if _gap_pin and _GAP_PIN_RX.search(question):
+        state["tool_results"].append(
+            {"tool": "known_gap", "ok": False, "error": _gap_pin})
+        async for _e in _triage_terminal(question, state):
+            yield _e
+        return
+    # (b) comeback / blown-lead phrasings: straight to
+    # get_standings_deep (behind/ahead-at-half proxy board) - free-SQL
+    # routes here produced raw ids, wrong seasons, and wrong reasons.
+    if (re.search(r"\bcomeback|\bblown lead", question, re.IGNORECASE)
+            and not _named_p):
+        _cseason = "2025-26"
+        _cm = re.search(r"(20\d\d)\s*-\s*(\d\d)", question)
+        if _cm:
+            _cseason = f"{_cm.group(1)}-{_cm.group(2)}"
+        _ch: dict[str, Any] = {}
+        async for _e in _triage_tool(
+                "get_standings_deep",
+                {"season": _cseason, "top": 5}, state, _ch):
+            yield _e
+        _cout = _ch.get("out") or {}
+        if _result_status(_cout) == "ok":
+            if state["tool_results"] and state["tool_results"][-1] is _cout:
+                state["tool_results"][-1] = {
+                    "tool": "get_standings_deep", "rows": [_cout]}
+            async for _e in _triage_terminal(question, state):
+                yield _e
+            return
     is_season_avg = (
         len(_named_p) == 1
         and _SEASON_AVG_RX.search(question)
@@ -3195,6 +3234,20 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
                         "Try a player, team, or stat that the season "
                         "data covers.")
     _scrubbed = _scrub_final_text(text)
+    # QA #67 (F55): with no explicit season context in the question,
+    # the season line must say the CURRENT season - a stray 2024-25
+    # row in evidence must not relabel the answer.
+    if not re.search(r"20\d\d-\d\d|last season|career|"
+                     r"all[\s-]*time|histor", state.get("question", "")
+                     or "", re.IGNORECASE):
+        try:
+            from .tools._core import SEASON as _CUR_SEASON
+            _scrubbed = re.sub(
+                r"This data covers the \d{4}-\d{2} season",
+                f"This data covers the {_CUR_SEASON} season",
+                _scrubbed, count=1)
+        except Exception:
+            pass
     # A named known-gap beats any no-data outcome: the generic
     # compute-failure fallback AND model-worded admissions ("the query
     # did not succeed", "no data is available", "I cannot rank").
