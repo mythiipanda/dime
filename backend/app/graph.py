@@ -1683,6 +1683,11 @@ async def _triage_seed(question: str, primary: str, model: str,
     is_compare_fast = (
         is_compare
         and 2 <= len(_named_p) <= 3
+        # _detect_entities caps at 3 players, so a 4-way ask would
+        # silently drop one - the same wrong-shape answer QA flagged on
+        # the 2-of-3 debate card. Three or more "vs" separators means
+        # the question names more players than the pin can serve.
+        and len(re.findall(r"\bvs\.?\b", question)) < 3
         and not is_trade
         and not is_cast
         and not re.search(r"\bimpact\b", question, re.IGNORECASE)

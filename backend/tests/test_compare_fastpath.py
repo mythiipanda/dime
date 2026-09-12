@@ -110,9 +110,22 @@ def test_no_fire_on_one_player(monkeypatch):
     assert st["round"] == 0
 
 
-def test_no_fire_on_three_players(monkeypatch):
+def test_fires_on_three_players(monkeypatch):
+    # QA #71: 3-player compares used to fan out through the planner
+    # (29 tools / 30s live). The pin now runs the three pairwise
+    # get_compare calls plus one scout per player, deterministically.
     monkeypatch.setattr(graph_mod, "_run_delegate_live", _fake_delegate)
     st = _drain(f"{EDWARDS} vs {LUKA} vs {DURANT}: "
+                f"compare scoring this season?")
+    names = _tool_names(st)
+    assert names.count("get_compare") == 3
+    assert names.count("delegate_scout") == 3
+    assert st["round"] in (MAX_TOOL_ROUNDS, DEEP_TOOL_ROUNDS)
+
+
+def test_no_fire_on_four_players(monkeypatch):
+    monkeypatch.setattr(graph_mod, "_run_delegate_live", _fake_delegate)
+    st = _drain(f"{EDWARDS} vs {LUKA} vs {DURANT} vs Wembanyama: "
                 f"compare scoring this season?")
     assert "get_compare" not in _tool_names(st)
     assert st["round"] == 0
