@@ -1682,7 +1682,7 @@ async def _triage_seed(question: str, primary: str, model: str,
             # are already in state["tool_results"].
     is_compare_fast = (
         is_compare
-        and len(_named_p) == 2
+        and 2 <= len(_named_p) <= 3
         and not is_trade
         and not is_cast
         and not re.search(r"\bimpact\b", question, re.IGNORECASE)
@@ -1694,20 +1694,28 @@ async def _triage_seed(question: str, primary: str, model: str,
         # Two-player compare turns burned 4 planner LLM rounds (10.3s)
         # on deterministic routing: get_compare, then one scout per
         # player. The tool resolves names itself, so answer straight
-        # from the warehouse. Exactly two players only; 1- and 3-player
-        # asks fall to the planner.
+        # from the warehouse. QA #71: a 3-player compare fanned out
+        # through the planner (29 tools / 30s) - run the three pairwise
+        # get_compare calls deterministically instead. 4+ player asks
+        # fall to the planner.
         _cseason = "2025-26"
         _cm = re.search(r"(20\d\d)\s*-\s*(\d\d)", question)
         if _cm:
             _cseason = f"{_cm.group(1)}-{_cm.group(2)}"
-        _chh: dict[str, Any] = {}
-        async for _e in _triage_tool(
-                "get_compare",
-                {"a": _named_p[0], "b": _named_p[1], "season": _cseason},
-                state, _chh):
-            yield _e
-        if _result_status(_chh.get("out") or {}) == "ok":
-            for _cp in _named_p[:2]:
+        from itertools import combinations as _combinations
+        _cok = True
+        for _ca, _cb in _combinations(_named_p[:3], 2):
+            _chh: dict[str, Any] = {}
+            async for _e in _triage_tool(
+                    "get_compare",
+                    {"a": _ca, "b": _cb, "season": _cseason},
+                    state, _chh):
+                yield _e
+            if _result_status(_chh.get("out") or {}) != "ok":
+                _cok = False
+                break
+        if _cok:
+            for _cp in _named_p[:3]:
                 _ctask = (f"Player focus: {_cp}. "
                           f"Original question: {question}")
                 _cargs = {"task": _ctask}
