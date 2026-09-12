@@ -88,3 +88,74 @@ def test_league_summary_scrub_no_data_collision():
         "Data provided by the league summary and split records.")
     assert "the data " not in out
     assert "the dataset" in out
+
+
+# --- v67: deterministic value patch + scrub widening (v66 live smoke) ---
+
+from app.graph import _scrub_final_text, presentation_agent  # noqa: E402
+
+
+def _present(question, analysis, tool_results):
+    async def _go():
+        state = {"question": question, "analysis": analysis,
+                 "tool_results": tool_results, "calls_made": [],
+                 "history": [], "primary": "p", "model": "m"}
+        out = None
+        async for e in presentation_agent(state):
+            if e.get("type") == "final_answer":
+                out = e["data"]["text"]
+        return out
+
+    return asyncio.run(_go())
+
+
+_TT_TR = [{"tool": "get_team_leaders",
+           "rows": [{"RANK": 1, "TEAM": "Denver Nuggets", "ABBREV": "DEN",
+                     "PTS": 10010, "GP": 82, "PER_GAME": 122.1}],
+           "meta": {"stat_category": "PTS", "season": "2025-26",
+                    "leader_line": "Denver Nuggets lead with 10010 total "
+                                   "PTS (122.1 per game over 82 games)"}}]
+
+
+def test_team_totals_value_patch_with_stat_token():
+    # v66 live failure shape: value dropped, stat token left behind.
+    out = _present(
+        "which team scored the most total points this season?",
+        "This data covers the 2025-26 season.\nBased on warehouse data, "
+        "the Denver Nuggets scored the most total points with PTS "
+        "(122.1 per game).", list(_TT_TR))
+    assert "10010" in out
+    assert "with PTS (" not in out
+    assert "warehouse" not in out.lower()
+    # "Based on warehouse data" opened a sentence -> capitalized fix.
+    assert "from the dataset" in out.lower()
+
+
+def test_team_totals_value_prepend_when_missing():
+    out = _present(
+        "which team scored the most total points this season?",
+        "This data covers the 2025-26 season.\nDenver took the scoring "
+        "crown this season at 122.1 per game.", list(_TT_TR))
+    assert "Denver Nuggets lead with 10010 total PTS" in out
+
+
+def test_team_totals_value_untouched_when_present():
+    out = _present(
+        "which team scored the most total points this season?",
+        "This data covers the 2025-26 season.\nThe Denver Nuggets lead "
+        "with 10010 total PTS (122.1 per game over 82 games).",
+        list(_TT_TR))
+    assert out.count("10010") == 1
+
+
+def test_scrub_nba_api_league_data_collision():
+    out = _scrub_final_text("Per the NBA API league data, Denver leads.")
+    assert "NBA API the dataset" not in out
+    assert "the dataset" in out
+
+
+def test_scrub_based_on_warehouse_data():
+    out = _scrub_final_text("Based on warehouse data, Denver leads. "
+                            "That holds, according to the warehouse data.")
+    assert "warehouse" not in out.lower()
+    assert "From the dataset, Denver leads." in out

@@ -3238,9 +3238,19 @@ def _scrub_final_text(text: str) -> str:
     cleaned = re.sub(r"\bwarehouse tables?\b", "the dataset", cleaned,
                      flags=re.IGNORECASE)
     # QA #75 nit: "per the warehouse output" leaks the same internal
-    # term in a softer form.
-    cleaned = re.sub(r"\b(?:per|from|in|via) (?:the )?warehouse (?:output|data|tables?)\b",
-                     "from the dataset", cleaned, flags=re.IGNORECASE)
+    # term in a softer form. v67: "Based on warehouse data, ..." leaked
+    # live (v66 smoke) - widen the prefix class and capitalize the
+    # replacement when the phrase opened the sentence.
+    def _wh_repl(m: "re.Match[str]") -> str:
+        pre = m.string[: m.start()].rstrip()
+        if not pre or pre.endswith((".", "!", "?", "\n")):
+            return "From the dataset"
+        return "from the dataset"
+
+    cleaned = re.sub(
+        r"\b(?:per|from|in|via|[Bb]ased on|[Aa]ccording to) (?:the )?"
+        r"warehouse (?:output|data|tables?)\b",
+        _wh_repl, cleaned)
     cleaned = re.sub(r"\bwarehouse output\b", "the dataset", cleaned,
                      flags=re.IGNORECASE)
 
@@ -3261,6 +3271,10 @@ def _scrub_final_text(text: str) -> str:
         r"i(?:'ve| have) saved|"
         r"i(?:'ll| will) keep (?:that|this|it) in mind)\b[^.!?\n]*[.!?]",
         _memory_scope, cleaned, flags=re.IGNORECASE)
+    # v67 live collision: "per the NBA API league data" hit the
+    # league-data rule below and shipped "per the NBA API the dataset".
+    cleaned = re.sub(r"\b(?:the )?NBA API league data\b", "the dataset",
+                     cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"\bleague data\b", "the dataset", cleaned,
                      flags=re.IGNORECASE)
     # scrub collisions: "the data data", "the dataset and the dataset"
@@ -3488,6 +3502,36 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
                         "game logs, standings, playoffs and the "
                         "Finals - try one of those.")
     _scrubbed = _scrub_final_text(text)
+    # v67 (v66 live smoke, 12:32 PM): team-totals answers paraphrased
+    # away the leader's total - "scored the most total points with PTS
+    # (122.1 per game)". meta.note already tells the LLM to cite
+    # leader_line verbatim; it still drops the value under variance.
+    # Patch deterministically from the tool payload.
+    for _tr in state.get("tool_results") or []:
+        if (isinstance(_tr, dict)
+                and _tr.get("tool") == "get_team_leaders"
+                and _tr.get("rows") and isinstance(_tr.get("meta"), dict)):
+            _tm = _tr["meta"]
+            _tstat = _tm.get("stat_category")
+            _ttot = _tr["rows"][0].get(_tstat) if _tstat else None
+            if _tstat and _ttot is not None:
+                _patched = re.sub(rf"\bwith {_tstat} \(",
+                                  f"with {_ttot} total {_tstat} (",
+                                  _scrubbed)
+                if _patched != _scrubbed:
+                    _scrubbed = _patched
+                elif str(_ttot) not in _scrubbed and _tm.get("leader_line"):
+                    _ll = _tm["leader_line"]
+                    _ll = _ll[0].upper() + _ll[1:] + "."
+                    _sm = re.match(
+                        r"(This data covers the \d{4}-\d{2} season\.?\s*)",
+                        _scrubbed)
+                    if _sm:
+                        _scrubbed = (_sm.group(1) + _ll + " "
+                                     + _scrubbed[_sm.end():])
+                    else:
+                        _scrubbed = _ll + " " + _scrubbed
+            break
     # QA #67 (F55): with no explicit season context in the question,
     # the season line must say the CURRENT season - a stray 2024-25
     # row in evidence must not relabel the answer.
