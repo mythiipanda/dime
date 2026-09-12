@@ -3189,6 +3189,14 @@ _DEV_TEXT_RX = re.compile(
     re.IGNORECASE)
 
 
+# F61/verify-v0: the honest compute-failure end. Names coverage instead
+# of admitting infra or blaming the user. Single source - the scrub's
+# canned replacements and the presentation gap detection both key on it.
+_COMPUTE_FALLBACK = ("That one didn't come back from the dataset just "
+                     "now. It covers 2025-26 player and team stats, "
+                     "game logs, standings, playoffs and the Finals.")
+
+
 def _scrub_final_text(text: str) -> str:
     """Exception text is for logs, never for the narrative (QA F34).
 
@@ -3197,15 +3205,23 @@ def _scrub_final_text(text: str) -> str:
     admission instead."""
     if not text:
         return text
+    # F61 shape ("I could not compute that from the dataset - the
+    # warehouse query for it did not run. Try a narrower ask."): infra
+    # admission + user-blaming. Rewrite before any other rule touches
+    # it; also kill a standalone "Try a narrower ask" sentence.
+    text = re.sub(
+        r"I could not compute that from the dataset[^.!?\n]*[.!?]"
+        r"\s*(?:Try a narrower ask[^.!?\n]*[.!?]?\s*)?",
+        _COMPUTE_FALLBACK + " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"(?:^|\s)Try a narrower ask[^.!?\n]*[.!?]?\s*",
+                  " ", text, flags=re.IGNORECASE)
     # F43: an answer that IS a tool/sandbox error must not ship. When
     # internal-error patterns cover most of the text, replace the whole
     # thing with one honest sentence.
     _hits = _DEV_TEXT_RX.findall(text)
     _covered = sum(len(h) for h in _hits)
     if _hits and _covered >= 0.6 * len(text):
-        return ("I could not compute that from the dataset - the "
-                "warehouse query for it did not run. Try a narrower "
-                "ask (one player, one stat) or a different angle.")
+        return _COMPUTE_FALLBACK
     cleaned = _DEV_TEXT_RX.sub("that data pull did not complete", text)
     # QA #60: the model sometimes NARRATES a tool error in prose
     # ("A query for the award returned an error stating 'Finals MVP'
@@ -3403,11 +3419,43 @@ def _scrub_final_text(text: str) -> str:
         r"did not succeed|not defined|no such column|failed after|"
         r"coroutine|aiter", cleaned, re.IGNORECASE)
     if _errish and not re.search(r"\d", cleaned):
-        return ("I could not compute that from the dataset - the "
-                "warehouse query for it did not run. Try a narrower "
-                "ask (one player, one stat) or a different angle.")
+        return _COMPUTE_FALLBACK
     return cleaned.strip()
 
+
+def _verify_draft_numerals(state: dict, text: str) -> list[str]:
+    """Verify node v0: numeral provenance (telemetry only).
+
+    Every number in the shipped answer must trace to this turn's tool
+    payloads or the season line - the v67 lesson generalized (LLM-
+    composed numerals are untrusted). Violations land on
+    state['_verify'] for the eval harness/reviewer; the re-route that
+    acts on them ships with the full verify node.
+    """
+    import json as _json
+
+    def _norm(n: str) -> str:
+        return n[:-2] if n.endswith(".0") else n
+
+    if not state.get("tool_results"):
+        state["_verify"] = {"numeral_violations": []}
+        return []
+    try:
+        raw = _json.dumps(state.get("tool_results") or [])
+        allowed = {_norm(n) for n in re.findall(r"\d+(?:\.\d+)?", raw)}
+        try:
+            from .tools._core import SEASON as _S
+            allowed |= set(re.findall(r"\d+", _S))
+        except Exception:
+            allowed |= {"2025", "26"}
+        violations: list[str] = []
+        for n in re.findall(r"\d+(?:\.\d+)?", text or ""):
+            if _norm(n) not in allowed and n not in violations:
+                violations.append(n)
+        state["_verify"] = {"numeral_violations": violations}
+        return violations
+    except Exception:
+        return []
 
 # QA #65 known-gap taxonomy: what the dataset provably does NOT have.
 # When an answer comes back content-thin, the honest fallback names
@@ -3575,7 +3623,7 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
         and len(r["summary"].strip()) >= 40
         for r in state["tool_results"])
     if _gap and not _evidenced and not _delegate_ok and (
-            _scrubbed.startswith("I could not compute that from the dataset")
+            _scrubbed.startswith(_COMPUTE_FALLBACK[:40])
             or re.search(
                 r"did not succeed|no data is available|"
                 r"i cannot|can't rank|not available|"
@@ -3593,6 +3641,7 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
                              "It covers 2025-26 player and team stats, "
                              "game logs, standings, playoffs and the "
                              "Finals - try one of those.")
+    _verify_draft_numerals(state, _scrubbed)
     yield _event("final_answer", {"text": _scrubbed})
     try:
         llm = get_llm(state["primary"], state["model"])  # type: ignore[arg-type]
