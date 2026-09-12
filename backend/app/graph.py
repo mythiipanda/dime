@@ -500,10 +500,16 @@ _GAMELOG_NO_RX = re.compile(
 # with the planner (season resolution lives there).
 _SEASON_AVG_RX = re.compile(
     r"\baverag\w*|\bavg\b|\bper game\b|\b[prs]pg\b|\bapg\b|"
-    r"\bbpg\b|\bspg\b|\bmpg\b",
+    r"\bbpg\b|\bspg\b|\bmpg\b|"
+    # QA #61/64: season-form performance asks ("how is James playing
+    # this season?") must answer from the 60-game season line, not an
+    # 8-game gamelog sample narrated as the season.
+    r"\bhow (?:is|has|'s)\b.{0,40}\bplay(?:ing|ed)\b|"
+    r"\bhow['’]?s\b.{0,30}\bthis season\b",
     re.IGNORECASE)
 _SEASON_AVG_NO_RX = re.compile(
-    r"\bcareer\b|\ball[\s-]*time\b|\blast season\b",
+    r"\bcareer\b|\ball[\s-]*time\b|\blast season\b|"
+    r"\blast \d+ games?\b|\blately\b|\brecent(?:ly)?\b",
     re.IGNORECASE)
 # League-wide leader questions have no named player, so the
 # player-scoped fast-path can't fire ("who had the most 50-point games
