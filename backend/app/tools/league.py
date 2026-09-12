@@ -1481,14 +1481,15 @@ def get_draft_board(season: str = "2025") -> dict[str, Any]:
 @tool
 def get_combine(season: str = "2025") -> dict[str, Any]:
     """Draft combine measurements plus shooting drills for one draft year."""
-    res = nba_stats.combine(season)
-    if not res.ok or res.frame.height == 0:
+    rows, meta = _warehouse_or_live(
+        "silver_combine", "_season = ?",
+        [season], lambda: nba_stats.combine(season), season,
+    )
+    if not rows:
         return {"tool": "get_combine", "ok": False,
-                "error": res.error or "empty upstream response"}
-    return {"tool": "get_combine", "ok": True,
-            "rows": res.frame.head(25).to_dicts(),
-            "meta": {"source": res.meta.source, "fetched_at": res.meta.fetched_at,
-                     "rows": res.frame.height, "cached": False}}
+                "error": meta.get("error") or "empty upstream response"}
+    return {"tool": "get_combine", "ok": True, "rows": rows[:25],
+            "meta": meta}
 
 
 @tool
@@ -2313,6 +2314,8 @@ FRESHNESS_RULES: dict[str, tuple[str, float | None]] = {
     "silver_leaders_dreb": ("daily in season", 36 * 3600),
     "silver_leaders_fg_pct": ("daily in season", 36 * 3600),
     "silver_player_gamelogs": ("daily in season", 36 * 3600),
+    "silver_player_season": ("static seed (bbref per-game)", None),
+    "silver_zone_splits": ("static seed (bbref shooting)", None),
     "silver_team_games": ("daily in season", 36 * 3600),
     "silver_boxscores": ("daily in season", 36 * 3600),
     "silver_shots": ("daily in season", 36 * 3600),

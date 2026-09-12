@@ -202,20 +202,25 @@ def last_fetch(table: str, season: str, entity: str = "") -> str:
         con.close()
 
 
-def save_chat(thread: str, role: str, text: str) -> None:
+def save_chat(thread: str, role: str, text: str, owner: str = "") -> None:
     con = connect()
     try:
         with write_guard():
             con.execute(
                 """CREATE TABLE IF NOT EXISTS chat_history(
-                thread VARCHAR, role VARCHAR, text VARCHAR, created_at VARCHAR)"""
+                thread VARCHAR, role VARCHAR, text VARCHAR, created_at VARCHAR,
+                owner VARCHAR)"""
             )
+            cols = [r[1] for r in con.execute(
+                "PRAGMA table_info(chat_history)").fetchall()]
+            if "owner" not in cols:
+                con.execute("ALTER TABLE chat_history ADD COLUMN owner VARCHAR DEFAULT ''")
             from datetime import datetime, timezone
 
             con.execute(
-                "INSERT INTO chat_history VALUES (?,?,?,?)",
+                "INSERT INTO chat_history VALUES (?,?,?,?,?)",
                 [thread, role, text[:4000],
-                 datetime.now(timezone.utc).isoformat()],
+                 datetime.now(timezone.utc).isoformat(), owner[:80]],
             )
     finally:
         con.close()
@@ -237,16 +242,26 @@ def chat_history(thread: str, limit: int = 6) -> list[dict[str, str]]:
         con.close()
 
 
-def list_threads() -> list[dict[str, str]]:
+def list_threads(owner: str = "") -> list[dict[str, str]]:
     con = connect()
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if "chat_history" not in tables:
             return []
-        rows = con.execute(
-            """SELECT thread, MAX(created_at), COUNT(*)
-            FROM chat_history GROUP BY thread ORDER BY MAX(created_at) DESC LIMIT 100"""
-        ).fetchall()
+        cols = {r[1] for r in con.execute(
+            "PRAGMA table_info(chat_history)").fetchall()}
+        if "owner" in cols:
+            rows = con.execute(
+                """SELECT thread, MAX(created_at), COUNT(*)
+                FROM chat_history WHERE owner = ?
+                GROUP BY thread ORDER BY MAX(created_at) DESC LIMIT 100""",
+                [owner],
+            ).fetchall()
+        else:
+            rows = con.execute(
+                """SELECT thread, MAX(created_at), COUNT(*)
+                FROM chat_history GROUP BY thread ORDER BY MAX(created_at) DESC LIMIT 100"""
+            ).fetchall()
         out = []
         for r in rows:
             first = con.execute(

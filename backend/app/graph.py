@@ -126,7 +126,11 @@ _PLANNER_PREFIX = (
     "Batch independent calls together. "
     "Call search_nba first when you lack an id. "
     "The current season is 2025-26. Pass season 2025-26 always, "
-    "unless the user names a different season explicitly."
+    "unless the user names a different season explicitly. "
+    "Season-boundary rule: it is the 2026 offseason. 'This season', "
+    "'current season', and 'last season' all mean 2025-26 (the most "
+    "recently completed season) until 2026-27 tips off in late October "
+    "2026. Do not map 'last season' to 2024-25 during the offseason."
     "\n\nAnalyst skills. Match the question to one skill and follow it:\n"
 )
 

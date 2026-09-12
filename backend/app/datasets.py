@@ -157,27 +157,51 @@ def dataset(
 
         table = f"silver_leaders_{clamp_stat(stat).lower()}"
     entity_scoped = name in ("player_gamelogs", "team_games", "shots", "scoreboard", "lineups", "on_off", "wowy", "four_factors")
+    entity = ""
+    if player_id:
+        entity = f"player:{player_id}"
+    elif team_id:
+        entity = f"team:{team_id}"
+    elif game_id:
+        entity = f"game:{game_id}"
+    elif game_date:
+        entity = f"date:{game_date}"
+    elif ids:
+        entity = f"wowy:{ids}"
     frame = store.read_frame(table, "_season = ?", [season])
     if entity_scoped:
-        frame = frame.clear()
+        # Warehouse-first per entity; never force a live call when seeded.
+        if entity:
+            try:
+                frame = store.read_frame(
+                    table, "_season = ? AND _entity = ?", [season, entity])
+            except Exception:
+                frame = frame.clear()
+        else:
+            frame = frame.clear()
     cached = frame.height > 0
     if not cached:
         live = _fetch_live(name, season, player_id, team_id, game_id, game_date, stat)
         if live is None:
             return {"ok": False, "error": "missing id param for this dataset"}
         if not live.ok:
-            return {"ok": False, "error": live.error}
-        entity = ""
-        if player_id:
-            entity = f"player:{player_id}"
-        elif team_id:
-            entity = f"team:{team_id}"
-        elif game_id:
-            entity = f"game:{game_id}"
-        elif game_date:
-            entity = f"date:{game_date}"
-        elif ids:
-            entity = f"wowy:{ids}"
+            # Honest attribution: name the failed live source, then stale-fallback.
+            stale = None
+            if entity_scoped and entity:
+                try:
+                    stale = store.read_frame(table, "_entity = ?", [entity])
+                except Exception:
+                    stale = None
+            if stale is not None and stale.height > 0:
+                out = _envelope(table, season, stale, True)
+                out["ok"] = True
+                out["meta"]["stale"] = True
+                out["meta"]["live_error"] = live.error or "empty upstream response"
+                out["meta"]["live_source"] = live.meta.source
+                return out
+            return {"ok": False, "error": live.error,
+                    "source": live.meta.source,
+                    "detail": "live source failed and no cached rows for this entity"}
         store.save_frame(table, live, entity)
         if entity_scoped:
             frame = store.read_frame(

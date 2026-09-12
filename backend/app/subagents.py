@@ -292,6 +292,11 @@ async def _run_desk(
                 SystemMessage(
                     content="Summarize these findings in 5 short sentences max. "
                     "Use only numbers present in the evidence. "
+                    "If a tool in the evidence returned an error or ok:false, "
+                    "name that metric as unavailable in one short clause; "
+                    "never silently drop it. If a result's meta has "
+                    "coverage=season_line, say the game-by-game log is not "
+                    "seeded yet and you are showing the season line. "
                     "If the evidence has no data rows, reply exactly: NO DATA."
                 ),
                 HumanMessage(content=f"Task: {task}\nEvidence: {str(collected)[:8000]}"),

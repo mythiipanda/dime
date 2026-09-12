@@ -74,6 +74,15 @@ def norm_name(name: str) -> str:
     return re.sub(r"[^a-z0-9]", "", ascii_only.lower())
 
 
+def loose_key(name: str) -> str:
+    """Last-name + first-initial fallback key, e.g. 'Mo Bamba' -> 'bambam'."""
+    base = strip_suffix(name)
+    parts = base.split()
+    if len(parts) < 2:
+        return norm_name(base)
+    return norm_name(parts[-1]) + norm_name(parts[0])[:1]
+
+
 # bbref display name -> warehouse canonical name (both resolved suffix-stripped).
 ALIAS_TARGETS = {
     "Jimmy Butler": "Jimmy Butler III",
@@ -116,6 +125,12 @@ def load_name_map() -> dict:
         ).fetchall()
     finally:
         con.close()
+    if not rows:
+        # Fallback: warehouse has no 2025-26 slice yet - use nba_api's
+        # bundled static player list (local, no network).
+        from nba_api.stats.static import players as _static_players
+        rows = [(r["id"], r["full_name"]) for r in _static_players.get_players()]
+        log(f"name map fallback: nba_api static list ({len(rows)} players, all-time)")
     mapping: dict = {}
     for pid, name in rows:
         key = norm_name(strip_suffix(name or ""))
@@ -125,7 +140,22 @@ def load_name_map() -> dict:
             log(f"WARN duplicate normalized name {name!r} -> {pid} (kept {mapping[key]})")
             continue
         mapping[key] = pid
-    log(f"name map: {len(mapping)} entries")
+    # Loose last-name+initial keys for nickname mismatches (bbref 'Mo Bamba'
+    # vs nba_api 'Mohamed Bamba'). Collision-safe: ambiguous keys dropped.
+    loose: dict = {}
+    collide: set = set()
+    for pid, name in rows:
+        lk = loose_key(name or "")
+        if lk in mapping or lk in loose and loose[lk] != pid:
+            collide.add(lk)
+            loose.pop(lk, None)
+            continue
+        if lk not in collide:
+            loose[lk] = pid
+    for lk in collide:
+        loose.pop(lk, None)
+    mapping.update(loose)
+    log(f"name map: {len(mapping)} entries ({len(loose)} loose keys)")
     return mapping
 
 
@@ -321,6 +351,8 @@ def main() -> None:
             nba_id = name_map.get(norm_name(strip_suffix(pname)))
             if nba_id is None:
                 nba_id = alias_map.get(norm_name(strip_suffix(pname)))
+            if nba_id is None:
+                nba_id = name_map.get(loose_key(pname))
             if nba_id is None:
                 failed[pid] = f"name mismatch: {pname!r}"
                 counts["no_name_match"] += 1

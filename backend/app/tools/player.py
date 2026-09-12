@@ -524,6 +524,21 @@ def compare_metrics(a: str | int, b: str | int, season: str = SEASON) -> dict[st
                      "raptor_season_a": ma.get("raptor_season"),
                      "raptor_season_b": mb.get("raptor_season")}}
 
+def _season_line(player_id: object, season: str) -> dict[str, Any] | None:
+    """Seeded per-game season line (bbref) for coverage-gated fallback."""
+    try:
+        frame = store.read_frame(
+            "silver_player_season",
+            "_season = ? AND CAST(PLAYER_ID AS VARCHAR) = CAST(? AS VARCHAR)",
+            [season, str(player_id)])
+        if frame is not None and frame.height > 0:
+            row = frame.to_dicts()[0]
+            return {k: v for k, v in row.items() if not k.startswith("_")}
+    except Exception:
+        pass
+    return None
+
+
 @tool
 def get_player_intel(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
     """Game log plus shot sample for one player id. Warehouse first."""
@@ -534,6 +549,16 @@ def get_player_intel(player_id: str | int, season: str = SEASON) -> dict[str, An
         lambda: nba_stats.player_gamelog(player_id, season), season,
         entity=f"player:{player_id}", ttl_s=TTL_GAMELOG,
     )
+    if not rows:
+        line = _season_line(player_id, season)
+        if line:
+            return {"tool": "get_player_intel", "ok": True, "rows": [line],
+                    "meta": {"source": "basketball-reference", "season": season,
+                             "coverage": "season_line",
+                             "note": "game-by-game log not seeded for this "
+                                     "player; showing season line"}}
+        return {"tool": "get_player_intel", "ok": False,
+                "error": meta.get("error") or "empty upstream response"}
     return {"tool": "get_player_intel", "ok": True, "rows": rows, "meta": meta}
 
 
@@ -592,6 +617,13 @@ def get_last_x(player_id: str | int, n: int = 10, season: str = SEASON) -> dict[
         entity=f"player:{player_id}", ttl_s=TTL_GAMELOG,
     )
     if not rows:
+        line = _season_line(player_id, season)
+        if line:
+            return {"tool": "get_last_x", "ok": True, "rows": [line],
+                    "meta": {"source": "basketball-reference", "season": season,
+                             "coverage": "season_line",
+                             "note": "game-by-game log not seeded for this "
+                                     "player; showing season line"}}
         return {"tool": "get_last_x", "ok": False,
                 "error": meta.get("error") or "empty upstream response"}
     import polars as _pl
@@ -986,14 +1018,76 @@ def get_advanced(player: str | int, season: str = SEASON) -> dict[str, Any]:
 
 @tool
 def get_shot_zones(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
-    """Zone splits for one player id: rim, midrange, three with shares."""
+    """Zone splits for one player id: rim, midrange, three with shares.
+
+    Warehouse-first: seeded silver_shots, then seeded silver_zone_splits
+    (basketball-reference distance buckets, league-wide), then live
+    shot_chart (fail-fast; endpoint-blocked from datacenter IPs).
+    """
     player_id = coerce_player_id(player_id)
     import math
 
-    res = nba_stats.shot_chart(player_id, season)
-    if not res.ok or res.frame.height == 0:
-        return {"tool": "get_shot_zones", "ok": False,
-                "error": res.error or "empty upstream response"}
+    res = None
+    live_error = ""
+    shot_dicts: list[dict[str, Any]] = []
+    shot_source = ""
+    shot_fetched = ""
+    try:
+        w = store.read_frame(
+            "silver_shots",
+            "_season = ? AND CAST(PLAYER_ID AS VARCHAR) = CAST(? AS VARCHAR)",
+            [season, str(player_id)])
+        if w is not None and w.height > 0:
+            shot_dicts = w.to_dicts()
+            shot_source = "warehouse:silver_shots"
+            if "_fetched_at" in w.columns:
+                shot_fetched = str(w["_fetched_at"][0])
+    except Exception:
+        pass
+    if not shot_dicts:
+        # League-wide seeded distance buckets (bbref shooting page).
+        try:
+            zb = store.read_frame(
+                "silver_zone_splits",
+                "_season = ? AND CAST(PLAYER_ID AS VARCHAR) = CAST(? AS VARCHAR)",
+                [season, str(player_id)])
+            if zb is not None and zb.height > 0:
+                out_rows = []
+                for r in zb.to_dicts():
+                    fga = float(r.get("FGA") or 0)
+                    fgm = float(r.get("FGM") or 0)
+                    out_rows.append({
+                        "zone": r.get("ZONE"), "FGM": int(fgm), "FGA": int(fga),
+                        "FG_PCT": round(fgm / fga, 3) if fga else 0.0,
+                        "share": round(float(r.get("FGA_PCT") or 0), 3),
+                        "fgm": int(fgm), "fga": int(fga),
+                        "fg_pct": round(fgm / fga, 3) if fga else 0.0,
+                        "freq_pct": round(float(r.get("FGA_PCT") or 0), 3),
+                    })
+                total = sum(r["FGA"] for r in out_rows) or 1
+                for r in out_rows:
+                    r["share"] = round(r["FGA"] / total, 3)
+                    r["freq_pct"] = r["share"]
+                return {"tool": "get_shot_zones", "ok": True, "rows": out_rows,
+                        "meta": {"source": "basketball-reference",
+                                 "season": season, "rows": len(out_rows),
+                                 "cached": True,
+                                 "note": "distance buckets (0-3ft, 3-10ft, "
+                                         "10-16ft, 16ft-3P, 3P), not exact "
+                                         "NBA zones"}}
+        except Exception:
+            pass
+    if not shot_dicts:
+        res = nba_stats.shot_chart(player_id, season)
+        if not res.ok or res.frame.height == 0:
+            return {"tool": "get_shot_zones", "ok": False,
+                    "error": res.error or "empty upstream response",
+                    "meta": {"coverage": "none",
+                             "note": "no seeded shot data for this player "
+                                     "and live source unreachable"}}
+        shot_dicts = res.frame.to_dicts()
+        shot_source = res.meta.source
+        shot_fetched = res.meta.fetched_at
 
     def _zone_of(r: dict) -> str:
         zb = str(r.get("SHOT_ZONE_BASIC") or "").strip()
@@ -1014,7 +1108,7 @@ def get_shot_zones(player_id: str | int, season: str = SEASON) -> dict[str, Any]
         return "3pt" in str(r.get("SHOT_TYPE", "") or "").lower()
 
     zones: dict[str, list] = {}
-    for r in res.frame.to_dicts():
+    for r in shot_dicts:
         z = _zone_of(r)
         made = _is_made(r)
         three = _is_three(r)
@@ -1067,8 +1161,9 @@ def get_shot_zones(player_id: str | int, season: str = SEASON) -> dict[str, Any]
         if not baseline_missing and z in league_efg:
             row["LEAGUE_DELTA"] = round(efg - league_efg[z], 3)
         rows.append(row)
-    meta: dict[str, Any] = {"source": res.meta.source, "fetched_at": res.meta.fetched_at,
-                            "rows": len(rows), "cached": False}
+    meta: dict[str, Any] = {"source": shot_source, "fetched_at": shot_fetched,
+                            "rows": len(rows),
+                            "cached": shot_source.startswith("warehouse")}
     if baseline_missing:
         meta["baseline_missing"] = True
         if baseline_detail:

@@ -260,6 +260,16 @@ export interface StreamHandlers {
   onError: (message: string) => void;
 }
 
+export function getClientId(): string {
+  if (typeof window === "undefined") return "";
+  let id = window.localStorage.getItem("dime_client");
+  if (!id) {
+    id = (window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`).slice(0, 64);
+    window.localStorage.setItem("dime_client", id);
+  }
+  return id;
+}
+
 export async function postChatStream(
   q: string,
   model: string | null,
@@ -270,7 +280,7 @@ export async function postChatStream(
   const res = await fetch(`${BACKEND}/api/v1/chat/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ q, model, thread }),
+    body: JSON.stringify({ q, model, thread, client: getClientId() }),
     signal,
   });
   const contentType = res.headers.get("content-type") || "";
@@ -336,7 +346,7 @@ export interface ThreadInfo {
 }
 
 export async function getThreads(): Promise<ThreadInfo[]> {
-  const res = await fetch(`${BACKEND}/api/v1/threads`);
+  const res = await fetch(`${BACKEND}/api/v1/threads?client=${encodeURIComponent(getClientId())}`);
   if (!res.ok) return [];
   return ((await res.json()).threads || []) as ThreadInfo[];
 }
