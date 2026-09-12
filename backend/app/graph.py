@@ -3891,6 +3891,37 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
                 _scrubbed, count=1)
         except Exception:
             pass
+    # F61 residual: the coverage line must match the evidence span -
+    # a deep hist answer from silver_hist_* shipped "This data covers
+    # the 2022-23 season." over rows spanning many seasons. When the
+    # evidence carries 2+ distinct seasons, rewrite the line to the
+    # real min-through-max span.
+    def _row_seasons(node: object, _out: set) -> None:
+        stack = [node]
+        while stack:
+            it = stack.pop()
+            if isinstance(it, list):
+                stack.extend(it[:300])
+            elif isinstance(it, dict):
+                for k, v in it.items():
+                    lk = str(k).lower()
+                    if lk in ("_season", "season") and isinstance(v, str):
+                        if re.fullmatch(r"20\d\d-\d\d", v.strip()):
+                            _out.add(v.strip())
+                    elif isinstance(v, (list, dict)):
+                        stack.append(v)
+    _ev_seasons: set = set()
+    for _tr in state.get("tool_results") or []:
+        if isinstance(_tr, dict):
+            _row_seasons(_tr.get("rows"), _ev_seasons)
+    if len(_ev_seasons) >= 2:
+        _ys = sorted(int(s[:4]) for s in _ev_seasons)
+        _span = (f"{_ys[0]}-{str(_ys[0] + 1)[2:]} through "
+                 f"{_ys[-1]}-{str(_ys[-1] + 1)[2:]}")
+        _scrubbed = re.sub(
+            r"This data covers the 20\d\d-\d\d season\.",
+            f"This data covers the {_span} seasons.", _scrubbed,
+            count=1)
     # A named known-gap beats any no-data outcome: the generic
     # compute-failure fallback AND model-worded admissions ("the query
     # did not succeed", "no data is available", "I cannot rank").

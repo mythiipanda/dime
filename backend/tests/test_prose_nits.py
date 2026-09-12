@@ -57,3 +57,48 @@ def test_and_logs_fragment():
         "And playoff logs, Jalen Brunson was the best player.")
     assert "And playoff logs" not in out
     assert "From the playoff logs, Jalen Brunson" in out
+
+
+# --- F61 residual: coverage line must match the evidence span ---
+
+import asyncio  # noqa: E402
+
+from app.graph import presentation_agent  # noqa: E402
+
+
+def _present(question, analysis, tool_results):
+    async def _go():
+        state = {"question": question, "analysis": analysis,
+                 "tool_results": tool_results, "calls_made": [],
+                 "history": [], "primary": "p", "model": "m"}
+        out = None
+        async for e in presentation_agent(state):
+            if e.get("type") == "final_answer":
+                out = e["data"]["text"]
+        return out
+
+    return asyncio.run(_go())
+
+
+def test_coverage_line_matches_multiseason_evidence():
+    trs = [{"tool": "get_historical_leaders",
+            "rows": [{"PLAYER": "A", "season": "2018-19", "PTS": 30},
+                     {"PLAYER": "B", "season": "2022-23", "PTS": 29},
+                     {"PLAYER": "C", "season": "2024-25", "PTS": 28}]}]
+    out = _present("best scoring seasons since 2018?",
+                   "This data covers the 2022-23 season. Player A "
+                   "averaged 30 points per game, ahead of Player B at "
+                   "29 and Player C at 28.", trs)
+    assert "This data covers the 2018-19 through 2024-25 seasons." in out
+    assert "covers the 2022-23 season" not in out
+
+
+def test_single_season_evidence_line_untouched():
+    trs = [{"tool": "get_historical_leaders",
+            "rows": [{"PLAYER": "A", "season": "2022-23", "PTS": 30},
+                     {"PLAYER": "B", "season": "2022-23", "PTS": 29}]}]
+    out = _present("best scoring season in 2022-23?",
+                   "This data covers the 2022-23 season. Player A "
+                   "averaged 30 points per game, ahead of Player B at "
+                   "29.", trs)
+    assert "This data covers the 2022-23 season." in out
