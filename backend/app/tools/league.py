@@ -1477,13 +1477,11 @@ def get_trade_value(
             # F47: 'Did the Lakers win the Luka trade?' graded Dallas's
             # empty side an F. What a past trade's other side received
             # is not in the data - refuse, don't manufacture a zero.
-            empty = team_a.upper() if not names_a else team_b.upper()
             return {"tool": "get_trade_value", "ok": False,
-                    "error": (f"the {empty} side has no assets in the "
-                              f"data - I can only grade proposed trades "
-                              f"where both sides name players. What a "
-                              f"past trade's other side actually "
-                              f"received is not in this dataset.")}
+                    "error": ("I can only grade proposed trades where "
+                              "both sides name players. What a past "
+                              "trade's other side actually received is "
+                              "not in this dataset.")}
 
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         cols = {t: {r[1] for r in con.execute(f"PRAGMA table_info({t})").fetchall()}
