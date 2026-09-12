@@ -2967,6 +2967,64 @@ def _scrub_final_text(text: str) -> str:
         r"[^.!?\n]*\b(?:returned an error|error stating|"
         r"not a valid [A-Za-z' ]*? key)\b[^.!?\n]*[.!?]",
         " ", cleaned)
+    # QA #61: stop chasing phrasings - ANY sentence that talks about
+    # tools or errors is plumbing narration and never ships. (The
+    # honest whole-answer fallback returns before this pass, so its
+    # own wording is unaffected.)
+    cleaned = re.sub(
+        r"[^.!?\n]*\b(?:tools?|errors?|unknown tables?)\b"
+        r"[^.!?\n]*[.!?]", " ", cleaned)
+    # "Based on scout summary and league data" - same class as
+    # "per the scout summary".
+    cleaned = re.sub(
+        r"[Bb]ased on (?:the )?(?:scout|league|team|\w+ desk)"
+        r" (?:summary|data),?", "", cleaned)
+    # QA #61c: integer-valued stats carry decimal noise ("32.0
+    # minutes", "15.0 games"). Strip trailing .0 everywhere.
+    cleaned = re.sub(r"\b(\d+)\.0\b", r"\1", cleaned)
+    # QA #61b: renumber numbered-list runs sequentially from 1 - the
+    # model emits "2. 3. 4." after an unnumbered first item. Line-start
+    # runs of 2+ are real list syntax; inline runs need 3+ markers so a
+    # stat sentence chain ("scored 5. Next game 6.") is never touched.
+    def _renum_lines(m: "re.Match[str]") -> str:
+        n = 0
+        out = []
+        for ln in m.group(0).split("\n"):
+            mm = re.match(r"^(\s*)\d+\.\s", ln)
+            if mm:
+                n += 1
+                ln = f"{mm.group(1)}{n}. " + ln[mm.end():]
+            out.append(ln)
+        return "\n".join(out)
+    cleaned = re.sub(r"(?:^\s*\d+\. [^\n]*(?:\n\s*\d+\. [^\n]*)+)",
+                     _renum_lines, cleaned, flags=re.MULTILINE)
+    _marks = list(re.finditer(r"(?<![\d.])(\d{1,2})\. (?=[A-Z])",
+                              cleaned))
+    _runs: list[list["re.Match[str]"]] = []
+    _cur: list["re.Match[str]"] = []
+    for m in _marks:
+        if _cur and int(m.group(1)) == int(_cur[-1].group(1)) + 1:
+            _cur.append(m)
+        else:
+            if len(_cur) >= 3:
+                _runs.append(_cur)
+            _cur = [m]
+    if len(_cur) >= 3:
+        _runs.append(_cur)
+    for _run in reversed(_runs):
+        for _i, m in enumerate(reversed(_run)):
+            cleaned = (cleaned[:m.start(1)]
+                       + str(len(_run) - _i) + cleaned[m.end(1):])
+    # Sentence-start capitalization after lead-in strips ("Based on
+    # scout summary, the team" -> "The team"), keeping stat acronyms.
+    _KEEP_LOWER = {"efg", "ts", "usg", "ast", "stl", "blk", "tov",
+                   "fg", "ft", "3p", "3pm", "rapm", "epm"}
+    def _cap(m: "re.Match[str]") -> str:
+        word = m.group(2)
+        if word.lower().rstrip("%") in _KEEP_LOWER:
+            return m.group(0)
+        return m.group(1) + word[0].upper() + word[1:]
+    cleaned = re.sub(r"(^|[.!?]\s+)([a-z][a-zA-Z%]*)", _cap, cleaned)
     # P3: tool names and desk identities are orchestration, never prose
     # ("Based on the get_injuries tool output", "the league agent").
     cleaned = re.sub(r"Based on the get_\w+ tool output,?", "", cleaned)
@@ -3009,7 +3067,9 @@ def _scrub_final_text(text: str) -> str:
             seen_paras.add(key)
             kept.append(para)
         cleaned = "\n\n".join(kept)
-    sentences = re.split(r"(?<=[.!?])\s+", cleaned)
+    # Split on horizontal whitespace only - eating the newline after a
+    # list item ("1. First.\n2. Second") flattens lists into prose.
+    sentences = re.split(r"(?<=[.!?])[ \t]+", cleaned)
     if len(sentences) > 1:
         seen_s: set[str] = set()
         kept_s: list[str] = []
