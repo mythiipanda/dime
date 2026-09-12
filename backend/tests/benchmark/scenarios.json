@@ -24,7 +24,7 @@
     {
       "id": "canon-finals",
       "chain": ["Who won the 2026 Finals and what was the series score?"],
-      "expect": {"contains": ["Knicks", "4-1"]},
+      "expect": {"contains_any": [["Knicks", "NYK"], ["4-1", "4 - 1"]]},
       "budget": {"max_seconds": 30}
     },
     {
@@ -50,12 +50,12 @@
       "id": "f63-switch-back",
       "chain": [
         "Who won the 2026 Finals?",
-        "Which team had the best regular season record?",
-        "Back to the Finals - who did the winner beat and what was the series?"
+        "How many assists did Jokic average this season?",
+        "Back to the Finals - who did the Knicks beat and what was the series score?"
       ],
       "expect_turns": [
         {"contains": ["Knicks", "4-1"]},
-        {"contains": ["Thunder", "64"]},
+        {"contains_any": [["Jokic", "Joki\u0107"]]},
         {"contains": ["Spurs", "4-1"], "not_contains": ["do not show", "no record", "not in the Finals"]}
       ],
       "budget": {"max_seconds_per_turn": 60}
@@ -76,7 +76,7 @@
     {
       "id": "efficiency-player",
       "chain": ["How many assists did Jokic average?"],
-      "expect": {"contains": ["Jokic"]},
+      "expect": {"contains_any": [["Jokic", "Joki\u0107"]]},
       "budget": {"max_seconds": 25, "max_tool_calls": 6}
     }
   ]

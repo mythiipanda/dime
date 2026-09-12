@@ -3638,6 +3638,45 @@ def _memory_ack(question: str) -> str | None:
             "Nothing carries over between sessions.")
 
 
+
+_ABSENCE_RX = re.compile(
+    r"(?:is|are|was|were)?\s*(?:missing|unavailable|not available|"
+    r"not in the|could not be found|no record)",
+    re.IGNORECASE)
+
+
+def _strip_false_absence(text: str, tool_results: list) -> str:
+    """F65: 'Heat win total is missing from the standings' shipped live
+    while get_standings' payload carried MIA 43-39 - the planner used a
+    top-N cut and synthesis reported its evidence WINDOW as a warehouse
+    gap. Deterministic guard: a sentence claiming absence about an
+    entity whose data sits in this turn's payloads is false - drop the
+    sentence, keep the rest. Conservative: only fires when the entity
+    string literally appears in payload JSON.
+    """
+    import json as _json
+
+    try:
+        hay = _json.dumps(
+            [r for r in tool_results or [] if isinstance(r, dict)],
+            default=str).lower()
+    except Exception:
+        return text
+    if not hay or hay == "[]":
+        return text
+    kept: list[str] = []
+    for seg in re.split(r"(?<=[.!?])\s+|\n", text):
+        if _ABSENCE_RX.search(seg):
+            # entity = capitalized tokens (team/player names) in the
+            # sentence; false only if one appears in the payload.
+            ents = re.findall(r"[A-Z][a-z]{2,}", seg)
+            if any(e.lower() in hay for e in ents):
+                continue  # false absence claim: drop
+        kept.append(seg)
+    out = " ".join(s.strip() for s in kept if s.strip())
+    return out or text
+
+
 async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any], None]:
     yield _event("node_update", {"node": "presentation", "status": "running"})
     text = state.get("analysis", "") or "No data came back. Try a player or team name."
@@ -3656,6 +3695,8 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
                         "game logs, standings, playoffs and the "
                         "Finals - try one of those.")
     _scrubbed = _scrub_final_text(text)
+    _scrubbed = _strip_false_absence(_scrubbed,
+                                 state.get("tool_results") or [])
     # v67 (v66 live smoke, 12:32 PM): team-totals answers paraphrased
     # away the leader's total - "scored the most total points with PTS
     # (122.1 per game)". meta.note already tells the LLM to cite

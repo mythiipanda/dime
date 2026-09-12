@@ -43,6 +43,9 @@ def check_text(text: str, expect: dict[str, Any],
     for needle in expect.get("contains", []):
         if needle.lower() not in low:
             fails.append(f"missing expected text: {needle!r}")
+    for group in expect.get("contains_any", []):
+        if not any(needle.lower() in low for needle in group):
+            fails.append(f"missing any of: {group!r}")
     for needle in list(expect.get("not_contains", [])) + list(banned):
         if needle.lower() in low:
             fails.append(f"contains banned text: {needle!r}")
