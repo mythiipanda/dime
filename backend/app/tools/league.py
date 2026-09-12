@@ -3,6 +3,7 @@
 from typing import Any
 from langchain_core.tools import tool
 
+from .. import store
 from ..sources import nba_stats
 from ._core import SEASON, TTL_LEADERS, TTL_SCOREBOARD_PAST, clamp_stat, _warehouse_or_live, is_past_game_date
 
@@ -435,6 +436,78 @@ def get_leaders(stat_category: str = "PTS", season: str = SEASON) -> dict[str, A
             continue
         pinned.append({k: r[k] for k in pin if k in r})
     return {"tool": "get_leaders", "ok": True, "rows": pinned, "meta": meta}
+
+
+_TEAM_TOTAL_STATS = ("PTS", "REB", "AST", "STL", "BLK", "FG3M", "TOV")
+
+
+@tool
+def get_team_leaders(stat_category: str = "AST",
+                     season: str = SEASON) -> dict[str, Any]:
+    """Team totals leaderboard for a counting stat (PTS, REB, AST, STL,
+    BLK): player game logs summed by team, with per-game averages.
+    Use for "which team leads in total assists" - get_leaders is
+    player-level only.
+    """
+    stat = clamp_stat(stat_category)
+    if stat not in _TEAM_TOTAL_STATS:
+        stat = "AST"
+    con = store.connect(read_only=True)
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        if "silver_player_gamelogs" not in tables:
+            return {"tool": "get_team_leaders", "ok": False,
+                    "error": "no player game logs table in the warehouse"}
+        # Dedupe: HOU shipped with 77 games seeded twice (nba_api
+        # partial rows alongside full basketball-reference rows, keyed
+        # by different Game_IDs) - naive sums doubled HOU's totals and
+        # crowned them false leaders. One row per (date, matchup,
+        # player), preferring the full bbref seed.
+        fetched = con.execute(
+            # Sources disagree on three abbrevs (nba_api PHX/CHA/BKN vs
+            # bbref PHO/CHO/BRK) - normalize or game-level dedupe
+            # misses cross-source dupes.
+            "WITH norm AS ("
+            "SELECT *, TRY_STRPTIME(GAME_DATE, '%b %d, %Y') AS d, "
+            "REPLACE(REPLACE(REPLACE(MATCHUP, 'PHX', 'PHO'), "
+            "'CHA', 'CHO'), 'BKN', 'BRK') AS m "
+            "FROM silver_player_gamelogs WHERE _season = ?), "
+            "bb_games AS ("
+            "SELECT DISTINCT d, m FROM norm "
+            "WHERE _source = 'basketball-reference'), "
+            "deduped AS ("
+            "SELECT n.* FROM norm n WHERE NOT ("
+            "n._source <> 'basketball-reference' AND (n.d, n.m) "
+            "IN (SELECT d, m FROM bb_games))) "
+            "SELECT SPLIT_PART(m, ' ', 1) AS ABBREV, "
+            f"SUM({stat}) AS TOTAL, COUNT(DISTINCT d) AS GP, "
+            f"ROUND(SUM({stat}) * 1.0 / COUNT(DISTINCT d), 1) "
+            "AS PER_GAME "
+            "FROM deduped GROUP BY 1 ORDER BY TOTAL DESC",
+            [season]).fetchall()
+    finally:
+        con.close()
+    from nba_api.stats.static import teams as _static
+    names = {t["abbreviation"]: t["full_name"]
+             for t in _static.get_teams()}
+    # warehouse normalized bbref abbrevs back to nba_api for display
+    _alias = {"PHO": "PHX", "CHO": "CHA", "BRK": "BKN"}
+    rows = []
+    for i, (abbrev, total, gp, per_game) in enumerate(fetched, 1):
+        rows.append({
+            "RANK": i,
+            "TEAM": names.get(_alias.get(abbrev, abbrev), abbrev),
+            "ABBREV": abbrev,
+            stat: int(total),
+            "GP": int(gp),
+            "PER_GAME": per_game,
+        })
+    meta = {"stat_category": stat, "season": season, "source": "warehouse",
+            "rows": len(rows),
+            "note": "team totals summed from player game logs "
+                    "(regular season)"}
+    return {"tool": "get_team_leaders", "ok": True, "rows": rows,
+            "meta": meta}
 
 
 @tool

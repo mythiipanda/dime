@@ -574,6 +574,9 @@ LEAGUE_BRIEF = (
     "IF the task mentions WPA, win probability added, or clutch-play-value "
     "leaders, THEN call get_wpa_leaders. "
     "IF the task names one stat category, THEN call get_leaders. "
+    "IF the task asks for TEAM totals or per-game team numbers "
+    "(which team leads in total assists/rebounds/points), THEN call "
+    "get_team_leaders - get_leaders is player-level only. "
     "Leaders answers state BOTH the totals leader and the per-game "
     "leader in one answer with GP alongside, values verbatim from tool "
     "rows. Never multiply per-game averages by games played to make a "
@@ -830,7 +833,7 @@ def _desk_spec(name: str, task: str):
             force = ("text_to_sql", {"question": task.replace(
                 " Answer via text_to_sql (you own that tool).", "")})
         return ("league", LEAGUE_BRIEF,
-                ["get_standings", "get_leaders", "get_injuries", "get_rapm",
+                ["get_standings", "get_leaders", "get_team_leaders", "get_injuries", "get_rapm",
                  "get_standings_deep", "get_hustle_boards",
                  "get_impact_estimate",
                  "get_playoffs", "get_playoff_intel", "get_ratings", "get_clutch", "get_elo",

@@ -1392,6 +1392,47 @@ async def _triage_seed(question: str, primary: str, model: str,
         async for _e in _triage_terminal(question, state):
             yield _e
         return
+    # Tony live find (11:54 AM): team-TOTAL counting-stat asks ("which
+    # team leads in total assists this season?") dead-ended honestly -
+    # get_leaders is player-level and the league desk said team totals
+    # are "not explicitly reported". They are one aggregation away:
+    # pin straight to get_team_leaders (game logs summed by team).
+    # Guards: no named player, no "player" word - player-leader
+    # phrasings keep their routes.
+    _tt_m = re.search(
+        r"\bteam(?:s|\b).{0,45}?\b(?:total|most|leads?|best|highest|top)\b"
+        r".{0,30}?\b(assists?|rebounds?|points?|steals?|blocks?)\b|"
+        r"\b(assists?|rebounds?|points?|steals?|blocks?)\b.{0,20}?"
+        r"\bby team\b", question, re.IGNORECASE)
+    if (_tt_m and not found_p
+            and not re.search(r"\bplayers?\b", question, re.IGNORECASE)
+            # single-game asks ("most 50-point games") belong to the
+            # gamelog team-wide fast path, not season totals
+            and not re.search(r"\bgames?\b|\d+\s*-?\s*pts?\b|"
+                              r"\d+-point", question, re.IGNORECASE)):
+        _tt_word = (_tt_m.group(1) or _tt_m.group(2) or "").lower()
+        _tt_stat = {"assist": "AST", "assists": "AST",
+                    "rebound": "REB", "rebounds": "REB",
+                    "point": "PTS", "points": "PTS",
+                    "steal": "STL", "steals": "STL",
+                    "block": "BLK", "blocks": "BLK"}.get(_tt_word, "AST")
+        _tseason = "2025-26"
+        _tsm = re.search(r"(20\d\d)\s*-\s*(\d\d)", question)
+        if _tsm:
+            _tseason = f"{_tsm.group(1)}-{_tsm.group(2)}"
+        _tth: dict[str, Any] = {}
+        async for _e in _triage_tool(
+                "get_team_leaders",
+                {"stat_category": _tt_stat, "season": _tseason},
+                state, _tth):
+            yield _e
+        _tt_out = _tth.get("out") or {}
+        if _result_status(_tt_out) == "ok":
+            # No rows=[payload] wrap: rows are already the leaderboard
+            # list (get_risers/QA #23 convention).
+            async for _e in _triage_terminal(question, state):
+                yield _e
+        return
     _GAP_PIN_RX = re.compile(
         r"\btwo[\s-]*way\b|\b10[\s-]*day\b|\bg[\s-]?league\b|"
         r"\bcontract (?:types?|status|kinds?)\b|"
@@ -2436,6 +2477,7 @@ _DISPLAY_TITLES = {
     "compare_metrics": "Metric adjudication",
     "get_debate_card": "Debate card",
     "get_leaders": "League leaders",
+    "get_team_leaders": "Team totals",
     "get_lineups": "Lineups",
     "get_shot_zones": "Shot zones",
     "get_matchup_splits": "Matchup splits",
@@ -2458,6 +2500,7 @@ _KIND_FOR_TOOL = {
     "get_shot_zones": "shots",
     "get_shot_compare": "shots",
     "get_leaders": "leaders",
+    "get_team_leaders": "leaders",
     "get_lineups": "lineups",
     "get_raptor_history": "raptor",
 }
