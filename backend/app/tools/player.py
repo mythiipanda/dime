@@ -1608,7 +1608,13 @@ def get_four_factors(player_id: str | int, team_id: str | int, season: str = SEA
 
 @tool
 async def get_shot_compare(a: str, b: str, season: str = SEASON) -> dict[str, Any]:
-    """Shot-diet showdown: zone eFG and share for two players."""
+    """Shot-diet showdown: zone eFG and share for two players.
+
+    Missing zone data stays null, never 0.0: a player without a seeded
+    zone row has NO data there, not a 0% shooter. Edges and the verdict
+    are computed only where BOTH players have data; takeaways must never
+    be built on a missing cell.
+    """
     async def _zones(who: str) -> dict[str, dict]:
         try:
             pid = coerce_player_id(who)
@@ -1616,27 +1622,71 @@ async def get_shot_compare(a: str, b: str, season: str = SEASON) -> dict[str, An
             return {r.get("zone", "?"): r for r in res.get("rows", [])}
         except Exception:
             return {}
+
+    def _f(row: dict, *keys: str) -> float | None:
+        for k in keys:
+            v = row.get(k)
+            if v is None:
+                continue
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                continue
+        return None
+
     ma, mb = await _asyncio.gather(_zones(a), _zones(b))
+    missing = [n for n, m in ((a, ma), (b, mb)) if not m]
     rows: list[dict[str, Any]] = []
     for z in sorted(set(ma) | set(mb)):
         ra, rb = ma.get(z, {}), mb.get(z, {})
-        ae = float(ra.get("eFG_PCT", 0) or 0)
-        be = float(rb.get("eFG_PCT", 0) or 0)
-        ash = float(ra.get("SHARE", ra.get("share", 0)) or 0)
-        bsh = float(rb.get("SHARE", rb.get("share", 0)) or 0)
-        edge = "wash" if max(ash, bsh) < 0.05 or ae == be else (a if ae > be else b)
+        ae = _f(ra, "eFG_PCT")
+        be = _f(rb, "eFG_PCT")
+        ash = _f(ra, "SHARE", "share")
+        bsh = _f(rb, "SHARE", "share")
+        if ae is None or be is None or ash is None or bsh is None:
+            edge = None  # not comparable, never a fake wash or fake winner
+        elif max(ash, bsh) < 0.05 or ae == be:
+            edge = "wash"
+        else:
+            edge = a if ae > be else b
         rows.append({"zone": z, "a_eFG": ae, "b_eFG": be,
                      "a_share": ash, "b_share": bsh, "edge": edge})
     rim = next((r for r in rows if r["zone"] == "Restricted Area"), None)
-    rim_owner = "wash" if not rim or max(rim["a_share"], rim["b_share"]) < 0.05 or rim["a_eFG"] == rim["b_eFG"] else (a if rim["a_eFG"] > rim["b_eFG"] else b)
-    threes = [r for r in rows if "3" in r["zone"] or "corner" in r["zone"].lower() or "break" in r["zone"].lower()]
-    arc = max(threes, key=lambda r: max(r["a_share"], r["b_share"]), default=None)
-    arc_owner = "wash" if not arc or arc["a_eFG"] == arc["b_eFG"] else (a if arc["a_eFG"] > arc["b_eFG"] else b)
-    arc_zone = arc["zone"] if arc else "no threes"
-    verdict = f"{rim_owner} owns the rim; {arc_owner} owns the arc ({arc_zone})."
+    if (not rim or rim["a_eFG"] is None or rim["b_eFG"] is None
+            or rim["a_share"] is None or rim["b_share"] is None):
+        rim_owner = None
+    elif max(rim["a_share"], rim["b_share"]) < 0.05 or rim["a_eFG"] == rim["b_eFG"]:
+        rim_owner = "wash"
+    else:
+        rim_owner = a if rim["a_eFG"] > rim["b_eFG"] else b
+    threes = [r for r in rows
+              if _is_three_zone(r["zone"])
+              and r["a_share"] is not None and r["b_share"] is not None]
+    arc = max(threes, key=lambda r: max(r["a_share"], r["b_share"]),
+              default=None)
+    if not arc or arc["a_eFG"] is None or arc["b_eFG"] is None:
+        arc_owner = None
+        arc_zone = None
+    else:
+        arc_owner = ("wash" if arc["a_eFG"] == arc["b_eFG"]
+                     else (a if arc["a_eFG"] > arc["b_eFG"] else b))
+        arc_zone = arc["zone"]
+    if missing:
+        verdict = (f"Shot diet unavailable for {', '.join(missing)} in "
+                   f"{season}; comparison shown only where both players "
+                   f"have seeded zone data.")
+    else:
+        rim_txt = {"wash": "neither owns the rim", None: "rim data missing"}.get(
+            rim_owner, f"{rim_owner} owns the rim")
+        arc_txt = {"wash": "neither owns the arc", None: "arc data missing"}.get(
+            arc_owner, f"{arc_owner} owns the arc ({arc_zone})")
+        verdict = f"{rim_txt}; {arc_txt}."
+    meta = {"source": "warehouse", "season": season,
+            "a": a, "b": b, "arc_zone": arc_zone, "arc_edge": arc_owner}
+    if missing:
+        meta["missing_zone_data"] = missing
     return {"tool": "get_shot_compare", "ok": True, "rows": rows,
-            "verdict": verdict, "meta": {"source": "nba_api", "season": season,
-            "a": a, "b": b, "arc_zone": arc_zone, "arc_edge": arc_owner}}
+            "verdict": verdict, "meta": meta}
 
 
 @tool
