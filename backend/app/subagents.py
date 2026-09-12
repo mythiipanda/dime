@@ -677,6 +677,24 @@ def _leaders_category(task: str) -> str | None:
     return None
 
 
+def _player_mentioned(task: str) -> str:
+    """First static-list player named in the task text, else ''."""
+    import unicodedata as _ud
+
+    from nba_api.stats.static import players as _static_players
+
+    def _norm(x: str) -> str:
+        return "".join(c for c in _ud.normalize("NFKD", x or "")
+                       if not _ud.combining(c)).lower()
+
+    nq = _norm(task or "")
+    for p in _static_players.get_players():
+        name = p.get("full_name", "")
+        if name and _norm(name) in nq:
+            return name
+    return ""
+
+
 def _teams_mentioned(task: str) -> list[str]:
     """Distinct team abbreviations named in the task text."""
     from nba_api.stats.static import teams as _static_teams
@@ -754,6 +772,12 @@ def _desk_spec(name: str, task: str):
             # F46: rookies = current draft class; never free SQL with an
             # age proxy, never historical seasons.
             force = ("get_rookie_leaders", {})
+        elif (_re.search(r"injur|healthy|available|\bstatus\b",
+                        task, _re.IGNORECASE)
+              and _player_mentioned(task)):
+            # F45: a player injury ask MUST carry player= or the playoff
+            # inactive-note join never runs.
+            force = ("get_injuries", {"player": _player_mentioned(task)})
         elif (_re.search(r"\blineup", task, _re.IGNORECASE)
               and len(_teams_mentioned(task)) == 0):
             # F50: league-wide lineup boards need a stated volume floor.

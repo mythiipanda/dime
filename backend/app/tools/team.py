@@ -192,10 +192,36 @@ def get_season_series(team_a: str, team_b: str,
                     f"{a.lower()}_pts": pts_a,
                     f"{b.lower()}_pts": pts_b,
                 })
-        # Playoffs: player gamelog table, A-perspective rows only
-        # (MATCHUP starts with the row owner's team), one row per game.
-        # Team scores are not tracked per playoff game - winner only.
-        if "silver_playoff_gamelogs" in tables:
+        # Playoffs: team-level table, A-perspective rows (MATCHUP starts
+        # with A), real NBA Game_IDs - substring(Game_ID,7,1) is the
+        # round (4 = Finals), and both teams' scores come from the B row.
+        _ROUND = {"1": "first round", "2": "conference semifinals",
+                  "3": "conference finals", "4": "NBA Finals"}
+        if "silver_playoffs" in tables and id_a is not None:
+            prows = con.execute(
+                """SELECT g.GAME_ID, g.GAME_DATE, g.MATCHUP, g.WL, g.PTS,
+                          o.PTS
+                   FROM silver_playoffs g
+                   LEFT JOIN silver_playoffs o
+                     ON o._season = g._season AND o.GAME_ID = g.GAME_ID
+                    AND o.TEAM_ABBREVIATION = ?
+                   WHERE g._season = ? AND g.TEAM_ABBREVIATION = ?
+                     AND g.MATCHUP ILIKE ?""",
+                [b, season, a, f"%{b}%"],
+            ).fetchall()
+            for gid, gdate, matchup, wl, pts_a, pts_b in prows:
+                rnd = str(gid)[7:8]  # 004 YY 0 R MM GG -> R at idx 7
+                games.append({
+                    "game_id": str(gid), "date": str(gdate),
+                    "matchup": str(matchup),
+                    "phase": "playoffs",
+                    "round": _ROUND.get(rnd, "playoffs"),
+                    "winner": a if str(wl).upper() == "W"
+                    else (b if str(wl).upper() == "L" else None),
+                    f"{a.lower()}_pts": pts_a,
+                    f"{b.lower()}_pts": pts_b,
+                })
+        elif "silver_playoff_gamelogs" in tables:
             prows = con.execute(
                 """SELECT DISTINCT Game_ID, GAME_DATE, MATCHUP, WL
                    FROM silver_playoff_gamelogs
@@ -230,6 +256,9 @@ def get_season_series(team_a: str, team_b: str,
     }
     if po:
         summary["playoff_meetings"] = len(po)
+        rounds = sorted({g.get("round") for g in po if g.get("round")})
+        if rounds:
+            summary["playoff_rounds"] = ", ".join(rounds)
         summary[f"{a.lower()}_playoff_wins"] = sum(
             1 for g in po if g.get("winner") == a)
         summary[f"{b.lower()}_playoff_wins"] = sum(
