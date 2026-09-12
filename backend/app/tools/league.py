@@ -1953,11 +1953,21 @@ def get_playoff_sim(season: str = SEASON, sims: int = 2000) -> dict[str, Any]:
     from ._core import season_static as _season_static
     if _season_static(season):
         # QA F10: simulating a completed season yields degenerate odds
-        # (1 = already happened). Point at the actual bracket instead.
+        # (1 = already happened). Answer with the actual playoff results
+        # instead of an error the asker cannot use.
+        _po = get_playoffs.invoke({"season": season})
+        if _po.get("ok"):
+            _rows = _po.get("rows") or {}
+            return {"tool": "get_playoff_sim", "ok": True,
+                    "rows": _rows,
+                    "meta": {"season": season, "offseason": True,
+                             "note": (f"{season} is complete - these are "
+                                      "the ACTUAL playoff results, not "
+                                      "simulations. Simulated odds return "
+                                      "when the next season begins.")}}
         return {"tool": "get_playoff_sim", "ok": False,
                 "error": f"{season} is complete - simulations are "
-                         f"meaningless for a finished season. Use "
-                         f"get_playoffs for the actual bracket/results.",
+                         f"meaningless for a finished season.",
                 "meta": {"season": season, "offseason": True}}
     out = run_playoff_sim(season, sims)
     if not out.get("teams"):

@@ -11,20 +11,34 @@ def _amap():
 
 
 def _strengths(con, season, amap):
+    """Team strengths on the ELO scale. Primary: real ELO from the shared
+    engine over silver_hist_gamelogs (QA F10: NET_RATING masquerading as
+    ELO surfaced 'OKC ELO 11.1'). Fallbacks are converted to ELO points."""
     tabs = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+    if "silver_hist_gamelogs" in tabs:
+        rows = con.execute(
+            "SELECT team_abbreviation, game_id, game_date, matchup, wl,"
+            " plus_minus FROM silver_hist_gamelogs WHERE _season = ?"
+            " ORDER BY game_date, game_id", [season]).fetchall()
+        if rows:
+            from .league import _build_elo
+            elo, _w, _l, _mov = _build_elo(rows)
+            if len(elo) >= 8:
+                return dict(elo), "real ELO from silver_hist_gamelogs"
     if "silver_team_ratings" in tabs:
         rows = con.execute("SELECT TEAM_ID, NET_RATING FROM silver_team_ratings"
                            " WHERE _season = ?", [season]).fetchall()
-        s = {amap[i]: float(nr or 0) for i, nr in rows if amap.get(i)}
+        s = {amap[i]: 1500.0 + float(nr or 0) * 28.0
+             for i, nr in rows if amap.get(i)}
         if len(s) >= 8:
-            return s, "silver_team_ratings.NET_RATING"
+            return s, "silver_team_ratings.NET_RATING x28 (ELO-scale proxy)"
     if "silver_standings" in tabs:
         rows = con.execute("SELECT TeamID, WINS, LOSSES FROM silver_standings"
                            " WHERE _season = ?", [season]).fetchall()
-        s = {amap[i]: ((w or 0) / ((w or 0) + (lo or 0)) - 0.5) * 40.0
+        s = {amap[i]: 1500.0 + ((w or 0) / ((w or 0) + (lo or 0)) - 0.5) * 160.0
              for i, w, lo in rows if amap.get(i) and (w or 0) + (lo or 0)}
         if len(s) >= 8:
-            return s, "silver_standings win-pct proxy (pct-0.5)*40"
+            return s, "silver_standings win-pct proxy (ELO-scale)"
     return {}, "empty"
 
 
@@ -56,9 +70,9 @@ def _field(con, season, strength, amap):
 
 def _series(a, b, strength):
     hi, lo = (a, b) if strength[a] >= strength[b] else (b, a)
-    d = strength[hi] - strength[lo]
-    ph = 1 / (1 + 10 ** (-(d * 4 + HOME_ELO) / 400))
-    pa = 1 / (1 + 10 ** (-(d * 4 - HOME_ELO) / 400))
+    d = strength[hi] - strength[lo]  # ELO points (strengths are ELO-scale)
+    ph = 1 / (1 + 10 ** (-(d + HOME_ELO) / 400))
+    pa = 1 / (1 + 10 ** (-(d - HOME_ELO) / 400))
     w = l = 0
     for h in (1, 1, 0, 0, 1, 0, 1):
         if random.random() < (ph if h else pa):

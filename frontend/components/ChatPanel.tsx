@@ -517,7 +517,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
               },
               {
                 title: "OKC Championship Odds",
-                desc: "2,000 Monte Carlo playoff simulations and ELO rating",
+                desc: "Playoff odds, bracket results, and ELO power rating",
                 prompt: "Show OKC Thunder playoff odds and ELO",
               },
               {

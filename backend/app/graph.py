@@ -122,6 +122,9 @@ _PLANNER_PREFIX = (
     "or deep standings splits, call delegate_league. "
     "For player risers/fallers (who is rising, falling, hot lately), "
     "call get_player_risers; get_risers is the TEAM win-rate version. "
+    "ELO means the 1500-scale rating from get_elo_standings; never "
+    "report NET_RATING as ELO. For title/playoff odds call "
+    "get_playoff_sim. "
     "For one player's season averages (ppg, rpg, apg, per-game asks, "
     "how many X per game, what does X average), call "
     "get_season_averages first - never delegate_league or text_to_sql "
@@ -1311,6 +1314,36 @@ async def _triage_seed(question: str, primary: str, model: str,
             if state["tool_results"] and state["tool_results"][-1] is _rout:
                 state["tool_results"][-1] = {
                     "tool": _rtool, "rows": [_rout]}
+            async for _e in _triage_terminal(question, state):
+                yield _e
+            return
+    _elo_ask = bool(re.search(r"\belo\b", question, re.IGNORECASE))
+    _odds_ask = bool(re.search(
+        r"playoff odds|title odds|championship odds|odds to win|"
+        r"title chances|playoff chances|win the (title|championship|finals)",
+        question, re.IGNORECASE))
+    if (_elo_ask or _odds_ask) and not is_trade and not is_cast:
+        # QA F10: the league desk used to improvise ELO from NET_RATING
+        # ("OKC ELO 11.1") and hand out raw 1.0 odds. Route to the real
+        # tools: get_elo_standings (1500-scale ELO) and get_playoff_sim
+        # (actual results while the season is complete).
+        _any_ok = False
+        if _odds_ask:
+            _oh: dict[str, Any] = {}
+            async for _e in _triage_tool(
+                    "get_playoff_sim", {"season": "2025-26"}, state, _oh):
+                yield _e
+            _any_ok = _any_ok or _result_status(_oh.get("out") or {}) == "ok"
+        if _elo_ask:
+            _eargs: dict[str, Any] = {"season": "2025-26"}
+            if found_t:
+                _eargs["opponent"] = found_t[0]
+            _eh: dict[str, Any] = {}
+            async for _e in _triage_tool(
+                    "get_elo_standings", _eargs, state, _eh):
+                yield _e
+            _any_ok = _any_ok or _result_status(_eh.get("out") or {}) == "ok"
+        if _any_ok:
             async for _e in _triage_terminal(question, state):
                 yield _e
             return
