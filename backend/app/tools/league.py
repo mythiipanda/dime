@@ -217,7 +217,13 @@ def get_standings_deep(season: str = SEASON, top: int = 5) -> dict[str, Any]:
                                  "surging": momentum[:top],
                                  "fading": momentum[-top:][::-1]}},
             "meta": {"source": "warehouse", "season": season, "top": top,
-                     "teams": len(teams)}}
+                     "teams": len(teams),
+                     "note": "comeback_kings and blown_leads use "
+                             "behind/ahead-at-HALFTIME records as the "
+                             "proxy. Play-by-play in-game margin data "
+                             "(deficits, runs, quarter splits) is not "
+                             "in the dataset - say that, never claim "
+                             "game logs are missing."}}
 
 
 @tool

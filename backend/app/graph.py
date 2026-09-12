@@ -3130,9 +3130,55 @@ def _scrub_final_text(text: str) -> str:
     return cleaned.strip()
 
 
+# QA #65 known-gap taxonomy: what the dataset provably does NOT have.
+# When an answer comes back content-thin, the honest fallback names
+# the specific gap (bench-scoring style) instead of shipping
+# boilerplate or inventing a wrong reason.
+_KNOWN_GAPS: list[tuple["re.Pattern[str]", str]] = [
+    (re.compile(r"\btwo[\s-]*way\b|\b10[\s-]*day\b|\bg[\s-]?league\b|"
+                r"\bcontract (?:types?|status|kinds?)\b", re.IGNORECASE),
+     "The dataset does not track contract types (two-way, 10-day, "
+     "G League), so players cannot be filtered by contract status. "
+     "It does track minutes and stats for every rostered player."),
+    (re.compile(r"\bbench (?:scoring|points|production|minutes|unit)|"
+                r"second unit|starters? vs\b", re.IGNORECASE),
+     "The dataset does not split bench vs starter production. "
+     "It does track per-player stats for everyone, starters included."),
+    (re.compile(r"\bplay[\s-]*by[\s-]*play|in[\s-]*game (?:margin|flow|comeback)|"
+                r"(?:largest|biggest) (?:deficit|lead|comeback|run)|"
+                r"quarter[\s-]*by[\s-]*quarter", re.IGNORECASE),
+     "The dataset has no play-by-play, so in-game margin flow "
+     "(deficits, runs, quarter splits) cannot be computed. Comeback "
+     "numbers use behind-at-halftime records as the proxy."),
+    (re.compile(r"\bwho won\b.{0,25}\b(?:mvp|dpoy|roy|6moy|mip)\b|"
+                r"\baward (?:winners?|results?|outcomes?)\b", re.IGNORECASE),
+     "The dataset does not record award outcomes. It can rank "
+     "candidates by a statistical formula instead."),
+]
+
+
+def _gap_note(question: str) -> str | None:
+    q = question or ""
+    for rx, msg in _KNOWN_GAPS:
+        if rx.search(q):
+            return msg
+    return None
+
+
 async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any], None]:
     yield _event("node_update", {"node": "presentation", "status": "running"})
     text = state.get("analysis", "") or "No data came back. Try a player or team name."
+    # QA #65 (F54): a content-thin answer - boilerplate season line and
+    # nothing else - never ships. Name the known gap when the question
+    # matches the taxonomy, else the honest generic fallback.
+    _core = re.sub(r"This data covers the \d{4}-\d{2} season\.?", "",
+                   text, flags=re.IGNORECASE)
+    _words = re.findall(r"[A-Za-z]+", _core)
+    if len(_words) < 5 and not re.search(r"\d", _core):
+        _gap = _gap_note(state.get("question", "") or "")
+        text = _gap or ("I could not find that in the dataset. "
+                        "Try a player, team, or stat that the season "
+                        "data covers.")
     yield _event("final_answer", {"text": _scrub_final_text(text)})
     try:
         llm = get_llm(state["primary"], state["model"])  # type: ignore[arg-type]
