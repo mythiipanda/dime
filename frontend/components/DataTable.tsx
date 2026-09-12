@@ -39,11 +39,25 @@ function asTable(rows: unknown, capCols: number, showIds = false): {
     ? [...capped, ...ordered.filter((k) => isIdCol(k) && !capped.includes(k))]
     : capped;
   const recs = (list as Record<string, unknown>[]).slice(0, 500);
+  // Percent-aware display (QA F18/F26 nit): share/pct columns stored as
+  // 0-1 fractions render as "46.8%", percent-scale values stay as-is,
+  // and long float artifacts round to 3 decimals.
+  const pctCol = (name: string) =>
+    /(^|_)(pct|percent|share|rate)($|_)/i.test(name) || name.includes("%");
+  const fmtNum = (name: string, v: number): string => {
+    if (pctCol(name)) {
+      const pct = Math.abs(v) <= 1.05 ? v * 100 : v;
+      return `${(Math.round(pct * 10) / 10).toFixed(1)}%`;
+    }
+    if (Number.isInteger(v)) return String(v);
+    return String(Math.round(v * 1000) / 1000);
+  };
   const body = recs.map((r) =>
     cols.map((c) => {
       const v = r[c];
       if (v === null || v === undefined) return "";
       if (typeof v === "object") return JSON.stringify(v).slice(0, 60);
+      if (typeof v === "number") return fmtNum(c, v);
       return String(v).slice(0, 60);
     }),
   );
