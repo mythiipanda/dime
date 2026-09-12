@@ -158,7 +158,14 @@ def test_batch_unknown_player_fallback():
     question = "Who wins this trade: Edwards (MIN) for Unknown (LAL)?"
     found_p = ["Anthony Edwards", "Zzz Unknown"]
     found_t = ["Minnesota Timberwolves", "Los Angeles Lakers"]
-    expected = _reference_trade_sides(question, list(found_p),
-                                      list(found_t), "2025-26")
     actual = _trade_sides(question, list(found_p), list(found_t), "2025-26")
-    assert actual == expected
+    # QA #70 contract change: an EMPTY side no longer bails to the
+    # planner - the sides are returned and get_trade_value emits the
+    # fast informative refusal (unknown/empty side). The pre-QA70
+    # reference returned None here, pushing the question down a slow
+    # multi-tool planner route for the same refusal.
+    assert actual is not None
+    assert actual["team_a"] == "MIN"
+    assert "Anthony Edwards" in actual["players_a"]
+    assert actual["team_b"] == "LAL"
+    assert actual["players_b"] == ""

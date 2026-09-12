@@ -808,7 +808,13 @@ def _trade_sides(question: str, found_p: list[str], found_t: list[str],
     for p in found_p:
         low = _fold(p)
         last = low.split()[-1]
-        if low in raw_q or re.search(r"\b" + re.escape(last) + r"\b", raw_q):
+        # QA #70: "the Luka trade" names the player by FIRST name only.
+        # Keep any distinctive (4+ char) name token, first or last -
+        # ambiguity is handled downstream by coerce_player_id.
+        if (low in raw_q
+                or re.search(r"\b" + re.escape(last) + r"\b", raw_q)
+                or any(re.search(r"\b" + re.escape(tok) + r"\b", raw_q)
+                       for tok in low.split() if len(tok) >= 4)):
             named.append(p)
     found_p = named
     q = question.lower()
@@ -900,7 +906,11 @@ def _trade_sides(question: str, found_p: list[str], found_t: list[str],
                 if p not in players_a and p not in players_b]
         for i, p in enumerate(rest):
             (players_a if i % 2 == 0 else players_b).append(p)
-    if not players_a or not players_b:
+    # QA #70: a side with no named players is NOT a bail - the tool
+    # turns it into the fast informative refusal ("past trade's other
+    # side is not in this dataset"). Bail only when neither side has
+    # players at all.
+    if not players_a and not players_b:
         return None
     return {"team_a": side_a, "players_a": ", ".join(players_a),
             "team_b": side_b, "players_b": ", ".join(players_b)}
