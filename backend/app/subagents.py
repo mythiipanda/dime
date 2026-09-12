@@ -300,8 +300,12 @@ async def _run_desk(
         and _row_count(c.get("rows")) > 0 for c in collected
     )
     if not has_data:
+        # QA F13 residue: this string surfaced verbatim in final answers
+        # ("No Kobe Bryant data found; no further detail available...").
+        # Make it read as an honest user-safe sentence if it ever leaks.
         return {"agent": desk, "ok": False,
-                "error": "no further detail available on that angle",
+                "error": ("no data on that angle in the dataset "
+                          "(coverage: 2024-25 and 2025-26 seasons)"),
                 "tool_trace": trace}
     try:
         text = await _asyncio.wait_for(
