@@ -3180,7 +3180,8 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
     _core = re.sub(r"This data covers the \d{4}-\d{2} season\.?", "",
                    text, flags=re.IGNORECASE)
     _words = re.findall(r"[A-Za-z]+", _core)
-    if len(_words) < 5 and not re.search(r"\d", _core):
+    if ((len(_words) < 5 and not re.search(r"\d", _core))
+            or text.startswith("No data came back")):
         _gap = _gap_note(state.get("question", "") or "")
         text = _gap or ("I could not find that in the dataset. "
                         "Try a player, team, or stat that the season "
@@ -3200,6 +3201,16 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
                 r"is missing|could not be computed|"
                 r"does not include", _scrubbed, re.IGNORECASE)):
         _scrubbed = _gap
+    # QA #66: the thin-net must also run POST-scrub - the sentence
+    # strips can remove every sentence, and shipping an empty string
+    # is worse than the boilerplate it replaced.
+    _core2 = re.sub(r"This data covers the \d{4}-\d{2} season\.?", "",
+                    _scrubbed, flags=re.IGNORECASE)
+    _words2 = re.findall(r"[A-Za-z]+", _core2)
+    if len(_words2) < 5 and not re.search(r"\d", _core2):
+        _scrubbed = _gap or ("I could not find that in the dataset. "
+                             "Try a player, team, or stat that the "
+                             "season data covers.")
     yield _event("final_answer", {"text": _scrubbed})
     try:
         llm = get_llm(state["primary"], state["model"])  # type: ignore[arg-type]
