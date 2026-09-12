@@ -93,6 +93,40 @@ function findZoneRecord(list: ZoneData[], targetId: string): ZoneData | undefine
   });
 }
 
+// Continuous efficiency gradient keyed on LEAGUE_DELTA (QA #26): before,
+// anything within +/-3 points of league average rendered as a barely-visible
+// 7% blue tint (looked blank), and below-average zones got a faint gray with
+// no red anywhere - RA 81.6% and AB3 37.9% read as the same flat color.
+// Now: cyan intensity scales with how far above league, ember with how far
+// below, clamped at +/-15 points. Null delta stays "no data" faint.
+function heatStyle(delta: number | null, isHover: boolean): {
+  fill: string; stroke: string; strokeWidth: number;
+} {
+  if (delta === null) {
+    return {
+      fill: isHover ? "rgba(0, 0, 0, 0.05)" : "rgba(0, 0, 0, 0.02)",
+      stroke: "var(--color-stone-border)",
+      strokeWidth: 1,
+    };
+  }
+  const t = Math.min(Math.abs(delta) / 0.15, 1);
+  const alpha = 0.22 + 0.36 * t + (isHover ? 0.18 : 0);
+  const minAlpha = 0.22 + (isHover ? 0.12 : 0); // data zones never look empty
+  const a = Math.max(alpha, minAlpha);
+  if (delta >= 0) {
+    return {
+      fill: `rgba(59, 166, 241, ${a.toFixed(2)})`,
+      stroke: "var(--color-cyan-signal)",
+      strokeWidth: isHover ? 2 : 1.2,
+    };
+  }
+  return {
+    fill: `rgba(225, 29, 72, ${a.toFixed(2)})`,
+    stroke: "var(--color-ember)",
+    strokeWidth: isHover ? 2 : 1.2,
+  };
+}
+
 export default function CourtHeatmap({ rows, meta, verdict }: CourtHeatmapProps) {
   const [hovered, setHovered] = useState<string | null>(null);
 
@@ -173,22 +207,10 @@ export default function CourtHeatmap({ rows, meta, verdict }: CourtHeatmapProps)
             } else if (rec) {
               // Missing delta means "no baseline", never "neutral": render
               // it like no-data instead of faking a league-average zone.
-              const delta = rec.LEAGUE_DELTA ?? null;
-              const efg = rec.eFG_PCT ?? 0;
-
-              if (delta === null) {
-                fill = isHover ? "rgba(0, 0, 0, 0.05)" : "rgba(0, 0, 0, 0.02)";
-              } else if (delta > 0.03 || efg >= 0.58) {
-                fill = isHover ? "rgba(59, 166, 241, 0.42)" : "rgba(59, 166, 241, 0.22)";
-                stroke = "var(--color-cyan-signal)";
-                strokeWidth = isHover ? 2 : 1.2;
-              } else if (delta < -0.03) {
-                fill = isHover ? "rgba(168, 162, 158, 0.3)" : "rgba(168, 162, 158, 0.14)";
-              } else {
-                // League-average WITH data must read differently from an
-                // empty zone (QA F2): subtle tint + dashed outline.
-                fill = isHover ? "rgba(59, 166, 241, 0.14)" : "rgba(59, 166, 241, 0.07)";
-              }
+              const style = heatStyle(rec.LEAGUE_DELTA ?? null, isHover);
+              fill = style.fill;
+              stroke = style.stroke;
+              strokeWidth = style.strokeWidth;
             }
 
             return (
@@ -318,9 +340,16 @@ export default function CourtHeatmap({ rows, meta, verdict }: CourtHeatmapProps)
             </span>
           </div>
         ) : (
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-            <span style={{ width: 8, height: 8, borderRadius: 2, background: "var(--color-cyan-signal)" }} />
-            Above league average
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+              <span style={{ width: 8, height: 8, borderRadius: 2, background: "var(--color-ember)" }} />
+              Below avg
+            </span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+              <span style={{ width: 8, height: 8, borderRadius: 2, background: "var(--color-cyan-signal)" }} />
+              Above avg
+            </span>
+            <span>depth scales with gap</span>
           </span>
         )}
       </div>
