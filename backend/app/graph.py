@@ -3515,12 +3515,22 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
             _tstat = _tm.get("stat_category")
             _ttot = _tr["rows"][0].get(_tstat) if _tstat else None
             if _tstat and _ttot is not None:
-                _patched = re.sub(rf"\bwith {_tstat} \(",
-                                  f"with {_ttot} total {_tstat} (",
-                                  _scrubbed)
+                # v67 smokes caught three degenerate shapes: "with PTS
+                # (", "with PTS, averaging", "lead with total PTS (",
+                # and "with . They averaged". Repair each; prepend
+                # leader_line only when the value is truly absent.
+                _patched = re.sub(
+                    rf"\bwith (?:total )?{_tstat}(?= \()",
+                    f"with {_ttot} total {_tstat}", _scrubbed)
+                _patched = re.sub(
+                    rf"\bwith (?:total )?{_tstat}(?=,)",
+                    f"with {_ttot} total {_tstat}", _patched)
+                _patched = re.sub(
+                    rf"\bwith\s+\.",
+                    f"with {_ttot} total {_tstat}.", _patched)
                 if _patched != _scrubbed:
                     _scrubbed = _patched
-                elif str(_ttot) not in _scrubbed and _tm.get("leader_line"):
+                if str(_ttot) not in _scrubbed and _tm.get("leader_line"):
                     _ll = _tm["leader_line"]
                     _ll = _ll[0].upper() + _ll[1:] + "."
                     _sm = re.match(

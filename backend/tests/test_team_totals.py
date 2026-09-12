@@ -159,3 +159,23 @@ def test_scrub_based_on_warehouse_data():
                             "That holds, according to the warehouse data.")
     assert "warehouse" not in out.lower()
     assert "From the dataset, Denver leads." in out
+
+
+def test_team_totals_value_patch_variants():
+    # v67 live-smoke shapes, each must ship the value exactly once.
+    shapes = [
+        "This data covers the 2025-26 season.\nThe Denver Nuggets "
+        "scored the most total points with PTS, averaging 122.1 "
+        "per game.",
+        "This data covers the 2025-26 season.\nThe Denver Nuggets "
+        "scored the most total points with . They averaged 122.1 "
+        "points per game over 82 games.",
+        "This data covers the 2025-26 season.\nThe Denver Nuggets "
+        "lead with total PTS (122.1 per game over 82 games).",
+    ]
+    for a in shapes:
+        out = _present("which team scored the most total points "
+                       "this season?", a, list(_TT_TR))
+        assert "10010" in out, a
+        assert "with PTS" not in out, a
+        assert "with ." not in out, a
