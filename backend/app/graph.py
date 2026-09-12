@@ -2803,7 +2803,22 @@ async def analytics_agent(state: DimeState) -> AsyncGenerator[dict[str, Any], No
                     for r in state["tool_results"]
                     if isinstance(r, dict) and r.get("error")][:3]
         cleaned = [_clean_error_text(e) for e in raw_errs]
-        cleaned = [c for c in cleaned if c and len(c) >= 12][:1]
+        cleaned = [c for c in cleaned if c and len(c) >= 12]
+        # Prefer informative refusals (F47 'side has no assets', F33
+        # inactive notes, coverage sentences) over generic query
+        # failures - the first error in the list is often the SQL
+        # dead-end, not the answer-shaped one.
+        def _rank(e: str) -> int:
+            low = e.lower()
+            if any(k in low for k in (
+                    "not in this dataset", "no assets", "was listed "
+                    "inactive", "unknown player", "no playoff games",
+                    "no 20", "covers ", "not seeded", "same team")):
+                return 0
+            if "did not succeed" in low or "did not complete" in low:
+                return 2
+            return 1
+        cleaned = sorted(cleaned, key=_rank)[:1]
         seasons = _collect_seasons(state["tool_results"])
         try:
             _qp, _qt = _detect_entities(state.get("question", "") or "")
