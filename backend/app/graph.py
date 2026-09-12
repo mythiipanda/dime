@@ -3197,6 +3197,7 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
             or re.search(
                 r"did not succeed|no data is available|"
                 r"i cannot|can't rank|not available|"
+                r"is missing|could not be computed|"
                 r"does not include", _scrubbed, re.IGNORECASE)):
         _scrubbed = _gap
     yield _event("final_answer", {"text": _scrubbed})
