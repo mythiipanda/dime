@@ -178,3 +178,49 @@ def test_suggestions_fallback_without_llm(monkeypatch):
 
     state, items = asyncio.run(_go())
     assert items == graph_mod._suggest(state["question"], [], [])
+
+
+# ------------------------------------------------- comeback override guard
+
+def test_gap_override_spares_evidence_backed_answers(monkeypatch):
+    # 10:09 AM live probe: the comeback pin returned 21 rows, the analyst
+    # honestly echoed the proxy note ("does not include..."), and the
+    # QA #66 gap-override REPLACED the whole answer with the bare
+    # play-by-play gap note - the MIN 17 board vanished. The override
+    # exists for no-data outcomes only.
+    monkeypatch.setattr(graph_mod, "get_llm", lambda *a, **k: None)
+
+    async def _go():
+        state = _make_state("Biggest comebacks in the 2026 playoffs?")
+        state["tool_results"] = [{
+            "tool": "get_standings_deep", "ok": True,
+            "rows": {"comeback_kings": [
+                {"TEAM": "Minnesota Timberwolves", "W": 17, "L": 18,
+                 "PCT": 0.486}]}}]
+        state["analysis"] = (
+            "Minnesota Timberwolves lead with 17 wins when trailing "
+            "at halftime. Exact margin flow does not include "
+            "play-by-play detail.")
+        events = [e async for e in presentation_agent(state)]
+        final = next(e for e in events if e.get("type") == "final_answer")
+        return (final.get("data") or {}).get("text", "")
+
+    text = asyncio.run(_go())
+    assert "Minnesota" in text
+    assert "17" in text
+
+
+def test_gap_override_still_rescues_true_no_data(monkeypatch):
+    monkeypatch.setattr(graph_mod, "get_llm", lambda *a, **k: None)
+
+    async def _go():
+        state = _make_state("Biggest comebacks in the 2026 playoffs?")
+        state["tool_results"] = []
+        state["analysis"] = "I could not compute that from the dataset."
+        events = [e async for e in presentation_agent(state)]
+        final = next(e for e in events if e.get("type") == "final_answer")
+        return (final.get("data") or {}).get("text", "")
+
+    text = asyncio.run(_go())
+    assert "no play-by-play" in text
+    assert "could not compute" not in text

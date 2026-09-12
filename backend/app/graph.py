@@ -3345,7 +3345,19 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
     # "Contract types are not tracked" informs; failure narration
     # only mystifies (QA #65 F54).
     _gap = _gap_note(state.get("question", "") or "")
-    if _gap and (
+    # The override exists to rescue NO-DATA outcomes. When the answer is
+    # evidence-backed, an honest gap sentence inside it ("margin flow is
+    # not in the dataset") must NOT trigger a full replacement - that
+    # nuked a correct 21-row comeback board on live (10:09 AM probe).
+    _evidenced = any(
+        isinstance(r, dict) and r.get("rows")
+        for r in _flatten_tables(state["tool_results"]))
+    _delegate_ok = any(
+        isinstance(r, dict) and r.get("agent") and r.get("ok")
+        and isinstance(r.get("summary"), str)
+        and len(r["summary"].strip()) >= 40
+        for r in state["tool_results"])
+    if _gap and not _evidenced and not _delegate_ok and (
             _scrubbed.startswith("I could not compute that from the dataset")
             or re.search(
                 r"did not succeed|no data is available|"
