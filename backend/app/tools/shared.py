@@ -29,7 +29,7 @@ def resolve_entity(query: str) -> dict[str, Any]:
                             or nq == (x.get("abbreviation", "") or "").lower())][:8]
         suggestions: list[str] = []
         top = ranked[0][0] if ranked else 0.0
-        return {
+        out = {
             "tool": "resolve_entity",
             "ok": True,
             "rows": {
@@ -40,6 +40,23 @@ def resolve_entity(query: str) -> dict[str, Any]:
             },
             "meta": {"source": "nba_api_static"},
         }
+        # QA #59: a loose single-name match must not silently pick one
+        # famous namesake - "James" answered LeBron with no nod to
+        # James Harden. Only ACTIVE players count as real alternatives;
+        # historical nobodies (James Davis) are not ambiguity. The note
+        # fires whenever several actives match loosely, even at high
+        # prefix scores.
+        if " " in raw.strip():
+            return out
+        _act = [(sc, r.get("full_name", "")) for sc, r in ranked
+                if r.get("is_active") and r.get("full_name")]
+        _exact_full = any(sc >= 0.99 for sc, _ in _act)
+        if len(_act) >= 2 and not _exact_full and _act[0][0] >= 0.6:
+            names = ", ".join(n for _, n in _act[:3])
+            out["ambiguity_note"] = (
+                f"'{raw}' loosely matches several active players "
+                f"({names}). State which one you assumed in one clause.")
+        return out
     except Exception as exc:
         return {"tool": "resolve_entity", "ok": False, "error": str(exc)[:200]}
 

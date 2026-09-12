@@ -682,7 +682,8 @@ def _evidence_text(collected: list, cap: int = 8000) -> str:
     for c in collected:
         if not isinstance(c, dict):
             continue
-        for key in ("player_note", "inactive_note", "error"):
+        for key in ("player_note", "inactive_note", "ambiguity_note",
+                    "error"):
             v = c.get(key)
             if isinstance(v, str) and v.strip():
                 notes.append(f"{c.get('tool', '?')} {key}: {v.strip()}")

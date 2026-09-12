@@ -217,7 +217,10 @@ def get_award_race(award: str, season: str = SEASON) -> dict[str, Any]:
             case_for = (f"leads the pool in {FEATURE_LABELS.get(leader, leader)} "
                         f"at {_round_val(leader, row[leader])}")
         else:
-            top_feat, top_z = contribs[0][1], contribs[0][2]
+            # QA #59: cite the highest raw z, not the highest weighted
+            # contribution - the card prints z-scores, so the label
+            # must not contradict them.
+            top_feat, top_z = max(contribs, key=lambda t: t[2])[1:3]
             case_for = (f"strongest edge is {FEATURE_LABELS.get(top_feat, top_feat)} "
                         f"at {_round_val(top_feat, row[top_feat])} (z {top_z:+.2f})")
         weak_feat = contribs[-1][1]
@@ -228,6 +231,10 @@ def get_award_race(award: str, season: str = SEASON) -> dict[str, Any]:
         if below:
             case_against = (f"below pool average in {weak_label} "
                             f"({weak_val} vs pool avg {weak_avg})")
+        elif weak_val == weak_avg:
+            # QA #59: equal values are not a weakness.
+            case_against = (f"no clear weakness - closest to the pool "
+                            f"average in {weak_label} ({weak_val})")
         else:
             case_against = (f"weakest edge is {weak_label} "
                             f"({weak_val} vs pool avg {weak_avg})")
