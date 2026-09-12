@@ -259,3 +259,64 @@ def test_memory_claim_inside_answer_rewritten():
     assert "I won't forget" not in out
     assert "during this conversation" in out
     assert "40-12" in out
+
+
+# ------------------------------------------------------------- F58
+
+def test_memory_statement_ack_detector_positive():
+    from app.graph import _memory_ack
+    for team in ("Lakers", "Celtics", "Knicks", "Warriors"):
+        out = _memory_ack(
+            f"My favorite team is the {team}. Remember that.")
+        assert out is not None, team
+        assert team in out
+        assert "this conversation" in out
+        assert "Nothing carries over between sessions" in out
+    out = _memory_ack("remember that my favorite team is the Warriors")
+    assert out is not None and "Warriors" in out
+    out = _memory_ack("My favorite player is LeBron James. Remember that.")
+    assert out is not None and "LeBron James" in out
+    assert "favorite player" in out
+
+
+def test_memory_statement_ack_detector_negative():
+    from app.graph import _memory_ack
+    # analytical asks carrying "favorite" must fall through to routes
+    assert _memory_ack(
+        "My favorite team is the Lakers, how many wins do they have?"
+    ) is None
+    assert _memory_ack(
+        "Who is the best player on the Lakers? They are my favorite team."
+    ) is None
+    assert _memory_ack("what is the Lakers record") is None
+    assert _memory_ack("") is None
+
+
+def test_memory_statement_ships_ack_not_no_data(monkeypatch):
+    # QA F58 live repro: "My favorite team is the Lakers. Remember that."
+    # shipped "No Los Angeles Clippers data found." (resolver matched both
+    # LA teams, team desk returned nothing, presentation named the FIRST).
+    # The pin must ship the session-scoped acknowledgment verbatim.
+    monkeypatch.setattr(graph_mod, "get_llm", lambda *a, **k: None)
+
+    async def _go():
+        state = _make_state("My favorite team is the Lakers. Remember that.")
+        state["tool_results"] = [{
+            "tool": "memory_note", "ok": False,
+            "error": "pinned"}]
+        state["analysis"] = ""
+        events = [e async for e in presentation_agent(state)]
+        final = next(e for e in events if e.get("type") == "final_answer")
+        return (final.get("data") or {}).get("text", "")
+
+    text = asyncio.run(_go())
+    assert "Lakers" in text
+    assert "this conversation" in text
+    assert "Clippers" not in text
+    assert "No " not in text.split(" Lakers")[0]
+
+
+def test_memory_ack_survives_scrub():
+    from app.graph import _memory_ack, _scrub_final_text
+    ack = _memory_ack("My favorite team is the Lakers. Remember that.")
+    assert _scrub_final_text(ack) == ack

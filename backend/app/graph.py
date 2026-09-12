@@ -1380,6 +1380,18 @@ async def _triage_seed(question: str, primary: str, model: str,
     # (a) truly-unanswerable known gaps (contract types, bench splits):
     # never run tools; inject the named-gap message as the sole error
     # so the no-evidence branch ships it verbatim.
+    # QA #72 (F58): memory/preference statements are not data asks.
+    # Pin a deterministic session-scoped acknowledgment BEFORE the
+    # planner - unrouted, "favorite team is the Lakers" hit the team
+    # desk, the resolver matched both Los Angeles teams, and the final
+    # answer shipped "No Los Angeles Clippers data found."
+    _mem_pin = _memory_ack(question)
+    if _mem_pin:
+        state["tool_results"].append(
+            {"tool": "memory_note", "ok": False, "error": _mem_pin})
+        async for _e in _triage_terminal(question, state):
+            yield _e
+        return
     _GAP_PIN_RX = re.compile(
         r"\btwo[\s-]*way\b|\b10[\s-]*day\b|\bg[\s-]?league\b|"
         r"\bcontract (?:types?|status|kinds?)\b|"
@@ -3332,6 +3344,46 @@ def _gap_note(question: str) -> str | None:
     return None
 
 
+# QA #72 (F58): memory/preference statements ("My favorite team is the
+# Lakers. Remember that.") are NOT data asks. Unpinned, the planner
+# routed them to the team desk, the resolver mapped "Lakers" to BOTH
+# Los Angeles teams, and presentation shipped "No Los Angeles Clippers
+# data found." - wrong team, false no-data claim, no acknowledgment.
+_MEMORY_STATEMENT_RX = re.compile(
+    r"\bfavou?rite\s+(?:team|player)\b", re.IGNORECASE)
+_MEMORY_DATA_ASK_RX = re.compile(
+    r"\bwho\b|\bwhat\b|\bwhich\b|\bhow (?:many|much|does|did|is|are)\b|"
+    r"\bwins?\b|\bloss(?:es)?\b|\bpoints?\b|\bstats?\b|\brecord\b|"
+    r"\bscores?d?\b|\bcompare\b|\bvs\.?\b|\baverages?d?\b|\bleaders?\b|"
+    r"\bbest\b|\bworst\b|\brank|\bodds\b|\btrades?\b|\binjur|"
+    r"\blineups?\b|\bcontracts?\b|\bsalary\b|\bplayoffs?\b|\bfinals\b|"
+    r"\bmvp\b|\bchampionship|\btitles?\b|\brookie|\bstreak\b|"
+    r"\broster\b|\bschedule\b|\bgames?\b", re.IGNORECASE)
+
+
+def _memory_ack(question: str) -> str | None:
+    """Session-scoped acknowledgment for preference/memory statements.
+
+    Returns None when the statement carries an analytical ask - those
+    fall through to the normal routes.
+    """
+    q = question or ""
+    if not _MEMORY_STATEMENT_RX.search(q):
+        return None
+    if _MEMORY_DATA_ASK_RX.search(q):
+        return None
+    m = re.search(r"\bfavou?rite\s+(team|player)\s+is\s+(?:the\s+)?"
+                  r"([^.,!?\n]+)", q, re.IGNORECASE)
+    if m:
+        entity = re.split(r"\s+(?:and|but|so)\s+", m.group(2).strip())[0]
+        kind = m.group(1).lower()
+        return (f"Got it - I've got {entity} down as your favorite {kind} "
+                "for this conversation. Nothing carries over between "
+                "sessions.")
+    return ("Got it - I'll keep that in mind during this conversation. "
+            "Nothing carries over between sessions.")
+
+
 async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any], None]:
     yield _event("node_update", {"node": "presentation", "status": "running"})
     text = state.get("analysis", "") or "No data came back. Try a player or team name."
@@ -3343,7 +3395,8 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
     _words = re.findall(r"[A-Za-z]+", _core)
     if ((len(_words) < 5 and not re.search(r"\d", _core))
             or text.startswith("No data came back")):
-        _gap = _gap_note(state.get("question", "") or "")
+        _gap = (_gap_note(state.get("question", "") or "")
+                or _memory_ack(state.get("question", "") or ""))
         text = _gap or ("I could not find that in the dataset. "
                         "Try a player, team, or stat that the season "
                         "data covers.")
@@ -3367,7 +3420,8 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
     # did not succeed", "no data is available", "I cannot rank").
     # "Contract types are not tracked" informs; failure narration
     # only mystifies (QA #65 F54).
-    _gap = _gap_note(state.get("question", "") or "")
+    _gap = (_gap_note(state.get("question", "") or "")
+            or _memory_ack(state.get("question", "") or ""))
     # The override exists to rescue NO-DATA outcomes. When the answer is
     # evidence-backed, an honest gap sentence inside it ("margin flow is
     # not in the dataset") must NOT trigger a full replacement - that
