@@ -577,7 +577,10 @@ def get_player_intel(player_id: str | int, season: str = SEASON) -> dict[str, An
                              "note": "game-by-game log not seeded for this "
                                      "player; showing season line"}}
         return {"tool": "get_player_intel", "ok": False,
-                "error": meta.get("error") or "empty upstream response"}
+                "error": (f"no {season} rows for {player_id}. Dataset "
+                          f"covers 2024-25 and 2025-26 only; a retired "
+                          f"or out-of-era player has no current-season "
+                          f"data by definition - say that plainly.")}
     return {"tool": "get_player_intel", "ok": True, "rows": rows, "meta": meta}
 
 
@@ -593,8 +596,17 @@ def get_season_averages(player_id: str | int, season: str = SEASON) -> dict[str,
                 "error": f"unknown player: {player_id}"}
     line = _season_line(pid, season)
     if not line:
+        # QA F13: a bare miss on a retired player dead-ended the answer
+        # ("No Kobe Bryant data found") instead of the honest story.
+        # Give the coverage facts so the narrative can say "retired /
+        # outside dataset" plainly instead of overclaiming no data.
         return {"tool": "get_season_averages", "ok": False,
-                "error": f"no season line on file for {season}"}
+                "error": (f"no season line on file for {season}. Dataset "
+                          f"covers 2024-25 and 2025-26 only; if this "
+                          f"player is retired, inactive, or from another "
+                          f"era, the correct answer is that no "
+                          f"current-season data exists for them (not "
+                          f"that no data exists at all).")}
     return {"tool": "get_season_averages", "ok": True, "rows": [line],
             "meta": {"source": "basketball-reference", "season": season,
                      "coverage": "season_line"}}

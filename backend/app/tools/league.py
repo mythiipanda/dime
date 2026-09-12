@@ -255,15 +255,16 @@ def get_leaders(stat_category: str = "PTS", season: str = SEASON) -> dict[str, A
     # Pin the asked-for stat column right after the identity columns so
     # capped table renderers (12-column cap) can never cut it (QA F8:
     # the AST leaders table rendered without an AST column).
-    pin = ["RANK", "PLAYER", "TEAM", stat_category, "GP", "MIN"]
+    # QA #30 nit: leaders tables carried every raw column (FGM/FGA on an
+    # AST leaderboard). Keep identity + the asked stat + context only.
+    pin = ["RANK", "PLAYER", "TEAM", stat_category, "GP", "MIN",
+           "PERCENTILE"]
     pinned = []
     for r in rows:
         if not isinstance(r, dict):
             pinned.append(r)
             continue
-        keyed = {k: r[k] for k in pin if k in r}
-        keyed.update({k: v for k, v in r.items() if k not in keyed})
-        pinned.append(keyed)
+        pinned.append({k: r[k] for k in pin if k in r})
     return {"tool": "get_leaders", "ok": True, "rows": pinned, "meta": meta}
 
 
@@ -830,7 +831,8 @@ def _payroll_source(con: object = None) -> str:
             if n > 300 and season:
                 date = f", fetched {str(fetched)[:10]}" if fetched else ""
                 return (f"basketball-reference contracts "
-                        f"(real {season} salaries{date})")
+                        f"({season} salaries{date}; "
+                        f"some players missing or estimated)")
     finally:
         if own:
             con.close()

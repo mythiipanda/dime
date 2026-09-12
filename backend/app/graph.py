@@ -2278,6 +2278,22 @@ def _flatten_tables(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
             return None
         out = dict(rec)
         out.pop("tool", None)
+        # QA F37: several fast paths wrap the whole tool payload as
+        # rows=[payload]; the table then renders one row whose columns
+        # are tool/ok/rows/meta with raw JSON blobs (risers #23, season
+        # averages #37). Unwrap centrally so EVERY tool-result table is
+        # safe, not just the paths patched one by one.
+        rows = out.get("rows")
+        if (isinstance(rows, list) and len(rows) == 1
+                and isinstance(rows[0], dict)
+                and "rows" in rows[0]
+                and ("ok" in rows[0] or "tool" in rows[0])):
+            inner = rows[0]
+            out["rows"] = inner.get("rows")
+            inner_meta = inner.get("meta")
+            if isinstance(inner_meta, dict):
+                meta = out.get("meta") if isinstance(out.get("meta"), dict) else {}
+                out["meta"] = {**inner_meta, **meta}
         out["kind"] = _KIND_FOR_TOOL.get(str(tool or ""), "dataset")
         if tool in _DISPLAY_TITLES:
             try:

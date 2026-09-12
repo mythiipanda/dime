@@ -245,5 +245,15 @@ def get_award_race(award: str, season: str = SEASON) -> dict[str, Any]:
     }
     if spec.get("proxy_caveat"):
         meta["proxy_caveat"] = spec["proxy_caveat"]
+    from ._core import season_static as _season_static
+    if _season_static(season):
+        # QA #30 nit: season ended in June; a "top candidate" card must
+        # not read like a live race. The dataset has no award outcomes.
+        meta["season_complete"] = True
+        meta["note"] = (f"{season} is complete. These are formula-based "
+                        f"statistical candidates from final stats; the "
+                        f"dataset does not record the actual award "
+                        f"outcome, so present them as model picks, not "
+                        f"a live race or official result.")
     return {"tool": "get_award_race", "ok": True,
             "rows": {"candidates": candidates}, "meta": meta}
