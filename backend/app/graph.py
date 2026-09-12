@@ -1313,9 +1313,9 @@ async def _triage_seed(question: str, primary: str, model: str,
             yield _e
         _rout = _rh2.get("out") or {}
         if _result_status(_rout) == "ok":
-            if state["tool_results"] and state["tool_results"][-1] is _rout:
-                state["tool_results"][-1] = {
-                    "tool": _rtool, "rows": [_rout]}
+            # No rows=[payload] wrap: the dataset table renders the raw
+            # payload as one giant JSON row (QA #23). Unwrapped, asTable
+            # finds the risers/fallers arrays like team get_risers (F12).
             async for _e in _triage_terminal(question, state):
                 yield _e
             return
@@ -1390,9 +1390,7 @@ async def _triage_seed(question: str, primary: str, model: str,
             yield _e
         _sout = _sh3.get("out") or {}
         if _result_status(_sout) == "ok":
-            if state["tool_results"] and state["tool_results"][-1] is _sout:
-                state["tool_results"][-1] = {
-                    "tool": _stool, "rows": [_sout]}
+            # Same QA #23 wrap leak as the risers path; pass through raw.
             async for _e in _triage_terminal(question, state):
                 yield _e
             return

@@ -560,11 +560,13 @@ def _season_line(player_id: object, season: str) -> dict[str, Any] | None:
 def get_player_intel(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
     """Game log plus shot sample for one player id. Warehouse first."""
     player_id = coerce_player_id(player_id)
+    # limit=500: the 25-row cap silently clipped logs to October-
+    # December games, so "playing lately?" read stale (QA #22).
     rows, meta = _warehouse_or_live(
         "silver_player_gamelogs", "_season = ? AND _entity = ?",
         [season, f"player:{player_id}"],
         lambda: nba_stats.player_gamelog(player_id, season), season,
-        entity=f"player:{player_id}", ttl_s=TTL_GAMELOG,
+        entity=f"player:{player_id}", ttl_s=TTL_GAMELOG, limit=500,
     )
     if not rows:
         line = _season_line(player_id, season)
@@ -610,7 +612,7 @@ def get_playoff_intel(player_id: str | int, season: str = SEASON) -> dict[str, A
         "silver_playoff_gamelogs", "_season = ? AND _entity = ?",
         [season, f"player:{pid}"],
         lambda: nba_stats.player_playoff_gamelog(pid, season), season,
-        entity=f"player:{pid}", ttl_s=TTL_GAMELOG,
+        entity=f"player:{pid}", ttl_s=TTL_GAMELOG, limit=100,
     )
     if not rows:
         try:
@@ -646,11 +648,14 @@ def get_playoff_intel(player_id: str | int, season: str = SEASON) -> dict[str, A
 def get_last_x(player_id: str | int, n: int = 10, season: str = SEASON) -> dict[str, Any]:
     """Last n games for one player id, most recent first."""
     player_id = coerce_player_id(player_id)
+    # limit=500: the default 25-row cap lands BEFORE the date sort, so
+    # "last n" used to mean "first 25 stored, then newest of those"
+    # (QA #22: KD's "last 5" showed December).
     rows, meta = _warehouse_or_live(
         "silver_player_gamelogs", "_season = ? AND _entity = ?",
         [season, f"player:{player_id}"],
         lambda: nba_stats.player_gamelog(player_id, season), season,
-        entity=f"player:{player_id}", ttl_s=TTL_GAMELOG,
+        entity=f"player:{player_id}", ttl_s=TTL_GAMELOG, limit=500,
     )
     if not rows:
         line = _season_line(player_id, season)
@@ -678,11 +683,13 @@ def get_last_x(player_id: str | int, n: int = 10, season: str = SEASON) -> dict[
 def get_trend(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
     """Decay-weighted recent form versus season baseline. DARKO-lite."""
     player_id = coerce_player_id(player_id)
+    # limit=500: same first-25-stored cap as get_last_x; the decay window
+    # must be the actual end of the log (QA #22).
     rows, meta = _warehouse_or_live(
         "silver_player_gamelogs", "_season = ? AND _entity = ?",
         [season, f"player:{player_id}"],
         lambda: nba_stats.player_gamelog(player_id, season), season,
-        entity=f"player:{player_id}", ttl_s=TTL_GAMELOG,
+        entity=f"player:{player_id}", ttl_s=TTL_GAMELOG, limit=500,
     )
     if not rows:
         return {"tool": "get_trend", "ok": False,
@@ -1352,11 +1359,12 @@ def _opp_tier_splits(frame: Any, season: str) -> list[dict[str, Any]]:
 def get_splits(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
     """Home/away plus monthly, wins/losses, last-10, starter splits from the game log."""
     player_id = coerce_player_id(player_id)
+    # limit=500: last-10 splits must see the full log (QA #22).
     rows_data, warehouse_meta = _warehouse_or_live(
         "silver_player_gamelogs", "_season = ? AND _entity = ?",
         [season, f"player:{player_id}"],
         lambda: nba_stats.player_gamelog(player_id, season), season,
-        entity=f"player:{player_id}", live_first=True,
+        entity=f"player:{player_id}", live_first=True, limit=500,
     )
     if not rows_data:
         return {"tool": "get_splits", "ok": False,
