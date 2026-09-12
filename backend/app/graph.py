@@ -3817,6 +3817,11 @@ def _strip_false_absence(text: str, tool_results: list) -> str:
     entity whose data sits in this turn's payloads is false - drop the
     sentence, keep the rest. Conservative: only fires when the entity
     string literally appears in payload JSON.
+
+    QA F65 (compare markdown): sentence reassembly must preserve the
+    original newline structure. Splitting on newlines and rejoining
+    with spaces flattened tables, headings and bullet lists into one
+    line, so the UI rendered the markdown source literally.
     """
     import json as _json
 
@@ -3828,16 +3833,24 @@ def _strip_false_absence(text: str, tool_results: list) -> str:
         return text
     if not hay or hay == "[]":
         return text
-    kept: list[str] = []
-    for seg in re.split(r"(?<=[.!?])\s+|\n", text):
-        if _ABSENCE_RX.search(seg):
-            # entity = capitalized tokens (team/player names) in the
-            # sentence; false only if one appears in the payload.
-            ents = re.findall(r"[A-Z][a-z]{2,}", seg)
-            if any(e.lower() in hay for e in ents):
-                continue  # false absence claim: drop
-        kept.append(seg)
-    out = " ".join(s.strip() for s in kept if s.strip())
+
+    def _sweep(chunk: str) -> str:
+        kept: list[str] = []
+        for seg in re.split(r"(?<=[.!?])[ \t]+", chunk):
+            if _ABSENCE_RX.search(seg):
+                # entity = capitalized tokens (team/player names) in the
+                # sentence; false only if one appears in the payload.
+                ents = re.findall(r"[A-Z][a-z]{2,}", seg)
+                if any(e.lower() in hay for e in ents):
+                    continue  # false absence claim: drop
+            kept.append(seg)
+        return " ".join(s.strip() for s in kept if s.strip())
+
+    # Newlines are structural (tables, headings, lists): sweep each
+    # line separately and rejoin with the original separators.
+    parts = re.split(r"(\n+)", text)
+    out = "".join(part if part.startswith("\n") else _sweep(part)
+                  for part in parts)
     return out or text
 
 

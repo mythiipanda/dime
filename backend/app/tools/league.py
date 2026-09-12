@@ -2159,7 +2159,8 @@ def get_lineup_leaders(min_minutes: int = 100, limit: int = 10,
     import duckdb
 
     sql = """
-        SELECT TEAM_ABBREVIATION, GROUP_NAME, GP, MIN, PLUS_MINUS,
+        SELECT TEAM_ABBREVIATION, GROUP_NAME, GP,
+               ROUND(MIN, 1) AS MIN, PLUS_MINUS,
                ROUND(PLUS_MINUS / NULLIF(MIN, 0) * 48, 1) AS NET48
         FROM silver_lineups
         WHERE _season = ? AND MIN >= ?

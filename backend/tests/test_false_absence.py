@@ -39,3 +39,24 @@ def test_scrub_based_on_available_league_data():
     assert out == "The highest score is 144."
     out2 = _scrub_final_text("He leads. Based on league data, X is next.")
     assert out2 == "He leads. X is next."
+
+
+def test_newlines_preserved():
+    # QA F65: the sweep used to rejoin every segment with spaces,
+    # flattening markdown tables/headings/lists into one line so the UI
+    # rendered the source literally ("| Metric | ...", "###", "* *").
+    text = ("Here is the comparison:\n\n"
+            "| Metric | Luka | SGA |\n|---|---|---|\n"
+            "| PPG | 33.5 | 31.1 |\n\n"
+            "**Verdict**\n* **Scoring:** Luka leads.\n"
+            "* **Efficiency:** SGA leads.")
+    assert _strip_false_absence(text, PAYLOAD) == text
+
+
+def test_drop_keeps_line_structure():
+    text = ("Nuggets won 54 games.\n"
+            "Heat win total is missing from the standings.\n"
+            "Spurs won 62.")
+    out = _strip_false_absence(text, PAYLOAD)
+    assert "missing" not in out
+    assert out == "Nuggets won 54 games.\n\nSpurs won 62."
