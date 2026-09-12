@@ -1431,7 +1431,10 @@ def get_trade_value(
         out["production_score"] = score
         out["est_market_value_m"] = est_m
         if out["salary_26_27"] is not None:
-            out["residual_m"] = round((out["salary_26_27"] - est_m * 1e6) / 1e6, 1)
+            # QA #39: salary-minus-market read backwards (-21.1 for a
+            # bargain). Flip to surplus value: positive = outperforming
+            # the contract, negative = overpaid.
+            out["residual_m"] = round((est_m * 1e6 - out["salary_26_27"]) / 1e6, 1)
         per = {c: lead["tot"][c] / gp for c in lead["tot"]}
         tags = []
         if (lead["fg3m"] or 0) / gp >= 2.0:
@@ -1611,7 +1614,10 @@ def get_trade_value(
                      "verdict": {"winner": winner, "delta_m": delta,
                                  "grades": _grades(), "text": text},
                      "data_gaps": data_gaps,
-                     "disclaimer": DISCLAIMER},
+                     "disclaimer": DISCLAIMER,
+                     "residual_meaning": "residual_m = estimated market "
+                     "value minus salary; positive = surplus value "
+                     "(outperforming the contract), negative = overpaid"},
             "meta": {"source": payroll_source,
                      "production_season": PROD_SEASON,
                      "salary_season": "2026-27 (column SALARY_2025_26)",

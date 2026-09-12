@@ -470,6 +470,19 @@ LEAGUE_BRIEF = (
     "THEN call get_streaks. "
     "IF the task asks how a player has done against one opponent team, "
     "THEN call get_head_to_head. "
+    "IF the task asks how one TEAM did against another TEAM, their "
+    "record or season series or meetings ('how did the Thunder do "
+    "against the Spurs', 'Lakers vs Celtics record'), THEN call "
+    "get_season_series first - it unions regular-season and playoff "
+    "meetings. Never answer team-vs-team from standings alone, "
+    "never run text_to_sql for a team-vs-team record question (F42: "
+    "free SQL answered about the WRONG TEAMS), and never turn an "
+    "empty lookup into a 0-0 record. "
+    "IF the task bounds games by a date range or month ('best games "
+    "in March', 'games in March 2026'), individual game logs ARE "
+    "available - use text_to_sql over silver_player_gamelogs with "
+    "the date filter (or search_game_logs); never claim game logs "
+    "are missing (F41). "
     "IF the task mentions shot zones, shot diet, rim rate, corner threes, "
     "or where teams shoot from, THEN call get_team_shot_zones with teams "
     "or 'league'; its deltas are vs the league baseline in percentage points. "
@@ -675,7 +688,7 @@ def _desk_spec(name: str, task: str):
                  "get_playoffs", "get_playoff_intel", "get_ratings", "get_clutch", "get_elo",
                  "get_elo_standings",
                  "get_playoff_sim", "get_game_prediction", "get_contract_value", "get_draft_board",
-                 "get_draft_model", "get_risers", "get_streaks", "get_head_to_head",
+                 "get_draft_model", "get_risers", "get_streaks", "get_head_to_head", "get_season_series",
                  "get_trade_check",
                  "get_trade_value",
                  "get_award_race",
