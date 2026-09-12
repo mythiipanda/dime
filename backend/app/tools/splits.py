@@ -67,8 +67,11 @@ def _f(value: object) -> float:
 def aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
     gp = len(rows or [])
     if gp == 0:
-        return {"gp": 0, "ppg": 0.0, "rpg": 0.0, "apg": 0.0,
-                "fg_pct": 0.0, "plus_minus": 0.0}
+        # QA #30: an empty bucket shipped as 0.0 across the board, which
+        # reads as a real (terrible) performance line. Zero games is
+        # missing data: N/A, never fake-neutral 0.0.
+        return {"gp": 0, "ppg": None, "rpg": None, "apg": None,
+                "fg_pct": None, "plus_minus": None}
     fgm = sum(_f(r.get("FGM")) for r in rows)
     fga = sum(_f(r.get("FGA")) for r in rows)
     return {

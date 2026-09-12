@@ -652,6 +652,22 @@ def _current_team_for_player(
         return fallback
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        from ._core import season_static as _season_static
+        if _season_static(SEASON) and name and "silver_salaries" in tables:
+            # Offseason: the 2026-27 contracts sheet is fresher than the
+            # final 2025-26 leaders table (LeBron played 2025-26 on LAL
+            # but signed with PHI for 2026-27 - QA #30 evidence dive).
+            # Trades in September must price him as a 76er.
+            try:
+                row = con.execute(
+                    "SELECT TEAM FROM silver_salaries "
+                    "WHERE LOWER(PLAYER_NAME) = LOWER(?) LIMIT 1",
+                    [name],
+                ).fetchone()
+                if row and row[0]:
+                    return str(row[0])
+            except Exception:
+                pass
         if name and "silver_leaders_pts" in tables:
             try:
                 row = con.execute(
@@ -751,8 +767,16 @@ def _resolve_stale_trade_player(want: str, team: str,
                     fuzzy.append(r)
     except Exception:
         fuzzy = []
-    for cand in exact + subs + fuzzy:
+    wl_first = wl.split()[0] if wl.split() else ""
+    for i, cand in enumerate(exact + subs + fuzzy):
         cname, csal, cteam = str(cand[0]), cand[1] or 0, str(cand[2] or "")
+        # Fuzzy candidates must also match on first name - otherwise
+        # "LeBron James" silently prices as "Bronny James" (father/son
+        # share the surname; seen live on the LAL trade-check path).
+        if i >= len(exact) + len(subs):
+            c_first = cname.lower().split()[0] if cname.split() else ""
+            if _dl.SequenceMatcher(None, wl_first, c_first).ratio() < 0.8:
+                continue
         try:
             cur = _current_team_for_player(cname, None, cteam, con)
         except Exception:
