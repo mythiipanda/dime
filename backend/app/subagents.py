@@ -472,11 +472,19 @@ LEAGUE_BRIEF = (
     "AND names a player, THEN call get_playoff_intel with that player "
     "name first and nothing else. "
     "IF the task mentions playoffs, champion, finals, or rings, "
-    "without a player name, THEN call get_playoffs first and nothing else. "
+    "without a player name, THEN call get_playoffs first and nothing else - "
+    "UNLESS two opposing teams are named: a series between two "
+    "named teams (Finals included) is a get_season_series call "
+    "FIRST, and get_playoffs aggregates must never be used to deny "
+    "or confirm the series itself (F49). "
     "IF the task mentions clutch, late game, or last 5 minutes, "
     "THEN call get_clutch. "
     "IF the task mentions offense, defense, net rating, pace, or ranks, "
     "THEN call get_ratings. "
+    "IF the task asks for the best or top lineups LEAGUE-WIDE "
+    "(no single team named), THEN call get_lineup_leaders - it "
+    "applies a stated minutes floor, so a tiny-sample unit never "
+    "tops the board (F50). "
     "IF the task mentions ELO, power ranking, or true strength, "
     "THEN call get_elo_standings (implied win pct, win equivalents, "
     "Elo-implied spreads). "
@@ -490,8 +498,13 @@ LEAGUE_BRIEF = (
     "IF the task mentions overpaid, underpaid, contract value, or "
     "salary vs production, THEN call get_contract_value, passing "
     "the player name when one is named. "
-    "IF the task mentions draft, prospects, or rookies, "
-    "THEN call get_draft_board. "
+    "IF the task asks about current NBA rookies (best rookies, ROY, "
+    "rookies averaging X), THEN call get_rookie_leaders with the "
+    "stat and threshold - rookies are the current draft class by "
+    "first-season definition, never an age proxy and never "
+    "historical seasons (F46). "
+    "IF the task mentions the upcoming draft, draft prospects, or "
+    "the combine, THEN call get_draft_board. "
     "IF the task mentions star probability or draft model, "
     "THEN call get_draft_model. "
     "IF the task mentions streaks (longest or active, player or team), "
@@ -507,10 +520,14 @@ LEAGUE_BRIEF = (
     "floor suited to the stat (assist-to-turnover: 300+ AST; shooting "
     "pct: 300+ attempts) and state the floor in the answer - a 17:1 "
     "ratio on 17 assists never tops a league leaderboard (F48). "
-    "IF the task asks whether a specific player is injured, healthy, "
-    "or available, call get_injuries with player=NAME - it joins "
-    "playoff inactive listings, so 'active now' never hides a "
-    "'was inactive for the entire playoff run' note (F45). "
+    "IF the task asks about a specific player's injury, health, or "
+    "availability in ANY phrasing, you MUST call get_injuries with "
+    "player=NAME (never a bare league-wide call). It joins playoff "
+    "inactive listings, so 'active now' never hides a 'was "
+    "inactive for the entire playoff run' note (F45). An empty "
+    "rows list for a named player means they are NOT on the "
+    "current injury report - say exactly that plus the inactive "
+    "note if present; it is never 'no data on that angle'. "
     "IF the task asks how one TEAM did against another TEAM, their "
     "record or season series or meetings ('how did the Thunder do "
     "against the Spurs', 'Lakers vs Celtics record'), THEN call "
@@ -660,6 +677,25 @@ def _leaders_category(task: str) -> str | None:
     return None
 
 
+def _teams_mentioned(task: str) -> list[str]:
+    """Distinct team abbreviations named in the task text."""
+    from nba_api.stats.static import teams as _static_teams
+
+    t = task or ""
+    low = t.lower()
+    out = []
+    for team in _static_teams.get_teams():
+        abbr = team["abbreviation"]
+        if (team["full_name"].lower() in low
+                or _re.search(r"\b" + _re.escape(abbr) + r"\b", t,
+                              _re.IGNORECASE)
+                or team.get("nickname", "").lower()
+                and team["nickname"].lower() in low):
+            if abbr not in out:
+                out.append(abbr)
+    return out
+
+
 def _desk_spec(name: str, task: str):
     """Shared desk configuration: (desk, brief, tool_names, force_tool).
 
@@ -713,9 +749,25 @@ def _desk_spec(name: str, task: str):
         )
         if _leaders_cat:
             force = ("get_leaders", {"stat_category": _leaders_cat})
+        elif _re.search(r"\brookie|\broy\b|first[- ]year",
+                        task, _re.IGNORECASE):
+            # F46: rookies = current draft class; never free SQL with an
+            # age proxy, never historical seasons.
+            force = ("get_rookie_leaders", {})
+        elif (_re.search(r"\blineup", task, _re.IGNORECASE)
+              and len(_teams_mentioned(task)) == 0):
+            # F50: league-wide lineup boards need a stated volume floor.
+            force = ("get_lineup_leaders", {})
         elif _re.search(r"playoff|champion|finals|\bring\b|title",
                         task, _re.IGNORECASE):
-            force = "get_playoffs"
+            pair = _teams_mentioned(task)
+            if len(pair) >= 2:
+                # F49: a series between two named teams is a
+                # get_season_series call; aggregates hide the meetings.
+                force = ("get_season_series",
+                         {"team_a": pair[0], "team_b": pair[1]})
+            else:
+                force = "get_playoffs"
         elif (not _SHOT_ZONE_RX.search(task)
               and not _HISTORICAL_RX.search(task)
               and _re.search(
@@ -731,6 +783,7 @@ def _desk_spec(name: str, task: str):
                  "get_standings_deep", "get_hustle_boards",
                  "get_impact_estimate",
                  "get_playoffs", "get_playoff_intel", "get_ratings", "get_clutch", "get_elo",
+                 "get_rookie_leaders", "get_lineup_leaders",
                  "get_elo_standings",
                  "get_playoff_sim", "get_game_prediction", "get_contract_value", "get_draft_board",
                  "get_draft_model", "get_risers", "get_streaks", "get_head_to_head", "get_season_series",

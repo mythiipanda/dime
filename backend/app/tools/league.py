@@ -47,6 +47,11 @@ def get_injuries(team: str = "", player: str = "",
         )
         rows = [r for r in rows if full.lower() in str(r.get("display_name", "")).lower()]
     out = {"tool": "get_injuries", "ok": True, "rows": rows, "meta": meta}
+    if player and not rows:
+        out["player_note"] = (
+            f"{player} is NOT on the current injury report. Report that "
+            "directly; an empty list for a named player is an answer, "
+            "never 'no data'.")
     if note:
         out.setdefault("rows")
         out["inactive_note"] = note
@@ -1779,6 +1784,122 @@ def get_draft_board(season: str = "2025") -> dict[str, Any]:
                      "matched_measurements": sum(1 for b in board[:30]
                                                  if b["HEIGHT"]),
                      "formula": "2*PTS + 50*TS + USG"}}
+
+
+@tool
+def get_rookie_leaders(stat: str = "ppg", min_value: float = 0,
+                       min_gp: int = 10, limit: int = 15,
+                       season: str = SEASON) -> dict[str, Any]:
+    """Current rookie class leaderboard (first-year NBA players only).
+
+    Rookies are defined structurally: a player in the current-season
+    stats table with NO row in any prior season (hist or warehouse).
+    Never an age proxy, never historical seasons (F46: a "rookies 20+
+    ppg" query answered from 2023-24 listed Edwards/LaMelo/Wemby; the
+    right answer was the current draft class, e.g. Cooper Flagg).
+    stat is a per-game column: ppg, rpg, apg, spg, bpg, mpg.
+    """
+    from .. import store as _store
+
+    import duckdb
+
+    col = str(stat or "ppg").strip().upper()
+    allowed = {"PPG", "RPG", "APG", "SPG", "BPG", "MPG",
+               "FG_PCT", "FG3_PCT", "FT_PCT", "GP"}
+    if col not in allowed:
+        return {"tool": "get_rookie_leaders", "ok": False,
+                "error": f"stat must be one of {sorted(allowed)}"}
+    sql = f"""
+        WITH cur AS (
+          SELECT PLAYER_ID, PLAYER, TEAM, AGE, GP, MPG, PPG, RPG, APG,
+                 SPG, BPG, FG_PCT, FG3_PCT, FT_PCT
+          FROM silver_player_season WHERE _season = ?
+        ),
+        hist AS (
+          SELECT DISTINCT PLAYER_ID FROM silver_hist_player_seasons
+          UNION
+          SELECT DISTINCT PLAYER_ID FROM silver_player_season
+          WHERE _season <> ?
+        )
+        SELECT c.PLAYER, c.TEAM, c.AGE, c.GP, c.MPG, c.PPG, c.RPG,
+               c.APG, c.SPG, c.BPG, c.FG_PCT, c.FG3_PCT, c.FT_PCT
+        FROM cur c LEFT JOIN hist h ON c.PLAYER_ID = h.PLAYER_ID
+        WHERE h.PLAYER_ID IS NULL AND c.GP >= ? AND c.{col} >= ?
+        ORDER BY c.{col} DESC LIMIT ?
+    """
+    try:
+        con = duckdb.connect(str(_store.DB_PATH), read_only=True)
+        try:
+            rows = con.execute(
+                sql, [season, season, int(min_gp), float(min_value),
+                      int(limit)]).fetchdf().to_dict("records")
+        finally:
+            con.close()
+    except Exception as exc:
+        return {"tool": "get_rookie_leaders", "ok": False,
+                "error": f"warehouse read failed: {str(exc)[:160]}"}
+    return {
+        "tool": "get_rookie_leaders", "ok": True, "rows": rows,
+        "meta": {
+            "season": season,
+            "rookie_definition": (
+                "first NBA season: no player row in any prior season"),
+            "floors": f"GP >= {int(min_gp)}, {col} >= {float(min_value)}",
+            "note": "current draft class only; never an age proxy"},
+    }
+
+
+@tool
+def get_lineup_leaders(min_minutes: int = 100, limit: int = 10,
+                       season: str = SEASON) -> dict[str, Any]:
+    """League-wide five-man lineup net-rating leaderboard.
+
+    Net rating is PLUS_MINUS per 48 minutes from the warehouse lineup
+    table. A minimum-minutes floor (default 100) is ALWAYS applied and
+    stated: a +3 in 4 minutes is a 300.0 'net rating' on a junk slice
+    and never tops the board (F50).
+    """
+    from .. import store as _store
+
+    import duckdb
+
+    sql = """
+        SELECT TEAM_ABBREVIATION, GROUP_NAME, GP, MIN, PLUS_MINUS,
+               ROUND(PLUS_MINUS / NULLIF(MIN, 0) * 48, 1) AS NET48
+        FROM silver_lineups
+        WHERE _season = ? AND MIN >= ?
+        ORDER BY PLUS_MINUS / NULLIF(MIN, 0) DESC NULLS LAST
+        LIMIT ?
+    """
+    try:
+        con = duckdb.connect(str(_store.DB_PATH), read_only=True)
+        try:
+            raw = con.execute(
+                sql, [season, float(min_minutes), int(limit) * 2]
+            ).fetchdf().to_dict("records")
+        finally:
+            con.close()
+    except Exception as exc:
+        return {"tool": "get_lineup_leaders", "ok": False,
+                "error": f"warehouse read failed: {str(exc)[:160]}"}
+    seen = set()
+    rows = []
+    for r in raw:
+        key = (r.get("TEAM_ABBREVIATION"), r.get("GROUP_NAME"))
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append(r)
+        if len(rows) >= int(limit):
+            break
+    return {
+        "tool": "get_lineup_leaders", "ok": True, "rows": rows,
+        "meta": {
+            "season": season,
+            "formula": "NET48 = PLUS_MINUS per 48 minutes",
+            "floor": f"MIN >= {int(min_minutes)} (stated volume floor; "
+                     "small-sample units are excluded, F50)"},
+    }
 
 
 @tool
