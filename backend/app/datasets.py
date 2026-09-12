@@ -1,6 +1,8 @@
 """Dataset boundary. Warehouse first, live on miss, provenance always."""
 
 import io
+
+import polars as pl
 from fastapi import APIRouter, Query
 from fastapi.responses import Response
 
@@ -246,7 +248,8 @@ def dataset(
                     continue
                 break
             except Exception:
-                frame = frame.drop("_d") if "_d" in frame.columns else frame
+                if "_d" in frame.columns:
+                    frame = frame.drop("_d")
                 continue
     if fmt == "csv":
         return Response(frame.write_csv(), media_type="text/csv")
