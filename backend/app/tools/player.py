@@ -2181,6 +2181,22 @@ def get_debate_card(a: str, b: str, season: str = SEASON,
                 return str(v)
         return "—"
 
+    def _pct(p: dict, *keys: str) -> str:
+        """Render a pct stat as a readable percent (QA #25: raw 0.476
+        decimals looked broken on the shareable card)."""
+        for k in keys:
+            v = p.get(k)
+            if v is None:
+                continue
+            try:
+                f = float(v)
+            except (TypeError, ValueError):
+                return str(v)
+            if f <= 1.0:
+                f *= 100
+            return f"{f:.1f}%"
+        return "—"
+
     # Build HTML card
     def _row(label: str, va: str, vb: str) -> str:
         return (
@@ -2190,15 +2206,15 @@ def get_debate_card(a: str, b: str, season: str = SEASON,
         )
 
     stats_html = ""
-    for label, keys in [
-        ("PPG", ("ppg", "PTS")),
-        ("RPG", ("rpg", "REB")),
-        ("APG", ("apg", "AST")),
-        ("FG%", ("fg_pct", "FG_PCT")),
-        ("3P%", ("fg3_pct", "FG3_PCT")),
-        ("Games", ("gp", "G", "GP")),
+    for label, keys, fmt in [
+        ("PPG", ("ppg", "PTS"), _stat),
+        ("RPG", ("rpg", "REB"), _stat),
+        ("APG", ("apg", "AST"), _stat),
+        ("FG%", ("fg_pct", "FG_PCT"), _pct),
+        ("3P%", ("fg3_pct", "FG3_PCT"), _pct),
+        ("Games", ("gp", "G", "GP"), _stat),
     ]:
-        stats_html += _row(label, _stat(players[0], *keys), _stat(players[1], *keys))
+        stats_html += _row(label, fmt(players[0], *keys), fmt(players[1], *keys))
 
     name_a = _html.escape(_stat(players[0], "name", "PLAYER", "player"))
     name_b = _html.escape(_stat(players[1], "name", "PLAYER", "player"))
