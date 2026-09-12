@@ -273,6 +273,16 @@ PLANNER_SYSTEM = (
 )
 
 MAX_TOOL_ROUNDS = 3
+
+# Watchdog (v2 step 3, Tony's "some of these don't even finish"): a
+# stuck turn must end honestly, never hang. Per-call timeouts feed the
+# circuit breaker; the turn budget forces the coverage-named honest
+# end (_COMPUTE_FALLBACK); heartbeats at the SSE layer already ping.
+TOOL_CALL_TIMEOUT_S = 25.0
+DESK_CALL_TIMEOUT_S = 75.0
+TURN_WARN_S = 40.0
+TURN_BUDGET_S = 90.0
+DEEP_TURN_BUDGET_S = 180.0
 MAX_TOOL_CALLS = 8
 DEEP_TOOL_ROUNDS = 5
 DEEP_TOOL_CALLS = 12
@@ -2815,10 +2825,13 @@ async def actual_tool_node(state: DimeState) -> AsyncGenerator[dict[str, Any], N
                 async def _on_tok(t: str) -> None:
                     await _tok_q.put((name, t))
 
-                out = await run_desk_streaming(
-                    name, args.get("task", "") if isinstance(args, dict) else "",
-                    state["primary"], state["model"],  # type: ignore[arg-type]
-                    on_token=_on_tok)
+                out = await asyncio.wait_for(
+                    run_desk_streaming(
+                        name,
+                        args.get("task", "") if isinstance(args, dict) else "",
+                        state["primary"], state["model"],  # type: ignore[arg-type]
+                        on_token=_on_tok),
+                    timeout=DESK_CALL_TIMEOUT_S)
                 if (isinstance(out, dict) and dkey is not None
                         and _result_status(out) == "ok"):
                     desk_cache[dkey] = out
@@ -2829,14 +2842,21 @@ async def actual_tool_node(state: DimeState) -> AsyncGenerator[dict[str, Any], N
                     elapsed[id(call)] = 0
                     await _tok_q.put(None)
                     return {**entity_cache[qnorm], "deduped": True}
-                out = await fn.ainvoke(args)
+                out = await asyncio.wait_for(fn.ainvoke(args),
+                                             timeout=TOOL_CALL_TIMEOUT_S)
                 if isinstance(out, dict) and _result_status(out) == "ok":
                     entity_cache[qnorm] = out
             else:
-                out = await fn.ainvoke(args)
+                out = await asyncio.wait_for(fn.ainvoke(args),
+                                             timeout=TOOL_CALL_TIMEOUT_S)
             elapsed[id(call)] = int((time.time() - t0) * 1000)
             await _tok_q.put(None)
             return out if isinstance(out, dict) else {"tool": name, "rows": out}
+        except TimeoutError:
+            elapsed[id(call)] = int((time.time() - t0) * 1000)
+            await _tok_q.put(None)
+            return {"tool": name, "ok": False,
+                    "error": f"timed out after {int(time.time() - t0)}s"}
         except Exception as exc:
             elapsed[id(call)] = int((time.time() - t0) * 1000)
             await _tok_q.put(None)
@@ -3726,6 +3746,11 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
                              "It covers 2025-26 player and team stats, "
                              "game logs, standings, playoffs and the "
                              "Finals - try one of those.")
+    # Watchdog: a turn that blew its wall-clock budget with no usable
+    # evidence ends with coverage named - never a hang, never the old
+    # "try a narrower ask" (F61/v70).
+    if state.get("_watchdog_tripped") and not _evidenced and not _delegate_ok:
+        _scrubbed = _gap or _COMPUTE_FALLBACK
     _verify_draft_numerals(state, _scrubbed)
     _new_facts = _extract_ledger_facts(state)
     if _new_facts:
@@ -3807,7 +3832,26 @@ async def run_chat(
             "node": "entry",
             "text": "Deep investigation mode: expanded tool budget.",
         })
+    _turn_t0 = time.time()
+    _turn_budget = DEEP_TURN_BUDGET_S if deep else TURN_BUDGET_S
+    _warned = False
     while state["round"] < max_rounds:
+        _el = time.time() - _turn_t0
+        if not _warned and _el > TURN_WARN_S:
+            _warned = True
+            yield _event("thought_stream", {
+                "node": "data_retrieval",
+                "text": "Still working on it - pulling the last of the "
+                        "data together.",
+            })
+        if _el > _turn_budget:
+            state["_watchdog_tripped"] = True  # type: ignore[typeddict-unknown-key]
+            yield _event("thought_stream", {
+                "node": "data_retrieval",
+                "text": "That took too long - wrapping up with what I "
+                        "have.",
+            })
+            break
         async for e in data_retrieval_agent(state):
             yield e
         if "_pending_calls" not in state:
