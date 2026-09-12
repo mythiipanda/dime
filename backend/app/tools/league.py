@@ -2178,6 +2178,94 @@ def get_risers(season: str = "2025-26", weeks: int = 4) -> dict[str, Any]:
             "meta": meta}
 
 
+@tool
+def get_player_risers(season: str = "2025-26", n: int = 10) -> dict[str, Any]:
+    """Player risers and fallers: last-N games scoring/efficiency vs the
+    player's own season average, warehouse only. Use this for
+    player-level 'who is rising/falling/hot' asks; get_risers is the
+    TEAM version (win-rate windows)."""
+    from .. import store as _store
+
+    season = str(season or "2025-26").strip() or "2025-26"
+    try:
+        n = max(5, min(int(n or 10), 15))
+    except (TypeError, ValueError):
+        n = 10
+    con = _store.connect()
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        if "silver_player_gamelogs" not in tables:
+            return {"tool": "get_player_risers", "ok": False,
+                    "error": "player gamelogs empty"}
+        rows = con.execute(
+            """SELECT g._entity, g.GAME_DATE, g.PTS, g.FG_PCT, g.FG3_PCT
+               FROM silver_player_gamelogs g
+               WHERE g._season = ?
+               ORDER BY g._entity, g.GAME_DATE""",
+            [season]).fetchall()
+        names = {}
+        try:
+            for pid, pname in con.execute(
+                    "SELECT PLAYER_ID, PLAYER FROM silver_player_season "
+                    "WHERE _season = ?", [season]).fetchall():
+                names[f"player:{pid}"] = pname
+        except Exception:
+            pass
+        teams = {}
+        try:
+            for pid, team in con.execute(
+                    "SELECT PLAYER_ID, TEAM FROM silver_player_season "
+                    "WHERE _season = ?", [season]).fetchall():
+                teams[f"player:{pid}"] = team
+        except Exception:
+            pass
+    finally:
+        con.close()
+    if not rows:
+        return {"tool": "get_player_risers", "ok": False,
+                "error": f"no player games for {season}"}
+    by_player: dict[str, list] = {}
+    for ent, _d, pts, fg, fg3 in rows:
+        if pts is None:
+            continue
+        by_player.setdefault(ent, []).append((pts, fg, fg3))
+    table = []
+    for ent, games in by_player.items():
+        if len(games) < 25:
+            continue
+        season_pts = sum(g[0] for g in games) / len(games)
+        last = games[-n:]
+        last_pts = sum(g[0] for g in last) / len(last)
+        fg_season = [g[1] for g in games if g[1] is not None]
+        fg_last = [g[1] for g in last if g[1] is not None]
+        table.append({
+            "PLAYER": names.get(ent, ent.replace("player:", "id ")),
+            "TEAM": teams.get(ent, ""),
+            "GP": len(games),
+            "SEASON_PPG": round(season_pts, 1),
+            f"LAST{n}_PPG": round(last_pts, 1),
+            "PPG_DELTA": round(last_pts - season_pts, 1),
+            "SEASON_FG_PCT": round(sum(fg_season) / len(fg_season), 3)
+                if fg_season else None,
+            f"LAST{n}_FG_PCT": round(sum(fg_last) / len(fg_last), 3)
+                if fg_last else None,
+        })
+    table.sort(key=lambda d: d["PPG_DELTA"], reverse=True)
+    meta = {"source": "warehouse", "season": season, "window": n,
+            "definition": "last-N scoring vs own season average, min 25 GP"}
+    from ._core import season_static as _season_static
+    if _season_static(season):
+        # Offseason honesty, same rule as get_risers (QA F12/F18): these
+        # are FINAL end-of-season form windows, not live risers.
+        meta["offseason"] = True
+        meta["note"] = (f"{season} is complete; these are end-of-season "
+                        f"form windows, not current risers. No NBA games "
+                        f"until preseason.")
+    return {"tool": "get_player_risers", "ok": True,
+            "rows": {"risers": table[:8], "fallers": table[-8:][::-1]},
+            "meta": meta}
+
+
 def _ensure_leaderboard_snapshots(con: Any) -> None:
     con.execute(
         """CREATE TABLE IF NOT EXISTS leaderboard_snapshots(

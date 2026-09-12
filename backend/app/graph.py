@@ -61,6 +61,9 @@ ANALYST_SYSTEM = (
     "Only cite all-in-one metrics present in evidence: RAPM-lite, on-off "
     "net, RAPTOR history. Label RAPM-lite and RAPTOR as estimates. "
     "Never invent PER, BPM, EPM, WS, VORP, or LEBRON. Say EPM is unavailable. "
+    "When shot-zone or shot-compare evidence is present, never claim "
+    "shot charts or visual courts are unavailable; the evidence card "
+    "renders the court. "
     "State the season the data covers in the first line of every answer; "
     "write it exactly like 'This data covers the 2025-26 season.' and "
     "never duplicate the word season. "
@@ -117,6 +120,8 @@ _PLANNER_PREFIX = (
     "For single-season leaders, standings, injuries, playoffs, ratings, "
     "clutch, ELO, title odds, today games, briefings, hustle boards, "
     "or deep standings splits, call delegate_league. "
+    "For player risers/fallers (who is rising, falling, hot lately), "
+    "call get_player_risers; get_risers is the TEAM win-rate version. "
     "For one player's season averages (ppg, rpg, apg, per-game asks, "
     "how many X per game, what does X average), call "
     "get_season_averages first - never delegate_league or text_to_sql "
@@ -1131,7 +1136,7 @@ async def _triage_seed(question: str, primary: str, model: str,
                        state: dict) -> AsyncGenerator[dict[str, Any], None]:
     found_p, found_t = _detect_entities(question)
     if state.get("history") and re.search(
-            r"\b(him|her|them|they|his|hers|theirs|it|that team|that player)\b",
+            r"\b(him|her|them|they|his|hers|their|theirs|it|that team|that player)\b",
             question, re.IGNORECASE):
         for t in state["history"][-6:]:
             hp, ht = _detect_entities(t.get("text") or "")
@@ -1288,6 +1293,50 @@ async def _triage_seed(question: str, primary: str, model: str,
                 yield _e
             return
         # Unknown player or missing line: fall through to the planner.
+    if re.search(r"\bris(?:ers?|ing)\b|\bfall(?:ers?|ing)\b",
+                 question, re.IGNORECASE) and not found_p and not is_trade:
+        # Player-level risers used to fall to the planner, which burned
+        # 12 tool calls / 177s and still surfaced TEAM win rates
+        # (QA F12 retest). One hop, warehouse only.
+        _team_intent = found_t or re.search(
+            r"\bteams?\b|\bfranchise", question, re.IGNORECASE)
+        _rtool = ("get_risers" if _team_intent
+                  else "get_player_risers")
+        _rh2: dict[str, Any] = {}
+        async for _e in _triage_tool(
+                _rtool, {"season": "2025-26"}, state, _rh2):
+            yield _e
+        _rout = _rh2.get("out") or {}
+        if _result_status(_rout) == "ok":
+            if state["tool_results"] and state["tool_results"][-1] is _rout:
+                state["tool_results"][-1] = {
+                    "tool": _rtool, "rows": [_rout]}
+            async for _e in _triage_terminal(question, state):
+                yield _e
+            return
+    _is_shot = bool(re.search(
+        r"shot ?charts?|shot zones?|shot diet|shot profile|"
+        r"shooting (?:splits?|profile|locations?|map)|zone diet|"
+        r"where (?:does|do|did)\b.{0,40}\bshoot",
+        question, re.IGNORECASE))
+    if _is_shot and found_p and not is_trade and not is_cast:
+        # Shot-chart asks used to burn ~22 planner tool calls / 67s on a
+        # compare thread (QA F3/#19 latency). One hop, warehouse-first.
+        _stool = "get_shot_compare" if len(found_p) >= 2 else "get_shot_zones"
+        _sargs = ({"a": found_p[0], "b": found_p[1], "season": "2025-26"}
+                  if len(found_p) >= 2
+                  else {"player_id": found_p[0], "season": "2025-26"})
+        _sh3: dict[str, Any] = {}
+        async for _e in _triage_tool(_stool, _sargs, state, _sh3):
+            yield _e
+        _sout = _sh3.get("out") or {}
+        if _result_status(_sout) == "ok":
+            if state["tool_results"] and state["tool_results"][-1] is _sout:
+                state["tool_results"][-1] = {
+                    "tool": _stool, "rows": [_sout]}
+            async for _e in _triage_terminal(question, state):
+                yield _e
+            return
     is_league_team = (
         not _named_p
         and _LEAGUE_TEAM_RX.search(question)
@@ -1552,97 +1601,81 @@ async def _triage_seed(question: str, primary: str, model: str,
                 _pid, _ab = 0, ""
             if _ab:
                 sides.append((p, _ab))
+        _cast_rows: list[dict[str, Any]] = []
+        _cast_notes: list[str] = []
         if sides:
-            from nba_api.stats.static import teams as _st
+            # Structured rows, not print-only text: the evidence card and
+            # the narrative both get real player names sorted by PPG
+            # (QA F34 follow-up: no more "Mate 1/2/3/4" placeholders).
+            from . import store as _store3
 
-            lines = ["print('Supporting cast comparison, 2025-26 regular season')"]
-            for p, ab in sides:
-                block: list[str] = []
-                last = p.split()[-1].replace("'", "")
-                safe = "".join(
-                    c for c in unicodedata.normalize("NFKD", p)
-                    if not unicodedata.combining(c)).replace("'", "")
-                block.append(f"print('{safe} plays for {ab} this season')")
-                full = next((t["full_name"] for t in _st.get_teams()
-                             if t["abbreviation"] == ab), ab)
-                nick = full.split()[-1].replace("'", "")
-                block.append(
-                    f"_t_{ab} = con.execute(\"SELECT TEAM_NAME, NET_RATING FROM "
-                    f"silver_team_ratings WHERE _season='2025-26' AND "
-                    f"(TEAM_NAME = '{nick}' OR TEAM_NAME = '{full}') "
-                    f"LIMIT 1\").fetchall()")
-                block.append(
-                    f"_mates_{ab} = con.execute(\"SELECT PLAYER, PTS, GP FROM "
-                    f"silver_leaders_pts WHERE _season='2025-26' AND TEAM='{ab}' "
-                    f"AND UPPER(PLAYER) NOT LIKE '%{last.upper()}%' "
-                    f"ORDER BY PTS DESC LIMIT 4\").fetchall()")
-                block.append(
-                    f"_adv_{ab} = con.execute(\"SELECT PLAYER_NAME, TS_PCT, "
-                    f"NET_RATING FROM silver_advanced WHERE _season='2025-26' "
-                    f"AND TEAM_ABBREVIATION='{ab}'\").fetchall()")
-                block.append(
-                    f"_admap_{ab} = {{str(r[0]): (r[1], r[2]) "
-                    f"for r in _adv_{ab}}}")
-                block.append(
-                    f"print('{safe} ({ab}) team net: ' + str(_t_{ab}))")
-                block.append(
-                    f"print('{ab} supporting mates (excluding {safe}):')")
-                block.append(
-                    f"for m in _mates_{ab}:\n"
-                    f"    _nm = str(m[0]).encode('ascii', 'ignore').decode()\n"
-                    f"    _ppg = m[1]/max(m[2], 1)\n"
-                    f"    _pair = _admap_{ab}.get(m[0], (None, None))\n"
-                    f"    _ts = _pair[0]\n"
-                    f"    _nr = _pair[1]\n"
-                    f"    _tss = f'{{_ts*100:.1f}}%' if _ts is not None else 'n/a'\n"
-                    f"    _nrs = f'{{_nr:+.1f}}' if _nr is not None else 'n/a'\n"
-                    f"    print(f'  {{_nm}}: {{_ppg:.1f}} ppg, TS {{_tss}} net {{_nrs}}')")
-                block.append(
-                    f"_best_{ab} = max([m[1]/max(m[2],1) for m in _mates_{ab}] "
-                    f"+ [0])")
-                block.append(
-                    f"print('Top {ab} supporting scorer ({safe} excluded): ' "
-                    f"+ str(round(_best_{ab}, 1)) + ' ppg')")
-                block.append(
-                    f"_tslist_{ab} = [_admap_{ab}.get(m[0], "
-                    f"(None, None))[0] for m in _mates_{ab}]")
-                block.append(
-                    f"_tsvals_{ab} = [v for v in _tslist_{ab} "
-                    f"if v is not None]")
-                block.append(
-                    f"print('{ab} cast-average TS%: ' + "
-                    f"(f'{{sum(_tsvals_{ab})/len(_tsvals_{ab})*100:.1f}}%' "
-                    f"if _tsvals_{ab} else 'n/a'))")
-                # A missing table, empty roster, or codegen slip must
-                # degrade to an honest line, never a raw NameError in
-                # the user's answer (QA F34).
-                lines.append("try:")
-                lines.extend("    " + bl for bl in
-                             "\n".join(block).split("\n") if bl.strip())
-                lines.append("except Exception:")
-                lines.append(
-                    f"    print('{safe}: cast data unavailable right now')")
+            try:
+                _con3 = _store3.connect()
+                try:
+                    for p, ab in sides:
+                        last = p.split()[-1]
+                        try:
+                            mates = _con3.execute(
+                                "SELECT PLAYER, PTS, GP FROM "
+                                "silver_leaders_pts WHERE _season='2025-26' "
+                                "AND TEAM=? AND UPPER(PLAYER) NOT LIKE ? "
+                                "ORDER BY PTS DESC LIMIT 4",
+                                [ab, "%" + last.upper() + "%"]).fetchall()
+                        except Exception:
+                            mates = []
+                        try:
+                            adv = {str(r[0]): (r[1], r[2])
+                                   for r in _con3.execute(
+                                       "SELECT PLAYER_NAME, TS_PCT, "
+                                       "NET_RATING FROM silver_advanced "
+                                       "WHERE _season='2025-26' AND "
+                                       "TEAM_ABBREVIATION=?",
+                                       [ab]).fetchall()}
+                        except Exception:
+                            adv = {}
+                        if not mates:
+                            _cast_notes.append(
+                                f"{p}: cast data unavailable right now")
+                            continue
+                        for m in mates:
+                            ppg = (m[1] or 0) / max(m[2] or 0, 1)
+                            pair = adv.get(str(m[0]), (None, None))
+                            _cast_rows.append({
+                                "SIDE": p, "PLAYER": str(m[0]),
+                                "TEAM": ab, "GP": int(m[2] or 0),
+                                "PPG": round(ppg, 1),
+                                "TS_PCT": (round(pair[0] * 100, 1)
+                                           if pair[0] is not None else None),
+                                "NET_RATING": (round(pair[1], 1)
+                                               if pair[1] is not None
+                                               else None),
+                            })
+                finally:
+                    _con3.close()
+            except Exception:
+                _cast_rows = []
+                _cast_notes = ["cast data unavailable right now"]
         if sides:
-            lines.append("out = 'cast table printed'")
-            code = "\n".join(lines)
-            _cast_args = {"code": code}
+            if _cast_rows:
+                _cmeta: dict[str, Any] = {"source": "warehouse",
+                                          "season": "2025-26",
+                                          "note": "supporting cast, "
+                                                  "star excluded, "
+                                                  "sorted by PPG"}
+                if _cast_notes:
+                    _cmeta["unavailable"] = "; ".join(_cast_notes)
+                out = {"tool": "run_python", "ok": True,
+                       "rows": _cast_rows, "meta": _cmeta}
+            else:
+                out = {"tool": "run_python", "ok": False,
+                       "error": "cast data unavailable right now"}
+            _cast_args = {"code": "structured supporting-cast query"}
             _t0 = time.time()
             yield _event("tool_call", {
                 "node": "data_retrieval", "name": "run_python",
                 "label": tool_label("run_python"),
                 "summary": _args_summary("run_python", _cast_args),
             })
-            try:
-                from .tools import v1_tools as _vt2
-
-                fn2 = next((t for t in _vt2 if t.name == "run_python"), None)
-                out = await fn2.ainvoke({"code": code}) if fn2 is not None else {
-                    "tool": "run_python", "ok": False, "error": "no python tool"}
-            except Exception as exc:
-                out = {"tool": "run_python", "ok": False,
-                       "error": str(exc)[:160]}
-            if not isinstance(out, dict):
-                out = {"tool": "run_python", "rows": out}
             _ms = int((time.time() - _t0) * 1000)
             _rd = _tool_result_payload("data_retrieval", "run_python", out, _ms)
             yield _event("tool_result", _rd)
@@ -1652,7 +1685,7 @@ async def _triage_seed(question: str, primary: str, model: str,
             })
             state["tool_results"].append(out)
             state["calls_made"].append("run_python:" + json.dumps(
-                {"code": code[:120]}, sort_keys=True))
+                {"code": "cast"}, sort_keys=True))
             return
     if found_p and re.search(
             r"\braptor\b|\bwar\b|peak|all-time|all time|greatest season|"

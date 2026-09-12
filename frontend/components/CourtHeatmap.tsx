@@ -13,10 +13,17 @@ export interface ZoneData {
   LEAGUE_DELTA?: number;
   a_eFG?: number;
   b_eFG?: number;
+  a_fg?: number;
+  b_fg?: number;
   a_share?: number;
   b_share?: number;
   edge?: string;
 }
+
+// Three-point zones read as 3P% (FG on threes), not eFG: labeling an
+// all-threes zone with its 1.5x eFG next to surfaces that show 3P%
+// made the same number look like two different stats (QA F23).
+const isThreeZone = (name: string) => /3|corner|break/i.test(name);
 
 interface CourtHeatmapProps {
   rows: unknown;
@@ -238,12 +245,24 @@ export default function CourtHeatmap({ rows, meta, verdict }: CourtHeatmapProps)
             {isCompare ? (
               <div style={{ marginTop: 4, display: "flex", flexDirection: "column", gap: 2 }}>
                 <div style={{ color: "var(--color-warm-gray)" }}>
-                  {meta?.a || "Player A"}: {((activeRecord.a_eFG ?? 0) * 100).toFixed(1)}% eFG (
-                  {((activeRecord.a_share ?? 0) * 100).toFixed(0)}% vol)
+                  {meta?.a || "Player A"}:{" "}
+                  {(() => {
+                    const three = isThreeZone(activeRecord.zone || hovered || "");
+                    const acc = three && activeRecord.a_fg != null ? activeRecord.a_fg : activeRecord.a_eFG;
+                    const lbl = three && activeRecord.a_fg != null ? "3P" : "eFG";
+                    return acc != null ? `${(acc * 100).toFixed(1)}% ${lbl}` : "n/a";
+                  })()}{" "}
+                  ({((activeRecord.a_share ?? 0) * 100).toFixed(0)}% vol)
                 </div>
                 <div style={{ color: "var(--color-warm-gray)" }}>
-                  {meta?.b || "Player B"}: {((activeRecord.b_eFG ?? 0) * 100).toFixed(1)}% eFG (
-                  {((activeRecord.b_share ?? 0) * 100).toFixed(0)}% vol)
+                  {meta?.b || "Player B"}:{" "}
+                  {(() => {
+                    const three = isThreeZone(activeRecord.zone || hovered || "");
+                    const acc = three && activeRecord.b_fg != null ? activeRecord.b_fg : activeRecord.b_eFG;
+                    const lbl = three && activeRecord.b_fg != null ? "3P" : "eFG";
+                    return acc != null ? `${(acc * 100).toFixed(1)}% ${lbl}` : "n/a";
+                  })()}{" "}
+                  ({((activeRecord.b_share ?? 0) * 100).toFixed(0)}% vol)
                 </div>
                 {activeRecord.edge && (
                   <div style={{ fontWeight: 500, color: "var(--color-cyan-edge)", marginTop: 2 }}>
@@ -254,7 +273,14 @@ export default function CourtHeatmap({ rows, meta, verdict }: CourtHeatmapProps)
             ) : (
               <div style={{ marginTop: 4, display: "flex", flexDirection: "column", gap: 2 }}>
                 <div style={{ color: "var(--color-warm-gray)" }}>
-                  Efficiency: {((activeRecord.eFG_PCT ?? activeRecord.FG_PCT ?? 0) * 100).toFixed(1)}% eFG
+                  {(() => {
+                    const three = isThreeZone(activeRecord.zone || hovered || "");
+                    const acc = three && activeRecord.FG_PCT != null
+                      ? activeRecord.FG_PCT
+                      : (activeRecord.eFG_PCT ?? activeRecord.FG_PCT);
+                    const lbl = three && activeRecord.FG_PCT != null ? "3P" : "eFG";
+                    return `Efficiency: ${acc != null ? ((acc * 100).toFixed(1) + "% " + lbl) : "n/a"}`;
+                  })()}
                 </div>
                 <div style={{ color: "var(--color-warm-gray)" }}>
                   Volume: {((activeRecord.SHARE ?? activeRecord.share ?? 0) * 100).toFixed(1)}% of shots
