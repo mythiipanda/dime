@@ -576,11 +576,15 @@ def get_player_intel(player_id: str | int, season: str = SEASON) -> dict[str, An
                              "coverage": "season_line",
                              "note": "game-by-game log not seeded for this "
                                      "player; showing season line"}}
+        from .splits import _resolve_name as _rname3
+        _d = _rname3(int(player_id), str(player_id))
+        # QA #32: facts only - an imperative to the model ("say that
+        # plainly") leaks verbatim into user-facing text.
         return {"tool": "get_player_intel", "ok": False,
-                "error": (f"no {season} rows for {player_id}. Dataset "
-                          f"covers 2024-25 and 2025-26 only; a retired "
-                          f"or out-of-era player has no current-season "
-                          f"data by definition - say that plainly.")}
+                "error": (f"No {season} rows for {_d}. The dataset "
+                          f"covers 2024-25 and 2025-26 only, so a "
+                          f"retired or out-of-era player has no "
+                          f"current-season data.")}
     return {"tool": "get_player_intel", "ok": True, "rows": rows, "meta": meta}
 
 

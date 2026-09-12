@@ -2727,8 +2727,9 @@ def _clean_error_text(text: str) -> str:
     s = re.sub(r"`[^`]*`", " ", s)
     s = re.sub(r"(?is)\bselect\b.*?(;|$)", " ", s)
     s = re.sub(r"\bSQL\b", " ", s, flags=re.IGNORECASE)
+    # QA #32: stripping 3-4 digit runs ate YEARS ("2025-26" -> "-26").
+    # Only long runs (raw ids like 1629029) get scrubbed here.
     s = re.sub(r"\b\d{5,}\b", " ", s)
-    s = re.sub(r"\b\d{3,4}\b", " ", s)
     s = re.sub(r"\s+", " ", s).strip(" .;:,")
     s = re.sub(r"\s+\b(id|on|in|at|for|with|from|and|or)$", "", s, flags=re.IGNORECASE).strip(" .;:,")
     return s
@@ -2763,16 +2764,20 @@ async def analytics_agent(state: DimeState) -> AsyncGenerator[dict[str, Any], No
             subject = "NBA"
         m = re.search(r"(20\d\d-\d\d)", state.get("question", "") or "")
         season_q = m.group(1) if m else (seasons[-1] if seasons else "")
-        if season_q:
-            base = f"No {subject} data found for {season_q}"
-        else:
-            base = f"No {subject} data found"
-        if seasons and seasons != [season_q]:
-            base += f"; warehouse covers {', '.join(seasons)}"
-        elif seasons and len(seasons) > 1:
-            base += f"; warehouse covers {', '.join(seasons)}"
         if cleaned:
-            base += f"; {cleaned[0]}"
+            # QA #32: lead with the specific tool error ("LeBron James
+            # is on PHI per salary data"), not the overclaiming
+            # "No <player> data found" - data often EXISTS elsewhere.
+            base = cleaned[0][0].upper() + cleaned[0][1:]
+            if seasons:
+                base += f" Warehouse coverage: {', '.join(seasons)}"
+        else:
+            if season_q:
+                base = f"No {subject} data found for {season_q}"
+            else:
+                base = f"No {subject} data found"
+            if seasons:
+                base += f"; warehouse covers {', '.join(seasons)}"
         state["analysis"] = base + "."
         yield _event(
             "custom_data", {"node": "analytics", "tables": _flatten_tables(state["tool_results"])}

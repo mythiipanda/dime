@@ -722,6 +722,29 @@ def _current_team_for_player(
     return fallback
 
 
+def _first_name_compatible(want: str, cand: str) -> bool:
+    """Trade-match first-name guard.
+
+    QA #32: ratio>=0.8 lets 'lebron' pass as 'bronny' (0.83) - the son
+    surfaces as a suggestion for the father. Accept equal first names,
+    prefix nicknames of length >= 4 ('steph'/'stephen'), or ratio >= 0.9
+    ('jayson'/'jason' 0.91, 'stephan'/'stephen' 0.93); 0.83 now fails.
+    """
+    import difflib as _dl
+
+    a = (want or "").lower().strip()
+    b = (cand or "").lower().strip()
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    if len(a) >= 4 and b.startswith(a):
+        return True
+    if len(b) >= 4 and a.startswith(b):
+        return True
+    return _dl.SequenceMatcher(None, a, b).ratio() >= 0.9
+
+
 def _resolve_stale_trade_player(want: str, team: str,
                                 con: object = None) -> tuple[str, int] | None:
     """Salary-sheet row for want whose current team is team, else None."""
@@ -775,7 +798,7 @@ def _resolve_stale_trade_player(want: str, team: str,
         # share the surname; seen live on the LAL trade-check path).
         if i >= len(exact) + len(subs):
             c_first = cname.lower().split()[0] if cname.split() else ""
-            if _dl.SequenceMatcher(None, wl_first, c_first).ratio() < 0.8:
+            if not _first_name_compatible(wl_first, c_first):
                 continue
         try:
             cur = _current_team_for_player(cname, None, cteam, con)
@@ -784,6 +807,75 @@ def _resolve_stale_trade_player(want: str, team: str,
         if str(cur).upper() == target:
             return cname, int(csal)
     return None
+
+
+def _locate_player_team(name: str, con: object) -> tuple[str, str, int] | None:
+    """(PLAYER_NAME, current TEAM, salary) for name, any team.
+
+    QA #32: when the caller's team attribution is stale ('LAL: LeBron
+    James'), locate the real team so the trade check can re-attribute
+    instead of erroring. Same first-name guard as the trade matchers.
+    """
+    import difflib as _dl
+
+    w = str(name or "").strip().lower()
+    if not w:
+        return None
+    try:
+        rows = con.execute(
+            "SELECT PLAYER_NAME, SALARY_2025_26, TEAM FROM silver_salaries"
+        ).fetchall()
+    except Exception:
+        return None
+    exact = [r for r in rows if str(r[0]).lower() == w]
+    subs = [r for r in rows if w in str(r[0]).lower() and r not in exact]
+    lows = [str(r[0]).lower() for r in rows]
+    fuzzy: list = []
+    wf = w.split()[0] if w.split() else ""
+    for m in _dl.get_close_matches(w, lows, n=3, cutoff=0.8):
+        for r in rows:
+            if str(r[0]).lower() == m and r not in exact and r not in subs:
+                cf = str(r[0]).lower().split()[0]
+                if _first_name_compatible(wf, cf):
+                    fuzzy.append(r)
+    for cand in (exact + subs + fuzzy)[:1]:
+        cname, csal, cteam = str(cand[0]), int(cand[1] or 0), str(cand[2] or "")
+        try:
+            cur = _current_team_for_player(cname, None, cteam, con)
+        except Exception:
+            cur = cteam
+        return cname, str(cur or cteam).upper(), csal
+    return None
+
+
+def _auto_correct_side(unks: list[str], old_team: str, plist: str,
+                       con: object):
+    """Re-attribute a side whose players are unknown on old_team.
+
+    Returns (new_team, (out, names, unk), corrections) when every
+    unknown on the side locates to one other team on the salary sheet,
+    else None. QA #32: 'LAL: LeBron James' -> priced as PHI-LeBron.
+    """
+    located = []
+    for u in unks:
+        base = u.split(" (suggestions")[0].strip()
+        hit = _locate_player_team(base, con)
+        if hit is None:
+            return None
+        located.append((base,) + hit)
+    new_teams = {t for _, _, t, _ in located}
+    if len(new_teams) != 1:
+        return None
+    new_team = new_teams.pop()
+    if new_team == str(old_team).upper():
+        return None
+    matched = _match_trade_players(new_team, plist, con)
+    corrections = [
+        f"{cname} is on {t} per the 2026-27 salary sheet "
+        f"(not {str(old_team).upper()}); computed for the corrected team"
+        for base, cname, t, _s in located
+    ]
+    return new_team, matched, corrections
 
 
 def _payroll(team: str, con: object = None) -> tuple[int, list[dict]]:
@@ -957,8 +1049,9 @@ def _match_trade_players(team: str, names: str,
             hit = next((p for p in roster if w in p["player"].lower()), None)
             if hit is None:
                 fb = _dl.get_close_matches(w, lows, n=1, cutoff=0.8)
-                if fb and _dl.SequenceMatcher(
-                        None, w.split()[0], fb[0].split()[0]).ratio() >= 0.8:
+                if fb and _first_name_compatible(
+                        w.split()[0] if w.split() else "",
+                        fb[0].split()[0] if fb[0].split() else ""):
                     hit = by_low[fb[0]]
             if hit:
                 matched.append(hit["player"])
@@ -969,7 +1062,10 @@ def _match_trade_players(team: str, names: str,
                     matched.append(stale[0])
                     total_out += stale[1]
                 else:
-                    sug = [disp[s] for s in _dl.get_close_matches(w, lows, n=2, cutoff=0.6)]
+                    sug = [disp[s] for s in _dl.get_close_matches(w, lows, n=2, cutoff=0.6)
+                           if _first_name_compatible(
+                               w.split()[0] if w.split() else "",
+                               s.split()[0] if s.split() else "")]
                     unknown.append(f"{orig} (suggestions: {', '.join(sug)})" if sug else orig)
     finally:
         if own:
@@ -1055,6 +1151,21 @@ def get_trade_check(
     try:
         out_a, names_a, unk_a = _match_trade_players(team_a, players_a, con)
         out_b, names_b, unk_b = _match_trade_players(team_b, players_b, con)
+        corrections: list[str] = []
+        if unk_a or unk_b:
+            # QA #32: stale attribution is recoverable - locate each
+            # unknown on the salary sheet and re-run the legality math
+            # with the corrected team instead of returning a raw error.
+            if unk_a:
+                fix = _auto_correct_side(unk_a, team_a, players_a, con)
+                if fix:
+                    team_a, (out_a, names_a, unk_a), corr = fix
+                    corrections.extend(corr)
+            if unk_b:
+                fix = _auto_correct_side(unk_b, team_b, players_b, con)
+                if fix:
+                    team_b, (out_b, names_b, unk_b), corr = fix
+                    corrections.extend(corr)
         if unk_a or unk_b:
             parts = []
             if unk_a:
@@ -1110,6 +1221,8 @@ def get_trade_check(
                                 **{k: v for k, v in state_b.items()}},
                      "legal": not issues, "issues": issues, "checks": checks,
                      "salary_date": salary_date,
+                     **({"attribution_corrections": corrections}
+                        if corrections else {}),
                      "disclaimer": "Estimate only, rules simplified. Skips cash, "
                      "prior trade exceptions, taxpayer midlevel, frozen pick, Stepien, "
                      "base-year, trade-kicker, minimum-salary, and sign-and-trade rules. "
@@ -1151,6 +1264,15 @@ def get_trade_value(
     try:
         _, names_a, unk_a = _match_trade_players(team_a, players_a, con)
         _, names_b, unk_b = _match_trade_players(team_b, players_b, con)
+        if unk_a or unk_b:
+            if unk_a:
+                fix = _auto_correct_side(unk_a, team_a, players_a, con)
+                if fix:
+                    team_a, (_, names_a, unk_a), _c = fix
+            if unk_b:
+                fix = _auto_correct_side(unk_b, team_b, players_b, con)
+                if fix:
+                    team_b, (_, names_b, unk_b), _c = fix
         if unk_a or unk_b:
             parts = []
             if unk_a:
