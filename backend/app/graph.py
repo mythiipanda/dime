@@ -3303,9 +3303,22 @@ def _scrub_final_text(text: str) -> str:
         r"warehouse quer\w*)\b[^.!?\n]*[.!?]", " ", cleaned)
     # "Based on scout summary and league data" - same class as
     # "per the scout summary".
+    def _strip_based_prefix(m: "re.Match[str]") -> str:
+        # Sentence-start removal must not leave a lowercase opener
+        # ("Based on the available league data, the highest..." lost
+        # its capital). Mid-sentence removals stay lowercase.
+        pre = m.string[: m.start()].rstrip()
+        rest = m.string[m.end():]
+        if (not pre or pre.endswith((".", "!", "?", "\n"))) and rest:
+            return ""  # capitalization handled by the post-pass below
+        return ""
     cleaned = re.sub(
-        r"[Bb]ased on (?:the )?(?:scout|league|team|\w+ desk)"
-        r" (?:summary|data),?", "", cleaned)
+        r"[Bb]ased on (?:the )?(?:(?:available|current|latest|full) )*"
+        r"(?:scout|league|team|\w+ desk) (?:summary|data),?",
+        "", cleaned)
+    cleaned = cleaned.lstrip()
+    if cleaned and cleaned[0].islower():
+        cleaned = cleaned[0].upper() + cleaned[1:]
     # Field-name parrots: the model quotes evidence keys ("ambiguity
     # note") and summary wording ("scout summary") as prose.
     cleaned = re.sub(r"\bambiguity[_ ]note\b", "note", cleaned,

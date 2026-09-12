@@ -30,3 +30,12 @@ def test_true_absence_kept():
 def test_no_payloads_is_noop():
     text = "Heat win total is missing."
     assert _strip_false_absence(text, []) == text
+
+
+def test_scrub_based_on_available_league_data():
+    from app.graph import _scrub_final_text
+    out = _scrub_final_text(
+        "Based on the available league data, the highest score is 144.")
+    assert out == "The highest score is 144."
+    out2 = _scrub_final_text("He leads. Based on league data, X is next.")
+    assert out2 == "He leads. X is next."
