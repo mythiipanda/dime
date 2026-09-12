@@ -3200,6 +3200,12 @@ def _scrub_final_text(text: str) -> str:
                      "the data", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"\bwarehouse tables?\b", "the dataset", cleaned,
                      flags=re.IGNORECASE)
+    # QA #75 nit: "per the warehouse output" leaks the same internal
+    # term in a softer form.
+    cleaned = re.sub(r"\b(?:per|from|in|via) (?:the )?warehouse (?:output|data|tables?)\b",
+                     "from the dataset", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\bwarehouse output\b", "the dataset", cleaned,
+                     flags=re.IGNORECASE)
 
     # F51: memory-persistence claims ("Noted your favorite team!",
     # "I'll remember that") imply cross-session memory that does not

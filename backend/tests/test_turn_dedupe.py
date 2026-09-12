@@ -320,3 +320,11 @@ def test_memory_ack_survives_scrub():
     from app.graph import _memory_ack, _scrub_final_text
     ack = _memory_ack("My favorite team is the Lakers. Remember that.")
     assert _scrub_final_text(ack) == ack
+
+
+def test_warehouse_output_phrasing_scrubbed():
+    from app.graph import _scrub_final_text
+    out = _scrub_final_text(
+        "The Atlanta Hawks lead with 2462, per the warehouse output.")
+    assert "warehouse" not in out.lower()
+    assert "2462" in out
