@@ -1912,7 +1912,7 @@ async def text_to_sql(question: str) -> dict[str, Any]:
         "WHERE _season = '2025-26' ORDER BY STL DESC LIMIT 1"
     )
     feedback = ""
-    for _ in range(3):
+    for _ in range(2):  # F44: 3 retries x LLM latency fed 300s desk loops
         try:
             resp = await invoke_with_fallback(
                 "mistral", "ministral-8b-2512",
@@ -1961,7 +1961,9 @@ async def text_to_sql(question: str) -> dict[str, Any]:
                 "sql": sql,
                 "meta": {"sql": sql[:500], "source": "warehouse"}}
     return {"tool": "text_to_sql", "ok": False,
-            "error": "sql failed after retries" + feedback[-160:]}
+            "error": ("the warehouse query did not succeed after several "
+                      "attempts; answer from results already gathered or "
+                      "state plainly that it could not be computed")}
 
 
 def _execute_with_timeout(con, sql: str, timeout_s: float):

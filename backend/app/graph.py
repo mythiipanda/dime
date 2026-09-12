@@ -1037,7 +1037,7 @@ def _trace_replay_events(out: dict[str, Any]) -> list[dict[str, Any]]:
         terr = None
         try:
             if tstatus != "ok" and te.get("error"):
-                terr = str(te.get("error"))[:160]
+                terr = _user_safe_tool_error(tname, str(te.get("error")))
         except Exception:
             terr = None
         rdata: dict[str, Any] = {
@@ -1089,11 +1089,33 @@ def _tool_result_payload(node: str, name: str, out: dict[str, Any], ms: int,
     if sql:
         payload["sql"] = sql
     if status != "ok":
+        # F43/F44: this field streams live into the progress UI, which
+        # rendered raw SQL errors ('ambiguous reference to column
+        # TEAM_ID ... LINE 42'). The model still sees the full error in
+        # state; the stream gets a sanitized line.
         try:
-            payload["error"] = str(out.get("error"))[:160]
+            payload["error"] = _user_safe_tool_error(
+                name, str(out.get("error") or ""))
         except Exception:
             payload["error"] = "failed"
     return payload
+
+
+def _user_safe_tool_error(name: str, err: str) -> str:
+    """One sanitized clause for streamed tool errors. Never SQL, never
+    column names, never sandbox internals."""
+    if not err:
+        return "failed"
+    low = err.lower()
+    if "disabled for this run" in low:
+        return "skipped after repeated failures"
+    if "unknown player" in low:
+        base = _clean_error_text(err)
+        return (base[:120] or "player not found")
+    base = _clean_error_text(err)
+    if not base or len(base) < 12 or "column" in low or "select" in low:
+        return "that data pull did not complete"
+    return base[:120]
 
 
 async def _triage_tool(name: str, args: dict[str, Any], state: dict,

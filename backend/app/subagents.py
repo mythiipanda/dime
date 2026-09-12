@@ -210,12 +210,25 @@ async def _run_desk(
                         "tool_trace": trace}
             if tool_calls:
                 break
+    _fails: dict[str, int] = {}
     for call in tool_calls:
         if calls_made >= WORKER_BUDGET:
             break
         fname = call.get("name", "")
         fn = by_name.get(fname)
         if fn is None:
+            continue
+        if _fails.get(fname, 0) >= 2:
+            # F44: no circuit breaker meant a desk burned 301s looping
+            # the same broken SQL pattern. Two failures disables the
+            # tool for the rest of this desk run.
+            out = {"tool": fname, "ok": False,
+                   "error": (fname + " disabled for this run after "
+                             "repeated failures; answer from the "
+                             "results already gathered or state the "
+                             "gap plainly.")}
+            collected.append(out)
+            calls_made += 1
             continue
         _t0 = _time.time()
         try:
@@ -224,6 +237,9 @@ async def _run_desk(
         except Exception as exc:
             out = {"tool": fname, "error": str(exc)[:160]}
             collected.append(out)
+        if isinstance(out, dict) and (out.get("ok") is False
+                                      or out.get("error")):
+            _fails[fname] = _fails.get(fname, 0) + 1
         _ms = int((_time.time() - _t0) * 1000)
         _rows = _row_count(out.get("rows")) if isinstance(out, dict) else _row_count(out)
         _st = _trace_status(out)
@@ -271,14 +287,26 @@ async def _run_desk(
             fn = by_name.get(call.get("name", ""))
             if fn is None:
                 continue
-            _t0 = _time.time()
             _cname = str(call.get("name", ""))
+            if _fails.get(_cname, 0) >= 2:
+                out = {"tool": _cname, "ok": False,
+                       "error": (_cname + " disabled for this run after "
+                                 "repeated failures; answer from the "
+                                 "results already gathered or state the "
+                                 "gap plainly.")}
+                collected.append(out)
+                calls_made += 1
+                continue
+            _t0 = _time.time()
             try:
                 out = await _invoke_capped(fn, call.get("args", {}) or {}, str(call.get("name", "")))
                 collected.append(out if isinstance(out, dict) else {"rows": out})
             except Exception as exc:
                 out = {"tool": _cname, "error": str(exc)[:160]}
                 collected.append(out)
+            if isinstance(out, dict) and (out.get("ok") is False
+                                          or out.get("error")):
+                _fails[_cname] = _fails.get(_cname, 0) + 1
             _ms = int((_time.time() - _t0) * 1000)
             _te = {
                 "name": _cname, "label": _desk_tool_label(_cname),
@@ -470,6 +498,10 @@ LEAGUE_BRIEF = (
     "THEN call get_streaks. "
     "IF the task asks how a player has done against one opponent team, "
     "THEN call get_head_to_head. "
+    "IF you cannot compute the exact thing asked (e.g. a pre/post "
+    "All-Star split fails), say so cleanly and stop - never pad the "
+    "answer with a loosely related stat that does not answer the "
+    "question (a steals leader is not an improvement answer). "
     "IF the task asks how one TEAM did against another TEAM, their "
     "record or season series or meetings ('how did the Thunder do "
     "against the Spurs', 'Lakers vs Celtics record'), THEN call "
