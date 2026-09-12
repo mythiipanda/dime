@@ -502,10 +502,19 @@ def get_team_leaders(stat_category: str = "AST",
             "GP": int(gp),
             "PER_GAME": per_game,
         })
+    leader = rows[0] if rows else None
+    leader_line = (f"{leader['TEAM']} lead with {leader[stat]} total "
+                   f"{stat} ({leader['PER_GAME']} per game over "
+                   f"{leader['GP']} games)") if leader else ""
     meta = {"stat_category": stat, "season": season, "source": "warehouse",
             "rows": len(rows),
+            "leader_line": leader_line,
             "note": "team totals summed from player game logs "
-                    "(regular season)"}
+                    "(regular season). Cite the leader's TOTAL value "
+                    "and per-game verbatim from leader_line - never "
+                    "drop the total (QA: points narrative shipped "
+                    "'scored the most points with total points and "
+                    "122.1 per game', value missing)."}
     return {"tool": "get_team_leaders", "ok": True, "rows": rows,
             "meta": meta}
 

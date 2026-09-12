@@ -3196,8 +3196,10 @@ def _scrub_final_text(text: str) -> str:
     # note") and summary wording ("scout summary") as prose.
     cleaned = re.sub(r"\bambiguity[_ ]note\b", "note", cleaned,
                      flags=re.IGNORECASE)
+    # QA #76: this used to rewrite to "the data", colliding into
+    # "Data provided by the data and split records".
     cleaned = re.sub(r"\b(?:the )?(?:scout|league|team) summary\b",
-                     "the data", cleaned, flags=re.IGNORECASE)
+                     "the dataset", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"\bwarehouse tables?\b", "the dataset", cleaned,
                      flags=re.IGNORECASE)
     # QA #75 nit: "per the warehouse output" leaks the same internal

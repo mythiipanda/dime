@@ -74,3 +74,17 @@ def test_tool_hou_not_double_counted():
     hou = next(r for r in out["rows"] if r["TEAM"] == "Houston Rockets")
     assert hou["PTS"] == 9449
     assert hou["GP"] == 82
+
+
+def test_leader_line_carries_total():
+    out = get_team_leaders.invoke({"stat_category": "PTS"})
+    line = out["meta"]["leader_line"]
+    assert "10010" in line and "Denver Nuggets" in line and "122.1" in line
+
+
+def test_league_summary_scrub_no_data_collision():
+    from app.graph import _scrub_final_text
+    out = _scrub_final_text(
+        "Data provided by the league summary and split records.")
+    assert "the data " not in out
+    assert "the dataset" in out
