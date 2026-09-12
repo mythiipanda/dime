@@ -63,6 +63,7 @@ from .prediction import get_game_prediction
 from .priors import get_rapm_prior
 from .shared import resolve_entity, run_python, search_nba
 from .headtohead import get_head_to_head
+from .team import get_season_series
 from .gamelog import search_game_logs
 from .splits import get_matchup_splits, get_regression_check
 from .streaks import get_streaks
@@ -167,6 +168,7 @@ v1_tools: list[BaseTool] = [
     remove_watchlist_item,
     get_streaks,
     get_head_to_head,
+    get_season_series,
     search_game_logs,
     get_game_prediction,
     get_team_shot_zones,

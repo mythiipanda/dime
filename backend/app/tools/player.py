@@ -264,6 +264,14 @@ async def get_compare(
                 "rim_share": None, "three_share": None}
         except Exception:
             diet = {"rim_share": None, "three_share": None}
+        # QA #34: blank compare cells get cited from other evidence
+        # streams anyway - name what is unavailable so the card and the
+        # narrative can say N/A instead of leaving silent blanks.
+        missing: list[str] = []
+        if diet.get("three_share") is None:
+            missing.append("three_share")
+        if diet.get("rim_share") is None:
+            missing.append("rim_share")
         gp = len(games)
 
         def _sum(key: str) -> float:
@@ -363,6 +371,8 @@ async def get_compare(
             "rim_share": diet.get("rim_share"),
             "three_share": diet.get("three_share"),
             "last5": [g.get("PTS", 0) for g in last.get("rows", [])],
+            "missing": (missing
+                        + (["net_onoff"] if net_onoff is None else [])),
             "sub_call_errors": sub_errors,
         }
 
@@ -402,18 +412,30 @@ def _metric_row(metric: str, label: str, method: str, a: object, b: object,
         except (TypeError, ValueError):
             return None
     fa, fb = _f(a), _f(b)
+    # QA #34: "edges by 0.6 eFG points" is noise presented as a win.
+    # Fraction-scale metrics (0-1: ts, efg, shares) need >= 0.02 to
+    # lead; counting-scale metrics need >= 1 pct relative separation.
+    if fa is not None and fb is not None and max(abs(fa), abs(fb)) <= 1.5:
+        eps = 0.02
+    else:
+        eps = 0.01 * max(abs(fa or 0), abs(fb or 0), 1.0)
     if fa is None or fb is None:
         leader = "na"
-    elif abs(fa - fb) < 1e-9:
+    elif abs(fa - fb) < eps:
         leader = "tie"
     elif (fa > fb) == higher_wins:
         leader = "a"
     else:
         leader = "b"
     who = na if leader == "a" else nb if leader == "b" else ""
+    if who:
+        note = f"{who} leads {label}."
+    elif leader == "tie" and fa is not None and fb is not None:
+        note = f"{label} effectively even (gap within noise)."
+    else:
+        note = f"{label} tied or missing."
     return {"metric": metric, "label": label, "method": method,
-            "a": fa, "b": fb, "leader": leader,
-            "note": f"{who} leads {label}." if who else f"{label} tied or missing."}
+            "a": fa, "b": fb, "leader": leader, "note": note}
 
 
 @tool

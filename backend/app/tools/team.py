@@ -130,6 +130,118 @@ async def get_preview(
                      "injuries_ignored": True}}
 
 
+def _series_date_key(s: object) -> str:
+    import datetime as _dt
+
+    raw = str(s or "").strip()
+    for fmt in ("%b %d, %Y", "%B %d, %Y"):
+        try:
+            return _dt.datetime.strptime(raw.title(), fmt).date().isoformat()
+        except (TypeError, ValueError):
+            continue
+    return raw
+
+
+@tool
+def get_season_series(team_a: str, team_b: str,
+                      season: str = SEASON) -> dict[str, Any]:
+    """Head-to-head between two TEAMS: every meeting this season, regular
+    season and playoffs, with winner and scores when tracked. Use for
+    "how did X do against Y", "X vs Y record", "season series"."""
+    from .competitive import _resolve_team_abbr
+    from nba_api.stats.static import teams as _static_teams
+
+    a = _resolve_team_abbr(team_a)
+    b = _resolve_team_abbr(team_b)
+    if not a or not b:
+        return {"tool": "get_season_series", "ok": False,
+                "error": f"could not resolve team(s): {team_a} / {team_b}"}
+    if a == b:
+        return {"tool": "get_season_series", "ok": False,
+                "error": "two different teams needed"}
+    ids = {str(t.get("abbreviation") or "").upper(): t.get("id")
+           for t in _static_teams.get_teams()}
+    id_a, id_b = ids.get(a), ids.get(b)
+
+    from .. import store as _store
+
+    games: list[dict[str, Any]] = []
+    con = _store.connect()
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        # Regular season: team game log, A's perspective, joined to B's
+        # row on Game_ID for both scores.
+        if "silver_team_games" in tables and id_a is not None:
+            rows = con.execute(
+                """SELECT g.Game_ID, g.GAME_DATE, g.MATCHUP, g.WL, g.PTS,
+                          o.PTS
+                   FROM silver_team_games g
+                   LEFT JOIN silver_team_games o
+                     ON o._season = g._season AND o.Game_ID = g.Game_ID
+                    AND o._entity = ?
+                   WHERE g._season = ? AND g._entity = ?
+                     AND g.MATCHUP ILIKE ?""",
+                [f"team:{id_b}", season, f"team:{id_a}", f"%{b}%"],
+            ).fetchall()
+            for gid, gdate, matchup, wl, pts_a, pts_b in rows:
+                games.append({
+                    "game_id": str(gid), "date": str(gdate),
+                    "matchup": str(matchup), "phase": "regular season",
+                    "winner": a if str(wl).upper() == "W"
+                    else (b if str(wl).upper() == "L" else None),
+                    f"{a.lower()}_pts": pts_a,
+                    f"{b.lower()}_pts": pts_b,
+                })
+        # Playoffs: player gamelog table, A-perspective rows only
+        # (MATCHUP starts with the row owner's team), one row per game.
+        # Team scores are not tracked per playoff game - winner only.
+        if "silver_playoff_gamelogs" in tables:
+            prows = con.execute(
+                """SELECT DISTINCT Game_ID, GAME_DATE, MATCHUP, WL
+                   FROM silver_playoff_gamelogs
+                   WHERE _season = ? AND MATCHUP ILIKE ?""",
+                [season, f"{a} % {b}"],
+            ).fetchall()
+            for gid, gdate, matchup, wl in prows:
+                games.append({
+                    "game_id": str(gid), "date": str(gdate),
+                    "matchup": str(matchup), "phase": "playoffs",
+                    "winner": a if str(wl).upper() == "W"
+                    else (b if str(wl).upper() == "L" else None),
+                })
+    finally:
+        con.close()
+
+    # F40: an empty lookup must NOT become a confident 0-0 answer.
+    if not games:
+        return {"tool": "get_season_series", "ok": False,
+                "error": (f"No games between {a} and {b} found in the "
+                          f"dataset (coverage: {season} regular season "
+                          f"and playoffs). Do not report a 0-0 record - "
+                          f"say the meetings are not in the dataset.")}
+    games.sort(key=lambda g: _series_date_key(g["date"]))
+    wins_a = sum(1 for g in games if g.get("winner") == a)
+    wins_b = sum(1 for g in games if g.get("winner") == b)
+    po = [g for g in games if g["phase"] == "playoffs"]
+    summary = {
+        "games": len(games),
+        f"{a.lower()}_wins": wins_a,
+        f"{b.lower()}_wins": wins_b,
+    }
+    if po:
+        summary["playoff_meetings"] = len(po)
+        summary[f"{a.lower()}_playoff_wins"] = sum(
+            1 for g in po if g.get("winner") == a)
+        summary[f"{b.lower()}_playoff_wins"] = sum(
+            1 for g in po if g.get("winner") == b)
+    return {"tool": "get_season_series", "ok": True,
+            "rows": {"teams": [a, b], "summary": summary, "games": games},
+            "meta": {"source": "warehouse team + playoff gamelogs",
+                     "season": season,
+                     "note": "playoff meetings carry winner only; "
+                             "team scores tracked for regular season"}}
+
+
 @tool
 def get_team_hub(team_id: str | int, season: str = SEASON) -> dict[str, Any]:
     """Game log plus roster for one team id. Warehouse first."""
