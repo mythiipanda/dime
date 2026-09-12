@@ -300,12 +300,32 @@ async def _run_desk(
         and _row_count(c.get("rows")) > 0 for c in collected
     )
     if not has_data:
-        # QA F13 residue: this string surfaced verbatim in final answers
-        # ("No Kobe Bryant data found; no further detail available...").
-        # Make it read as an honest user-safe sentence if it ever leaks.
-        return {"agent": desk, "ok": False,
-                "error": ("no data on that angle in the dataset "
-                          "(coverage: 2024-25 and 2025-26 seasons)"),
+        # QA #31: the generic message swallowed the one informative
+        # error in the trace - "How did Luka do in the 2026 playoffs?"
+        # dead-ended while the playoff tool KNEW he was listed inactive
+        # for all 10 LAL games. Surface the most informative tool error
+        # (longest specific message, prefers ones carrying real facts
+        # like inactivity notes or coverage seasons) instead.
+        errs = []
+        for c in collected:
+            if not isinstance(c, dict):
+                continue
+            e = c.get("error")
+            if isinstance(e, str) and e.strip():
+                errs.append(e.strip())
+        informative = next(
+            (e for e in errs if "was listed inactive" in e),
+            None)
+        if informative is None and errs:
+            informative = max(errs, key=len)
+        if informative:
+            err = informative
+        else:
+            # QA F13 residue: read as an honest user-safe sentence if
+            # this ever leaks into a final answer.
+            err = ("no data on that angle in the dataset "
+                   "(coverage: 2024-25 and 2025-26 seasons)")
+        return {"agent": desk, "ok": False, "error": err,
                 "tool_trace": trace}
     try:
         text = await _asyncio.wait_for(

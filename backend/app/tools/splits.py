@@ -32,10 +32,11 @@ VERDICT_RULES = [
     ' "no underlying driver found; expected to drift back toward baseline".',
 ]
 
+# QA #31: this surfaced verbatim on the waiver card - internal table
+# names are plumbing, never user-facing (F25-class). Say the fact only.
 CAREER_UNAVAILABLE_NOTE = (
-    "silver_hist_player_seasons not seeded and silver_hist_gamelogs carries"
-    " no player key, so no career baseline exists. Verdict leans on season"
-    " baseline plus driver analysis."
+    "Career baseline is not available for this player yet, so the "
+    "verdict leans on this season's baseline plus driver analysis."
 )
 
 
@@ -407,6 +408,18 @@ def get_regression_check(player: str, stat: str = "PTS", n: int = 10,
     ]
     scales = {"true_shooting": 20.0, "minutes": 0.25, "shot_volume": 1.0 / 3.0,
               "opponent_defense": 0.25}
+    # QA #31: the waiver card printed raw decimals ("true shooting 0.5
+    # vs 0.5 -0.05") with no units. Scale percents to 0-100 and tag
+    # every driver with an explicit unit.
+    _UNITS = {"true_shooting": "pct", "minutes": "min", "shot_volume": "fga",
+              "opponent_defense": "rank"}
+    for d in drivers_all:
+        d["unit"] = _UNITS.get(d.get("factor"), "")
+        if d.get("factor") == "true_shooting":
+            for k in ("window", "baseline", "delta"):
+                v = d.get(k)
+                if isinstance(v, (int, float)) and abs(v) <= 1.5:
+                    d[k] = round(v * 100, 1)
     drivers = sorted(drivers_all,
                      key=lambda d: abs(_f(d.get("delta"))
                                        * scales.get(d.get("factor"), 1.0)),
