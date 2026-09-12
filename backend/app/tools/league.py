@@ -1966,7 +1966,21 @@ def get_playoff_sim(season: str = SEASON, sims: int = 2000) -> dict[str, Any]:
         # instead of an error the asker cannot use.
         _po = get_playoffs.invoke({"season": season})
         if _po.get("ok"):
-            _rows = _po.get("rows") or {}
+            _rows = dict(_po.get("rows") or {})
+            # QA F36: the LLM narrates from ROWS, not meta - it framed
+            # these actuals as "simulation output" despite the meta note.
+            # Put the honesty where the model reads: inside the payload.
+            _champ = _rows.get("champion")
+            _rec = _rows.get("champion_record") or {}
+            _rows["result_kind"] = "ACTUAL_RESULTS_NOT_SIMULATION"
+            _rows["summary"] = (
+                f"The {season} season is complete - these are the ACTUAL "
+                f"playoff results, not a simulation"
+                + (f": {_champ} won the championship "
+                   f"{_rec.get('w')}-{_rec.get('l')}. " if _champ else ". ")
+                + "Monte Carlo simulated odds are unavailable for a "
+                  "completed season; they return when the next season "
+                  "begins. Present these numbers as final results only.")
             return {"tool": "get_playoff_sim", "ok": True,
                     "rows": _rows,
                     "meta": {"season": season, "offseason": True,
