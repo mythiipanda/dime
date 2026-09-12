@@ -2340,6 +2340,32 @@ def _validate_readonly_sql(sql: str, present: set[str]) -> str:
     return sql
 
 
+def _attach_player_names(rows: list[dict]) -> None:
+    """F63: gamelog tables carry Player_ID but no name column, and a
+    team-wide pull then reads to compose as "no individual player
+    statistics by name" (the Finals switch-back intermittency - the
+    named route answered, the anonymized route dead-ended). Resolve
+    names from the static list when the SQL skipped the join."""
+    if not rows:
+        return
+    has_pid = any("Player_ID" in r or "player_id" in r for r in rows)
+    has_name = any(
+        any(str(k).lower() in ("player", "player_name", "name")
+            for k in r)
+        for r in rows)
+    if not has_pid or has_name:
+        return
+    from .splits import _resolve_name as _rname
+    for r in rows:
+        pid = r.get("Player_ID", r.get("player_id"))
+        if pid is None:
+            continue
+        try:
+            r["PLAYER"] = _rname(int(pid), str(pid))
+        except (TypeError, ValueError):
+            pass
+
+
 @tool
 async def text_to_sql(question: str) -> dict[str, Any]:
     """Answer a data question with SQL over warehouse tables. SELECT only."""
@@ -2469,8 +2495,10 @@ async def text_to_sql(question: str) -> dict[str, Any]:
                 "(SELECT DISTINCT col FROM table LIMIT 20)."
             )
             continue
+        out_rows = [dict(zip(names, r)) for r in rows[:25]]
+        _attach_player_names(out_rows)
         return {"tool": "text_to_sql", "ok": True,
-                "rows": [dict(zip(names, r)) for r in rows[:25]],
+                "rows": out_rows,
                 "sql": sql,
                 "meta": {"sql": sql[:500], "source": "warehouse"}}
     return {"tool": "text_to_sql", "ok": False,

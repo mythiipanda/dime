@@ -90,3 +90,17 @@ def test_tool_output_prefix_stripped_before_tool_sentence_drop():
     out2 = _scrub_final_text(
         "Based on the get_standings tool output, OKC won 64.")
     assert out2 == "OKC won 64."
+
+
+def test_text_to_sql_attaches_player_names():
+    # F63: a team-wide playoff gamelog pull returns Player_ID but no
+    # name column, and compose dead-ended on "no individual player
+    # statistics by name". Names must be attached from the static list.
+    from app.tools.league import _attach_player_names
+    rows = [{"Player_ID": 1629638, "PTS": 35, "MATCHUP": "SAS @ DEN"}]
+    _attach_player_names(rows)
+    assert rows[0]["PLAYER"] == "Nickeil Alexander-Walker"
+    named = [{"Player_ID": 1, "PLAYER": "Already Named", "PTS": 10}]
+    _attach_player_names(named)
+    assert named[0]["PLAYER"] == "Already Named"
+    _attach_player_names([])  # no-op, no raise
