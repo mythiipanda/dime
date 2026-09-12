@@ -27,6 +27,22 @@ def _is_three_zone(name: object) -> bool:
     return "3" in z or "corner" in z or "break" in z
 
 
+def _display_name(raw: object) -> str:
+    """Names in, names out: desks pass ids verbatim per the id contract,
+    so numeric ids resolve back to display names for verdicts/tables."""
+    txt = str(raw or "").strip()
+    if not txt.isdigit():
+        return txt
+    try:
+        from nba_api.stats.static import players as _pl_static
+        hit = _pl_static.find_player_by_id(int(txt))
+        if hit and hit.get("full_name"):
+            return str(hit["full_name"])
+    except Exception:
+        pass
+    return txt
+
+
 def zone_diet(rows: object) -> dict[str, float | None]:
     try:
         items = list(rows or [])
@@ -320,7 +336,7 @@ async def get_compare(
                     pass
                 break
         return {
-            "name": who,
+            "name": _display_name(who),
             "player_id": pid,
             "team": team_abbr,
             "team_record": record,
@@ -1641,6 +1657,9 @@ async def get_shot_compare(a: str, b: str, season: str = SEASON) -> dict[str, An
         return None
 
     ma, mb = await _asyncio.gather(_zones(a), _zones(b))
+    # Verdicts and edges must read as names, not raw ids: desks pass ids
+    # verbatim per the id-contract, so resolve display names here.
+    a, b = _display_name(a), _display_name(b)
     missing = [n for n, m in ((a, ma), (b, mb)) if not m]
     rows: list[dict[str, Any]] = []
     for z in sorted(set(ma) | set(mb)):
