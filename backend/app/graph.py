@@ -2939,6 +2939,18 @@ def _scrub_final_text(text: str) -> str:
         cleaned = " ".join(kept_s)
         cleaned = re.sub(r" \n", "\n", cleaned)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    # QA #46 structural net: an answer that reads like an error and
+    # carries no data claim at all is replaced wholesale - pattern
+    # lists alone kept missing new exception phrasings ('async for'
+    # requires..., 'no such column ...').
+    _errish = re.search(
+        r"error|exception|unavailable|requires an object|traceback|"
+        r"did not succeed|not defined|no such column|failed after|"
+        r"coroutine|aiter", cleaned, re.IGNORECASE)
+    if _errish and not re.search(r"\d", cleaned):
+        return ("I could not compute that from the dataset - the "
+                "warehouse query for it did not run. Try a narrower "
+                "ask (one player, one stat) or a different angle.")
     return cleaned.strip()
 
 
