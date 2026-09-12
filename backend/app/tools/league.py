@@ -252,7 +252,19 @@ def get_leaders(stat_category: str = "PTS", season: str = SEASON) -> dict[str, A
                 r["PERCENTILE"] = round(100 * (1 - (rank - 1) / total), 1)
     except Exception:
         pass
-    return {"tool": "get_leaders", "ok": True, "rows": rows, "meta": meta}
+    # Pin the asked-for stat column right after the identity columns so
+    # capped table renderers (12-column cap) can never cut it (QA F8:
+    # the AST leaders table rendered without an AST column).
+    pin = ["RANK", "PLAYER", "TEAM", stat_category, "GP", "MIN"]
+    pinned = []
+    for r in rows:
+        if not isinstance(r, dict):
+            pinned.append(r)
+            continue
+        keyed = {k: r[k] for k in pin if k in r}
+        keyed.update({k: v for k, v in r.items() if k not in keyed})
+        pinned.append(keyed)
+    return {"tool": "get_leaders", "ok": True, "rows": pinned, "meta": meta}
 
 
 @tool
@@ -1938,6 +1950,15 @@ def get_playoff_sim(season: str = SEASON, sims: int = 2000) -> dict[str, Any]:
         sims = max(100, min(int(sims or 2000), 10000))
     except (TypeError, ValueError):
         sims = 2000
+    from ._core import season_static as _season_static
+    if _season_static(season):
+        # QA F10: simulating a completed season yields degenerate odds
+        # (1 = already happened). Point at the actual bracket instead.
+        return {"tool": "get_playoff_sim", "ok": False,
+                "error": f"{season} is complete - simulations are "
+                         f"meaningless for a finished season. Use "
+                         f"get_playoffs for the actual bracket/results.",
+                "meta": {"season": season, "offseason": True}}
     out = run_playoff_sim(season, sims)
     if not out.get("teams"):
         return {"tool": "get_playoff_sim", "ok": False,
@@ -2125,6 +2146,8 @@ def get_risers(season: str = "2025-26", weeks: int = 4) -> dict[str, Any]:
     if not rows:
         return {"tool": "get_risers", "ok": False,
                 "error": f"no games for {season}"}
+    from ._core import season_static as _season_static
+    offseason = _season_static(season)
     by_team: dict[str, list] = {}
     for t, _, w in rows:
         if t:
@@ -2140,10 +2163,19 @@ def get_risers(season: str = "2025-26", weeks: int = 4) -> dict[str, Any]:
                       "LAST10_PCT": round(lp, 3), "SEASON_PCT": round(sp, 3),
                       "DELTA": round(lp - sp, 3)})
     table.sort(key=lambda d: d["DELTA"], reverse=True)
+    meta = {"source": "warehouse", "season": season,
+            "window": n, "weeks": weeks}
+    if offseason:
+        # QA F12: in the offseason these are FINAL season windows (form at
+        # the end of a completed season), not current risers - no games
+        # exist to rise in. Say so in-band so desks cannot misframe it.
+        meta["offseason"] = True
+        meta["note"] = (f"{season} is complete; these are end-of-season "
+                        f"form windows, not current risers. No NBA games "
+                        f"until preseason.")
     return {"tool": "get_risers", "ok": True,
             "rows": {"risers": table[:5], "fallers": table[-5:][::-1]},
-            "meta": {"source": "warehouse", "season": season,
-                     "window": n, "weeks": weeks}}
+            "meta": meta}
 
 
 def _ensure_leaderboard_snapshots(con: Any) -> None:
