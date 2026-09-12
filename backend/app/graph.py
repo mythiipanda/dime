@@ -2356,6 +2356,7 @@ _DISPLAY_TITLES = {
     "get_award_race": "Award race",
     "get_trade_value": "Trade value",
     "get_matchup_preview": "Matchup preview",
+    "get_standings_deep": "Standings deep cuts",
 }
 
 _KIND_FOR_TOOL = {
