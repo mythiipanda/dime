@@ -218,6 +218,14 @@ def get_standings_deep(season: str = SEASON, top: int = 5) -> dict[str, Any]:
                                  "fading": momentum[-top:][::-1]}},
             "meta": {"source": "warehouse", "season": season, "top": top,
                      "teams": len(teams),
+                     # QA #72: the count leader must survive into the
+                     # prose - analyst narration over the raw board
+                     # sometimes named no leader at all. The label lives
+                     # in meta so every path narrates it.
+                     "comeback_leader": (
+                         f"{comeback[0]['TEAM']} lead with "
+                         f"{comeback[0]['W']} wins when trailing at "
+                         f"halftime" if comeback else ""),
                      "note": "comeback_kings and blown_leads use "
                              "behind/ahead-at-halftime records as the "
                              "proxy. Play-by-play in-game margin data "
