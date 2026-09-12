@@ -224,3 +224,38 @@ def test_gap_override_still_rescues_true_no_data(monkeypatch):
     text = asyncio.run(_go())
     assert "no play-by-play" in text
     assert "could not compute" not in text
+
+
+# ------------------------------------------------------------- F51
+
+def test_memory_persistence_claims_rewritten_session_scoped():
+    from app.graph import _scrub_final_text
+    out = _scrub_final_text("Noted your favorite team!")
+    assert "during this conversation" in out
+    assert "Noted your" not in out
+
+
+def test_memory_session_scoped_phrasing_survives():
+    from app.graph import _scrub_final_text
+    ok = "I'll remember that during this conversation."
+    assert _scrub_final_text(ok) == ok
+    ok2 = ("Got it - the Lakers. I'll keep that in mind for this chat. "
+           "They lead the West at 40-12.")
+    assert "this chat" in _scrub_final_text(ok2)
+
+
+def test_analytical_as_noted_untouched():
+    from app.graph import _scrub_final_text
+    text = ("As noted above, Minnesota leads with 17 wins. "
+            "Denver follows with 16.")
+    assert _scrub_final_text(text) == text
+
+
+def test_memory_claim_inside_answer_rewritten():
+    from app.graph import _scrub_final_text
+    out = _scrub_final_text(
+        "The Lakers are 40-12 this season. I won't forget that "
+        "they're your team.")
+    assert "I won't forget" not in out
+    assert "during this conversation" in out
+    assert "40-12" in out

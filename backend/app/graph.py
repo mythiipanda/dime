@@ -3145,6 +3145,24 @@ def _scrub_final_text(text: str) -> str:
                      "the data", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"\bwarehouse tables?\b", "the dataset", cleaned,
                      flags=re.IGNORECASE)
+
+    # F51: memory-persistence claims ("Noted your favorite team!",
+    # "I'll remember that") imply cross-session memory that does not
+    # exist (F22 shelved). Session-scoped phrasing survives; anything
+    # else is rewritten to it. Analytical "as noted" is untouched.
+    def _memory_scope(m: "re.Match[str]") -> str:
+        sent = m.group(0)
+        if re.search(r"this (?:conversation|chat|session)", sent,
+                     re.IGNORECASE):
+            return sent
+        return ("I'll keep that in mind during this conversation - "
+                "nothing carries over between sessions.")
+    cleaned = re.sub(
+        r"[^.!?\n]*\b(?:i(?:'ve| have) noted|noted (?:that )?you(?:r)?\b|"
+        r"i(?:'ll| will) remember|i won't forget|"
+        r"i(?:'ve| have) saved|"
+        r"i(?:'ll| will) keep (?:that|this|it) in mind)\b[^.!?\n]*[.!?]",
+        _memory_scope, cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"\bleague data\b", "the dataset", cleaned,
                      flags=re.IGNORECASE)
     # scrub collisions: "the data data", "the dataset and the dataset"
