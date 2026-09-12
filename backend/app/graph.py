@@ -2791,6 +2791,11 @@ def _clean_error_text(text: str) -> str:
     s = text or ""
     s = re.sub(r"\b(get_\w+|delegate_\w+|resolve_entity|search_nba|run_python|text_to_sql)\b", "", s, flags=re.IGNORECASE)
     s = re.sub(r"Client error '\d{3}[^']*' for url\s*'[^']*'\.?", " ", s)
+    # content-free sandbox/schema failures are not an "informative
+    # refusal" - strip them so the honest fallback fires instead
+    s = re.sub(r"unknown table or column\.?[^\n]*", " ", s,
+               flags=re.IGNORECASE)
+    s = re.sub(r"Valid tables:[^\n]*", " ", s, flags=re.IGNORECASE)
     s = re.sub(r"For more information check:[^\n]*", " ", s)
     s = re.sub(r"https?://\S+", " ", s)
     s = re.sub(r"\bsilver_\w+\b", "", s, flags=re.IGNORECASE)
@@ -2920,6 +2925,8 @@ _DEV_TEXT_RX = re.compile(
     # F53: httpx client errors (403/404/5xx with the external URL) are
     # tool internals, never an answer
     r"Client error '\d{3}[^']*' for url[^\n]*|"
+    r"[Uu]nknown table or column\.?[^\n]*|"
+    r"Valid tables:[^\n]*|"
     r"For more information check:[^\n]*|"
     r"https?://developer\.mozilla\.org[^\n]*|"
     # F43: run_python sandbox rejections must never BE the answer
