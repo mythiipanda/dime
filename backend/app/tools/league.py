@@ -8,14 +8,34 @@ from ._core import SEASON, TTL_LEADERS, TTL_SCOREBOARD_PAST, clamp_stat, _wareho
 
 
 @tool
-def get_injuries(team: str = "", season: str = SEASON) -> dict[str, Any]:
-    """Injury report, optional team abbreviation filter."""
+def get_injuries(team: str = "", player: str = "",
+                 season: str = SEASON) -> dict[str, Any]:
+    """Injury report, optional team abbreviation or player filter.
+
+    With a player name, also joins playoff inactive listings so
+    'is X injured?' surfaces 'inactive for the entire playoff run'
+    instead of a bare 'active' (F45)."""
     from ..sources import espn
 
     rows, meta = _warehouse_or_live(
         "silver_injuries", "_season = ?",
         [season], lambda: espn.injuries(season), season,
     )
+    note = None
+    if player:
+        try:
+            from ._core import coerce_player_id
+            from .gamelog import playoff_inactive_note as _pin
+            from .splits import _resolve_name as _rn
+
+            pid = coerce_player_id(player)
+            note = _pin(pid, season, _rn(pid, str(player)))
+        except Exception:
+            note = None
+        low = str(player).strip().lower()
+        rows = [r for r in rows
+                if low in str(r.get("player") or r.get("name")
+                                or "").lower()]
     if team:
         from nba_api.stats.static import teams as _teams
 
@@ -26,7 +46,11 @@ def get_injuries(team: str = "", season: str = SEASON) -> dict[str, Any]:
             want,
         )
         rows = [r for r in rows if full.lower() in str(r.get("display_name", "")).lower()]
-    return {"tool": "get_injuries", "ok": True, "rows": rows, "meta": meta}
+    out = {"tool": "get_injuries", "ok": True, "rows": rows, "meta": meta}
+    if note:
+        out.setdefault("rows")
+        out["inactive_note"] = note
+    return out
 
 
 _STANDINGS_KEEP = ("TeamID", "team", "abbrev", "Conference", "WINS",
@@ -1905,6 +1929,19 @@ async def text_to_sql(question: str) -> dict[str, Any]:
         "SQL: SELECT PLAYER_NAME, TEAM_ABBREVIATION, AGE, GP, PTS, AST "
         "FROM silver_hist_player_seasons WHERE AGE < 24 AND PTS >= 15 AND AST >= 5 "
         "AND SEASON = 2024 ORDER BY PTS DESC LIMIT 10\n"
+        "Q: What were the best games in March 2026?\n"
+        "Note: current-season per-game logs live in silver_player_gamelogs "
+        "with UPPERCASE columns (PLAYER_NAME absent - join player ids via "
+        "silver_leaders_pts.PLAYER_ID/PLAYER; GAME_DATE, MATCHUP, PTS). "
+        "Dates look like 'Mar 30, 2026'; filter months with ILIKE, e.g. "
+        "GAME_DATE ILIKE '%Mar%2026'. A 'no such column' error means "
+        "wrong table/column spelling - retry with these names, it NEVER "
+        "means the games are missing.\n"
+        "SQL: SELECT p.PLAYER, g.GAME_DATE, g.MATCHUP, g.PTS FROM "
+        "silver_player_gamelogs g JOIN silver_leaders_pts p ON "
+        "p.PLAYER_ID = g.Player_ID AND p._season = g._season "
+        "WHERE g._season = '2025-26' AND g.GAME_DATE ILIKE '%Mar%2026' "
+        "ORDER BY g.PTS DESC LIMIT 10\n"
         "Q: Who led the 2025-26 season in steals?\n"
         "Note: season totals come from silver_leaders_* tables; "
         "never aggregate silver_player_gamelogs for season totals.\n"
