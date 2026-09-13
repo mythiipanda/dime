@@ -28,3 +28,14 @@ def test_shared_surname_stays_ambiguous():
 def test_full_name_matching_unchanged():
     found_p, _ = _detect_entities("How did Luka Doncic do last night?")
     assert found_p == ["Luka Dončić"]
+
+
+def test_first_name_position_does_not_detect_other_player():
+    # "Cooper Flagg" must not pull in Sharife Cooper via surname Cooper.
+    found_p, _ = _detect_entities("How good has Cooper Flagg been this season?")
+    assert found_p == ["Cooper Flagg"]
+
+
+def test_possessive_surname_detected():
+    found_p, _ = _detect_entities("Wembanyama's blocks this season?")
+    assert found_p == ["Victor Wembanyama"]

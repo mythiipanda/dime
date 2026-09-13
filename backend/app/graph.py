@@ -611,9 +611,18 @@ def _detect_entities(question: str) -> tuple[list[str], list[str]]:
         if len(entries) != 1:
             continue
         disp, fn = entries[0]
-        if len(sur) >= 3 and fn not in found_p and re.search(
-                r"\b" + re.escape(disp) + r"\b", question):
+        if len(sur) < 3 or fn in found_p:
+            continue
+        for _m in re.finditer(r"\b" + re.escape(disp) + r"\b", question):
+            # First-name position guard: "Cooper Flagg" must not detect
+            # Sharife Cooper. A surname used as a surname is followed by
+            # a lowercase or punctuated token, not another Capitalized
+            # name token.
+            _rest = question[_m.end():].lstrip()
+            if _rest[:1].isupper():
+                continue
             found_p.append(fn)
+            break
     found_t = []
     race_words = re.search(
         r"magic number|standings|playoff race|\bseed\b|tanking|lottery",
