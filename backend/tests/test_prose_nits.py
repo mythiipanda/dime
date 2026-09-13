@@ -259,3 +259,20 @@ def test_duplicated_list_word_collapsed():
     out = _scrub_final_text("Ranked on points, efficiency, and efficiency.")
     assert "and efficiency." in out
     assert "efficiency, and efficiency" not in out
+
+
+def test_scrub_bold_source_line_dropped():
+    out = _scrub_final_text(
+        "Luka is averaging 33.5 points per game.\n\n**Source:** league agent summary"
+    )
+    assert "Source" not in out and "agent" not in out
+    assert "33.5" in out
+
+
+def test_scrub_trailing_empty_list_item_dropped():
+    out = _scrub_final_text(
+        "1. The Spurs won the opener.\n2. \n3. The Knicks took the series."
+    )
+    assert "2. The Knicks took the series." in out
+    lines = [ln for ln in out.splitlines() if ln.strip()]
+    assert not any(ln.strip() in ("2.", "-", "*") for ln in lines)

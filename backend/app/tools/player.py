@@ -146,6 +146,66 @@ def _read_df(sql: str, params: list, tries: int = 5) -> list[dict[str, Any]]:
     raise last or RuntimeError("warehouse read failed")
 
 
+def _different_teams_pair(left: dict[str, Any], right: dict[str, Any],
+                          season: str) -> dict[str, Any]:
+    """Pair block for players on different teams.
+
+    "No shared court" only means they are not teammates; their teams may
+    have met several times this season. Compute the actual meetings from
+    the warehouse gamelogs so the answer never claims zero matchups when
+    the two players in fact shared the floor.
+    """
+    from .headtohead import _load_player_games, vs_opponent
+    lid, rid = left.get("player_id"), right.get("player_id")
+    ta, tb = str(left.get("team") or ""), str(right.get("team") or "")
+    base: dict[str, Any] = {"teammates": False, "both_on_net": None,
+                            "both_on_minutes": 0}
+    if not (lid and rid and ta and tb):
+        base["note"] = "Different teams."
+        return base
+    try:
+        a_games = vs_opponent(_load_player_games(int(lid), season), tb)
+        b_games = vs_opponent(_load_player_games(int(rid), season), ta)
+    except Exception:
+        base["note"] = "Different teams; meeting logs unavailable."
+        return base
+    a_by_id = {str(g.get("Game_ID")): g for g in a_games}
+    b_by_id = {str(g.get("Game_ID")): g for g in b_games}
+    shared = sorted(set(a_by_id) & set(b_by_id))
+    meetings = []
+    for gid in shared:
+        ga, gb = a_by_id[gid], b_by_id[gid]
+        meetings.append({
+            "game_id": gid,
+            "date": ga.get("GAME_DATE"),
+            "matchup": ga.get("MATCHUP"),
+            "a_pts": ga.get("PTS"), "a_reb": ga.get("REB"),
+            "a_ast": ga.get("AST"), "a_wl": ga.get("WL"),
+            "b_pts": gb.get("PTS"), "b_reb": gb.get("REB"),
+            "b_ast": gb.get("AST"),
+        })
+    base["h2h_meetings"] = meetings
+    if shared:
+        a_pts = [m["a_pts"] for m in meetings if m["a_pts"] is not None]
+        b_pts = [m["b_pts"] for m in meetings if m["b_pts"] is not None]
+        note = (f"Different teams; they shared the floor in "
+                f"{len(shared)} game(s) this season")
+        if a_pts:
+            note += (f" ({left.get('name') or 'player A'} averaged "
+                     f"{sum(a_pts) / len(a_pts):.1f} pts in those games)")
+        if b_pts:
+            note += (f"; {right.get('name') or 'player B'} averaged "
+                     f"{sum(b_pts) / len(b_pts):.1f} pts")
+        base["note"] = note + "."
+    elif a_games or b_games:
+        base["note"] = (f"Different teams; {ta} and {tb} met, but the two"
+                        " players did not appear in the same game.")
+    else:
+        base["note"] = (f"Different teams; {ta} and {tb} did not meet "
+                        "this season.")
+    return base
+
+
 @tool
 async def get_compare(
     a: str, b: str, season: str = SEASON,
@@ -388,8 +448,7 @@ async def get_compare(
             pair = {"teammates": True, "both_on_net": None,
                     "both_on_minutes": 0, "note": str(exc)[:160]}
     else:
-        pair = {"teammates": False, "both_on_net": None,
-                "both_on_minutes": 0, "note": "Different teams, no shared court."}
+        pair = _different_teams_pair(left, right, season)
     sub_call_errors: dict[str, str] = {}
     for side, player in (("a", left), ("b", right)):
         for key, err in (player.get("sub_call_errors") or {}).items():

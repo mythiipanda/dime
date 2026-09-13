@@ -4148,8 +4148,11 @@ def _scrub_final_text(text: str) -> str:
     # grammar. Source lines that name an agent or the dataset are
     # orchestration leaks, never provenance; drop the whole line.
     cleaned = re.sub(
-        r"(?m)^[ \t]*Source:[^\n]*\b(?:agent|dataset)\b[^\n]*$",
+        r"(?m)^[ \t]*\*{0,2}Source:\*{0,2}[^\n]*\b(?:agent|dataset)\b[^\n]*$",
         "", cleaned)
+    # Sweep3: trailing empty list items ("3." with no text) after the
+    # model ran out of content.
+    cleaned = re.sub(r"(?m)^[ \t]*(?:\d+\.|[-*])[ \t]*$\n?", "", cleaned)
     # Same probe: "And the dataset, Shai ... played" - a dangling
     # vocative left when a prefix rule fired mid-sentence. "And the
     # dataset," can never open a grammatical sentence; strip it.
