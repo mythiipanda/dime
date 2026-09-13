@@ -164,3 +164,12 @@ def test_refusal_still_fires_with_empty_evidence():
     out = _present("what is the airspeed of a swallow?",
                    "This data covers the 2025-26 season.", [])
     assert "could not find that in the dataset" in out
+
+
+def test_empty_backtick_citation_line_dropped():
+    out = _present("best rookies?",
+                   "This data covers the 2025-26 season.\n"
+                   "Analysis based on ``.\n"
+                   "**Takeaways**\n1. Cooper Flagg leads scoring.", [])
+    assert "Analysis based on" not in out
+    assert "Cooper Flagg leads scoring." in out

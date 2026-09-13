@@ -1521,6 +1521,30 @@ def get_trade_check(
     Picks and exceptions stay out of v1.
     """
 
+    if (not team_a or not team_b) and players_a and players_b:
+        # 2026-09-13 compose probe: the agent called this with players
+        # only, hit "two teams needed", and concluded salary data was
+        # missing - a false absence over a full salary sheet. Each
+        # player's current team is resolvable from that sheet (same
+        # resolver the stale-attribution fix uses), so infer missing
+        # side teams before erroring.
+        from .. import store as _store
+
+        def _infer_side(plist: str) -> str:
+            ts: set[str] = set()
+            for nm in [x.strip() for x in str(plist).split(",") if x.strip()]:
+                hit = _locate_player_team(nm, con)
+                if hit is None:
+                    return ""
+                ts.add(str(hit[1]))
+            return ts.pop() if len(ts) == 1 else ""
+
+        con = _store.connect()
+        try:
+            team_a = team_a or _infer_side(players_a)
+            team_b = team_b or _infer_side(players_b)
+        finally:
+            con.close()
     if not team_a or not team_b:
         return {"tool": "get_trade_check", "ok": False,
                 "error": "two teams needed"}

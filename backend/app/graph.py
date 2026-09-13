@@ -3921,6 +3921,10 @@ def _scrub_final_text(text: str) -> str:
     # 2026-09-13 probe: "the dataset data shows:" - the league-data
     # rewrite landing after "the dataset" rewrite. Same collision class.
     cleaned = re.sub(r"\b[Tt]he dataset data\b", "the data", cleaned)
+    # Same probe: "Analysis based on ``." - an empty tool-name citation
+    # left when the model backticks a blank. Drop the line outright.
+    cleaned = re.sub(r"(?m)^[ \t]*\*?Analysis based on `[^`]*`\.?\*?[ \t]*$\n?",
+                     "", cleaned)
     cleaned = re.sub(r"\bthe the\b", "the", cleaned,
                      flags=re.IGNORECASE)
     cleaned = re.sub(r"\bcomeback_kings\b", "comeback wins", cleaned,
