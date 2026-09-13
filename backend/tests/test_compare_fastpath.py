@@ -72,11 +72,16 @@ def _compare_args(state):
 
 
 def test_fastpath_fires_on_two_player_compare(monkeypatch):
+    # 2026-09-13: the two-player compare pin now answers straight from
+    # the get_compare payload (deterministic_answer) after the LLM
+    # compose flaked under battery load and dropped a TS figure. One
+    # get_compare call, no desk fan-out.
     monkeypatch.setattr(graph_mod, "_run_delegate_live", _fake_delegate)
     st = _drain(Q2)
-    assert _tool_names(st) == ["get_compare", "delegate_scout",
-                               "delegate_scout"]
-    assert st["round"] in (MAX_TOOL_ROUNDS, DEEP_TOOL_ROUNDS)
+    assert _tool_names(st) == ["get_compare"]
+    meta = st["tool_results"][-1].get("meta") or {}
+    ans = meta.get("deterministic_answer") or ""
+    assert EDWARDS in ans and LUKA in ans
 
 
 def test_fastpath_compare_args_are_deterministic(monkeypatch):
@@ -100,7 +105,11 @@ def test_fastpath_compare_output_matches_slow_path(monkeypatch):
     except Exception as exc:
         pytest.skip(f"warehouse unavailable: {exc}")
     assert direct["ok"] is True
-    assert st["tool_results"][0] == direct
+    # The pin wraps the raw tool payload; the numbers must be identical
+    # to a direct call with the same args.
+    wrapped = st["tool_results"][0]
+    assert wrapped["tool"] == "get_compare"
+    assert wrapped["rows"][0]["rows"] == direct["rows"]
 
 
 def test_no_fire_on_one_player(monkeypatch):
@@ -147,8 +156,9 @@ def test_history_still_fastpaths_two_player_compare(monkeypatch):
     monkeypatch.setattr(graph_mod, "_run_delegate_live", _fake_delegate)
     st = _drain(Q2, history=[{"role": "user", "text": "hi"},
                              {"role": "assistant", "text": "hey"}])
-    assert _tool_names(st) == ["get_compare", "delegate_scout",
-                               "delegate_scout"]
+    assert _tool_names(st) == ["get_compare"]
+    meta = st["tool_results"][-1].get("meta") or {}
+    assert meta.get("deterministic_answer")
 
 
 class _FakeTool:

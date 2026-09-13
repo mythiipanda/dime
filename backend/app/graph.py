@@ -1830,11 +1830,17 @@ async def _triage_seed(question: str, primary: str, model: str,
     # once declared "no shared court time" while the teams had met.
     # Pin it: one get_compare call, deterministic answer from the
     # payload (season lines + actual meetings from the pair block).
-    # Burn-down: fold into a generic two-player compare pin once the
-    # efficiency-compare lane is also deterministic.
-    if (re.search(r"\bhead[- ]to[- ]head\b|\bh2h\b", question,
-                  re.IGNORECASE)
-            and len(found_p) >= 2):
+    # Burn-down: DONE (2026-09-13) - widened from h2h-only to every
+    # two-player compare after the LLM-composed efficiency compare
+    # flaked under battery load (dropped a TS figure). One get_compare
+    # call, deterministic answer from the payload; the scout-desk
+    # enrichment from the former fast-path is traded for numerals that
+    # cannot drift.
+    if (re.search(r"\bhead[- ]to[- ]head\b|\bh2h\b|\bcompare\b|"
+                  r"\bvs\.?\b|\bversus\b", question, re.IGNORECASE)
+            and len(found_p) == 2
+            and not re.search(r"\bimpact\b|\brapm\b|on.off",
+                              question, re.IGNORECASE)):
         _hh: dict[str, Any] = {}
         async for _e in _triage_tool(
                 "get_compare",
@@ -1895,6 +1901,53 @@ async def _triage_seed(question: str, primary: str, model: str,
                 state["tool_results"][-1] = {
                     "tool": "get_compare", "rows": [_hout],
                     "meta": _hmeta}
+            async for _e in _triage_terminal(question, state):
+                yield _e
+        return
+    # Clutch-scorer leaderboard asks ("best clutch scorers this
+    # season"). Sweep3: this lane spent 16.8s on a delegate fan-out
+    # for a board the warehouse already serves. Pin it: one get_clutch
+    # call and a deterministic board built from the payload (v67 law:
+    # LLM-composed numerals are untrusted on pinned lanes).
+    # Burn-down: merge into a generic ranking-board pin framework with
+    # the contract-value and standings boards.
+    if (re.search(r"\bclutch\b", question, re.IGNORECASE)
+            and re.search(r"\b(best|top|leaders?|scorers?|rank)\b",
+                          question, re.IGNORECASE)
+            and not found_p and not found_t
+            and not re.search(r"\bteams?\b", question, re.IGNORECASE)):
+        _cl: dict[str, Any] = {}
+        async for _e in _triage_tool(
+                "get_clutch", {"scope": "player", "season": "2025-26"},
+                state, _cl):
+            yield _e
+        _clout = _cl.get("out") or {}
+        if _result_status(_clout) == "ok":
+            _crows = _clout.get("rows") or []
+            _cmeta = dict(_clout.get("meta") or {})
+            if _crows:
+                _lines = [
+                    "Clutch scoring leaders - final 5 minutes, margin "
+                    "within 5 (2025-26):"]
+                for _f in _crows[:5]:
+                    try:
+                        _fg = f"{float(_f.get('FG_PCT')) * 100:.1f}%"
+                    except (TypeError, ValueError):
+                        _fg = "?"
+                    _pm = _f.get("PLUS_MINUS")
+                    try:
+                        _pmi = int(_pm)
+                        _pms = f"+{_pmi}" if _pmi >= 0 else str(_pmi)
+                    except (TypeError, ValueError):
+                        _pms = "?"
+                    _lines.append(
+                        f"- {_f.get('PLAYER_NAME')}: {_f.get('PTS')} pts "
+                        f"over {_f.get('GP')} clutch games on {_fg} FG "
+                        f"(plus-minus {_pms}).")
+                _cmeta["deterministic_answer"] = "\n".join(_lines)
+            if state["tool_results"] and state["tool_results"][-1] is _clout:
+                state["tool_results"][-1] = {
+                    "tool": "get_clutch", "rows": _crows, "meta": _cmeta}
             async for _e in _triage_terminal(question, state):
                 yield _e
         return
