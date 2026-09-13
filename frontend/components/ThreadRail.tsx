@@ -57,7 +57,7 @@ export default function ThreadRail({
         display: "flex",
         flexDirection: "column",
         height: "100%",
-        padding: "16px 12px",
+        padding: "10px 0",
         background: "var(--color-stone-canvas)",
         borderRight: "1px solid var(--color-stone-border)",
         boxSizing: "border-box",
@@ -67,7 +67,7 @@ export default function ThreadRail({
     >
       <div style={{ display: "flex", flexDirection: "column", gap: 10, minHeight: 0, flex: 1 }}>
         {/* Brand & Action Top Header */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 4px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 10px" }}>
           <button
             type="button"
             onClick={onHomeClick}
@@ -83,7 +83,7 @@ export default function ThreadRail({
             }}
             title="Return to Home"
           >
-            <span style={{ fontWeight: 600, fontSize: 16, letterSpacing: "-0.02em", color: "var(--color-ink-black)" }}>
+            <span style={{ fontWeight: 600, fontSize: 13, letterSpacing: "-0.01em", color: "var(--color-ink-black)" }}>
               Dime
             </span>
           </button>
@@ -111,15 +111,17 @@ export default function ThreadRail({
           style={{
             fontSize: 13,
             fontWeight: 500,
-            width: "100%",
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            padding: "8px 12px",
+            padding: "0 10px",
+            height: 32,
+            margin: "0 8px",
+            width: "calc(100% - 16px)",
             background: "var(--color-pure-white)",
             border: "1px solid var(--color-stone-border)",
             borderRadius: 8,
-            boxShadow: "0 1px 2px rgba(0, 0, 0, 0.04)",
+            boxShadow: "var(--shadow-card)",
             cursor: "pointer",
           }}
         >
@@ -151,15 +153,15 @@ export default function ThreadRail({
             style={{
               fontSize: 12,
               fontWeight: 500,
-              color: "var(--color-warm-gray)",
-              padding: "0 6px",
-              marginBottom: 8,
+              color: "var(--color-ash-gray)",
+              padding: "0 10px",
+              marginBottom: 4,
             }}
           >
             Recent sessions
           </div>
 
-          <div style={{ padding: "0 2px 8px" }}>
+          <div style={{ padding: "0 10px 6px" }}>
             <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
               <svg
                 width="12"
@@ -202,7 +204,7 @@ export default function ThreadRail({
             }}
           >
             {visibleBuckets.map((bucket) => (
-              <div key={bucket.label} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <div key={bucket.label} style={{ display: "flex", flexDirection: "column", gap: 1 }}>
                 <div style={{ fontSize: 11, fontWeight: 500, color: "var(--color-ash-gray)", padding: "8px 6px 4px" }}>
                   {bucket.label}
                 </div>
@@ -213,17 +215,20 @@ export default function ThreadRail({
                       key={t.id}
                       type="button"
                       onClick={() => onSelect(t.id)}
-                      className="interactive-tactile"
+                      className="sidebar-row"
                       style={{
                         textAlign: "left",
-                        borderRadius: 6,
-                        padding: "6px 8px",
+                        borderRadius: 8,
+                        height: 32,
+                        padding: "0 8px",
+                        margin: "0 8px",
                         fontSize: 13,
-                        background: isSelected ? "var(--color-pure-white)" : "transparent",
-                        border: isSelected ? "1px solid var(--color-stone-border)" : "1px solid transparent",
-                        boxShadow: isSelected ? "0 1px 2px rgba(0, 0, 0, 0.04)" : "none",
+                        background: isSelected ? "var(--color-field)" : "transparent",
+                        border: "none",
                         cursor: "pointer",
-                        width: "100%",
+                        width: "calc(100% - 16px)",
+                        display: "flex",
+                        alignItems: "center",
                         color: isSelected ? "var(--color-ink-black)" : "var(--color-warm-gray)",
                       }}
                     >

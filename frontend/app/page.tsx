@@ -123,7 +123,7 @@ export default function Home() {
   return (
     <div style={{ display: "flex", height: "100vh", width: "100vw", overflow: "hidden", background: "var(--color-stone-canvas)" }}>
       {/* Left Sidebar */}
-      <aside className="sidebar-rail" style={{ width: 260, flexShrink: 0, height: "100vh" }}>
+      <aside className="sidebar-rail" style={{ width: 224, flexShrink: 0, height: "100vh" }}>
         <ThreadRail
           threads={threads}
           active={active}

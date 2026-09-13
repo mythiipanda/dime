@@ -141,6 +141,18 @@ body {
 }
 
 /* harness tab style: active = field fill, idle = dimmed (ChatComposer header tabs) */
+/* harness sidebar rows (SidebarNav.tsx): bg-hover on hover, 150ms ease */
+.sidebar-row {
+  transition: background-color 150ms ease, color 150ms ease, transform 150ms ease;
+}
+.sidebar-row:hover {
+  background: var(--hover-subtle);
+  color: var(--color-ink-black);
+}
+.sidebar-row:active {
+  transform: scale(0.98);
+}
+
 .tab-active {
   background: var(--color-field);
   color: var(--color-ink-black);
