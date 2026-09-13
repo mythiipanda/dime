@@ -15,10 +15,21 @@ const NODE_LABELS: Record<string, string> = {
 };
 
 function thoughtsFor(ai: AiMessage): string[] {
+  // Dedupe identical lines: the backend can emit the same plan text at
+  // a node boundary and again inside the node, and receipts should read
+  // like a receipt, not a log tail.
   const out: string[] = [];
+  const seen = new Set<string>();
   for (const n of AGENT_NODES) {
     const s = ai.nodes[n];
-    if (s) out.push(...s.thoughts);
+    if (!s) continue;
+    for (const t of s.thoughts) {
+      const key = t.trim().toLowerCase();
+      if (key && !seen.has(key)) {
+        seen.add(key);
+        out.push(t);
+      }
+    }
   }
   return out;
 }
@@ -72,7 +83,11 @@ function ToolRow({ c }: { c: ToolCall }) {
         ? "#e11d48"
         : "var(--color-ink-black)";
   const glyph = c.status === "running" ? "" : c.status === "fail" ? "!" : "✓";
-  const label = c.label || c.name.replace(/_/g, " ");
+  // Fallback names arrive as get_shot_zones-style identifiers; show
+  // a noun phrase ("Shot zones") instead of the raw function name.
+  const label =
+    c.label ||
+    (c.name.replace(/_/g, " ").replace(/^get /, "").replace(/^\w/, (ch) => ch.toUpperCase()));
   const prefix = c.agent ? `${c.agent.charAt(0).toUpperCase() + c.agent.slice(1)} desk · ` : "";
   return (
     <div
