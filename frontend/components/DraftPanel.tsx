@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import EmptyState from "./EmptyState";
 import DataTable from "./DataTable";
 import { BACKEND } from "../lib/chat";
 
@@ -49,7 +50,13 @@ export default function DraftPanel() {
         </button>
       </div>
       {error && <div style={{ color: "var(--color-warm-gray)", marginTop: 8 }}>{error}</div>}
-      {rows !== null && (
+      {rows !== null && Array.isArray(rows) && rows.length === 0 && (
+        <EmptyState
+          title={`No combine data for ${year}`}
+          description="Try another draft year - measurements land after each combine."
+        />
+      )}
+      {rows !== null && !(Array.isArray(rows) && rows.length === 0) && (
         <div style={{ marginTop: 8 }}>
           <DataTable rows={rows} />
         </div>

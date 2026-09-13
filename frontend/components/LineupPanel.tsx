@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import EmptyState from "./EmptyState";
 import { BACKEND } from "../lib/chat";
 import WowyCard from "./WowyCard";
 
@@ -145,6 +146,13 @@ export default function LineupPanel() {
             ))}
           </select>
           {error && <div style={{ color: "var(--color-warm-gray)", marginTop: 8 }}>{error}</div>}
+          {!busy && !error && rows.length === 0 && (
+            <EmptyState
+              title="No lineup data for this team"
+              description="Five-man units appear once the season sample is large enough to trust."
+            />
+          )}
+          {rows.length > 0 && (
           <table style={{ width: "100%", marginTop: 8, fontSize: 12 }}>
             <thead><tr><th style={{ textAlign: "left" }}>Unit</th><th>MIN</th><th>+/-</th><th>Trust</th><th /></tr></thead>
             <tbody>
@@ -159,6 +167,7 @@ export default function LineupPanel() {
               ))}
             </tbody>
           </table>
+          )}
           {busy && <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginTop: 8 }}>Loading...</div>}
         </div>
       ) : (

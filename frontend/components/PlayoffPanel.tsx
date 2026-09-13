@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import EmptyState from "./EmptyState";
 import { BACKEND } from "../lib/chat";
 
 type PlayoffRow = { TEAM_ABBREVIATION?: string; WL?: string };
@@ -55,7 +56,13 @@ export default function PlayoffPanel() {
           Champion {champion.team} ({champion.w}-{champion.l}, {count} rows)
         </div>
       )}
-      {!busy && !error && (
+      {!busy && !error && table.length === 0 && (
+        <EmptyState
+          title="No playoff data yet"
+          description="Series results appear here once the postseason field is set."
+        />
+      )}
+      {!busy && !error && table.length > 0 && (
         <table style={{ marginTop: 12, fontSize: 12, borderCollapse: "collapse", width: "100%" }}>
           <thead>
             <tr style={{ color: "var(--color-warm-gray)", textAlign: "left" }}>
