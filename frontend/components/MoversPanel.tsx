@@ -162,10 +162,13 @@ export default function MoversPanel() {
 
       {loading ? (
         <Skeleton lines={3} />
-      ) : err || !rows ? (
+      ) : err || !rows ||
+        (rows.climbers.length === 0 &&
+          rows.fallers.length === 0 &&
+          rows.new_entries.length === 0) ? (
         <EmptyState
           title="No movers yet"
-          description={err || "Rankings need another slate of games before movers appear."}
+          description="Rankings need another slate of games before movers appear."
         />
       ) : (
         <div

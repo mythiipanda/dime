@@ -293,7 +293,15 @@ async def api_movers(
     from .tools.league import get_leaderboard_deltas
     import json
     res = get_leaderboard_deltas.invoke({"season": season, "days": days})
-    return json.loads(res) if isinstance(res, str) else res
+    out = json.loads(res) if isinstance(res, str) else res
+    # Snapshots accumulate one per day; before the second one lands (and
+    # through the offseason) the tool errors. The Today page should show
+    # an honest empty state, not a failure, so translate to empty rows.
+    if isinstance(out, dict) and not out.get("ok") and "not enough snapshots" in str(out.get("error", "")):
+        return {"tool": "get_leaderboard_deltas", "ok": True,
+                "rows": {"climbers": [], "fallers": [], "new_entries": []},
+                "meta": {"reason": "snapshots_pending", "season": season}}
+    return out
 
 
 @router.get("/briefing")
