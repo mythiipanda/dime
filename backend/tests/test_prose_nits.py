@@ -173,3 +173,43 @@ def test_empty_backtick_citation_line_dropped():
                    "**Takeaways**\n1. Cooper Flagg leads scoring.", [])
     assert "Analysis based on" not in out
     assert "Cooper Flagg leads scoring." in out
+
+
+def test_output_subject_sentences_dropped():
+    from app.graph import _scrub_final_text
+    txt = ("Nikola Jokić led with 10.7 assists per game. "
+           "The output confirms he holds the top rank.")
+    out = _scrub_final_text(txt)
+    assert "output" not in out.lower()
+    assert "10.7 assists" in out
+
+
+def test_estimate_output_rewrite_keeps_fact():
+    from app.graph import _scrub_final_text
+    txt = "The statistical estimate output reports a net rating lift of 0.16 per 100 possessions."
+    out = _scrub_final_text(txt)
+    assert "output" not in out.lower()
+    assert "estimate reports a net rating lift of 0.16" in out
+
+
+def test_renumber_lists_after_strip():
+    from app.graph import _renumber_lists
+    txt = "Takeaways\n2. The estimate values his impact.\n3. He recorded 5026 possessions."
+    out = _renumber_lists(txt)
+    assert "\n1. The estimate values" in out
+    assert "\n2. He recorded 5026" in out
+    # Separate blocks restart at 1.
+    txt2 = "1. a\n2. b\n\nSome prose.\n5. c\n7. d"
+    out2 = _renumber_lists(txt2)
+    assert out2 == "1. a\n2. b\n\nSome prose.\n1. c\n2. d"
+    # Non-list text untouched.
+    assert _renumber_lists("No lists here.") == "No lists here."
+
+
+def test_space_before_punctuation_collapsed():
+    from app.graph import _scrub_final_text
+    out = _scrub_final_text("He averaged 10.7 assists per game . Next line , too .")
+    assert "game." in out
+    assert "line, too." in out
+    # Decimals survive.
+    assert "0.665" in _scrub_final_text("He shot 0.665 from the line .")

@@ -3910,6 +3910,31 @@ _COMPUTE_FALLBACK = ("That one didn't come back from the dataset just "
                      "game logs, standings, playoffs and the Finals.")
 
 
+
+
+def _renumber_lists(text: str) -> str:
+    """Renumber each contiguous ordered-list block from 1.
+
+    Scrub rules can delete a list item ("Takeaways\\n2. ..." after
+    item 1 was stripped as plumbing narration). Markdown renders the
+    literal numbers, so renumber every contiguous block sequentially.
+    """
+    out: list[str] = []
+    n = 0
+    for line in text.split("\n"):
+        m = re.match(r"^(\s*)\d+([.)]\s+)(.*)$", line)
+        if m:
+            n += 1
+            out.append(f"{m.group(1)}{n}{m.group(2)}{m.group(3)}")
+        else:
+            if line.strip():
+                n = 0
+            out.append(line)
+    return "\n".join(out)
+
+
+
+
 def _scrub_final_text(text: str) -> str:
     """Exception text is for logs, never for the narrative (QA F34).
 
@@ -4008,6 +4033,16 @@ def _scrub_final_text(text: str) -> str:
         r"\b(?:[Pp]er|[Ff]rom|[Vv]ia|[Bb]ased on|[Aa]ccording to) "
         r"(?:the )?outputs?\b",
         _wh_repl, cleaned)
+    # 2026-09-13 sweep: "output" as the SUBJECT of a sentence is the
+    # same leak class - "The output confirms he holds the top rank."
+    # Drop the whole sentence (the fact it confirms is already in the
+    # answer); "the statistical estimate output reports X" keeps the
+    # fact via the narrower "estimate output" -> "estimate" rewrite.
+    cleaned = re.sub(r"\bestimate output\b", "estimate", cleaned,
+                     flags=re.IGNORECASE)
+    cleaned = re.sub(
+        r"[^.!?\n]*\b[Tt]he output (?:confirms?|shows?|indicates?|"
+        r"reports?|states?)\b[^.!?\n]*[.!?]", " ", cleaned)
     # v77 QA nit: "using the basketball-reference the dataset" - the
     # warehouse-output rewrite fires AFTER a source name, leaving
     # "<source> the dataset". Collapse to "<source> dataset".
@@ -4048,6 +4083,9 @@ def _scrub_final_text(text: str) -> str:
                      "", cleaned)
     cleaned = re.sub(r"\bthe the\b", "the", cleaned,
                      flags=re.IGNORECASE)
+    # 2026-09-13 sweep: "10.7 assists per game ." - stray space before
+    # terminal punctuation, an LLM typo class that reads sloppy.
+    cleaned = re.sub(r" +([.,;:!?])(?=\s|$)", r"\1", cleaned)
     cleaned = re.sub(r"\bcomeback_kings\b", "comeback wins", cleaned,
                      flags=re.IGNORECASE)
     cleaned = re.sub(r"\bthe dataset(?:,? and|,)? the dataset\b",
@@ -4606,6 +4644,10 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
                 r"This data covers the \d{4}-\d{2} season",
                 f"This data covers the {_CUR_SEASON} season",
                 _scrubbed, count=1)
+            _scrubbed = re.sub(
+                r"This data covers the 20\d\d season",
+                f"This data covers the {_CUR_SEASON} season",
+                _scrubbed, count=1)
         except Exception:
             pass
     # F61 residual: the coverage line must match the evidence span -
@@ -4703,6 +4745,7 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
     # "try a narrower ask" (F61/v70).
     if state.get("_watchdog_tripped") and not _evidenced and not _delegate_ok:
         _scrubbed = _gap or _COMPUTE_FALLBACK
+    _scrubbed = _renumber_lists(_scrubbed)
     _verify_draft_numerals(state, _scrubbed)
     _new_facts = _extract_ledger_facts(state)
     if _new_facts:
