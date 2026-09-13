@@ -648,7 +648,13 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                         }}
                       >
                         Picking up from earlier -{" "}
-                        {[...(m.ai.carry.players ?? []), ...(m.ai.carry.teams ?? [])].join(", ")}
+                        {/* Player lane wins: when a player carried, answer-text
+                            teams (often just the opponent) are noise. Team-only
+                            carry (F67 lane) still names the team. */}
+                        {(m.ai.carry.players?.length
+                          ? m.ai.carry.players
+                          : [...(m.ai.carry.players ?? []), ...(m.ai.carry.teams ?? [])]
+                        ).join(", ")}
                       </div>
                     )}
 
