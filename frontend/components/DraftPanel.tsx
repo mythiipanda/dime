@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import EmptyState from "./EmptyState";
 import DataTable from "./DataTable";
 import { BACKEND } from "../lib/chat";
@@ -30,6 +30,12 @@ export default function DraftPanel() {
       setBusy(false);
     }
   };
+
+  // Auto-load the default year so Explore never opens on an empty panel.
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="card">

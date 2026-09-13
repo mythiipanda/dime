@@ -102,3 +102,31 @@ def test_single_season_evidence_line_untouched():
                    "averaged 30 points per game, ahead of Player B at "
                    "29.", trs)
     assert "This data covers the 2022-23 season." in out
+
+
+def test_source_line_naming_agent_or_dataset_dropped():
+    # 2026-09-13 compose probe: "Source: league agent the dataset."
+    # leaked an internal agent name after the scout-summary rewrite.
+    out = _present("who won the title?",
+                   "This data covers the 2025-26 season.\n"
+                   "Source: league agent the dataset.\n"
+                   "The New York Knicks won the championship.", [])
+    assert "Source:" not in out
+    assert "league agent" not in out
+    assert "The New York Knicks won the championship." in out
+
+
+def test_real_source_citation_survives():
+    out = _present("who leads scoring?",
+                   "Source: Basketball-Reference. Luka leads with "
+                   "2143 points.", [])
+    assert "Source: Basketball-Reference." in out
+
+
+def test_dangling_and_the_dataset_vocative_stripped():
+    # Same probe: "And the dataset, Shai ... played 15 playoff games."
+    out = _present("how did shai do in the playoffs?",
+                   "And the dataset, Shai Gilgeous-Alexander played 15 "
+                   "playoff games.", [])
+    assert "And the dataset," not in out
+    assert "Shai Gilgeous-Alexander played 15 playoff games." in out

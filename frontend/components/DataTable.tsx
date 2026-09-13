@@ -33,7 +33,10 @@ function asTable(rows: unknown, capCols: number, showIds = false): {
   const first = (list as unknown[])[0] as Record<string, unknown>;
   if (typeof first !== "object" || first === null) return null;
   const allKeys = Object.keys(first);
-  const isIdCol = (k: string) => /(^id$|_id$)/i.test(k);
+  // Warehouse ID columns arrive as id / *_id / camelCase-ID (LeagueID,
+  // SeasonID, TeamID). The [a-z]ID branch skips all-caps stat names like
+  // GRID that merely end in the letters ID.
+  const isIdCol = (k: string) => /(^id$|_id$|[a-z]ID$)/i.test(k);
   const ordered = [...allKeys.filter((k) => !isIdCol(k)), ...allKeys.filter((k) => isIdCol(k))];
   const capped = ordered.slice(0, Math.max(1, Math.min(12, capCols)));
   const cols = showIds

@@ -3918,6 +3918,19 @@ def _scrub_final_text(text: str) -> str:
                      flags=re.IGNORECASE)
     cleaned = re.sub(r"\bthe dataset(?:,? and|,)? the dataset\b",
                      "the dataset", cleaned, flags=re.IGNORECASE)
+    # 2026-09-13 compose probe: the "the dataset" rewrites above turn a
+    # "Source: league agent summary" attribution line into "Source:
+    # league agent the dataset" - an internal agent name + broken
+    # grammar. Source lines that name an agent or the dataset are
+    # orchestration leaks, never provenance; drop the whole line.
+    cleaned = re.sub(
+        r"(?m)^[ \t]*Source:[^\n]*\b(?:agent|dataset)\b[^\n]*$",
+        "", cleaned)
+    # Same probe: "And the dataset, Shai ... played" - a dangling
+    # vocative left when a prefix rule fired mid-sentence. "And the
+    # dataset," can never open a grammatical sentence; strip it.
+    cleaned = re.sub(r"(?m)(^|[.!?] )[Aa]nd the dataset, ", r"\1",
+                     cleaned)
     # Raw ids are plumbing (QA #65: "Their unique identifier is
     # 1610612760"). Kill id-narration sentences, then lone long runs.
     cleaned = re.sub(
