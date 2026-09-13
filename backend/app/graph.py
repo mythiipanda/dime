@@ -588,6 +588,32 @@ def _detect_entities(question: str) -> tuple[list[str], list[str]]:
     players, teams = _entity_lists()
     found_p = [p["full_name"] for p in players
                if p.get("full_name", "") and _norm(p["full_name"]) in nq]
+    # Surname-only references ("a Brunson for Wembanyama trade"): full-name
+    # matching never fires, and downstream pins that need found_p miss the
+    # lane entirely (2026-09-13 probe: a legality ask fell to the planner,
+    # which answered value instead). Add a player when their surname is
+    # capitalized in the original question and UNIQUE among ACTIVE players
+    # (the all-time pool shares surnames like Brunson with retired
+    # players). Shared surnames stay for resolve_entity; the case gate
+    # keeps lowercase common words ("love", "ball") from becoming players.
+    _suffixes = {"jr.", "sr.", "ii", "iii", "iv"}
+    from nba_api.stats.static import players as _static_players
+    _by_surname: dict[str, list] = {}
+    for ap in _static_players.get_active_players():
+        fn = ap.get("full_name", "")
+        if not fn:
+            continue
+        toks = [t for t in fn.split() if t.lower() not in _suffixes]
+        if not toks:
+            continue
+        _by_surname.setdefault(_norm(toks[-1]), []).append((toks[-1], fn))
+    for sur, entries in _by_surname.items():
+        if len(entries) != 1:
+            continue
+        disp, fn = entries[0]
+        if len(sur) >= 3 and fn not in found_p and re.search(
+                r"\b" + re.escape(disp) + r"\b", question):
+            found_p.append(fn)
     found_t = []
     race_words = re.search(
         r"magic number|standings|playoff race|\bseed\b|tanking|lottery",
