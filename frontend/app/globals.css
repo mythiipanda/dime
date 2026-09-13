@@ -153,6 +153,11 @@ body {
   transform: scale(0.98);
 }
 
+/* records-table language: hairline rows + hover (RecordsTable.css) */
+.dime-table tr > td, .dime-table tr > th { transition: background-color 120ms ease-out; }
+.dime-table tbody tr:hover > td { background: var(--hover-subtle); }
+.dime-table tbody tr:last-child > td { border-bottom: none; }
+
 .tab-active {
   background: var(--color-field);
   color: var(--color-ink-black);

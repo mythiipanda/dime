@@ -227,7 +227,7 @@ export default function DataTable({ rows, capCols = 8, capRows = 25, heat = fals
           CSV
         </button>
       </div>
-    <div style={{ overflowX: "auto" }}>
+    <div className="dime-table" style={{ overflowX: "auto", border: "1px solid var(--color-stone-border)", borderRadius: 10, background: "var(--color-pure-white)", boxShadow: "var(--shadow-card)" }}>
       <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12 }}>
         <thead>
           <tr>
@@ -247,7 +247,7 @@ export default function DataTable({ rows, capCols = 8, capRows = 25, heat = fals
                 style={{
                   textAlign: t.numeric[t.cols.indexOf(c)] ? "right" : "left",
                   borderBottom: "1px solid var(--color-stone-border)",
-                  padding: "4px 8px",
+                  padding: "7px 10px",
                   color: "var(--color-warm-gray)",
                   fontWeight: 500,
                   cursor: "pointer",
@@ -269,14 +269,14 @@ export default function DataTable({ rows, capCols = 8, capRows = 25, heat = fals
                 const m = t.maxs[j];
                 const bg =
                   heat && v !== null && m !== null
-                    ? `rgba(59, 166, 241, ${(0.04 + 0.22 * (Math.abs(v) / m)).toFixed(3)})`
+                    ? `color-mix(in srgb, var(--color-cyan-signal) ${Math.round(4 + 22 * (Math.abs(v) / m))}%, transparent)`
                     : undefined;
                 return (
                   <td
                     key={j}
                     style={{
                       borderBottom: "1px solid var(--color-stone-border)",
-                      padding: "4px 8px",
+                      padding: "7px 10px",
                       background: bg,
                       textAlign: t.numeric[j] ? "right" : "left",
                       fontVariantNumeric: "tabular-nums",
