@@ -1,24 +1,50 @@
 @import "tailwindcss";
 
 @theme {
-  --color-stone-canvas: #fafaf9;
-  --color-pure-white: #ffffff;
-  --color-stone-border: #e8e6e5;
-  --color-stone-muted: #d6d3d1;
-  --color-ash-gray: #9E9E9E;
-  --color-warm-gray: #5D5D5D;
-  --color-ink-black: #292929;
-  --color-soot: #1c1917;
-  --color-sky-wash: #c1e1f7;
-  --color-cyan-signal: #3ba6f1;
-  --color-cyan-edge: #3398e1;
-  --color-ember: #e11d48;
+  /* Dual theme (2026-09-13): values are the beautifului harness tokens
+     (research/design-skills/beautifului/foundation.css), light here,
+     dark under .dark below. Token names unchanged - every component
+     inherits through var(--color-*). */
+  --color-stone-canvas: oklch(0.985 0.001 286.376);   /* page */
+  --color-pure-white: oklch(1 0 0);                   /* surface */
+  --color-stone-border: oklch(0.946 0.003 264.542);   /* line */
+  --color-stone-muted: oklch(0.912 0.005 258.326);    /* line-strong */
+  --color-ash-gray: oklch(0.695 0.009 264.505);       /* ink-3 */
+  --color-warm-gray: oklch(0.506 0.01 264.477);       /* ink-2 */
+  --color-ink-black: oklch(0.247 0.006 258.361);      /* ink */
+  --color-soot: oklch(0.247 0.006 258.361);           /* strong ink (charts) */
+  --color-sky-wash: oklch(0.96 0.019 252.878);        /* accent-tint */
+  --color-cyan-signal: oklch(0.626 0.205 254.947);    /* accent */
+  --color-cyan-edge: oklch(0.556 0.187 255.617);      /* accent-ink */
+  --color-ember: oklch(0.621 0.192 23.042);           /* red */
 
   --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", ui-sans-serif, system-ui, sans-serif;
   --font-body: -apple-system, BlinkMacSystemFont, "SF Pro Text", ui-sans-serif, system-ui, sans-serif;
 
   --shadow-card: rgba(0, 0, 0, 0.05) 0px 4px 16px 0px;
   --shadow-preview: rgba(17, 12, 46, 0.12) 0px 12px 45px 0px;
+  --hover-subtle: rgba(0, 0, 0, 0.03);
+  --shadow-focus: 0 8px 32px rgba(0, 0, 0, 0.08);
+}
+
+.dark {
+  --color-stone-canvas: oklch(0.209 0.004 264.477);
+  --color-pure-white: oklch(0.26 0.006 271.191);
+  --color-stone-border: oklch(0.308 0.006 258.354);
+  --color-stone-muted: oklch(0.356 0.007 264.474);
+  --color-ash-gray: oklch(0.541 0.01 264.484);
+  --color-warm-gray: oklch(0.731 0.008 260.731);
+  --color-ink-black: oklch(0.964 0.002 247.839);
+  --color-soot: oklch(0.964 0.002 247.839);
+  --color-sky-wash: oklch(0.68 0.173 253.301 / 0.16);
+  --color-cyan-signal: oklch(0.68 0.173 253.301);
+  --color-cyan-edge: oklch(0.788 0.113 248.33);
+  --color-ember: oklch(0.666 0.18 21.433);
+
+  --shadow-card: rgba(0, 0, 0, 0.35) 0px 4px 16px 0px;
+  --shadow-preview: rgba(0, 0, 0, 0.5) 0px 12px 45px 0px;
+  --hover-subtle: rgba(255, 255, 255, 0.05);
+  --shadow-focus: 0 8px 32px rgba(0, 0, 0, 0.45);
 }
 
 html {
@@ -79,7 +105,7 @@ body {
   font-weight: 500;
   border-radius: 9999px;
   padding: 5px 14px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.07);
+  box-shadow: var(--shadow-card);
 }
 
 .tab-idle {
@@ -92,7 +118,7 @@ body {
 
 .tab-idle:hover {
   color: var(--color-ink-black);
-  background: rgba(0, 0, 0, 0.03);
+  background: var(--hover-subtle);
 }
 
 .field {
@@ -135,7 +161,7 @@ body {
 }
 
 .pill-ghost:hover {
-  background: rgba(0, 0, 0, 0.03);
+  background: var(--hover-subtle);
 }
 
 .composer-card {
@@ -144,7 +170,7 @@ body {
 
 .composer-card:focus-within {
   border-color: var(--color-stone-muted);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-focus);
 }
 
 @keyframes dime-rise {

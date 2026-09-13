@@ -65,13 +65,13 @@ function MetricsView({ rows }: { rows: Record<string, unknown> }) {
       <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12 }}>
         <thead>
           <tr>
-            <th style={{ textAlign: "left", borderBottom: "1px solid #e8e6e5", padding: "4px 8px", color: "#78716c", fontWeight: 500 }}>
+            <th style={{ textAlign: "left", borderBottom: "1px solid var(--color-stone-border)", padding: "4px 8px", color: "var(--color-warm-gray)", fontWeight: 500 }}>
               Metric
             </th>
-            <th style={{ textAlign: "left", borderBottom: "1px solid #e8e6e5", padding: "4px 8px", color: "#78716c", fontWeight: 500 }}>
+            <th style={{ textAlign: "left", borderBottom: "1px solid var(--color-stone-border)", padding: "4px 8px", color: "var(--color-warm-gray)", fontWeight: 500 }}>
               {labelA}
             </th>
-            <th style={{ textAlign: "left", borderBottom: "1px solid #e8e6e5", padding: "4px 8px", color: "#78716c", fontWeight: 500 }}>
+            <th style={{ textAlign: "left", borderBottom: "1px solid var(--color-stone-border)", padding: "4px 8px", color: "var(--color-warm-gray)", fontWeight: 500 }}>
               {labelB}
             </th>
           </tr>
@@ -79,13 +79,13 @@ function MetricsView({ rows }: { rows: Record<string, unknown> }) {
         <tbody>
           {metrics.map((m) => (
             <tr key={String(m.metric)}>
-              <td style={{ borderBottom: "1px solid #e8e6e5", padding: "4px 8px", color: "#78716c" }}>
+              <td style={{ borderBottom: "1px solid var(--color-stone-border)", padding: "4px 8px", color: "var(--color-warm-gray)" }}>
                 {String(m.label)}
               </td>
-              <td style={{ borderBottom: "1px solid #e8e6e5", padding: "4px 8px", fontWeight: m.leader === "a" ? 600 : 400 }}>
+              <td style={{ borderBottom: "1px solid var(--color-stone-border)", padding: "4px 8px", fontWeight: m.leader === "a" ? 600 : 400 }}>
                 {num(m.a)}
               </td>
-              <td style={{ borderBottom: "1px solid #e8e6e5", padding: "4px 8px", fontWeight: m.leader === "b" ? 600 : 400 }}>
+              <td style={{ borderBottom: "1px solid var(--color-stone-border)", padding: "4px 8px", fontWeight: m.leader === "b" ? 600 : 400 }}>
                 {num(m.b)}
               </td>
             </tr>
@@ -165,9 +165,9 @@ export default function CompareView({ rows, onDebate }: { rows: unknown; onDebat
             <th
               style={{
                 textAlign: "left",
-                borderBottom: "1px solid #e8e6e5",
+                borderBottom: "1px solid var(--color-stone-border)",
                 padding: "8px 10px",
-                color: "#78716c",
+                color: "var(--color-warm-gray)",
                 fontWeight: 500,
                 verticalAlign: "top",
                 overflowWrap: "break-word",
@@ -178,9 +178,9 @@ export default function CompareView({ rows, onDebate }: { rows: unknown; onDebat
             <th
               style={{
                 textAlign: "left",
-                borderBottom: "1px solid #e8e6e5",
+                borderBottom: "1px solid var(--color-stone-border)",
                 padding: "8px 10px",
-                color: "#78716c",
+                color: "var(--color-warm-gray)",
                 fontWeight: 500,
                 verticalAlign: "top",
                 overflowWrap: "break-word",
@@ -191,9 +191,9 @@ export default function CompareView({ rows, onDebate }: { rows: unknown; onDebat
             <th
               style={{
                 textAlign: "left",
-                borderBottom: "1px solid #e8e6e5",
+                borderBottom: "1px solid var(--color-stone-border)",
                 padding: "8px 10px",
-                color: "#78716c",
+                color: "var(--color-warm-gray)",
                 fontWeight: 500,
                 verticalAlign: "top",
                 overflowWrap: "break-word",
@@ -206,13 +206,13 @@ export default function CompareView({ rows, onDebate }: { rows: unknown; onDebat
         <tbody>
           {keys.map((k) => (
             <tr key={k}>
-              <td style={{ borderBottom: "1px solid #e8e6e5", padding: "8px 10px", color: "#78716c", verticalAlign: "top", overflowWrap: "break-word" }}>
+              <td style={{ borderBottom: "1px solid var(--color-stone-border)", padding: "8px 10px", color: "var(--color-warm-gray)", verticalAlign: "top", overflowWrap: "break-word" }}>
                 {k}
               </td>
-              <td style={{ borderBottom: "1px solid #e8e6e5", padding: "8px 10px", verticalAlign: "top", overflowWrap: "break-word" }}>
+              <td style={{ borderBottom: "1px solid var(--color-stone-border)", padding: "8px 10px", verticalAlign: "top", overflowWrap: "break-word" }}>
                 {fmt(a[k as keyof Side])}
               </td>
-              <td style={{ borderBottom: "1px solid #e8e6e5", padding: "8px 10px", verticalAlign: "top", overflowWrap: "break-word" }}>
+              <td style={{ borderBottom: "1px solid var(--color-stone-border)", padding: "8px 10px", verticalAlign: "top", overflowWrap: "break-word" }}>
                 {fmt(b[k as keyof Side])}
               </td>
             </tr>
@@ -223,10 +223,10 @@ export default function CompareView({ rows, onDebate }: { rows: unknown; onDebat
       {names.length === 2 && (
         <div style={{ marginTop: 8, minWidth: 0 }}>
           <div style={{ display: "flex", height: 10, borderRadius: 9999, overflow: "hidden" }}>
-            <div style={{ width: `${(prob[names[0]] || 0) * 100}%`, background: "#0c0a09" }} />
-            <div style={{ flex: 1, background: "#e8e6e5" }} />
+            <div style={{ width: `${(prob[names[0]] || 0) * 100}%`, background: "var(--color-ink-black)" }} />
+            <div style={{ flex: 1, background: "var(--color-stone-border)" }} />
           </div>
-          <div style={{ fontSize: 12, color: "#78716c", marginTop: 4, overflowWrap: "break-word" }}>
+          <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginTop: 4, overflowWrap: "break-word" }}>
             {names[0]} {Math.round((prob[names[0]] || 0) * 100)} pct vs {names[1]}{" "}
             {Math.round((prob[names[1]] || 0) * 100)} pct
           </div>

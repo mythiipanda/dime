@@ -99,8 +99,8 @@ export default function DebateCardModal({
           left: 0,
           right: 0,
           zIndex: 5,
-          background: "#ffffff",
-          border: "1px solid #e8e6e5",
+          background: "var(--color-pure-white)",
+          border: "1px solid var(--color-stone-border)",
           borderRadius: 8,
           margin: "4px 0 0",
           padding: 4,
@@ -120,7 +120,7 @@ export default function DebateCardModal({
                 fontSize: 13,
                 lineHeight: 1.5,
                 minHeight: 40,
-                color: "#0c0a09",
+                color: "var(--color-ink-black)",
                 cursor: "pointer",
               }}
               onClick={() => {
@@ -156,8 +156,8 @@ export default function DebateCardModal({
     >
       <div
         style={{
-          background: "#ffffff",
-          border: "1px solid #e8e6e5",
+          background: "var(--color-pure-white)",
+          border: "1px solid var(--color-stone-border)",
           borderRadius: 10,
           padding: 20,
           maxWidth: 640,
@@ -169,7 +169,7 @@ export default function DebateCardModal({
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="display" style={{ fontSize: 20, color: "#0c0a09", marginBottom: 4 }}>
+        <div className="display" style={{ fontSize: 20, color: "var(--color-ink-black)", marginBottom: 4 }}>
           Debate card
         </div>
         {debateTopic ? (
@@ -181,7 +181,7 @@ export default function DebateCardModal({
                 fontWeight: 500,
                 borderRadius: 9999,
                 padding: "2px 10px",
-                border: "1px solid #e8e6e5",
+                border: "1px solid var(--color-stone-border)",
                 background: "var(--color-sky-wash)",
                 color: "var(--color-cyan-edge)",
                 whiteSpace: "nowrap",
@@ -195,7 +195,7 @@ export default function DebateCardModal({
             </span>
           </div>
         ) : (
-          <div style={{ fontSize: 14, color: "#78716c", marginBottom: 16 }}>
+          <div style={{ fontSize: 14, color: "var(--color-warm-gray)", marginBottom: 16 }}>
             Pick two players and settle it with data.
           </div>
         )}
@@ -244,7 +244,7 @@ export default function DebateCardModal({
           </button>
         </div>
         {status === "error" && (
-          <div style={{ fontSize: 14, color: "#78716c", marginBottom: 12 }}>
+          <div style={{ fontSize: 14, color: "var(--color-warm-gray)", marginBottom: 12 }}>
             {error || "Something went wrong."}
           </div>
         )}
@@ -258,8 +258,8 @@ export default function DebateCardModal({
                 height: 360,
                 maxHeight: "50dvh",
                 display: "block",
-                background: "#fafaf9",
-                border: "1px solid #e8e6e5",
+                background: "var(--color-stone-canvas)",
+                border: "1px solid var(--color-stone-border)",
                 borderRadius: 10,
               }}
             />

@@ -100,8 +100,8 @@ export default function AnswerText({ text }: { text: string }) {
           code: ({ children }) => (
             <code
               style={{
-                background: "#fafaf9",
-                border: "1px solid #e8e6e5",
+                background: "var(--color-stone-canvas)",
+                border: "1px solid var(--color-stone-border)",
                 borderRadius: 4,
                 padding: "0 4px",
                 fontSize: 12,
@@ -119,9 +119,9 @@ export default function AnswerText({ text }: { text: string }) {
             <th
               style={{
                 textAlign: "left",
-                borderBottom: "1px solid #e8e6e5",
+                borderBottom: "1px solid var(--color-stone-border)",
                 padding: "4px 8px",
-                color: "#78716c",
+                color: "var(--color-warm-gray)",
                 fontWeight: 500,
               }}
             >
@@ -129,7 +129,7 @@ export default function AnswerText({ text }: { text: string }) {
             </th>
           ),
           td: ({ children }) => (
-            <td style={{ borderBottom: "1px solid #e8e6e5", padding: "4px 8px" }}>
+            <td style={{ borderBottom: "1px solid var(--color-stone-border)", padding: "4px 8px" }}>
               {children}
             </td>
           ),

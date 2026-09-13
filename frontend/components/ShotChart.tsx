@@ -30,7 +30,7 @@ function drawShots(canvas: HTMLCanvasElement, shots: Shot[]) {
   ctx.clearRect(0, 0, W, H);
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, W, H);
-  ctx.strokeStyle = "#0c0a09";
+  ctx.strokeStyle = "var(--color-ink-black)";
   ctx.lineWidth = 2;
   ctx.strokeRect(sx(-250), sy(422), 500 * sc, 472 * sc);
   ctx.beginPath();
@@ -52,7 +52,7 @@ function drawShots(canvas: HTMLCanvasElement, shots: Shot[]) {
     ctx.beginPath();
     ctx.arc(sx(s.LOC_X / 10), sy(s.LOC_Y / 10), 3, 0, Math.PI * 2);
     if (made) {
-      ctx.fillStyle = "#0c0a09";
+      ctx.fillStyle = "var(--color-ink-black)";
       ctx.fill();
     } else {
       ctx.strokeStyle = "#a8a29e";

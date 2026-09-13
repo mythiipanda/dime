@@ -34,6 +34,16 @@ export default function Home() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [preset, setPreset] = useState<string | null>(null);
   const [exploreKey, setExploreKey] = useState(0);
+  const [themeTick, setThemeTick] = useState(0);
+  useEffect(() => {
+    try {
+      const t = localStorage.getItem("dime_theme") || "dark";
+      document.documentElement.classList.toggle("dark", t === "dark");
+    } catch {}
+  }, []);
+  const themeDark = typeof window !== "undefined" &&
+    (themeTick >= 0) &&
+    document.documentElement.classList.contains("dark");
   const [paletteKey, setPaletteKey] = useState(0);
   const [activeSection, setActiveSection] = useState("leaders");
   const [showOnboarding, setShowOnboarding] = useState(false);
@@ -229,6 +239,22 @@ export default function Home() {
 
           {/* Right Status */}
           <div className="season-badge" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button
+              type="button"
+              aria-label="Toggle dark mode"
+              title="Toggle light/dark"
+              onClick={() => {
+                const el = document.documentElement;
+                const dark = !el.classList.contains("dark");
+                el.classList.toggle("dark", dark);
+                try { localStorage.setItem("dime_theme", dark ? "dark" : "light"); } catch {}
+                setThemeTick((n) => n + 1);
+              }}
+              className="pill-ghost interactive-tactile"
+              style={{ fontSize: 11, padding: "3px 10px", lineHeight: 1.4 }}
+            >
+              {themeDark ? "\u263E Dark" : "\u2600 Light"}
+            </button>
             <span
               style={{
                 fontSize: 11,

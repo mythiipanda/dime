@@ -588,13 +588,14 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                 >
                   <div
                     style={{
-                      background: "var(--color-soot)",
-                      color: "#ffffff",
+                      background: "var(--color-pure-white)",
+                      border: "1px solid var(--color-stone-border)",
+                      color: "var(--color-ink-black)",
                       borderRadius: "18px 18px 4px 18px",
                       padding: "10px 16px",
                       fontSize: 14,
                       lineHeight: 1.5,
-                      boxShadow: "0 1px 3px rgba(0, 0, 0, 0.08)",
+                      boxShadow: "var(--shadow-card)",
                     }}
                   >
                     {m.text}
@@ -622,7 +623,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                   {m.ai && <AgentActivity ai={m.ai} />}
 
                     {m.ai?.error && (
-                      <div style={{ color: "#e11d48", fontSize: 13, marginBottom: 8 }}>Error: {m.ai.error}</div>
+                      <div style={{ color: "var(--color-ember)", fontSize: 13, marginBottom: 8 }}>Error: {m.ai.error}</div>
                     )}
 
                     {m.ai?.caution && m.ai.caution.length > 0 && (
