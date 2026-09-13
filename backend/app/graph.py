@@ -621,6 +621,13 @@ def _detect_entities(question: str) -> tuple[list[str], list[str]]:
             _rest = question[_m.end():].lstrip()
             if _rest[:1].isupper():
                 continue
+            # Hyphenated-surname fragment guard: the "Alexander" in
+            # "Gilgeous-Alexander" is not a mention of Trey Alexander.
+            # It added a phantom second player to carry scans and
+            # flaked the F67 T3 playoff pin (battery run8/run12,
+            # 2026-09-13).
+            if _m.start() > 0 and question[_m.start() - 1] == "-":
+                continue
             found_p.append(fn)
             break
     found_t = []
@@ -703,7 +710,16 @@ def _detect_carry_players(text: str) -> list[str]:
         return found
     from nba_api.stats.static import players as _static_players
     out: list[str] = []
-    for tok in re.findall(r"\b[A-Z][a-z]{3,}\b", text):
+    for _m in re.finditer(r"\b[A-Z][a-z]{3,}\b", text):
+        tok = _m.group(0)
+        # Hyphenated-surname fragment: "Alexander" inside
+        # "Gilgeous-Alexander" is not a surname mention - it carried
+        # Trey Alexander alongside SGA, broke the one-carried-player
+        # gate, and flaked the F67 T3 playoff pin (battery run8/run12,
+        # 2026-09-13). A real second mention of a hyphenated player
+        # still resolves through full detection above.
+        if _m.start() > 0 and text[_m.start() - 1] == "-":
+            continue
         # Unique ACTIVE player with this exact surname ("Brunson" ->
         # Jalen; Rick is inactive). Ties and namesakes carry nothing -
         # same conservatism as the question-time loose-name rule.
@@ -1413,11 +1429,24 @@ async def _triage_seed(question: str, primary: str, model: str,
         # answer - "best record?" names no team in the ask).
         _hist = state["history"][-6:]
         _user_turns = [t for t in _hist if t.get("role") == "human"]
-        _psrc = _user_turns or _hist
-        for t in _psrc:
+        for t in _user_turns:
             for p in _detect_carry_players(t.get("text") or ""):
                 if p not in found_p and len(found_p) < 3:
                     found_p.append(p)
+        if not found_p and _user_turns:
+            # F67-chain flake (battery run8/run12, 2026-09-13): the asks
+            # named nobody ("best record?" / "their best player?"), so
+            # the user-turn scan found no referent for "he" and the old
+            # `_user_turns or _hist` never fell through - the answer
+            # that DID name the player (the T2 pin's SGA) was ignored
+            # and the T3 playoff pin wobbled to planner variance.
+            # Answer mentions are the fallback when user turns name no
+            # one; when a user turn DID name someone (the F64 case),
+            # this never runs and the one-carried-player gate holds.
+            for t in reversed(_hist):
+                for p in _detect_carry_players(t.get("text") or ""):
+                    if p not in found_p and len(found_p) < 3:
+                        found_p.append(p)
         for t in _hist:
             for tm in _detect_entities(t.get("text") or "")[1]:
                 if tm not in found_t and len(found_t) < 2:

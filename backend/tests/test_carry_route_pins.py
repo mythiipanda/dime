@@ -19,13 +19,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.graph import _triage_seed  # noqa: E402
 
+# Roles match the production chat_history shape ('human'/'ai').
 OKC_HIST = [
-    {"text": "Which team had the best record this season?"},
-    {"text": "The Oklahoma City Thunder had the best record at 64-18."},
+    {"role": "human", "text": "Which team had the best record this season?"},
+    {"role": "ai",
+     "text": "The Oklahoma City Thunder had the best record at 64-18."},
 ]
 WEMBY_HIST = [
-    {"text": "How is Wembanyama playing?"},
-    {"text": "Victor Wembanyama is averaging 24 points this season."},
+    {"role": "human", "text": "How is Wembanyama playing?"},
+    {"role": "ai",
+     "text": "Victor Wembanyama is averaging 24 points this season."},
 ]
 
 
@@ -56,10 +59,42 @@ def test_playoff_carry_named_player_keeps_own_lane():
         "pin_" not in c for c in _tool_names(st))
 
 
-def test_playoff_carry_two_players_no_pin():
-    hist = WEMBY_HIST + [{"text": "Jalen Brunson is at 32.6."}]
+def test_playoff_carry_answer_mention_does_not_steal_subject():
+    # F64: an ANSWER that happens to name a second player must not
+    # break the one-carried-player gate - the user-turn subject
+    # (Wembanyama) wins and the pin fires for him.
+    hist = WEMBY_HIST + [{"role": "ai", "text": "Jalen Brunson is at 32.6."}]
+    st = _drain("How did he do in the playoffs?", hist)
+    assert "get_playoff_intel" in _tool_names(st)
+    assert any("Wembanyama" in c for c in st["calls_made"])
+
+
+def test_playoff_carry_two_user_named_players_no_pin():
+    # Genuine ambiguity: the USER's own turns name two players, so
+    # "he" has no single referent and the pin must not fire.
+    hist = WEMBY_HIST + [
+        {"role": "human", "text": "And how is Jalen Brunson doing?"},
+        {"role": "ai", "text": "Jalen Brunson is at 32.6."},
+    ]
     st = _drain("How did he do in the playoffs?", hist)
     assert "get_playoff_intel" not in _tool_names(st)
+
+
+def test_playoff_carry_falls_back_to_answer_mentions():
+    # F67 chain (battery run8/run12 flake): asks named nobody ("best
+    # record?" / "their best player?"), so "he" must resolve from the
+    # answer that named the player.
+    hist = [
+        {"role": "human",
+         "text": "Which team had the best record this season?"},
+        {"role": "ai", "text": "The Oklahoma City Thunder at 64-18."},
+        {"role": "human", "text": "Who was their best player?"},
+        {"role": "ai",
+         "text": "Shai Gilgeous-Alexander led the Thunder in scoring."},
+    ]
+    st = _drain("How did he do in the playoffs?", hist)
+    assert "get_playoff_intel" in _tool_names(st)
+    assert any("Gilgeous-Alexander" in c for c in st["calls_made"])
 
 
 def test_playoff_carry_no_history_no_pin():

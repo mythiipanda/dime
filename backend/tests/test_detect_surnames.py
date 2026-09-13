@@ -39,3 +39,16 @@ def test_first_name_position_does_not_detect_other_player():
 def test_possessive_surname_detected():
     found_p, _ = _detect_entities("Wembanyama's blocks this season?")
     assert found_p == ["Victor Wembanyama"]
+
+
+def test_hyphenated_surname_fragment_not_detected():
+    # The "Alexander" in "Gilgeous-Alexander" is not a mention of Trey
+    # Alexander - it added a phantom second player to carry scans and
+    # flaked the F67 T3 playoff pin (battery run8/run12, 2026-09-13).
+    from app.graph import _detect_carry_players, _detect_entities
+    txt = "Shai Gilgeous-Alexander led the Thunder in scoring."
+    assert _detect_entities(txt)[0] == ["Shai Gilgeous-Alexander"]
+    assert _detect_carry_players(txt) == ["Shai Gilgeous-Alexander"]
+    # A standalone surname mention still resolves.
+    assert "Trey Alexander" in _detect_entities(
+        "Would an Alexander for Brunson trade work?")[0]
