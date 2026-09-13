@@ -4070,6 +4070,16 @@ def _scrub_final_text(text: str) -> str:
     # fact via the narrower "estimate output" -> "estimate" rewrite.
     cleaned = re.sub(r"\bestimate output\b", "estimate", cleaned,
                      flags=re.IGNORECASE)
+    # 2026-09-13 sweep2: "I used the provided game logs and summary to
+    # show ..." - first-person tool narration, never prose.
+    cleaned = re.sub(
+        r"[^.!?\n]*\bI used the (?:provided )?[A-Za-z ]*?"
+        r"(?:logs?|summary|output|data|stats?|table)\b[^.!?\n]*[.!?]",
+        " ", cleaned)
+    # "league leaders output lists" - "output" as a source noun; the
+    # subject-verb drop above only covers "The output ...".
+    cleaned = re.sub(r"\b(league leaders|leaders|league) output\b",
+                     r"\1 table", cleaned)
     cleaned = re.sub(
         r"[^.!?\n]*\b[Tt]he output (?:confirms?|shows?|indicates?|"
         r"reports?|states?)\b[^.!?\n]*[.!?]", " ", cleaned)
@@ -4116,13 +4126,17 @@ def _scrub_final_text(text: str) -> str:
     # 2026-09-13 sweep: "10.7 assists per game ." - stray space before
     # terminal punctuation, an LLM typo class that reads sloppy.
     cleaned = re.sub(r" +([.,;:!?])(?=\s|$)", r"\1", cleaned)
+    # Sweep2: "points, efficiency, and efficiency" - the LLM repeated
+    # the final list item. Collapse "X, and X" -> "and X"... kept
+    # simple: drop the earlier duplicate and its comma.
+    cleaned = re.sub(r"\b(\w{4,}), and \1\b", r"and \1", cleaned)
     # 2026-09-13 gauntlet: "**Takeaways:**\n\n**Verdict:**" - a section
     # header whose items were all stripped (or never written) ships as
     # an empty section. Drop header lines with no list items or prose
     # before the next header.
     cleaned = re.sub(
-        r"(?m)^[ \t]*\*\*(?:Takeaways?|Verdict|Summary):?\*\*:?[ \t]*\n"
-        r"(?=[ \t]*\n?[ \t]*\*\*(?:Takeaways?|Verdict|Summary)|\s*$)",
+        r"(?m)^[ \t]*\*\*[^*\n]+\*\*:?[ \t]*\n"
+        r"(?=[ \t]*\n?[ \t]*\*\*|\s*$)",
         "", cleaned)
     cleaned = re.sub(r"\bcomeback_kings\b", "comeback wins", cleaned,
                      flags=re.IGNORECASE)

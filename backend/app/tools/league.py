@@ -1,5 +1,6 @@
 """League desk. Standings, leaders, hustle, ratings, history, draft."""
 
+import re
 from typing import Any
 from langchain_core.tools import tool
 
@@ -2070,10 +2071,24 @@ def get_trade_value(
                      "estimates": True}}
 
 
+def _norm_draft_year(season: str) -> str:
+    """Draft tools key on the draft YEAR ('2025'), not the NBA season
+    label ('2025-26'). The global agent instruction says 'pass season
+    2025-26 always', which crashed int() here and sent the lane
+    flailing into text_to_sql over a 2023 hist table - the chat then
+    claimed 'no 2024 or 2025 combine entries' while the Explore draft
+    tab showed all 79 (2026-09-13 sweep)."""
+    s = str(season or "").strip()
+    m = re.fullmatch(r"(20\d\d)-\d\d", s)
+    return m.group(1) if m else s
+
+
 @tool
 def get_draft_board(season: str = "2025") -> dict[str, Any]:
     """Draft board: college production plus combine measurements, blended rank."""
     import unicodedata as _ud
+
+    season = _norm_draft_year(season)
 
     from ..sources import cbb as _cbb
 
@@ -2085,6 +2100,20 @@ def get_draft_board(season: str = "2025") -> dict[str, Any]:
     if not prod.ok or prod.frame.height == 0:
         # F53: prod.error is a raw httpx message with the external URL -
         # never hand it to the narrative. Facts only.
+        # 2026-09-13 sweep2: with college stats blocked, the tool
+        # errored outright and the lane claimed NO draft data while
+        # silver_combine held all 79 measurements. Degrade to a
+        # combine-only board instead of a false absence.
+        rows, meta = _warehouse_or_live(
+            "silver_combine", "_season = ?",
+            [season], lambda: nba_stats.combine(season), season,
+        )
+        if rows:
+            meta = dict(meta)
+            meta["note"] = ("college production stats unavailable; "
+                            "combine measurements only")
+            return {"tool": "get_draft_board", "ok": True,
+                    "rows": rows[:30], "meta": meta}
         return {"tool": "get_draft_board", "ok": False,
                 "error": (f"{season} college stats are unavailable "
                           "(upstream source blocked). Draft data covers "
@@ -2249,10 +2278,37 @@ def get_lineup_leaders(min_minutes: int = 100, limit: int = 10,
 @tool
 def get_combine(season: str = "2025") -> dict[str, Any]:
     """Draft combine measurements plus shooting drills for one draft year."""
+    season = _norm_draft_year(season)
     rows, meta = _warehouse_or_live(
         "silver_combine", "_season = ?",
         [season], lambda: nba_stats.combine(season), season,
     )
+    if not rows:
+        # Requested draft year not seeded: answer from the newest
+        # seeded year and SAY so, never a false absence.
+        try:
+            from .. import store as _store
+            con = _store.connect(read_only=True)
+            try:
+                avail = [r[0] for r in con.execute(
+                    "SELECT DISTINCT _season FROM silver_combine "
+                    "ORDER BY 1 DESC").fetchall()]
+            finally:
+                con.close()
+        except Exception:
+            avail = []
+        if avail:
+            sub = str(avail[0])
+            rows, meta = _warehouse_or_live(
+                "silver_combine", "_season = ?",
+                [sub], lambda: nba_stats.combine(sub), sub,
+            )
+            if rows:
+                meta = dict(meta)
+                meta["note"] = (f"requested draft year {season} is not "
+                                f"seeded; showing {sub}, the newest "
+                                "available combine year")
+                season = sub
     if not rows:
         return {"tool": "get_combine", "ok": False,
                 "error": meta.get("error") or "empty upstream response"}

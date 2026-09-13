@@ -228,3 +228,34 @@ def test_empty_section_headers_dropped():
     txt2 = "Intro.\n\n**Takeaways**\n1. First point.\n\n**Verdict**\nDone."
     out2 = _scrub_final_text(txt2)
     assert "**Takeaways**" in out2 and "1. First point." in out2
+
+
+def test_first_person_tool_narration_dropped():
+    from app.graph import _scrub_final_text
+    txt = ("I used the provided game logs and summary to show the "
+           "Finals matchups against SAS. Brunson scored 45 in Game 5.")
+    out = _scrub_final_text(txt)
+    assert "I used" not in out
+    assert "45 in Game 5" in out
+
+
+def test_leaders_output_rewritten():
+    from app.graph import _scrub_final_text
+    out = _scrub_final_text("The league leaders output lists totals.")
+    assert "output" not in out.lower()
+    assert "league leaders table" in out
+
+
+def test_any_empty_bold_header_dropped():
+    from app.graph import _scrub_final_text
+    txt = "Intro line.\n\n**Finals Game Log**\n\n**Takeaways**\n1. A point."
+    out = _scrub_final_text(txt)
+    assert "Finals Game Log" not in out
+    assert "1. A point." in out
+
+
+def test_duplicated_list_word_collapsed():
+    from app.graph import _scrub_final_text
+    out = _scrub_final_text("Ranked on points, efficiency, and efficiency.")
+    assert "and efficiency." in out
+    assert "efficiency, and efficiency" not in out
