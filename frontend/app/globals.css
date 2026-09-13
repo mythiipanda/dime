@@ -123,13 +123,15 @@ body {
   padding: 24px;
 }
 
+/* harness primary button: ink fill, surface text, control radius (records-primary-button + send button) */
 .pill-cta {
-  background: var(--color-cyan-signal);
-  border: 1px solid var(--color-cyan-edge);
-  color: #ffffff;
+  background: var(--color-ink-black);
+  border: none;
+  color: var(--color-pure-white);
   font-weight: 500;
-  border-radius: 9999px;
-  padding: 8px 16px;
+  font-size: 12px;
+  border-radius: 8px;
+  padding: 8px 12px;
 }
 
 .pill-ghost {
