@@ -11,6 +11,7 @@ import {
 } from "../lib/chat";
 import { RunInfo, buildCitation, getModels, getRuns, postChatStream } from "../lib/api";
 import AnswerText from "./AnswerText";
+import { StreamText } from "./StreamText";
 import { ArtifactItem } from "./ArtifactCanvas";
 import DataArtifacts from "./DataArtifacts";
 import ModelPicker from "./ModelPicker";
@@ -669,10 +670,12 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                       </div>
                     )}
 
-                    <AnswerText text={m.text} />
-
-                    {m.ai?.streaming && !m.ai.done && (
-                      <span className="caret" aria-hidden />
+                    {m.ai?.streaming && !m.ai.done ? (
+                      <div style={{ fontSize: 14, lineHeight: 1.64, color: "var(--color-ink-black)" }}>
+                        <StreamText text={m.text} />
+                      </div>
+                    ) : (
+                      <AnswerText text={m.text} />
                     )}
 
                     {m.ai && !m.ai.done && !m.ai.text && !aiHasTables(m.ai) && (
