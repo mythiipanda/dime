@@ -1433,13 +1433,14 @@ async def _triage_seed(question: str, primary: str, model: str,
             for p in _detect_carry_players(t.get("text") or ""):
                 if p not in found_p and len(found_p) < 3:
                     found_p.append(p)
-        if not found_p and _user_turns:
+        if not found_p:
             # F67-chain flake (battery run8/run12, 2026-09-13): the asks
             # named nobody ("best record?" / "their best player?"), so
             # the user-turn scan found no referent for "he" and the old
-            # `_user_turns or _hist` never fell through - the answer
-            # that DID name the player (the T2 pin's SGA) was ignored
-            # and the T3 playoff pin wobbled to planner variance.
+            # `_user_turns or _hist` fell through only when NO user
+            # turns existed - the answer that DID name the player (the
+            # T2 pin's SGA) was ignored and the T3 playoff pin wobbled
+            # to planner variance.
             # Answer mentions are the fallback when user turns name no
             # one; when a user turn DID name someone (the F64 case),
             # this never runs and the one-carried-player gate holds.
