@@ -1,6 +1,6 @@
 import { BACKEND, ModelsResponse } from "./chat";
 
-const SEASON = "2025-26";
+export const SEASON = "2025-26";
 
 export interface GameRow {
   HOME_TEAM_ABBREVIATION?: string;

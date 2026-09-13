@@ -189,7 +189,9 @@ _PLANNER_PREFIX = (
     "In two-player compare answers, state each player's headline line "
     "(per-game points, rebounds, assists, and an efficiency figure) "
     "from the payload before the takeaways - never present a margin "
-    "or percentage gap without the underlying numbers."
+    "or percentage gap without the underlying numbers. Every takeaway "
+    "that cites a lead or a gap must name both figures, like "
+    "'66.5% vs 61.6% TS', never 'leads by 4.9 percentage points' alone."
     "For two-team previews call get_preview once and nothing else. "
     "If the question names a venue or home team (in, at, hosting, "
     "homestand), pass it as home_abbrev. "
@@ -3916,6 +3918,9 @@ def _scrub_final_text(text: str) -> str:
                      flags=re.IGNORECASE)
     # scrub collisions: "the data data", "the dataset and the dataset"
     cleaned = re.sub(r"\b[Tt]he data data\b", "the data", cleaned)
+    # 2026-09-13 probe: "the dataset data shows:" - the league-data
+    # rewrite landing after "the dataset" rewrite. Same collision class.
+    cleaned = re.sub(r"\b[Tt]he dataset data\b", "the data", cleaned)
     cleaned = re.sub(r"\bthe the\b", "the", cleaned,
                      flags=re.IGNORECASE)
     cleaned = re.sub(r"\bcomeback_kings\b", "comeback wins", cleaned,
@@ -4375,10 +4380,33 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
             or text.startswith("No data came back")):
         _gap = (_gap_note(state.get("question", "") or "")
                 or _memory_ack(state.get("question", "") or ""))
-        text = _gap or ("I could not find that in the dataset. "
-                        "It covers 2025-26 player and team stats, "
-                        "game logs, standings, playoffs and the "
-                        "Finals - try one of those.")
+        if _gap:
+            text = _gap
+        else:
+            # f62 (2026-09-13 prod QA): the refusal declared "could not
+            # find" while the turn's tool_results carried the correct
+            # 19-row playoff log - prose contradicting its own attached
+            # evidence. The refusal must look at the payloads first:
+            # with rows attached, the honest message is a summary
+            # failure, not an absence.
+            _has_rows = False
+            for _tr in state.get("tool_results") or []:
+                if not isinstance(_tr, dict):
+                    continue
+                _r = _tr.get("rows")
+                if isinstance(_r, list) and _r:
+                    _has_rows = True
+                elif isinstance(_r, dict) and any(
+                        v for v in _r.values() if v):
+                    _has_rows = True
+            text = (("I pulled the relevant data but could not turn it "
+                     "into a clean summary - the evidence panel below "
+                     "has the full breakdown.")
+                    if _has_rows else
+                    ("I could not find that in the dataset. "
+                     "It covers 2025-26 player and team stats, "
+                     "game logs, standings, playoffs and the "
+                     "Finals - try one of those."))
     _scrubbed = _scrub_final_text(text)
     _scrubbed = _strip_false_absence(_scrubbed,
                                  state.get("tool_results") or [])

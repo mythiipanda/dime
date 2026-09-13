@@ -139,3 +139,28 @@ def test_dataset_parenthetical_dropped_from_headers():
     assert "(the dataset)" not in out
     assert "### Player Comparison" in out
     assert "Luka averages 33.5 points per game." in out
+
+
+def test_dataset_data_collision_collapsed():
+    out = _present("compare efficiency?",
+                   "**the dataset data shows:**\nShai leads.", [])
+    assert "dataset data" not in out
+    assert "Shai leads." in out
+
+
+def test_refusal_never_contradicts_attached_evidence():
+    # f62 (2026-09-13 prod QA): thin analysis + rich tool rows must not
+    # ship "I could not find that in the dataset."
+    trs = [{"tool": "get_playoff_intel",
+            "rows": [{"PLAYER": "Jalen Brunson", "GAME_DATE": "2026-06-13",
+                      "PTS": 45, "MIN": 41}]}]
+    out = _present("How did Brunson do in Game 5 of the Finals?",
+                   "This data covers the 2025-26 season.", trs)
+    assert "could not find" not in out.lower()
+    assert "evidence panel" in out
+
+
+def test_refusal_still_fires_with_empty_evidence():
+    out = _present("what is the airspeed of a swallow?",
+                   "This data covers the 2025-26 season.", [])
+    assert "could not find that in the dataset" in out
