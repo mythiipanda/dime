@@ -139,7 +139,7 @@
           "contains_any": [
             [
               "Jokic",
-              "Joki\u0107"
+              "Jokić"
             ]
           ]
         },
@@ -196,7 +196,7 @@
         "contains_any": [
           [
             "Jokic",
-            "Joki\u0107"
+            "Jokić"
           ]
         ]
       },
@@ -230,8 +230,8 @@
       "budget": {
         "max_seconds": 120
       },
-      "xfail": true,
-      "comment": "F66: deep multi-stat compare ships nameless tables, empty cells, or invented numbers. Requires DEN's real total (10010), no empty table cells, no broken 'with .' sentences. xfail until it passes twice."
+      "xfail": false,
+      "comment": "F66: deep multi-stat compare. xfail flipped 2026-09-12 after two consecutive PASS runs against prod v77 (runs 1789270623, 1789270921). Gate satisfied."
     }
   ]
 }
