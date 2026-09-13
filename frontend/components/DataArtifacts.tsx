@@ -172,6 +172,26 @@ export default function DataArtifacts({
   });
   const fallback = preferred >= 0 ? preferred : tables.length - 1;
   const table = tables[Math.min(pageState ?? fallback, Math.max(tables.length - 1, 0))];
+  // F27 empty-chrome fix: when a tool returns zero (or unparseable) rows,
+  // render an honest empty state instead of a blank panel body.
+  const bodyRows = (table?.rows as { rows?: unknown } | undefined)?.rows ?? table?.rows;
+  const hasRenderableRows =
+    Array.isArray(bodyRows) &&
+    bodyRows.length > 0 &&
+    typeof bodyRows[0] === "object" &&
+    bodyRows[0] !== null;
+  const emptyState = (
+    <div
+      style={{
+        fontSize: 12,
+        color: "var(--color-warm-gray)",
+        padding: "12px 4px",
+      }}
+    >
+      No rows returned for this view. Try widening the filters or asking a
+      broader question.
+    </div>
+  );
   const page = Math.min(pageState ?? fallback, Math.max(tables.length - 1, 0));
   const setPage = (n: number) => setPageState(Math.max(0, Math.min(n, tables.length - 1)));
 
@@ -544,7 +564,12 @@ export default function DataArtifacts({
         </details>
       )}
 
-      {toolName === "get_compare" || toolName === "get_preview" ? (
+      {!hasRenderableRows &&
+      toolName !== "run_python" &&
+      toolName !== "get_game_prediction" &&
+      toolName !== "get_impact_estimate" ? (
+        emptyState
+      ) : toolName === "get_compare" || toolName === "get_preview" ? (
         <CompareView rows={table.rows} />
       ) : toolName === "get_wowy" ? (
         <WowyCard
