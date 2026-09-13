@@ -1691,9 +1691,40 @@ async def _triage_seed(question: str, primary: str, model: str,
     # team-scoring TOTALS and gave up (live, 6:22 PM chain retest),
     # though the control ask with the team named outright works. One
     # team resolved (named or carried) + a best-player ask reads the
-    # team's top scorers straight from the leaders table.
-    if (not found_p and not _named_p and len(found_t) == 1
-            and state.get("history")
+    # team's top scorers straight from the leaders table. Carried
+    # players from history do not block the pin: the question names
+    # nobody (capital guard), so a carried player is context, not
+    # the ask.
+    # Resolve "their" deterministically: a team named in the question
+    # wins; otherwise the textually FIRST team of the MOST RECENT
+    # history turn that mentions one - and only when the question
+    # actually carries a pronoun/reference, so a league-wide ask
+    # ("best player in the league") never inherits a team. Battery
+    # run 2 flake (local, 8:59 PM): T1's standings answer also named
+    # the Spurs, so "exactly one carried team" silently failed 1/3
+    # of the time and the turn fell to the planner. Pronoun reference
+    # is recency, not uniqueness.
+    def _first_team_in(text: str) -> str | None:
+        cands = _detect_entities(text)[1]
+        if not cands:
+            return None
+        low = text.lower()
+        def _pos(full: str) -> int:
+            spots = [low.find(full.lower()),
+                     low.find(full.split()[-1].lower())]
+            spots = [s for s in spots if s >= 0]
+            return min(spots) if spots else len(low)
+        return min(cands, key=_pos)
+    _bteam = _first_team_in(question)
+    if not _bteam and state.get("history") and re.search(
+            r"\b(their|theirs|them|they|that team|this team|it)\b",
+            question, re.IGNORECASE):
+        for _ht in reversed(state["history"][-6:]):
+            _bteam = _first_team_in(_ht.get("text") or "")
+            if _bteam:
+                break
+    if (_bteam
+            and not _named_p
             and re.search(r"\bbest players?\b|\bstar players?\b|"
                           r"\btop players?\b", question, re.IGNORECASE)
             # a mid-sentence capitalized token is a name the static
@@ -1703,9 +1734,9 @@ async def _triage_seed(question: str, primary: str, model: str,
             and not is_trade and not is_cast and not is_compare):
         try:
             from .tools.gamelog import _team_abbr as _tabbr
-            _babbr, _bfull = _tabbr(found_t[0])
+            _babbr, _bfull = _tabbr(_bteam)
         except Exception:
-            _babbr, _bfull = "", found_t[0]
+            _babbr, _bfull = "", _bteam
         _brows: list[dict[str, Any]] = []
         if _babbr:
             import time as _btime
@@ -1731,17 +1762,25 @@ async def _triage_seed(question: str, primary: str, model: str,
                 except Exception:
                     _btime.sleep(0.2)
         if _brows:
-            yield _event("thought_stream", {
-                "node": "data_retrieval",
-                "text": f"Reading {_bfull} scoring leaders from the "
-                        "warehouse."})
-            state["tool_results"].append({
+            _bres = {
                 "tool": "pin_team_best_player", "ok": True,
                 "rows": _brows,
                 "meta": {"source": "warehouse", "season": "2025-26",
                          "note": (f"top {_bfull} scorers by per-game "
                                   "points (20+ games); 'best player' "
-                                  "read as the team's leading scorers")}})
+                                  "read as the team's leading scorers")}}
+            yield _event("tool_call", {
+                "node": "data_retrieval",
+                "name": "pin_team_best_player",
+                "label": tool_label("pin_team_best_player"),
+                "summary": f"{_bfull} scoring leaders, 2025-26"})
+            yield _event("tool_result", _tool_result_payload(
+                "data_retrieval", "pin_team_best_player", _bres, 0))
+            yield _event("thought_stream", {
+                "node": "data_retrieval",
+                "text": f"Reading {_bfull} scoring leaders from the "
+                        "warehouse."})
+            state["tool_results"].append(_bres)
             state["calls_made"].append("pin_team_best_player")
             async for _e in _triage_terminal(question, state):
                 yield _e

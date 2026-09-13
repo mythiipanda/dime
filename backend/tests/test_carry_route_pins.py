@@ -84,3 +84,36 @@ def test_best_player_no_team_no_pin():
 def test_best_player_named_player_no_pin():
     st = _drain("Is Brunson their best player?", OKC_HIST)
     assert "pin_team_best_player" not in _tool_names(st)
+
+
+def test_best_player_pin_survives_carried_player():
+    # Battery run 2 flake (local, 8:53 PM): T1's standings answer named
+    # Shai, the carry seed pulled him into found_p, and the pin's
+    # "not found_p" clause silently handed the turn to the planner.
+    # The question still names nobody, so the carried player is context,
+    # not the ask - the pin must fire.
+    hist = [
+        {"text": "Which team had the best record this season?"},
+        {"text": "The Oklahoma City Thunder had the best record at "
+                 "64-18, led by Shai Gilgeous-Alexander."},
+    ]
+    st = _drain("Who was their best player?", hist)
+    assert "pin_team_best_player" in _tool_names(st), _tool_names(st)
+
+
+def test_best_player_pin_uses_most_recent_team():
+    # Battery run 2 flake (local, 9:00 PM): T1's answer named the
+    # runner-up Spurs too, so the "exactly one carried team" gate
+    # failed and the planner compared SGA vs Wembanyama instead of
+    # answering about OKC. "Their" is the most recent turn's subject.
+    hist = [
+        {"text": "Which team had the best record this season?"},
+        {"text": "The Oklahoma City Thunder had the best record at "
+                 "64-18, ahead of the San Antonio Spurs at 62-20."},
+    ]
+    st = _drain("Who was their best player?", hist)
+    names = _tool_names(st)
+    assert "pin_team_best_player" in names, names
+    rows = next(r for r in st["tool_results"]
+                if r.get("tool") == "pin_team_best_player")["rows"]
+    assert all("Wembanyama" not in r.get("PLAYER", "") for r in rows), rows
