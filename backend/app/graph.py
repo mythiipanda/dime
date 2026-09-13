@@ -1760,6 +1760,64 @@ async def _triage_seed(question: str, primary: str, model: str,
             async for _e in _triage_terminal(question, state):
                 yield _e
         return
+    # Contract-value asks ("most overpaid", "best value contracts").
+    # Sweep3: this lane ran a 15-tool, 65s planner fan-out and composed
+    # empty slots ("His salary of exceeds a predicted value of by a
+    # residual of ."). Pin it: one get_contract_value call and a
+    # deterministic board built from the payload (v67 law: LLM-composed
+    # numerals are untrusted on pinned lanes).
+    # Burn-down: belongs in a generic ranking-board pin framework.
+    if (re.search(r"\boverpaid\b|\bunderpaid\b|\bbest value\b|"
+                  r"\bworst value\b|\bvalue contracts?\b|"
+                  r"\bbiggest bargains?\b", question, re.IGNORECASE)
+            and not found_p
+            and not re.search(r"\btrade\b|\btrad(e|ing)\b",
+                              question, re.IGNORECASE)):
+        _over = not re.search(r"\bunderpaid\b|\bbest value\b|"
+                              r"\bbargain", question, re.IGNORECASE)
+        _vh: dict[str, Any] = {}
+        async for _e in _triage_tool(
+                "get_contract_value", {"season": "2025-26"}, state, _vh):
+            yield _e
+        _vout = _vh.get("out") or {}
+        if _result_status(_vout) == "ok":
+            _vrows = _vout.get("rows") or []
+            _vmeta = _vout.get("meta") or {}
+            _board = _vrows[:5] if _over else _vrows[10:15]
+            if _board:
+                def _m(v: object) -> str:
+                    try:
+                        return f"${float(v) / 1e6:.1f}M"
+                    except (TypeError, ValueError):
+                        return "?"
+                _title = ("Most overpaid" if _over
+                          else "Best value (most underpaid)")
+                _lines = [
+                    f"{_title} contracts - {_vmeta.get('salary_season', '2026-27')} "
+                    f"salary vs production-predicted value:"]
+                for _f in _board:
+                    _res = _f.get("RESIDUAL") or 0
+                    _lines.append(
+                        f"- {_f.get('PLAYER')} ({_f.get('TEAM')}): "
+                        f"{_m(_f.get('SALARY'))} salary vs "
+                        f"{_m(_f.get('PREDICTED'))} predicted - "
+                        f"{_m(abs(_res))} "
+                        f"{'over' if _res > 0 else 'under'}.")
+                _lines.append(
+                    "Residual = salary minus an OLS-predicted value from "
+                    "per-game production (PTS + 1.2*REB + 1.5*AST + 2*STL "
+                    f"+ 2*BLK - 1.5*TOV) across "
+                    f"{_vmeta.get('n_qualified', '?')} qualified players "
+                    f"({_vmeta.get('min_gp', 20)}+ GP).")
+                _vmeta = {**_vmeta,
+                          "deterministic_answer": "\n".join(_lines)}
+            if state["tool_results"] and state["tool_results"][-1] is _vout:
+                state["tool_results"][-1] = {
+                    "tool": "get_contract_value", "rows": _vrows,
+                    "meta": _vmeta}
+            async for _e in _triage_terminal(question, state):
+                yield _e
+        return
     _GAP_PIN_RX = re.compile(
         r"\btwo[\s-]*way\b|\b10[\s-]*day\b|\bg[\s-]?league\b|"
         r"\bcontract (?:types?|status|kinds?)\b|"
