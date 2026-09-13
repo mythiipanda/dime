@@ -1277,6 +1277,7 @@ async def _triage_terminal(question: str,
 async def _triage_seed(question: str, primary: str, model: str,
                        state: dict) -> AsyncGenerator[dict[str, Any], None]:
     found_p, found_t = _detect_entities(question)
+    _orig_p, _orig_t = list(found_p), list(found_t)
     if state.get("history") and re.search(
             r"\b(him|her|them|they|his|hers|their|theirs|it|he|she|"
             r"that team|that player)\b",
@@ -1299,6 +1300,13 @@ async def _triage_seed(question: str, primary: str, model: str,
             for tm in _detect_entities(t.get("text") or "")[1]:
                 if tm not in found_t and len(found_t) < 2:
                     found_t.append(tm)
+        # S4: surface carry to the client so the UI can say "picking up
+        # from earlier" instead of pretending the pronoun was explicit.
+        _carried_p = [p for p in found_p if p not in _orig_p]
+        _carried_t = [t for t in found_t if t not in _orig_t]
+        if _carried_p or _carried_t:
+            state["carry_note"] = {"players": _carried_p,
+                                   "teams": _carried_t}
     yield _event("thought_stream", {
         "node": "data_retrieval",
         "text": _triage_plan_text(question, found_p, found_t, bool(state.get("history"))),
@@ -4499,7 +4507,10 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
     _new_facts = _extract_ledger_facts(state)
     if _new_facts:
         yield _event("ledger_facts", {"facts": _new_facts})
-    yield _event("final_answer", {"text": _scrubbed})
+    _fa: dict[str, Any] = {"text": _scrubbed}
+    if state.get("carry_note"):
+        _fa["carry"] = state["carry_note"]
+    yield _event("final_answer", _fa)
     try:
         llm = get_llm(state["primary"], state["model"])  # type: ignore[arg-type]
     except Exception:

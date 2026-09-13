@@ -16,6 +16,7 @@ import TodayPanel from "../components/TodayPanel";
 import MoversPanel from "../components/MoversPanel";
 import WatchlistPanel from "../components/WatchlistPanel";
 import OnboardingModal from "../components/OnboardingModal";
+import DebateCardModal from "../components/DebateCardModal";
 import { ThreadInfo, getQueryParam, getThreads, setQueryParam } from "../lib/api";
 
 type Tab = "chat" | "data" | "today";
@@ -28,6 +29,7 @@ export default function Home() {
   const [tab, setTab] = useState<Tab>("chat");
   const [threads, setThreads] = useState<ThreadInfo[]>([]);
   const [active, setActive] = useState<string | null>(null);
+  const [debateOpen, setDebateOpen] = useState(false);
   const [activeArtifact, setActiveArtifact] = useState<ArtifactItem | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [preset, setPreset] = useState<string | null>(null);
@@ -244,7 +246,10 @@ export default function Home() {
 
         {/* Viewport Content */}
         <div style={{ flex: 1, minHeight: 0, overflow: "hidden", position: "relative" }}>
-          <CommandPalette onAsk={(q) => setPreset(q)} onTab={selectTab} />
+          <CommandPalette onAsk={(q) => setPreset(q)} onTab={selectTab} onDebate={() => setDebateOpen(true)} />
+          {debateOpen && (
+            <DebateCardModal onClose={() => setDebateOpen(false)} />
+          )}
 
           {tab === "chat" ? (
             <div className="chat-split" style={{ height: "100%", display: "flex", overflow: "hidden" }}>

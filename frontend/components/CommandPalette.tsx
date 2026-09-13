@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { BACKEND } from "../lib/chat";
+import { pinToTray, readTray } from "./CompareTray";
 
 interface Hit {
   kind: string;
@@ -20,10 +21,12 @@ const SECTIONS = [
 export default function CommandPalette({
   onAsk,
   onTab,
+  onDebate,
   openKey = 0,
 }: {
   onAsk: (q: string) => void;
   onTab: (t: "chat" | "data") => void;
+  onDebate?: () => void;
   openKey?: number;
 }) {
   const [open, setOpen] = useState(false);
@@ -96,6 +99,30 @@ export default function CommandPalette({
   const sections = SECTIONS.filter(
     (s) => !needle || s.label.toLowerCase().includes(needle),
   );
+  const tray = readTray();
+  const actions: { label: string; hint: string; run: () => void }[] = [
+    ...(onDebate
+      ? [{
+          label: "New debate card",
+          hint: "action",
+          run: () => {
+            onDebate();
+            setOpen(false);
+          },
+        }]
+      : []),
+    ...(tray.length >= 2
+      ? [{
+          label: `Compare tray: ${tray.join(" vs ")}`,
+          hint: "action",
+          run: () => {
+            onTab("chat");
+            onAsk(`Compare ${tray.join(" and ")} this season`);
+            setOpen(false);
+          },
+        }]
+      : []),
+  ].filter((a) => !needle || a.label.toLowerCase().includes(needle));
   const goto = (hash: string) => {
     onTab("data");
     setOpen(false);
@@ -148,6 +175,16 @@ export default function CommandPalette({
           >
             Go to datasets
           </button>
+          {actions.map((a) => (
+            <button
+              key={a.label}
+              style={{ textAlign: "left", padding: "8px", fontSize: 13 }}
+              onClick={a.run}
+            >
+              <span style={{ color: "var(--color-ash-gray)", fontSize: 11 }}>{a.hint} </span>
+              {a.label}
+            </button>
+          ))}
           {sections.map((s) => (
             <button
               key={s.hash}
@@ -159,18 +196,33 @@ export default function CommandPalette({
             </button>
           ))}
           {hits.map((h) => (
-            <button
-              key={`${h.kind}-${h.id}`}
-              style={{ textAlign: "left", padding: "8px", fontSize: 13 }}
-              onClick={() => {
-                onTab("chat");
-                onAsk(`Tell me about ${h.name}`);
-                setOpen(false);
-              }}
-            >
-              <span style={{ color: "var(--color-ash-gray)", fontSize: 11 }}>{h.kind} </span>
-              {h.name}
-            </button>
+            <div key={`${h.kind}-${h.id}`} style={{ display: "flex", alignItems: "center" }}>
+              <button
+                style={{ flex: 1, textAlign: "left", padding: "8px", fontSize: 13 }}
+                onClick={() => {
+                  onTab("chat");
+                  onAsk(`Tell me about ${h.name}`);
+                  setOpen(false);
+                }}
+              >
+                <span style={{ color: "var(--color-ash-gray)", fontSize: 11 }}>{h.kind} </span>
+                {h.name}
+              </button>
+              {h.kind === "player" && (
+                <button
+                  style={{
+                    fontSize: 11,
+                    padding: "4px 8px",
+                    color: "var(--color-warm-gray)",
+                    whiteSpace: "nowrap",
+                  }}
+                  title={`Pin ${h.name} to compare tray`}
+                  onClick={() => pinToTray(h.name)}
+                >
+                  + tray
+                </button>
+              )}
+            </div>
           ))}
         </div>
         <div style={{ fontSize: 11, color: "var(--color-ash-gray)", marginTop: 8 }}>

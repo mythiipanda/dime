@@ -46,6 +46,7 @@ export interface AiMessage {
   error?: string;
   suggestions?: string[];
   caution?: string[];
+  carry?: { players?: string[]; teams?: string[] };
 }
 
 export interface ChatMessage {

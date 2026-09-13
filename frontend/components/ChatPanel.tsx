@@ -94,6 +94,9 @@ function applyEvent(ai: AiMessage, type: string, data: unknown): AiMessage {
   } else if (type === "final_answer") {
     next.text = String(d.text || "");
     next.streaming = false;
+    if (d.carry && typeof d.carry === "object") {
+      next.carry = d.carry as AiMessage["carry"];
+    }
   } else if (type === "suggestions") {
     const items = (d.items as string[]) || [];
     next.suggestions = items;
@@ -625,6 +628,27 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                     {m.ai?.caution && m.ai.caution.length > 0 && (
                       <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginBottom: 10, background: "var(--color-sky-wash)", padding: "6px 12px", borderRadius: 8 }}>
                         Check numbers against tables: {m.ai.caution.join(", ")}
+                      </div>
+                    )}
+
+                    {m.ai?.carry &&
+                      ((m.ai.carry.players?.length ?? 0) > 0 ||
+                        (m.ai.carry.teams?.length ?? 0) > 0) && (
+                      <div
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                          fontSize: 12,
+                          color: "var(--color-warm-gray)",
+                          background: "var(--color-sky-wash)",
+                          borderRadius: 999,
+                          padding: "3px 12px",
+                          marginBottom: 8,
+                        }}
+                      >
+                        Picking up from earlier -{" "}
+                        {[...(m.ai.carry.players ?? []), ...(m.ai.carry.teams ?? [])].join(", ")}
                       </div>
                     )}
 
