@@ -92,6 +92,17 @@ def connect(read_only: bool = False) -> duckdb.DuckDBPyConnection:
         except _LOCK_ERRORS as exc:
             last = exc
             time.sleep(_CONNECT_BACKOFF_S * (2 ** attempt))
+        except duckdb.BinderException as exc:
+            # Same-process attach race: two threads duckdb.connect() the
+            # same file at once and the loser gets "Cannot attach
+            # "warehouse" - already attached". Transient - the winner's
+            # attach is visible on retry - so retry like lock contention.
+            # Surfaced as blank shot-diet cells in get_compare when a
+            # zones sub-call swallowed it (test_compare_fastpath flake).
+            if "already attached" not in str(exc):
+                raise
+            last = exc
+            time.sleep(_CONNECT_BACKOFF_S * (2 ** attempt))
     assert last is not None
     raise last
 
