@@ -4487,6 +4487,27 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
                 r"is missing|could not be computed|"
                 r"does not include", _scrubbed, re.IGNORECASE)):
         _scrubbed = _gap
+    # F39: compose sometimes emits GFM pipe tables in the answer text.
+    # Tables are evidence cards now (S2 design) - the LLM-composed table
+    # is a duplicate with untrusted labels (it rendered team wins as a
+    # "Points Per Game" row on the Luka/SGA compare). Strip pipe-table
+    # blocks (2+ consecutive pipe rows) when real table artifacts exist
+    # to cite; single stray pipe lines and prose stay.
+    if _evidenced:
+        _kept: list[str] = []
+        _run: list[str] = []
+        for _ln in _scrubbed.split("\n") + [""]:
+            if re.match(r"^\s*\|.*\|\s*$", _ln):
+                _run.append(_ln)
+            else:
+                if len(_run) < 2:
+                    _kept.extend(_run)
+                _run = []
+                _kept.append(_ln)
+        _stripped = re.sub(r"\n{3,}", "\n\n",
+                           "\n".join(_kept)).strip()
+        if _stripped:
+            _scrubbed = _stripped
     # QA #66: the thin-net must also run POST-scrub - the sentence
     # strips can remove every sentence, and shipping an empty string
     # is worse than the boilerplate it replaced.
