@@ -1840,7 +1840,12 @@ async def _triage_seed(question: str, primary: str, model: str,
                   r"\bvs\.?\b|\bversus\b", question, re.IGNORECASE)
             and len(found_p) == 2
             and not re.search(r"\bimpact\b|\brapm\b|on.off",
-                              question, re.IGNORECASE)):
+                              question, re.IGNORECASE)
+            # Trade-value asks name two players and say "vs" but belong
+            # to the get_trade_value fast-path (test_trade_latency).
+            and not re.search(
+                r"\btrad(e|es|ed|ing)\b|sign-and-trade|\bswap\b|"
+                r"\bdeal\b", question, re.IGNORECASE)):
         _hh: dict[str, Any] = {}
         async for _e in _triage_tool(
                 "get_compare",
