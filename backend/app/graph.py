@@ -1818,6 +1818,79 @@ async def _triage_seed(question: str, primary: str, model: str,
             async for _e in _triage_terminal(question, state):
                 yield _e
         return
+    # Player-vs-player head-to-head asks ("head to head between X and
+    # Y"). Sweep3: this lane ran 11 tools / 92.5s and its LLM answer
+    # once declared "no shared court time" while the teams had met.
+    # Pin it: one get_compare call, deterministic answer from the
+    # payload (season lines + actual meetings from the pair block).
+    # Burn-down: fold into a generic two-player compare pin once the
+    # efficiency-compare lane is also deterministic.
+    if (re.search(r"\bhead[- ]to[- ]head\b|\bh2h\b", question,
+                  re.IGNORECASE)
+            and len(found_p) >= 2):
+        _hh: dict[str, Any] = {}
+        async for _e in _triage_tool(
+                "get_compare",
+                {"a": found_p[0], "b": found_p[1], "season": "2025-26"},
+                state, _hh):
+            yield _e
+        _hout = _hh.get("out") or {}
+        if _result_status(_hout) == "ok":
+            _hr = _hout.get("rows") or {}
+            _a, _b = _hr.get("a") or {}, _hr.get("b") or {}
+            _pair = _hr.get("pair") or {}
+
+            def _pc(v: object) -> str:
+                try:
+                    return f"{float(v) * 100:.1f}%"
+                except (TypeError, ValueError):
+                    return "?"
+            _lines = []
+            for _p in (_a, _b):
+                if _p.get("name"):
+                    _lines.append(
+                        f"- {_p['name']} ({_p.get('team', '?')}): "
+                        f"{_p.get('ppg', '?')} pts, {_p.get('rpg', '?')} reb, "
+                        f"{_p.get('apg', '?')} ast on {_pc(_p.get('ts_pct'))} "
+                        f"TS over {_p.get('gp', '?')} games.")
+            _meet = _pair.get("h2h_meetings") or []
+            if _meet:
+                _aw = sum(1 for m in _meet
+                          if str(m.get("a_wl") or "").upper() == "W")
+                _lines.append(
+                    f"They shared the floor {len(_meet)} time(s) this "
+                    f"season; {_a.get('name', 'player A')}'s team went "
+                    f"{_aw}-{len(_meet) - _aw} in those games:")
+                for _m in sorted(_meet, key=lambda g: str(g.get("date") or "")):
+                    _lines.append(
+                        f"- {_m.get('date')}: {_a.get('name', 'A')} "
+                        f"{_m.get('a_pts', '?')} pts, {_b.get('name', 'B')} "
+                        f"{_m.get('b_pts', '?')} pts "
+                        f"({'W' if str(_m.get('a_wl') or '').upper() == 'W' else 'L'} "
+                        f"for {_a.get('name', 'A')}).")
+            elif _pair.get("note"):
+                _lines.append(str(_pair["note"]))
+            try:
+                _tsa, _tsb = float(_a.get("ts_pct")), float(_b.get("ts_pct"))
+                _ppa, _ppb = float(_a.get("ppg")), float(_b.get("ppg"))
+                _eff = _a if _tsa >= _tsb else _b
+                _vol = _a if _ppa >= _ppb else _b
+                _lines.append(
+                    f"Verdict: {_eff.get('name')} holds the efficiency edge "
+                    f"({_pc(max(_tsa, _tsb))} vs {_pc(min(_tsa, _tsb))} TS); "
+                    f"{_vol.get('name')} leads scoring volume "
+                    f"({max(_ppa, _ppb):.1f} vs {min(_ppa, _ppb):.1f} ppg).")
+            except (TypeError, ValueError):
+                pass
+            _hmeta = dict(_hout.get("meta") or {})
+            _hmeta["deterministic_answer"] = "\n".join(_lines)
+            if state["tool_results"] and state["tool_results"][-1] is _hout:
+                state["tool_results"][-1] = {
+                    "tool": "get_compare", "rows": [_hout],
+                    "meta": _hmeta}
+            async for _e in _triage_terminal(question, state):
+                yield _e
+        return
     _GAP_PIN_RX = re.compile(
         r"\btwo[\s-]*way\b|\b10[\s-]*day\b|\bg[\s-]?league\b|"
         r"\bcontract (?:types?|status|kinds?)\b|"
