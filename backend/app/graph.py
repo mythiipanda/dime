@@ -890,6 +890,84 @@ def _player_team_abbr(pid: int, season: str) -> str:
     return ""
 
 
+def _money_m(v: object) -> str:
+    try:
+        return f"${float(v) / 1_000_000:.1f}M"
+    except (TypeError, ValueError):
+        return "an unknown amount"
+
+
+def _trade_verdict_text(rows: dict[str, Any]) -> str:
+    """Deterministic trade verdict from the get_trade_check payload.
+
+    QA 2026-09-13: the LLM verdict inverted the constraint ("SAS cannot
+    receive enough") while its own takeaways stated it correctly - the
+    classic whack-a-mole the v67 law bans. On the pinned trade lane the
+    answer ships payload-built text: side A sends rows.team_a.out and
+    receives rows.team_b.out, capped at rows.team_a.allowed_in (and the
+    mirror for B), so the receiving limit and the outgoing salary can
+    never be swapped by compose variance.
+    """
+    a = rows.get("team_a") or {}
+    b = rows.get("team_b") or {}
+    ta = str(a.get("team") or "Team A")
+    tb = str(b.get("team") or "Team B")
+    pa = ", ".join(str(p) for p in a.get("players") or []) or "unnamed players"
+    pb = ", ".join(str(p) for p in b.get("players") or []) or "unnamed players"
+    out_a, out_b = _money_m(a.get("out")), _money_m(b.get("out"))
+    allow_a = _money_m(a.get("allowed_in"))
+    allow_b = _money_m(b.get("allowed_in"))
+    rule_a = str(a.get("match_rule") or "salary matching")
+    rule_b = str(b.get("match_rule") or "salary matching")
+    lines: list[str] = []
+    if rows.get("legal"):
+        lines.append("Legal under the simplified 2023 CBA "
+                     "salary-matching rules.")
+    else:
+        lines.append("Not legal as constructed.")
+    def _f(v: object) -> float | None:
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+
+    legal = bool(rows.get("legal"))
+    for team, send, recv, allow, rule, inc, cap in (
+            (ta, out_a, out_b, allow_a, rule_a,
+             _f(b.get("out")), _f(a.get("allowed_in"))),
+            (tb, out_b, out_a, allow_b, rule_b,
+             _f(a.get("out")), _f(b.get("allowed_in")))):
+        ok = (inc <= cap) if (inc is not None and cap is not None) else legal
+        line = (f"{team} sends out {send} and takes back {recv}; "
+                f"{team} can receive at most {allow} under the {rule} "
+                "rule")
+        if ok:
+            line += " - within the limit."
+        elif inc is not None and cap is not None:
+            line += (f" - ${(inc - cap) / 1_000_000:.1f}M over, "
+                     "so the trade fails here.")
+        else:
+            line += " - over the limit, so the trade fails here."
+        lines.append(line)
+    for issue in rows.get("issues") or []:
+        s = str(issue)
+        if "takes back too much" not in s:
+            lines.append(s[0].upper() + s[1:] + ".")
+    corr = rows.get("attribution_corrections") or []
+    if corr:
+        lines.append("Roster corrections applied: "
+                     + "; ".join(str(c) for c in corr) + ".")
+    sal_date = str(rows.get("salary_date") or "").strip()[:10]
+    disc = ("Estimate only with simplified rules - cash, trade "
+            "exceptions, taxpayer midlevel, frozen picks, Stepien, "
+            "base-year, trade kickers and sign-and-trades are not "
+            "modeled.")
+    if sal_date:
+        disc = f"Salary figures as of {sal_date}. " + disc
+    lines.append(disc)
+    return "\n".join(lines)
+
+
 def _trade_sides(question: str, found_p: list[str], found_t: list[str],
                  season: str) -> dict[str, str] | None:
     """Deterministic trade sides: players grouped by current team abbrev."""
@@ -2454,6 +2532,11 @@ async def _triage_seed(question: str, primary: str, model: str,
                            "error": str(exc)[:160]}
                 if not isinstance(out, dict):
                     out = {"tool": "get_trade_check", "rows": out}
+                if out.get("ok") and isinstance(out.get("rows"), dict):
+                    # Compose inverted this verdict once already; ship
+                    # the payload-built text (v67 law).
+                    out.setdefault("meta", {})["deterministic_answer"] = (
+                        _trade_verdict_text(out["rows"]))
                 _ms = int((time.time() - _t0) * 1000)
                 _rd: dict[str, Any] = _tool_result_payload(
                     "data_retrieval", _tname, out, _ms)
@@ -4461,9 +4544,13 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
                 and _tr["meta"].get("deterministic_answer")):
             _det = str(_tr["meta"]["deterministic_answer"])
             try:
-                from .tools._core import SEASON as _CUR_SEASON
-                _det = (f"This data covers the {_CUR_SEASON} season.\n"
-                        + _det)
+                if _tr.get("tool") != "get_trade_check":
+                    # Trade verdicts quote next-season salary-sheet
+                    # figures with their own as-of date; the generic
+                    # current-season header would misstate them.
+                    from .tools._core import SEASON as _CUR_SEASON
+                    _det = (f"This data covers the {_CUR_SEASON} season.\n"
+                            + _det)
             except Exception:
                 pass
             _scrubbed = _det

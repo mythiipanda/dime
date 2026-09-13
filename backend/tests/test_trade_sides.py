@@ -53,3 +53,33 @@ def test_exact_match_keeps_working(monkeypatch):
         ["Minnesota Timberwolves", "Los Angeles Lakers"], "2024-25")
     assert res == {"team_a": "MIN", "players_a": "Anthony Edwards",
                    "team_b": "LAL", "players_b": "Luka Dončić"}
+
+
+def test_trade_verdict_text_never_inverts_constraint():
+    """QA 2026-09-13: the LLM verdict said 'SAS cannot receive enough'
+    while its takeaways had it right. The pinned lane now ships
+    payload-built text; regression-lock that the over-limit side is the
+    RECEIVING team whose cap is exceeded."""
+    from app.graph import _trade_verdict_text
+
+    rows = {"team_a": {"team": "NYK", "out": 37700000,
+                       "players": ["Jalen Brunson"],
+                       "allowed_in": 50000000, "match_rule": "125% + 250k"},
+            "team_b": {"team": "SAS", "out": 15000000,
+                       "players": ["Devin Vassell"],
+                       "allowed_in": 21300000, "match_rule": "125% + 250k"},
+            "legal": False, "issues": ["SAS takes back too much"],
+            "salary_date": "2026-09-01"}
+    txt = _trade_verdict_text(rows)
+    assert txt.startswith("Not legal as constructed.")
+    assert "SAS can receive at most $21.3M" in txt
+    assert "$16.4M over" in txt
+    assert "NYK" in txt and "within the limit" in txt.split("\n")[1]
+    assert "simplified" in txt
+
+    rows["team_b"]["allowed_in"] = 60000000
+    rows["legal"] = True
+    rows["issues"] = []
+    txt2 = _trade_verdict_text(rows)
+    assert txt2.startswith("Legal under the simplified 2023 CBA")
+    assert "over, so the trade fails" not in txt2

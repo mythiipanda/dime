@@ -1298,8 +1298,8 @@ def _apron_state(payroll: int) -> dict[str, object]:
 
 def _allowed_incoming(outgoing: int, over_apron1: bool) -> tuple[int, str]:
     if over_apron1:
-        return outgoing, "100pct above first apron"
-    return int(outgoing * 1.25 + 250_000), "125pct plus 250k below first apron"
+        return outgoing, "100% (above the first apron)"
+    return int(outgoing * 1.25 + 250_000), "125% plus $250k (below the first apron)"
 
 
 def _salary_vintage(con: object = None) -> tuple[str, int, str | None]:
