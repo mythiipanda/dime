@@ -26,3 +26,15 @@ def test_finals_game3_home_is_explicit():
     g3 = games["2026-06-08"]
     assert g3["home"] == "NYK" and g3["winner"] == "SAS"
     assert g3["score"] == {"NYK": 111, "SAS": 115}
+
+
+def test_contract_value_team_scope():
+    from app.tools.league import get_contract_value
+    r = asyncio.run(get_contract_value.ainvoke(
+        {"season": "2025-26", "team": "Spurs"}))
+    assert r["ok"] and r["meta"]["team_scope"] == "SAS"
+    assert all(f["TEAM"] == "SAS" for f in r["rows"])
+    # League-wide board unchanged when no team is passed.
+    r2 = asyncio.run(get_contract_value.ainvoke({"season": "2025-26"}))
+    assert r2["ok"] and len(r2["rows"]) == 20
+    assert r2["meta"]["team_scope"] is None

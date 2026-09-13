@@ -1775,9 +1775,12 @@ async def _triage_seed(question: str, primary: str, model: str,
                               question, re.IGNORECASE)):
         _over = not re.search(r"\bunderpaid\b|\bbest value\b|"
                               r"\bbargain", question, re.IGNORECASE)
+        _vargs: dict[str, Any] = {"season": "2025-26"}
+        if found_t:
+            _vargs["team"] = found_t[0]
         _vh: dict[str, Any] = {}
         async for _e in _triage_tool(
-                "get_contract_value", {"season": "2025-26"}, state, _vh):
+                "get_contract_value", _vargs, state, _vh):
             yield _e
         _vout = _vh.get("out") or {}
         if _result_status(_vout) == "ok":
@@ -1790,10 +1793,14 @@ async def _triage_seed(question: str, primary: str, model: str,
                         return f"${float(v) / 1e6:.1f}M"
                     except (TypeError, ValueError):
                         return "?"
+                _scope = _vmeta.get("team_scope")
                 _title = ("Most overpaid" if _over
                           else "Best value (most underpaid)")
+                _title += " contracts"
+                if _scope:
+                    _title += f" on {_scope}"
                 _lines = [
-                    f"{_title} contracts - {_vmeta.get('salary_season', '2026-27')} "
+                    f"{_title} - {_vmeta.get('salary_season', '2026-27')} "
                     f"salary vs production-predicted value:"]
                 for _f in _board:
                     _res = _f.get("RESIDUAL") or 0

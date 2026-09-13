@@ -2917,8 +2917,9 @@ def get_playoff_sim(season: str = SEASON, sims: int = 2000) -> dict[str, Any]:
 
 
 @tool
-def get_contract_value(season: str = "2025-26", min_gp: int = 20) -> dict[str, Any]:
-    """Contract value residuals: 2026-27 salary vs OLS prediction from per-game production. Ten most overpaid plus ten most underpaid."""
+def get_contract_value(season: str = "2025-26", min_gp: int = 20,
+                       team: str = "") -> dict[str, Any]:
+    """Contract value residuals: 2026-27 salary vs OLS prediction from per-game production. Ten most overpaid plus ten most underpaid; pass team to scope the board to one roster."""
     import unicodedata as _ud
 
     from .. import store as _store
@@ -2928,6 +2929,9 @@ def get_contract_value(season: str = "2025-26", min_gp: int = 20) -> dict[str, A
         min_gp = max(0, min(int(min_gp), 82))
     except (TypeError, ValueError):
         min_gp = 20
+    # The cap-ledger loop below reuses the name `team` - capture the
+    # argument now or the scope filter reads the last roster row's team.
+    team_arg = str(team or "").strip()
 
     weights = {"PTS": 1.0, "REB": 1.2, "AST": 1.5,
                "STL": 2.0, "BLK": 2.0, "TOV": -1.5}
@@ -3002,8 +3006,32 @@ def get_contract_value(season: str = "2025-26", min_gp: int = 20) -> dict[str, A
         f["PREDICTED"] = int(round(slope * f["SCORE"] + intercept))
         f["RESIDUAL"] = int(f["SALARY"]) - int(f["PREDICTED"])
         f["SCORE"] = round(f["SCORE"], 2)
-    over = sorted(fitted, key=lambda f: f["RESIDUAL"], reverse=True)[:10]
-    under = sorted(fitted, key=lambda f: f["RESIDUAL"])[:10]
+    team_scope = ""
+    if team_arg:
+        try:
+            from ._core import coerce_team_id as _cti
+            _tid = _cti(team_arg)
+            from nba_api.stats.static import teams as _teams
+
+            for _t in _teams.get_teams():
+                if _t.get("id") == _tid:
+                    team_scope = str(_t.get("abbreviation", "")).upper()
+                    break
+        except (ValueError, TypeError):
+            team_scope = ""
+    if team_scope:
+        fitted = [f for f in fitted
+                  if str(f.get("TEAM") or "").upper() == team_scope]
+        if not fitted:
+            return {"tool": "get_contract_value", "ok": False,
+                    "error": f"no qualified players on {team_scope}"}
+        over = sorted(fitted, key=lambda f: f["RESIDUAL"],
+                      reverse=True)[:5]
+        under = sorted(fitted, key=lambda f: f["RESIDUAL"])[:5]
+    else:
+        over = sorted(fitted, key=lambda f: f["RESIDUAL"],
+                      reverse=True)[:10]
+        under = sorted(fitted, key=lambda f: f["RESIDUAL"])[:10]
     rows = over + under
     formula = ("score = PTS + 1.2*REB + 1.5*AST + 2*STL + 2*BLK - 1.5*TOV "
                "(per game); salary_hat = slope*score + intercept (OLS by hand); "
@@ -3015,7 +3043,8 @@ def get_contract_value(season: str = "2025-26", min_gp: int = 20) -> dict[str, A
                      "n_qualified": n, "min_gp": min_gp,
                      "production_season": season, "salary_season": "2026-27",
                      "production_date": prod_date, "salary_date": cap_date,
-                     "overpaid_first": True}}
+                     "overpaid_first": True,
+                     "team_scope": team_scope or None}}
 
 
 @tool
