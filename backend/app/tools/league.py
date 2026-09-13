@@ -711,6 +711,78 @@ def get_team_compare(stat_category: str = "PTS", top: int = 3,
 
 
 @tool
+def get_team_four_factors(team: str = "", season: str = SEASON) -> dict[str, Any]:
+    """Team four factors (eFG%, TOV%, ORB%, FT rate, plus defensive
+    mirrors), computed offline from warehouse team game rows. Use for
+    "why are the Thunder good", "team identity", or any four-factors
+    ask. Pass a team name/abbrev to scope to one team; empty returns
+    the full 30-team board.
+    """
+    try:
+        _con = store.connect()
+        try:
+            tables = {r[0] for r in _con.execute("SHOW TABLES").fetchall()}
+        finally:
+            _con.close()
+    except Exception as exc:
+        return {"tool": "get_team_four_factors", "ok": False,
+                "rows": [], "meta": {},
+                "error": f"warehouse read failed: {str(exc)[:120]}"}
+    if "silver_four_factors_team" not in tables:
+        return {"tool": "get_team_four_factors", "ok": False,
+                "rows": [], "meta": {"season": season},
+                "error": "warehouse table missing: "
+                         "silver_four_factors_team (run "
+                         "scripts/build_team_four_factors.py)"}
+    where, params = "_season = ?", [season]
+    team_q = (team or "").strip()
+    if team_q:
+        from nba_api.stats.static import teams as _static
+        match = None
+        for t in _static.get_teams():
+            if team_q.lower() in (t["full_name"].lower(),
+                                  t["abbreviation"].lower(),
+                                  t["nickname"].lower()):
+                match = t
+                break
+        if match is None:
+            return {"tool": "get_team_four_factors", "ok": False,
+                    "rows": [], "meta": {"season": season},
+                    "error": f"unknown team '{team_q}'"}
+        where += " AND TEAM = ?"
+        params.append(match["abbreviation"])
+    try:
+        rows = store._read_df(
+            f"SELECT TEAM, GP, W, EFG_PCT, TOV_PCT, ORB_PCT, FT_RATE, "
+            f"OPP_EFG_PCT, OPP_TOV_PCT, DRB_PCT, OPP_FT_RATE "
+            f"FROM silver_four_factors_team WHERE {where} "
+            f"ORDER BY EFG_PCT DESC", params)
+    except Exception as exc:
+        return {"tool": "get_team_four_factors", "ok": False,
+                "rows": [], "meta": {"season": season},
+                "error": f"warehouse read failed: {str(exc)[:120]}"}
+    if not rows:
+        return {"tool": "get_team_four_factors", "ok": False,
+                "rows": [], "meta": {"season": season},
+                "error": f"no four-factors rows for {season}"}
+    meta = {"season": season, "source": "warehouse",
+            "rows": len(rows),
+            "note": "computed offline from silver_team_games box "
+                    "scores; eFG% = (FGM + 0.5*FG3M)/FGA, TOV% per "
+                    "possession estimate, ORB% vs opponent DREB, "
+                    "FTr = FTA/FGA. Quote figures verbatim."}
+    if team_q and rows:
+        r0 = rows[0]
+        meta["leader_line"] = (
+            f"{r0['TEAM']} four factors {season}: eFG% {r0['EFG_PCT']}, "
+            f"TOV% {r0['TOV_PCT']}, ORB% {r0['ORB_PCT']}, "
+            f"FT rate {r0['FT_RATE']} (defense: opp eFG% "
+            f"{r0['OPP_EFG_PCT']}, DRB% {r0['DRB_PCT']})")
+    return {"tool": "get_team_four_factors", "ok": True, "rows": rows,
+            "meta": meta}
+
+
+@tool
 def get_hustle(scope: str = "player", season: str = SEASON) -> dict[str, Any]:
     """Hustle leaders, player or team scope. Contests, deflections, charges."""
     from ._core import clamp_scope

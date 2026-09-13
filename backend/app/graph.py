@@ -2231,6 +2231,137 @@ async def _triage_seed(question: str, primary: str, model: str,
                         async for _e in _triage_terminal(question, state):
                             yield _e
                         return
+    # F61: "all-time record for most points by a team in one game" went
+    # to delegate_league + freeform text_to_sql and shipped a different
+    # number each run (144 off playoff rows vs 157 off regular rows)
+    # with no coverage window named. Deterministic lane:
+    # silver_hist_gamelogs is the team game-log table (2009-10 through
+    # current); answer from the payload verbatim with the span named
+    # (v67 law).
+    # Burn-down: team single-game SCORING record only - player records
+    # keep the gamelog best-game pin, other team stat records
+    # (rebounds/assists) stay with the planner until they flake.
+    if (re.search(r"\bmost points\b|\bscoring record\b|"
+                  r"\bhighest[\s-]*scor", question, re.IGNORECASE)
+            and re.search(r"\bteam\b", question, re.IGNORECASE)
+            and re.search(r"\bin (?:one|a|1) game\b|"
+                          r"\bsingle[\s-]*game\b", question,
+                          re.IGNORECASE)
+            and not found_p
+            and not is_compare and not is_trade and not is_cast):
+        import time as _rtime
+
+        from . import store as _rstore
+        _rrows: list[dict[str, Any]] = []
+        for _try in range(3):
+            try:
+                _rcon = _rstore.connect()
+                try:
+                    _rcur = _rcon.execute(
+                        "SELECT team_name, pts, game_date, _season, "
+                        "matchup FROM silver_hist_gamelogs "
+                        "ORDER BY pts DESC LIMIT 5")
+                    _rcols = [d[0] for d in _rcon.description]
+                    _rrows = [dict(zip(_rcols, r))
+                              for r in _rcur.fetchall()]
+                finally:
+                    _rcon.close()
+                break
+            except Exception:
+                _rtime.sleep(0.2)
+        if _rrows:
+            from .tools._core import SEASON as _RCUR
+            from .tools._core import HIST_SEASON_START as _RHIST
+            _rtop = _rrows[0]
+            _rnxt = "; ".join(
+                f"{r['team_name']} {r['pts']} ({r['game_date']})"
+                for r in _rrows[1:4])
+            _rdet = (
+                f"This data covers the {_RHIST} through {_RCUR} "
+                f"seasons.\n"
+                f"The highest-scoring team game in coverage: "
+                f"{_rtop['team_name']} scored {_rtop['pts']} points "
+                f"({_rtop['matchup']}, {_rtop['game_date']}, "
+                f"{_rtop['_season']} season).")
+            if _rnxt:
+                _rdet += f" Next: {_rnxt}."
+            _rdet += (" Team games before 2009-10 are outside "
+                      "coverage.")
+            _rres = {
+                "tool": "pin_team_scoring_record", "ok": True,
+                "rows": _rrows,
+                "meta": {"source": "warehouse",
+                         "span": f"{_RHIST}..{_RCUR}",
+                         "deterministic_answer": _rdet}}
+            yield _event("tool_call", {
+                "node": "data_retrieval",
+                "name": "pin_team_scoring_record",
+                "label": tool_label("pin_team_scoring_record"),
+                "summary": "team single-game scoring record, all "
+                           "coverage seasons"})
+            yield _event("tool_result", _tool_result_payload(
+                "data_retrieval", "pin_team_scoring_record", _rres, 0))
+            yield _event("thought_stream", {
+                "node": "data_retrieval",
+                "text": "Reading the team single-game scoring record "
+                        "from the warehouse."})
+            state["tool_results"].append(_rres)
+            state["calls_made"].append("pin_team_scoring_record")
+            async for _e in _triage_terminal(question, state):
+                yield _e
+            return
+    # Four-factors team asks: verified live (2026-09-13) that the
+    # planner free-formed "Thunder four factors" through text_to_sql /
+    # run_python and shipped WRONG figures (12.4% TOV vs 10.8% real,
+    # "FT rate not available" while it sits in the table). Pin the lane
+    # to get_team_four_factors (silver_four_factors_team, computed
+    # offline from team game rows) with a deterministic answer (v67
+    # law). Player four-factors keep get_four_factors (found_p guard).
+    # Burn-down: team-scope only; player on/off four-factors and
+    # four-factors inside broader compares stay with the planner.
+    if (re.search(r"\bfour[\s-]*factors?\b", question, re.IGNORECASE)
+            and not found_p
+            and not is_compare and not is_trade and not is_cast):
+        _ffh: dict[str, Any] = {}
+        _ffargs: dict[str, Any] = {}
+        if found_t:
+            _ffargs["team"] = found_t[0]
+        async for _e in _triage_tool(
+                "get_team_four_factors", _ffargs, state, _ffh):
+            yield _e
+        _ffout = _ffh.get("out") or {}
+        if _result_status(_ffout) == "ok" and _ffout.get("rows"):
+            _frows = _ffout["rows"]
+            from .tools._core import SEASON as _FFCUR
+            if len(_frows) == 1:
+                _r0 = _frows[0]
+                _ffdet = (
+                    f"This data covers the {_FFCUR} season.\n"
+                    f"{_r0['TEAM']} four factors: eFG% {_r0['EFG_PCT']}, "
+                    f"TOV% {_r0['TOV_PCT']}, ORB% {_r0['ORB_PCT']}, "
+                    f"FT rate {_r0['FT_RATE']}. Defense: opponent eFG% "
+                    f"{_r0['OPP_EFG_PCT']}, forced TOV% "
+                    f"{_r0['OPP_TOV_PCT']}, DRB% {_r0['DRB_PCT']}, "
+                    f"opponent FT rate {_r0['OPP_FT_RATE']}. "
+                    f"Computed from {_r0['GP']} team game rows "
+                    f"(record {_r0['W']}-{_r0['GP'] - _r0['W']}).")
+            else:
+                _ffdet = (
+                    f"This data covers the {_FFCUR} season.\n"
+                    "League four-factors board (offense): "
+                    + "; ".join(
+                        f"{r['TEAM']} eFG% {r['EFG_PCT']}, "
+                        f"TOV% {r['TOV_PCT']}"
+                        for r in _frows[:5]) + ".")
+            _ffout.setdefault("meta", {})["deterministic_answer"] = _ffdet
+            if state["tool_results"] and \
+                    state["tool_results"][-1] is _ffout:
+                state["tool_results"][-1] = {
+                    "tool": "get_team_four_factors",
+                    "rows": _frows, "meta": _ffout["meta"]}
+            async for _e in _triage_terminal(question, state):
+                yield _e
+            return
     # Record-when-plays: "What is Denver's record when Jokic plays?"
     # has a planner recipe (delegate_team -> search_game_logs, report
     # rows.record verbatim) but sampling skips it ~50% of the time
@@ -3447,6 +3578,7 @@ _DISPLAY_TITLES = {
     "get_debate_card": "Debate card",
     "get_leaders": "League leaders",
     "get_team_compare": "Team compare",
+    "get_team_four_factors": "Four factors",
     "get_team_leaders": "Team totals",
     "get_lineups": "Lineups",
     "get_shot_zones": "Shot zones",
@@ -3471,6 +3603,7 @@ _KIND_FOR_TOOL = {
     "get_shot_compare": "shots",
     "get_leaders": "leaders",
     "get_team_compare": "leaders",
+    "get_team_four_factors": "leaders",
     "get_team_leaders": "leaders",
     "get_lineups": "lineups",
     "get_raptor_history": "raptor",
@@ -4876,10 +5009,15 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
                 and _tr["meta"].get("deterministic_answer")):
             _det = str(_tr["meta"]["deterministic_answer"])
             try:
-                if _tr.get("tool") != "get_trade_check":
+                if _tr.get("tool") not in ("get_trade_check",
+                                           "pin_team_scoring_record",
+                                           "get_team_four_factors"):
                     # Trade verdicts quote next-season salary-sheet
                     # figures with their own as-of date; the generic
-                    # current-season header would misstate them.
+                    # current-season header would misstate them. The
+                    # team scoring-record pin carries its own
+                    # historical-span coverage line; the four-factors
+                    # pin writes its coverage line into the det.
                     from .tools._core import SEASON as _CUR_SEASON
                     _det = (f"This data covers the {_CUR_SEASON} season.\n"
                             + _det)
@@ -4975,6 +5113,41 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
             r"This data covers the 20\d\d-\d\d season\.",
             f"This data covers the {_span} seasons.", _scrubbed,
             count=1)
+    # F61 coverage-window honesty: all-time/historical asks run over the
+    # silver_hist_* span, but the compose prompt tells the model to
+    # write the current-season line verbatim (and sometimes no line at
+    # all). For a historical question with no explicit season, the line
+    # must name the historical span; when the line is missing over
+    # evidenced rows, prepend it.
+    _qtxt = state.get("question", "") or ""
+    _hist_q = re.search(
+        r"all[\s-]*time|histor|record for|since (?:19|20)\d\d",
+        _qtxt, re.IGNORECASE) and not re.search(r"20\d\d-\d\d", _qtxt)
+    if _hist_q:
+        try:
+            from .tools._core import SEASON as _CUR_SEASON
+            from .tools._core import HIST_SEASON_START as _HIST_START
+            _hist_line = (f"This data covers the {_HIST_START} through "
+                          f"{_CUR_SEASON} seasons.")
+            _new, _n = re.subn(
+                r"This data covers the 20\d\d-\d\d season\.",
+                _hist_line, _scrubbed, count=1)
+            _scrubbed = _new
+            if _n == 0 and "This data covers" not in _scrubbed:
+                _has_rows = any(
+                    isinstance(r, dict) and r.get("rows")
+                    for r in _flatten_tables(state["tool_results"]))
+                if _has_rows:
+                    # A model-written "season not specified" admission
+                    # contradicts the span line - drop it (F61 bench run
+                    # shipped exactly that over 144-pt playoff rows).
+                    _scrubbed = re.sub(
+                        r"The season is not specified in the "
+                        r"evidence\.?\s*", "", _scrubbed,
+                        flags=re.IGNORECASE)
+                    _scrubbed = _hist_line + "\n" + _scrubbed
+        except Exception:
+            pass
     # A named known-gap beats any no-data outcome: the generic
     # compute-failure fallback AND model-worded admissions ("the query
     # did not succeed", "no data is available", "I cannot rank").

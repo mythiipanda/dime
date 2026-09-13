@@ -81,7 +81,10 @@
    ],
    "expect": {
     "contains": [
-     "2025-26"
+     "2025-26",
+     "2009-10",
+     "176",
+     "Kings"
     ],
     "not_contains": [
      "try a narrower",
@@ -90,9 +93,9 @@
     ]
    },
    "budget": {
-    "max_seconds": 95
+    "max_seconds": 30
    },
-   "comment": "Out-of-coverage ask: must end honestly naming coverage, never hang, never user-blame."
+   "comment": "Pinned deterministic since the F61 fix: team single-game scoring record reads silver_hist_gamelogs verbatim with the 2009-10..2025-26 span named. Was: LLM roulette (144 vs 157) with no coverage window."
   },
   {
    "id": "f62-evidence-carry",
@@ -469,6 +472,28 @@
     "max_seconds_per_turn": 60
    },
    "comment": "S4: pronoun follow-up carries SGA into the splits lane."
+  },
+  {
+   "id": "canon-four-factors-team",
+   "chain": [
+    "What are the Thunder's four factors this season?"
+   ],
+   "expect": {
+    "contains": [
+     "0.5613",
+     "0.1077",
+     "64-18",
+     "OKC"
+    ],
+    "not_contains": [
+     "not available",
+     "not included"
+    ]
+   },
+   "budget": {
+    "max_seconds": 30
+   },
+   "comment": "Pinned lane (2026-09-13): planner freeform shipped wrong TOV%/missing FTr. Deterministic from silver_four_factors_team (offline-computed from team game rows)."
   }
  ]
 }

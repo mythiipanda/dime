@@ -8,6 +8,10 @@ from .. import store
 from ..sources.base import FetchResult
 
 SEASON = "2025-26"
+# Oldest season in the silver_hist_* tables (verified 2026-09-13:
+# hist gamelogs/shots/standings all start 2009-10). Coverage honesty
+# for all-time/historical asks must name this span, not just SEASON.
+HIST_SEASON_START = "2009-10"
 
 
 TOOL_LABELS = {
