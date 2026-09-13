@@ -3242,6 +3242,7 @@ FRESHNESS_RULES: dict[str, tuple[str, float | None]] = {
     "silver_team_games": ("daily in season", 36 * 3600),
     "silver_boxscores": ("daily in season", 36 * 3600),
     "silver_shots": ("daily in season", 36 * 3600),
+    "silver_playoff_inactive": ("static seed (bbref inactive listings)", None),
     "silver_schedule": ("daily in season", 36 * 3600),
     "silver_hustle_player": ("daily in season", 36 * 3600),
     "silver_hustle_team": ("daily in season", 36 * 3600),

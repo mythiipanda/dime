@@ -455,7 +455,8 @@ def compact_thread(thread: str, keep_recent: int = 4,
                 % ",".join(["?"] * len(ids)), ids,
             )
             con.execute(
-                "INSERT INTO chat_history VALUES (?,?,?,?)",
+                "INSERT INTO chat_history (thread, role, text, created_at)"
+                " VALUES (?,?,?,?)",
                 [thread, "summary", ("THREAD SUMMARY: " + memo)[:4000],
                  datetime.now(timezone.utc).isoformat()],
             )
