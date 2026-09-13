@@ -399,6 +399,30 @@ def get_playoffs(season: str = SEASON) -> dict[str, Any]:
             + ", recorded games - not a simulation or prediction. "
               "If the ask was to simulate, say simulated odds are "
               "unavailable for a completed season.")
+    # F63/v67: the Finals result is a pinned lane - the answer text must
+    # be built here from payload fields (full names, "4-1" form), never
+    # LLM-composed from abbreviations ("NYK ... 4 to 1" shipped live).
+    _fin = rows_out.get("finals")
+    if isinstance(_fin, dict) and _fin.get("winner"):
+        try:
+            from nba_api.stats.static import teams as _static
+            _name = {t["abbreviation"]: t["full_name"]
+                     for t in _static.get_teams()}
+            _w = _fin["winner"]
+            _l = next((t for t in _fin.get("teams", []) if t != _w), "")
+            _wt = _name.get(_w, _w)
+            _lt = _name.get(_l, _l)
+            _ww = sum(1 for g in _fin.get("games", [])
+                      if g.get("winner") == _w)
+            _tot = len(_fin.get("games", [])) or 0
+            _lw = _tot - _ww
+            _yr = season.split("-")[0]
+            _yr = str(int(_yr) + 1) if _yr.isdigit() else season
+            meta["deterministic_answer"] = (
+                f"The {_wt} won the {_yr} NBA Finals, beating the "
+                f"{_lt} {_ww}-{_lw}.")
+        except Exception:
+            pass
     return {"tool": "get_playoffs", "ok": True,
             "rows": rows_out,
             "meta": meta}

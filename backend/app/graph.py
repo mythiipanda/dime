@@ -1472,8 +1472,15 @@ async def _triage_seed(question: str, primary: str, model: str,
     # carries the finals block deterministically; pin it. Guards: no
     # MVP (award known-gap owns that), no future/prediction phrasing,
     # no named player, clean single-turn only.
+    # F63: a Finals series ask ("who did X beat", "series score") is the
+    # same deterministic lane even mid-thread - allow history then.
+    _fin_series_ask = bool(
+        re.search(r"\bfinals\b", question, re.IGNORECASE)
+        and re.search(r"\bseries (?:score|result)\b|\bwho did\b[^?]*\bbeat\b",
+                      question, re.IGNORECASE))
     if (((re.search(r"\bfinals\b", question, re.IGNORECASE)
           and re.search(r"\bwho (?:won|wins|took)\b|\bwinner\b|"
+                        r"\bwho did\b[^?]*\bbeat\b|"
                         r"\bchampions?(?:ship)?\s+(?:winner|result)|"
                         r"\bchampions?\b", question, re.IGNORECASE))
          or (re.search(r"\bchampions?\b|\btitle\b", question, re.IGNORECASE)
@@ -1483,7 +1490,8 @@ async def _triage_seed(question: str, primary: str, model: str,
                            question, re.IGNORECASE)))
             and not re.search(r"\bmvp\b|\bwill\b|\bgoing to\b|\bodds\b|"
                               r"\bpredict", question, re.IGNORECASE)
-            and not found_p and not state.get("history")):
+            and not found_p
+            and (not state.get("history") or _fin_series_ask)):
         _fseason = "2025-26"
         _fm = re.search(r"\b(20\d\d)\b", question)
         if _fm:
@@ -1497,7 +1505,8 @@ async def _triage_seed(question: str, primary: str, model: str,
         if _result_status(_fout) == "ok":
             if state["tool_results"] and state["tool_results"][-1] is _fout:
                 state["tool_results"][-1] = {
-                    "tool": "get_playoffs", "rows": [_fout]}
+                    "tool": "get_playoffs", "rows": [_fout],
+                    "meta": _fout.get("meta") or {}}
             async for _e in _triage_terminal(question, state):
                 yield _e
         return
@@ -3529,7 +3538,7 @@ def _scrub_final_text(text: str) -> str:
 
     cleaned = re.sub(
         r"\b(?:per|from|in|via|[Bb]ased on|[Aa]ccording to) (?:the )?"
-        r"warehouse (?:output|data|tables?)\b",
+        r"warehouse (?:outputs?|data|tables?)\b",
         _wh_repl, cleaned)
     cleaned = re.sub(r"\bwarehouse output\b", "the dataset", cleaned,
                      flags=re.IGNORECASE)
