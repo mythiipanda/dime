@@ -279,6 +279,51 @@ def get_clutch(scope: str = "player", season: str = SEASON) -> dict[str, Any]:
     return {"tool": "get_clutch", "ok": True, "rows": slim[:30], "meta": meta}
 
 
+def _finals_game_scores(finals: list[dict[str, Any]],
+                        season: str) -> dict[str, dict[str, int]]:
+    """Date -> {team: points} for Finals games, from player gamelogs.
+
+    The 2025-26 playoff gamelogs use synthetic Game_IDs, so the join key
+    is the game date; summing player PTS per team per date reproduces
+    the team score for each Finals game.
+    """
+    from datetime import datetime as _dt
+
+    dates: dict[str, str] = {}
+    for g in finals:
+        try:
+            dates[_dt.strptime(str(g.get("GAME_DATE")), "%Y-%m-%d")
+                  .strftime("%b %-d, %Y")] = str(g.get("GAME_DATE"))
+        except (TypeError, ValueError):
+            pass
+    if not dates:
+        return {}
+    try:
+        from .. import store as _store
+
+        import duckdb as _ddb
+
+        con = _ddb.connect(str(_store.DB_PATH), read_only=True)
+        try:
+            ph = ",".join("?" * len(dates))
+            rows = con.execute(
+                f"SELECT GAME_DATE, split_part(MATCHUP, ' ', 1), "
+                f"SUM(PTS) FROM silver_playoff_gamelogs "
+                f"WHERE _season = ? AND GAME_DATE IN ({ph}) "
+                f"GROUP BY 1, 2",
+                [season, *sorted(dates)]).fetchall()
+        finally:
+            con.close()
+    except Exception:
+        return {}
+    out: dict[str, dict[str, int]] = {}
+    for gdate, team, pts in rows:
+        iso = dates.get(str(gdate))
+        if iso and team:
+            out.setdefault(iso, {})[str(team)] = int(pts or 0)
+    return out
+
+
 @tool
 def get_playoffs(season: str = SEASON) -> dict[str, Any]:
     """Playoff wins per team plus champion for one season."""
@@ -324,21 +369,43 @@ def get_playoffs(season: str = SEASON) -> dict[str, Any]:
                 fwins[t] = fwins.get(t, 0) + 1
         if len(fteams) == 2:
             ta, tb = fteams[0], fteams[1]
+            # Game scores and home team, joined by date from the
+            # player-level playoff gamelogs (those rows carry synthetic
+            # Game_IDs, so GAME_ID itself cannot be the join key).
+            # Without these fields the composed answer guessed home/away
+            # from the raw MATCHUP string and got game 3 wrong, and it
+            # never had the scores at all.
+            _scores = _finals_game_scores(finals, season)
+            games_out = []
+            for g in finals:
+                if str(g.get("TEAM_ABBREVIATION")) != ta:
+                    continue
+                matchup = str(g.get("MATCHUP"))
+                if " @ " in matchup:
+                    home = matchup.split(" @ ")[1].strip()
+                elif " vs. " in matchup:
+                    home = matchup.split(" vs. ")[0].strip()
+                else:
+                    home = ""
+                game = {"game_id": str(g.get("GAME_ID")),
+                        "date": str(g.get("GAME_DATE")),
+                        "matchup": matchup,
+                        "home": home,
+                        "winner": (ta if g.get("WL") == "W"
+                                   else tb)}
+                sc = _scores.get(str(g.get("GAME_DATE")) or "")
+                if sc:
+                    game["score"] = sc
+                    game["scoreline"] = ", ".join(
+                        f"{t} {sc[t]}" for t in (ta, tb) if t in sc)
+                games_out.append(game)
             rows_out["finals"] = {
                 "round": "NBA Finals",
                 "teams": [ta, tb],
                 "series_score": (f"{ta} {fwins.get(ta, 0)} - "
                                  f"{fwins.get(tb, 0)} {tb}"),
                 "winner": max(fwins, key=fwins.get) if fwins else "",
-                "games": [
-                    {"game_id": str(g.get("GAME_ID")),
-                     "date": str(g.get("GAME_DATE")),
-                     "matchup": str(g.get("MATCHUP")),
-                     "winner": (ta if g.get("WL") == "W"
-                                and str(g.get("TEAM_ABBREVIATION")) == ta
-                                else tb)}
-                    for g in finals
-                    if str(g.get("TEAM_ABBREVIATION")) == ta],
+                "games": games_out,
             }
             # F52: the Finals MVP award itself is not recorded anywhere
             # in the dataset. Say that, then give the honest statistical
