@@ -110,6 +110,10 @@ export default function DataArtifacts({
   const [heat, setHeat] = useState(false);
   const [viewMode, setViewMode] = useState<"table" | "chart" | "court">("table");
   const [showInline, setShowInline] = useState(false);
+  // S2: datasets are citations, collapsed to a receipt strip by
+  // default and expandable in place (direction: "tables stop being
+  // dumps below the answer - they ARE the citation").
+  const [expanded, setExpanded] = useState(false);
 
   const tables: {
     tool: string;
@@ -174,6 +178,7 @@ export default function DataArtifacts({
   useEffect(() => {
     if (isShotTool) {
       setViewMode("court");
+      setExpanded(true);
     } else {
       setViewMode("table");
     }
@@ -225,7 +230,10 @@ export default function DataArtifacts({
         </div>
         <button
           type="button"
-          onClick={() => setShowInline(true)}
+          onClick={() => {
+            setShowInline(true);
+            setExpanded(true);
+          }}
           className="pill-ghost interactive-tactile"
           style={{ fontSize: 11, padding: "2px 8px" }}
         >
@@ -235,7 +243,106 @@ export default function DataArtifacts({
     );
   }
 
+  const rowCount = (() => {
+    const r: unknown = table.rows;
+    if (Array.isArray(r)) return r.length;
+    if (r && typeof r === "object") {
+      const first = Object.values(r as Record<string, unknown>).find((v) =>
+        Array.isArray(v),
+      );
+      if (Array.isArray(first)) return first.length;
+    }
+    return null;
+  })();
+
+  if (!expanded) {
+    return (
+      <div
+        style={{
+          border: "1px solid var(--color-stone-border)",
+          borderRadius: 12,
+          padding: "10px 14px",
+          background: "var(--color-pure-white)",
+          marginTop: 10,
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          flexWrap: "wrap",
+        }}
+      >
+        <div style={{ flex: 1, minWidth: 220 }}>
+          <div
+            style={{
+              fontWeight: 600,
+              fontSize: 13,
+              color: "var(--color-ink-black)",
+            }}
+          >
+            {rawTitle}
+            {rowCount !== null && (
+              <span style={{ fontWeight: 400, color: "var(--color-ash-gray)" }}>
+                {" "}
+                · {rowCount} rows
+              </span>
+            )}
+          </div>
+          <div style={{ fontSize: 11, color: "var(--color-ash-gray)", marginTop: 2 }}>
+            {table.meta?.source ? `Source: ${table.meta.source}` : "Source: NBA data"}
+            {table.meta?.fetched_at
+              ? ` · ${String(table.meta.fetched_at).slice(0, 10)}`
+              : ""}
+          </div>
+          {table.verdict && (
+            <div style={{ fontSize: 12, marginTop: 4, color: "var(--color-ink-black)" }}>
+              {table.verdict.length > 160
+                ? `${table.verdict.slice(0, 160)}…`
+                : table.verdict}
+            </div>
+          )}
+        </div>
+        <CitePill title={rawTitle} meta={table.meta} />
+        {onOpenArtifact && (
+          <button
+            type="button"
+            className="pill-ghost interactive-tactile"
+            style={{
+              fontSize: 11,
+              padding: "3px 10px",
+              borderColor: "var(--color-cyan-edge)",
+              color: "var(--color-cyan-edge)",
+            }}
+            onClick={() => {
+              onOpenArtifact({
+                id: artifactId,
+                tool: toolName || table.tool,
+                title: rawTitle,
+                rows: table.rows,
+                player: (table as { player?: unknown }).player,
+                meta: table.meta,
+                verdict: table.verdict,
+              });
+              setShowInline(false);
+            }}
+            title="Open in dedicated side canvas"
+          >
+            Canvas
+          </button>
+        )}
+        <button
+          type="button"
+          className="pill-ghost interactive-tactile"
+          style={{ fontSize: 11, padding: "3px 10px", fontWeight: 600 }}
+          onClick={() => setExpanded(true)}
+          title="Show the evidence table inline"
+        >
+          Evidence ▸
+        </button>
+      </div>
+    );
+  }
+
   return (
+    // expanded evidence card
     <div
       style={{
         border: "1px solid var(--color-stone-border)",
@@ -279,6 +386,15 @@ export default function DataArtifacts({
         </div>
 
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <button
+            type="button"
+            className="pill-ghost interactive-tactile"
+            style={{ fontSize: 11, padding: "3px 10px" }}
+            onClick={() => setExpanded(false)}
+            title="Collapse back to the receipt strip"
+          >
+            ▸ Collapse
+          </button>
           <CitePill title={rawTitle} meta={table.meta} />
           {onOpenArtifact && (
             <button
