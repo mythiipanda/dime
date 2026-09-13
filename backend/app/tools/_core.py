@@ -8,6 +8,53 @@ from .. import store
 from ..sources.base import FetchResult
 
 SEASON = "2025-26"
+
+
+TOOL_LABELS = {
+    "resolve_entity": "Identifying players and teams",
+    "search_nba": "Searching league coverage",
+    "get_compare": "Comparing players",
+    "delegate_scout": "Scouting players",
+    "delegate_team": "Scouting teams",
+    "delegate_league": "Scanning league data",
+    "run_python": "Crunching numbers",
+    "text_to_sql": "Querying the warehouse",
+    "get_playoff_intel": "Pulling playoff logs",
+    "get_trade_check": "Checking trade math",
+    "get_trade_value": "Grading trade value",
+    "get_award_race": "Ranking award races",
+    "get_matchup_preview": "Previewing the matchup",
+    "get_game_prediction": "Simulating the matchup",
+    "get_briefing": "Briefing the slate",
+    "get_lineup_stats": "Rating lineups",
+    "get_rotation_check": "Checking the rotation",
+    "get_streaks": "Finding streaks",
+    "get_head_to_head": "Checking head-to-head history",
+    "get_season_series": "Pulling the season series",
+    "get_team_shot_zones": "Mapping shot zones",
+    "get_warehouse_freshness": "Checking warehouse freshness",
+    "get_elo_standings": "Computing ELO ratings",
+    "get_impact_estimate": "Estimating impact",
+    "search_game_logs": "Searching game logs",
+    "get_team_game_log": "Pulling the team game log",
+}
+
+_DESK_LABEL_OVERRIDES = {
+    "run_python": "Warehouse query",
+    "text_to_sql": "Warehouse query",
+}
+
+
+def tool_label(name: str, desk: bool = False) -> str:
+    """Single source of truth for tool display labels; desk mode swaps two."""
+    if not name:
+        return "Checking data"
+    if desk and name in _DESK_LABEL_OVERRIDES:
+        return _DESK_LABEL_OVERRIDES[name]
+    if name in TOOL_LABELS:
+        return TOOL_LABELS[name]
+    return name.replace("_", " ").strip().title() or "Checking data"
+
 MAX_ROWS = 25
 TTL_SCOREBOARD_PAST = 12 * 3600
 TTL_GAMELOG = 6 * 3600

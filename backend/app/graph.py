@@ -23,6 +23,7 @@ from .providers import (
 from .skills import catalog as skills_catalog, load_skill as skills_load_skill
 from .subagents import delegate_tools, run_desk_streaming, _SHOT_ZONE_RX, _HISTORICAL_RX
 from .tools import v1_tools
+from .tools._core import tool_label
 
 ANALYST_SYSTEM = (
     "You are Dime, an NBA data analyst assistant. "
@@ -302,44 +303,6 @@ DEEP_TRIGGERS = [
     r"\ball\b.*\b(teams|players)\b",
     r"\brank\b.*\b(top|best)\b.*\b\d+\b",
 ]
-
-TOOL_LABELS = {
-    "resolve_entity": "Identifying players and teams",
-    "search_nba": "Searching league coverage",
-    "get_compare": "Comparing players",
-    "delegate_scout": "Scouting players",
-    "delegate_team": "Scouting teams",
-    "delegate_league": "Scanning league data",
-    "run_python": "Crunching numbers",
-    "text_to_sql": "Querying the warehouse",
-    "get_playoff_intel": "Pulling playoff logs",
-    "get_trade_check": "Checking trade math",
-    "get_trade_value": "Grading trade value",
-    "get_award_race": "Ranking award races",
-    "get_matchup_preview": "Previewing the matchup",
-    "get_game_prediction": "Simulating the matchup",
-    "get_briefing": "Briefing the slate",
-    "get_lineup_stats": "Rating lineups",
-    "get_rotation_check": "Checking the rotation",
-    "get_streaks": "Finding streaks",
-    "get_head_to_head": "Checking head-to-head history",
-    "get_season_series": "Pulling the season series",
-    "get_team_shot_zones": "Mapping shot zones",
-    "get_warehouse_freshness": "Checking warehouse freshness",
-    "get_elo_standings": "Computing ELO ratings",
-    "get_impact_estimate": "Estimating impact",
-    "search_game_logs": "Searching game logs",
-    "get_team_game_log": "Pulling the team game log",
-}
-
-
-def tool_label(name: str) -> str:
-    if not name:
-        return "Checking data"
-    if name in TOOL_LABELS:
-        return TOOL_LABELS[name]
-    return name.replace("_", " ").strip().title() or "Checking data"
-
 
 def _tool_names_from_calls_made(calls_made: list[str]) -> list[str]:
     names: list[str] = []

@@ -33,27 +33,8 @@ async def _invoke_capped(fn, args: dict, name: str) -> Any:
 
 
 def _desk_tool_label(name: str) -> str:
-    labels = {
-        "resolve_entity": "Identifying players and teams",
-        "search_nba": "Searching league coverage",
-        "get_compare": "Comparing players",
-        "delegate_scout": "Scouting players",
-        "delegate_team": "Scouting teams",
-        "delegate_league": "Scanning league data",
-        "run_python": "Warehouse query",
-        "text_to_sql": "Warehouse query",
-        "get_playoff_intel": "Pulling playoff logs",
-        "get_trade_check": "Checking trade math",
-        "get_trade_value": "Grading trade value",
-        "get_award_race": "Ranking award races",
-        "get_matchup_preview": "Previewing the matchup",
-        "get_impact_estimate": "Estimating impact",
-    }
-    if not name:
-        return "Checking data"
-    if name in labels:
-        return labels[name]
-    return name.replace("_", " ").strip().title() or "Checking data"
+    from .tools._core import tool_label as _tl
+    return _tl(name, desk=True)
 
 
 def _trace_status(out: Any) -> str:
