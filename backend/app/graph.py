@@ -3935,6 +3935,11 @@ def _scrub_final_text(text: str) -> str:
     # dataset," can never open a grammatical sentence; strip it.
     cleaned = re.sub(r"(?m)(^|[.!?] )[Aa]nd the dataset, ", r"\1",
                      cleaned)
+    # Same probe: a rewrite landed "the dataset" inside a markdown
+    # header ("### Player Comparison (the dataset)"). Headers are
+    # titles, not prose - drop the parenthetical there only.
+    cleaned = re.sub(r"(?m)^(#{1,6} [^\n]*?)\s*\(the dataset\)\s*$",
+                     r"\1", cleaned)
     # Raw ids are plumbing (QA #65: "Their unique identifier is
     # 1610612760"). Kill id-narration sentences, then lone long runs.
     cleaned = re.sub(

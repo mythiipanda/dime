@@ -130,3 +130,12 @@ def test_dangling_and_the_dataset_vocative_stripped():
                    "playoff games.", [])
     assert "And the dataset," not in out
     assert "Shai Gilgeous-Alexander played 15 playoff games." in out
+
+
+def test_dataset_parenthetical_dropped_from_headers():
+    out = _present("compare them?",
+                   "### Player Comparison (the dataset)\n"
+                   "Luka averages 33.5 points per game.", [])
+    assert "(the dataset)" not in out
+    assert "### Player Comparison" in out
+    assert "Luka averages 33.5 points per game." in out
