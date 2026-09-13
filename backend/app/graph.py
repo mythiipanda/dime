@@ -647,6 +647,39 @@ def _direct_named_teams(question: str, found_t: list[str]) -> list[str]:
     return out
 
 
+def _detect_carry_players(text: str) -> list[str]:
+    """Carry-time player detection for history turns: full entity
+    detection first, then distinctive surname-only mentions ("What is
+    Brunson averaging?"). The pronoun gate upstream already
+    established a referent, and coerce_player_id raises on
+    multi-active namesakes (QA #59), so a resolved surname is
+    unambiguous enough to carry."""
+    found, _ = _detect_entities(text)
+    if found:
+        return found
+    from nba_api.stats.static import players as _static_players
+    out: list[str] = []
+    for tok in re.findall(r"\b[A-Z][a-z]{3,}\b", text):
+        # Unique ACTIVE player with this exact surname ("Brunson" ->
+        # Jalen; Rick is inactive). Ties and namesakes carry nothing -
+        # same conservatism as the question-time loose-name rule.
+        try:
+            exact = [x for x in
+                     _static_players.find_players_by_last_name(tok)
+                     if x.get("is_active")
+                     and x.get("full_name", "").split()[-1].lower()
+                     == tok.lower()]
+        except Exception:
+            continue
+        if len(exact) == 1:
+            nm = str(exact[0].get("full_name") or "")
+            if nm and nm not in out:
+                out.append(nm)
+        if len(out) >= 3:
+            break
+    return out
+
+
 def _direct_named_players(question: str, found_p: list[str]) -> list[str]:
     """Players named outright in the raw question text.
 
@@ -1248,12 +1281,22 @@ async def _triage_seed(question: str, primary: str, model: str,
             r"\b(him|her|them|they|his|hers|their|theirs|it|he|she|"
             r"that team|that player)\b",
             question, re.IGNORECASE):
-        for t in state["history"][-6:]:
-            hp, ht = _detect_entities(t.get("text") or "")
-            for p in hp:
+        # Player carry prefers the SUBJECT of prior asks (user turns);
+        # answer mentions follow only when no ask named anyone - the
+        # F64 flake: a playoff-avg answer that happened to name a
+        # second player broke the one-carried-player pin gate 1/3 of
+        # the time. Team carry keeps the all-turns recency scan (the
+        # F67 "their best player" chain resolves the team FROM the
+        # answer - "best record?" names no team in the ask).
+        _hist = state["history"][-6:]
+        _user_turns = [t for t in _hist if t.get("role") == "human"]
+        _psrc = _user_turns or _hist
+        for t in _psrc:
+            for p in _detect_carry_players(t.get("text") or ""):
                 if p not in found_p and len(found_p) < 3:
                     found_p.append(p)
-            for tm in ht:
+        for t in _hist:
+            for tm in _detect_entities(t.get("text") or "")[1]:
                 if tm not in found_t and len(found_t) < 2:
                     found_t.append(tm)
     yield _event("thought_stream", {
