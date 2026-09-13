@@ -1683,12 +1683,16 @@ async def _triage_seed(question: str, primary: str, model: str,
     # same deterministic lane even mid-thread - allow history then.
     _fin_series_ask = bool(
         re.search(r"\bfinals\b", question, re.IGNORECASE)
-        and re.search(r"\bseries (?:score|result)\b|\bwho did\b[^?]*\bbeat\b",
+        and re.search(r"\bseries (?:score|result)\b|\bwho did\b[^?]*\bbeat\b|"
+                      r"\bgame[- ]by[- ]game\b|\bwalk (?:me )?through\b|"
+                      r"\beach game\b|\bevery game\b",
                       question, re.IGNORECASE))
     if (((re.search(r"\bfinals\b", question, re.IGNORECASE)
           and re.search(r"\bwho (?:won|wins|took)\b|\bwinner\b|"
                         r"\bwho did\b[^?]*\bbeat\b|"
                         r"\bchampions?(?:ship)?\s+(?:winner|result)|"
+                        r"\bgame[- ]by[- ]game\b|\bwalk (?:me )?through\b|"
+                        r"\beach game\b|\bevery game\b|"
                         r"\bchampions?\b", question, re.IGNORECASE))
          or (re.search(r"\bchampions?\b|\btitle\b", question, re.IGNORECASE)
              and re.search(r"\b20\d\d\b|\bnba\b|\bthis (?:year|season)\b",
@@ -1710,10 +1714,49 @@ async def _triage_seed(question: str, primary: str, model: str,
             yield _e
         _fout = _fh.get("out") or {}
         if _result_status(_fout) == "ok":
+            _meta = dict(_fout.get("meta") or {})
+            # Game-by-game / walkthrough asks ship deterministic (v67
+            # law): the LLM given this payload answered with only the
+            # headline, and mid-thread it once claimed no Finals data
+            # existed at all. Build the listing from the payload.
+            if re.search(r"\bgame[- ]by[- ]game\b|\bwalk (?:me )?through\b|"
+                         r"\beach game\b|\bevery game\b",
+                         question, re.IGNORECASE):
+                _fin = ((_fout.get("rows") or {}).get("finals")
+                        if isinstance(_fout.get("rows"), dict) else None) or {}
+                _games = sorted(_fin.get("games") or [],
+                                key=lambda g: str(g.get("date") or ""))
+                if _games:
+                    from datetime import datetime as _dt2
+
+                    _lines = [f"Finals series: {_fin.get('series_score')}."]
+                    for _i, _g in enumerate(_games, 1):
+                        try:
+                            _gd = _dt2.strptime(str(_g.get("date")),
+                                                "%Y-%m-%d").strftime("%b %-d")
+                        except (TypeError, ValueError):
+                            _gd = str(_g.get("date") or "")
+                        _line = f"Game {_i} ({_gd}): "
+                        if _g.get("scoreline"):
+                            _line += str(_g["scoreline"]) + " - "
+                        else:
+                            _line += str(_g.get("matchup") or "") + " - "
+                        _line += f"{_g.get('winner')} won"
+                        if _g.get("home"):
+                            _line += (f" at home" if _g.get("home")
+                                      == _g.get("winner")
+                                      else f" on the road at {_g['home']}")
+                        _lines.append(_line + ".")
+                    _note = _fin.get("finals_mvp_note")
+                    if _note:
+                        _lines.append(str(_note))
+                    _meta["deterministic_answer"] = "\n".join(
+                        "- " + ln if ln.startswith("Game ") else ln
+                        for ln in _lines)
             if state["tool_results"] and state["tool_results"][-1] is _fout:
                 state["tool_results"][-1] = {
                     "tool": "get_playoffs", "rows": [_fout],
-                    "meta": _fout.get("meta") or {}}
+                    "meta": _meta}
             async for _e in _triage_terminal(question, state):
                 yield _e
         return
