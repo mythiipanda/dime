@@ -142,7 +142,9 @@ export default function PlayoffPanel() {
         </div>
       ))}
       <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginTop: 12 }}>
-        Simulated odds live in chat: ask Simulate the playoffs.
+        {champion
+          ? "Final results. Simulated odds return when the next season begins."
+          : "Simulated odds live in chat: ask Simulate the playoffs."}
       </div>
     </div>
   );
