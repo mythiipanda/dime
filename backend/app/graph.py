@@ -1659,6 +1659,132 @@ async def _triage_seed(question: str, primary: str, model: str,
                 yield _e
             return
         # Unknown player / no playoff log: fall through to the planner.
+    # F62: cross-turn specific-game stat follow-up - "How many points
+    # did he score in that game?" carries the player AND the game
+    # from history; unpinned, the planner dumps the whole playoff log
+    # grouped by month and asks for a date (prod f62, 2/2). One
+    # carried player + "that/this game" + a Finals game number (from
+    # the question itself or the most recent history turn that set
+    # one) resolves the exact game row from the warehouse and answers
+    # from the payload (v67 law: deterministic on pinned lanes).
+    # Burn-down: Finals game-N only; regular-season or undated "that
+    # game" references stay with the planner.
+    if (not _named_p
+            and len(found_p) == 1
+            and state.get("history")
+            and re.search(r"\b(?:that|this) game\b", question,
+                          re.IGNORECASE)
+            and re.search(r"\bhow many\b|\bwhat did\b|\bwhat'd\b|"
+                          r"\bhow'd\b|\bhow did\b", question,
+                          re.IGNORECASE)
+            and not is_trade and not is_cast and not is_compare):
+        _gnum = 0
+        _gm2 = re.search(r"\bgame\s+(\d+)\b", question, re.IGNORECASE)
+        if _gm2 and re.search(r"\bfinals\b", question, re.IGNORECASE):
+            _gnum = int(_gm2.group(1))
+        else:
+            for _ht in reversed(state["history"][-6:]):
+                _htx = str(_ht.get("text") or "")
+                _hm = re.search(r"\bgame\s+(\d+)\b", _htx,
+                                re.IGNORECASE)
+                if _hm and re.search(r"\bfinals\b", _htx,
+                                     re.IGNORECASE):
+                    _gnum = int(_hm.group(1))
+                    break
+        if _gnum:
+            try:
+                from .tools._core import coerce_player_id as _gcp
+                _gpid = _gcp(found_p[0])
+            except Exception:
+                _gpid = None
+            if _gpid:
+                import time as _gtime
+
+                from . import store as _gstore
+                _grow: dict[str, Any] | None = None
+                for _try in range(3):
+                    try:
+                        _gcon = _gstore.connect()
+                        try:
+                            _gfd = [r[0] for r in _gcon.execute(
+                                "SELECT DISTINCT GAME_DATE FROM "
+                                "silver_playoffs WHERE _season = ? AND "
+                                "substr(CAST(GAME_ID AS VARCHAR), 8, 1) "
+                                "= '4'", ["2025-26"]).fetchall()]
+                            from datetime import datetime as _gdt
+                            _gdates = [
+                                _d.strftime("%b %-d, %Y") for _d in
+                                sorted(_gdt.strptime(str(_x), "%Y-%m-%d")
+                                       for _x in _gfd)]
+                            if _gdates and _gnum <= len(_gdates):
+                                _r = _gcon.execute(
+                                    "SELECT GAME_DATE, MATCHUP, PTS, "
+                                    "REB, AST, MIN FROM "
+                                    "silver_playoff_gamelogs WHERE "
+                                    "_season = ? AND _entity = ? AND "
+                                    "GAME_DATE = ?",
+                                    ["2025-26", f"player:{_gpid}",
+                                     _gdates[_gnum - 1]]).fetchone()
+                                if _r:
+                                    _grow = dict(zip(
+                                        ["GAME_DATE", "MATCHUP", "PTS",
+                                         "REB", "AST", "MIN"], _r))
+                        finally:
+                            _gcon.close()
+                        break
+                    except Exception:
+                        _gtime.sleep(0.2)
+                if _grow:
+                    from .tools.splits import _resolve_name as _grname
+                    _gdisp = _grname(_gpid, str(found_p[0]))
+                    _gstat = "PTS"
+                    if re.search(r"\brebounds?\b", question,
+                                 re.IGNORECASE):
+                        _gstat = "REB"
+                    elif re.search(r"\bassists?\b", question,
+                                   re.IGNORECASE):
+                        _gstat = "AST"
+                    _gval = _grow.get(_gstat)
+                    if _gval is not None:
+                        _gnoun = {"PTS": "points", "REB": "rebounds",
+                                  "AST": "assists"}[_gstat]
+                        _gverb = {"PTS": "scored", "REB": "grabbed",
+                                  "AST": "dished"}[_gstat]
+                        _gres = {
+                            "tool": "pin_game_stat_followup",
+                            "ok": True,
+                            "rows": [_grow],
+                            "meta": {
+                                "source": "warehouse",
+                                "season": "2025-26",
+                                "deterministic_answer": (
+                                    f"{_gdisp} {_gverb} {int(_gval)} "
+                                    f"{_gnoun} in Game {_gnum} of the "
+                                    f"2026 Finals "
+                                    f"({_grow['GAME_DATE']}, "
+                                    f"{_grow['MATCHUP']}).")}}
+                        yield _event("tool_call", {
+                            "node": "data_retrieval",
+                            "name": "pin_game_stat_followup",
+                            "label": tool_label(
+                                "pin_game_stat_followup"),
+                            "summary": f"{_gdisp} Finals game "
+                                       f"{_gnum} log, 2025-26"})
+                        yield _event("tool_result",
+                                     _tool_result_payload(
+                                         "data_retrieval",
+                                         "pin_game_stat_followup",
+                                         _gres, 0))
+                        yield _event("thought_stream", {
+                            "node": "data_retrieval",
+                            "text": f"Reading {_gdisp}'s Finals game "
+                                    f"{_gnum} line from the warehouse."})
+                        state["tool_results"].append(_gres)
+                        state["calls_made"].append(
+                            "pin_game_stat_followup")
+                        async for _e in _triage_terminal(question, state):
+                            yield _e
+                        return
     # F67: "their best player" carry - the planner resolved "their" to
     # team-scoring TOTALS and gave up (live, 6:22 PM chain retest),
     # though the control ask with the team named outright works. One
@@ -3635,6 +3761,17 @@ def _scrub_final_text(text: str) -> str:
         _wh_repl, cleaned)
     cleaned = re.sub(r"\bwarehouse output\b", "the dataset", cleaned,
                      flags=re.IGNORECASE)
+    # v77 QA nit: "according to the output" leaks the same infra term
+    # without the "warehouse" prefix - same rewrite class.
+    cleaned = re.sub(
+        r"\b(?:[Pp]er|[Ff]rom|[Vv]ia|[Bb]ased on|[Aa]ccording to) "
+        r"(?:the )?outputs?\b",
+        _wh_repl, cleaned)
+    # v77 QA nit: "using the basketball-reference the dataset" - the
+    # warehouse-output rewrite fires AFTER a source name, leaving
+    # "<source> the dataset". Collapse to "<source> dataset".
+    cleaned = re.sub(r"\b(basketball-reference|nba api) the dataset\b",
+                     r"\1 dataset", cleaned, flags=re.IGNORECASE)
 
     # F51: memory-persistence claims ("Noted your favorite team!",
     # "I'll remember that") imply cross-session memory that does not

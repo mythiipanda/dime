@@ -705,6 +705,26 @@ def get_playoff_intel(player_id: str | int, season: str = SEASON) -> dict[str, A
         return {"tool": "get_playoff_intel", "ok": False, "error": err}
     cols = ["GAME_DATE", "MATCHUP", "PTS", "REB", "AST", "MIN"]
     slim = [{k: r.get(k) for k in cols if k in r} for r in rows]
+    # F67 T3: the slim rows carried no player name, so compose wrote
+    # "the recorded player" / "the OKC player" - name every row.
+    from .splits import _resolve_name as _pnm
+    _disp = _pnm(pid, str(player_id))
+    for r in slim:
+        r["PLAYER"] = _disp
+    # F67 413-vs-414: aggregate asks ("how did he do in the
+    # playoffs?") were LLM-summed over 19 rows and drifted by a point
+    # between runs. Compute the series totals once, here, and mark
+    # them canonical (v67 law: deterministic numerals on this lane).
+    def _sum(col: str) -> int:
+        return int(sum(float(r.get(col) or 0) for r in slim))
+    meta = dict(meta or {})
+    meta["player"] = _disp
+    meta["totals"] = {"GP": len(slim), "PTS": _sum("PTS"),
+                      "REB": _sum("REB"), "AST": _sum("AST"),
+                      "MIN": _sum("MIN")}
+    meta["totals_note"] = (
+        "Canonical series totals - quote these verbatim for any "
+        "aggregate ask instead of summing the rows yourself.")
     return {"tool": "get_playoff_intel", "ok": True, "rows": slim, "meta": meta}
 
 

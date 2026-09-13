@@ -37,6 +37,8 @@ TOOL_LABELS = {
     "get_impact_estimate": "Estimating impact",
     "search_game_logs": "Searching game logs",
     "get_team_game_log": "Pulling the team game log",
+    "pin_team_best_player": "Reading team scoring leaders",
+    "pin_game_stat_followup": "Pulling the Finals game line",
 }
 
 _DESK_LABEL_OVERRIDES = {
