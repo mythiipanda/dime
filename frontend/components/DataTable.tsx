@@ -10,6 +10,7 @@ interface Props {
   heat?: boolean;
   storeKey?: string;
   onPlayerSelect?: (playerName: string) => void;
+  onPinPlayer?: (playerName: string) => void;
 }
 
 function asTable(rows: unknown, capCols: number, showIds = false): {
@@ -87,7 +88,7 @@ function asTable(rows: unknown, capCols: number, showIds = false): {
   return { cols, body, nums, maxs, subs, numeric };
 }
 
-export default function DataTable({ rows, capCols = 8, capRows = 25, heat = false, storeKey, onPlayerSelect }: Props) {
+export default function DataTable({ rows, capCols = 8, capRows = 25, heat = false, storeKey, onPlayerSelect, onPinPlayer }: Props) {
   const safeCapRows = Math.max(5, Math.min(100, capRows));
   const [showIds, setShowIds] = useState(false);
   const t = useMemo(() => asTable(rows, capCols, showIds), [rows, capCols, showIds]);
@@ -278,6 +279,7 @@ export default function DataTable({ rows, capCols = 8, capRows = 25, heat = fals
                     }}
                   >
                     {(t.cols[j] === "PLAYER" || t.cols[j] === "player" || t.cols[j] === "PLAYER_NAME") && cell ? (
+                      <>
                       <button
                         type="button"
                         onClick={() => onPlayerSelect ? onPlayerSelect(cell) : setFilter(cell)}
@@ -297,6 +299,25 @@ export default function DataTable({ rows, capCols = 8, capRows = 25, heat = fals
                       >
                         {cell}
                       </button>
+                      {onPinPlayer && (
+                        <button
+                          type="button"
+                          onClick={() => onPinPlayer(cell)}
+                          title={`Pin ${cell} to compare tray`}
+                          aria-label={`Pin ${cell} to compare tray`}
+                          style={{
+                            background: "none",
+                            border: "none",
+                            padding: "0 0 0 6px",
+                            cursor: "pointer",
+                            color: "var(--color-warm-gray)",
+                            fontSize: 11,
+                          }}
+                        >
+                          +
+                        </button>
+                      )}
+                      </>
                     ) : (
                       cell
                     )}

@@ -96,12 +96,14 @@ export default function DataArtifacts({
   ai,
   loading,
   onAsk,
+  onPinPlayer,
   onOpenArtifact,
   activeArtifactId,
 }: {
   ai: AiMessage;
   loading?: boolean;
   onAsk?: (query: string) => void;
+  onPinPlayer?: (playerName: string) => void;
   onOpenArtifact?: (artifact: ArtifactItem) => void;
   activeArtifactId?: string;
 }) {
@@ -635,6 +637,7 @@ export default function DataArtifacts({
             onPlayerSelect={(player) =>
               onAsk ? onAsk(`Tell me about ${player} this season`) : undefined
             }
+            onPinPlayer={onPinPlayer}
           />
         </>
       )}

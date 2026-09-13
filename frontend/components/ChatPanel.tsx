@@ -16,6 +16,8 @@ import DataArtifacts from "./DataArtifacts";
 import ModelPicker from "./ModelPicker";
 import AgentActivity from "./AgentActivity";
 import Skeleton from "./Skeleton";
+import CompareTray, { pinToTray, readTray } from "./CompareTray";
+import DebateCardModal from "./DebateCardModal";
 
 function aiHasTables(ai: AiMessage): boolean {
   return Object.values(ai.nodes).some((n) => n.tables.length > 0);
@@ -248,6 +250,8 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
   const [models, setModels] = useState<ModelOption[]>([]);
   const [model, setModel] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [debateOpen, setDebateOpen] = useState(false);
+  const [debateTopic, setDebateTopic] = useState<string | undefined>(undefined);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [elapsed, setElapsed] = useState(0);
@@ -639,6 +643,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                         ai={m.ai}
                         loading={!m.ai.done}
                         onAsk={sendText}
+                        onPinPlayer={(p) => pinToTray(p)}
                         onOpenArtifact={onOpenArtifact}
                         activeArtifactId={activeArtifactId}
                       />
@@ -649,6 +654,20 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                         <CopyButton text={m.text} />
                         <CiteButton text={m.text} meta={firstTableMeta(m.ai)} />
                         <LinkButton index={i} />
+                        <button
+                          type="button"
+                          className="pill-ghost interactive-tactile"
+                          style={{ fontSize: 12, padding: "3px 10px" }}
+                          title="Settle it: open a debate card from this answer"
+                          onClick={() => {
+                            setDebateTopic(
+                              messages.slice(0, i).reverse().find((x) => x.role === "human")?.text
+                            );
+                            setDebateOpen(true);
+                          }}
+                        >
+                          Debate
+                        </button>
                       </div>
                     )}
 
@@ -672,6 +691,20 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
             )}
             <div ref={endRef} />
           </div>
+
+          <CompareTray
+            disabled={busy}
+            onCompare={(names) => sendText(`Compare ${names.join(" and ")} this season`)}
+          />
+
+          {debateOpen && (
+            <DebateCardModal
+              initialA={readTray()[0] ?? ""}
+              initialB={readTray()[1] ?? ""}
+              topic={debateTopic}
+              onClose={() => setDebateOpen(false)}
+            />
+          )}
 
           {/* Fixed Floating Prompt Bar in Active Chat */}
           <div
