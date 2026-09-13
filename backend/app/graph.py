@@ -53,6 +53,10 @@ ANALYST_SYSTEM = (
     "Keep answers short and specific with numbers. "
     "Use one Takeaways block and one Verdict block at most; never "
     "repeat a heading or restate the same numbers in two sections. "
+    "The Verdict is the decisive takeaway - one sentence judging what "
+    "the evidence DOES show, never a report of missing or unavailable "
+    "data; absence notes belong in the body, never in the verdict "
+    "(the UI renders the verdict as the headline). "
     "Use a numbered list only when the user asked for a ranking. "
     "For player comparisons: one markdown table with 8 or more metric rows "
     "covering scoring, rebounds, assists, shooting splits, efficiency, "
@@ -3041,14 +3045,16 @@ def _flatten_tables(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 for r in _rows
             ]
         out["kind"] = _KIND_FOR_TOOL.get(str(tool or ""), "dataset")
+        # Every table keeps the title _with_title computed - dropping
+        # non-curated titles here left pin-lane payloads (playoff
+        # intel, standings, season averages) untitled, and the card
+        # header fell back to a bare "DATASET" (QA S2 polish nit).
         if tool in _DISPLAY_TITLES:
             try:
                 meta = out.get("meta") if isinstance(out.get("meta"), dict) else None
                 out["title"] = _display_title(str(tool or ""), meta)
             except Exception:
                 out["title"] = _DISPLAY_TITLES.get(str(tool), "Dataset")
-        else:
-            out.pop("title", None)
         meta = out.get("meta")
         if isinstance(meta, dict):
             out["meta"] = {k: v for k, v in meta.items()
