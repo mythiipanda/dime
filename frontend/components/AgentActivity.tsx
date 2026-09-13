@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { AiMessage, NodeName, ToolCall } from "../lib/chat";
+import ThinkLine from "./ThinkLine";
 import { rerunSql, type SqlRerunRows } from "../lib/api";
 
 const AGENT_NODES: NodeName[] = ["entry", "data_retrieval", "tools", "analytics"];
@@ -415,8 +416,8 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
             }}
           />
         )}
-        <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--color-ink-black)" }}>
-          {running ? headerText : "Receipts"}
+        <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--color-ink-black)", display: "inline-flex" }}>
+          {running ? <ThinkLine text={headerText} /> : "Receipts"}
         </span>
         <span style={{ fontSize: 11, color: "var(--color-ash-gray)" }}>
           {open ? "▾" : "▸"}

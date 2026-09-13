@@ -29,6 +29,80 @@
 }
 
 
+
+
+/* transitions.dev #14 skeleton-reveal - content blurs into focus as it
+   replaces the skeleton (Dime tokens; reduced-motion safe) */
+.t-skel-in {
+  animation: t-skel-in 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes t-skel-in {
+  from { opacity: 0; filter: blur(6px); transform: translateY(4px); }
+  to { opacity: 1; filter: blur(0); transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .t-skel-in { animation: none; }
+}
+
+/* transitions.dev #28 thinking states - Dime-token colors so the shimmer
+   reads in both themes (base = warm-gray, highlight = ink) */
+:root {
+  --think-swap: 200ms;
+  --think-distance: 8px;
+  --think-blur: 2px;
+  --think-shimmer: 2000ms;
+  --think-ease: ease-in-out;
+}
+.t-think { position: relative; display: inline-block; }
+.t-think-sizer { display: block; visibility: hidden; white-space: nowrap; }
+.t-think-text {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  display: block;
+  color: var(--color-warm-gray);
+  white-space: nowrap;
+}
+.t-think-text::before {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: linear-gradient(90deg,
+    transparent 0%, transparent 40%,
+    var(--color-ink-black) 50%,
+    transparent 60%, transparent 100%);
+  background-size: 400% 100%;
+  background-repeat: no-repeat;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: t-think-shimmer var(--think-shimmer) linear infinite;
+}
+@keyframes t-think-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: 0% 0; }
+}
+.t-think-text.is-exit {
+  transition: transform var(--think-swap) var(--think-ease),
+    filter var(--think-swap) var(--think-ease),
+    opacity var(--think-swap) var(--think-ease);
+  transform: translateY(calc(var(--think-distance) * -1));
+  filter: blur(var(--think-blur));
+  opacity: 0;
+}
+.t-think-text.is-enter {
+  animation: t-think-enter var(--think-swap) var(--think-ease) both;
+}
+@keyframes t-think-enter {
+  from { transform: translateY(var(--think-distance)); filter: blur(var(--think-blur)); opacity: 0; }
+  to { transform: translateY(0); filter: blur(0); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .t-think-text::before { animation: none; }
+  .t-think-text.is-exit, .t-think-text.is-enter { transition: none; animation: none; filter: none; }
+}
+
 /* harness streaming primitive styles (verbatim from foundation.css, tokens renamed) */
 .stream-tail {
   filter: blur(1.6px);
@@ -161,12 +235,34 @@ body {
 .dime-table tbody tr:last-child > td { border-bottom: none; }
 
 .tab-active {
-  background: var(--color-field);
+  background: transparent;
   color: var(--color-ink-black);
   font-weight: 400;
   border-radius: 6px;
   padding: 3px 12px;
   box-shadow: none;
+}
+
+/* transitions.dev #16 tabs-sliding: one pill glides to the active tab */
+.t-tabs-pill {
+  position: absolute;
+  top: 2px;
+  left: 0;
+  bottom: 2px;
+  width: 0;
+  border-radius: 6px;
+  background: var(--color-pure-white);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1),
+    width 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+}
+.dark .t-tabs-pill {
+  background: var(--color-canvas);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+@media (prefers-reduced-motion: reduce) {
+  .t-tabs-pill { transition: none; }
 }
 
 .tab-idle {

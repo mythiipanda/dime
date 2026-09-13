@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import ArtifactCanvas, { ArtifactItem } from "../components/ArtifactCanvas";
 import ChatPanel from "../components/ChatPanel";
 import CommandPalette from "../components/CommandPalette";
@@ -82,6 +82,29 @@ export default function Home() {
     setQueryParam("tab", "chat", true);
     finishOnboarding();
   };
+
+  const tabsRef = useRef<HTMLDivElement | null>(null);
+  const pillRef = useRef<HTMLSpanElement | null>(null);
+  const tabBtnRefs = {
+    today: useRef<HTMLButtonElement | null>(null),
+    chat: useRef<HTMLButtonElement | null>(null),
+    data: useRef<HTMLButtonElement | null>(null),
+  };
+  useLayoutEffect(() => {
+    const btn = tabBtnRefs[tab].current;
+    const pill = pillRef.current;
+    if (!btn || !pill) return;
+    // transitions.dev #16: first paint positions the pill without motion,
+    // subsequent tab switches slide it.
+    const prev = pill.style.transition;
+    if (!pill.dataset.ready) {
+      pill.style.transition = "none";
+      pill.dataset.ready = "1";
+    }
+    pill.style.transform = `translateX(${btn.offsetLeft}px)`;
+    pill.style.width = `${btn.offsetWidth}px`;
+    if (prev !== undefined) requestAnimationFrame(() => { pill.style.transition = prev; });
+  }, [tab]);
 
   const selectTab = (t: Tab) => {
     setTab(t);
@@ -188,15 +211,20 @@ export default function Home() {
 
           {/* Centered Segmented Control (shadcn Tabs style) */}
           <div
+            ref={tabsRef}
+            className="t-tabs"
             style={{
               display: "inline-flex",
-              background: "rgba(0, 0, 0, 0.04)",
+              position: "relative",
+              background: "var(--color-field)",
               padding: "2px",
               borderRadius: 8,
               border: "1px solid var(--color-stone-border)",
             }}
           >
+            <span ref={pillRef} className="t-tabs-pill" aria-hidden="true" />
             <button
+              ref={tabBtnRefs.today}
               onClick={() => selectTab("today")}
               className={tab === "today" ? "tab-active" : "tab-idle"}
               style={{
@@ -205,11 +233,15 @@ export default function Home() {
                 padding: "3px 12px",
                 borderRadius: 6,
                 cursor: "pointer",
+                position: "relative",
+                zIndex: 1,
+                background: "transparent",
               }}
             >
               Today
             </button>
             <button
+              ref={tabBtnRefs.chat}
               onClick={() => selectTab("chat")}
               className={tab === "chat" ? "tab-active" : "tab-idle"}
               style={{
@@ -218,11 +250,15 @@ export default function Home() {
                 padding: "3px 12px",
                 borderRadius: 6,
                 cursor: "pointer",
+                position: "relative",
+                zIndex: 1,
+                background: "transparent",
               }}
             >
               Analyst chat
             </button>
             <button
+              ref={tabBtnRefs.data}
               onClick={() => selectTab("data")}
               className={tab === "data" ? "tab-active" : "tab-idle"}
               style={{
@@ -231,6 +267,9 @@ export default function Home() {
                 padding: "3px 12px",
                 borderRadius: 6,
                 cursor: "pointer",
+                position: "relative",
+                zIndex: 1,
+                background: "transparent",
               }}
             >
               Explore

@@ -29,7 +29,7 @@ export default function AnswerText({ text }: { text: string }) {
         fontVariantNumeric: "tabular-nums",
         color: "var(--color-ink-black)",
       }}
-      className="answer-md"
+      className="answer-md t-skel-in"
     >
       {coverage && (
         <div
