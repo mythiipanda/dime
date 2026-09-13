@@ -80,7 +80,7 @@ function ToolRow({ c }: { c: ToolCall }) {
     c.status === "running"
       ? "var(--color-cyan-signal)"
       : c.status === "fail"
-        ? "#e11d48"
+        ? "var(--color-ember)"
         : "var(--color-ink-black)";
   const glyph = c.status === "running" ? "" : c.status === "fail" ? "!" : "✓";
   // Fallback names arrive as get_shot_zones-style identifiers; show
@@ -147,7 +147,7 @@ function ToolRow({ c }: { c: ToolCall }) {
               style={{
                 display: "block",
                 fontSize: 11.5,
-                color: c.status === "fail" ? "#e11d48" : "var(--color-ash-gray)",
+                color: c.status === "fail" ? "var(--color-ember)" : "var(--color-ash-gray)",
               }}
             >
               {metaLine(c)}
@@ -237,7 +237,7 @@ function ToolRow({ c }: { c: ToolCall }) {
                 </pre>
               )}
               {rerun && !rerun.loading && rerun.error && (
-                <div style={{ marginTop: 4, color: "#e11d48" }}>
+                <div style={{ marginTop: 4, color: "var(--color-ember)" }}>
                   {rerun.error.slice(0, 160)}
                 </div>
               )}

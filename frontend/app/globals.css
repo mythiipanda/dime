@@ -17,6 +17,7 @@
   --color-cyan-signal: oklch(0.626 0.205 254.947);    /* accent */
   --color-cyan-edge: oklch(0.556 0.187 255.617);      /* accent-ink */
   --color-ember: oklch(0.621 0.192 23.042);           /* red */
+  --color-field: oklch(0.961 0.001 286.375);          /* field (inset fill) */
 
   --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", ui-sans-serif, system-ui, sans-serif;
   --font-body: -apple-system, BlinkMacSystemFont, "SF Pro Text", ui-sans-serif, system-ui, sans-serif;
@@ -25,6 +26,11 @@
   --shadow-preview: rgba(17, 12, 46, 0.12) 0px 12px 45px 0px;
   --hover-subtle: rgba(0, 0, 0, 0.03);
   --shadow-focus: 0 8px 32px rgba(0, 0, 0, 0.08);
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .dark {
@@ -40,6 +46,7 @@
   --color-cyan-signal: oklch(0.68 0.173 253.301);
   --color-cyan-edge: oklch(0.788 0.113 248.33);
   --color-ember: oklch(0.666 0.18 21.433);
+  --color-field: oklch(0.293 0.006 271.223);
 
   --shadow-card: rgba(0, 0, 0, 0.35) 0px 4px 16px 0px;
   --shadow-preview: rgba(0, 0, 0, 0.5) 0px 12px 45px 0px;
@@ -99,26 +106,28 @@ body {
   padding: 8px 16px;
 }
 
+/* harness tab style: active = field fill, idle = dimmed (ChatComposer header tabs) */
 .tab-active {
-  background: var(--color-pure-white);
+  background: var(--color-field);
   color: var(--color-ink-black);
-  font-weight: 500;
-  border-radius: 9999px;
-  padding: 5px 14px;
-  box-shadow: var(--shadow-card);
+  font-weight: 400;
+  border-radius: 6px;
+  padding: 3px 12px;
+  box-shadow: none;
 }
 
 .tab-idle {
   background: transparent;
-  color: var(--color-warm-gray);
-  border: 1px solid transparent;
-  border-radius: 9999px;
-  padding: 5px 14px;
+  color: var(--color-ink-black);
+  opacity: 0.5;
+  border: none;
+  border-radius: 6px;
+  padding: 3px 12px;
 }
 
 .tab-idle:hover {
-  color: var(--color-ink-black);
-  background: var(--hover-subtle);
+  opacity: 0.75;
+  background: transparent;
 }
 
 .field {

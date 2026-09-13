@@ -27,10 +27,14 @@ function drawShots(canvas: HTMLCanvasElement, shots: Shot[]) {
   const sx = (x: number) => ((x + 250) / 500) * W;
   const sy = (y: number) => H - ((y + 50) / 475) * H;
   const sc = W / 500;
+  // Canvas cannot resolve CSS var() strings - read the themed values directly.
+  const cssv = getComputedStyle(document.documentElement);
+  const surface = cssv.getPropertyValue("--color-pure-white").trim() || "#ffffff";
+  const ink = cssv.getPropertyValue("--color-ink-black").trim() || "#1c1917";
   ctx.clearRect(0, 0, W, H);
-  ctx.fillStyle = "#ffffff";
+  ctx.fillStyle = surface;
   ctx.fillRect(0, 0, W, H);
-  ctx.strokeStyle = "var(--color-ink-black)";
+  ctx.strokeStyle = ink;
   ctx.lineWidth = 2;
   ctx.strokeRect(sx(-250), sy(422), 500 * sc, 472 * sc);
   ctx.beginPath();
@@ -52,7 +56,7 @@ function drawShots(canvas: HTMLCanvasElement, shots: Shot[]) {
     ctx.beginPath();
     ctx.arc(sx(s.LOC_X / 10), sy(s.LOC_Y / 10), 3, 0, Math.PI * 2);
     if (made) {
-      ctx.fillStyle = "var(--color-ink-black)";
+      ctx.fillStyle = ink;
       ctx.fill();
     } else {
       ctx.strokeStyle = "#a8a29e";

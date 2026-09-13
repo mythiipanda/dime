@@ -448,9 +448,9 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
               width: "100%",
               background: "var(--color-pure-white)",
               border: "1px solid var(--color-stone-border)",
-              borderRadius: 24,
-              boxShadow: "0 6px 30px rgba(0, 0, 0, 0.06)",
-              padding: "16px 20px 14px",
+              borderRadius: 14,
+              boxShadow: "var(--shadow-card)",
+              padding: "14px 16px 12px",
               boxSizing: "border-box",
               display: "flex",
               flexDirection: "column",
@@ -463,8 +463,8 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                 width: "100%",
                 border: "none",
                 outline: "none",
-                fontSize: 15,
-                lineHeight: 1.5,
+                fontSize: 13,
+                lineHeight: 1.4,
                 resize: "none",
                 fontFamily: "inherit",
                 background: "transparent",
@@ -486,7 +486,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
               placeholder="Compare Luka and SGA by efficiency..."
             />
 
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 4, borderTop: "1px solid var(--color-stone-canvas)" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 4 }}>
               <ModelPicker models={models} value={model} onChange={setModel} />
 
               {busy ? (
@@ -499,11 +499,22 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                 </button>
               ) : (
                 <button
-                  className="pill-cta interactive-tactile"
-                  style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 20px" }}
+                  type="button"
+                  aria-label="Send"
+                  disabled={!input.trim()}
                   onClick={() => sendText(input)}
+                  className="interactive-tactile"
+                  style={{
+                    width: 28, height: 28, borderRadius: 8, border: "none", cursor: input.trim() ? "pointer" : "default",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    background: input.trim() ? "var(--color-ink-black)" : "var(--color-stone-muted)",
+                    color: input.trim() ? "var(--color-pure-white)" : "var(--color-warm-gray)",
+                    transition: "background 200ms ease, color 200ms ease",
+                  }}
                 >
-                  Ask
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 19V5M5 12l7-7 7 7" />
+                  </svg>
                 </button>
               )}
             </div>
@@ -588,14 +599,12 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                 >
                   <div
                     style={{
-                      background: "var(--color-pure-white)",
-                      border: "1px solid var(--color-stone-border)",
+                      background: "var(--color-field)",
                       color: "var(--color-ink-black)",
-                      borderRadius: "18px 18px 4px 18px",
-                      padding: "10px 16px",
-                      fontSize: 14,
-                      lineHeight: 1.5,
-                      boxShadow: "var(--shadow-card)",
+                      borderRadius: 12,
+                      padding: "6px 12px",
+                      fontSize: 13,
+                      lineHeight: 1.4,
                     }}
                   >
                     {m.text}
@@ -611,6 +620,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                     display: "flex",
                     flexDirection: "column",
                     scrollMarginTop: 16,
+                    animation: "fade-up 400ms cubic-bezier(0.23, 1, 0.32, 1) both",
                   }}
                 >
                   {/* Message Header */}
@@ -774,10 +784,10 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                   gap: 10,
                   alignItems: "center",
                   border: "1px solid var(--color-stone-border)",
-                  borderRadius: 20,
-                  padding: "10px 14px 10px 16px",
+                  borderRadius: 14,
+                  padding: "10px 12px 10px 16px",
                   background: "var(--color-pure-white)",
-                  boxShadow: "0 8px 30px rgba(0, 0, 0, 0.08)",
+                  boxShadow: "var(--shadow-card)",
                 }}
               >
                 <ModelPicker models={models} value={model} onChange={setModel} />
@@ -788,7 +798,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                     flex: 1,
                     border: "none",
                     outline: "none",
-                    fontSize: 14,
+                    fontSize: 13,
                     resize: "none",
                     fontFamily: "inherit",
                     background: "transparent",
@@ -816,8 +826,23 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                     Stop {elapsed}s
                   </button>
                 ) : (
-                  <button className="pill-cta" onClick={() => sendText(input)}>
-                    Ask
+                  <button
+                    type="button"
+                    aria-label="Send"
+                    disabled={!input.trim()}
+                    onClick={() => sendText(input)}
+                    style={{
+                      width: 28, height: 28, borderRadius: 8, border: "none", flexShrink: 0,
+                      cursor: input.trim() ? "pointer" : "default",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      background: input.trim() ? "var(--color-ink-black)" : "var(--color-stone-muted)",
+                      color: input.trim() ? "var(--color-pure-white)" : "var(--color-warm-gray)",
+                      transition: "background 200ms ease, color 200ms ease",
+                    }}
+                  >
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 19V5M5 12l7-7 7 7" />
+                    </svg>
                   </button>
                 )}
               </div>
