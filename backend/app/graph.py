@@ -1687,6 +1687,39 @@ async def _triage_seed(question: str, primary: str, model: str,
             spots = [s for s in spots if s >= 0]
             return min(spots) if spots else len(low)
         return min(cands, key=_pos)
+    # F67: "best record this season?" - the highest-traffic standings
+    # ask - ran through delegate_league planner variance and sometimes
+    # shipped an answer with no team name at all (battery F67[2]),
+    # which then broke the next turn's "their" carry. Pin it: top
+    # standings row, answer text built from payload fields (v67 law:
+    # deterministic on pinned lanes). Burn-down: standings-record class.
+    if (re.search(r"\bbest record\b|\btop record\b", question,
+                  re.IGNORECASE)
+            and not found_p and not _named_p
+            and not is_trade and not is_cast and not is_compare):
+        _sh: dict[str, Any] = {}
+        async for _e in _triage_tool(
+                "get_standings", {"season": "2025-26"}, state, _sh):
+            yield _e
+        _sout = _sh.get("out") or {}
+        if _result_status(_sout) == "ok":
+            _srows = _sout.get("rows") or []
+            _top = _srows[0] if _srows and isinstance(_srows[0], dict) else {}
+            _steam = str(_top.get("team") or "").strip()
+            _srec = str(_top.get("Record") or "").strip()
+            try:
+                _spct = f"{float(_top.get('WinPCT')):.3f}".lstrip("0")
+            except (TypeError, ValueError):
+                _spct = ""
+            if _steam and _srec:
+                _sout["meta"] = dict(_sout.get("meta") or {})
+                _sout["meta"]["deterministic_answer"] = (
+                    f"The {_steam} had the best record in the "
+                    f"2025-26 season at {_srec}"
+                    + (f" ({_spct})" if _spct else "") + ".")
+                async for _e in _triage_terminal(question, state):
+                    yield _e
+            return
     _bteam = _first_team_in(question)
     if not _bteam and state.get("history") and re.search(
             r"\b(their|theirs|them|they|that team|this team|it)\b",
@@ -1701,8 +1734,17 @@ async def _triage_seed(question: str, primary: str, model: str,
                           r"\btop players?\b", question, re.IGNORECASE)
             # a mid-sentence capitalized token is a name the static
             # list did not catch ("Is Brunson their best player?") -
-            # leave those to the planner.
-            and not re.search(r"(?<!^)\b[A-Z][a-z]{2,}\b", question)
+            # leave those to the planner. Finals/NBA/Playoffs are
+            # keywords, not names (QA: "their best player in the
+            # Finals?" escaped the pin on the capital F).
+            and not re.search(
+                r"(?<!^)\b[A-Z][a-z]{2,}\b",
+                __import__("functools").reduce(
+                    lambda _q, _w: re.sub(rf"\b{re.escape(_w)}\b", "",
+                                          _q, flags=re.IGNORECASE),
+                    [_w for _ft in found_t for _w in str(_ft).split()],
+                    re.sub(r"\b(?:Finals?|NBA|Playoffs?)\b", "",
+                           question)))
             and not is_trade and not is_cast and not is_compare):
         try:
             from .tools.gamelog import _team_abbr as _tabbr
@@ -1710,6 +1752,7 @@ async def _triage_seed(question: str, primary: str, model: str,
         except Exception:
             _babbr, _bfull = "", _bteam
         _brows: list[dict[str, Any]] = []
+        _bfinals = bool(re.search(r"\bfinals\b", question, re.IGNORECASE))
         if _babbr:
             import time as _btime
 
@@ -1718,29 +1761,79 @@ async def _triage_seed(question: str, primary: str, model: str,
                 try:
                     _bcon = _bstore.connect()
                     try:
-                        _cur = _bcon.execute(
-                            "SELECT PLAYER, GP, PTS, "
-                            "ROUND(PTS * 1.0 / NULLIF(GP, 0), 1) AS PPG "
-                            "FROM silver_leaders_pts "
-                            "WHERE TEAM = ? AND _season = ? AND GP >= 20 "
-                            "ORDER BY PTS * 1.0 / NULLIF(GP, 0) DESC "
-                            "LIMIT 3", [_babbr, "2025-26"])
-                        _bcols = [d[0] for d in _bcon.description]
-                        _brows = [dict(zip(_bcols, r))
-                                  for r in _cur.fetchall()]
+                        if _bfinals:
+                            # Finals-phrased ask: answer from the actual
+                            # Finals game logs (round 4 dates), not the
+                            # season leader table (QA F63 team-carry gap:
+                            # "Spurs' best player in the Finals").
+                            _fd = [r[0] for r in _bcon.execute(
+                                "SELECT DISTINCT GAME_DATE FROM "
+                                "silver_playoffs WHERE _season = ? AND "
+                                "substr(CAST(GAME_ID AS VARCHAR), 8, 1) "
+                                "= '4'", ["2025-26"]).fetchall()]
+                            if _fd:
+                                # gamelogs store 'Jun 13, 2026', not ISO
+                                from datetime import datetime as _bdt
+                                _fd = [_bdt.strptime(str(_d), "%Y-%m-%d")
+                                       .strftime("%b %-d, %Y")
+                                       for _d in _fd]
+                                _ph = ",".join("?" * len(_fd))
+                                for _e, _gp, _pts, _ppg in _bcon.execute(
+                                        "SELECT _entity, COUNT(*), "
+                                        "SUM(PTS), ROUND(AVG(PTS), 1) "
+                                        "FROM silver_playoff_gamelogs "
+                                        "WHERE _season = ? AND "
+                                        "MATCHUP LIKE ? AND GAME_DATE "
+                                        f"IN ({_ph}) GROUP BY 1 "
+                                        "ORDER BY 3 DESC LIMIT 3",
+                                        ["2025-26", _babbr + " %",
+                                         *sorted(_fd)]).fetchall():
+                                    _pid = str(_e).replace("player:", "")
+                                    _nm = _bcon.execute(
+                                        "SELECT DISTINCT PLAYER FROM "
+                                        "silver_leaders_pts WHERE "
+                                        "CAST(PLAYER_ID AS VARCHAR) = ?",
+                                        [_pid]).fetchone()
+                                    _brows.append({
+                                        "PLAYER": _nm[0] if _nm else _pid,
+                                        "GP": _gp, "PTS": _pts,
+                                        "PPG": _ppg})
+                        if not _brows:
+                            _cur = _bcon.execute(
+                                "SELECT PLAYER, GP, PTS, "
+                                "ROUND(PTS * 1.0 / NULLIF(GP, 0), 1) AS PPG "
+                                "FROM silver_leaders_pts "
+                                "WHERE TEAM = ? AND _season = ? AND GP >= 20 "
+                                "ORDER BY PTS * 1.0 / NULLIF(GP, 0) DESC "
+                                "LIMIT 3", [_babbr, "2025-26"])
+                            _bcols = [d[0] for d in _bcon.description]
+                            _brows = [dict(zip(_bcols, r))
+                                      for r in _cur.fetchall()]
                     finally:
                         _bcon.close()
                     break
                 except Exception:
                     _btime.sleep(0.2)
         if _brows:
+            _bmeta: dict[str, Any] = {
+                "source": "warehouse", "season": "2025-26",
+                "note": (f"top {_bfull} scorers by per-game "
+                         "points (20+ games); 'best player' "
+                         "read as the team's leading scorers")}
+            if _bfinals:
+                _btop = _brows[0]
+                _bmeta["note"] = (
+                    f"top {_bfull} scorers in the Finals series, "
+                    "from the Finals game logs")
+                _bmeta["deterministic_answer"] = (
+                    f"{_btop['PLAYER']} was the {_bfull}' leading "
+                    f"Finals scorer at {_btop['PPG']} points per game "
+                    f"over {_btop['GP']} games "
+                    f"({int(_btop['PTS'])} total).")
             _bres = {
                 "tool": "pin_team_best_player", "ok": True,
                 "rows": _brows,
-                "meta": {"source": "warehouse", "season": "2025-26",
-                         "note": (f"top {_bfull} scorers by per-game "
-                                  "points (20+ games); 'best player' "
-                                  "read as the team's leading scorers")}}
+                "meta": _bmeta}
             yield _event("tool_call", {
                 "node": "data_retrieval",
                 "name": "pin_team_best_player",
