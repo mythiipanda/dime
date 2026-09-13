@@ -335,18 +335,37 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
   const hasActivity = thoughts.length > 0 || calls.length > 0 || live.length > 0;
 
   if (!running && !open) {
-    const secs = ai.thoughtMs ? `${(ai.thoughtMs / 1000).toFixed(0)}s` : "";
-    const pill = secs
-      ? `Thought for ${secs} · ${calls.length} tool${calls.length === 1 ? "" : "s"}`
-      : "Thought process";
+    if (!calls.length && !thoughts.length) return null;
+    if (!calls.length) {
+      return (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="pill-ghost"
+          style={{ fontSize: 12, marginBottom: 8 }}
+        >
+          Details
+        </button>
+      );
+    }
+    const secs = ai.thoughtMs ? `${(ai.thoughtMs / 1000).toFixed(1)}s` : "";
+    const rows = calls.reduce((n, c) => n + (typeof c.rows === "number" ? c.rows : 0), 0);
+    const bits = [
+      `${calls.length} tool${calls.length === 1 ? "" : "s"}`,
+      ...(rows ? [`${rows} row${rows === 1 ? "" : "s"}`] : []),
+      ...(secs ? [secs] : []),
+    ];
     return (
       <button
         type="button"
         onClick={() => setOpen(true)}
         className="pill-ghost"
         style={{ fontSize: 12, marginBottom: 8 }}
+        aria-label="Show receipts"
       >
-        {pill}
+        <span style={{ color: "var(--color-ash-gray)" }}>Receipts</span>
+        {" · "}
+        {bits.join(" · ")}
       </button>
     );
   }
@@ -382,7 +401,7 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
           />
         )}
         <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--color-ink-black)" }}>
-          {running ? headerText : "Thought process"}
+          {running ? headerText : "Receipts"}
         </span>
         <span style={{ fontSize: 11, color: "var(--color-ash-gray)" }}>
           {open ? "▾" : "▸"}
@@ -395,7 +414,7 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
               Starting…
             </div>
           )}
-          {thoughts.map((t, i) => (
+          {(running || calls.length === 0) && thoughts.map((t, i) => (
             <div
               key={`t-${i}`}
               style={{ fontSize: 12.5, color: "var(--color-warm-gray)", padding: "2px 0" }}
@@ -403,7 +422,7 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
               {t}
             </div>
           ))}
-          {live.map((l, i) => {
+          {running && live.map((l, i) => {
             const isLive = running && i === live.length - 1;
             const prefix = l.agent
               ? `${l.agent.charAt(0).toUpperCase() + l.agent.slice(1)} desk · `

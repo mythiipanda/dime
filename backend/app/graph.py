@@ -23,6 +23,7 @@ from .providers import (
 from .skills import catalog as skills_catalog, load_skill as skills_load_skill
 from .subagents import delegate_tools, run_desk_streaming, _SHOT_ZONE_RX, _HISTORICAL_RX
 from .tools import v1_tools
+from .tools._core import tool_label
 
 ANALYST_SYSTEM = (
     "You are Dime, an NBA data analyst assistant. "
@@ -123,9 +124,9 @@ _PLANNER_PREFIX = (
     "stat thresholds, draft queries), call delegate_league and tell it "
     "to answer via text_to_sql. "
     "For top-N team comparisons across several stats (top 3 scoring teams "
-    "with wins, best defenses by rating and record), call delegate_league "
-    "and tell it to answer from get_team_leaders for each stat PLUS "
-    "get_standings for records - never text_to_sql anonymous aggregates "
+    "with wins, best defenses by rating and record), call get_team_compare "
+    "- it joins the deduped team-totals board with standings records in "
+    "one deterministic payload. Never text_to_sql anonymous aggregates "
     "(they ship nameless tables). "
     "For supporting-cast questions, call run_python averaging teammate PPG "
     "from silver_leaders_pts excluding the star, joined with NET_RATING "
@@ -302,44 +303,6 @@ DEEP_TRIGGERS = [
     r"\ball\b.*\b(teams|players)\b",
     r"\brank\b.*\b(top|best)\b.*\b\d+\b",
 ]
-
-TOOL_LABELS = {
-    "resolve_entity": "Identifying players and teams",
-    "search_nba": "Searching league coverage",
-    "get_compare": "Comparing players",
-    "delegate_scout": "Scouting players",
-    "delegate_team": "Scouting teams",
-    "delegate_league": "Scanning league data",
-    "run_python": "Crunching numbers",
-    "text_to_sql": "Querying the warehouse",
-    "get_playoff_intel": "Pulling playoff logs",
-    "get_trade_check": "Checking trade math",
-    "get_trade_value": "Grading trade value",
-    "get_award_race": "Ranking award races",
-    "get_matchup_preview": "Previewing the matchup",
-    "get_game_prediction": "Simulating the matchup",
-    "get_briefing": "Briefing the slate",
-    "get_lineup_stats": "Rating lineups",
-    "get_rotation_check": "Checking the rotation",
-    "get_streaks": "Finding streaks",
-    "get_head_to_head": "Checking head-to-head history",
-    "get_season_series": "Pulling the season series",
-    "get_team_shot_zones": "Mapping shot zones",
-    "get_warehouse_freshness": "Checking warehouse freshness",
-    "get_elo_standings": "Computing ELO ratings",
-    "get_impact_estimate": "Estimating impact",
-    "search_game_logs": "Searching game logs",
-    "get_team_game_log": "Pulling the team game log",
-}
-
-
-def tool_label(name: str) -> str:
-    if not name:
-        return "Checking data"
-    if name in TOOL_LABELS:
-        return TOOL_LABELS[name]
-    return name.replace("_", " ").strip().title() or "Checking data"
-
 
 def _tool_names_from_calls_made(calls_made: list[str]) -> list[str]:
     names: list[str] = []
@@ -523,6 +486,9 @@ _SEASON_AVG_RX = re.compile(
     r"\bhow (?:is|has|'s)\b.{0,40}\bplay(?:ing|ed)\b|"
     r"\bhow['’]?s\b.{0,30}\bthis season\b",
     re.IGNORECASE)
+_SEASON_LINE_RX = re.compile(
+    r"\bseason (?:average|averages|avg|line|numbers|stats?|"
+    r"performance)\b", re.IGNORECASE)
 _SEASON_AVG_NO_RX = re.compile(
     r"\bcareer\b|\ball[\s-]*time\b|\blast season\b|"
     r"\blast \d+ games?\b|\blately\b|\brecent(?:ly)?\b",
@@ -622,8 +588,15 @@ def _detect_entities(question: str) -> tuple[list[str], list[str]]:
                     and re.search(r"\b" + re.escape(nick) + r"\b", q))
                 or (city and not race_words
                     and re.search(r"\b" + re.escape(city) + r"\b", q))
+                # F68/F69: abbreviations match case-SENSITIVELY -
+                # case-insensitive matching read the word "was" as WAS
+                # (Washington Wizards) and silently derailed carry
+                # chains ("Who was their best player?" -> Wizards
+                # thought line + wrong-team pull). Real abbreviations
+                # arrive uppercase; lowercase intent is caught by the
+                # city/nickname branches.
                 or re.search(r"\b" + re.escape(t.get("abbreviation", "")) + r"\b",
-                             question, re.IGNORECASE)):
+                             question)):
             found_t.append(full)
     return found_p, found_t
 
@@ -1268,7 +1241,8 @@ async def _triage_seed(question: str, primary: str, model: str,
                        state: dict) -> AsyncGenerator[dict[str, Any], None]:
     found_p, found_t = _detect_entities(question)
     if state.get("history") and re.search(
-            r"\b(him|her|them|they|his|hers|their|theirs|it|that team|that player)\b",
+            r"\b(him|her|them|they|his|hers|their|theirs|it|he|she|"
+            r"that team|that player)\b",
             question, re.IGNORECASE):
         for t in state["history"][-6:]:
             hp, ht = _detect_entities(t.get("text") or "")
@@ -1407,6 +1381,49 @@ async def _triage_seed(question: str, primary: str, model: str,
             {"tool": "memory_note", "ok": False, "error": _mem_pin})
         async for _e in _triage_terminal(question, state):
             yield _e
+        return
+    # F66: multi-metric "top N teams" compares ("compare the top 3
+    # scoring teams: total points, per-game average, and how many games
+    # each won") escaped every pin, fanned out through delegate_league,
+    # and shipped a NAMELESS table with empty cells and invented
+    # numbers. Deterministic lane: get_team_compare joins the deduped
+    # team-totals board with standings records; compose ships
+    # meta.deterministic_answer verbatim. Guards: a named player or
+    # named teams keep their own routes; single-stat totals asks keep
+    # the team-totals pin below.
+    _dc_top = re.search(r"\btop\s*(\d+)\b", question, re.IGNORECASE)
+    _dc_stat = re.search(
+        r"\b(scoring|points?|rebounding|rebounds?|assists?|steals?|"
+        r"blocks?)\b", question, re.IGNORECASE)
+    _dc_metrics = sum(
+        bool(re.search(p, question, re.IGNORECASE)) for p in (
+            r"\btotals?\b", r"per[\s-]*game|\baverages?\b|\bavg\b",
+            r"\bwins?\b|\bwon\b|\brecord\b"))
+    if (_dc_top and _dc_stat and _dc_metrics >= 2
+            and not found_p and not found_t
+            and re.search(r"\bteams?\b", question, re.IGNORECASE)):
+        _dc_stat_map = {
+            "scoring": "PTS", "point": "PTS", "points": "PTS",
+            "rebounding": "REB", "rebound": "REB", "rebounds": "REB",
+            "assist": "AST", "assists": "AST",
+            "steal": "STL", "steals": "STL",
+            "block": "BLK", "blocks": "BLK"}
+        _dcseason = "2025-26"
+        _dsm = re.search(r"(20\d\d)\s*-\s*(\d\d)", question)
+        if _dsm:
+            _dcseason = f"{_dsm.group(1)}-{_dsm.group(2)}"
+        _dch: dict[str, Any] = {}
+        async for _e in _triage_tool(
+                "get_team_compare",
+                {"stat_category": _dc_stat_map.get(
+                     _dc_stat.group(1).lower(), "PTS"),
+                 "top": int(_dc_top.group(1)), "season": _dcseason},
+                state, _dch):
+            yield _e
+        _dcout = _dch.get("out") or {}
+        if _result_status(_dcout) == "ok":
+            async for _e in _triage_terminal(question, state):
+                yield _e
         return
     # Tony live find (11:54 AM): team-TOTAL counting-stat asks ("which
     # team leads in total assists this season?") dead-ended honestly -
@@ -1569,6 +1586,168 @@ async def _triage_seed(question: str, primary: str, model: str,
                 yield _e
             return
         # Unknown player or missing line: fall through to the planner.
+    # F64: cross-turn "compare that to his season average" - the name
+    # arrives by pronoun carry, so the direct-name pin above never
+    # fires, and the planner free-styles a run_python average over a
+    # PARTIAL game-log window (live, 5:17 PM: Brunson "28 PPG across
+    # 13 complete games" labeled as his season average while the full
+    # season line exists). One player carried from history + an
+    # explicit season-line ask routes to get_season_averages; the
+    # ledger/history supplies the "that" side. Playoff-average asks
+    # stay with the playoff lanes; career/last-N stay out via
+    # _SEASON_AVG_NO_RX.
+    if (not is_season_avg
+            and len(found_p) == 1
+            and state.get("history")
+            and _SEASON_LINE_RX.search(question)
+            and not _SEASON_AVG_NO_RX.search(question)
+            and not re.search(r"\bplayoffs?\b", question, re.IGNORECASE)
+            and not is_trade and not is_cast):
+        _cseason = "2025-26"
+        _cm2 = re.search(r"(20\d\d)\s*-\s*(\d\d)", question)
+        if _cm2:
+            _cseason = f"{_cm2.group(1)}-{_cm2.group(2)}"
+        _ch2: dict[str, Any] = {}
+        async for _e in _triage_tool(
+                "get_season_averages",
+                {"player_id": found_p[0], "season": _cseason},
+                state, _ch2):
+            yield _e
+        _cout2 = _ch2.get("out") or {}
+        if _result_status(_cout2) == "ok":
+            if state["tool_results"] and state["tool_results"][-1] is _cout2:
+                state["tool_results"][-1] = {
+                    "tool": "get_season_averages", "rows": [_cout2]}
+            async for _e in _triage_terminal(question, state):
+                yield _e
+            return
+        # Unknown player or missing line: fall through to the planner.
+    # F63: cross-turn playoff/Finals carry - "How did he do in the
+    # playoffs?" names nobody, so player-level lanes never fire and the
+    # planner settles for TEAM-level tables (live, 6:22 PM: injuries +
+    # team game logs, honest dead-end 0/3). One player carried from
+    # history + an explicit playoff/Finals ask pins that player's
+    # playoff game log. Named-player playoff asks keep their own lanes.
+    if (not _named_p
+            and len(found_p) == 1
+            and state.get("history")
+            and re.search(r"\bplayoffs?\b|\bpostseason\b|\bfinals\b",
+                          question, re.IGNORECASE)
+            and not is_trade and not is_cast and not is_compare):
+        _pseason = "2025-26"
+        _pm = re.search(r"(20\d\d)\s*-\s*(\d\d)", question)
+        if _pm:
+            _pseason = f"{_pm.group(1)}-{_pm.group(2)}"
+        _ph: dict[str, Any] = {}
+        async for _e in _triage_tool(
+                "get_playoff_intel",
+                {"player_id": found_p[0], "season": _pseason},
+                state, _ph):
+            yield _e
+        _pout = _ph.get("out") or {}
+        if _result_status(_pout) == "ok":
+            async for _e in _triage_terminal(question, state):
+                yield _e
+            return
+        # Unknown player / no playoff log: fall through to the planner.
+    # F67: "their best player" carry - the planner resolved "their" to
+    # team-scoring TOTALS and gave up (live, 6:22 PM chain retest),
+    # though the control ask with the team named outright works. One
+    # team resolved (named or carried) + a best-player ask reads the
+    # team's top scorers straight from the leaders table. Carried
+    # players from history do not block the pin: the question names
+    # nobody (capital guard), so a carried player is context, not
+    # the ask.
+    # Resolve "their" deterministically: a team named in the question
+    # wins; otherwise the textually FIRST team of the MOST RECENT
+    # history turn that mentions one - and only when the question
+    # actually carries a pronoun/reference, so a league-wide ask
+    # ("best player in the league") never inherits a team. Battery
+    # run 2 flake (local, 8:59 PM): T1's standings answer also named
+    # the Spurs, so "exactly one carried team" silently failed 1/3
+    # of the time and the turn fell to the planner. Pronoun reference
+    # is recency, not uniqueness.
+    def _first_team_in(text: str) -> str | None:
+        cands = _detect_entities(text)[1]
+        if not cands:
+            return None
+        low = text.lower()
+        def _pos(full: str) -> int:
+            spots = [low.find(full.lower()),
+                     low.find(full.split()[-1].lower())]
+            spots = [s for s in spots if s >= 0]
+            return min(spots) if spots else len(low)
+        return min(cands, key=_pos)
+    _bteam = _first_team_in(question)
+    if not _bteam and state.get("history") and re.search(
+            r"\b(their|theirs|them|they|that team|this team|it)\b",
+            question, re.IGNORECASE):
+        for _ht in reversed(state["history"][-6:]):
+            _bteam = _first_team_in(_ht.get("text") or "")
+            if _bteam:
+                break
+    if (_bteam
+            and not _named_p
+            and re.search(r"\bbest players?\b|\bstar players?\b|"
+                          r"\btop players?\b", question, re.IGNORECASE)
+            # a mid-sentence capitalized token is a name the static
+            # list did not catch ("Is Brunson their best player?") -
+            # leave those to the planner.
+            and not re.search(r"(?<!^)\b[A-Z][a-z]{2,}\b", question)
+            and not is_trade and not is_cast and not is_compare):
+        try:
+            from .tools.gamelog import _team_abbr as _tabbr
+            _babbr, _bfull = _tabbr(_bteam)
+        except Exception:
+            _babbr, _bfull = "", _bteam
+        _brows: list[dict[str, Any]] = []
+        if _babbr:
+            import time as _btime
+
+            from . import store as _bstore
+            for _try in range(3):
+                try:
+                    _bcon = _bstore.connect()
+                    try:
+                        _cur = _bcon.execute(
+                            "SELECT PLAYER, GP, PTS, "
+                            "ROUND(PTS * 1.0 / NULLIF(GP, 0), 1) AS PPG "
+                            "FROM silver_leaders_pts "
+                            "WHERE TEAM = ? AND _season = ? AND GP >= 20 "
+                            "ORDER BY PTS * 1.0 / NULLIF(GP, 0) DESC "
+                            "LIMIT 3", [_babbr, "2025-26"])
+                        _bcols = [d[0] for d in _bcon.description]
+                        _brows = [dict(zip(_bcols, r))
+                                  for r in _cur.fetchall()]
+                    finally:
+                        _bcon.close()
+                    break
+                except Exception:
+                    _btime.sleep(0.2)
+        if _brows:
+            _bres = {
+                "tool": "pin_team_best_player", "ok": True,
+                "rows": _brows,
+                "meta": {"source": "warehouse", "season": "2025-26",
+                         "note": (f"top {_bfull} scorers by per-game "
+                                  "points (20+ games); 'best player' "
+                                  "read as the team's leading scorers")}}
+            yield _event("tool_call", {
+                "node": "data_retrieval",
+                "name": "pin_team_best_player",
+                "label": tool_label("pin_team_best_player"),
+                "summary": f"{_bfull} scoring leaders, 2025-26"})
+            yield _event("tool_result", _tool_result_payload(
+                "data_retrieval", "pin_team_best_player", _bres, 0))
+            yield _event("thought_stream", {
+                "node": "data_retrieval",
+                "text": f"Reading {_bfull} scoring leaders from the "
+                        "warehouse."})
+            state["tool_results"].append(_bres)
+            state["calls_made"].append("pin_team_best_player")
+            async for _e in _triage_terminal(question, state):
+                yield _e
+            return
     if re.search(r"\bris(?:ers?|ing)\b|\bfall(?:ers?|ing)\b",
                  question, re.IGNORECASE) and not found_p and not is_trade:
         # Player-level risers used to fall to the planner, which burned
@@ -2531,6 +2710,7 @@ _DISPLAY_TITLES = {
     "compare_metrics": "Metric adjudication",
     "get_debate_card": "Debate card",
     "get_leaders": "League leaders",
+    "get_team_compare": "Team compare",
     "get_team_leaders": "Team totals",
     "get_lineups": "Lineups",
     "get_shot_zones": "Shot zones",
@@ -2554,6 +2734,7 @@ _KIND_FOR_TOOL = {
     "get_shot_zones": "shots",
     "get_shot_compare": "shots",
     "get_leaders": "leaders",
+    "get_team_compare": "leaders",
     "get_team_leaders": "leaders",
     "get_lineups": "lineups",
     "get_raptor_history": "raptor",
@@ -3286,6 +3467,13 @@ def _scrub_final_text(text: str) -> str:
     if _hits and _covered >= 0.6 * len(text):
         return _COMPUTE_FALLBACK
     cleaned = _DEV_TEXT_RX.sub("that data pull did not complete", text)
+    # P3/F66-chain: "Based on the get_X tool output" / display-name
+    # variants ("Based on the Get Standings output") are orchestration,
+    # never prose. Must run BEFORE the QA #60/#61 sentence drops, which
+    # otherwise nuke the whole sentence for containing "tool".
+    cleaned = re.sub(
+        r"[Bb]ased on the [Gg]et[_ ][A-Za-z]+(?: tool)? output,?", "",
+        cleaned)
     # QA #60: the model sometimes NARRATES a tool error in prose
     # ("A query for the award returned an error stating 'Finals MVP'
     # is not a valid award key"). Internal plumbing is never the
@@ -3419,6 +3607,45 @@ def _scrub_final_text(text: str) -> str:
         for _i, m in enumerate(reversed(_run)):
             cleaned = (cleaned[:m.start(1)]
                        + str(len(_run) - _i) + cleaned[m.end(1):])
+    # QA nit batch (Sep 12 overnight chain): internal arithmetic
+    # narration never ships. "Dividing 2143 by 64 gives 33.5 points
+    # per game." keeps the value and drops the scratch work;
+    # "(509 \u00f7 19)" and "130/5 = 26 PPG" lose the long division.
+    cleaned = re.sub(
+        r"[Dd]ividing \d[\d,]*(?:\.\d+)? by \d[\d,]*(?:\.\d+)? "
+        r"gives ", "", cleaned)
+    cleaned = re.sub(
+        r"\(\s*\d[\d,]*(?:\.\d+)?\s*[\u00f7/]\s*\d[\d,]*"
+        r"(?:\.\d+)?\s*\)", "", cleaned)
+    cleaned = re.sub(
+        r"\b\d[\d,]*(?:\.\d+)?\s*/\s*\d[\d,]*(?:\.\d+)?"
+        r"\s*=\s*", "", cleaned)
+    # "a 48 and 30 record" -> "a 48-30 record" (HOU-with-KD chain).
+    cleaned = re.sub(r"\b(\d{1,3}) and (\d{1,3}) record\b",
+                     r"\1-\2 record", cleaned)
+    # "the LAL franchise" - abbreviations are table shorthand, never
+    # prose (T7 ambiguity answer shipped it live).
+    try:
+        from nba_api.stats.static import teams as _static_teams
+        _abbr_map = {t["abbreviation"]: t["full_name"]
+                     for t in _static_teams.get_teams()}
+    except Exception:
+        _abbr_map = {}
+    if _abbr_map:
+        def _franchise(m: "re.Match[str]") -> str:
+            return (f"the {_abbr_map.get(m.group(1), m.group(1))} "
+                    f"franchise")
+        cleaned = re.sub(r"\bthe ([A-Z]{3}) franchise\b",
+                         _franchise, cleaned)
+    # Scrub-collision leftover: "Data provided by the data and split
+    # records" (league-agent rewrite landed next to "provided by").
+    cleaned = re.sub(r"\bprovided by the data\b",
+                     "provided by the dataset", cleaned,
+                     flags=re.IGNORECASE)
+    # Strip-induced fragment: "And playoff logs, Jalen ..." - the
+    # based-on strip ate the sentence head and left a dangling And.
+    cleaned = re.sub(r"(^|[.!?]\s+)And (?=(?:playoff |game )?logs\b)",
+                     r"\1From the ", cleaned)
     # Sentence-start capitalization after lead-in strips ("Based on
     # scout summary, the team" -> "The team"), keeping stat acronyms.
     _KEEP_LOWER = {"efg", "ts", "usg", "ast", "stl", "blk", "tov",
@@ -3431,7 +3658,6 @@ def _scrub_final_text(text: str) -> str:
     cleaned = re.sub(r"(^|[.!?]\s+)([a-z][a-zA-Z%]*)", _cap, cleaned)
     # P3: tool names and desk identities are orchestration, never prose
     # ("Based on the get_injuries tool output", "the league agent").
-    cleaned = re.sub(r"Based on the get_\w+ tool output,?", "", cleaned)
     cleaned = re.sub(r"\bthe get_\w+ tool\b", "the data", cleaned)
     cleaned = re.sub(r"\bget_\w+\b", "", cleaned)
     cleaned = re.sub(r"\bfrom the (league|scout|team) (agent|desk)\b",
@@ -3538,6 +3764,40 @@ def _extract_ledger_facts(state: dict) -> list[str]:
                 ll = (tr.get("meta") or {}).get("leader_line")
                 if ll:
                     facts.append(ll[0].upper() + ll[1:])
+            elif tname == "get_team_compare":
+                da = (tr.get("meta") or {}).get("deterministic_answer")
+                if da:
+                    facts.append(da[0].upper() + da[1:])
+            elif tname == "get_standings" and isinstance(rows, list):
+                # QA F67: "Which team had the best record?" answered OKC
+                # 64-18, but the ledger carried nothing, so the next
+                # turn ("their best player") resolved to a false
+                # absence. Persist the best-record team as trusted
+                # evidence for pronoun carry. LeagueRank 1 row wins;
+                # fall back to max WINS.
+                best = None
+                for r in rows:
+                    if isinstance(r, dict) and r.get("LeagueRank") == 1.0:
+                        best = r
+                        break
+                if best is None:
+                    def _w(row: dict) -> float:
+                        try:
+                            return float(row.get("WINS"))
+                        except (TypeError, ValueError):
+                            return -1.0
+                    cands = [r for r in rows if isinstance(r, dict)]
+                    best = max(cands, key=_w, default=None)
+                    if best is not None and _w(best) < 0:
+                        best = None
+                if best is not None and best.get("team"):
+                    line = f"Best record: {best['team']}"
+                    rec = best.get("Record")
+                    if rec:
+                        line += f" ({rec})"
+                    if best.get("abbrev"):
+                        line += f" [{best['abbrev']}]"
+                    facts.append(line)
             elif tname == "search_game_logs" and isinstance(rows, dict):
                 matches = rows.get("matches") or []
                 player = rows.get("player")
@@ -3690,6 +3950,11 @@ def _strip_false_absence(text: str, tool_results: list) -> str:
     entity whose data sits in this turn's payloads is false - drop the
     sentence, keep the rest. Conservative: only fires when the entity
     string literally appears in payload JSON.
+
+    QA F65 (compare markdown): sentence reassembly must preserve the
+    original newline structure. Splitting on newlines and rejoining
+    with spaces flattened tables, headings and bullet lists into one
+    line, so the UI rendered the markdown source literally.
     """
     import json as _json
 
@@ -3701,16 +3966,24 @@ def _strip_false_absence(text: str, tool_results: list) -> str:
         return text
     if not hay or hay == "[]":
         return text
-    kept: list[str] = []
-    for seg in re.split(r"(?<=[.!?])\s+|\n", text):
-        if _ABSENCE_RX.search(seg):
-            # entity = capitalized tokens (team/player names) in the
-            # sentence; false only if one appears in the payload.
-            ents = re.findall(r"[A-Z][a-z]{2,}", seg)
-            if any(e.lower() in hay for e in ents):
-                continue  # false absence claim: drop
-        kept.append(seg)
-    out = " ".join(s.strip() for s in kept if s.strip())
+
+    def _sweep(chunk: str) -> str:
+        kept: list[str] = []
+        for seg in re.split(r"(?<=[.!?])[ \t]+", chunk):
+            if _ABSENCE_RX.search(seg):
+                # entity = capitalized tokens (team/player names) in the
+                # sentence; false only if one appears in the payload.
+                ents = re.findall(r"[A-Z][a-z]{2,}", seg)
+                if any(e.lower() in hay for e in ents):
+                    continue  # false absence claim: drop
+            kept.append(seg)
+        return " ".join(s.strip() for s in kept if s.strip())
+
+    # Newlines are structural (tables, headings, lists): sweep each
+    # line separately and rejoin with the original separators.
+    parts = re.split(r"(\n+)", text)
+    out = "".join(part if part.startswith("\n") else _sweep(part)
+                  for part in parts)
     return out or text
 
 
@@ -3734,6 +4007,22 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
     _scrubbed = _scrub_final_text(text)
     _scrubbed = _strip_false_absence(_scrubbed,
                                  state.get("tool_results") or [])
+    # F66: multi-metric team compare ships deterministic - the payload
+    # built the sentence, the LLM narrative is ignored (v67 design
+    # law: LLM-composed numerals are untrusted on pinned lanes).
+    for _tr in state.get("tool_results") or []:
+        if (isinstance(_tr, dict)
+                and isinstance(_tr.get("meta"), dict)
+                and _tr["meta"].get("deterministic_answer")):
+            _det = str(_tr["meta"]["deterministic_answer"])
+            try:
+                from .tools._core import SEASON as _CUR_SEASON
+                _det = (f"This data covers the {_CUR_SEASON} season.\n"
+                        + _det)
+            except Exception:
+                pass
+            _scrubbed = _det
+            break
     # v67 (v66 live smoke, 12:32 PM): team-totals answers paraphrased
     # away the leader's total - "scored the most total points with PTS
     # (122.1 per game)". meta.note already tells the LLM to cite
@@ -3787,6 +4076,37 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
                 _scrubbed, count=1)
         except Exception:
             pass
+    # F61 residual: the coverage line must match the evidence span -
+    # a deep hist answer from silver_hist_* shipped "This data covers
+    # the 2022-23 season." over rows spanning many seasons. When the
+    # evidence carries 2+ distinct seasons, rewrite the line to the
+    # real min-through-max span.
+    def _row_seasons(node: object, _out: set) -> None:
+        stack = [node]
+        while stack:
+            it = stack.pop()
+            if isinstance(it, list):
+                stack.extend(it[:300])
+            elif isinstance(it, dict):
+                for k, v in it.items():
+                    lk = str(k).lower()
+                    if lk in ("_season", "season") and isinstance(v, str):
+                        if re.fullmatch(r"20\d\d-\d\d", v.strip()):
+                            _out.add(v.strip())
+                    elif isinstance(v, (list, dict)):
+                        stack.append(v)
+    _ev_seasons: set = set()
+    for _tr in state.get("tool_results") or []:
+        if isinstance(_tr, dict):
+            _row_seasons(_tr.get("rows"), _ev_seasons)
+    if len(_ev_seasons) >= 2:
+        _ys = sorted(int(s[:4]) for s in _ev_seasons)
+        _span = (f"{_ys[0]}-{str(_ys[0] + 1)[2:]} through "
+                 f"{_ys[-1]}-{str(_ys[-1] + 1)[2:]}")
+        _scrubbed = re.sub(
+            r"This data covers the 20\d\d-\d\d season\.",
+            f"This data covers the {_span} seasons.", _scrubbed,
+            count=1)
     # A named known-gap beats any no-data outcome: the generic
     # compute-failure fallback AND model-worded admissions ("the query
     # did not succeed", "no data is available", "I cannot rank").
