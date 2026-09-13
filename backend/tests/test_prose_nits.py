@@ -213,3 +213,18 @@ def test_space_before_punctuation_collapsed():
     assert "line, too." in out
     # Decimals survive.
     assert "0.665" in _scrub_final_text("He shot 0.665 from the line .")
+
+
+def test_empty_section_headers_dropped():
+    from app.graph import _scrub_final_text
+    txt = ("This data covers the 2025-26 season.\n\n**Takeaways:**\n\n"
+           "**Verdict:**\nThe evidence does not show a rate split.")
+    out = _scrub_final_text(txt)
+    assert "**Takeaways" not in out
+    # A Verdict header followed by real prose survives.
+    assert "**Verdict:**" in out
+    assert "rate split" in out
+    # A Takeaways section with items survives.
+    txt2 = "Intro.\n\n**Takeaways**\n1. First point.\n\n**Verdict**\nDone."
+    out2 = _scrub_final_text(txt2)
+    assert "**Takeaways**" in out2 and "1. First point." in out2

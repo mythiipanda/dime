@@ -4116,6 +4116,14 @@ def _scrub_final_text(text: str) -> str:
     # 2026-09-13 sweep: "10.7 assists per game ." - stray space before
     # terminal punctuation, an LLM typo class that reads sloppy.
     cleaned = re.sub(r" +([.,;:!?])(?=\s|$)", r"\1", cleaned)
+    # 2026-09-13 gauntlet: "**Takeaways:**\n\n**Verdict:**" - a section
+    # header whose items were all stripped (or never written) ships as
+    # an empty section. Drop header lines with no list items or prose
+    # before the next header.
+    cleaned = re.sub(
+        r"(?m)^[ \t]*\*\*(?:Takeaways?|Verdict|Summary):?\*\*:?[ \t]*\n"
+        r"(?=[ \t]*\n?[ \t]*\*\*(?:Takeaways?|Verdict|Summary)|\s*$)",
+        "", cleaned)
     cleaned = re.sub(r"\bcomeback_kings\b", "comeback wins", cleaned,
                      flags=re.IGNORECASE)
     cleaned = re.sub(r"\bthe dataset(?:,? and|,)? the dataset\b",
