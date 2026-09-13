@@ -1789,6 +1789,63 @@ async def _triage_seed(question: str, primary: str, model: str,
                         async for _e in _triage_terminal(question, state):
                             yield _e
                         return
+    # Record-when-plays: "What is Denver's record when Jokic plays?"
+    # has a planner recipe (delegate_team -> search_game_logs, report
+    # rows.record verbatim) but sampling skips it ~50% of the time
+    # (test_record_when_jokic_plays flakes identically on the deployed
+    # base - unpinned lane variance, not a regression). One resolvable
+    # player + a record-when-plays ask pins search_game_logs with no
+    # filters and answers from rows.record verbatim (v67 law).
+    # Burn-down: "plays" only - "sits"/"without" complements stay
+    # with the planner.
+    if (re.search(r"\brecord\b", question, re.IGNORECASE)
+            and re.search(r"\bwhen\b", question, re.IGNORECASE)
+            and re.search(r"\bplays?\b|\bplaying\b|\bon the floor\b|"
+                          r"\bin the lineup\b", question, re.IGNORECASE)
+            and not re.search(r"\bsits?\b|\bsitting\b|\bsat\b|"
+                              r"\bwithout\b|\bmissing\b|\bmiss(?:es|ed)?\b|"
+                              r"\bis out\b|\bwas out\b", question,
+                              re.IGNORECASE)
+            and len(found_p) == 1
+            and not is_trade and not is_cast and not is_compare):
+        _rwseason = "2025-26"
+        _rwm = re.search(r"(20\d\d)\s*-\s*(\d\d)", question)
+        if _rwm:
+            _rwseason = f"{_rwm.group(1)}-{_rwm.group(2)}"
+        _rwpo = bool(re.search(r"\bplayoffs?\b|\bpostseason\b|"
+                               r"\bfinals\b", question, re.IGNORECASE))
+        _rwh: dict[str, Any] = {}
+        async for _e in _triage_tool(
+                "search_game_logs",
+                {"player": found_p[0], "season": _rwseason,
+                 "playoffs": _rwpo, "limit": 100},
+                state, _rwh):
+            yield _e
+        _rwout = _rwh.get("out") or {}
+        if _result_status(_rwout) == "ok":
+            _rwrows = _rwout.get("rows") or {}
+            _rwrec = _rwrows.get("record") or {}
+            _rwg = _rwrec.get("games")
+            if _rwg:
+                _rwpname = str(_rwrows.get("player") or found_p[0])
+                _rwabbr = str(_rwrows.get("player_team") or "")
+                try:
+                    from .tools.headtohead import _team_abbr as _rwta
+                    _rwfull = _rwta(_rwabbr)[1] if _rwabbr else ""
+                except Exception:
+                    _rwfull = _rwabbr
+                _rwscope = ("playoff " if _rwpo else "")
+                _rwout["meta"] = dict(_rwout.get("meta") or {})
+                _rwout["meta"]["deterministic_answer"] = (
+                    f"The {_rwfull} went {_rwrec.get('w')}-"
+                    f"{_rwrec.get('l')} in the {_rwg} {_rwscope}games "
+                    f"{_rwpname} played"
+                    + ("" if _rwpo else " this season")
+                    + f" ({_rwseason}).")
+                async for _e in _triage_terminal(question, state):
+                    yield _e
+            return
+        # Unknown player / no games: fall through to the planner.
     # F67: "their best player" carry - the planner resolved "their" to
     # team-scoring TOTALS and gave up (live, 6:22 PM chain retest),
     # though the control ask with the team named outright works. One
