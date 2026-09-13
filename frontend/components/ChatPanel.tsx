@@ -438,8 +438,13 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
             boxSizing: "border-box",
           }}
         >
-          <div className="display" style={{ fontSize: 32, fontWeight: 500, color: "var(--color-ink-black)", marginBottom: 28, textAlign: "center" }}>
-            What would you like to know?
+          <div style={{ marginBottom: 22, textAlign: "left" }}>
+            <div style={{ fontSize: 24, fontWeight: 400, color: "var(--color-ash-gray)", lineHeight: 1.3 }}>
+              Dime analyst
+            </div>
+            <div style={{ fontSize: 24, fontWeight: 500, color: "var(--color-ink-black)", lineHeight: 1.3, letterSpacing: "-0.01em" }}>
+              What would you like to know?
+            </div>
           </div>
 
           {/* Centered Large Prompt Composer Card */}
@@ -522,27 +527,28 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
           </div>
 
           {/* Curated 2x2 Prompt Cards (Minimalist Frontier AI style) */}
-          <div className="prompt-grid" style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10, width: "100%", marginTop: 24 }}>
+          {/* harness home suggestions: flat icon links, no cards (harness.html) */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 2, width: "100%", marginTop: 20 }}>
             {[
               {
                 title: "Compare Luka & Shai",
-                desc: "True shooting, shot zones, and on-off impact",
                 prompt: "Compare Luka Dončić and Shai Gilgeous-Alexander",
+                icon: <><circle cx="12" cy="12" r="9" /><path d="M12 3v18M3 12h18" /></>,
               },
               {
-                title: "League Assist Leaders",
-                desc: "Top playmakers, assist-to-turnover ratio, and creation",
+                title: "League assist leaders",
                 prompt: "Who leads the league in assists?",
+                icon: <><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></>,
               },
               {
-                title: "OKC Championship Odds",
-                desc: "Playoff odds, bracket results, and ELO power rating",
+                title: "OKC championship odds",
                 prompt: "Show OKC Thunder playoff odds and ELO",
+                icon: <><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></>,
               },
               {
                 title: "SAC trades LaVine to LAL",
-                desc: "Salary matching for Reaves and Vanderbilt",
                 prompt: "Check if Sacramento can trade Zach LaVine to the Lakers for Austin Reaves and Jarred Vanderbilt",
+                icon: <><path d="M17 3l4 4-4 4" /><path d="M21 7H9" /><path d="M7 21l-4-4 4-4" /><path d="M3 17h12" /></>,
               },
             ].map((item) => (
               <button
@@ -550,28 +556,27 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                 type="button"
                 onClick={() => sendText(item.prompt)}
                 disabled={busy}
-                className="interactive-tactile"
+                className="sidebar-row"
                 style={{
                   display: "flex",
-                  flexDirection: "column",
-                  alignItems: "flex-start",
-                  gap: 4,
-                  padding: "14px 16px",
-                  borderRadius: 10,
-                  background: "var(--color-pure-white)",
-                  border: "1px solid var(--color-stone-border)",
-                  boxShadow: "var(--shadow-subtle)",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "0 8px",
+                  height: 34,
+                  borderRadius: 8,
+                  background: "transparent",
+                  border: "none",
                   cursor: busy ? "default" : "pointer",
                   textAlign: "left",
                   opacity: busy ? 0.6 : 1,
+                  fontSize: 13,
+                  color: "var(--color-ink-black)",
                 }}
               >
-                <div style={{ color: "var(--color-ink-black)", fontWeight: 500, fontSize: 13 }}>
-                  {item.title}
-                </div>
-                <div style={{ fontSize: 12, color: "var(--color-warm-gray)", lineHeight: 1.4 }}>
-                  {item.desc}
-                </div>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--color-ash-gray)", flexShrink: 0 }}>
+                  {item.icon}
+                </svg>
+                {item.title}
               </button>
             ))}
           </div>

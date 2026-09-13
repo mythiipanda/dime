@@ -107,7 +107,7 @@ export default function ThreadRail({
         <button
           type="button"
           onClick={onNew}
-          className="interactive-tactile"
+          className="sidebar-row"
           style={{
             fontSize: 13,
             fontWeight: 500,
@@ -118,10 +118,9 @@ export default function ThreadRail({
             height: 32,
             margin: "0 8px",
             width: "calc(100% - 16px)",
-            background: "var(--color-pure-white)",
-            border: "1px solid var(--color-stone-border)",
+            background: "transparent",
+            border: "none",
             borderRadius: 8,
-            boxShadow: "var(--shadow-card)",
             cursor: "pointer",
           }}
         >
@@ -132,17 +131,7 @@ export default function ThreadRail({
             </svg>
             <span>New session</span>
           </div>
-          <span
-            style={{
-              fontSize: 10,
-              color: "var(--color-ash-gray)",
-              fontFamily: "monospace",
-              background: "var(--color-stone-canvas)",
-              padding: "1px 5px",
-              borderRadius: 4,
-              border: "1px solid var(--color-stone-border)",
-            }}
-          >
+          <span style={{ fontSize: 10, color: "var(--color-ash-gray)", fontFamily: "monospace" }}>
             ⌘N
           </span>
         </button>
