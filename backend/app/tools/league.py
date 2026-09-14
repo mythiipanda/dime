@@ -2459,6 +2459,28 @@ def get_lineup_leaders(min_minutes: int = 100, limit: int = 10,
             raw = con.execute(
                 sql, [season, float(min_minutes), int(limit) * 2]
             ).fetchdf().to_dict("records")
+            hist = False
+            if not raw:
+                # F79: silver_lineups seeds the current season only;
+                # older seasons (2009-10+) live in silver_hist_lineups
+                # with lowercase keys. Data-audit P1: "best lineups
+                # 2021-22" got empty rows here and the planner
+                # improvised 2025-26 lineups as the answer.
+                raw = con.execute(
+                    """
+                    SELECT team_abbreviation AS TEAM_ABBREVIATION,
+                           group_name AS GROUP_NAME, gp AS GP,
+                           ROUND(min, 1) AS MIN, plus_minus AS PLUS_MINUS,
+                           ROUND(plus_minus / NULLIF(min, 0) * 48, 1)
+                               AS NET48
+                    FROM silver_hist_lineups
+                    WHERE _season = ? AND min >= ?
+                    ORDER BY plus_minus / NULLIF(min, 0) DESC NULLS LAST
+                    LIMIT ?
+                    """,
+                    [season, float(min_minutes), int(limit) * 2],
+                ).fetchdf().to_dict("records")
+                hist = bool(raw)
         finally:
             con.close()
     except Exception as exc:
@@ -2474,14 +2496,21 @@ def get_lineup_leaders(min_minutes: int = 100, limit: int = 10,
         rows.append(r)
         if len(rows) >= int(limit):
             break
-    return {
-        "tool": "get_lineup_leaders", "ok": True, "rows": rows,
-        "meta": {
-            "season": season,
-            "formula": "NET48 = PLUS_MINUS per 48 minutes",
-            "floor": f"MIN >= {int(min_minutes)} (stated volume floor; "
-                     "small-sample units are excluded, F50)"},
-    }
+    meta = {
+        "season": season,
+        "formula": "NET48 = PLUS_MINUS per 48 minutes",
+        "floor": f"MIN >= {int(min_minutes)} (stated volume floor; "
+                 "small-sample units are excluded, F50)"}
+    if hist:
+        meta["coverage"] = "historical_lineups"
+    if not rows:
+        return {"tool": "get_lineup_leaders", "ok": False,
+                "error": (f"No lineup data on file for {season} at "
+                          f"that minutes floor; lineups cover 2009-10 "
+                          f"through the current season. Try a lower "
+                          f"minutes floor for short seasons.")}
+    return {"tool": "get_lineup_leaders", "ok": True, "rows": rows,
+            "meta": meta}
 
 
 @tool
