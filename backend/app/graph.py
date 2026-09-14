@@ -2139,6 +2139,44 @@ async def _triage_seed(question: str, primary: str, model: str,
                 yield _e
             return
         # Unknown player or missing line: fall through to the planner.
+    # F81 (QA hammer, prod v84+): "Luka 2022-23 stats" names a season
+    # but says "stats", not "season averages", so neither season-line
+    # regex fired and the planner raced - 1/3 of runs went to RAPTOR
+    # history (8 tools, then refused the asked season). Pin: a single
+    # named player + an explicit YYYY-YY season + stat intent resolves
+    # the season-line table first (F73 covers 2014-15+; pre-2014 gets
+    # the honest coverage error). Burn-down: explicit-season stat asks.
+    _hsm = re.search(r"\b(20\d\d)\s*-\s*(\d\d)\b", question)
+    if (not is_season_avg
+            and _hsm
+            and len(_named_p) == 1
+            and re.search(r"\bstats?\b|\bnumbers\b|\baveraged\b|"
+                          r"\b[prs]pg\b|\bapg\b|\bbpg\b|\bspg\b|"
+                          r"\bline\b", question, re.IGNORECASE)
+            and not _SEASON_AVG_NO_RX.search(question)
+            and not re.search(r"\bplayoffs?\b|\bfinals\b|\bgame\b",
+                              question, re.IGNORECASE)
+            and not is_compare and not is_trade and not is_cast):
+        _hsseason = f"{_hsm.group(1)}-{_hsm.group(2)}"
+        _hsh: dict[str, Any] = {}
+        async for _e in _triage_tool(
+                "get_season_averages",
+                {"player_id": _named_p[0], "season": _hsseason},
+                state, _hsh):
+            yield _e
+        _hsout = _hsh.get("out") or {}
+        if _result_status(_hsout) == "ok":
+            if state["tool_results"] and state["tool_results"][-1] is _hsout:
+                state["tool_results"][-1] = {
+                    "tool": "get_season_averages", "rows": [_hsout]}
+            async for _e in _triage_terminal(question, state):
+                yield _e
+            return
+        # Pre-2014 season or unknown player: honest error already
+        # emitted; stop here so the planner cannot race to RAPTOR.
+        async for _e in _triage_terminal(question, state):
+            yield _e
+        return
     # F77: "career points" asks fell to text_to_sql, which summed a
     # wrong slice and shipped fabricated numerals (LeBron "291.5
     # career points", data-audit P0-1). Pin: career totals tool
