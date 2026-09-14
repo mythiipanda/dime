@@ -5386,7 +5386,15 @@ def _verify_draft_numerals(state: dict, text: str) -> list[str]:
     try:
         raw = _json.dumps(state.get("tool_results") or [])
         raw += _json.dumps(state.get("ledger") or [])
-        allowed = {_norm(n) for n in re.findall(r"\d+(?:\.\d+)?", raw)}
+        allowed: set[str] = set()
+        for token in re.findall(r"\d+(?:\.\d+)?", raw):
+            allowed.add(_norm(token))
+            try:
+                value = float(token)
+                for variant in (value * 100, round(value, 1), round(value, 2)):
+                    allowed.add(_norm(f"{variant:g}"))
+            except ValueError:
+                pass
         try:
             from .tools._core import SEASON as _S
             allowed |= set(re.findall(r"\d+", _S))
@@ -5790,7 +5798,12 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
     if state.get("_watchdog_tripped") and not _evidenced and not _delegate_ok:
         _scrubbed = _gap or _COMPUTE_FALLBACK
     _scrubbed = _renumber_lists(_scrubbed)
-    _verify_draft_numerals(state, _scrubbed)
+    _violations = _verify_draft_numerals(state, _scrubbed)
+    if _violations:
+        _scrubbed = (
+            "I pulled the relevant data but could not verify every figure in "
+            "the summary. The evidence panel below has the sourced results."
+        )
     _new_facts = _extract_ledger_facts(state)
     if _new_facts:
         yield _event("ledger_facts", {"facts": _new_facts})

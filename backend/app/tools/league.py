@@ -631,11 +631,13 @@ def get_leaders(stat_category: str = "PTS", season: str = SEASON) -> dict[str, A
                     "stat_category": stat_category, "rows": len(rows),
                     "qualification": "82+ made threes"}
             if rows:
-                lead = rows[0]
+                leaders = "; ".join(
+                    f"{row['PLAYER']} {row['FG3_PCT'] * 100:.1f}% "
+                    f"({row['FG3M']} makes on {row['FG3A']} attempts)"
+                    for row in rows[:5]
+                )
                 meta["deterministic_answer"] = (
-                    f"{lead['PLAYER']} leads qualified NBA players in "
-                    f"three-point percentage at {lead['FG3_PCT'] * 100:.1f}% "
-                    f"({lead['FG3M']} makes on {lead['FG3A']} attempts). "
+                    f"Qualified three-point percentage leaders: {leaders}. "
                     "Qualification: 82+ made threes.")
         except Exception:
             rows = []
@@ -652,8 +654,10 @@ def get_leaders(stat_category: str = "PTS", season: str = SEASON) -> dict[str, A
     # the AST leaders table rendered without an AST column).
     # QA #30 nit: leaders tables carried every raw column (FGM/FGA on an
     # AST leaderboard). Keep identity + the asked stat + context only.
-    pin = ["RANK", "PLAYER", "TEAM", stat_category, "GP", "MIN",
-           "PERCENTILE"]
+    pin = ["RANK", "PLAYER", "TEAM", stat_category]
+    if stat_category == "FG3_PCT":
+        pin.extend(["FG3M", "FG3A"])
+    pin.extend(["GP", "MIN", "PERCENTILE"])
     pinned = []
     for r in rows:
         if not isinstance(r, dict):
