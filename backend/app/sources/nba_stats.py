@@ -262,7 +262,8 @@ def team_roster(team_id: int, season: str) -> FetchResult:
         frames = _frames(
             CommonTeamRoster(team_id=team_id, season=season or None, timeout=_t())
         )
-        frame = _pl(frames[1] if len(frames) > 1 else frames[0])
+        # frames[0] is the player roster; frames[1] is coaches.
+        frame = _pl(frames[0])
         if frame.height == 0:
             from . import espn as _espn
 
