@@ -143,6 +143,7 @@ class TradeBody(BaseModel):
     players_a: str | list[str] = ""
     team_b: str = ""
     players_b: str | list[str] = ""
+    season: str = "2025-26"
 
     @field_validator("players_a", "players_b")
     @classmethod
@@ -159,6 +160,7 @@ def trade_check(body: TradeBody) -> dict:
     return get_trade_check.invoke({
         "team_a": body.team_a, "players_a": body.players_a,
         "team_b": body.team_b, "players_b": body.players_b,
+        "season": body.season,
     })
 
 

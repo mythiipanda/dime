@@ -3421,6 +3421,7 @@ async def _triage_seed(question: str, primary: str, model: str,
         if sides:
             from .tools import v1_tools
 
+            sides["season"] = season
             fn = next((t for t in v1_tools if t.name == "get_trade_check"),
                       None)
             if fn is not None:

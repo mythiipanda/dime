@@ -12,7 +12,8 @@ from app.tools import get_trade_check
 def test_teams_inferred_from_player_names():
     out = get_trade_check.invoke({
         "team_a": "", "players_a": "Jalen Brunson",
-        "team_b": "", "players_b": "Victor Wembanyama"})
+        "team_b": "", "players_b": "Victor Wembanyama",
+        "season": "2026-27"})
     assert out["ok"] is True
     rows = out["rows"]
     assert rows["team_a"]["team"] == "NYK"
