@@ -172,3 +172,12 @@ def test_playoff_carry_carries_authoritative_answer():
     result = next(r for r in st["tool_results"]
                   if r.get("tool") == "get_playoff_intel")
     assert result["meta"].get("deterministic_answer")
+
+
+def test_comeback_pin_carries_authoritative_answer():
+    st = _drain("What was the biggest comeback win this season?")
+    result = next(r for r in st["tool_results"]
+                  if r.get("tool") == "get_standings_deep")
+    answer = result["meta"].get("deterministic_answer", "")
+    assert "trailing at halftime" in answer
+    assert "not a measure of the largest" in answer

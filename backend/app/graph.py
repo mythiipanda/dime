@@ -2214,7 +2214,13 @@ async def _triage_seed(question: str, primary: str, model: str,
                                 "comeback proxy; play-by-play margin "
                                 "data is not in the dataset. Name the "
                                 "WINS (count) leader as the answer; "
-                                "winning percentage is secondary."}}
+                                "winning percentage is secondary.",
+                        "deterministic_answer": (
+                            f"{_cb[0].get('TEAM_NAME')} led this comeback "
+                            f"proxy with {_cb[0].get('WINS')} wins when "
+                            "trailing at halftime. This is not a measure "
+                            "of the largest in-game deficit overcome.")
+                        if _cb else None}}
             async for _e in _triage_terminal(question, state):
                 yield _e
             return
