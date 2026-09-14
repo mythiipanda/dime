@@ -116,3 +116,53 @@ async def test_exhausted_repair_returns_named_partial() -> None:
 
     assert result.verification.status == VerificationStatus.PARTIAL
     assert result.draft.gaps == ["clutch context", "add clutch evidence"]
+
+@pytest.mark.anyio
+async def test_runtime_ledger_owns_turn_and_stage_lifecycle() -> None:
+    from v2.runtime import LedgerKind, RunLedger
+
+    ledger = RunLedger("run")
+    instance = Runtime(
+        intake=Intake(), planner=Planner(),
+        executor=PlanExecutor({"fake": FakeCapability("fake", {"value": 42})}),
+        synthesizer=Synthesizer(),
+        mechanical_verifier=SequenceVerifier(VerificationStatus.PASS),
+        semantic_verifier=SequenceVerifier(VerificationStatus.PASS),
+        ledger=ledger,
+    )
+    await instance.run("answer", run_id="run")
+
+    kinds = [entry.kind for entry in ledger.entries]
+    assert kinds[0] == LedgerKind.TURN_START
+    assert kinds[-1] == LedgerKind.TURN_END
+    starts = [entry.step_id for entry in ledger.entries
+              if entry.kind == LedgerKind.STEP_START]
+    ends = [entry.step_id for entry in ledger.entries
+            if entry.kind == LedgerKind.STEP_END]
+    assert starts == ["understand", "plan", "execute", "synthesize", "verify"]
+    assert ends == starts
+    assert ledger.entries[-1].data == {"reason": "complete", "verification": "pass"}
+
+
+@pytest.mark.anyio
+async def test_runtime_ledger_closes_failed_stage_and_turn() -> None:
+    from v2.runtime import LedgerKind, RunLedger
+
+    class BrokenIntake:
+        async def understand(self, request):
+            raise RuntimeError("bad input")
+
+    ledger = RunLedger("run")
+    instance = Runtime(
+        intake=BrokenIntake(), planner=Planner(), executor=PlanExecutor({}),
+        synthesizer=Synthesizer(),
+        mechanical_verifier=SequenceVerifier(VerificationStatus.PASS),
+        semantic_verifier=SequenceVerifier(VerificationStatus.PASS), ledger=ledger)
+    with pytest.raises(RuntimeError, match="bad input"):
+        await instance.run("answer", run_id="run")
+
+    assert [entry.kind for entry in ledger.entries] == [
+        LedgerKind.TURN_START, LedgerKind.STEP_START,
+        LedgerKind.STEP_END, LedgerKind.TURN_END]
+    assert ledger.entries[-2].data["reason"] == "failed"
+    assert ledger.entries[-1].data["reason"] == "failed"

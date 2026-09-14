@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Iterable
 
 from v2.contracts import (
@@ -9,6 +10,7 @@ from v2.contracts import (
 )
 from v2.runtime.executor import PlanExecutor
 from v2.runtime.interfaces import Intake, Planner, Repairer, Synthesizer, Verifier
+from v2.runtime.ledger import LedgerKind, RunLedger, TerminalReason
 from v2.runtime.models import RuntimeResult
 
 
@@ -23,6 +25,7 @@ class Runtime:
         mechanical_verifier: Verifier,
         semantic_verifier: Verifier,
         repairer: Repairer | None = None,
+        ledger: RunLedger | None = None,
     ) -> None:
         self._intake = intake
         self._planner = planner
@@ -31,23 +34,54 @@ class Runtime:
         self._mechanical_verifier = mechanical_verifier
         self._semantic_verifier = semantic_verifier
         self._repairer = repairer
+        self._ledger = ledger
 
     async def run(self, request: str, *, run_id: str | None = None) -> RuntimeResult:
-        task = await self._intake.understand(request)
-        plan = await self._planner.plan(task)
-        execution = await self._executor.execute(task, plan, run_id=run_id)
-        draft = await self._synthesizer.synthesize(task, execution.evidence)
+        turn_id = run_id or "turn"
+        if self._ledger is not None:
+            if run_id is not None and self._ledger.run_id != run_id:
+                raise ValueError("ledger run id does not match runtime run id")
+            self._ledger.append(
+                LedgerKind.TURN_START, turn_id=turn_id,
+                data={"request": request},
+            )
+        try:
+            task = await self._stage(
+                turn_id, "understand", self._intake.understand(request))
+            plan = await self._stage(
+                turn_id, "plan", self._planner.plan(task))
+            execution = await self._stage(
+                turn_id, "execute",
+                self._executor.execute(task, plan, run_id=run_id))
+            draft = await self._stage(
+                turn_id, "synthesize",
+                self._synthesizer.synthesize(task, execution.evidence))
+        except BaseException as exc:
+            self._close_failed(turn_id, exc)
+            raise
         evidence = {item.evidence_id: item for item in execution.evidence}
-        verification = await self._verify(task, draft, evidence)
+        try:
+            verification = await self._stage(
+                turn_id, "verify", self._verify(task, draft, evidence))
+        except BaseException as exc:
+            self._close_failed(turn_id, exc)
+            raise
         repaired = False
 
         if (
             verification.status == VerificationStatus.REPAIR
             and self._repairer is not None
         ):
-            draft = await self._repairer.repair(task, draft, evidence, verification)
-            repaired = True
-            verification = await self._verify(task, draft, evidence)
+            try:
+                draft = await self._stage(
+                    turn_id, "repair",
+                    self._repairer.repair(task, draft, evidence, verification))
+                repaired = True
+                verification = await self._stage(
+                    turn_id, "reverify", self._verify(task, draft, evidence))
+            except BaseException as exc:
+                self._close_failed(turn_id, exc)
+                raise
 
         if verification.status == VerificationStatus.REPAIR:
             gaps = _unique(
@@ -63,12 +97,54 @@ class Runtime:
                 update={"status": VerificationStatus.PARTIAL}
             )
 
-        return RuntimeResult(
+        result = RuntimeResult(
             task=task,
             execution=execution,
             draft=draft,
             verification=verification,
             repaired=repaired,
+        )
+        if self._ledger is not None:
+            self._ledger.append(
+                LedgerKind.TURN_END, turn_id=turn_id,
+                data={"reason": TerminalReason.COMPLETE.value,
+                      "verification": verification.status.value},
+            )
+        return result
+
+    async def _stage(self, turn_id: str, step_id: str, awaitable):
+        if self._ledger is not None:
+            self._ledger.append(
+                LedgerKind.STEP_START, turn_id=turn_id, step_id=step_id)
+        try:
+            result = await awaitable
+        except BaseException as exc:
+            if self._ledger is not None:
+                reason = (TerminalReason.CANCELLED
+                          if isinstance(exc, asyncio.CancelledError)
+                          else TerminalReason.FAILED)
+                self._ledger.append(
+                    LedgerKind.STEP_END, turn_id=turn_id, step_id=step_id,
+                    data={"reason": reason.value,
+                          "error": f"{type(exc).__name__}: {exc}"},
+                )
+            raise
+        if self._ledger is not None:
+            self._ledger.append(
+                LedgerKind.STEP_END, turn_id=turn_id, step_id=step_id,
+                data={"reason": TerminalReason.COMPLETE.value})
+        return result
+
+    def _close_failed(self, turn_id: str, exc: BaseException) -> None:
+        if self._ledger is None:
+            return
+        reason = (TerminalReason.CANCELLED
+                  if isinstance(exc, asyncio.CancelledError)
+                  else TerminalReason.FAILED)
+        self._ledger.append(
+            LedgerKind.TURN_END, turn_id=turn_id,
+            data={"reason": reason.value,
+                  "error": f"{type(exc).__name__}: {exc}"},
         )
 
     async def _verify(self, task, draft, evidence) -> VerificationReport:
