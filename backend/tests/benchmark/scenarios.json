@@ -657,6 +657,45 @@
     "max_seconds": 45,
     "max_tool_calls": 4
    }
+  },
+  {
+   "id": "f86-jaylen-brown-player-evaluation",
+   "tags": [
+    "player",
+    "evaluation",
+    "value",
+    "comps",
+    "regression"
+   ],
+   "as_of": "2026-09-14",
+   "season": "2025-26",
+   "chain": [
+    "Celtics - was Jaylen Brown a good player and what should his value be, comparable players in advanced metrics, is he a star or superstar or role player?"
+   ],
+   "expect": {
+    "contains": [
+     "star",
+     "35.1",
+     "57.3",
+     "RAPM-lite",
+     "Modeled value",
+     "Devin Booker"
+    ]
+   },
+   "trajectory": {
+    "required_tools": [
+     "get_player_evaluation"
+    ],
+    "forbidden_tools": [
+     "get_comps",
+     "text_to_sql"
+    ],
+    "no_duplicate_calls": true
+   },
+   "budget": {
+    "max_seconds": 30,
+    "max_tool_calls": 1
+   }
   }
  ]
 }

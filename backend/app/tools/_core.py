@@ -39,6 +39,7 @@ TOOL_LABELS = {
     "get_warehouse_freshness": "Checking warehouse freshness",
     "get_elo_standings": "Computing ELO ratings",
     "get_impact_estimate": "Estimating impact",
+    "get_player_evaluation": "Evaluating player",
     "search_game_logs": "Searching game logs",
     "get_team_game_log": "Pulling the team game log",
     "pin_team_best_player": "Reading team scoring leaders",
