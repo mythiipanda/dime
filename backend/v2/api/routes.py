@@ -127,9 +127,11 @@ async def quick_answer_stream(body: QuickAnswerBody):
     def progress(node: str, status: str) -> None:
         queue.put_nowait(NodeUpdate(node=node, status=status))
 
+    ledger_dir = os.environ.get(
+        "DIME_V2_LEDGER_DIR", str(_BACKEND / "data" / "v2-ledgers"))
     runtime, ledger = build_runtime(
         provider=provider, model_name=model_name, run_id=run_id,
-        progress=progress)
+        progress=progress, ledger_dir=ledger_dir)
 
     async def generate():
         task = asyncio.create_task(runtime.run(body.q, run_id=run_id))

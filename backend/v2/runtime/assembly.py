@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 
 from app.providers import ProviderName
 from v2.adapters import (
@@ -14,7 +15,7 @@ from v2.adapters import (
     ToolCapability,
 )
 from v2.contracts import DraftReport, VerificationReport
-from v2.runtime import PlanExecutor, RecordedCapability, RunLedger, Runtime
+from v2.runtime import FileLedger, PlanExecutor, RecordedCapability, RunLedger, Runtime
 from v2.runtime.verifier import verify_mechanical
 
 
@@ -23,9 +24,23 @@ class MechanicalVerifier:
         return verify_mechanical(task, draft, list(evidence.values()))
 
 
-class NoRepair:
+class EvidenceBoundRepair:
     async def repair(self, task, draft, evidence, verification) -> DraftReport:
-        return draft
+        rejected = {
+            item.claim_index for item in verification.claim_results
+            if not item.supported
+        }
+        claims = [
+            claim for index, claim in enumerate(draft.claims)
+            if index not in rejected
+        ]
+        gaps = list(dict.fromkeys([
+            *draft.gaps,
+            *verification.missing_branches,
+            *verification.contradictions,
+            *verification.repair_instructions,
+        ]))
+        return draft.model_copy(update={"claims": claims, "gaps": gaps})
 
 
 def capability_catalog() -> dict[str, str]:
@@ -41,8 +56,10 @@ def build_runtime(
     model_name: str,
     run_id: str,
     progress: Callable[[str, str], None] | None = None,
-) -> tuple[Runtime, RunLedger]:
-    ledger = RunLedger(run_id)
+    ledger_dir: str | Path | None = None,
+) -> tuple[Runtime, RunLedger | FileLedger]:
+    ledger = (FileLedger(Path(ledger_dir) / f"{run_id}.jsonl", run_id)
+              if ledger_dir is not None else RunLedger(run_id))
     model = RecordedStructuredModel(
         ProviderStructuredModel(provider, model_name), ledger, turn_id=run_id)
     catalog = capability_catalog()
@@ -61,7 +78,7 @@ def build_runtime(
         mechanical_verifier=MechanicalVerifier(),
         semantic_verifier=ModelSemanticVerifier(
             model, provider=provider, model_name=model_name),
-        repairer=NoRepair(),
+        repairer=EvidenceBoundRepair(),
         ledger=ledger,
         progress=progress,
     )

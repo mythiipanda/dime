@@ -76,3 +76,10 @@ def test_file_ledger_is_append_only_and_reloadable(tmp_path: Path) -> None:
     loaded = FileLedger(path, "run")
     assert loaded.ledger.entries == file.ledger.entries
     assert [entry.sequence for entry in loaded.ledger.entries] == [1, 2]
+
+
+def test_file_ledger_exposes_runtime_surface(tmp_path: Path) -> None:
+    file = FileLedger(tmp_path / "run.jsonl", "run")
+    file.append(LedgerKind.TURN_START, turn_id="t")
+    assert file.run_id == "run"
+    assert len(file.entries) == 1

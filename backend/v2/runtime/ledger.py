@@ -181,6 +181,14 @@ class FileLedger:
         self._lock = Lock()
         self.ledger = RunLedger(run_id, self._read())
 
+    @property
+    def run_id(self) -> str:
+        return self.ledger.run_id
+
+    @property
+    def entries(self) -> tuple[LedgerEntry, ...]:
+        return self.ledger.entries
+
     def append(self, *args: Any, **kwargs: Any) -> LedgerEntry:
         with self._lock:
             entry = self.ledger.append(*args, **kwargs)

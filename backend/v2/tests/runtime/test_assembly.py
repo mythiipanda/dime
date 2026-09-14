@@ -48,3 +48,21 @@ async def test_seasonless_capability_does_not_receive_season():
     await ToolCapability(
         "entity_resolution", tools={"resolve_entity": Tool()}).execute(node, task, [])
     assert seen == {"query": "Boston"}
+
+
+def test_evidence_bound_repair_drops_rejected_claims_and_keeps_gap():
+    from v2.contracts import Claim, DraftReport, ClaimResult, VerificationReport
+    from v2.runtime.assembly import EvidenceBoundRepair
+    import asyncio
+
+    draft = DraftReport(sections=["answer"], claims=[
+        Claim(text="Grounded 61.", kind="observed", evidence_ids=["ev"]),
+        Claim(text="Wrong 62.", kind="observed", evidence_ids=["ev"]),
+    ])
+    report = VerificationReport(status="repair", claim_results=[
+        ClaimResult(claim_index=0, supported=True),
+        ClaimResult(claim_index=1, supported=False, reasons=["uncited numeral 62"]),
+    ], repair_instructions=["Repair claim 1: uncited numeral 62"])
+    result = asyncio.run(EvidenceBoundRepair().repair(None, draft, {}, report))
+    assert [claim.text for claim in result.claims] == ["Grounded 61."]
+    assert result.gaps == ["Repair claim 1: uncited numeral 62"]
