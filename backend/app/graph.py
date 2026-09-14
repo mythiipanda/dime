@@ -419,6 +419,10 @@ _LIST_RX = re.compile(
     r"\bunder\s+\d+|\bover\s+\d+|\bage\b|"
     r"\baverag\w*\b|\bat least\b|"
     r"leads?\s+the\s+league|who\s+leads\b", re.IGNORECASE)
+_PLAYER_EVAL_RX = re.compile(
+    r"\b(?:star|superstar|role player|starter|player tier|player value)\b|"
+    r"\bhow good (?:is|was|has)\b|\bwas .{0,40} a good player\b",
+    re.IGNORECASE)
 _COMPS_RX = re.compile(
     r"\bmost\s+like\b|\bplays?\s+like\b|\bstatistically\s+similar\b|"
     r"\bsimilar\s+players?\b|\bclosest\s+comps?\b|"
@@ -3510,6 +3514,19 @@ async def _triage_seed(question: str, primary: str, model: str,
             if state["tool_results"] and state["tool_results"][-1] is _iout:
                 state["tool_results"][-1] = {
                     "tool": "get_impact_estimate", "rows": [_iout]}
+            async for _e in _triage_terminal(question, state):
+                yield _e
+        return
+    is_player_eval = bool(found_p and _PLAYER_EVAL_RX.search(question)
+                          and not is_compare and not is_trade and not is_cast)
+    if is_player_eval:
+        _evh: dict[str, Any] = {}
+        async for _e in _triage_tool(
+                "get_player_evaluation",
+                {"player": found_p[0], "season": "2025-26"}, state, _evh):
+            yield _e
+        _evout = _evh.get("out") or {}
+        if _result_status(_evout) == "ok" and _result_rows(_evout):
             async for _e in _triage_terminal(question, state):
                 yield _e
         return
