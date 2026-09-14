@@ -2109,6 +2109,25 @@ async def _triage_seed(question: str, primary: str, model: str,
             async for _e in _triage_terminal(question, state):
                 yield _e
             return
+    _multi_player_dims = sum(bool(re.search(p, question, re.IGNORECASE))
+                             for p in (
+        r"\baverag\w*|\bseason (?:line|stats?|numbers)",
+        r"\badvanced|\bimpact|\befficien",
+        r"\bshot (?:profile|diet|zones?)|\bwhere .{0,20} shoots?",
+        r"\bclutch|\blate[ -]game",
+    ))
+    if (len(_named_p) == 1 and _multi_player_dims >= 3
+            and not is_compare and not is_trade and not is_cast):
+        _mrh: dict[str, Any] = {}
+        async for _e in _triage_tool(
+                "get_player_report",
+                {"player": _named_p[0], "season": "2025-26"}, state, _mrh):
+            yield _e
+        _mrout = _mrh.get("out") or {}
+        if _result_status(_mrout) == "ok" and _result_rows(_mrout):
+            async for _e in _triage_terminal(question, state):
+                yield _e
+        return
     is_season_avg = (
         len(_named_p) == 1
         and _SEASON_AVG_RX.search(question)
