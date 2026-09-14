@@ -4592,6 +4592,14 @@ _DEV_TEXT_RX = re.compile(
     # F53: httpx client errors (403/404/5xx with the external URL) are
     # tool internals, never an answer
     r"Client error '\d{3}[^']*' for url[^\n]*|"
+    # F78: urllib/requests transport failures (data-audit P0-3: a raw
+    # "HTTPSConnectionPool(host='stats.nba.com'...): Read timed out"
+    # string shipped as the final answer on a historical shot chart)
+    r"\b\w*ConnectionPool\b[^\n]*|"
+    r"\bRead timed out\b[^\n]*|"
+    r"\(read timeout=[^)]*\)|"
+    r"Max retries exceeded[^\n]*|"
+    r"Failed to establish a new connection[^\n]*|"
     r"[Uu]nknown table or column\.?[^\n]*|"
     r"Valid tables:[^\n]*|"
     r"For more information check:[^\n]*|"
