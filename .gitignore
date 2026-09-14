@@ -78,3 +78,7 @@ backend/app/data/
 skills-lock.json
 .claude/
 agent/
+
+# Agent-only working dirs - never ship to the public repo (Tony, 2026-09-13)
+research/
+dime-arch/

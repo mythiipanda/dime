@@ -142,7 +142,7 @@
      "contains_any": [
       [
        "Jokic",
-       "Jokić"
+       "Joki\u0107"
       ]
      ]
     },
@@ -198,7 +198,7 @@
     "contains_any": [
      [
       "Jokic",
-      "Jokić"
+      "Joki\u0107"
      ]
     ]
    },
@@ -266,7 +266,7 @@
    "expect": {
     "contains_any": [
      [
-      "Dončić",
+      "Don\u010di\u0107",
       "Doncic",
       "Luka"
      ]
@@ -292,7 +292,7 @@
     ],
     "contains_any": [
      [
-      "Dončić",
+      "Don\u010di\u0107",
       "Luka"
      ]
     ]
@@ -305,7 +305,7 @@
   {
    "id": "canon-h2h",
    "chain": [
-    "Show me the head to head between Luka Dončić and Shai Gilgeous-Alexander this season"
+    "Show me the head to head between Luka Don\u010di\u0107 and Shai Gilgeous-Alexander this season"
    ],
    "expect": {
     "contains": [
@@ -480,8 +480,8 @@
    ],
    "expect": {
     "contains": [
-     "0.5613",
-     "0.1077",
+     "56.1%",
+     "10.8%",
      "64-18",
      "OKC"
     ],
@@ -493,7 +493,132 @@
    "budget": {
     "max_seconds": 30
    },
-   "comment": "Pinned lane (2026-09-13): planner freeform shipped wrong TOV%/missing FTr. Deterministic from silver_four_factors_team (offline-computed from team game rows)."
+   "comment": "Pinned lane (2026-09-13): planner freeform shipped wrong TOV%/missing FTr. Deterministic from silver_four_factors_team (offline-computed from team game rows). Units fixed 2026-09-13 (QA P3): prose renders percents, matching the check-lines."
+  },
+  {
+   "id": "f68-followup-ts-compare",
+   "chain": [
+    "compare Luka and SGA by efficiency",
+    "who has a better true shooting percentage between them?"
+   ],
+   "expect_turns": [
+    {
+     "contains_any": [
+      [
+       "66.5"
+      ],
+      [
+       "61.6"
+      ]
+     ],
+     "not_contains": [
+      "could not find that in the dataset"
+     ]
+    },
+    {
+     "contains_any": [
+      [
+       "66.5"
+      ],
+      [
+       "TS",
+       "true shooting"
+      ]
+     ],
+     "not_contains": [
+      "could not find that in the dataset"
+     ]
+    }
+   ],
+   "budget": {
+    "max_seconds_per_turn": 60
+   },
+   "comment": "F68 (2026-09-13 prod QA, Tony): comparative follow-up with no compare keyword fell to the planner and flaked to the no-data refusal. Pin: two players in scope + comparative adjective routes to the get_compare deterministic lane."
+  },
+  {
+   "id": "f69-top15-overall-ranking",
+   "chain": [
+    "in your view who are the top 15 players in the league"
+   ],
+   "expect_turns": [
+    {
+     "contains": [
+      "RAPM"
+     ],
+     "contains_any": [
+      [
+       "Wembanyama"
+      ],
+      [
+       "Joki"
+      ]
+     ],
+     "not_contains": [
+      "steals",
+      "could not find that in the dataset"
+     ]
+    }
+   ],
+   "budget": {
+    "max_seconds_per_turn": 60
+   },
+   "comment": "F69: overall top-N ask routed to a steals board on prod. Pin: get_player_rankings, RAPM-lite basis named."
+  },
+  {
+   "id": "f69b-top10-historical-season",
+   "chain": [
+    "who were the top 10 players in 2015-16"
+   ],
+   "expect_turns": [
+    {
+     "contains": [
+      "Curry"
+     ],
+     "contains_any": [
+      [
+       "WAR"
+      ],
+      [
+       "RAPTOR"
+      ]
+     ],
+     "not_contains": [
+      "could not find that in the dataset"
+     ]
+    }
+   ],
+   "budget": {
+    "max_seconds_per_turn": 60
+   },
+   "comment": "F69 cross-season: RAPTOR WAR covers 2014-15..2021-22; 2015-16 top is Curry's unanimous-MVP season."
+  },
+  {
+   "id": "f70-four-factors-compare",
+   "chain": [
+    "compare OKC and Detroit by four factors"
+   ],
+   "expect_turns": [
+    {
+     "contains": [],
+     "contains_any": [
+      [
+       "Detroit",
+       "DET"
+      ],
+      [
+       "eFG"
+      ]
+     ],
+     "not_contains": [
+      "could not find that in the dataset",
+      "preview"
+     ]
+    }
+   ],
+   "budget": {
+    "max_seconds_per_turn": 60
+   },
+   "comment": "QA hammer P2 v79: compare phrasing missed the four-factors lane and routed to PREVIEW filler."
   }
  ]
 }
