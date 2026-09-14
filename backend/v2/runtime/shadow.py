@@ -105,3 +105,63 @@ def _hash(value: Any) -> str:
     raw = value if isinstance(value, str) else json.dumps(
         value, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(raw.encode()).hexdigest()
+
+class ShadowGatePolicy(BaseModel):
+    minimum_runs: int = Field(default=100, ge=1)
+    maximum_failure_rate: float = Field(default=0.01, ge=0, le=1)
+    maximum_grounding_drift_rate: float = Field(default=0.01, ge=0, le=1)
+    maximum_route_drift_rate: float = Field(default=0.05, ge=0, le=1)
+    maximum_answer_drift_rate: float = Field(default=0.10, ge=0, le=1)
+
+
+class ShadowGateReport(BaseModel):
+    total_runs: int
+    failure_rate: float
+    grounding_drift_rate: float
+    route_drift_rate: float
+    answer_drift_rate: float
+    ready: bool
+    blockers: list[str] = Field(default_factory=list)
+
+
+def evaluate_shadow_gate(
+    comparisons: list[ShadowComparison],
+    policy: ShadowGatePolicy | None = None,
+) -> ShadowGateReport:
+    policy = policy or ShadowGatePolicy()
+    total = len(comparisons)
+
+    def rate(kind: DifferenceKind) -> float:
+        if not total:
+            return 0.0
+        return sum(kind in item.differences for item in comparisons) / total
+
+    rates = {
+        DifferenceKind.FAILURE: rate(DifferenceKind.FAILURE),
+        DifferenceKind.GROUNDING: rate(DifferenceKind.GROUNDING),
+        DifferenceKind.ROUTE: rate(DifferenceKind.ROUTE),
+        DifferenceKind.ANSWER: rate(DifferenceKind.ANSWER),
+    }
+    blockers: list[str] = []
+    if total < policy.minimum_runs:
+        blockers.append(
+            f"need {policy.minimum_runs - total} more shadow runs")
+    checks = [
+        (DifferenceKind.FAILURE, policy.maximum_failure_rate),
+        (DifferenceKind.GROUNDING, policy.maximum_grounding_drift_rate),
+        (DifferenceKind.ROUTE, policy.maximum_route_drift_rate),
+        (DifferenceKind.ANSWER, policy.maximum_answer_drift_rate),
+    ]
+    for kind, maximum in checks:
+        if rates[kind] > maximum:
+            blockers.append(
+                f"{kind.value} rate {rates[kind]:.3f} exceeds {maximum:.3f}")
+    return ShadowGateReport(
+        total_runs=total,
+        failure_rate=rates[DifferenceKind.FAILURE],
+        grounding_drift_rate=rates[DifferenceKind.GROUNDING],
+        route_drift_rate=rates[DifferenceKind.ROUTE],
+        answer_drift_rate=rates[DifferenceKind.ANSWER],
+        ready=not blockers,
+        blockers=blockers,
+    )
