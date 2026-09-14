@@ -77,6 +77,7 @@ function ToolRow({ c }: { c: ToolCall }) {
     | { loading: true }
     | { loading: false; data?: SqlRerunRows; error?: string }
   >(null);
+  const [draftSql, setDraftSql] = useState(c.sql || "");
   const dotColor =
     c.status === "running"
       ? "var(--color-cyan-signal)"
@@ -187,21 +188,9 @@ function ToolRow({ c }: { c: ToolCall }) {
               </button>
               <button
                 type="button"
-                disabled={rerun?.loading === true}
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (rerun?.loading) return;
-                  const sql = c.sql as string;
-                  setRerun({ loading: true });
-                  rerunSql(sql).then(
-                    (data) => setRerun({ loading: false, data }),
-                    (err) =>
-                      setRerun({
-                        loading: false,
-                        error:
-                          err instanceof Error ? err.message : "re-run failed",
-                      }),
-                  );
+                  setSqlOpen(true);
                 }}
                 style={{
                   background: "none",
@@ -212,30 +201,63 @@ function ToolRow({ c }: { c: ToolCall }) {
                   fontSize: 11,
                   fontWeight: 600,
                   color: "var(--color-cyan-edge)",
-                  opacity: rerun?.loading ? 0.5 : 1,
                 }}
               >
-                {rerun?.loading ? "Re-running…" : "Re-run"}
+                Edit & run
               </button>
               {sqlOpen && (
-                <pre
-                  style={{
-                    fontFamily: "ui-monospace, monospace",
-                    fontSize: 11,
-                    lineHeight: 1.5,
-                    background: "var(--color-stone-canvas)",
-                    border: "1px solid var(--color-stone-border)",
-                    borderRadius: 6,
-                    padding: 8,
-                    overflowX: "auto",
-                    margin: "4px 0 0",
-                    color: "var(--color-ink-black)",
-                    whiteSpace: "pre-wrap",
-                    wordBreak: "break-word",
-                  }}
-                >
-                  {c.sql}
-                </pre>
+                <div style={{ marginTop: 4 }}>
+                  <textarea
+                    aria-label="SQL query"
+                    value={draftSql}
+                    onChange={(e) => setDraftSql(e.target.value)}
+                    spellCheck={false}
+                    style={{
+                      display: "block",
+                      width: "100%",
+                      minHeight: 96,
+                      resize: "vertical",
+                      fontFamily: "ui-monospace, monospace",
+                      fontSize: 11,
+                      lineHeight: 1.5,
+                      background: "var(--color-stone-canvas)",
+                      border: "1px solid var(--color-stone-border)",
+                      borderRadius: 6,
+                      padding: 8,
+                      color: "var(--color-ink-black)",
+                    }}
+                  />
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+                    <button
+                      type="button"
+                      className="pill-ghost"
+                      disabled={rerun?.loading === true || !draftSql.trim()}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (rerun?.loading || !draftSql.trim()) return;
+                        setRerun({ loading: true });
+                        rerunSql(draftSql).then(
+                          (data) => setRerun({ loading: false, data }),
+                          (err) =>
+                            setRerun({
+                              loading: false,
+                              error:
+                                err instanceof Error ? err.message : "query failed",
+                            }),
+                        );
+                      }}
+                      style={{
+                        fontSize: 11,
+                        opacity: rerun?.loading || !draftSql.trim() ? 0.5 : 1,
+                      }}
+                    >
+                      {rerun?.loading ? "Running…" : "Run query"}
+                    </button>
+                    <span style={{ color: "var(--color-ash-gray)" }}>
+                      Read-only · 25 row cap
+                    </span>
+                  </div>
+                </div>
               )}
               {rerun && !rerun.loading && rerun.error && (
                 <div style={{ marginTop: 4, color: "var(--color-ember)" }}>
