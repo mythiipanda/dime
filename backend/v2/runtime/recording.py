@@ -1,0 +1,60 @@
+from __future__ import annotations
+
+from collections.abc import Sequence
+from typing import Any
+
+from v2.contracts import EvidenceEnvelope, PlanNode, TaskSpec
+from v2.runtime.interfaces import Capability
+from v2.runtime.ledger import LedgerKind
+
+
+class RecordedCapability:
+    def __init__(self, capability: Capability, ledger: Any, *, turn_id: str) -> None:
+        self.name = capability.name
+        self._capability = capability
+        self._ledger = ledger
+        self._turn_id = turn_id
+        self._sequence = 0
+
+    async def execute(
+        self,
+        node: PlanNode,
+        task: TaskSpec,
+        evidence: Sequence[EvidenceEnvelope],
+    ) -> EvidenceEnvelope:
+        self._sequence += 1
+        call_id = f"tool:{self._turn_id}:{node.id}:{self._sequence}"
+        data = {
+            "name": self.name,
+            "args": {
+                "node": node.model_dump(mode="json"),
+                "task": task.model_dump(mode="json"),
+                "evidence_ids": [item.evidence_id for item in evidence],
+            },
+        }
+        self._ledger.append(
+            LedgerKind.TOOL_CALL,
+            turn_id=self._turn_id,
+            step_id=node.id,
+            call_id=call_id,
+            data=data,
+        )
+        try:
+            result = await self._capability.execute(node, task, evidence)
+        except BaseException as exc:
+            self._ledger.append(
+                LedgerKind.TOOL_RESULT,
+                turn_id=self._turn_id,
+                step_id=node.id,
+                call_id=call_id,
+                data={"status": "failed", "error": f"{type(exc).__name__}: {exc}"},
+            )
+            raise
+        self._ledger.append(
+            LedgerKind.TOOL_RESULT,
+            turn_id=self._turn_id,
+            step_id=node.id,
+            call_id=call_id,
+            data={"status": "ok", "evidence": result.model_dump(mode="json")},
+        )
+        return result

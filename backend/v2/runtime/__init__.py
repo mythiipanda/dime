@@ -11,6 +11,7 @@ from v2.runtime.ledger import (
 )
 from v2.runtime.loop import Runtime
 from v2.runtime.models import ExecutionResult, RuntimeResult
+from v2.runtime.recording import RecordedCapability
 from v2.runtime.verifier import (
     SemanticVerifier,
     merge_verification_reports,
@@ -32,6 +33,7 @@ __all__ = [
     "PlanExecutor",
     "Planner",
     "Repairer",
+    "RecordedCapability",
     "Runtime",
     "RuntimeResult",
     "SemanticVerifier",

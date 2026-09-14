@@ -4,6 +4,7 @@ from .models import (
     ModelSemanticVerifier,
     ModelSynthesizer,
     ProviderStructuredModel,
+    RecordedStructuredModel,
     StructuredModel,
 )
 from .capabilities import CAPABILITIES, Capability
@@ -21,6 +22,7 @@ from .core import (
 __all__ = [
     "StructuredModel",
     "ProviderStructuredModel",
+    "RecordedStructuredModel",
     "ModelSynthesizer",
     "ModelSemanticVerifier",
     "ModelPlanner",

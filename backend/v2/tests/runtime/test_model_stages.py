@@ -66,3 +66,24 @@ def test_json_object_accepts_fenced_json_and_rejects_prose():
     assert _json_object('```json\n{"ok": true}\n```') == '{"ok": true}'
     with pytest.raises(ValueError):
         _json_object("no object")
+
+@pytest.mark.anyio
+async def test_recorded_model_keeps_success_and_failure_attempts():
+    from v2.adapters import RecordedStructuredModel
+    from v2.contracts import TaskSpec
+    from v2.runtime import LedgerKind, RequestEnvelope, RunLedger
+
+    class Failing:
+        async def generate(self, **call):
+            raise RuntimeError("provider down")
+
+    envelope = RequestEnvelope.freeze(provider="p", model="m", route="intake",
+        prompt="prompt", context={}, tool_schemas={}, planner_version="v2")
+    ledger = RunLedger("run")
+    recorded = RecordedStructuredModel(Failing(), ledger, turn_id="turn")
+    with pytest.raises(RuntimeError, match="provider down"):
+        await recorded.generate(schema=TaskSpec, prompt="prompt", payload={}, envelope=envelope)
+
+    assert [entry.kind for entry in ledger.entries] == [
+        LedgerKind.MODEL_REQUEST, LedgerKind.ASSISTANT_ATTEMPT]
+    assert ledger.entries[-1].data["status"] == "failed"

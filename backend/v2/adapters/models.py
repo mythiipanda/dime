@@ -195,3 +195,51 @@ def _json_object(text: str) -> str:
     if start < 0 or end < start:
         raise ValueError("model did not return a JSON object")
     return text[start : end + 1]
+
+class RecordedStructuredModel:
+    def __init__(self, model: StructuredModel, ledger: Any, *, turn_id: str) -> None:
+        self._model = model
+        self._ledger = ledger
+        self._turn_id = turn_id
+        self._sequence = 0
+
+    async def generate(
+        self,
+        *,
+        schema: type[T],
+        prompt: str,
+        payload: Mapping[str, Any],
+        envelope: RequestEnvelope,
+    ) -> T:
+        from v2.runtime.ledger import LedgerKind
+
+        self._sequence += 1
+        call_id = f"model:{self._turn_id}:{self._sequence}"
+        self._ledger.append(
+            LedgerKind.MODEL_REQUEST,
+            turn_id=self._turn_id,
+            call_id=call_id,
+            data=envelope.model_dump(mode="json"),
+        )
+        try:
+            result = await self._model.generate(
+                schema=schema,
+                prompt=prompt,
+                payload=payload,
+                envelope=envelope,
+            )
+        except BaseException as exc:
+            self._ledger.append(
+                LedgerKind.ASSISTANT_ATTEMPT,
+                turn_id=self._turn_id,
+                call_id=call_id,
+                data={"status": "failed", "error": f"{type(exc).__name__}: {exc}"},
+            )
+            raise
+        self._ledger.append(
+            LedgerKind.ASSISTANT_ATTEMPT,
+            turn_id=self._turn_id,
+            call_id=call_id,
+            data={"status": "accepted", "output": result.model_dump(mode="json")},
+        )
+        return result
