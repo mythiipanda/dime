@@ -4173,6 +4173,23 @@ def _with_title(rec: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _authoritative_answer(results: list[dict[str, Any]]) -> str | None:
+    """Return an answer owned by a deterministic tool, including pin wrappers."""
+    for result in results:
+        if not isinstance(result, dict):
+            continue
+        candidates = [result]
+        rows = result.get("rows")
+        if (isinstance(rows, list) and len(rows) == 1
+                and isinstance(rows[0], dict)):
+            candidates.append(rows[0])
+        for candidate in candidates:
+            meta = candidate.get("meta")
+            if isinstance(meta, dict) and meta.get("deterministic_answer"):
+                return str(meta["deterministic_answer"])
+    return None
+
+
 def _flatten_tables(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     def _sanitize(rec: dict[str, Any]) -> dict[str, Any] | None:
         tool = rec.get("tool")
@@ -4833,12 +4850,7 @@ async def analytics_agent(state: DimeState) -> AsyncGenerator[dict[str, Any], No
     except Exception as exc:
         state["analysis"] = ""
         yield _event("error", {"node": "analytics", "message": str(exc)[:200]})
-    deterministic = any(
-        isinstance(result, dict)
-        and isinstance(result.get("meta"), dict)
-        and result["meta"].get("deterministic_answer")
-        for result in state["tool_results"]
-    )
+    deterministic = _authoritative_answer(state["tool_results"]) is not None
     unverified = (
         [] if deterministic
         else _verify_draft_numerals(state, state["analysis"])[:5]
@@ -5589,33 +5601,33 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
     # F66: multi-metric team compare ships deterministic - the payload
     # built the sentence, the LLM narrative is ignored (v67 design
     # law: LLM-composed numerals are untrusted on pinned lanes).
-    for _tr in state.get("tool_results") or []:
-        if (isinstance(_tr, dict)
-                and isinstance(_tr.get("meta"), dict)
-                and _tr["meta"].get("deterministic_answer")):
-            _det = str(_tr["meta"]["deterministic_answer"])
+    _authoritative = _authoritative_answer(state.get("tool_results") or [])
+    if _authoritative is not None:
+        _scrubbed = _authoritative
+        for _tr in state.get("tool_results") or []:
+            if not isinstance(_tr, dict):
+                continue
+            _candidate = _tr
+            _rows = _tr.get("rows")
+            if (isinstance(_rows, list) and len(_rows) == 1
+                    and isinstance(_rows[0], dict)
+                    and isinstance(_rows[0].get("meta"), dict)
+                    and _rows[0]["meta"].get("deterministic_answer")):
+                _candidate = _rows[0]
+            _meta = _candidate.get("meta")
+            if not (isinstance(_meta, dict)
+                    and _meta.get("deterministic_answer") == _authoritative):
+                continue
             try:
-                if _tr.get("tool") not in ("get_trade_check",
-                                           "pin_team_scoring_record",
-                                           "get_team_four_factors"):
-                    # Trade verdicts quote next-season salary-sheet
-                    # figures with their own as-of date; the generic
-                    # current-season header would misstate them. The
-                    # team scoring-record pin carries its own
-                    # historical-span coverage line; the four-factors
-                    # pin writes its coverage line into the det.
+                if _candidate.get("tool") not in (
+                        "get_trade_check", "pin_team_scoring_record",
+                        "get_team_four_factors"):
                     from .tools._core import SEASON as _CUR_SEASON
-                    # F72: the header must follow the ANSWERED season.
-                    # get_player_rankings answers historical seasons
-                    # (meta.season "2015-16") but the header said the
-                    # current one - "This data covers 2025-26" over a
-                    # 2015-16 board, live on prod.
-                    _det_season = _tr["meta"].get("season") or _CUR_SEASON
-                    _det = (f"This data covers the {_det_season} season.\n"
-                            + _det)
+                    _det_season = _meta.get("season") or _CUR_SEASON
+                    _scrubbed = (f"This data covers the {_det_season} season.\n"
+                                 + _authoritative)
             except Exception:
                 pass
-            _scrubbed = _det
             break
     # v67 (v66 live smoke, 12:32 PM): team-totals answers paraphrased
     # away the leader's total - "scored the most total points with PTS

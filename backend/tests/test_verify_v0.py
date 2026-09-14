@@ -145,3 +145,39 @@ def test_deterministic_prediction_suppresses_discarded_draft_caution(monkeypatch
                 if event["type"] == "custom_data"
                 and event["data"].get("unverified_numbers")]
     assert cautions == []
+
+
+def test_wrapped_authoritative_answer_suppresses_discarded_draft_caution(monkeypatch):
+    from app import graph
+    from app.graph import analytics_agent
+
+    async def fake_stream(*args, **kwargs):
+        yield {"text": "Draft invents 022, 1, and 2."}
+
+    monkeypatch.setattr(graph, "astream_with_fallback", fake_stream)
+
+    async def _go():
+        state = {"question": "What were Luka Doncic's stats in 2022-23?",
+                 "history": [], "tool_results": [], "calls_made": [], "round": 0,
+                 "primary": "p", "model": "m", "ledger": []}
+        async for _ in graph._triage_seed(
+                state["question"], "primary", "model", state):
+            pass
+        events = []
+        async for event in analytics_agent(state):
+            events.append(event)
+        return state, events
+
+    state, events = asyncio.run(_go())
+    assert not [e for e in events if e["type"] == "custom_data"
+                and e["data"].get("unverified_numbers")]
+    answer = asyncio.run(_final_answer(state))
+    assert "32.4 points" in answer and "2022-23" in answer
+    assert "could not verify" not in answer
+
+
+async def _final_answer(state):
+    async for event in presentation_agent(state):
+        if event.get("type") == "final_answer":
+            return event["data"]["text"]
+    raise AssertionError("no final answer")
