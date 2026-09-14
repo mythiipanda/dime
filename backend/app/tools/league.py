@@ -60,6 +60,51 @@ def get_injuries(team: str = "", player: str = "",
     return out
 
 
+
+
+_STANDINGS_HIST_MAP = {
+    "team_id": "TeamID", "team_city": "TeamCity",
+    "team_name": "TeamName", "conference": "Conference",
+    "wins": "WINS", "losses": "LOSSES", "win_pct": "WinPCT",
+    "record": "Record", "playoff_rank": "PlayoffRank",
+    "league_rank": "LeagueRank", "l10": "L10", "home": "HOME",
+    "road": "ROAD", "points_pg": "PointsPG",
+    "opp_points_pg": "OppPointsPG", "diff_points_pg": "DiffPointsPG",
+    "str_current_streak": "strCurrentStreak",
+    "three_pts_or_less": "ThreePTSOrLess",
+    "ahead_at_half": "AheadAtHalf", "behind_at_half": "BehindAtHalf",
+    "oct": "Oct", "nov": "Nov", "dec": "Dec", "jan": "Jan",
+    "feb": "Feb", "mar": "Mar", "apr": "Apr",
+}
+
+
+def _hist_standings_rows(season: str) -> list[dict[str, Any]]:
+    """F76: silver_standings only seeds 2023-24+; older seasons live in
+    silver_hist_standings (2009-10+) with lowercase keys. Normalize to
+    the nba_api shape so every consumer renders both the same. Before
+    this, "best record in 2016-17" silently answered with the current
+    season's table."""
+    try:
+        from .. import store as _store
+    except Exception:
+        from app import store as _store
+    try:
+        frame = _store.read_frame(
+            "silver_hist_standings", "_season = ?", [season])
+    except Exception:
+        return []
+    if frame is None or frame.height == 0:
+        return []
+    out: list[dict[str, Any]] = []
+    for h in frame.to_dicts():
+        row = {dst: h.get(src) for src, dst in _STANDINGS_HIST_MAP.items()
+               if h.get(src) is not None}
+        if row:
+            out.append(row)
+    out.sort(key=lambda r: -(r.get("WINS") or 0))
+    return out
+
+
 _STANDINGS_KEEP = ("TeamID", "team", "abbrev", "Conference", "WINS",
                    "LOSSES", "WinPCT", "Record", "PlayoffRank",
                    "LeagueRank", "L10", "HOME", "ROAD", "PointsPG",
@@ -101,6 +146,17 @@ def get_standings(season: str = SEASON) -> dict[str, Any]:
         [season], lambda: nba_stats.standings(season), season,
         limit=30,
     )
+    if not rows:
+        # F76: historical seasons (2009-10..2022-23) are warehouse-only.
+        hist = _hist_standings_rows(str(season))
+        if hist:
+            return {"tool": "get_standings", "ok": True,
+                    "rows": _slim_standings(hist),
+                    "meta": {"source": "warehouse", "season": str(season),
+                             "coverage": "historical_standings"}}
+        return {"tool": "get_standings", "ok": False,
+                "error": (f"No standings on file for {season}; standings "
+                          f"cover 2009-10 through the current season.")}
     return {"tool": "get_standings", "ok": True,
             "rows": _slim_standings(rows), "meta": meta}
 
@@ -132,14 +188,28 @@ def get_standings_deep(season: str = SEASON, top: int = 5) -> dict[str, Any]:
         if "silver_standings" not in tables:
             return {"tool": "get_standings_deep", "ok": False,
                     "error": "standings empty"}
-        rows = con.execute(
-            """SELECT TeamCity, TeamName, WinPCT,
-            "ThreePTSOrLess", "AheadAtHalf", "BehindAtHalf",
-            "L10", "strCurrentStreak",
-            "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr"
-            FROM silver_standings WHERE _season = ?""",
-            [season],
-        ).fetchall()
+        if "silver_standings" in tables:
+            rows = con.execute(
+                """SELECT TeamCity, TeamName, WinPCT,
+                "ThreePTSOrLess", "AheadAtHalf", "BehindAtHalf",
+                "L10", "strCurrentStreak",
+                "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr"
+                FROM silver_standings WHERE _season = ?""",
+                [season],
+            ).fetchall()
+        else:
+            rows = []
+        if not rows and "silver_hist_standings" in tables:
+            # F76: same deep-cut shape from the historical table
+            # (lowercase keys) for seasons before 2023-24.
+            rows = con.execute(
+                """SELECT team_city, team_name, win_pct,
+                three_pts_or_less, ahead_at_half, behind_at_half,
+                l10, str_current_streak,
+                oct, nov, dec, jan, feb, mar, apr
+                FROM silver_hist_standings WHERE _season = ?""",
+                [season],
+            ).fetchall()
     finally:
         con.close()
     if not rows:
