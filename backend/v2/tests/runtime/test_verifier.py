@@ -1,0 +1,142 @@
+from datetime import date, datetime
+from decimal import Decimal
+
+import pytest
+
+from v2.contracts import Claim, ClaimKind, DraftReport, EntityRef, SeasonRef, TaskSpec, VerificationReport, VerificationStatus
+from v2.domain.calculations import Calculation, CalculationInput, CalculationOperation
+from v2.runtime.verifier import merge_verification_reports, validate_semantic_report, verify_mechanical
+
+
+def task(season="2025-26"):
+    from v2.contracts import RunMode
+    return TaskSpec(goal="Rank Boston", mode=RunMode.QUICK, deliverable="answer",
+        entities=[EntityRef(id="BOS", type="team", display_name="Boston Celtics")],
+        season=SeasonRef(value=season, source="user", confidence=1), as_of=date(2026, 4, 15))
+
+
+def evidence(**changes):
+    from v2.contracts import EvidenceEnvelope
+    values = dict(evidence_id="standings", capability="standings", source="warehouse:standings",
+        observed_at=datetime(2026, 4, 15, 12), season="2025-26", as_of=date(2026, 4, 15),
+        entities=[EntityRef(id="BOS", type="team", display_name="Boston Celtics")],
+        rows=[{"TEAM": "Boston Celtics", "W": 61, "WIN_PCT": 0.744},
+              {"TEAM": "New York Knicks", "W": 52, "WIN_PCT": 0.634}],
+        units={"W": "wins", "WIN_PCT": "percent"},
+        metric_definitions={"W": "regular-season wins", "WIN_PCT": "wins divided by games"},
+        qualification="All teams with 82 games", coverage="All 30 NBA teams")
+    values.update(changes)
+    return EvidenceEnvelope(**values)
+
+
+def report(claim):
+    return DraftReport(sections=[claim.text], claims=[claim])
+
+
+def test_observed_claim_passes_with_number_date_season_entity_and_units():
+    claim = Claim(text="As of 2026-04-15, the Boston Celtics had 61 wins in 2025-26.",
+                  kind=ClaimKind.OBSERVED, evidence_ids=["standings"])
+    result = verify_mechanical(task(), report(claim), [evidence()])
+    assert result.status == VerificationStatus.PASS
+    assert result.claim_results[0].supported
+
+
+def test_rejects_uncited_numeral_date_and_season():
+    claim = Claim(text="As of 2026-04-14, Boston had 62 wins in 2024-25.",
+                  kind=ClaimKind.OBSERVED, evidence_ids=["standings"])
+    reasons = verify_mechanical(task(), report(claim), [evidence()]).claim_results[0].reasons
+    assert "uncited numeral 62" in reasons
+    assert "uncited date 2026-04-14" in reasons
+    assert "uncited season 2024-25" in reasons
+
+
+def test_percent_scaling_and_declared_constant_are_supported():
+    claim = Claim(text="Boston won 74.4% across 82 games.", kind=ClaimKind.OBSERVED,
+                  evidence_ids=["standings"])
+    assert verify_mechanical(task(), report(claim), [evidence()], allowed_constants=[82]).status == VerificationStatus.PASS
+
+
+def test_entity_season_and_as_of_mismatches_fail():
+    bad = evidence(entities=[EntityRef(id="NYK", type="team", display_name="New York Knicks")],
+                   season="2024-25", as_of=date(2026, 4, 16))
+    claim = Claim(text="Boston had 61 wins.", kind=ClaimKind.OBSERVED, evidence_ids=["standings"])
+    reasons = verify_mechanical(task(), report(claim), [bad]).claim_results[0].reasons
+    assert "cited evidence entities do not match the task entities" in reasons
+    assert any("does not match task season" in r for r in reasons)
+    assert any("after task as-of" in r for r in reasons)
+
+
+def test_rank_requires_qualification_and_coverage():
+    claim = Claim(text="Boston ranks 1st with 61 wins.", kind=ClaimKind.OBSERVED, evidence_ids=["standings"])
+    result = verify_mechanical(task(), report(claim), [evidence(qualification=None, coverage=None)], allowed_constants=[1])
+    assert "rank claim lacks qualification evidence" in result.claim_results[0].reasons
+    assert "rank claim lacks coverage evidence" in result.claim_results[0].reasons
+    assert "rank claim lacks a recomputable rank calculation" in result.claim_results[0].reasons
+
+
+def test_derived_claim_recomputes_calculation_and_lineage():
+    from v2.contracts import EvidenceEnvelope
+    raw = evidence()
+    derived = EvidenceEnvelope(evidence_id="derived", capability="calculation", source="runtime",
+        observed_at=datetime(2026, 4, 15), season="2025-26", entities=raw.entities,
+        rows={"win_gap": 9}, lineage=["standings"])
+    calc = Calculation(calculation_id="gap", operation=CalculationOperation.SUBTRACT,
+        inputs=[CalculationInput(evidence_id="standings", path="rows[0].W"),
+                CalculationInput(evidence_id="standings", path="rows[1].W")],
+        result=Decimal("9"), unit="wins")
+    claim = Claim(text="Boston's lead was 9 wins.", kind=ClaimKind.DERIVED,
+                  evidence_ids=["derived"], calculation_id="gap")
+    assert verify_mechanical(task(), report(claim), [raw, derived], [calc]).status == VerificationStatus.PASS
+
+
+def test_bad_calculation_and_unknown_evidence_fail_closed():
+    calc = Calculation(calculation_id="gap", operation=CalculationOperation.SUBTRACT,
+        inputs=[CalculationInput(evidence_id="standings", path="rows[0].W"),
+                CalculationInput(evidence_id="standings", path="rows[1].W")], result=Decimal("10"))
+    claim = Claim(text="The gap was 10 wins.", kind=ClaimKind.DERIVED,
+                  evidence_ids=["missing"], calculation_id="gap")
+    result = verify_mechanical(task(), report(claim), [evidence()], [calc])
+    assert result.status == VerificationStatus.REPAIR
+    assert any("unknown evidence ids" in r for r in result.claim_results[0].reasons)
+    assert any("does not recompute" in r for r in result.claim_results[0].reasons)
+
+
+def test_semantic_contract_rejects_replacement_facts():
+    assert validate_semantic_report({"status": "pass", "claim_results": []}).status == VerificationStatus.PASS
+    with pytest.raises(ValueError, match="forbidden fields"):
+        validate_semantic_report({"status": "repair", "replacement_facts": ["Boston won 61"]})
+    with pytest.raises(ValueError, match="one VerificationReport"):
+        validate_semantic_report("[]")
+
+
+def test_report_merge_preserves_both_verifiers_failures():
+    mechanical = VerificationReport(status="repair",
+        claim_results=[{"claim_index": 0, "supported": False, "reasons": ["number"]}])
+    semantic = VerificationReport(status="partial",
+        claim_results=[{"claim_index": 0, "supported": False, "reasons": ["inference"]}],
+        missing_branches=["risks"])
+    merged = merge_verification_reports(mechanical, semantic)
+    assert merged.status == VerificationStatus.REPAIR
+    assert merged.claim_results[0].reasons == ["number", "inference"]
+    assert merged.missing_branches == ["risks"]
+
+
+def test_rank_recomputation_passes_with_complete_population():
+    calc = Calculation(
+        calculation_id="rank", operation=CalculationOperation.RANK_DESC,
+        inputs=[CalculationInput(evidence_id="standings", path="rows[0].W"),
+                CalculationInput(evidence_id="standings", path="rows[1].W")],
+        subject_input=0, result=Decimal("1"),
+    )
+    claim = Claim(text="Boston ranks 1st with 61 wins.", kind=ClaimKind.DERIVED,
+                  evidence_ids=["standings"], calculation_id="rank")
+    assert verify_mechanical(task(), report(claim), [evidence()], [calc]).status == VerificationStatus.PASS
+
+
+def test_uncited_section_fact_is_rejected():
+    claim = Claim(text="Boston led the table.", kind=ClaimKind.OBSERVED,
+                  evidence_ids=["standings"])
+    draft = DraftReport(sections=["Boston won 62 games."], claims=[claim])
+    result = verify_mechanical(task(), draft, [evidence()])
+    assert result.status == VerificationStatus.REPAIR
+    assert "62" in result.repair_instructions[-1]
