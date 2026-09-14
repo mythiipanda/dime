@@ -353,14 +353,20 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
   if (!running && !open) {
     if (!calls.length && !thoughts.length) return null;
     if (!calls.length) {
+      // F80: concept-lane answers pull no stats, so they landed here
+      // and read "Details" while every other answer reads "Receipts" -
+      // QA keys on Receipts and users saw an unfinished-looking card.
+      // Same pill, honestly labeled.
       return (
         <button
           type="button"
           onClick={() => setOpen(true)}
           className="pill-ghost"
           style={{ fontSize: 12, marginBottom: 8 }}
+          aria-label="Show receipts"
         >
-          Details
+          <span style={{ color: "var(--color-ash-gray)" }}>Receipts</span>
+          {" · concept · no stats pulled"}
         </button>
       );
     }
