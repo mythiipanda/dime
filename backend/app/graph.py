@@ -4833,7 +4833,16 @@ async def analytics_agent(state: DimeState) -> AsyncGenerator[dict[str, Any], No
     except Exception as exc:
         state["analysis"] = ""
         yield _event("error", {"node": "analytics", "message": str(exc)[:200]})
-    unverified = _verify_draft_numerals(state, state["analysis"])[:5]
+    deterministic = any(
+        isinstance(result, dict)
+        and isinstance(result.get("meta"), dict)
+        and result["meta"].get("deterministic_answer")
+        for result in state["tool_results"]
+    )
+    unverified = (
+        [] if deterministic
+        else _verify_draft_numerals(state, state["analysis"])[:5]
+    )
     if unverified:
         yield _event("custom_data", {"node": "analytics",
                                      "unverified_numbers": unverified})
