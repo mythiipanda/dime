@@ -143,6 +143,9 @@ function Standings() {
     if (v) {
       setSeason(v);
       show(v);
+    } else {
+      // Auto-load the current season so Explore never opens on an empty panel.
+      show("2025-26");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

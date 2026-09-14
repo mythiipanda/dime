@@ -8,6 +8,10 @@ from .. import store
 from ..sources.base import FetchResult
 
 SEASON = "2025-26"
+# Oldest season in the silver_hist_* tables (verified 2026-09-13:
+# hist gamelogs/shots/standings all start 2009-10). Coverage honesty
+# for all-time/historical asks must name this span, not just SEASON.
+HIST_SEASON_START = "2009-10"
 
 
 TOOL_LABELS = {
@@ -37,6 +41,8 @@ TOOL_LABELS = {
     "get_impact_estimate": "Estimating impact",
     "search_game_logs": "Searching game logs",
     "get_team_game_log": "Pulling the team game log",
+    "pin_team_best_player": "Reading team scoring leaders",
+    "pin_game_stat_followup": "Pulling the Finals game line",
 }
 
 _DESK_LABEL_OVERRIDES = {

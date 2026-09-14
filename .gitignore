@@ -71,10 +71,14 @@ backend/bench/results/
 DESIGN.MD
 ROADMAP.md
 OPENCODE.md
-README.md
+# README.md (unignored 2026-09-13: Tony asked for a real repo README with product media)
 docs/
 backend/app/data/
 .agents/
 skills-lock.json
 .claude/
 agent/
+
+# Agent-only working dirs - never ship to the public repo (Tony, 2026-09-13)
+research/
+dime-arch/

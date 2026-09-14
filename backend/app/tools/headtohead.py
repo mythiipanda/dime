@@ -128,16 +128,62 @@ def get_head_to_head(player: str, opponent: str,
     between them, and the player's team record in those games. Fewer
     than 5 games sets small_sample and says so plainly. Warehouse only;
     player-vs-player is not supported.
+    If `opponent` names a PLAYER (e.g. "Shai Gilgeous-Alexander"), it
+    resolves to that player's current team so the lane still answers the
+    meetings between the two players' teams instead of erroring; the
+    resolution is disclosed in the note.
     """
     season = clamp_season(season)
     try:
         pid = coerce_player_id(player)
     except ValueError as exc:
         return {"tool": "get_head_to_head", "ok": False, "error": str(exc)}
+    opp_player_note = ""
     try:
         abbr, full_name = _team_abbr(opponent)
-    except ValueError as exc:
-        return {"tool": "get_head_to_head", "ok": False, "error": str(exc)}
+    except ValueError:
+        # 2026-09-13 sweep3: "head to head between Luka and SGA" passed
+        # a PLAYER as the opponent, got 'unknown team', and the lane
+        # shipped "no shared court logs, precluding direct comparison"
+        # while MIN-vs-LAL meetings sat in the warehouse. Resolve an
+        # opponent player to their current team and say so; the answer
+        # is then the player's games against that team.
+        try:
+            import time as _time
+            from collections import Counter as _Counter
+
+            from .. import store as _store
+            from ._core import coerce_player_id as _cpi
+            opp_pid = _cpi(opponent)
+            ab = ""
+            if opp_pid:
+                for _ in range(3):
+                    try:
+                        con = _store.connect()
+                        try:
+                            _rows = con.execute(
+                                "SELECT MATCHUP FROM silver_player_gamelogs"
+                                " WHERE _season = ? AND _entity = ? LIMIT 40",
+                                [season, f"player:{opp_pid}"]).fetchall()
+                        finally:
+                            con.close()
+                        c = _Counter(str(r[0] or "").split(" ")[0]
+                                     for r in _rows)
+                        c.pop("", None)
+                        ab = c.most_common(1)[0][0] if c else ""
+                        break
+                    except Exception:
+                        _time.sleep(0.2)
+            if not ab:
+                return {"tool": "get_head_to_head", "ok": False,
+                        "error": f"unknown team or player: {opponent}"}
+            abbr, full_name = _team_abbr(ab)
+            opp_player_note = (f"opponent '{opponent}' resolved to "
+                               f"team {abbr}; games are {player} vs "
+                               f"{abbr} (meetings between their teams)")
+        except Exception as exc:
+            return {"tool": "get_head_to_head", "ok": False,
+                    "error": f"unknown team or player: {opponent} ({exc})"}
     games = _load_player_games(pid, season)
     if not games:
         return {"tool": "get_head_to_head", "ok": False,
@@ -176,9 +222,13 @@ def get_head_to_head(player: str, opponent: str,
             "plus_minus": _f(g.get("PLUS_MINUS")),
             "wl": str(g.get("WL") or "").upper(),
         })
-    note = (f"only {opp_line['gp']} game(s) vs {abbr}: treat the averages"
-            " as noisy" if small
-            else None)
+    notes = []
+    if opp_player_note:
+        notes.append(opp_player_note)
+    if small:
+        notes.append(f"only {opp_line['gp']} game(s) vs {abbr}: treat the"
+                     " averages as noisy")
+    note = "; ".join(notes) or None
     return {
         "tool": "get_head_to_head",
         "ok": True,

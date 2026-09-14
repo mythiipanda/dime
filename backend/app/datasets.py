@@ -80,6 +80,20 @@ def _envelope(table: str, season: str, frame: object, cached: bool) -> dict:
             keyed.update({k: v for k, v in r.items() if k not in keyed})
             pinned.append(keyed)
         rows = pinned
+    if table == "silver_standings":
+        # Pin the overall record ahead of ConferenceRecord/DivisionRecord:
+        # the 12-col render cap used to cut before WINS/LOSSES, so the
+        # Explore standings panel showed "41-11" (conference record) as
+        # the only record column while the team was 64-18 overall.
+        pin = ["TeamCity", "TeamName", "Conference", "Record",
+               "WINS", "LOSSES", "WinPCT", "PlayoffRank",
+               "ClinchIndicator"]
+        pinned = []
+        for r in rows:
+            keyed = {k: r[k] for k in pin if k in r}
+            keyed.update({k: v for k, v in r.items() if k not in keyed})
+            pinned.append(keyed)
+        rows = pinned
     if table == "silver_lineups":
         from .tools._core import trust_tier
 

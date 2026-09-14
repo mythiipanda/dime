@@ -18,9 +18,9 @@ export default function Sparkline({
   const d = values.map((v, i) => `${i ? "L" : "M"}${px(i)},${py(v)}`).join(" ");
   return (
     <svg width={width} height={height} style={{ display: "block" }}>
-      <path d={d} fill="none" stroke="#3ba6f1" strokeWidth={2} />
+      <path d={d} fill="none" stroke="var(--color-cyan-signal)" strokeWidth={2} />
       {values.map((v, i) => (
-        <circle key={i} cx={px(i)} cy={py(v)} r={2} fill="#0c0a09" />
+        <circle key={i} cx={px(i)} cy={py(v)} r={2} fill="var(--color-ink-black)" />
       ))}
     </svg>
   );

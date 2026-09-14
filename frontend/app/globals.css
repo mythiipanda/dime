@@ -1,24 +1,165 @@
 @import "tailwindcss";
 
 @theme {
-  --color-stone-canvas: #fafaf9;
-  --color-pure-white: #ffffff;
-  --color-stone-border: #e8e6e5;
-  --color-stone-muted: #d6d3d1;
-  --color-ash-gray: #9E9E9E;
-  --color-warm-gray: #5D5D5D;
-  --color-ink-black: #292929;
-  --color-soot: #1c1917;
-  --color-sky-wash: #c1e1f7;
-  --color-cyan-signal: #3ba6f1;
-  --color-cyan-edge: #3398e1;
-  --color-ember: #e11d48;
+  /* Dual theme (2026-09-13): values are the beautifului harness tokens
+     (research/design-skills/beautifului/foundation.css), light here,
+     dark under .dark below. Token names unchanged - every component
+     inherits through var(--color-*). */
+  --color-stone-canvas: oklch(0.985 0.001 286.376);   /* page */
+  --color-pure-white: oklch(1 0 0);                   /* surface */
+  --color-stone-border: oklch(0.946 0.003 264.542);   /* line */
+  --color-stone-muted: oklch(0.912 0.005 258.326);    /* line-strong */
+  --color-ash-gray: oklch(0.695 0.009 264.505);       /* ink-3 */
+  --color-warm-gray: oklch(0.506 0.01 264.477);       /* ink-2 */
+  --color-ink-black: oklch(0.247 0.006 258.361);      /* ink */
+  --color-soot: oklch(0.247 0.006 258.361);           /* strong ink (charts) */
+  --color-sky-wash: oklch(0.96 0.019 252.878);        /* accent-tint */
+  --color-cyan-signal: oklch(0.626 0.205 254.947);    /* accent */
+  --color-cyan-edge: oklch(0.556 0.187 255.617);      /* accent-ink */
+  --color-ember: oklch(0.621 0.192 23.042);           /* red */
+  --color-field: oklch(0.961 0.001 286.375);          /* field (inset fill) */
 
   --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", ui-sans-serif, system-ui, sans-serif;
   --font-body: -apple-system, BlinkMacSystemFont, "SF Pro Text", ui-sans-serif, system-ui, sans-serif;
 
   --shadow-card: rgba(0, 0, 0, 0.05) 0px 4px 16px 0px;
   --shadow-preview: rgba(17, 12, 46, 0.12) 0px 12px 45px 0px;
+  --hover-subtle: rgba(0, 0, 0, 0.03);
+  --shadow-focus: 0 8px 32px rgba(0, 0, 0, 0.08);
+}
+
+
+
+
+/* transitions.dev #14 skeleton-reveal - content blurs into focus as it
+   replaces the skeleton (Dime tokens; reduced-motion safe) */
+.t-skel-in {
+  animation: t-skel-in 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes t-skel-in {
+  from { opacity: 0; filter: blur(6px); transform: translateY(4px); }
+  to { opacity: 1; filter: blur(0); transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .t-skel-in { animation: none; }
+}
+
+/* transitions.dev #28 thinking states - Dime-token colors so the shimmer
+   reads in both themes (base = warm-gray, highlight = ink) */
+:root {
+  --think-swap: 200ms;
+  --think-distance: 8px;
+  --think-blur: 2px;
+  --think-shimmer: 2000ms;
+  --think-ease: ease-in-out;
+}
+.t-think { position: relative; display: inline-block; }
+.t-think-sizer { display: block; visibility: hidden; white-space: nowrap; }
+.t-think-text {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  display: block;
+  color: var(--color-warm-gray);
+  white-space: nowrap;
+}
+.t-think-text::before {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: linear-gradient(90deg,
+    transparent 0%, transparent 40%,
+    var(--color-ink-black) 50%,
+    transparent 60%, transparent 100%);
+  background-size: 400% 100%;
+  background-repeat: no-repeat;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: t-think-shimmer var(--think-shimmer) linear infinite;
+}
+@keyframes t-think-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: 0% 0; }
+}
+.t-think-text.is-exit {
+  transition: transform var(--think-swap) var(--think-ease),
+    filter var(--think-swap) var(--think-ease),
+    opacity var(--think-swap) var(--think-ease);
+  transform: translateY(calc(var(--think-distance) * -1));
+  filter: blur(var(--think-blur));
+  opacity: 0;
+}
+.t-think-text.is-enter {
+  animation: t-think-enter var(--think-swap) var(--think-ease) both;
+}
+@keyframes t-think-enter {
+  from { transform: translateY(var(--think-distance)); filter: blur(var(--think-blur)); opacity: 0; }
+  to { transform: translateY(0); filter: blur(0); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .t-think-text::before { animation: none; }
+  .t-think-text.is-exit, .t-think-text.is-enter { transition: none; animation: none; filter: none; }
+}
+
+/* harness streaming primitive styles (verbatim from foundation.css, tokens renamed) */
+.stream-tail {
+  filter: blur(1.6px);
+  -webkit-mask-image: linear-gradient(to right, oklch(0 0 0) 20%, oklch(0 0 0 / 0.2));
+  mask-image: linear-gradient(to right, oklch(0 0 0) 20%, oklch(0 0 0 / 0.2));
+}
+
+.stream-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1.05em;
+  margin-left: 1.5px;
+  translate: 0 -0.5px;
+  border-radius: 1px;
+  background: var(--color-ink-black);
+  vertical-align: text-bottom;
+  animation: caret-blink 1s step-end infinite;
+}
+
+.stream-caret.is-streaming {
+  animation: none;
+}
+
+@keyframes caret-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stream-caret { animation: none; }
+  .stream-tail { filter: none; -webkit-mask-image: none; mask-image: none; }
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.dark {
+  --color-stone-canvas: oklch(0.209 0.004 264.477);
+  --color-pure-white: oklch(0.26 0.006 271.191);
+  --color-stone-border: oklch(0.308 0.006 258.354);
+  --color-stone-muted: oklch(0.356 0.007 264.474);
+  --color-ash-gray: oklch(0.541 0.01 264.484);
+  --color-warm-gray: oklch(0.731 0.008 260.731);
+  --color-ink-black: oklch(0.964 0.002 247.839);
+  --color-soot: oklch(0.964 0.002 247.839);
+  --color-sky-wash: oklch(0.68 0.173 253.301 / 0.16);
+  --color-cyan-signal: oklch(0.68 0.173 253.301);
+  --color-cyan-edge: oklch(0.788 0.113 248.33);
+  --color-ember: oklch(0.666 0.18 21.433);
+  --color-field: oklch(0.293 0.006 271.223);
+
+  --shadow-card: rgba(0, 0, 0, 0.35) 0px 4px 16px 0px;
+  --shadow-preview: rgba(0, 0, 0, 0.5) 0px 12px 45px 0px;
+  --hover-subtle: rgba(255, 255, 255, 0.05);
+  --shadow-focus: 0 8px 32px rgba(0, 0, 0, 0.45);
 }
 
 html {
@@ -56,13 +197,15 @@ body {
   padding: 24px;
 }
 
+/* harness primary button: ink fill, surface text, control radius (records-primary-button + send button) */
 .pill-cta {
-  background: var(--color-cyan-signal);
-  border: 1px solid var(--color-cyan-edge);
-  color: #ffffff;
+  background: var(--color-ink-black);
+  border: none;
+  color: var(--color-pure-white);
   font-weight: 500;
-  border-radius: 9999px;
-  padding: 8px 16px;
+  font-size: 12px;
+  border-radius: 8px;
+  padding: 8px 12px;
 }
 
 .pill-ghost {
@@ -73,26 +216,67 @@ body {
   padding: 8px 16px;
 }
 
-.tab-active {
-  background: var(--color-pure-white);
+/* harness tab style: active = field fill, idle = dimmed (ChatComposer header tabs) */
+/* harness sidebar rows (SidebarNav.tsx): bg-hover on hover, 150ms ease */
+.sidebar-row {
+  transition: background-color 150ms ease, color 150ms ease, transform 150ms ease;
+}
+.sidebar-row:hover {
+  background: var(--hover-subtle);
   color: var(--color-ink-black);
-  font-weight: 500;
-  border-radius: 9999px;
-  padding: 5px 14px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.07);
+}
+.sidebar-row:active {
+  transform: scale(0.98);
+}
+
+/* records-table language: hairline rows + hover (RecordsTable.css) */
+.dime-table tr > td, .dime-table tr > th { transition: background-color 120ms ease-out; }
+.dime-table tbody tr:hover > td { background: var(--hover-subtle); }
+.dime-table tbody tr:last-child > td { border-bottom: none; }
+
+.tab-active {
+  background: transparent;
+  color: var(--color-ink-black);
+  font-weight: 400;
+  border-radius: 6px;
+  padding: 3px 12px;
+  box-shadow: none;
+}
+
+/* transitions.dev #16 tabs-sliding: one pill glides to the active tab */
+.t-tabs-pill {
+  position: absolute;
+  top: 2px;
+  left: 0;
+  bottom: 2px;
+  width: 0;
+  border-radius: 6px;
+  background: var(--color-pure-white);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1),
+    width 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+}
+.dark .t-tabs-pill {
+  background: var(--color-canvas);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+@media (prefers-reduced-motion: reduce) {
+  .t-tabs-pill { transition: none; }
 }
 
 .tab-idle {
   background: transparent;
-  color: var(--color-warm-gray);
-  border: 1px solid transparent;
-  border-radius: 9999px;
-  padding: 5px 14px;
+  color: var(--color-ink-black);
+  opacity: 0.5;
+  border: none;
+  border-radius: 6px;
+  padding: 3px 12px;
 }
 
 .tab-idle:hover {
-  color: var(--color-ink-black);
-  background: rgba(0, 0, 0, 0.03);
+  opacity: 0.75;
+  background: transparent;
 }
 
 .field {
@@ -135,7 +319,7 @@ body {
 }
 
 .pill-ghost:hover {
-  background: rgba(0, 0, 0, 0.03);
+  background: var(--hover-subtle);
 }
 
 .composer-card {
@@ -144,7 +328,7 @@ body {
 
 .composer-card:focus-within {
   border-color: var(--color-stone-muted);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-focus);
 }
 
 @keyframes dime-rise {

@@ -11,11 +11,14 @@ import {
 } from "../lib/chat";
 import { RunInfo, buildCitation, getModels, getRuns, postChatStream } from "../lib/api";
 import AnswerText from "./AnswerText";
+import { StreamText } from "./StreamText";
 import { ArtifactItem } from "./ArtifactCanvas";
 import DataArtifacts from "./DataArtifacts";
 import ModelPicker from "./ModelPicker";
 import AgentActivity from "./AgentActivity";
 import Skeleton from "./Skeleton";
+import CompareTray, { pinToTray, readTray } from "./CompareTray";
+import DebateCardModal from "./DebateCardModal";
 
 function aiHasTables(ai: AiMessage): boolean {
   return Object.values(ai.nodes).some((n) => n.tables.length > 0);
@@ -92,6 +95,9 @@ function applyEvent(ai: AiMessage, type: string, data: unknown): AiMessage {
   } else if (type === "final_answer") {
     next.text = String(d.text || "");
     next.streaming = false;
+    if (d.carry && typeof d.carry === "object") {
+      next.carry = d.carry as AiMessage["carry"];
+    }
   } else if (type === "suggestions") {
     const items = (d.items as string[]) || [];
     next.suggestions = items;
@@ -248,6 +254,8 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
   const [models, setModels] = useState<ModelOption[]>([]);
   const [model, setModel] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [debateOpen, setDebateOpen] = useState(false);
+  const [debateTopic, setDebateTopic] = useState<string | undefined>(undefined);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [elapsed, setElapsed] = useState(0);
@@ -430,8 +438,13 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
             boxSizing: "border-box",
           }}
         >
-          <div className="display" style={{ fontSize: 32, fontWeight: 500, color: "var(--color-ink-black)", marginBottom: 28, textAlign: "center" }}>
-            What would you like to know?
+          <div style={{ marginBottom: 22, textAlign: "left" }}>
+            <div style={{ fontSize: 24, fontWeight: 400, color: "var(--color-ash-gray)", lineHeight: 1.3 }}>
+              Dime analyst
+            </div>
+            <div style={{ fontSize: 24, fontWeight: 500, color: "var(--color-ink-black)", lineHeight: 1.3, letterSpacing: "-0.01em" }}>
+              What would you like to know?
+            </div>
           </div>
 
           {/* Centered Large Prompt Composer Card */}
@@ -441,9 +454,9 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
               width: "100%",
               background: "var(--color-pure-white)",
               border: "1px solid var(--color-stone-border)",
-              borderRadius: 24,
-              boxShadow: "0 6px 30px rgba(0, 0, 0, 0.06)",
-              padding: "16px 20px 14px",
+              borderRadius: 14,
+              boxShadow: "var(--shadow-card)",
+              padding: "14px 16px 12px",
               boxSizing: "border-box",
               display: "flex",
               flexDirection: "column",
@@ -456,8 +469,8 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                 width: "100%",
                 border: "none",
                 outline: "none",
-                fontSize: 15,
-                lineHeight: 1.5,
+                fontSize: 13,
+                lineHeight: 1.4,
                 resize: "none",
                 fontFamily: "inherit",
                 background: "transparent",
@@ -479,7 +492,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
               placeholder="Compare Luka and SGA by efficiency..."
             />
 
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 4, borderTop: "1px solid var(--color-stone-canvas)" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 4 }}>
               <ModelPicker models={models} value={model} onChange={setModel} />
 
               {busy ? (
@@ -492,38 +505,50 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                 </button>
               ) : (
                 <button
-                  className="pill-cta interactive-tactile"
-                  style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 20px" }}
+                  type="button"
+                  aria-label="Send"
+                  disabled={!input.trim()}
                   onClick={() => sendText(input)}
+                  className="interactive-tactile"
+                  style={{
+                    width: 28, height: 28, borderRadius: 8, border: "none", cursor: input.trim() ? "pointer" : "default",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    background: input.trim() ? "var(--color-ink-black)" : "var(--color-stone-muted)",
+                    color: input.trim() ? "var(--color-pure-white)" : "var(--color-warm-gray)",
+                    transition: "background 200ms ease, color 200ms ease",
+                  }}
                 >
-                  Ask
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 19V5M5 12l7-7 7 7" />
+                  </svg>
                 </button>
               )}
             </div>
           </div>
 
           {/* Curated 2x2 Prompt Cards (Minimalist Frontier AI style) */}
-          <div className="prompt-grid" style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10, width: "100%", marginTop: 24 }}>
+          {/* harness home suggestions: flat icon links, no cards (harness.html) */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 2, width: "100%", marginTop: 20 }}>
             {[
               {
                 title: "Compare Luka & Shai",
-                desc: "True shooting, shot zones, and on-off impact",
                 prompt: "Compare Luka Dončić and Shai Gilgeous-Alexander",
+                icon: <><circle cx="12" cy="12" r="9" /><path d="M12 3v18M3 12h18" /></>,
               },
               {
-                title: "League Assist Leaders",
-                desc: "Top playmakers, assist-to-turnover ratio, and creation",
+                title: "League assist leaders",
                 prompt: "Who leads the league in assists?",
+                icon: <><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></>,
               },
               {
-                title: "OKC Championship Odds",
-                desc: "Playoff odds, bracket results, and ELO power rating",
+                title: "OKC championship odds",
                 prompt: "Show OKC Thunder playoff odds and ELO",
+                icon: <><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></>,
               },
               {
                 title: "SAC trades LaVine to LAL",
-                desc: "Salary matching for Reaves and Vanderbilt",
                 prompt: "Check if Sacramento can trade Zach LaVine to the Lakers for Austin Reaves and Jarred Vanderbilt",
+                icon: <><path d="M17 3l4 4-4 4" /><path d="M21 7H9" /><path d="M7 21l-4-4 4-4" /><path d="M3 17h12" /></>,
               },
             ].map((item) => (
               <button
@@ -531,28 +556,27 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                 type="button"
                 onClick={() => sendText(item.prompt)}
                 disabled={busy}
-                className="interactive-tactile"
+                className="sidebar-row"
                 style={{
                   display: "flex",
-                  flexDirection: "column",
-                  alignItems: "flex-start",
-                  gap: 4,
-                  padding: "14px 16px",
-                  borderRadius: 10,
-                  background: "var(--color-pure-white)",
-                  border: "1px solid var(--color-stone-border)",
-                  boxShadow: "var(--shadow-subtle)",
+                  alignItems: "center",
+                  gap: 10,
+                  padding: "0 8px",
+                  height: 34,
+                  borderRadius: 8,
+                  background: "transparent",
+                  border: "none",
                   cursor: busy ? "default" : "pointer",
                   textAlign: "left",
                   opacity: busy ? 0.6 : 1,
+                  fontSize: 13,
+                  color: "var(--color-ink-black)",
                 }}
               >
-                <div style={{ color: "var(--color-ink-black)", fontWeight: 500, fontSize: 13 }}>
-                  {item.title}
-                </div>
-                <div style={{ fontSize: 12, color: "var(--color-warm-gray)", lineHeight: 1.4 }}>
-                  {item.desc}
-                </div>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--color-ash-gray)", flexShrink: 0 }}>
+                  {item.icon}
+                </svg>
+                {item.title}
               </button>
             ))}
           </div>
@@ -581,13 +605,12 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                 >
                   <div
                     style={{
-                      background: "var(--color-soot)",
-                      color: "#ffffff",
-                      borderRadius: "18px 18px 4px 18px",
-                      padding: "10px 16px",
-                      fontSize: 14,
-                      lineHeight: 1.5,
-                      boxShadow: "0 1px 3px rgba(0, 0, 0, 0.08)",
+                      background: "var(--color-field)",
+                      color: "var(--color-ink-black)",
+                      borderRadius: 12,
+                      padding: "6px 12px",
+                      fontSize: 13,
+                      lineHeight: 1.4,
                     }}
                   >
                     {m.text}
@@ -603,6 +626,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                     display: "flex",
                     flexDirection: "column",
                     scrollMarginTop: 16,
+                    animation: "fade-up 400ms cubic-bezier(0.23, 1, 0.32, 1) both",
                   }}
                 >
                   {/* Message Header */}
@@ -615,7 +639,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                   {m.ai && <AgentActivity ai={m.ai} />}
 
                     {m.ai?.error && (
-                      <div style={{ color: "#e11d48", fontSize: 13, marginBottom: 8 }}>Error: {m.ai.error}</div>
+                      <div style={{ color: "var(--color-ember)", fontSize: 13, marginBottom: 8 }}>Error: {m.ai.error}</div>
                     )}
 
                     {m.ai?.caution && m.ai.caution.length > 0 && (
@@ -624,10 +648,39 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                       </div>
                     )}
 
-                    <AnswerText text={m.text} />
+                    {m.ai?.carry &&
+                      ((m.ai.carry.players?.length ?? 0) > 0 ||
+                        (m.ai.carry.teams?.length ?? 0) > 0) && (
+                      <div
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                          fontSize: 12,
+                          color: "var(--color-warm-gray)",
+                          background: "var(--color-sky-wash)",
+                          borderRadius: 999,
+                          padding: "3px 12px",
+                          marginBottom: 8,
+                        }}
+                      >
+                        Picking up from earlier -{" "}
+                        {/* Player lane wins: when a player carried, answer-text
+                            teams (often just the opponent) are noise. Team-only
+                            carry (F67 lane) still names the team. */}
+                        {(m.ai.carry.players?.length
+                          ? m.ai.carry.players
+                          : [...(m.ai.carry.players ?? []), ...(m.ai.carry.teams ?? [])]
+                        ).join(", ")}
+                      </div>
+                    )}
 
-                    {m.ai?.streaming && !m.ai.done && (
-                      <span className="caret" aria-hidden />
+                    {m.ai?.streaming && !m.ai.done ? (
+                      <div style={{ fontSize: 14, lineHeight: 1.64, color: "var(--color-ink-black)" }}>
+                        <StreamText text={m.text} />
+                      </div>
+                    ) : (
+                      <AnswerText text={m.text} />
                     )}
 
                     {m.ai && !m.ai.done && !m.ai.text && !aiHasTables(m.ai) && (
@@ -639,6 +692,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                         ai={m.ai}
                         loading={!m.ai.done}
                         onAsk={sendText}
+                        onPinPlayer={(p) => pinToTray(p)}
                         onOpenArtifact={onOpenArtifact}
                         activeArtifactId={activeArtifactId}
                       />
@@ -649,6 +703,20 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                         <CopyButton text={m.text} />
                         <CiteButton text={m.text} meta={firstTableMeta(m.ai)} />
                         <LinkButton index={i} />
+                        <button
+                          type="button"
+                          className="pill-ghost interactive-tactile"
+                          style={{ fontSize: 12, padding: "3px 10px" }}
+                          title="Settle it: open a debate card from this answer"
+                          onClick={() => {
+                            setDebateTopic(
+                              messages.slice(0, i).reverse().find((x) => x.role === "human")?.text
+                            );
+                            setDebateOpen(true);
+                          }}
+                        >
+                          Debate
+                        </button>
                       </div>
                     )}
 
@@ -672,6 +740,20 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
             )}
             <div ref={endRef} />
           </div>
+
+          <CompareTray
+            disabled={busy}
+            onCompare={(names) => sendText(`Compare ${names.join(" and ")} this season`)}
+          />
+
+          {debateOpen && (
+            <DebateCardModal
+              initialA={readTray()[0] ?? ""}
+              initialB={readTray()[1] ?? ""}
+              topic={debateTopic}
+              onClose={() => setDebateOpen(false)}
+            />
+          )}
 
           {/* Fixed Floating Prompt Bar in Active Chat */}
           <div
@@ -710,10 +792,10 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                   gap: 10,
                   alignItems: "center",
                   border: "1px solid var(--color-stone-border)",
-                  borderRadius: 20,
-                  padding: "10px 14px 10px 16px",
+                  borderRadius: 14,
+                  padding: "10px 12px 10px 16px",
                   background: "var(--color-pure-white)",
-                  boxShadow: "0 8px 30px rgba(0, 0, 0, 0.08)",
+                  boxShadow: "var(--shadow-card)",
                 }}
               >
                 <ModelPicker models={models} value={model} onChange={setModel} />
@@ -724,7 +806,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                     flex: 1,
                     border: "none",
                     outline: "none",
-                    fontSize: 14,
+                    fontSize: 13,
                     resize: "none",
                     fontFamily: "inherit",
                     background: "transparent",
@@ -752,8 +834,23 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                     Stop {elapsed}s
                   </button>
                 ) : (
-                  <button className="pill-cta" onClick={() => sendText(input)}>
-                    Ask
+                  <button
+                    type="button"
+                    aria-label="Send"
+                    disabled={!input.trim()}
+                    onClick={() => sendText(input)}
+                    style={{
+                      width: 28, height: 28, borderRadius: 8, border: "none", flexShrink: 0,
+                      cursor: input.trim() ? "pointer" : "default",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      background: input.trim() ? "var(--color-ink-black)" : "var(--color-stone-muted)",
+                      color: input.trim() ? "var(--color-pure-white)" : "var(--color-warm-gray)",
+                      transition: "background 200ms ease, color 200ms ease",
+                    }}
+                  >
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 19V5M5 12l7-7 7 7" />
+                    </svg>
                   </button>
                 )}
               </div>

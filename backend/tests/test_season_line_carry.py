@@ -13,8 +13,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.graph import _triage_seed  # noqa: E402
 
-HIST = [{"text": "What is Brunson averaging in the playoffs?"},
-        {"text": "Jalen Brunson averaged 32.6 points per game in "
+HIST = [{"role": "human",
+         "text": "What is Brunson averaging in the playoffs?"},
+        {"role": "ai",
+         "text": "Jalen Brunson averaged 32.6 points per game in "
                  "the Finals."}]
 
 
@@ -56,8 +58,23 @@ def test_playoff_average_stays_off_season_pin():
     assert "get_season_averages" not in _tool_names(st)
 
 
-def test_two_carried_players_no_pin():
-    hist = HIST + [{"text": "Luka Dončić is at 33.5 this year."}]
+def test_answer_mention_does_not_dilute_user_subject():
+    # F64: the user asked about Brunson; an ANSWER that also mentions
+    # Luka must not break the one-carried-player gate.
+    hist = HIST + [{"role": "ai",
+                    "text": "Luka Dončić is at 33.5 this year."}]
+    st = _drain("Compare that to his season average", hist)
+    assert "get_season_averages" in _tool_names(st)
+    assert any("Brunson" in c for c in st["calls_made"])
+
+
+def test_two_user_named_players_no_pin():
+    # Genuine ambiguity: the USER named two players across turns, so
+    # "his" has no single referent and the pin must not fire.
+    hist = HIST + [{"role": "human",
+                    "text": "And what about Luka Dončić?"},
+                   {"role": "ai",
+                    "text": "Luka Dončić is at 33.5 this year."}]
     st = _drain("Compare that to his season average", hist)
     assert "get_season_averages" not in _tool_names(st)
 

@@ -1,9 +1,107 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { GameRow, TodayMover, TeamStreak, TodayRows, getToday } from "../lib/api";
+import { GameRow, TodayMover, TeamStreak, TodayRows, getToday, getDatasetJson, SEASON } from "../lib/api";
 import EmptyState from "./EmptyState";
 import Skeleton from "./Skeleton";
+
+// Offseason season-wrap: when no games are on the slate, derive the
+// season recap from payloads (playoffs round-4 rows, leaders, standings)
+// - never hardcoded. v67: all numerals come from warehouse rows.
+type SeasonWrap = {
+  season: string;
+  champion: string;
+  runnerUp: string;
+  series: string;
+  scoring: string;
+  best: string;
+};
+
+function useSeasonWrap(active: boolean): SeasonWrap | null {
+  const [wrap, setWrap] = useState<SeasonWrap | null>(null);
+  useEffect(() => {
+    if (!active) return;
+    let live = true;
+    (async () => {
+      try {
+        const [po, ld, st] = await Promise.all([
+          getDatasetJson("playoffs", { season: SEASON }),
+          getDatasetJson("leaders", { season: SEASON, stat: "PTS" }),
+          getDatasetJson("standings", { season: SEASON }),
+        ]);
+        if (!live) return;
+        // Playoff game ids carry the round at chars 6-7; 04 = Finals.
+        const finals = ((po.data || []) as Record<string, unknown>[]).filter(
+          (r) => String(r.GAME_ID || "").slice(6, 8) === "04",
+        );
+        const wins: Record<string, { name: string; w: number }> = {};
+        for (const r of finals) {
+          const ab = String(r.TEAM_ABBREVIATION || "");
+          if (!ab) continue;
+          wins[ab] = wins[ab] || { name: String(r.TEAM_NAME || ab), w: 0 };
+          if (String(r.WL) === "W") wins[ab].w += 1;
+        }
+        const teams = Object.values(wins).sort((a, b) => b.w - a.w);
+        if (teams.length < 2 || teams[0].w < 4) return; // no decided Finals
+        const leaders = (ld.data || []) as Record<string, unknown>[];
+        const top = [...leaders]
+          .filter((r) => typeof r.PTS === "number" && typeof r.GP === "number" && (r.GP as number) > 0)
+          .sort((a, b) => (b.PTS as number) / (b.GP as number) - (a.PTS as number) / (a.GP as number))[0];
+        const standings = (st.data || []) as Record<string, unknown>[];
+        const bestRow = [...standings]
+          .filter((r) => typeof r.WINS === "number")
+          .sort((a, b) => (b.WINS as number) - (a.WINS as number))[0];
+        setWrap({
+          season: SEASON,
+          champion: teams[0].name,
+          runnerUp: teams[1].name,
+          series: `${teams[0].w}-${teams[1].w}`,
+          scoring: top
+            ? `${String(top.PLAYER)}, ${Math.round(((top.PTS as number) / (top.GP as number)) * 10) / 10} ppg`
+            : "",
+          best: bestRow
+            ? `${String(bestRow.TeamCity)} ${String(bestRow.TeamName)}, ${bestRow.WINS}-${bestRow.LOSSES}`
+            : "",
+        });
+      } catch {
+        /* wrap stays hidden on any fetch problem */
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [active]);
+  return wrap;
+}
+
+function SeasonWrapCard({ w }: { w: SeasonWrap }) {
+  const lines = [
+    { k: "Champions", v: `${w.champion} (def. ${w.runnerUp}, ${w.series})` },
+    { k: "Scoring leader", v: w.scoring },
+    { k: "Best record", v: w.best },
+  ].filter((l) => l.v);
+  return (
+    <div
+      style={{
+        border: "1px solid var(--color-stone-border)",
+        borderRadius: 12,
+        padding: "12px 14px",
+        marginBottom: 12,
+        background: "var(--color-pure-white)",
+      }}
+    >
+      <div style={{ fontSize: 12, fontWeight: 600, color: "var(--color-warm-gray)", marginBottom: 6 }}>
+        {w.season} season wrap
+      </div>
+      {lines.map((l) => (
+        <div key={l.k} style={{ display: "flex", gap: 10, fontSize: 13, padding: "3px 0" }}>
+          <span style={{ minWidth: 110, color: "var(--color-warm-gray)" }}>{l.k}</span>
+          <span style={{ fontWeight: 500, color: "var(--color-ink-black)" }}>{l.v}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function GameChip({ g }: { g: GameRow }) {
   return (
@@ -142,6 +240,12 @@ export default function TodayPanel() {
     };
   }, []);
 
+  // Hooks must run before ANY early return below (React #310 guard):
+  // compute noGames defensively and call the wrap hook unconditionally.
+  const noGames =
+    !!rows && !(rows.last_night || []).length && !(rows.tonight || []).length;
+  const wrap = useSeasonWrap(noGames);
+
   if (loading) {
     return (
       <div className="card">
@@ -162,18 +266,18 @@ export default function TodayPanel() {
     );
   }
 
-  const noGames =
-    !(rows.last_night || []).length && !(rows.tonight || []).length;
-
   return (
     <div className="card">
       <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Today</div>
 
       {noGames ? (
-        <EmptyState
-          title="No games today"
-          description="It's the offseason. Check back in October, or explore season leaders below."
-        />
+        <>
+          {wrap && <SeasonWrapCard w={wrap} />}
+          <EmptyState
+            title="No games today"
+            description="It's the offseason. Check back in October, or explore season leaders below."
+          />
+        </>
       ) : (
         <>
           <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginBottom: 4 }}>

@@ -146,6 +146,66 @@ def _read_df(sql: str, params: list, tries: int = 5) -> list[dict[str, Any]]:
     raise last or RuntimeError("warehouse read failed")
 
 
+def _different_teams_pair(left: dict[str, Any], right: dict[str, Any],
+                          season: str) -> dict[str, Any]:
+    """Pair block for players on different teams.
+
+    "No shared court" only means they are not teammates; their teams may
+    have met several times this season. Compute the actual meetings from
+    the warehouse gamelogs so the answer never claims zero matchups when
+    the two players in fact shared the floor.
+    """
+    from .headtohead import _load_player_games, vs_opponent
+    lid, rid = left.get("player_id"), right.get("player_id")
+    ta, tb = str(left.get("team") or ""), str(right.get("team") or "")
+    base: dict[str, Any] = {"teammates": False, "both_on_net": None,
+                            "both_on_minutes": 0}
+    if not (lid and rid and ta and tb):
+        base["note"] = "Different teams."
+        return base
+    try:
+        a_games = vs_opponent(_load_player_games(int(lid), season), tb)
+        b_games = vs_opponent(_load_player_games(int(rid), season), ta)
+    except Exception:
+        base["note"] = "Different teams; meeting logs unavailable."
+        return base
+    a_by_id = {str(g.get("Game_ID")): g for g in a_games}
+    b_by_id = {str(g.get("Game_ID")): g for g in b_games}
+    shared = sorted(set(a_by_id) & set(b_by_id))
+    meetings = []
+    for gid in shared:
+        ga, gb = a_by_id[gid], b_by_id[gid]
+        meetings.append({
+            "game_id": gid,
+            "date": ga.get("GAME_DATE"),
+            "matchup": ga.get("MATCHUP"),
+            "a_pts": ga.get("PTS"), "a_reb": ga.get("REB"),
+            "a_ast": ga.get("AST"), "a_wl": ga.get("WL"),
+            "b_pts": gb.get("PTS"), "b_reb": gb.get("REB"),
+            "b_ast": gb.get("AST"),
+        })
+    base["h2h_meetings"] = meetings
+    if shared:
+        a_pts = [m["a_pts"] for m in meetings if m["a_pts"] is not None]
+        b_pts = [m["b_pts"] for m in meetings if m["b_pts"] is not None]
+        note = (f"Different teams; they shared the floor in "
+                f"{len(shared)} game(s) this season")
+        if a_pts:
+            note += (f" ({left.get('name') or 'player A'} averaged "
+                     f"{sum(a_pts) / len(a_pts):.1f} pts in those games)")
+        if b_pts:
+            note += (f"; {right.get('name') or 'player B'} averaged "
+                     f"{sum(b_pts) / len(b_pts):.1f} pts")
+        base["note"] = note + "."
+    elif a_games or b_games:
+        base["note"] = (f"Different teams; {ta} and {tb} met, but the two"
+                        " players did not appear in the same game.")
+    else:
+        base["note"] = (f"Different teams; {ta} and {tb} did not meet "
+                        "this season.")
+    return base
+
+
 @tool
 async def get_compare(
     a: str, b: str, season: str = SEASON,
@@ -388,8 +448,7 @@ async def get_compare(
             pair = {"teammates": True, "both_on_net": None,
                     "both_on_minutes": 0, "note": str(exc)[:160]}
     else:
-        pair = {"teammates": False, "both_on_net": None,
-                "both_on_minutes": 0, "note": "Different teams, no shared court."}
+        pair = _different_teams_pair(left, right, season)
     sub_call_errors: dict[str, str] = {}
     for side, player in (("a", left), ("b", right)):
         for key, err in (player.get("sub_call_errors") or {}).items():
@@ -705,6 +764,26 @@ def get_playoff_intel(player_id: str | int, season: str = SEASON) -> dict[str, A
         return {"tool": "get_playoff_intel", "ok": False, "error": err}
     cols = ["GAME_DATE", "MATCHUP", "PTS", "REB", "AST", "MIN"]
     slim = [{k: r.get(k) for k in cols if k in r} for r in rows]
+    # F67 T3: the slim rows carried no player name, so compose wrote
+    # "the recorded player" / "the OKC player" - name every row.
+    from .splits import _resolve_name as _pnm
+    _disp = _pnm(pid, str(player_id))
+    for r in slim:
+        r["PLAYER"] = _disp
+    # F67 413-vs-414: aggregate asks ("how did he do in the
+    # playoffs?") were LLM-summed over 19 rows and drifted by a point
+    # between runs. Compute the series totals once, here, and mark
+    # them canonical (v67 law: deterministic numerals on this lane).
+    def _sum(col: str) -> int:
+        return int(sum(float(r.get(col) or 0) for r in slim))
+    meta = dict(meta or {})
+    meta["player"] = _disp
+    meta["totals"] = {"GP": len(slim), "PTS": _sum("PTS"),
+                      "REB": _sum("REB"), "AST": _sum("AST"),
+                      "MIN": _sum("MIN")}
+    meta["totals_note"] = (
+        "Canonical series totals - quote these verbatim for any "
+        "aggregate ask instead of summing the rows yourself.")
     return {"tool": "get_playoff_intel", "ok": True, "rows": slim, "meta": meta}
 
 
@@ -2370,3 +2449,60 @@ h1 {{ font-size: 22px; margin: 0; color: #1c1917; }}
             "rows": {"path": str(out_path), "players": [name_a, name_b],
                      "stats": [_line(p) for p in players]},
             "meta": {"season": season, "format": "html"}}
+
+
+@tool
+def get_player_rankings(n: int = 15, season: str = SEASON) -> dict[str, Any]:
+    """Overall top-N players board ranked by the warehouse impact metric.
+
+    Current seasons (RAPM-lite coverage, e.g. 2025-26): rank by RAPM-lite
+    with a possessions floor. Historical seasons 2014-15..2021-22: rank by
+    FiveThirtyEight WAR. Other seasons return an honest coverage note -
+    never a single-stat board presented as an overall ranking.
+    """
+    try:
+        n = max(1, min(int(n), 50))
+    except (TypeError, ValueError):
+        n = 15
+    meta: dict[str, Any] = {"season": season, "n": n}
+    try:
+        r = _read_df(
+            "SELECT name, rapm, possessions FROM silver_rapm"
+            " WHERE _season = ? AND rapm IS NOT NULL"
+            " AND possessions >= 2000"
+            " ORDER BY rapm DESC LIMIT ?",
+            [season, n],
+        )
+        if r:
+            rows = [{"rank": i + 1, "player": row.get("name"),
+                     "rapm": round(float(row.get("rapm")), 2),
+                     "possessions": int(row.get("possessions") or 0)}
+                    for i, row in enumerate(r)]
+            meta["metric"] = "rapm_lite"
+            return {"tool": "get_player_rankings", "ok": True,
+                    "rows": rows, "meta": meta}
+    except Exception:
+        pass
+    try:
+        r = _read_df(
+            "SELECT PLAYER_NAME, RAPTOR_TOTAL, WAR_TOTAL"
+            " FROM silver_raptor_player WHERE _season = ?"
+            " AND WAR_TOTAL IS NOT NULL"
+            " ORDER BY WAR_TOTAL DESC LIMIT ?",
+            [season, n],
+        )
+        if r:
+            rows = [{"rank": i + 1, "player": row.get("PLAYER_NAME"),
+                     "war": round(float(row.get("WAR_TOTAL")), 1),
+                     "raptor": round(float(row.get("RAPTOR_TOTAL") or 0), 1)}
+                    for i, row in enumerate(r)]
+            meta["metric"] = "raptor_war"
+            return {"tool": "get_player_rankings", "ok": True,
+                    "rows": rows, "meta": meta}
+    except Exception:
+        pass
+    return {"tool": "get_player_rankings", "ok": False,
+            "error": (f"No overall impact metric covers {season}. "
+                      "RAPM-lite covers 2025-26; FiveThirtyEight RAPTOR "
+                      "covers 2014-15 through 2021-22."),
+            "meta": meta}

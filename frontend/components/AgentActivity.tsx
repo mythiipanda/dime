@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { AiMessage, NodeName, ToolCall } from "../lib/chat";
+import ThinkLine from "./ThinkLine";
 import { rerunSql, type SqlRerunRows } from "../lib/api";
 
 const AGENT_NODES: NodeName[] = ["entry", "data_retrieval", "tools", "analytics"];
@@ -15,10 +16,21 @@ const NODE_LABELS: Record<string, string> = {
 };
 
 function thoughtsFor(ai: AiMessage): string[] {
+  // Dedupe identical lines: the backend can emit the same plan text at
+  // a node boundary and again inside the node, and receipts should read
+  // like a receipt, not a log tail.
   const out: string[] = [];
+  const seen = new Set<string>();
   for (const n of AGENT_NODES) {
     const s = ai.nodes[n];
-    if (s) out.push(...s.thoughts);
+    if (!s) continue;
+    for (const t of s.thoughts) {
+      const key = t.trim().toLowerCase();
+      if (key && !seen.has(key)) {
+        seen.add(key);
+        out.push(t);
+      }
+    }
   }
   return out;
 }
@@ -69,10 +81,14 @@ function ToolRow({ c }: { c: ToolCall }) {
     c.status === "running"
       ? "var(--color-cyan-signal)"
       : c.status === "fail"
-        ? "#e11d48"
+        ? "var(--color-ember)"
         : "var(--color-ink-black)";
   const glyph = c.status === "running" ? "" : c.status === "fail" ? "!" : "✓";
-  const label = c.label || c.name.replace(/_/g, " ");
+  // Fallback names arrive as get_shot_zones-style identifiers; show
+  // a noun phrase ("Shot zones") instead of the raw function name.
+  const label =
+    c.label ||
+    (c.name.replace(/_/g, " ").replace(/^get /, "").replace(/^\w/, (ch) => ch.toUpperCase()));
   const prefix = c.agent ? `${c.agent.charAt(0).toUpperCase() + c.agent.slice(1)} desk · ` : "";
   return (
     <div
@@ -132,7 +148,7 @@ function ToolRow({ c }: { c: ToolCall }) {
               style={{
                 display: "block",
                 fontSize: 11.5,
-                color: c.status === "fail" ? "#e11d48" : "var(--color-ash-gray)",
+                color: c.status === "fail" ? "var(--color-ember)" : "var(--color-ash-gray)",
               }}
             >
               {metaLine(c)}
@@ -222,7 +238,7 @@ function ToolRow({ c }: { c: ToolCall }) {
                 </pre>
               )}
               {rerun && !rerun.loading && rerun.error && (
-                <div style={{ marginTop: 4, color: "#e11d48" }}>
+                <div style={{ marginTop: 4, color: "var(--color-ember)" }}>
                   {rerun.error.slice(0, 160)}
                 </div>
               )}
@@ -400,8 +416,8 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
             }}
           />
         )}
-        <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--color-ink-black)" }}>
-          {running ? headerText : "Receipts"}
+        <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--color-ink-black)", display: "inline-flex" }}>
+          {running ? <ThinkLine text={headerText} /> : "Receipts"}
         </span>
         <span style={{ fontSize: 11, color: "var(--color-ash-gray)" }}>
           {open ? "▾" : "▸"}

@@ -290,6 +290,17 @@ export default function ArtifactCanvas({ artifact, onClose, onAsk }: ArtifactCan
               )}
             </pre>
           </div>
+        ) : !Array.isArray(tableRows) || !tableRows.length ? (
+          <div
+            style={{
+              fontSize: 12,
+              color: "var(--color-warm-gray)",
+              padding: "12px 4px",
+            }}
+          >
+            No rows returned for this view. Try widening the filters or asking
+            a broader question.
+          </div>
         ) : viewMode === "chart" ? (
           <AutoChart table={artifact as { rows?: unknown }} />
         ) : (

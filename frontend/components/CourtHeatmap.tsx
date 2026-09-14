@@ -49,8 +49,11 @@ const ZONE_PATHS: { id: string; label: string; d: string }[] = [
   {
     id: "In The Paint (Non-RA)",
     label: "Paint (Non-RA)",
-    // Paint key minus the restricted area
-    d: "M 170,470 L 170,280 L 330,280 L 330,470 L 290,470 L 290,430 A 40,40 0 0,0 210,430 L 210,470 Z",
+    // Paint key minus the restricted area. The carve arc must bulge UP
+    // (sweep 1) around the basket like the RA zone itself; sweep 0 carved
+    // a downward semicircle below y=430 that no zone fills, rendering a
+    // white bubble over the RA's own fill (F2 residual).
+    d: "M 170,470 L 170,280 L 330,280 L 330,470 L 290,470 L 290,430 A 40,40 0 0,1 210,430 L 210,470 Z",
   },
   {
     id: "Mid-Range",
