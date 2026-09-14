@@ -82,7 +82,7 @@ def build_envelope(
     return EvidenceEnvelope(
         evidence_id=evidence_id(spec.name, arguments, rows),
         capability=spec.name,
-        source=f"v1:{spec.tool_name}:{meta.get('source', 'unknown')}",
+        source=f"{spec.source_prefix}:{spec.tool_name}:{meta.get('source', 'unknown')}",
         observed_at=observed_at or datetime.now(timezone.utc),
         season=str(season) if season is not None else None,
         entities=envelope_entities,

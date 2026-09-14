@@ -13,12 +13,8 @@ PERCENT = "percent_0_100"
 POINTS_PER_100 = "points_per_100_possessions"
 MINUTES = "minutes"
 
-EFG_DEF = (
-    "Effective field-goal percentage: (FGM + 0.5 * FG3M) / FGA, "
-    "fraction scale 0-1.")
-TS_DEF = (
-    "True shooting percentage: PTS / (2 * (FGA + 0.44 * FTA)), "
-    "fraction scale 0-1.")
+EFG_DEF = "Effective field-goal percentage: (FGM + 0.5 * FG3M) / FGA."
+TS_DEF = "True shooting percentage: PTS / (2 * (FGA + 0.44 * FTA))."
 NET_RATING_DEF = (
     "Net rating: offensive rating minus defensive rating, points per "
     "100 possessions.")
@@ -56,6 +52,7 @@ class Capability:
     units: Mapping[str, str] = field(default_factory=dict)
     metric_definitions: Mapping[str, str] = field(default_factory=dict)
     qualification: str | None = None
+    source_prefix: str = "v1"
     extract_entities: Callable[[Any], list[EntityRef]] | None = None
 
 
@@ -96,7 +93,7 @@ _LIST = [
     Capability(name="player_report", tool_name="get_player_report"),
     Capability(name="player_comparison", tool_name="get_compare"),
     Capability(name="metric_adjudication", tool_name="compare_metrics"),
-    Capability(name="metric_coverage", tool_name="metric_coverage"),
+    Capability(name="metric_coverage", tool_name="metric_coverage", source_prefix="v2"),
     Capability(
         name="shots",
         tool_name="search_shots",

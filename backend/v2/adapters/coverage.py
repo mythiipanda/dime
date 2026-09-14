@@ -1,15 +1,15 @@
 """Deterministic metric coverage registry.
 
-Which impact metrics the warehouse backs, which are proprietary and
-never estimated. No warehouse query: proprietary coverage is a declared
-constant, and available metrics name their backing table.
+Which impact metrics the warehouse backs and which are unavailable.
+No warehouse query: coverage is declared here and available metrics name
+their backing table.
 """
 from __future__ import annotations
 
 import re
 from typing import Any
 
-PROPRIETARY_METRICS = ("EPM", "LEBRON", "DARKO", "DRIP", "PER", "BPM",
+UNAVAILABLE_METRICS = ("EPM", "LEBRON", "DARKO", "DRIP", "PER", "BPM",
                        "WS", "VORP")
 
 AVAILABLE_METRICS = {
@@ -42,7 +42,7 @@ def _key(metric: str) -> str:
 
 def _classify(metric: str) -> dict[str, str]:
     key = _ALIASES.get(_key(metric), _key(metric))
-    for prop in PROPRIETARY_METRICS:
+    for prop in UNAVAILABLE_METRICS:
         if key == _key(prop):
             return {"metric": prop, "status": "unavailable",
                     "note": "not in warehouse, never estimated"}
@@ -61,8 +61,8 @@ def metric_coverage(
 ) -> dict[str, Any]:
     """Report warehouse coverage for named metrics, for at most one player.
 
-    Proprietary metrics (EPM, LEBRON, DARKO, DRIP, PER, BPM, WS, VORP)
-    are not available and never estimated.
+    EPM, LEBRON, DARKO, DRIP, PER, BPM, WS and VORP are unavailable
+    and never estimated.
     """
     if isinstance(metrics, str):
         metrics = [m.strip() for m in re.split(r"[,;&]|\band\b", metrics)
@@ -98,7 +98,7 @@ def metric_coverage(
         parts.append(f"No recognized metrics requested{subject}.")
     meta: dict[str, Any] = {
         "source": "warehouse coverage",
-        "coverage": "declared coverage registry; proprietary metrics are "
+        "coverage": "declared coverage registry; unavailable metrics are "
                     "constants, available metrics name their silver table",
         "deterministic_answer": " ".join(parts),
         "warnings": warnings,

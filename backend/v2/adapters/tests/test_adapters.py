@@ -272,7 +272,7 @@ def test_metric_coverage_proprietary_one_player():
          "season": "2025-26"},
         tools=COVERAGE_TOOLS)
     assert env.capability == "metric_coverage"
-    assert env.source == "v1:metric_coverage:warehouse coverage"
+    assert env.source == "v2:metric_coverage:warehouse coverage"
     assert env.season == "2025-26"
     joined = " ".join(env.warnings)
     assert "not available" in joined
