@@ -346,6 +346,18 @@ def get_game_prediction(a: str = "", b: str = "", game_date: str = "",
         "methodology": methodology,
         "assumptions": assumptions,
         "limitations": limitations,
-        "meta": {"source": "warehouse", "season": season,
-                 "ratings_fetched_at": home_r["fetched_at"]},
+        "meta": {
+            "source": "warehouse",
+            "season": season,
+            "ratings_fetched_at": home_r["fetched_at"],
+            "deterministic_answer": (
+                f"{home_abbr} has a {p_home * 100:.1f}% win probability "
+                f"to {away_abbr}'s {p_away * 100:.1f}%. The projected "
+                f"score is {home_abbr} {sim['home_mean']:.1f}, "
+                f"{away_abbr} {sim['away_mean']:.1f}, a "
+                f"{abs(sim['home_mean'] - sim['away_mean']):.1f}-point "
+                f"edge for {home_abbr if sim['home_mean'] >= sim['away_mean'] else away_abbr}. "
+                "This is a model estimate, not betting advice."
+            ),
+        },
     }

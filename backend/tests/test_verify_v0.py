@@ -98,3 +98,22 @@ def test_presentation_does_not_ship_unverified_figures_clean():
     answer = asyncio.run(_go())
     assert "99.9" not in answer
     assert "could not verify every figure" in answer
+
+
+def test_game_prediction_publishes_verified_deterministic_summary():
+    from app.graph import _triage_seed
+
+    async def _go():
+        state = {"question": "Who wins Celtics vs Knicks?", "history": [],
+                 "tool_results": [], "calls_made": [], "round": 0}
+        async for _ in _triage_seed(
+                state["question"], "primary", "model", state):
+            pass
+        state.update({"analysis": "wrong 99.9", "primary": "p", "model": "m"})
+        async for event in presentation_agent(state):
+            if event.get("type") == "final_answer":
+                return event["data"]["text"]
+
+    answer = asyncio.run(_go())
+    assert "54.8%" in answer and "2.0-point edge" in answer
+    assert "could not verify" not in answer
