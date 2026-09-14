@@ -1,0 +1,940 @@
+{
+  "version": 3,
+  "notes": "Frozen 35-scenario v2 behavioral pack. Tool-routing pins were replaced by equivalent evidence and budget requirements.",
+  "banned_everywhere": [
+    "try a narrower",
+    "did not run",
+    "warehouse query",
+    "based on warehouse"
+  ],
+  "scenarios": [
+    {
+      "id": "canon-team-ast",
+      "chain": [
+        "Which team had the most total assists this season?"
+      ],
+      "expect": {
+        "contains": [
+          "2462",
+          "Atlanta"
+        ]
+      },
+      "budget": {
+        "max_seconds": 30
+      }
+    },
+    {
+      "id": "canon-team-pts",
+      "chain": [
+        "Which team scored the most total points?"
+      ],
+      "expect": {
+        "contains": [
+          "10010",
+          "Denver"
+        ]
+      },
+      "budget": {
+        "max_seconds": 30
+      }
+    },
+    {
+      "id": "canon-team-reb",
+      "chain": [
+        "Which team grabbed the most total rebounds?"
+      ],
+      "expect": {
+        "contains": [
+          "3946",
+          "Houston"
+        ]
+      },
+      "budget": {
+        "max_seconds": 30
+      }
+    },
+    {
+      "id": "canon-finals",
+      "chain": [
+        "Who won the 2026 Finals and what was the series score?"
+      ],
+      "expect": {
+        "contains_any": [
+          [
+            "Knicks",
+            "NYK"
+          ],
+          [
+            "4-1",
+            "4 - 1"
+          ]
+        ]
+      },
+      "budget": {
+        "max_seconds": 30
+      }
+    },
+    {
+      "id": "f61-hang-class",
+      "chain": [
+        "What is the all-time record for most points by a team in one game?"
+      ],
+      "expect": {
+        "contains": [
+          "2025-26",
+          "2009-10",
+          "176",
+          "Kings"
+        ],
+        "not_contains": [
+          "try a narrower",
+          "did not run",
+          "hang"
+        ]
+      },
+      "budget": {
+        "max_seconds": 30
+      },
+      "comment": "Pinned deterministic since the F61 fix: team single-game scoring record reads silver_hist_gamelogs verbatim with the 2009-10..2025-26 span named. Was: LLM roulette (144 vs 157) with no coverage window."
+    },
+    {
+      "id": "f62-evidence-carry",
+      "chain": [
+        "How did Jalen Brunson do in Game 5 of the Finals?",
+        "How many points did he score in that game?"
+      ],
+      "expect_turns": [
+        {
+          "contains": [
+            "45"
+          ]
+        },
+        {
+          "contains": [
+            "45"
+          ],
+          "not_contains": [
+            "do not show",
+            "does not contain",
+            "no record"
+          ]
+        }
+      ],
+      "budget": {
+        "max_seconds_per_turn": 60
+      }
+    },
+    {
+      "id": "f63-switch-back",
+      "chain": [
+        "Who won the 2026 Finals?",
+        "How many assists did Jokic average this season?",
+        "Back to the Finals - who did the Knicks beat and what was the series score?"
+      ],
+      "expect_turns": [
+        {
+          "contains": [
+            "Knicks",
+            "4-1"
+          ]
+        },
+        {
+          "contains_any": [
+            [
+              "Jokic",
+              "Jokić"
+            ]
+          ]
+        },
+        {
+          "contains": [
+            "Spurs",
+            "4-1"
+          ],
+          "not_contains": [
+            "do not show",
+            "no record",
+            "not in the Finals"
+          ]
+        }
+      ],
+      "budget": {
+        "max_seconds_per_turn": 60
+      }
+    },
+    {
+      "id": "f64-team-scope-logs",
+      "chain": [
+        "Show me the Spurs last 5 games"
+      ],
+      "expect": {
+        "contains": [
+          "Spurs"
+        ]
+      },
+      "comment": "Was known-open xfail; green on 9/12 and 9/13 runs - now a real gate."
+    },
+    {
+      "id": "efficiency-simple",
+      "chain": [
+        "How many games did the Nuggets win?"
+      ],
+      "expect": {
+        "contains": [
+          "54"
+        ]
+      },
+      "budget": {
+        "max_seconds": 20,
+        "max_tool_calls": 5
+      }
+    },
+    {
+      "id": "efficiency-player",
+      "chain": [
+        "How many assists did Jokic average?"
+      ],
+      "expect": {
+        "contains_any": [
+          [
+            "Jokic",
+            "Jokić"
+          ]
+        ]
+      },
+      "budget": {
+        "max_seconds": 25,
+        "max_tool_calls": 6
+      }
+    },
+    {
+      "id": "f66-deep-compare",
+      "chain": [
+        "Compare the top 3 scoring teams: total points, per-game average, and how many games each won"
+      ],
+      "expect": {
+        "contains": [
+          "10010"
+        ],
+        "contains_any": [
+          [
+            "Nuggets",
+            "Denver"
+          ]
+        ],
+        "not_contains": [
+          "not specified",
+          "| |",
+          "with .",
+          "missing"
+        ]
+      },
+      "budget": {
+        "max_seconds": 120
+      },
+      "xfail": false,
+      "comment": "F66: deep multi-stat compare. xfail flipped 2026-09-12 after two consecutive PASS runs against prod v77 (runs 1789270623, 1789270921). Gate satisfied."
+    },
+    {
+      "id": "canon-best-record",
+      "chain": [
+        "Which team had the best record this season?"
+      ],
+      "expect": {
+        "contains_any": [
+          [
+            "Oklahoma City",
+            "Thunder",
+            "OKC"
+          ]
+        ],
+        "contains": [
+          "64",
+          "18"
+        ]
+      },
+      "budget": {
+        "max_seconds": 45
+      },
+      "comment": "F67 T1: best-record lane names OKC 64-18."
+    },
+    {
+      "id": "canon-scoring-leader",
+      "chain": [
+        "Who averaged the most points per game this season?"
+      ],
+      "expect": {
+        "contains_any": [
+          [
+            "Dončić",
+            "Doncic",
+            "Luka"
+          ]
+        ],
+        "contains": [
+          "33.5"
+        ]
+      },
+      "budget": {
+        "max_seconds": 45
+      },
+      "comment": "QA canon: Luka 33.5 ppg (PPG wording; total-points leader is a different lane)."
+    },
+    {
+      "id": "canon-compare-efficiency",
+      "chain": [
+        "Compare Luka and SGA by efficiency"
+      ],
+      "expect": {
+        "contains": [
+          "61.6",
+          "66.5"
+        ],
+        "contains_any": [
+          [
+            "Dončić",
+            "Luka"
+          ]
+        ]
+      },
+      "budget": {
+        "max_seconds": 45
+      },
+      "comment": "QA canon: Luka .616 TS, SGA .665 TS; compose must carry both figures."
+    },
+    {
+      "id": "canon-h2h",
+      "chain": [
+        "Show me the head to head between Luka Dončić and Shai Gilgeous-Alexander this season"
+      ],
+      "expect": {
+        "contains": [
+          "0-2",
+          "61.6",
+          "66.5"
+        ],
+        "not_contains": [
+          "no shared court"
+        ]
+      },
+      "budget": {
+        "max_seconds": 45
+      },
+      "comment": "sweep3: h2h lane, deterministic compare payload."
+    },
+    {
+      "id": "canon-overpaid-league",
+      "chain": [
+        "Who is the most overpaid player in the league?"
+      ],
+      "expect": {
+        "contains": [
+          "LaVine",
+          "$29.6M"
+        ],
+        "not_contains": [
+          "residual of ."
+        ]
+      },
+      "budget": {
+        "max_seconds": 45
+      },
+      "comment": "QA canon: LaVine +$29.6M league-worst."
+    },
+    {
+      "id": "canon-best-value",
+      "chain": [
+        "Who are the best value contracts this season?"
+      ],
+      "expect": {
+        "contains": [
+          "Wembanyama",
+          "under"
+        ]
+      },
+      "budget": {
+        "max_seconds": 45
+      },
+      "comment": "QA canon: Wemby underpaid $29.4M."
+    },
+    {
+      "id": "canon-overpaid-spurs",
+      "chain": [
+        "Who is the most overpaid player on the Spurs?"
+      ],
+      "expect": {
+        "contains": [
+          "Fox",
+          "on SAS"
+        ],
+        "not_contains": [
+          "LaVine"
+        ]
+      },
+      "budget": {
+        "max_seconds": 45
+      },
+      "comment": "Team-scoped value ask stays on the team (Fox +$22.1M), not the league board."
+    },
+    {
+      "id": "canon-record-when-plays",
+      "chain": [
+        "What is Denver's record when Jokic plays?"
+      ],
+      "expect": {
+        "contains": [
+          "43-22"
+        ]
+      },
+      "budget": {
+        "max_seconds": 45
+      },
+      "comment": "record-when-plays pin (8e196bb)."
+    },
+    {
+      "id": "canon-clutch",
+      "chain": [
+        "Who are the best clutch scorers this season?"
+      ],
+      "expect": {
+        "contains": [
+          "175"
+        ],
+        "contains_any": [
+          [
+            "Gilgeous-Alexander",
+            "Shai",
+            "SGA"
+          ]
+        ]
+      },
+      "budget": {
+        "max_seconds": 45
+      },
+      "comment": "Clutch leaderboard pin: SGA 175 clutch points."
+    },
+    {
+      "id": "canon-finals-gbg",
+      "chain": [
+        "Compare Luka and SGA by efficiency",
+        "Walk me through the 2026 Finals game by game"
+      ],
+      "expect_turns": [
+        {
+          "contains": [
+            "61.6",
+            "66.5"
+          ]
+        },
+        {
+          "contains": [
+            "105",
+            "115"
+          ],
+          "not_contains": [
+            "No NBA Finals",
+            "no Finals"
+          ]
+        }
+      ],
+      "budget": {
+        "max_seconds_per_turn": 60
+      },
+      "comment": "sweep3: series walkthrough after a compare stays on the league lane and lists game scores."
+    },
+    {
+      "id": "canon-playoff-carry",
+      "chain": [
+        "How did Shai Gilgeous-Alexander do in the playoffs?",
+        "What were his shooting splits?"
+      ],
+      "expect_turns": [
+        {
+          "contains_any": [
+            [
+              "Shai",
+              "Gilgeous"
+            ]
+          ]
+        },
+        {
+          "contains_any": [
+            [
+              "%",
+              "FG",
+              "splits",
+              "shooting"
+            ]
+          ]
+        }
+      ],
+      "budget": {
+        "max_seconds_per_turn": 60
+      },
+      "comment": "S4: pronoun follow-up carries SGA into the splits lane."
+    },
+    {
+      "id": "canon-four-factors-team",
+      "chain": [
+        "What are the Thunder's four factors this season?"
+      ],
+      "expect": {
+        "contains": [
+          "56.1%",
+          "10.8%",
+          "64-18",
+          "OKC"
+        ],
+        "not_contains": [
+          "not available",
+          "not included"
+        ]
+      },
+      "budget": {
+        "max_seconds": 30
+      },
+      "comment": "Pinned lane (2026-09-13): planner freeform shipped wrong TOV%/missing FTr. Deterministic from silver_four_factors_team (offline-computed from team game rows). Units fixed 2026-09-13 (QA P3): prose renders percents, matching the check-lines."
+    },
+    {
+      "id": "f68-followup-ts-compare",
+      "chain": [
+        "compare Luka and SGA by efficiency",
+        "who has a better true shooting percentage between them?"
+      ],
+      "expect_turns": [
+        {
+          "contains_any": [
+            [
+              "66.5"
+            ],
+            [
+              "61.6"
+            ]
+          ],
+          "not_contains": [
+            "could not find that in the dataset"
+          ]
+        },
+        {
+          "contains_any": [
+            [
+              "66.5"
+            ],
+            [
+              "TS",
+              "true shooting"
+            ]
+          ],
+          "not_contains": [
+            "could not find that in the dataset"
+          ]
+        }
+      ],
+      "budget": {
+        "max_seconds_per_turn": 60
+      },
+      "comment": "F68 (2026-09-13 prod QA, Tony): comparative follow-up with no compare keyword fell to the planner and flaked to the no-data refusal. Pin: two players in scope + comparative adjective routes to the get_compare deterministic lane."
+    },
+    {
+      "id": "f69-top15-overall-ranking",
+      "chain": [
+        "in your view who are the top 15 players in the league"
+      ],
+      "expect_turns": [
+        {
+          "contains": [
+            "RAPM"
+          ],
+          "contains_any": [
+            [
+              "Wembanyama"
+            ],
+            [
+              "Joki"
+            ]
+          ],
+          "not_contains": [
+            "steals",
+            "could not find that in the dataset"
+          ]
+        }
+      ],
+      "budget": {
+        "max_seconds_per_turn": 60
+      },
+      "comment": "F69: overall top-N ask routed to a steals board on prod. Pin: get_player_rankings, RAPM-lite basis named."
+    },
+    {
+      "id": "f69b-top10-historical-season",
+      "chain": [
+        "who were the top 10 players in 2015-16"
+      ],
+      "expect_turns": [
+        {
+          "contains": [
+            "Curry"
+          ],
+          "contains_any": [
+            [
+              "WAR"
+            ],
+            [
+              "RAPTOR"
+            ]
+          ],
+          "not_contains": [
+            "could not find that in the dataset"
+          ]
+        }
+      ],
+      "budget": {
+        "max_seconds_per_turn": 60
+      },
+      "comment": "F69 cross-season: RAPTOR WAR covers 2014-15..2021-22; 2015-16 top is Curry's unanimous-MVP season."
+    },
+    {
+      "id": "f70-four-factors-compare",
+      "chain": [
+        "compare OKC and Detroit by four factors"
+      ],
+      "expect_turns": [
+        {
+          "contains": [],
+          "contains_any": [
+            [
+              "Detroit",
+              "DET"
+            ],
+            [
+              "eFG"
+            ]
+          ],
+          "not_contains": [
+            "could not find that in the dataset",
+            "preview"
+          ]
+        }
+      ],
+      "budget": {
+        "max_seconds_per_turn": 60
+      },
+      "comment": "QA hammer P2 v79: compare phrasing missed the four-factors lane and routed to PREVIEW filler."
+    },
+    {
+      "id": "f83-current-lakers-roster",
+      "tags": [
+        "team",
+        "roster",
+        "routing",
+        "regression",
+        "current-season"
+      ],
+      "as_of": "2026-09-14",
+      "season": "2025-26",
+      "chain": [
+        "Who is on the Lakers roster right now?"
+      ],
+      "expect": {
+        "contains": [
+          "LeBron James",
+          "Luka Don"
+        ],
+        "not_contains": [
+          "Lionel Chalmers"
+        ]
+      },
+      "budget": {
+        "max_seconds": 45,
+        "max_tool_calls": 4
+      },
+      "evidence_requirement": {
+        "any_capability": [
+          "team_hub",
+          "roster"
+        ],
+        "required_values": [
+          "LeBron James",
+          "Luka Dončić"
+        ],
+        "max_evidence": 1
+      }
+    },
+    {
+      "id": "f86-jaylen-brown-player-evaluation",
+      "tags": [
+        "player",
+        "evaluation",
+        "value",
+        "comps",
+        "regression"
+      ],
+      "as_of": "2026-09-14",
+      "season": "2025-26",
+      "chain": [
+        "Celtics - was Jaylen Brown a good player and what should his value be, comparable players in advanced metrics, is he a star or superstar or role player?"
+      ],
+      "expect": {
+        "contains": [
+          "star",
+          "35.1",
+          "57.3",
+          "RAPM-lite",
+          "Modeled value",
+          "Devin Booker"
+        ]
+      },
+      "budget": {
+        "max_seconds": 30,
+        "max_tool_calls": 1
+      },
+      "evidence_requirement": {
+        "any_capability": [
+          "player_evaluation"
+        ],
+        "required_values": [
+          "35.1",
+          "57.3",
+          "Devin Booker"
+        ],
+        "max_evidence": 1
+      }
+    },
+    {
+      "id": "f87-player-multipart-report",
+      "tags": [
+        "player",
+        "multi-part",
+        "routing",
+        "regression"
+      ],
+      "as_of": "2026-09-14",
+      "season": "2025-26",
+      "chain": [
+        "For LeBron this season, give me his averages, advanced metrics, shot profile, and clutch scoring."
+      ],
+      "expect": {
+        "contains": [
+          "20.9 PPG",
+          "59.4% true shooting",
+          "Restricted Area",
+          "Clutch: 50"
+        ]
+      },
+      "budget": {
+        "max_seconds": 30,
+        "max_tool_calls": 1
+      },
+      "evidence_requirement": {
+        "any_capability": [
+          "player_report"
+        ],
+        "required_values": [
+          "20.9",
+          "59.4",
+          "Restricted Area",
+          "50"
+        ],
+        "max_evidence": 1
+      }
+    },
+    {
+      "id": "f88-qualified-3p-leader",
+      "tags": [
+        "league",
+        "leaderboard",
+        "qualification",
+        "regression"
+      ],
+      "as_of": "2026-09-14",
+      "season": "2025-26",
+      "chain": [
+        "Who leads the league in 3P% this season?"
+      ],
+      "expect": {
+        "contains": [
+          "Luke Kennard",
+          "47.8%",
+          "82+ made threes"
+        ]
+      },
+      "budget": {
+        "max_seconds": 20,
+        "max_tool_calls": 1
+      },
+      "evidence_requirement": {
+        "any_capability": [
+          "leaders",
+          "qualified_leaders"
+        ],
+        "required_values": [
+          "Luke Kennard",
+          "47.8"
+        ],
+        "qualification_contains": [
+          "82",
+          "made threes"
+        ],
+        "max_evidence": 1
+      }
+    },
+    {
+      "id": "f88-team-ratings",
+      "tags": [
+        "team",
+        "ratings",
+        "routing",
+        "regression"
+      ],
+      "as_of": "2026-09-14",
+      "season": "2025-26",
+      "chain": [
+        "Warriors ratings?"
+      ],
+      "expect": {
+        "contains": [
+          "113.8 offense",
+          "114.4 defense",
+          "-0.5 net"
+        ]
+      },
+      "budget": {
+        "max_seconds": 20,
+        "max_tool_calls": 1
+      },
+      "evidence_requirement": {
+        "any_capability": [
+          "ratings",
+          "team_ratings"
+        ],
+        "required_values": [
+          "113.8",
+          "114.4",
+          "-0.5"
+        ],
+        "max_evidence": 1
+      }
+    },
+    {
+      "id": "f89-qualified-young-usage",
+      "tags": [
+        "league",
+        "usage",
+        "qualification",
+        "regression"
+      ],
+      "as_of": "2026-09-14",
+      "season": "2025-26",
+      "chain": [
+        "Which young player under 23 has the highest usage rate this season?"
+      ],
+      "expect": {
+        "contains": [
+          "Victor Wembanyama",
+          "31.6%",
+          "1,000+ total minutes"
+        ]
+      },
+      "budget": {
+        "max_seconds": 20,
+        "max_tool_calls": 1
+      },
+      "evidence_requirement": {
+        "any_capability": [
+          "young_player_usage",
+          "qualified_leaders"
+        ],
+        "required_values": [
+          "Victor Wembanyama",
+          "31.6"
+        ],
+        "qualification_contains": [
+          "1,000",
+          "minutes"
+        ],
+        "max_evidence": 1
+      }
+    },
+    {
+      "id": "f89-efg-sensitive-compare",
+      "tags": [
+        "player",
+        "compare",
+        "metric",
+        "regression"
+      ],
+      "as_of": "2026-09-14",
+      "season": "2025-26",
+      "chain": [
+        "Compare Jaylen Brown and Jayson Tatum in eFG% this season."
+      ],
+      "expect": {
+        "contains": [
+          "52.2% eFG",
+          "49.3% eFG"
+        ],
+        "not_contains": [
+          "57.3% TS"
+        ]
+      },
+      "budget": {
+        "max_seconds": 25,
+        "max_tool_calls": 1
+      },
+      "evidence_requirement": {
+        "any_capability": [
+          "compare",
+          "player_comparison"
+        ],
+        "required_values": [
+          "52.2",
+          "49.3"
+        ],
+        "metric_definitions_contain": [
+          "efg"
+        ],
+        "max_evidence": 1
+      }
+    },
+    {
+      "id": "f89-proprietary-metric-not-player",
+      "tags": [
+        "player",
+        "metric",
+        "entity",
+        "regression"
+      ],
+      "as_of": "2026-09-14",
+      "season": "2025-26",
+      "chain": [
+        "Can I trust EPM and LEBRON for Brunson?"
+      ],
+      "expect": {
+        "contains": [
+          "not available",
+          "Jalen Brunson",
+          "never estimates"
+        ],
+        "not_contains": [
+          "LeBron James"
+        ]
+      },
+      "budget": {
+        "max_seconds": 10,
+        "max_tool_calls": 1
+      },
+      "evidence_requirement": {
+        "any_capability": [
+          "metric_coverage"
+        ],
+        "required_values": [
+          "Jalen Brunson"
+        ],
+        "warnings_contain": [
+          "not available",
+          "never estimates"
+        ],
+        "max_evidence": 1
+      }
+    }
+  ]
+}
