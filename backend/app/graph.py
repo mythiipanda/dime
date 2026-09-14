@@ -5186,7 +5186,13 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
                     # historical-span coverage line; the four-factors
                     # pin writes its coverage line into the det.
                     from .tools._core import SEASON as _CUR_SEASON
-                    _det = (f"This data covers the {_CUR_SEASON} season.\n"
+                    # F72: the header must follow the ANSWERED season.
+                    # get_player_rankings answers historical seasons
+                    # (meta.season "2015-16") but the header said the
+                    # current one - "This data covers 2025-26" over a
+                    # 2015-16 board, live on prod.
+                    _det_season = _tr["meta"].get("season") or _CUR_SEASON
+                    _det = (f"This data covers the {_det_season} season.\n"
                             + _det)
             except Exception:
                 pass
