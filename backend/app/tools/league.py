@@ -307,8 +307,12 @@ def get_standings_deep(season: str = SEASON, top: int = 5) -> dict[str, Any]:
 
 
 @tool
-def get_ratings(season: str = SEASON) -> dict[str, Any]:
-    """Team offensive, defensive, and net ratings plus pace and ranks."""
+def get_ratings(season: str = SEASON, team: str = "") -> dict[str, Any]:
+    """Team offensive, defensive, and net ratings plus pace and ranks.
+
+    Optional team narrows a direct team-ratings question to one row and
+    supplies a payload-built answer, avoiding lineup and SQL detours.
+    """
     from nba_api.stats.static import teams as _teams
 
     abbrev = {t["id"]: t["abbreviation"] for t in _teams.get_teams()}
@@ -325,6 +329,20 @@ def get_ratings(season: str = SEASON) -> dict[str, Any]:
         d = {k: r.get(k) for k in keep if k in r}
         d["TEAM"] = abbrev.get(r.get("TEAM_ID"), str(r.get("TEAM_NAME") or ""))
         slim.append(d)
+    if team:
+        want = str(team).strip().lower()
+        slim = [r for r in slim if (
+            want == str(r.get("TEAM") or "").lower()
+            or want in str(r.get("TEAM_NAME") or "").lower()
+            or str(r.get("TEAM_NAME") or "").lower() in want)]
+        meta["team"] = team
+        if slim:
+            r = slim[0]
+            meta["deterministic_answer"] = (
+                f"{r.get('TEAM_NAME') or r.get('TEAM')} ratings, {season}: "
+                f"{r.get('OFF_RATING')} offense, {r.get('DEF_RATING')} "
+                f"defense, {r.get('NET_RATING'):+g} net, and "
+                f"{r.get('PACE')} pace. Record: {r.get('W')}-{r.get('L')}.")
     return {"tool": "get_ratings", "ok": True, "rows": slim, "meta": meta}
 
 
@@ -573,7 +591,13 @@ def get_playoffs(season: str = SEASON) -> dict[str, Any]:
 
 @tool
 def get_leaders(stat_category: str = "PTS", season: str = SEASON) -> dict[str, Any]:
-    """League leaders for one stat category like PTS, REB, AST."""
+    """League leaders for one stat category like PTS, REB, AST.
+
+    Percentage boards use the NBA minimums carried by the warehouse
+    instead of an arbitrary attempts floor. For 3P%, the qualification is
+    82 made threes over an 82-game season. This keeps the board comparable
+    to the official league leaderboard and excludes tiny samples.
+    """
     stat_category = clamp_stat(stat_category)
     table = f"silver_leaders_{stat_category.lower()}"
     rows, meta = _warehouse_or_live(
@@ -581,6 +605,40 @@ def get_leaders(stat_category: str = "PTS", season: str = SEASON) -> dict[str, A
         [season], lambda: nba_stats.leaders(stat_category, season), season,
     )
     meta["stat_category"] = stat_category
+    # silver_leaders_fg3_pct is not materialized. The PTS leaders table
+    # contains the complete shooting columns, so build the official 3P%
+    # board from it. NBA qualification is 82 makes in an 82-game season
+    # (prorated in shorter seasons), not the ad-hoc 300-attempt floor that
+    # previously hid Luke Kennard's 47.8% season.
+    if stat_category == "FG3_PCT":
+        try:
+            con = store.connect(read_only=True)
+            try:
+                raw = con.execute(
+                    "SELECT PLAYER, TEAM, GP, MIN, FG3M, FG3A, FG3_PCT "
+                    "FROM silver_leaders_pts WHERE _season = ? "
+                    "AND FG3M >= 82 ORDER BY FG3_PCT DESC, FG3M DESC",
+                    [season]).fetchall()
+            finally:
+                con.close()
+            rows = [
+                {"RANK": i, "PLAYER": r[0], "TEAM": r[1], "GP": r[2],
+                 "MIN": r[3], "FG3M": r[4], "FG3A": r[5],
+                 "FG3_PCT": r[6]}
+                for i, r in enumerate(raw, 1)
+            ]
+            meta = {"source": "warehouse", "season": season,
+                    "stat_category": stat_category, "rows": len(rows),
+                    "qualification": "82+ made threes"}
+            if rows:
+                lead = rows[0]
+                meta["deterministic_answer"] = (
+                    f"{lead['PLAYER']} leads qualified NBA players in "
+                    f"three-point percentage at {lead['FG3_PCT'] * 100:.1f}% "
+                    f"({lead['FG3M']} makes on {lead['FG3A']} attempts). "
+                    "Qualification: 82+ made threes.")
+        except Exception:
+            rows = []
     try:
         total = int(meta.get("rows") or len(rows) or 0)
         for r in rows:
