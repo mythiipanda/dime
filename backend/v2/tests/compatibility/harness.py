@@ -55,6 +55,9 @@ def load_pack(path: Path) -> dict[str, Any]:
     ids = [scenario["id"] for scenario in scenarios]
     if len(ids) != len(set(ids)):
         raise ValueError("compatibility scenario ids must be unique")
+    banned = pack.get("banned_everywhere", [])
+    for scenario in scenarios:
+        scenario["_banned_everywhere"] = banned
     return pack
 
 
@@ -80,7 +83,8 @@ def grade_scenario(scenario: dict[str, Any], turns: list[TurnTrace]) -> Scenario
     if len(turns) != expected_turns:
         return ScenarioResult(scenario["id"], (f"expected {expected_turns} turns, got {len(turns)}",))
     expectations = scenario.get("expect_turns") or [scenario.get("expect", {})]
-    banned = scenario.get("banned", [])
+    banned = [*scenario.get("_banned_everywhere", []),
+              *scenario.get("banned", [])]
     for index, (turn, expected) in enumerate(zip(turns, expectations), 1):
         text = turn.text.casefold()
         for needle in expected.get("contains", []):

@@ -60,3 +60,13 @@ def test_latency_and_tool_budgets_are_hard_failures():
     assert set(result.failures) == {
         "latency 20.1s > 20s budget", "6 tool calls > 5 budget",
     }
+
+
+def test_global_banned_text_is_enforced():
+    scenario = next(s for s in load_pack(PACK)["scenarios"]
+                    if s["id"] == "efficiency-simple")
+    result = grade_scenario(
+        scenario, [TurnTrace(1.0, 1, (), (),
+                             text="Try a narrower warehouse query")])
+    assert not result.passed
+    assert any("contains banned text" in failure for failure in result.failures)
