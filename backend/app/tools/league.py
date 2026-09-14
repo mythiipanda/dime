@@ -663,6 +663,43 @@ def get_leaders(stat_category: str = "PTS", season: str = SEASON) -> dict[str, A
     return {"tool": "get_leaders", "ok": True, "rows": pinned, "meta": meta}
 
 
+@tool
+def get_young_player_usage(max_age: int = 22, min_minutes: int = 1000,
+                           season: str = SEASON) -> dict[str, Any]:
+    """Qualified usage-rate board for young players from silver_advanced.
+
+    Uses total minutes (GP * per-game MIN) as the sample floor. The default
+    means age 22 or younger with at least 1,000 minutes in the asked season.
+    """
+    max_age = max(18, min(int(max_age), 25))
+    min_minutes = max(0, min(int(min_minutes), 3000))
+    con = store.connect(read_only=True)
+    try:
+        raw = con.execute(
+            "SELECT PLAYER_NAME, TEAM_ABBREVIATION, AGE, GP, MIN, USG_PCT "
+            "FROM silver_advanced WHERE _season = ? AND AGE <= ? "
+            "AND GP * MIN >= ? ORDER BY USG_PCT DESC",
+            [season, max_age, min_minutes]).fetchall()
+    finally:
+        con.close()
+    rows = [{"RANK": i, "PLAYER": r[0], "TEAM": r[1], "AGE": r[2],
+             "GP": r[3], "MPG": r[4], "MINUTES": round(r[3] * r[4]),
+             "USG_PCT": round(float(r[5]) * 100, 1)}
+            for i, r in enumerate(raw, 1)]
+    meta: dict[str, Any] = {
+        "source": "warehouse:silver_advanced", "season": season,
+        "max_age": max_age, "min_minutes": min_minutes, "rows": len(rows)}
+    if rows:
+        lead = rows[0]
+        meta["deterministic_answer"] = (
+            f"{lead['PLAYER']} leads players age {max_age} or younger in "
+            f"usage rate at {lead['USG_PCT']:.1f}% in {season}. "
+            f"Qualification: {min_minutes:,}+ total minutes; "
+            f"{lead['MINUTES']:,} minutes in {lead['GP']} games.")
+    return {"tool": "get_young_player_usage", "ok": True,
+            "rows": rows, "meta": meta}
+
+
 _TEAM_TOTAL_STATS = ("PTS", "REB", "AST", "STL", "BLK", "FG3M", "TOV")
 
 
