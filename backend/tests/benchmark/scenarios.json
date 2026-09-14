@@ -804,6 +804,117 @@
         "max_seconds": 20,
         "max_tool_calls": 1
       }
+    },
+    {
+      "id": "f89-qualified-young-usage",
+      "tags": [
+        "league",
+        "usage",
+        "qualification",
+        "regression"
+      ],
+      "as_of": "2026-09-14",
+      "season": "2025-26",
+      "chain": [
+        "Which young player under 23 has the highest usage rate this season?"
+      ],
+      "expect": {
+        "contains": [
+          "Victor Wembanyama",
+          "31.6%",
+          "1,000+ total minutes"
+        ]
+      },
+      "trajectory": {
+        "required_tools": [
+          "get_young_player_usage"
+        ],
+        "forbidden_tools": [
+          "text_to_sql",
+          "delegate_league"
+        ],
+        "no_duplicate_calls": true
+      },
+      "budget": {
+        "max_seconds": 20,
+        "max_tool_calls": 1
+      }
+    },
+    {
+      "id": "f89-efg-sensitive-compare",
+      "tags": [
+        "player",
+        "compare",
+        "metric",
+        "regression"
+      ],
+      "as_of": "2026-09-14",
+      "season": "2025-26",
+      "chain": [
+        "Compare Jaylen Brown and Jayson Tatum in eFG% this season."
+      ],
+      "expect": {
+        "contains": [
+          "52.2% eFG",
+          "49.3% eFG"
+        ],
+        "not_contains": [
+          "57.3% TS"
+        ]
+      },
+      "trajectory": {
+        "required_tools": [
+          "get_compare"
+        ],
+        "forbidden_tools": [
+          "compare_metrics",
+          "delegate_scout"
+        ],
+        "no_duplicate_calls": true
+      },
+      "budget": {
+        "max_seconds": 25,
+        "max_tool_calls": 1
+      }
+    },
+    {
+      "id": "f89-proprietary-metric-not-player",
+      "tags": [
+        "player",
+        "metric",
+        "entity",
+        "regression"
+      ],
+      "as_of": "2026-09-14",
+      "season": "2025-26",
+      "chain": [
+        "Can I trust EPM and LEBRON for Brunson?"
+      ],
+      "expect": {
+        "contains": [
+          "not available",
+          "Jalen Brunson",
+          "never estimates"
+        ],
+        "not_contains": [
+          "LeBron James"
+        ]
+      },
+      "trajectory": {
+        "required_tools": [
+          "metric_coverage"
+        ],
+        "forbidden_tools": [
+          "compare_metrics",
+          "get_compare",
+          "resolve_entity"
+        ],
+        "no_duplicate_calls": true
+      },
+      "budget": {
+        "max_seconds": 10,
+        "max_tool_calls": 1
+      }
     }
   ]
 }
