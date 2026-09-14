@@ -513,6 +513,23 @@ _SEASON_AVG_NO_RX = re.compile(
 # Conservative: requires a who/which + most + stat-games phrasing; the
 # multi-player compare ("who had more 40-point games, X or Y?") names
 # players and is excluded by the no-named-player gate in _triage_seed.
+_CAREER_TOT_RX = re.compile(
+    r"\bcareer\s+(points|rebounds|assists|steals|blocks|threes|"
+    r"3-pointers|games|minutes)\b|"
+    r"\bhow\s+many\s+career\s+(points|rebounds|assists|steals|"
+    r"blocks|threes|3-pointers|games|minutes)\b|"
+    r"\b(points|rebounds|assists|steals|blocks|threes|3-pointers)\s+"
+    r"in\s+(?:his|her|their)\s+career\b",
+    re.IGNORECASE)
+_CAREER_STAT_FIELD = {
+    "points": ("PTS", "career points"), "rebounds": ("REB", "career rebounds"),
+    "assists": ("AST", "career assists"), "steals": ("STL", "career steals"),
+    "blocks": ("BLK", "career blocks"), "threes": ("FG3M", "career threes"),
+    "3-pointers": ("FG3M", "career threes"), "games": ("GP", "career games"),
+    "minutes": ("MIN", "career minutes"),
+}
+
+
 _LEAGUE_LEADERS_RX = re.compile(
     r"\b(?:who|which(?:\s+player)?)\b.{0,40}\bmost\b.{0,80}?"
     r"(?:\b\d{2}\s*[-–—]?\s*points?\s+games?\b|"
@@ -2122,6 +2139,58 @@ async def _triage_seed(question: str, primary: str, model: str,
                 yield _e
             return
         # Unknown player or missing line: fall through to the planner.
+    # F77: "career points" asks fell to text_to_sql, which summed a
+    # wrong slice and shipped fabricated numerals (LeBron "291.5
+    # career points", data-audit P0-1). Pin: career totals tool
+    # (live full-career, warehouse partial labeled when live is
+    # unreachable), answer built from payload fields (v67 law).
+    # Burn-down: career-totals class.
+    _ctm = _CAREER_TOT_RX.search(question)
+    if (_ctm
+            and len(_named_p) == 1
+            and not re.search(r"\bcareer[\s-]*high\b", question,
+                              re.IGNORECASE)
+            and not is_compare and not is_trade and not is_cast):
+        _cth: dict[str, Any] = {}
+        async for _e in _triage_tool(
+                "get_career_totals", {"player": _named_p[0]},
+                state, _cth):
+            yield _e
+        _ctout = _cth.get("out") or {}
+        if _result_status(_ctout) == "ok":
+            _ctrow = (_ctout.get("rows") or [{}])[0]
+            _ctstat = next((g for g in _ctm.groups() if g), "")
+            _ctfield, _ctlabel = _CAREER_STAT_FIELD.get(
+                _ctstat.lower(), ("PTS", "career points"))
+            _ctval = _ctrow.get(_ctfield)
+            _ctname = str(_ctrow.get("player") or "").strip()
+            if _ctname and _ctval is not None:
+                _ctmeta = dict(_ctout.get("meta") or {})
+                _ctval = int(round(float(_ctval)))
+                if _ctmeta.get("coverage") == "partial_from_2014-15":
+                    _ctthrough = str(_ctmeta.get("through") or "2024-25")
+                    if _ctfield == "FG3M":
+                        _ctthrough = "2024-25"
+                    _ctans = (
+                        f"In the seasons on file (2014-15 through "
+                        f"{_ctthrough}), {_ctname} has {_ctval:,} "
+                        f"{_ctlabel.split(' ', 1)[1]}. Seasons before "
+                        f"2014-15 aren't in the dataset, so this is "
+                        f"not his full career total.")
+                else:
+                    _ctans = (
+                        f"{_ctname} has {_ctval:,} {_ctlabel} in the "
+                        f"NBA regular season.")
+                _ctout["meta"] = _ctmeta
+                _ctout["meta"]["deterministic_answer"] = _ctans
+                if state["tool_results"] and state["tool_results"][-1] is _ctout:
+                    state["tool_results"][-1] = {
+                        "tool": "get_career_totals",
+                        "rows": [_ctout]}
+                async for _e in _triage_terminal(question, state):
+                    yield _e
+                return
+        # Tool failed entirely: fall through to the planner.
     # F64: cross-turn "compare that to his season average" - the name
     # arrives by pronoun carry, so the direct-name pin above never
     # fires, and the planner free-styles a run_python average over a
