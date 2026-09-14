@@ -117,3 +117,31 @@ def test_game_prediction_publishes_verified_deterministic_summary():
     answer = asyncio.run(_go())
     assert "54.8%" in answer and "2.0-point edge" in answer
     assert "could not verify" not in answer
+
+
+def test_deterministic_prediction_suppresses_discarded_draft_caution(monkeypatch):
+    from app import graph
+    from app.graph import analytics_agent
+
+    async def fake_stream(*args, **kwargs):
+        yield {"text": "Model draft derives a 9.6-point probability gap."}
+
+    monkeypatch.setattr(graph, "astream_with_fallback", fake_stream)
+
+    async def _go():
+        state = {"question": "Who wins Celtics vs Knicks?", "history": [],
+                 "tool_results": [], "calls_made": [], "round": 0,
+                 "primary": "p", "model": "m", "ledger": []}
+        async for _ in graph._triage_seed(
+                state["question"], "primary", "model", state):
+            pass
+        events = []
+        async for event in analytics_agent(state):
+            events.append(event)
+        return events
+
+    events = asyncio.run(_go())
+    cautions = [event for event in events
+                if event["type"] == "custom_data"
+                and event["data"].get("unverified_numbers")]
+    assert cautions == []
