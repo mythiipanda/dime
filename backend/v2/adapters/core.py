@@ -32,7 +32,7 @@ async def ainvoke_tool(tool: Any, arguments: Mapping[str, Any]) -> dict[str, Any
     if getattr(tool, "coroutine", None) is not None:
         result = await tool.ainvoke(dict(arguments))
     elif hasattr(tool, "invoke"):
-        result = tool.invoke(dict(arguments))
+        result = await asyncio.to_thread(tool.invoke, dict(arguments))
     else:
         result = tool(**dict(arguments))
         if inspect.isawaitable(result):

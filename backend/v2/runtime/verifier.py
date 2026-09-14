@@ -33,13 +33,6 @@ _SEMANTIC_KEYS = {
     "repair_instructions",
 }
 
-SEMANTIC_VERIFIER_INSTRUCTIONS = """Return one VerificationReport JSON object and nothing else.
-Check requested-branch coverage, unsupported inference, omitted counterevidence,
-contradictions, and uncertainty. Cite claim indexes in claim_results. Repair
-instructions may identify defects and required checks, but must never provide
-replacement facts or rewritten claims."""
-
-
 class SemanticVerifier(Protocol):
     async def verify(self, task: TaskSpec, draft: DraftReport,
                      evidence: Sequence[EvidenceEnvelope]) -> VerificationReport: ...

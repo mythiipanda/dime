@@ -236,3 +236,23 @@ def test_observed_at_is_deterministic_when_injected():
     env = build_envelope(spec, {"season": "2025-26"}, STANDINGS_PAYLOAD,
                          observed_at=when)
     assert env.observed_at == when
+
+
+def test_sync_tool_runs_off_event_loop():
+    import asyncio
+    import threading
+
+    loop_thread = threading.get_ident()
+
+    class ThreadRecordingTool(FakeTool):
+        def invoke(self, arguments):
+            self.thread_id = threading.get_ident()
+            return super().invoke(arguments)
+
+    async def run():
+        tool = ThreadRecordingTool(STANDINGS_PAYLOAD)
+        await acall_capability(
+            "standings", {"season": "2025-26"}, tools={"get_standings": tool})
+        return tool.thread_id
+
+    assert asyncio.run(run()) != loop_thread
