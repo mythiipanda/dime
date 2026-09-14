@@ -3560,6 +3560,52 @@ async def _triage_seed(question: str, primary: str, model: str,
                     {"task": task}, sort_keys=True))
             if seeds:
                 return
+    # F74 (2026-09-14 prod QA): concept/glossary asks ("what is a pick
+    # and roll?", "how does defensive 3 seconds work?") name nobody and
+    # hit no data lane; they fell through the picker to the planner,
+    # called nothing, and shipped a dataset refusal. Answer the concept
+    # plainly from general basketball knowledge - no tools, and per the
+    # v67 law no statistics the warehouse did not produce. The guards
+    # keep data asks on their lanes: any entity, season, stat, or
+    # recency keyword skips this lane entirely.
+    if (not found_p and not found_t
+            and re.match(
+                r"^\s*(?:what(?:'s| is| are)\b|how do(?:es)?\b|"
+                r"explain\b|what does\b|what'?s the difference\b|"
+                r"difference between\b|why do(?:es)?\b)",
+                question, re.IGNORECASE)
+            and not re.search(
+                r"20\d\d|\bpoints?\b|\bppg\b|\brebounds?\w*\b|"
+                r"\bassists?\b|\bsteals?\b|\bblocks?\b|\bseason\b|"
+                r"\baverage\w*\b|\brank\w*\b|\btop\b|\bbest\b|"
+                r"\bworst\b|\bmost\b|\blead\w*\b|\brecord\b|"
+                r"\bstandings?\b|\bstats?\b|\btonight\b|"
+                r"\byesterday\b|\btoday\b|\blast\b",
+                question, re.IGNORECASE)):
+        _cparts: list[str] = []
+        try:
+            async for _cch in astream_with_fallback(
+                    primary, model,
+                    [SystemMessage(content=(
+                        "You are Dime, an NBA data product. Explain the "
+                        "basketball concept in the question plainly for "
+                        "a smart fan: 2-4 sentences, what it is and why "
+                        "teams use it. Concepts only - no player "
+                        "performance claims, no current-season "
+                        "references, no statistics.")),
+                     HumanMessage(content=question)]):
+                _cparts.append(_cch["text"])
+                yield _event("token", {"text": _cch["text"]})
+        except Exception:
+            _cparts = []
+        _cans = "".join(_cparts).strip()
+        if len(_cans) >= 60:
+            state["analysis"] = _cans
+            state["_analysis_final"] = True  # type: ignore[typeddict-unknown-key]
+            async for _e in _triage_terminal(question, state):
+                yield _e
+            return
+        # LLM miss: fall through to the picker/planner as before.
     pick = None
     if is_trade:
         pick = "delegate_league"
@@ -4317,6 +4363,14 @@ def _clean_error_text(text: str) -> str:
 
 async def analytics_agent(state: DimeState) -> AsyncGenerator[dict[str, Any], None]:
     yield _event("node_update", {"node": "analytics", "status": "running"})
+    # F74: a triage lane that already composed the final analysis
+    # (concept answers) skips evidence assembly - with zero tool
+    # results the no-evidence branch would clobber it with a false
+    # "No data found".
+    if state.get("_analysis_final"):
+        yield _event("node_update",
+                     {"node": "analytics", "status": "complete"})
+        return
     def _has_rows(rows: Any) -> bool:
         if isinstance(rows, list):
             return len(rows) > 0
