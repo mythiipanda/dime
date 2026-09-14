@@ -700,10 +700,10 @@ def get_player_intel(player_id: str | int, season: str = SEASON) -> dict[str, An
         # QA #32: facts only - an imperative to the model ("say that
         # plainly") leaks verbatim into user-facing text.
         return {"tool": "get_player_intel", "ok": False,
-                "error": (f"No {season} rows for {_d}. The dataset "
-                          f"covers 2024-25 and 2025-26 only, so a "
-                          f"retired or out-of-era player has no "
-                          f"current-season data.")}
+                # F75: user-safe phrasing only - never instructions.
+                "error": (f"No {season} game log rows for {_d}; game "
+                          f"logs cover 2024-25 and 2025-26, and season "
+                          f"lines cover 2014-15 onward.")}
     out = {"tool": "get_player_intel", "ok": True, "rows": rows,
            "meta": meta}
     try:
@@ -738,12 +738,12 @@ def get_season_averages(player_id: str | int, season: str = SEASON) -> dict[str,
         # Give the coverage facts so the narrative can say "retired /
         # outside dataset" plainly instead of overclaiming no data.
         return {"tool": "get_season_averages", "ok": False,
-                "error": (f"no season line on file for {season}. Season "
+                # F75: this text can ship verbatim (QA #32 class) -
+                # keep it user-safe prose, no model instructions.
+                "error": (f"No season line on file for {season}; season "
                           f"lines cover 2014-15 through the current "
-                          f"season; for older seasons the correct answer "
-                          f"is that the season line is outside dataset "
-                          f"coverage (not that no data exists at all). "
-                          f"Never estimate or invent a figure.")}
+                          f"season, so this one is outside dataset "
+                          f"coverage.")}
     return {"tool": "get_season_averages", "ok": True, "rows": [line],
             "meta": {"source": "basketball-reference", "season": season,
                      "coverage": "season_line"}}

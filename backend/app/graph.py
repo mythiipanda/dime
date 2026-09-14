@@ -2602,9 +2602,20 @@ async def _triage_seed(question: str, primary: str, model: str,
                   re.IGNORECASE)
             and not found_p and not _named_p
             and not is_trade and not is_cast and not is_compare):
+        # F76: honor an asked season ("best record in 2016-17") -
+        # the pin used to hardcode the current season and answered
+        # historical asks with today's table.
+        _bseason = "2025-26"
+        _bm = re.search(r"\b(20\d\d)-(\d\d)\b", question)
+        if _bm:
+            _bseason = f"{_bm.group(1)}-{_bm.group(2)}"
+        else:
+            _by = re.search(r"\b(20\d\d)\b", question)
+            if _by:
+                _bseason = f"{int(_by.group(1)) - 1}-{str(_by.group(1))[2:]}"
         _sh: dict[str, Any] = {}
         async for _e in _triage_tool(
-                "get_standings", {"season": "2025-26"}, state, _sh):
+                "get_standings", {"season": _bseason}, state, _sh):
             yield _e
         _sout = _sh.get("out") or {}
         if _result_status(_sout) == "ok":
@@ -2620,7 +2631,7 @@ async def _triage_seed(question: str, primary: str, model: str,
                 _sout["meta"] = dict(_sout.get("meta") or {})
                 _sout["meta"]["deterministic_answer"] = (
                     f"The {_steam} had the best record in the "
-                    f"2025-26 season at {_srec}"
+                    f"{_bseason} season at {_srec}"
                     + (f" ({_spct})" if _spct else "") + ".")
                 async for _e in _triage_terminal(question, state):
                     yield _e
