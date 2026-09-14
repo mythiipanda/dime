@@ -78,12 +78,13 @@ RESOLVE_PAYLOAD = {
     "meta": {"source": "nba_api_static"},
 }
 
-SEASON_AVG_PAYLOAD = {
-    "tool": "get_season_averages",
+ADVANCED_PAYLOAD = {
+    "tool": "get_advanced",
     "ok": True,
-    "rows": [{"player": "Jayson Tatum", "ppg": 27.1, "rpg": 8.9,
-              "ts_pct": 0.612, "efg_pct": 0.556, "fg_pct": 0.471}],
-    "meta": {"source": "warehouse", "season": "2025-26"},
+    "rows": {"PLAYER_NAME": "Jayson Tatum", "TS_PCT": 54.1,
+             "EFG_PCT": 49.3, "USG_PCT": 27.8},
+    "meta": {"source": "nba_api", "season": "2025-26",
+             "units": "percentages on 0-100 scale"},
 }
 
 COMPARE_PAYLOAD = {
@@ -180,11 +181,12 @@ def test_acall_capability_inside_running_loop():
     async def run():
         return await acall_capability(
             "shooting_efficiency", {"player_id": 1628369, "season": "2025-26"},
-            tools={"get_season_averages": FakeTool(SEASON_AVG_PAYLOAD)})
+            tools={"get_advanced": FakeTool(ADVANCED_PAYLOAD)})
 
     env = asyncio.run(run())
-    assert env.metric_definitions["ts_pct"].startswith("True shooting")
-    assert env.units["ts_pct"] == "fraction_0_1"
+    assert env.metric_definitions["TS_PCT"].startswith("True shooting")
+    assert env.units["TS_PCT"] == "percent_0_100"
+    assert env.rows["EFG_PCT"] == 49.3
 
 
 def test_failed_tool_raises_adapter_error():

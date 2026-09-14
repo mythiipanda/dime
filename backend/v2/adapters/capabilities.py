@@ -104,10 +104,9 @@ _LIST = [
     ),
     Capability(
         name="shooting_efficiency",
-        tool_name="get_season_averages",
-        units={"ts_pct": FRACTION, "efg_pct": FRACTION, "fg_pct": FRACTION,
-               "fg3_pct": FRACTION, "ft_pct": FRACTION},
-        metric_definitions={"ts_pct": TS_DEF, "efg_pct": EFG_DEF},
+        tool_name="get_advanced",
+        units={"TS_PCT": PERCENT, "EFG_PCT": PERCENT},
+        metric_definitions={"TS_PCT": TS_DEF, "EFG_PCT": EFG_DEF},
     ),
     Capability(
         name="on_off",
