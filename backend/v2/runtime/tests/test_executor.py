@@ -1,0 +1,87 @@
+from __future__ import annotations
+
+import asyncio
+
+import pytest
+from v2.contracts import Plan, PlanNode, PlanStatus, RunMode, TaskSpec
+from v2.runtime import FakeCapability, PlanExecutor
+
+
+def node(
+    node_id: str, *, parents: list[str] | None = None, attempts: int = 1
+) -> PlanNode:
+    return PlanNode(
+        id=node_id,
+        description=node_id,
+        depends_on=parents or [],
+        capability_hints=["fake"],
+        completion_test="returns evidence",
+        max_attempts=attempts,
+    )
+
+
+@pytest.mark.asyncio
+async def test_executes_dag_and_preserves_lineage() -> None:
+    plan = Plan(nodes=[node("a"), node("b"), node("c", parents=["a", "b"])])
+    result = await PlanExecutor({"fake": FakeCapability("fake", {"ok": True})}).execute(
+        TaskSpec(goal="answer", mode=RunMode.QUICK, deliverable="text"), plan
+    )
+
+    assert [item.status for item in result.plan.nodes] == [
+        PlanStatus.COMPLETE,
+        PlanStatus.COMPLETE,
+        PlanStatus.COMPLETE,
+    ]
+    assert result.evidence[-1].lineage == ["evidence:a", "evidence:b"]
+    assert all(count == 1 for count in result.attempts.values())
+
+
+@pytest.mark.asyncio
+async def test_retries_without_weakening_failure() -> None:
+    result = await PlanExecutor(
+        {"fake": FakeCapability("fake", {}, failures_before_success=1)}
+    ).execute(
+        TaskSpec(goal="answer", mode=RunMode.QUICK, deliverable="text"),
+        Plan(nodes=[node("a", attempts=2)]),
+    )
+
+    assert result.plan.nodes[0].status == PlanStatus.COMPLETE
+    assert result.attempts == {"a": 2}
+    assert result.errors["a"] == ["RuntimeError: injected capability failure"]
+
+
+@pytest.mark.asyncio
+async def test_failed_parent_skips_descendant() -> None:
+    result = await PlanExecutor({}).execute(
+        TaskSpec(goal="answer", mode=RunMode.QUICK, deliverable="text"),
+        Plan(nodes=[node("a"), node("b", parents=["a"])]),
+    )
+
+    assert [item.status for item in result.plan.nodes] == [
+        PlanStatus.FAILED,
+        PlanStatus.SKIPPED,
+    ]
+    assert result.errors == {"a": ["no registered capability matches capability hints"]}
+
+
+@pytest.mark.asyncio
+async def test_independent_nodes_run_concurrently() -> None:
+    active = 0
+    peak = 0
+
+    class TrackingCapability:
+        name = "fake"
+
+        async def execute(self, node, task, evidence):
+            nonlocal active, peak
+            active += 1
+            peak = max(peak, active)
+            await asyncio.sleep(0)
+            active -= 1
+            return await FakeCapability("fake", {}).execute(node, task, evidence)
+
+    plan = Plan(nodes=[node("a"), node("b")])
+    await PlanExecutor({"fake": TrackingCapability()}, max_concurrency=2).execute(
+        TaskSpec(goal="answer", mode=RunMode.QUICK, deliverable="text"), plan
+    )
+    assert peak == 2
