@@ -28,6 +28,88 @@ def _is_three_zone(name: object) -> bool:
     return "3" in z or "corner" in z or "break" in z
 
 
+_CAREER_STAT_KEYS = ("GP", "MIN", "PTS", "REB", "AST", "STL", "BLK",
+                     "FG3M")
+
+
+@tool
+def get_career_totals(player: str) -> dict[str, Any]:
+    """Full NBA regular-season career totals for one player.
+
+    Live primary source first (true full career); when the live source
+    is unreachable, sums the warehouse season lines (2014-15 onward,
+    per-game rates x games) and marks the coverage partial instead of
+    inventing a full-career figure (F77: text_to_sql used to sum a
+    wrong slice and ship fabricated totals like "291.5 career points").
+    """
+    try:
+        pid = coerce_player_id(player)
+    except Exception:
+        pid = 0
+    if not pid:
+        return {"tool": "get_career_totals", "ok": False,
+                "error": f"I don't recognize the player '{player}'."}
+    name = _display_name(player)
+    res = nba_stats.career_totals(int(pid))
+    if res.ok and res.frame is not None and res.frame.height > 0:
+        row = {str(k).lower(): v for k, v in res.frame.to_dicts()[0].items()}
+        out = {"player": name}
+        for key in _CAREER_STAT_KEYS:
+            out[key] = _num(row.get(key.lower()))
+        return {"tool": "get_career_totals", "ok": True, "rows": [out],
+                "meta": {"source": "nba_api", "coverage": "full_career"}}
+    # Warehouse fallback: partial coverage, labeled as such.
+    try:
+        hist = store.read_frame(
+            "silver_hist_player_seasons", "player_id = ?", [int(pid)])
+    except Exception:
+        hist = None
+    sums: dict[str, float] = {}
+    seasons = 0
+    if hist is not None and hist.height > 0:
+        seasons = hist.height
+        for r in hist.to_dicts():
+            gp = _num(r.get("gp")) or 0.0
+            sums["GP"] = sums.get("GP", 0.0) + gp
+            for key, col in (("MIN", "min"), ("PTS", "pts"), ("REB", "reb"),
+                             ("AST", "ast"), ("STL", "stl"), ("BLK", "blk"),
+                             ("FG3M", "fg3m")):
+                rate = _num(r.get(col))
+                if rate is not None:
+                    sums[key] = sums.get(key, 0.0) + rate * gp
+    through = "2024-25"
+    try:
+        cur = store.read_frame(
+            "silver_player_season", "PLAYER_ID = ?", [int(pid)])
+    except Exception:
+        cur = None
+    if cur is not None and cur.height > 0:
+        r = cur.to_dicts()[0]
+        gp = _num(r.get("GP")) or 0.0
+        if gp:
+            through = str(r.get("_season") or "2025-26")
+            seasons += 1
+            sums["GP"] = sums.get("GP", 0.0) + gp
+            for key, col in (("MIN", "MPG"), ("PTS", "PPG"),
+                             ("REB", "RPG"), ("AST", "APG"),
+                             ("STL", "SPG"), ("BLK", "BPG")):
+                rate = _num(r.get(col))
+                if rate is not None:
+                    sums[key] = sums.get(key, 0.0) + rate * gp
+    if not sums:
+        return {"tool": "get_career_totals", "ok": False,
+                "error": (f"Career totals for {name} aren't available "
+                          f"right now; the live stats source didn't "
+                          f"respond and no season lines are on file.")}
+    out = {"player": name}
+    out.update({k: round(v) for k, v in sums.items()})
+    return {"tool": "get_career_totals", "ok": True, "rows": [out],
+            "meta": {"source": "warehouse",
+                     "coverage": "partial_from_2014-15",
+                     "through": through,
+                     "seasons_on_file": seasons}}
+
+
 def _display_name(raw: object) -> str:
     """Names in, names out: desks pass ids verbatim per the id contract,
     so numeric ids resolve back to display names for verdicts/tables."""

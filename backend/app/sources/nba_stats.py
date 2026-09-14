@@ -24,6 +24,17 @@ def _t() -> int:
     return settings.default_timeout_seconds
 
 
+def career_totals(player_id: int) -> FetchResult:
+    """Full regular-season career totals (all seasons, one row)."""
+    from nba_api.stats.endpoints import PlayerCareerStats
+
+    def run() -> pl.DataFrame:
+        ep = PlayerCareerStats(player_id=player_id, timeout=_t())
+        return _pl(ep.career_totals_regular_season.get_data_frame())
+
+    return safe(SOURCE, "career", run)
+
+
 def player_gamelog(player_id: int, season: str) -> FetchResult:
     from nba_api.stats.endpoints import PlayerGameLog
 
