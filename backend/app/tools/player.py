@@ -909,6 +909,13 @@ def get_playoff_intel(player_id: str | int, season: str = SEASON) -> dict[str, A
     meta["totals_note"] = (
         "Canonical series totals - quote these verbatim for any "
         "aggregate ask instead of summing the rows yourself.")
+    gp = len(slim)
+    if gp:
+        meta["deterministic_answer"] = (
+            f"{_disp} averaged {meta['totals']['PTS'] / gp:.1f} points, "
+            f"{meta['totals']['REB'] / gp:.1f} rebounds, and "
+            f"{meta['totals']['AST'] / gp:.1f} assists over {gp} playoff "
+            f"games in the {season} season.")
     return {"tool": "get_playoff_intel", "ok": True, "rows": slim, "meta": meta}
 
 

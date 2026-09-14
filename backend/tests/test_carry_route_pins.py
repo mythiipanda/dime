@@ -152,3 +152,23 @@ def test_best_player_pin_uses_most_recent_team():
     rows = next(r for r in st["tool_results"]
                 if r.get("tool") == "pin_team_best_player")["rows"]
     assert all("Wembanyama" not in r.get("PLAYER", "") for r in rows), rows
+
+
+def test_best_player_pin_carries_authoritative_answer():
+    st = _drain("Who was their best player?", OKC_HIST)
+    result = next(r for r in st["tool_results"]
+                  if r.get("tool") == "pin_team_best_player")
+    answer = result["meta"].get("deterministic_answer", "")
+    assert "Shai Gilgeous-Alexander" in answer
+    assert "points per game" in answer
+
+
+def test_playoff_carry_carries_authoritative_answer():
+    hist = [
+        {"role": "human", "text": "Who was their best player?"},
+        {"role": "ai", "text": "Shai Gilgeous-Alexander led the Thunder."},
+    ]
+    st = _drain("How did he do in the playoffs?", hist)
+    result = next(r for r in st["tool_results"]
+                  if r.get("tool") == "get_playoff_intel")
+    assert result["meta"].get("deterministic_answer")

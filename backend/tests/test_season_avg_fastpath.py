@@ -67,3 +67,11 @@ def test_scrub_strips_exception_text():
 def test_scrub_keeps_clean_text():
     clean = "Curry averages 26.6 points per game on 63.7% true shooting."
     assert _scrub_final_text(clean) == clean
+
+
+def test_named_playoff_average_does_not_use_regular_season_line():
+    st = _drain("How many points per game did Luka average in the playoffs this year?")
+    names = _tool_names(st)
+    assert "get_playoff_intel" in names
+    assert "get_season_averages" not in names
+    assert "inactive for all 10" in str(st["tool_results"])

@@ -2237,6 +2237,25 @@ async def _triage_seed(question: str, primary: str, model: str,
             async for _e in _triage_terminal(question, state):
                 yield _e
         return
+    if (len(_named_p) == 1
+            and re.search(r"\bplayoffs?\b|\bpostseason\b|\bfinals\b",
+                          question, re.IGNORECASE)
+            and re.search(r"\baverag\w*|\bstats?\b|\bnumbers\b|"
+                          r"\bhow (?:did|was)\b|\b[prs]pg\b|\bapg\b",
+                          question, re.IGNORECASE)
+            and not is_compare and not is_trade and not is_cast):
+        _npseason = "2025-26"
+        _npm = re.search(r"(20\d\d)\s*-\s*(\d\d)", question)
+        if _npm:
+            _npseason = f"{_npm.group(1)}-{_npm.group(2)}"
+        _nph: dict[str, Any] = {}
+        async for _e in _triage_tool(
+                "get_playoff_intel",
+                {"player_id": _named_p[0], "season": _npseason}, state, _nph):
+            yield _e
+        async for _e in _triage_terminal(question, state):
+            yield _e
+        return
     is_season_avg = (
         len(_named_p) == 1
         and _SEASON_AVG_RX.search(question)
@@ -2245,6 +2264,8 @@ async def _triage_seed(question: str, primary: str, model: str,
         and not is_trade
         and not is_cast
         and not _PREDICT_LIVE_RX.search(question)
+        and not re.search(r"\bplayoffs?\b|\bpostseason\b|\bfinals\b",
+                          question, re.IGNORECASE)
     )
     if is_season_avg:
         # Single-stat asks used to fall through to the planner, which
@@ -3055,8 +3076,8 @@ async def _triage_seed(question: str, primary: str, model: str,
                 "note": (f"top {_bfull} scorers by per-game "
                          "points (20+ games); 'best player' "
                          "read as the team's leading scorers")}
+            _btop = _brows[0]
             if _bfinals:
-                _btop = _brows[0]
                 _bmeta["note"] = (
                     f"top {_bfull} scorers in the Finals series, "
                     "from the Finals game logs")
@@ -3065,6 +3086,11 @@ async def _triage_seed(question: str, primary: str, model: str,
                     f"Finals scorer at {_btop['PPG']} points per game "
                     f"over {_btop['GP']} games "
                     f"({int(_btop['PTS'])} total).")
+            else:
+                _bmeta["deterministic_answer"] = (
+                    f"{_btop['PLAYER']} led the {_bfull} in scoring "
+                    f"at {_btop['PPG']} points per game over "
+                    f"{_btop['GP']} games in the 2025-26 season.")
             _bres = {
                 "tool": "pin_team_best_player", "ok": True,
                 "rows": _brows,
