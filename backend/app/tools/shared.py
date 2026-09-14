@@ -27,6 +27,21 @@ def resolve_entity(query: str) -> dict[str, Any]:
             t = [x for x in all_t
                  if nq and (nq in _norm_name(x.get("full_name", ""))
                             or nq == (x.get("abbreviation", "") or "").lower())][:8]
+        # F83: the fuzzy player matcher can produce a weak, unrelated player
+        # for an exact team query ("Los Angeles Lakers" -> Lionel Chalmers).
+        # Keep the entity types disjoint when the query exactly names a team;
+        # a weak cross-type row otherwise anchors downstream summaries even
+        # after the team tool returns the real roster.
+        exact_team = any(
+            nq in {
+                _norm_name(x.get("full_name", "")),
+                _norm_name(x.get("nickname", "")),
+                _norm_name(x.get("abbreviation", "")),
+            }
+            for x in t
+        )
+        if exact_team and not (ranked and ranked[0][0] >= 0.95):
+            ranked = []
         suggestions: list[str] = []
         top = ranked[0][0] if ranked else 0.0
         out = {

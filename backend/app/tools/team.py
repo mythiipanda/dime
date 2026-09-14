@@ -414,7 +414,10 @@ def get_team_hub(team_id: str | int, season: str = SEASON) -> dict[str, Any]:
             pass
     return {
         "tool": "get_team_hub", "ok": True,
-        "rows": {"games": games, "roster": roster}, "meta": meta,
+        # Put the compact roster before the game log. Delegate evidence is
+        # deliberately capped; roster questions used to lose this field
+        # behind a long games list and summarize only the resolver payload.
+        "rows": {"roster": roster, "games": games}, "meta": meta,
     }
 
 
