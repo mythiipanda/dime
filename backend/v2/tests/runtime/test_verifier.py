@@ -163,3 +163,10 @@ def test_percent_metric_accepts_human_unit_not_internal_unit_name():
     claim = Claim(text="Boston's WIN PCT was 74.4%.", kind=ClaimKind.OBSERVED,
                   evidence_ids=["standings"])
     assert verify_mechanical(task(), report(claim), [evidence()]).status == VerificationStatus.PASS
+
+
+def test_bare_list_ordinals_are_not_factual_numerals():
+    from v2.runtime.verifier import _number_tokens
+
+    text = "1. Oklahoma City\n2. Boston\n3. Cleveland"
+    assert _number_tokens(text) == []
