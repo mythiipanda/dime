@@ -36,3 +36,12 @@ def test_runner_rejects_stale_server_revision():
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_local_fingerprint_matches_revision_endpoint_hash():
+    from pathlib import Path
+
+    from v2.api.routes import _executable_sha256
+
+    root = Path(__file__).resolve().parents[4]
+    assert RevisionFingerprint.current(root).executable_sha256 == _executable_sha256()

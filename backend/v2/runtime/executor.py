@@ -73,6 +73,9 @@ class PlanExecutor:
                     node.status = PlanStatus.SKIPPED
                     progressed = True
 
+            self._save_checkpoint(
+                run_id, task, plan, nodes, evidence_by_node, attempts, errors
+            )
             ready = [
                 node
                 for node in nodes.values()
@@ -85,6 +88,11 @@ class PlanExecutor:
             if ready:
                 progressed = True
                 batch = ready[: self._max_concurrency]
+                for node in batch:
+                    node.status = PlanStatus.RUNNING
+                self._save_checkpoint(
+                    run_id, task, plan, nodes, evidence_by_node, attempts, errors
+                )
                 tasks = [
                     asyncio.create_task(
                         self._run_node(node, task, evidence_by_node, attempts, errors)
@@ -172,7 +180,6 @@ class PlanExecutor:
         parent_evidence: Sequence[EvidenceEnvelope] = tuple(
             evidence_by_node[parent] for parent in node.depends_on
         )
-        node.status = PlanStatus.RUNNING
         for _ in range(node.max_attempts):
             attempts[node.id] += 1
             try:

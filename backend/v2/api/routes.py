@@ -13,7 +13,7 @@ from v2.projects.service import ProjectStore
 router = APIRouter()
 _BACKEND = Path(__file__).resolve().parents[2]
 _PROJECTS = ProjectStore(
-    os.environ.get("DIME_PROJECT_STORE", str(_BACKEND / "data" / "v2-projects.json"))
+    os.environ.get("DIME_PROJECT_STORE", str(_BACKEND / "data" / "v2-projects.sqlite3"))
 )
 
 

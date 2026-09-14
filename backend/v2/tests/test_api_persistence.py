@@ -144,3 +144,52 @@ def test_revision_and_feature_flagged_project_endpoints(
     project_id = created.json()["id"]
     assert client.get(f"/api/projects/{project_id}").json()["goal"] == "Celtics outlook"
     assert len(client.get("/api/projects").json()["projects"]) == 1
+
+
+def test_project_store_handles_independent_workers(tmp_path: Path) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+
+    path = tmp_path / "projects.sqlite3"
+
+    def create(index: int) -> str:
+        return ProjectStore(path).create(f"project {index}").id
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        ids = list(pool.map(create, range(20)))
+    assert len(set(ids)) == 20
+    assert len(ProjectStore(path).list()) == 20
+
+
+@pytest.mark.anyio
+async def test_cancelled_execution_resumes_started_node(tmp_path: Path) -> None:
+    import asyncio
+
+    checkpoints = FileCheckpointStore(tmp_path)
+    started = asyncio.Event()
+
+    class SlowCapability:
+        name = "fake"
+
+        async def execute(self, node, task, evidence):
+            started.set()
+            await asyncio.Event().wait()
+
+    executor = PlanExecutor({"fake": SlowCapability()}, checkpoint_store=checkpoints)
+    running = asyncio.create_task(executor.execute(_task(), _plan(), run_id="cancel"))
+    await started.wait()
+    running.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await running
+
+    checkpoint = checkpoints.load("cancel")
+    assert checkpoint is not None
+    assert checkpoint.plan.nodes[0].status == PlanStatus.RUNNING
+
+    calls: list[str] = []
+    resumed = PlanExecutor(
+        {"fake": FakeCapability("fake", lambda node: calls.append(node.id) or {"node": node.id})},
+        checkpoint_store=checkpoints,
+    )
+    result = await resumed.execute(_task(), _plan(), run_id="cancel")
+    assert calls == ["one", "two"]
+    assert all(node.status == PlanStatus.COMPLETE for node in result.plan.nodes)

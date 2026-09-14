@@ -23,8 +23,16 @@ class RevisionFingerprint:
         revision = subprocess.check_output(
             ["git", "rev-parse", "HEAD"], cwd=root, text=True
         ).strip()
-        executable = Path(os.environ.get("DIME_SERVER_EXECUTABLE", __file__))
-        return cls(revision, hashlib.sha256(executable.read_bytes()).hexdigest())
+        backend = root / "backend" if (root / "backend").is_dir() else root
+        digest = hashlib.sha256()
+        for directory in (backend / "app", backend / "v2"):
+            for path in sorted(directory.rglob("*")):
+                if path.is_file() and path.suffix in {".py", ".md"}:
+                    digest.update(path.relative_to(backend).as_posix().encode())
+                    digest.update(b"\0")
+                    digest.update(path.read_bytes())
+                    digest.update(b"\0")
+        return cls(revision, digest.hexdigest())
 
 
 @dataclass(frozen=True)
