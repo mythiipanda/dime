@@ -2655,6 +2655,54 @@ h1 {{ font-size: 22px; margin: 0; color: #1c1917; }}
 
 
 @tool
+def get_player_report(player: str | int, season: str = SEASON) -> dict[str, Any]:
+    """Multi-part player report: season line, advanced profile, shots, clutch."""
+    from .league import get_clutch
+
+    try:
+        pid = coerce_player_id(player)
+    except ValueError as exc:
+        return {"tool": "get_player_report", "ok": False, "error": str(exc)}
+    avg = get_season_averages.invoke({"player_id": pid, "season": season})
+    adv = get_advanced.invoke({"player": pid, "season": season})
+    shots = get_shot_zones.invoke({"player_id": pid, "season": season})
+    clutch = get_clutch.invoke({"scope": "player", "season": season,
+                                "player": str(player)})
+    if not avg.get("ok") or not avg.get("rows"):
+        return {"tool": "get_player_report", "ok": False,
+                "error": avg.get("error", "season line unavailable")}
+    line = avg["rows"][0]
+    name = str(line.get("PLAYER") or player)
+    a = adv.get("rows") if adv.get("ok") and isinstance(adv.get("rows"), dict) else None
+    z = shots.get("rows") if shots.get("ok") and isinstance(shots.get("rows"), list) else []
+    cr = clutch.get("rows") if clutch.get("ok") and isinstance(clutch.get("rows"), list) else []
+    crow = next((r for r in cr if str(r.get("PLAYER_NAME", "")).lower() == name.lower()), None)
+    top_zones = sorted(z, key=lambda r: float(r.get("share") or 0), reverse=True)[:3]
+    lines = [
+        f"{name}, {season}: {line.get('PPG'):g} PPG, {line.get('RPG'):g} RPG, "
+        f"{line.get('APG'):g} APG in {line.get('GP'):g} games.",
+    ]
+    if a:
+        lines.append(f"Advanced: {a.get('TS_PCT'):g}% true shooting, "
+                     f"{a.get('USG_PCT'):g}% usage, {a.get('PIE'):g} PIE, "
+                     f"{a.get('NET_RATING'):+g} net rating.")
+    if top_zones:
+        lines.append("Shot profile: " + "; ".join(
+            f"{r.get('zone')} {100 * float(r.get('share') or 0):.1f}% of shots "
+            f"at {100 * float(r.get('FG_PCT') or 0):.1f}% FG"
+            for r in top_zones) + ".")
+    if crow:
+        lines.append(f"Clutch: {crow.get('PTS')} points in {crow.get('GP')} games, "
+                     f"{100 * float(crow.get('FG_PCT') or 0):.1f}% FG, "
+                     f"plus-minus {int(crow.get('PLUS_MINUS') or 0):+d}.")
+    return {"tool": "get_player_report", "ok": True,
+            "rows": {"season_line": line, "advanced": a,
+                     "shot_profile": z, "clutch": crow},
+            "meta": {"season": season, "player": name,
+                     "deterministic_answer": "\n".join(lines)}}
+
+
+@tool
 def get_player_evaluation(player: str | int, season: str = SEASON) -> dict[str, Any]:
     """Grounded player tier, advanced profile, modeled value, and comps.
 

@@ -44,6 +44,7 @@ from .lineup import get_lineup_stats
 from .player import (
     compare_metrics,
     get_player_rankings,
+    get_player_report,
     get_player_evaluation,
     get_advanced,
     get_compare,
@@ -146,6 +147,7 @@ v1_tools: list[BaseTool] = [
     get_historical_leaders,
     get_comps,
     get_player_rankings,
+    get_player_report,
     get_player_evaluation,
     get_advanced,
     get_rest,
