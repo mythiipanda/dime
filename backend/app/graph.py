@@ -2216,8 +2216,8 @@ async def _triage_seed(question: str, primary: str, model: str,
                                 "WINS (count) leader as the answer; "
                                 "winning percentage is secondary.",
                         "deterministic_answer": (
-                            f"{_cb[0].get('TEAM_NAME')} led this comeback "
-                            f"proxy with {_cb[0].get('WINS')} wins when "
+                            f"{_cb[0].get('TEAM')} led this comeback "
+                            f"proxy with {_cb[0].get('W')} wins when "
                             "trailing at halftime. This is not a measure "
                             "of the largest in-game deficit overcome.")
                         if _cb else None}}

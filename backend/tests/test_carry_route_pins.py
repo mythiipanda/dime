@@ -179,5 +179,7 @@ def test_comeback_pin_carries_authoritative_answer():
     result = next(r for r in st["tool_results"]
                   if r.get("tool") == "get_standings_deep")
     answer = result["meta"].get("deterministic_answer", "")
+    assert answer.startswith(
+        "Minnesota Timberwolves led this comeback proxy with 17 wins")
     assert "trailing at halftime" in answer
     assert "not a measure of the largest" in answer
