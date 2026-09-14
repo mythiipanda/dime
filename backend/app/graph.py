@@ -2743,6 +2743,42 @@ async def _triage_seed(question: str, primary: str, model: str,
                 async for _e in _triage_terminal(question, state):
                     yield _e
             return
+    # F79: "best 5-man lineups in 2021-22?" went to the planner, which
+    # called get_lineup_leaders with the default (current) season and
+    # presented 2025-26 lineups as the 2021-22 answer (data-audit P1).
+    # Pin the leaderboard ask: asked season wins (the tool's hist
+    # fallback covers 2009-10+). Team-scoped lineup asks ("Lakers best
+    # lineup") stay with the planner's get_lineups path. Burn-down:
+    # lineup-leaderboard class.
+    if (re.search(r"\bbest\b|\btop\b", question, re.IGNORECASE)
+            and re.search(r"\b(?:five|5)[\s-]*man\b|\blineups?\b",
+                          question, re.IGNORECASE)
+            and not found_p and not _named_p and not found_t
+            and not is_trade and not is_cast and not is_compare):
+        _lseason = "2025-26"
+        _lm = re.search(r"\b(20\d\d)\s*-\s*(\d\d)\b", question)
+        if _lm:
+            _lseason = f"{_lm.group(1)}-{_lm.group(2)}"
+        _lh: dict[str, Any] = {}
+        async for _e in _triage_tool(
+                "get_lineup_leaders", {"season": _lseason}, state, _lh):
+            yield _e
+        _lout = _lh.get("out") or {}
+        if _result_status(_lout) == "ok":
+            _lrows = _lout.get("rows") or []
+            _ltop = _lrows[0] if _lrows and isinstance(_lrows[0], dict) else {}
+            _lname = str(_ltop.get("GROUP_NAME") or "").strip()
+            _lnet = _ltop.get("NET48")
+            if _lname and _lnet is not None:
+                _lout["meta"] = dict(_lout.get("meta") or {})
+                _lout["meta"]["deterministic_answer"] = (
+                    f"The best five-man lineup in the {_lseason} "
+                    f"season by net rating (minimum 100 minutes "
+                    f"together) was {_lname} at "
+                    f"{float(_lnet):+.1f} per 48 minutes.")
+            async for _e in _triage_terminal(question, state):
+                yield _e
+            return
     _bteam = _first_team_in(question)
     if not _bteam and state.get("history") and re.search(
             r"\b(their|theirs|them|they|that team|this team|it)\b",
