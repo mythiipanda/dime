@@ -1780,6 +1780,83 @@ def get_splits(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
                      "rows": len(rows), "cached": False}}
 
 
+
+
+def _hist_on_off_rows(pid: int, tid: int, season: str) -> list[dict[str, Any]]:
+    """F82: silver_on_off is current-season only. For 2009-10+ seasons,
+    derive on/off ratings from silver_hist_possessions (per-possession
+    lineups). Same {Stat, On, Off, On-Off} shape as the pbpstats pivot.
+    Garbage-time possessions excluded."""
+    try:
+        con = store.connect(read_only=True)
+    except Exception:
+        return []
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        if "silver_hist_possessions" not in tables:
+            return []
+        rows = con.execute(
+            """
+            WITH tp AS (
+              SELECT
+                CASE WHEN offense_team_id = ? THEN 'off' ELSE 'def' END
+                    AS side,
+                CASE WHEN (
+                    offense_team_id = ? AND ? IN (off_player_1, off_player_2,
+                        off_player_3, off_player_4, off_player_5)) OR (
+                    defense_team_id = ? AND ? IN (def_player_1, def_player_2,
+                        def_player_3, def_player_4, def_player_5))
+                    THEN 'on' ELSE 'off' END AS floor,
+                points,
+                count_as_possession = 'true' AS isposs
+              FROM silver_hist_possessions
+              WHERE _season = ?
+                AND (offense_team_id = ? OR defense_team_id = ?)
+                AND (garbage = 0 OR garbage IS NULL)
+            )
+            SELECT floor,
+              round(100.0 * sum(CASE WHEN side = 'off' THEN points END)
+                    / nullif(sum(CASE WHEN side = 'off' AND isposs
+                                 THEN 1 END), 0), 1) AS off_rtg,
+              round(100.0 * sum(CASE WHEN side = 'def' THEN points END)
+                    / nullif(sum(CASE WHEN side = 'def' AND isposs
+                                 THEN 1 END), 0), 1) AS def_rtg,
+              sum(CASE WHEN isposs THEN 1 ELSE 0 END) AS poss
+            FROM tp GROUP BY floor
+            """,
+            [tid, tid, pid, tid, pid, season, tid, tid],
+        ).fetchall()
+    except Exception:
+        try:
+            con.close()
+        except Exception:
+            pass
+        return []
+    try:
+        con.close()
+    except Exception:
+        pass
+    by_floor = {r[0]: r for r in rows}
+    on, off = by_floor.get("on"), by_floor.get("off")
+    if not on or not off or not on[3] or not off[3]:
+        return []
+    def _net(r):
+        return round((r[1] or 0) - (r[2] or 0), 1)
+    out = []
+    for stat, ov, fv in (
+        ("Offensive Rating", on[1], off[1]),
+        ("Defensive Rating", on[2], off[2]),
+        ("Net Rating", _net(on), _net(off)),
+    ):
+        if ov is None or fv is None:
+            continue
+        out.append({"Stat": stat, "On": f"{ov:.1f}", "Off": f"{fv:.1f}",
+                    "On-Off": f"{ov - fv:+.1f}"})
+    out.append({"Stat": "Possessions (volume)", "On": str(int(on[3])),
+                "Off": str(int(off[3])), "On-Off": ""})
+    return out
+
+
 @tool
 def get_on_off(player_id: str | int, team_id: str | int, season: str = SEASON) -> dict[str, Any]:
     """On and off splits for one player on one team. Possession level."""
@@ -1793,6 +1870,17 @@ def get_on_off(player_id: str | int, team_id: str | int, season: str = SEASON) -
         lambda: pbpstats.on_off(player_id, team_id, season), season,
         entity=f"player:{player_id}", ttl_s=TTL_PBPSTATS,
     )
+    if not rows:
+        # F82: historical seasons (2009-10+) from possession lineups.
+        hist = _hist_on_off_rows(int(player_id), int(team_id), str(season))
+        if hist:
+            return {"tool": "get_on_off", "ok": True, "rows": hist,
+                    "meta": {"source": "warehouse", "season": str(season),
+                             "coverage": "historical_on_off"}}
+        return {"tool": "get_on_off", "ok": False,
+                "error": (f"No on/off data on file for {season}; on/off "
+                          f"splits cover 2009-10 through the current "
+                          f"season.")}
     return {"tool": "get_on_off", "ok": True, "rows": rows, "meta": meta}
 
 

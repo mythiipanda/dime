@@ -2139,6 +2139,50 @@ async def _triage_seed(question: str, primary: str, model: str,
                 yield _e
             return
         # Unknown player or missing line: fall through to the planner.
+    # F82: "Curry on/off for the 2018-19 Warriors" - the planner never
+    # picked get_on_off for a historical season, ran text_to_sql, and
+    # refused (data-audit P1: earlier runs showed a wrong-season game
+    # log instead). Pin: one player + on/off phrasing -> get_on_off
+    # with the asked season; the tool's possession fallback covers
+    # 2009-10+. Team comes from the question, else the player's team
+    # that season from the warehouse. Burn-down: on/off class.
+    if (len(found_p) == 1
+            and re.search(r"\bon[/\s-]?off\b", question, re.IGNORECASE)
+            and not is_compare and not is_trade and not is_cast):
+        _oseason = "2025-26"
+        _om = re.search(r"\b(20\d\d)\s*-\s*(\d\d)\b", question)
+        if _om:
+            _oseason = f"{_om.group(1)}-{_om.group(2)}"
+        _oteam: Any = found_t[0] if found_t else ""
+        if not _oteam:
+            try:
+                from . import store as _ostore
+                _opid = int(str(found_p[0])) if str(found_p[0]).isdigit() else 0
+                if not _opid:
+                    from .tools._core import coerce_player_id as _cpid
+                    _opid = int(_cpid(found_p[0]))
+                _ohit = _ostore.read_frame(
+                    "silver_hist_player_seasons",
+                    "player_id = ? AND _season = ?", [_opid, _oseason])
+                if _ohit is not None and _ohit.height:
+                    _oteam = str(_ohit.to_dicts()[-1].get(
+                        "team_abbreviation") or "")
+            except Exception:
+                _oteam = ""
+        if _oteam:
+            _ooh: dict[str, Any] = {}
+            async for _e in _triage_tool(
+                    "get_on_off",
+                    {"player_id": found_p[0], "team_id": _oteam,
+                     "season": _oseason},
+                    state, _ooh):
+                yield _e
+            _ooout = _ooh.get("out") or {}
+            if _result_status(_ooout) == "ok":
+                async for _e in _triage_terminal(question, state):
+                    yield _e
+                return
+        # No team resolvable or tool miss: fall through to planner.
     # F81 (QA hammer, prod v84+): "Luka 2022-23 stats" names a season
     # but says "stats", not "season averages", so neither season-line
     # regex fired and the planner raced - 1/3 of runs went to RAPTOR
