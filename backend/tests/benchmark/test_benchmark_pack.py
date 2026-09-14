@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from assertions import (  # noqa: E402
     check_budget,
     check_text,
+    check_trajectory,
     evaluate_scenario,
     load_pack,
 )
@@ -69,3 +70,35 @@ def test_xfail_never_fails_pack_semantics():
                                         "tool_calls": 1,
                                         "streamed_chars": 1}], banned=[])
     assert res["xfail"] and not res["pass"]
+
+
+def test_check_trajectory_required_forbidden_and_duplicates():
+    turns = [{"tool_trace": [
+        {"name": "delegate_team", "agent": ""},
+        {"name": "resolve_entity", "agent": "team"},
+        {"name": "get_team_hub", "agent": "team"},
+    ]}]
+    assert check_trajectory(turns, {
+        "required_tools": ["delegate_team", "get_team_hub"],
+        "forbidden_tools": ["text_to_sql"],
+        "no_duplicate_calls": True,
+    }) == []
+    fails = check_trajectory(turns, {
+        "required_tools": ["get_standings"],
+        "forbidden_tools": ["resolve_entity"],
+    })
+    assert len(fails) == 2
+
+
+def test_evaluate_scenario_grades_trajectory_separately():
+    scenario = {
+        "id": "route", "chain": ["q"], "expect": {"contains": ["LeBron"]},
+        "trajectory": {"required_tools": ["get_team_hub"]},
+    }
+    result = evaluate_scenario(scenario, [{
+        "text": "LeBron", "seconds": 1, "tool_calls": 1,
+        "tool_trace": [{"name": "resolve_entity", "agent": "team"}],
+        "streamed_chars": 5,
+    }], banned=[])
+    assert not result["pass"]
+    assert result["fails"] == ["trajectory: missing required tool: get_team_hub"]

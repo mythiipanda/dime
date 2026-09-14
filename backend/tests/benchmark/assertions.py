@@ -33,6 +33,12 @@ def validate_pack(pack: dict[str, Any]) -> None:
         if has_turns:
             assert len(s["expect_turns"]) == len(s["chain"]), (
                 f"{s['id']}: expect_turns must match chain length")
+        assert isinstance(s.get("tags", []), list), f"{s['id']}: tags must be a list"
+        traj = s.get("trajectory", {})
+        assert isinstance(traj, dict), f"{s['id']}: trajectory must be an object"
+        for key in ("required_tools", "forbidden_tools"):
+            assert isinstance(traj.get(key, []), list), (
+                f"{s['id']}: trajectory.{key} must be a list")
 
 
 def check_text(text: str, expect: dict[str, Any],
@@ -63,6 +69,26 @@ def check_budget(turn: dict[str, Any], budget: dict[str, Any]) -> list[str]:
     return fails
 
 
+
+def check_trajectory(turns: list[dict[str, Any]],
+                     trajectory: dict[str, Any]) -> list[str]:
+    """Grade the observable tool path separately from answer content."""
+    names = [str(step.get("name", ""))
+             for turn in turns for step in turn.get("tool_trace", [])
+             if isinstance(step, dict)]
+    fails: list[str] = []
+    for name in trajectory.get("required_tools", []):
+        if name not in names:
+            fails.append(f"missing required tool: {name}")
+    for name in trajectory.get("forbidden_tools", []):
+        if name in names:
+            fails.append(f"called forbidden tool: {name}")
+    if trajectory.get("no_duplicate_calls"):
+        dupes = sorted({name for name in names if name and names.count(name) > 1})
+        if dupes:
+            fails.append(f"duplicate tool calls: {dupes}")
+    return fails
+
 def evaluate_scenario(scenario: dict[str, Any],
                       turns: list[dict[str, Any]],
                       banned: list[str]) -> dict[str, Any]:
@@ -85,6 +111,8 @@ def evaluate_scenario(scenario: dict[str, Any],
         for i, turn in enumerate(turns):
             for f in check_budget(turn, {"max_seconds": per_turn}):
                 fails.append(f"T{i + 1}: {f}")
+    for f in check_trajectory(turns, scenario.get("trajectory", {})):
+        fails.append(f"trajectory: {f}")
     if budget and turns:
         total = dict(turns[-1])
         total["seconds"] = sum(t.get("seconds", 0) for t in turns)

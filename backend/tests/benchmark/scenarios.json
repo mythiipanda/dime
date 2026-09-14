@@ -1,6 +1,6 @@
 {
- "version": 1,
- "notes": "Dime benchmark pack v2. v1 axes kept (capability content assertions + efficiency budgets); v2 folds the /tmp/battery.py sweep canon into text-graded scenarios: best record, scoring leader, compare/h2h figures, overpaid/value boards (league + team scope), record-when-plays, clutch, Finals walkthrough carry, playoff pronoun carry. Tool-name pinning stays in pytest/battery; this pack grades what the user reads.",
+ "version": 2,
+ "notes": "Dime trace-first benchmark pack v2. Content and efficiency grades are joined by optional trajectory assertions over the SSE tool path. Cases may carry tags and frozen as_of/season metadata; public fixtures contain product tests only, never raw user traces.",
  "banned_everywhere": [
   "try a narrower",
   "did not run",
@@ -619,6 +619,44 @@
     "max_seconds_per_turn": 60
    },
    "comment": "QA hammer P2 v79: compare phrasing missed the four-factors lane and routed to PREVIEW filler."
+  },
+  {
+   "id": "f83-current-lakers-roster",
+   "tags": [
+    "team",
+    "roster",
+    "routing",
+    "regression",
+    "current-season"
+   ],
+   "as_of": "2026-09-14",
+   "season": "2025-26",
+   "chain": [
+    "Who is on the Lakers roster right now?"
+   ],
+   "expect": {
+    "contains": [
+     "LeBron James",
+     "Luka Don"
+    ],
+    "not_contains": [
+     "Lionel Chalmers"
+    ]
+   },
+   "trajectory": {
+    "required_tools": [
+     "delegate_team",
+     "get_team_hub"
+    ],
+    "forbidden_tools": [
+     "text_to_sql"
+    ],
+    "no_duplicate_calls": true
+   },
+   "budget": {
+    "max_seconds": 45,
+    "max_tool_calls": 4
+   }
   }
  ]
 }
