@@ -32,10 +32,10 @@ class Runtime:
         self._semantic_verifier = semantic_verifier
         self._repairer = repairer
 
-    async def run(self, request: str) -> RuntimeResult:
+    async def run(self, request: str, *, run_id: str | None = None) -> RuntimeResult:
         task = await self._intake.understand(request)
         plan = await self._planner.plan(task)
-        execution = await self._executor.execute(task, plan)
+        execution = await self._executor.execute(task, plan, run_id=run_id)
         draft = await self._synthesizer.synthesize(task, execution.evidence)
         evidence = {item.evidence_id: item for item in execution.evidence}
         verification = await self._verify(task, draft, evidence)

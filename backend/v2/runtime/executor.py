@@ -4,6 +4,7 @@ import asyncio
 from collections.abc import Mapping, Sequence
 
 from v2.contracts import EvidenceEnvelope, Plan, PlanNode, PlanStatus, TaskSpec
+from v2.runtime.checkpoints import CheckpointStore, ExecutionCheckpoint
 from v2.runtime.interfaces import Capability
 from v2.runtime.models import ExecutionResult
 
@@ -15,6 +16,7 @@ class PlanExecutor:
         *,
         max_concurrency: int = 4,
         max_failures: int | None = None,
+        checkpoint_store: CheckpointStore | None = None,
     ) -> None:
         if max_concurrency < 1:
             raise ValueError("max_concurrency must be positive")
@@ -23,12 +25,39 @@ class PlanExecutor:
         self._capabilities = dict(capabilities)
         self._max_concurrency = max_concurrency
         self._max_failures = max_failures
+        self._checkpoint_store = checkpoint_store
 
-    async def execute(self, task: TaskSpec, plan: Plan) -> ExecutionResult:
-        nodes = {node.id: node.model_copy(deep=True) for node in plan.nodes}
-        evidence_by_node: dict[str, EvidenceEnvelope] = {}
-        attempts = {node_id: 0 for node_id in nodes}
-        errors: dict[str, list[str]] = {}
+    async def execute(
+        self, task: TaskSpec, plan: Plan, *, run_id: str | None = None
+    ) -> ExecutionResult:
+        checkpoint = (
+            self._checkpoint_store.load(run_id)
+            if self._checkpoint_store is not None and run_id is not None
+            else None
+        )
+        if checkpoint is not None:
+            if checkpoint.task != task:
+                raise ValueError("checkpoint task does not match requested task")
+            if [node.id for node in checkpoint.plan.nodes] != [
+                node.id for node in plan.nodes
+            ]:
+                raise ValueError("checkpoint plan does not match requested plan")
+            nodes = {
+                node.id: node.model_copy(deep=True) for node in checkpoint.plan.nodes
+            }
+            for node in nodes.values():
+                if node.status == PlanStatus.RUNNING:
+                    node.status = PlanStatus.PENDING
+            evidence_by_node = dict(checkpoint.evidence_by_node)
+            attempts = {
+                node_id: checkpoint.attempts.get(node_id, 0) for node_id in nodes
+            }
+            errors = {key: list(value) for key, value in checkpoint.errors.items()}
+        else:
+            nodes = {node.id: node.model_copy(deep=True) for node in plan.nodes}
+            evidence_by_node: dict[str, EvidenceEnvelope] = {}
+            attempts = {node_id: 0 for node_id in nodes}
+            errors: dict[str, list[str]] = {}
         failures = 0
 
         while any(node.status == PlanStatus.PENDING for node in nodes.values()):
@@ -56,13 +85,14 @@ class PlanExecutor:
             if ready:
                 progressed = True
                 batch = ready[: self._max_concurrency]
-                results = await asyncio.gather(
-                    *(
+                tasks = [
+                    asyncio.create_task(
                         self._run_node(node, task, evidence_by_node, attempts, errors)
-                        for node in batch
                     )
-                )
-                for node, envelope in results:
+                    for node in batch
+                ]
+                for completed in asyncio.as_completed(tasks):
+                    node, envelope = await completed
                     if envelope is None:
                         node.status = PlanStatus.FAILED
                         failures += 1
@@ -78,6 +108,9 @@ class PlanExecutor:
                         else:
                             node.status = PlanStatus.COMPLETE
                             evidence_by_node[node.id] = envelope
+                    self._save_checkpoint(
+                        run_id, task, plan, nodes, evidence_by_node, attempts, errors
+                    )
 
             if self._max_failures is not None and failures >= self._max_failures:
                 for node in nodes.values():
@@ -97,6 +130,29 @@ class PlanExecutor:
             ],
             attempts=attempts,
             errors=errors,
+        )
+
+    def _save_checkpoint(
+        self,
+        run_id: str | None,
+        task: TaskSpec,
+        original_plan: Plan,
+        nodes: Mapping[str, PlanNode],
+        evidence_by_node: Mapping[str, EvidenceEnvelope],
+        attempts: Mapping[str, int],
+        errors: Mapping[str, list[str]],
+    ) -> None:
+        if self._checkpoint_store is None or run_id is None:
+            return
+        self._checkpoint_store.save(
+            ExecutionCheckpoint(
+                run_id=run_id,
+                task=task,
+                plan=Plan(nodes=[nodes[node.id] for node in original_plan.nodes]),
+                evidence_by_node=dict(evidence_by_node),
+                attempts=dict(attempts),
+                errors={key: list(value) for key, value in errors.items()},
+            )
         )
 
     async def _run_node(
