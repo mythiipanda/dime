@@ -76,3 +76,25 @@ def test_numeral_provenance_records_violations():
 def test_numeral_provenance_handles_empty_state():
     assert _verify_draft_numerals({}, "") == []
     assert _verify_draft_numerals({"tool_results": None}, None) == []
+
+
+def test_numeral_provenance_accepts_percent_scaling_and_rounding():
+    state = {"tool_results": [{"rows": {"probability": 0.548,
+                                         "margin": 1.98}}]}
+    assert _verify_draft_numerals(
+        state, "Boston has a 54.8% chance and is favored by 2 points.") == []
+
+
+def test_presentation_does_not_ship_unverified_figures_clean():
+    async def _go():
+        state = {"question": "rank them", "analysis": "Wrong has 99.9 points.",
+                 "tool_results": [{"tool": "x", "ok": True,
+                                   "rows": [{"PLAYER": "Right", "PTS": 10}]}],
+                 "calls_made": [], "history": [], "primary": "p", "model": "m"}
+        async for event in presentation_agent(state):
+            if event.get("type") == "final_answer":
+                return event["data"]["text"]
+
+    answer = asyncio.run(_go())
+    assert "99.9" not in answer
+    assert "could not verify every figure" in answer
