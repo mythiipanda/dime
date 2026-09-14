@@ -3488,6 +3488,7 @@ FRESHNESS_RULES: dict[str, tuple[str, float | None]] = {
     "silver_player_season": ("static seed (bbref per-game)", None),
     "silver_zone_splits": ("static seed (bbref shooting)", None),
     "silver_team_games": ("daily in season", 36 * 3600),
+    "silver_four_factors_team": ("derived from silver_team_games (offline build)", None),
     "silver_boxscores": ("daily in season", 36 * 3600),
     "silver_shots": ("daily in season", 36 * 3600),
     "silver_playoff_inactive": ("static seed (bbref inactive listings)", None),
