@@ -10,6 +10,7 @@ from v2.adapters import (
     build_envelope,
     call_capability,
 )
+from v2.adapters import coverage
 from v2.contracts import EntityRef, EvidenceEnvelope
 
 
@@ -99,9 +100,10 @@ def test_registry_covers_initial_pack():
     expected = {
         "entity_resolution", "standings", "team_totals", "qualified_leaders",
         "team_ratings", "roster", "player_report", "player_comparison",
-        "metric_coverage", "shots", "shooting_efficiency", "on_off",
-        "lineups", "clutch", "playoffs", "trades", "contracts", "game_logs",
-        "four_factors", "team_four_factors",
+        "metric_adjudication", "metric_coverage", "shots",
+        "shooting_efficiency", "on_off", "lineups", "clutch", "playoffs",
+        "trades", "contracts", "game_logs", "four_factors",
+        "team_four_factors",
     }
     assert set(CAPABILITIES) == expected
     tool_names = [c.tool_name for c in CAPABILITIES.values()]
@@ -258,3 +260,62 @@ def test_sync_tool_runs_off_event_loop():
         return tool.thread_id
 
     assert asyncio.run(run()) != loop_thread
+
+
+COVERAGE_TOOLS = {"metric_coverage": coverage.metric_coverage}
+
+
+def test_metric_coverage_proprietary_one_player():
+    env = call_capability(
+        "metric_coverage",
+        {"metrics": ["EPM", "LEBRON"], "player": "Jalen Brunson",
+         "season": "2025-26"},
+        tools=COVERAGE_TOOLS)
+    assert env.capability == "metric_coverage"
+    assert env.source == "v1:metric_coverage:warehouse coverage"
+    assert env.season == "2025-26"
+    joined = " ".join(env.warnings)
+    assert "not available" in joined
+    assert "never estimates" in joined
+    assert "Jalen Brunson" in joined
+    assert all(r["player"] == "Jalen Brunson" for r in env.rows)
+    assert all(r["status"] == "unavailable" for r in env.rows)
+    answer = env.rows and env.warnings[0] or ""
+    assert "LeBron James" not in answer
+
+
+def test_metric_coverage_available_metric_names_table():
+    env = call_capability(
+        "metric_coverage", {"metrics": ["RAPM-lite", "true shooting"]},
+        tools=COVERAGE_TOOLS)
+    by_metric = {r["metric"]: r for r in env.rows}
+    assert by_metric["RAPM-lite"]["status"] == "available"
+    assert "silver_rapm" in by_metric["RAPM-lite"]["note"]
+    assert by_metric["true shooting"]["status"] == "available"
+    assert env.warnings == []
+
+
+def test_metric_coverage_string_metrics_and_unknown():
+    env = call_capability(
+        "metric_coverage", {"metrics": "EPM, RAPM, plus/minus"},
+        tools=COVERAGE_TOOLS)
+    statuses = {r["metric"]: r["status"] for r in env.rows}
+    assert statuses["EPM"] == "unavailable"
+    assert statuses["RAPM-lite"] == "available"
+    assert statuses["plus/minus"] == "unknown"
+    assert any("not a recognized metric" in w for w in env.warnings)
+
+
+def test_metric_coverage_without_player_or_season():
+    env = call_capability("metric_coverage", {"metrics": ["DARKO"]},
+                          tools=COVERAGE_TOOLS)
+    assert env.season is None
+    assert "player" not in env.rows[0]
+    assert "not available" in env.warnings[0]
+
+
+def test_default_registry_includes_native_coverage_tool():
+    pytest.importorskip("app.tools")
+    from v2.adapters.core import _default_tools
+
+    assert "metric_coverage" in _default_tools()

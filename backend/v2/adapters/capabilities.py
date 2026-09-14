@@ -95,7 +95,8 @@ _LIST = [
     Capability(name="roster", tool_name="get_team_hub"),
     Capability(name="player_report", tool_name="get_player_report"),
     Capability(name="player_comparison", tool_name="get_compare"),
-    Capability(name="metric_coverage", tool_name="compare_metrics"),
+    Capability(name="metric_adjudication", tool_name="compare_metrics"),
+    Capability(name="metric_coverage", tool_name="metric_coverage"),
     Capability(
         name="shots",
         tool_name="search_shots",

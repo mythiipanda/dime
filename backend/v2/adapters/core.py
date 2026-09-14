@@ -98,7 +98,11 @@ def build_envelope(
 def _default_tools() -> dict[str, Any]:
     from app.tools import v1_tools
 
-    return {tool.name: tool for tool in v1_tools}
+    from . import coverage
+
+    registry = {tool.name: tool for tool in v1_tools}
+    registry["metric_coverage"] = coverage.metric_coverage
+    return registry
 
 
 async def acall_capability(
