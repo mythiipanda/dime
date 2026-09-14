@@ -2449,3 +2449,60 @@ h1 {{ font-size: 22px; margin: 0; color: #1c1917; }}
             "rows": {"path": str(out_path), "players": [name_a, name_b],
                      "stats": [_line(p) for p in players]},
             "meta": {"season": season, "format": "html"}}
+
+
+@tool
+def get_player_rankings(n: int = 15, season: str = SEASON) -> dict[str, Any]:
+    """Overall top-N players board ranked by the warehouse impact metric.
+
+    Current seasons (RAPM-lite coverage, e.g. 2025-26): rank by RAPM-lite
+    with a possessions floor. Historical seasons 2014-15..2021-22: rank by
+    FiveThirtyEight WAR. Other seasons return an honest coverage note -
+    never a single-stat board presented as an overall ranking.
+    """
+    try:
+        n = max(1, min(int(n), 50))
+    except (TypeError, ValueError):
+        n = 15
+    meta: dict[str, Any] = {"season": season, "n": n}
+    try:
+        r = _read_df(
+            "SELECT name, rapm, possessions FROM silver_rapm"
+            " WHERE _season = ? AND rapm IS NOT NULL"
+            " AND possessions >= 2000"
+            " ORDER BY rapm DESC LIMIT ?",
+            [season, n],
+        )
+        if r:
+            rows = [{"rank": i + 1, "player": row.get("name"),
+                     "rapm": round(float(row.get("rapm")), 2),
+                     "possessions": int(row.get("possessions") or 0)}
+                    for i, row in enumerate(r)]
+            meta["metric"] = "rapm_lite"
+            return {"tool": "get_player_rankings", "ok": True,
+                    "rows": rows, "meta": meta}
+    except Exception:
+        pass
+    try:
+        r = _read_df(
+            "SELECT PLAYER_NAME, RAPTOR_TOTAL, WAR_TOTAL"
+            " FROM silver_raptor_player WHERE _season = ?"
+            " AND WAR_TOTAL IS NOT NULL"
+            " ORDER BY WAR_TOTAL DESC LIMIT ?",
+            [season, n],
+        )
+        if r:
+            rows = [{"rank": i + 1, "player": row.get("PLAYER_NAME"),
+                     "war": round(float(row.get("WAR_TOTAL")), 1),
+                     "raptor": round(float(row.get("RAPTOR_TOTAL") or 0), 1)}
+                    for i, row in enumerate(r)]
+            meta["metric"] = "raptor_war"
+            return {"tool": "get_player_rankings", "ok": True,
+                    "rows": rows, "meta": meta}
+    except Exception:
+        pass
+    return {"tool": "get_player_rankings", "ok": False,
+            "error": (f"No overall impact metric covers {season}. "
+                      "RAPM-lite covers 2025-26; FiveThirtyEight RAPTOR "
+                      "covers 2014-15 through 2021-22."),
+            "meta": meta}

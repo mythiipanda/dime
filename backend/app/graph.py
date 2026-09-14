@@ -1632,6 +1632,76 @@ async def _triage_seed(question: str, primary: str, model: str,
             async for _e in _triage_terminal(question, state):
                 yield _e
         return
+    # F69 (2026-09-13 prod QA, Tony): "in your view who are the top 15
+    # players in the league" was planner-routed to a STEALS leaderboard
+    # presented as an overall ranking. Overall top-N player asks (no
+    # single-stat keyword) pin to get_player_rankings: RAPM-lite for
+    # current coverage, FiveThirtyEight WAR for 2014-15..2021-22, an
+    # honest coverage note elsewhere. The deterministic answer names the
+    # metric basis (v67 law: "in your view" still answers from the
+    # payload). Burn-down: stat-qualified top-N asks keep get_leaders;
+    # team top-N keeps the F66 pin above.
+    _rk_m = re.search(
+        r"\btop\s*(\d+)\s+(?:best\s+)?players?\b|"
+        r"\bbest\s+(\d+)\s+players?\b|"
+        r"\btop\s+players?\s+in\s+the\s+(?:league|nba)\b|"
+        r"\bbest\s+players?\s+in\s+the\s+(?:league|nba)\b",
+        question, re.IGNORECASE)
+    if (_rk_m and not found_p and not found_t
+            and not re.search(
+                r"\bscor\w*|\bpoints?\b|\brebounds?\w*\b|"
+                r"\bassists?\b|\bsteals?\b|\bblocks?\b|"
+                r"\bthrees?\b|\b3-?pt|\bshoot\w*\b|"
+                r"\bdefen[cs]\w*\b|\brookie|\bclutch\b|"
+                r"\bhustle\b|\bdunk\w*\b",
+                question, re.IGNORECASE)
+            and not is_trade and not is_cast):
+        _rk_n = int(next((g for g in _rk_m.groups() if g), "15"))
+        _rkseason = "2025-26"
+        _rkm = re.search(r"(20\d\d)\s*-\s*(\d\d)", question)
+        if _rkm:
+            _rkseason = f"{_rkm.group(1)}-{_rkm.group(2)}"
+        _rkh: dict[str, Any] = {}
+        async for _e in _triage_tool(
+                "get_player_rankings", {"n": _rk_n, "season": _rkseason},
+                state, _rkh):
+            yield _e
+        _rkout = _rkh.get("out") or {}
+        if _result_status(_rkout) == "ok" and _rkout.get("rows"):
+            _rkmetric = (_rkout.get("meta") or {}).get("metric")
+            if _rkmetric == "rapm_lite":
+                _rkbasis = ("Ranked by RAPM-lite (regularized "
+                            "plus-minus), the impact metric in the "
+                            "warehouse; 2,000-possession minimum")
+                _rkrows_txt = "\n".join(
+                    f"{r['rank']}. {r['player']} (RAPM {r['rapm']})"
+                    for r in _rkout["rows"])
+            else:
+                _rkbasis = ("Ranked by FiveThirtyEight WAR "
+                            "(RAPTOR vintage)")
+                _rkrows_txt = "\n".join(
+                    f"{r['rank']}. {r['player']} "
+                    f"({r['war']} WAR, {r['raptor']} RAPTOR)"
+                    for r in _rkout["rows"])
+            _rkdet = (f"Top {len(_rkout['rows'])} players, "
+                      f"{_rkseason} season. {_rkbasis}:\n"
+                      + _rkrows_txt)
+            _rkout.setdefault("meta", {})["deterministic_answer"] = _rkdet
+            if state["tool_results"] and state["tool_results"][-1] is _rkout:
+                state["tool_results"][-1] = {
+                    "tool": "get_player_rankings",
+                    "rows": _rkout["rows"], "meta": _rkout["meta"]}
+            async for _e in _triage_terminal(question, state):
+                yield _e
+        else:
+            # Uncovered season: ship the honest coverage note from the
+            # tool error instead of the generic refusal.
+            _rkerr = (_rkout.get("error") or
+                      "No overall impact metric covers that season.")
+            state["analysis"] = str(_rkerr)
+            async for _e in _triage_terminal(question, state):
+                yield _e
+        return
     # Tony live find (11:54 AM): team-TOTAL counting-stat asks ("which
     # team leads in total assists this season?") dead-ended honestly -
     # get_leaders is player-level and the league desk said team totals
@@ -1836,8 +1906,19 @@ async def _triage_seed(question: str, primary: str, model: str,
     # call, deterministic answer from the payload; the scout-desk
     # enrichment from the former fast-path is traded for numerals that
     # cannot drift.
-    if (re.search(r"\bhead[- ]to[- ]head\b|\bh2h\b|\bcompare\b|"
-                  r"\bvs\.?\b|\bversus\b", question, re.IGNORECASE)
+    # F68 (2026-09-13 prod QA): comparative FOLLOW-UPS carry no compare
+    # keyword at all - "who has a better true shooting percentage
+    # between them?" resolved both players via carry and still fell to
+    # the planner, which flaked to the no-data refusal with an empty
+    # supervisor note. When exactly two players are in scope (named or
+    # carried), comparative adjectives are a compare ask.
+    _two_player_comparative = bool(re.search(
+        r"\bbetter\b|\bworse\b|\bhigher\b|\blower\b|\bbest\b|"
+        r"\bstronger\b|\bmore efficient\b|\befficient\b",
+        question, re.IGNORECASE)) and len(found_p) == 2
+    if ((re.search(r"\bhead[- ]to[- ]head\b|\bh2h\b|\bcompare\b|"
+                   r"\bvs\.?\b|\bversus\b", question, re.IGNORECASE)
+         or _two_player_comparative)
             and len(found_p) == 2
             and not re.search(r"\bimpact\b|\brapm\b|on.off",
                               question, re.IGNORECASE)
@@ -2319,9 +2400,71 @@ async def _triage_seed(question: str, primary: str, model: str,
     # law). Player four-factors keep get_four_factors (found_p guard).
     # Burn-down: team-scope only; player on/off four-factors and
     # four-factors inside broader compares stay with the planner.
+    # QA hammer P2 (2026-09-13 v79 retest): "compare OKC and Detroit by
+    # four factors" carries "compare", so the old gate skipped the lane
+    # and routed to PREVIEW filler. Two-team four-factors compares run
+    # one call per team and ship a deterministic side-by-side.
     if (re.search(r"\bfour[\s-]*factors?\b", question, re.IGNORECASE)
             and not found_p
-            and not is_compare and not is_trade and not is_cast):
+            and not is_trade and not is_cast):
+        from .tools._core import SEASON as _FFCUR
+
+        def _ffpct(v: object) -> str:
+            # QA hammer P3: table values are raw fractions (0.5613);
+            # prose must render percents (56.1%) like the check-lines.
+            try:
+                return f"{float(v) * 100:.1f}%"
+            except (TypeError, ValueError):
+                return "?"
+
+        def _ffrate(v: object) -> str:
+            try:
+                return f"{float(v):.3f}"
+            except (TypeError, ValueError):
+                return "?"
+
+        if len(found_t) >= 2:
+            _cmprows: list[dict[str, Any]] = []
+            for _t in found_t[:2]:
+                _ch: dict[str, Any] = {}
+                async for _e in _triage_tool(
+                        "get_team_four_factors", {"team": _t}, state, _ch):
+                    yield _e
+                _co = _ch.get("out") or {}
+                if _result_status(_co) == "ok" and _co.get("rows"):
+                    _cmprows.extend(_co["rows"])
+            if len(_cmprows) >= 2:
+                _ca, _cb = _cmprows[0], _cmprows[1]
+                _clines = [
+                    f"This data covers the {_FFCUR} season.",
+                    f"{_ca['TEAM']} vs {_cb['TEAM']} four factors:",
+                    (f"- eFG%: {_ca['TEAM']} {_ffpct(_ca['EFG_PCT'])} vs "
+                     f"{_cb['TEAM']} {_ffpct(_cb['EFG_PCT'])}"),
+                    (f"- TOV%: {_ca['TEAM']} {_ffpct(_ca['TOV_PCT'])} vs "
+                     f"{_cb['TEAM']} {_ffpct(_cb['TOV_PCT'])}"),
+                    (f"- ORB%: {_ca['TEAM']} {_ffpct(_ca['ORB_PCT'])} vs "
+                     f"{_cb['TEAM']} {_ffpct(_cb['ORB_PCT'])}"),
+                    (f"- FT rate: {_ca['TEAM']} {_ffrate(_ca['FT_RATE'])} "
+                     f"vs {_cb['TEAM']} {_ffrate(_cb['FT_RATE'])}"),
+                ]
+                try:
+                    _ea = float(_ca["EFG_PCT"]) - float(_ca["TOV_PCT"])
+                    _eb = float(_cb["EFG_PCT"]) - float(_cb["TOV_PCT"])
+                    _cw = _ca["TEAM"] if _ea >= _eb else _cb["TEAM"]
+                    _clines.append(
+                        f"Verdict: {_cw} holds the shooting/turnover "
+                        f"edge.")
+                except (TypeError, ValueError, KeyError):
+                    pass
+                _cmeta = {"source": "warehouse",
+                          "deterministic_answer": "\n".join(_clines)}
+                state["tool_results"].append({
+                    "tool": "get_team_four_factors",
+                    "rows": _cmprows, "meta": _cmeta})
+                state["calls_made"].append("get_team_four_factors")
+                async for _e in _triage_terminal(question, state):
+                    yield _e
+            return
         _ffh: dict[str, Any] = {}
         _ffargs: dict[str, Any] = {}
         if found_t:
@@ -2332,17 +2475,19 @@ async def _triage_seed(question: str, primary: str, model: str,
         _ffout = _ffh.get("out") or {}
         if _result_status(_ffout) == "ok" and _ffout.get("rows"):
             _frows = _ffout["rows"]
-            from .tools._core import SEASON as _FFCUR
             if len(_frows) == 1:
                 _r0 = _frows[0]
                 _ffdet = (
                     f"This data covers the {_FFCUR} season.\n"
-                    f"{_r0['TEAM']} four factors: eFG% {_r0['EFG_PCT']}, "
-                    f"TOV% {_r0['TOV_PCT']}, ORB% {_r0['ORB_PCT']}, "
-                    f"FT rate {_r0['FT_RATE']}. Defense: opponent eFG% "
-                    f"{_r0['OPP_EFG_PCT']}, forced TOV% "
-                    f"{_r0['OPP_TOV_PCT']}, DRB% {_r0['DRB_PCT']}, "
-                    f"opponent FT rate {_r0['OPP_FT_RATE']}. "
+                    f"{_r0['TEAM']} four factors: eFG% "
+                    f"{_ffpct(_r0['EFG_PCT'])}, "
+                    f"TOV% {_ffpct(_r0['TOV_PCT'])}, "
+                    f"ORB% {_ffpct(_r0['ORB_PCT'])}, "
+                    f"FT rate {_ffrate(_r0['FT_RATE'])}. Defense: "
+                    f"opponent eFG% {_ffpct(_r0['OPP_EFG_PCT'])}, "
+                    f"forced TOV% {_ffpct(_r0['OPP_TOV_PCT'])}, "
+                    f"DRB% {_ffpct(_r0['DRB_PCT'])}, "
+                    f"opponent FT rate {_ffrate(_r0['OPP_FT_RATE'])}. "
                     f"Computed from {_r0['GP']} team game rows "
                     f"(record {_r0['W']}-{_r0['GP'] - _r0['W']}).")
             else:
@@ -2350,8 +2495,8 @@ async def _triage_seed(question: str, primary: str, model: str,
                     f"This data covers the {_FFCUR} season.\n"
                     "League four-factors board (offense): "
                     + "; ".join(
-                        f"{r['TEAM']} eFG% {r['EFG_PCT']}, "
-                        f"TOV% {r['TOV_PCT']}"
+                        f"{r['TEAM']} eFG% {_ffpct(r['EFG_PCT'])}, "
+                        f"TOV% {_ffpct(r['TOV_PCT'])}"
                         for r in _frows[:5]) + ".")
             _ffout.setdefault("meta", {})["deterministic_answer"] = _ffdet
             if state["tool_results"] and \
