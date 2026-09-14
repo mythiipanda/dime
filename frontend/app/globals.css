@@ -493,3 +493,19 @@ body {
     min-height: 40px;
   }
 }
+
+/* Scrollbars: thin, transparent until hover - portfolio pattern,
+   themed via color-mix on the foreground ink so dark/light both work. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--color-ink-black) 18%, transparent) transparent;
+}
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: transparent; border-radius: 100px; }
+:hover::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--color-ink-black) 15%, transparent);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklab, var(--color-ink-black) 25%, transparent);
+}

@@ -262,6 +262,11 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
   const [atBottom, setAtBottom] = useState(true);
   const endRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  // Composer auto-grow: after a send clears the input (no onChange
+  // fires), snap the height back to the collapsed rows height.
+  useEffect(() => {
+    if (!input && inputRef.current) inputRef.current.style.height = "";
+  }, [input]);
   const abort = useRef<AbortController | null>(null);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -475,14 +480,19 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                 fontFamily: "inherit",
                 background: "transparent",
                 minHeight: 48,
-                maxHeight: 180,
+                maxHeight: 240,
                 overflowY: "auto",
                 boxSizing: "border-box",
               }}
               value={input}
               rows={2}
               autoFocus
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                setInput(e.target.value);
+                const el = e.target;
+                el.style.height = "auto";
+                el.style.height = Math.min(el.scrollHeight, 240) + "px";
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
@@ -810,12 +820,17 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                     resize: "none",
                     fontFamily: "inherit",
                     background: "transparent",
-                    maxHeight: 160,
+                    maxHeight: 200,
                     overflowY: "auto",
                   }}
                   value={input}
                   rows={1}
-                  onChange={(e) => setInput(e.target.value)}
+                  onChange={(e) => {
+                    setInput(e.target.value);
+                    const el = e.target;
+                    el.style.height = "auto";
+                    el.style.height = Math.min(el.scrollHeight, 200) + "px";
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !e.shiftKey) {
                       e.preventDefault();
