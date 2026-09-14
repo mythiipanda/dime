@@ -388,6 +388,30 @@ def get_team_hub(team_id: str | int, season: str = SEASON) -> dict[str, Any]:
         lambda: nba_stats.team_roster(team_id, season), season,
         entity=f"team:{team_id}", ttl_s=TTL_ROSTER,
     )
+    if not roster or "PLAYER" not in (roster[0] if roster else {}):
+        # F83: silver_rosters was seeded from the CommonTeamRoster
+        # COACHES dataset (frames[1] - "Lakers roster" answered with
+        # assistant coach Lionel Chalmers, data-audit P1). Both live
+        # sources block our IPs, so derive the roster from
+        # silver_player_season: every player with minutes for the team
+        # this season. Honest framing: appeared-this-season list.
+        try:
+            from .. import store as _store
+            from .gamelog import _team_abbr as _tabbr_fn
+            abbr, _full = _tabbr_fn(team_id)
+            frame = _store.read_frame(
+                "silver_player_season", '"TEAM" = ? AND _season = ?',
+                [abbr, season])
+            if frame is not None and frame.height:
+                roster = sorted(
+                    ({"PLAYER": r.get("PLAYER"), "TEAM": r.get("TEAM"),
+                      "AGE": r.get("AGE"), "GP": r.get("GP"),
+                      "PPG": r.get("PPG"), "RPG": r.get("RPG"),
+                      "APG": r.get("APG")}
+                     for r in frame.to_dicts()),
+                    key=lambda r: -(r.get("GP") or 0))
+        except Exception:
+            pass
     return {
         "tool": "get_team_hub", "ok": True,
         "rows": {"games": games, "roster": roster}, "meta": meta,
