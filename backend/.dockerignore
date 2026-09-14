@@ -3,4 +3,4 @@
 __pycache__/
 *.pyc
 .pytest_cache/
-/scripts
+# /scripts unignored: Dockerfile bakes four-factors via scripts/build_team_four_factors.py
