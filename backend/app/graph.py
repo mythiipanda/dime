@@ -3858,7 +3858,29 @@ def _flatten_tables(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
             clean = _sanitize(_with_title(r))
             if clean is not None:
                 flat.append(clean)
-    return flat
+    # F71 empty-canvas fix: tables drive the artifact cards and the canvas.
+    # Two shapes rendered empty or junk for many prompts:
+    # 1. rows None/[] (empty supervisor notes, null stat payloads) became
+    #    cards that open to "No rows returned for this view".
+    # 2. single-object rows (one player's advanced line) hit table views
+    #    that only render arrays, so real data showed as empty.
+    # Drop artifacts with nothing to show (keeping verdict/deterministic
+    # answer carriers) and wrap flat dict rows into one-row tables.
+    # Structured payloads (compare {a, b}, nested views) pass through.
+    out_flat: list[dict[str, Any]] = []
+    for t in flat:
+        rows = t.get("rows")
+        if (isinstance(rows, dict) and rows and not {"a", "b"} <= set(rows)
+                and all(not isinstance(v, (dict, list)) for v in rows.values())):
+            t["rows"] = [rows]
+            rows = t["rows"]
+        empty = rows is None or (isinstance(rows, (list, dict)) and not rows)
+        if empty and not t.get("verdict") and not (
+                isinstance(t.get("meta"), dict)
+                and t["meta"].get("deterministic_answer")):
+            continue
+        out_flat.append(t)
+    return out_flat
 
 
 def _numbers(text: str) -> list[str]:
