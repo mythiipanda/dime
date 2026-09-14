@@ -106,3 +106,35 @@ class EvidenceIndex:
     def values(self, evidence_ids: Iterable[str]) -> Iterator[EvidenceValue]:
         for item in self.require(evidence_ids):
             yield from iter_values(item)
+
+@dataclass(frozen=True)
+class SourceIntegrityIssue:
+    code: str
+    message: str
+
+
+def source_integrity_issues(
+    evidence: EvidenceEnvelope,
+    *,
+    required_season: str | None = None,
+    expected_teams: Mapping[str, str] | None = None,
+) -> list[SourceIntegrityIssue]:
+    issues: list[SourceIntegrityIssue] = []
+    if required_season and evidence.season and evidence.season != required_season:
+        issues.append(SourceIntegrityIssue(
+            "season_mismatch",
+            f"evidence season {evidence.season} does not match {required_season}"))
+    expected = {name.casefold(): team.upper()
+                for name, team in (expected_teams or {}).items()}
+    rows = evidence.rows if isinstance(evidence.rows, list) else [evidence.rows]
+    for row in rows:
+        if not isinstance(row, Mapping):
+            continue
+        name = str(row.get("PLAYER_NAME") or row.get("player") or "").strip()
+        team = str(row.get("TEAM") or row.get("team") or "").strip().upper()
+        wanted = expected.get(name.casefold())
+        if name and team and wanted and team != wanted:
+            issues.append(SourceIntegrityIssue(
+                "team_conflict",
+                f"{name} is {team} in evidence but {wanted} in season context"))
+    return issues

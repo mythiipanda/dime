@@ -26,3 +26,20 @@ def test_index_resolves_nested_values_and_ancestors():
 def test_index_rejects_invalid_lineage(items, message):
     with pytest.raises(ValueError, match=message):
         EvidenceIndex(items)
+
+
+def test_source_integrity_rejects_salary_vintage_and_team_conflict():
+    from v2.domain.evidence import source_integrity_issues
+
+    salary = EvidenceEnvelope(
+        evidence_id="salary", capability="contracts", source="bref",
+        observed_at=datetime(2026, 9, 14), season="2026-27",
+        rows=[{"PLAYER_NAME": "LeBron James", "TEAM": "PHI",
+               "SALARY": 3876529}])
+    issues = source_integrity_issues(
+        salary, required_season="2025-26",
+        expected_teams={"LeBron James": "LAL"})
+    assert [issue.code for issue in issues] == [
+        "season_mismatch", "team_conflict"]
+    assert "2026-27" in issues[0].message
+    assert "PHI" in issues[1].message and "LAL" in issues[1].message
