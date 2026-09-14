@@ -31,6 +31,7 @@ def stream_turn(base: str, question: str, thread: str,
         headers={"Content-Type": "application/json"})
     t0 = time.time()
     text, tool_calls, streamed = "", 0, 0
+    tool_trace: list[dict[str, str]] = []
     with urllib.request.urlopen(req, timeout=timeout_s) as resp:
         event = None
         for raw in resp:
@@ -47,6 +48,10 @@ def stream_turn(base: str, question: str, thread: str,
                     text = str(data.get("text", ""))
                 elif event == "tool_call":
                     tool_calls += 1
+                    tool_trace.append({
+                        "name": str(data.get("name", "")),
+                        "agent": str(data.get("agent", "")),
+                    })
                 elif event in ("token", "thought_token"):
                     streamed += len(str(data.get("text", "")))
                 event = None
@@ -54,7 +59,8 @@ def stream_turn(base: str, question: str, thread: str,
                 # final_answer seen; keep reading until stream closes
                 pass
     return {"text": text, "seconds": round(time.time() - t0, 2),
-            "tool_calls": tool_calls, "streamed_chars": streamed}
+            "tool_calls": tool_calls, "tool_trace": tool_trace,
+            "streamed_chars": streamed}
 
 
 def run_pack(base: str, pack: dict, only: str | None) -> dict:
@@ -71,7 +77,7 @@ def run_pack(base: str, pack: dict, only: str | None) -> dict:
             except Exception as exc:  # network/timeout: record, grade as fail
                 turns.append({"text": f"<runner error: {exc}>",
                               "seconds": 0.0, "tool_calls": 0,
-                              "streamed_chars": 0})
+                              "tool_trace": [], "streamed_chars": 0})
                 break
         results.append(evaluate_scenario(s, turns, banned))
         results[-1]["thread"] = thread
