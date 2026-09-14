@@ -102,3 +102,31 @@ def test_evaluate_scenario_grades_trajectory_separately():
     }], banned=[])
     assert not result["pass"]
     assert result["fails"] == ["trajectory: missing required tool: get_team_hub"]
+
+
+def test_claim_grounding_matches_rows_meta_and_percent_scaling():
+    from grounding import check_claim_grounding
+    tables = [{"rows": [{"PLAYER": "Luke Kennard", "FG3_PCT": 0.478,
+                          "FG3M": 117, "FG3A": 245}],
+               "meta": {"season": "2025-26", "qualification": "82+ makes"}}]
+    grade = check_claim_grounding(
+        "In 2025-26 Kennard shot 47.8% (117 on 245); 82 makes required.",
+        tables)
+    assert grade["unsupported"] == []
+    assert grade["coverage"] == 1.0
+
+
+def test_claim_grounding_flags_invented_number_and_allows_declared_constant():
+    from grounding import check_claim_grounding
+    grade = check_claim_grounding("He scored 45 in 2 games.",
+                                  [{"rows": [{"PTS": 44}]}], allow=["2"])
+    assert grade["unsupported"] == ["45"]
+
+
+def test_evidence_envelope_excludes_answer_and_question_text():
+    from grounding import evidence_envelope
+    env = evidence_envelope("case", [{"text": "secret", "evidence_tables":
+                                      [{"rows": [{"PTS": 33}]}],
+                                      "tool_trace": [{"name": "get_x"}]}])
+    raw = __import__("json").dumps(env)
+    assert "secret" not in raw and "33" in raw and "get_x" in raw

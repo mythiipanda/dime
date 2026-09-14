@@ -19,6 +19,7 @@ import uuid
 from pathlib import Path
 
 from assertions import evaluate_scenario, load_pack
+from grounding import check_claim_grounding, evidence_envelope
 
 HERE = Path(__file__).resolve().parent
 
@@ -32,6 +33,7 @@ def stream_turn(base: str, question: str, thread: str,
     t0 = time.time()
     text, tool_calls, streamed = "", 0, 0
     tool_trace: list[dict[str, str]] = []
+    evidence_tables: list[dict] = []
     with urllib.request.urlopen(req, timeout=timeout_s) as resp:
         event = None
         for raw in resp:
@@ -46,6 +48,9 @@ def stream_turn(base: str, question: str, thread: str,
                     data = {}
                 if event == "final_answer":
                     text = str(data.get("text", ""))
+                elif event == "custom_data":
+                    if isinstance(data.get("tables"), list):
+                        evidence_tables = data["tables"]
                 elif event == "tool_call":
                     tool_calls += 1
                     tool_trace.append({
@@ -60,6 +65,7 @@ def stream_turn(base: str, question: str, thread: str,
                 pass
     return {"text": text, "seconds": round(time.time() - t0, 2),
             "tool_calls": tool_calls, "tool_trace": tool_trace,
+            "evidence_tables": evidence_tables,
             "streamed_chars": streamed}
 
 
@@ -80,6 +86,18 @@ def run_pack(base: str, pack: dict, only: str | None) -> dict:
                               "tool_trace": [], "streamed_chars": 0})
                 break
         results.append(evaluate_scenario(s, turns, banned))
+        ground_turns = [check_claim_grounding(
+            t.get("text", ""), t.get("evidence_tables", []),
+            (s.get("grounding") or {}).get("allow")) for t in turns]
+        results[-1]["grounding"] = ground_turns
+        if (s.get("grounding") or {}).get("enforce"):
+            for i, grade in enumerate(ground_turns):
+                if grade["unsupported"]:
+                    results[-1]["fails"].append(
+                        f"T{i + 1}: unsupported factual numerals: "
+                        f"{grade['unsupported']}")
+            results[-1]["pass"] = not results[-1]["fails"]
+        results[-1]["evidence_envelope"] = evidence_envelope(s["id"], turns)
         results[-1]["thread"] = thread
         results[-1]["answers"] = [t["text"] for t in turns]
         mark = ("PASS" if results[-1]["pass"]
@@ -95,6 +113,12 @@ def run_pack(base: str, pack: dict, only: str | None) -> dict:
             "total": len(graded),
             "xfail_now_passing": [r["id"] for r in known if r["pass"]],
         },
+        "grounding": {
+            "claims": sum(g["claims"] for r in results
+                          for g in r.get("grounding", [])),
+            "supported": sum(g["supported"] for r in results
+                             for g in r.get("grounding", [])),
+        },
         "efficiency": {
             "seconds_total": round(sum(r.get("seconds", 0) for r in results), 1),
             "tool_calls_total": sum(r.get("tool_calls", 0) for r in results),
@@ -109,6 +133,8 @@ def markdown(report: dict) -> str:
              f"Capability: {report['capability']['passed']}/"
              f"{report['capability']['total']} passed "
              f"(xfail-now-passing: {report['capability']['xfail_now_passing']})",
+             f"Grounding: {report['grounding']['supported']}/"
+             f"{report['grounding']['claims']} factual numerals supported,",
              f"Efficiency: {report['efficiency']['seconds_total']}s total, "
              f"{report['efficiency']['tool_calls_total']} tool calls, "
              f"{report['efficiency']['streamed_chars_total']} streamed chars", ""]
