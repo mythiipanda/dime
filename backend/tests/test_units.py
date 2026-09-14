@@ -76,6 +76,12 @@ def test_dataset_tables_allowlisted():
     }
 
 
+def test_resolve_entity_exact_team_excludes_weak_player_match():
+    res = tools.resolve_entity.invoke({"query": "Los Angeles Lakers"})
+    assert res["rows"]["teams"][0]["abbreviation"] == "LAL"
+    assert res["rows"]["players"] == []
+
+
 def test_resolve_entity_static():
     res = tools.resolve_entity.invoke({"query": "LeBron James"})
     ids = [p.get("id") for p in res["rows"]["players"]]
