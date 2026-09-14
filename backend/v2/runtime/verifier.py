@@ -27,7 +27,7 @@ _NUMBER = re.compile(
 _DATE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
 _SEASON = re.compile(r"\b\d{4}-\d{2}\b(?!-\d{2})")
 _RANK = re.compile(r"(?:#\s*(\d+)|\b(\d+)(?:st|nd|rd|th)\b)", re.IGNORECASE)
-_LIST_LABEL = re.compile(r"(?m)^\s*\d+\.\s")
+_LIST_LABEL = re.compile(r"(?m)^\s*(\d+)\.\s")
 _SEMANTIC_KEYS = {
     "status", "claim_results", "missing_branches", "contradictions",
     "repair_instructions",
@@ -52,14 +52,9 @@ def _canon_number(raw: Any) -> set[Decimal]:
 
 
 def _number_tokens(text: str) -> list[str]:
-    labels = {match.start() for match in _LIST_LABEL.finditer(text)}
-    tokens: list[str] = []
-    for match in _NUMBER.finditer(text):
-        raw = match.group(0)
-        if match.start() in labels:
-            continue
-        tokens.append(raw)
-    return tokens
+    label_numbers = {match.start(1) for match in _LIST_LABEL.finditer(text)}
+    return [match.group(0) for match in _NUMBER.finditer(text)
+            if match.start() not in label_numbers]
 
 
 def _text_values(envelopes: Iterable[EvidenceEnvelope]) -> set[str]:
@@ -69,7 +64,6 @@ def _text_values(envelopes: Iterable[EvidenceEnvelope]) -> set[str]:
             values.add(envelope.season)
         if envelope.as_of:
             values.add(envelope.as_of.isoformat())
-        values.add(envelope.observed_at.date().isoformat())
         for entity in envelope.entities:
             values.update((entity.id.casefold(), entity.display_name.casefold()))
         for item in iter_values(envelope):
@@ -167,7 +161,14 @@ def _metric_unit_reasons(claim: Claim,
             )
         for metric, unit in envelope.units.items():
             metric_words = metric.casefold().replace("_", " ")
-            if len(metric_words) >= 3 and metric_words in text and unit.casefold() not in text:
+            if len(metric_words) < 3 or metric_words not in text:
+                continue
+            unit_name = unit.casefold()
+            percent_shown = "%" in claim.text or "percent" in text
+            if unit_name in {"percent", "percent_0_100", "fraction_0_1"}:
+                if not percent_shown:
+                    reasons.append(f"metric {metric} is stated without a percent unit")
+            elif unit_name not in text:
                 reasons.append(f"metric {metric} is stated without its declared unit {unit}")
     return reasons
 

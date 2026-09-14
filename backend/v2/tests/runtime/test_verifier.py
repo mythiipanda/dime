@@ -140,3 +140,26 @@ def test_uncited_section_fact_is_rejected():
     result = verify_mechanical(task(), draft, [evidence()])
     assert result.status == VerificationStatus.REPAIR
     assert "62" in result.repair_instructions[-1]
+
+
+def test_observation_time_does_not_support_an_as_of_claim():
+    claim = Claim(text="As of 2026-04-15, Boston had 61 wins.",
+                  kind=ClaimKind.OBSERVED, evidence_ids=["standings"])
+    result = verify_mechanical(
+        task(), report(claim),
+        [evidence(as_of=None, observed_at=datetime(2026, 4, 15, 12))],
+    )
+    assert "uncited date 2026-04-15" in result.claim_results[0].reasons
+
+
+def test_ordered_list_labels_are_not_factual_numerals():
+    claim = Claim(text="Boston had 61 wins.", kind=ClaimKind.OBSERVED,
+                  evidence_ids=["standings"])
+    draft = DraftReport(sections=["1. Boston had 61 wins."], claims=[claim])
+    assert verify_mechanical(task(), draft, [evidence()]).status == VerificationStatus.PASS
+
+
+def test_percent_metric_accepts_human_unit_not_internal_unit_name():
+    claim = Claim(text="Boston's WIN PCT was 74.4%.", kind=ClaimKind.OBSERVED,
+                  evidence_ids=["standings"])
+    assert verify_mechanical(task(), report(claim), [evidence()]).status == VerificationStatus.PASS
