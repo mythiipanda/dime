@@ -136,9 +136,9 @@ def test_apron_matching_rules():
     from app.tools.league import CAP, _allowed_incoming, _apron_state
 
     assert _allowed_incoming(20_000_000, True) == (
-        20_000_000, "100pct above first apron")
+        20_000_000, "100% (above the first apron)")
     assert _allowed_incoming(20_000_000, False) == (
-        25_250_000, "125pct plus 250k below first apron")
+        25_250_000, "125% plus $250k (below the first apron)")
     over = _apron_state(CAP["apron2"] + 1)
     assert over["over_apron1"] and over["over_apron2"]
     under = _apron_state(0)

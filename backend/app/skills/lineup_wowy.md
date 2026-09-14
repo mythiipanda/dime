@@ -1,3 +1,7 @@
+---
+name: lineup_wowy
+description: Best lineups and with-or-without-you pairs with minutes context.
+---
 # lineup_wowy
 
 Use when the user asks who plays well together, best lineup, on-off, or Wowy.

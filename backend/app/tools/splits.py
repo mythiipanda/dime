@@ -32,10 +32,11 @@ VERDICT_RULES = [
     ' "no underlying driver found; expected to drift back toward baseline".',
 ]
 
+# QA #31: this surfaced verbatim on the waiver card - internal table
+# names are plumbing, never user-facing (F25-class). Say the fact only.
 CAREER_UNAVAILABLE_NOTE = (
-    "silver_hist_player_seasons not seeded and silver_hist_gamelogs carries"
-    " no player key, so no career baseline exists. Verdict leans on season"
-    " baseline plus driver analysis."
+    "Career baseline is not available for this player yet, so the "
+    "verdict leans on this season's baseline plus driver analysis."
 )
 
 
@@ -67,8 +68,11 @@ def _f(value: object) -> float:
 def aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
     gp = len(rows or [])
     if gp == 0:
-        return {"gp": 0, "ppg": 0.0, "rpg": 0.0, "apg": 0.0,
-                "fg_pct": 0.0, "plus_minus": 0.0}
+        # QA #30: an empty bucket shipped as 0.0 across the board, which
+        # reads as a real (terrible) performance line. Zero games is
+        # missing data: N/A, never fake-neutral 0.0.
+        return {"gp": 0, "ppg": None, "rpg": None, "apg": None,
+                "fg_pct": None, "plus_minus": None}
     fgm = sum(_f(r.get("FGM")) for r in rows)
     fga = sum(_f(r.get("FGA")) for r in rows)
     return {
@@ -347,11 +351,25 @@ def _career_baseline(pid: int, stat: str) -> dict[str, Any]:
         )
         if not rows:
             raise LookupError("empty")
-        gp = len(rows)
-        vals = [_f(r.get(stat.lower())) for r in rows]
-        per_game = round(sum(vals) / gp, 1) if gp else 0.0
-        return {"available": True, "gp": gp, "per_game": per_game,
-                "stat": stat}
+        # QA #31b: len(rows) is SEASONS, not games - the card printed
+        # "22.9 PTS/game over 2 games" for a 2-season baseline. Use the
+        # real gp column for games, weight the average by it, and flag
+        # thin samples so a 2-season career is not presented as signal.
+        seasons = len(rows)
+        key = stat.lower()
+        games = int(sum(_f(r.get("gp")) for r in rows)) or seasons
+        wsum = sum(_f(r.get(key)) * max(_f(r.get("gp")), 1.0) for r in rows)
+        wgp = sum(max(_f(r.get("gp")), 1.0) for r in rows)
+        per_game = round(wsum / wgp, 1) if wgp else 0.0
+        out = {"available": True, "gp": games, "seasons": seasons,
+               "per_game": per_game, "stat": stat}
+        if games < 82 or seasons < 3:
+            out["small_sample"] = True
+            out["note"] = (
+                f"Thin career baseline ({games} games over {seasons} "
+                f"season{'s' if seasons != 1 else ''}); treat as "
+                f"directional, not a settled norm.")
+        return out
     except Exception:
         return {"available": False, "note": CAREER_UNAVAILABLE_NOTE}
 
@@ -404,6 +422,18 @@ def get_regression_check(player: str, stat: str = "PTS", n: int = 10,
     ]
     scales = {"true_shooting": 20.0, "minutes": 0.25, "shot_volume": 1.0 / 3.0,
               "opponent_defense": 0.25}
+    # QA #31: the waiver card printed raw decimals ("true shooting 0.5
+    # vs 0.5 -0.05") with no units. Scale percents to 0-100 and tag
+    # every driver with an explicit unit.
+    _UNITS = {"true_shooting": "pct", "minutes": "min", "shot_volume": "fga",
+              "opponent_defense": "rank"}
+    for d in drivers_all:
+        d["unit"] = _UNITS.get(d.get("factor"), "")
+        if d.get("factor") == "true_shooting":
+            for k in ("window", "baseline", "delta"):
+                v = d.get(k)
+                if isinstance(v, (int, float)) and abs(v) <= 1.5:
+                    d[k] = round(v * 100, 1)
     drivers = sorted(drivers_all,
                      key=lambda d: abs(_f(d.get("delta"))
                                        * scales.get(d.get("factor"), 1.0)),
@@ -418,7 +448,16 @@ def get_regression_check(player: str, stat: str = "PTS", n: int = 10,
     meta.update({"season": season, "stat": stat,
                  "verdict_rules": VERDICT_RULES,
                  "driver_scaling": "ts*20, minutes/4, fga/3, opponent/4"
-                 " so factors are comparable; drivers ranked by scaled |delta|"})
+                 " so factors are comparable; drivers ranked by scaled |delta|",
+                 # QA #31b: QA's narrative listed per-game ranges instead
+                 # of using the verdict, and misread the defense rank.
+                 "opponent_defense_meaning":
+                 "average defensive rank of opponents faced, 1 = best "
+                 "defense, 30 = worst; negative delta = tougher slate",
+                 "narrative_guidance":
+                 "lead with the verdict and verdict_note, cite the top "
+                 "drivers with their units, and honor any career-baseline "
+                 "small_sample note; do not just list per-game ranges"})
     return {"tool": "get_regression_check", "ok": True,
             "rows": {"player": _resolve_name(pid, str(player)),
                      "player_id": pid, "stat": stat,

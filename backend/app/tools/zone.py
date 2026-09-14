@@ -9,7 +9,7 @@ Zones are derived geometrically from the warehouse's x_legacy/y_legacy
 (tenths of a foot) because the source table carries no zone labels.
 
 Warehouse-first. No live calls. The source backfill covers completed
-seasons 2021-22 through 2025-26, regular season and playoffs.
+seasons 2009-10 through 2025-26, regular season and playoffs.
 """
 
 import math
@@ -189,6 +189,17 @@ def _parse_teams(raw: str, frame_team_ids: set[int]) -> tuple[set[int], list[str
     return wanted, unknown
 
 
+def _coverage_bounds() -> str:
+    try:
+        rows = _store._read_df(
+            f"SELECT MIN(_season) AS lo, MAX(_season) AS hi FROM {TABLE}", [])
+    except Exception:
+        return "unknown"
+    if not rows:
+        return "unknown"
+    return f"{rows[0].get('lo')} through {rows[0].get('hi')}"
+
+
 @tool
 def get_team_shot_zones(teams: str = "league",
                         season: str = SEASON) -> dict[str, Any]:
@@ -202,7 +213,7 @@ def get_team_shot_zones(teams: str = "league",
     if frame.height == 0:
         return {"tool": "get_team_shot_zones", "ok": False,
                 "error": f"no shot rows for season {season} in {TABLE}; "
-                         f"coverage is seasons 2021-22 through 2025-26"}
+                         f"coverage is seasons {_coverage_bounds()}"}
     frame_ids = {int(t) for t in frame.select("team_id").to_series().to_list()}
     wanted, unknown = _parse_teams(teams, frame_ids)
     all_shots = [{
@@ -236,7 +247,7 @@ def get_team_shot_zones(teams: str = "league",
         "data_note": (
             f"Historical shot-level data from sportsdataverse nba_stats_shots, "
             f"backfilled 2026-09-10. Warehouse coverage: completed seasons "
-            f"2021-22 through 2025-26, regular season and playoffs. "
+            f"2009-10 through 2025-26 (hustle tracking from 2015-16), regular season and playoffs. "
             f"Zones are derived geometrically from shot x/y coordinates "
             f"(not source labels): {', '.join(f'{k}={v}' for k, v in ZONE_LEGEND.items())}. "
             f"League baselines are pooled across all 30 teams for {season}. "

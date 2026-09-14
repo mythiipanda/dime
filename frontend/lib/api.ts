@@ -1,6 +1,6 @@
 import { BACKEND, ModelsResponse } from "./chat";
 
-const SEASON = "2025-26";
+export const SEASON = "2025-26";
 
 export interface GameRow {
   HOME_TEAM_ABBREVIATION?: string;
@@ -193,6 +193,16 @@ export interface StreamHandlers {
   onError: (message: string) => void;
 }
 
+export function getClientId(): string {
+  if (typeof window === "undefined") return "";
+  let id = window.localStorage.getItem("dime_client");
+  if (!id) {
+    id = (window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`).slice(0, 64);
+    window.localStorage.setItem("dime_client", id);
+  }
+  return id;
+}
+
 export async function postChatStream(
   q: string,
   model: string | null,
@@ -200,14 +210,44 @@ export async function postChatStream(
   signal?: AbortSignal,
   thread?: string | null,
 ): Promise<void> {
-  const res = await fetch(`${BACKEND}/api/v1/chat/stream`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ q, model, thread }),
-    signal,
-  });
+  // Stall watchdog: if the stream goes silent for 90s (or the request
+  // itself never starts), surface an error instead of spinning forever.
+  const STALL_MS = 90_000;
+  const ctrl = new AbortController();
+  let lastActivity = Date.now();
+  let stalled = false;
+  const watchdog = setInterval(() => {
+    if (Date.now() - lastActivity > STALL_MS) {
+      stalled = true;
+      ctrl.abort();
+    }
+  }, 5_000);
+  if (signal) {
+    if (signal.aborted) ctrl.abort();
+    else signal.addEventListener("abort", () => ctrl.abort(), { once: true });
+  }
+  let res: Response;
+  try {
+    res = await fetch(`${BACKEND}/api/v1/chat/stream`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ q, model, thread, client: getClientId() }),
+      signal: ctrl.signal,
+    });
+  } catch (e) {
+    clearInterval(watchdog);
+    if (stalled) {
+      handlers.onError("No response from the server for 90s. The backend may be down - try again in a moment.");
+    } else if ((e as Error)?.name === "AbortError") {
+      handlers.onError("Request cancelled.");
+    } else {
+      handlers.onError("Could not reach the Dime backend. Check your connection and try again.");
+    }
+    return;
+  }
   const contentType = res.headers.get("content-type") || "";
   if (!res.ok || !res.body || !contentType.includes("text/event-stream")) {
+    clearInterval(watchdog);
     if (res.status === 429) {
       handlers.onError("Too many requests. Wait a minute and try again.");
     } else {
@@ -218,9 +258,23 @@ export async function postChatStream(
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buf = "";
+  try {
   for (;;) {
-    const { done, value } = await reader.read();
+    let read: ReadableStreamReadResult<Uint8Array>;
+    try {
+      read = await reader.read();
+    } catch (e) {
+      clearInterval(watchdog);
+      if (stalled) {
+        handlers.onError("The stream went quiet for 90s - the backend may be stuck. Try again.");
+      } else if ((e as Error)?.name !== "AbortError") {
+        handlers.onError("Connection to the backend dropped. Try again.");
+      }
+      return;
+    }
+    const { done, value } = read;
     if (done) break;
+    lastActivity = Date.now();
     buf += decoder.decode(value, { stream: true });
     const parts = buf.split("\n\n");
     buf = parts.pop() || "";
@@ -240,6 +294,9 @@ export async function postChatStream(
         continue;
       }
     }
+  }
+  } finally {
+    clearInterval(watchdog);
   }
   handlers.onDone();
 }
@@ -268,10 +325,72 @@ export interface ThreadInfo {
   turns: number;
 }
 
+// --- Local session persistence (QA F22) -------------------------------
+// The backend session store is ephemeral container state: every deploy
+// wipes it. The rail is per-browser by design, so localStorage is the
+// durable source of truth for this browser's history; the server copy
+// is a cache. Merge on read, write on every successful fetch.
+const THREADS_KEY = () => `dime_threads_${getClientId()}`;
+const RUNS_KEY = (id: string) => `dime_runs_${getClientId()}_${id}`;
+const MAX_CACHED_THREADS = 50;
+const MAX_CACHED_RUNS = 40;
+
+function lsGet(key: string): unknown {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function lsSet(key: string, value: unknown): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* storage full or blocked - persistence is best-effort */
+  }
+}
+
+export function loadCachedThreads(): ThreadInfo[] {
+  const v = lsGet(THREADS_KEY());
+  return Array.isArray(v) ? (v as ThreadInfo[]) : [];
+}
+
+function saveThreads(list: ThreadInfo[]): void {
+  const sorted = [...list].sort((a, b) =>
+    String(b.updated).localeCompare(String(a.updated)),
+  );
+  lsSet(THREADS_KEY(), sorted.slice(0, MAX_CACHED_THREADS));
+}
+
+function mergeThreads(server: ThreadInfo[]): ThreadInfo[] {
+  const byId = new Map<string, ThreadInfo>();
+  for (const t of loadCachedThreads()) byId.set(t.id, t);
+  for (const t of server) byId.set(t.id, t); // server copy wins
+  const merged = [...byId.values()];
+  saveThreads(merged);
+  return merged;
+}
+
+function cacheRuns(thread: string, runs: RunInfo[]): void {
+  if (runs.length) lsSet(RUNS_KEY(thread), runs.slice(-MAX_CACHED_RUNS));
+}
+
+export function loadCachedRuns(thread: string): RunInfo[] {
+  const v = lsGet(RUNS_KEY(thread));
+  return Array.isArray(v) ? (v as RunInfo[]) : [];
+}
+
 export async function getThreads(): Promise<ThreadInfo[]> {
-  const res = await fetch(`${BACKEND}/api/v1/threads`);
-  if (!res.ok) return [];
-  return ((await res.json()).threads || []) as ThreadInfo[];
+  try {
+    const res = await fetch(`${BACKEND}/api/v1/threads?client=${encodeURIComponent(getClientId())}`);
+    if (!res.ok) return loadCachedThreads();
+    const server = ((await res.json()).threads || []) as ThreadInfo[];
+    return mergeThreads(server);
+  } catch {
+    return loadCachedThreads();
+  }
 }
 
 export interface RunInfo {
@@ -283,9 +402,19 @@ export interface RunInfo {
 }
 
 export async function getRuns(thread: string): Promise<RunInfo[]> {
-  const res = await fetch(`${BACKEND}/api/v1/threads/${thread}/runs`);
-  if (!res.ok) return [];
-  return ((await res.json()).runs || []) as RunInfo[];
+  try {
+    const res = await fetch(`${BACKEND}/api/v1/threads/${thread}/runs`);
+    if (!res.ok) return loadCachedRuns(thread);
+    const runs = ((await res.json()).runs || []) as RunInfo[];
+    if (runs.length) {
+      cacheRuns(thread, runs);
+      return runs;
+    }
+    // Server has no rows for a thread this browser knows: deploy wipe.
+    return loadCachedRuns(thread);
+  } catch {
+    return loadCachedRuns(thread);
+  }
 }
 
 export function exportUrl(thread: string): string {

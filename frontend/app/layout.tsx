@@ -1,9 +1,5 @@
 import type { Metadata } from "next";
-import { Inter, Inter_Tight } from "next/font/google";
 import "./globals.css";
-
-const inter = Inter({ subsets: ["latin"], variable: "--font-body" });
-const tight = Inter_Tight({ subsets: ["latin"], variable: "--font-display" });
 
 export const metadata: Metadata = {
   title: "Dime NBA Analyst",
@@ -12,8 +8,8 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body className={`${inter.variable} ${tight.variable}`}>{children}</body>
+    <html lang="en" className="dark" suppressHydrationWarning>
+      <body className="antialiased">{children}</body>
     </html>
   );
 }

@@ -1,6 +1,8 @@
 """Dataset boundary. Warehouse first, live on miss, provenance always."""
 
 import io
+
+import polars as pl
 from fastapi import APIRouter, Query
 from fastapi.responses import Response
 
@@ -65,6 +67,33 @@ def _envelope(table: str, season: str, frame: object, cached: bool) -> dict:
         meta["source"] = frame["_source"][0]
         meta["fetched_at"] = frame["_fetched_at"][0]
     rows = frame.to_dicts()
+    if table.startswith("silver_leaders_"):
+        # Pin the stat column after the identity columns so capped table
+        # renderers (12-col cap) keep it visible (QA F8, Explore tab).
+        stat_col = table.rsplit("_", 1)[-1].upper()
+        if stat_col == "FG":
+            stat_col = "FG_PCT"
+        pin = ["RANK", "PLAYER", "TEAM", stat_col, "GP", "MIN"]
+        pinned = []
+        for r in rows:
+            keyed = {k: r[k] for k in pin if k in r}
+            keyed.update({k: v for k, v in r.items() if k not in keyed})
+            pinned.append(keyed)
+        rows = pinned
+    if table == "silver_standings":
+        # Pin the overall record ahead of ConferenceRecord/DivisionRecord:
+        # the 12-col render cap used to cut before WINS/LOSSES, so the
+        # Explore standings panel showed "41-11" (conference record) as
+        # the only record column while the team was 64-18 overall.
+        pin = ["TeamCity", "TeamName", "Conference", "Record",
+               "WINS", "LOSSES", "WinPCT", "PlayoffRank",
+               "ClinchIndicator"]
+        pinned = []
+        for r in rows:
+            keyed = {k: r[k] for k in pin if k in r}
+            keyed.update({k: v for k, v in r.items() if k not in keyed})
+            pinned.append(keyed)
+        rows = pinned
     if table == "silver_lineups":
         from .tools._core import trust_tier
 
@@ -157,27 +186,57 @@ def dataset(
 
         table = f"silver_leaders_{clamp_stat(stat).lower()}"
     entity_scoped = name in ("player_gamelogs", "team_games", "shots", "scoreboard", "lineups", "on_off", "wowy", "four_factors")
+    entity = ""
+    if player_id:
+        entity = f"player:{player_id}"
+    elif team_id:
+        entity = f"team:{team_id}"
+    elif game_id:
+        entity = f"game:{game_id}"
+    elif game_date:
+        entity = f"date:{game_date}"
+    elif ids:
+        entity = f"wowy:{ids}"
     frame = store.read_frame(table, "_season = ?", [season])
+    if name == "leaders" and frame.height > 0:
+        # Warehouse storage order is arbitrary; leaders must come back
+        # ranked or the Top-10 chart and table drop or bury leaders.
+        stat_col = clamp_stat(stat)
+        if stat_col in frame.columns:
+            frame = frame.sort(stat_col, descending=True, nulls_last=True)
     if entity_scoped:
-        frame = frame.clear()
+        # Warehouse-first per entity; never force a live call when seeded.
+        if entity:
+            try:
+                frame = store.read_frame(
+                    table, "_season = ? AND _entity = ?", [season, entity])
+            except Exception:
+                frame = frame.clear()
+        else:
+            frame = frame.clear()
     cached = frame.height > 0
     if not cached:
         live = _fetch_live(name, season, player_id, team_id, game_id, game_date, stat)
         if live is None:
             return {"ok": False, "error": "missing id param for this dataset"}
         if not live.ok:
-            return {"ok": False, "error": live.error}
-        entity = ""
-        if player_id:
-            entity = f"player:{player_id}"
-        elif team_id:
-            entity = f"team:{team_id}"
-        elif game_id:
-            entity = f"game:{game_id}"
-        elif game_date:
-            entity = f"date:{game_date}"
-        elif ids:
-            entity = f"wowy:{ids}"
+            # Honest attribution: name the failed live source, then stale-fallback.
+            stale = None
+            if entity_scoped and entity:
+                try:
+                    stale = store.read_frame(table, "_entity = ?", [entity])
+                except Exception:
+                    stale = None
+            if stale is not None and stale.height > 0:
+                out = _envelope(table, season, stale, True)
+                out["ok"] = True
+                out["meta"]["stale"] = True
+                out["meta"]["live_error"] = live.error or "empty upstream response"
+                out["meta"]["live_source"] = live.meta.source
+                return out
+            return {"ok": False, "error": live.error,
+                    "source": live.meta.source,
+                    "detail": "live source failed and no cached rows for this entity"}
         store.save_frame(table, live, entity)
         if entity_scoped:
             frame = store.read_frame(
@@ -185,6 +244,27 @@ def dataset(
             )
         else:
             frame = store.read_frame(table, "_season = ?", [season])
+    if (name in ("player_gamelogs", "team_games", "playoff_gamelogs")
+            and frame.height > 0 and "GAME_DATE" in frame.columns):
+        # Warehouse storage order is arbitrary; game logs must come back
+        # newest-first by REAL date or the panel's "recent" slice quietly
+        # shows December string-sort order (QA F19).
+        for fmt_s in ("%b %d, %Y", "%Y-%m-%d"):
+            try:
+                frame = frame.with_columns(
+                    pl.col("GAME_DATE").str.strptime(
+                        pl.Date, fmt_s, strict=False).alias("_d"))
+                if frame["_d"].null_count() < frame.height:
+                    frame = frame.sort("_d", descending=True,
+                                       nulls_last=True).drop("_d")
+                else:
+                    frame = frame.drop("_d")
+                    continue
+                break
+            except Exception:
+                if "_d" in frame.columns:
+                    frame = frame.drop("_d")
+                continue
     if fmt == "csv":
         return Response(frame.write_csv(), media_type="text/csv")
     if fmt == "parquet":

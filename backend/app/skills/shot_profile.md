@@ -1,3 +1,7 @@
+---
+name: shot_profile
+description: Shot diet and efficiency by zone, best and weakest areas.
+---
 # shot_profile
 
 Use when the user asks about shooting, shot chart, zones, or efficiency.

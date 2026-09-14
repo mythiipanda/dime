@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import EmptyState from "./EmptyState";
 import { BACKEND } from "../lib/chat";
 
 interface FreshRow {
@@ -26,6 +27,13 @@ export default function FreshnessPanel() {
         Data freshness
       </div>
       {err && <div style={{ fontSize: 12, color: "var(--color-warm-gray)" }}>{err}</div>}
+      {!err && rows.length === 0 && (
+        <EmptyState
+          title="No freshness data"
+          description="Warehouse tables report their last fetch here once seeded."
+        />
+      )}
+      {rows.length > 0 && (
       <table style={{ fontSize: 12, width: "100%", borderCollapse: "collapse" }}>
         <thead>
           <tr style={{ textAlign: "left", color: "var(--color-warm-gray)" }}>
@@ -44,6 +52,7 @@ export default function FreshnessPanel() {
           ))}
         </tbody>
       </table>
+      )}
     </div>
   );
 }

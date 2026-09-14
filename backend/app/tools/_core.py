@@ -1,5 +1,6 @@
 """Shared warehouse-first fetch helper plus registry constants."""
 
+from functools import lru_cache
 from typing import Any
 import polars as pl
 
@@ -7,6 +8,59 @@ from .. import store
 from ..sources.base import FetchResult
 
 SEASON = "2025-26"
+# Oldest season in the silver_hist_* tables (verified 2026-09-13:
+# hist gamelogs/shots/standings all start 2009-10). Coverage honesty
+# for all-time/historical asks must name this span, not just SEASON.
+HIST_SEASON_START = "2009-10"
+
+
+TOOL_LABELS = {
+    "resolve_entity": "Identifying players and teams",
+    "search_nba": "Searching league coverage",
+    "get_compare": "Comparing players",
+    "delegate_scout": "Scouting players",
+    "delegate_team": "Scouting teams",
+    "delegate_league": "Scanning league data",
+    "run_python": "Crunching numbers",
+    "text_to_sql": "Querying the warehouse",
+    "get_playoff_intel": "Pulling playoff logs",
+    "get_trade_check": "Checking trade math",
+    "get_trade_value": "Grading trade value",
+    "get_award_race": "Ranking award races",
+    "get_matchup_preview": "Previewing the matchup",
+    "get_game_prediction": "Simulating the matchup",
+    "get_briefing": "Briefing the slate",
+    "get_lineup_stats": "Rating lineups",
+    "get_rotation_check": "Checking the rotation",
+    "get_streaks": "Finding streaks",
+    "get_head_to_head": "Checking head-to-head history",
+    "get_season_series": "Pulling the season series",
+    "get_team_shot_zones": "Mapping shot zones",
+    "get_warehouse_freshness": "Checking warehouse freshness",
+    "get_elo_standings": "Computing ELO ratings",
+    "get_impact_estimate": "Estimating impact",
+    "search_game_logs": "Searching game logs",
+    "get_team_game_log": "Pulling the team game log",
+    "pin_team_best_player": "Reading team scoring leaders",
+    "pin_game_stat_followup": "Pulling the Finals game line",
+}
+
+_DESK_LABEL_OVERRIDES = {
+    "run_python": "Warehouse query",
+    "text_to_sql": "Warehouse query",
+}
+
+
+def tool_label(name: str, desk: bool = False) -> str:
+    """Single source of truth for tool display labels; desk mode swaps two."""
+    if not name:
+        return "Checking data"
+    if desk and name in _DESK_LABEL_OVERRIDES:
+        return _DESK_LABEL_OVERRIDES[name]
+    if name in TOOL_LABELS:
+        return TOOL_LABELS[name]
+    return name.replace("_", " ").strip().title() or "Checking data"
+
 MAX_ROWS = 25
 TTL_SCOREBOARD_PAST = 12 * 3600
 TTL_GAMELOG = 6 * 3600
@@ -97,6 +151,72 @@ def _norm_name(s: object) -> str:
         if not _ud.combining(c)).strip()
 
 
+_PLAYER_ROWS: list[dict] = []
+_PLAYER_NORMS: list[str] = []
+
+
+def _build_player_index() -> None:
+    try:
+        from nba_api.stats.static import players as _players_mod
+
+        rows = _players_mod.get_players()
+    except Exception:
+        return
+    try:
+        norms = [_norm_name(r.get("full_name", "")) for r in rows]
+    except Exception:
+        return
+    _PLAYER_ROWS.extend(rows)
+    _PLAYER_NORMS.extend(norms)
+
+
+_build_player_index()
+
+_ID_NAME: dict[int, str] = {int(r["id"]): r.get("full_name", "")
+                            for r in _PLAYER_ROWS if r.get("id")}
+
+
+def attach_names(rows: object) -> object:
+    """Rows keyed only by player_id/team_id get a readable name column
+    (QA #66: after *_id stripping the model could only say 'one
+    player'). Name stays, id is stripped downstream."""
+    if not isinstance(rows, list):
+        return rows
+    team_by_id: dict[int, str] = {}
+    out = []
+    for r in rows:
+        if isinstance(r, dict):
+            has_name = any(k in r for k in ("name", "player", "PLAYER",
+                                            "team", "TEAM"))
+            if not has_name:
+                pid = r.get("player_id")
+                if pid is not None:
+                    try:
+                        nm = _ID_NAME.get(int(pid))
+                    except (TypeError, ValueError):
+                        nm = None
+                    if nm:
+                        r = {"name": nm, **r}
+                tid = r.get("team_id")
+                if tid is not None and "name" not in r:
+                    if not team_by_id:
+                        try:
+                            from nba_api.stats.static import teams as _t
+                            team_by_id = {int(x["id"]): x.get(
+                                "abbreviation", "") for x in
+                                _t.get_teams()}
+                        except Exception:
+                            team_by_id = {}
+                    try:
+                        ab = team_by_id.get(int(tid))
+                    except (TypeError, ValueError):
+                        ab = None
+                    if ab:
+                        r = {"team": ab, **r}
+        out.append(r)
+    return out
+
+
 def score_player_candidates(raw: str) -> list[tuple[float, dict]]:
     """Scored general matcher over static players. No network.
 
@@ -138,9 +258,10 @@ def score_player_candidates(raw: str) -> list[tuple[float, dict]]:
                 _add(x["id"], 0.9 if exact else 0.7, x)
         except Exception:
             pass
-    all_p = players.get_players()
-    for x in all_p:
-        name = _norm_name(x.get("full_name", ""))
+    all_p = _PLAYER_ROWS if _PLAYER_ROWS else players.get_players()
+    use_cache = bool(_PLAYER_ROWS and len(_PLAYER_NORMS) == len(_PLAYER_ROWS))
+    for _i, x in enumerate(all_p):
+        name = _PLAYER_NORMS[_i] if use_cache else _norm_name(x.get("full_name", ""))
         if not name or x.get("id") in scored:
             continue
         ntokens = name.split()
@@ -163,29 +284,71 @@ def score_player_candidates(raw: str) -> list[tuple[float, dict]]:
         elif nq and "".join(t[0] for t in ntokens if t) == nq.replace(" ", ""):
             _add(x["id"], 0.5, x)
     if nq:
-        norms = [_norm_name(x.get("full_name", "")) for x in all_p]
+        norms = _PLAYER_NORMS if use_cache else [_norm_name(x.get("full_name", "")) for x in all_p]
         for match in _dl.get_close_matches(nq, norms, n=5, cutoff=0.6):
-            for x in all_p:
-                if _norm_name(x.get("full_name", "")) == match:
+            for _j, x in enumerate(all_p):
+                xn = _PLAYER_NORMS[_j] if use_cache else _norm_name(x.get("full_name", ""))
+                if xn == match:
                     ratio = _dl.SequenceMatcher(None, nq, match).ratio()
                     _add(x["id"], round(min(ratio, 0.89), 2), x)
                     break
     return sorted(scored.values(), key=lambda t: -t[0])
 
 
+def _resolve_player_id_uncached(key: str) -> int:
+    ranked = score_player_candidates(key)
+    # QA #59/#60: a loose SINGLE-TOKEN name must not silently pick one
+    # active namesake ("James" -> LeBron, ignoring James Harden). Match
+    # on whole name tokens only - fuzzy scorer noise (Jaylen Brown for
+    # "lebron") is not ambiguity. Multi-word and single-active names
+    # resolve as before.
+    if " " not in key.strip():
+        nq = _norm_name(key)
+        act: list[str] = []
+        for _sc, r in ranked:
+            fn = r.get("full_name", "")
+            if (r.get("is_active") and fn and nq
+                    and nq in _norm_name(fn).split()
+                    and fn not in act):
+                act.append(fn)
+        if len(act) >= 2:
+            names = ", ".join(act[:3])
+            raise ValueError(
+                f"ambiguous name '{key}' - several active players match "
+                f"({names}); ask which one or use a full name")
+    if ranked and ranked[0][0] >= 0.8 and (
+            len(ranked) < 2 or ranked[0][0] - ranked[1][0] >= 0.05):
+        return int(ranked[0][1]["id"])
+    hints = ", ".join(r[1].get("full_name", "?") for r in ranked[:3])
+    raise ValueError(f"unknown player: {key}" + (f" (did you mean {hints}?)" if hints else ""))
+
+
+_coerce_player_id_cached = lru_cache(maxsize=2048)(_resolve_player_id_uncached)
+
+
 def coerce_player_id(value: object) -> int:
-    """Accept an id or a name. Names resolve through scored static matching."""
+    """Accept an id or a name. Names resolve through scored static matching.
+
+    Name results are cached process-local by stripped lowercase input.
+    """
     raw = str(value).strip()
     try:
         return int(raw)
     except (TypeError, ValueError):
         pass
-    ranked = score_player_candidates(raw)
-    if ranked and ranked[0][0] >= 0.8 and (
-            len(ranked) < 2 or ranked[0][0] - ranked[1][0] >= 0.05):
-        return int(ranked[0][1]["id"])
-    hints = ", ".join(r[1].get("full_name", "?") for r in ranked[:3])
-    raise ValueError(f"unknown player: {value}" + (f" (did you mean {hints}?)" if hints else ""))
+    key = raw.lower()
+    try:
+        return _coerce_player_id_cached(key)
+    except ValueError as exc:
+        msg = str(exc)
+        prefix = f"unknown player: {key}"
+        if msg.startswith(prefix):
+            msg = f"unknown player: {value}" + msg[len(prefix):]
+        raise ValueError(msg) from None
+
+
+coerce_player_id.cache_info = _coerce_player_id_cached.cache_info  # type: ignore[attr-defined]
+coerce_player_id.cache_clear = _coerce_player_id_cached.cache_clear  # type: ignore[attr-defined]
 
 
 def coerce_team_id(value: object) -> int:
@@ -246,6 +409,28 @@ def is_past_game_date(game_date: str) -> bool:
         return False
 
 
+def season_static(season: str) -> bool:
+    """True when the season is complete and its tables never change again.
+
+    NBA seasons end in June; give a grace buffer to July 15 of the end
+    year. In the 2026 offseason, 2025-26 is static: live refetch only
+    multiplies blocked-endpoint timeouts without fresher data.
+    """
+    import datetime as _dt
+
+    m = _re_match(r"^20(\d{2})-(\d{2})$", str(season or ""))
+    if not m:
+        return False
+    end_year = 2000 + int(m.group(2))
+    return _dt.date.today() > _dt.date(end_year, 7, 15)
+
+
+def _re_match(pattern: str, text: str):
+    import re as _re
+
+    return _re.match(pattern, text)
+
+
 def _warehouse_or_live(
     table: str,
     where: str,
@@ -265,6 +450,19 @@ def _warehouse_or_live(
             if age is not None and age > ttl_s:
                 frame = None
     if frame is None or frame.height == 0:
+        if season_static(season):
+            # Static season: never burn ~24s on a blocked live refetch.
+            frame = store.read_frame(table, where, params)
+            if frame is not None and frame.height > 0:
+                meta: dict[str, Any] = {"rows": frame.height, "cached": True,
+                                        "static_season": True}
+                if "_source" in frame.columns:
+                    meta["source"] = frame["_source"][0]
+                    meta["fetched_at"] = frame["_fetched_at"][0]
+                return frame.head(limit).to_dicts(), meta
+            return [], {"source": "warehouse", "static_season": True,
+                        "error": f"no seeded rows for {table} ({season}); "
+                                 "season complete, live refetch disabled"}
         live: FetchResult = fetch()
         if not live.ok or live.frame.height == 0:
             frame = store.read_frame(table, where, params)

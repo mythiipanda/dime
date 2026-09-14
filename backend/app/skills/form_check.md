@@ -1,3 +1,7 @@
+---
+name: form_check
+description: Hot streaks, slumps, and recent form over the last games.
+---
 # form_check
 
 Use when the user asks about form, slump, hot streak, or last games.

@@ -114,6 +114,63 @@ def fallback_order(primary: ProviderName) -> list[ProviderName]:
     return [primary, *rest]
 
 
+# --- Provider probes (qm pattern: verify, don't assume) -------------
+# A provider that errors in the fallback chain gets probed with a tiny
+# synthetic request (never user data); a fresh FAILED probe skips it in
+# later fallbacks until the TTL expires and it earns a retry. Silent
+# provider drift (quota exhausted, model renamed) used to surface as
+# slow turns failing through the whole chain one by one.
+_PROBE_TTL_S = 600.0
+_probe_state: dict[str, tuple[bool, float]] = {}
+
+
+def probe_verdict(name: str) -> bool | None:
+    """True/False from a fresh probe; None when unknown or stale."""
+    import time as _t
+
+    got = _probe_state.get(name)
+    if got is None:
+        return None
+    ok, ts = got
+    return ok if (_t.time() - ts) < _PROBE_TTL_S else None
+
+
+async def probe_provider(name: ProviderName) -> bool:
+    """Synthetic liveness probe: 4 tokens, 8s deadline, no user data."""
+    import asyncio as _a
+    import time as _t
+    from langchain_core.messages import HumanMessage as _HM
+
+    client = get_llm(name)
+    if client is None:
+        _probe_state[name] = (False, _t.time())
+        return False
+    try:
+        out = await _a.wait_for(
+            client.ainvoke([_HM(content="Reply with the single word: ok")],
+                           max_tokens=4),
+            timeout=8.0)
+        ok = bool(getattr(out, "content", "") or "")
+    except Exception:
+        ok = False
+    _probe_state[name] = (ok, _t.time())
+    return ok
+
+
+def note_provider_failure(name: str) -> None:
+    """Fire-and-forget probe after a live failure; stale OKs re-probe."""
+    import asyncio as _a
+    import time as _t
+
+    got = _probe_state.get(name)
+    if got is not None and (_t.time() - got[1]) < 60.0:
+        return  # already probed in the last minute
+    try:
+        _a.get_running_loop().create_task(probe_provider(name))
+    except RuntimeError:
+        pass  # no loop (sync caller): probe happens on next failure
+
+
 async def invoke_with_fallback(
     primary: ProviderName,
     model: str,
@@ -123,6 +180,10 @@ async def invoke_with_fallback(
     """Try providers in order. Raise the last error only if all fail."""
     errors: list[str] = []
     for name in fallback_order(primary):
+        verdict = probe_verdict(name)
+        if verdict is False:
+            errors.append(f"{name}: probe failed recently")
+            continue
         client = get_llm(name, model if name == primary else None)
         if client is None:
             errors.append(f"{name}: missing key")
@@ -131,6 +192,7 @@ async def invoke_with_fallback(
             return await client.ainvoke(messages, **kwargs)
         except Exception as exc:
             errors.append(f"{name}: {str(exc)[:160]}")
+            note_provider_failure(name)
     raise RuntimeError("all providers failed: " + " | ".join(errors))
 
 
@@ -143,6 +205,10 @@ async def astream_with_fallback(
     """Yield text chunks, trying providers in order. One provider streams."""
     errors: list[str] = []
     for name in fallback_order(primary):
+        verdict = probe_verdict(name)
+        if verdict is False:
+            errors.append(f"{name}: probe failed recently")
+            continue
         client = get_llm(name, model if name == primary else None)
         if client is None:
             errors.append(f"{name}: missing key")
@@ -155,6 +221,7 @@ async def astream_with_fallback(
             return
         except Exception as exc:
             errors.append(f"{name}: {str(exc)[:160]}")
+            note_provider_failure(name)
     raise RuntimeError("all providers failed: " + " | ".join(errors))
 
 
@@ -172,6 +239,10 @@ async def astream_chunks_with_fallback(
     """
     errors: list[str] = []
     for name in fallback_order(primary):
+        verdict = probe_verdict(name)
+        if verdict is False:
+            errors.append(f"{name}: probe failed recently")
+            continue
         client = get_llm(name, model if name == primary else None)
         if client is None:
             errors.append(f"{name}: missing key")
@@ -182,6 +253,7 @@ async def astream_chunks_with_fallback(
             return
         except Exception as exc:
             errors.append(f"{name}: {str(exc)[:160]}")
+            note_provider_failure(name)
     raise RuntimeError("all providers failed: " + " | ".join(errors))
 
 

@@ -81,15 +81,16 @@ class ChatBody(BaseModel):
     model: str | None = None
     thread: str | None = None
     history: list[dict[str, str]] | None = None
+    client: str | None = None
 
 
 async def _stream(
     question: str, model: str | None, thread: str | None = None,
-    history: list[dict[str, str]] | None = None,
+    history: list[dict[str, str]] | None = None, client: str = "",
 ):
     history = history or (store.chat_history(thread, 6) if thread else [])
     if thread:
-        store.save_chat(thread, "human", question[:2000])
+        store.save_chat(thread, "human", question[:2000], owner=client[:80])
 
     async def gen():
         import json as _json
@@ -98,10 +99,18 @@ async def _stream(
         tables: list[dict] = []
         suggestions: list[str] = []
         async for event in run_chat(
-            question[:2000], (model or "")[:200], history
+            question[:2000], (model or "")[:200], history, thread
         ):
             if event["type"] == "final_answer":
                 final = str(event["data"].get("text", ""))
+            elif event["type"] == "ledger_facts":
+                _lf = event["data"].get("facts")
+                if thread and isinstance(_lf, list):
+                    try:
+                        store.save_facts(thread, [str(f) for f in _lf],
+                                         owner=client[:80])
+                    except Exception:
+                        pass
             elif event["type"] == "custom_data":
                 data = event["data"]
                 if isinstance(data.get("tables"), list):
@@ -110,10 +119,12 @@ async def _stream(
                 items = event["data"].get("items", [])
                 if isinstance(items, list):
                     suggestions = [str(i) for i in items]
+            if event["type"] == "ledger_facts":
+                continue  # internal plumbing - persisted above, not streamed
             yield emit_sse(event["type"],
                            _sanitize_sse_event(event["type"], event["data"]))
         if thread and final:
-            store.save_chat(thread, "ai", final)
+            store.save_chat(thread, "ai", final, owner=client[:80])
             store.save_run(thread, question[:2000], final, tables, suggestions)
 
     async for chunk in with_heartbeat(gen()):
@@ -121,8 +132,8 @@ async def _stream(
 
 
 @router.get("/threads")
-def threads() -> dict:
-    return {"threads": store.list_threads()}
+def threads(client: str = Query("")) -> dict:
+    return {"threads": store.list_threads(owner=client[:80])}
 
 
 class TradeBody(BaseModel):
@@ -204,7 +215,8 @@ async def chat_stream_get(
             yield emit_sse("error", {"message": "rate limited, retry soon"})
 
         return StreamingResponse(limited(), media_type="text/event-stream")
-    return StreamingResponse(_stream(q, model, thread), media_type="text/event-stream")
+    client = request.headers.get("x-dime-client", "") or ""
+    return StreamingResponse(_stream(q, model, thread, client=client), media_type="text/event-stream")
 
 
 @router.post("/chat/stream")
@@ -215,8 +227,10 @@ async def chat_stream_post(request: Request, body: ChatBody):
             yield emit_sse("error", {"message": "rate limited, retry soon"})
 
         return StreamingResponse(limited(), media_type="text/event-stream")
+    client = body.client or request.headers.get("x-dime-client", "") or ""
     return StreamingResponse(
-        _stream(body.q, body.model, body.thread, body.history),
+        _stream(body.q, body.model, body.thread, body.history,
+                client=client[:80]),
         media_type="text/event-stream",
     )
 
@@ -279,7 +293,15 @@ async def api_movers(
     from .tools.league import get_leaderboard_deltas
     import json
     res = get_leaderboard_deltas.invoke({"season": season, "days": days})
-    return json.loads(res) if isinstance(res, str) else res
+    out = json.loads(res) if isinstance(res, str) else res
+    # Snapshots accumulate one per day; before the second one lands (and
+    # through the offseason) the tool errors. The Today page should show
+    # an honest empty state, not a failure, so translate to empty rows.
+    if isinstance(out, dict) and not out.get("ok") and "not enough snapshots" in str(out.get("error", "")):
+        return {"tool": "get_leaderboard_deltas", "ok": True,
+                "rows": {"climbers": [], "fallers": [], "new_entries": []},
+                "meta": {"reason": "snapshots_pending", "season": season}}
+    return out
 
 
 @router.get("/briefing")

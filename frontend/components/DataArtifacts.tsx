@@ -96,12 +96,14 @@ export default function DataArtifacts({
   ai,
   loading,
   onAsk,
+  onPinPlayer,
   onOpenArtifact,
   activeArtifactId,
 }: {
   ai: AiMessage;
   loading?: boolean;
   onAsk?: (query: string) => void;
+  onPinPlayer?: (playerName: string) => void;
   onOpenArtifact?: (artifact: ArtifactItem) => void;
   activeArtifactId?: string;
 }) {
@@ -110,6 +112,10 @@ export default function DataArtifacts({
   const [heat, setHeat] = useState(false);
   const [viewMode, setViewMode] = useState<"table" | "chart" | "court">("table");
   const [showInline, setShowInline] = useState(false);
+  // S2: datasets are citations, collapsed to a receipt strip by
+  // default and expandable in place (direction: "tables stop being
+  // dumps below the answer - they ARE the citation").
+  const [expanded, setExpanded] = useState(false);
 
   const tables: {
     tool: string;
@@ -166,6 +172,26 @@ export default function DataArtifacts({
   });
   const fallback = preferred >= 0 ? preferred : tables.length - 1;
   const table = tables[Math.min(pageState ?? fallback, Math.max(tables.length - 1, 0))];
+  // F27 empty-chrome fix: when a tool returns zero (or unparseable) rows,
+  // render an honest empty state instead of a blank panel body.
+  const bodyRows = (table?.rows as { rows?: unknown } | undefined)?.rows ?? table?.rows;
+  const hasRenderableRows =
+    Array.isArray(bodyRows) &&
+    bodyRows.length > 0 &&
+    typeof bodyRows[0] === "object" &&
+    bodyRows[0] !== null;
+  const emptyState = (
+    <div
+      style={{
+        fontSize: 12,
+        color: "var(--color-warm-gray)",
+        padding: "12px 4px",
+      }}
+    >
+      No rows returned for this view. Try widening the filters or asking a
+      broader question.
+    </div>
+  );
   const page = Math.min(pageState ?? fallback, Math.max(tables.length - 1, 0));
   const setPage = (n: number) => setPageState(Math.max(0, Math.min(n, tables.length - 1)));
 
@@ -174,6 +200,7 @@ export default function DataArtifacts({
   useEffect(() => {
     if (isShotTool) {
       setViewMode("court");
+      setExpanded(true);
     } else {
       setViewMode("table");
     }
@@ -225,7 +252,10 @@ export default function DataArtifacts({
         </div>
         <button
           type="button"
-          onClick={() => setShowInline(true)}
+          onClick={() => {
+            setShowInline(true);
+            setExpanded(true);
+          }}
           className="pill-ghost interactive-tactile"
           style={{ fontSize: 11, padding: "2px 8px" }}
         >
@@ -235,8 +265,108 @@ export default function DataArtifacts({
     );
   }
 
+  const rowCount = (() => {
+    const r: unknown = table.rows;
+    if (Array.isArray(r)) return r.length;
+    if (r && typeof r === "object") {
+      const first = Object.values(r as Record<string, unknown>).find((v) =>
+        Array.isArray(v),
+      );
+      if (Array.isArray(first)) return first.length;
+    }
+    return null;
+  })();
+
+  if (!expanded) {
+    return (
+      <div
+        style={{
+          border: "1px solid var(--color-stone-border)",
+          borderRadius: 12,
+          padding: "10px 14px",
+          background: "var(--color-pure-white)",
+          marginTop: 10,
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          flexWrap: "wrap",
+        }}
+      >
+        <div style={{ flex: 1, minWidth: 220 }}>
+          <div
+            style={{
+              fontWeight: 600,
+              fontSize: 13,
+              color: "var(--color-ink-black)",
+            }}
+          >
+            {rawTitle}
+            {rowCount !== null && (
+              <span style={{ fontWeight: 400, color: "var(--color-ash-gray)" }}>
+                {" "}
+                · {rowCount} rows
+              </span>
+            )}
+          </div>
+          <div style={{ fontSize: 11, color: "var(--color-ash-gray)", marginTop: 2 }}>
+            {table.meta?.source ? `Source: ${table.meta.source}` : "Source: NBA data"}
+            {table.meta?.fetched_at
+              ? ` · ${String(table.meta.fetched_at).slice(0, 10)}`
+              : ""}
+          </div>
+          {table.verdict && (
+            <div style={{ fontSize: 12, marginTop: 4, color: "var(--color-ink-black)" }}>
+              {table.verdict.length > 160
+                ? `${table.verdict.slice(0, 160)}…`
+                : table.verdict}
+            </div>
+          )}
+        </div>
+        <CitePill title={rawTitle} meta={table.meta} />
+        {onOpenArtifact && (
+          <button
+            type="button"
+            className="pill-ghost interactive-tactile"
+            style={{
+              fontSize: 11,
+              padding: "3px 10px",
+              borderColor: "var(--color-cyan-edge)",
+              color: "var(--color-cyan-edge)",
+            }}
+            onClick={() => {
+              onOpenArtifact({
+                id: artifactId,
+                tool: toolName || table.tool,
+                title: rawTitle,
+                rows: table.rows,
+                player: (table as { player?: unknown }).player,
+                meta: table.meta,
+                verdict: table.verdict,
+              });
+              setShowInline(false);
+            }}
+            title="Open in dedicated side canvas"
+          >
+            Canvas
+          </button>
+        )}
+        <button
+          type="button"
+          className="pill-ghost interactive-tactile"
+          style={{ fontSize: 11, padding: "3px 10px", fontWeight: 600 }}
+          onClick={() => setExpanded(true)}
+          title="Show the evidence table inline"
+        >
+          Evidence ▸
+        </button>
+      </div>
+    );
+  }
+
   return (
+    // expanded evidence card
     <div
+      className="t-skel-in"
       style={{
         border: "1px solid var(--color-stone-border)",
         borderRadius: 12,
@@ -279,6 +409,15 @@ export default function DataArtifacts({
         </div>
 
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <button
+            type="button"
+            className="pill-ghost interactive-tactile"
+            style={{ fontSize: 11, padding: "3px 10px" }}
+            onClick={() => setExpanded(false)}
+            title="Collapse back to the receipt strip"
+          >
+            ▸ Collapse
+          </button>
           <CitePill title={rawTitle} meta={table.meta} />
           {onOpenArtifact && (
             <button
@@ -426,7 +565,12 @@ export default function DataArtifacts({
         </details>
       )}
 
-      {toolName === "get_compare" || toolName === "get_preview" ? (
+      {!hasRenderableRows &&
+      toolName !== "run_python" &&
+      toolName !== "get_game_prediction" &&
+      toolName !== "get_impact_estimate" ? (
+        emptyState
+      ) : toolName === "get_compare" || toolName === "get_preview" ? (
         <CompareView rows={table.rows} />
       ) : toolName === "get_wowy" ? (
         <WowyCard
@@ -519,6 +663,7 @@ export default function DataArtifacts({
             onPlayerSelect={(player) =>
               onAsk ? onAsk(`Tell me about ${player} this season`) : undefined
             }
+            onPinPlayer={onPinPlayer}
           />
         </>
       )}

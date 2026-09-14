@@ -118,5 +118,5 @@ def test_unknown_player():
 
 def test_missing_season():
     res = tools.get_comps.invoke(
-        {"player_id": "Luka Doncic", "season": "2019-20"})
+        {"player_id": "Luka Doncic", "season": "2030-31"})
     assert res["ok"] is False

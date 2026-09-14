@@ -11,6 +11,7 @@ double-doubles are counted the Stathead way: 10+ in three (or two) of
 PTS/REB/AST/STL/BLK."""
 
 import datetime as _dt
+from collections import Counter
 from typing import Any
 
 from langchain_core.tools import tool
@@ -103,7 +104,7 @@ def _load_games(table: str, season: str,
     pid None loads every player (league-wide mode); otherwise one player.
     Each row carries player_id so callers can group.
     """
-    cols = ("GAME_DATE", "MATCHUP", "WL", "MIN", "FGM", "FGA", "FG3M",
+    cols = ("GAME_DATE", "Game_ID", "MATCHUP", "WL", "MIN", "FGM", "FGA", "FG3M",
             "FG3A", "FTM", "FTA", "OREB", "DREB", "REB", "AST", "STL",
             "BLK", "TOV", "PF", "PTS", "PLUS_MINUS")
     con = store.connect(read_only=True)
@@ -132,6 +133,7 @@ def _load_games(table: str, season: str,
         matchup = str(r.get("MATCHUP") or "")
         games.append({
             "player_id": r.get("Player_ID"),
+            "game_id": r.get("Game_ID"),
             "date": d,
             "matchup": matchup,
             "opponent": opponent_abbr(matchup),
@@ -180,6 +182,52 @@ def _playoff_coverage() -> str:
     return "playoff coverage: " + ", ".join(seasons)
 
 
+def playoff_inactive_note(pid: int, season: str, name: str | None = None) -> str | None:
+    """Explain a playoff-gamelog miss when the player was listed inactive.
+
+    QA F33: Luka's 2026 playoff lookup returned a bare "no data" while he
+    was in fact inactive (injured) for LAL's entire run - the bare message
+    reads like a coverage gap and contradicts teammates having rows. The
+    seeded silver_playoff_inactive table (bbref inactive listings) turns
+    the error into the true story.
+    """
+    try:
+        con = store.connect(read_only=True)
+        try:
+            tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+            if "silver_playoff_inactive" not in tables:
+                return None
+            rows = con.execute(
+                "SELECT GAME_DATE, MATCHUP, REASON FROM silver_playoff_inactive"
+                " WHERE _season = ? AND _entity = ?",
+                [season, f"player:{pid}"],
+            ).fetchall()
+        finally:
+            con.close()
+    except Exception:
+        return None
+    if not rows:
+        return None
+    from datetime import datetime as _dt
+
+    def _pd(d: str):
+        try:
+            return _dt.strptime(d, "%b %d, %Y")
+        except (TypeError, ValueError):
+            return None
+
+    dates = sorted(d for d in (_pd(r[0]) for r in rows) if d)
+    team = (rows[0][1] or "").split(" ")[0]
+    reason = (rows[0][2] or "inactive").strip().lower()
+    span = ""
+    if dates:
+        span = (f" ({dates[0].strftime('%b %-d')}"
+                f"-{dates[-1].strftime('%b %-d, %Y')})")
+    who = name or f"player {pid}"
+    return (f"{who} was listed {reason} for all {len(rows)} "
+            f"{team} playoff games{span}")
+
+
 def _matches(g: dict[str, Any], f: dict[str, Any]) -> bool:
     """One predicate over a normalized game row. Filters AND together."""
     if f["min_points"] is not None and g["pts"] < f["min_points"]:
@@ -189,6 +237,12 @@ def _matches(g: dict[str, Any], f: dict[str, Any]) -> bool:
     if f["min_assists"] is not None and g["ast"] < f["min_assists"]:
         return False
     if f["min_pra"] is not None and g["pts"] + g["reb"] + g["ast"] < f["min_pra"]:
+        return False
+    if f.get("max_points") is not None and g["pts"] >= f["max_points"]:
+        return False
+    if f.get("max_rebounds") is not None and g["reb"] >= f["max_rebounds"]:
+        return False
+    if f.get("max_assists") is not None and g["ast"] >= f["max_assists"]:
         return False
     if f["double_double"] and g["dd_count"] < 2:
         return False
@@ -207,6 +261,51 @@ def _matches(g: dict[str, Any], f: dict[str, Any]) -> bool:
     return True
 
 
+def _dedupe_games(games: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Collapse duplicate Game_ID rows, keeping the first occurrence.
+
+    The warehouse is append-seeded, so a re-seed can store one game
+    twice. The record must count distinct games, not rows. Rows with
+    no Game_ID are kept as-is.
+    """
+    seen: set = set()
+    unique: list[dict[str, Any]] = []
+    for g in games:
+        gid = g.get("game_id")
+        if gid is None or gid == "":
+            unique.append(g)
+            continue
+        if gid in seen:
+            continue
+        seen.add(gid)
+        unique.append(g)
+    return unique
+
+
+def _record_for_scope(games: list[dict[str, Any]], scope: str) -> dict[str, Any]:
+    """W/L aggregate over distinct games with its scope attached.
+
+    The scope label rides the record so a caller holding a regular
+    output and a playoff output cannot sum them silently.
+    """
+    wl = Counter(str(g.get("wl") or "").upper() for g in games)
+    w, l = wl.get("W", 0), wl.get("L", 0)
+    return {"w": w, "l": l, "games": w + l, "scope": scope}
+
+
+def _record_note(record_games: int, total: int, scope: str) -> str | None:
+    """Explain a record that covers fewer games than matched.
+
+    Rows without a W/L result count toward the total but not toward
+    wins/losses. None when every matched game has a result.
+    """
+    if record_games == total:
+        return None
+    return (f"record covers {record_games} of {total} matched {scope}"
+            " games; games without a W/L result are excluded"
+            " from wins/losses")
+
+
 def _describe_filters(f: dict[str, Any], playoffs: bool = False) -> str:
     bits = []
     if playoffs:
@@ -221,6 +320,12 @@ def _describe_filters(f: dict[str, Any], playoffs: bool = False) -> str:
         bits.append(f"{f['min_assists']:g}+ assists")
     if f["min_pra"] is not None:
         bits.append(f"{f['min_pra']:g}+ points+rebounds+assists")
+    if f.get("max_points") is not None:
+        bits.append(f"under {f['max_points']:g} points")
+    if f.get("max_rebounds") is not None:
+        bits.append(f"under {f['max_rebounds']:g} rebounds")
+    if f.get("max_assists") is not None:
+        bits.append(f"under {f['max_assists']:g} assists")
     if f["triple_double"]:
         bits.append("triple-doubles")
     elif f["double_double"]:
@@ -241,6 +346,7 @@ def _describe_filters(f: dict[str, Any], playoffs: bool = False) -> str:
 def _row_out(g: dict[str, Any]) -> dict[str, Any]:
     return {
         "date": g["date"].isoformat(),
+        "game_id": g.get("game_id"),
         "opponent": g["opponent"],
         "matchup": g["matchup"],
         "home": g["home"],
@@ -268,6 +374,9 @@ def search_game_logs(
     min_rebounds: float | None = None,
     min_assists: float | None = None,
     min_pra: float | None = None,
+    max_points: float | None = None,
+    max_rebounds: float | None = None,
+    max_assists: float | None = None,
     triple_double: bool = False,
     double_double: bool = False,
     best_game: bool = False,
@@ -297,7 +406,9 @@ def search_game_logs(
     regular-season table.
     min_points / min_rebounds / min_assists: per-game stat floors
     (e.g. min_points=40 for 40-point games). min_pra: points + rebounds
-    + assists floor. triple_double / double_double: keep only games
+    + assists floor. max_points / max_rebounds / max_assists: per-game
+    stat ceilings, exclusive (max_points=20 keeps 0-19 games -
+    "under 20"). triple_double / double_double: keep only games
     with 10+ in 3 (or 2) of PTS/REB/AST/STL/BLK. opponent: team name or
     abbreviation, e.g. "Knicks" or "NYK". month: name, number, or
     YYYY-MM. start_date / end_date: YYYY-MM-DD, inclusive. home_away:
@@ -331,6 +442,9 @@ def search_game_logs(
         thr_rebounds = _positive(min_rebounds, "min_rebounds")
         thr_assists = _positive(min_assists, "min_assists")
         thr_pra = _positive(min_pra, "min_pra")
+        cap_points = _positive(max_points, "max_points")
+        cap_rebounds = _positive(max_rebounds, "max_rebounds")
+        cap_assists = _positive(max_assists, "max_assists")
     except ValueError as exc:
         return {"tool": "search_game_logs", "ok": False, "error": str(exc)}
     abbr: str | None = None
@@ -364,6 +478,8 @@ def search_game_logs(
     filters = {
         "min_points": thr_points, "min_rebounds": thr_rebounds,
         "min_assists": thr_assists, "min_pra": thr_pra,
+        "max_points": cap_points, "max_rebounds": cap_rebounds,
+        "max_assists": cap_assists,
         "double_double": bool(double_double),
         "triple_double": bool(triple_double),
         "best_game": bool(best_game),
@@ -382,7 +498,9 @@ def search_game_logs(
         err = (f"no {scope} gamelog data for {label} in the warehouse"
                f" ({season})")
         if playoffs:
-            err += f"; {_playoff_coverage()}"
+            note = (playoff_inactive_note(pid, season, label)
+                    if pid is not None else None)
+            err += f"; {note}" if note else f"; {_playoff_coverage()}"
         return {"tool": "search_game_logs", "ok": False, "error": err}
     matched = [g for g in games if _matches(g, filters)]
     lim = _clamp_limit(limit)
@@ -454,10 +572,21 @@ def search_game_logs(
         }
     assert pid is not None
     name = _resolve_name(pid, str(player))
+    matched = _dedupe_games(matched)
     if best_game:
         # "best game" / "career high": the single max-points game.
         matched = sorted(matched, key=lambda g: g["pts"], reverse=True)[:1]
     capped = len(matched) > lim
+    scope_label = "playoffs" if playoffs else "regular"
+    record = _record_for_scope(matched, scope_label)
+    meta: dict[str, Any] = {
+        "source": "warehouse",
+        "season": season,
+        "coverage_note": _coverage_note(table),
+    }
+    note = _record_note(record["games"], len(matched), scope_label)
+    if note is not None:
+        meta["record_note"] = note
     return {
         "tool": "search_game_logs",
         "ok": True,
@@ -470,13 +599,10 @@ def search_game_logs(
             "total": len(matched),
             "returned": min(len(matched), lim),
             "capped": capped,
+            "record": record,
             "matches": [_row_out(g) for g in matched[:lim]],
         },
-        "meta": {
-            "source": "warehouse",
-            "season": season,
-            "coverage_note": _coverage_note(table),
-        },
+        "meta": meta,
     }
 
 

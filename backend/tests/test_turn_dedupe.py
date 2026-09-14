@@ -178,3 +178,153 @@ def test_suggestions_fallback_without_llm(monkeypatch):
 
     state, items = asyncio.run(_go())
     assert items == graph_mod._suggest(state["question"], [], [])
+
+
+# ------------------------------------------------- comeback override guard
+
+def test_gap_override_spares_evidence_backed_answers(monkeypatch):
+    # 10:09 AM live probe: the comeback pin returned 21 rows, the analyst
+    # honestly echoed the proxy note ("does not include..."), and the
+    # QA #66 gap-override REPLACED the whole answer with the bare
+    # play-by-play gap note - the MIN 17 board vanished. The override
+    # exists for no-data outcomes only.
+    monkeypatch.setattr(graph_mod, "get_llm", lambda *a, **k: None)
+
+    async def _go():
+        state = _make_state("Biggest comebacks in the 2026 playoffs?")
+        state["tool_results"] = [{
+            "tool": "get_standings_deep", "ok": True,
+            "rows": {"comeback_kings": [
+                {"TEAM": "Minnesota Timberwolves", "W": 17, "L": 18,
+                 "PCT": 0.486}]}}]
+        state["analysis"] = (
+            "Minnesota Timberwolves lead with 17 wins when trailing "
+            "at halftime. Exact margin flow does not include "
+            "play-by-play detail.")
+        events = [e async for e in presentation_agent(state)]
+        final = next(e for e in events if e.get("type") == "final_answer")
+        return (final.get("data") or {}).get("text", "")
+
+    text = asyncio.run(_go())
+    assert "Minnesota" in text
+    assert "17" in text
+
+
+def test_gap_override_still_rescues_true_no_data(monkeypatch):
+    monkeypatch.setattr(graph_mod, "get_llm", lambda *a, **k: None)
+
+    async def _go():
+        state = _make_state("Biggest comebacks in the 2026 playoffs?")
+        state["tool_results"] = []
+        state["analysis"] = "I could not compute that from the dataset."
+        events = [e async for e in presentation_agent(state)]
+        final = next(e for e in events if e.get("type") == "final_answer")
+        return (final.get("data") or {}).get("text", "")
+
+    text = asyncio.run(_go())
+    assert "no play-by-play" in text
+    assert "could not compute" not in text
+
+
+# ------------------------------------------------------------- F51
+
+def test_memory_persistence_claims_rewritten_session_scoped():
+    from app.graph import _scrub_final_text
+    out = _scrub_final_text("Noted your favorite team!")
+    assert "during this conversation" in out
+    assert "Noted your" not in out
+
+
+def test_memory_session_scoped_phrasing_survives():
+    from app.graph import _scrub_final_text
+    ok = "I'll remember that during this conversation."
+    assert _scrub_final_text(ok) == ok
+    ok2 = ("Got it - the Lakers. I'll keep that in mind for this chat. "
+           "They lead the West at 40-12.")
+    assert "this chat" in _scrub_final_text(ok2)
+
+
+def test_analytical_as_noted_untouched():
+    from app.graph import _scrub_final_text
+    text = ("As noted above, Minnesota leads with 17 wins. "
+            "Denver follows with 16.")
+    assert _scrub_final_text(text) == text
+
+
+def test_memory_claim_inside_answer_rewritten():
+    from app.graph import _scrub_final_text
+    out = _scrub_final_text(
+        "The Lakers are 40-12 this season. I won't forget that "
+        "they're your team.")
+    assert "I won't forget" not in out
+    assert "during this conversation" in out
+    assert "40-12" in out
+
+
+# ------------------------------------------------------------- F58
+
+def test_memory_statement_ack_detector_positive():
+    from app.graph import _memory_ack
+    for team in ("Lakers", "Celtics", "Knicks", "Warriors"):
+        out = _memory_ack(
+            f"My favorite team is the {team}. Remember that.")
+        assert out is not None, team
+        assert team in out
+        assert "this conversation" in out
+        assert "Nothing carries over between sessions" in out
+    out = _memory_ack("remember that my favorite team is the Warriors")
+    assert out is not None and "Warriors" in out
+    out = _memory_ack("My favorite player is LeBron James. Remember that.")
+    assert out is not None and "LeBron James" in out
+    assert "favorite player" in out
+
+
+def test_memory_statement_ack_detector_negative():
+    from app.graph import _memory_ack
+    # analytical asks carrying "favorite" must fall through to routes
+    assert _memory_ack(
+        "My favorite team is the Lakers, how many wins do they have?"
+    ) is None
+    assert _memory_ack(
+        "Who is the best player on the Lakers? They are my favorite team."
+    ) is None
+    assert _memory_ack("what is the Lakers record") is None
+    assert _memory_ack("") is None
+
+
+def test_memory_statement_ships_ack_not_no_data(monkeypatch):
+    # QA F58 live repro: "My favorite team is the Lakers. Remember that."
+    # shipped "No Los Angeles Clippers data found." (resolver matched both
+    # LA teams, team desk returned nothing, presentation named the FIRST).
+    # The pin must ship the session-scoped acknowledgment verbatim.
+    monkeypatch.setattr(graph_mod, "get_llm", lambda *a, **k: None)
+
+    async def _go():
+        state = _make_state("My favorite team is the Lakers. Remember that.")
+        state["tool_results"] = [{
+            "tool": "memory_note", "ok": False,
+            "error": "pinned"}]
+        state["analysis"] = ""
+        events = [e async for e in presentation_agent(state)]
+        final = next(e for e in events if e.get("type") == "final_answer")
+        return (final.get("data") or {}).get("text", "")
+
+    text = asyncio.run(_go())
+    assert "Lakers" in text
+    assert "this conversation" in text
+    assert "Clippers" not in text
+    assert "No " not in text.split(" Lakers")[0]
+
+
+def test_memory_ack_survives_scrub():
+    from app.graph import _memory_ack, _scrub_final_text
+    ack = _memory_ack("My favorite team is the Lakers. Remember that.")
+    assert _scrub_final_text(ack) == ack
+
+
+def test_warehouse_output_phrasing_scrubbed():
+    from app.graph import _scrub_final_text
+    out = _scrub_final_text(
+        "The Atlanta Hawks lead with 2462, per the warehouse output.")
+    assert "warehouse" not in out.lower()
+    assert "2462" in out

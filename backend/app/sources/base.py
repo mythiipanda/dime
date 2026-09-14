@@ -36,11 +36,20 @@ def safe(source: str, season: str, fn: Any, *args: Any,
          accept_empty: bool = False, **kwargs: Any) -> FetchResult:
     """Retry wrapper. Empty-but-successful results are retried unless the
     caller opts in to accept_empty (a valid empty answer, e.g. no games
-    on a scoreboard date, is not a failure)."""
+    on a scoreboard date, is not a failure).
+
+    Query-time latency policy: stats.nba.com endpoint-blocks datacenter
+    IPs, so retries mostly multiply a guaranteed timeout. Defaults cut
+    worst-case stall from ~54s to ~24s; DIME_LIVE_ATTEMPTS /
+    DIME_LIVE_BACKOFF_S override for seeding scripts that want patience.
+    """
+    import os as _os
     import time as _time
 
+    attempts = int(_os.environ.get("DIME_LIVE_ATTEMPTS", "2"))
+    backoff = float(_os.environ.get("DIME_LIVE_BACKOFF_S", "2"))
     last: Exception | None = None
-    for attempt in range(3):
+    for attempt in range(attempts):
         try:
             frame = fn(*args, **kwargs)
             if getattr(frame, "height", 0) > 0 or accept_empty:
@@ -48,5 +57,6 @@ def safe(source: str, season: str, fn: Any, *args: Any,
             last = RuntimeError("empty upstream response")
         except Exception as exc:
             last = exc
-        _time.sleep(4 * (attempt + 1))
+        if attempt < attempts - 1:
+            _time.sleep(backoff * (attempt + 1))
     return empty(source, season, str(last))

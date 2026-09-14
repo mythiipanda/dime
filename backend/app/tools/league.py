@@ -1,21 +1,43 @@
 """League desk. Standings, leaders, hustle, ratings, history, draft."""
 
+import re
 from typing import Any
 from langchain_core.tools import tool
 
+from .. import store
 from ..sources import nba_stats
 from ._core import SEASON, TTL_LEADERS, TTL_SCOREBOARD_PAST, clamp_stat, _warehouse_or_live, is_past_game_date
 
 
 @tool
-def get_injuries(team: str = "", season: str = SEASON) -> dict[str, Any]:
-    """Injury report, optional team abbreviation filter."""
+def get_injuries(team: str = "", player: str = "",
+                 season: str = SEASON) -> dict[str, Any]:
+    """Injury report, optional team abbreviation or player filter.
+
+    With a player name, also joins playoff inactive listings so
+    'is X injured?' surfaces 'inactive for the entire playoff run'
+    instead of a bare 'active' (F45)."""
     from ..sources import espn
 
     rows, meta = _warehouse_or_live(
         "silver_injuries", "_season = ?",
         [season], lambda: espn.injuries(season), season,
     )
+    note = None
+    if player:
+        try:
+            from ._core import coerce_player_id
+            from .gamelog import playoff_inactive_note as _pin
+            from .splits import _resolve_name as _rn
+
+            pid = coerce_player_id(player)
+            note = _pin(pid, season, _rn(pid, str(player)))
+        except Exception:
+            note = None
+        low = str(player).strip().lower()
+        rows = [r for r in rows
+                if low in str(r.get("player") or r.get("name")
+                                or "").lower()]
     if team:
         from nba_api.stats.static import teams as _teams
 
@@ -26,7 +48,49 @@ def get_injuries(team: str = "", season: str = SEASON) -> dict[str, Any]:
             want,
         )
         rows = [r for r in rows if full.lower() in str(r.get("display_name", "")).lower()]
-    return {"tool": "get_injuries", "ok": True, "rows": rows, "meta": meta}
+    out = {"tool": "get_injuries", "ok": True, "rows": rows, "meta": meta}
+    if player and not rows:
+        out["player_note"] = (
+            f"{player} is NOT on the current injury report. Report that "
+            "directly; an empty list for a named player is an answer, "
+            "never 'no data'.")
+    if note:
+        out.setdefault("rows")
+        out["inactive_note"] = note
+    return out
+
+
+_STANDINGS_KEEP = ("TeamID", "team", "abbrev", "Conference", "WINS",
+                   "LOSSES", "WinPCT", "Record", "PlayoffRank",
+                   "LeagueRank", "L10", "HOME", "ROAD", "PointsPG",
+                   "OppPointsPG", "DiffPointsPG", "CurrentStreak")
+
+
+def _slim_standings(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Compact standing rows.
+
+    QA #40: the raw 70-column row set overran the 12k-char evidence
+    window after ~8 teams, so the LLM truthfully reported 'Lakers not
+    in the evidence' while the card below rendered the full table.
+    Slim rows keep all 30 teams inside the window, and team/abbrev
+    give the narrative the full-name tokens it grounds on.
+    """
+    from nba_api.stats.static import teams as _static
+
+    abbr_by_id = {t.get("id"): str(t.get("abbreviation") or "")
+                  for t in _static.get_teams()}
+    out = []
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        tid = r.get("TeamID")
+        full = f"{r.get('TeamCity') or ''} {r.get('TeamName') or ''}".strip()
+        slim = {k: r.get(k) for k in _STANDINGS_KEEP
+                if k in r and k not in ("team", "abbrev")}
+        slim["team"] = full
+        slim["abbrev"] = abbr_by_id.get(tid, "")
+        out.append(slim)
+    return out
 
 
 @tool
@@ -37,7 +101,8 @@ def get_standings(season: str = SEASON) -> dict[str, Any]:
         [season], lambda: nba_stats.standings(season), season,
         limit=30,
     )
-    return {"tool": "get_standings", "ok": True, "rows": rows, "meta": meta}
+    return {"tool": "get_standings", "ok": True,
+            "rows": _slim_standings(rows), "meta": meta}
 
 
 @tool
@@ -154,7 +219,21 @@ def get_standings_deep(season: str = SEASON, top: int = 5) -> dict[str, Any]:
                                  "surging": momentum[:top],
                                  "fading": momentum[-top:][::-1]}},
             "meta": {"source": "warehouse", "season": season, "top": top,
-                     "teams": len(teams)}}
+                     "teams": len(teams),
+                     # QA #72: the count leader must survive into the
+                     # prose - analyst narration over the raw board
+                     # sometimes named no leader at all. The label lives
+                     # in meta so every path narrates it.
+                     "comeback_leader": (
+                         f"{comeback[0]['TEAM']} lead with "
+                         f"{comeback[0]['W']} wins when trailing at "
+                         f"halftime" if comeback else ""),
+                     "note": "comeback_kings and blown_leads use "
+                             "behind/ahead-at-halftime records as the "
+                             "proxy. Play-by-play in-game margin data "
+                             "(deficits, runs, quarter splits) is not "
+                             "in the dataset - say that, never claim "
+                             "game logs are missing."}}
 
 
 @tool
@@ -200,6 +279,51 @@ def get_clutch(scope: str = "player", season: str = SEASON) -> dict[str, Any]:
     return {"tool": "get_clutch", "ok": True, "rows": slim[:30], "meta": meta}
 
 
+def _finals_game_scores(finals: list[dict[str, Any]],
+                        season: str) -> dict[str, dict[str, int]]:
+    """Date -> {team: points} for Finals games, from player gamelogs.
+
+    The 2025-26 playoff gamelogs use synthetic Game_IDs, so the join key
+    is the game date; summing player PTS per team per date reproduces
+    the team score for each Finals game.
+    """
+    from datetime import datetime as _dt
+
+    dates: dict[str, str] = {}
+    for g in finals:
+        try:
+            dates[_dt.strptime(str(g.get("GAME_DATE")), "%Y-%m-%d")
+                  .strftime("%b %-d, %Y")] = str(g.get("GAME_DATE"))
+        except (TypeError, ValueError):
+            pass
+    if not dates:
+        return {}
+    try:
+        from .. import store as _store
+
+        import duckdb as _ddb
+
+        con = _ddb.connect(str(_store.DB_PATH), read_only=True)
+        try:
+            ph = ",".join("?" * len(dates))
+            rows = con.execute(
+                f"SELECT GAME_DATE, split_part(MATCHUP, ' ', 1), "
+                f"SUM(PTS) FROM silver_playoff_gamelogs "
+                f"WHERE _season = ? AND GAME_DATE IN ({ph}) "
+                f"GROUP BY 1, 2",
+                [season, *sorted(dates)]).fetchall()
+        finally:
+            con.close()
+    except Exception:
+        return {}
+    out: dict[str, dict[str, int]] = {}
+    for gdate, team, pts in rows:
+        iso = dates.get(str(gdate))
+        if iso and team:
+            out.setdefault(iso, {})[str(team)] = int(pts or 0)
+    return out
+
+
 @tool
 def get_playoffs(season: str = SEASON) -> dict[str, Any]:
     """Playoff wins per team plus champion for one season."""
@@ -223,14 +347,152 @@ def get_playoffs(season: str = SEASON) -> dict[str, Any]:
     table = sorted(
         ((t, w) for t, w in wins.items()), key=lambda x: x[1], reverse=True)
     champ = table[0][0] if table and table[0][1] >= 12 else ""
+    rows_out: dict[str, Any] = {"champion": champ,
+            "champion_record":
+                {"w": wins.get(champ, 0), "l": losses.get(champ, 0)}
+                if champ else {},
+            "wins": [{"team": t, "w": w, "l": losses.get(t, 0)}
+                     for t, w in table[:16]],
+            "games_total": games // 2}
+    # F49 residual: a generic "who won the Finals / series score" ask
+    # has no team names to route to get_season_series, so the Finals
+    # series must be visible HERE: round 4 games from the real NBA
+    # Game_IDs (004 YY 0 R MM GG -> R at index 7).
+    finals = [r for r in rows if str(r.get("GAME_ID") or "")[7:8] == "4"]
+    if finals:
+        fteams = sorted({str(r.get("TEAM_ABBREVIATION") or "")
+                         for r in finals} - {""})
+        fwins: dict[str, int] = {}
+        for r in finals:
+            t = str(r.get("TEAM_ABBREVIATION") or "")
+            if r.get("WL") == "W":
+                fwins[t] = fwins.get(t, 0) + 1
+        if len(fteams) == 2:
+            ta, tb = fteams[0], fteams[1]
+            # Game scores and home team, joined by date from the
+            # player-level playoff gamelogs (those rows carry synthetic
+            # Game_IDs, so GAME_ID itself cannot be the join key).
+            # Without these fields the composed answer guessed home/away
+            # from the raw MATCHUP string and got game 3 wrong, and it
+            # never had the scores at all.
+            _scores = _finals_game_scores(finals, season)
+            games_out = []
+            for g in finals:
+                if str(g.get("TEAM_ABBREVIATION")) != ta:
+                    continue
+                matchup = str(g.get("MATCHUP"))
+                if " @ " in matchup:
+                    home = matchup.split(" @ ")[1].strip()
+                elif " vs. " in matchup:
+                    home = matchup.split(" vs. ")[0].strip()
+                else:
+                    home = ""
+                game = {"game_id": str(g.get("GAME_ID")),
+                        "date": str(g.get("GAME_DATE")),
+                        "matchup": matchup,
+                        "home": home,
+                        "winner": (ta if g.get("WL") == "W"
+                                   else tb)}
+                sc = _scores.get(str(g.get("GAME_DATE")) or "")
+                if sc:
+                    game["score"] = sc
+                    game["scoreline"] = ", ".join(
+                        f"{t} {sc[t]}" for t in (ta, tb) if t in sc)
+                games_out.append(game)
+            rows_out["finals"] = {
+                "round": "NBA Finals",
+                "teams": [ta, tb],
+                "series_score": (f"{ta} {fwins.get(ta, 0)} - "
+                                 f"{fwins.get(tb, 0)} {tb}"),
+                "winner": max(fwins, key=fwins.get) if fwins else "",
+                "games": games_out,
+            }
+            # F52: the Finals MVP award itself is not recorded anywhere
+            # in the dataset. Say that, then give the honest statistical
+            # read: the leading Finals scorer, per-game, over the series.
+            try:
+                from datetime import datetime as _dt
+
+                fdates = set()
+                for g in finals:
+                    try:
+                        fdates.add(_dt.strptime(
+                            str(g.get("GAME_DATE")), "%Y-%m-%d"
+                        ).strftime("%b %-d, %Y"))
+                    except (TypeError, ValueError):
+                        pass
+                if fdates:
+                    from .. import store as _store
+
+                    import duckdb as _ddb
+
+                    _con = _ddb.connect(str(_store.DB_PATH), read_only=True)
+                    try:
+                        _ph = ",".join("?" * len(fdates))
+                        _sc = _con.execute(
+                            f"SELECT _entity, COUNT(*), "
+                            f"ROUND(AVG(PTS), 1) FROM "
+                            f"silver_playoff_gamelogs WHERE _season = ? "
+                            f"AND GAME_DATE IN ({_ph}) GROUP BY 1 "
+                            f"ORDER BY 3 DESC LIMIT 1",
+                            [season, *sorted(fdates)]).fetchone()
+                        if _sc and _sc[1]:
+                            _pid = str(_sc[0]).replace("player:", "")
+                            _nm = _con.execute(
+                                "SELECT DISTINCT PLAYER FROM "
+                                "silver_leaders_pts WHERE "
+                                "CAST(PLAYER_ID AS VARCHAR) = ?",
+                                [_pid]).fetchone()
+                            _name = _nm[0] if _nm else _pid
+                            rows_out["finals"]["finals_mvp_note"] = (
+                                "The Finals MVP award is not recorded in "
+                                "this dataset. The leading Finals scorer "
+                                f"was {_name} at {_sc[2]} points per "
+                                f"game over the {len(fdates)}-game "
+                                "series.")
+                    finally:
+                        _con.close()
+            except Exception:
+                pass
+    from ._core import season_static as _season_static
+    if _season_static(season):
+        # QA F36: subagent paths answer "simulate the playoffs" from
+        # get_playoffs directly and the model framed these actuals as
+        # simulation output. Label them AT THE SOURCE so every path is
+        # honest: these are final results, not a Monte Carlo run.
+        rows_out["result_kind"] = "ACTUAL_RESULTS_NOT_SIMULATION"
+        rows_out["summary"] = (
+            f"These are the ACTUAL final {season} playoff results"
+            + (f" ({champ} champions)" if champ else "")
+            + ", recorded games - not a simulation or prediction. "
+              "If the ask was to simulate, say simulated odds are "
+              "unavailable for a completed season.")
+    # F63/v67: the Finals result is a pinned lane - the answer text must
+    # be built here from payload fields (full names, "4-1" form), never
+    # LLM-composed from abbreviations ("NYK ... 4 to 1" shipped live).
+    _fin = rows_out.get("finals")
+    if isinstance(_fin, dict) and _fin.get("winner"):
+        try:
+            from nba_api.stats.static import teams as _static
+            _name = {t["abbreviation"]: t["full_name"]
+                     for t in _static.get_teams()}
+            _w = _fin["winner"]
+            _l = next((t for t in _fin.get("teams", []) if t != _w), "")
+            _wt = _name.get(_w, _w)
+            _lt = _name.get(_l, _l)
+            _ww = sum(1 for g in _fin.get("games", [])
+                      if g.get("winner") == _w)
+            _tot = len(_fin.get("games", [])) or 0
+            _lw = _tot - _ww
+            _yr = season.split("-")[0]
+            _yr = str(int(_yr) + 1) if _yr.isdigit() else season
+            meta["deterministic_answer"] = (
+                f"The {_wt} won the {_yr} NBA Finals, beating the "
+                f"{_lt} {_ww}-{_lw}.")
+        except Exception:
+            pass
     return {"tool": "get_playoffs", "ok": True,
-            "rows": {"champion": champ,
-                     "champion_record":
-                         {"w": wins.get(champ, 0), "l": losses.get(champ, 0)}
-                         if champ else {},
-                     "wins": [{"team": t, "w": w, "l": losses.get(t, 0)}
-                              for t, w in table[:16]],
-                     "games_total": games // 2},
+            "rows": rows_out,
             "meta": meta}
 
 
@@ -245,16 +507,279 @@ def get_leaders(stat_category: str = "PTS", season: str = SEASON) -> dict[str, A
     )
     meta["stat_category"] = stat_category
     try:
-        from .. import store as _store
-
-        total = len(_store.read_frame(table, "_season = ?", [season]))
+        total = int(meta.get("rows") or len(rows) or 0)
         for r in rows:
             rank = r.get("RANK") or 0
             if rank and total:
                 r["PERCENTILE"] = round(100 * (1 - (rank - 1) / total), 1)
     except Exception:
         pass
-    return {"tool": "get_leaders", "ok": True, "rows": rows, "meta": meta}
+    # Pin the asked-for stat column right after the identity columns so
+    # capped table renderers (12-column cap) can never cut it (QA F8:
+    # the AST leaders table rendered without an AST column).
+    # QA #30 nit: leaders tables carried every raw column (FGM/FGA on an
+    # AST leaderboard). Keep identity + the asked stat + context only.
+    pin = ["RANK", "PLAYER", "TEAM", stat_category, "GP", "MIN",
+           "PERCENTILE"]
+    pinned = []
+    for r in rows:
+        if not isinstance(r, dict):
+            pinned.append(r)
+            continue
+        pinned.append({k: r[k] for k in pin if k in r})
+    return {"tool": "get_leaders", "ok": True, "rows": pinned, "meta": meta}
+
+
+_TEAM_TOTAL_STATS = ("PTS", "REB", "AST", "STL", "BLK", "FG3M", "TOV")
+
+
+def _deduped_team_totals(stat: str, season: str):
+    """Deduped team-totals query shared by get_team_leaders and
+    get_team_compare. Returns (abbrev, total, gp, per_game) rows
+    ordered by total desc, or None when the game-logs table is absent.
+
+    Dedupe: HOU shipped with 77 games seeded twice (nba_api partial
+    rows alongside full basketball-reference rows, keyed by different
+    Game_IDs) - naive sums doubled HOU's totals and crowned them false
+    leaders. One row per (date, matchup, player), preferring the full
+    bbref seed. Sources disagree on three abbrevs (nba_api PHX/CHA/BKN
+    vs bbref PHO/CHO/BRK) - normalize or game-level dedupe misses
+    cross-source dupes.
+    """
+    con = store.connect(read_only=True)
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        if "silver_player_gamelogs" not in tables:
+            return None
+        return con.execute(
+            "WITH norm AS ("
+            "SELECT *, TRY_STRPTIME(GAME_DATE, '%b %d, %Y') AS d, "
+            "REPLACE(REPLACE(REPLACE(MATCHUP, 'PHX', 'PHO'), "
+            "'CHA', 'CHO'), 'BKN', 'BRK') AS m "
+            "FROM silver_player_gamelogs WHERE _season = ?), "
+            "bb_games AS ("
+            "SELECT DISTINCT d, m FROM norm "
+            "WHERE _source = 'basketball-reference'), "
+            "deduped AS ("
+            "SELECT n.* FROM norm n WHERE NOT ("
+            "n._source <> 'basketball-reference' AND (n.d, n.m) "
+            "IN (SELECT d, m FROM bb_games))) "
+            "SELECT SPLIT_PART(m, ' ', 1) AS ABBREV, "
+            f"SUM({stat}) AS TOTAL, COUNT(DISTINCT d) AS GP, "
+            f"ROUND(SUM({stat}) * 1.0 / COUNT(DISTINCT d), 1) "
+            "AS PER_GAME "
+            "FROM deduped GROUP BY 1 ORDER BY TOTAL DESC",
+            [season]).fetchall()
+    finally:
+        con.close()
+
+
+
+
+@tool
+def get_team_leaders(stat_category: str = "AST",
+                     season: str = SEASON) -> dict[str, Any]:
+    """Team totals leaderboard for a counting stat (PTS, REB, AST, STL,
+    BLK): player game logs summed by team, with per-game averages.
+    Use for "which team leads in total assists" - get_leaders is
+    player-level only.
+    """
+    stat = clamp_stat(stat_category)
+    if stat not in _TEAM_TOTAL_STATS:
+        stat = "AST"
+    fetched = _deduped_team_totals(stat, season)
+    if fetched is None:
+        return {"tool": "get_team_leaders", "ok": False,
+                "error": "no player game logs table in the warehouse"}
+    from nba_api.stats.static import teams as _static
+    names = {t["abbreviation"]: t["full_name"]
+             for t in _static.get_teams()}
+    # warehouse normalized bbref abbrevs back to nba_api for display
+    _alias = {"PHO": "PHX", "CHO": "CHA", "BRK": "BKN"}
+    rows = []
+    for i, (abbrev, total, gp, per_game) in enumerate(fetched, 1):
+        rows.append({
+            "RANK": i,
+            "TEAM": names.get(_alias.get(abbrev, abbrev), abbrev),
+            "ABBREV": abbrev,
+            stat: int(total),
+            "GP": int(gp),
+            "PER_GAME": per_game,
+        })
+    leader = rows[0] if rows else None
+    leader_line = (f"{leader['TEAM']} lead with {leader[stat]} total "
+                   f"{stat} ({leader['PER_GAME']} per game over "
+                   f"{leader['GP']} games)") if leader else ""
+    meta = {"stat_category": stat, "season": season, "source": "warehouse",
+            "rows": len(rows),
+            "leader_line": leader_line,
+            "note": "team totals summed from player game logs "
+                    "(regular season). Cite the leader's TOTAL value "
+                    "and per-game verbatim from leader_line - never "
+                    "drop the total (QA: points narrative shipped "
+                    "'scored the most points with total points and "
+                    "122.1 per game', value missing)."}
+    return {"tool": "get_team_leaders", "ok": True, "rows": rows,
+            "meta": meta}
+
+
+@tool
+def get_team_compare(stat_category: str = "PTS", top: int = 3,
+                     season: str = SEASON) -> dict[str, Any]:
+    """Top-N team compare on one counting stat: total, per-game, games
+    played, and the win-loss record joined from standings, in one
+    board. Use for multi-metric team compares ("compare the top 3
+    scoring teams: totals, per-game, and wins") - get_team_leaders has
+    no records and a delegate fan-out composes nameless tables with
+    empty cells or invented numbers (F66). The answer is built
+    deterministically from the rows into meta.deterministic_answer;
+    compose ships it verbatim (v67 design law)."""
+    stat = clamp_stat(stat_category)
+    if stat not in _TEAM_TOTAL_STATS:
+        stat = "PTS"
+    try:
+        top = max(2, min(int(top or 3), 10))
+    except (TypeError, ValueError):
+        top = 3
+    fetched = _deduped_team_totals(stat, season)
+    if fetched is None:
+        return {"tool": "get_team_compare", "ok": False,
+                "error": "no player game logs table in the warehouse"}
+    con = store.connect(read_only=True)
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        records: dict[str, tuple[int, int]] = {}
+        if "silver_standings" in tables:
+            for city, name, w, loss in con.execute(
+                    "SELECT TeamCity, TeamName, WINS, LOSSES "
+                    "FROM silver_standings WHERE _season = ?",
+                    [season]).fetchall():
+                records[f"{city or ''} {name or ''}".strip()] = (
+                    int(w or 0), int(loss or 0))
+    finally:
+        con.close()
+    from nba_api.stats.static import teams as _static
+    names = {t["abbreviation"]: t["full_name"]
+             for t in _static.get_teams()}
+    # warehouse normalized bbref abbrevs back to nba_api for display
+    _alias = {"PHO": "PHX", "CHO": "CHA", "BRK": "BKN"}
+    rows = []
+    for i, (abbrev, total, gp, per_game) in enumerate(
+            fetched[:top], 1):
+        team = names.get(_alias.get(abbrev, abbrev), abbrev)
+        w, loss = records.get(team, (None, None))
+        rows.append({
+            "RANK": i,
+            "TEAM": team,
+            "ABBREV": abbrev,
+            stat: int(total),
+            "GP": int(gp),
+            "PER_GAME": per_game,
+            "W": w,
+            "L": loss,
+            "RECORD": f"{w}-{loss}" if w is not None else "",
+        })
+    if not rows:
+        return {"tool": "get_team_compare", "ok": False,
+                "error": f"no team totals for {season}"}
+    leader = rows[0]
+    answer = (f"{leader['TEAM']} lead with {leader[stat]} total {stat} "
+              f"({leader['PER_GAME']} per game over {leader['GP']} "
+              f"games)")
+    if leader.get("RECORD"):
+        answer += f" and a {leader['RECORD']} record"
+    answer += "."
+    if len(rows) > 1:
+        parts = []
+        for r in rows[1:]:
+            part = (f"{r['TEAM']}: {r[stat]} total {stat} "
+                    f"({r['PER_GAME']} per game)")
+            if r.get("RECORD"):
+                part += f", {r['RECORD']}"
+            parts.append(part)
+        answer += " " + "; ".join(parts) + "."
+    meta = {"stat_category": stat, "season": season,
+            "source": "warehouse", "rows": len(rows),
+            "deterministic_answer": answer,
+            "note": "deterministic deep-compare lane (F66): ship "
+                    "deterministic_answer verbatim - totals and "
+                    "per-game come from deduped player game logs, "
+                    "records from standings. Never recompose these "
+                    "numbers from scratch."}
+    return {"tool": "get_team_compare", "ok": True, "rows": rows,
+            "meta": meta}
+
+
+@tool
+def get_team_four_factors(team: str = "", season: str = SEASON) -> dict[str, Any]:
+    """Team four factors (eFG%, TOV%, ORB%, FT rate, plus defensive
+    mirrors), computed offline from warehouse team game rows. Use for
+    "why are the Thunder good", "team identity", or any four-factors
+    ask. Pass a team name/abbrev to scope to one team; empty returns
+    the full 30-team board.
+    """
+    try:
+        _con = store.connect()
+        try:
+            tables = {r[0] for r in _con.execute("SHOW TABLES").fetchall()}
+        finally:
+            _con.close()
+    except Exception as exc:
+        return {"tool": "get_team_four_factors", "ok": False,
+                "rows": [], "meta": {},
+                "error": f"warehouse read failed: {str(exc)[:120]}"}
+    if "silver_four_factors_team" not in tables:
+        return {"tool": "get_team_four_factors", "ok": False,
+                "rows": [], "meta": {"season": season},
+                "error": "warehouse table missing: "
+                         "silver_four_factors_team (run "
+                         "scripts/build_team_four_factors.py)"}
+    where, params = "_season = ?", [season]
+    team_q = (team or "").strip()
+    if team_q:
+        from nba_api.stats.static import teams as _static
+        match = None
+        for t in _static.get_teams():
+            if team_q.lower() in (t["full_name"].lower(),
+                                  t["abbreviation"].lower(),
+                                  t["nickname"].lower()):
+                match = t
+                break
+        if match is None:
+            return {"tool": "get_team_four_factors", "ok": False,
+                    "rows": [], "meta": {"season": season},
+                    "error": f"unknown team '{team_q}'"}
+        where += " AND TEAM = ?"
+        params.append(match["abbreviation"])
+    try:
+        rows = store._read_df(
+            f"SELECT TEAM, GP, W, EFG_PCT, TOV_PCT, ORB_PCT, FT_RATE, "
+            f"OPP_EFG_PCT, OPP_TOV_PCT, DRB_PCT, OPP_FT_RATE "
+            f"FROM silver_four_factors_team WHERE {where} "
+            f"ORDER BY EFG_PCT DESC", params)
+    except Exception as exc:
+        return {"tool": "get_team_four_factors", "ok": False,
+                "rows": [], "meta": {"season": season},
+                "error": f"warehouse read failed: {str(exc)[:120]}"}
+    if not rows:
+        return {"tool": "get_team_four_factors", "ok": False,
+                "rows": [], "meta": {"season": season},
+                "error": f"no four-factors rows for {season}"}
+    meta = {"season": season, "source": "warehouse",
+            "rows": len(rows),
+            "note": "computed offline from silver_team_games box "
+                    "scores; eFG% = (FGM + 0.5*FG3M)/FGA, TOV% per "
+                    "possession estimate, ORB% vs opponent DREB, "
+                    "FTr = FTA/FGA. Quote figures verbatim."}
+    if team_q and rows:
+        r0 = rows[0]
+        meta["leader_line"] = (
+            f"{r0['TEAM']} four factors {season}: eFG% {r0['EFG_PCT']}, "
+            f"TOV% {r0['TOV_PCT']}, ORB% {r0['ORB_PCT']}, "
+            f"FT rate {r0['FT_RATE']} (defense: opp eFG% "
+            f"{r0['OPP_EFG_PCT']}, DRB% {r0['DRB_PCT']})")
+    return {"tool": "get_team_four_factors", "ok": True, "rows": rows,
+            "meta": meta}
 
 
 @tool
@@ -294,10 +819,14 @@ def get_rapm(player: str = "", top: int = 10, season: str = SEASON) -> dict[str,
             ).fetchall()
     finally:
         con.close()
-    out = [{"player_id": r[0], "name": r[1], "rapm": r[2], "possessions": r[3]}
+    out = [{"player_id": r[0], "name": r[1],
+            "rapm": round(float(r[2] or 0), 2), "possessions": r[3]}
            for r in rows]
     return {"tool": "get_rapm", "ok": True, "rows": out,
-            "meta": {"source": "rapm-lite", "season": season}}
+            "meta": {"source": "rapm-lite (estimate)", "season": season,
+                     "qualification": "players under 500 possessions "
+                                      "excluded; estimates shrink "
+                                      "toward the prior"}}
 
 
 @tool
@@ -486,10 +1015,19 @@ def get_rest(team_abbrev: str = "", season: str = SEASON) -> dict[str, Any]:
                 rest_w += w == "W"
                 rest_l += w != "W"
         prev = (t, d)
+    _rmeta: dict[str, Any] = {"source": "warehouse", "season": season}
+    from ._core import season_static as _season_static
+    if _season_static(season):
+        # QA F17: in the offseason there are no upcoming back-to-backs;
+        # these are FINAL 2025-26 splits, and the next games are preseason.
+        _rmeta["offseason"] = True
+        _rmeta["note"] = (f"{season} is complete; these are final "
+                          "splits. No NBA games until preseason, so no "
+                          "upcoming back-to-backs exist right now.")
     return {"tool": "get_rest", "ok": True,
             "rows": {"back_to_back": f"{b2b_w}-{b2b_l}",
                      "three_plus_rest": f"{rest_w}-{rest_l}"},
-            "meta": {"source": "warehouse", "season": season}}
+            "meta": _rmeta}
 
 
 """Shared ELO engine. get_win_prob and get_elo build ratings from the same
@@ -618,6 +1156,22 @@ def _current_team_for_player(
         return fallback
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        from ._core import season_static as _season_static
+        if _season_static(SEASON) and name and "silver_salaries" in tables:
+            # Offseason: the 2026-27 contracts sheet is fresher than the
+            # final 2025-26 leaders table (LeBron played 2025-26 on LAL
+            # but signed with PHI for 2026-27 - QA #30 evidence dive).
+            # Trades in September must price him as a 76er.
+            try:
+                row = con.execute(
+                    "SELECT TEAM FROM silver_salaries "
+                    "WHERE LOWER(PLAYER_NAME) = LOWER(?) LIMIT 1",
+                    [name],
+                ).fetchone()
+                if row and row[0]:
+                    return str(row[0])
+            except Exception:
+                pass
         if name and "silver_leaders_pts" in tables:
             try:
                 row = con.execute(
@@ -672,6 +1226,29 @@ def _current_team_for_player(
     return fallback
 
 
+def _first_name_compatible(want: str, cand: str) -> bool:
+    """Trade-match first-name guard.
+
+    QA #32: ratio>=0.8 lets 'lebron' pass as 'bronny' (0.83) - the son
+    surfaces as a suggestion for the father. Accept equal first names,
+    prefix nicknames of length >= 4 ('steph'/'stephen'), or ratio >= 0.9
+    ('jayson'/'jason' 0.91, 'stephan'/'stephen' 0.93); 0.83 now fails.
+    """
+    import difflib as _dl
+
+    a = (want or "").lower().strip()
+    b = (cand or "").lower().strip()
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    if len(a) >= 4 and b.startswith(a):
+        return True
+    if len(b) >= 4 and a.startswith(b):
+        return True
+    return _dl.SequenceMatcher(None, a, b).ratio() >= 0.9
+
+
 def _resolve_stale_trade_player(want: str, team: str,
                                 con: object = None) -> tuple[str, int] | None:
     """Salary-sheet row for want whose current team is team, else None."""
@@ -717,8 +1294,16 @@ def _resolve_stale_trade_player(want: str, team: str,
                     fuzzy.append(r)
     except Exception:
         fuzzy = []
-    for cand in exact + subs + fuzzy:
+    wl_first = wl.split()[0] if wl.split() else ""
+    for i, cand in enumerate(exact + subs + fuzzy):
         cname, csal, cteam = str(cand[0]), cand[1] or 0, str(cand[2] or "")
+        # Fuzzy candidates must also match on first name - otherwise
+        # "LeBron James" silently prices as "Bronny James" (father/son
+        # share the surname; seen live on the LAL trade-check path).
+        if i >= len(exact) + len(subs):
+            c_first = cname.lower().split()[0] if cname.split() else ""
+            if not _first_name_compatible(wl_first, c_first):
+                continue
         try:
             cur = _current_team_for_player(cname, None, cteam, con)
         except Exception:
@@ -726,6 +1311,90 @@ def _resolve_stale_trade_player(want: str, team: str,
         if str(cur).upper() == target:
             return cname, int(csal)
     return None
+
+
+def _locate_player_team(name: str, con: object) -> tuple[str, str, int] | None:
+    """(PLAYER_NAME, current TEAM, salary) for name, any team.
+
+    QA #32: when the caller's team attribution is stale ('LAL: LeBron
+    James'), locate the real team so the trade check can re-attribute
+    instead of erroring. Same first-name guard as the trade matchers.
+    """
+    import difflib as _dl
+
+    w = str(name or "").strip().lower()
+    if not w:
+        return None
+    try:
+        rows = con.execute(
+            "SELECT PLAYER_NAME, SALARY_2025_26, TEAM FROM silver_salaries"
+        ).fetchall()
+    except Exception:
+        return None
+    exact = [r for r in rows if str(r[0]).lower() == w]
+    subs = [r for r in rows if w in str(r[0]).lower() and r not in exact]
+    lows = [str(r[0]).lower() for r in rows]
+    fuzzy: list = []
+    wf = w.split()[0] if w.split() else ""
+    for m in _dl.get_close_matches(w, lows, n=3, cutoff=0.8):
+        for r in rows:
+            if str(r[0]).lower() == m and r not in exact and r not in subs:
+                cf = str(r[0]).lower().split()[0]
+                if _first_name_compatible(wf, cf):
+                    fuzzy.append(r)
+    for cand in (exact + subs + fuzzy)[:1]:
+        cname, csal, cteam = str(cand[0]), int(cand[1] or 0), str(cand[2] or "")
+        try:
+            cur = _current_team_for_player(cname, None, cteam, con)
+        except Exception:
+            cur = cteam
+        return cname, str(cur or cteam).upper(), csal
+    return None
+
+
+def _norm_trade_teams(team_a: str, team_b: str) -> tuple[str, str] | None:
+    """Resolve abbrev/city/nickname to canonical abbreviations.
+
+    F47: 'LAL' vs 'LAKERS' graded as two franchises with an empty side.
+    Returns None when both sides resolve to the same team.
+    """
+    from .competitive import _resolve_team_abbr
+
+    a = _resolve_team_abbr(team_a) or str(team_a or "").strip().upper()
+    b = _resolve_team_abbr(team_b) or str(team_b or "").strip().upper()
+    if a and b and a == b:
+        return None
+    return a, b
+
+
+def _auto_correct_side(unks: list[str], old_team: str, plist: str,
+                       con: object):
+    """Re-attribute a side whose players are unknown on old_team.
+
+    Returns (new_team, (out, names, unk), corrections) when every
+    unknown on the side locates to one other team on the salary sheet,
+    else None. QA #32: 'LAL: LeBron James' -> priced as PHI-LeBron.
+    """
+    located = []
+    for u in unks:
+        base = u.split(" (suggestions")[0].strip()
+        hit = _locate_player_team(base, con)
+        if hit is None:
+            return None
+        located.append((base,) + hit)
+    new_teams = {t for _, _, t, _ in located}
+    if len(new_teams) != 1:
+        return None
+    new_team = new_teams.pop()
+    if new_team == str(old_team).upper():
+        return None
+    matched = _match_trade_players(new_team, plist, con)
+    corrections = [
+        f"{cname} is on {t} per the 2026-27 salary sheet "
+        f"(not {str(old_team).upper()}); computed for the corrected team"
+        for base, cname, t, _s in located
+    ]
+    return new_team, matched, corrections
 
 
 def _payroll(team: str, con: object = None) -> tuple[int, list[dict]]:
@@ -769,8 +1438,33 @@ def _apron_state(payroll: int) -> dict[str, object]:
 
 def _allowed_incoming(outgoing: int, over_apron1: bool) -> tuple[int, str]:
     if over_apron1:
-        return outgoing, "100pct above first apron"
-    return int(outgoing * 1.25 + 250_000), "125pct plus 250k below first apron"
+        return outgoing, "100% (above the first apron)"
+    return int(outgoing * 1.25 + 250_000), "125% plus $250k (below the first apron)"
+
+
+def _salary_vintage(con: object = None) -> tuple[str, int, str | None]:
+    """Stored salary vintage: (season, rows, fetched_at) from silver_salaries."""
+    from .. import store as _store
+
+    own = con is None
+    if own:
+        con = _store.connect()
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        if "silver_salaries" not in tables:
+            return "", 0, None
+        row = con.execute(
+            "SELECT _season, COUNT(*), MAX(_fetched_at) FROM silver_salaries "
+            "GROUP BY _season ORDER BY COUNT(*) DESC LIMIT 1"
+        ).fetchone()
+        if not row:
+            return "", 0, None
+        return str(row[0] or ""), int(row[1] or 0), row[2]
+    except Exception:
+        return "", 0, None
+    finally:
+        if own:
+            con.close()
 
 
 def _payroll_source(con: object = None) -> str:
@@ -782,9 +1476,12 @@ def _payroll_source(con: object = None) -> str:
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if "silver_salaries" in tables:
-            n = con.execute("SELECT COUNT(*) FROM silver_salaries").fetchone()[0]
-            if n > 300:
-                return "basketball-reference contracts (real 2026-27 salaries)"
+            season, n, fetched = _salary_vintage(con)
+            if n > 300 and season:
+                date = f", fetched {str(fetched)[:10]}" if fetched else ""
+                return (f"basketball-reference contracts "
+                        f"({season} salaries{date}; "
+                        f"some players missing or estimated)")
     finally:
         if own:
             con.close()
@@ -828,6 +1525,7 @@ def get_cap_ledger(team: str = "") -> dict[str, Any]:
         total, players = _payroll(team, con)
         source = _payroll_source(con)
         salary_date = _salary_date(con)
+        season, _, _ = _salary_vintage(con)
     finally:
         con.close()
     return {"tool": "get_cap_ledger", "ok": True,
@@ -836,7 +1534,7 @@ def get_cap_ledger(team: str = "") -> dict[str, Any]:
                                        reverse=True)[:15],
                      "room_under_apron2": CAP["apron2"] - total,
                      "over_tax": total > CAP["tax"]},
-            "meta": {"source": source, "season": "2026-27",
+            "meta": {"source": source, "season": season or "2026-27",
                      "salary_date": salary_date,
                      **{k: v for k, v in CAP.items()}}}
 
@@ -870,8 +1568,9 @@ def _match_trade_players(team: str, names: str,
             hit = next((p for p in roster if w in p["player"].lower()), None)
             if hit is None:
                 fb = _dl.get_close_matches(w, lows, n=1, cutoff=0.8)
-                if fb and _dl.SequenceMatcher(
-                        None, w.split()[0], fb[0].split()[0]).ratio() >= 0.8:
+                if fb and _first_name_compatible(
+                        w.split()[0] if w.split() else "",
+                        fb[0].split()[0] if fb[0].split() else ""):
                     hit = by_low[fb[0]]
             if hit:
                 matched.append(hit["player"])
@@ -882,7 +1581,10 @@ def _match_trade_players(team: str, names: str,
                     matched.append(stale[0])
                     total_out += stale[1]
                 else:
-                    sug = [disp[s] for s in _dl.get_close_matches(w, lows, n=2, cutoff=0.6)]
+                    sug = [disp[s] for s in _dl.get_close_matches(w, lows, n=2, cutoff=0.6)
+                           if _first_name_compatible(
+                               w.split()[0] if w.split() else "",
+                               s.split()[0] if s.split() else "")]
                     unknown.append(f"{orig} (suggestions: {', '.join(sug)})" if sug else orig)
     finally:
         if own:
@@ -959,15 +1661,61 @@ def get_trade_check(
     Picks and exceptions stay out of v1.
     """
 
+    if (not team_a or not team_b) and players_a and players_b:
+        # 2026-09-13 compose probe: the agent called this with players
+        # only, hit "two teams needed", and concluded salary data was
+        # missing - a false absence over a full salary sheet. Each
+        # player's current team is resolvable from that sheet (same
+        # resolver the stale-attribution fix uses), so infer missing
+        # side teams before erroring.
+        from .. import store as _store
+
+        def _infer_side(plist: str) -> str:
+            ts: set[str] = set()
+            for nm in [x.strip() for x in str(plist).split(",") if x.strip()]:
+                hit = _locate_player_team(nm, con)
+                if hit is None:
+                    return ""
+                ts.add(str(hit[1]))
+            return ts.pop() if len(ts) == 1 else ""
+
+        con = _store.connect()
+        try:
+            team_a = team_a or _infer_side(players_a)
+            team_b = team_b or _infer_side(players_b)
+        finally:
+            con.close()
     if not team_a or not team_b:
         return {"tool": "get_trade_check", "ok": False,
                 "error": "two teams needed"}
+    _norm = _norm_trade_teams(team_a, team_b)
+    if _norm is None:
+        return {"tool": "get_trade_check", "ok": False,
+                "error": (f"both sides resolve to the same team "
+                          f"({team_a} / {team_b}) - a trade needs two "
+                          f"different teams; check the team names")}
+    team_a, team_b = _norm
     from .. import store as _store
 
     con = _store.connect()
     try:
         out_a, names_a, unk_a = _match_trade_players(team_a, players_a, con)
         out_b, names_b, unk_b = _match_trade_players(team_b, players_b, con)
+        corrections: list[str] = []
+        if unk_a or unk_b:
+            # QA #32: stale attribution is recoverable - locate each
+            # unknown on the salary sheet and re-run the legality math
+            # with the corrected team instead of returning a raw error.
+            if unk_a:
+                fix = _auto_correct_side(unk_a, team_a, players_a, con)
+                if fix:
+                    team_a, (out_a, names_a, unk_a), corr = fix
+                    corrections.extend(corr)
+            if unk_b:
+                fix = _auto_correct_side(unk_b, team_b, players_b, con)
+                if fix:
+                    team_b, (out_b, names_b, unk_b), corr = fix
+                    corrections.extend(corr)
         if unk_a or unk_b:
             parts = []
             if unk_a:
@@ -979,6 +1727,14 @@ def get_trade_check(
             if hints:
                 msg += ". " + "; ".join(hints)
             return {"tool": "get_trade_check", "ok": False, "error": msg}
+        if not names_a or not names_b:
+            # F47: never grade a ghost trade with an empty side.
+            empty = team_a.upper() if not names_a else team_b.upper()
+            return {"tool": "get_trade_check", "ok": False,
+                    "error": (f"no players matched on the {empty} side - "
+                              f"not grading a one-sided 'trade'. If you "
+                              f"meant a past real-world trade, say which "
+                              f"teams and players were in it.")}
         pay_a, _ = _payroll(team_a, con)
         pay_b, _ = _payroll(team_b, con)
         salary_date = _salary_date(con)
@@ -1023,6 +1779,8 @@ def get_trade_check(
                                 **{k: v for k, v in state_b.items()}},
                      "legal": not issues, "issues": issues, "checks": checks,
                      "salary_date": salary_date,
+                     **({"attribution_corrections": corrections}
+                        if corrections else {}),
                      "disclaimer": "Estimate only, rules simplified. Skips cash, "
                      "prior trade exceptions, taxpayer midlevel, frozen pick, Stepien, "
                      "base-year, trade-kicker, minimum-salary, and sign-and-trade rules. "
@@ -1047,6 +1805,14 @@ def get_trade_value(
 
     from .. import store as _store
 
+    if team_a and team_b:
+        _norm = _norm_trade_teams(team_a, team_b)
+        if _norm is None:
+            return {"tool": "get_trade_value", "ok": False,
+                    "error": (f"both sides resolve to the same team "
+                              f"({team_a} / {team_b}) - check the team "
+                              f"names")}
+        team_a, team_b = _norm
     PROD_SEASON = "2025-26"
     SAL_SEASON = "2026-27"
     DISCLAIMER = ("All dollar figures are rough estimates from 2025-26 "
@@ -1065,6 +1831,15 @@ def get_trade_value(
         _, names_a, unk_a = _match_trade_players(team_a, players_a, con)
         _, names_b, unk_b = _match_trade_players(team_b, players_b, con)
         if unk_a or unk_b:
+            if unk_a:
+                fix = _auto_correct_side(unk_a, team_a, players_a, con)
+                if fix:
+                    team_a, (_, names_a, unk_a), _c = fix
+            if unk_b:
+                fix = _auto_correct_side(unk_b, team_b, players_b, con)
+                if fix:
+                    team_b, (_, names_b, unk_b), _c = fix
+        if unk_a or unk_b:
             parts = []
             if unk_a:
                 parts.append(f"{team_a.upper()}: {'; '.join(unk_a)}")
@@ -1075,6 +1850,19 @@ def get_trade_value(
             if hints:
                 msg += ". " + "; ".join(hints)
             return {"tool": "get_trade_value", "ok": False, "error": msg}
+        if not names_a or not names_b:
+            # F47: 'Did the Lakers win the Luka trade?' graded Dallas's
+            # empty side an F. What a past trade's other side received
+            # is not in the data - refuse, don't manufacture a zero.
+            return {"tool": "get_trade_value", "ok": False,
+                    # QA #70: terminal refusal - the triage pin ships
+                    # this straight to compose instead of spending 5+
+                    # planner tools (60-100s) to land on the same answer.
+                    "terminal": True,
+                    "error": ("I can only grade proposed trades where "
+                              "both sides name players. What a past "
+                              "trade's other side actually received is "
+                              "not in this dataset.")}
 
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         cols = {t: {r[1] for r in con.execute(f"PRAGMA table_info({t})").fetchall()}
@@ -1222,7 +2010,17 @@ def get_trade_value(
         out["production_score"] = score
         out["est_market_value_m"] = est_m
         if out["salary_26_27"] is not None:
-            out["residual_m"] = round((out["salary_26_27"] - est_m * 1e6) / 1e6, 1)
+            # QA #39: salary-minus-market read backwards (-21.1 for a
+            # bargain). Flip to surplus value: positive = outperforming
+            # the contract, negative = overpaid.
+            out["residual_m"] = round((est_m * 1e6 - out["salary_26_27"]) / 1e6, 1)
+            _rv = out["residual_m"]
+            # QA #47: direction must be readable without a card legend.
+            out["residual_note"] = (
+                f"surplus value of about ${_rv}M (outperforming the "
+                f"contract)" if _rv >= 0 else
+                f"overpaid by an estimated ${abs(_rv)}M on this "
+                f"production")
         per = {c: lead["tot"][c] / gp for c in lead["tot"]}
         tags = []
         if (lead["fg3m"] or 0) / gp >= 2.0:
@@ -1402,17 +2200,34 @@ def get_trade_value(
                      "verdict": {"winner": winner, "delta_m": delta,
                                  "grades": _grades(), "text": text},
                      "data_gaps": data_gaps,
-                     "disclaimer": DISCLAIMER},
+                     "disclaimer": DISCLAIMER,
+                     "residual_meaning": "residual_m = estimated market "
+                     "value minus salary; positive = surplus value "
+                     "(outperforming the contract), negative = overpaid"},
             "meta": {"source": payroll_source,
                      "production_season": PROD_SEASON,
                      "salary_season": "2026-27 (column SALARY_2025_26)",
                      "estimates": True}}
 
 
+def _norm_draft_year(season: str) -> str:
+    """Draft tools key on the draft YEAR ('2025'), not the NBA season
+    label ('2025-26'). The global agent instruction says 'pass season
+    2025-26 always', which crashed int() here and sent the lane
+    flailing into text_to_sql over a 2023 hist table - the chat then
+    claimed 'no 2024 or 2025 combine entries' while the Explore draft
+    tab showed all 79 (2026-09-13 sweep)."""
+    s = str(season or "").strip()
+    m = re.fullmatch(r"(20\d\d)-\d\d", s)
+    return m.group(1) if m else s
+
+
 @tool
 def get_draft_board(season: str = "2025") -> dict[str, Any]:
     """Draft board: college production plus combine measurements, blended rank."""
     import unicodedata as _ud
+
+    season = _norm_draft_year(season)
 
     from ..sources import cbb as _cbb
 
@@ -1422,8 +2237,27 @@ def get_draft_board(season: str = "2025") -> dict[str, Any]:
 
     prod = _cbb.get_player_stats(2025 if season == "2025" else int(season))
     if not prod.ok or prod.frame.height == 0:
+        # F53: prod.error is a raw httpx message with the external URL -
+        # never hand it to the narrative. Facts only.
+        # 2026-09-13 sweep2: with college stats blocked, the tool
+        # errored outright and the lane claimed NO draft data while
+        # silver_combine held all 79 measurements. Degrade to a
+        # combine-only board instead of a false absence.
+        rows, meta = _warehouse_or_live(
+            "silver_combine", "_season = ?",
+            [season], lambda: nba_stats.combine(season), season,
+        )
+        if rows:
+            meta = dict(meta)
+            meta["note"] = ("college production stats unavailable; "
+                            "combine measurements only")
+            return {"tool": "get_draft_board", "ok": True,
+                    "rows": rows[:30], "meta": meta}
         return {"tool": "get_draft_board", "ok": False,
-                "error": prod.error or "college stats empty"}
+                "error": (f"{season} college stats are unavailable "
+                          "(upstream source blocked). Draft data covers "
+                          "through the 2025 draft; the 2026 lottery and "
+                          "class are not in the dataset.")}
     rows, meta = _warehouse_or_live(
         "silver_combine", "_season = ?",
         [season], lambda: nba_stats.combine(season), season,
@@ -1453,16 +2287,172 @@ def get_draft_board(season: str = "2025") -> dict[str, Any]:
 
 
 @tool
+def get_rookie_leaders(stat: str = "ppg", min_value: float = 0,
+                       min_gp: int = 10, limit: int = 15,
+                       season: str = SEASON) -> dict[str, Any]:
+    """Current rookie class leaderboard (first-year NBA players only).
+
+    Rookies are defined structurally: a player in the current-season
+    stats table with NO row in any prior season (hist or warehouse).
+    Never an age proxy, never historical seasons (F46: a "rookies 20+
+    ppg" query answered from 2023-24 listed Edwards/LaMelo/Wemby; the
+    right answer was the current draft class, e.g. Cooper Flagg).
+    stat is a per-game column: ppg, rpg, apg, spg, bpg, mpg.
+    """
+    from .. import store as _store
+
+    import duckdb
+
+    col = str(stat or "ppg").strip().upper()
+    allowed = {"PPG", "RPG", "APG", "SPG", "BPG", "MPG",
+               "FG_PCT", "FG3_PCT", "FT_PCT", "GP"}
+    if col not in allowed:
+        return {"tool": "get_rookie_leaders", "ok": False,
+                "error": f"stat must be one of {sorted(allowed)}"}
+    sql = f"""
+        SELECT PLAYER_ID, PLAYER, TEAM, AGE, GP, MPG, PPG, RPG, APG,
+               SPG, BPG, FG_PCT, FG3_PCT, FT_PCT
+        FROM silver_player_season
+        WHERE _season = ? AND GP >= ? AND {col} >= ?
+        ORDER BY {col} DESC
+    """
+    try:
+        con = duckdb.connect(str(_store.DB_PATH), read_only=True)
+        try:
+            cur_rows = con.execute(
+                sql, [season, int(min_gp), float(min_value)]
+            ).fetchdf().to_dict("records")
+            hist_names = {r[0] for r in con.execute(
+                "SELECT DISTINCT player_name FROM "
+                "silver_hist_player_seasons").fetchall()}
+            hist_names |= {r[0] for r in con.execute(
+                "SELECT DISTINCT PLAYER FROM silver_player_season "
+                "WHERE _season <> ?", [season]).fetchall()}
+        finally:
+            con.close()
+    except Exception as exc:
+        return {"tool": "get_rookie_leaders", "ok": False,
+                "error": f"warehouse read failed: {str(exc)[:160]}"}
+    # Name-keyed match (ids are namespace-mixed across sources), with
+    # accents and generational suffixes stripped: 'Sengun' matches
+    # 'Şengün', 'GG Jackson II' matches 'GG Jackson'. Matching only
+    # ever EXCLUDES non-rookies, so over-matching is the safe side.
+    import re as _re
+    import unicodedata as _ud
+
+    def _nkey(name: object) -> str:
+        n = "".join(c for c in _ud.normalize("NFKD", str(name or ""))
+                    if not _ud.combining(c)).lower()
+        n = _re.sub(r"\s+(jr|sr|ii|iii|iv|v)\.?$", "", n).strip()
+        return _re.sub(r"[^a-z ]", "", n).strip()
+
+    hist_keys = {_nkey(n) for n in hist_names}
+    rows = [r for r in cur_rows
+            if _nkey(r.get("PLAYER")) not in hist_keys][:int(limit)]
+    return {
+        "tool": "get_rookie_leaders", "ok": True, "rows": rows,
+        "meta": {
+            "season": season,
+            "rookie_definition": (
+                "first NBA season: no player row in any prior season"),
+            "floors": f"GP >= {int(min_gp)}, {col} >= {float(min_value)}",
+            "note": "current draft class only; never an age proxy"},
+    }
+
+
+@tool
+def get_lineup_leaders(min_minutes: int = 100, limit: int = 10,
+                       season: str = SEASON) -> dict[str, Any]:
+    """League-wide five-man lineup net-rating leaderboard.
+
+    Net rating is PLUS_MINUS per 48 minutes from the warehouse lineup
+    table. A minimum-minutes floor (default 100) is ALWAYS applied and
+    stated: a +3 in 4 minutes is a 300.0 'net rating' on a junk slice
+    and never tops the board (F50).
+    """
+    from .. import store as _store
+
+    import duckdb
+
+    sql = """
+        SELECT TEAM_ABBREVIATION, GROUP_NAME, GP,
+               ROUND(MIN, 1) AS MIN, PLUS_MINUS,
+               ROUND(PLUS_MINUS / NULLIF(MIN, 0) * 48, 1) AS NET48
+        FROM silver_lineups
+        WHERE _season = ? AND MIN >= ?
+        ORDER BY PLUS_MINUS / NULLIF(MIN, 0) DESC NULLS LAST
+        LIMIT ?
+    """
+    try:
+        con = duckdb.connect(str(_store.DB_PATH), read_only=True)
+        try:
+            raw = con.execute(
+                sql, [season, float(min_minutes), int(limit) * 2]
+            ).fetchdf().to_dict("records")
+        finally:
+            con.close()
+    except Exception as exc:
+        return {"tool": "get_lineup_leaders", "ok": False,
+                "error": f"warehouse read failed: {str(exc)[:160]}"}
+    seen = set()
+    rows = []
+    for r in raw:
+        key = (r.get("TEAM_ABBREVIATION"), r.get("GROUP_NAME"))
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append(r)
+        if len(rows) >= int(limit):
+            break
+    return {
+        "tool": "get_lineup_leaders", "ok": True, "rows": rows,
+        "meta": {
+            "season": season,
+            "formula": "NET48 = PLUS_MINUS per 48 minutes",
+            "floor": f"MIN >= {int(min_minutes)} (stated volume floor; "
+                     "small-sample units are excluded, F50)"},
+    }
+
+
+@tool
 def get_combine(season: str = "2025") -> dict[str, Any]:
     """Draft combine measurements plus shooting drills for one draft year."""
-    res = nba_stats.combine(season)
-    if not res.ok or res.frame.height == 0:
+    season = _norm_draft_year(season)
+    rows, meta = _warehouse_or_live(
+        "silver_combine", "_season = ?",
+        [season], lambda: nba_stats.combine(season), season,
+    )
+    if not rows:
+        # Requested draft year not seeded: answer from the newest
+        # seeded year and SAY so, never a false absence.
+        try:
+            from .. import store as _store
+            con = _store.connect(read_only=True)
+            try:
+                avail = [r[0] for r in con.execute(
+                    "SELECT DISTINCT _season FROM silver_combine "
+                    "ORDER BY 1 DESC").fetchall()]
+            finally:
+                con.close()
+        except Exception:
+            avail = []
+        if avail:
+            sub = str(avail[0])
+            rows, meta = _warehouse_or_live(
+                "silver_combine", "_season = ?",
+                [sub], lambda: nba_stats.combine(sub), sub,
+            )
+            if rows:
+                meta = dict(meta)
+                meta["note"] = (f"requested draft year {season} is not "
+                                f"seeded; showing {sub}, the newest "
+                                "available combine year")
+                season = sub
+    if not rows:
         return {"tool": "get_combine", "ok": False,
-                "error": res.error or "empty upstream response"}
-    return {"tool": "get_combine", "ok": True,
-            "rows": res.frame.head(25).to_dicts(),
-            "meta": {"source": res.meta.source, "fetched_at": res.meta.fetched_at,
-                     "rows": res.frame.height, "cached": False}}
+                "error": meta.get("error") or "empty upstream response"}
+    return {"tool": "get_combine", "ok": True, "rows": rows[:25],
+            "meta": meta}
 
 
 @tool
@@ -1517,6 +2507,53 @@ _SQL_TABLES = [
 RERUN_ROW_CAP = 25
 RERUN_TIMEOUT_S = 30
 
+_SCHEMA_TTL_S = 3600.0
+_schema_cache: dict[str, object] = {"at": 0.0, "present": [], "cols": {}}
+_schema_cache_stats: dict[str, int] = {"hits": 0, "misses": 0}
+
+
+def _clear_warehouse_schema_cache() -> None:
+    _schema_cache["at"] = 0.0
+    _schema_cache["present"] = []
+    _schema_cache["cols"] = {}
+    _schema_cache_stats["hits"] = 0
+    _schema_cache_stats["misses"] = 0
+
+
+def _warehouse_schema_cache_info() -> dict[str, float]:
+    return {"hits": _schema_cache_stats["hits"],
+            "misses": _schema_cache_stats["misses"],
+            "at": _schema_cache["at"]}
+
+
+def _get_warehouse_schema() -> tuple[list[str], dict[str, list[str]]]:
+    import time as _time
+
+    from .. import store as _store
+
+    now = _time.monotonic()
+    at = float(_schema_cache.get("at") or 0.0)
+    if now - at < _SCHEMA_TTL_S and _schema_cache.get("present"):
+        _schema_cache_stats["hits"] += 1
+        return (list(_schema_cache["present"]),  # type: ignore[arg-type]
+                {k: list(v) for k, v in  # type: ignore[attr-defined]
+                 _schema_cache["cols"].items()})  # type: ignore[attr-defined]
+    _schema_cache_stats["misses"] += 1
+    con = _store.connect()
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        present = [t for t in _SQL_TABLES if t in tables]
+        cols: dict[str, list[str]] = {}
+        for t in present:
+            cols[t] = [r[1] for r in
+                       con.execute(f"PRAGMA table_info({t})").fetchall()][:40]
+    finally:
+        con.close()
+    _schema_cache["at"] = now
+    _schema_cache["present"] = present
+    _schema_cache["cols"] = cols
+    return (list(present), {k: list(v) for k, v in cols.items()})
+
 import re as _re_mod
 
 
@@ -1546,6 +2583,32 @@ def _validate_readonly_sql(sql: str, present: set[str]) -> str:
     return sql
 
 
+def _attach_player_names(rows: list[dict]) -> None:
+    """F63: gamelog tables carry Player_ID but no name column, and a
+    team-wide pull then reads to compose as "no individual player
+    statistics by name" (the Finals switch-back intermittency - the
+    named route answered, the anonymized route dead-ended). Resolve
+    names from the static list when the SQL skipped the join."""
+    if not rows:
+        return
+    has_pid = any("Player_ID" in r or "player_id" in r for r in rows)
+    has_name = any(
+        any(str(k).lower() in ("player", "player_name", "name")
+            for k in r)
+        for r in rows)
+    if not has_pid or has_name:
+        return
+    from .splits import _resolve_name as _rname
+    for r in rows:
+        pid = r.get("Player_ID", r.get("player_id"))
+        if pid is None:
+            continue
+        try:
+            r["PLAYER"] = _rname(int(pid), str(pid))
+        except (TypeError, ValueError):
+            pass
+
+
 @tool
 async def text_to_sql(question: str) -> dict[str, Any]:
     """Answer a data question with SQL over warehouse tables. SELECT only."""
@@ -1556,44 +2619,10 @@ async def text_to_sql(question: str) -> dict[str, Any]:
     from .. import store as _store
     from ..providers import invoke_with_fallback
 
-    allowed = _SQL_TABLES
-    con = _store.connect()
-    try:
-        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
-        present = [t for t in allowed if t in tables]
-        cols: dict[str, list[str]] = {}
-        for t in present:
-            cols[t] = [f"{r[1]} {r[2]}" for r in
-                       con.execute(f"PRAGMA table_info({t})").fetchall()][:20]
-    finally:
-        con.close()
+    present, cols = _get_warehouse_schema()
     if not present:
         return {"tool": "text_to_sql", "ok": False, "error": "warehouse empty"}
-    qtokens = set(_re.findall(r"[a-z]+", question.lower()))
-    syn = {"points": {"pts"}, "assists": {"ast"}, "rebounds": {"reb"},
-           "steals": {"stl"}, "blocks": {"blk"}, "streak": {"game_date"},
-           "games": {"game_date", "gp"}, "season": {"season", "_season"},
-           "player": {"player"}, "team": {"team"},
-           "draft": {"draft"}, "salary": {"salary"}, "payroll": {"salary"}}
-    expanded = set(qtokens)
-    for tok in qtokens:
-        expanded |= syn.get(tok, set())
-
-    def _tabscore(t: str) -> tuple[int, int]:
-        parts = set(_re.findall(r"[a-z]+", t.lower()))
-        cols_l = [c.lower() for c in cols[t]]
-        hit_t = len(parts & expanded)
-        hit_c = sum(1 for c in cols_l
-                    if set(_re.findall(r"[a-z]+", c)) & expanded)
-        return (hit_t * 3 + min(hit_c, 6), -len(cols[t]))
-
-    ranked = sorted(present, key=_tabscore, reverse=True)
-    keep = set(ranked[:10])
-    for must in ("silver_player_gamelogs", "silver_standings"):
-        if must in cols:
-            keep.add(must)
-    schema = "\n".join(f"{t}: {', '.join(cols[t])}"
-                       for t in ranked if t in keep)
+    schema = _describe_warehouse_schema(cols)
     examples = (
         "\nExamples.\nQ: Thunder record this season?\n"
         "SQL: SELECT WINS, LOSSES FROM silver_standings "
@@ -1642,26 +2671,27 @@ async def text_to_sql(question: str) -> dict[str, Any]:
         "SQL: SELECT PLAYER_NAME, TEAM_ABBREVIATION, AGE, GP, PTS, AST "
         "FROM silver_hist_player_seasons WHERE AGE < 24 AND PTS >= 15 AND AST >= 5 "
         "AND SEASON = 2024 ORDER BY PTS DESC LIMIT 10\n"
+        "Q: What were the best games in March 2026?\n"
+        "Note: current-season per-game logs live in silver_player_gamelogs "
+        "with UPPERCASE columns (PLAYER_NAME absent - join player ids via "
+        "silver_leaders_pts.PLAYER_ID/PLAYER; GAME_DATE, MATCHUP, PTS). "
+        "Dates look like 'Mar 30, 2026'; filter months with ILIKE, e.g. "
+        "GAME_DATE ILIKE '%Mar%2026'. A 'no such column' error means "
+        "wrong table/column spelling - retry with these names, it NEVER "
+        "means the games are missing.\n"
+        "SQL: SELECT p.PLAYER, g.GAME_DATE, g.MATCHUP, g.PTS FROM "
+        "silver_player_gamelogs g JOIN silver_leaders_pts p ON "
+        "p.PLAYER_ID = g.Player_ID AND p._season = g._season "
+        "WHERE g._season = '2025-26' AND g.GAME_DATE ILIKE '%Mar%2026' "
+        "ORDER BY g.PTS DESC LIMIT 10\n"
         "Q: Who led the 2025-26 season in steals?\n"
         "Note: season totals come from silver_leaders_* tables; "
         "never aggregate silver_player_gamelogs for season totals.\n"
         "SQL: SELECT PLAYER, STL FROM silver_leaders_stl "
         "WHERE _season = '2025-26' ORDER BY STL DESC LIMIT 1"
-        "Q: Who has the longest 20-point game streak this season?\n"
-        "Note GAME_DATE is text like 'Apr 02, 2026'; parse with "
-        "TRY_STRPTIME(GAME_DATE, '%b %d, %Y'). Use gaps-and-islands.\n"
-        "SQL: WITH g AS (SELECT Player_ID, PTS, "
-        "TRY_STRPTIME(GAME_DATE, '%b %d, %Y') AS d "
-        "FROM silver_player_gamelogs WHERE _season = '2025-26'), "
-        "s AS (SELECT Player_ID, d, PTS, ROW_NUMBER() OVER "
-        "(PARTITION BY Player_ID ORDER BY d) - ROW_NUMBER() OVER "
-        "(PARTITION BY Player_ID, (PTS >= 20)::INT ORDER BY d) AS grp "
-        "FROM g WHERE d IS NOT NULL) SELECT Player_ID, COUNT(*) AS streak "
-        "FROM s WHERE PTS >= 20 GROUP BY Player_ID, grp "
-        "ORDER BY streak DESC LIMIT 5"
     )
     feedback = ""
-    for _ in range(3):
+    for _ in range(2):  # F44: 3 retries x LLM latency fed 300s desk loops
         try:
             resp = await invoke_with_fallback(
                 "mistral", "ministral-8b-2512",
@@ -1669,9 +2699,10 @@ async def text_to_sql(question: str) -> dict[str, Any]:
                  HumanMessage(
                       content="Write one SQLite SELECT using only these tables "
                       "and columns. Match column case exactly as listed.\n"
-                      "Always filter _season = '2025-26' unless the question "
-                      "asks about other seasons.\n"
-                      "Rules. Season totals and season leaders questions MUST use "
+                      "Rules. Ratio/percentage leaderboards MUST add a "
+                      "minimum-volume floor (AST/TOV: AST >= 300; shooting "
+                      "pct: attempts >= 300) or the top row is a junk "
+                      "small-sample slice. Season totals and season leaders questions MUST use "
                       "the silver_leaders_* tables directly; they hold final official "
                       "season totals. silver_player_gamelogs is an incomplete per-game "
                       "sample: never SUM it to compute season totals, and never join "
@@ -1679,13 +2710,9 @@ async def text_to_sql(question: str) -> dict[str, Any]:
                       f"Schema:\n{schema}{examples}\nQuestion: {question}{feedback}")])
             sql = _re.sub(r"^```sql|```$", "", str(getattr(resp, "content", "") or ""),
                           flags=_re.MULTILINE).strip()
-            m = _re.search(r"(?i)\b(select|with)\b", sql)
-            if m and m.start() > 0:
-                sql = sql[m.start():].strip()
-            sql = _re.sub(r"```$", "", sql).strip()
         except Exception as exc:
             return {"tool": "text_to_sql", "ok": False, "error": str(exc)[:160]}
-        if not _re.match(r"(?i)^\s*(select|with)\b", sql) or _re.search(
+        if not _re.match(r"(?i)^\s*select\b", sql) or _re.search(
                 r"(?i)\b(insert|update|delete|drop|alter|create|pragma|attach|copy)\b", sql):
             feedback = "\nPrevious reply was not a single SELECT. Reply with SQL only."
             continue
@@ -1693,14 +2720,6 @@ async def text_to_sql(question: str) -> dict[str, Any]:
             sql = _validate_readonly_sql(sql, set(present))
         except ValueError as vexc:
             feedback = f"\nPrevious reply was rejected: {vexc}. Reply with SQL only."
-            continue
-        used = set(_re.findall(r"(?i)from\s+(\w+)|join\s+(\w+)", sql))
-        used_tables = {a or b for a, b in used}
-        ctes = set(_re.findall(r"(?i)(?:with|,)\s*(\w+)\s+as\s*\(", sql))
-        used_tables -= {c for c in ctes if c.lower() not in
-                        {t.lower() for t in present}}
-        if not used_tables or not used_tables.issubset(set(present)):
-            feedback = "\nPrevious reply used unknown tables. Use only listed tables."
             continue
         con = _store.connect()
         try:
@@ -1719,12 +2738,16 @@ async def text_to_sql(question: str) -> dict[str, Any]:
                 "(SELECT DISTINCT col FROM table LIMIT 20)."
             )
             continue
+        out_rows = [dict(zip(names, r)) for r in rows[:25]]
+        _attach_player_names(out_rows)
         return {"tool": "text_to_sql", "ok": True,
-                "rows": [dict(zip(names, r)) for r in rows[:25]],
+                "rows": out_rows,
                 "sql": sql,
                 "meta": {"sql": sql[:500], "source": "warehouse"}}
     return {"tool": "text_to_sql", "ok": False,
-            "error": "sql failed after retries" + feedback[-160:]}
+            "error": ("the warehouse query did not succeed after several "
+                      "attempts; answer from results already gathered or "
+                      "state plainly that it could not be computed")}
 
 
 def _execute_with_timeout(con, sql: str, timeout_s: float):
@@ -1924,6 +2947,39 @@ def get_playoff_sim(season: str = SEASON, sims: int = 2000) -> dict[str, Any]:
         sims = max(100, min(int(sims or 2000), 10000))
     except (TypeError, ValueError):
         sims = 2000
+    from ._core import season_static as _season_static
+    if _season_static(season):
+        # QA F10: simulating a completed season yields degenerate odds
+        # (1 = already happened). Answer with the actual playoff results
+        # instead of an error the asker cannot use.
+        _po = get_playoffs.invoke({"season": season})
+        if _po.get("ok"):
+            _rows = dict(_po.get("rows") or {})
+            # QA F36: the LLM narrates from ROWS, not meta - it framed
+            # these actuals as "simulation output" despite the meta note.
+            # Put the honesty where the model reads: inside the payload.
+            _champ = _rows.get("champion")
+            _rec = _rows.get("champion_record") or {}
+            _rows["result_kind"] = "ACTUAL_RESULTS_NOT_SIMULATION"
+            _rows["summary"] = (
+                f"The {season} season is complete - these are the ACTUAL "
+                f"playoff results, not a simulation"
+                + (f": {_champ} won the championship "
+                   f"{_rec.get('w')}-{_rec.get('l')}. " if _champ else ". ")
+                + "Monte Carlo simulated odds are unavailable for a "
+                  "completed season; they return when the next season "
+                  "begins. Present these numbers as final results only.")
+            return {"tool": "get_playoff_sim", "ok": True,
+                    "rows": _rows,
+                    "meta": {"season": season, "offseason": True,
+                             "note": (f"{season} is complete - these are "
+                                      "the ACTUAL playoff results, not "
+                                      "simulations. Simulated odds return "
+                                      "when the next season begins.")}}
+        return {"tool": "get_playoff_sim", "ok": False,
+                "error": f"{season} is complete - simulations are "
+                         f"meaningless for a finished season.",
+                "meta": {"season": season, "offseason": True}}
     out = run_playoff_sim(season, sims)
     if not out.get("teams"):
         return {"tool": "get_playoff_sim", "ok": False,
@@ -1934,8 +2990,8 @@ def get_playoff_sim(season: str = SEASON, sims: int = 2000) -> dict[str, Any]:
 
 @tool
 def get_contract_value(season: str = "2025-26", min_gp: int = 20,
-                       player: str = "") -> dict[str, Any]:
-    """Contract value residuals: 2026-27 salary vs OLS prediction from per-game production. Ten most overpaid plus ten most underpaid."""
+                       team: str = "") -> dict[str, Any]:
+    """Contract value residuals: 2026-27 salary vs OLS prediction from per-game production. Ten most overpaid plus ten most underpaid; pass team to scope the board to one roster."""
     import unicodedata as _ud
 
     from .. import store as _store
@@ -1945,6 +3001,9 @@ def get_contract_value(season: str = "2025-26", min_gp: int = 20,
         min_gp = max(0, min(int(min_gp), 82))
     except (TypeError, ValueError):
         min_gp = 20
+    # The cap-ledger loop below reuses the name `team` - capture the
+    # argument now or the scope filter reads the last roster row's team.
+    team_arg = str(team or "").strip()
 
     weights = {"PTS": 1.0, "REB": 1.2, "AST": 1.5,
                "STL": 2.0, "BLK": 2.0, "TOV": -1.5}
@@ -1989,8 +3048,8 @@ def get_contract_value(season: str = "2025-26", min_gp: int = 20,
     for r in prod:
         by_name.setdefault(_norm(r[0]), r)
     fitted = []
-    for cplayer, cteam, csal in cap:
-        r = by_name.get(_norm(cplayer))
+    for player, team, salary in cap:
+        r = by_name.get(_norm(player))
         if r is None:
             continue
         _, lteam, gp, pts, reb, ast, stl, blk, tov = r
@@ -2000,8 +3059,8 @@ def get_contract_value(season: str = "2025-26", min_gp: int = 20,
         vals = {"PTS": pts or 0, "REB": reb or 0, "AST": ast or 0,
                 "STL": stl or 0, "BLK": blk or 0, "TOV": tov or 0}
         score = sum(vals[c] / gp * use_w[c] for c in use_w)
-        fitted.append({"PLAYER": cplayer, "TEAM": cteam or lteam,
-                       "SALARY": csal or 0, "GP": gp, "SCORE": score})
+        fitted.append({"PLAYER": player, "TEAM": team or lteam,
+                       "SALARY": salary or 0, "GP": gp, "SCORE": score})
     n = len(fitted)
     if n < 2:
         return {"tool": "get_contract_value", "ok": False,
@@ -2019,48 +3078,45 @@ def get_contract_value(season: str = "2025-26", min_gp: int = 20,
         f["PREDICTED"] = int(round(slope * f["SCORE"] + intercept))
         f["RESIDUAL"] = int(f["SALARY"]) - int(f["PREDICTED"])
         f["SCORE"] = round(f["SCORE"], 2)
-    leaders = sorted(fitted, key=lambda f: f["RESIDUAL"], reverse=True)[:10]
-    laggards = sorted(fitted, key=lambda f: f["RESIDUAL"])[:10]
-    top20 = list(leaders) + list(laggards)
+    team_scope = ""
+    if team_arg:
+        try:
+            from ._core import coerce_team_id as _cti
+            _tid = _cti(team_arg)
+            from nba_api.stats.static import teams as _teams
+
+            for _t in _teams.get_teams():
+                if _t.get("id") == _tid:
+                    team_scope = str(_t.get("abbreviation", "")).upper()
+                    break
+        except (ValueError, TypeError):
+            team_scope = ""
+    if team_scope:
+        fitted = [f for f in fitted
+                  if str(f.get("TEAM") or "").upper() == team_scope]
+        if not fitted:
+            return {"tool": "get_contract_value", "ok": False,
+                    "error": f"no qualified players on {team_scope}"}
+        over = sorted(fitted, key=lambda f: f["RESIDUAL"],
+                      reverse=True)[:5]
+        under = sorted(fitted, key=lambda f: f["RESIDUAL"])[:5]
+    else:
+        over = sorted(fitted, key=lambda f: f["RESIDUAL"],
+                      reverse=True)[:10]
+        under = sorted(fitted, key=lambda f: f["RESIDUAL"])[:10]
+    rows = over + under
     formula = ("score = PTS + 1.2*REB + 1.5*AST + 2*STL + 2*BLK - 1.5*TOV "
                "(per game); salary_hat = slope*score + intercept (OLS by hand); "
                "residual = salary - salary_hat")
-    meta = {"formula": formula, "weights": weights,
-            "missing_columns_zero_weight": missing,
-            "slope": round(slope, 2), "intercept": round(intercept, 2),
-            "n_qualified": n, "min_gp": min_gp,
-            "production_season": season, "salary_season": "2026-27",
-            "production_date": prod_date, "salary_date": cap_date,
-            "overpaid_first": True}
-    if player:
-        from ._core import coerce_player_id as _cp
-        from nba_api.stats.static import players as _sp
-
-        try:
-            _cp(player)
-        except ValueError as exc:
-            return {"tool": "get_contract_value", "ok": False,
-                    "error": str(exc)[:160]}
-        want = _norm(str(next(
-            (p.get("full_name", "") for p in _sp.get_players()
-             if _norm(p.get("full_name", "")) == _norm(player)), player)))
-        hit = next((f for f in fitted if _norm(f["PLAYER"]) == want), None)
-        if hit is not None:
-            return {"tool": "get_contract_value", "ok": True,
-                    "rows": [hit], "meta": {**meta, "player": hit["PLAYER"]}}
-        gp_note = ""
-        try:
-            prow = by_name.get(want)
-            if prow is not None:
-                gp_note = (f" Excluded by the {min_gp}-game minimum"
-                           f" ({prow[2] or 0} GP).")
-        except Exception:
-            pass
-        return {"tool": "get_contract_value", "ok": True, "rows": [],
-                "meta": {**meta, "player": player,
-                         "note": f"No qualified row for {player}." + gp_note}}
-    return {"tool": "get_contract_value", "ok": True, "rows": top20,
-            "meta": meta}
+    return {"tool": "get_contract_value", "ok": True, "rows": rows,
+            "meta": {"formula": formula, "weights": weights,
+                     "missing_columns_zero_weight": missing,
+                     "slope": round(slope, 2), "intercept": round(intercept, 2),
+                     "n_qualified": n, "min_gp": min_gp,
+                     "production_season": season, "salary_season": "2026-27",
+                     "production_date": prod_date, "salary_date": cap_date,
+                     "overpaid_first": True,
+                     "team_scope": team_scope or None}}
 
 
 @tool
@@ -2140,6 +3196,8 @@ def get_risers(season: str = "2025-26", weeks: int = 4) -> dict[str, Any]:
     if not rows:
         return {"tool": "get_risers", "ok": False,
                 "error": f"no games for {season}"}
+    from ._core import season_static as _season_static
+    offseason = _season_static(season)
     by_team: dict[str, list] = {}
     for t, _, w in rows:
         if t:
@@ -2155,10 +3213,108 @@ def get_risers(season: str = "2025-26", weeks: int = 4) -> dict[str, Any]:
                       "LAST10_PCT": round(lp, 3), "SEASON_PCT": round(sp, 3),
                       "DELTA": round(lp - sp, 3)})
     table.sort(key=lambda d: d["DELTA"], reverse=True)
+    meta = {"source": "warehouse", "season": season,
+            "window": n, "weeks": weeks}
+    if offseason:
+        # QA F12: in the offseason these are FINAL season windows (form at
+        # the end of a completed season), not current risers - no games
+        # exist to rise in. Say so in-band so desks cannot misframe it.
+        meta["offseason"] = True
+        meta["note"] = (f"{season} is complete; these are end-of-season "
+                        f"form windows, not current risers. No NBA games "
+                        f"until preseason.")
     return {"tool": "get_risers", "ok": True,
             "rows": {"risers": table[:5], "fallers": table[-5:][::-1]},
-            "meta": {"source": "warehouse", "season": season,
-                     "window": n, "weeks": weeks}}
+            "meta": meta}
+
+
+@tool
+def get_player_risers(season: str = "2025-26", n: int = 10) -> dict[str, Any]:
+    """Player risers and fallers: last-N games scoring/efficiency vs the
+    player's own season average, warehouse only. Use this for
+    player-level 'who is rising/falling/hot' asks; get_risers is the
+    TEAM version (win-rate windows)."""
+    from .. import store as _store
+
+    season = str(season or "2025-26").strip() or "2025-26"
+    try:
+        n = max(5, min(int(n or 10), 15))
+    except (TypeError, ValueError):
+        n = 10
+    con = _store.connect()
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        if "silver_player_gamelogs" not in tables:
+            return {"tool": "get_player_risers", "ok": False,
+                    "error": "player gamelogs empty"}
+        rows = con.execute(
+            """SELECT g._entity, g.GAME_DATE, g.PTS, g.FG_PCT, g.FG3_PCT
+               FROM silver_player_gamelogs g
+               WHERE g._season = ?
+               ORDER BY g._entity,
+                        strptime(g.GAME_DATE, '%b %d, %Y')""",
+            [season]).fetchall()
+        names = {}
+        try:
+            for pid, pname in con.execute(
+                    "SELECT PLAYER_ID, PLAYER FROM silver_player_season "
+                    "WHERE _season = ?", [season]).fetchall():
+                names[f"player:{pid}"] = pname
+        except Exception:
+            pass
+        teams = {}
+        try:
+            for pid, team in con.execute(
+                    "SELECT PLAYER_ID, TEAM FROM silver_player_season "
+                    "WHERE _season = ?", [season]).fetchall():
+                teams[f"player:{pid}"] = team
+        except Exception:
+            pass
+    finally:
+        con.close()
+    if not rows:
+        return {"tool": "get_player_risers", "ok": False,
+                "error": f"no player games for {season}"}
+    by_player: dict[str, list] = {}
+    for ent, _d, pts, fg, fg3 in rows:
+        if pts is None:
+            continue
+        by_player.setdefault(ent, []).append((pts, fg, fg3))
+    table = []
+    for ent, games in by_player.items():
+        if len(games) < 25:
+            continue
+        season_pts = sum(g[0] for g in games) / len(games)
+        last = games[-n:]
+        last_pts = sum(g[0] for g in last) / len(last)
+        fg_season = [g[1] for g in games if g[1] is not None]
+        fg_last = [g[1] for g in last if g[1] is not None]
+        table.append({
+            "PLAYER": names.get(ent, ent.replace("player:", "id ")),
+            "TEAM": teams.get(ent, ""),
+            "GP": len(games),
+            "SEASON_PPG": round(season_pts, 1),
+            f"LAST{n}_PPG": round(last_pts, 1),
+            "PPG_DELTA": round(last_pts - season_pts, 1),
+            "SEASON_FG_PCT": round(sum(fg_season) / len(fg_season), 3)
+                if fg_season else None,
+            f"LAST{n}_FG_PCT": round(sum(fg_last) / len(fg_last), 3)
+                if fg_last else None,
+        })
+    table.sort(key=lambda d: d["PPG_DELTA"], reverse=True)
+    meta = {"source": "warehouse", "season": season, "window": n,
+            "definition": "last-N scoring vs own season average, min 25 GP"}
+    from ._core import season_static as _season_static
+    if _season_static(season):
+        # Offseason honesty, same rule as get_risers (QA F12/F18): these
+        # are FINAL end-of-season form windows, not live risers.
+        meta["offseason"] = True
+        meta["note"] = (f"{season} is complete; these are end-of-season "
+                        f"form windows, not current risers. No NBA games "
+                        f"until preseason.")
+    return {"tool": "get_player_risers", "ok": True,
+            "rows": {"risers": table[:8], "fallers": table[-8:][::-1]},
+            "meta": meta}
 
 
 def _ensure_leaderboard_snapshots(con: Any) -> None:
@@ -2326,9 +3482,17 @@ FRESHNESS_RULES: dict[str, tuple[str, float | None]] = {
     "silver_leaders_reb": ("daily in season", 36 * 3600),
     "silver_leaders_stl": ("daily in season", 36 * 3600),
     "silver_leaders_blk": ("daily in season", 36 * 3600),
+    "silver_leaders_dreb": ("daily in season", 36 * 3600),
+    "silver_leaders_fg_pct": ("daily in season", 36 * 3600),
     "silver_player_gamelogs": ("daily in season", 36 * 3600),
+    "silver_player_season": ("static seed (bbref per-game)", None),
+    "silver_zone_splits": ("static seed (bbref shooting)", None),
     "silver_team_games": ("daily in season", 36 * 3600),
+    "silver_four_factors_team": ("derived from silver_team_games (offline build)", None),
     "silver_boxscores": ("daily in season", 36 * 3600),
+    "silver_shots": ("daily in season", 36 * 3600),
+    "silver_playoff_inactive": ("static seed (bbref inactive listings)", None),
+    "silver_schedule": ("daily in season", 36 * 3600),
     "silver_hustle_player": ("daily in season", 36 * 3600),
     "silver_hustle_team": ("daily in season", 36 * 3600),
     "silver_advanced": ("daily in season", 36 * 3600),
@@ -2337,15 +3501,15 @@ FRESHNESS_RULES: dict[str, tuple[str, float | None]] = {
     "silver_team_ratings": ("daily in season", 36 * 3600),
     "silver_on_off": ("daily in season", 36 * 3600),
     "silver_lineups": ("daily in season", 36 * 3600),
+    "silver_wowy": ("daily in season", 36 * 3600),
     "silver_rosters": ("daily in season", 36 * 3600),
     "silver_salaries": ("weekly", 7 * _DAY),
     "silver_cap_players": ("weekly", 7 * _DAY),
     "silver_combine": ("weekly", 7 * _DAY),
     "silver_playoffs": ("seasonal", 400 * _DAY),
     "silver_playoff_gamelogs": ("seasonal", 400 * _DAY),
-    "silver_rapm": ("seasonal", 400 * _DAY),
-    "silver_shots": ("seasonal", 400 * _DAY),
     "silver_hist_gamelogs": ("static", None),
+    "silver_hist_draft": ("static", None),
     "silver_hist_hustle": ("static", None),
     "silver_hist_lineups": ("static", None),
     "silver_hist_possessions": ("static", None),
@@ -2354,6 +3518,10 @@ FRESHNESS_RULES: dict[str, tuple[str, float | None]] = {
     "silver_hist_player_seasons": ("static", None),
     "silver_raptor_player": ("static", None),
     "silver_raptor_team": ("static", None),
+    "silver_rapm": ("static", None),
+    "silver_rapm_prior": ("static", None),
+    "silver_hist_pbp": ("static", None),
+    "silver_bbref_gamelogs_2024_25": ("static", None),
 }
 
 

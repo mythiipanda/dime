@@ -295,4 +295,6 @@ def test_integration_pooled_season_label():
     assert res["ok"] is True, res.get("error")
     assert res["meta"]["season_scope"] == "pooled"
     assert "not a single team-season" in res["meta"]["season_note"]
-    assert len(res["meta"]["seasons"]) == 5
+    # Warehouse grows over time (5 seasons at writing, 17 by Sept 2026);
+    # assert the pool covers the data, not a frozen count.
+    assert len(res["meta"]["seasons"]) >= 5

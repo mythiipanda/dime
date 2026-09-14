@@ -13,10 +13,17 @@ export interface ZoneData {
   LEAGUE_DELTA?: number;
   a_eFG?: number;
   b_eFG?: number;
+  a_fg?: number;
+  b_fg?: number;
   a_share?: number;
   b_share?: number;
   edge?: string;
 }
+
+// Three-point zones read as 3P% (FG on threes), not eFG: labeling an
+// all-threes zone with its 1.5x eFG next to surfaces that show 3P%
+// made the same number look like two different stats (QA F23).
+const isThreeZone = (name: string) => /3|corner|break/i.test(name);
 
 interface CourtHeatmapProps {
   rows: unknown;
@@ -42,8 +49,11 @@ const ZONE_PATHS: { id: string; label: string; d: string }[] = [
   {
     id: "In The Paint (Non-RA)",
     label: "Paint (Non-RA)",
-    // Paint key minus the restricted area
-    d: "M 170,470 L 170,280 L 330,280 L 330,470 L 290,470 L 290,430 A 40,40 0 0,0 210,430 L 210,470 Z",
+    // Paint key minus the restricted area. The carve arc must bulge UP
+    // (sweep 1) around the basket like the RA zone itself; sweep 0 carved
+    // a downward semicircle below y=430 that no zone fills, rendering a
+    // white bubble over the RA's own fill (F2 residual).
+    d: "M 170,470 L 170,280 L 330,280 L 330,470 L 290,470 L 290,430 A 40,40 0 0,1 210,430 L 210,470 Z",
   },
   {
     id: "Mid-Range",
@@ -84,6 +94,40 @@ function findZoneRecord(list: ZoneData[], targetId: string): ZoneData | undefine
     if (norm.includes("above") && (z.includes("above") || z.includes("break"))) return true;
     return false;
   });
+}
+
+// Continuous efficiency gradient keyed on LEAGUE_DELTA (QA #26): before,
+// anything within +/-3 points of league average rendered as a barely-visible
+// 7% blue tint (looked blank), and below-average zones got a faint gray with
+// no red anywhere - RA 81.6% and AB3 37.9% read as the same flat color.
+// Now: cyan intensity scales with how far above league, ember with how far
+// below, clamped at +/-15 points. Null delta stays "no data" faint.
+function heatStyle(delta: number | null, isHover: boolean): {
+  fill: string; stroke: string; strokeWidth: number;
+} {
+  if (delta === null) {
+    return {
+      fill: isHover ? "rgba(0, 0, 0, 0.05)" : "rgba(0, 0, 0, 0.02)",
+      stroke: "var(--color-stone-border)",
+      strokeWidth: 1,
+    };
+  }
+  const t = Math.min(Math.abs(delta) / 0.15, 1);
+  const alpha = 0.22 + 0.36 * t + (isHover ? 0.18 : 0);
+  const minAlpha = 0.22 + (isHover ? 0.12 : 0); // data zones never look empty
+  const a = Math.max(alpha, minAlpha);
+  if (delta >= 0) {
+    return {
+      fill: `rgba(59, 166, 241, ${a.toFixed(2)})`,
+      stroke: "var(--color-cyan-signal)",
+      strokeWidth: isHover ? 2 : 1.2,
+    };
+  }
+  return {
+    fill: `rgba(225, 29, 72, ${a.toFixed(2)})`,
+    stroke: "var(--color-ember)",
+    strokeWidth: isHover ? 2 : 1.2,
+  };
 }
 
 export default function CourtHeatmap({ rows, meta, verdict }: CourtHeatmapProps) {
@@ -164,18 +208,12 @@ export default function CourtHeatmap({ rows, meta, verdict }: CourtHeatmapProps)
                 }
               }
             } else if (rec) {
-              const delta = rec.LEAGUE_DELTA ?? 0;
-              const efg = rec.eFG_PCT ?? 0;
-
-              if (delta > 0.03 || efg >= 0.58) {
-                fill = isHover ? "rgba(59, 166, 241, 0.42)" : "rgba(59, 166, 241, 0.22)";
-                stroke = "var(--color-cyan-signal)";
-                strokeWidth = isHover ? 2 : 1.2;
-              } else if (delta < -0.03) {
-                fill = isHover ? "rgba(168, 162, 158, 0.3)" : "rgba(168, 162, 158, 0.14)";
-              } else {
-                fill = isHover ? "rgba(0, 0, 0, 0.06)" : "rgba(0, 0, 0, 0.02)";
-              }
+              // Missing delta means "no baseline", never "neutral": render
+              // it like no-data instead of faking a league-average zone.
+              const style = heatStyle(rec.LEAGUE_DELTA ?? null, isHover);
+              fill = style.fill;
+              stroke = style.stroke;
+              strokeWidth = style.strokeWidth;
             }
 
             return (
@@ -232,12 +270,24 @@ export default function CourtHeatmap({ rows, meta, verdict }: CourtHeatmapProps)
             {isCompare ? (
               <div style={{ marginTop: 4, display: "flex", flexDirection: "column", gap: 2 }}>
                 <div style={{ color: "var(--color-warm-gray)" }}>
-                  {meta?.a || "Player A"}: {((activeRecord.a_eFG ?? 0) * 100).toFixed(1)}% eFG (
-                  {((activeRecord.a_share ?? 0) * 100).toFixed(0)}% vol)
+                  {meta?.a || "Player A"}:{" "}
+                  {(() => {
+                    const three = isThreeZone(activeRecord.zone || hovered || "");
+                    const acc = three && activeRecord.a_fg != null ? activeRecord.a_fg : activeRecord.a_eFG;
+                    const lbl = three && activeRecord.a_fg != null ? "3P" : "eFG";
+                    return acc != null ? `${(acc * 100).toFixed(1)}% ${lbl}` : "n/a";
+                  })()}{" "}
+                  ({((activeRecord.a_share ?? 0) * 100).toFixed(0)}% vol)
                 </div>
                 <div style={{ color: "var(--color-warm-gray)" }}>
-                  {meta?.b || "Player B"}: {((activeRecord.b_eFG ?? 0) * 100).toFixed(1)}% eFG (
-                  {((activeRecord.b_share ?? 0) * 100).toFixed(0)}% vol)
+                  {meta?.b || "Player B"}:{" "}
+                  {(() => {
+                    const three = isThreeZone(activeRecord.zone || hovered || "");
+                    const acc = three && activeRecord.b_fg != null ? activeRecord.b_fg : activeRecord.b_eFG;
+                    const lbl = three && activeRecord.b_fg != null ? "3P" : "eFG";
+                    return acc != null ? `${(acc * 100).toFixed(1)}% ${lbl}` : "n/a";
+                  })()}{" "}
+                  ({((activeRecord.b_share ?? 0) * 100).toFixed(0)}% vol)
                 </div>
                 {activeRecord.edge && (
                   <div style={{ fontWeight: 500, color: "var(--color-cyan-edge)", marginTop: 2 }}>
@@ -248,7 +298,14 @@ export default function CourtHeatmap({ rows, meta, verdict }: CourtHeatmapProps)
             ) : (
               <div style={{ marginTop: 4, display: "flex", flexDirection: "column", gap: 2 }}>
                 <div style={{ color: "var(--color-warm-gray)" }}>
-                  Efficiency: {((activeRecord.eFG_PCT ?? activeRecord.FG_PCT ?? 0) * 100).toFixed(1)}% eFG
+                  {(() => {
+                    const three = isThreeZone(activeRecord.zone || hovered || "");
+                    const acc = three && activeRecord.FG_PCT != null
+                      ? activeRecord.FG_PCT
+                      : (activeRecord.eFG_PCT ?? activeRecord.FG_PCT);
+                    const lbl = three && activeRecord.FG_PCT != null ? "3P" : "eFG";
+                    return `Efficiency: ${acc != null ? ((acc * 100).toFixed(1) + "% " + lbl) : "n/a"}`;
+                  })()}
                 </div>
                 <div style={{ color: "var(--color-warm-gray)" }}>
                   Volume: {((activeRecord.SHARE ?? activeRecord.share ?? 0) * 100).toFixed(1)}% of shots
@@ -286,9 +343,16 @@ export default function CourtHeatmap({ rows, meta, verdict }: CourtHeatmapProps)
             </span>
           </div>
         ) : (
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-            <span style={{ width: 8, height: 8, borderRadius: 2, background: "var(--color-cyan-signal)" }} />
-            Above league average
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+              <span style={{ width: 8, height: 8, borderRadius: 2, background: "var(--color-ember)" }} />
+              Below avg
+            </span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+              <span style={{ width: 8, height: 8, borderRadius: 2, background: "var(--color-cyan-signal)" }} />
+              Above avg
+            </span>
+            <span>depth scales with gap</span>
           </span>
         )}
       </div>

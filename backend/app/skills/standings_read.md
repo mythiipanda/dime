@@ -1,3 +1,7 @@
+---
+name: standings_read
+description: Standings, playoff races, seeds, and clinch notes.
+---
 # standings_read
 
 Use when the user asks about standings, races, seeds, or clinching.

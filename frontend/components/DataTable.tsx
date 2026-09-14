@@ -10,6 +10,7 @@ interface Props {
   heat?: boolean;
   storeKey?: string;
   onPlayerSelect?: (playerName: string) => void;
+  onPinPlayer?: (playerName: string) => void;
 }
 
 function asTable(rows: unknown, capCols: number, showIds = false): {
@@ -32,18 +33,36 @@ function asTable(rows: unknown, capCols: number, showIds = false): {
   const first = (list as unknown[])[0] as Record<string, unknown>;
   if (typeof first !== "object" || first === null) return null;
   const allKeys = Object.keys(first);
-  const isIdCol = (k: string) => /(^id$|_id$)/i.test(k);
+  // Warehouse ID columns arrive as id / *_id / camelCase-ID (LeagueID,
+  // SeasonID, TeamID). The [a-z]ID branch skips all-caps stat names like
+  // GRID that merely end in the letters ID.
+  const isIdCol = (k: string) => /(^id$|_id$|[a-z]ID$)/i.test(k);
   const ordered = [...allKeys.filter((k) => !isIdCol(k)), ...allKeys.filter((k) => isIdCol(k))];
   const capped = ordered.slice(0, Math.max(1, Math.min(12, capCols)));
   const cols = showIds
     ? [...capped, ...ordered.filter((k) => isIdCol(k) && !capped.includes(k))]
     : capped;
   const recs = (list as Record<string, unknown>[]).slice(0, 500);
+  // Percent-aware display (QA F18/F26 nit): share/pct columns stored as
+  // 0-1 fractions render as "46.8%", percent-scale values stay as-is,
+  // and long float artifacts round to 3 decimals.
+  const pctCol = (name: string) =>
+    /(^|_)(pct|percent|share|rate)($|_)/i.test(name) || /pct$/i.test(name)
+    || name.includes("%");
+  const fmtNum = (name: string, v: number): string => {
+    if (pctCol(name)) {
+      const pct = Math.abs(v) <= 1.05 ? v * 100 : v;
+      return `${(Math.round(pct * 10) / 10).toFixed(1)}%`;
+    }
+    if (Number.isInteger(v)) return String(v);
+    return String(Math.round(v * 1000) / 1000);
+  };
   const body = recs.map((r) =>
     cols.map((c) => {
       const v = r[c];
       if (v === null || v === undefined) return "";
       if (typeof v === "object") return JSON.stringify(v).slice(0, 60);
+      if (typeof v === "number") return fmtNum(c, v);
       return String(v).slice(0, 60);
     }),
   );
@@ -73,7 +92,7 @@ function asTable(rows: unknown, capCols: number, showIds = false): {
   return { cols, body, nums, maxs, subs, numeric };
 }
 
-export default function DataTable({ rows, capCols = 8, capRows = 25, heat = false, storeKey, onPlayerSelect }: Props) {
+export default function DataTable({ rows, capCols = 8, capRows = 25, heat = false, storeKey, onPlayerSelect, onPinPlayer }: Props) {
   const safeCapRows = Math.max(5, Math.min(100, capRows));
   const [showIds, setShowIds] = useState(false);
   const t = useMemo(() => asTable(rows, capCols, showIds), [rows, capCols, showIds]);
@@ -208,7 +227,7 @@ export default function DataTable({ rows, capCols = 8, capRows = 25, heat = fals
           CSV
         </button>
       </div>
-    <div style={{ overflowX: "auto" }}>
+    <div className="dime-table" style={{ overflowX: "auto", border: "1px solid var(--color-stone-border)", borderRadius: 10, background: "var(--color-pure-white)", boxShadow: "var(--shadow-card)" }}>
       <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12 }}>
         <thead>
           <tr>
@@ -228,7 +247,7 @@ export default function DataTable({ rows, capCols = 8, capRows = 25, heat = fals
                 style={{
                   textAlign: t.numeric[t.cols.indexOf(c)] ? "right" : "left",
                   borderBottom: "1px solid var(--color-stone-border)",
-                  padding: "4px 8px",
+                  padding: "7px 10px",
                   color: "var(--color-warm-gray)",
                   fontWeight: 500,
                   cursor: "pointer",
@@ -250,20 +269,21 @@ export default function DataTable({ rows, capCols = 8, capRows = 25, heat = fals
                 const m = t.maxs[j];
                 const bg =
                   heat && v !== null && m !== null
-                    ? `rgba(59, 166, 241, ${(0.04 + 0.22 * (Math.abs(v) / m)).toFixed(3)})`
+                    ? `color-mix(in srgb, var(--color-cyan-signal) ${Math.round(4 + 22 * (Math.abs(v) / m))}%, transparent)`
                     : undefined;
                 return (
                   <td
                     key={j}
                     style={{
                       borderBottom: "1px solid var(--color-stone-border)",
-                      padding: "4px 8px",
+                      padding: "7px 10px",
                       background: bg,
                       textAlign: t.numeric[j] ? "right" : "left",
                       fontVariantNumeric: "tabular-nums",
                     }}
                   >
                     {(t.cols[j] === "PLAYER" || t.cols[j] === "player" || t.cols[j] === "PLAYER_NAME") && cell ? (
+                      <>
                       <button
                         type="button"
                         onClick={() => onPlayerSelect ? onPlayerSelect(cell) : setFilter(cell)}
@@ -283,6 +303,25 @@ export default function DataTable({ rows, capCols = 8, capRows = 25, heat = fals
                       >
                         {cell}
                       </button>
+                      {onPinPlayer && (
+                        <button
+                          type="button"
+                          onClick={() => onPinPlayer(cell)}
+                          title={`Pin ${cell} to compare tray`}
+                          aria-label={`Pin ${cell} to compare tray`}
+                          style={{
+                            background: "none",
+                            border: "none",
+                            padding: "0 0 0 6px",
+                            cursor: "pointer",
+                            color: "var(--color-warm-gray)",
+                            fontSize: 11,
+                          }}
+                        >
+                          +
+                        </button>
+                      )}
+                      </>
                     ) : (
                       cell
                     )}

@@ -62,7 +62,10 @@ export function normalizeZones(rows: unknown): ZonePoint[] {
     const fga = asNum(r.FGA) ?? 0;
     const fgm = asNum(r.FGM) ?? 0;
     const share = asNum(r.SHARE) ?? asNum(r.share) ?? null;
-    const acc = asNum(r.eFG_PCT) ?? asNum(r.FG_PCT) ?? null;
+    // Three-point zones read as 3P% (FG on threes), matching the court
+    // tooltip; eFG elsewhere (QA F23 cross-surface consistency).
+    const isThree = /3|corner|break/i.test(zone);
+    const acc = (isThree ? asNum(r.FG_PCT) : null) ?? asNum(r.eFG_PCT) ?? asNum(r.FG_PCT) ?? null;
     if (share === null || acc === null) continue;
     pts.push({
       zone,
@@ -100,7 +103,7 @@ export default function ZoneBars({ rows }: { rows: unknown }) {
         Shot diet by zone
       </div>
       <div style={{ fontSize: 11, color: "var(--color-warm-gray)", marginTop: 2, marginBottom: 8 }}>
-        Frequency is share of shots. Accuracy is eFG where available.
+        Frequency is share of shots. Accuracy is 3P% on three-point zones, eFG elsewhere.
       </div>
       <svg
         viewBox={`0 0 ${W} ${baseY + 44}`}
@@ -153,7 +156,7 @@ export default function ZoneBars({ rows }: { rows: unknown }) {
                 rx={2.5}
                 fill="var(--color-cyan-signal)"
               >
-                <title>{`${p.zone}: ${(p.acc * 100).toFixed(1)}% eFG${p.delta !== null ? ` (${p.delta >= 0 ? "+" : ""}${(p.delta * 100).toFixed(1)} vs league)` : ""}`}</title>
+                <title>{`${p.zone}: ${(p.acc * 100).toFixed(1)}% ${/3|corner|break/i.test(p.zone) ? "3P" : "eFG"}${p.delta !== null ? ` (${p.delta >= 0 ? "+" : ""}${(p.delta * 100).toFixed(1)} vs league)` : ""}`}</title>
               </rect>
               <text
                 x={fX + barW / 2}

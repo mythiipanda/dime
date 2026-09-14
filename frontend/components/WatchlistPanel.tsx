@@ -129,7 +129,7 @@ export default function WatchlistPanel() {
         </button>
       </div>
       {formErr && (
-        <div style={{ fontSize: 12, color: "#e11d48", marginBottom: 8 }}>{formErr}</div>
+        <div style={{ fontSize: 12, color: "var(--color-ember)", marginBottom: 8 }}>{formErr}</div>
       )}
 
       {loading ? (

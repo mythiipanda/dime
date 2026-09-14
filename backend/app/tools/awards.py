@@ -217,17 +217,29 @@ def get_award_race(award: str, season: str = SEASON) -> dict[str, Any]:
             case_for = (f"leads the pool in {FEATURE_LABELS.get(leader, leader)} "
                         f"at {_round_val(leader, row[leader])}")
         else:
-            top_feat, top_z = contribs[0][1], contribs[0][2]
+            # QA #59: cite the strongest edge, not the highest weighted
+            # contribution. QA #63: direction-aware - for lower-is-
+            # better stats (opp PPG, DEF rating) a high raw z is BAD,
+            # so rank by sign-adjusted z, printing the raw z.
+            top_feat, top_z = max(
+                contribs, key=lambda t: signs[t[1]] * t[2])[1:3]
             case_for = (f"strongest edge is {FEATURE_LABELS.get(top_feat, top_feat)} "
                         f"at {_round_val(top_feat, row[top_feat])} (z {top_z:+.2f})")
-        weak_feat = contribs[-1][1]
+        # QA #63: weakest edge is the worst DIRECTION-ADJUSTED z, not
+        # the lowest weighted contribution (a good opp-PPG must never
+        # be labeled a weakness). Compare on the rounded display values
+        # so equal printouts (0.8 vs 0.8) are never called a weakness.
+        weak_feat, weak_dz = min(
+            ((feat, signs[feat] * z) for _, feat, z in contribs),
+            key=lambda t: t[1])
         weak_label = FEATURE_LABELS.get(weak_feat, weak_feat)
-        weak_val, weak_avg = _round_val(weak_feat, row[weak_feat]), _round_val(weak_feat, means[weak_feat])
-        raw, avg = float(row[weak_feat]), means[weak_feat]
-        below = (raw < avg) if signs[weak_feat] > 0 else (raw > avg)
-        if below:
-            case_against = (f"below pool average in {weak_label} "
-                            f"({weak_val} vs pool avg {weak_avg})")
+        weak_val = _round_val(weak_feat, row[weak_feat])
+        weak_avg = _round_val(weak_feat, means[weak_feat])
+        if weak_dz >= 0 or weak_val == weak_avg:
+            # Above average at everything, or equal to the pool on the
+            # printed values - not a weakness (QA #59/#63).
+            case_against = (f"no clear weakness - closest to the pool "
+                            f"average in {weak_label} ({weak_val})")
         else:
             case_against = (f"weakest edge is {weak_label} "
                             f"({weak_val} vs pool avg {weak_avg})")
@@ -245,5 +257,15 @@ def get_award_race(award: str, season: str = SEASON) -> dict[str, Any]:
     }
     if spec.get("proxy_caveat"):
         meta["proxy_caveat"] = spec["proxy_caveat"]
+    from ._core import season_static as _season_static
+    if _season_static(season):
+        # QA #30 nit: season ended in June; a "top candidate" card must
+        # not read like a live race. The dataset has no award outcomes.
+        meta["season_complete"] = True
+        meta["note"] = (f"{season} is complete. These are formula-based "
+                        f"statistical candidates from final stats; the "
+                        f"dataset does not record the actual award "
+                        f"outcome, so present them as model picks, not "
+                        f"a live race or official result.")
     return {"tool": "get_award_race", "ok": True,
             "rows": {"candidates": candidates}, "meta": meta}

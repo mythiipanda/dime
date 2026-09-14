@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { AiMessage, NodeName, ToolCall } from "../lib/chat";
+import ThinkLine from "./ThinkLine";
 import { rerunSql, type SqlRerunRows } from "../lib/api";
 
 const AGENT_NODES: NodeName[] = ["entry", "data_retrieval", "tools", "analytics"];
@@ -15,10 +16,21 @@ const NODE_LABELS: Record<string, string> = {
 };
 
 function thoughtsFor(ai: AiMessage): string[] {
+  // Dedupe identical lines: the backend can emit the same plan text at
+  // a node boundary and again inside the node, and receipts should read
+  // like a receipt, not a log tail.
   const out: string[] = [];
+  const seen = new Set<string>();
   for (const n of AGENT_NODES) {
     const s = ai.nodes[n];
-    if (s) out.push(...s.thoughts);
+    if (!s) continue;
+    for (const t of s.thoughts) {
+      const key = t.trim().toLowerCase();
+      if (key && !seen.has(key)) {
+        seen.add(key);
+        out.push(t);
+      }
+    }
   }
   return out;
 }
@@ -69,10 +81,14 @@ function ToolRow({ c }: { c: ToolCall }) {
     c.status === "running"
       ? "var(--color-cyan-signal)"
       : c.status === "fail"
-        ? "#e11d48"
+        ? "var(--color-ember)"
         : "var(--color-ink-black)";
   const glyph = c.status === "running" ? "" : c.status === "fail" ? "!" : "✓";
-  const label = c.label || c.name.replace(/_/g, " ");
+  // Fallback names arrive as get_shot_zones-style identifiers; show
+  // a noun phrase ("Shot zones") instead of the raw function name.
+  const label =
+    c.label ||
+    (c.name.replace(/_/g, " ").replace(/^get /, "").replace(/^\w/, (ch) => ch.toUpperCase()));
   const prefix = c.agent ? `${c.agent.charAt(0).toUpperCase() + c.agent.slice(1)} desk · ` : "";
   return (
     <div
@@ -132,7 +148,7 @@ function ToolRow({ c }: { c: ToolCall }) {
               style={{
                 display: "block",
                 fontSize: 11.5,
-                color: c.status === "fail" ? "#e11d48" : "var(--color-ash-gray)",
+                color: c.status === "fail" ? "var(--color-ember)" : "var(--color-ash-gray)",
               }}
             >
               {metaLine(c)}
@@ -222,7 +238,7 @@ function ToolRow({ c }: { c: ToolCall }) {
                 </pre>
               )}
               {rerun && !rerun.loading && rerun.error && (
-                <div style={{ marginTop: 4, color: "#e11d48" }}>
+                <div style={{ marginTop: 4, color: "var(--color-ember)" }}>
                   {rerun.error.slice(0, 160)}
                 </div>
               )}
@@ -335,18 +351,37 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
   const hasActivity = thoughts.length > 0 || calls.length > 0 || live.length > 0;
 
   if (!running && !open) {
-    const secs = ai.thoughtMs ? `${(ai.thoughtMs / 1000).toFixed(0)}s` : "";
-    const pill = secs
-      ? `Thought for ${secs} · ${calls.length} tool${calls.length === 1 ? "" : "s"}`
-      : "Thought process";
+    if (!calls.length && !thoughts.length) return null;
+    if (!calls.length) {
+      return (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="pill-ghost"
+          style={{ fontSize: 12, marginBottom: 8 }}
+        >
+          Details
+        </button>
+      );
+    }
+    const secs = ai.thoughtMs ? `${(ai.thoughtMs / 1000).toFixed(1)}s` : "";
+    const rows = calls.reduce((n, c) => n + (typeof c.rows === "number" ? c.rows : 0), 0);
+    const bits = [
+      `${calls.length} tool${calls.length === 1 ? "" : "s"}`,
+      ...(rows ? [`${rows} row${rows === 1 ? "" : "s"}`] : []),
+      ...(secs ? [secs] : []),
+    ];
     return (
       <button
         type="button"
         onClick={() => setOpen(true)}
         className="pill-ghost"
         style={{ fontSize: 12, marginBottom: 8 }}
+        aria-label="Show receipts"
       >
-        {pill}
+        <span style={{ color: "var(--color-ash-gray)" }}>Receipts</span>
+        {" · "}
+        {bits.join(" · ")}
       </button>
     );
   }
@@ -381,8 +416,8 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
             }}
           />
         )}
-        <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--color-ink-black)" }}>
-          {running ? headerText : "Thought process"}
+        <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--color-ink-black)", display: "inline-flex" }}>
+          {running ? <ThinkLine text={headerText} /> : "Receipts"}
         </span>
         <span style={{ fontSize: 11, color: "var(--color-ash-gray)" }}>
           {open ? "▾" : "▸"}
@@ -395,7 +430,7 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
               Starting…
             </div>
           )}
-          {thoughts.map((t, i) => (
+          {(running || calls.length === 0) && thoughts.map((t, i) => (
             <div
               key={`t-${i}`}
               style={{ fontSize: 12.5, color: "var(--color-warm-gray)", padding: "2px 0" }}
@@ -403,7 +438,7 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
               {t}
             </div>
           ))}
-          {live.map((l, i) => {
+          {running && live.map((l, i) => {
             const isLive = running && i === live.length - 1;
             const prefix = l.agent
               ? `${l.agent.charAt(0).toUpperCase() + l.agent.slice(1)} desk · `

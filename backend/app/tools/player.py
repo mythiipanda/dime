@@ -1,4 +1,5 @@
 """Player desk. Intel, form, comps, zones, splits, possession splits."""
+import datetime as _dt
 
 from typing import Any
 import asyncio as _asyncio
@@ -25,6 +26,22 @@ def _num(value: object) -> float | None:
 def _is_three_zone(name: object) -> bool:
     z = str(name or "").lower()
     return "3" in z or "corner" in z or "break" in z
+
+
+def _display_name(raw: object) -> str:
+    """Names in, names out: desks pass ids verbatim per the id contract,
+    so numeric ids resolve back to display names for verdicts/tables."""
+    txt = str(raw or "").strip()
+    if not txt.isdigit():
+        return txt
+    try:
+        from nba_api.stats.static import players as _pl_static
+        hit = _pl_static.find_player_by_id(int(txt))
+        if hit and hit.get("full_name"):
+            return str(hit["full_name"])
+    except Exception:
+        pass
+    return txt
 
 
 def zone_diet(rows: object) -> dict[str, float | None]:
@@ -129,6 +146,66 @@ def _read_df(sql: str, params: list, tries: int = 5) -> list[dict[str, Any]]:
     raise last or RuntimeError("warehouse read failed")
 
 
+def _different_teams_pair(left: dict[str, Any], right: dict[str, Any],
+                          season: str) -> dict[str, Any]:
+    """Pair block for players on different teams.
+
+    "No shared court" only means they are not teammates; their teams may
+    have met several times this season. Compute the actual meetings from
+    the warehouse gamelogs so the answer never claims zero matchups when
+    the two players in fact shared the floor.
+    """
+    from .headtohead import _load_player_games, vs_opponent
+    lid, rid = left.get("player_id"), right.get("player_id")
+    ta, tb = str(left.get("team") or ""), str(right.get("team") or "")
+    base: dict[str, Any] = {"teammates": False, "both_on_net": None,
+                            "both_on_minutes": 0}
+    if not (lid and rid and ta and tb):
+        base["note"] = "Different teams."
+        return base
+    try:
+        a_games = vs_opponent(_load_player_games(int(lid), season), tb)
+        b_games = vs_opponent(_load_player_games(int(rid), season), ta)
+    except Exception:
+        base["note"] = "Different teams; meeting logs unavailable."
+        return base
+    a_by_id = {str(g.get("Game_ID")): g for g in a_games}
+    b_by_id = {str(g.get("Game_ID")): g for g in b_games}
+    shared = sorted(set(a_by_id) & set(b_by_id))
+    meetings = []
+    for gid in shared:
+        ga, gb = a_by_id[gid], b_by_id[gid]
+        meetings.append({
+            "game_id": gid,
+            "date": ga.get("GAME_DATE"),
+            "matchup": ga.get("MATCHUP"),
+            "a_pts": ga.get("PTS"), "a_reb": ga.get("REB"),
+            "a_ast": ga.get("AST"), "a_wl": ga.get("WL"),
+            "b_pts": gb.get("PTS"), "b_reb": gb.get("REB"),
+            "b_ast": gb.get("AST"),
+        })
+    base["h2h_meetings"] = meetings
+    if shared:
+        a_pts = [m["a_pts"] for m in meetings if m["a_pts"] is not None]
+        b_pts = [m["b_pts"] for m in meetings if m["b_pts"] is not None]
+        note = (f"Different teams; they shared the floor in "
+                f"{len(shared)} game(s) this season")
+        if a_pts:
+            note += (f" ({left.get('name') or 'player A'} averaged "
+                     f"{sum(a_pts) / len(a_pts):.1f} pts in those games)")
+        if b_pts:
+            note += (f"; {right.get('name') or 'player B'} averaged "
+                     f"{sum(b_pts) / len(b_pts):.1f} pts")
+        base["note"] = note + "."
+    elif a_games or b_games:
+        base["note"] = (f"Different teams; {ta} and {tb} met, but the two"
+                        " players did not appear in the same game.")
+    else:
+        base["note"] = (f"Different teams; {ta} and {tb} did not meet "
+                        "this season.")
+    return base
+
+
 @tool
 async def get_compare(
     a: str, b: str, season: str = SEASON,
@@ -198,19 +275,20 @@ async def get_compare(
 
         async def _invoke(label: str, subtool: Any,
                           args: dict[str, Any]) -> Any:
-            try:
-                return await subtool.ainvoke(args)
-            except Exception as exc:  # noqa: BLE001 - transient sub-call, retry
-                _logger.warning(
-                    "get_compare sub-call %s failed for %s; retrying: %r",
-                    label, who, exc)
-            try:
-                return await subtool.ainvoke(args)
-            except Exception as exc:  # noqa: BLE001 - surfaced in sub_errors
-                _logger.warning(
-                    "get_compare sub-call %s failed twice for %s: %r",
-                    label, who, exc)
-                return exc
+            last: Exception | None = None
+            for attempt in range(4):
+                try:
+                    return await subtool.ainvoke(args)
+                except Exception as exc:  # noqa: BLE001 - transient contention
+                    last = exc
+                    _logger.warning(
+                        "get_compare sub-call %s failed for %s (try %d/4): %r",
+                        label, who, attempt + 1, exc)
+                    await _asyncio.sleep(0.2 * (attempt + 1))
+            _logger.warning(
+                "get_compare sub-call %s failed 4 times for %s: %r",
+                label, who, last)
+            return last
 
         results = await _asyncio.gather(
             *(_invoke(k, t, a) for k, (t, a) in job_defs.items()))
@@ -246,6 +324,14 @@ async def get_compare(
                 "rim_share": None, "three_share": None}
         except Exception:
             diet = {"rim_share": None, "three_share": None}
+        # QA #34: blank compare cells get cited from other evidence
+        # streams anyway - name what is unavailable so the card and the
+        # narrative can say N/A instead of leaving silent blanks.
+        missing: list[str] = []
+        if diet.get("three_share") is None:
+            missing.append("three_share")
+        if diet.get("rim_share") is None:
+            missing.append("rim_share")
         gp = len(games)
 
         def _sum(key: str) -> float:
@@ -319,7 +405,7 @@ async def get_compare(
                     pass
                 break
         return {
-            "name": who,
+            "name": _display_name(who),
             "player_id": pid,
             "team": team_abbr,
             "team_record": record,
@@ -345,6 +431,8 @@ async def get_compare(
             "rim_share": diet.get("rim_share"),
             "three_share": diet.get("three_share"),
             "last5": [g.get("PTS", 0) for g in last.get("rows", [])],
+            "missing": (missing
+                        + (["net_onoff"] if net_onoff is None else [])),
             "sub_call_errors": sub_errors,
         }
 
@@ -360,8 +448,7 @@ async def get_compare(
             pair = {"teammates": True, "both_on_net": None,
                     "both_on_minutes": 0, "note": str(exc)[:160]}
     else:
-        pair = {"teammates": False, "both_on_net": None,
-                "both_on_minutes": 0, "note": "Different teams, no shared court."}
+        pair = _different_teams_pair(left, right, season)
     sub_call_errors: dict[str, str] = {}
     for side, player in (("a", left), ("b", right)):
         for key, err in (player.get("sub_call_errors") or {}).items():
@@ -384,18 +471,30 @@ def _metric_row(metric: str, label: str, method: str, a: object, b: object,
         except (TypeError, ValueError):
             return None
     fa, fb = _f(a), _f(b)
+    # QA #34: "edges by 0.6 eFG points" is noise presented as a win.
+    # Fraction-scale metrics (0-1: ts, efg, shares) need >= 0.02 to
+    # lead; counting-scale metrics need >= 1 pct relative separation.
+    if fa is not None and fb is not None and max(abs(fa), abs(fb)) <= 1.5:
+        eps = 0.02
+    else:
+        eps = 0.01 * max(abs(fa or 0), abs(fb or 0), 1.0)
     if fa is None or fb is None:
         leader = "na"
-    elif abs(fa - fb) < 1e-9:
+    elif abs(fa - fb) < eps:
         leader = "tie"
     elif (fa > fb) == higher_wins:
         leader = "a"
     else:
         leader = "b"
     who = na if leader == "a" else nb if leader == "b" else ""
+    if who:
+        note = f"{who} leads {label}."
+    elif leader == "tie" and fa is not None and fb is not None:
+        note = f"{label} effectively even (gap within noise)."
+    else:
+        note = f"{label} tied or missing."
     return {"metric": metric, "label": label, "method": method,
-            "a": fa, "b": fb, "leader": leader,
-            "note": f"{who} leads {label}." if who else f"{label} tied or missing."}
+            "a": fa, "b": fb, "leader": leader, "note": note}
 
 
 @tool
@@ -523,17 +622,98 @@ def compare_metrics(a: str | int, b: str | int, season: str = SEASON) -> dict[st
                      "raptor_season_a": ma.get("raptor_season"),
                      "raptor_season_b": mb.get("raptor_season")}}
 
+def _season_line(player_id: object, season: str) -> dict[str, Any] | None:
+    """Seeded per-game season line (bbref) for coverage-gated fallback."""
+    try:
+        frame = store.read_frame(
+            "silver_player_season",
+            "_season = ? AND CAST(PLAYER_ID AS VARCHAR) = CAST(? AS VARCHAR)",
+            [season, str(player_id)])
+        if frame is not None and frame.height > 0:
+            row = frame.to_dicts()[0]
+            # P3: bbref marks traded players 2TM/3TM - never leak the
+            # code into the narrative.
+            if str(row.get("TEAM") or "").endswith("TM"):
+                n = str(row["TEAM"])[:-2]
+                row["TEAM"] = (f"traded mid-season ({n} teams)")
+            return {k: v for k, v in row.items() if not k.startswith("_")}
+    except Exception:
+        pass
+    return None
+
+
 @tool
 def get_player_intel(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
     """Game log plus shot sample for one player id. Warehouse first."""
     player_id = coerce_player_id(player_id)
+    # limit=500: the 25-row cap silently clipped logs to October-
+    # December games, so "playing lately?" read stale (QA #22).
     rows, meta = _warehouse_or_live(
         "silver_player_gamelogs", "_season = ? AND _entity = ?",
         [season, f"player:{player_id}"],
         lambda: nba_stats.player_gamelog(player_id, season), season,
-        entity=f"player:{player_id}", ttl_s=TTL_GAMELOG,
+        entity=f"player:{player_id}", ttl_s=TTL_GAMELOG, limit=500,
     )
-    return {"tool": "get_player_intel", "ok": True, "rows": rows, "meta": meta}
+    if not rows:
+        line = _season_line(player_id, season)
+        if line:
+            return {"tool": "get_player_intel", "ok": True, "rows": [line],
+                    "meta": {"source": "basketball-reference", "season": season,
+                             "coverage": "season_line",
+                             "note": "game-by-game log not seeded for this "
+                                     "player; showing season line"}}
+        from .splits import _resolve_name as _rname3
+        _d = _rname3(int(player_id), str(player_id))
+        # QA #32: facts only - an imperative to the model ("say that
+        # plainly") leaks verbatim into user-facing text.
+        return {"tool": "get_player_intel", "ok": False,
+                "error": (f"No {season} rows for {_d}. The dataset "
+                          f"covers 2024-25 and 2025-26 only, so a "
+                          f"retired or out-of-era player has no "
+                          f"current-season data.")}
+    out = {"tool": "get_player_intel", "ok": True, "rows": rows,
+           "meta": meta}
+    try:
+        from .gamelog import playoff_inactive_note as _pin
+        from .splits import _resolve_name as _rname4
+
+        _note = _pin(int(player_id), season,
+                     _rname4(int(player_id), str(player_id)))
+        if _note:
+            # F45: a scout-only injury ask must still surface the
+            # playoff inactive listing.
+            out["inactive_note"] = _note
+    except Exception:
+        pass
+    return out
+
+
+@tool
+def get_season_averages(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
+    """Per-game season averages (PPG, RPG, APG, SPG, BPG, percentages,
+    games played) for one player. Names or ids. Warehouse only, seeded
+    from basketball-reference; no game-by-game detail."""
+    try:
+        pid = coerce_player_id(player_id)
+    except ValueError:
+        return {"tool": "get_season_averages", "ok": False,
+                "error": f"unknown player: {player_id}"}
+    line = _season_line(pid, season)
+    if not line:
+        # QA F13: a bare miss on a retired player dead-ended the answer
+        # ("No Kobe Bryant data found") instead of the honest story.
+        # Give the coverage facts so the narrative can say "retired /
+        # outside dataset" plainly instead of overclaiming no data.
+        return {"tool": "get_season_averages", "ok": False,
+                "error": (f"no season line on file for {season}. Dataset "
+                          f"covers 2024-25 and 2025-26 only; if this "
+                          f"player is retired, inactive, or from another "
+                          f"era, the correct answer is that no "
+                          f"current-season data exists for them (not "
+                          f"that no data exists at all).")}
+    return {"tool": "get_season_averages", "ok": True, "rows": [line],
+            "meta": {"source": "basketball-reference", "season": season,
+                     "coverage": "season_line"}}
 
 
 @tool
@@ -548,7 +728,7 @@ def get_playoff_intel(player_id: str | int, season: str = SEASON) -> dict[str, A
         "silver_playoff_gamelogs", "_season = ? AND _entity = ?",
         [season, f"player:{pid}"],
         lambda: nba_stats.player_playoff_gamelog(pid, season), season,
-        entity=f"player:{pid}", ttl_s=TTL_GAMELOG,
+        entity=f"player:{pid}", ttl_s=TTL_GAMELOG, limit=100,
     )
     if not rows:
         try:
@@ -567,16 +747,43 @@ def get_playoff_intel(player_id: str | int, season: str = SEASON) -> dict[str, A
                 con.close()
         except Exception:
             seasons = []
-        if seasons:
+        from .gamelog import playoff_inactive_note as _pin
+        from .splits import _resolve_name as _rname
+        _disp = _rname(pid, str(player_id))
+        note = _pin(pid, season, _disp)
+        if note:
+            err = (f"No playoff games found for {_disp} in {season}: "
+                   f"{note}.")
+        elif seasons:
             coverage = ", ".join(seasons)
-            err = (f"No playoff games found for {player_id} in {season} "
+            err = (f"No playoff games found for {_disp} in {season} "
                    f"(playoff coverage: {coverage}).")
         else:
-            err = (f"No playoff games found for {player_id} in {season} "
+            err = (f"No playoff games found for {_disp} in {season} "
                    f"and no playoff seasons are stored yet.")
         return {"tool": "get_playoff_intel", "ok": False, "error": err}
     cols = ["GAME_DATE", "MATCHUP", "PTS", "REB", "AST", "MIN"]
     slim = [{k: r.get(k) for k in cols if k in r} for r in rows]
+    # F67 T3: the slim rows carried no player name, so compose wrote
+    # "the recorded player" / "the OKC player" - name every row.
+    from .splits import _resolve_name as _pnm
+    _disp = _pnm(pid, str(player_id))
+    for r in slim:
+        r["PLAYER"] = _disp
+    # F67 413-vs-414: aggregate asks ("how did he do in the
+    # playoffs?") were LLM-summed over 19 rows and drifted by a point
+    # between runs. Compute the series totals once, here, and mark
+    # them canonical (v67 law: deterministic numerals on this lane).
+    def _sum(col: str) -> int:
+        return int(sum(float(r.get(col) or 0) for r in slim))
+    meta = dict(meta or {})
+    meta["player"] = _disp
+    meta["totals"] = {"GP": len(slim), "PTS": _sum("PTS"),
+                      "REB": _sum("REB"), "AST": _sum("AST"),
+                      "MIN": _sum("MIN")}
+    meta["totals_note"] = (
+        "Canonical series totals - quote these verbatim for any "
+        "aggregate ask instead of summing the rows yourself.")
     return {"tool": "get_playoff_intel", "ok": True, "rows": slim, "meta": meta}
 
 
@@ -584,13 +791,23 @@ def get_playoff_intel(player_id: str | int, season: str = SEASON) -> dict[str, A
 def get_last_x(player_id: str | int, n: int = 10, season: str = SEASON) -> dict[str, Any]:
     """Last n games for one player id, most recent first."""
     player_id = coerce_player_id(player_id)
+    # limit=500: the default 25-row cap lands BEFORE the date sort, so
+    # "last n" used to mean "first 25 stored, then newest of those"
+    # (QA #22: KD's "last 5" showed December).
     rows, meta = _warehouse_or_live(
         "silver_player_gamelogs", "_season = ? AND _entity = ?",
         [season, f"player:{player_id}"],
         lambda: nba_stats.player_gamelog(player_id, season), season,
-        entity=f"player:{player_id}", ttl_s=TTL_GAMELOG,
+        entity=f"player:{player_id}", ttl_s=TTL_GAMELOG, limit=500,
     )
     if not rows:
+        line = _season_line(player_id, season)
+        if line:
+            return {"tool": "get_last_x", "ok": True, "rows": [line],
+                    "meta": {"source": "basketball-reference", "season": season,
+                             "coverage": "season_line",
+                             "note": "game-by-game log not seeded for this "
+                                     "player; showing season line"}}
         return {"tool": "get_last_x", "ok": False,
                 "error": meta.get("error") or "empty upstream response"}
     import polars as _pl
@@ -609,15 +826,21 @@ def get_last_x(player_id: str | int, n: int = 10, season: str = SEASON) -> dict[
 def get_trend(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
     """Decay-weighted recent form versus season baseline. DARKO-lite."""
     player_id = coerce_player_id(player_id)
+    # limit=500: same first-25-stored cap as get_last_x; the decay window
+    # must be the actual end of the log (QA #22).
     rows, meta = _warehouse_or_live(
         "silver_player_gamelogs", "_season = ? AND _entity = ?",
         [season, f"player:{player_id}"],
         lambda: nba_stats.player_gamelog(player_id, season), season,
-        entity=f"player:{player_id}", ttl_s=TTL_GAMELOG,
+        entity=f"player:{player_id}", ttl_s=TTL_GAMELOG, limit=500,
     )
     if not rows:
         return {"tool": "get_trend", "ok": False,
                 "error": meta.get("error") or "empty upstream response"}
+    # Warehouse storage order is not guaranteed chronological; form must
+    # be computed on real dates or "recent" quietly means December (F19).
+    from .splits import parse_game_date as _pgd
+    rows = sorted(rows, key=lambda r: _pgd(r.get("GAME_DATE")) or _dt.min)
     try:
         pts = [float(r.get("PTS") or 0) for r in rows]
     except (TypeError, ValueError):
@@ -636,7 +859,14 @@ def get_trend(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
                      "form_ppg": round(form, 1),
                      "delta": round(form - base, 1),
                      "direction": "up" if form > base + 1 else (
-                         "down" if form < base - 1 else "flat")},
+                         "down" if form < base - 1 else "flat"),
+                     # Coverage honesty: name the actual windows so the
+                     # narrative can say which dates "form" covers instead
+                     # of implying an unverified recent stretch.
+                     "log_from": rows[0].get("GAME_DATE"),
+                     "log_to": rows[-1].get("GAME_DATE"),
+                     "form_from": rows[-len(recent)].get("GAME_DATE"),
+                     "form_games": len(recent)},
             "meta": meta}
 
 
@@ -979,20 +1209,155 @@ def get_advanced(player: str | int, season: str = SEASON) -> dict[str, Any]:
         return {"tool": "get_advanced", "ok": False,
                 "error": f"no advanced row for player {player_id}"}
     slim = {k: rows[0].get(k) for k in ADVANCED_COLS if k in rows[0]}
+    # Units honesty: nba_api ships these pct fields as 0-1 decimals while
+    # TM_TOV_PCT is already 0-100. The mix made the model print PIE as
+    # "0.1" next to "54.6%" TS in the same answer. Normalize everything
+    # to the 0-100 scale the _PCT names imply.
+    for k in ("USG_PCT", "TS_PCT", "EFG_PCT", "AST_PCT", "PIE"):
+        v = slim.get(k)
+        if isinstance(v, (int, float)) and v <= 1.0:
+            slim[k] = round(v * 100, 1)
     return {"tool": "get_advanced", "ok": True, "rows": slim,
-            "meta": {"source": "nba_api", "season": season}}
+            "meta": {"source": "nba_api", "season": season,
+                     "units": "percentages on 0-100 scale"}}
+
+
+# bbref distance buckets -> canonical court zones (approximate; corner
+# threes cannot be separated from above-the-break in bucket data).
+_BUCKET_TO_ZONE = {
+    "0-3ft": "Restricted Area",
+    "3-10ft": "In The Paint (Non-RA)",
+    "10-16ft": "Mid-Range",
+    "16ft-3P": "Mid-Range",
+    "3P": "Above the Break 3",
+}
 
 
 @tool
 def get_shot_zones(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
-    """Zone splits for one player id: rim, midrange, three with shares."""
+    """Zone splits for one player id: rim, midrange, three with shares.
+
+    Warehouse-first: seeded silver_shots, then seeded silver_zone_splits
+    (basketball-reference distance buckets, league-wide), then live
+    shot_chart (fail-fast; endpoint-blocked from datacenter IPs).
+    """
     player_id = coerce_player_id(player_id)
     import math
 
-    res = nba_stats.shot_chart(player_id, season)
-    if not res.ok or res.frame.height == 0:
-        return {"tool": "get_shot_zones", "ok": False,
-                "error": res.error or "empty upstream response"}
+    res = None
+    live_error = ""
+    shot_dicts: list[dict[str, Any]] = []
+    shot_source = ""
+    shot_fetched = ""
+    try:
+        w = store.read_frame(
+            "silver_shots",
+            "_season = ? AND CAST(PLAYER_ID AS VARCHAR) = CAST(? AS VARCHAR)",
+            [season, str(player_id)])
+        if w is not None and w.height > 0:
+            shot_dicts = w.to_dicts()
+            shot_source = "warehouse:silver_shots"
+            if "_fetched_at" in w.columns:
+                shot_fetched = str(w["_fetched_at"][0])
+    except Exception:
+        pass
+    if not shot_dicts:
+        # League-wide seeded distance buckets (bbref shooting page).
+        try:
+            zb = store.read_frame(
+                "silver_zone_splits",
+                "_season = ? AND CAST(PLAYER_ID AS VARCHAR) = CAST(? AS VARCHAR)",
+                [season, str(player_id)])
+            if zb is not None and zb.height > 0:
+                # League baseline from the same bucket table (league-wide seed).
+                league_fg: dict[str, float] = {}
+                try:
+                    lz = store.read_frame(
+                        "silver_zone_splits", "_season = ?", [season])
+                    if lz is not None and lz.height > 0:
+                        agg: dict[str, list] = {}
+                        for lr in lz.to_dicts():
+                            zone = _BUCKET_TO_ZONE.get(str(lr.get("ZONE")))
+                            if zone is None:
+                                continue
+                            m_v = float(lr.get("FGM") or 0)
+                            a_v = float(lr.get("FGA") or 0)
+                            if not (math.isfinite(m_v) and math.isfinite(a_v)):
+                                continue  # NaN rows (per-100 sections) poison sums
+                            a = agg.setdefault(zone, [0.0, 0.0])
+                            a[0] += m_v
+                            a[1] += a_v
+                        for zone, (m, a) in agg.items():
+                            if a >= 50:
+                                league_fg[zone] = round(m / a, 3)
+                except Exception:
+                    pass
+                # Distance buckets map onto the canonical viz zones so the
+                # court heatmap and compare paths can read them. Buckets are
+                # approximate: 3-10ft counts as paint, 10-16ft and 16ft-3P
+                # merge into mid-range, all threes land in above-the-break
+                # (corners cannot be separated from bucket data).
+                merged: dict[str, list[float]] = {}
+                for r in zb.to_dicts():
+                    zone = _BUCKET_TO_ZONE.get(str(r.get("ZONE")))
+                    if zone is None:
+                        continue
+                    slot = merged.setdefault(zone, [0.0, 0.0])
+                    slot[0] += float(r.get("FGM") or 0)
+                    slot[1] += float(r.get("FGA") or 0)
+                bucket_rows = [{"ZONE": z, "FGM": m, "FGA": a}
+                               for z, (m, a) in merged.items()]
+                zb_rows = bucket_rows
+                out_rows = []
+                for r in zb_rows:
+                    fga = float(r.get("FGA") or 0)
+                    fgm = float(r.get("FGM") or 0)
+                    fgp = round(fgm / fga, 3) if fga else 0.0
+                    zone_name = str(r.get("ZONE"))
+                    # Buckets carry no made-threes split; on canonical zones
+                    # eFG = FG% for twos, 1.5x FG% for the all-threes bucket.
+                    efgp = (round(fgp * 1.5, 3) if _is_three_zone(zone_name)
+                            else fgp)
+                    row = {
+                        "zone": zone_name, "FGM": int(fgm), "FGA": int(fga),
+                        "FG_PCT": fgp,
+                        "eFG_PCT": efgp,
+                        "share": round(float(r.get("FGA_PCT") or 0), 3),
+                        "fgm": int(fgm), "fga": int(fga),
+                        "fg_pct": fgp,
+                        "freq_pct": round(float(r.get("FGA_PCT") or 0), 3),
+                    }
+                    if str(r.get("ZONE")) in league_fg:
+                        row["LEAGUE_DELTA"] = round(fgp - league_fg[str(r.get("ZONE"))], 3)
+                    out_rows.append(row)
+                total = sum(r["FGA"] for r in out_rows) or 1
+                for r in out_rows:
+                    r["share"] = round(r["FGA"] / total, 3)
+                    r["freq_pct"] = r["share"]
+                meta = {"source": "basketball-reference",
+                        "season": season, "rows": len(out_rows),
+                        "cached": True,
+                        "note": "distance buckets mapped onto court zones "
+                                "(3-10ft counts as paint, both mid buckets "
+                                "merge, corner threes included in "
+                                "above-the-break), not exact NBA zones"}
+                if league_fg:
+                    meta["baseline"] = "silver_zone_splits league bucket FG%"
+                return {"tool": "get_shot_zones", "ok": True, "rows": out_rows,
+                        "meta": meta}
+        except Exception:
+            pass
+    if not shot_dicts:
+        res = nba_stats.shot_chart(player_id, season)
+        if not res.ok or res.frame.height == 0:
+            return {"tool": "get_shot_zones", "ok": False,
+                    "error": res.error or "empty upstream response",
+                    "meta": {"coverage": "none",
+                             "note": "no seeded shot data for this player "
+                                     "and live source unreachable"}}
+        shot_dicts = res.frame.to_dicts()
+        shot_source = res.meta.source
+        shot_fetched = res.meta.fetched_at
 
     def _zone_of(r: dict) -> str:
         zb = str(r.get("SHOT_ZONE_BASIC") or "").strip()
@@ -1013,7 +1378,7 @@ def get_shot_zones(player_id: str | int, season: str = SEASON) -> dict[str, Any]
         return "3pt" in str(r.get("SHOT_TYPE", "") or "").lower()
 
     zones: dict[str, list] = {}
-    for r in res.frame.to_dicts():
+    for r in shot_dicts:
         z = _zone_of(r)
         made = _is_made(r)
         three = _is_three(r)
@@ -1053,6 +1418,39 @@ def get_shot_zones(player_id: str | int, season: str = SEASON) -> dict[str, Any]
             baseline_detail = "silver_shots empty or missing zone/made columns"
     except Exception as exc:
         baseline_detail = str(exc)[:120]
+    bucket_fg: dict[str, float] = {}
+    if baseline_missing:
+        # Fall back to the league-wide bucket table (551 players) mapped
+        # onto canonical zones; corner zones reuse the all-threes baseline.
+        try:
+            lz = store.read_frame("silver_zone_splits", "_season = ?", [season])
+            if lz is not None and lz.height > 0:
+                agg_b: dict[str, list] = {}
+                for lr in lz.to_dicts():
+                    zone = _BUCKET_TO_ZONE.get(str(lr.get("ZONE")))
+                    if zone is None:
+                        continue
+                    m_v = float(lr.get("FGM") or 0)
+                    a_v = float(lr.get("FGA") or 0)
+                    if not (math.isfinite(m_v) and math.isfinite(a_v)):
+                        continue  # NaN rows (per-100 sections) poison sums
+                    slot = agg_b.setdefault(zone, [0.0, 0.0])
+                    slot[0] += m_v
+                    slot[1] += a_v
+                for zone, (m, a) in agg_b.items():
+                    if a >= 50:
+                        bucket_fg[zone] = round(m / a, 3)
+                if "Above the Break 3" in bucket_fg:
+                    bucket_fg.setdefault("Left Corner 3",
+                                         bucket_fg["Above the Break 3"])
+                    bucket_fg.setdefault("Right Corner 3",
+                                         bucket_fg["Above the Break 3"])
+        except Exception:
+            bucket_fg = {}
+        if not bucket_fg:
+            baseline_detail = ("league baseline unavailable: shot-level data "
+                               "seeded for few players and bucket table "
+                               "missing for this season")
     rows = []
     for z, (m, a, t) in sorted(zones.items()):
         fgp = round(m / a, 3) if a else 0.0
@@ -1065,10 +1463,15 @@ def get_shot_zones(player_id: str | int, season: str = SEASON) -> dict[str, Any]
                                "freq_pct": shr}
         if not baseline_missing and z in league_efg:
             row["LEAGUE_DELTA"] = round(efg - league_efg[z], 3)
+        elif z in bucket_fg:
+            row["LEAGUE_DELTA"] = round(fgp - bucket_fg[z], 3)
         rows.append(row)
-    meta: dict[str, Any] = {"source": res.meta.source, "fetched_at": res.meta.fetched_at,
-                            "rows": len(rows), "cached": False}
-    if baseline_missing:
+    meta: dict[str, Any] = {"source": shot_source, "fetched_at": shot_fetched,
+                            "rows": len(rows), "season": season,
+                            "cached": shot_source.startswith("warehouse")}
+    if baseline_missing and bucket_fg:
+        meta["baseline"] = "silver_zone_splits league bucket FG% (mapped)"
+    elif baseline_missing:
         meta["baseline_missing"] = True
         if baseline_detail:
             meta["baseline_detail"] = baseline_detail
@@ -1115,11 +1518,12 @@ def _opp_tier_splits(frame: Any, season: str) -> list[dict[str, Any]]:
 def get_splits(player_id: str | int, season: str = SEASON) -> dict[str, Any]:
     """Home/away plus monthly, wins/losses, last-10, starter splits from the game log."""
     player_id = coerce_player_id(player_id)
+    # limit=500: last-10 splits must see the full log (QA #22).
     rows_data, warehouse_meta = _warehouse_or_live(
         "silver_player_gamelogs", "_season = ? AND _entity = ?",
         [season, f"player:{player_id}"],
         lambda: nba_stats.player_gamelog(player_id, season), season,
-        entity=f"player:{player_id}", live_first=True,
+        entity=f"player:{player_id}", live_first=True, limit=500,
     )
     if not rows_data:
         return {"tool": "get_splits", "ok": False,
@@ -1417,7 +1821,13 @@ def get_four_factors(player_id: str | int, team_id: str | int, season: str = SEA
 
 @tool
 async def get_shot_compare(a: str, b: str, season: str = SEASON) -> dict[str, Any]:
-    """Shot-diet showdown: zone eFG and share for two players."""
+    """Shot-diet showdown: zone eFG and share for two players.
+
+    Missing zone data stays null, never 0.0: a player without a seeded
+    zone row has NO data there, not a 0% shooter. Edges and the verdict
+    are computed only where BOTH players have data; takeaways must never
+    be built on a missing cell.
+    """
     async def _zones(who: str) -> dict[str, dict]:
         try:
             pid = coerce_player_id(who)
@@ -1425,27 +1835,77 @@ async def get_shot_compare(a: str, b: str, season: str = SEASON) -> dict[str, An
             return {r.get("zone", "?"): r for r in res.get("rows", [])}
         except Exception:
             return {}
+
+    def _f(row: dict, *keys: str) -> float | None:
+        for k in keys:
+            v = row.get(k)
+            if v is None:
+                continue
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                continue
+        return None
+
     ma, mb = await _asyncio.gather(_zones(a), _zones(b))
+    # Verdicts and edges must read as names, not raw ids: desks pass ids
+    # verbatim per the id-contract, so resolve display names here.
+    a, b = _display_name(a), _display_name(b)
+    missing = [n for n, m in ((a, ma), (b, mb)) if not m]
     rows: list[dict[str, Any]] = []
     for z in sorted(set(ma) | set(mb)):
         ra, rb = ma.get(z, {}), mb.get(z, {})
-        ae = float(ra.get("eFG_PCT", 0) or 0)
-        be = float(rb.get("eFG_PCT", 0) or 0)
-        ash = float(ra.get("SHARE", ra.get("share", 0)) or 0)
-        bsh = float(rb.get("SHARE", rb.get("share", 0)) or 0)
-        edge = "wash" if max(ash, bsh) < 0.05 or ae == be else (a if ae > be else b)
+        ae = _f(ra, "eFG_PCT")
+        be = _f(rb, "eFG_PCT")
+        afg = _f(ra, "FG_PCT", "fg_pct")
+        bfg = _f(rb, "FG_PCT", "fg_pct")
+        ash = _f(ra, "SHARE", "share")
+        bsh = _f(rb, "SHARE", "share")
+        if ae is None or be is None or ash is None or bsh is None:
+            edge = None  # not comparable, never a fake wash or fake winner
+        elif max(ash, bsh) < 0.05 or ae == be:
+            edge = "wash"
+        else:
+            edge = a if ae > be else b
         rows.append({"zone": z, "a_eFG": ae, "b_eFG": be,
+                     "a_fg": afg, "b_fg": bfg,
                      "a_share": ash, "b_share": bsh, "edge": edge})
     rim = next((r for r in rows if r["zone"] == "Restricted Area"), None)
-    rim_owner = "wash" if not rim or max(rim["a_share"], rim["b_share"]) < 0.05 or rim["a_eFG"] == rim["b_eFG"] else (a if rim["a_eFG"] > rim["b_eFG"] else b)
-    threes = [r for r in rows if "3" in r["zone"] or "corner" in r["zone"].lower() or "break" in r["zone"].lower()]
-    arc = max(threes, key=lambda r: max(r["a_share"], r["b_share"]), default=None)
-    arc_owner = "wash" if not arc or arc["a_eFG"] == arc["b_eFG"] else (a if arc["a_eFG"] > arc["b_eFG"] else b)
-    arc_zone = arc["zone"] if arc else "no threes"
-    verdict = f"{rim_owner} owns the rim; {arc_owner} owns the arc ({arc_zone})."
+    if (not rim or rim["a_eFG"] is None or rim["b_eFG"] is None
+            or rim["a_share"] is None or rim["b_share"] is None):
+        rim_owner = None
+    elif max(rim["a_share"], rim["b_share"]) < 0.05 or rim["a_eFG"] == rim["b_eFG"]:
+        rim_owner = "wash"
+    else:
+        rim_owner = a if rim["a_eFG"] > rim["b_eFG"] else b
+    threes = [r for r in rows
+              if _is_three_zone(r["zone"])
+              and r["a_share"] is not None and r["b_share"] is not None]
+    arc = max(threes, key=lambda r: max(r["a_share"], r["b_share"]),
+              default=None)
+    if not arc or arc["a_eFG"] is None or arc["b_eFG"] is None:
+        arc_owner = None
+        arc_zone = None
+    else:
+        arc_owner = ("wash" if arc["a_eFG"] == arc["b_eFG"]
+                     else (a if arc["a_eFG"] > arc["b_eFG"] else b))
+        arc_zone = arc["zone"]
+    if missing:
+        verdict = (f"Shot diet unavailable for {', '.join(missing)} in "
+                   f"{season}; comparison shown only where both players "
+                   f"have seeded zone data.")
+    else:
+        rim_txt = {"wash": "neither owns the rim", None: "rim data missing"}.get(
+            rim_owner, f"{rim_owner} owns the rim")
+        arc_txt = {"wash": "neither owns the arc", None: "arc data missing"}.get(
+            arc_owner, f"{arc_owner} owns the arc ({arc_zone})")
+        verdict = f"{rim_txt}; {arc_txt}."
+    meta = {"source": "warehouse", "season": season,
+            "a": a, "b": b, "arc_zone": arc_zone, "arc_edge": arc_owner}
+    if missing:
+        meta["missing_zone_data"] = missing
     return {"tool": "get_shot_compare", "ok": True, "rows": rows,
-            "verdict": verdict, "meta": {"source": "nba_api", "season": season,
-            "a": a, "b": b, "arc_zone": arc_zone, "arc_edge": arc_owner}}
+            "verdict": verdict, "meta": meta}
 
 
 @tool
@@ -1880,6 +2340,22 @@ def get_debate_card(a: str, b: str, season: str = SEASON,
                 return str(v)
         return "—"
 
+    def _pct(p: dict, *keys: str) -> str:
+        """Render a pct stat as a readable percent (QA #25: raw 0.476
+        decimals looked broken on the shareable card)."""
+        for k in keys:
+            v = p.get(k)
+            if v is None:
+                continue
+            try:
+                f = float(v)
+            except (TypeError, ValueError):
+                return str(v)
+            if f <= 1.0:
+                f *= 100
+            return f"{f:.1f}%"
+        return "—"
+
     # Build HTML card
     def _row(label: str, va: str, vb: str) -> str:
         return (
@@ -1889,15 +2365,15 @@ def get_debate_card(a: str, b: str, season: str = SEASON,
         )
 
     stats_html = ""
-    for label, keys in [
-        ("PPG", ("ppg", "PTS")),
-        ("RPG", ("rpg", "REB")),
-        ("APG", ("apg", "AST")),
-        ("FG%", ("fg_pct", "FG_PCT")),
-        ("3P%", ("fg3_pct", "FG3_PCT")),
-        ("Games", ("gp", "G", "GP")),
+    for label, keys, fmt in [
+        ("PPG", ("ppg", "PTS"), _stat),
+        ("RPG", ("rpg", "REB"), _stat),
+        ("APG", ("apg", "AST"), _stat),
+        ("FG%", ("fg_pct", "FG_PCT"), _pct),
+        ("3P%", ("fg3_pct", "FG3_PCT"), _pct),
+        ("Games", ("gp", "G", "GP"), _stat),
     ]:
-        stats_html += _row(label, _stat(players[0], *keys), _stat(players[1], *keys))
+        stats_html += _row(label, fmt(players[0], *keys), fmt(players[1], *keys))
 
     name_a = _html.escape(_stat(players[0], "name", "PLAYER", "player"))
     name_b = _html.escape(_stat(players[1], "name", "PLAYER", "player"))
@@ -1947,8 +2423,14 @@ h1 {{ font-size: 22px; margin: 0; color: #1c1917; }}
     # Save where the file endpoint serves: backend/data/cards (git-ignored).
     out_dir = _Path(__file__).resolve().parent.parent.parent / "data" / "cards"
     out_dir.mkdir(parents=True, exist_ok=True)
-    safe_a = "".join(c for c in name_a if c.isalnum())[:20]
-    safe_b = "".join(c for c in name_b if c.isalnum())[:20]
+    import unicodedata as _ud
+
+    def _slug(s: str) -> str:
+        folded = _ud.normalize("NFKD", s).encode("ascii", "ignore").decode()
+        return "".join(c for c in folded if c.isalnum())[:20] or "player"
+
+    safe_a = _slug(name_a)
+    safe_b = _slug(name_b)
     fname = f"debate_{safe_a}_vs_{safe_b}_{season.replace('-', '')}.html"
     out_path = out_dir / fname
     out_path.write_text(html_doc, encoding="utf-8")

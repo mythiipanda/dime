@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import ArtifactCanvas, { ArtifactItem } from "../components/ArtifactCanvas";
 import ChatPanel from "../components/ChatPanel";
 import CommandPalette from "../components/CommandPalette";
@@ -16,6 +16,7 @@ import TodayPanel from "../components/TodayPanel";
 import MoversPanel from "../components/MoversPanel";
 import WatchlistPanel from "../components/WatchlistPanel";
 import OnboardingModal from "../components/OnboardingModal";
+import DebateCardModal from "../components/DebateCardModal";
 import { ThreadInfo, getQueryParam, getThreads, setQueryParam } from "../lib/api";
 
 type Tab = "chat" | "data" | "today";
@@ -28,10 +29,21 @@ export default function Home() {
   const [tab, setTab] = useState<Tab>("chat");
   const [threads, setThreads] = useState<ThreadInfo[]>([]);
   const [active, setActive] = useState<string | null>(null);
+  const [debateOpen, setDebateOpen] = useState(false);
   const [activeArtifact, setActiveArtifact] = useState<ArtifactItem | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [preset, setPreset] = useState<string | null>(null);
   const [exploreKey, setExploreKey] = useState(0);
+  const [themeTick, setThemeTick] = useState(0);
+  useEffect(() => {
+    try {
+      const t = localStorage.getItem("dime_theme") || "dark";
+      document.documentElement.classList.toggle("dark", t === "dark");
+    } catch {}
+  }, []);
+  const themeDark = typeof window !== "undefined" &&
+    (themeTick >= 0) &&
+    document.documentElement.classList.contains("dark");
   const [paletteKey, setPaletteKey] = useState(0);
   const [activeSection, setActiveSection] = useState("leaders");
   const [showOnboarding, setShowOnboarding] = useState(false);
@@ -70,6 +82,29 @@ export default function Home() {
     setQueryParam("tab", "chat", true);
     finishOnboarding();
   };
+
+  const tabsRef = useRef<HTMLDivElement | null>(null);
+  const pillRef = useRef<HTMLSpanElement | null>(null);
+  const tabBtnRefs = {
+    today: useRef<HTMLButtonElement | null>(null),
+    chat: useRef<HTMLButtonElement | null>(null),
+    data: useRef<HTMLButtonElement | null>(null),
+  };
+  useLayoutEffect(() => {
+    const btn = tabBtnRefs[tab].current;
+    const pill = pillRef.current;
+    if (!btn || !pill) return;
+    // transitions.dev #16: first paint positions the pill without motion,
+    // subsequent tab switches slide it.
+    const prev = pill.style.transition;
+    if (!pill.dataset.ready) {
+      pill.style.transition = "none";
+      pill.dataset.ready = "1";
+    }
+    pill.style.transform = `translateX(${btn.offsetLeft}px)`;
+    pill.style.width = `${btn.offsetWidth}px`;
+    if (prev !== undefined) requestAnimationFrame(() => { pill.style.transition = prev; });
+  }, [tab]);
 
   const selectTab = (t: Tab) => {
     setTab(t);
@@ -111,7 +146,7 @@ export default function Home() {
   return (
     <div style={{ display: "flex", height: "100vh", width: "100vw", overflow: "hidden", background: "var(--color-stone-canvas)" }}>
       {/* Left Sidebar */}
-      <aside className="sidebar-rail" style={{ width: 260, flexShrink: 0, height: "100vh" }}>
+      <aside className="sidebar-rail" style={{ width: 224, flexShrink: 0, height: "100vh" }}>
         <ThreadRail
           threads={threads}
           active={active}
@@ -176,15 +211,20 @@ export default function Home() {
 
           {/* Centered Segmented Control (shadcn Tabs style) */}
           <div
+            ref={tabsRef}
+            className="t-tabs"
             style={{
               display: "inline-flex",
-              background: "rgba(0, 0, 0, 0.04)",
+              position: "relative",
+              background: "var(--color-field)",
               padding: "2px",
               borderRadius: 8,
               border: "1px solid var(--color-stone-border)",
             }}
           >
+            <span ref={pillRef} className="t-tabs-pill" aria-hidden="true" />
             <button
+              ref={tabBtnRefs.today}
               onClick={() => selectTab("today")}
               className={tab === "today" ? "tab-active" : "tab-idle"}
               style={{
@@ -193,11 +233,15 @@ export default function Home() {
                 padding: "3px 12px",
                 borderRadius: 6,
                 cursor: "pointer",
+                position: "relative",
+                zIndex: 1,
+                background: "transparent",
               }}
             >
               Today
             </button>
             <button
+              ref={tabBtnRefs.chat}
               onClick={() => selectTab("chat")}
               className={tab === "chat" ? "tab-active" : "tab-idle"}
               style={{
@@ -206,11 +250,15 @@ export default function Home() {
                 padding: "3px 12px",
                 borderRadius: 6,
                 cursor: "pointer",
+                position: "relative",
+                zIndex: 1,
+                background: "transparent",
               }}
             >
               Analyst chat
             </button>
             <button
+              ref={tabBtnRefs.data}
               onClick={() => selectTab("data")}
               className={tab === "data" ? "tab-active" : "tab-idle"}
               style={{
@@ -219,6 +267,9 @@ export default function Home() {
                 padding: "3px 12px",
                 borderRadius: 6,
                 cursor: "pointer",
+                position: "relative",
+                zIndex: 1,
+                background: "transparent",
               }}
             >
               Explore
@@ -227,6 +278,22 @@ export default function Home() {
 
           {/* Right Status */}
           <div className="season-badge" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button
+              type="button"
+              aria-label="Toggle dark mode"
+              title="Toggle light/dark"
+              onClick={() => {
+                const el = document.documentElement;
+                const dark = !el.classList.contains("dark");
+                el.classList.toggle("dark", dark);
+                try { localStorage.setItem("dime_theme", dark ? "dark" : "light"); } catch {}
+                setThemeTick((n) => n + 1);
+              }}
+              className="pill-ghost interactive-tactile"
+              style={{ fontSize: 11, padding: "3px 10px", lineHeight: 1.4 }}
+            >
+              {themeDark ? "\u263E Dark" : "\u2600 Light"}
+            </button>
             <span
               style={{
                 fontSize: 11,
@@ -244,7 +311,10 @@ export default function Home() {
 
         {/* Viewport Content */}
         <div style={{ flex: 1, minHeight: 0, overflow: "hidden", position: "relative" }}>
-          <CommandPalette onAsk={(q) => setPreset(q)} onTab={selectTab} />
+          <CommandPalette onAsk={(q) => setPreset(q)} onTab={selectTab} onDebate={() => setDebateOpen(true)} />
+          {debateOpen && (
+            <DebateCardModal onClose={() => setDebateOpen(false)} />
+          )}
 
           {tab === "chat" ? (
             <div className="chat-split" style={{ height: "100%", display: "flex", overflow: "hidden" }}>

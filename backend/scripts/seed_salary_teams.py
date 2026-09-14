@@ -2,12 +2,14 @@
 
 Usage: python3 scripts/seed_salary_teams.py (run from backend/)
 Source: https://raw.githubusercontent.com/coder-data/NBA-Stats-Salaries-2024-2025/main/NBA%20Salaries%202024-2025.csv
-Matches on upper(player name). Updates TEAM only. Idempotent.
+Matches on accent-folded upper(player name). Updates TEAM only, never
+touches scrape salary values. Idempotent.
 """
 
 import csv
 import io
 import sys
+import unicodedata
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -19,9 +21,11 @@ from app import store
 URL = "https://raw.githubusercontent.com/coder-data/NBA-Stats-Salaries-2024-2025/main/NBA%20Salaries%202024-2025.csv"
 
 
-def _parse_salary(raw: str) -> int | None:
-    digits = "".join(c for c in (raw or "") if c.isdigit())
-    return int(digits) if digits else None
+def _fold(name: str) -> str:
+    return "".join(
+        c for c in unicodedata.normalize("NFKD", str(name or ""))
+        if not unicodedata.combining(c)
+    ).strip().upper()
 
 
 def load_mapping() -> dict[str, str]:
@@ -39,23 +43,21 @@ def load_mapping() -> dict[str, str]:
             inner.append(line.strip('"'))
     reader = csv.DictReader(io.StringIO("\n".join(inner[1:])))
     mapping: dict[str, str] = {}
-    salaries: dict[str, int] = {}
     for row in reader:
         name = (row.get("Player") or "").strip()
         tm = (row.get("Tm") or "").strip().upper()
-        sal = _parse_salary(row.get("2025-26") or "")
         if not name or not tm or tm == "TM":
             continue
         if name == "Player":
             continue
-        mapping[name.upper()] = tm
-        if sal:
-            salaries[name.upper()] = sal
-    return mapping, salaries
+        mapping[_fold(name)] = tm
+    return mapping
 
 
 def main() -> None:
-    mapping, salaries = load_mapping()
+    from datetime import datetime, timezone
+
+    mapping = load_mapping()
     con = store.connect()
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
@@ -63,31 +65,28 @@ def main() -> None:
             print("silver_salaries missing")
             return
         rows = con.execute(
-            "SELECT PLAYER_NAME, TEAM, SALARY_2025_26 FROM silver_salaries").fetchall()
+            "SELECT PLAYER_NAME, TEAM FROM silver_salaries").fetchall()
         matched = 0
         overridden = 0
-        sal_fixed = 0
         with store.write_guard():
-            for name, team, cur_sal in rows:
-                key = str(name or "").strip().upper()
+            for name, team in rows:
+                key = _fold(name)
                 want = mapping.get(key)
                 if want is None:
                     continue
                 matched += 1
-                if (team or "").upper() != want:
+                if not (team or "").strip():
                     con.execute(
                         "UPDATE silver_salaries SET TEAM = ? WHERE PLAYER_NAME = ?",
                         [want, name],
                     )
                     overridden += 1
-                want_sal = salaries.get(key)
-                if want_sal and cur_sal != want_sal:
-                    con.execute(
-                        "UPDATE silver_salaries SET SALARY_2025_26 = ? WHERE PLAYER_NAME = ?",
-                        [want_sal, name],
-                    )
-                    sal_fixed += 1
-        print(f"csv_players={len(mapping)} matched={matched} overridden={overridden} salaries_fixed={sal_fixed}")
+            con.execute(
+                "INSERT INTO fetch_log VALUES (?,?,?,?,?,?)",
+                ["silver_salaries", "", "team-patch", "csv-teams",
+                 datetime.now(timezone.utc).isoformat(), overridden],
+            )
+        print(f"csv_players={len(mapping)} matched={matched} overridden={overridden}")
     finally:
         con.close()
 

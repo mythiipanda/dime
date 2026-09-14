@@ -2,6 +2,10 @@
 LEARNINGS.MD
 AGENTS.md
 decisions.tsv
+SHIFT_LOG.md
+backend/scripts/*_progress.json
+backend/scripts/*_player_ids.txt
+backend/scripts/*.log
 .env
 .env.local
 backend/.env
@@ -67,4 +71,10 @@ backend/bench/results/
 DESIGN.MD
 ROADMAP.md
 OPENCODE.md
+# README.md (unignored 2026-09-13: Tony asked for a real repo README with product media)
+docs/
 backend/app/data/
+.agents/
+skills-lock.json
+.claude/
+agent/

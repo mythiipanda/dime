@@ -1,0 +1,499 @@
+{
+ "version": 1,
+ "notes": "Dime benchmark pack v2. v1 axes kept (capability content assertions + efficiency budgets); v2 folds the /tmp/battery.py sweep canon into text-graded scenarios: best record, scoring leader, compare/h2h figures, overpaid/value boards (league + team scope), record-when-plays, clutch, Finals walkthrough carry, playoff pronoun carry. Tool-name pinning stays in pytest/battery; this pack grades what the user reads.",
+ "banned_everywhere": [
+  "try a narrower",
+  "did not run",
+  "warehouse query",
+  "based on warehouse"
+ ],
+ "scenarios": [
+  {
+   "id": "canon-team-ast",
+   "chain": [
+    "Which team had the most total assists this season?"
+   ],
+   "expect": {
+    "contains": [
+     "2462",
+     "Atlanta"
+    ]
+   },
+   "budget": {
+    "max_seconds": 30
+   }
+  },
+  {
+   "id": "canon-team-pts",
+   "chain": [
+    "Which team scored the most total points?"
+   ],
+   "expect": {
+    "contains": [
+     "10010",
+     "Denver"
+    ]
+   },
+   "budget": {
+    "max_seconds": 30
+   }
+  },
+  {
+   "id": "canon-team-reb",
+   "chain": [
+    "Which team grabbed the most total rebounds?"
+   ],
+   "expect": {
+    "contains": [
+     "3946",
+     "Houston"
+    ]
+   },
+   "budget": {
+    "max_seconds": 30
+   }
+  },
+  {
+   "id": "canon-finals",
+   "chain": [
+    "Who won the 2026 Finals and what was the series score?"
+   ],
+   "expect": {
+    "contains_any": [
+     [
+      "Knicks",
+      "NYK"
+     ],
+     [
+      "4-1",
+      "4 - 1"
+     ]
+    ]
+   },
+   "budget": {
+    "max_seconds": 30
+   }
+  },
+  {
+   "id": "f61-hang-class",
+   "chain": [
+    "What is the all-time record for most points by a team in one game?"
+   ],
+   "expect": {
+    "contains": [
+     "2025-26",
+     "2009-10",
+     "176",
+     "Kings"
+    ],
+    "not_contains": [
+     "try a narrower",
+     "did not run",
+     "hang"
+    ]
+   },
+   "budget": {
+    "max_seconds": 30
+   },
+   "comment": "Pinned deterministic since the F61 fix: team single-game scoring record reads silver_hist_gamelogs verbatim with the 2009-10..2025-26 span named. Was: LLM roulette (144 vs 157) with no coverage window."
+  },
+  {
+   "id": "f62-evidence-carry",
+   "chain": [
+    "How did Jalen Brunson do in Game 5 of the Finals?",
+    "How many points did he score in that game?"
+   ],
+   "expect_turns": [
+    {
+     "contains": [
+      "45"
+     ]
+    },
+    {
+     "contains": [
+      "45"
+     ],
+     "not_contains": [
+      "do not show",
+      "does not contain",
+      "no record"
+     ]
+    }
+   ],
+   "budget": {
+    "max_seconds_per_turn": 60
+   }
+  },
+  {
+   "id": "f63-switch-back",
+   "chain": [
+    "Who won the 2026 Finals?",
+    "How many assists did Jokic average this season?",
+    "Back to the Finals - who did the Knicks beat and what was the series score?"
+   ],
+   "expect_turns": [
+    {
+     "contains": [
+      "Knicks",
+      "4-1"
+     ]
+    },
+    {
+     "contains_any": [
+      [
+       "Jokic",
+       "Jokić"
+      ]
+     ]
+    },
+    {
+     "contains": [
+      "Spurs",
+      "4-1"
+     ],
+     "not_contains": [
+      "do not show",
+      "no record",
+      "not in the Finals"
+     ]
+    }
+   ],
+   "budget": {
+    "max_seconds_per_turn": 60
+   }
+  },
+  {
+   "id": "f64-team-scope-logs",
+   "chain": [
+    "Show me the Spurs last 5 games"
+   ],
+   "expect": {
+    "contains": [
+     "Spurs"
+    ]
+   },
+   "comment": "Was known-open xfail; green on 9/12 and 9/13 runs - now a real gate."
+  },
+  {
+   "id": "efficiency-simple",
+   "chain": [
+    "How many games did the Nuggets win?"
+   ],
+   "expect": {
+    "contains": [
+     "54"
+    ]
+   },
+   "budget": {
+    "max_seconds": 20,
+    "max_tool_calls": 5
+   }
+  },
+  {
+   "id": "efficiency-player",
+   "chain": [
+    "How many assists did Jokic average?"
+   ],
+   "expect": {
+    "contains_any": [
+     [
+      "Jokic",
+      "Jokić"
+     ]
+    ]
+   },
+   "budget": {
+    "max_seconds": 25,
+    "max_tool_calls": 6
+   }
+  },
+  {
+   "id": "f66-deep-compare",
+   "chain": [
+    "Compare the top 3 scoring teams: total points, per-game average, and how many games each won"
+   ],
+   "expect": {
+    "contains": [
+     "10010"
+    ],
+    "contains_any": [
+     [
+      "Nuggets",
+      "Denver"
+     ]
+    ],
+    "not_contains": [
+     "not specified",
+     "| |",
+     "with .",
+     "missing"
+    ]
+   },
+   "budget": {
+    "max_seconds": 120
+   },
+   "xfail": false,
+   "comment": "F66: deep multi-stat compare. xfail flipped 2026-09-12 after two consecutive PASS runs against prod v77 (runs 1789270623, 1789270921). Gate satisfied."
+  },
+  {
+   "id": "canon-best-record",
+   "chain": [
+    "Which team had the best record this season?"
+   ],
+   "expect": {
+    "contains_any": [
+     [
+      "Oklahoma City",
+      "Thunder",
+      "OKC"
+     ]
+    ],
+    "contains": [
+     "64",
+     "18"
+    ]
+   },
+   "budget": {
+    "max_seconds": 45
+   },
+   "comment": "F67 T1: best-record lane names OKC 64-18."
+  },
+  {
+   "id": "canon-scoring-leader",
+   "chain": [
+    "Who averaged the most points per game this season?"
+   ],
+   "expect": {
+    "contains_any": [
+     [
+      "Dončić",
+      "Doncic",
+      "Luka"
+     ]
+    ],
+    "contains": [
+     "33.5"
+    ]
+   },
+   "budget": {
+    "max_seconds": 45
+   },
+   "comment": "QA canon: Luka 33.5 ppg (PPG wording; total-points leader is a different lane)."
+  },
+  {
+   "id": "canon-compare-efficiency",
+   "chain": [
+    "Compare Luka and SGA by efficiency"
+   ],
+   "expect": {
+    "contains": [
+     "61.6",
+     "66.5"
+    ],
+    "contains_any": [
+     [
+      "Dončić",
+      "Luka"
+     ]
+    ]
+   },
+   "budget": {
+    "max_seconds": 45
+   },
+   "comment": "QA canon: Luka .616 TS, SGA .665 TS; compose must carry both figures."
+  },
+  {
+   "id": "canon-h2h",
+   "chain": [
+    "Show me the head to head between Luka Dončić and Shai Gilgeous-Alexander this season"
+   ],
+   "expect": {
+    "contains": [
+     "0-2",
+     "61.6",
+     "66.5"
+    ],
+    "not_contains": [
+     "no shared court"
+    ]
+   },
+   "budget": {
+    "max_seconds": 45
+   },
+   "comment": "sweep3: h2h lane, deterministic compare payload."
+  },
+  {
+   "id": "canon-overpaid-league",
+   "chain": [
+    "Who is the most overpaid player in the league?"
+   ],
+   "expect": {
+    "contains": [
+     "LaVine",
+     "$29.6M"
+    ],
+    "not_contains": [
+     "residual of ."
+    ]
+   },
+   "budget": {
+    "max_seconds": 45
+   },
+   "comment": "QA canon: LaVine +$29.6M league-worst."
+  },
+  {
+   "id": "canon-best-value",
+   "chain": [
+    "Who are the best value contracts this season?"
+   ],
+   "expect": {
+    "contains": [
+     "Wembanyama",
+     "under"
+    ]
+   },
+   "budget": {
+    "max_seconds": 45
+   },
+   "comment": "QA canon: Wemby underpaid $29.4M."
+  },
+  {
+   "id": "canon-overpaid-spurs",
+   "chain": [
+    "Who is the most overpaid player on the Spurs?"
+   ],
+   "expect": {
+    "contains": [
+     "Fox",
+     "on SAS"
+    ],
+    "not_contains": [
+     "LaVine"
+    ]
+   },
+   "budget": {
+    "max_seconds": 45
+   },
+   "comment": "Team-scoped value ask stays on the team (Fox +$22.1M), not the league board."
+  },
+  {
+   "id": "canon-record-when-plays",
+   "chain": [
+    "What is Denver's record when Jokic plays?"
+   ],
+   "expect": {
+    "contains": [
+     "43-22"
+    ]
+   },
+   "budget": {
+    "max_seconds": 45
+   },
+   "comment": "record-when-plays pin (8e196bb)."
+  },
+  {
+   "id": "canon-clutch",
+   "chain": [
+    "Who are the best clutch scorers this season?"
+   ],
+   "expect": {
+    "contains": [
+     "175"
+    ],
+    "contains_any": [
+     [
+      "Gilgeous-Alexander",
+      "Shai",
+      "SGA"
+     ]
+    ]
+   },
+   "budget": {
+    "max_seconds": 45
+   },
+   "comment": "Clutch leaderboard pin: SGA 175 clutch points."
+  },
+  {
+   "id": "canon-finals-gbg",
+   "chain": [
+    "Compare Luka and SGA by efficiency",
+    "Walk me through the 2026 Finals game by game"
+   ],
+   "expect_turns": [
+    {
+     "contains": [
+      "61.6",
+      "66.5"
+     ]
+    },
+    {
+     "contains": [
+      "105",
+      "115"
+     ],
+     "not_contains": [
+      "No NBA Finals",
+      "no Finals"
+     ]
+    }
+   ],
+   "budget": {
+    "max_seconds_per_turn": 60
+   },
+   "comment": "sweep3: series walkthrough after a compare stays on the league lane and lists game scores."
+  },
+  {
+   "id": "canon-playoff-carry",
+   "chain": [
+    "How did Shai Gilgeous-Alexander do in the playoffs?",
+    "What were his shooting splits?"
+   ],
+   "expect_turns": [
+    {
+     "contains_any": [
+      [
+       "Shai",
+       "Gilgeous"
+      ]
+     ]
+    },
+    {
+     "contains_any": [
+      [
+       "%",
+       "FG",
+       "splits",
+       "shooting"
+      ]
+     ]
+    }
+   ],
+   "budget": {
+    "max_seconds_per_turn": 60
+   },
+   "comment": "S4: pronoun follow-up carries SGA into the splits lane."
+  },
+  {
+   "id": "canon-four-factors-team",
+   "chain": [
+    "What are the Thunder's four factors this season?"
+   ],
+   "expect": {
+    "contains": [
+     "0.5613",
+     "0.1077",
+     "64-18",
+     "OKC"
+    ],
+    "not_contains": [
+     "not available",
+     "not included"
+    ]
+   },
+   "budget": {
+    "max_seconds": 30
+   },
+   "comment": "Pinned lane (2026-09-13): planner freeform shipped wrong TOV%/missing FTr. Deterministic from silver_four_factors_team (offline-computed from team game rows)."
+  }
+ ]
+}

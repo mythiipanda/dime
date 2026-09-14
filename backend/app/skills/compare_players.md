@@ -1,3 +1,7 @@
+---
+name: compare_players
+description: Compare two or more players across scoring, efficiency, shot diet, clutch, and impact.
+---
 # compare_players
 
 Use when the user names two or more players with compare, versus, better, or rank.

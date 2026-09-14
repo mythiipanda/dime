@@ -92,6 +92,17 @@ def connect(read_only: bool = False) -> duckdb.DuckDBPyConnection:
         except _LOCK_ERRORS as exc:
             last = exc
             time.sleep(_CONNECT_BACKOFF_S * (2 ** attempt))
+        except duckdb.BinderException as exc:
+            # Same-process attach race: two threads duckdb.connect() the
+            # same file at once and the loser gets "Cannot attach
+            # "warehouse" - already attached". Transient - the winner's
+            # attach is visible on retry - so retry like lock contention.
+            # Surfaced as blank shot-diet cells in get_compare when a
+            # zones sub-call swallowed it (test_compare_fastpath flake).
+            if "already attached" not in str(exc):
+                raise
+            last = exc
+            time.sleep(_CONNECT_BACKOFF_S * (2 ** attempt))
     assert last is not None
     raise last
 
@@ -202,20 +213,25 @@ def last_fetch(table: str, season: str, entity: str = "") -> str:
         con.close()
 
 
-def save_chat(thread: str, role: str, text: str) -> None:
+def save_chat(thread: str, role: str, text: str, owner: str = "") -> None:
     con = connect()
     try:
         with write_guard():
             con.execute(
                 """CREATE TABLE IF NOT EXISTS chat_history(
-                thread VARCHAR, role VARCHAR, text VARCHAR, created_at VARCHAR)"""
+                thread VARCHAR, role VARCHAR, text VARCHAR, created_at VARCHAR,
+                owner VARCHAR)"""
             )
+            cols = [r[1] for r in con.execute(
+                "PRAGMA table_info(chat_history)").fetchall()]
+            if "owner" not in cols:
+                con.execute("ALTER TABLE chat_history ADD COLUMN owner VARCHAR DEFAULT ''")
             from datetime import datetime, timezone
 
             con.execute(
-                "INSERT INTO chat_history VALUES (?,?,?,?)",
+                "INSERT INTO chat_history VALUES (?,?,?,?,?)",
                 [thread, role, text[:4000],
-                 datetime.now(timezone.utc).isoformat()],
+                 datetime.now(timezone.utc).isoformat(), owner[:80]],
             )
     finally:
         con.close()
@@ -237,16 +253,78 @@ def chat_history(thread: str, limit: int = 6) -> list[dict[str, str]]:
         con.close()
 
 
-def list_threads() -> list[dict[str, str]]:
+def save_facts(thread: str, facts: list[str], owner: str = "") -> None:
+    """Thread evidence ledger (v2 step 2): verified facts extracted from
+    tool payloads at ship time. Deduped per thread; read back into state
+    on later turns so follow-ups resolve evidence, not just entities."""
+    if not thread or not facts:
+        return
+    con = connect()
+    try:
+        with write_guard():
+            con.execute(
+                """CREATE TABLE IF NOT EXISTS thread_facts(
+                thread VARCHAR, fact VARCHAR, created_at VARCHAR,
+                owner VARCHAR)"""
+            )
+            from datetime import datetime, timezone
+
+            for f in facts:
+                f = str(f)[:500]
+                dupe = con.execute(
+                    "SELECT 1 FROM thread_facts WHERE thread=? AND fact=? "
+                    "LIMIT 1", [thread, f]).fetchone()
+                if not dupe:
+                    con.execute(
+                        "INSERT INTO thread_facts VALUES (?,?,?,?)",
+                        [thread, f,
+                         datetime.now(timezone.utc).isoformat(),
+                         owner[:80]],
+                    )
+    finally:
+        con.close()
+
+
+def thread_facts(thread: str, limit: int = 20) -> list[str]:
+    if not thread:
+        return []
+    con = connect()
+    try:
+        tables = {r[0] for r in con.execute(
+            "SELECT table_name FROM information_schema.tables").fetchall()}
+        if "thread_facts" not in tables:
+            return []
+        rows = con.execute(
+            """SELECT fact FROM thread_facts WHERE thread = ?
+            ORDER BY created_at DESC LIMIT ?""",
+            [thread, limit]).fetchall()
+        return [r[0] for r in reversed(rows)]
+    except Exception:
+        return []
+    finally:
+        con.close()
+
+
+def list_threads(owner: str = "") -> list[dict[str, str]]:
     con = connect()
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if "chat_history" not in tables:
             return []
-        rows = con.execute(
-            """SELECT thread, MAX(created_at), COUNT(*)
-            FROM chat_history GROUP BY thread ORDER BY MAX(created_at) DESC LIMIT 100"""
-        ).fetchall()
+        cols = {r[1] for r in con.execute(
+            "PRAGMA table_info(chat_history)").fetchall()}
+        if "owner" in cols:
+            rows = con.execute(
+                """SELECT thread, MAX(created_at), COUNT(*)
+                FROM chat_history WHERE owner = ?
+                GROUP BY thread ORDER BY MAX(created_at) DESC LIMIT 100""",
+                [owner],
+            ).fetchall()
+        else:
+            rows = con.execute(
+                """SELECT thread, MAX(created_at), COUNT(*)
+                FROM chat_history GROUP BY thread ORDER BY MAX(created_at) DESC LIMIT 100"""
+            ).fetchall()
         out = []
         for r in rows:
             first = con.execute(
@@ -320,3 +398,79 @@ def list_runs(thread: str) -> list[dict]:
         return out
     finally:
         con.close()
+
+
+def compact_thread(thread: str, keep_recent: int = 4,
+                   threshold: int = 12) -> dict:
+    """Fold old turns of a thread into one summary memo row.
+
+    When the thread holds more than `threshold` rows, the oldest rows
+    (all but the newest `keep_recent`) are summarized by the cheapest
+    configured LLM into entities, Q&A pairs, and open items. The
+    summarized rows are deleted and replaced with a single
+    role='summary' row prefixed 'THREAD SUMMARY: '. Prior memo rows
+    age into the summarized set, so a second compact folds the old
+    memo into the new one instead of losing it. LLM failure leaves
+    history untouched and reports compacted False.
+    """
+    con = connect()
+    try:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        if "chat_history" not in tables:
+            return {"compacted": False, "kept": 0, "dropped": 0}
+        rows = con.execute(
+            """SELECT rowid, role, text FROM chat_history
+            WHERE thread = ? ORDER BY created_at, rowid""",
+            [thread],
+        ).fetchall()
+    finally:
+        con.close()
+    if len(rows) <= threshold:
+        return {"compacted": False, "kept": len(rows), "dropped": 0}
+    keep = rows[-keep_recent:] if keep_recent > 0 else []
+    older = rows[:len(rows) - len(keep)]
+    transcript = "\n".join(
+        f"{r[1]}: {(r[2] or '')[:1000]}" for r in older
+    )
+    try:
+        from .providers import get_llm, resolve_model_id
+        from langchain_core.messages import HumanMessage, SystemMessage
+
+        primary, model = resolve_model_id(None)
+        client = get_llm(primary, model)
+        if client is None:
+            return {"compacted": False, "kept": len(rows), "dropped": 0}
+        resp = client.invoke([
+            SystemMessage(content="You compress chat threads into short memos."),
+            HumanMessage(content=(
+                "Summarize these older chat turns for an NBA analyst "
+                "assistant. Produce three sections: entities discussed, "
+                "Q&A pairs (question plus one-line answer each), "
+                "open/unresolved items. Keep every entity name and number. "
+                "Be concise.\n\n" + transcript
+            )),
+        ])
+        memo = str(getattr(resp, "content", "") or "").strip()
+        if not memo:
+            return {"compacted": False, "kept": len(rows), "dropped": 0}
+    except Exception:
+        return {"compacted": False, "kept": len(rows), "dropped": 0}
+    con = connect()
+    try:
+        with write_guard():
+            from datetime import datetime, timezone
+
+            ids = [r[0] for r in older]
+            con.execute(
+                "DELETE FROM chat_history WHERE rowid IN (%s)"
+                % ",".join(["?"] * len(ids)), ids,
+            )
+            con.execute(
+                "INSERT INTO chat_history (thread, role, text, created_at)"
+                " VALUES (?,?,?,?)",
+                [thread, "summary", ("THREAD SUMMARY: " + memo)[:4000],
+                 datetime.now(timezone.utc).isoformat()],
+            )
+    finally:
+        con.close()
+    return {"compacted": True, "kept": len(keep), "dropped": len(older)}
