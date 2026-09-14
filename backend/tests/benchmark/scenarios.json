@@ -696,6 +696,42 @@
     "max_seconds": 30,
     "max_tool_calls": 1
    }
+  },
+  {
+   "id": "f87-player-multipart-report",
+   "tags": [
+    "player",
+    "multi-part",
+    "routing",
+    "regression"
+   ],
+   "as_of": "2026-09-14",
+   "season": "2025-26",
+   "chain": [
+    "For LeBron this season, give me his averages, advanced metrics, shot profile, and clutch scoring."
+   ],
+   "expect": {
+    "contains": [
+     "20.9 PPG",
+     "59.4% true shooting",
+     "Restricted Area",
+     "Clutch: 50"
+    ]
+   },
+   "trajectory": {
+    "required_tools": [
+     "get_player_report"
+    ],
+    "forbidden_tools": [
+     "get_season_averages",
+     "delegate_scout"
+    ],
+    "no_duplicate_calls": true
+   },
+   "budget": {
+    "max_seconds": 30,
+    "max_tool_calls": 1
+   }
   }
  ]
 }

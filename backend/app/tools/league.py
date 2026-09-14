@@ -329,7 +329,8 @@ def get_ratings(season: str = SEASON) -> dict[str, Any]:
 
 
 @tool
-def get_clutch(scope: str = "player", season: str = SEASON) -> dict[str, Any]:
+def get_clutch(scope: str = "player", season: str = SEASON,
+               player: str = "") -> dict[str, Any]:
     """Clutch stats (last 5 min, margin 5 or less), player or team scope."""
     scope = "team" if str(scope).lower().startswith("team") else "player"
     entity = f"{scope}-clutch"
@@ -339,6 +340,10 @@ def get_clutch(scope: str = "player", season: str = SEASON) -> dict[str, Any]:
         entity=entity, limit=600,
     )
     name_col = "TEAM_ABBREVIATION" if scope == "team" else "PLAYER_NAME"
+    if player and scope == "player":
+        _want = str(player).strip().lower()
+        rows = [r for r in rows
+                if str(r.get("PLAYER_NAME") or "").strip().lower() == _want]
     slim = sorted(
         ({name_col: r.get(name_col), "GP": r.get("GP"), "W": r.get("W"),
           "L": r.get("L"), "PTS": r.get("PTS"),
