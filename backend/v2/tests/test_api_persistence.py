@@ -193,3 +193,45 @@ async def test_cancelled_execution_resumes_started_node(tmp_path: Path) -> None:
     result = await resumed.execute(_task(), _plan(), run_id="cancel")
     assert calls == ["one", "two"]
     assert all(node.status == PlanStatus.COMPLETE for node in result.plan.nodes)
+
+
+def test_quick_answer_route_is_flagged_and_streams_typed_contract(monkeypatch, tmp_path):
+    from datetime import UTC, datetime
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from v2 import contracts
+    from v2.api import routes
+    from v2.runtime.ledger import RunLedger
+    from v2.runtime.models import ExecutionResult, RuntimeResult
+
+    monkeypatch.setenv("DIME_RUNTIME_V2", "shadow")
+    evidence = contracts.EvidenceEnvelope(
+        evidence_id="ev", capability="standings", source="fixture",
+        observed_at=datetime.now(UTC), rows=[{"TEAM": "Boston", "WINS": 61}])
+    result = RuntimeResult(
+        task=contracts.TaskSpec(goal="record", mode="quick", deliverable="text"),
+        execution=ExecutionResult(
+            plan=contracts.Plan(nodes=[]), evidence=[evidence]),
+        draft=contracts.DraftReport(sections=["Record"], claims=[
+            contracts.Claim(text="Boston won 61 games.", kind="observed",
+                            evidence_ids=["ev"])]),
+        verification=contracts.VerificationReport(
+            status="pass", claim_results=[
+                contracts.ClaimResult(claim_index=0, supported=True)]))
+
+    class FakeRuntime:
+        async def run(self, request, *, run_id=None):
+            return result
+
+    monkeypatch.setattr("v2.runtime.assembly.build_runtime",
+                        lambda **kwargs: (FakeRuntime(), RunLedger(kwargs["run_id"])))
+    app = FastAPI()
+    app.include_router(routes.router, prefix="/api")
+    response = TestClient(app).post("/api/v2/chat/stream", json={"q": "record?"})
+
+    assert response.status_code == 200
+    assert response.headers["x-dime-run-id"].startswith("run-")
+    assert "event: custom_data" in response.text
+    assert "event: final_answer" in response.text
+    assert "Boston won 61 games." in response.text
+    assert response.text.rstrip().endswith("data: {}")

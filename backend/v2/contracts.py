@@ -64,6 +64,7 @@ class PlanNode(BaseModel):
     description: str
     depends_on: list[str] = Field(default_factory=list)
     capability_hints: list[str] = Field(default_factory=list)
+    arguments: dict[str, Any] = Field(default_factory=dict)
     expected_schema: dict[str, Any] = Field(default_factory=dict)
     completion_test: str
     max_attempts: int = Field(default=1, ge=1, le=5)

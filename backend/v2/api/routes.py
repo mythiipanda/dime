@@ -83,3 +83,95 @@ def get_project(project_id: str) -> dict:
     if project is None:
         raise HTTPException(status_code=404, detail="project not found")
     return project.model_dump(mode="json")
+
+class QuickAnswerBody(BaseModel):
+    q: str = Field(min_length=1, max_length=2000)
+    model: str | None = None
+
+
+def _answer_text(result) -> str:
+    supported = {
+        item.claim_index for item in result.verification.claim_results
+        if item.supported
+    }
+    claims = [
+        claim.text for index, claim in enumerate(result.draft.claims)
+        if not result.verification.claim_results or index in supported
+    ]
+    text = "\n\n".join(claims)
+    if result.draft.gaps:
+        gap_text = " ".join(result.draft.gaps)
+        text = f"{text}\n\nWhat I could not verify: {gap_text}" if text else gap_text
+    return text
+
+
+@router.post("/v2/chat/stream")
+async def quick_answer_stream(body: QuickAnswerBody):
+    _require_projects()
+    import asyncio
+    import uuid
+
+    from fastapi.responses import StreamingResponse
+    from app.providers import resolve_model_id
+    from v2.api.events import (
+        CustomData, FinalAnswer, GraphEnd, NodeUpdate, ToolCall, ToolResult,
+    )
+    from v2.api.sse import encode_event
+    from v2.runtime.assembly import build_runtime
+    from v2.runtime.ledger import LedgerKind
+
+    run_id = f"run-{uuid.uuid4().hex}"
+    provider, model_name = resolve_model_id(body.model)
+    queue: asyncio.Queue = asyncio.Queue()
+
+    def progress(node: str, status: str) -> None:
+        queue.put_nowait(NodeUpdate(node=node, status=status))
+
+    runtime, ledger = build_runtime(
+        provider=provider, model_name=model_name, run_id=run_id,
+        progress=progress)
+
+    async def generate():
+        task = asyncio.create_task(runtime.run(body.q, run_id=run_id))
+        while not task.done() or not queue.empty():
+            try:
+                event = await asyncio.wait_for(queue.get(), timeout=0.1)
+                yield encode_event(event)
+            except TimeoutError:
+                continue
+        try:
+            result = await task
+        except Exception:
+            yield encode_event(NodeUpdate(
+                node="runtime", status="failed"))
+            yield encode_event(GraphEnd())
+            return
+        for entry in ledger.entries:
+            if entry.kind == LedgerKind.TOOL_CALL:
+                yield encode_event(ToolCall(
+                    node=entry.step_id or "execute",
+                    name=str(entry.data.get("name", "tool")),
+                    args=entry.data.get("args", {})))
+            elif entry.kind == LedgerKind.TOOL_RESULT:
+                payload = entry.data
+                evidence = payload.get("evidence", {})
+                rows = evidence.get("rows")
+                row_count = len(rows) if isinstance(rows, list) else None
+                yield encode_event(ToolResult(
+                    node=entry.step_id or "execute",
+                    name=str(evidence.get("capability", "tool")),
+                    status="ok" if payload.get("status") == "ok" else "fail",
+                    rows=row_count,
+                    error=payload.get("error")))
+        yield encode_event(CustomData(
+            node="verify",
+            tables=[item.model_dump(mode="json")
+                    for item in result.execution.evidence]))
+        yield encode_event(FinalAnswer(
+            text=_answer_text(result),
+            carry={"run_id": run_id,
+                   "verification": result.verification.status.value}))
+        yield encode_event(GraphEnd())
+
+    return StreamingResponse(generate(), media_type="text/event-stream",
+                             headers={"X-Dime-Run-Id": run_id})

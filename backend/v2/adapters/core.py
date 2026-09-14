@@ -151,7 +151,9 @@ class ToolCapability:
             raise AdapterError(f"unknown capability {name!r}")
         self.name = name
         self._tools = tools
-        self._arguments = arguments or _task_arguments
+        self._arguments = arguments or (
+            lambda node, task, evidence: _task_arguments(
+                self.name, node, task, evidence))
 
     async def execute(
         self,
@@ -163,9 +165,11 @@ class ToolCapability:
         return await acall_capability(self.name, arguments, tools=self._tools)
 
 
-def _task_arguments(node: Any, task: Any, evidence: Iterable[EvidenceEnvelope]) -> dict[str, Any]:
-    arguments: dict[str, Any] = {}
+def _task_arguments(name: str, node: Any, task: Any, evidence: Iterable[EvidenceEnvelope]) -> dict[str, Any]:
+    arguments = dict(getattr(node, "arguments", {}) or {})
     season = getattr(task, "season", None)
     if season is not None:
-        arguments["season"] = season.value
+        spec = CAPABILITIES[name]
+        if spec.season_arg and spec.season_arg not in arguments:
+            arguments[spec.season_arg] = season.value
     return arguments

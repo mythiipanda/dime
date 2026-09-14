@@ -18,6 +18,7 @@ A single JSON object matching the Plan contract, and nothing else:
 - description (str): what evidence this node produces.
 - depends_on (list of str): ids that must complete first; [] if independent.
 - capability_hints (list of str): names from the supplied catalog only.
+- arguments (object): explicit tool arguments grounded in the TaskSpec; never invent ids.
 - expected_schema (object): the shape of the EvidenceEnvelope rows this
   node should return.
 - completion_test (str): a checkable condition for when the node is done.

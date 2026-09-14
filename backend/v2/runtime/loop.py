@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 
 from v2.contracts import (
     ClaimResult,
@@ -26,6 +26,7 @@ class Runtime:
         semantic_verifier: Verifier,
         repairer: Repairer | None = None,
         ledger: RunLedger | None = None,
+        progress: Callable[[str, str], None] | None = None,
     ) -> None:
         self._intake = intake
         self._planner = planner
@@ -35,6 +36,7 @@ class Runtime:
         self._semantic_verifier = semantic_verifier
         self._repairer = repairer
         self._ledger = ledger
+        self._progress = progress
 
     async def run(self, request: str, *, run_id: str | None = None) -> RuntimeResult:
         turn_id = run_id or "turn"
@@ -113,6 +115,8 @@ class Runtime:
         return result
 
     async def _stage(self, turn_id: str, step_id: str, awaitable):
+        if self._progress is not None:
+            self._progress(step_id, "running")
         if self._ledger is not None:
             self._ledger.append(
                 LedgerKind.STEP_START, turn_id=turn_id, step_id=step_id)
@@ -128,7 +132,11 @@ class Runtime:
                     data={"reason": reason.value,
                           "error": f"{type(exc).__name__}: {exc}"},
                 )
+            if self._progress is not None:
+                self._progress(step_id, "failed")
             raise
+        if self._progress is not None:
+            self._progress(step_id, "complete")
         if self._ledger is not None:
             self._ledger.append(
                 LedgerKind.STEP_END, turn_id=turn_id, step_id=step_id,
