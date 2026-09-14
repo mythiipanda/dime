@@ -1593,6 +1593,43 @@ async def _triage_seed(question: str, primary: str, model: str,
             async for _e in _triage_terminal(question, state):
                 yield _e
         return
+    # F88: percentage leaderboards need a qualification-aware warehouse
+    # board, not free-form SQL with an arbitrary attempts threshold.
+    if (not found_p and not found_t and not state.get("history")
+            and re.search(r"(?:who|which player).*(?:leads?|highest|best)|"
+                          r"leaders?", question, re.IGNORECASE)
+            and re.search(r"3\s*P\s*%|three[ -]point (?:percentage|%)|"
+                          r"FG3_PCT", question, re.IGNORECASE)):
+        _p3h: dict[str, Any] = {}
+        async for _e in _triage_tool(
+                "get_leaders",
+                {"stat_category": "FG3_PCT", "season": "2025-26"},
+                state, _p3h):
+            yield _e
+        _p3out = _p3h.get("out") or {}
+        if _result_status(_p3out) == "ok" and _result_rows(_p3out):
+            async for _e in _triage_terminal(question, state):
+                yield _e
+        return
+
+    # F88: a named team's plain ratings question is one get_ratings call.
+    # The old planner wandered through lineup stats, a league delegate,
+    # standings, and two Python calls before returning the team row.
+    if (len(_named) == 1 and not found_p
+            and re.search(r"\bratings?\b|offensive rating|defensive rating|"
+                          r"net rating|\bpace\b", question, re.IGNORECASE)
+            and not is_compare and not is_predict and not state.get("history")):
+        _rth: dict[str, Any] = {}
+        async for _e in _triage_tool(
+                "get_ratings", {"team": _named[0], "season": "2025-26"},
+                state, _rth):
+            yield _e
+        _rtout = _rth.get("out") or {}
+        if _result_status(_rtout) == "ok" and _result_rows(_rtout):
+            async for _e in _triage_terminal(question, state):
+                yield _e
+        return
+
     # QA #67 route pins - the planner is non-deterministic, so known
     # phrasing classes get deterministic routes BEFORE it runs.
     # (a) truly-unanswerable known gaps (contract types, bench splits):
