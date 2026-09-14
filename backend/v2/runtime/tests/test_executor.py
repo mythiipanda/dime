@@ -6,6 +6,11 @@ import pytest
 from v2.contracts import Plan, PlanNode, PlanStatus, RunMode, TaskSpec
 from v2.runtime import FakeCapability, PlanExecutor
 
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
+
 
 def node(
     node_id: str, *, parents: list[str] | None = None, attempts: int = 1
@@ -20,7 +25,7 @@ def node(
     )
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_executes_dag_and_preserves_lineage() -> None:
     plan = Plan(nodes=[node("a"), node("b"), node("c", parents=["a", "b"])])
     result = await PlanExecutor({"fake": FakeCapability("fake", {"ok": True})}).execute(
@@ -36,7 +41,7 @@ async def test_executes_dag_and_preserves_lineage() -> None:
     assert all(count == 1 for count in result.attempts.values())
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_retries_without_weakening_failure() -> None:
     result = await PlanExecutor(
         {"fake": FakeCapability("fake", {}, failures_before_success=1)}
@@ -50,7 +55,7 @@ async def test_retries_without_weakening_failure() -> None:
     assert result.errors["a"] == ["RuntimeError: injected capability failure"]
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_failed_parent_skips_descendant() -> None:
     result = await PlanExecutor({}).execute(
         TaskSpec(goal="answer", mode=RunMode.QUICK, deliverable="text"),
@@ -64,7 +69,7 @@ async def test_failed_parent_skips_descendant() -> None:
     assert result.errors == {"a": ["no registered capability matches capability hints"]}
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_independent_nodes_run_concurrently() -> None:
     active = 0
     peak = 0

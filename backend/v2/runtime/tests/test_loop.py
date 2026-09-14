@@ -14,6 +14,11 @@ from v2.contracts import (
 )
 from v2.runtime import FakeCapability, PlanExecutor, Runtime
 
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
+
 
 class Intake:
     async def understand(self, request: str) -> TaskSpec:
@@ -71,7 +76,7 @@ def runtime(mechanical, semantic, repairer=None) -> Runtime:
     )
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_passes_verified_quick_slice() -> None:
     result = await runtime(
         SequenceVerifier(VerificationStatus.PASS),
@@ -82,7 +87,7 @@ async def test_passes_verified_quick_slice() -> None:
     assert result.repaired is False
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_repairs_once_and_reverifies() -> None:
     result = await runtime(
         SequenceVerifier(VerificationStatus.REPAIR, VerificationStatus.PASS),
@@ -95,7 +100,7 @@ async def test_repairs_once_and_reverifies() -> None:
     assert result.verification.status == VerificationStatus.PASS
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_exhausted_repair_returns_named_partial() -> None:
     class RejectingVerifier:
         async def verify(self, task, draft, evidence):
