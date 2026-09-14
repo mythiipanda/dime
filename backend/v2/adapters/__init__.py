@@ -9,6 +9,7 @@ from .models import (
 from .capabilities import CAPABILITIES, Capability
 from .core import (
     AdapterError,
+    ToolCapability,
     acall_capability,
     ainvoke_tool,
     build_envelope,
@@ -26,6 +27,7 @@ __all__ = [
     "ModelIntake",
     "CAPABILITIES",
     "AdapterError",
+    "ToolCapability",
     "Capability",
     "acall_capability",
     "ainvoke_tool",

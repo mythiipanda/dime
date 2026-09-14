@@ -29,7 +29,7 @@ def evidence_id(capability: str, arguments: Mapping[str, Any], rows: Any) -> str
 
 
 async def ainvoke_tool(tool: Any, arguments: Mapping[str, Any]) -> dict[str, Any]:
-    if getattr(tool, "coroutine", None) is not None:
+    if hasattr(tool, "ainvoke"):
         result = await tool.ainvoke(dict(arguments))
     elif hasattr(tool, "invoke"):
         result = await asyncio.to_thread(tool.invoke, dict(arguments))
@@ -138,3 +138,34 @@ def call_capability(
     raise AdapterError(
         "call_capability cannot block inside a running event loop; "
         "use acall_capability")
+
+class ToolCapability:
+    def __init__(
+        self,
+        name: str,
+        *,
+        tools: Mapping[str, Any] | None = None,
+        arguments: Callable[[Any, Any, Iterable[EvidenceEnvelope]], Mapping[str, Any]] | None = None,
+    ) -> None:
+        if name not in CAPABILITIES:
+            raise AdapterError(f"unknown capability {name!r}")
+        self.name = name
+        self._tools = tools
+        self._arguments = arguments or _task_arguments
+
+    async def execute(
+        self,
+        node: Any,
+        task: Any,
+        evidence: Iterable[EvidenceEnvelope],
+    ) -> EvidenceEnvelope:
+        arguments = dict(self._arguments(node, task, evidence))
+        return await acall_capability(self.name, arguments, tools=self._tools)
+
+
+def _task_arguments(node: Any, task: Any, evidence: Iterable[EvidenceEnvelope]) -> dict[str, Any]:
+    arguments: dict[str, Any] = {}
+    season = getattr(task, "season", None)
+    if season is not None:
+        arguments["season"] = season.value
+    return arguments

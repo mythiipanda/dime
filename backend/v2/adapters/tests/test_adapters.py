@@ -319,3 +319,28 @@ def test_default_registry_includes_native_coverage_tool():
     from v2.adapters.core import _default_tools
 
     assert "metric_coverage" in _default_tools()
+
+@pytest.mark.anyio
+async def test_tool_capability_executes_through_runtime_protocol():
+    from v2.adapters import ToolCapability
+    from v2.contracts import Plan, PlanNode, RunMode, SeasonRef, TaskSpec
+    from v2.runtime import PlanExecutor
+
+    class StandingsTool:
+        name = "get_standings"
+
+        async def ainvoke(self, arguments):
+            assert arguments == {"season": "2025-26"}
+            return {"ok": True, "rows": [{"team": "Boston", "wins": 61}],
+                    "meta": {"source": "fixture", "season": "2025-26"}}
+
+    capability = ToolCapability("standings", tools={"get_standings": StandingsTool()})
+    task = TaskSpec(goal="Boston record", mode=RunMode.QUICK, deliverable="text",
+                    season=SeasonRef(value="2025-26", source="resolved", confidence=1))
+    plan = Plan(nodes=[PlanNode(id="record", description="team record",
+        capability_hints=["standings"], completion_test="Boston row present")])
+
+    result = await PlanExecutor({"standings": capability}).execute(task, plan)
+
+    assert result.evidence[0].capability == "standings"
+    assert result.evidence[0].rows == [{"team": "Boston", "wins": 61}]
