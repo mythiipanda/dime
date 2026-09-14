@@ -2655,6 +2655,117 @@ h1 {{ font-size: 22px; margin: 0; color: #1c1917; }}
 
 
 @tool
+def get_player_evaluation(player: str | int, season: str = SEASON) -> dict[str, Any]:
+    """Grounded player tier, advanced profile, modeled value, and comps.
+
+    Tier rules are deterministic and transparent. Current-season impact uses
+    RAPM-lite as a context metric, never as the sole tier label.
+    """
+    from .league import get_contract_value
+
+    try:
+        pid = coerce_player_id(player)
+    except ValueError as exc:
+        return {"tool": "get_player_evaluation", "ok": False,
+                "error": str(exc)}
+    adv = get_advanced.invoke({"player": pid, "season": season})
+    if not adv.get("ok") or not isinstance(adv.get("rows"), dict):
+        return {"tool": "get_player_evaluation", "ok": False,
+                "error": adv.get("error", "advanced profile unavailable")}
+    a = adv["rows"]
+    name = str(a.get("PLAYER_NAME") or player)
+    gp = int(a.get("GP") or 0)
+    minutes = float(a.get("MIN") or 0)
+    pie_rank = int(a.get("PIE_RANK") or 9999)
+    usage_rank = int(a.get("USG_PCT_RANK") or 9999)
+    ts_rank = int(a.get("TS_PCT_RANK") or 9999)
+
+    rapm = None
+    rapm_rank = None
+    rapm_n = None
+    try:
+        rows = _read_df(
+            "SELECT name, rapm, possessions,"
+            " ROW_NUMBER() OVER (ORDER BY rapm DESC) AS impact_rank,"
+            " COUNT(*) OVER () AS impact_n FROM silver_rapm"
+            " WHERE _season = ? AND rapm IS NOT NULL AND possessions >= 2000"
+            " QUALIFY LOWER(name) = LOWER(?)", [season, name])
+        if rows:
+            rapm = round(float(rows[0]["rapm"]), 2)
+            rapm_rank = int(rows[0]["impact_rank"])
+            rapm_n = int(rows[0]["impact_n"])
+    except Exception:
+        pass
+
+    # A durable tier needs role and production, not one noisy impact metric.
+    # Superstar requires top-ten PIE plus top-25 impact. Star recognizes a
+    # top-40 PIE season with top-60 usage or top-75 impact. Remaining
+    # high-minute players are starters; lower-minute players are role players.
+    if gp >= 40 and pie_rank <= 10 and rapm_rank is not None and rapm_rank <= 25:
+        tier = "superstar"
+    elif gp >= 40 and pie_rank <= 40 and (usage_rank <= 60 or
+                                          (rapm_rank is not None and rapm_rank <= 75)):
+        tier = "star"
+    elif gp >= 20 and minutes >= 25:
+        tier = "starter"
+    else:
+        tier = "role player"
+
+    value = get_contract_value.invoke(
+        {"season": season, "min_gp": 20, "player": name})
+    value_row = ((value.get("rows") or [None])[0]
+                 if isinstance(value.get("rows"), list) else None)
+    comps = get_comps.invoke({"player_id": pid, "season": season, "k": 5})
+    comp_rows = comps.get("rows") if comps.get("ok") else []
+    comp_rows = comp_rows if isinstance(comp_rows, list) else []
+
+    profile = {
+        "gp": gp, "minutes": minutes,
+        "usage_pct": a.get("USG_PCT"), "usage_rank": usage_rank,
+        "true_shooting_pct": a.get("TS_PCT"), "true_shooting_rank": ts_rank,
+        "pie": a.get("PIE"), "pie_rank": pie_rank,
+        "net_rating": a.get("NET_RATING"),
+        "rapm_lite": rapm, "rapm_lite_rank": rapm_rank,
+        "rapm_lite_pool": rapm_n,
+    }
+    comp_names = [str(r.get("PLAYER")) for r in comp_rows[:5]
+                  if r.get("PLAYER")]
+    lines = [
+        f"{name} grades as a {tier} for the {season} season.",
+        f"Profile: {gp} games, {minutes:g} MPG, {a.get('USG_PCT'):g}% usage "
+        f"(rank {usage_rank}), {a.get('TS_PCT'):g}% true shooting "
+        f"(rank {ts_rank}), and {a.get('PIE'):g} PIE (rank {pie_rank}).",
+    ]
+    if rapm is not None:
+        lines.append(f"Impact context: {rapm:+g} RAPM-lite, rank {rapm_rank} "
+                     f"of {rapm_n} qualified players; RAPM-lite is an estimate.")
+    if isinstance(value_row, dict):
+        pred = int(value_row.get("PREDICTED") or 0)
+        sal = int(value_row.get("SALARY") or 0)
+        residual = int(value_row.get("RESIDUAL") or 0)
+        lines.append(f"Modeled value: ${pred / 1e6:.1f}M against a "
+                     f"${sal / 1e6:.1f}M salary ({residual / 1e6:+.1f}M "
+                     "salary-minus-model residual).")
+    if comp_names:
+        lines.append("Closest statistical comps: " + ", ".join(comp_names) + ".")
+    return {
+        "tool": "get_player_evaluation", "ok": True,
+        "rows": {"player": name, "team": a.get("TEAM_ABBREVIATION"),
+                 "season": season, "tier": tier, "profile": profile,
+                 "modeled_value": value_row, "comps": comp_rows[:5]},
+        "meta": {
+            "season": season,
+            "tier_rule": ("superstar = 40+ GP, top-10 PIE and top-25 "
+                          "RAPM-lite; star = 40+ GP, top-40 PIE and either "
+                          "top-60 usage or top-75 RAPM-lite; starter = 20+ "
+                          "GP and 25+ MPG; otherwise role player"),
+            "value_method": (value.get("meta") or {}).get("formula"),
+            "deterministic_answer": "\n".join(lines),
+        },
+    }
+
+
+@tool
 def get_player_rankings(n: int = 15, season: str = SEASON) -> dict[str, Any]:
     """Overall top-N players board ranked by the warehouse impact metric.
 
