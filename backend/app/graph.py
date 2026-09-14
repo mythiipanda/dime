@@ -603,6 +603,10 @@ def _detect_entities(question: str) -> tuple[list[str], list[str]]:
 
     q = question.lower()
     for nick, full in NICKNAMES.items():
+        # LEBRON is an impact metric name. Uppercase LEBRON must not turn
+        # into LeBron James; ordinary LeBron/Bron mentions still do.
+        if nick == "lebron" and re.search(r"\bLEBRON\b", question):
+            continue
         if re.search(r"\b" + re.escape(nick) + r"\b", q):
             q += " " + full.lower()
     nq = _norm(q)
@@ -685,6 +689,10 @@ def _expand_nicknames(question: str) -> str:
     for nick in sorted(NICKNAMES, key=len, reverse=True):
         full = NICKNAMES[nick]
         if full.lower() in lowered:
+            continue
+        # LEBRON in all caps is the proprietary impact metric, not the
+        # LeBron nickname. Preserve it for the metric-coverage pin.
+        if nick == "lebron" and re.search(r"\bLEBRON\b", question):
             continue
         out = re.sub(r"\b" + re.escape(nick) + r"\b", full, out,
                      flags=re.IGNORECASE)
@@ -1593,6 +1601,59 @@ async def _triage_seed(question: str, primary: str, model: str,
             async for _e in _triage_terminal(question, state):
                 yield _e
         return
+    # F89: qualified young-player usage board. Free SQL previously used a
+    # stale slice and no sample floor, naming Paolo at 33%. The current
+    # silver_advanced board uses age <= 22 and 1,000+ total minutes.
+    if (not found_p and not found_t and not state.get("history")
+            and re.search(r"\busage(?: rate)?\b|\busg(?:_pct)?\b",
+                          question, re.IGNORECASE)
+            and re.search(r"under\s+23|age\s*(?:22|23)|young players?",
+                          question, re.IGNORECASE)
+            and re.search(r"highest|leads?|top|which|who", question,
+                          re.IGNORECASE)):
+        _yuh: dict[str, Any] = {}
+        async for _e in _triage_tool(
+                "get_young_player_usage",
+                {"max_age": 22, "min_minutes": 1000,
+                 "season": "2025-26"}, state, _yuh):
+            yield _e
+        _yuout = _yuh.get("out") or {}
+        if _result_status(_yuout) == "ok" and _result_rows(_yuout):
+            async for _e in _triage_terminal(question, state):
+                yield _e
+        return
+
+    # F89: EPM/LEBRON/DARKO/DRIP are named metric gaps, not players.
+    # A single-player metric question gets an honest coverage answer and
+    # never manufactures LeBron James as a second comparison subject.
+    _unavailable_metrics = re.findall(
+        r"\b(EPM|LEBRON|DARKO|DRIP)\b", question, re.IGNORECASE)
+    if (_unavailable_metrics and len(found_p) <= 1
+            and not state.get("history")):
+        _uniq = list(dict.fromkeys(m.upper() for m in _unavailable_metrics))
+        _subject = f" for {found_p[0]}" if found_p else ""
+        _msg = (f"{' and '.join(_uniq)} {'are' if len(_uniq) > 1 else 'is'} "
+                f"not available in the warehouse{_subject}; Dime never "
+                "estimates missing proprietary metrics. Available current "
+                "impact context includes RAPM-lite, on-off net, PIE, and "
+                "true shooting.")
+        _mcres = {
+            "tool": "metric_coverage", "ok": True,
+            "rows": [{"metrics": _uniq}],
+            "meta": {"source": "warehouse coverage",
+                     "deterministic_answer": _msg}}
+        yield _event("tool_call", {
+            "node": "data_retrieval", "name": "metric_coverage",
+            "label": "Checking metric coverage",
+            "summary": ", ".join(_uniq)})
+        yield _event("tool_result", _tool_result_payload(
+            "data_retrieval", "metric_coverage", _mcres, 0))
+        state["tool_results"].append(_mcres)
+        state["calls_made"].append("metric_coverage")
+        async for _e in _triage_terminal(question, state):
+            yield _e
+        return
+
     # F88: percentage leaderboards need a qualification-aware warehouse
     # board, not free-form SQL with an arbitrary attempts threshold.
     if (not found_p and not found_t and not state.get("history")
@@ -2002,14 +2063,20 @@ async def _triage_seed(question: str, primary: str, model: str,
                     return f"{float(v) * 100:.1f}%"
                 except (TypeError, ValueError):
                     return "?"
+            _asks_efg = bool(re.search(
+                r"\beFG(?:%)?\b|effective field goal", question,
+                re.IGNORECASE))
             _lines = []
             for _p in (_a, _b):
                 if _p.get("name"):
+                    _eff_value = (_p.get("efg_pct") if _asks_efg
+                                  else _p.get("ts_pct"))
+                    _eff_label = "eFG" if _asks_efg else "TS"
                     _lines.append(
                         f"- {_p['name']} ({_p.get('team', '?')}): "
                         f"{_p.get('ppg', '?')} pts, {_p.get('rpg', '?')} reb, "
-                        f"{_p.get('apg', '?')} ast on {_pc(_p.get('ts_pct'))} "
-                        f"TS over {_p.get('gp', '?')} games.")
+                        f"{_p.get('apg', '?')} ast on {_pc(_eff_value)} "
+                        f"{_eff_label} over {_p.get('gp', '?')} games.")
             _meet = _pair.get("h2h_meetings") or []
             if _meet:
                 _aw = sum(1 for m in _meet
@@ -2028,13 +2095,17 @@ async def _triage_seed(question: str, primary: str, model: str,
             elif _pair.get("note"):
                 _lines.append(str(_pair["note"]))
             try:
-                _tsa, _tsb = float(_a.get("ts_pct")), float(_b.get("ts_pct"))
+                _metric_key = "efg_pct" if _asks_efg else "ts_pct"
+                _metric_label = "eFG" if _asks_efg else "TS"
+                _tsa, _tsb = (float(_a.get(_metric_key)),
+                              float(_b.get(_metric_key)))
                 _ppa, _ppb = float(_a.get("ppg")), float(_b.get("ppg"))
                 _eff = _a if _tsa >= _tsb else _b
                 _vol = _a if _ppa >= _ppb else _b
                 _lines.append(
                     f"Verdict: {_eff.get('name')} holds the efficiency edge "
-                    f"({_pc(max(_tsa, _tsb))} vs {_pc(min(_tsa, _tsb))} TS); "
+                    f"({_pc(max(_tsa, _tsb))} vs {_pc(min(_tsa, _tsb))} "
+                    f"{_metric_label}); "
                     f"{_vol.get('name')} leads scoring volume "
                     f"({max(_ppa, _ppb):.1f} vs {min(_ppa, _ppb):.1f} ppg).")
             except (TypeError, ValueError):
