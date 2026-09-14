@@ -435,7 +435,7 @@ _PREDICT_RX = re.compile(
     r"\bprojected\s+(total|score)\b|"
     r"\bpre[\s-]?game\s+(monte\s*carlo|prediction|estimate)|"
     r"\bmonte\s*carlo\b|"
-    r"\bpredict(?:s|ed|ing)?\s+(?:the\s+)?(?:score|winner|game|matchup)\b|"
+    r"\bpredict(?:s|ed|ing)?\b|\bprediction\b|"
     r"\bchances?\s+of\s+winning\b|"
     r"\bfavor\w*\b",
     re.IGNORECASE)
@@ -1532,7 +1532,8 @@ async def _triage_seed(question: str, primary: str, model: str,
                 # no-data branch and the LLM never runs.
                 if state["tool_results"] and state["tool_results"][-1] is _pout:
                     state["tool_results"][-1] = {
-                        "tool": "get_game_prediction", "rows": [_pout]}
+                        "tool": "get_game_prediction", "rows": [_pout],
+                        "meta": _pout.get("meta") or {}}
                 async for _e in _triage_terminal(question, state):
                     yield _e
             return
@@ -4832,10 +4833,7 @@ async def analytics_agent(state: DimeState) -> AsyncGenerator[dict[str, Any], No
     except Exception as exc:
         state["analysis"] = ""
         yield _event("error", {"node": "analytics", "message": str(exc)[:200]})
-    unverified = [
-        n for n in _numbers(state["analysis"])
-        if n not in evidence and len(n) > 2
-    ][:5]
+    unverified = _verify_draft_numerals(state, state["analysis"])[:5]
     if unverified:
         yield _event("custom_data", {"node": "analytics",
                                      "unverified_numbers": unverified})

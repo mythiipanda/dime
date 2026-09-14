@@ -166,3 +166,20 @@ def test_single_team_prediction_falls_through():
     st = _drain("who wins the Lakers game tonight")
     assert "get_game_prediction" not in _tool_names(st)
     assert st["round"] == 0
+
+
+def test_plain_predict_and_prediction_phrasing_use_game_prediction():
+    for question in (
+        "Predict the Celtics vs Knicks game.",
+        "Celtics vs Knicks prediction",
+    ):
+        st = _drain(question)
+        assert _tool_names(st) == ["get_game_prediction"]
+        assert "get_preview" not in _tool_names(st)
+
+
+def test_prediction_wrapper_carries_deterministic_answer():
+    st = _drain("Who wins Celtics vs Knicks?")
+    answer = st["tool_results"][0]["meta"]["deterministic_answer"]
+    assert "54.8%" in answer
+    assert "2.0-point edge" in answer
