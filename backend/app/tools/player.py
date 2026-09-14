@@ -639,6 +639,39 @@ def _season_line(player_id: object, season: str) -> dict[str, Any] | None:
             return {k: v for k, v in row.items() if not k.startswith("_")}
     except Exception:
         pass
+    # F73: historical season lines live in silver_hist_player_seasons
+    # (2014-15..2024-25, sportsdataverse). Before this, "Tatum 2023-24
+    # ppg" dead-ended with a no-data error while the warehouse held the
+    # line - and the fallback narrative invented numbers. Keys are
+    # normalized to the bbref shape so every consumer renders it the
+    # same as a current-season line.
+    try:
+        frame = store.read_frame(
+            "silver_hist_player_seasons",
+            "_season = ? AND CAST(player_id AS VARCHAR) = CAST(? AS VARCHAR)",
+            [season, str(player_id)])
+        if frame is not None and frame.height > 0:
+            h = frame.to_dicts()[0]
+            row = {
+                "PLAYER_ID": h.get("player_id"),
+                "PLAYER": h.get("player_name"),
+                "TEAM": h.get("team_abbreviation"),
+                "AGE": h.get("age"),
+                "GP": h.get("gp"),
+                "MPG": h.get("min"),
+                "PPG": h.get("pts"),
+                "RPG": h.get("reb"),
+                "APG": h.get("ast"),
+                "SPG": h.get("stl"),
+                "BPG": h.get("blk"),
+                "FG_PCT": h.get("fg_pct"),
+                "FG3_PCT": h.get("fg3_pct"),
+                "FT_PCT": h.get("ft_pct"),
+                "TS_PCT": h.get("ts_pct"),
+            }
+            return {k: v for k, v in row.items() if v is not None}
+    except Exception:
+        pass
     return None
 
 
@@ -705,12 +738,12 @@ def get_season_averages(player_id: str | int, season: str = SEASON) -> dict[str,
         # Give the coverage facts so the narrative can say "retired /
         # outside dataset" plainly instead of overclaiming no data.
         return {"tool": "get_season_averages", "ok": False,
-                "error": (f"no season line on file for {season}. Dataset "
-                          f"covers 2024-25 and 2025-26 only; if this "
-                          f"player is retired, inactive, or from another "
-                          f"era, the correct answer is that no "
-                          f"current-season data exists for them (not "
-                          f"that no data exists at all).")}
+                "error": (f"no season line on file for {season}. Season "
+                          f"lines cover 2014-15 through the current "
+                          f"season; for older seasons the correct answer "
+                          f"is that the season line is outside dataset "
+                          f"coverage (not that no data exists at all). "
+                          f"Never estimate or invent a figure.")}
     return {"tool": "get_season_averages", "ok": True, "rows": [line],
             "meta": {"source": "basketball-reference", "season": season,
                      "coverage": "season_line"}}
