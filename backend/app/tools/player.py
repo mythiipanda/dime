@@ -826,9 +826,19 @@ def get_season_averages(player_id: str | int, season: str = SEASON) -> dict[str,
                           f"lines cover 2014-15 through the current "
                           f"season, so this one is outside dataset "
                           f"coverage.")}
+    name = str(line.get("PLAYER") or player_id)
+    answer = (
+        f"{name} averaged {float(line['PPG']):g} points, "
+        f"{float(line['RPG']):g} rebounds, and {float(line['APG']):g} assists "
+        f"in {int(line['GP'])} games during the {season} season. "
+        f"He shot {float(line['FG_PCT']) * 100:.1f}% from the field, "
+        f"{float(line['FG3_PCT']) * 100:.1f}% from three, and "
+        f"{float(line['FT_PCT']) * 100:.1f}% at the line."
+    )
     return {"tool": "get_season_averages", "ok": True, "rows": [line],
             "meta": {"source": "basketball-reference", "season": season,
-                     "coverage": "season_line"}}
+                     "coverage": "season_line",
+                     "deterministic_answer": answer}}
 
 
 @tool
