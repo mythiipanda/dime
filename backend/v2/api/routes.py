@@ -115,7 +115,8 @@ async def quick_answer_stream(body: QuickAnswerBody):
     from v2.runtime.policy import ExecutionPolicy
 
     run_id = f"run-{uuid.uuid4().hex}"
-    provider, model_name = resolve_model_id(body.model)
+    provider, model_name = resolve_model_id(
+        body.model or os.environ.get("DIME_V2_MODEL"))
     queue: asyncio.Queue = asyncio.Queue()
 
     def progress(node: str, status: str) -> None:

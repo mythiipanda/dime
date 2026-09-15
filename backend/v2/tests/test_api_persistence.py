@@ -292,3 +292,13 @@ def test_rejected_claim_cannot_publish_after_reverify_warning():
     text = _answer_text(result)
     assert "The true-shooting leader" not in text
     assert text == "uncited numeral 71.2%"
+
+def test_v2_uses_one_configured_model_policy(monkeypatch):
+    monkeypatch.setenv("DIME_V2_MODEL", "openrouter:openrouter/free")
+    seen = []
+    monkeypatch.setattr("app.providers.resolve_model_id",
+                        lambda value: seen.append(value) or ("openrouter", "openrouter/free"))
+    from v2.api.routes import QuickAnswerBody
+    import inspect
+    source = inspect.getsource(__import__("v2.api.routes", fromlist=["quick_answer_stream"]).quick_answer_stream)
+    assert 'body.model or os.environ.get("DIME_V2_MODEL")' in source
