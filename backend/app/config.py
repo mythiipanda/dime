@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     openrouter_api_key: str = ""
     openrouter_model: str = "nvidia/nemotron-3-super-120b-a12b:free"
     inception_api_key: str = ""
+    firecrawl_api_key: str = ""
     inception_model: str = "mercury-2.5"
     groq_api_key: str = ""
     groq_model: str = "openai/gpt-oss-20b"

@@ -81,3 +81,29 @@ async def test_firecrawl_does_not_claim_unsupported_freshness(monkeypatch):
         WebSearchRequest(query="latest Celtics", freshness="week"))
     await client.aclose()
     assert "no documented freshness-window" in response.warnings[0]
+
+@pytest.mark.anyio
+async def test_firecrawl_sends_optional_key():
+    async def handler(request):
+        assert request.headers["Authorization"] == "Bearer fc-test"
+        return httpx.Response(200, json={"success": True, "data": {"web": []}})
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    await FirecrawlWeb(api_key="fc-test", client=client).search(
+        WebSearchRequest(query="Brown trade"))
+    await client.aclose()
+
+
+@pytest.mark.anyio
+async def test_firecrawl_keyless_denial_is_actionable():
+    async def handler(request):
+        return httpx.Response(403, json={"success": False, "error": "suspicious IP"})
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    with pytest.raises(RuntimeError, match="configure a free API key"):
+        await FirecrawlWeb(client=client).search(WebSearchRequest(query="Brown trade"))
+    await client.aclose()
+
+
+def test_firecrawl_accepts_configured_key(monkeypatch):
+    monkeypatch.setenv("FIRECRAWL_API_KEY", "fc-configured")
+    from app.config import Settings
+    assert Settings().firecrawl_api_key == "fc-configured"

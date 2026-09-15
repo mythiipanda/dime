@@ -164,12 +164,19 @@ class DuckDuckGoSearch:
 
 
 class FirecrawlWeb:
-    """Keyless Firecrawl search and one-page Markdown extraction."""
+    """Firecrawl search and one-page Markdown extraction.
+
+    Firecrawl documents keyless access, but some server IPs are denied. An API
+    key is optional at the contract boundary and should be configured for a
+    reliable deployment.
+    """
 
     name = "firecrawl"
 
-    def __init__(self, *, base_url: str = "https://api.firecrawl.dev/v2",
+    def __init__(self, *, api_key: str = "",
+                 base_url: str = "https://api.firecrawl.dev/v2",
                  client: httpx.AsyncClient | None = None) -> None:
+        self._api_key = api_key
         self._base_url = base_url.rstrip("/")
         self._client = client
 
@@ -177,8 +184,14 @@ class FirecrawlWeb:
         owns_client = self._client is None
         client = self._client or httpx.AsyncClient(
             timeout=httpx.Timeout(15, connect=5), follow_redirects=False)
+        headers = ({"Authorization": f"Bearer {self._api_key}"}
+                   if self._api_key else {})
         try:
-            response = await client.post(f"{self._base_url}/{path}", json=body)
+            response = await client.post(
+                f"{self._base_url}/{path}", json=body, headers=headers)
+            if response.status_code == 403 and not self._api_key:
+                raise RuntimeError(
+                    "Firecrawl keyless access was denied; configure a free API key")
             response.raise_for_status()
             payload = response.json()
         finally:
