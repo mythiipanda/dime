@@ -19,3 +19,33 @@ def test_adjudication_keeps_model_prose_and_marks_supported_claims():
     gaps = _verification_gaps(draft, report)
     assert gaps[0].kind == "unsupported_claim"
     assert gaps[0].blocks == ["claim:1"]
+
+
+def test_verified_claim_carries_per_claim_provenance_for_mixed_sources():
+    from datetime import UTC, datetime
+    from v2.contracts import EvidenceEnvelope
+
+    draft = DraftReport(sections=["Comparison"], claims=[
+        Claim(text="SGA scored 31.1 PPG.", kind="observed",
+              evidence_ids=["warehouse-sga"]),
+        Claim(text="Luka scored 33.5 PPG.", kind="observed",
+              evidence_ids=["fallback-luka"]),
+    ])
+    report = VerificationReport(status="pass", claim_results=[
+        ClaimResult(claim_index=0, supported=True),
+        ClaimResult(claim_index=1, supported=True),
+    ])
+    evidence = {
+        "warehouse-sga": EvidenceEnvelope(
+            evidence_id="warehouse-sga", capability="player_report",
+            source="warehouse:silver_player_season", observed_at=datetime.now(UTC),
+            rows={"player": "SGA", "ppg": 31.1}),
+        "fallback-luka": EvidenceEnvelope(
+            evidence_id="fallback-luka", capability="player_report",
+            source="fallback:basketball-reference", observed_at=datetime.now(UTC),
+            rows={"player": "Luka", "ppg": 33.5}),
+    }
+    claims = _verified_claims(draft, report, evidence)
+    assert claims[0].sources[0].source.startswith("warehouse:")
+    assert claims[1].sources[0].source.startswith("fallback:")
+    assert claims[0].sources != claims[1].sources

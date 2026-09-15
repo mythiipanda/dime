@@ -162,10 +162,17 @@ class Gap(BaseModel):
     blocks: list[str] = Field(default_factory=list)
 
 
+class ClaimSource(BaseModel):
+    evidence_id: str
+    source: str
+    capability: str
+
+
 class VerifiedClaim(BaseModel):
     claim_index: int = Field(ge=0)
     claim: Claim
     evidence_ids: list[str] = Field(default_factory=list)
+    sources: list[ClaimSource] = Field(default_factory=list)
 
 
 class ClaimResult(BaseModel):

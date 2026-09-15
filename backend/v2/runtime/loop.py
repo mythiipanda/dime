@@ -5,6 +5,7 @@ from collections.abc import Callable, Iterable
 
 from v2.contracts import (
     ClaimResult,
+    ClaimSource,
     Gap,
     GapKind,
     VerificationReport,
@@ -102,7 +103,7 @@ class Runtime:
                 update={"status": VerificationStatus.PARTIAL}
             )
 
-        verified_claims = _verified_claims(draft, verification)
+        verified_claims = _verified_claims(draft, verification, evidence)
         gaps = _verification_gaps(draft, verification)
         result = RuntimeResult(
             task=task,
@@ -212,7 +213,7 @@ def _unique(values: Iterable[str]) -> list[str]:
     return list(dict.fromkeys(value for value in values if value))
 
 
-def _verified_claims(draft, verification) -> list[VerifiedClaim]:
+def _verified_claims(draft, verification, evidence=None) -> list[VerifiedClaim]:
     supported = {
         result.claim_index for result in verification.claim_results
         if result.supported
@@ -220,8 +221,15 @@ def _verified_claims(draft, verification) -> list[VerifiedClaim]:
     if not verification.claim_results and verification.status == VerificationStatus.PASS:
         supported = set(range(len(draft.claims)))
     return [
-        VerifiedClaim(claim_index=index, claim=claim,
-                      evidence_ids=list(claim.evidence_ids))
+        VerifiedClaim(
+            claim_index=index, claim=claim,
+            evidence_ids=list(claim.evidence_ids),
+            sources=[ClaimSource(
+                evidence_id=evidence_id,
+                source=evidence[evidence_id].source,
+                capability=evidence[evidence_id].capability)
+                for evidence_id in claim.evidence_ids
+                if evidence and evidence_id in evidence])
         for index, claim in enumerate(draft.claims)
         if index in supported
     ]
