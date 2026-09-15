@@ -90,17 +90,10 @@ class QuickAnswerBody(BaseModel):
 
 
 def _answer_text(result) -> str:
-    supported = {
-        item.claim_index for item in result.verification.claim_results
-        if item.supported
-    }
-    claims = [
-        claim.text for index, claim in enumerate(result.draft.claims)
-        if not result.verification.claim_results or index in supported
-    ]
+    claims = [item.claim.text for item in result.verified_claims]
     text = "\n\n".join(claims)
-    if result.draft.gaps:
-        gap_text = " ".join(result.draft.gaps)
+    if result.gaps:
+        gap_text = " ".join(gap.message for gap in result.gaps)
         text = f"{text}\n\nWhat I could not verify: {gap_text}" if text else gap_text
     return text
 
@@ -172,7 +165,9 @@ async def quick_answer_stream(body: QuickAnswerBody):
         yield encode_event(FinalAnswer(
             text=_answer_text(result),
             carry={"run_id": run_id,
-                   "verification": result.verification.status.value}))
+                   "verification": result.verification.status.value,
+                   "verified_claims": len(result.verified_claims),
+                   "gaps": [gap.model_dump(mode="json") for gap in result.gaps]}))
         yield encode_event(GraphEnd())
 
     return StreamingResponse(generate(), media_type="text/event-stream",

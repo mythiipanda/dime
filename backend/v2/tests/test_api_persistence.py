@@ -217,7 +217,12 @@ def test_quick_answer_route_is_flagged_and_streams_typed_contract(monkeypatch, t
                             evidence_ids=["ev"])]),
         verification=contracts.VerificationReport(
             status="pass", claim_results=[
-                contracts.ClaimResult(claim_index=0, supported=True)]))
+                contracts.ClaimResult(claim_index=0, supported=True)]),
+        verified_claims=[contracts.VerifiedClaim(
+            claim_index=0,
+            claim=contracts.Claim(text="Boston won 61 games.", kind="observed",
+                                  evidence_ids=["ev"]),
+            evidence_ids=["ev"])])
 
     class FakeRuntime:
         async def run(self, request, *, run_id=None):
@@ -235,3 +240,30 @@ def test_quick_answer_route_is_flagged_and_streams_typed_contract(monkeypatch, t
     assert "event: final_answer" in response.text
     assert "Boston won 61 games." in response.text
     assert response.text.rstrip().endswith("data: {}")
+
+
+def test_answer_text_publishes_only_adjudicated_model_prose():
+    from v2 import contracts
+    from v2.api.routes import _answer_text
+    from v2.runtime.models import ExecutionResult, RuntimeResult
+
+    supported = contracts.Claim(
+        text="Boston won 61 games.", kind="observed", evidence_ids=["ev"])
+    rejected = contracts.Claim(
+        text="Boston won 62 games.", kind="observed", evidence_ids=["ev"])
+    result = RuntimeResult(
+        task=contracts.TaskSpec(goal="record", mode="quick", deliverable="text"),
+        execution=ExecutionResult(plan=contracts.Plan(nodes=[])),
+        draft=contracts.DraftReport(
+            sections=["Record"], claims=[supported, rejected]),
+        verification=contracts.VerificationReport(status="partial"),
+        verified_claims=[contracts.VerifiedClaim(
+            claim_index=0, claim=supported, evidence_ids=["ev"])],
+        gaps=[contracts.Gap(
+            kind="source_conflict",
+            message="salary evidence is 2026-27, not 2025-26",
+            blocks=["trade_math"])])
+    text = _answer_text(result)
+    assert "61 games" in text
+    assert "62 games" not in text
+    assert "salary evidence is 2026-27, not 2025-26" in text
