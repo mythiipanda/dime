@@ -1,6 +1,12 @@
 name: build-backend
 on:
   workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Image tag to publish
+        required: false
+        default: latest
+        type: string
   push:
     branches: [dev]
     paths:
@@ -27,4 +33,5 @@ jobs:
         with:
           context: backend
           push: true
-          tags: ghcr.io/mythiipanda/dime-backend:latest
+          build-args: DIME_REVISION=${{ github.sha }}
+          tags: ghcr.io/mythiipanda/dime-backend:${{ inputs.image_tag || 'latest' }}
