@@ -112,6 +112,7 @@ async def quick_answer_stream(body: QuickAnswerBody):
     from v2.api.sse import encode_event
     from v2.runtime.assembly import build_runtime
     from v2.runtime.ledger import LedgerKind
+    from v2.runtime.policy import ExecutionPolicy
 
     run_id = f"run-{uuid.uuid4().hex}"
     provider, model_name = resolve_model_id(body.model)
@@ -122,9 +123,12 @@ async def quick_answer_stream(body: QuickAnswerBody):
 
     ledger_dir = os.environ.get(
         "DIME_V2_LEDGER_DIR", str(_BACKEND / "data" / "v2-ledgers"))
+    policy = (ExecutionPolicy.shadow(ledger_dir=ledger_dir)
+              if os.environ.get("DIME_RUNTIME_V2", "off").lower() == "shadow"
+              else ExecutionPolicy.live(ledger_dir=ledger_dir))
     runtime, ledger = build_runtime(
         provider=provider, model_name=model_name, run_id=run_id,
-        progress=progress, ledger_dir=ledger_dir)
+        progress=progress, policy=policy)
 
     async def generate():
         task = asyncio.create_task(runtime.run(body.q, run_id=run_id))

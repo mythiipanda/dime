@@ -17,6 +17,7 @@ from v2.adapters import (
 )
 from v2.contracts import DraftReport, VerificationReport
 from v2.runtime import FileLedger, PlanExecutor, RecordedCapability, RunLedger, Runtime
+from v2.runtime.policy import ExecutionPolicy
 from v2.runtime.verifier import verify_mechanical
 
 
@@ -57,10 +58,13 @@ def build_runtime(
     model_name: str,
     run_id: str,
     progress: Callable[[str, str], None] | None = None,
+    policy: ExecutionPolicy | None = None,
     ledger_dir: str | Path | None = None,
 ) -> tuple[Runtime, RunLedger | FileLedger]:
-    ledger = (FileLedger(Path(ledger_dir) / f"{run_id}.jsonl", run_id)
-              if ledger_dir is not None else RunLedger(run_id))
+    policy = policy or ExecutionPolicy.live(ledger_dir=ledger_dir)
+    resolved_ledger_dir = policy.ledger_dir
+    ledger = (FileLedger(Path(resolved_ledger_dir) / f"{run_id}.jsonl", run_id)
+              if resolved_ledger_dir is not None else RunLedger(run_id))
     model = RecordedStructuredModel(
         ProviderStructuredModel(provider, model_name), ledger, turn_id=run_id)
     catalog = capability_catalog()
@@ -73,7 +77,9 @@ def build_runtime(
                           capability_catalog=catalog),
         planner=ModelPlanner(model, provider=provider, model_name=model_name,
                              capability_catalog=catalog),
-        executor=PlanExecutor(capabilities, max_concurrency=4, max_failures=2),
+        executor=PlanExecutor(
+            capabilities, max_concurrency=policy.max_concurrency,
+            max_failures=policy.max_failures),
         synthesizer=ModelSynthesizer(
             model, provider=provider, model_name=model_name),
         mechanical_verifier=MechanicalVerifier(),
