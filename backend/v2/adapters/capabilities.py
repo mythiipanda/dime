@@ -52,6 +52,7 @@ class Capability:
     units: Mapping[str, str] = field(default_factory=dict)
     metric_definitions: Mapping[str, str] = field(default_factory=dict)
     qualification: str | None = None
+    coverage: str | None = None
     source_prefix: str = "v1"
     extract_entities: Callable[[Any], list[EntityRef]] | None = None
 
@@ -81,6 +82,7 @@ _LIST = [
         units={"GP": COUNT, "MIN": MINUTES, "FG_PCT": FRACTION,
                "FG3_PCT": FRACTION, "FT_PCT": FRACTION},
         qualification="Qualified players only (NBA leaderboard minimums).",
+        coverage="Source-ranked qualified leaderboard; returned rows preserve population ranks.",
     ),
     Capability(
         name="team_ratings",

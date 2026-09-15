@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Iterable, Mapping
 
 from ..contracts import EntityRef, EvidenceEnvelope
+from ..domain.evidence import iter_values
 from .capabilities import CAPABILITIES, Capability
 
 
@@ -87,12 +88,21 @@ def build_envelope(
         season=str(season) if season is not None else None,
         entities=envelope_entities,
         rows=rows,
-        units=dict(spec.units),
+        units={key: unit for key, unit in spec.units.items()
+               if any(key.casefold() == item.path.rsplit(".", 1)[-1].casefold()
+                      for item in _row_values(rows))},
         metric_definitions=dict(spec.metric_definitions),
         qualification=meta.get("qualification") or spec.qualification,
-        coverage=meta.get("coverage"),
+        coverage=meta.get("coverage") or spec.coverage,
         warnings=warnings,
     )
+
+
+def _row_values(rows: Any):
+    envelope = EvidenceEnvelope(
+        evidence_id="row-scan", capability="row-scan", source="runtime",
+        observed_at=datetime.now(timezone.utc), rows=rows)
+    return iter_values(envelope)
 
 
 def _default_tools() -> dict[str, Any]:

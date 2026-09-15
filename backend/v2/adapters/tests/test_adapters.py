@@ -344,3 +344,9 @@ async def test_tool_capability_executes_through_runtime_protocol():
 
     assert result.evidence[0].capability == "standings"
     assert result.evidence[0].rows == [{"team": "Boston", "wins": 61}]
+
+def test_leader_envelope_filters_units_and_declares_rank_coverage():
+    env = call_capability("qualified_leaders", {"season": "2025-26"},
+                          tools={"get_leaders": FakeTool(LEADERS_PAYLOAD)})
+    assert set(env.units) == {"GP", "MIN", "FG3_PCT"}
+    assert "population ranks" in env.coverage

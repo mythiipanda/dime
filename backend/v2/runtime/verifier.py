@@ -199,7 +199,12 @@ def _qualification_coverage_reasons(claim: Claim,
         reasons.append("rank claim lacks qualification evidence")
     if not any(envelope.coverage for envelope in envelopes):
         reasons.append("rank claim lacks coverage evidence")
-    if not claim.calculation_id:
+    explicit_rank = any(
+        any(item.path.rsplit(".", 1)[-1].casefold() == "rank"
+            and decimal_value(item.value) == 1 for item in iter_values(envelope))
+        for envelope in envelopes
+    )
+    if not claim.calculation_id and not explicit_rank:
         reasons.append("rank claim lacks a recomputable rank calculation")
     return reasons
 

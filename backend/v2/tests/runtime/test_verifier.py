@@ -196,3 +196,12 @@ def test_mixed_source_claim_requires_provenance_label():
         "text": ("Warehouse data has SGA at 31.1 PPG; according to the "
                  "Basketball-Reference fallback, Luka averaged 33.5 PPG.")})
     assert verify_mechanical(task(), report(labeled), [sga, luka]).status == "pass"
+
+def test_source_ranked_leader_does_not_require_duplicate_calculation():
+    ranked = evidence(
+        rows=[{"RANK": 1, "PLAYER": "Boston Celtics", "W": 61}],
+        units={"W": "wins"},
+        qualification="Qualified teams", coverage="Source-ranked full population")
+    claim = Claim(text="Boston is the leader with 61 wins.",
+                  kind=ClaimKind.OBSERVED, evidence_ids=["standings"])
+    assert verify_mechanical(task(), report(claim), [ranked]).status == VerificationStatus.PASS
