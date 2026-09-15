@@ -85,49 +85,22 @@ async def test_jina_reader_rejects_empty_payload(monkeypatch):
     await client.aclose()
 
 @pytest.mark.anyio
-async def test_local_fetch_extracts_main_content_and_follows_checked_redirect(monkeypatch):
-    from v2.adapters.web import LocalWebFetch
-    checked = []
-    async def public(url):
-        checked.append(url)
-        return url
+async def test_jina_reader_sends_optional_free_key(monkeypatch):
+    from v2.adapters.web import JinaReader
+    async def public(url): return url
     async def handler(request):
-        if request.url.path == "/start":
-            return httpx.Response(302, headers={"location": "/article"})
-        return httpx.Response(200, headers={"content-type": "text/html"}, text="""
-          <html><head><title>Brown analysis</title></head><body>
-          <nav>Noise</nav><article><h1>Brown analysis</h1>
-          <p>Jaylen Brown has a central two-way role for Boston across a full season.</p>
-          </article></body></html>""")
+        assert request.headers["Authorization"] == "Bearer jina-test"
+        return httpx.Response(200, json={"data": {
+            "url": "https://example.com", "title": "Example",
+            "content": "Extracted content"}})
     monkeypatch.setattr("v2.adapters.web.validate_public_url", public)
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    page = await LocalWebFetch(client=client).fetch(WebSearchResult(
-        rank=1, url="https://example.com/start", title="Search title", snippet=""))
+    await JinaReader(api_key="jina-test", client=client).fetch(WebSearchResult(
+        rank=1, url="https://example.com", title="Example", snippet=""))
     await client.aclose()
-    assert checked == ["https://example.com/start", "https://example.com/article",
-                       "https://example.com/article"]
-    assert page.title == "Brown analysis"
-    assert "central two-way role" in page.markdown
-    assert len(page.markdown) < 500
 
 
-@pytest.mark.anyio
-async def test_local_fetch_rejects_non_html_and_oversize(monkeypatch):
-    from v2.adapters.web import LocalWebFetch
-    async def public(url): return url
-    monkeypatch.setattr("v2.adapters.web.validate_public_url", public)
-    async def json_handler(request):
-        return httpx.Response(200, headers={"content-type": "application/json"}, text="{}")
-    client = httpx.AsyncClient(transport=httpx.MockTransport(json_handler))
-    with pytest.raises(RuntimeError, match="unsupported web content type"):
-        await LocalWebFetch(client=client).fetch(WebSearchResult(
-            rank=1, url="https://example.com/a", title="A", snippet=""))
-    await client.aclose()
-    async def html_handler(request):
-        return httpx.Response(200, headers={"content-type": "text/html"},
-                              content=b"<article>" + b"x" * 100 + b"</article>")
-    client = httpx.AsyncClient(transport=httpx.MockTransport(html_handler))
-    with pytest.raises(RuntimeError, match="response-size limit"):
-        await LocalWebFetch(client=client, max_bytes=50).fetch(WebSearchResult(
-            rank=1, url="https://example.com/a", title="A", snippet=""))
-    await client.aclose()
+def test_jina_key_is_optional_config(monkeypatch):
+    monkeypatch.setenv("JINA_API_KEY", "jina-configured")
+    from app.config import Settings
+    assert Settings().jina_api_key == "jina-configured"

@@ -163,71 +163,16 @@ class DuckDuckGoSearch:
         )
 
 
-class LocalWebFetch:
-    """Self-contained HTTP fetch with Trafilatura main-content extraction."""
-
-    name = "local-trafilatura"
-
-    def __init__(self, *, client: httpx.AsyncClient | None = None,
-                 max_bytes: int = 2_000_000) -> None:
-        self._client = client
-        self._max_bytes = max_bytes
-
-    async def fetch(self, result: WebSearchResult) -> WebPage:
-        import hashlib
-        from trafilatura import bare_extraction, extract
-
-        source_url = await validate_public_url(str(result.url))
-        owns_client = self._client is None
-        client = self._client or httpx.AsyncClient(
-            timeout=httpx.Timeout(15, connect=5), follow_redirects=False,
-            headers={"User-Agent": "Dime/2 web evidence fetch"})
-        try:
-            response = await client.get(source_url)
-            redirects = 0
-            while response.is_redirect:
-                redirects += 1
-                if redirects > 3 or "location" not in response.headers:
-                    raise RuntimeError("web source exceeded redirect limit")
-                source_url = str(response.url.join(response.headers["location"]))
-                await validate_public_url(source_url)
-                response = await client.get(source_url)
-            response.raise_for_status()
-            content_type = response.headers.get("content-type", "").lower()
-            if not any(kind in content_type for kind in ("text/html", "application/xhtml+xml")):
-                raise RuntimeError(f"unsupported web content type: {content_type or 'unknown'}")
-            raw = response.content
-        finally:
-            if owns_client:
-                await client.aclose()
-        if len(raw) > self._max_bytes:
-            raise RuntimeError("web source exceeds response-size limit")
-        html = raw.decode(response.encoding or "utf-8", errors="replace")
-        markdown = extract(
-            html, url=source_url, output_format="markdown",
-            include_comments=False, include_tables=True,
-            include_links=True, with_metadata=False) or ""
-        document = bare_extraction(
-            html, url=source_url, include_comments=False,
-            include_tables=True, with_metadata=True)
-        if not markdown.strip():
-            raise RuntimeError("local extractor found no main page content")
-        final_url = await validate_public_url(str(response.url))
-        return WebPage(
-            url=final_url, title=str(getattr(document, "title", None) or result.title),
-            publisher=getattr(document, "sitename", None),
-            published_at=getattr(document, "date", None),
-            retrieved_at=datetime.now().astimezone(), markdown=markdown[:120_000],
-            content_hash=hashlib.sha256(markdown.encode()).hexdigest())
-
 
 class JinaReader:
     """Keyless Reader API fallback for one selected public search result."""
 
     name = "jina-reader"
 
-    def __init__(self, *, base_url: str = "https://r.jina.ai",
+    def __init__(self, *, api_key: str = "",
+                 base_url: str = "https://r.jina.ai",
                  client: httpx.AsyncClient | None = None) -> None:
+        self._api_key = api_key
         self._base_url = base_url.rstrip("/")
         self._client = client
 
@@ -239,10 +184,12 @@ class JinaReader:
         client = self._client or httpx.AsyncClient(
             timeout=httpx.Timeout(20, connect=5), follow_redirects=False)
         try:
+            headers = {"Accept": "application/json", "X-Robots-Txt": "true",
+                       "X-Retain-Links": "all", "X-No-Cache": "true"}
+            if self._api_key:
+                headers["Authorization"] = f"Bearer {self._api_key}"
             response = await client.get(
-                f"{self._base_url}/{source_url}",
-                headers={"Accept": "application/json", "X-Robots-Txt": "true",
-                         "X-Retain-Links": "all", "X-No-Cache": "true"})
+                f"{self._base_url}/{source_url}", headers=headers)
             response.raise_for_status()
             payload = response.json()
         finally:
