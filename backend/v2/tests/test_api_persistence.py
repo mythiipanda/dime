@@ -267,3 +267,28 @@ def test_answer_text_publishes_only_adjudicated_model_prose():
     assert "61 games" in text
     assert "62 games" not in text
     assert "salary evidence is 2026-27, not 2025-26" in text
+
+
+def test_rejected_claim_cannot_publish_after_reverify_warning():
+    from v2 import contracts
+    from v2.api.routes import _answer_text
+    from v2.runtime.models import ExecutionResult, RuntimeResult
+
+    wrong = contracts.Claim(
+        text="The true-shooting leader was at 71.2%.",
+        kind="observed", evidence_ids=["ts"])
+    result = RuntimeResult(
+        task=contracts.TaskSpec(goal="TS leader", mode="quick", deliverable="text"),
+        execution=ExecutionResult(plan=contracts.Plan(nodes=[])),
+        draft=contracts.DraftReport(sections=["Leader"], claims=[wrong]),
+        verification=contracts.VerificationReport(
+            status="partial", claim_results=[contracts.ClaimResult(
+                claim_index=0, supported=False,
+                reasons=["uncited numeral 71.2%"])]),
+        verified_claims=[],
+        gaps=[contracts.Gap(
+            kind="unsupported_claim", message="uncited numeral 71.2%",
+            blocks=["claim:0"])])
+    text = _answer_text(result)
+    assert "The true-shooting leader" not in text
+    assert text == "uncited numeral 71.2%"
