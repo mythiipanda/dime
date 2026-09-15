@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Any, Callable, Iterable
 
 from v2.contracts import EvidenceEnvelope, VerificationReport, VerificationStatus
+from v2.runtime.ledger import LedgerEntry
+from v2.runtime.projections import admitted_evidence, tool_attempts
 
 
 @dataclass(frozen=True)
@@ -43,6 +45,26 @@ class TurnTrace:
     tools: tuple[dict[str, Any], ...]
     report: VerificationReport | None = None
     text: str = ""
+
+    @classmethod
+    def from_ledger(
+        cls,
+        entries: Iterable[LedgerEntry],
+        *,
+        seconds: float,
+        report: VerificationReport | None = None,
+        text: str = "",
+    ) -> "TurnTrace":
+        entries = tuple(entries)
+        tools = tuple(tool_attempts(entries))
+        return cls(
+            seconds=seconds,
+            tool_calls=len(tools),
+            evidence=tuple(admitted_evidence(entries)),
+            tools=tools,
+            report=report,
+            text=text,
+        )
 
 
 @dataclass(frozen=True)
