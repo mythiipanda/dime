@@ -5,7 +5,10 @@ from collections.abc import Callable, Iterable
 
 from v2.contracts import (
     ClaimResult,
+    Gap,
+    GapKind,
     VerificationReport,
+    VerifiedClaim,
     VerificationStatus,
 )
 from v2.runtime.executor import PlanExecutor
@@ -99,12 +102,16 @@ class Runtime:
                 update={"status": VerificationStatus.PARTIAL}
             )
 
+        verified_claims = _verified_claims(draft, verification)
+        gaps = _verification_gaps(draft, verification)
         result = RuntimeResult(
             task=task,
             execution=execution,
             draft=draft,
             verification=verification,
             repaired=repaired,
+            verified_claims=verified_claims,
+            gaps=gaps,
         )
         if self._ledger is not None:
             self._ledger.append(
@@ -203,3 +210,34 @@ def _merge_claim_results(results: Iterable[ClaimResult]) -> list[ClaimResult]:
 
 def _unique(values: Iterable[str]) -> list[str]:
     return list(dict.fromkeys(value for value in values if value))
+
+
+def _verified_claims(draft, verification) -> list[VerifiedClaim]:
+    supported = {
+        result.claim_index for result in verification.claim_results
+        if result.supported
+    }
+    if not verification.claim_results and verification.status == VerificationStatus.PASS:
+        supported = set(range(len(draft.claims)))
+    return [
+        VerifiedClaim(claim_index=index, claim=claim,
+                      evidence_ids=list(claim.evidence_ids))
+        for index, claim in enumerate(draft.claims)
+        if index in supported
+    ]
+
+
+def _verification_gaps(draft, verification) -> list[Gap]:
+    gaps = [Gap(kind=GapKind.MISSING_EVIDENCE, message=message)
+            for message in draft.gaps]
+    gaps.extend(Gap(kind=GapKind.MISSING_EVIDENCE, message=message)
+                for message in verification.missing_branches)
+    gaps.extend(Gap(kind=GapKind.SOURCE_CONFLICT, message=message)
+                for message in verification.contradictions)
+    for result in verification.claim_results:
+        if not result.supported:
+            gaps.extend(Gap(kind=GapKind.UNSUPPORTED_CLAIM, message=reason,
+                            blocks=[f"claim:{result.claim_index}"])
+                        for reason in result.reasons)
+    return list({(gap.kind, gap.message, tuple(gap.blocks)): gap
+                 for gap in gaps}.values())

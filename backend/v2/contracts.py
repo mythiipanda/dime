@@ -34,6 +34,13 @@ class VerificationStatus(StrEnum):
     PARTIAL = "partial"
 
 
+class GapKind(StrEnum):
+    MISSING_EVIDENCE = "missing_evidence"
+    SOURCE_CONFLICT = "source_conflict"
+    UNSUPPORTED_CLAIM = "unsupported_claim"
+    EXECUTION_FAILURE = "execution_failure"
+
+
 class EntityRef(BaseModel):
     id: str
     type: Literal["player", "team", "game", "league"]
@@ -146,6 +153,19 @@ class DraftReport(BaseModel):
     sections: list[str]
     claims: list[Claim]
     gaps: list[str] = Field(default_factory=list)
+
+
+class Gap(BaseModel):
+    kind: GapKind
+    message: str
+    evidence_ids: list[str] = Field(default_factory=list)
+    blocks: list[str] = Field(default_factory=list)
+
+
+class VerifiedClaim(BaseModel):
+    claim_index: int = Field(ge=0)
+    claim: Claim
+    evidence_ids: list[str] = Field(default_factory=list)
 
 
 class ClaimResult(BaseModel):

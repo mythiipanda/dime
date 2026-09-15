@@ -7,7 +7,9 @@ from v2.contracts import (
     EvidenceEnvelope,
     Plan,
     TaskSpec,
+    Gap,
     VerificationReport,
+    VerifiedClaim,
 )
 
 
@@ -24,3 +26,5 @@ class RuntimeResult(BaseModel):
     draft: DraftReport
     verification: VerificationReport
     repaired: bool = False
+    verified_claims: list[VerifiedClaim] = Field(default_factory=list)
+    gaps: list[Gap] = Field(default_factory=list)
