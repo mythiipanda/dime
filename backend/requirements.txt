@@ -18,3 +18,4 @@ scipy==1.16.2
 # gzip covers responses without it.
 
 ddgs==9.15.0
+trafilatura==2.0.0

@@ -4,7 +4,7 @@ import httpx
 import pytest
 
 from v2.adapters.web import (
-    DuckDuckGoSearch, FirecrawlWeb, WebSearchRequest, WebSearchResult,
+    DuckDuckGoSearch, WebSearchRequest, WebSearchResult,
     validate_public_url,
 )
 
@@ -29,33 +29,6 @@ async def test_duckduckgo_is_typed_and_labeled_best_effort(monkeypatch):
     assert "no official full-results API" in response.warnings[0]
 
 
-@pytest.mark.anyio
-async def test_firecrawl_search_and_fetch_keep_source_identity(monkeypatch):
-    calls = []
-    async def handler(request):
-        calls.append((request.url.path, request.read()))
-        if request.url.path.endswith("/search"):
-            return httpx.Response(200, json={"success": True, "data": {"web": [{
-                "url": "https://example.com/report", "title": "Report",
-                "description": "Result snippet"}]}})
-        return httpx.Response(200, json={"success": True, "data": {
-            "markdown": "# Report\nGrounded text", "metadata": {
-                "sourceURL": "https://example.com/report", "title": "Report",
-                "ogSiteName": "Example"}}})
-    async def public(url): return url
-    monkeypatch.setattr("v2.adapters.web.validate_public_url", public)
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    provider = FirecrawlWeb(client=client)
-    search = await provider.search(WebSearchRequest(query="Brown trade"))
-    page = await provider.fetch(search.results[0])
-    await client.aclose()
-    assert search.results[0].snippet == "Result snippet"
-    assert str(page.url) == "https://example.com/report"
-    assert page.publisher == "Example"
-    assert len(page.content_hash) == 64
-    assert [item[0] for item in calls] == ["/v2/search", "/v2/scrape"]
-
-
 def test_fetch_request_requires_search_rank():
     from pydantic import ValidationError
     from v2.adapters.web import WebFetchRequest
@@ -72,41 +45,7 @@ async def test_url_guard_rejects_non_http_or_private_urls(url):
     with pytest.raises(ValueError):
         await validate_public_url(url)
 
-@pytest.mark.anyio
-async def test_firecrawl_does_not_claim_unsupported_freshness(monkeypatch):
-    async def handler(request):
-        return httpx.Response(200, json={"success": True, "data": {"web": []}})
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    response = await FirecrawlWeb(client=client).search(
-        WebSearchRequest(query="latest Celtics", freshness="week"))
-    await client.aclose()
-    assert "no documented freshness-window" in response.warnings[0]
 
-@pytest.mark.anyio
-async def test_firecrawl_sends_optional_key():
-    async def handler(request):
-        assert request.headers["Authorization"] == "Bearer fc-test"
-        return httpx.Response(200, json={"success": True, "data": {"web": []}})
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    await FirecrawlWeb(api_key="fc-test", client=client).search(
-        WebSearchRequest(query="Brown trade"))
-    await client.aclose()
-
-
-@pytest.mark.anyio
-async def test_firecrawl_keyless_denial_is_actionable():
-    async def handler(request):
-        return httpx.Response(403, json={"success": False, "error": "suspicious IP"})
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    with pytest.raises(RuntimeError, match="configure a free API key"):
-        await FirecrawlWeb(client=client).search(WebSearchRequest(query="Brown trade"))
-    await client.aclose()
-
-
-def test_firecrawl_accepts_configured_key(monkeypatch):
-    monkeypatch.setenv("FIRECRAWL_API_KEY", "fc-configured")
-    from app.config import Settings
-    assert Settings().firecrawl_api_key == "fc-configured"
 
 @pytest.mark.anyio
 async def test_jina_reader_fetches_selected_source_and_preserves_final_url(monkeypatch):
@@ -143,4 +82,52 @@ async def test_jina_reader_rejects_empty_payload(monkeypatch):
     with pytest.raises(RuntimeError, match="no page content"):
         await JinaReader(client=client).fetch(WebSearchResult(
             rank=1, url="https://example.com", title="Example", snippet=""))
+    await client.aclose()
+
+@pytest.mark.anyio
+async def test_local_fetch_extracts_main_content_and_follows_checked_redirect(monkeypatch):
+    from v2.adapters.web import LocalWebFetch
+    checked = []
+    async def public(url):
+        checked.append(url)
+        return url
+    async def handler(request):
+        if request.url.path == "/start":
+            return httpx.Response(302, headers={"location": "/article"})
+        return httpx.Response(200, headers={"content-type": "text/html"}, text="""
+          <html><head><title>Brown analysis</title></head><body>
+          <nav>Noise</nav><article><h1>Brown analysis</h1>
+          <p>Jaylen Brown has a central two-way role for Boston across a full season.</p>
+          </article></body></html>""")
+    monkeypatch.setattr("v2.adapters.web.validate_public_url", public)
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    page = await LocalWebFetch(client=client).fetch(WebSearchResult(
+        rank=1, url="https://example.com/start", title="Search title", snippet=""))
+    await client.aclose()
+    assert checked == ["https://example.com/start", "https://example.com/article",
+                       "https://example.com/article"]
+    assert page.title == "Brown analysis"
+    assert "central two-way role" in page.markdown
+    assert len(page.markdown) < 500
+
+
+@pytest.mark.anyio
+async def test_local_fetch_rejects_non_html_and_oversize(monkeypatch):
+    from v2.adapters.web import LocalWebFetch
+    async def public(url): return url
+    monkeypatch.setattr("v2.adapters.web.validate_public_url", public)
+    async def json_handler(request):
+        return httpx.Response(200, headers={"content-type": "application/json"}, text="{}")
+    client = httpx.AsyncClient(transport=httpx.MockTransport(json_handler))
+    with pytest.raises(RuntimeError, match="unsupported web content type"):
+        await LocalWebFetch(client=client).fetch(WebSearchResult(
+            rank=1, url="https://example.com/a", title="A", snippet=""))
+    await client.aclose()
+    async def html_handler(request):
+        return httpx.Response(200, headers={"content-type": "text/html"},
+                              content=b"<article>" + b"x" * 100 + b"</article>")
+    client = httpx.AsyncClient(transport=httpx.MockTransport(html_handler))
+    with pytest.raises(RuntimeError, match="response-size limit"):
+        await LocalWebFetch(client=client, max_bytes=50).fetch(WebSearchResult(
+            rank=1, url="https://example.com/a", title="A", snippet=""))
     await client.aclose()

@@ -163,6 +163,64 @@ class DuckDuckGoSearch:
         )
 
 
+class LocalWebFetch:
+    """Self-contained HTTP fetch with Trafilatura main-content extraction."""
+
+    name = "local-trafilatura"
+
+    def __init__(self, *, client: httpx.AsyncClient | None = None,
+                 max_bytes: int = 2_000_000) -> None:
+        self._client = client
+        self._max_bytes = max_bytes
+
+    async def fetch(self, result: WebSearchResult) -> WebPage:
+        import hashlib
+        from trafilatura import bare_extraction, extract
+
+        source_url = await validate_public_url(str(result.url))
+        owns_client = self._client is None
+        client = self._client or httpx.AsyncClient(
+            timeout=httpx.Timeout(15, connect=5), follow_redirects=False,
+            headers={"User-Agent": "Dime/2 web evidence fetch"})
+        try:
+            response = await client.get(source_url)
+            redirects = 0
+            while response.is_redirect:
+                redirects += 1
+                if redirects > 3 or "location" not in response.headers:
+                    raise RuntimeError("web source exceeded redirect limit")
+                source_url = str(response.url.join(response.headers["location"]))
+                await validate_public_url(source_url)
+                response = await client.get(source_url)
+            response.raise_for_status()
+            content_type = response.headers.get("content-type", "").lower()
+            if not any(kind in content_type for kind in ("text/html", "application/xhtml+xml")):
+                raise RuntimeError(f"unsupported web content type: {content_type or 'unknown'}")
+            raw = response.content
+        finally:
+            if owns_client:
+                await client.aclose()
+        if len(raw) > self._max_bytes:
+            raise RuntimeError("web source exceeds response-size limit")
+        html = raw.decode(response.encoding or "utf-8", errors="replace")
+        markdown = extract(
+            html, url=source_url, output_format="markdown",
+            include_comments=False, include_tables=True,
+            include_links=True, with_metadata=False) or ""
+        document = bare_extraction(
+            html, url=source_url, include_comments=False,
+            include_tables=True, with_metadata=True)
+        if not markdown.strip():
+            raise RuntimeError("local extractor found no main page content")
+        final_url = await validate_public_url(str(response.url))
+        return WebPage(
+            url=final_url, title=str(getattr(document, "title", None) or result.title),
+            publisher=getattr(document, "sitename", None),
+            published_at=getattr(document, "date", None),
+            retrieved_at=datetime.now().astimezone(), markdown=markdown[:120_000],
+            content_hash=hashlib.sha256(markdown.encode()).hexdigest())
+
+
 class JinaReader:
     """Keyless Reader API fallback for one selected public search result."""
 
@@ -202,97 +260,4 @@ class JinaReader:
             url=final_url, title=str(data.get("title") or result.title),
             published_at=data.get("publishedTime"),
             retrieved_at=datetime.now().astimezone(), markdown=markdown,
-            content_hash=hashlib.sha256(markdown.encode()).hexdigest())
-
-
-class FirecrawlWeb:
-    """Firecrawl search and one-page Markdown extraction.
-
-    Firecrawl documents keyless access, but some server IPs are denied. An API
-    key is optional at the contract boundary and should be configured for a
-    reliable deployment.
-    """
-
-    name = "firecrawl"
-
-    def __init__(self, *, api_key: str = "",
-                 base_url: str = "https://api.firecrawl.dev/v2",
-                 client: httpx.AsyncClient | None = None) -> None:
-        self._api_key = api_key
-        self._base_url = base_url.rstrip("/")
-        self._client = client
-
-    async def _post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
-        owns_client = self._client is None
-        client = self._client or httpx.AsyncClient(
-            timeout=httpx.Timeout(15, connect=5), follow_redirects=False)
-        headers = ({"Authorization": f"Bearer {self._api_key}"}
-                   if self._api_key else {})
-        try:
-            response = await client.post(
-                f"{self._base_url}/{path}", json=body, headers=headers)
-            if response.status_code == 403 and not self._api_key:
-                raise RuntimeError(
-                    "Firecrawl keyless access was denied; configure a free API key")
-            response.raise_for_status()
-            payload = response.json()
-        finally:
-            if owns_client:
-                await client.aclose()
-        if not isinstance(payload, dict) or not payload.get("success"):
-            raise RuntimeError(f"Firecrawl {path} returned no successful payload")
-        return payload
-
-    async def search(self, request: WebSearchRequest) -> WebSearchResponse:
-        if request.include_domains and request.exclude_domains:
-            raise ValueError("include_domains and exclude_domains are exclusive")
-        body: dict[str, Any] = {"query": request.query,
-                                "limit": request.max_results,
-                                "sources": ["web"]}
-        if request.include_domains:
-            body["includeDomains"] = [_domain(item) for item in request.include_domains]
-        if request.exclude_domains:
-            body["excludeDomains"] = [_domain(item) for item in request.exclude_domains]
-        payload = await self._post("search", body)
-        web = (payload.get("data") or {}).get("web") or []
-        results = []
-        for item in web[:request.max_results]:
-            url = item.get("url")
-            if not url:
-                continue
-            await validate_public_url(str(url))
-            results.append(WebSearchResult(
-                rank=len(results) + 1, url=url,
-                title=str(item.get("title") or "Untitled source"),
-                snippet=str(item.get("description") or item.get("snippet") or "")))
-        warnings = []
-        if request.freshness:
-            warnings.append(
-                "Firecrawl search has no documented freshness-window parameter; "
-                "published dates must be checked after extraction.")
-        return WebSearchResponse(
-            provider=self.name, observed_at=datetime.now().astimezone(),
-            query=request.query, results=results,
-            coverage="Firecrawl web search; snippets are discovery evidence only.",
-            warnings=warnings)
-
-    async def fetch(self, result: WebSearchResult) -> WebPage:
-        import hashlib
-
-        await validate_public_url(str(result.url))
-        payload = await self._post("scrape", {
-            "url": str(result.url), "formats": ["markdown"],
-            "onlyMainContent": True, "maxAge": 0,
-        })
-        data = payload.get("data") or {}
-        metadata = data.get("metadata") or {}
-        final_url = str(metadata.get("sourceURL") or metadata.get("url") or result.url)
-        await validate_public_url(final_url)
-        markdown = str(data.get("markdown") or "")[:120_000]
-        if not markdown.strip():
-            raise RuntimeError("Firecrawl scrape returned no page content")
-        return WebPage(
-            url=final_url, title=str(metadata.get("title") or result.title),
-            publisher=metadata.get("ogSiteName"), retrieved_at=datetime.now().astimezone(),
-            markdown=markdown,
             content_hash=hashlib.sha256(markdown.encode()).hexdigest())
