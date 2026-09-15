@@ -24,6 +24,7 @@ OUTPUT_CONTRACTS = {
     "intake": (contracts.TaskSpec,),
     "planner": (contracts.PlanNode,),
     "synthesizer": (contracts.DraftReport, contracts.Claim),
+    "repair_answer": (contracts.DraftReport, contracts.Claim),
     "verifier": (contracts.VerificationReport, contracts.ClaimResult),
     "repair": (contracts.PlanNode,),
     "project_planner": (contracts.PlanNode,),

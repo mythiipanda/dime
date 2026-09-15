@@ -1,6 +1,7 @@
 from .models import (
     ModelIntake,
     ModelPlanner,
+    ModelRepairer,
     ModelSemanticVerifier,
     ModelSynthesizer,
     ProviderStructuredModel,
@@ -24,6 +25,7 @@ __all__ = [
     "ProviderStructuredModel",
     "RecordedStructuredModel",
     "ModelSynthesizer",
+    "ModelRepairer",
     "ModelSemanticVerifier",
     "ModelPlanner",
     "ModelIntake",

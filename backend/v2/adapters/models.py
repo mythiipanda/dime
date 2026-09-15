@@ -151,6 +151,28 @@ class ModelSynthesizer(ModelStage):
         )
 
 
+class ModelRepairer(ModelStage):
+    prompt_name = "repair_answer"
+    route = "repair"
+    schema = DraftReport
+
+    async def repair(
+        self,
+        task: TaskSpec,
+        draft: DraftReport,
+        evidence: Mapping[str, EvidenceEnvelope],
+        verification: VerificationReport,
+    ) -> DraftReport:
+        return await self._generate({
+            "task": task.model_dump(mode="json"),
+            "draft": draft.model_dump(mode="json"),
+            "verification": verification.model_dump(mode="json"),
+            "admitted_evidence": [
+                item.model_dump(mode="json") for item in evidence.values()
+            ],
+        })
+
+
 class ModelSemanticVerifier(ModelStage):
     prompt_name = "verifier"
     route = "semantic_verifier"

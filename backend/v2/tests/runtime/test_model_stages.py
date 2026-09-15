@@ -5,6 +5,7 @@ import pytest
 from v2.adapters.models import (
     ModelIntake,
     ModelPlanner,
+    ModelRepairer,
     ModelSemanticVerifier,
     ModelSynthesizer,
     _json_object,
@@ -87,3 +88,30 @@ async def test_recorded_model_keeps_success_and_failure_attempts():
     assert [entry.kind for entry in ledger.entries] == [
         LedgerKind.MODEL_REQUEST, LedgerKind.ASSISTANT_ATTEMPT]
     assert ledger.entries[-1].data["status"] == "failed"
+
+
+@pytest.mark.anyio
+async def test_model_repair_receives_only_typed_admitted_context():
+    from v2.contracts import Claim, DraftReport, TaskSpec, VerificationReport
+
+    stub = StubModel([{
+        "sections": ["Record"],
+        "claims": [{"text": "Boston won 61 games.", "kind": "observed",
+                    "evidence_ids": ["ev"]}],
+        "gaps": ["salary evidence is 2026-27, not 2025-26"],
+    }])
+    repairer = ModelRepairer(stub, provider="stub", model_name="stub-model")
+    task = TaskSpec(goal="record", mode="quick", deliverable="text")
+    draft = DraftReport(sections=["Record"], claims=[
+        Claim(text="Boston won 62 games.", kind="observed", evidence_ids=["ev"])])
+    report = VerificationReport(status="repair", repair_instructions=[
+        "Repair claim 0: uncited numeral 62"])
+    evidence = EvidenceEnvelope(
+        evidence_id="ev", capability="standings", source="fixture",
+        observed_at=datetime.now(UTC), rows={"team": "Boston", "wins": 61})
+
+    repaired = await repairer.repair(task, draft, {"ev": evidence}, report)
+    payload = stub.calls[0]["payload"]
+    assert set(payload) == {"task", "draft", "verification", "admitted_evidence"}
+    assert payload["admitted_evidence"][0]["evidence_id"] == "ev"
+    assert repaired.claims[0].text == "Boston won 61 games."

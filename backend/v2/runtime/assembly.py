@@ -8,6 +8,7 @@ from v2.adapters import (
     CAPABILITIES,
     ModelIntake,
     ModelPlanner,
+    ModelRepairer,
     ModelSemanticVerifier,
     ModelSynthesizer,
     ProviderStructuredModel,
@@ -78,7 +79,8 @@ def build_runtime(
         mechanical_verifier=MechanicalVerifier(),
         semantic_verifier=ModelSemanticVerifier(
             model, provider=provider, model_name=model_name),
-        repairer=EvidenceBoundRepair(),
+        repairer=ModelRepairer(
+            model, provider=provider, model_name=model_name),
         ledger=ledger,
         progress=progress,
     )
