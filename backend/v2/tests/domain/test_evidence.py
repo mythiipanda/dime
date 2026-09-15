@@ -43,3 +43,17 @@ def test_source_integrity_rejects_salary_vintage_and_team_conflict():
         "season_mismatch", "team_conflict"]
     assert "2026-27" in issues[0].message
     assert "PHI" in issues[1].message and "LAL" in issues[1].message
+
+
+def test_admission_fails_closed_on_integrity_issue():
+    from v2.domain.evidence import EvidenceAdmissionError, admit_evidence
+
+    item = EvidenceEnvelope(
+        evidence_id="salary", capability="contracts", source="bref",
+        observed_at=datetime(2026, 9, 15), season="2026-27",
+        rows={"PLAYER_NAME": "LeBron James", "TEAM": "PHI"})
+    with pytest.raises(EvidenceAdmissionError) as caught:
+        admit_evidence(item, required_season="2025-26",
+                       expected_teams={"LeBron James": "LAL"})
+    assert [issue.code for issue in caught.value.issues] == [
+        "season_mismatch", "team_conflict"]

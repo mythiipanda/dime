@@ -138,3 +138,22 @@ def source_integrity_issues(
                 "team_conflict",
                 f"{name} is {team} in evidence but {wanted} in season context"))
     return issues
+
+class EvidenceAdmissionError(ValueError):
+    def __init__(self, issues: list[SourceIntegrityIssue]) -> None:
+        self.issues = issues
+        super().__init__("; ".join(issue.message for issue in issues))
+
+
+def admit_evidence(
+    evidence: EvidenceEnvelope,
+    *,
+    required_season: str | None = None,
+    expected_teams: Mapping[str, str] | None = None,
+) -> EvidenceEnvelope:
+    issues = source_integrity_issues(
+        evidence, required_season=required_season,
+        expected_teams=expected_teams)
+    if issues:
+        raise EvidenceAdmissionError(issues)
+    return evidence

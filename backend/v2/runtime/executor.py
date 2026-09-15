@@ -7,6 +7,7 @@ from v2.contracts import EvidenceEnvelope, Plan, PlanNode, PlanStatus, TaskSpec
 from v2.runtime.checkpoints import CheckpointStore, ExecutionCheckpoint
 from v2.runtime.interfaces import Capability
 from v2.runtime.models import ExecutionResult
+from v2.domain.evidence import admit_evidence
 
 
 class PlanExecutor:
@@ -184,6 +185,9 @@ class PlanExecutor:
             attempts[node.id] += 1
             try:
                 result = await capability.execute(node, task, parent_evidence)
+                result = admit_evidence(
+                    result,
+                    required_season=(task.season.value if task.season else None))
                 if result.capability != capability.name:
                     raise ValueError(
                         f"capability returned {result.capability!r}, expected {capability.name!r}"

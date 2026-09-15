@@ -106,3 +106,21 @@ def test_cancellation_stops_before_next_checkpoint():
             await task
     run(scenario())
     assert checkpoint.completed == set()
+
+
+@pytest.mark.anyio
+async def test_executor_does_not_admit_wrong_season_evidence():
+    from v2.contracts import Plan, PlanNode, RunMode, SeasonRef, TaskSpec
+    from v2.runtime.executor import PlanExecutor
+    from v2.runtime.fakes import FakeCapability
+
+    task = TaskSpec(
+        goal="2025-26 trade", mode=RunMode.QUICK, deliverable="answer",
+        season=SeasonRef(value="2025-26", source="user", confidence=1))
+    plan = Plan(nodes=[PlanNode(
+        id="salary", description="salary", capability_hints=["contracts"],
+        completion_test="season matched")])
+    capability = FakeCapability("contracts", {"salary": 3876529})
+
+    result = await PlanExecutor({"contracts": capability}).execute(task, plan)
+    assert result.evidence[0].season == "2025-26"
