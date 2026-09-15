@@ -163,6 +163,48 @@ class DuckDuckGoSearch:
         )
 
 
+class JinaReader:
+    """Keyless Reader API fallback for one selected public search result."""
+
+    name = "jina-reader"
+
+    def __init__(self, *, base_url: str = "https://r.jina.ai",
+                 client: httpx.AsyncClient | None = None) -> None:
+        self._base_url = base_url.rstrip("/")
+        self._client = client
+
+    async def fetch(self, result: WebSearchResult) -> WebPage:
+        import hashlib
+
+        source_url = await validate_public_url(str(result.url))
+        owns_client = self._client is None
+        client = self._client or httpx.AsyncClient(
+            timeout=httpx.Timeout(20, connect=5), follow_redirects=False)
+        try:
+            response = await client.get(
+                f"{self._base_url}/{source_url}",
+                headers={"Accept": "application/json", "X-Robots-Txt": "true",
+                         "X-Retain-Links": "all", "X-No-Cache": "true"})
+            response.raise_for_status()
+            payload = response.json()
+        finally:
+            if owns_client:
+                await client.aclose()
+        data = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(data, dict):
+            raise RuntimeError("Jina Reader returned no structured page payload")
+        final_url = str(data.get("url") or source_url)
+        await validate_public_url(final_url)
+        markdown = str(data.get("content") or "")[:120_000]
+        if not markdown.strip():
+            raise RuntimeError("Jina Reader returned no page content")
+        return WebPage(
+            url=final_url, title=str(data.get("title") or result.title),
+            published_at=data.get("publishedTime"),
+            retrieved_at=datetime.now().astimezone(), markdown=markdown,
+            content_hash=hashlib.sha256(markdown.encode()).hexdigest())
+
+
 class FirecrawlWeb:
     """Firecrawl search and one-page Markdown extraction.
 

@@ -107,3 +107,40 @@ def test_firecrawl_accepts_configured_key(monkeypatch):
     monkeypatch.setenv("FIRECRAWL_API_KEY", "fc-configured")
     from app.config import Settings
     assert Settings().firecrawl_api_key == "fc-configured"
+
+@pytest.mark.anyio
+async def test_jina_reader_fetches_selected_source_and_preserves_final_url(monkeypatch):
+    from v2.adapters.web import JinaReader
+    calls = []
+    async def handler(request):
+        calls.append(request)
+        return httpx.Response(200, json={"data": {
+            "url": "https://example.com/story", "title": "Story",
+            "content": "# Story\nSourced details",
+            "publishedTime": "2026-09-15T10:00:00Z"}})
+    async def public(url): return url
+    monkeypatch.setattr("v2.adapters.web.validate_public_url", public)
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    page = await JinaReader(client=client).fetch(WebSearchResult(
+        rank=1, url="https://example.com/story", title="Search title", snippet=""))
+    await client.aclose()
+    assert calls[0].url.path == "/https://example.com/story"
+    assert calls[0].headers["X-Robots-Txt"] == "true"
+    assert str(page.url) == "https://example.com/story"
+    assert page.title == "Story"
+    assert page.published_at is not None
+    assert len(page.content_hash) == 64
+
+
+@pytest.mark.anyio
+async def test_jina_reader_rejects_empty_payload(monkeypatch):
+    from v2.adapters.web import JinaReader
+    async def handler(request):
+        return httpx.Response(200, json={"data": {"title": "No content"}})
+    async def public(url): return url
+    monkeypatch.setattr("v2.adapters.web.validate_public_url", public)
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    with pytest.raises(RuntimeError, match="no page content"):
+        await JinaReader(client=client).fetch(WebSearchResult(
+            rank=1, url="https://example.com", title="Example", snippet=""))
+    await client.aclose()
