@@ -16,3 +16,5 @@ scipy==1.16.2
 # Never add google brotli. openai 3 vendored httpx2 calls
 # Decompressor.process with kwargs that brotli 1.0.9 lacks.
 # gzip covers responses without it.
+
+ddgs==9.15.0
