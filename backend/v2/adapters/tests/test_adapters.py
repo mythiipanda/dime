@@ -98,8 +98,8 @@ COMPARE_PAYLOAD = {
 
 def test_registry_covers_initial_pack():
     expected = {
-        "entity_resolution", "standings", "team_totals", "qualified_leaders",
-        "team_ratings", "roster", "player_report", "player_comparison",
+        "entity_resolution", "standings", "team_trajectory", "team_totals", "qualified_leaders",
+        "team_ratings", "roster", "player_report", "player_evaluation", "player_comparison",
         "metric_adjudication", "metric_coverage", "shots",
         "shooting_efficiency", "on_off", "lineups", "clutch", "playoffs",
         "trades", "contracts", "game_logs", "four_factors",

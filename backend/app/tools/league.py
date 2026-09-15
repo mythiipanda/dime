@@ -3860,3 +3860,59 @@ def get_warehouse_freshness() -> dict[str, Any]:
     return {"tool": "get_warehouse_freshness", "ok": True, "rows": rows,
             "meta": {"tables": len(rows), "stale": stale_n, "unknown": unknown_n,
                      "in_season": now.month in _IN_SEASON_MONTHS}}
+
+
+@tool
+def get_team_trajectory(
+    team: str | int, seasons: int = 3, through_season: str = SEASON,
+) -> dict[str, Any]:
+    """Multi-season regular-season records for one team, newest first.
+
+    This is a trajectory evidence primitive, not a trend opinion. It reads
+    complete historical standings and returns record and win percentage for
+    a bounded number of seasons ending at through_season.
+    """
+    from .. import store as _store
+    from ._core import coerce_team_id
+
+    try:
+        team_id = coerce_team_id(team)
+        limit = max(2, min(int(seasons), 10))
+    except (ValueError, TypeError):
+        return {"tool": "get_team_trajectory", "ok": False,
+                "error": f"unknown team or invalid season count: {team!r}"}
+    con = _store.connect(read_only=True)
+    try:
+        tables = {row[0] for row in con.execute("SHOW TABLES").fetchall()}
+        if "silver_hist_standings" not in tables:
+            return {"tool": "get_team_trajectory", "ok": False,
+                    "error": "historical standings are unavailable"}
+        columns = {row[1] for row in
+                   con.execute("PRAGMA table_info(silver_hist_standings)").fetchall()}
+        season_type = (" AND season_type = 'regular-season'"
+                       if "season_type" in columns else "")
+        rows = con.execute(
+            "SELECT _season, wins, losses, win_pct "
+            "FROM silver_hist_standings WHERE CAST(team_id AS VARCHAR) = ? "
+            "AND _season <= ?" + season_type +
+            " ORDER BY _season DESC LIMIT ?",
+            [str(team_id), through_season, limit],
+        ).fetchall()
+    except Exception as exc:
+        return {"tool": "get_team_trajectory", "ok": False,
+                "error": str(exc)[:200]}
+    finally:
+        con.close()
+    if not rows:
+        return {"tool": "get_team_trajectory", "ok": False,
+                "error": f"no historical standings through {through_season}"}
+    return {
+        "tool": "get_team_trajectory", "ok": True,
+        "rows": [{"season": season, "wins": int(wins),
+                  "losses": int(losses), "record": f"{int(wins)}-{int(losses)}",
+                  "win_pct": round(float(win_pct), 3)}
+                 for season, wins, losses, win_pct in rows],
+        "meta": {"source": "warehouse silver_hist_standings",
+                 "through_season": through_season,
+                 "coverage": "regular-season records, newest first"},
+    }

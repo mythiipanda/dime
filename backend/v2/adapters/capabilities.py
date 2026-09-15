@@ -72,6 +72,13 @@ _LIST = [
                "DiffPointsPG": PER_GAME},
     ),
     Capability(
+        name="team_trajectory",
+        tool_name="get_team_trajectory",
+        season_arg="through_season",
+        units={"wins": COUNT, "losses": COUNT, "win_pct": FRACTION},
+        coverage="Bounded regular-season records, newest first.",
+    ),
+    Capability(
         name="team_totals",
         tool_name="get_team_leaders",
         units={"GP": COUNT},
@@ -93,6 +100,7 @@ _LIST = [
     ),
     Capability(name="roster", tool_name="get_team_hub"),
     Capability(name="player_report", tool_name="get_player_report"),
+    Capability(name="player_evaluation", tool_name="get_player_evaluation"),
     Capability(name="player_comparison", tool_name="get_compare"),
     Capability(name="metric_adjudication", tool_name="compare_metrics"),
     Capability(name="metric_coverage", tool_name="metric_coverage", source_prefix="v2"),
