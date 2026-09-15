@@ -211,3 +211,83 @@ class JinaReader:
             published_at=data.get("publishedTime"),
             retrieved_at=datetime.now().astimezone(), markdown=markdown,
             content_hash=hashlib.sha256(markdown.encode()).hexdigest())
+
+
+class WebSearchCapability:
+    """Discover current sources as typed evidence; snippets are not page facts."""
+
+    name = "web_search"
+
+    def __init__(self, provider: WebSearchProvider | None = None) -> None:
+        self._provider = provider or DuckDuckGoSearch()
+
+    async def execute(self, node: Any, task: Any, evidence: Sequence[Any]):
+        from v2.contracts import EvidenceEnvelope
+
+        request = WebSearchRequest.model_validate(node.arguments)
+        response = await self._provider.search(request)
+        rows = [item.model_dump(mode="json") for item in response.results]
+        identity = _web_evidence_id(
+            self.name, request.model_dump(mode="json"), rows)
+        return EvidenceEnvelope(
+            evidence_id=identity,
+            capability=self.name,
+            source=f"web:{response.provider}",
+            observed_at=response.observed_at,
+            rows=rows,
+            coverage=response.coverage,
+            warnings=response.warnings,
+        )
+
+
+class WebFetchCapability:
+    """Extract one search-selected result without accepting arbitrary URLs."""
+
+    name = "web_fetch"
+
+    def __init__(self, provider: WebFetchProvider | None = None) -> None:
+        self._provider = provider or JinaReader()
+
+    async def execute(self, node: Any, task: Any, evidence: Sequence[Any]):
+        from v2.contracts import EvidenceEnvelope
+
+        request = WebFetchRequest.model_validate(node.arguments)
+        matches = [
+            item for item in evidence
+            if item.evidence_id == request.search_evidence_id
+            and item.capability == "web_search"
+        ]
+        if len(matches) != 1:
+            raise ValueError("web_fetch requires its selected web_search parent evidence")
+        parent = matches[0]
+        selected = next(
+            (row for row in parent.rows if row.get("rank") == request.result_rank),
+            None,
+        )
+        if selected is None:
+            raise ValueError("selected search rank is absent from parent evidence")
+        result = WebSearchResult.model_validate(selected)
+        page = await self._provider.fetch(result)
+        rows = page.model_dump(mode="json")
+        identity = _web_evidence_id(
+            self.name, request.model_dump(mode="json"), rows)
+        return EvidenceEnvelope(
+            evidence_id=identity,
+            capability=self.name,
+            source=f"web:{page.url}",
+            observed_at=page.retrieved_at,
+            as_of=page.published_at.date() if page.published_at else None,
+            rows=rows,
+            coverage="Full extracted page text from one selected discovery result.",
+            lineage=[parent.evidence_id],
+        )
+
+
+def _web_evidence_id(capability: str, arguments: Any, rows: Any) -> str:
+    import hashlib
+    import json
+
+    raw = json.dumps(
+        {"capability": capability, "arguments": arguments, "rows": rows},
+        sort_keys=True, separators=(",", ":"), default=str)
+    return f"{capability}:{hashlib.sha256(raw.encode()).hexdigest()[:16]}"

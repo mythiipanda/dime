@@ -116,3 +116,82 @@ def test_jina_reader_can_force_keyless_with_configured_key(monkeypatch):
     monkeypatch.setattr("app.config.settings.jina_api_key", "jina-from-settings")
     from v2.adapters.web import JinaReader
     assert JinaReader(api_key="")._api_key == ""
+
+@pytest.mark.anyio
+async def test_web_search_capability_normalizes_discovery_evidence():
+    from datetime import UTC, datetime
+    from v2.adapters.web import WebSearchCapability, WebSearchResponse
+    from v2.contracts import PlanNode, TaskSpec
+
+    class Search:
+        name = "fixture-search"
+        async def search(self, request):
+            return WebSearchResponse(
+                provider=self.name, observed_at=datetime(2026, 9, 15, tzinfo=UTC),
+                query=request.query,
+                results=[WebSearchResult(rank=1, url="https://example.com/story",
+                                         title="Story", snippet="Discovery only")],
+                coverage="fixture coverage")
+
+    node = PlanNode(id="search", description="current reporting",
+                    capability_hints=["web_search"],
+                    arguments={"query": "Jaylen Brown role"},
+                    completion_test="one source")
+    envelope = await WebSearchCapability(Search()).execute(
+        node, TaskSpec(goal="role", mode="quick", deliverable="answer"), [])
+    assert envelope.capability == "web_search"
+    assert envelope.source == "web:fixture-search"
+    assert envelope.rows[0]["rank"] == 1
+    assert envelope.lineage == []
+
+
+@pytest.mark.anyio
+async def test_web_fetch_capability_only_extracts_selected_parent_result():
+    from datetime import UTC, datetime
+    from v2.adapters.web import WebFetchCapability, WebPage
+    from v2.contracts import EvidenceEnvelope, PlanNode, TaskSpec
+
+    parent = EvidenceEnvelope(
+        evidence_id="web_search:parent", capability="web_search",
+        source="web:fixture", observed_at=datetime(2026, 9, 15, tzinfo=UTC),
+        rows=[{"rank": 1, "url": "https://example.com/story",
+               "title": "Story", "snippet": "Discovery"}])
+
+    class Fetch:
+        name = "fixture-fetch"
+        async def fetch(self, result):
+            assert result.rank == 1
+            return WebPage(
+                url=result.url, title=result.title,
+                retrieved_at=datetime(2026, 9, 15, tzinfo=UTC),
+                markdown="# Story\nFull sourced text", content_hash="a" * 64)
+
+    node = PlanNode(id="fetch", description="page", depends_on=["search"],
+                    capability_hints=["web_fetch"],
+                    arguments={"search_evidence_id": parent.evidence_id,
+                               "result_rank": 1}, completion_test="page text")
+    envelope = await WebFetchCapability(Fetch()).execute(
+        node, TaskSpec(goal="role", mode="quick", deliverable="answer"), [parent])
+    assert envelope.lineage == [parent.evidence_id]
+    assert envelope.rows["markdown"].startswith("# Story")
+    assert envelope.source == "web:https://example.com/story"
+
+
+@pytest.mark.anyio
+async def test_web_fetch_capability_rejects_unselected_or_unrelated_source():
+    from datetime import UTC, datetime
+    from v2.adapters.web import WebFetchCapability
+    from v2.contracts import EvidenceEnvelope, PlanNode, TaskSpec
+
+    parent = EvidenceEnvelope(
+        evidence_id="web_search:parent", capability="web_search",
+        source="web:fixture", observed_at=datetime(2026, 9, 15, tzinfo=UTC),
+        rows=[{"rank": 1, "url": "https://example.com/story",
+               "title": "Story", "snippet": "Discovery"}])
+    node = PlanNode(id="fetch", description="page",
+                    capability_hints=["web_fetch"],
+                    arguments={"search_evidence_id": "web_search:other",
+                               "result_rank": 1}, completion_test="page text")
+    with pytest.raises(ValueError, match="selected web_search parent"):
+        await WebFetchCapability().execute(
+            node, TaskSpec(goal="role", mode="quick", deliverable="answer"), [parent])

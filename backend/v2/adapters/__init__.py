@@ -9,6 +9,7 @@ from .models import (
     StructuredModel,
 )
 from .capabilities import CAPABILITIES, Capability
+from .web import WebFetchCapability, WebSearchCapability
 from .core import (
     AdapterError,
     ToolCapability,
@@ -39,4 +40,6 @@ __all__ = [
     "call_capability",
     "evidence_id",
     "invoke_tool",
+    "WebSearchCapability",
+    "WebFetchCapability",
 ]

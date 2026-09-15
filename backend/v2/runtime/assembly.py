@@ -14,6 +14,8 @@ from v2.adapters import (
     ProviderStructuredModel,
     RecordedStructuredModel,
     ToolCapability,
+    WebFetchCapability,
+    WebSearchCapability,
 )
 from v2.contracts import DraftReport, VerificationReport
 from v2.runtime import FileLedger, PlanExecutor, RecordedCapability, RunLedger, Runtime
@@ -48,8 +50,10 @@ class EvidenceBoundRepair:
 
 def capability_catalog() -> dict[str, str]:
     return {
-        name: spec.tool_name.replace("_", " ")
-        for name, spec in CAPABILITIES.items()
+        **{name: spec.tool_name.replace("_", " ")
+           for name, spec in CAPABILITIES.items()},
+        "web_search": "discover current public web sources for time-sensitive facts",
+        "web_fetch": "extract one selected web search result as sourced page evidence",
     }
 
 
@@ -74,6 +78,12 @@ def build_runtime(
         name: RecordedCapability(ToolCapability(name), ledger, turn_id=run_id)
         for name in CAPABILITIES
     }
+    capabilities.update({
+        "web_search": RecordedCapability(
+            WebSearchCapability(), ledger, turn_id=run_id),
+        "web_fetch": RecordedCapability(
+            WebFetchCapability(), ledger, turn_id=run_id),
+    })
     runtime = Runtime(
         intake=ModelIntake(model, provider=provider, model_name=model_name,
                           capability_catalog=catalog, skill_library=skills),

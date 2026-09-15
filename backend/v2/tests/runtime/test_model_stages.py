@@ -112,6 +112,7 @@ async def test_model_repair_receives_only_typed_admitted_context():
 
     repaired = await repairer.repair(task, draft, {"ev": evidence}, report)
     payload = stub.calls[0]["payload"]
-    assert set(payload) == {"task", "draft", "verification", "admitted_evidence"}
+    assert set(payload) == {"task", "draft", "verification", "admitted_evidence", "skills"}
+    assert payload["skills"] == []
     assert payload["admitted_evidence"][0]["evidence_id"] == "ev"
     assert repaired.claims[0].text == "Boston won 61 games."
