@@ -173,6 +173,20 @@ def _metric_unit_reasons(claim: Claim,
     return reasons
 
 
+def _mixed_source_reasons(claim: Claim,
+                          envelopes: Sequence[EvidenceEnvelope]) -> list[str]:
+    source_classes = {envelope.source.split(":", 1)[0].casefold()
+                      for envelope in envelopes}
+    if len(source_classes) < 2:
+        return []
+    text = claim.text.casefold()
+    labels_sources = ("source" in text or "warehouse" in text
+                      or "fallback" in text or "according to" in text)
+    if labels_sources:
+        return []
+    return ["mixed-source claim does not label differing provenance"]
+
+
 def _qualification_coverage_reasons(claim: Claim,
                                     envelopes: Sequence[EvidenceEnvelope]) -> list[str]:
     if not _RANK.search(claim.text) and not re.search(
@@ -273,6 +287,7 @@ def verify_mechanical(
             reasons.append(f"uncited season {value}")
         reasons.extend(_entity_reasons(task, claim, cited))
         reasons.extend(_scope_reasons(task, cited))
+        reasons.extend(_mixed_source_reasons(claim, cited))
         reasons.extend(_metric_unit_reasons(claim, cited))
         reasons.extend(_qualification_coverage_reasons(claim, cited))
 

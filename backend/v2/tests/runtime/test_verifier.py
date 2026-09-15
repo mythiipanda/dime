@@ -170,3 +170,29 @@ def test_bare_list_ordinals_are_not_factual_numerals():
 
     text = "1. Oklahoma City\n2. Boston\n3. Cleveland"
     assert _number_tokens(text) == []
+
+
+def test_mixed_source_claim_requires_provenance_label():
+    from v2.contracts import EvidenceEnvelope
+
+    sga = EvidenceEnvelope(
+        evidence_id="sga", capability="player_report",
+        source="warehouse:silver_player_season",
+        observed_at=datetime(2026, 4, 15), season="2025-26",
+        rows={"player": "SGA", "ppg": 31.1})
+    luka = EvidenceEnvelope(
+        evidence_id="luka", capability="player_report",
+        source="fallback:basketball-reference",
+        observed_at=datetime(2026, 4, 15), season="2025-26",
+        rows={"player": "Luka", "ppg": 33.5})
+    unlabeled = Claim(
+        text="SGA averaged 31.1 PPG and Luka averaged 33.5 PPG.",
+        kind="observed", evidence_ids=["sga", "luka"])
+    failed = verify_mechanical(task(), report(unlabeled), [sga, luka])
+    assert "mixed-source claim does not label differing provenance" in (
+        failed.claim_results[0].reasons)
+
+    labeled = unlabeled.model_copy(update={
+        "text": ("Warehouse data has SGA at 31.1 PPG; according to the "
+                 "Basketball-Reference fallback, Luka averaged 33.5 PPG.")})
+    assert verify_mechanical(task(), report(labeled), [sga, luka]).status == "pass"
