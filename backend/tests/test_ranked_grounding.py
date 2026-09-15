@@ -22,7 +22,13 @@ def test_three_point_percentage_uses_official_makes_floor():
     assert out["ok"] and out["rows"][0]["PLAYER"] == "Luke Kennard"
     assert out["rows"][0]["FG3_PCT"] == 0.478
     assert out["meta"]["qualification"] == "82+ made threes"
-    assert "47.8%" in out["meta"]["deterministic_answer"]
+    assert out["rows"][0]["FG3A"] == 245
+    answer = out["meta"]["deterministic_answer"]
+    assert all(name in answer for name in (
+        "Luke Kennard", "Bobby Portis", "Cam Spencer",
+        "Jaylon Tyson", "Rui Hachimura",
+    ))
+    assert "47.8%" in answer and "245 attempts" in answer
 
 
 def test_three_point_prompt_forces_leader_tool():

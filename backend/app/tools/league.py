@@ -631,11 +631,13 @@ def get_leaders(stat_category: str = "PTS", season: str = SEASON) -> dict[str, A
                     "stat_category": stat_category, "rows": len(rows),
                     "qualification": "82+ made threes"}
             if rows:
-                lead = rows[0]
+                leaders = "; ".join(
+                    f"{row['PLAYER']} {row['FG3_PCT'] * 100:.1f}% "
+                    f"({row['FG3M']} makes on {row['FG3A']} attempts)"
+                    for row in rows[:5]
+                )
                 meta["deterministic_answer"] = (
-                    f"{lead['PLAYER']} leads qualified NBA players in "
-                    f"three-point percentage at {lead['FG3_PCT'] * 100:.1f}% "
-                    f"({lead['FG3M']} makes on {lead['FG3A']} attempts). "
+                    f"Qualified three-point percentage leaders: {leaders}. "
                     "Qualification: 82+ made threes.")
         except Exception:
             rows = []
@@ -652,8 +654,10 @@ def get_leaders(stat_category: str = "PTS", season: str = SEASON) -> dict[str, A
     # the AST leaders table rendered without an AST column).
     # QA #30 nit: leaders tables carried every raw column (FGM/FGA on an
     # AST leaderboard). Keep identity + the asked stat + context only.
-    pin = ["RANK", "PLAYER", "TEAM", stat_category, "GP", "MIN",
-           "PERCENTILE"]
+    pin = ["RANK", "PLAYER", "TEAM", stat_category]
+    if stat_category == "FG3_PCT":
+        pin.extend(["FG3M", "FG3A"])
+    pin.extend(["GP", "MIN", "PERCENTILE"])
     pinned = []
     for r in rows:
         if not isinstance(r, dict):
@@ -1823,6 +1827,7 @@ def _pick_value_for_slot(slot: int, is_frp: bool) -> float:
 @tool
 def get_trade_check(
     team_a: str = "", players_a: str = "", team_b: str = "", players_b: str = "",
+    season: str = SEASON,
 ) -> dict[str, Any]:
     """Trade legality check. Player names comma separated per side.
 
@@ -1830,6 +1835,34 @@ def get_trade_check(
     apron, 100 percent above it, no aggregation above the second apron.
     Picks and exceptions stay out of v1.
     """
+
+    if not players_a and not players_b:
+        return {"tool": "get_trade_check", "ok": False,
+                "error": "two teams needed"}
+
+    from .. import store as _store
+
+    guard_con = _store.connect()
+    try:
+        salary_season, salary_rows, _ = _salary_vintage(guard_con)
+        if salary_rows and salary_season and salary_season != season:
+            return {"tool": "get_trade_check", "ok": False,
+                    "error": (f"salary data is for {salary_season}, not {season}; "
+                              "trade math was not calculated")}
+        for supplied_team, players in ((team_a, players_a), (team_b, players_b)):
+            if not supplied_team:
+                continue
+            for player in [x.strip() for x in str(players).split(",") if x.strip()]:
+                row = guard_con.execute(
+                    "SELECT TEAM FROM silver_salaries WHERE lower(PLAYER_NAME) = lower(?) LIMIT 1",
+                    [player],
+                ).fetchone()
+                if row and str(row[0] or "").upper() != supplied_team.upper():
+                    return {"tool": "get_trade_check", "ok": False,
+                            "error": (f"salary data lists {player} with {row[0]}, "
+                                      f"not {supplied_team.upper()}; trade math was not calculated")}
+    finally:
+        guard_con.close()
 
     if (not team_a or not team_b) and players_a and players_b:
         # 2026-09-13 compose probe: the agent called this with players

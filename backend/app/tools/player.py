@@ -826,9 +826,19 @@ def get_season_averages(player_id: str | int, season: str = SEASON) -> dict[str,
                           f"lines cover 2014-15 through the current "
                           f"season, so this one is outside dataset "
                           f"coverage.")}
+    name = str(line.get("PLAYER") or player_id)
+    answer = (
+        f"{name} averaged {float(line['PPG']):g} points, "
+        f"{float(line['RPG']):g} rebounds, and {float(line['APG']):g} assists "
+        f"in {int(line['GP'])} games during the {season} season. "
+        f"He shot {float(line['FG_PCT']) * 100:.1f}% from the field, "
+        f"{float(line['FG3_PCT']) * 100:.1f}% from three, and "
+        f"{float(line['FT_PCT']) * 100:.1f}% at the line."
+    )
     return {"tool": "get_season_averages", "ok": True, "rows": [line],
             "meta": {"source": "basketball-reference", "season": season,
-                     "coverage": "season_line"}}
+                     "coverage": "season_line",
+                     "deterministic_answer": answer}}
 
 
 @tool
@@ -899,6 +909,13 @@ def get_playoff_intel(player_id: str | int, season: str = SEASON) -> dict[str, A
     meta["totals_note"] = (
         "Canonical series totals - quote these verbatim for any "
         "aggregate ask instead of summing the rows yourself.")
+    gp = len(slim)
+    if gp:
+        meta["deterministic_answer"] = (
+            f"{_disp} averaged {meta['totals']['PTS'] / gp:.1f} points, "
+            f"{meta['totals']['REB'] / gp:.1f} rebounds, and "
+            f"{meta['totals']['AST'] / gp:.1f} assists over {gp} playoff "
+            f"games in the {season} season.")
     return {"tool": "get_playoff_intel", "ok": True, "rows": slim, "meta": meta}
 
 

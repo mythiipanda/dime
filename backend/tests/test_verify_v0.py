@@ -76,3 +76,108 @@ def test_numeral_provenance_records_violations():
 def test_numeral_provenance_handles_empty_state():
     assert _verify_draft_numerals({}, "") == []
     assert _verify_draft_numerals({"tool_results": None}, None) == []
+
+
+def test_numeral_provenance_accepts_percent_scaling_and_rounding():
+    state = {"tool_results": [{"rows": {"probability": 0.548,
+                                         "margin": 1.98}}]}
+    assert _verify_draft_numerals(
+        state, "Boston has a 54.8% chance and is favored by 2 points.") == []
+
+
+def test_presentation_does_not_ship_unverified_figures_clean():
+    async def _go():
+        state = {"question": "rank them", "analysis": "Wrong has 99.9 points.",
+                 "tool_results": [{"tool": "x", "ok": True,
+                                   "rows": [{"PLAYER": "Right", "PTS": 10}]}],
+                 "calls_made": [], "history": [], "primary": "p", "model": "m"}
+        async for event in presentation_agent(state):
+            if event.get("type") == "final_answer":
+                return event["data"]["text"]
+
+    answer = asyncio.run(_go())
+    assert "99.9" not in answer
+    assert "could not verify every figure" in answer
+
+
+def test_game_prediction_publishes_verified_deterministic_summary():
+    from app.graph import _triage_seed
+
+    async def _go():
+        state = {"question": "Who wins Celtics vs Knicks?", "history": [],
+                 "tool_results": [], "calls_made": [], "round": 0}
+        async for _ in _triage_seed(
+                state["question"], "primary", "model", state):
+            pass
+        state.update({"analysis": "wrong 99.9", "primary": "p", "model": "m"})
+        async for event in presentation_agent(state):
+            if event.get("type") == "final_answer":
+                return event["data"]["text"]
+
+    answer = asyncio.run(_go())
+    assert "54.8%" in answer and "2.0-point edge" in answer
+    assert "could not verify" not in answer
+
+
+def test_deterministic_prediction_suppresses_discarded_draft_caution(monkeypatch):
+    from app import graph
+    from app.graph import analytics_agent
+
+    async def fake_stream(*args, **kwargs):
+        yield {"text": "Model draft derives a 9.6-point probability gap."}
+
+    monkeypatch.setattr(graph, "astream_with_fallback", fake_stream)
+
+    async def _go():
+        state = {"question": "Who wins Celtics vs Knicks?", "history": [],
+                 "tool_results": [], "calls_made": [], "round": 0,
+                 "primary": "p", "model": "m", "ledger": []}
+        async for _ in graph._triage_seed(
+                state["question"], "primary", "model", state):
+            pass
+        events = []
+        async for event in analytics_agent(state):
+            events.append(event)
+        return events
+
+    events = asyncio.run(_go())
+    cautions = [event for event in events
+                if event["type"] == "custom_data"
+                and event["data"].get("unverified_numbers")]
+    assert cautions == []
+
+
+def test_wrapped_authoritative_answer_suppresses_discarded_draft_caution(monkeypatch):
+    from app import graph
+    from app.graph import analytics_agent
+
+    async def fake_stream(*args, **kwargs):
+        yield {"text": "Draft invents 022, 1, and 2."}
+
+    monkeypatch.setattr(graph, "astream_with_fallback", fake_stream)
+
+    async def _go():
+        state = {"question": "What were Luka Doncic's stats in 2022-23?",
+                 "history": [], "tool_results": [], "calls_made": [], "round": 0,
+                 "primary": "p", "model": "m", "ledger": []}
+        async for _ in graph._triage_seed(
+                state["question"], "primary", "model", state):
+            pass
+        events = []
+        async for event in analytics_agent(state):
+            events.append(event)
+        return state, events
+
+    state, events = asyncio.run(_go())
+    assert not [e for e in events if e["type"] == "custom_data"
+                and e["data"].get("unverified_numbers")]
+    answer = asyncio.run(_final_answer(state))
+    assert "32.4 points" in answer and "2022-23" in answer
+    assert "could not verify" not in answer
+
+
+async def _final_answer(state):
+    async for event in presentation_agent(state):
+        if event.get("type") == "final_answer":
+            return event["data"]["text"]
+    raise AssertionError("no final answer")

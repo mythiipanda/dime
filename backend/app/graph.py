@@ -435,7 +435,7 @@ _PREDICT_RX = re.compile(
     r"\bprojected\s+(total|score)\b|"
     r"\bpre[\s-]?game\s+(monte\s*carlo|prediction|estimate)|"
     r"\bmonte\s*carlo\b|"
-    r"\bpredict(?:s|ed|ing)?\s+(?:the\s+)?(?:score|winner|game|matchup)\b|"
+    r"\bpredict(?:s|ed|ing)?\b|\bprediction\b|"
     r"\bchances?\s+of\s+winning\b|"
     r"\bfavor\w*\b",
     re.IGNORECASE)
@@ -1532,7 +1532,8 @@ async def _triage_seed(question: str, primary: str, model: str,
                 # no-data branch and the LLM never runs.
                 if state["tool_results"] and state["tool_results"][-1] is _pout:
                     state["tool_results"][-1] = {
-                        "tool": "get_game_prediction", "rows": [_pout]}
+                        "tool": "get_game_prediction", "rows": [_pout],
+                        "meta": _pout.get("meta") or {}}
                 async for _e in _triage_terminal(question, state):
                     yield _e
             return
@@ -2213,7 +2214,13 @@ async def _triage_seed(question: str, primary: str, model: str,
                                 "comeback proxy; play-by-play margin "
                                 "data is not in the dataset. Name the "
                                 "WINS (count) leader as the answer; "
-                                "winning percentage is secondary."}}
+                                "winning percentage is secondary.",
+                        "deterministic_answer": (
+                            f"{_cb[0].get('TEAM')} led this comeback "
+                            f"proxy with {_cb[0].get('W')} wins when "
+                            "trailing at halftime. This is not a measure "
+                            "of the largest in-game deficit overcome.")
+                        if _cb else None}}
             async for _e in _triage_terminal(question, state):
                 yield _e
             return
@@ -2236,6 +2243,25 @@ async def _triage_seed(question: str, primary: str, model: str,
             async for _e in _triage_terminal(question, state):
                 yield _e
         return
+    if (len(_named_p) == 1
+            and re.search(r"\bplayoffs?\b|\bpostseason\b|\bfinals\b",
+                          question, re.IGNORECASE)
+            and re.search(r"\baverag\w*|\bstats?\b|\bnumbers\b|"
+                          r"\bhow (?:did|was)\b|\b[prs]pg\b|\bapg\b",
+                          question, re.IGNORECASE)
+            and not is_compare and not is_trade and not is_cast):
+        _npseason = "2025-26"
+        _npm = re.search(r"(20\d\d)\s*-\s*(\d\d)", question)
+        if _npm:
+            _npseason = f"{_npm.group(1)}-{_npm.group(2)}"
+        _nph: dict[str, Any] = {}
+        async for _e in _triage_tool(
+                "get_playoff_intel",
+                {"player_id": _named_p[0], "season": _npseason}, state, _nph):
+            yield _e
+        async for _e in _triage_terminal(question, state):
+            yield _e
+        return
     is_season_avg = (
         len(_named_p) == 1
         and _SEASON_AVG_RX.search(question)
@@ -2244,6 +2270,8 @@ async def _triage_seed(question: str, primary: str, model: str,
         and not is_trade
         and not is_cast
         and not _PREDICT_LIVE_RX.search(question)
+        and not re.search(r"\bplayoffs?\b|\bpostseason\b|\bfinals\b",
+                          question, re.IGNORECASE)
     )
     if is_season_avg:
         # Single-stat asks used to fall through to the planner, which
@@ -3054,8 +3082,8 @@ async def _triage_seed(question: str, primary: str, model: str,
                 "note": (f"top {_bfull} scorers by per-game "
                          "points (20+ games); 'best player' "
                          "read as the team's leading scorers")}
+            _btop = _brows[0]
             if _bfinals:
-                _btop = _brows[0]
                 _bmeta["note"] = (
                     f"top {_bfull} scorers in the Finals series, "
                     "from the Finals game logs")
@@ -3064,6 +3092,11 @@ async def _triage_seed(question: str, primary: str, model: str,
                     f"Finals scorer at {_btop['PPG']} points per game "
                     f"over {_btop['GP']} games "
                     f"({int(_btop['PTS'])} total).")
+            else:
+                _bmeta["deterministic_answer"] = (
+                    f"{_btop['PLAYER']} led the {_bfull} in scoring "
+                    f"at {_btop['PPG']} points per game over "
+                    f"{_btop['GP']} games in the 2025-26 season.")
             _bres = {
                 "tool": "pin_team_best_player", "ok": True,
                 "rows": _brows,
@@ -3388,6 +3421,7 @@ async def _triage_seed(question: str, primary: str, model: str,
         if sides:
             from .tools import v1_tools
 
+            sides["season"] = season
             fn = next((t for t in v1_tools if t.name == "get_trade_check"),
                       None)
             if fn is not None:
@@ -4172,6 +4206,23 @@ def _with_title(rec: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _authoritative_answer(results: list[dict[str, Any]]) -> str | None:
+    """Return an answer owned by a deterministic tool, including pin wrappers."""
+    for result in results:
+        if not isinstance(result, dict):
+            continue
+        candidates = [result]
+        rows = result.get("rows")
+        if (isinstance(rows, list) and len(rows) == 1
+                and isinstance(rows[0], dict)):
+            candidates.append(rows[0])
+        for candidate in candidates:
+            meta = candidate.get("meta")
+            if isinstance(meta, dict) and meta.get("deterministic_answer"):
+                return str(meta["deterministic_answer"])
+    return None
+
+
 def _flatten_tables(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     def _sanitize(rec: dict[str, Any]) -> dict[str, Any] | None:
         tool = rec.get("tool")
@@ -4832,10 +4883,11 @@ async def analytics_agent(state: DimeState) -> AsyncGenerator[dict[str, Any], No
     except Exception as exc:
         state["analysis"] = ""
         yield _event("error", {"node": "analytics", "message": str(exc)[:200]})
-    unverified = [
-        n for n in _numbers(state["analysis"])
-        if n not in evidence and len(n) > 2
-    ][:5]
+    deterministic = _authoritative_answer(state["tool_results"]) is not None
+    unverified = (
+        [] if deterministic
+        else _verify_draft_numerals(state, state["analysis"])[:5]
+    )
     if unverified:
         yield _event("custom_data", {"node": "analytics",
                                      "unverified_numbers": unverified})
@@ -5386,7 +5438,15 @@ def _verify_draft_numerals(state: dict, text: str) -> list[str]:
     try:
         raw = _json.dumps(state.get("tool_results") or [])
         raw += _json.dumps(state.get("ledger") or [])
-        allowed = {_norm(n) for n in re.findall(r"\d+(?:\.\d+)?", raw)}
+        allowed: set[str] = set()
+        for token in re.findall(r"\d+(?:\.\d+)?", raw):
+            allowed.add(_norm(token))
+            try:
+                value = float(token)
+                for variant in (value * 100, round(value, 1), round(value, 2)):
+                    allowed.add(_norm(f"{variant:g}"))
+            except ValueError:
+                pass
         try:
             from .tools._core import SEASON as _S
             allowed |= set(re.findall(r"\d+", _S))
@@ -5574,33 +5634,33 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
     # F66: multi-metric team compare ships deterministic - the payload
     # built the sentence, the LLM narrative is ignored (v67 design
     # law: LLM-composed numerals are untrusted on pinned lanes).
-    for _tr in state.get("tool_results") or []:
-        if (isinstance(_tr, dict)
-                and isinstance(_tr.get("meta"), dict)
-                and _tr["meta"].get("deterministic_answer")):
-            _det = str(_tr["meta"]["deterministic_answer"])
+    _authoritative = _authoritative_answer(state.get("tool_results") or [])
+    if _authoritative is not None:
+        _scrubbed = _authoritative
+        for _tr in state.get("tool_results") or []:
+            if not isinstance(_tr, dict):
+                continue
+            _candidate = _tr
+            _rows = _tr.get("rows")
+            if (isinstance(_rows, list) and len(_rows) == 1
+                    and isinstance(_rows[0], dict)
+                    and isinstance(_rows[0].get("meta"), dict)
+                    and _rows[0]["meta"].get("deterministic_answer")):
+                _candidate = _rows[0]
+            _meta = _candidate.get("meta")
+            if not (isinstance(_meta, dict)
+                    and _meta.get("deterministic_answer") == _authoritative):
+                continue
             try:
-                if _tr.get("tool") not in ("get_trade_check",
-                                           "pin_team_scoring_record",
-                                           "get_team_four_factors"):
-                    # Trade verdicts quote next-season salary-sheet
-                    # figures with their own as-of date; the generic
-                    # current-season header would misstate them. The
-                    # team scoring-record pin carries its own
-                    # historical-span coverage line; the four-factors
-                    # pin writes its coverage line into the det.
+                if _candidate.get("tool") not in (
+                        "get_trade_check", "pin_team_scoring_record",
+                        "get_team_four_factors"):
                     from .tools._core import SEASON as _CUR_SEASON
-                    # F72: the header must follow the ANSWERED season.
-                    # get_player_rankings answers historical seasons
-                    # (meta.season "2015-16") but the header said the
-                    # current one - "This data covers 2025-26" over a
-                    # 2015-16 board, live on prod.
-                    _det_season = _tr["meta"].get("season") or _CUR_SEASON
-                    _det = (f"This data covers the {_det_season} season.\n"
-                            + _det)
+                    _det_season = _meta.get("season") or _CUR_SEASON
+                    _scrubbed = (f"This data covers the {_det_season} season.\n"
+                                 + _authoritative)
             except Exception:
                 pass
-            _scrubbed = _det
             break
     # v67 (v66 live smoke, 12:32 PM): team-totals answers paraphrased
     # away the leader's total - "scored the most total points with PTS
@@ -5790,7 +5850,12 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
     if state.get("_watchdog_tripped") and not _evidenced and not _delegate_ok:
         _scrubbed = _gap or _COMPUTE_FALLBACK
     _scrubbed = _renumber_lists(_scrubbed)
-    _verify_draft_numerals(state, _scrubbed)
+    _violations = _verify_draft_numerals(state, _scrubbed)
+    if _violations:
+        _scrubbed = (
+            "I pulled the relevant data but could not verify every figure in "
+            "the summary. The evidence panel below has the sourced results."
+        )
     _new_facts = _extract_ledger_facts(state)
     if _new_facts:
         yield _event("ledger_facts", {"facts": _new_facts})

@@ -7,7 +7,7 @@ import os
 import re
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import FileResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from .graph import run_chat
 from .providers import models_catalog
@@ -137,10 +137,20 @@ def threads(client: str = Query("")) -> dict:
 
 
 class TradeBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     team_a: str = ""
-    players_a: str = ""
+    players_a: str | list[str] = ""
     team_b: str = ""
-    players_b: str = ""
+    players_b: str | list[str] = ""
+    season: str = "2025-26"
+
+    @field_validator("players_a", "players_b")
+    @classmethod
+    def normalize_players(cls, value: str | list[str]) -> str:
+        if isinstance(value, list):
+            return ", ".join(item.strip() for item in value if item.strip())
+        return value
 
 
 @router.post("/trade/check")
@@ -150,6 +160,7 @@ def trade_check(body: TradeBody) -> dict:
     return get_trade_check.invoke({
         "team_a": body.team_a, "players_a": body.players_a,
         "team_b": body.team_b, "players_b": body.players_b,
+        "season": body.season,
     })
 
 
