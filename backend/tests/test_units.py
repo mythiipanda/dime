@@ -415,3 +415,12 @@ def test_compare_metrics_adjudicates():
     assert "EPM" in [u["metric"] for u in rows["unavailable"]]
     leaders = {m["leader"] for m in rows["metrics"]}
     assert leaders <= {"a", "b", "tie", "na"}
+
+
+def test_text_to_sql_allowlist_covers_current_analysis_tables():
+    from app.tools.league import _SQL_TABLES
+
+    assert {
+        "silver_advanced", "silver_player_season", "silver_on_off",
+        "silver_four_factors", "silver_four_factors_team", "silver_cap_players",
+    } <= set(_SQL_TABLES)

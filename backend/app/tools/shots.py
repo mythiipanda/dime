@@ -882,7 +882,9 @@ def _run_search(con: Any, season: str, player: str, team: str,
         except (TypeError, ValueError):
             period = None
         shots.append({
+            "player_id": int(r["PLAYER_ID"]),
             "player": _player_full_name(r["PLAYER_ID"]) or r["player"],
+            "team_id": int(r["TEAM_ID"]),
             "team": _team_abbr(r["TEAM_ID"]),
             "period": period,
             "clock": format_clock(r["MINUTES_REMAINING"],

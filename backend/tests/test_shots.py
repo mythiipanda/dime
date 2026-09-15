@@ -572,3 +572,41 @@ def test_non_late_period_late_clock_still_contradicts_with_note():
     assert res["aggregate"]["attempts"] == 0
     assert "note" in res["meta"]
     assert "late_clock" in res["meta"]["note"]
+
+
+def test_individual_shot_rows_keep_canonical_player_and_team_ids(monkeypatch):
+    class FakeCon:
+        description = []
+        def execute(self, sql, params=None):
+            if "COUNT(*) FROM silver_shots WHERE _season" in sql:
+                self.description = [("count_star()",)]
+                self._rows = [(1,)]
+            elif "GROUP BY 1" in sql:
+                self.description = []
+                self._rows = []
+            elif "SELECT PLAYER_NAME AS player" in sql:
+                self.description = [(name,) for name in [
+                    "player", "PLAYER_ID", "TEAM_ID", "period",
+                    "MINUTES_REMAINING", "SECONDS_REMAINING", "zone",
+                    "zone_label", "action", "distance_ft", "SHOT_MADE_FLAG",
+                    "GAME_ID"]]
+                self._rows = [("Tatum", 1628369, 1610612738, 1, 5, 0,
+                               "corner_3", "Left Corner 3", "Jump Shot",
+                               23.0, 1, "game")]
+            else:
+                self.description = [(name,) for name in [
+                    "attempts", "makes", "threes_made", "games"]]
+                self._rows = [(1, 1, 1, 1)]
+            return self
+        def fetchall(self): return self._rows
+        def fetchone(self): return self._rows[0]
+        def close(self): pass
+
+    monkeypatch.setattr("app.tools.shots._warehouse_conn", FakeCon)
+    monkeypatch.setattr("app.tools.shots._resolve_player",
+                        lambda *args: (1628369, "exact", None))
+    result = search_shots.invoke({"player": "Tatum", "zones": "corner_3"})
+    row = result["shots"][0]
+    assert row["player_id"] == 1628369
+    assert row["team_id"] == 1610612738
+    assert row["team"] == "BOS"
