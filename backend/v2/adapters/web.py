@@ -169,9 +169,12 @@ class JinaReader:
 
     name = "jina-reader"
 
-    def __init__(self, *, api_key: str = "",
+    def __init__(self, *, api_key: str | None = None,
                  base_url: str = "https://r.jina.ai",
                  client: httpx.AsyncClient | None = None) -> None:
+        if api_key is None:
+            from app.config import settings
+            api_key = settings.jina_api_key
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
         self._client = client

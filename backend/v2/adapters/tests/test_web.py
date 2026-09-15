@@ -104,3 +104,15 @@ def test_jina_key_is_optional_config(monkeypatch):
     monkeypatch.setenv("JINA_API_KEY", "jina-configured")
     from app.config import Settings
     assert Settings().jina_api_key == "jina-configured"
+
+
+def test_jina_reader_defaults_to_settings_key(monkeypatch):
+    monkeypatch.setattr("app.config.settings.jina_api_key", "jina-from-settings")
+    from v2.adapters.web import JinaReader
+    assert JinaReader()._api_key == "jina-from-settings"
+
+
+def test_jina_reader_can_force_keyless_with_configured_key(monkeypatch):
+    monkeypatch.setattr("app.config.settings.jina_api_key", "jina-from-settings")
+    from v2.adapters.web import JinaReader
+    assert JinaReader(api_key="")._api_key == ""
