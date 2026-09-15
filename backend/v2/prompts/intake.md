@@ -25,6 +25,7 @@ Fields:
 - as_of (ISO date) or null: the date the answer should speak as of.
 - subquestions (list of str): the distinct questions inside the goal.
 - required_evidence (list of str): capability names the answer needs.
+- skills (list of str): applicable names from the supplied skill catalog; [] when none applies.
 - assumptions (list of str): interpretations you fixed without being told.
 - open_questions (list of str): ambiguities you could not resolve.
 
@@ -37,6 +38,8 @@ Fields:
 - Carry ambiguity into assumptions or open_questions; never silently guess
   on identity, season, metric, or qualification.
 - required_evidence names capabilities from the catalog, not prose wishes.
+- Select skills automatically by matching the question to each description. Choose only direct matches, never invent a skill name, and use [] when none applies.
+- Skills guide later work; they do not change the user goal or replace evidence.
 - Do not answer the question. Do not plan tool calls.
 
 ## Stop condition

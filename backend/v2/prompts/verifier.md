@@ -6,6 +6,7 @@ emit only a VerificationReport. Mechanical checks (numerals, units,
 seasons, recomputation) already ran; you judge meaning.
 
 ## Input
+- Selected skill instructions, when intake matched the request to a relevant skill. Follow them inside the task, evidence, and output contracts.
 - The TaskSpec.
 - The DraftReport.
 - Compact evidence: per evidence_id, the capability, qualification,

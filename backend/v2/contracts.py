@@ -64,6 +64,7 @@ class TaskSpec(BaseModel):
     required_evidence: list[str] = Field(default_factory=list)
     assumptions: list[str] = Field(default_factory=list)
     open_questions: list[str] = Field(default_factory=list)
+    skills: list[str] = Field(default_factory=list)
 
 
 class PlanNode(BaseModel):

@@ -17,6 +17,7 @@ from v2.contracts import (
 )
 from v2.prompts import load_prompt
 from v2.runtime.ledger import RequestEnvelope
+from v2.skills import SkillLibrary, skill_hashes
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -76,12 +77,14 @@ class ModelStage:
         model_name: str,
         planner_version: str = "v2",
         budgets: Mapping[str, int | float] | None = None,
+        skill_library: SkillLibrary | None = None,
     ) -> None:
         self._model = model
         self._provider = provider
         self._model_name = model_name
         self._planner_version = planner_version
         self._budgets = dict(budgets or {})
+        self._skills = skill_library or SkillLibrary()
         self.last_envelope: RequestEnvelope | None = None
 
     async def _generate(self, payload: Mapping[str, Any]) -> Any:
@@ -95,6 +98,7 @@ class ModelStage:
             tool_schemas=self.schema.model_json_schema(),
             planner_version=self._planner_version,
             budgets=self._budgets,
+            skill_hashes=skill_hashes(list(payload.get("skills", []))),
         )
         self.last_envelope = envelope
         return await self._model.generate(
@@ -115,9 +119,13 @@ class ModelIntake(ModelStage):
         self._catalog = dict(capability_catalog)
 
     async def understand(self, request: str) -> TaskSpec:
-        return await self._generate(
-            {"question": request, "capability_catalog": self._catalog}
-        )
+        task = await self._generate({
+            "question": request,
+            "capability_catalog": self._catalog,
+            "skill_catalog": self._skills.catalog(),
+        })
+        self._skills.activate(task.skills)
+        return task
 
 
 class ModelPlanner(ModelStage):
@@ -130,9 +138,11 @@ class ModelPlanner(ModelStage):
         self._catalog = dict(capability_catalog)
 
     async def plan(self, task: TaskSpec) -> Plan:
-        return await self._generate(
-            {"task": task.model_dump(mode="json"), "capability_catalog": self._catalog}
-        )
+        return await self._generate({
+            "task": task.model_dump(mode="json"),
+            "capability_catalog": self._catalog,
+            "skills": self._skills.activate(task.skills),
+        })
 
 
 class ModelSynthesizer(ModelStage):
@@ -147,6 +157,7 @@ class ModelSynthesizer(ModelStage):
             {
                 "task": task.model_dump(mode="json"),
                 "evidence": [item.model_dump(mode="json") for item in evidence],
+                "skills": self._skills.activate(task.skills),
             }
         )
 
@@ -167,6 +178,7 @@ class ModelRepairer(ModelStage):
             "task": task.model_dump(mode="json"),
             "draft": draft.model_dump(mode="json"),
             "verification": verification.model_dump(mode="json"),
+            "skills": self._skills.activate(task.skills),
             "admitted_evidence": [
                 item.model_dump(mode="json") for item in evidence.values()
             ],
@@ -199,6 +211,7 @@ class ModelSemanticVerifier(ModelStage):
                 "task": task.model_dump(mode="json"),
                 "draft": draft.model_dump(mode="json"),
                 "evidence": compact,
+                "skills": self._skills.activate(task.skills),
             }
         )
 

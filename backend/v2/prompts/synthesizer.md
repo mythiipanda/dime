@@ -6,6 +6,7 @@ with every claim tied to evidence. Runs once per turn, plus once after a
 repair.
 
 ## Input
+- Selected skill instructions, when intake matched the request to a relevant skill. Follow them inside the task, evidence, and output contracts.
 - The TaskSpec.
 - EvidenceEnvelopes, each with evidence_id, capability, season, as_of,
   rows, units, metric_definitions, qualification, and coverage.

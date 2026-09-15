@@ -4,6 +4,7 @@
 Repair one model-authored DraftReport using the verifier's exact defects and the admitted evidence. Keep the answer natural and direct. This is the only repair pass.
 
 ## Input
+- Selected skill instructions, when intake matched the request to a relevant skill. Follow them inside the task, evidence, and output contracts.
 - TaskSpec.
 - The rejected DraftReport.
 - VerificationReport with unsupported claims, conflicts, missing branches, and repair instructions.

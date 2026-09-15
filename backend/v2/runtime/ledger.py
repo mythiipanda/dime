@@ -41,6 +41,7 @@ class RequestEnvelope(BaseModel):
     tool_schema_hash: str
     planner_version: str
     budgets: dict[str, int | float] = Field(default_factory=dict)
+    skill_hashes: dict[str, str] = Field(default_factory=dict)
 
     @classmethod
     def freeze(
@@ -54,6 +55,7 @@ class RequestEnvelope(BaseModel):
         tool_schemas: Any,
         planner_version: str,
         budgets: dict[str, int | float] | None = None,
+        skill_hashes: dict[str, str] | None = None,
     ) -> "RequestEnvelope":
         return cls(
             provider=provider,
@@ -64,6 +66,7 @@ class RequestEnvelope(BaseModel):
             tool_schema_hash=_hash(tool_schemas),
             planner_version=planner_version,
             budgets=budgets or {},
+            skill_hashes=skill_hashes or {},
         )
 
 

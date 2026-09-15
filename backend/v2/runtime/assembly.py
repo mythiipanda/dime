@@ -19,6 +19,7 @@ from v2.contracts import DraftReport, VerificationReport
 from v2.runtime import FileLedger, PlanExecutor, RecordedCapability, RunLedger, Runtime
 from v2.runtime.policy import ExecutionPolicy
 from v2.runtime.verifier import verify_mechanical
+from v2.skills import SkillLibrary
 
 
 class MechanicalVerifier:
@@ -65,6 +66,7 @@ def build_runtime(
     resolved_ledger_dir = policy.ledger_dir
     ledger = (FileLedger(Path(resolved_ledger_dir) / f"{run_id}.jsonl", run_id)
               if resolved_ledger_dir is not None else RunLedger(run_id))
+    skills = SkillLibrary()
     model = RecordedStructuredModel(
         ProviderStructuredModel(provider, model_name), ledger, turn_id=run_id)
     catalog = capability_catalog()
@@ -74,19 +76,19 @@ def build_runtime(
     }
     runtime = Runtime(
         intake=ModelIntake(model, provider=provider, model_name=model_name,
-                          capability_catalog=catalog),
+                          capability_catalog=catalog, skill_library=skills),
         planner=ModelPlanner(model, provider=provider, model_name=model_name,
-                             capability_catalog=catalog),
+                             capability_catalog=catalog, skill_library=skills),
         executor=PlanExecutor(
             capabilities, max_concurrency=policy.max_concurrency,
             max_failures=policy.max_failures),
         synthesizer=ModelSynthesizer(
-            model, provider=provider, model_name=model_name),
+            model, provider=provider, model_name=model_name, skill_library=skills),
         mechanical_verifier=MechanicalVerifier(),
         semantic_verifier=ModelSemanticVerifier(
-            model, provider=provider, model_name=model_name),
+            model, provider=provider, model_name=model_name, skill_library=skills),
         repairer=ModelRepairer(
-            model, provider=provider, model_name=model_name),
+            model, provider=provider, model_name=model_name, skill_library=skills),
         ledger=ledger,
         progress=progress,
     )

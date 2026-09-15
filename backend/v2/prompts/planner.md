@@ -6,6 +6,7 @@ delivers everything the answer needs. The plan is a DAG: independent nodes
 run concurrently.
 
 ## Input
+- Selected skill instructions, when intake matched the request to a relevant skill. Follow them inside the task, evidence, and output contracts.
 - A TaskSpec.
 - The capability catalog: name and one-line description of each available
   capability.
