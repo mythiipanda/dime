@@ -145,13 +145,18 @@ def test_standings_envelope_shape():
     assert env.observed_at.tzinfo is not None
 
 
-def test_meta_season_overrides_argument():
+def test_response_season_must_match_scoped_request():
     payload = {**STANDINGS_PAYLOAD,
                "meta": {"source": "warehouse", "season": "2024-25"}}
-    env = call_capability("standings", {"season": "2024-25"},
-                          tools={"get_standings": FakeTool(payload)})
-    assert env.season == "2024-25"
+    with pytest.raises(AdapterError, match="does not match requested season"):
+        call_capability("standings", {"season": "2025-26"},
+                        tools={"get_standings": FakeTool(payload)})
 
+
+def test_matching_response_season_is_preserved():
+    env = call_capability("standings", {"season": "2025-26"},
+                          tools={"get_standings": FakeTool(STANDINGS_PAYLOAD)})
+    assert env.season == "2025-26"
 
 def test_evidence_id_is_stable_and_content_addressed():
     args = {"season": "2025-26"}

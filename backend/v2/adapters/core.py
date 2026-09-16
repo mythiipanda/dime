@@ -79,8 +79,14 @@ def build_envelope(
         raise AdapterError(f"{spec.tool_name}: result meta must be an object")
     meta = raw_meta or {}
     season = meta.get("season")
-    if season is None and spec.season_arg:
-        season = arguments.get(spec.season_arg)
+    requested_season = arguments.get(spec.season_arg) if spec.season_arg else None
+    if season is None:
+        season = requested_season
+    elif (spec.task_season_scoped and requested_season is not None
+          and str(season) != str(requested_season)):
+        raise AdapterError(
+            f"{spec.tool_name}: response season {season} does not match "
+            f"requested season {requested_season}")
     warning_values = meta.get("warnings") or []
     if isinstance(warning_values, str):
         warnings = [warning_values]
