@@ -29,17 +29,25 @@ def admitted_evidence(entries: Iterable[LedgerEntry]) -> list[EvidenceEnvelope]:
 
 
 def tool_attempts(entries: Iterable[LedgerEntry]) -> list[dict[str, Any]]:
-    calls = {
-        entry.call_id: entry for entry in entries
-        if entry.kind == LedgerKind.TOOL_CALL and entry.call_id
-    }
+    calls: dict[str, LedgerEntry] = {}
+    for entry in entries:
+        if entry.kind != LedgerKind.TOOL_CALL or not entry.call_id:
+            continue
+        previous = calls.get(entry.call_id)
+        if previous is not None and previous.data != entry.data:
+            raise ValueError(f"tool call id {entry.call_id} has conflicting payloads")
+        calls[entry.call_id] = entry
     attempts: list[dict[str, Any]] = []
+    results: set[str] = set()
     for entry in entries:
         if entry.kind != LedgerKind.TOOL_RESULT or not entry.call_id:
             continue
         call = calls.get(entry.call_id)
         if call is None:
-            continue
+            raise ValueError("tool result requires its recorded call")
+        if entry.call_id in results:
+            raise ValueError("tool call has multiple results")
+        results.add(entry.call_id)
         if set(call.data) != {"name", "args"}:
             raise ValueError("tool call has unexpected fields")
         if not isinstance(call.data["name"], str) or not call.data["name"].strip():

@@ -101,3 +101,24 @@ def test_admitted_evidence_rejects_conflicting_duplicate_identity() -> None:
 
     identical = ledger.entries[-1].model_copy(update={"sequence": 3})
     assert admitted_evidence([*ledger.entries, identical]) == [evidence]
+
+
+def test_tool_attempt_projection_rejects_orphan_conflict_and_duplicate_result() -> None:
+    import pytest
+    from v2.runtime.ledger import LedgerEntry
+
+    now = datetime.now(UTC)
+    call = LedgerEntry(sequence=1, run_id="run", kind="tool/call",
+        recorded_at=now, turn_id="turn", call_id="call",
+        data={"name": "standings", "args": {}})
+    result = LedgerEntry(sequence=2, run_id="run", kind="tool/result",
+        recorded_at=now, turn_id="turn", call_id="call",
+        data={"status": "failed", "error": "down"})
+    with pytest.raises(ValueError, match="recorded call"):
+        tool_attempts([result])
+    conflicting = call.model_copy(update={"sequence": 2,
+        "data": {"name": "ratings", "args": {}}})
+    with pytest.raises(ValueError, match="conflicting payloads"):
+        tool_attempts([call, conflicting, result.model_copy(update={"sequence": 3})])
+    with pytest.raises(ValueError, match="multiple results"):
+        tool_attempts([call, result, result.model_copy(update={"sequence": 3})])
