@@ -452,3 +452,24 @@ def test_adapter_preserves_singular_and_string_source_warnings(
         tools={"get_standings": FakeTool(payload)},
     )
     assert env.warnings == expected
+
+
+def test_adapter_preserves_source_as_of_and_warns_on_bad_date() -> None:
+    payload = {
+        "ok": True, "rows": {"team": "BOS", "payroll": 200_000_000},
+        "meta": {"source": "salary-sheet", "season": "2026-27",
+                 "salary_date": "2026-09-14T03:20:00Z"},
+    }
+    env = call_capability(
+        "contracts", {"team": "BOS"},
+        tools={"get_cap_ledger": FakeTool(payload)},
+    )
+    assert env.as_of.isoformat() == "2026-09-14"
+
+    payload["meta"]["salary_date"] = "unknown"
+    env = call_capability(
+        "contracts", {"team": "BOS"},
+        tools={"get_cap_ledger": FakeTool(payload)},
+    )
+    assert env.as_of is None
+    assert env.warnings == ["unparseable salary_date: unknown"]

@@ -5,7 +5,7 @@ import asyncio
 import hashlib
 import inspect
 import json
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any, Callable, Iterable, Mapping
 
 from ..contracts import EntityRef, EvidenceEnvelope
@@ -84,6 +84,15 @@ def build_envelope(
         warnings.append(result["ambiguity_note"])
     if isinstance(rows, list) and not rows:
         warnings.append("empty result set")
+    as_of = None
+    for key in ("as_of", "salary_date", "production_date"):
+        value = meta.get(key)
+        if value:
+            try:
+                as_of = date.fromisoformat(str(value).split("T", 1)[0])
+            except ValueError:
+                warnings.append(f"unparseable {key}: {value}")
+            break
     envelope_entities = list(entities or [])
     if spec.extract_entities is not None:
         envelope_entities = spec.extract_entities(rows) + envelope_entities
@@ -100,6 +109,7 @@ def build_envelope(
         season=str(season) if season is not None else None,
         vintages=vintages,
         task_season_scoped=spec.task_season_scoped,
+        as_of=as_of,
         entities=envelope_entities,
         rows=rows,
         units={key: unit for key, unit in spec.units.items()
