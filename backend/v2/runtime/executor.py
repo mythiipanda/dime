@@ -344,7 +344,10 @@ class PlanExecutor:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001
-                errors.setdefault(node.id, []).append(f"{type(exc).__name__}: {exc}")
+                message = f"{type(exc).__name__}: {exc}"
+                node_errors = errors.setdefault(node.id, [])
+                if message not in node_errors:
+                    node_errors.append(message)
         return node, None
 
     def _select_capability(self, node: PlanNode) -> Capability | None:

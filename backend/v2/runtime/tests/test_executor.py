@@ -74,6 +74,22 @@ async def test_retries_without_weakening_failure() -> None:
 
 
 @pytest.mark.anyio
+async def test_repeated_identical_failures_return_a_failed_partial_result() -> None:
+    result = await PlanExecutor({
+        "fake": FakeCapability("fake", {}, failures_before_success=2),
+    }).execute(
+        TaskSpec(goal="answer", mode=RunMode.QUICK, deliverable="text"),
+        Plan(nodes=[node("a", attempts=2)]),
+    )
+
+    assert result.plan.nodes[0].status == PlanStatus.FAILED
+    assert result.attempts == {"a": 2}
+    assert result.errors == {
+        "a": ["RuntimeError: injected capability failure"],
+    }
+
+
+@pytest.mark.anyio
 async def test_unknown_capability_fails_preflight() -> None:
     with pytest.raises(ValueError, match="exactly one registered capability"):
         await PlanExecutor({}).execute(
