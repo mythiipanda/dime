@@ -62,3 +62,22 @@ def test_successful_tool_result_drops_unknown_internal_fields():
     assert public == {
         "node": "tools", "name": "standings", "status": "ok", "rows": 30,
     }
+
+
+def test_thought_stream_replaces_internal_or_unbounded_text():
+    for text in (
+        "Traceback: provider failed at /srv/app.py",
+        "SELECT secret FROM private_table",
+        "x" * 1001,
+    ):
+        public = _sanitize_sse_event("thought_stream", {
+            "node": "data_retrieval", "text": text,
+        })
+        assert public["text"] == "Working through the evidence..."
+
+
+def test_curated_thought_stream_status_remains_visible():
+    public = _sanitize_sse_event("thought_stream", {
+        "node": "data_retrieval", "text": "Reading standings from the warehouse.",
+    })
+    assert public["text"] == "Reading standings from the warehouse."

@@ -34,6 +34,18 @@ def _sanitize_sse_event(etype: str, data: dict) -> dict:
         return {key: data[key] for key in ("node", "agent") if key in data} | {
             "text": "Working through the evidence...",
         }
+    if etype == "thought_stream" and isinstance(data, dict):
+        text = str(data.get("text", ""))
+        unsafe = (
+            len(text) > 1000
+            or any(marker in text for marker in (
+                "Traceback", "/srv/", "/home/", "Exception:", "Error:",
+                "SELECT ", "INSERT ", "UPDATE ", "DELETE ",
+            ))
+        )
+        return {key: data[key] for key in ("node", "agent") if key in data} | {
+            "text": ("Working through the evidence..." if unsafe else text),
+        }
     if etype == "tool_result" and isinstance(data, dict):
         if data.get("status") in {"fail", "failed", "error"} or data.get("error"):
             out = {key: data[key] for key in (
