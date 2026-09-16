@@ -429,3 +429,18 @@ def test_request_envelope_requires_canonical_hashes(field) -> None:
     envelope[field] = "not-a-hash"
     with pytest.raises(Exception, match="lowercase sha256"):
         RequestEnvelope.model_validate(envelope)
+
+
+def test_file_ledger_write_failure_does_not_mutate_memory(tmp_path, monkeypatch) -> None:
+    file = FileLedger(tmp_path / "run.jsonl", "run")
+    original_open = Path.open
+
+    def fail_open(path, *args, **kwargs):
+        if path == file.path:
+            raise OSError("disk full")
+        return original_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", fail_open)
+    with pytest.raises(OSError, match="disk full"):
+        file.append(LedgerKind.TURN_START, turn_id="turn", data={"request": "q"})
+    assert file.entries == ()

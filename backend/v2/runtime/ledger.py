@@ -448,12 +448,14 @@ class FileLedger:
 
     def append(self, *args: Any, **kwargs: Any) -> LedgerEntry:
         with self._lock:
-            entry = self.ledger.append(*args, **kwargs)
+            staged = RunLedger(self.run_id, self.ledger.entries)
+            entry = staged.append(*args, **kwargs)
             self.path.parent.mkdir(parents=True, exist_ok=True)
             with self.path.open("a", encoding="utf-8") as handle:
                 handle.write(entry.model_dump_json() + "\n")
                 handle.flush()
                 os.fsync(handle.fileno())
+            self.ledger = staged
             return entry
 
     def _read(self) -> list[LedgerEntry]:
