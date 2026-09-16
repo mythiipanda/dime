@@ -155,6 +155,21 @@ async def test_repairs_once_and_reverifies() -> None:
 
 
 @pytest.mark.anyio
+async def test_runtime_revalidates_repairer_output() -> None:
+    class InvalidRepairer:
+        async def repair(self, task, draft, evidence, verification):
+            return draft.model_copy(update={"sections": [" "]})
+
+    instance = runtime(
+        SequenceVerifier(VerificationStatus.REPAIR),
+        SequenceVerifier(VerificationStatus.PASS),
+        InvalidRepairer(),
+    )
+    with pytest.raises(ValueError, match="draft sections"):
+        await instance.run("answer")
+
+
+@pytest.mark.anyio
 async def test_exhausted_repair_returns_named_partial() -> None:
     class RejectingVerifier:
         async def verify(self, task, draft, evidence):

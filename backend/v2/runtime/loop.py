@@ -101,9 +101,10 @@ class Runtime:
                 break
             suffix = "" if attempt == 0 else f":{attempt + 1}"
             try:
-                draft = await self._stage(
-                    turn_id, f"repair{suffix}",
-                    self._repairer.repair(task, draft, evidence, verification))
+                repair_call = self._repairer.repair(
+                    task, draft, evidence, verification)
+                draft = DraftReport.model_validate((await self._stage(
+                    turn_id, f"repair{suffix}", repair_call)).model_dump())
                 repaired = True
                 verification = await self._stage(
                     turn_id, f"reverify{suffix}",
