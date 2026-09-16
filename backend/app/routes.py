@@ -187,6 +187,24 @@ async def _record_v2_shadow(
     ShadowStore(path).append(comparison)
 
 
+async def _record_shadow_capacity_failure(question: str, v1_outcome) -> None:
+    from v2.runtime.shadow import RunOutcome, ShadowStore, compare_outcomes
+
+    primary = await v1_outcome
+    comparison = compare_outcomes(question, primary, RunOutcome(status="failed"))
+    path = os.environ.get(
+        "DIME_V2_SHADOW_STORE", str(CARDS_DIR.parent / "v2-shadow.jsonl"))
+    ShadowStore(path).append(comparison)
+
+
+def _shadow_max_inflight() -> int:
+    try:
+        value = int(os.environ.get("DIME_V2_SHADOW_MAX_INFLIGHT", "8"))
+    except ValueError:
+        return 8
+    return min(64, max(1, value))
+
+
 def _consume_background_task(task) -> None:
     _SHADOW_TASKS.discard(task)
     try:
@@ -252,8 +270,13 @@ async def _stream(
         v1_outcome = loop.create_future() if _shadow_enabled() else None
         shadow_task = None
         if v1_outcome is not None:
-            shadow_task = asyncio.create_task(_record_v2_shadow(
-                question[:2000], (model or "")[:200], history, v1_outcome))
+            if len(_SHADOW_TASKS) >= _shadow_max_inflight():
+                shadow_run = _record_shadow_capacity_failure(
+                    question[:2000], v1_outcome)
+            else:
+                shadow_run = _record_v2_shadow(
+                    question[:2000], (model or "")[:200], history, v1_outcome)
+            shadow_task = asyncio.create_task(shadow_run)
             _SHADOW_TASKS.add(shadow_task)
             shadow_task.add_done_callback(_consume_background_task)
         try:
