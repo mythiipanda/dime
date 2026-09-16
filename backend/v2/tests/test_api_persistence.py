@@ -380,7 +380,7 @@ def test_failed_stream_tool_result_keeps_its_call_identity(monkeypatch):
     assert 'private plan text' not in response.text
 
 
-def test_v2_final_answer_does_not_overload_frontend_carry(monkeypatch):
+def test_v2_final_answer_carries_run_and_verification_metadata(monkeypatch):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     from v2.api import routes
@@ -394,6 +394,7 @@ def test_v2_final_answer_does_not_overload_frontend_carry(monkeypatch):
         verified_claims=[SimpleNamespace(
             claim=SimpleNamespace(text="Boston won 61 games."))],
         gaps=[],
+        verification=SimpleNamespace(status=SimpleNamespace(value="pass")),
         execution=SimpleNamespace(evidence=[]),
     )
 
@@ -411,9 +412,11 @@ def test_v2_final_answer_does_not_overload_frontend_carry(monkeypatch):
         "/api/v2/chat/stream", json={"q": "record?"})
 
     final_chunk = response.text.split("event: final_answer", 1)[1].split("\n\n", 1)[0]
-    assert '"carry"' not in final_chunk
-    assert '"run_id"' not in final_chunk
-    assert '"gaps"' not in final_chunk
+    assert '"carry"' in final_chunk
+    assert '"run_id"' in final_chunk
+    assert '"verification":"pass"' in final_chunk
+    assert '"verified_claims":1' in final_chunk
+    assert '"gaps":[]' in final_chunk
 
 
 def test_answer_text_publishes_only_adjudicated_model_prose():

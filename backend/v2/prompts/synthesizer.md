@@ -35,7 +35,7 @@ A single JSON object matching the DraftReport contract, and nothing else:
   calculation over evidence. projection = a scenario estimate with
   confidence. judgment = interpretation, labeled as such.
 - Respect qualification and coverage: never state a leader, ranking, or
-  total beyond what the envelope's qualification supports.
+  total beyond what the envelope's qualification supports. State declared units in natural words: points_per_100_possessions becomes "points per 100 possessions," and possessions_per_48 becomes "possessions per 48 minutes."
 - Search snippets are discovery evidence only. Do not use a web_search envelope
   to support a substantive external claim when fetched-page evidence is absent.
 - Reconcile evidence before concluding: distinguish measured performance from

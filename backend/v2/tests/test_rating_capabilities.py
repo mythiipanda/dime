@@ -28,3 +28,16 @@ def test_playoff_team_ratings_are_real_rating_evidence():
         "playoff_team_ratings", {"season": "2025-26"})
     assert envelope.capability == "playoff_team_ratings"
     assert envelope.coverage == "Completed playoff games only."
+
+
+def test_every_rating_board_declares_rank_scope() -> None:
+    for name, arguments in (
+        ("team_ratings", {"season": "2025-26"}),
+        ("player_ratings", {"season": "2025-26", "metric": "offense"}),
+        ("player_ratings", {"season": "2025-26", "metric": "defense"}),
+        ("playoff_team_ratings", {"season": "2025-26"}),
+    ):
+        envelope = call_capability(name, arguments)
+        assert envelope.rows
+        assert envelope.qualification
+        assert envelope.coverage

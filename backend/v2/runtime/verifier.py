@@ -198,7 +198,7 @@ def _metric_unit_reasons(claim: Claim,
             if unit_name in {"percent", "percent_0_100", "fraction_0_1"}:
                 if not percent_shown:
                     reasons.append(f"metric {metric} is stated without a percent unit")
-            elif unit_name not in text:
+            elif unit_name.replace("_", " ") not in text:
                 reasons.append(f"metric {metric} is stated without its declared unit {unit}")
     return reasons
 

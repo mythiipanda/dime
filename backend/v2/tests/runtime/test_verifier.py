@@ -322,3 +322,12 @@ def test_player_alias_ids_match_on_canonical_identity():
         claim = Claim(text=text, kind="observed", evidence_ids=["standings"])
         result = verify_mechanical(player_task, report(claim), [player_evidence])
         assert result.status == VerificationStatus.PASS
+
+
+def test_natural_language_rating_unit_matches_declared_machine_unit():
+    ev = evidence(units={"OFF_RATING": "points_per_100_possessions"})
+    ev = ev.model_copy(update={"rows": [{"TEAM": "Denver", "OFF_RATING": 126.1}]})
+    claim = Claim(text="Denver's offensive rating was 126.1 points per 100 possessions.", kind="observed", evidence_ids=[ev.evidence_id])
+    result = verify_mechanical(TaskSpec(goal="ratings", mode="quick", deliverable="answer"), report(claim), [ev], allowed_constants=[1])
+    assert result.status == "pass"
+    assert result.claim_results[0].supported

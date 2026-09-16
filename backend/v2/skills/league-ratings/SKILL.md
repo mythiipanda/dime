@@ -17,3 +17,5 @@ For ratings of teams in the playoffs, use `playoff_team_ratings`. `playoffs` can
 ## Complete the answer
 
 Cover every requested branch before synthesis. Compare lower defensive rating as better and higher offensive rating as better. Display the retrieved rating tables and state the season, population, sample floor, and metric limitation.
+
+Use natural unit wording in every rating claim: "points per 100 possessions." Do not expose schema labels such as `points_per_100_possessions` in prose.

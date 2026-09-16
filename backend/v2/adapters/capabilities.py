@@ -124,6 +124,8 @@ _LIST = [
         units={"OFF_RATING": POINTS_PER_100, "DEF_RATING": POINTS_PER_100,
                "NET_RATING": POINTS_PER_100, "PACE": "possessions_per_48"},
         metric_definitions={"NET_RATING": NET_RATING_DEF},
+        qualification="All NBA teams in the selected regular season.",
+        coverage="Full regular-season team rating table.",
     ),
     Capability(name="roster", tool_name="get_team_hub"),
     Capability(name="player_report", tool_name="get_player_report",
