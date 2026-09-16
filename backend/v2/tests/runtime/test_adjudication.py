@@ -237,3 +237,34 @@ def test_runtime_result_rejects_task_scoped_evidence_from_wrong_season() -> None
                 season=SeasonRef(value="2025-26", source="user", confidence=1)),
             execution=execution, draft=DraftReport(sections=[], claims=[]),
             verification=VerificationReport(status="partial"))
+
+
+def test_runtime_result_rejects_pass_with_partial_publication_state() -> None:
+    import pytest
+    from pydantic import ValidationError
+    from v2.contracts import Gap, Plan, TaskSpec
+    from v2.runtime.models import ExecutionResult, RuntimeResult
+
+    base = dict(
+        task=TaskSpec(goal="answer", mode="quick", deliverable="text"),
+        execution=ExecutionResult(plan=Plan(nodes=[])),
+        draft=DraftReport(sections=["Answer"], claims=[]),
+        verification=VerificationReport(status="pass"),
+    )
+    with pytest.raises(ValidationError, match="publication state"):
+        RuntimeResult(**base, gaps=[Gap(kind="missing_evidence", message="missing")])
+
+
+def test_runtime_result_rejects_partial_without_publication_gap() -> None:
+    import pytest
+    from pydantic import ValidationError
+    from v2.contracts import Plan, TaskSpec
+    from v2.runtime.models import ExecutionResult, RuntimeResult
+
+    with pytest.raises(ValidationError, match="publication state"):
+        RuntimeResult(
+            task=TaskSpec(goal="answer", mode="quick", deliverable="text"),
+            execution=ExecutionResult(plan=Plan(nodes=[])),
+            draft=DraftReport(sections=["Answer"], claims=[]),
+            verification=VerificationReport(status="partial"),
+        )

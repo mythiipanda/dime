@@ -149,4 +149,11 @@ class RuntimeResult(BaseModel):
         supported = {index for index, result in by_index.items() if result.supported}
         if seen != supported:
             raise ValueError("verified claims must match supported adjudications")
+        expected_status = (
+            "partial" if self.gaps or len(supported) != len(self.draft.claims)
+            else "pass"
+        )
+        if self.verification.status.value != expected_status:
+            raise ValueError(
+                "verification status does not match runtime publication state")
         return self
