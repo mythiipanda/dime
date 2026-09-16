@@ -1011,3 +1011,13 @@ def test_project_store_rejects_symlinked_sqlite_auxiliary_files(
     with pytest.raises(ValueError, match="auxiliary file cannot be a symlink"):
         ProjectStore(path)
     assert outside.read_text() == "private"
+
+
+def test_checkpoint_store_revalidates_copied_checkpoint(tmp_path: Path) -> None:
+    from pydantic import ValidationError
+    from v2.runtime.checkpoints import ExecutionCheckpoint
+    valid = ExecutionCheckpoint(run_id="run", task=_task(), plan=_plan())
+    unsafe = valid.model_copy(update={"run_id": " "})
+    with pytest.raises(ValidationError, match="run id must be non-empty"):
+        FileCheckpointStore(tmp_path).save(unsafe)
+    assert list(tmp_path.iterdir()) == []

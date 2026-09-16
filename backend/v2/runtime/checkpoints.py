@@ -65,6 +65,7 @@ class FileCheckpointStore:
             return ExecutionCheckpoint.model_validate_json(path.read_text())
 
     def save(self, checkpoint: ExecutionCheckpoint) -> None:
+        checkpoint = ExecutionCheckpoint.model_validate(checkpoint.model_dump())
         path = self._path(checkpoint.run_id)
         with _checkpoint_path_lock(path):
             self._reject_symlinked_directory()
