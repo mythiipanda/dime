@@ -123,6 +123,12 @@ class LedgerEntry(BaseModel):
     call_id: str | None = None
     data: dict[str, Any] = Field(default_factory=dict)
 
+    @model_validator(mode="after")
+    def validate_timestamp(self) -> "LedgerEntry":
+        if self.recorded_at.tzinfo is None:
+            raise ValueError("ledger recorded_at must include timezone")
+        return self
+
 
 def _validate_start_data(kind: LedgerKind, data: dict[str, Any]) -> None:
     if kind == LedgerKind.TURN_START:

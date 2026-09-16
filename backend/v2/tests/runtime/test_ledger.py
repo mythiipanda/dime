@@ -547,3 +547,16 @@ def test_file_ledger_rejects_symlinked_record(tmp_path) -> None:
     path.symlink_to(outside)
     with pytest.raises(ValueError, match="cannot be a symlink"):
         FileLedger(path, "run")
+
+
+def test_ledger_entry_requires_timezone_aware_recording_time() -> None:
+    from datetime import datetime
+    from pydantic import ValidationError
+    from v2.runtime.ledger import LedgerEntry
+
+    with pytest.raises(ValidationError, match="recorded_at must include timezone"):
+        LedgerEntry(
+            sequence=1, run_id="run", kind="turn/start",
+            recorded_at=datetime(2026, 9, 15), turn_id="turn",
+            data={"request": "answer"},
+        )
