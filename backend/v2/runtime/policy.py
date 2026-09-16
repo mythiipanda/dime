@@ -3,7 +3,7 @@ from __future__ import annotations
 from enum import StrEnum
 from pathlib import Path
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ExecutionMode(StrEnum):
@@ -14,6 +14,8 @@ class ExecutionMode(StrEnum):
 
 
 class ExecutionPolicy(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     mode: ExecutionMode
     max_concurrency: int = Field(default=4, ge=1, le=16)
     max_failures: int = Field(default=2, ge=1, le=10)

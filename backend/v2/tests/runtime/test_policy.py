@@ -30,3 +30,10 @@ def test_non_live_modes_cannot_be_constructed_as_publishable() -> None:
         kwargs = {"replay_path": "fixture.jsonl"} if mode == ExecutionMode.REPLAY else {}
         with pytest.raises(ValidationError, match=f"{mode.value} mode cannot publish"):
             ExecutionPolicy(mode=mode, publish=True, **kwargs)
+
+
+def test_policy_rejects_unknown_configuration_fields() -> None:
+    with pytest.raises(Exception, match="publsh"):
+        ExecutionPolicy.model_validate({
+            "mode": "live", "publish": True, "publsh": False,
+        })
