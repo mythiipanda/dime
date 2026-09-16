@@ -33,7 +33,6 @@ class Planner:
                     id="facts",
                     description="facts",
                     capability_hints=["fake"],
-                    completion_test="has facts",
                 )
             ]
         )

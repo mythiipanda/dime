@@ -338,7 +338,7 @@ async def test_tool_capability_executes_through_runtime_protocol():
     task = TaskSpec(goal="Boston record", mode=RunMode.QUICK, deliverable="text",
                     season=SeasonRef(value="2025-26", source="resolved", confidence=1))
     plan = Plan(nodes=[PlanNode(id="record", description="team record",
-        capability_hints=["standings"], completion_test="Boston row present")])
+        capability_hints=["standings"])])
 
     result = await PlanExecutor({"standings": capability}).execute(task, plan)
 
@@ -387,7 +387,6 @@ def test_trade_legality_inherits_salary_vintage_from_contract_parent() -> None:
         id="legal", description="legality", capability_hints=["trades"],
         arguments={"team_a": "BOS", "players_a": "Jaylen Brown",
                    "team_b": "LAC", "players_b": "Paul George"},
-        completion_test="legality result",
     )
     arguments = _task_arguments("trades", node, task, [contract])
     assert arguments["season"] == "2026-27"
@@ -401,7 +400,6 @@ def test_tool_capability_preflight_rejects_unknown_arguments() -> None:
     node = PlanNode(
         id="record", description="record", capability_hints=["standings"],
         arguments={"season": "2025-26", "invented": True},
-        completion_test="record returned",
     )
     with pytest.raises(ValueError, match="unknown arguments.*invented"):
         capability.validate_arguments(node)

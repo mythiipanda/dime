@@ -20,7 +20,6 @@ def node(
         description=node_id,
         depends_on=parents or [],
         capability_hints=["fake"],
-        completion_test="returns evidence",
         max_attempts=attempts,
     )
 
@@ -104,7 +103,7 @@ async def test_non_task_season_capability_admits_next_vintage_contracts() -> Non
 
     plan = Plan(nodes=[PlanNode(
         id="salary", description="next-season salary",
-        capability_hints=["contracts"], completion_test="salary row")])
+        capability_hints=["contracts"])])
     task = TaskSpec(goal="trade fit", mode="deep_dive", deliverable="analysis",
                     season=SeasonRef(value="2025-26", source="user", confidence=1))
     result = await PlanExecutor({"contracts": Contracts()}).execute(task, plan)
@@ -128,8 +127,7 @@ async def test_task_season_capability_still_rejects_wrong_vintage() -> None:
                 season="2024-25", rows={"wins": 61})
 
     plan = Plan(nodes=[PlanNode(
-        id="record", description="record", capability_hints=["standings"],
-        completion_test="record row")])
+        id="record", description="record", capability_hints=["standings"])])
     task = TaskSpec(goal="record", mode="quick", deliverable="answer",
                     season=SeasonRef(value="2025-26", source="user", confidence=1))
     result = await PlanExecutor({"standings": Standings()}).execute(task, plan)
@@ -148,10 +146,9 @@ async def test_ambiguous_capability_hints_fail_before_any_execution() -> None:
 
     capabilities = {"one": Tracking("one", {}), "two": Tracking("two", {})}
     plan = Plan(nodes=[
-        PlanNode(id="valid", description="valid", capability_hints=["one"],
-                 completion_test="done"),
+        PlanNode(id="valid", description="valid", capability_hints=["one"]),
         PlanNode(id="ambiguous", description="ambiguous",
-                 capability_hints=["one", "two"], completion_test="done"),
+                 capability_hints=["one", "two"]),
     ])
     with pytest.raises(ValueError, match="exactly one registered capability"):
         await PlanExecutor(capabilities).execute(
@@ -173,9 +170,8 @@ async def test_invalid_arguments_fail_before_any_execution() -> None:
 
     plan = Plan(nodes=[
         PlanNode(id="valid", description="valid", capability_hints=["fake"],
-                 arguments={"required": True}, completion_test="done"),
-        PlanNode(id="bad", description="bad", capability_hints=["fake"],
-                 completion_test="done"),
+                 arguments={"required": True}),
+        PlanNode(id="bad", description="bad", capability_hints=["fake"]),
     ])
     with pytest.raises(ValueError, match="required field missing"):
         await PlanExecutor({"fake": Validated("fake", {})}).execute(
@@ -205,8 +201,7 @@ async def test_missing_required_evidence_fails_before_execution() -> None:
 @pytest.mark.anyio
 async def test_model_plan_cannot_predeclare_node_complete() -> None:
     plan = Plan(nodes=[PlanNode(
-        id="facts", description="facts", capability_hints=["fake"],
-        completion_test="done", status=PlanStatus.COMPLETE,
+        id="facts", description="facts", capability_hints=["fake"], status=PlanStatus.COMPLETE,
     )])
     with pytest.raises(ValueError, match="must start pending"):
         await PlanExecutor({"fake": FakeCapability("fake", {})}).execute(

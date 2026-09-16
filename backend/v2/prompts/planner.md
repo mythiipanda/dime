@@ -18,9 +18,6 @@ A single JSON object matching the Plan contract, and nothing else:
 - depends_on (list of str): ids that must complete first; [] if independent.
 - capability_hints (list of str): names from the supplied catalog only.
 - arguments (object): explicit tool arguments that validate against the selected capability schema and are grounded in the TaskSpec. Use provider-facing ids when the schema requires ids; never invent one.
-- expected_schema (object): the shape of the EvidenceEnvelope rows this
-  node should return.
-- completion_test (str): a checkable condition for when the node is done.
 - max_attempts (int, 1-5, default 1).
 - status: leave as "pending"; the executor owns it.
 

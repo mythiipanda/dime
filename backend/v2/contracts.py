@@ -4,7 +4,7 @@ from datetime import date, datetime
 from enum import StrEnum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class RunMode(StrEnum):
@@ -84,13 +84,13 @@ class TaskSpec(BaseModel):
 
 
 class PlanNode(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     id: str
     description: str
     depends_on: list[str] = Field(default_factory=list)
     capability_hints: list[str] = Field(default_factory=list)
     arguments: dict[str, Any] = Field(default_factory=dict)
-    expected_schema: dict[str, Any] = Field(default_factory=dict)
-    completion_test: str
     max_attempts: int = Field(default=1, ge=1, le=5)
     status: PlanStatus = PlanStatus.PENDING
 

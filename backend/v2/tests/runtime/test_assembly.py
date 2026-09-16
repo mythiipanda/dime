@@ -18,7 +18,7 @@ async def test_tool_capability_uses_planned_arguments_and_scoped_season():
 
     node = PlanNode(
         id="standings", description="record", capability_hints=["standings"],
-        arguments={"team_id": "1610612738"}, completion_test="one row")
+        arguments={"team_id": "1610612738"})
     task = TaskSpec(
         goal="Boston record", mode="quick", deliverable="record",
         season=SeasonRef(value="2025-26", source="user", confidence=1))
@@ -41,7 +41,7 @@ async def test_seasonless_capability_does_not_receive_season():
 
     node = PlanNode(
         id="resolve", description="resolve", capability_hints=["entity_resolution"],
-        arguments={"query": "Boston"}, completion_test="one team")
+        arguments={"query": "Boston"})
     task = TaskSpec(
         goal="Boston record", mode="quick", deliverable="record",
         season=SeasonRef(value="2025-26", source="default", confidence=.8))

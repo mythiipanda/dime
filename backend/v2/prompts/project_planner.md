@@ -19,12 +19,8 @@ A single JSON object matching the Plan contract, and nothing else:
 - depends_on (list of str): ids that must complete first; [] if independent.
 - capability_hints (list of str): names from the supplied catalog only.
 - arguments (object): explicit tool arguments grounded in the TaskSpec; never invent ids.
-- expected_schema (object): the shape of the EvidenceEnvelope rows this
-  node should return.
-- completion_test (str): a checkable condition for when the node is done.
 - max_attempts (int, 1-5, default 1).
-- status ("pending" | "running" | "complete" | "failed" | "skipped"):
-  "pending" for new nodes; preserved from prior state when resuming.
+- status: leave as "pending"; the executor and trusted checkpoint own it.
 
 ## Invariants
 - One node per deliverable evidence need. A worker receives one node plus

@@ -35,8 +35,7 @@ async def test_model_backed_stages_form_a_structured_slice():
         {"goal": "Boston record", "mode": "quick", "deliverable": "text",
          "required_evidence": ["standings"]},
         {"nodes": [{"id": "facts", "description": "standings",
-                    "capability_hints": ["standings"],
-                    "completion_test": "one Boston row"}]},
+                    "capability_hints": ["standings"],}]},
         {"sections": ["Record"], "claims": [{"text": "Boston won 61 games.",
           "kind": "observed", "evidence_ids": ["ev"]}]},
         {"status": "pass", "claim_results": [

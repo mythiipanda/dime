@@ -118,8 +118,7 @@ async def test_executor_does_not_admit_wrong_season_evidence():
         goal="2025-26 trade", mode=RunMode.QUICK, deliverable="answer",
         season=SeasonRef(value="2025-26", source="user", confidence=1))
     plan = Plan(nodes=[PlanNode(
-        id="salary", description="salary", capability_hints=["contracts"],
-        completion_test="season matched")])
+        id="salary", description="salary", capability_hints=["contracts"])])
     capability = FakeCapability("contracts", {"salary": 3876529})
 
     result = await PlanExecutor({"contracts": capability}).execute(task, plan)

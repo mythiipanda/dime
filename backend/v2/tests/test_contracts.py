@@ -16,10 +16,9 @@ from v2.contracts import (
 
 def test_plan_accepts_dag():
     plan = Plan(nodes=[
-        PlanNode(id="baseline", description="Get baseline",
-                 completion_test="baseline evidence exists"),
+        PlanNode(id="baseline", description="Get baseline"),
         PlanNode(id="report", description="Write report",
-                 depends_on=["baseline"], completion_test="report exists"),
+                 depends_on=["baseline"]),
     ])
     assert plan.nodes[1].depends_on == ["baseline"]
 
@@ -27,10 +26,8 @@ def test_plan_accepts_dag():
 def test_plan_rejects_cycle():
     with pytest.raises(ValidationError, match="acyclic"):
         Plan(nodes=[
-            PlanNode(id="a", description="A", depends_on=["b"],
-                     completion_test="done"),
-            PlanNode(id="b", description="B", depends_on=["a"],
-                     completion_test="done"),
+            PlanNode(id="a", description="A", depends_on=["b"]),
+            PlanNode(id="b", description="B", depends_on=["a"]),
         ])
 
 
@@ -71,3 +68,17 @@ def test_task_scope_rejects_duplicate_contract_entries() -> None:
     with pytest.raises(ValidationError, match="skills"):
         TaskSpec(goal="trade", mode="deep_dive", deliverable="analysis",
                  skills=["trade-analysis", "trade-analysis"])
+
+
+def test_plan_node_exposes_only_enforced_execution_contract() -> None:
+    assert "expected_schema" not in PlanNode.model_fields
+    assert "completion_test" not in PlanNode.model_fields
+
+
+def test_plan_node_rejects_unenforced_model_fields() -> None:
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        PlanNode(
+            id="facts",
+            description="facts",
+            expected_schema={"wins": "integer"},
+        )

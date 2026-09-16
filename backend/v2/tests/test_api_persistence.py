@@ -37,14 +37,12 @@ def _plan() -> Plan:
                 id="one",
                 description="first",
                 capability_hints=["fake"],
-                completion_test="row",
             ),
             PlanNode(
                 id="two",
                 description="second",
                 depends_on=["one"],
                 capability_hints=["fake"],
-                completion_test="row",
             ),
         ]
     )

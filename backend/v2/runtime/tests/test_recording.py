@@ -19,8 +19,7 @@ async def test_recorded_capability_emits_canonical_call_and_result():
     ledger = RunLedger("run")
     capability = RecordedCapability(Capability(), ledger, turn_id="turn")
     await capability.execute(
-        PlanNode(id="record", description="record", capability_hints=["standings"],
-                 completion_test="row"),
+        PlanNode(id="record", description="record", capability_hints=["standings"]),
         TaskSpec(goal="record", mode=RunMode.QUICK, deliverable="text"), [])
 
     assert [entry.kind for entry in ledger.entries] == [

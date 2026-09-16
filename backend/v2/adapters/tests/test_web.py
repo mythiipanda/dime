@@ -136,8 +136,7 @@ async def test_web_search_capability_normalizes_discovery_evidence():
 
     node = PlanNode(id="search", description="current reporting",
                     capability_hints=["web_search"],
-                    arguments={"query": "Jaylen Brown role"},
-                    completion_test="one source")
+                    arguments={"query": "Jaylen Brown role"})
     envelope = await WebSearchCapability(Search()).execute(
         node, TaskSpec(goal="role", mode="quick", deliverable="answer"), [])
     assert envelope.capability == "web_search"
@@ -170,7 +169,7 @@ async def test_web_fetch_capability_only_extracts_selected_parent_result():
     node = PlanNode(id="fetch", description="page", depends_on=["search"],
                     capability_hints=["web_fetch"],
                     arguments={"search_evidence_id": parent.evidence_id,
-                               "result_rank": 1}, completion_test="page text")
+                               "result_rank": 1})
     envelope = await WebFetchCapability(Fetch()).execute(
         node, TaskSpec(goal="role", mode="quick", deliverable="answer"), [parent])
     assert envelope.lineage == [parent.evidence_id]
@@ -192,7 +191,7 @@ async def test_web_fetch_capability_rejects_unselected_or_unrelated_source():
     node = PlanNode(id="fetch", description="page",
                     capability_hints=["web_fetch"],
                     arguments={"search_evidence_id": "web_search:other",
-                               "result_rank": 1}, completion_test="page text")
+                               "result_rank": 1})
     with pytest.raises(ValueError, match="selected web_search parent"):
         await WebFetchCapability().execute(
             node, TaskSpec(goal="role", mode="quick", deliverable="answer"), [parent])
@@ -224,11 +223,9 @@ async def test_planned_web_dag_binds_fetch_to_content_addressed_parent():
     plan = Plan(nodes=[
         PlanNode(id="discover", description="current source",
             capability_hints=["web_search"],
-            arguments={"query": "current Jaylen Brown role"},
-            completion_test="one selected source"),
+            arguments={"query": "current Jaylen Brown role"}),
         PlanNode(id="extract", description="full page", depends_on=["discover"],
-            capability_hints=["web_fetch"], arguments={"result_rank": 1},
-            completion_test="page text"),
+            capability_hints=["web_fetch"], arguments={"result_rank": 1}),
     ])
     result = await PlanExecutor({
         "web_search": WebSearchCapability(Search()),
@@ -245,7 +242,6 @@ def test_web_preflight_rejects_unknown_arguments() -> None:
     node = PlanNode(
         id="search", description="search", capability_hints=["web_search"],
         arguments={"query": "Jaylen Brown role", "url": "https://example.com"},
-        completion_test="results returned",
     )
     with pytest.raises(ValueError, match="unknown arguments.*url"):
         WebSearchCapability().validate_arguments(node)
