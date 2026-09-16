@@ -211,3 +211,12 @@ def test_claim_source_and_verified_claim_reject_ambiguous_identity() -> None:
     claim = Claim(text="Observed.", kind="observed", evidence_ids=["ev"])
     with pytest.raises(ValidationError, match="evidence_ids must not contain duplicates"):
         VerifiedClaim(claim_index=0, claim=claim, evidence_ids=["ev", "ev"])
+
+
+def test_entity_and_season_identity_must_be_non_empty() -> None:
+    from v2.contracts import SeasonRef
+
+    with pytest.raises(ValidationError, match="entity id and display name"):
+        EntityRef(id="BOS", type="team", display_name=" ")
+    with pytest.raises(ValidationError, match="season value must be non-empty"):
+        SeasonRef(value=" ", source="user", confidence=1)

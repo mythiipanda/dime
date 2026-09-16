@@ -48,6 +48,12 @@ class EntityRef(BaseModel):
     type: Literal["player", "team", "game", "league"]
     display_name: str
 
+    @model_validator(mode="after")
+    def validate_identity(self) -> "EntityRef":
+        if not self.id.strip() or not self.display_name.strip():
+            raise ValueError("entity id and display name must be non-empty")
+        return self
+
 
 class SeasonRef(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -56,8 +62,16 @@ class SeasonRef(BaseModel):
     source: Literal["user", "context", "default", "resolved"]
     confidence: float = Field(ge=0, le=1)
 
+    @model_validator(mode="after")
+    def validate_identity(self) -> "SeasonRef":
+        if not self.value.strip():
+            raise ValueError("season value must be non-empty")
+        return self
+
 
 class ConversationTurn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     role: Literal["user", "assistant"]
     content: str = Field(min_length=1, max_length=2000)
 
