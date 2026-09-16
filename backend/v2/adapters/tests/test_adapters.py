@@ -769,3 +769,34 @@ def test_trade_value_rejects_malformed_data_gaps(data_gaps):
                             "team_b": "LAC", "players_b": "Paul George"},
             tools={"get_trade_value": FakeTool(payload)},
         )
+
+
+def test_evidence_identity_is_bound_to_non_fetch_source_vintage():
+    base = {
+        "tool": "get_trade_value",
+        "ok": True,
+        "rows": {"player": "Jaylen Brown", "salary": 57_100_000},
+        "meta": {
+            "source": "salary-sheet",
+            "production_season": "2025-26",
+            "salary_season": "2026-27",
+            "salary_date": "2026-07-01",
+        },
+    }
+    changed = {
+        **base,
+        "meta": {**base["meta"], "salary_season": "2027-28",
+                 "salary_date": "2027-07-01"},
+    }
+    args = {"team_a": "BOS", "players_a": "Jaylen Brown",
+            "team_b": "LAC", "players_b": "Paul George"}
+
+    first = call_capability(
+        "trade_value", args, tools={"get_trade_value": FakeTool(base)})
+    later = call_capability(
+        "trade_value", args, tools={"get_trade_value": FakeTool(changed)})
+
+    assert first.rows == later.rows
+    assert first.as_of != later.as_of
+    assert first.vintages != later.vintages
+    assert first.evidence_id != later.evidence_id

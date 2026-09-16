@@ -179,7 +179,8 @@ def build_envelope(
             spec.name, arguments, rows,
             source_revision={
                 "source": meta.get("source", "unknown"),
-                "fetched_at": meta.get("fetched_at"),
+                "as_of": as_of.isoformat() if as_of else None,
+                "vintages": vintages,
             },
         ),
         capability=spec.name,
