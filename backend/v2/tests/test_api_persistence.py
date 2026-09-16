@@ -358,3 +358,23 @@ def test_live_route_reports_terminal_runtime_failure(monkeypatch):
     assert "Dime could not complete this run." in response.text
     assert "private provider detail" not in response.text
     assert response.text.rstrip().endswith("data: {}")
+
+
+@pytest.mark.anyio
+async def test_checkpoint_resume_rejects_changed_plan_with_same_node_ids(
+    tmp_path: Path,
+) -> None:
+    from v2.runtime.checkpoints import ExecutionCheckpoint
+
+    checkpoints = FileCheckpointStore(tmp_path)
+    original = _plan()
+    changed = original.model_copy(deep=True)
+    changed.nodes[0].arguments = {"team": "LAL"}
+    checkpoints.save(ExecutionCheckpoint(
+        run_id="changed", task=_task(), plan=original,
+    ))
+
+    with pytest.raises(ValueError, match="checkpoint plan does not match"):
+        await PlanExecutor(
+            {"fake": FakeCapability("fake", {})}, checkpoint_store=checkpoints,
+        ).execute(_task(), changed, run_id="changed")

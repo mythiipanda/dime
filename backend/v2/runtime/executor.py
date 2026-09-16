@@ -40,9 +40,10 @@ class PlanExecutor:
         if checkpoint is not None:
             if checkpoint.task != task:
                 raise ValueError("checkpoint task does not match requested task")
-            if [node.id for node in checkpoint.plan.nodes] != [
-                node.id for node in plan.nodes
-            ]:
+            checkpoint_plan = checkpoint.plan.model_copy(deep=True)
+            for node in checkpoint_plan.nodes:
+                node.status = PlanStatus.PENDING
+            if checkpoint_plan != plan:
                 raise ValueError("checkpoint plan does not match requested plan")
             nodes = {
                 node.id: node.model_copy(deep=True) for node in checkpoint.plan.nodes
