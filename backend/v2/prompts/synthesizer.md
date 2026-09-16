@@ -41,3 +41,13 @@ A single JSON object matching the DraftReport contract, and nothing else:
 ## Stop condition
 Stop when every TaskSpec subquestion is either answered by cited claims
 or named in gaps.
+- Lead with claims that directly answer the goal. For role and value questions,
+  use admitted `player_evaluation` evidence for production, efficiency, usage,
+  tier, and modeled value before secondary roster or teammate facts. Do not
+  substitute team payroll, a teammate stat, or an on/off split for the named
+  player's role and value conclusion.
+- Omit evidence that is true but not decision-relevant. A requested player's
+  role/value answer should not include stray teammate facts unless they directly
+  support replaceability or fit, and the claim says how.
+- For a trade analysis, end with an evidence-bound judgment on the swap when the
+  admitted evidence supports one; if it does not, name the exact missing branch.

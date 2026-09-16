@@ -47,3 +47,7 @@ Fields:
 ## Stop condition
 Stop when every field is filled or explicitly null and each unresolved
 ambiguity is recorded in open_questions. One pass only.
+- A player's current team, contract team, roster membership, or trade-side team
+  is an evidence lookup, not a user-answerable ambiguity, when entity resolution
+  or contracts are available. Put that lookup in required_evidence and any
+  provisional interpretation in assumptions; never put it in open_questions.

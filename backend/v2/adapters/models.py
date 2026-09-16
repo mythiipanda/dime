@@ -191,6 +191,19 @@ class ModelIntake(ModelStage):
             "skill_catalog": self._skills.catalog(),
         })
         self._skills.activate(task.skills)
+        evidence_questions = [
+            question for question in task.open_questions
+            if (" team " in f" {question.casefold()} "
+                and {"entity_resolution", "contracts"}
+                    & set(task.required_evidence))
+        ]
+        if evidence_questions:
+            task = task.model_copy(update={
+                "open_questions": [question for question in task.open_questions
+                                   if question not in evidence_questions],
+                "assumptions": list(dict.fromkeys([
+                    *task.assumptions, *evidence_questions])),
+            })
         player_count = sum(entity.type == "player" for entity in task.entities)
         if player_count < 2:
             task = task.model_copy(update={
