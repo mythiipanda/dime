@@ -190,6 +190,10 @@ class PlanExecutor:
             if node.status == PlanStatus.FAILED and not node_errors:
                 raise ValueError(
                     f"checkpoint node {node_id!r} failed without errors")
+            if (node.status == PlanStatus.FAILED
+                    and checkpoint.attempts.get(node_id, 0) != node.max_attempts):
+                raise ValueError(
+                    f"checkpoint node {node_id!r} failed before exhausting attempts")
             if node.status == PlanStatus.SKIPPED and node_id in checkpoint.errors:
                 raise ValueError(
                     f"checkpoint node {node_id!r} skipped but carries errors")

@@ -388,3 +388,15 @@ async def test_cancelling_execution_cancels_every_inflight_node() -> None:
     with pytest.raises(asyncio.CancelledError):
         await running
     assert cancelled == {"a", "b"}
+
+
+def test_execution_result_rejects_failed_node_with_attempts_remaining() -> None:
+    from pydantic import ValidationError
+    from v2.runtime.models import ExecutionResult
+
+    failed = node("failed", attempts=2).model_copy(update={"status": PlanStatus.FAILED})
+    with pytest.raises(ValidationError, match="exhaust its attempt budget"):
+        ExecutionResult(
+            plan=Plan(nodes=[failed]), attempts={"failed": 1},
+            errors={"failed": ["failure"]},
+        )
