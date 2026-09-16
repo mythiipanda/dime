@@ -275,6 +275,41 @@ def test_quick_answer_route_is_flagged_and_streams_typed_contract(monkeypatch, t
     assert response.text.rstrip().endswith("data: {}")
 
 
+@pytest.mark.anyio
+async def test_stream_cancellation_stops_detached_runtime(monkeypatch):
+    import asyncio
+    from v2.api import routes
+    from v2.runtime.ledger import RunLedger
+
+    started = asyncio.Event()
+    cancelled = asyncio.Event()
+
+    class WaitingRuntime:
+        async def run(self, request, *, run_id=None, context=()):
+            started.set()
+            try:
+                await asyncio.Future()
+            finally:
+                cancelled.set()
+
+    monkeypatch.setattr(
+        "app.providers.resolve_model_id", lambda value: ("openrouter", "fixture"))
+    monkeypatch.setattr(
+        "v2.runtime.assembly.build_runtime",
+        lambda **kwargs: (WaitingRuntime(), RunLedger(kwargs["run_id"])),
+    )
+    monkeypatch.setenv("DIME_RUNTIME_V2", "on")
+    response = await routes.quick_answer_stream(
+        routes.QuickAnswerBody(q="record?"))
+
+    reading = asyncio.create_task(anext(response.body_iterator))
+    await asyncio.wait_for(started.wait(), timeout=1)
+    reading.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await reading
+    await asyncio.wait_for(cancelled.wait(), timeout=1)
+
+
 def test_answer_text_publishes_only_adjudicated_model_prose():
     from datetime import UTC, datetime
     from v2 import contracts

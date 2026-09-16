@@ -171,54 +171,58 @@ async def quick_answer_stream(body: QuickAnswerBody):
     async def generate():
         task = asyncio.create_task(runtime.run(
             body.q, run_id=run_id, context=tuple(body.history)))
-        while not task.done() or not queue.empty():
-            try:
-                event = await asyncio.wait_for(queue.get(), timeout=0.1)
-                yield encode_event(event)
-            except TimeoutError:
-                continue
         try:
-            result = await task
-        except Exception as exc:
-            yield encode_event(NodeUpdate(
-                node="runtime", status="failed"))
+            while not task.done() or not queue.empty():
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=0.1)
+                    yield encode_event(event)
+                except TimeoutError:
+                    continue
+            try:
+                result = await task
+            except Exception as exc:
+                yield encode_event(NodeUpdate(
+                    node="runtime", status="failed"))
+                if policy.publish:
+                    yield "event: error\ndata: " + json.dumps({
+                        "message": "Dime could not complete this run.",
+                        "run_id": run_id,
+                        "error_type": type(exc).__name__,
+                    }, separators=(",", ":")) + "\n\n"
+                yield encode_event(GraphEnd())
+                return
+            for entry in ledger.entries:
+                if entry.kind == LedgerKind.TOOL_CALL:
+                    yield encode_event(ToolCall(
+                        node=entry.step_id or "execute",
+                        name=str(entry.data.get("name", "tool")),
+                        args=entry.data.get("args", {})))
+                elif entry.kind == LedgerKind.TOOL_RESULT:
+                    payload = entry.data
+                    evidence = payload.get("evidence", {})
+                    rows = evidence.get("rows")
+                    row_count = len(rows) if isinstance(rows, list) else None
+                    yield encode_event(ToolResult(
+                        node=entry.step_id or "execute",
+                        name=str(evidence.get("capability", "tool")),
+                        status="ok" if payload.get("status") == "ok" else "fail",
+                        rows=row_count,
+                        error=payload.get("error")))
+            yield encode_event(CustomData(
+                node="verify",
+                tables=[item.model_dump(mode="json")
+                        for item in result.execution.evidence]))
             if policy.publish:
-                yield "event: error\ndata: " + json.dumps({
-                    "message": "Dime could not complete this run.",
-                    "run_id": run_id,
-                    "error_type": type(exc).__name__,
-                }, separators=(",", ":")) + "\n\n"
+                yield encode_event(FinalAnswer(
+                    text=_answer_text(result),
+                    carry={"run_id": run_id,
+                           "verification": result.verification.status.value,
+                           "verified_claims": len(result.verified_claims),
+                           "gaps": [gap.model_dump(mode="json") for gap in result.gaps]}))
             yield encode_event(GraphEnd())
-            return
-        for entry in ledger.entries:
-            if entry.kind == LedgerKind.TOOL_CALL:
-                yield encode_event(ToolCall(
-                    node=entry.step_id or "execute",
-                    name=str(entry.data.get("name", "tool")),
-                    args=entry.data.get("args", {})))
-            elif entry.kind == LedgerKind.TOOL_RESULT:
-                payload = entry.data
-                evidence = payload.get("evidence", {})
-                rows = evidence.get("rows")
-                row_count = len(rows) if isinstance(rows, list) else None
-                yield encode_event(ToolResult(
-                    node=entry.step_id or "execute",
-                    name=str(evidence.get("capability", "tool")),
-                    status="ok" if payload.get("status") == "ok" else "fail",
-                    rows=row_count,
-                    error=payload.get("error")))
-        yield encode_event(CustomData(
-            node="verify",
-            tables=[item.model_dump(mode="json")
-                    for item in result.execution.evidence]))
-        if policy.publish:
-            yield encode_event(FinalAnswer(
-                text=_answer_text(result),
-                carry={"run_id": run_id,
-                       "verification": result.verification.status.value,
-                       "verified_claims": len(result.verified_claims),
-                       "gaps": [gap.model_dump(mode="json") for gap in result.gaps]}))
-        yield encode_event(GraphEnd())
-
+        finally:
+            if not task.done():
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
     return StreamingResponse(generate(), media_type="text/event-stream",
                              headers={"X-Dime-Run-Id": run_id})
