@@ -99,3 +99,27 @@ async def test_recorded_capability_rejects_mislabeled_lineage_before_admission()
             TaskSpec(goal="record", mode=RunMode.QUICK, deliverable="text"), [parent],
         )
     assert ledger.entries[-1].data["status"] == "failed"
+
+
+@pytest.mark.anyio
+async def test_recorded_capability_rejects_reused_input_evidence_identity() -> None:
+    parent = EvidenceEnvelope(
+        evidence_id="ev", capability="standings", source="fixture",
+        observed_at=datetime.now(UTC), rows={},
+    )
+
+    class ReusedIdentity(Capability):
+        async def execute(self, node, task, evidence):
+            return EvidenceEnvelope(
+                evidence_id="ev", capability=self.name, source="fixture",
+                observed_at=datetime.now(UTC), rows={}, lineage=["ev"],
+            )
+
+    ledger = RunLedger("run")
+    capability = RecordedCapability(ReusedIdentity(), ledger, turn_id="turn")
+    with pytest.raises(ValueError, match="cannot reuse"):
+        await capability.execute(
+            PlanNode(id="record", description="record", capability_hints=["standings"]),
+            TaskSpec(goal="record", mode=RunMode.QUICK, deliverable="text"), [parent],
+        )
+    assert ledger.entries[-1].data["status"] == "failed"
