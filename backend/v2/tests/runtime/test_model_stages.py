@@ -254,3 +254,18 @@ async def test_semantic_verifier_rejects_contradictory_pass() -> None:
             TaskSpec(goal="record", mode="quick", deliverable="answer"),
             draft, {},
         )
+
+
+@pytest.mark.anyio
+async def test_synthesizer_rejects_unknown_evidence_ids() -> None:
+    from v2.contracts import TaskSpec
+
+    stub = StubModel([{
+        "sections": ["Answer"],
+        "claims": [{"text": "Boston won 61 games.", "kind": "observed",
+                    "evidence_ids": ["invented"]}],
+    }])
+    synthesizer = ModelSynthesizer(stub, provider="stub", model_name="stub-model")
+    with pytest.raises(ValueError, match="unknown evidence ids.*invented"):
+        await synthesizer.synthesize(
+            TaskSpec(goal="record", mode="quick", deliverable="answer"), [])

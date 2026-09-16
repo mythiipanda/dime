@@ -203,6 +203,18 @@ class ModelPlanner(ModelStage):
         })
 
 
+def _validate_draft(
+    draft: DraftReport, evidence: Sequence[EvidenceEnvelope]
+) -> DraftReport:
+    known = {item.evidence_id for item in evidence}
+    unknown = sorted({evidence_id for claim in draft.claims
+                      for evidence_id in claim.evidence_ids
+                      if evidence_id not in known})
+    if unknown:
+        raise ValueError(f"draft cites unknown evidence ids: {unknown}")
+    return draft
+
+
 class ModelSynthesizer(ModelStage):
     prompt_name = "synthesizer"
     route = "synthesizer"
@@ -211,13 +223,14 @@ class ModelSynthesizer(ModelStage):
     async def synthesize(
         self, task: TaskSpec, evidence: Sequence[EvidenceEnvelope]
     ) -> DraftReport:
-        return await self._generate(
+        draft = await self._generate(
             {
                 "task": task.model_dump(mode="json"),
                 "evidence": [item.model_dump(mode="json") for item in evidence],
                 "skills": self._skills.activate(task.skills),
             }
         )
+        return _validate_draft(draft, evidence)
 
 
 class ModelRepairer(ModelStage):
@@ -232,7 +245,7 @@ class ModelRepairer(ModelStage):
         evidence: Mapping[str, EvidenceEnvelope],
         verification: VerificationReport,
     ) -> DraftReport:
-        return await self._generate({
+        repaired = await self._generate({
             "task": task.model_dump(mode="json"),
             "draft": draft.model_dump(mode="json"),
             "verification": verification.model_dump(mode="json"),
@@ -241,6 +254,7 @@ class ModelRepairer(ModelStage):
                 item.model_dump(mode="json") for item in evidence.values()
             ],
         })
+        return _validate_draft(repaired, list(evidence.values()))
 
 
 class ModelSemanticVerifier(ModelStage):
