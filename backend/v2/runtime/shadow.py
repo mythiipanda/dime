@@ -114,6 +114,12 @@ def _difference_kinds(v1: RunOutcome, v2: RunOutcome) -> list[DifferenceKind]:
 
 
 def compare_outcomes(request: str, v1: RunOutcome, v2: RunOutcome) -> ShadowComparison:
+    if not isinstance(request, str):
+        raise TypeError("shadow request must be a string")
+    if not request.strip():
+        raise ValueError("shadow request must be non-empty")
+    if len(request) > 2000:
+        raise ValueError("shadow request cannot exceed 2000 characters")
     v1 = RunOutcome.model_validate(v1.model_dump())
     v2 = RunOutcome.model_validate(v2.model_dump())
     differences = _difference_kinds(v1, v2)

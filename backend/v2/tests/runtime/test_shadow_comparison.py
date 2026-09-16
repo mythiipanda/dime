@@ -14,6 +14,14 @@ def outcome(**updates):
     return RunOutcome(**values)
 
 
+def test_shadow_comparison_validates_request_boundary():
+    for request in (" ", "x" * 2001):
+        with pytest.raises(ValueError, match="shadow request"):
+            compare_outcomes(request, outcome(), outcome())
+    with pytest.raises(TypeError, match="shadow request"):
+        compare_outcomes(7, outcome(), outcome())
+
+
 def test_equal_outcomes_have_no_differences_and_hide_request():
     comparison = compare_outcomes("What is Boston's record?", outcome(), outcome())
     assert comparison.differences == []
