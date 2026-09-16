@@ -1,4 +1,5 @@
 from pathlib import Path
+from threading import Event, Thread
 
 import pytest
 
@@ -506,3 +507,23 @@ def test_file_ledgers_for_same_path_share_lock_and_refresh_state(tmp_path) -> No
     first.append(LedgerKind.TURN_START, turn_id="turn", data={"request": "q"})
     second.append(LedgerKind.TURN_END, turn_id="turn", data={"reason": "complete"})
     assert [entry.sequence for entry in FileLedger(path, "run").entries] == [1, 2]
+
+
+def test_file_ledger_load_is_serialized_with_same_path_writes(tmp_path) -> None:
+    path = tmp_path / "run.jsonl"
+    first = FileLedger(path, "run")
+    started = Event()
+    finished = Event()
+
+    def load() -> None:
+        started.set()
+        FileLedger(path, "run")
+        finished.set()
+
+    with first._lock:
+        thread = Thread(target=load)
+        thread.start()
+        assert started.wait(timeout=1)
+        assert not finished.wait(timeout=0.05)
+    thread.join(timeout=1)
+    assert finished.is_set()

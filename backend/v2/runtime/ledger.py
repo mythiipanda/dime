@@ -445,7 +445,8 @@ class FileLedger:
     def __init__(self, path: str | Path, run_id: str) -> None:
         self.path = Path(path)
         self._lock = _ledger_path_lock(self.path)
-        self.ledger = RunLedger(run_id, self._read())
+        with self._lock:
+            self.ledger = RunLedger(run_id, self._read())
 
     @property
     def run_id(self) -> str:
