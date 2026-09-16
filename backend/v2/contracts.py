@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from decimal import Decimal
 from enum import StrEnum
+import math
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -218,6 +220,20 @@ class EvidenceEnvelope(BaseModel):
         entity_keys = [(item.type, item.id) for item in self.entities]
         if len(entity_keys) != len(set(entity_keys)):
             raise ValueError("evidence entities must not contain duplicate identities")
+
+        def validate_finite(value: Any) -> None:
+            if isinstance(value, float) and not math.isfinite(value):
+                raise ValueError("evidence rows must contain only finite numbers")
+            if isinstance(value, Decimal) and not value.is_finite():
+                raise ValueError("evidence rows must contain only finite numbers")
+            if isinstance(value, dict):
+                for child in value.values():
+                    validate_finite(child)
+            elif isinstance(value, list):
+                for child in value:
+                    validate_finite(child)
+
+        validate_finite(self.rows)
         return self
 
 

@@ -284,3 +284,11 @@ def test_derived_claim_rejects_blank_calculation_identity() -> None:
     with pytest.raises(ValidationError, match="non-empty calculation id"):
         Claim(text="Derived.", kind="derived", evidence_ids=["ev"],
               calculation_id=" ")
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_evidence_rejects_nonfinite_row_values(value) -> None:
+    with pytest.raises(ValidationError, match="only finite numbers"):
+        EvidenceEnvelope(
+            evidence_id="ev", capability="ratings", source="fixture",
+            observed_at=datetime(2026, 9, 15), rows={"rating": value})
