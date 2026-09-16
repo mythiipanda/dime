@@ -178,3 +178,23 @@ def test_pack_validates_expectation_contract(tmp_path, expectation, error):
     else:
         with pytest.raises(ValueError, match=error):
             load_pack(path)
+
+
+@pytest.mark.parametrize("changes,error", [
+    ({"budget": {"max_second": 2}}, "invalid budget fields"),
+    ({"budget": {"max_seconds": float("nan")}}, "finite and non-negative"),
+    ({"budget": {"max_tool_calls": 1.5}}, "finite and non-negative"),
+    ({"evidence_requirement": {"invented": []}}, "invalid evidence fields"),
+    ({"evidence_requirement": {"any_capability": [" "]}},
+     "any_capability must contain"),
+    ({"evidence_requirement": {"max_evidence": -1}},
+     "max_evidence must be"),
+])
+def test_pack_validates_budget_and_evidence_contracts(tmp_path, changes, error):
+    import json
+    payload = json.loads(PACK.read_text())
+    payload["scenarios"][0].update(changes)
+    path = tmp_path / "pack.json"
+    path.write_text(json.dumps(payload))
+    with pytest.raises(ValueError, match=error):
+        load_pack(path)

@@ -164,6 +164,43 @@ def load_pack(path: Path) -> dict[str, Any]:
                 raise ValueError(
                     f"compatibility scenario {scenario_id} contains_any must contain "
                     "non-empty unique string groups")
+        budget = scenario.get("budget", {})
+        allowed_budget = {"max_seconds", "max_seconds_per_turn", "max_tool_calls"}
+        if not isinstance(budget, dict) or set(budget) - allowed_budget:
+            raise ValueError(
+                f"compatibility scenario {scenario_id} has invalid budget fields")
+        for field, value in budget.items():
+            if (isinstance(value, bool) or not isinstance(value, (int, float))
+                    or not math.isfinite(value) or value < 0
+                    or (field == "max_tool_calls" and not isinstance(value, int))):
+                raise ValueError(
+                    f"compatibility scenario {scenario_id} {field} must be "
+                    "finite and non-negative")
+        requirement = scenario.get("evidence_requirement")
+        if requirement is not None:
+            allowed_requirement = {
+                "any_capability", "required_values", "max_evidence",
+                "qualification_contains", "metric_definitions_contain",
+                "warnings_contain",
+            }
+            if not isinstance(requirement, dict) or set(requirement) - allowed_requirement:
+                raise ValueError(
+                    f"compatibility scenario {scenario_id} has invalid evidence fields")
+            for field in allowed_requirement - {"max_evidence"}:
+                values = requirement.get(field, [])
+                if (not isinstance(values, list)
+                        or any(not isinstance(item, str) or not item.strip()
+                               for item in values)
+                        or len(values) != len(set(values))):
+                    raise ValueError(
+                        f"compatibility scenario {scenario_id} {field} must contain "
+                        "unique non-empty strings")
+            maximum = requirement.get("max_evidence")
+            if (isinstance(maximum, bool) or not isinstance(maximum, int)
+                    or maximum < 0):
+                raise ValueError(
+                    f"compatibility scenario {scenario_id} max_evidence must be "
+                    "a non-negative integer")
         ids.append(scenario_id)
         scenario["_banned_everywhere"] = banned
     if len(ids) != len(set(ids)):
