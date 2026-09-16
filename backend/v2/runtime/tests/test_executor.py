@@ -428,3 +428,11 @@ def test_execution_result_rejects_skipped_node_with_attempts() -> None:
     skipped = node("skipped").model_copy(update={"status": PlanStatus.SKIPPED})
     with pytest.raises(ValidationError, match="cannot carry attempts"):
         ExecutionResult(plan=Plan(nodes=[skipped]), attempts={"skipped": 1})
+
+
+@pytest.mark.parametrize("count", [True, 1.5, "1"])
+def test_execution_result_rejects_noninteger_attempt_counts(count) -> None:
+    from pydantic import ValidationError
+    from v2.runtime.models import ExecutionResult
+    with pytest.raises(ValidationError, match="valid integer|attempt counts must be integers"):
+        ExecutionResult(plan=Plan(nodes=[node("pending")]), attempts={"pending": count})

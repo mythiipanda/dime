@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
 
 from v2.contracts import (
     DraftReport,
@@ -18,7 +18,7 @@ class ExecutionResult(BaseModel):
 
     plan: Plan
     evidence: list[EvidenceEnvelope] = Field(default_factory=list)
-    attempts: dict[str, int] = Field(default_factory=dict)
+    attempts: dict[str, StrictInt] = Field(default_factory=dict)
     errors: dict[str, list[str]] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -50,6 +50,9 @@ class ExecutionResult(BaseModel):
             if item.lineage != expected_lineage:
                 raise ValueError(
                     f"execution evidence lineage does not match node {node.id!r}")
+        if any(isinstance(count, bool) or not isinstance(count, int)
+               for count in self.attempts.values()):
+            raise ValueError("execution attempt counts must be integers")
         if any(count < 0 for count in self.attempts.values()):
             raise ValueError("execution attempt counts must be non-negative")
         for node in self.plan.nodes:

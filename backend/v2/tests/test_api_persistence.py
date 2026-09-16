@@ -937,3 +937,13 @@ def test_project_store_rejects_status_regression_and_terminal_rewrite(tmp_path: 
     with pytest.raises(ValueError, match="complete to running"):
         store.update(project.id, status="running", result=None)
     assert store.get(project.id) == complete
+
+
+def test_checkpoint_rejects_noninteger_attempt_counts() -> None:
+    from pydantic import ValidationError
+    from v2.runtime.checkpoints import ExecutionCheckpoint
+    for count in (True, 1.5, "1"):
+        with pytest.raises(ValidationError, match="valid integer|attempt counts must be integers"):
+            ExecutionCheckpoint(
+                run_id="run", task=_task(), plan=_plan(), attempts={"one": count},
+            )
