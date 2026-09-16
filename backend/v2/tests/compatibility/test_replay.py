@@ -28,3 +28,21 @@ def test_replay_rejects_prompt_material(tmp_path):
                                 "prompt": "hidden", "turns": []}))
     with pytest.raises(ValueError, match="prompt"):
         load_replay(path)
+
+
+@pytest.mark.parametrize("payload,error", [
+    ({"version": 2, "scenario_id": "x", "revision": "r"}, "top-level"),
+    ({"version": 2, "scenario_id": " ", "revision": "r", "turns": []},
+     "scenario_id"),
+    ({"version": 2, "scenario_id": "x", "revision": "r", "turns": {}},
+     "turns must be a list"),
+    ({"version": 2, "scenario_id": "x", "revision": "r",
+      "turns": [{"evidence": []}]}, "replay turn"),
+    ({"version": 2, "scenario_id": "x", "revision": "r",
+      "turns": [{"evidence": {}, "tools": []}]}, "must be lists"),
+])
+def test_replay_rejects_partial_or_mistyped_structure(tmp_path, payload, error):
+    path = tmp_path / "bad-shape.json"
+    path.write_text(json.dumps(payload))
+    with pytest.raises(ValueError, match=error):
+        load_replay(path)

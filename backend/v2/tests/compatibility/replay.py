@@ -28,12 +28,19 @@ def save_replay(path: Path, scenario_id: str, revision: str,
 
 def load_replay(path: Path) -> dict[str, Any]:
     payload = json.loads(path.read_text())
-    if set(payload) - _ALLOWED_TOP_LEVEL or set(payload).intersection(_FORBIDDEN):
-        raise ValueError("replay contains prompt or unknown top-level fields")
-    if payload.get("version") != 2:
+    if not isinstance(payload, dict) or set(payload) != _ALLOWED_TOP_LEVEL:
+        raise ValueError("replay contains prompt, missing, or unknown top-level fields")
+    if payload["version"] != 2:
         raise ValueError("unsupported replay version")
-    for turn in payload.get("turns", []):
-        if set(turn) - _ALLOWED_TURN or set(turn).intersection(_FORBIDDEN):
-            raise ValueError("replay turn contains prompt or unknown fields")
+    for field in ("scenario_id", "revision"):
+        if not isinstance(payload[field], str) or not payload[field].strip():
+            raise ValueError(f"replay {field} must be non-empty")
+    if not isinstance(payload["turns"], list):
+        raise ValueError("replay turns must be a list")
+    for turn in payload["turns"]:
+        if not isinstance(turn, dict) or set(turn) != _ALLOWED_TURN:
+            raise ValueError("replay turn contains prompt, missing, or unknown fields")
+        if not isinstance(turn["evidence"], list) or not isinstance(turn["tools"], list):
+            raise ValueError("replay evidence and tools must be lists")
         turn["evidence"] = [EvidenceEnvelope.model_validate(item) for item in turn["evidence"]]
     return payload
