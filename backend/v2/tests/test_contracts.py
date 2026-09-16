@@ -9,6 +9,8 @@ from v2.contracts import (
     EvidenceEnvelope,
     Plan,
     PlanNode,
+    TaskSpec,
+    EntityRef,
 )
 
 
@@ -52,3 +54,20 @@ def test_evidence_round_trip():
     )
     assert EvidenceEnvelope.model_validate_json(
         evidence.model_dump_json()).rows[0]["TEAM"] == "BOS"
+
+
+def test_task_scope_rejects_duplicate_contract_entries() -> None:
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="required_evidence"):
+        TaskSpec(goal="record", mode="quick", deliverable="answer",
+                 required_evidence=["standings", "standings"])
+    with pytest.raises(ValidationError, match="duplicate identities"):
+        TaskSpec(goal="record", mode="quick", deliverable="answer",
+                 entities=[
+                     EntityRef(id="BOS", type="team", display_name="Boston"),
+                     EntityRef(id="BOS", type="team", display_name="Celtics"),
+                 ])
+    with pytest.raises(ValidationError, match="skills"):
+        TaskSpec(goal="trade", mode="deep_dive", deliverable="analysis",
+                 skills=["trade-analysis", "trade-analysis"])

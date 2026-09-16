@@ -71,6 +71,17 @@ class TaskSpec(BaseModel):
     open_questions: list[str] = Field(default_factory=list)
     skills: list[str] = Field(default_factory=list)
 
+    @model_validator(mode="after")
+    def validate_scope(self) -> "TaskSpec":
+        if len(self.required_evidence) != len(set(self.required_evidence)):
+            raise ValueError("required_evidence must not contain duplicates")
+        entity_keys = [(item.type, item.id) for item in self.entities]
+        if len(entity_keys) != len(set(entity_keys)):
+            raise ValueError("entities must not contain duplicate identities")
+        if len(self.skills) != len(set(self.skills)):
+            raise ValueError("skills must not contain duplicates")
+        return self
+
 
 class PlanNode(BaseModel):
     id: str
