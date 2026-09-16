@@ -548,3 +548,58 @@ def test_execution_result_bounds_errors_per_node() -> None:
     with pytest.raises(ValidationError, match="too many errors"):
         ExecutionResult(plan=Plan(nodes=[failed]), attempts={"failed": 5},
                         errors={"failed": [f"error-{index}" for index in range(6)]})
+
+@pytest.mark.anyio
+async def test_compound_ratings_plan_cannot_skip_requested_populations() -> None:
+    from v2.contracts import Plan, PlanNode, TaskSpec
+
+    capabilities = {
+        name: FakeCapability(name, rows={"name": name})
+        for name in (
+            "team_ratings", "player_ratings", "playoff_team_ratings",
+            "playoffs",
+        )
+    }
+    executor = PlanExecutor(capabilities)
+    task = TaskSpec(
+        goal="rank offense and defense", mode="deep_dive",
+        deliverable="team, player, and playoff ratings",
+        required_evidence=[
+            "team_ratings", "player_ratings", "playoff_team_ratings",
+        ],
+        requirements=[
+            {"id": "teams", "description": "team ratings", "capability_options": ["team_ratings"]},
+            {"id": "players", "description": "player ratings", "capability_options": ["player_ratings"]},
+            {"id": "playoffs", "description": "playoff ratings", "capability_options": ["playoff_team_ratings"]},
+        ],
+    )
+    incomplete = Plan(nodes=[PlanNode(
+        id="bracket", description="playoff results",
+        capability_hints=["playoffs"],
+    )])
+    with pytest.raises(ValueError, match=(
+        "players.*playoffs.*teams"
+    )):
+        await executor.execute(task, incomplete)
+
+@pytest.mark.anyio
+async def test_requirement_coverage_rejects_semantically_wrong_capability() -> None:
+    from v2.contracts import Plan, PlanNode, TaskSpec
+
+    executor = PlanExecutor({
+        "playoffs": FakeCapability("playoffs", rows={}),
+        "playoff_team_ratings": FakeCapability("playoff_team_ratings", rows={}),
+    })
+    task = TaskSpec(
+        goal="playoff ratings", mode="quick", deliverable="ratings",
+        requirements=[{
+            "id": "playoff_ratings", "description": "rate playoff teams",
+            "capability_options": ["playoff_team_ratings"],
+        }],
+    )
+    wrong = Plan(nodes=[PlanNode(
+        id="bracket", description="results", capability_hints=["playoffs"],
+        covers_requirement_ids=["playoff_ratings"],
+    )])
+    with pytest.raises(ValueError, match="cannot satisfy requirement"):
+        await executor.execute(task, wrong)

@@ -93,6 +93,26 @@ class ConversationTurn(BaseModel):
         return self
 
 
+class EvidenceRequirement(BaseModel):
+    """One independently reviewable clause of the user's evidence request."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9_]*$")
+    description: str = Field(min_length=1, max_length=1000)
+    capability_options: list[str] = Field(min_length=1, max_length=8)
+
+    @model_validator(mode="after")
+    def validate_requirement(self) -> "EvidenceRequirement":
+        if not self.description.strip():
+            raise ValueError("requirement description must be non-empty")
+        if any(not value.strip() for value in self.capability_options):
+            raise ValueError("requirement capabilities must be non-empty")
+        if len(self.capability_options) != len(set(self.capability_options)):
+            raise ValueError("requirement capabilities must not contain duplicates")
+        return self
+
+
 class TaskSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -104,6 +124,8 @@ class TaskSpec(BaseModel):
     as_of: date | None = None
     subquestions: list[str] = Field(default_factory=list, max_length=32)
     required_evidence: list[str] = Field(default_factory=list, max_length=32)
+    requirements: list[EvidenceRequirement] = Field(
+        default_factory=list, max_length=32)
     assumptions: list[str] = Field(default_factory=list, max_length=32)
     open_questions: list[str] = Field(default_factory=list, max_length=32)
     skills: list[str] = Field(default_factory=list, max_length=16)
@@ -119,9 +141,36 @@ class TaskSpec(BaseModel):
                 raise ValueError(f"{field_name} must not contain empty values")
             if len(values) != len(set(values)):
                 raise ValueError(f"{field_name} must not contain duplicates")
+        requirement_ids = [item.id for item in self.requirements]
+        if len(requirement_ids) != len(set(requirement_ids)):
+            raise ValueError("requirements must not contain duplicate ids")
         entity_keys = [(item.type, item.id) for item in self.entities]
         if len(entity_keys) != len(set(entity_keys)):
             raise ValueError("entities must not contain duplicate identities")
+        return self
+
+
+class RequirementReview(BaseModel):
+    """Independent clause ledger for an intake decomposition."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    requirements: list[EvidenceRequirement] = Field(
+        default_factory=list, max_length=32)
+    missing_subquestions: list[str] = Field(default_factory=list, max_length=32)
+    missing_skills: list[str] = Field(default_factory=list, max_length=16)
+
+    @model_validator(mode="after")
+    def validate_review(self) -> "RequirementReview":
+        requirement_ids = [item.id for item in self.requirements]
+        if len(requirement_ids) != len(set(requirement_ids)):
+            raise ValueError("requirements must not contain duplicate ids")
+        for field_name in ("missing_subquestions", "missing_skills"):
+            values = getattr(self, field_name)
+            if any(not value.strip() for value in values):
+                raise ValueError(f"{field_name} must not contain empty values")
+            if len(values) != len(set(values)):
+                raise ValueError(f"{field_name} must not contain duplicates")
         return self
 
 
@@ -132,6 +181,7 @@ class PlanNode(BaseModel):
     description: str = Field(min_length=1, max_length=2000)
     depends_on: list[str] = Field(default_factory=list, max_length=32)
     capability_hints: list[str] = Field(default_factory=list, max_length=16)
+    covers_requirement_ids: list[str] = Field(default_factory=list, max_length=32)
     arguments: dict[str, Any] = Field(default_factory=dict, max_length=64)
     max_attempts: StrictInt = Field(default=1, ge=1, le=5)
     status: PlanStatus = PlanStatus.PENDING
@@ -146,6 +196,12 @@ class PlanNode(BaseModel):
             raise ValueError("plan node capability hints must not contain duplicates")
         if any(not value.strip() for value in self.capability_hints):
             raise ValueError("plan node capability hints must be non-empty")
+        if len(self.covers_requirement_ids) != len(
+            set(self.covers_requirement_ids)
+        ):
+            raise ValueError("covered requirement ids must not contain duplicates")
+        if any(not value.strip() for value in self.covers_requirement_ids):
+            raise ValueError("covered requirement ids must be non-empty")
 
         def validate_finite(value: Any) -> None:
             if isinstance(value, float) and not math.isfinite(value):

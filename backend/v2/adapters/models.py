@@ -26,6 +26,7 @@ from v2.contracts import (
     DraftReport,
     EvidenceEnvelope,
     Plan,
+    RequirementReview,
     TaskSpec,
     VerificationReport,
 )
@@ -132,6 +133,7 @@ class ModelStage:
         planner_version: str = "v2",
         budgets: Mapping[str, int | float] | None = None,
         skill_library: SkillLibrary | None = None,
+        requirement_review: bool = False,
     ) -> None:
         for name, value in {
             "provider": provider,
@@ -146,27 +148,30 @@ class ModelStage:
         self._planner_version = planner_version
         self._budgets = dict(budgets or {})
         self._skills = skill_library or SkillLibrary()
+        self._requirement_review = requirement_review
         self.last_envelope: RequestEnvelope | None = None
 
     async def _generate(self, payload: Mapping[str, Any]) -> Any:
-        prompt = load_prompt(self.prompt_name)
+        return await self._generate_as(
+            prompt_name=self.prompt_name, route=self.route,
+            schema=self.schema, payload=payload,
+        )
+
+    async def _generate_as(
+        self, *, prompt_name: str, route: str, schema: type[BaseModel],
+        payload: Mapping[str, Any],
+    ) -> Any:
+        prompt = load_prompt(prompt_name)
         envelope = RequestEnvelope.freeze(
-            provider=self._provider,
-            model=self._model_name,
-            route=self.route,
-            prompt=prompt,
-            context=payload,
-            tool_schemas=self.schema.model_json_schema(),
-            planner_version=self._planner_version,
-            budgets=self._budgets,
+            provider=self._provider, model=self._model_name, route=route,
+            prompt=prompt, context=payload,
+            tool_schemas=schema.model_json_schema(),
+            planner_version=self._planner_version, budgets=self._budgets,
             skill_hashes=skill_hashes(list(payload.get("skills", []))),
         )
         self.last_envelope = envelope
         return await self._model.generate(
-            schema=self.schema,
-            prompt=prompt,
-            payload=payload,
-            envelope=envelope,
+            schema=schema, prompt=prompt, payload=payload, envelope=envelope,
         )
 
 
@@ -237,6 +242,19 @@ class ModelIntake(ModelStage):
                 if name not in set(task.skills)
             ],
         })
+        if self._requirement_review:
+            review = await self._review_requirements(request, task)
+            task = task.model_copy(update={
+                "subquestions": list(dict.fromkeys([
+                    *task.subquestions, *review.missing_subquestions,
+                ])),
+                "required_evidence": task.required_evidence,
+                "requirements": review.requirements,
+                "skills": list(dict.fromkeys([
+                    *task.skills, *review.missing_skills,
+                ])),
+            })
+            self._skills.activate(task.skills)
         player_count = sum(entity.type == "player" for entity in task.entities)
         optional_evidence = set()
         if player_count < 2:
@@ -262,6 +280,29 @@ class ModelIntake(ModelStage):
             raise ValueError(f"intake selected unknown capabilities: {unknown}")
         return task
 
+    async def _review_requirements(
+        self, request: str, task: TaskSpec,
+    ) -> RequirementReview:
+        review = await self._generate_as(
+            prompt_name="requirement_review", route="requirement_review",
+            schema=RequirementReview, payload={
+                "question": request,
+                "draft_task": task.model_dump(mode="json"),
+                "capability_catalog": self._catalog,
+                "skill_catalog": self._skills.catalog(),
+            },
+        )
+        unknown_evidence = sorted(
+            {capability for requirement in review.requirements
+             for capability in requirement.capability_options}
+            - self._catalog.keys()
+        )
+        if unknown_evidence:
+            raise ValueError(
+                f"requirement review selected unknown capabilities: {unknown_evidence}"
+            )
+        return review
+
 
 class ModelPlanner(ModelStage):
     prompt_name = "planner"
@@ -279,11 +320,49 @@ class ModelPlanner(ModelStage):
             "skills": self._skills.activate(task.skills),
         }
         try:
-            return await self._generate(payload)
+            plan = await self._generate(payload)
         except RuntimeError as exc:
             if str(exc) != "all structured-output providers failed":
                 raise
-            return await self._generate(payload)
+            plan = await self._generate(payload)
+        feedback = self._coverage_feedback(task, plan)
+        if not feedback:
+            return plan
+        return await self._generate({
+            **payload,
+            "coverage_feedback": {
+                **feedback, "instruction": "Return a complete replacement plan.",
+            },
+        })
+
+    def _coverage_feedback(self, task: TaskSpec, plan: Plan) -> dict[str, Any]:
+        selected = {
+            name for node in plan.nodes for name in node.capability_hints
+            if name in self._catalog
+        }
+        missing_evidence = sorted(set(task.required_evidence) - selected)
+        requirements = {item.id: item for item in task.requirements}
+        covered: set[str] = set()
+        mismatched: list[str] = []
+        for node in plan.nodes:
+            node_capabilities = set(node.capability_hints) & self._catalog.keys()
+            for requirement_id in node.covers_requirement_ids:
+                requirement = requirements.get(requirement_id)
+                if requirement is None:
+                    mismatched.append(f"unknown:{requirement_id}")
+                elif node_capabilities & set(requirement.capability_options):
+                    covered.add(requirement_id)
+                else:
+                    mismatched.append(requirement_id)
+        missing_requirements = sorted(requirements.keys() - covered)
+        feedback: dict[str, Any] = {}
+        if missing_evidence:
+            feedback["missing_required_evidence"] = missing_evidence
+        if missing_requirements:
+            feedback["missing_requirement_ids"] = missing_requirements
+        if mismatched:
+            feedback["mismatched_requirement_ids"] = sorted(set(mismatched))
+        return feedback
 
 
 def _validate_draft(

@@ -23,6 +23,7 @@ REQUIRED_SECTIONS = ("Objective", "Input", "Output", "Invariants", "Stop conditi
 OUTPUT_CONTRACTS = {
     "intake": (contracts.TaskSpec,),
     "planner": (contracts.PlanNode,),
+    "requirement_review": (contracts.RequirementReview,),
     "synthesizer": (contracts.DraftReport, contracts.Claim),
     "repair_answer": (contracts.DraftReport, contracts.Claim),
     "verifier": (contracts.VerificationReport, contracts.ClaimResult),

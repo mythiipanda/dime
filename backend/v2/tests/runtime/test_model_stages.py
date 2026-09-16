@@ -758,3 +758,73 @@ async def test_trade_skill_baseline_does_not_expand_one_player_question() -> Non
         stub, provider="stub", model_name="stub", capability_catalog=catalog,
     ).understand("Should Boston trade Brown?")
     assert task.required_evidence == ["player_evaluation"]
+
+@pytest.mark.anyio
+async def test_requirement_review_repairs_omitted_compound_branches():
+    catalog = {
+        "team_ratings": "team ratings", "player_ratings": "player ratings",
+        "playoff_team_ratings": "playoff ratings", "playoffs": "results",
+    }
+    stub = StubModel([{
+        "goal": "rank last season offense and defense", "mode": "deep_dive",
+        "deliverable": "rankings", "season": {
+            "value": "2025-26", "source": "user", "confidence": 1,
+        }, "subquestions": ["playoff results"], "required_evidence": ["playoffs"],
+    }, {
+        "missing_subquestions": [
+            "rank regular-season teams", "rank qualified players",
+            "rank playoff teams by rating",
+        ],
+        "requirements": [
+            {"id": "regular_team_ratings", "description": "rank regular-season teams", "capability_options": ["team_ratings"]},
+            {"id": "player_ratings", "description": "rank qualified players", "capability_options": ["player_ratings"]},
+            {"id": "playoff_team_ratings", "description": "rank playoff teams", "capability_options": ["playoff_team_ratings"]},
+        ],
+        "missing_skills": ["league-ratings"],
+    }])
+    task = await ModelIntake(
+        stub, provider="stub", model_name="stub-model",
+        capability_catalog=catalog, requirement_review=True,
+    ).understand("Rank the best offensive and defensive teams and players, including playoffs")
+    assert task.required_evidence == ["playoffs"]
+    assert [item.id for item in task.requirements] == [
+        "regular_team_ratings", "player_ratings", "playoff_team_ratings",
+    ]
+    assert task.subquestions == [
+        "playoff results", "rank regular-season teams", "rank qualified players",
+        "rank playoff teams by rating",
+    ]
+    assert task.skills == ["league-ratings"]
+    assert stub.calls[1]["envelope"].route == "requirement_review"
+
+
+@pytest.mark.anyio
+async def test_planner_replans_when_first_plan_omits_required_evidence():
+    from v2.contracts import Plan, TaskSpec
+
+    stub = StubModel([
+        {"nodes": [{"id": "results", "description": "results",
+                    "capability_hints": ["playoffs"]}]},
+        {"nodes": [
+            {"id": "results", "description": "results",
+             "capability_hints": ["playoffs"]},
+            {"id": "ratings", "description": "ratings",
+             "capability_hints": ["team_ratings"],
+             "covers_requirement_ids": ["team_ratings"]},
+        ]},
+    ])
+    planner = ModelPlanner(
+        stub, provider="stub", model_name="stub-model",
+        capability_catalog={"playoffs": {}, "team_ratings": {}},
+    )
+    plan = await planner.plan(TaskSpec(
+        goal="ratings", mode="deep_dive", deliverable="ranking",
+        required_evidence=["team_ratings"],
+    ))
+    assert {node.capability_hints[0] for node in plan.nodes} == {
+        "playoffs", "team_ratings",
+    }
+    assert stub.calls[1]["payload"]["coverage_feedback"] == {
+        "missing_required_evidence": ["team_ratings"],
+        "instruction": "Return a complete replacement plan.",
+    }

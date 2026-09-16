@@ -269,6 +269,29 @@ class PlanExecutor:
                     raise ValueError(
                         f"web_fetch node {node.id!r} requires exactly one "
                         "web_search dependency")
+        known_requirements = {item.id: item for item in task.requirements}
+        covered: dict[str, set[str]] = {}
+        unknown_requirement_ids: set[str] = set()
+        for node in plan.nodes:
+            selected_name = self._selected_name(plan, node.id)
+            for requirement_id in node.covers_requirement_ids:
+                requirement = known_requirements.get(requirement_id)
+                if requirement is None:
+                    unknown_requirement_ids.add(requirement_id)
+                elif selected_name not in requirement.capability_options:
+                    raise ValueError(
+                        f"plan node {node.id!r} uses {selected_name!r}, which cannot "
+                        f"satisfy requirement {requirement_id!r}"
+                    )
+                else:
+                    covered.setdefault(requirement_id, set()).add(selected_name)
+        if unknown_requirement_ids:
+            raise ValueError(
+                f"plan covers unknown requirements: {sorted(unknown_requirement_ids)}"
+            )
+        uncovered = sorted(known_requirements.keys() - covered.keys())
+        if uncovered:
+            raise ValueError(f"plan leaves requirements uncovered: {uncovered}")
         missing = sorted(set(task.required_evidence) - selected)
         if missing:
             raise ValueError(

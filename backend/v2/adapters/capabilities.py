@@ -167,6 +167,23 @@ _LIST = [
         qualification="Clutch: last 5 minutes, margin 5 or fewer.",
     ),
     Capability(name="playoffs", tool_name="get_playoffs"),
+    Capability(
+        name="player_ratings", tool_name="get_player_ratings",
+        units={"OFF_RATING": POINTS_PER_100, "DEF_RATING": POINTS_PER_100,
+               "MINUTES": MINUTES},
+        qualification="Minimum total-minutes floor is required.",
+        coverage=("On-court team rating while each player played; not an "
+                  "isolated individual-value metric."),
+    ),
+    Capability(
+        name="playoff_team_ratings", tool_name="get_playoff_team_ratings",
+        units={"OFF_RATING": POINTS_PER_100, "DEF_RATING": POINTS_PER_100,
+               "NET_RATING": POINTS_PER_100},
+        metric_definitions={"NET_RATING": NET_RATING_DEF},
+        qualification=("All playoff teams; estimated possessions use the "
+                       "NBA box-score formula."),
+        coverage="Completed playoff games only.",
+    ),
     Capability(name="trades", tool_name="get_trade_check", season_arg=None,
                task_season_scoped=False),
     Capability(name="trade_value", tool_name="get_trade_value", season_arg=None,
@@ -207,6 +224,13 @@ CAPABILITY_DESCRIPTIONS: dict[str, str] = {
     "lineups": "Five-player lineup ratings subject to a possession sample floor.",
     "clutch": "Player or team stats in the last five minutes with a margin of five or less.",
     "playoffs": "Playoff wins by team and champion for one season.",
+    "player_ratings": (
+        "Qualified player on-court offensive or defensive rating leaderboard. "
+        "This is lineup context, not isolated player value."
+    ),
+    "playoff_team_ratings": (
+        "Team offensive, defensive, and net ratings from completed playoff games."
+    ),
     "trades": "Check salary-matching legality for players on two trade sides.",
     "trade_value": "Compare estimated production value, salary, and picks across trade sides.",
     "contracts": "Team payroll, player salaries, and apron room.",

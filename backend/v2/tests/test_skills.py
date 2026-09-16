@@ -9,7 +9,8 @@ def test_builtin_catalog_is_agent_skills_metadata_only():
     library = SkillLibrary()
     catalog = library.catalog()
     assert {item["name"] for item in catalog} == {
-        "trade-analysis", "injury-impact", "player-comparison"
+        "trade-analysis", "injury-impact", "player-comparison",
+        "league-ratings",
     }
     assert all(set(item) == {"name", "description"} for item in catalog)
     assert all("# " not in item["description"] for item in catalog)

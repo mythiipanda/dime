@@ -20,6 +20,7 @@ A single JSON object matching the Plan contract, and nothing else:
 - description (str): what evidence this node produces.
 - depends_on (list of str): ids that must complete first; [] if independent.
 - capability_hints (list of str): names from the supplied catalog only.
+- covers_requirement_ids (list of str): TaskSpec requirement IDs this node satisfies.
 - arguments (object): explicit tool arguments grounded in the TaskSpec; never invent ids.
 - max_attempts (int, 1-5, default 1).
 - status: leave as "pending"; the executor owns it.

@@ -17,6 +17,7 @@ A single JSON object matching the Plan contract, and nothing else:
 - description (str): what evidence this node produces.
 - depends_on (list of str): ids that must complete first; [] if independent.
 - capability_hints (list of str): names from the supplied catalog only.
+- covers_requirement_ids (list of str): TaskSpec requirement IDs this node satisfies.
 - arguments (object): explicit tool arguments that validate against the selected capability schema and are grounded in the TaskSpec. Use provider-facing ids when the schema requires ids; never invent one.
 - max_attempts (int, 1-5, default 1).
 - status: leave as "pending"; the executor owns it.
@@ -28,8 +29,8 @@ A single JSON object matching the Plan contract, and nothing else:
   into many nodes.
 - depends_on expresses real data dependence only; everything else stays
   parallel.
-- Every subquestion and every required_evidence entry maps to at least one
-  node.
+- Every subquestion and every required_evidence entry maps to at least one node.
+- Every TaskSpec requirement ID is named by at least one node. The node's selected capability must appear in that requirement's capability_options.
 - Every argument name and value shape follows the chosen capability schema; omit optional arguments instead of inventing values.
 - Nodes produce evidence, never prose answers.
 - A web_fetch node must depend on exactly one web_search node. Set result_rank in arguments; omit search_evidence_id because the executor binds the fetch to its content-addressed parent result after search executes.

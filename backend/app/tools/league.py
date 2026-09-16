@@ -347,6 +347,102 @@ def get_ratings(season: str = SEASON, team: str = "") -> dict[str, Any]:
 
 
 @tool
+def get_player_ratings(
+    season: str = SEASON, metric: str = "offense", limit: int = 10,
+    min_minutes: int = 1000,
+) -> dict[str, Any]:
+    """Qualified player on-court offensive or defensive rating leaderboard.
+
+    These are lineup results while the player was on court, not an individual
+    defensive-value metric. Total minutes set the sample floor.
+    """
+    from ._core import clamp_season
+
+    season = clamp_season(season)
+    metric = "defense" if str(metric).casefold().startswith("def") else "offense"
+    limit = max(1, min(int(limit), 50))
+    min_minutes = max(0, min(int(min_minutes), 4000))
+    column = "DEF_RATING" if metric == "defense" else "OFF_RATING"
+    direction = "ASC" if metric == "defense" else "DESC"
+    con = store.connect(read_only=True)
+    try:
+        raw = con.execute(
+            f"SELECT PLAYER_NAME, TEAM_ABBREVIATION, GP, MIN, {column} "
+            "FROM silver_advanced WHERE _season = ? AND GP * MIN >= ? "
+            f"ORDER BY {column} {direction}, GP * MIN DESC LIMIT ?",
+            [season, min_minutes, limit],
+        ).fetchall()
+    finally:
+        con.close()
+    rows = [
+        {"RANK": rank, "PLAYER": row[0], "TEAM": row[1], "GP": row[2],
+         "MPG": row[3], "MINUTES": round(row[2] * row[3]), column: row[4]}
+        for rank, row in enumerate(raw, 1)
+    ]
+    return {
+        "tool": "get_player_ratings", "ok": True, "rows": rows,
+        "meta": {
+            "source": "warehouse:silver_advanced", "season": season,
+            "metric": metric, "qualification": f"{min_minutes:,}+ total minutes",
+            "coverage": (
+                "On-court team rating while each player played. This does not "
+                "isolate individual offensive or defensive value."
+            ),
+        },
+    }
+
+
+@tool
+def get_playoff_team_ratings(
+    season: str = SEASON, limit: int = 30,
+) -> dict[str, Any]:
+    """Team offensive, defensive, and net ratings from playoff game logs."""
+    from ._core import clamp_season
+
+    season = clamp_season(season)
+    limit = max(1, min(int(limit), 30))
+    con = store.connect(read_only=True)
+    try:
+        raw = con.execute(
+            """
+            WITH games AS (
+              SELECT TEAM_ID, TEAM_NAME, GAME_ID, PTS,
+                     FGA + 0.44 * FTA - OREB + TOV AS poss
+              FROM silver_playoffs WHERE _season = ?
+            ), paired AS (
+              SELECT a.TEAM_ID, a.TEAM_NAME, a.GAME_ID, a.PTS, a.poss,
+                     b.PTS AS opp_pts, b.poss AS opp_poss
+              FROM games a JOIN games b
+                ON a.GAME_ID = b.GAME_ID AND a.TEAM_ID <> b.TEAM_ID
+            )
+            SELECT TEAM_NAME, count(*),
+                   round(100 * sum(PTS) / nullif(sum(poss), 0), 1) AS off_rating,
+                   round(100 * sum(opp_pts) / nullif(sum(opp_poss), 0), 1) AS def_rating,
+                   round(100 * sum(PTS) / nullif(sum(poss), 0)
+                       - 100 * sum(opp_pts) / nullif(sum(opp_poss), 0), 1) AS net_rating
+            FROM paired GROUP BY TEAM_ID, TEAM_NAME
+            ORDER BY net_rating DESC LIMIT ?
+            """,
+            [season, limit],
+        ).fetchall()
+    finally:
+        con.close()
+    rows = [
+        {"RANK": rank, "TEAM_NAME": row[0], "GP": row[1],
+         "OFF_RATING": row[2], "DEF_RATING": row[3], "NET_RATING": row[4]}
+        for rank, row in enumerate(raw, 1)
+    ]
+    return {
+        "tool": "get_playoff_team_ratings", "ok": True, "rows": rows,
+        "meta": {
+            "source": "warehouse:silver_playoffs", "season": season,
+            "coverage": "Completed playoff games only.",
+            "qualification": "All playoff teams; estimated possessions use the NBA box-score formula.",
+        },
+    }
+
+
+@tool
 def get_clutch(scope: str = "player", season: str = SEASON,
                player: str = "") -> dict[str, Any]:
     """Clutch stats (last 5 min, margin 5 or less), player or team scope."""
