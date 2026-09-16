@@ -87,7 +87,8 @@ class ProjectStore:
                 raise ValueError(
                     f"project status cannot transition from {current.status.value} "
                     f"to {next_status.value}")
-            values["updated_at"] = datetime.now(UTC)
+            observed_at = datetime.now(UTC)
+            values["updated_at"] = max(observed_at, current.updated_at)
             project = Project.model_validate(values)
             connection.execute(
                 "UPDATE projects SET data = ? WHERE id = ?",

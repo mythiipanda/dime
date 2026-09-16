@@ -945,6 +945,28 @@ def test_project_store_rejects_status_regression_and_terminal_rewrite(tmp_path: 
     assert store.get(project.id) == complete
 
 
+def test_project_store_handles_wall_clock_rollback_on_update(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    from datetime import datetime, UTC
+    from v2.projects import service
+
+    store = ProjectStore(tmp_path / "projects.sqlite3")
+    project = store.create("Celtics outlook")
+
+    class RolledBackDateTime:
+        @staticmethod
+        def now(timezone):
+            assert timezone is UTC
+            return datetime(2000, 1, 1, tzinfo=UTC)
+
+    monkeypatch.setattr(service, "datetime", RolledBackDateTime)
+    updated = store.update(project.id, status="running")
+
+    assert updated.updated_at == project.updated_at
+    assert updated.status == "running"
+
+
 def test_checkpoint_rejects_noninteger_attempt_counts() -> None:
     from pydantic import ValidationError
     from v2.runtime.checkpoints import ExecutionCheckpoint
