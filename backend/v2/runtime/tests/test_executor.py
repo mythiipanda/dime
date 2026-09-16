@@ -270,3 +270,33 @@ def test_execution_result_binds_evidence_capability_and_lineage_to_plan() -> Non
     wrong_capability = parent_evidence.model_copy(update={"capability": "other"})
     with pytest.raises(ValidationError, match="capability does not match"):
         ExecutionResult(plan=Plan(nodes=[parent]), evidence=[wrong_capability])
+
+
+@pytest.mark.anyio
+async def test_nonseason_entity_resolution_admits_on_season_resolved_task() -> None:
+    from datetime import UTC, datetime
+    from v2.adapters.capabilities import CAPABILITIES
+    from v2.contracts import EvidenceEnvelope, SeasonRef
+
+    class Resolver:
+        name = "entity_resolution"
+        task_season_scoped = CAPABILITIES[name].task_season_scoped
+
+        async def execute(self, node, task, evidence):
+            return EvidenceEnvelope(
+                evidence_id="resolve:brown", capability=self.name,
+                source="static:nba", observed_at=datetime.now(UTC),
+                rows={"players": [{"id": "1627759", "name": "Jaylen Brown"}]},
+            )
+
+    plan = Plan(nodes=[PlanNode(
+        id="resolve", description="resolve player",
+        capability_hints=["entity_resolution"],
+    )])
+    task = TaskSpec(
+        goal="evaluate Brown", mode="quick", deliverable="answer",
+        season=SeasonRef(value="2025-26", source="user", confidence=1),
+    )
+    result = await PlanExecutor({"entity_resolution": Resolver()}).execute(task, plan)
+    assert result.plan.nodes[0].status == PlanStatus.COMPLETE
+    assert result.evidence[0].task_season_scoped is False

@@ -84,6 +84,7 @@ _LIST = [
         name="entity_resolution",
         tool_name="resolve_entity",
         season_arg=None,
+        task_season_scoped=False,
         extract_entities=_resolve_entities,
     ),
     Capability(
