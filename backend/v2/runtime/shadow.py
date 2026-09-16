@@ -55,6 +55,18 @@ class ShadowComparison(BaseModel):
     v2: RunOutcome
     differences: list[DifferenceKind] = Field(default_factory=list)
 
+    @model_validator(mode="after")
+    def validate_identity(self) -> "ShadowComparison":
+        if not self.comparison_id.strip() or not self.request_hash.strip():
+            raise ValueError("shadow comparison identity must be non-empty")
+        if len(self.request_hash) != 64 or any(
+            char not in "0123456789abcdef" for char in self.request_hash
+        ):
+            raise ValueError("shadow request hash must be lowercase sha256")
+        if len(self.differences) != len(set(self.differences)):
+            raise ValueError("shadow differences must be unique")
+        return self
+
 
 def compare_outcomes(request: str, v1: RunOutcome, v2: RunOutcome) -> ShadowComparison:
     differences: list[DifferenceKind] = []

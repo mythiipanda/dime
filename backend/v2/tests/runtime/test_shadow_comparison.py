@@ -96,3 +96,19 @@ def test_shadow_persisted_contracts_reject_unknown_fields() -> None:
             "route_drift_rate": 0, "answer_drift_rate": 0, "ready": False,
             "invented": True,
         })
+
+
+def test_shadow_comparison_rejects_bad_identity_and_duplicate_differences() -> None:
+    import pytest
+    from pydantic import ValidationError
+    from v2.runtime.shadow import ShadowComparison
+
+    base = {"comparison_id": "id", "request_hash": "a" * 64,
+            "v1": outcome(), "v2": outcome()}
+    for changes, error in [
+        ({"comparison_id": " "}, "identity"),
+        ({"request_hash": "hash"}, "lowercase sha256"),
+        ({"differences": ["answer", "answer"]}, "differences must be unique"),
+    ]:
+        with pytest.raises(ValidationError, match=error):
+            ShadowComparison(**{**base, **changes})
