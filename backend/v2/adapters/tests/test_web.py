@@ -306,3 +306,12 @@ def test_web_page_contract_rejects_blank_content_and_bad_hash():
     ]:
         with pytest.raises(ValidationError, match=error):
             WebPage(**{**base, **changes})
+
+
+def test_web_search_result_rejects_blank_title_and_non_http_url():
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="title must be non-empty"):
+        WebSearchResult(rank=1, url="https://example.com", title=" ", snippet="")
+    with pytest.raises(ValidationError, match="http.*https"):
+        WebSearchResult(rank=1, url="ftp://example.com/file", title="File", snippet="")

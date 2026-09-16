@@ -49,6 +49,14 @@ class WebSearchResult(BaseModel):
     snippet: str
     published_at: datetime | None = None
 
+    @model_validator(mode="after")
+    def validate_result(self) -> "WebSearchResult":
+        if self.url.scheme not in {"http", "https"}:
+            raise ValueError("web search result must use HTTP(S)")
+        if not self.title.strip():
+            raise ValueError("web search result title must be non-empty")
+        return self
+
 
 class WebSearchResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
