@@ -199,3 +199,24 @@ def test_shadow_comparison_rejects_forged_derived_fields() -> None:
         ShadowComparison.model_validate({**payload, "differences": []})
     with pytest.raises(ValidationError, match="comparison id does not match"):
         ShadowComparison.model_validate({**payload, "comparison_id": "0" * 24})
+
+
+def test_v2_outcome_deduplicates_reused_capability_route() -> None:
+    from datetime import UTC, datetime
+    from types import SimpleNamespace
+    from v2.contracts import EvidenceEnvelope, VerificationReport
+    from v2.runtime.shadow import outcome_from_v2
+
+    evidence = [
+        EvidenceEnvelope(
+            evidence_id=f"ev-{index}", capability="player_report",
+            source="fixture", observed_at=datetime.now(UTC), rows={"index": index},
+        )
+        for index in range(2)
+    ]
+    result = SimpleNamespace(
+        verification=VerificationReport(status="pass"),
+        execution=SimpleNamespace(evidence=evidence),
+        draft=SimpleNamespace(claims=[]),
+    )
+    assert outcome_from_v2(result, "answer").capabilities == ["player_report"]

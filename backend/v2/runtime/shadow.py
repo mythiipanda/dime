@@ -159,7 +159,9 @@ def outcome_from_v2(result: Any, answer: str, duration_ms: int | None = None) ->
     return RunOutcome(
         status="ok" if status == "pass" else status,
         answer=answer,
-        capabilities=[item.capability for item in result.execution.evidence],
+        capabilities=list(dict.fromkeys(
+            item.capability for item in result.execution.evidence
+        )),
         evidence_count=len(result.execution.evidence),
         supported_claims=sum(item.supported for item in claim_results),
         total_claims=len(result.draft.claims),
