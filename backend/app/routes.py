@@ -69,8 +69,8 @@ def _v1_shadow_outcome(
         answer=answer,
         capabilities=list(dict.fromkeys(canonical_capabilities)),
         evidence_count=evidence_count,
-        supported_claims=0,
-        total_claims=0,
+        supported_claims=None,
+        total_claims=None,
         duration_ms=duration_ms,
     )
 

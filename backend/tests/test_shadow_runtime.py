@@ -42,6 +42,8 @@ def test_v1_shadow_runs_silently_without_changing_primary_stream(monkeypatch):
     assert captured["outcome"].answer == "Boston won 61 games."
     assert captured["outcome"].capabilities == ["standings"]
     assert captured["outcome"].evidence_count == 1
+    assert captured["outcome"].supported_claims is None
+    assert captured["outcome"].total_claims is None
 
 
 def test_shadow_failure_cannot_change_primary_stream(monkeypatch):

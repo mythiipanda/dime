@@ -48,6 +48,24 @@ def test_comparison_classifies_answer_route_grounding_and_failure():
     ]
 
 
+
+def test_grounding_drift_requires_comparable_claim_metrics():
+    comparison = compare_outcomes(
+        "record?",
+        outcome(evidence_count=1, supported_claims=None, total_claims=None),
+        outcome(evidence_count=3, supported_claims=3, total_claims=3),
+    )
+    assert DifferenceKind.GROUNDING not in comparison.differences
+
+    comparable = compare_outcomes(
+        "record?",
+        outcome(status="partial", evidence_count=1,
+                supported_claims=1, total_claims=2),
+        outcome(status="partial", evidence_count=3,
+                supported_claims=2, total_claims=2),
+    )
+    assert DifferenceKind.GROUNDING in comparable.differences
+
 def test_equal_non_ok_outcomes_remain_failure_drift() -> None:
     comparison = compare_outcomes(
         "record?", outcome(status="partial"), outcome(status="partial"))
@@ -137,6 +155,14 @@ def test_shadow_outcome_rejects_unknown_status() -> None:
     for status in ("", "success", "PASS"):
         with pytest.raises(ValidationError, match="Input should be"):
             outcome(status=status)
+
+
+def test_shadow_claim_metrics_are_jointly_known_or_unknown() -> None:
+    from pydantic import ValidationError
+
+    assert outcome(supported_claims=None, total_claims=None).total_claims is None
+    with pytest.raises(ValidationError, match="both be known or unknown"):
+        outcome(supported_claims=None, total_claims=1)
 
 
 def test_ok_shadow_outcome_rejects_incomplete_claim_support() -> None:

@@ -43,8 +43,8 @@ class RunOutcome(BaseModel):
     answer: str = Field(default="", max_length=200_000)
     capabilities: list[str] = Field(default_factory=list, max_length=32)
     evidence_count: StrictInt = 0
-    supported_claims: StrictInt = 0
-    total_claims: StrictInt = 0
+    supported_claims: StrictInt | None = None
+    total_claims: StrictInt | None = None
     duration_ms: StrictInt | None = None
 
     @model_validator(mode="after")
@@ -53,11 +53,19 @@ class RunOutcome(BaseModel):
             raise ValueError("shadow outcome capabilities must be non-empty")
         if len(self.capabilities) != len(set(self.capabilities)):
             raise ValueError("shadow outcome capabilities must be unique")
-        if min(self.evidence_count, self.supported_claims, self.total_claims) < 0:
+        claim_counts = (self.supported_claims, self.total_claims)
+        if self.evidence_count < 0 or any(
+            value is not None and value < 0 for value in claim_counts
+        ):
             raise ValueError("shadow outcome counts must be non-negative")
-        if self.supported_claims > self.total_claims:
+        if (self.supported_claims is None) != (self.total_claims is None):
+            raise ValueError("shadow claim counts must both be known or unknown")
+        if (self.supported_claims is not None
+                and self.supported_claims > self.total_claims):
             raise ValueError("supported claims cannot exceed total claims")
-        if self.status == OutcomeStatus.OK and self.supported_claims != self.total_claims:
+        if (self.status == OutcomeStatus.OK
+                and self.supported_claims is not None
+                and self.supported_claims != self.total_claims):
             raise ValueError("ok shadow outcome requires every claim to be supported")
         if self.status == OutcomeStatus.OK and not self.answer.strip():
             raise ValueError("ok shadow outcome requires a non-empty answer")
@@ -106,10 +114,11 @@ def _difference_kinds(v1: RunOutcome, v2: RunOutcome) -> list[DifferenceKind]:
         differences.append(DifferenceKind.ANSWER)
     if set(v1.capabilities) != set(v2.capabilities):
         differences.append(DifferenceKind.ROUTE)
-    v1_grounded = (v1.supported_claims, v1.total_claims, v1.evidence_count)
-    v2_grounded = (v2.supported_claims, v2.total_claims, v2.evidence_count)
-    if v1_grounded != v2_grounded:
-        differences.append(DifferenceKind.GROUNDING)
+    if v1.total_claims is not None and v2.total_claims is not None:
+        v1_grounded = (v1.supported_claims, v1.total_claims, v1.evidence_count)
+        v2_grounded = (v2.supported_claims, v2.total_claims, v2.evidence_count)
+        if v1_grounded != v2_grounded:
+            differences.append(DifferenceKind.GROUNDING)
     return differences
 
 
