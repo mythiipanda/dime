@@ -212,7 +212,8 @@ def test_quick_answer_route_is_flagged_and_streams_typed_contract(monkeypatch, t
             claim_index=0,
             claim=contracts.Claim(text="Boston won 61 games.", kind="observed",
                                   evidence_ids=["ev"]),
-            evidence_ids=["ev"])])
+            evidence_ids=["ev"], sources=[contracts.ClaimSource(
+                evidence_id="ev", source="fixture", capability="standings")])])
 
     class FakeRuntime:
         async def run(self, request, *, run_id=None, context=()):

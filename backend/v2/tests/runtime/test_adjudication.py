@@ -94,3 +94,35 @@ def test_runtime_result_rejects_mismatched_verified_claim() -> None:
                 claim_index=0, claim=draft.claims[0], evidence_ids=["ev"]),
             ],
         )
+
+
+def test_runtime_result_rejects_forged_claim_source() -> None:
+    import pytest
+    from datetime import UTC, datetime
+    from pydantic import ValidationError
+    from v2.contracts import ClaimSource, EvidenceEnvelope, Plan, TaskSpec, VerifiedClaim
+    from v2.runtime.models import ExecutionResult, RuntimeResult
+
+    claim = Claim(text="Boston won 61 games.", kind="observed", evidence_ids=["ev"])
+    with pytest.raises(ValidationError, match="sources do not match"):
+        RuntimeResult(
+            task=TaskSpec(goal="record", mode="quick", deliverable="answer"),
+            execution=ExecutionResult(
+                plan=Plan(nodes=[]),
+                evidence=[EvidenceEnvelope(
+                    evidence_id="ev", capability="standings",
+                    source="warehouse:standings", observed_at=datetime.now(UTC),
+                    rows={"wins": 61},
+                )],
+            ),
+            draft=DraftReport(sections=["Answer"], claims=[claim]),
+            verification=VerificationReport(status="pass", claim_results=[
+                ClaimResult(claim_index=0, supported=True),
+            ]),
+            verified_claims=[VerifiedClaim(
+                claim_index=0, claim=claim, evidence_ids=["ev"],
+                sources=[ClaimSource(
+                    evidence_id="ev", source="web:forged",
+                    capability="standings")],
+            )],
+        )

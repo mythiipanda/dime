@@ -36,6 +36,7 @@ class RuntimeResult(BaseModel):
     @model_validator(mode="after")
     def validate_publication(self) -> "RuntimeResult":
         by_index = {item.claim_index: item for item in self.verification.claim_results}
+        evidence = {item.evidence_id: item for item in self.execution.evidence}
         seen: set[int] = set()
         for item in self.verified_claims:
             if item.claim_index in seen:
@@ -50,4 +51,16 @@ class RuntimeResult(BaseModel):
                 raise ValueError("verified claim lacks supported adjudication")
             if item.evidence_ids != item.claim.evidence_ids:
                 raise ValueError("verified claim evidence does not match its claim")
+            expected_sources = [
+                (evidence_id, evidence[evidence_id].source,
+                 evidence[evidence_id].capability)
+                for evidence_id in item.evidence_ids
+                if evidence_id in evidence
+            ]
+            actual_sources = [
+                (source.evidence_id, source.source, source.capability)
+                for source in item.sources
+            ]
+            if actual_sources != expected_sources:
+                raise ValueError("verified claim sources do not match execution evidence")
         return self
