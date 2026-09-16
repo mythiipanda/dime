@@ -5,6 +5,7 @@ from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any, Protocol, TypeVar
 
+from openai import AsyncOpenAI
 from pydantic import BaseModel
 from pydantic_ai import Agent, NativeOutput
 from pydantic_ai.models.openai import OpenAIChatModel
@@ -66,9 +67,20 @@ class ProviderStructuredModel:
             base_url, api_key, fallback_model = configs[provider]
             if not api_key:
                 continue
+            headers = ({
+                "HTTP-Referer": "https://github.com/mythiipanda/dime",
+                "X-Title": "Dime NBA Analyst",
+            } if provider == "openrouter" else None)
+            client = AsyncOpenAI(
+                base_url=base_url,
+                api_key=api_key,
+                timeout=settings.llm_timeout_s,
+                max_retries=0,
+                default_headers=headers,
+            )
             models.append((provider, OpenAIChatModel(
                 self.model if provider == self.provider else fallback_model,
-                provider=OpenAIProvider(base_url=base_url, api_key=api_key),
+                provider=OpenAIProvider(openai_client=client),
             )))
         return models
 

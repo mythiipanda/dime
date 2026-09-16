@@ -180,3 +180,19 @@ def test_pydanticai_provider_boundary_preserves_ordered_fallback(monkeypatch) ->
     assert [provider for provider, _ in models] == ["inception", "mistral"]
     assert models[0][1].model_name == "mercury-test"
     assert models[1][1].model_name == settings.mistral_model
+
+
+def test_pydanticai_models_keep_timeout_and_openrouter_attribution(monkeypatch) -> None:
+    from v2.adapters.models import ProviderStructuredModel
+
+    monkeypatch.setattr("v2.adapters.models.settings.openrouter_api_key", "key")
+    monkeypatch.setattr("v2.adapters.models.settings.mistral_api_key", "")
+    monkeypatch.setattr("v2.adapters.models.settings.inception_api_key", "")
+    monkeypatch.setattr("v2.adapters.models.settings.groq_api_key", "")
+    [(provider, model)] = ProviderStructuredModel(
+        "openrouter", "openrouter/free")._models()
+    assert provider == "openrouter"
+    client = model.client
+    assert client.timeout == settings.llm_timeout_s
+    assert client.max_retries == 0
+    assert client.default_headers["X-Title"] == "Dime NBA Analyst"
