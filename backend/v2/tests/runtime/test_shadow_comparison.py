@@ -112,3 +112,21 @@ def test_shadow_comparison_rejects_bad_identity_and_duplicate_differences() -> N
     ]:
         with pytest.raises(ValidationError, match=error):
             ShadowComparison(**{**base, **changes})
+
+
+def test_shadow_gate_report_rejects_impossible_state() -> None:
+    import pytest
+    from pydantic import ValidationError
+    from v2.runtime.shadow import ShadowGateReport
+
+    base = {"total_runs": 1, "failure_rate": 0, "grounding_drift_rate": 0,
+            "route_drift_rate": 0, "answer_drift_rate": 0, "ready": True}
+    for changes, error in [
+        ({"failure_rate": 1.1}, "out of range"),
+        ({"total_runs": -1}, "out of range"),
+        ({"ready": False, "blockers": []}, "contradicts"),
+        ({"ready": True, "blockers": ["blocked"]}, "contradicts"),
+        ({"ready": False, "blockers": ["same", "same"]}, "must be unique"),
+    ]:
+        with pytest.raises(ValidationError, match=error):
+            ShadowGateReport(**{**base, **changes})

@@ -159,6 +159,20 @@ class ShadowGateReport(BaseModel):
     ready: bool
     blockers: list[str] = Field(default_factory=list)
 
+    @model_validator(mode="after")
+    def validate_report(self) -> "ShadowGateReport":
+        rates = (self.failure_rate, self.grounding_drift_rate,
+                 self.route_drift_rate, self.answer_drift_rate)
+        if self.total_runs < 0 or any(rate < 0 or rate > 1 for rate in rates):
+            raise ValueError("shadow gate counts and rates are out of range")
+        if any(not blocker.strip() for blocker in self.blockers):
+            raise ValueError("shadow gate blockers must be non-empty")
+        if len(self.blockers) != len(set(self.blockers)):
+            raise ValueError("shadow gate blockers must be unique")
+        if self.ready == bool(self.blockers):
+            raise ValueError("shadow gate readiness contradicts blockers")
+        return self
+
 
 def evaluate_shadow_gate(
     comparisons: list[ShadowComparison],
