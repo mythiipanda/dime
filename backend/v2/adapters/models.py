@@ -220,7 +220,7 @@ class ModelIntake(ModelStage):
             analytical_assumption = any(
                 token in folded for token in (
                     "risk tolerance", "front office", "preference",
-                    "appetite", "willingness",
+                    "appetite", "willingness", "trade intent",
                 ))
             if evidence_lookup or analytical_assumption:
                 resolvable_questions.append(question)
@@ -231,6 +231,12 @@ class ModelIntake(ModelStage):
                 "assumptions": list(dict.fromkeys([
                     *task.assumptions, *resolvable_questions])),
             })
+        task = task.model_copy(update={
+            "required_evidence": [
+                name for name in task.required_evidence
+                if name not in set(task.skills)
+            ],
+        })
         player_count = sum(entity.type == "player" for entity in task.entities)
         optional_evidence = {"trade_value"}
         if player_count < 2:

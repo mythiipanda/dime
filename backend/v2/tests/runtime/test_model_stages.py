@@ -675,3 +675,18 @@ async def test_followup_trade_uses_context_performance_season_not_forward_defaul
     ))
     assert task.season.value == "2025-26"
     assert task.season.source == "context"
+
+@pytest.mark.anyio
+async def test_intake_removes_skills_from_required_evidence_and_trade_intent_blocker() -> None:
+    stub = StubModel([{
+        "goal": "Brown for George", "mode": "quick", "deliverable": "answer",
+        "skills": ["trade-analysis", "player-comparison"],
+        "required_evidence": ["trade-analysis", "player-comparison", "contracts"],
+        "open_questions": ["Celtics front office current trade intent for Brown"],
+    }])
+    intake = ModelIntake(stub, provider="stub", model_name="stub-model",
+        capability_catalog={"contracts": {}})
+    task = await intake.understand("Brown for George?")
+    assert task.required_evidence == ["contracts"]
+    assert task.open_questions == []
+    assert task.assumptions == ["Celtics front office current trade intent for Brown"]
