@@ -166,6 +166,11 @@ class PlanExecutor:
         ) - nodes.keys()
         if unknown:
             raise ValueError(f"checkpoint references unknown nodes: {sorted(unknown)}")
+        evidence_ids = [
+            item.evidence_id for item in checkpoint.evidence_by_node.values()
+        ]
+        if len(evidence_ids) != len(set(evidence_ids)):
+            raise ValueError("checkpoint evidence ids must be unique")
         for node_id, node in nodes.items():
             evidence = checkpoint.evidence_by_node.get(node_id)
             if (node.status == PlanStatus.COMPLETE) != (evidence is not None):

@@ -696,3 +696,28 @@ def test_stream_tool_result_status_matches_error() -> None:
         ToolResult(node="execute", name="standings", status="ok", error="bad")
     with pytest.raises(ValidationError, match="requires an error"):
         ToolResult(node="execute", name="standings", status="fail")
+
+
+@pytest.mark.anyio
+async def test_checkpoint_resume_rejects_duplicate_evidence_identity(tmp_path: Path) -> None:
+    from datetime import UTC, datetime
+    from v2.contracts import EvidenceEnvelope
+    from v2.runtime.checkpoints import ExecutionCheckpoint
+
+    checkpoints = FileCheckpointStore(tmp_path)
+    plan = _plan()
+    for node in plan.nodes:
+        node.status = PlanStatus.COMPLETE
+    first = EvidenceEnvelope(
+        evidence_id="same", capability="fake", source="fixture",
+        observed_at=datetime.now(UTC), rows={"node": "one"})
+    second = first.model_copy(update={"rows": {"node": "two"}})
+    checkpoints.save(ExecutionCheckpoint(
+        run_id="duplicate-evidence", task=_task(), plan=plan,
+        evidence_by_node={"one": first, "two": second},
+        attempts={"one": 1, "two": 1}))
+
+    with pytest.raises(ValueError, match="checkpoint evidence ids must be unique"):
+        await PlanExecutor(
+            {"fake": FakeCapability("fake", {})}, checkpoint_store=checkpoints,
+        ).execute(_task(), _plan(), run_id="duplicate-evidence")
