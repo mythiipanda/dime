@@ -118,8 +118,9 @@ class ShadowStore:
 
 def outcome_from_v2(result: Any, answer: str, duration_ms: int | None = None) -> RunOutcome:
     claim_results = result.verification.claim_results
+    status = result.verification.status.value
     return RunOutcome(
-        status="ok",
+        status="ok" if status == "pass" else status,
         answer=answer,
         capabilities=[item.capability for item in result.execution.evidence],
         evidence_count=len(result.execution.evidence),

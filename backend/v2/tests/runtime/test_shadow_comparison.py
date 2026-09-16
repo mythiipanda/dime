@@ -130,3 +130,21 @@ def test_shadow_gate_report_rejects_impossible_state() -> None:
     ]:
         with pytest.raises(ValidationError, match=error):
             ShadowGateReport(**{**base, **changes})
+
+
+def test_v2_outcome_preserves_nonpassing_verification_status() -> None:
+    from v2.contracts import DraftReport, Plan, TaskSpec, VerificationReport
+    from v2.runtime.models import ExecutionResult, RuntimeResult
+    from v2.runtime.shadow import outcome_from_v2
+
+    result = RuntimeResult(
+        task=TaskSpec(goal="answer", mode="quick", deliverable="text"),
+        execution=ExecutionResult(plan=Plan(nodes=[])),
+        draft=DraftReport(sections=["No answer"], claims=[]),
+        verification=VerificationReport(status="partial"),
+        gaps=[{"kind": "missing_evidence", "message": "missing"}],
+    )
+    v2_outcome = outcome_from_v2(result, "missing")
+    assert v2_outcome.status == "partial"
+    comparison = compare_outcomes("answer?", outcome(status="ok"), v2_outcome)
+    assert DifferenceKind.FAILURE in comparison.differences
