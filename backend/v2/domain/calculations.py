@@ -3,7 +3,7 @@ from __future__ import annotations
 from decimal import Decimal, DivisionByZero, InvalidOperation
 from enum import StrEnum
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from v2.domain.evidence import EvidenceIndex, decimal_value
 
@@ -20,12 +20,16 @@ class CalculationOperation(StrEnum):
 
 
 class CalculationInput(BaseModel):
-    evidence_id: str
-    path: str
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    evidence_id: str = Field(min_length=1)
+    path: str = Field(min_length=1)
 
 
 class Calculation(BaseModel):
-    calculation_id: str
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    calculation_id: str = Field(min_length=1)
     operation: CalculationOperation
     inputs: list[CalculationInput]
     result: Decimal
@@ -36,6 +40,8 @@ class Calculation(BaseModel):
     def validate_shape(self) -> "Calculation":
         if not self.inputs:
             raise ValueError("calculations require inputs")
+        if len(self.inputs) != len(set(self.inputs)):
+            raise ValueError("calculation inputs must not contain duplicates")
         if self.operation in (CalculationOperation.SUBTRACT,
                               CalculationOperation.DIVIDE,
                               CalculationOperation.PERCENT):

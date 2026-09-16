@@ -38,3 +38,19 @@ def test_missing_input_fails_closed():
         inputs=[ref("rows[0].MISSING")], result=Decimal("1"))
     with pytest.raises(ValueError, match="missing or non-numeric"):
         recompute(calculation, index())
+
+
+@pytest.mark.parametrize("payload,error", [
+    ({"calculation_id": "sum", "operation": "add", "inputs": [
+        {"evidence_id": "box", "path": "rows[0].PTS"},
+        {"evidence_id": "box", "path": "rows[0].PTS"},
+    ], "result": 60}, "must not contain duplicates"),
+    ({"calculation_id": "sum", "operation": "add", "inputs": [
+        {"evidence_id": "box", "path": "rows[0].PTS"},
+    ], "result": 30, "invented": True}, "Extra inputs are not permitted"),
+])
+def test_calculation_contract_rejects_ambiguous_inputs(payload, error):
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match=error):
+        Calculation.model_validate(payload)
