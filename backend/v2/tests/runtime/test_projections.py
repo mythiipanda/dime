@@ -35,26 +35,28 @@ def test_replay_projection_excludes_prompts_questions_and_answers():
 
 def test_successful_tool_projection_rejects_missing_or_extra_evidence_fields():
     import pytest
+    from v2.runtime.ledger import LedgerEntry
 
-    def ledger_with_result(data):
-        ledger = RunLedger("run")
-        ledger.append(LedgerKind.TOOL_CALL, turn_id="turn", step_id="facts",
-                      call_id="call", data={"name": "standings", "args": {}})
-        ledger.append(LedgerKind.TOOL_RESULT, turn_id="turn", step_id="facts",
-                      call_id="call", data=data)
-        return ledger
+    def entries_with_result(data):
+        call = LedgerEntry(
+            sequence=1, run_id="run", kind="tool/call", recorded_at=datetime.now(UTC),
+            turn_id="turn", call_id="call", data={"name": "standings", "args": {}},
+        )
+        result = LedgerEntry(
+            sequence=2, run_id="run", kind="tool/result", recorded_at=datetime.now(UTC),
+            turn_id="turn", call_id="call", data=data,
+        )
+        return [call, result]
 
-    missing = ledger_with_result({"status": "ok"})
     with pytest.raises(ValueError, match="unexpected fields"):
-        admitted_evidence(missing.entries)
+        admitted_evidence(entries_with_result({"status": "ok"}))
 
     _, evidence = ledger_with_attempt()
-    extra = ledger_with_result({
-        "status": "ok", "evidence": evidence.model_dump(mode="json"),
-        "unverified": True,
-    })
     with pytest.raises(ValueError, match="unexpected fields"):
-        admitted_evidence(extra.entries)
+        admitted_evidence(entries_with_result({
+            "status": "ok", "evidence": evidence.model_dump(mode="json"),
+            "unverified": True,
+        }))
 
 
 def test_tool_attempt_projection_rejects_partial_call_and_status() -> None:
@@ -73,10 +75,13 @@ def test_tool_attempt_projection_rejects_partial_call_and_status() -> None:
     with pytest.raises(ValueError, match="tool call has unexpected fields"):
         tool_attempts([call, result])
 
-    ledger = RunLedger("run")
-    ledger.append(LedgerKind.TOOL_CALL, turn_id="turn", call_id="call",
-                  data={"name": "standings", "args": {}})
-    ledger.append(LedgerKind.TOOL_RESULT, turn_id="turn", call_id="call",
-                  data={"status": "success"})
+    call = LedgerEntry(
+        sequence=1, run_id="run", kind="tool/call", recorded_at=datetime.now(UTC),
+        turn_id="turn", call_id="call", data={"name": "standings", "args": {}},
+    )
+    bad_status = LedgerEntry(
+        sequence=2, run_id="run", kind="tool/result", recorded_at=datetime.now(UTC),
+        turn_id="turn", call_id="call", data={"status": "success"},
+    )
     with pytest.raises(ValueError, match="status must be ok or failed"):
-        tool_attempts(ledger.entries)
+        tool_attempts([call, bad_status])

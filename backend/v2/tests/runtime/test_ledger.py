@@ -38,7 +38,7 @@ def test_tool_call_identity_is_immutable() -> None:
     ledger.append(LedgerKind.TOOL_CALL, turn_id="t", step_id="s", call_id="c",
                   data={"name": "prediction", "args": {"a": "BOS"}})
     ledger.append(LedgerKind.TOOL_RESULT, turn_id="t", step_id="s", call_id="c",
-                  data={"status": "ok", "value": {"win_probability": 0.548}})
+                  data={"status": "ok", "evidence": {"win_probability": 0.548}})
     with pytest.raises(ValueError, match="cannot change"):
         ledger.append(LedgerKind.TOOL_CALL, turn_id="t", step_id="s", call_id="c",
                       data={"name": "prediction", "args": {"a": "NYK"}})
@@ -164,3 +164,21 @@ def test_tool_call_data_shape_is_strict(data, error) -> None:
         RunLedger("run").append(
             LedgerKind.TOOL_CALL, turn_id="turn", call_id="call", data=data,
         )
+
+
+@pytest.mark.parametrize(
+    "data,error",
+    [
+        ({"status": "ok"}, "status and evidence object"),
+        ({"status": "ok", "evidence": {}, "error": "bad"}, "status and evidence object"),
+        ({"status": "failed"}, "non-empty error"),
+        ({"status": "failed", "error": " "}, "non-empty error"),
+        ({"status": "success"}, "status must be ok or failed"),
+    ],
+)
+def test_tool_result_data_shape_is_strict(data, error) -> None:
+    ledger = RunLedger("run")
+    ledger.append(LedgerKind.TOOL_CALL, turn_id="turn", call_id="call",
+                  data={"name": "standings", "args": {}})
+    with pytest.raises(ValueError, match=error):
+        ledger.append(LedgerKind.TOOL_RESULT, turn_id="turn", call_id="call", data=data)

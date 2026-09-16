@@ -154,6 +154,17 @@ class RunLedger:
                 raise ValueError("tool result requires an earlier tool call")
             if call_id in self._results:
                 raise ValueError("tool call may have only one result")
+            status = payload.get("status")
+            if status == "ok":
+                if set(payload) != {"status", "evidence"}                         or not isinstance(payload.get("evidence"), dict):
+                    raise ValueError(
+                        "successful tool result requires exactly status and evidence object")
+            elif status == "failed":
+                if set(payload) != {"status", "error"}                         or not isinstance(payload.get("error"), str)                         or not payload["error"].strip():
+                    raise ValueError(
+                        "failed tool result requires exactly status and non-empty error")
+            else:
+                raise ValueError("tool result status must be ok or failed")
             self._results.add(call_id)
         entry = LedgerEntry(
             sequence=len(self._entries) + 1,
