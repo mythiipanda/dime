@@ -84,3 +84,19 @@ def test_catalog_rejects_symlinked_skill_definition(tmp_path: Path):
     (package / "SKILL.md").symlink_to(outside)
     with pytest.raises(ValueError, match="SKILL.md cannot be a symlink"):
         SkillLibrary(tmp_path).catalog()
+
+
+def test_activation_hash_covers_resource_contents(tmp_path: Path):
+    package = tmp_path / "example"
+    references = package / "references"
+    references.mkdir(parents=True)
+    (package / "SKILL.md").write_text(
+        "---\nname: example\ndescription: Example skill\n---\nInstructions",
+        encoding="utf-8",
+    )
+    resource = references / "guide.md"
+    resource.write_text("first", encoding="utf-8")
+    first = SkillLibrary(tmp_path).activate(["example"])[0]["content_hash"]
+    resource.write_text("second", encoding="utf-8")
+    second = SkillLibrary(tmp_path).activate(["example"])[0]["content_hash"]
+    assert first != second

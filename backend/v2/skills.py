@@ -33,10 +33,15 @@ class Skill:
                 if path.is_file():
                     resources.append(str(path.relative_to(self.directory)))
         resources.sort()
+        digest = hashlib.sha256()
+        digest.update((self.directory / "SKILL.md").read_bytes())
+        for resource in resources:
+            digest.update(resource.encode())
+            digest.update((self.directory / resource).read_bytes())
         return {
             "name": self.name,
             "instructions": self.body,
-            "content_hash": self.content_hash,
+            "content_hash": digest.hexdigest(),
             "resources": resources,
         }
 
