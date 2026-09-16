@@ -3,7 +3,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, TypeAdapter, field_validator, model_validator
 
 
 class StrictEvent(BaseModel):
@@ -61,8 +61,8 @@ class ToolResult(StrictEvent):
     node: str
     name: str
     status: Literal["ok", "fail"]
-    rows: int | None = Field(default=None, ge=0)
-    ms: int | None = Field(default=None, ge=0)
+    rows: StrictInt | None = Field(default=None, ge=0)
+    ms: StrictInt | None = Field(default=None, ge=0)
     error: str | None = None
     summary: str | None = None
     sql: str | None = None

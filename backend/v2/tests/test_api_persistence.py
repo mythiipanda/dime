@@ -726,6 +726,11 @@ def test_stream_tool_result_rejects_negative_row_count() -> None:
         ToolResult(node="execute", name="standings", status="ok", rows=-1)
     with pytest.raises(ValidationError, match="greater than or equal to 0"):
         ToolResult(node="execute", name="standings", status="ok", ms=-1)
+    for field in ("rows", "ms"):
+        for value in (True, 1.5, "1"):
+            with pytest.raises(ValidationError):
+                ToolResult(node="execute", name="standings", status="ok",
+                           **{field: value})
 
 
 @pytest.mark.parametrize(
