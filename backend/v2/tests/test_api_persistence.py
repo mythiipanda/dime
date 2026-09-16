@@ -1307,3 +1307,13 @@ def test_chat_route_fails_closed_on_unknown_runtime_mode(monkeypatch):
         "/api/v2/chat/stream", json={"q": "record?"})
 
     assert response.status_code == 404
+
+
+def test_frontend_preserves_public_node_error_status():
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[3]
+              / "frontend" / "components" / "ChatPanel.tsx").read_text()
+
+    assert 'status === "complete" || status === "error" ? status : "running"' in source
+    assert 'd.status === "complete" ? "complete" : "running"' not in source

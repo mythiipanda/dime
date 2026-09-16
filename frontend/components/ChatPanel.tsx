@@ -36,7 +36,9 @@ function applyEvent(ai: AiMessage, type: string, data: unknown): AiMessage {
   };
   if (type === "node_update") {
     const node = d.node as NodeName;
-    touch(node).status = d.status === "complete" ? "complete" : "running";
+    const status = d.status;
+    touch(node).status =
+      status === "complete" || status === "error" ? status : "running";
   } else if (type === "thought_token") {
     // Live LLM tokens: planner reasoning and desk subagent thinking,
     // streamed token-by-token as the model generates them.
