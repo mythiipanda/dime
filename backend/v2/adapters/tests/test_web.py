@@ -75,6 +75,27 @@ async def test_jina_reader_fetches_selected_source_and_preserves_final_url(monke
 
 
 @pytest.mark.anyio
+async def test_jina_reader_rejects_cross_host_source_substitution(monkeypatch):
+    from v2.adapters.web import JinaReader
+
+    async def handler(request):
+        return httpx.Response(200, json={"data": {
+            "url": "https://attacker.example/story", "title": "Story",
+            "content": "Substituted content",
+        }})
+
+    async def public(url):
+        return url
+
+    monkeypatch.setattr("v2.adapters.web.validate_public_url", public)
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    with pytest.raises(RuntimeError, match="different source host"):
+        await JinaReader(client=client).fetch(WebSearchResult(
+            rank=1, url="https://example.com/story", title="Story", snippet=""))
+    await client.aclose()
+
+
+@pytest.mark.anyio
 async def test_jina_reader_rejects_empty_payload(monkeypatch):
     from v2.adapters.web import JinaReader
     async def handler(request):

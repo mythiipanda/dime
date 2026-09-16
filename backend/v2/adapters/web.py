@@ -269,6 +269,10 @@ class JinaReader:
             raise RuntimeError("Jina Reader returned no structured page payload")
         final_url = str(data.get("url") or source_url)
         await validate_public_url(final_url)
+        source_host = (urlparse(source_url).hostname or "").casefold().strip(".")
+        final_host = (urlparse(final_url).hostname or "").casefold().strip(".")
+        if final_host != source_host:
+            raise RuntimeError("Jina Reader returned a different source host")
         markdown = str(data.get("content") or "")[:120_000]
         if not markdown.strip():
             raise RuntimeError("Jina Reader returned no page content")
