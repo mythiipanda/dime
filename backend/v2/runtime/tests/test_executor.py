@@ -337,3 +337,16 @@ def test_execution_result_rejects_unattempted_completed_or_failed_node() -> None
         ExecutionResult(
             plan=Plan(nodes=[failed]), errors={"failed": ["failure"]},
         )
+
+
+@pytest.mark.parametrize("errors,message", [([" "], "empty errors"), (["same", "same"], "duplicate errors")])
+def test_execution_result_rejects_invalid_error_messages(errors, message) -> None:
+    from pydantic import ValidationError
+    from v2.runtime.models import ExecutionResult
+
+    failed = node("failed").model_copy(update={"status": PlanStatus.FAILED})
+    with pytest.raises(ValidationError, match=message):
+        ExecutionResult(
+            plan=Plan(nodes=[failed]), attempts={"failed": 1},
+            errors={"failed": errors},
+        )

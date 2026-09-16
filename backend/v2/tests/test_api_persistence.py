@@ -604,3 +604,20 @@ async def test_checkpoint_rejects_unattempted_completed_node(tmp_path: Path) -> 
         await PlanExecutor(
             {"fake": FakeCapability("fake", {})}, checkpoint_store=checkpoints,
         ).execute(_task(), _plan(), run_id="unattempted")
+
+
+@pytest.mark.anyio
+async def test_checkpoint_rejects_duplicate_error_messages(tmp_path: Path) -> None:
+    from v2.runtime.checkpoints import ExecutionCheckpoint
+
+    checkpoints = FileCheckpointStore(tmp_path)
+    plan = _plan()
+    plan.nodes[0].status = PlanStatus.FAILED
+    checkpoints.save(ExecutionCheckpoint(
+        run_id="duplicate-errors", task=_task(), plan=plan,
+        attempts={"one": 1}, errors={"one": ["same", "same"]},
+    ))
+    with pytest.raises(ValueError, match="duplicate errors"):
+        await PlanExecutor(
+            {"fake": FakeCapability("fake", {})}, checkpoint_store=checkpoints,
+        ).execute(_task(), _plan(), run_id="duplicate-errors")

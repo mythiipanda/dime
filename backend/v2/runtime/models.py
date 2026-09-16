@@ -61,6 +61,10 @@ class ExecutionResult(BaseModel):
                 raise ValueError(
                     f"execution node {node.id!r} reached terminal state without an attempt")
             node_errors = self.errors.get(node.id, [])
+            if any(not error.strip() for error in node_errors):
+                raise ValueError(f"execution node {node.id!r} has empty errors")
+            if len(node_errors) != len(set(node_errors)):
+                raise ValueError(f"execution node {node.id!r} has duplicate errors")
             if node.status.value == "failed" and not node_errors:
                 raise ValueError(f"failed node {node.id!r} requires errors")
             if node.status.value == "skipped" and node_errors:

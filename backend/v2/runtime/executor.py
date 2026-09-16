@@ -171,7 +171,12 @@ class PlanExecutor:
             if (node.status == PlanStatus.COMPLETE) != (evidence is not None):
                 raise ValueError(
                     f"checkpoint node {node_id!r} completion/evidence mismatch")
-            if node.status == PlanStatus.FAILED and not checkpoint.errors.get(node_id):
+            node_errors = checkpoint.errors.get(node_id, [])
+            if any(not error.strip() for error in node_errors):
+                raise ValueError(f"checkpoint node {node_id!r} has empty errors")
+            if len(node_errors) != len(set(node_errors)):
+                raise ValueError(f"checkpoint node {node_id!r} has duplicate errors")
+            if node.status == PlanStatus.FAILED and not node_errors:
                 raise ValueError(
                     f"checkpoint node {node_id!r} failed without errors")
             if node.status == PlanStatus.SKIPPED and node_id in checkpoint.errors:
