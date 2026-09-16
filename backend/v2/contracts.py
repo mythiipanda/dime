@@ -313,6 +313,10 @@ class VerifiedClaim(BaseModel):
         source_ids = [item.evidence_id for item in self.sources]
         if len(source_ids) != len(set(source_ids)):
             raise ValueError("verified claim sources must not contain duplicates")
+        if self.evidence_ids != self.claim.evidence_ids:
+            raise ValueError("verified claim evidence must match the claim")
+        if not set(source_ids) <= set(self.evidence_ids):
+            raise ValueError("verified claim sources must belong to its evidence")
         return self
 
 

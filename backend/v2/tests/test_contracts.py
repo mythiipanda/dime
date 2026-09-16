@@ -235,3 +235,16 @@ def test_projection_requires_scenario_evidence() -> None:
 def test_claim_rejects_empty_text_or_evidence_identity(payload, error) -> None:
     with pytest.raises(ValidationError, match=error):
         Claim.model_validate(payload)
+
+
+def test_verified_claim_requires_exact_source_binding() -> None:
+    from v2.contracts import ClaimSource, VerifiedClaim
+
+    claim = Claim(text="Observed.", kind="observed", evidence_ids=["ev"])
+    source = ClaimSource(evidence_id="ev", source="fixture", capability="standings")
+    VerifiedClaim(claim_index=0, claim=claim, evidence_ids=["ev"], sources=[source])
+    with pytest.raises(ValidationError, match="evidence must match"):
+        VerifiedClaim(claim_index=0, claim=claim, evidence_ids=[], sources=[])
+    unknown = ClaimSource(evidence_id="other", source="fixture", capability="standings")
+    with pytest.raises(ValidationError, match="belong to its evidence"):
+        VerifiedClaim(claim_index=0, claim=claim, evidence_ids=["ev"], sources=[unknown])
