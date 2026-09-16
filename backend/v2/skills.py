@@ -76,10 +76,21 @@ class SkillLibrary:
 
 
 def skill_hashes(activated: list[dict[str, Any]]) -> dict[str, str]:
-    return {
-        str(skill["name"]): str(skill["content_hash"])
-        for skill in activated
-    }
+    hashes: dict[str, str] = {}
+    for skill in activated:
+        if set(skill) != {"name", "instructions", "content_hash", "resources"}:
+            raise ValueError("activated skill has unexpected fields")
+        name = skill["name"]
+        content_hash = skill["content_hash"]
+        if not isinstance(name, str) or not _NAME.fullmatch(name):
+            raise ValueError("activated skill has invalid name")
+        if (not isinstance(content_hash, str) or len(content_hash) != 64
+                or any(char not in "0123456789abcdef" for char in content_hash)):
+            raise ValueError("activated skill has invalid content hash")
+        if name in hashes:
+            raise ValueError("activated skill names must be unique")
+        hashes[name] = content_hash
+    return hashes
 
 
 def _read_skill(path: Path) -> Skill:

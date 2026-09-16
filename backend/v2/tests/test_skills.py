@@ -43,3 +43,16 @@ def test_invalid_agent_skill_package_fails_closed(tmp_path: Path):
     (directory / "SKILL.md").write_text("# no frontmatter", encoding="utf-8")
     with pytest.raises(ValueError, match="YAML frontmatter"):
         SkillLibrary(tmp_path).catalog()
+
+
+def test_skill_hashes_rejects_malformed_activated_context():
+    valid = SkillLibrary().activate(["trade-analysis"])[0]
+    for changed, error in [
+        ({**valid, "content_hash": "bad"}, "content hash"),
+        ({**valid, "name": "Bad Name"}, "invalid name"),
+        ({**valid, "extra": True}, "unexpected fields"),
+    ]:
+        with pytest.raises(ValueError, match=error):
+            skill_hashes([changed])
+    with pytest.raises(ValueError, match="names must be unique"):
+        skill_hashes([valid, valid])
