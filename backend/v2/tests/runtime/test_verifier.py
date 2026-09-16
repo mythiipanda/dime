@@ -288,9 +288,14 @@ def test_entity_alias_ids_match_on_canonical_display_name():
     from v2.contracts import EvidenceEnvelope
     task_with_slug = task().model_copy(update={"entities": [EntityRef(
         id="boston-celtics", type="team", display_name="Boston Celtics")]})
-    evidence_with_numeric_id = evidence(entities=[EntityRef(
-        id="1610612738", type="team", display_name="boston-celtics")])
-    claim = Claim(text="The Boston Celtics finished with 61 wins.",
-                  kind="observed", evidence_ids=["standings"])
-    result = verify_mechanical(task_with_slug, report(claim), [evidence_with_numeric_id])
-    assert result.status == VerificationStatus.PASS
+    for evidence_entity in (
+        EntityRef(id="1610612738", type="team", display_name="boston-celtics"),
+        EntityRef(id="BOS", type="team", display_name="bos"),
+    ):
+        evidence_with_alias = evidence(entities=[evidence_entity])
+        for text in ("The Boston Celtics finished with 61 wins.",
+                     "The team's win total was 61."):
+            claim = Claim(text=text, kind="observed", evidence_ids=["standings"])
+            result = verify_mechanical(
+                task_with_slug, report(claim), [evidence_with_alias])
+            assert result.status == VerificationStatus.PASS

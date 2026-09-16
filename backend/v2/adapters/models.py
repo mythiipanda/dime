@@ -205,13 +205,15 @@ class ModelIntake(ModelStage):
                     *task.assumptions, *evidence_questions])),
             })
         player_count = sum(entity.type == "player" for entity in task.entities)
+        optional_evidence = {"trade_value"}
         if player_count < 2:
-            task = task.model_copy(update={
-                "required_evidence": [
-                    name for name in task.required_evidence
-                    if name not in {"trade_value", "player_comparison"}
-                ],
-            })
+            optional_evidence.add("player_comparison")
+        task = task.model_copy(update={
+            "required_evidence": [
+                name for name in task.required_evidence
+                if name not in optional_evidence
+            ],
+        })
         unknown = sorted(set(task.required_evidence) - self._catalog.keys())
         if unknown:
             raise ValueError(f"intake selected unknown capabilities: {unknown}")

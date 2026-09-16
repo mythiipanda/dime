@@ -625,3 +625,19 @@ async def test_intake_turns_tool_resolvable_team_question_into_assumption() -> N
     task = await intake.understand("What about Brown for Paul George?")
     assert task.open_questions == []
     assert task.assumptions == ["Which team is Paul George currently on?"]
+
+@pytest.mark.anyio
+async def test_intake_does_not_hard_require_trade_value() -> None:
+    stub = StubModel([{
+        "goal": "Brown for George", "mode": "quick", "deliverable": "answer",
+        "entities": [
+            {"id": "1627759", "type": "player", "display_name": "Jaylen Brown"},
+            {"id": "202331", "type": "player", "display_name": "Paul George"},
+        ],
+        "required_evidence": ["player_evaluation", "trade_value", "player_comparison"],
+    }])
+    intake = ModelIntake(stub, provider="stub", model_name="stub-model",
+        capability_catalog={"player_evaluation": {}, "trade_value": {},
+                            "player_comparison": {}})
+    task = await intake.understand("Brown for George?")
+    assert task.required_evidence == ["player_evaluation", "player_comparison"]

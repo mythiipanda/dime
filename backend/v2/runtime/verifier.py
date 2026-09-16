@@ -104,6 +104,22 @@ def _claim_seasons_supported(claim: Claim,
             if value.casefold() not in supported]
 
 
+def _canonical_entity(entity) -> tuple[str, str]:
+    if entity.type == "team":
+        try:
+            from app.tools._core import coerce_team_id
+            for candidate in (entity.id, entity.display_name):
+                try:
+                    return ("team", str(coerce_team_id(candidate)))
+                except (TypeError, ValueError):
+                    continue
+        except ImportError:
+            pass
+    normalized = " ".join(
+        entity.id.casefold().replace("-", " ").replace("_", " ").split())
+    return (entity.type, normalized)
+
+
 def _entity_reasons(task: TaskSpec, claim: Claim,
                     envelopes: Sequence[EvidenceEnvelope]) -> list[str]:
     text = claim.text.casefold()
@@ -113,34 +129,21 @@ def _entity_reasons(task: TaskSpec, claim: Claim,
     }
     row_values = _text_values(envelopes)
     reasons: list[str] = []
-    task_entities = {
-        (entity.type, entity.id.casefold()) for entity in task.entities
-    }
+    task_entities = {_canonical_entity(entity) for entity in task.entities}
     cited_entities = {
-        (entity.type, entity.id.casefold())
+        _canonical_entity(entity)
         for envelope in envelopes for entity in envelope.entities
     }
-    def normalized_name(value: str) -> str:
-        return " ".join(value.casefold().replace("-", " ").replace("_", " ").split())
-
-    task_names = {
-        (entity.type, normalized_name(entity.display_name)) for entity in task.entities
-    }
-    cited_names = {
-        (entity.type, normalized_name(entity.display_name))
-        for envelope in envelopes for entity in envelope.entities
-    }
-    names_match = bool(task_names & cited_names)
-    if (task_entities and cited_entities and not task_entities & cited_entities
-            and not names_match):
+    if task_entities and cited_entities and not task_entities & cited_entities:
         reasons.append("cited evidence entities do not match the task entities")
     for entity in task.entities:
         if entity.display_name.casefold() not in text and entity.id.casefold() not in text:
             continue
         exact = (entity.type, entity.id.casefold(), entity.display_name.casefold())
-        if exact not in evidence_entities and not {
-            entity.id.casefold(), entity.display_name.casefold()
-        } & row_values and (entity.type, normalized_name(entity.display_name)) not in cited_names:
+        canonical = _canonical_entity(entity)
+        if (exact not in evidence_entities
+                and canonical not in cited_entities
+                and not {entity.id.casefold(), entity.display_name.casefold()} & row_values):
             reasons.append(f"entity {entity.display_name} is not supported by cited evidence")
     return reasons
 

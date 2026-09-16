@@ -455,7 +455,7 @@ def test_answer_text_publishes_only_adjudicated_model_prose():
     text = _answer_text(result)
     assert "61 games" in text
     assert "62 games" not in text
-    assert "salary evidence is 2026-27, not 2025-26" in text
+    assert "The available sources conflict on part of this answer." in text
 
 
 def test_rejected_claim_cannot_publish_after_reverify_warning():
@@ -1584,7 +1584,7 @@ def test_answer_text_removes_repair_directives_and_repeated_gaps():
             contracts.Gap(kind="source_conflict", message="fit evidence was unavailable"),
         ],
     )
-    assert _answer_text(result) == "fit evidence was unavailable"
+    assert _answer_text(result) == "fit evidence was unavailable The available sources conflict on part of this answer."
 
 
 def test_answer_text_hides_mechanical_verifier_reasons():
@@ -1605,3 +1605,25 @@ def test_answer_text_hides_mechanical_verifier_reasons():
     text = _answer_text(result)
     assert text == "A drafted claim could not be verified."
     assert "qualification" not in text
+
+
+def test_answer_text_hides_policy_and_tool_directives():
+    from v2 import contracts
+    from v2.api.routes import _answer_text
+    from v2.runtime.models import ExecutionResult, RuntimeResult
+    raw = [
+        "undeclared source identity",
+        "Usage rate rank lacks coverage and qualification evidence",
+        "Identify or query a tool for role context",
+        "Ensure contract evidence matches the salary season",
+    ]
+    result = RuntimeResult(
+        task=contracts.TaskSpec(goal="value", mode="quick", deliverable="answer"),
+        execution=ExecutionResult(plan=contracts.Plan(nodes=[])),
+        draft=contracts.DraftReport(sections=[], claims=[], gaps=raw),
+        verification=contracts.VerificationReport(status="partial"),
+        gaps=[contracts.Gap(kind="missing_evidence", message=item) for item in raw],
+    )
+    text = _answer_text(result)
+    assert text == "Some requested evidence was not strong enough to verify."
+    assert all(item not in text for item in raw)
