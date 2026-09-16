@@ -358,6 +358,28 @@ async def test_unresolved_intake_questions_stop_before_planning() -> None:
 
 
 @pytest.mark.anyio
+async def test_empty_synthesis_cannot_publish_a_blank_clean_pass() -> None:
+    class EmptySynthesizer:
+        async def synthesize(self, task, evidence):
+            return DraftReport(sections=[], claims=[])
+
+    instance = Runtime(
+        intake=Intake(), planner=Planner(),
+        executor=PlanExecutor({"fake": FakeCapability("fake", {"value": 42})}),
+        synthesizer=EmptySynthesizer(),
+        mechanical_verifier=SequenceVerifier(VerificationStatus.PASS),
+        semantic_verifier=SequenceVerifier(VerificationStatus.PASS),
+    )
+    result = await instance.run("answer")
+
+    assert result.verification.status == VerificationStatus.PARTIAL
+    assert result.verified_claims == []
+    assert [gap.message for gap in result.gaps] == [
+        "synthesis produced no publishable claims",
+    ]
+
+
+@pytest.mark.anyio
 async def test_empty_evidence_cannot_finish_as_a_clean_pass() -> None:
     class EmptySynthesizer:
         async def synthesize(self, task, evidence):

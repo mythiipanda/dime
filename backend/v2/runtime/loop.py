@@ -161,7 +161,15 @@ class Runtime:
             node.id for node in execution.plan.nodes
             if node.status.value == "skipped"
         ]
-        if ((draft.gaps or empty_evidence_gaps or unresolved_errors or skipped_nodes)
+        empty_draft_gaps = ([] if (
+            draft.claims or draft.gaps or empty_evidence_gaps
+            or unresolved_errors or skipped_nodes
+        ) else [Gap(
+            kind=GapKind.MISSING_EVIDENCE,
+            message="synthesis produced no publishable claims",
+        )])
+        if ((draft.gaps or empty_evidence_gaps or empty_draft_gaps
+                or unresolved_errors or skipped_nodes)
                 and verification.status == VerificationStatus.PASS):
             verification = verification.model_copy(
                 update={"status": VerificationStatus.PARTIAL}
@@ -171,6 +179,7 @@ class Runtime:
             *_verification_gaps(
                 draft, verification, unresolved_errors, evidence_ids=set(evidence)),
             *empty_evidence_gaps,
+            *empty_draft_gaps,
             *[
                 Gap(kind=GapKind.EXECUTION_FAILURE,
                     message=f"execution skipped node {node_id}",
