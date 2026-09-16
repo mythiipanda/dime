@@ -498,6 +498,29 @@ async def test_model_authored_gap_downgrades_clean_verification_to_partial() -> 
 
 
 @pytest.mark.anyio
+async def test_unexplained_partial_verification_returns_typed_gap() -> None:
+    class UnexplainedPartialVerifier:
+        async def verify(self, task, draft, evidence):
+            return VerificationReport(
+                status=VerificationStatus.PARTIAL,
+                claim_results=[{
+                    "claim_index": index, "supported": True,
+                } for index, _claim in enumerate(draft.claims)],
+            )
+
+    result = await runtime(
+        SequenceVerifier(VerificationStatus.PASS),
+        UnexplainedPartialVerifier(),
+    ).run("answer")
+
+    assert result.verification.status == VerificationStatus.PARTIAL
+    assert [gap.message for gap in result.gaps] == [
+        "verification did not establish complete support",
+    ]
+    assert result.verified_claims[0].claim.text == "42"
+
+
+@pytest.mark.anyio
 async def test_partial_repair_instruction_surfaces_as_typed_gap() -> None:
     class PartialSemanticVerifier:
         async def verify(self, task, draft, evidence):

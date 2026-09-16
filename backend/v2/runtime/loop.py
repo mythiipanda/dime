@@ -198,6 +198,11 @@ class Runtime:
                 for node_id in skipped_nodes
             ],
         ]
+        if verification.status == VerificationStatus.PARTIAL and not gaps:
+            gaps.append(Gap(
+                kind=GapKind.MISSING_EVIDENCE,
+                message="verification did not establish complete support",
+            ))
         result = RuntimeResult(
             task=task,
             execution=execution,
