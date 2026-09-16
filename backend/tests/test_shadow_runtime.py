@@ -159,3 +159,59 @@ def test_inflight_shadow_task_is_retained_until_completion(monkeypatch):
         return chunks
 
     assert asyncio.run(exercise())
+
+
+def test_v2_shadow_runtime_has_bounded_wall_clock(monkeypatch, tmp_path):
+    from v2.runtime.shadow import ShadowStore
+
+    cancelled = asyncio.Event()
+
+    class HangingRuntime:
+        async def run(self, *args, **kwargs):
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cancelled.set()
+                raise
+
+    monkeypatch.setattr(
+        "app.providers.resolve_model_id", lambda model: ("inception", "model"))
+    monkeypatch.setattr(
+        "v2.runtime.assembly.build_runtime", lambda **kwargs: (HangingRuntime(), object()))
+    store_path = tmp_path / "shadow.jsonl"
+    monkeypatch.setenv("DIME_V2_SHADOW_STORE", str(store_path))
+    monkeypatch.setenv("DIME_V2_SHADOW_TIMEOUT_SECONDS", "1")
+
+    async def exercise():
+        loop = asyncio.get_running_loop()
+        primary = loop.create_future()
+        primary.set_result(routes._v1_shadow_outcome(
+            answer="v1 answer", capabilities=[], evidence_count=0,
+            had_error=False, duration_ms=1))
+        await routes._record_v2_shadow("record?", None, [], primary)
+
+    asyncio.run(exercise())
+    assert cancelled.is_set()
+    records = ShadowStore(store_path).read()
+    assert records[0].v2.status == "failed"
+
+
+def test_v2_shadow_timeout_rejects_unbounded_configuration(monkeypatch):
+    for value in ("0", "3601"):
+        monkeypatch.setenv("DIME_V2_SHADOW_TIMEOUT_SECONDS", value)
+        primary = None
+
+        async def exercise():
+            nonlocal primary
+            primary = asyncio.get_running_loop().create_future()
+            primary.set_result(routes._v1_shadow_outcome(
+                answer="v1", capabilities=[], evidence_count=0,
+                had_error=False, duration_ms=1))
+            await routes._record_v2_shadow("record?", None, [], primary)
+
+        try:
+            asyncio.run(exercise())
+        except ValueError as exc:
+            assert "shadow timeout" in str(exc)
+        else:
+            raise AssertionError("invalid timeout accepted")

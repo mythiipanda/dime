@@ -133,6 +133,10 @@ async def _record_v2_shadow(
     )
 
     started = time.monotonic()
+    timeout_s = int(os.environ.get(
+        "DIME_V2_SHADOW_TIMEOUT_SECONDS", str(max(30, settings.llm_timeout_s * 8))))
+    if timeout_s < 1 or timeout_s > 3600:
+        raise ValueError("shadow timeout must be between 1 and 3600 seconds")
     try:
         provider, model_name = resolve_model_id(
             model or os.environ.get("DIME_V2_MODEL"))
@@ -158,7 +162,10 @@ async def _record_v2_shadow(
             if item.get("role") in {"human", "user", "ai", "assistant"}
             and str(item.get("content", item.get("text", ""))).strip()
         )[-8:]
-        result = await runtime.run(question, run_id=run_id, context=context)
+        result = await asyncio.wait_for(
+            runtime.run(question, run_id=run_id, context=context),
+            timeout=timeout_s,
+        )
         answer = "\n\n".join(item.claim.text for item in result.verified_claims)
         if result.gaps:
             gaps = " ".join(item.message for item in result.gaps)
