@@ -318,3 +318,21 @@ def test_web_search_result_rejects_blank_title_and_non_http_url():
         WebSearchResult(rank=1, url="https://example.com", title=" ", snippet="")
     with pytest.raises(ValidationError, match="http.*https"):
         WebSearchResult(rank=1, url="ftp://example.com/file", title="File", snippet="")
+
+
+def test_web_contracts_require_timezone_aware_observation_times() -> None:
+    from datetime import datetime
+    from pydantic import ValidationError
+    from v2.adapters.web import WebPage, WebSearchResponse
+
+    with pytest.raises(ValidationError, match="observed_at must include timezone"):
+        WebSearchResponse(
+            provider="fixture", observed_at=datetime(2026, 9, 15),
+            query="Brown", results=[], coverage="fixture",
+        )
+    with pytest.raises(ValidationError, match="retrieved_at must include timezone"):
+        WebPage(
+            url="https://example.com", title="Story",
+            retrieved_at=datetime(2026, 9, 15), markdown="Body",
+            content_hash=hashlib.sha256(b"Body").hexdigest(),
+        )
