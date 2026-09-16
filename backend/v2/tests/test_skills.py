@@ -45,6 +45,21 @@ def test_invalid_agent_skill_package_fails_closed(tmp_path: Path):
         SkillLibrary(tmp_path).catalog()
 
 
+@pytest.mark.parametrize("frontmatter,error", [
+    ("name: example\ndescription: Example\ninstructions: hidden",
+     "unknown frontmatter fields"),
+    ("name: example", "requires name and description"),
+])
+def test_skill_frontmatter_contract_is_closed(tmp_path: Path, frontmatter, error):
+    package = tmp_path / "example"
+    package.mkdir()
+    (package / "SKILL.md").write_text(
+        f"---\n{frontmatter}\n---\nInstructions", encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match=error):
+        SkillLibrary(tmp_path).catalog()
+
+
 def test_skill_hashes_rejects_malformed_activated_context():
     valid = SkillLibrary().activate(["trade-analysis"])[0]
     for changed, error in [

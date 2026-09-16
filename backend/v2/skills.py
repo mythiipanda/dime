@@ -125,6 +125,11 @@ def _read_skill(path: Path) -> Skill:
     metadata = yaml.safe_load(raw_frontmatter)
     if not isinstance(metadata, dict):
         raise ValueError(f"{path}: frontmatter must be a mapping")
+    unknown = sorted(set(metadata) - {"name", "description"})
+    if unknown:
+        raise ValueError(f"{path}: unknown frontmatter fields: {unknown}")
+    if set(metadata) != {"name", "description"}:
+        raise ValueError(f"{path}: frontmatter requires name and description")
     name = metadata.get("name")
     description = metadata.get("description")
     if not isinstance(name, str) or not _NAME.fullmatch(name) or len(name) > 64:
