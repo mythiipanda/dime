@@ -667,3 +667,44 @@ def test_non_boolean_success_flag_fails_closed(ok) -> None:
             "standings", {"season": "2025-26"},
             tools={"get_standings": FakeTool(payload)},
         )
+
+
+def test_adapter_preserves_sample_and_data_limitations_as_warnings():
+    payload = {
+        "ok": True,
+        "rows": [{"FG_PCT": 0.8, "FGA": 5}],
+        "meta": {
+            "source": "fixture",
+            "season": "2025-26",
+            "sample_warning": "only 5 attempts; percentages are noisy",
+            "data_note": "results are time-based, not score-aware",
+        },
+    }
+
+    envelope = call_capability(
+        "shots", {"season": "2025-26"},
+        tools={"search_shots": FakeTool(payload)},
+    )
+
+    assert envelope.warnings == [
+        "only 5 attempts; percentages are noisy",
+        "results are time-based, not score-aware",
+    ]
+
+
+@pytest.mark.parametrize("key,value", [
+    ("sample_warning", []),
+    ("data_note", {"note": "not score-aware"}),
+    ("sample_warning", " "),
+])
+def test_adapter_rejects_malformed_sample_limitations(key, value):
+    payload = {
+        "ok": True,
+        "rows": [{"FG_PCT": 0.8}],
+        "meta": {"source": "fixture", "season": "2025-26", key: value},
+    }
+    with pytest.raises(AdapterError, match=f"{key} must be non-empty text"):
+        call_capability(
+            "shots", {"season": "2025-26"},
+            tools={"search_shots": FakeTool(payload)},
+        )

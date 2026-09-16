@@ -112,6 +112,16 @@ def build_envelope(
     singular_warning = meta.get("warning")
     if singular_warning:
         warnings.append(str(singular_warning))
+    for key in ("sample_warning", "data_note"):
+        limitation = meta.get(key)
+        if limitation is not None:
+            if not isinstance(limitation, str):
+                raise AdapterError(
+                    f"{spec.tool_name}: {key} must be non-empty text")
+            if not limitation.strip():
+                raise AdapterError(
+                    f"{spec.tool_name}: {key} must be non-empty text")
+            warnings.append(limitation)
     stale = meta.get("stale")
     if stale is not None and not isinstance(stale, bool):
         raise AdapterError(f"{spec.tool_name}: stale marker must be boolean")
