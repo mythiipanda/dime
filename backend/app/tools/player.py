@@ -2815,7 +2815,8 @@ def get_player_evaluation(player: str | int, season: str = SEASON) -> dict[str, 
         lines.append("Closest statistical comps: " + ", ".join(comp_names) + ".")
     return {
         "tool": "get_player_evaluation", "ok": True,
-        "rows": {"player": name, "team": a.get("TEAM_ABBREVIATION"),
+        "rows": {"player": name, "player_id": str(pid),
+                 "team": a.get("TEAM_ABBREVIATION"),
                  "season": season, "tier": tier, "profile": profile,
                  "modeled_value": value_row, "comps": comp_rows[:5]},
         "meta": {

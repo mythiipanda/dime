@@ -28,6 +28,7 @@ def test_jaylen_brown_complete_evaluation():
     out = get_player_evaluation.invoke({"player": "Jaylen Brown"})
     assert out["ok"] is True
     rows = out["rows"]
+    assert rows["player_id"].isdigit()
     assert rows["tier"] == "star"
     assert rows["profile"]["usage_rank"] == 3
     assert rows["profile"]["pie_rank"] == 25
