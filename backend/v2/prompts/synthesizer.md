@@ -8,8 +8,10 @@ repair.
 ## Input
 - Selected skill instructions, when intake matched the request to a relevant skill. Follow them inside the task, evidence, and output contracts.
 - The TaskSpec.
-- EvidenceEnvelopes, each with evidence_id, capability, season, as_of,
-  rows, units, metric_definitions, qualification, and coverage.
+- EvidenceEnvelopes, each with evidence_id, capability, season, vintages,
+  task_season_scoped, as_of, rows, units, metric_definitions, qualification,
+  and coverage. A multi-vintage capability can carry distinct production and
+  salary seasons in vintages; do not force those onto the task season.
 - Declared calculation results, when present, each with a calculation_id
   and parent evidence_ids.
 

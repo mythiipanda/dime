@@ -185,9 +185,14 @@ class PlanExecutor:
             attempts[node.id] += 1
             try:
                 result = await capability.execute(node, task, parent_evidence)
+                task_season_scoped = getattr(
+                    capability, "task_season_scoped", True)
+                result = result.model_copy(update={
+                    "task_season_scoped": task_season_scoped,
+                })
                 required_season = (
                     task.season.value
-                    if task.season and getattr(capability, "task_season_scoped", True)
+                    if task.season and task_season_scoped
                     else None
                 )
                 result = admit_evidence(result, required_season=required_season)

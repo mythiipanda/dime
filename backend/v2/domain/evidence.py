@@ -36,7 +36,7 @@ def decimal_value(value: Any) -> Decimal | None:
     if isinstance(value, (date, datetime)):
         return None
     text = str(value).strip().replace(",", "").replace("$", "")
-    if text.endswith("%"):
+    if text.endswith("%") or text[-1:].upper() in {"K", "M", "B"}:
         text = text[:-1]
     try:
         return Decimal(text)

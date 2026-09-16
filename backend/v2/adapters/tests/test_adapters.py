@@ -350,3 +350,21 @@ def test_leader_envelope_filters_units_and_declares_rank_coverage():
                           tools={"get_leaders": FakeTool(LEADERS_PAYLOAD)})
     assert set(env.units) == {"GP", "MIN", "FG3_PCT"}
     assert "population ranks" in env.coverage
+
+
+def test_multi_vintage_trade_metadata_is_preserved() -> None:
+    payload = {
+        "tool": "get_trade_value", "ok": True,
+        "rows": {"player": "Jaylen Brown", "salary_26_27": 57_100_000},
+        "meta": {"source": "salary-sheet", "production_season": "2025-26",
+                 "salary_season": "2026-27 (column SALARY_2025_26)"},
+    }
+    env = call_capability(
+        "trade_value", {"team_a": "BOS", "players_a": "Jaylen Brown",
+                        "team_b": "LAC", "players_b": "Paul George"},
+        tools={"get_trade_value": FakeTool(payload)},
+    )
+    assert env.season is None
+    assert env.vintages == {"production_season": "2025-26",
+                            "salary_season": "2026-27"}
+    assert env.task_season_scoped is False

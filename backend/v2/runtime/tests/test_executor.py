@@ -115,6 +115,7 @@ async def test_non_task_season_capability_admits_next_vintage_contracts() -> Non
     result = await PlanExecutor({"contracts": Contracts()}).execute(task, plan)
     assert result.plan.nodes[0].status == PlanStatus.COMPLETE
     assert result.evidence[0].season == "2026-27"
+    assert result.evidence[0].task_season_scoped is False
 
 
 @pytest.mark.anyio

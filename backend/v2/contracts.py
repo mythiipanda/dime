@@ -125,6 +125,8 @@ class EvidenceEnvelope(BaseModel):
     source: str
     observed_at: datetime
     season: str | None = None
+    vintages: dict[str, str] = Field(default_factory=dict)
+    task_season_scoped: bool = True
     as_of: date | None = None
     entities: list[EntityRef] = Field(default_factory=list)
     rows: list[dict[str, Any]] | dict[str, Any]

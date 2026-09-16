@@ -22,7 +22,8 @@ from v2.domain.calculations import Calculation, validate_calculation
 from v2.domain.evidence import EvidenceIndex, decimal_value, iter_values
 
 _NUMBER = re.compile(
-    r"(?<![A-Za-z0-9])(?:\d{4}-\d{2}-\d{2}|\d{4}-\d{2}|[-+]?\$?\d[\d,]*(?:\.\d+)?%?)(?![A-Za-z0-9])"
+    r"(?<![A-Za-z0-9])(?:\d{4}-\d{2}-\d{2}|\d{4}-\d{2}|[-+]?\$?\d[\d,]*(?:\.\d+)?(?:%|[KMB])?)(?![A-Za-z0-9])",
+    re.IGNORECASE,
 )
 _DATE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
 _SEASON = re.compile(r"\b\d{4}-\d{2}\b(?!-\d{2})")
@@ -46,6 +47,11 @@ def _canon_number(raw: Any) -> set[Decimal]:
     text = str(raw).strip()
     if text.endswith("%"):
         values.add(value / 100)
+    elif text[-1:].upper() in {"K", "M", "B"}:
+        compact = decimal_value(text[:-1])
+        if compact is not None:
+            values.add(compact * {"K": 1_000, "M": 1_000_000,
+                                  "B": 1_000_000_000}[text[-1].upper()])
     elif abs(value) <= 1:
         values.add(value * 100)
     return values
@@ -62,6 +68,7 @@ def _text_values(envelopes: Iterable[EvidenceEnvelope]) -> set[str]:
     for envelope in envelopes:
         if envelope.season:
             values.add(envelope.season)
+        values.update(value.casefold() for value in envelope.vintages.values())
         if envelope.as_of:
             values.add(envelope.as_of.isoformat())
         for entity in envelope.entities:
@@ -77,6 +84,9 @@ def _numeric_values(envelopes: Iterable[EvidenceEnvelope]) -> set[Decimal]:
     for envelope in envelopes:
         for item in iter_values(envelope):
             values.update(_canon_number(item.value))
+            if isinstance(item.value, str):
+                for token in _number_tokens(item.value):
+                    values.update(_canon_number(token))
     return values
 
 
@@ -127,7 +137,10 @@ def _scope_reasons(task: TaskSpec,
                    envelopes: Sequence[EvidenceEnvelope]) -> list[str]:
     reasons: list[str] = []
     if task.season:
-        seasons = {envelope.season for envelope in envelopes if envelope.season}
+        seasons = {
+            envelope.season for envelope in envelopes
+            if envelope.season and envelope.task_season_scoped
+        }
         if seasons and task.season.value not in seasons:
             reasons.append(
                 f"cited evidence season {sorted(seasons)} does not match task season "

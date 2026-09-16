@@ -205,3 +205,31 @@ def test_source_ranked_leader_does_not_require_duplicate_calculation():
     claim = Claim(text="Boston is the leader with 61 wins.",
                   kind=ClaimKind.OBSERVED, evidence_ids=["standings"])
     assert verify_mechanical(task(), report(claim), [ranked]).status == VerificationStatus.PASS
+
+
+def test_multi_vintage_trade_evidence_supports_salary_and_season_claim() -> None:
+    from v2.contracts import EvidenceEnvelope
+
+    trade = EvidenceEnvelope(
+        evidence_id="trade", capability="trade_value", source="warehouse:trade_value",
+        observed_at=datetime(2026, 4, 15),
+        season=None,
+        vintages={"production_season": "2025-26", "salary_season": "2026-27"},
+        task_season_scoped=False,
+        rows={"player": "Jaylen Brown", "salary_26_27": 57_100_000,
+              "disclaimer": "2025-26 production versus 2026-27 salaries"},
+    )
+    claim = Claim(
+        text="Jaylen Brown's 2026-27 salary is $57.1M.",
+        kind=ClaimKind.OBSERVED, evidence_ids=["trade"],
+    )
+    assert verify_mechanical(task(), report(claim), [trade]).status == VerificationStatus.PASS
+
+
+def test_task_season_scope_still_rejects_statistical_vintage_mismatch() -> None:
+    wrong = evidence(season="2024-25", task_season_scoped=True)
+    claim = Claim(text="Boston had 61 wins.", kind=ClaimKind.OBSERVED,
+                  evidence_ids=["standings"])
+    result = verify_mechanical(task(), report(claim), [wrong])
+    assert any("does not match task season" in reason
+               for reason in result.claim_results[0].reasons)

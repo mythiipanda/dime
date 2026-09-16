@@ -80,12 +80,19 @@ def build_envelope(
     envelope_entities = list(entities or [])
     if spec.extract_entities is not None:
         envelope_entities = spec.extract_entities(rows) + envelope_entities
+    vintages = {
+        str(key): str(value).split(" (", 1)[0]
+        for key, value in meta.items()
+        if str(key).endswith("_season") and value is not None
+    }
     return EvidenceEnvelope(
         evidence_id=evidence_id(spec.name, arguments, rows),
         capability=spec.name,
         source=f"{spec.source_prefix}:{spec.tool_name}:{meta.get('source', 'unknown')}",
         observed_at=observed_at or datetime.now(timezone.utc),
         season=str(season) if season is not None else None,
+        vintages=vintages,
+        task_season_scoped=spec.task_season_scoped,
         entities=envelope_entities,
         rows=rows,
         units={key: unit for key, unit in spec.units.items()
