@@ -29,6 +29,8 @@ class Project(BaseModel):
     def validate_state(self) -> "Project":
         if not self.id.strip() or not self.goal.strip() or not self.run_id.strip():
             raise ValueError("project identity and goal must be non-empty")
+        if self.run_id != f"project-{self.id}":
+            raise ValueError("project run id must match project identity")
         if self.updated_at < self.created_at:
             raise ValueError("project updated_at cannot precede created_at")
         if self.status == ProjectStatus.COMPLETE:

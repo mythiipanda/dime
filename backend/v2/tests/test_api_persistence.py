@@ -111,6 +111,14 @@ def test_project_store_round_trip(tmp_path: Path) -> None:
     assert store.list() == [project]
 
 
+def test_project_contract_binds_run_identity() -> None:
+    from pydantic import ValidationError
+    from v2.projects.models import Project
+
+    with pytest.raises(ValidationError, match="run id must match"):
+        Project(id="abc", goal="answer", run_id="project-other")
+
+
 def test_project_store_rejects_symlinked_database(tmp_path: Path) -> None:
     outside = tmp_path / "outside.sqlite3"
     outside.touch()
