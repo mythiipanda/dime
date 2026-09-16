@@ -97,6 +97,26 @@ def test_build_runtime_wires_configured_checkpoint_store(tmp_path, monkeypatch) 
     assert store._directory == tmp_path / "checkpoints"
 
 
+@pytest.mark.parametrize("mode", ["replay", "eval"])
+def test_build_runtime_never_executes_unsupported_modes_live(
+    mode, tmp_path, monkeypatch,
+) -> None:
+    from v2.runtime.assembly import build_runtime
+    from v2.runtime.policy import ExecutionPolicy
+
+    monkeypatch.setattr(
+        "v2.runtime.assembly.ProviderStructuredModel",
+        lambda *args: (_ for _ in ()).throw(AssertionError("live model constructed")),
+    )
+    policy = (ExecutionPolicy.replay(tmp_path / "fixture.jsonl")
+              if mode == "replay" else ExecutionPolicy.evaluation())
+    with pytest.raises(NotImplementedError, match=f"{mode} runtime assembly"):
+        build_runtime(
+            provider="inception", model_name="mercury-test", run_id="run",
+            policy=policy,
+        )
+
+
 def test_build_runtime_rejects_unsafe_run_identity(tmp_path) -> None:
     from v2.runtime.assembly import build_runtime
     from v2.runtime.policy import ExecutionPolicy

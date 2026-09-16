@@ -20,7 +20,7 @@ from v2.adapters import (
 from v2.contracts import DraftReport, VerificationReport
 from v2.runtime import FileLedger, PlanExecutor, RecordedCapability, RunLedger, Runtime
 from v2.runtime.checkpoints import FileCheckpointStore
-from v2.runtime.policy import ExecutionPolicy
+from v2.runtime.policy import ExecutionMode, ExecutionPolicy
 from v2.runtime.verifier import verify_mechanical
 from v2.adapters.web import WebFetchRequest, WebSearchRequest
 from v2.skills import SkillLibrary
@@ -95,6 +95,9 @@ def build_runtime(
         raise ValueError("run_id may contain only letters, numbers, '-' and '_'")
     policy = (ExecutionPolicy.live(ledger_dir=ledger_dir) if policy is None
               else ExecutionPolicy.model_validate(policy.model_dump()))
+    if policy.mode in {ExecutionMode.REPLAY, ExecutionMode.EVAL}:
+        raise NotImplementedError(
+            f"{policy.mode.value} runtime assembly is not implemented")
     resolved_ledger_dir = policy.ledger_dir
     ledger = (FileLedger(Path(resolved_ledger_dir) / f"{run_id}.jsonl", run_id)
               if resolved_ledger_dir is not None else RunLedger(run_id))
