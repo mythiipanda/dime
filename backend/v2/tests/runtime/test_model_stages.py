@@ -143,7 +143,8 @@ async def test_semantic_verifier_receives_vintage_and_source_scope() -> None:
     from v2.adapters.models import ModelSemanticVerifier
     from v2.contracts import Claim, DraftReport, EvidenceEnvelope, TaskSpec
 
-    stub = StubModel([{"status": "pass", "claim_results": []}])
+    stub = StubModel([{"status": "pass", "claim_results": [
+        {"claim_index": 0, "supported": True}]}])
     verifier = ModelSemanticVerifier(stub, provider="stub", model_name="stub-model")
     task = TaskSpec(goal="trade", mode="deep_dive", deliverable="analysis")
     draft = DraftReport(sections=["Trade"], claims=[Claim(
@@ -222,3 +223,34 @@ async def test_recorded_model_logs_actual_fallback_provenance() -> None:
     assert attempt.data["provider"] == "mistral"
     assert attempt.data["model"] == "ministral-test"
     assert attempt.data["used_fallback"] is True
+
+
+@pytest.mark.anyio
+async def test_semantic_verifier_rejects_incomplete_claim_adjudication() -> None:
+    from v2.contracts import Claim, DraftReport, TaskSpec
+
+    stub = StubModel([{"status": "pass", "claim_results": []}])
+    verifier = ModelSemanticVerifier(stub, provider="stub", model_name="stub-model")
+    draft = DraftReport(sections=["Answer"], claims=[Claim(
+        text="Boston won 61 games.", kind="observed", evidence_ids=["ev"])])
+    with pytest.raises(ValueError, match="every claim exactly once"):
+        await verifier.verify(
+            TaskSpec(goal="record", mode="quick", deliverable="answer"),
+            draft, {},
+        )
+
+
+@pytest.mark.anyio
+async def test_semantic_verifier_rejects_contradictory_pass() -> None:
+    from v2.contracts import Claim, DraftReport, TaskSpec
+
+    stub = StubModel([{"status": "pass", "claim_results": [
+        {"claim_index": 0, "supported": False, "reasons": ["unsupported"]}]}])
+    verifier = ModelSemanticVerifier(stub, provider="stub", model_name="stub-model")
+    draft = DraftReport(sections=["Answer"], claims=[Claim(
+        text="Boston won 61 games.", kind="observed", evidence_ids=["ev"])])
+    with pytest.raises(ValueError, match="pass contradicts"):
+        await verifier.verify(
+            TaskSpec(goal="record", mode="quick", deliverable="answer"),
+            draft, {},
+        )

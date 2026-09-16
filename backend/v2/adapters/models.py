@@ -268,7 +268,7 @@ class ModelSemanticVerifier(ModelStage):
             }
             for item in evidence.values()
         ]
-        return await self._generate(
+        report = await self._generate(
             {
                 "task": task.model_dump(mode="json"),
                 "draft": draft.model_dump(mode="json"),
@@ -276,6 +276,18 @@ class ModelSemanticVerifier(ModelStage):
                 "skills": self._skills.activate(task.skills),
             }
         )
+        expected = list(range(len(draft.claims)))
+        observed = sorted(item.claim_index for item in report.claim_results)
+        if observed != expected or len(observed) != len(set(observed)):
+            raise ValueError(
+                "semantic verifier must adjudicate every claim exactly once")
+        if report.status.value == "pass" and (
+            any(not item.supported for item in report.claim_results)
+            or report.missing_branches or report.contradictions
+            or report.repair_instructions
+        ):
+            raise ValueError("semantic verifier pass contradicts its findings")
+        return report
 
 
 
