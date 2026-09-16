@@ -861,6 +861,29 @@ async def test_matchup_winner_requirement_selects_prediction_capability():
 
 
 @pytest.mark.anyio
+async def test_external_discovery_requirement_accepts_fetched_evidence():
+    stub = StubModel([
+        {
+            "goal": "check current status", "mode": "quick",
+            "deliverable": "status", "required_evidence": ["web_search"],
+        },
+        {
+            "requirements": [{
+                "id": "current_status", "description": "current status",
+                "capability_options": ["web_search"],
+            }],
+            "missing_subquestions": [], "missing_skills": [],
+        },
+    ])
+    task = await ModelIntake(
+        stub, provider="stub", model_name="stub",
+        capability_catalog={"web_search": {}, "web_fetch": {}},
+        requirement_review=True,
+    ).understand("What is the current status?")
+    assert task.requirements[0].capability_options == ["web_search", "web_fetch"]
+
+
+@pytest.mark.anyio
 async def test_model_repair_keeps_corrected_rejected_branch():
     from v2.contracts import (
         Claim, DraftReport, EvidenceEnvelope, TaskSpec, VerificationReport,

@@ -332,7 +332,22 @@ class ModelIntake(ModelStage):
             raise ValueError(
                 f"requirement review selected unknown capabilities: {unknown_evidence}"
             )
-        return review
+        # Search discovers a source; fetch turns that selected source into
+        # admissible external evidence. A requirement that accepts discovery
+        # therefore also accepts its evidence-producing refinement. Keeping
+        # this closure in the typed ledger lets the planner attach the fetch to
+        # the same evidence clause without weakening capability validation.
+        requirements = [
+            requirement.model_copy(update={
+                "capability_options": list(dict.fromkeys([
+                    *requirement.capability_options,
+                    *(["web_fetch"] if "web_search" in requirement.capability_options
+                      else []),
+                ])),
+            })
+            for requirement in review.requirements
+        ]
+        return review.model_copy(update={"requirements": requirements})
 
 
 class ModelPlanner(ModelStage):
