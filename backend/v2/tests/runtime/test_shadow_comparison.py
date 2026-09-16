@@ -117,8 +117,8 @@ def test_shadow_comparison_rejects_bad_identity_and_duplicate_differences() -> N
     from pydantic import ValidationError
     from v2.runtime.shadow import ShadowComparison
 
-    base = {"comparison_id": "id", "request_hash": "a" * 64,
-            "v1": outcome(), "v2": outcome()}
+    valid = compare_outcomes("request", outcome(), outcome())
+    base = valid.model_dump(mode="python")
     for changes, error in [
         ({"comparison_id": " "}, "identity"),
         ({"request_hash": "hash"}, "lowercase sha256"),
@@ -186,3 +186,16 @@ def test_shadow_store_rejects_blank_persisted_records(tmp_path):
     path.write_text(path.read_text() + "\n")
     with pytest.raises(ValueError, match="blank records"):
         store.read()
+
+
+def test_shadow_comparison_rejects_forged_derived_fields() -> None:
+    import pytest
+    from pydantic import ValidationError
+    from v2.runtime.shadow import ShadowComparison
+
+    comparison = compare_outcomes("request", outcome(), outcome(answer="different"))
+    payload = comparison.model_dump(mode="python")
+    with pytest.raises(ValidationError, match="differences do not match"):
+        ShadowComparison.model_validate({**payload, "differences": []})
+    with pytest.raises(ValidationError, match="comparison id does not match"):
+        ShadowComparison.model_validate({**payload, "comparison_id": "0" * 24})

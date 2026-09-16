@@ -77,10 +77,20 @@ class ShadowComparison(BaseModel):
             raise ValueError("shadow request hash must be lowercase sha256")
         if len(self.differences) != len(set(self.differences)):
             raise ValueError("shadow differences must be unique")
+        expected = _difference_kinds(self.v1, self.v2)
+        if self.differences != expected:
+            raise ValueError("shadow differences do not match recorded outcomes")
+        identity = _hash({
+            "request": self.request_hash,
+            "v1": self.v1.model_dump(mode="json"),
+            "v2": self.v2.model_dump(mode="json"),
+        })[:24]
+        if self.comparison_id != identity:
+            raise ValueError("shadow comparison id does not match recorded outcomes")
         return self
 
 
-def compare_outcomes(request: str, v1: RunOutcome, v2: RunOutcome) -> ShadowComparison:
+def _difference_kinds(v1: RunOutcome, v2: RunOutcome) -> list[DifferenceKind]:
     differences: list[DifferenceKind] = []
     if v1.status != "ok" or v2.status != "ok":
         differences.append(DifferenceKind.FAILURE)
@@ -92,6 +102,11 @@ def compare_outcomes(request: str, v1: RunOutcome, v2: RunOutcome) -> ShadowComp
     v2_grounded = (v2.supported_claims, v2.total_claims, v2.evidence_count)
     if v1_grounded != v2_grounded:
         differences.append(DifferenceKind.GROUNDING)
+    return differences
+
+
+def compare_outcomes(request: str, v1: RunOutcome, v2: RunOutcome) -> ShadowComparison:
+    differences = _difference_kinds(v1, v2)
     request_hash = _hash(request)
     comparison_id = _hash({
         "request": request_hash,
