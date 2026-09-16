@@ -374,7 +374,7 @@ def test_failed_stream_tool_result_keeps_its_call_identity(monkeypatch):
 
     assert '"name":"contracts"' in response.text
     assert '"name":"tool"' not in response.text
-    assert 'contracts failed' in response.text
+    assert '"error":"Tool failed"' in response.text
     assert 'source unavailable' not in response.text
     assert '"args"' not in response.text
     assert '"team":"BOS"' not in response.text
@@ -1434,3 +1434,33 @@ def test_v2_sse_emits_strict_json_for_non_finite_nested_values():
     assert json.loads(payload)["tables"] == [{"value": None, "other": None}]
     assert "NaN" not in payload
     assert "Infinity" not in payload
+
+
+def test_v2_sse_boundary_hides_draft_reasoning_and_diagnostics():
+    import json
+
+    cases = [
+        (Token(text="unverified answer 99"), {"text": ""}),
+        (ThoughtStream(node="analytics", text="private chain of thought"), {
+            "node": "analytics", "text": "Working through the evidence...",
+        }),
+        (ToolResult(
+            node="tools", name="warehouse", status="ok", rows=1,
+            summary="private provider summary", sql="SELECT private FROM secret",
+        ), {"node": "tools", "name": "warehouse", "status": "ok", "rows": 1}),
+        (ToolResult(
+            node="tools", name="warehouse", status="fail",
+            error="provider token secret", summary="private provider summary",
+        ), {"node": "tools", "name": "warehouse", "status": "fail",
+            "error": "Tool failed"}),
+    ]
+
+    for event, expected in cases:
+        payload = encode_event(event).split("data: ", 1)[1].strip()
+        assert json.loads(payload) == expected
+    combined = "".join(encode_event(event) for event, _ in cases)
+    for secret in (
+        "unverified answer 99", "private chain of thought", "SELECT private",
+        "provider token secret", "private provider summary",
+    ):
+        assert secret not in combined

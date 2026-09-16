@@ -4,7 +4,7 @@ import json
 import math
 from collections.abc import AsyncIterable, AsyncIterator, Iterable
 
-from v2.api.events import InternalEvent
+from v2.api.events import EventType, InternalEvent
 
 
 def _bounded_public_value(value, *, depth: int = 0):
@@ -27,9 +27,26 @@ def _bounded_public_value(value, *, depth: int = 0):
     return str(value)[:200_000]
 
 
-def encode_event(event: InternalEvent) -> str:
+def _public_payload(event: InternalEvent) -> dict:
     payload = event.model_dump(mode="json", exclude={"type"}, exclude_none=True)
-    payload = _bounded_public_value(payload)
+    if event.type == EventType.TOKEN:
+        return {"text": ""}
+    if event.type == EventType.THOUGHT_STREAM:
+        return {key: payload[key] for key in ("node",) if key in payload} | {
+            "text": "Working through the evidence...",
+        }
+    if event.type == EventType.TOOL_RESULT:
+        out = {key: payload[key] for key in (
+            "node", "name", "status", "rows", "ms", "agent",
+        ) if key in payload}
+        if payload.get("status") == "fail":
+            out["error"] = "Tool failed"
+        return out
+    return payload
+
+
+def encode_event(event: InternalEvent) -> str:
+    payload = _bounded_public_value(_public_payload(event))
     return f"event: {event.type.value}\ndata: {json.dumps(payload, separators=(',', ':'), allow_nan=False)}\n\n"
 
 
