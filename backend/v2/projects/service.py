@@ -54,6 +54,10 @@ class ProjectStore:
         )
 
     def update(self, project_id: str, **changes: object) -> Project:
+        allowed = {"goal", "status", "result", "error"}
+        unknown = sorted(set(changes) - allowed)
+        if unknown:
+            raise ValueError(f"project update has unknown fields: {unknown}")
         with self._lock, self._connect() as connection:
             row = connection.execute(
                 "SELECT data FROM projects WHERE id = ?", (project_id,)

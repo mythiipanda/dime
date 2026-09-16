@@ -905,3 +905,13 @@ def test_checkpoint_store_rejects_symlinked_directory(tmp_path: Path) -> None:
         with pytest.raises(ValueError, match="directory cannot be a symlink"):
             operation()
     assert list(outside.iterdir()) == []
+
+
+def test_project_store_update_rejects_identity_and_unknown_fields(tmp_path: Path) -> None:
+    store = ProjectStore(tmp_path / "projects.sqlite3")
+    project = store.create("Celtics outlook")
+    for changes in ({"id": "other"}, {"run_id": "project-other"},
+                    {"created_at": project.created_at}, {"invented": True}):
+        with pytest.raises(ValueError, match="unknown fields"):
+            store.update(project.id, **changes)
+    assert store.get(project.id) == project
