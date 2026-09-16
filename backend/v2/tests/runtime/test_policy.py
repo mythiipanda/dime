@@ -61,3 +61,19 @@ def test_policy_rejects_symlinked_replay_fixture(tmp_path) -> None:
     link.symlink_to(target)
     with pytest.raises(ValidationError, match="replay_path cannot be a symlink"):
         ExecutionPolicy(mode="replay", replay_path=link, publish=False)
+
+
+@pytest.mark.parametrize("field_name", ["ledger_dir", "checkpoint_dir", "replay_path"])
+def test_policy_rejects_symlinked_path_ancestors(tmp_path, field_name) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    parent = tmp_path / "parent"
+    parent.symlink_to(outside, target_is_directory=True)
+    path = parent / ("fixture.json" if field_name == "replay_path" else "storage")
+    kwargs = {field_name: path}
+    if field_name == "replay_path":
+        kwargs.update(mode="replay", publish=False)
+    else:
+        kwargs.update(mode="live")
+    with pytest.raises(ValidationError, match=f"{field_name} parent cannot be a symlink"):
+        ExecutionPolicy(**kwargs)
