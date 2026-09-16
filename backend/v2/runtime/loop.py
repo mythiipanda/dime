@@ -57,6 +57,17 @@ class Runtime:
         self, request: str, *, run_id: str | None = None,
         context: tuple[ConversationTurn, ...] = (),
     ) -> RuntimeResult:
+        if not isinstance(request, str):
+            raise TypeError("runtime request must be a string")
+        if not request.strip():
+            raise ValueError("runtime request must be non-empty")
+        if len(request) > 2000:
+            raise ValueError("runtime request cannot exceed 2000 characters")
+        context = tuple(ConversationTurn.model_validate(
+            turn.model_dump() if isinstance(turn, ConversationTurn) else turn
+        ) for turn in context)
+        if len(context) > 8:
+            raise ValueError("runtime context cannot exceed 8 turns")
         turn_id = run_id or "turn"
         if self._ledger is not None:
             if run_id is not None and self._ledger.run_id != run_id:

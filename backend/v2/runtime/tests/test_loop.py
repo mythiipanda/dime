@@ -105,6 +105,30 @@ def test_runtime_rejects_invalid_repair_budget(attempts, error) -> None:
 
 
 @pytest.mark.anyio
+async def test_runtime_validates_direct_request_and_context_boundary() -> None:
+    from v2.contracts import ConversationTurn
+
+    instance = runtime(
+        SequenceVerifier(VerificationStatus.PASS),
+        SequenceVerifier(VerificationStatus.PASS),
+    )
+    for request in (" ", "x" * 2001):
+        with pytest.raises(ValueError, match="request"):
+            await instance.run(request)
+    with pytest.raises(TypeError, match="request"):
+        await instance.run(7)
+    with pytest.raises(ValueError, match="8 turns"):
+        await instance.run("answer", context=tuple(
+            ConversationTurn(role="user", content=str(index))
+            for index in range(9)
+        ))
+    invalid = ConversationTurn(role="user", content="valid").model_copy(
+        update={"content": " "})
+    with pytest.raises(ValueError, match="conversation content"):
+        await instance.run("answer", context=(invalid,))
+
+
+@pytest.mark.anyio
 async def test_passes_verified_quick_slice() -> None:
     result = await runtime(
         SequenceVerifier(VerificationStatus.PASS),
