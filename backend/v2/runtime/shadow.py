@@ -256,9 +256,6 @@ def evaluate_shadow_gate(
         ShadowComparison.model_validate(item.model_dump())
         for item in comparisons
     ]
-    ids = [comparison.comparison_id for comparison in comparisons]
-    if len(ids) != len(set(ids)):
-        raise ValueError("shadow gate comparisons must be unique")
     total = len(comparisons)
 
     def rate(kind: DifferenceKind) -> float:
