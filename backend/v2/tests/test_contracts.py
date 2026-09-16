@@ -36,7 +36,7 @@ def test_claim_support_rules():
     with pytest.raises(ValidationError, match="require evidence"):
         Claim(text="Boston won 60 games", kind=ClaimKind.OBSERVED)
     claim = Claim(text="Boston projects to 55 wins", kind=ClaimKind.PROJECTION,
-                  confidence=0.6)
+                  confidence=0.6, evidence_ids=["baseline"])
     assert claim.confidence == 0.6
 
 
@@ -220,3 +220,8 @@ def test_entity_and_season_identity_must_be_non_empty() -> None:
         EntityRef(id="BOS", type="team", display_name=" ")
     with pytest.raises(ValidationError, match="season value must be non-empty"):
         SeasonRef(value=" ", source="user", confidence=1)
+
+
+def test_projection_requires_scenario_evidence() -> None:
+    with pytest.raises(ValidationError, match="projection claims require evidence"):
+        Claim(text="Boston projects to improve.", kind="projection", confidence=0.6)

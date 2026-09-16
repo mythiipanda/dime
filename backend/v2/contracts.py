@@ -223,6 +223,8 @@ class Claim(BaseModel):
             raise ValueError("only derived claims may name a calculation id")
         if self.kind == ClaimKind.PROJECTION and self.confidence is None:
             raise ValueError("projection claims require confidence")
+        if self.kind == ClaimKind.PROJECTION and not self.evidence_ids:
+            raise ValueError("projection claims require evidence")
         if self.kind != ClaimKind.PROJECTION and self.confidence is not None:
             raise ValueError("only projection claims may name confidence")
         return self
