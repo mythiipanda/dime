@@ -25,6 +25,12 @@ class CalculationInput(BaseModel):
     evidence_id: str = Field(min_length=1)
     path: str = Field(min_length=1)
 
+    @model_validator(mode="after")
+    def validate_identity(self) -> "CalculationInput":
+        if not self.evidence_id.strip() or not self.path.strip():
+            raise ValueError("calculation input identity must be non-empty")
+        return self
+
 
 class Calculation(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -38,6 +44,12 @@ class Calculation(BaseModel):
 
     @model_validator(mode="after")
     def validate_shape(self) -> "Calculation":
+        if not self.calculation_id.strip():
+            raise ValueError("calculation id must be non-empty")
+        if self.unit is not None and not self.unit.strip():
+            raise ValueError("calculation unit must be non-empty when present")
+        if not self.result.is_finite():
+            raise ValueError("calculation result must be finite")
         if not self.inputs:
             raise ValueError("calculations require inputs")
         if len(self.inputs) != len(set(self.inputs)):

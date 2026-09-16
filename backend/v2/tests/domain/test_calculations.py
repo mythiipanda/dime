@@ -54,3 +54,19 @@ def test_calculation_contract_rejects_ambiguous_inputs(payload, error):
 
     with pytest.raises(ValidationError, match=error):
         Calculation.model_validate(payload)
+
+
+@pytest.mark.parametrize("schema,payload,error", [
+    (CalculationInput, {"evidence_id": " ", "path": "rows.value"}, "identity"),
+    (CalculationInput, {"evidence_id": "ev", "path": " "}, "identity"),
+    (Calculation, {"calculation_id": " ", "operation": "add",
+                   "inputs": [{"evidence_id": "box", "path": "rows[0].PTS"}],
+                   "result": 30}, "calculation id"),
+    (Calculation, {"calculation_id": "sum", "operation": "add",
+                   "inputs": [{"evidence_id": "box", "path": "rows[0].PTS"}],
+                   "result": "NaN"}, "finite number"),
+])
+def test_calculation_contract_rejects_blank_identity_and_nonfinite_result(schema, payload, error):
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError, match=error):
+        schema.model_validate(payload)
