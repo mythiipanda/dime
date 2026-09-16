@@ -372,3 +372,11 @@ def test_execution_coordinates_are_strict_integers(schema, payload) -> None:
 def test_confidence_values_are_strict_floats(schema, payload) -> None:
     with pytest.raises(ValidationError):
         schema.model_validate(payload)
+
+
+def test_plan_has_a_hard_execution_node_limit() -> None:
+    with pytest.raises(ValidationError, match="at most 32 items"):
+        Plan(nodes=[
+            PlanNode(id=f"node-{index}", description="work")
+            for index in range(33)
+        ])

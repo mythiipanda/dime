@@ -166,7 +166,7 @@ class PlanNode(BaseModel):
 class Plan(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    nodes: list[PlanNode]
+    nodes: list[PlanNode] = Field(max_length=32)
 
     @model_validator(mode="after")
     def validate_dependencies(self) -> Plan:
