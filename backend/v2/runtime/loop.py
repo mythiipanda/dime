@@ -30,6 +30,7 @@ class Runtime:
         mechanical_verifier: Verifier,
         semantic_verifier: Verifier,
         repairer: Repairer | None = None,
+        repair_attempts: int = 1,
         ledger: RunLedger | None = None,
         progress: Callable[[str, str], None] | None = None,
     ) -> None:
@@ -40,6 +41,7 @@ class Runtime:
         self._mechanical_verifier = mechanical_verifier
         self._semantic_verifier = semantic_verifier
         self._repairer = repairer
+        self._repair_attempts = repair_attempts
         self._ledger = ledger
         self._progress = progress
 
@@ -79,17 +81,19 @@ class Runtime:
             raise
         repaired = False
 
-        if (
-            verification.status == VerificationStatus.REPAIR
-            and self._repairer is not None
-        ):
+        for attempt in range(self._repair_attempts):
+            if (verification.status != VerificationStatus.REPAIR
+                    or self._repairer is None):
+                break
+            suffix = "" if attempt == 0 else f":{attempt + 1}"
             try:
                 draft = await self._stage(
-                    turn_id, "repair",
+                    turn_id, f"repair{suffix}",
                     self._repairer.repair(task, draft, evidence, verification))
                 repaired = True
                 verification = await self._stage(
-                    turn_id, "reverify", self._verify(task, draft, evidence))
+                    turn_id, f"reverify{suffix}",
+                    self._verify(task, draft, evidence))
             except BaseException as exc:
                 self._close_failed(turn_id, exc)
                 raise

@@ -208,3 +208,27 @@ async def test_semantic_verifier_never_sees_mechanically_rejected_draft() -> Non
     assert result.verification.status == VerificationStatus.PARTIAL
     assert result.verified_claims == []
     assert result.gaps[0].message == "uncited numeral 43"
+
+
+@pytest.mark.anyio
+async def test_runtime_honors_zero_repair_budget() -> None:
+    mechanical = SequenceVerifier(VerificationStatus.REPAIR)
+    semantic = SequenceVerifier(VerificationStatus.PASS)
+    instance = runtime(mechanical, semantic, Repairer())
+    instance._repair_attempts = 0
+    result = await instance.run("answer")
+    assert result.repaired is False
+    assert result.verification.status == VerificationStatus.PARTIAL
+
+
+@pytest.mark.anyio
+async def test_runtime_honors_two_repair_budget() -> None:
+    mechanical = SequenceVerifier(
+        VerificationStatus.REPAIR, VerificationStatus.REPAIR,
+        VerificationStatus.PASS)
+    semantic = SequenceVerifier(VerificationStatus.PASS)
+    instance = runtime(mechanical, semantic, Repairer())
+    instance._repair_attempts = 2
+    result = await instance.run("answer")
+    assert result.repaired is True
+    assert result.verification.status == VerificationStatus.PASS

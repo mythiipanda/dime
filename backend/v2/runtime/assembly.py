@@ -120,6 +120,7 @@ def build_runtime(
             model, provider=provider, model_name=model_name, skill_library=skills),
         repairer=ModelRepairer(
             model, provider=provider, model_name=model_name, skill_library=skills),
+        repair_attempts=policy.repair_attempts,
         ledger=ledger,
         progress=progress,
     )
