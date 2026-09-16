@@ -118,14 +118,22 @@ class Runtime:
             )
 
         empty_evidence_gaps = _empty_evidence_gaps(execution.evidence)
-        if ((empty_evidence_gaps or execution.errors)
+        failed_nodes = {
+            node.id for node in execution.plan.nodes
+            if node.status.value == "failed"
+        }
+        unresolved_errors = {
+            node_id: errors for node_id, errors in execution.errors.items()
+            if node_id in failed_nodes
+        }
+        if ((empty_evidence_gaps or unresolved_errors)
                 and verification.status == VerificationStatus.PASS):
             verification = verification.model_copy(
                 update={"status": VerificationStatus.PARTIAL}
             )
         verified_claims = _verified_claims(draft, verification, evidence)
         gaps = [
-            *_verification_gaps(draft, verification, execution.errors),
+            *_verification_gaps(draft, verification, unresolved_errors),
             *empty_evidence_gaps,
         ]
         result = RuntimeResult(

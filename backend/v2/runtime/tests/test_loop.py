@@ -335,3 +335,29 @@ async def test_execution_failure_prevents_clean_pass_status() -> None:
     result = await instance.run("answer")
     assert result.verification.status == VerificationStatus.PARTIAL
     assert any(gap.kind == "execution_failure" for gap in result.gaps)
+
+
+@pytest.mark.anyio
+async def test_recovered_retry_error_does_not_downgrade_verified_result() -> None:
+    class RetryPlanner:
+        async def plan(self, task):
+            return Plan(nodes=[PlanNode(
+                id="facts", description="facts", capability_hints=["fake"],
+                max_attempts=2,
+            )])
+
+    instance = Runtime(
+        intake=Intake(), planner=RetryPlanner(),
+        executor=PlanExecutor({
+            "fake": FakeCapability("fake", {"value": 42}, failures_before_success=1),
+        }),
+        synthesizer=Synthesizer(),
+        mechanical_verifier=SequenceVerifier(VerificationStatus.PASS),
+        semantic_verifier=SequenceVerifier(VerificationStatus.PASS),
+    )
+    result = await instance.run("answer")
+    assert result.execution.errors == {
+        "facts": ["RuntimeError: injected capability failure"],
+    }
+    assert result.verification.status == VerificationStatus.PASS
+    assert result.gaps == []
