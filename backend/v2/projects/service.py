@@ -10,10 +10,20 @@ from uuid import uuid4
 from v2.projects.models import Project, ProjectStatus
 
 
+_LOCKS_GUARD = Lock()
+_LOCKS: dict[Path, Lock] = {}
+
+
+def _path_lock(path: Path) -> Lock:
+    resolved = path.resolve()
+    with _LOCKS_GUARD:
+        return _LOCKS.setdefault(resolved, Lock())
+
+
 class ProjectStore:
     def __init__(self, path: str | Path) -> None:
         self._path = Path(path)
-        self._lock = Lock()
+        self._lock = _path_lock(self._path)
 
     def create(self, goal: str) -> Project:
         project_id = uuid4().hex
@@ -26,14 +36,14 @@ class ProjectStore:
         return project
 
     def get(self, project_id: str) -> Project | None:
-        with self._connect() as connection:
+        with self._lock, self._connect() as connection:
             row = connection.execute(
                 "SELECT data FROM projects WHERE id = ?", (project_id,)
             ).fetchone()
         return Project.model_validate_json(row[0]) if row else None
 
     def list(self) -> list[Project]:
-        with self._connect() as connection:
+        with self._lock, self._connect() as connection:
             rows = connection.execute("SELECT data FROM projects").fetchall()
         return sorted(
             (Project.model_validate_json(row[0]) for row in rows),
