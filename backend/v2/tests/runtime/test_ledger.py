@@ -204,3 +204,17 @@ def test_reloaded_ledger_rejects_invalid_turn_and_step_order() -> None:
     with pytest.raises(ValueError, match="follow turn end"):
         RunLedger("run", [entry(1, "turn/start"), entry(2, "turn/end"),
                           entry(3, "assistant/attempt")])
+
+
+def test_live_ledger_enforces_turn_and_step_lifecycle() -> None:
+    ledger = RunLedger("run")
+    with pytest.raises(ValueError, match="open turn"):
+        ledger.append(LedgerKind.TURN_END, turn_id="turn")
+    ledger.append(LedgerKind.TURN_START, turn_id="turn")
+    ledger.append(LedgerKind.STEP_START, turn_id="turn", step_id="plan")
+    with pytest.raises(ValueError, match="open steps"):
+        ledger.append(LedgerKind.TURN_END, turn_id="turn")
+    ledger.append(LedgerKind.STEP_END, turn_id="turn", step_id="plan")
+    ledger.append(LedgerKind.TURN_END, turn_id="turn")
+    with pytest.raises(ValueError, match="follow turn end"):
+        ledger.append(LedgerKind.ASSISTANT_ATTEMPT, turn_id="turn")

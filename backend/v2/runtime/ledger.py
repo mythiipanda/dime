@@ -153,6 +153,23 @@ class RunLedger:
         data: dict[str, Any] | None = None,
     ) -> LedgerEntry:
         payload = dict(data or {})
+        open_turns, open_steps, closed_turns = self._lifecycle_state()
+        if kind == LedgerKind.TURN_START:
+            if turn_id in open_turns or turn_id in closed_turns:
+                raise ValueError("turn may start only once")
+        elif kind == LedgerKind.TURN_END:
+            if turn_id not in open_turns:
+                raise ValueError("turn end requires an open turn")
+            if any(turn == turn_id for turn, _ in open_steps):
+                raise ValueError("turn cannot end with open steps")
+        elif turn_id in closed_turns:
+            raise ValueError("events cannot follow turn end")
+        if kind == LedgerKind.STEP_START and step_id:
+            if (turn_id, step_id) in open_steps:
+                raise ValueError("step may start only once before ending")
+        elif kind == LedgerKind.STEP_END and step_id:
+            if (turn_id, step_id) not in open_steps:
+                raise ValueError("step end requires an open step")
         if not turn_id.strip():
             raise ValueError("ledger turn id must be non-empty")
         if step_id is not None and not step_id.strip():
@@ -204,6 +221,22 @@ class RunLedger:
         )
         self._entries.append(entry)
         return entry
+
+    def _lifecycle_state(self):
+        open_turns: set[str] = set()
+        open_steps: set[tuple[str, str]] = set()
+        closed_turns: set[str] = set()
+        for entry in self._entries:
+            if entry.kind == LedgerKind.TURN_START:
+                open_turns.add(entry.turn_id)
+            elif entry.kind == LedgerKind.TURN_END:
+                open_turns.discard(entry.turn_id)
+                closed_turns.add(entry.turn_id)
+            elif entry.kind == LedgerKind.STEP_START and entry.step_id:
+                open_steps.add((entry.turn_id, entry.step_id))
+            elif entry.kind == LedgerKind.STEP_END and entry.step_id:
+                open_steps.discard((entry.turn_id, entry.step_id))
+        return open_turns, open_steps, closed_turns
 
     def model_history(self, turn_id: str) -> list[dict[str, Any]]:
         history = []
