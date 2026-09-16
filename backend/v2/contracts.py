@@ -222,3 +222,17 @@ class VerificationReport(BaseModel):
     missing_branches: list[str] = Field(default_factory=list)
     contradictions: list[str] = Field(default_factory=list)
     repair_instructions: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_status(self) -> "VerificationReport":
+        findings = (
+            any(not item.supported for item in self.claim_results)
+            or bool(self.missing_branches)
+            or bool(self.contradictions)
+            or bool(self.repair_instructions)
+        )
+        if self.status == VerificationStatus.PASS and findings:
+            raise ValueError("pass status contradicts verification findings")
+        if self.status == VerificationStatus.REPAIR and not findings:
+            raise ValueError("repair status requires an actionable finding")
+        return self

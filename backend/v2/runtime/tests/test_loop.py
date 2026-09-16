@@ -55,7 +55,14 @@ class SequenceVerifier:
         self.statuses = list(statuses)
 
     async def verify(self, task, draft, evidence) -> VerificationReport:
-        return VerificationReport(status=self.statuses.pop(0))
+        status = self.statuses.pop(0)
+        return VerificationReport(
+            status=status,
+            repair_instructions=(
+                ["repair requested"]
+                if status == VerificationStatus.REPAIR else []
+            ),
+        )
 
 
 class Repairer:

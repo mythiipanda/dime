@@ -248,7 +248,7 @@ async def test_semantic_verifier_rejects_contradictory_pass() -> None:
     verifier = ModelSemanticVerifier(stub, provider="stub", model_name="stub-model")
     draft = DraftReport(sections=["Answer"], claims=[Claim(
         text="Boston won 61 games.", kind="observed", evidence_ids=["ev"])])
-    with pytest.raises(ValueError, match="pass contradicts"):
+    with pytest.raises(Exception, match="pass status contradicts"):
         await verifier.verify(
             TaskSpec(goal="record", mode="quick", deliverable="answer"),
             draft, {},

@@ -94,3 +94,14 @@ def test_plan_node_rejects_unenforced_model_fields() -> None:
 def test_model_authored_contracts_reject_unknown_fields(model, payload) -> None:
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
         model.model_validate(payload)
+
+
+@pytest.mark.parametrize("payload,error", [
+    ({"status": "pass", "missing_branches": ["salary"]}, "pass status contradicts"),
+    ({"status": "repair"}, "repair status requires"),
+])
+def test_verification_status_must_match_findings(payload, error) -> None:
+    from v2.contracts import VerificationReport
+
+    with pytest.raises(ValidationError, match=error):
+        VerificationReport.model_validate(payload)
