@@ -61,6 +61,10 @@ class Runtime:
             intake_call = (self._intake.understand(request, context)
                            if context else self._intake.understand(request))
             task = await self._stage(turn_id, "understand", intake_call)
+            if task.open_questions:
+                raise ValueError(
+                    "intake left unresolved questions: "
+                    + "; ".join(task.open_questions))
             plan = await self._stage(
                 turn_id, "plan", self._planner.plan(task))
             execution = await self._stage(

@@ -232,3 +232,26 @@ async def test_runtime_honors_two_repair_budget() -> None:
     result = await instance.run("answer")
     assert result.repaired is True
     assert result.verification.status == VerificationStatus.PASS
+
+
+@pytest.mark.anyio
+async def test_unresolved_intake_questions_stop_before_planning() -> None:
+    class AmbiguousIntake:
+        async def understand(self, request):
+            return TaskSpec(
+                goal=request, mode="quick", deliverable="answer",
+                open_questions=["Which Brown do you mean?"],
+            )
+
+    class MustNotPlan:
+        async def plan(self, task):
+            raise AssertionError("planner ran on ambiguous task")
+
+    instance = Runtime(
+        intake=AmbiguousIntake(), planner=MustNotPlan(),
+        executor=PlanExecutor({}), synthesizer=Synthesizer(),
+        mechanical_verifier=SequenceVerifier(VerificationStatus.PASS),
+        semantic_verifier=SequenceVerifier(VerificationStatus.PASS),
+    )
+    with pytest.raises(ValueError, match="Which Brown"):
+        await instance.run("assess Brown")
