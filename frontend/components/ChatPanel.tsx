@@ -182,9 +182,9 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-function CiteButton({ text, meta }: {
+function CiteButton({ text, sources }: {
   text: string;
-  meta?: { source?: string; fetched_at?: string; season?: string };
+  sources: { source?: string; fetched_at?: string; season?: string }[];
 }) {
   const [done, setDone] = useState(false);
   return (
@@ -193,13 +193,13 @@ function CiteButton({ text, meta }: {
       style={{ fontSize: 12 }}
       title="Copy answer with a citable source line"
       onClick={() => {
-        const line = buildCitation({
-          source: meta?.source,
-          fetchedAt: meta?.fetched_at,
-          season: meta?.season,
-        });
+        const lines = sources.map((meta) => buildCitation({
+          source: meta.source,
+          fetchedAt: meta.fetched_at,
+          season: meta.season,
+        }));
         navigator.clipboard
-          .writeText(`${text}\n\n${line}`)
+          .writeText(`${text}\n\n${lines.join("\n")}`)
           .then(() => {
             setDone(true);
             setTimeout(() => setDone(false), 1500);
@@ -212,17 +212,26 @@ function CiteButton({ text, meta }: {
   );
 }
 
-function firstTableMeta(ai: AiMessage | undefined): {
+function tableSources(ai: AiMessage | undefined): {
   source?: string; fetched_at?: string; season?: string;
-} | undefined {
-  if (!ai) return undefined;
-  for (const n of Object.values(ai.nodes)) {
-    const t = n?.tables?.[0] as {
-      meta?: { source?: string; fetched_at?: string; season?: string };
-    } | undefined;
-    if (t?.meta) return t.meta;
+}[] {
+  if (!ai) return [];
+  const sources: { source?: string; fetched_at?: string; season?: string }[] = [];
+  const seen = new Set<string>();
+  for (const node of Object.values(ai.nodes)) {
+    for (const table of node?.tables ?? []) {
+      const meta = table.meta as {
+        source?: string; fetched_at?: string; season?: string;
+      } | undefined;
+      if (!meta?.source) continue;
+      const key = JSON.stringify([meta.source, meta.fetched_at, meta.season]);
+      if (!seen.has(key)) {
+        seen.add(key);
+        sources.push(meta);
+      }
+    }
   }
-  return undefined;
+  return sources;
 }
 
 function LinkButton({ index }: { index: number }) {
@@ -713,7 +722,9 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                     {m.text && (
                       <div style={{ display: "flex", gap: 8, marginTop: 12, alignItems: "center" }}>
                         <CopyButton text={m.text} />
-                        <CiteButton text={m.text} meta={firstTableMeta(m.ai)} />
+                        {tableSources(m.ai).length > 0 && (
+                          <CiteButton text={m.text} sources={tableSources(m.ai)} />
+                        )}
                         <LinkButton index={i} />
                         <button
                           type="button"

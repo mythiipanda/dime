@@ -1317,3 +1317,15 @@ def test_frontend_preserves_public_node_error_status():
 
     assert 'status === "complete" || status === "error" ? status : "running"' in source
     assert 'd.status === "complete" ? "complete" : "running"' not in source
+
+
+def test_frontend_answer_citation_preserves_all_distinct_sources():
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[3]
+              / "frontend" / "components" / "ChatPanel.tsx").read_text()
+
+    assert "function tableSources(" in source
+    assert 'lines.join("\\n")' in source
+    assert "function firstTableMeta(" not in source
+    assert "meta={firstTableMeta(m.ai)}" not in source
