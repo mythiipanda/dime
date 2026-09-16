@@ -157,10 +157,11 @@ def _answer_text(result) -> str:
         internal = (
             folded.startswith(("repair claim ", "include ", "update ",
                                "retrieve ", "fetch ", "gather ", "synthesize ",
-                               "add claims", "document "))
+                               "add ", "document ", "locate "))
             or "once gaps are resolved" in folded
             or " capability" in folded
             or folded.endswith(" analysis")
+            or folded.startswith("official ")
             or any(name.replace("_", " ") in folded or name in folded
                    for name in capability_names)
             or any(token in folded for token in (
@@ -173,6 +174,8 @@ def _answer_text(result) -> str:
         )
         if internal:
             continue
+        if folded in {"player age risk assessment", "age risk assessment"}:
+            message = "Age-related risk was not available in the retrieved player data."
         if gap.kind.value == "unsupported_claim":
             generic_limit = True
             continue

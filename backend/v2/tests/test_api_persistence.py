@@ -1620,7 +1620,7 @@ def test_answer_text_hides_policy_and_tool_directives():
     result = RuntimeResult(
         task=contracts.TaskSpec(goal="value", mode="quick", deliverable="answer"),
         execution=ExecutionResult(plan=contracts.Plan(nodes=[])),
-        draft=contracts.DraftReport(sections=[], claims=[], gaps=raw),
+        draft=contracts.DraftReport(sections=[], claims=[], gaps=list(dict.fromkeys(raw))),
         verification=contracts.VerificationReport(status="partial"),
         gaps=[contracts.Gap(kind="missing_evidence", message=item) for item in raw],
     )
@@ -1644,8 +1644,31 @@ def test_answer_text_drops_internal_followup_and_capability_language():
         execution=ExecutionResult(plan=contracts.Plan(nodes=[contracts.PlanNode(
             id="legal", description="legality", capability_hints=["trades"],
             status="failed")]), attempts={"legal": 1}, errors={"legal": ["failed"]}),
-        draft=contracts.DraftReport(sections=[], claims=[], gaps=raw),
+        draft=contracts.DraftReport(sections=[], claims=[], gaps=list(dict.fromkeys(raw))),
         verification=contracts.VerificationReport(status="partial"),
         gaps=[contracts.Gap(kind="missing_evidence", message=item) for item in raw],
     )
     assert _answer_text(result) == ""
+
+
+def test_answer_text_drops_final_showcase_directives_and_deduplicates_age_gap():
+    from v2 import contracts
+    from v2.api.routes import _answer_text
+    from v2.runtime.models import ExecutionResult, RuntimeResult
+    raw = [
+        "Locate contract evidence listing Jaylen Brown's 2026-27 salary to authorize terms.",
+        "Add contract year and option details",
+        "Official cap impact for Boston",
+        "Official cap impact for Boston",
+        "Player age risk assessment",
+    ]
+    result = RuntimeResult(
+        task=contracts.TaskSpec(goal="trade", mode="quick", deliverable="answer"),
+        execution=ExecutionResult(plan=contracts.Plan(nodes=[])),
+        draft=contracts.DraftReport(sections=[], claims=[], gaps=list(dict.fromkeys(raw))),
+        verification=contracts.VerificationReport(status="partial"),
+        gaps=[contracts.Gap(kind="missing_evidence", message=item)
+              for item in dict.fromkeys(raw)],
+    )
+    assert _answer_text(result) == (
+        "Age-related risk was not available in the retrieved player data.")
