@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from v2.contracts import EvidenceEnvelope
@@ -13,7 +13,7 @@ PACK = HERE / "fixtures" / "scenarios.json"
 def evidence(capability: str = "ratings", rows: dict | None = None, **kwargs) -> EvidenceEnvelope:
     return EvidenceEnvelope(
         evidence_id="ev-1", capability=capability, source="fixture",
-        observed_at=datetime(2026, 9, 14), rows=rows or {}, **kwargs,
+        observed_at=datetime(2026, 9, 14, tzinfo=UTC), rows=rows or {}, **kwargs,
     )
 
 

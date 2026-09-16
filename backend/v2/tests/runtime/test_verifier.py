@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
@@ -18,7 +18,7 @@ def task(season="2025-26"):
 def evidence(**changes):
     from v2.contracts import EvidenceEnvelope
     values = dict(evidence_id="standings", capability="standings", source="warehouse:standings",
-        observed_at=datetime(2026, 4, 15, 12), season="2025-26", as_of=date(2026, 4, 15),
+        observed_at=datetime(2026, 4, 15, 12, tzinfo=UTC), season="2025-26", as_of=date(2026, 4, 15),
         entities=[EntityRef(id="BOS", type="team", display_name="Boston Celtics")],
         rows=[{"TEAM": "Boston Celtics", "W": 61, "WIN_PCT": 0.744},
               {"TEAM": "New York Knicks", "W": 52, "WIN_PCT": 0.634}],
@@ -78,7 +78,7 @@ def test_derived_claim_recomputes_calculation_and_lineage():
     from v2.contracts import EvidenceEnvelope
     raw = evidence()
     derived = EvidenceEnvelope(evidence_id="derived", capability="calculation", source="runtime",
-        observed_at=datetime(2026, 4, 15), season="2025-26", entities=raw.entities,
+        observed_at=datetime(2026, 4, 15, tzinfo=UTC), season="2025-26", entities=raw.entities,
         rows={"win_gap": 9}, lineage=["standings"])
     calc = Calculation(calculation_id="gap", operation=CalculationOperation.SUBTRACT,
         inputs=[CalculationInput(evidence_id="standings", path="rows[0].W"),
@@ -147,7 +147,7 @@ def test_observation_time_does_not_support_an_as_of_claim():
                   kind=ClaimKind.OBSERVED, evidence_ids=["standings"])
     result = verify_mechanical(
         task(), report(claim),
-        [evidence(as_of=None, observed_at=datetime(2026, 4, 15, 12))],
+        [evidence(as_of=None, observed_at=datetime(2026, 4, 15, 12, tzinfo=UTC))],
     )
     assert "uncited date 2026-04-15" in result.claim_results[0].reasons
 
@@ -178,12 +178,12 @@ def test_mixed_source_claim_requires_provenance_label():
     sga = EvidenceEnvelope(
         evidence_id="sga", capability="player_report",
         source="warehouse:silver_player_season",
-        observed_at=datetime(2026, 4, 15), season="2025-26",
+        observed_at=datetime(2026, 4, 15, tzinfo=UTC), season="2025-26",
         rows={"player": "SGA", "ppg": 31.1})
     luka = EvidenceEnvelope(
         evidence_id="luka", capability="player_report",
         source="fallback:basketball-reference",
-        observed_at=datetime(2026, 4, 15), season="2025-26",
+        observed_at=datetime(2026, 4, 15, tzinfo=UTC), season="2025-26",
         rows={"player": "Luka", "ppg": 33.5})
     unlabeled = Claim(
         text="SGA averaged 31.1 PPG and Luka averaged 33.5 PPG.",
@@ -212,7 +212,7 @@ def test_multi_vintage_trade_evidence_supports_salary_and_season_claim() -> None
 
     trade = EvidenceEnvelope(
         evidence_id="trade", capability="trade_value", source="warehouse:trade_value",
-        observed_at=datetime(2026, 4, 15),
+        observed_at=datetime(2026, 4, 15, tzinfo=UTC),
         season=None,
         vintages={"production_season": "2025-26", "salary_season": "2026-27"},
         task_season_scoped=False,

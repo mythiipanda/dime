@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
@@ -10,7 +10,7 @@ from v2.domain.evidence import EvidenceIndex
 
 def index():
     return EvidenceIndex([EvidenceEnvelope(evidence_id="box", capability="box", source="fixture",
-        observed_at=datetime(2026, 9, 14), rows=[{"PTS": 30, "FGA": 20}, {"PTS": 20, "FGA": 25}])])
+        observed_at=datetime(2026, 9, 14, tzinfo=UTC), rows=[{"PTS": 30, "FGA": 20}, {"PTS": 20, "FGA": 25}])])
 
 
 def ref(path):

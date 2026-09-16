@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 
 import pytest
 
@@ -8,7 +8,7 @@ from v2.domain.evidence import EvidenceIndex
 
 def envelope(evidence_id: str, *, lineage=(), rows=None):
     return EvidenceEnvelope(evidence_id=evidence_id, capability="test", source="fixture",
-        observed_at=datetime(2026, 9, 14), rows=rows or [{"PTS": 10}], lineage=list(lineage))
+        observed_at=datetime(2026, 9, 14, tzinfo=UTC), rows=rows or [{"PTS": 10}], lineage=list(lineage))
 
 
 def test_index_resolves_nested_values_and_ancestors():
@@ -33,7 +33,7 @@ def test_source_integrity_rejects_salary_vintage_and_team_conflict():
 
     salary = EvidenceEnvelope(
         evidence_id="salary", capability="contracts", source="bref",
-        observed_at=datetime(2026, 9, 14), season="2026-27",
+        observed_at=datetime(2026, 9, 14, tzinfo=UTC), season="2026-27",
         rows=[{"PLAYER_NAME": "LeBron James", "TEAM": "PHI",
                "SALARY": 3876529}])
     issues = source_integrity_issues(
@@ -50,7 +50,7 @@ def test_admission_fails_closed_on_integrity_issue():
 
     item = EvidenceEnvelope(
         evidence_id="salary", capability="contracts", source="bref",
-        observed_at=datetime(2026, 9, 15), season="2026-27",
+        observed_at=datetime(2026, 9, 15, tzinfo=UTC), season="2026-27",
         rows={"PLAYER_NAME": "LeBron James", "TEAM": "PHI"})
     with pytest.raises(EvidenceAdmissionError) as caught:
         admit_evidence(item, required_season="2025-26",
@@ -99,7 +99,7 @@ def test_admission_requires_season_on_season_scoped_evidence() -> None:
 
     item = EvidenceEnvelope(
         evidence_id="standings", capability="standings", source="fixture",
-        observed_at=datetime(2026, 9, 15), rows={"wins": 61},
+        observed_at=datetime(2026, 9, 15, tzinfo=UTC), rows={"wins": 61},
     )
     with pytest.raises(EvidenceAdmissionError) as caught:
         admit_evidence(item, required_season="2025-26")

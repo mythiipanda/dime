@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 
 import pytest
 from pydantic import ValidationError
@@ -45,7 +45,7 @@ def test_evidence_round_trip():
         evidence_id="ratings:bos:2025-26",
         capability="team_ratings",
         source="warehouse:silver_team_ratings",
-        observed_at=datetime(2026, 9, 14, 14, 0),
+        observed_at=datetime(2026, 9, 14, 14, 0, tzinfo=UTC),
         season="2025-26",
         rows=[{"TEAM": "BOS", "NET_RATING": 8.2}],
         units={"NET_RATING": "points per 100 possessions"},
@@ -273,7 +273,7 @@ def test_conversation_turn_rejects_blank_content() -> None:
 ])
 def test_evidence_rejects_blank_optional_metadata(changes, error) -> None:
     payload = {"evidence_id": "ev", "capability": "standings",
-               "source": "fixture", "observed_at": datetime(2026, 9, 15),
+               "source": "fixture", "observed_at": datetime(2026, 9, 15, tzinfo=UTC),
                "rows": {}}
     payload.update(changes)
     with pytest.raises(ValidationError, match=error):
@@ -291,7 +291,7 @@ def test_evidence_rejects_nonfinite_row_values(value) -> None:
     with pytest.raises(ValidationError, match="only finite numbers"):
         EvidenceEnvelope(
             evidence_id="ev", capability="ratings", source="fixture",
-            observed_at=datetime(2026, 9, 15), rows={"rating": value})
+            observed_at=datetime(2026, 9, 15, tzinfo=UTC), rows={"rating": value})
 
 
 @pytest.mark.parametrize("value", ["2025", "25-26", "2025-27", "2025/26"])
@@ -305,4 +305,15 @@ def test_evidence_season_requires_canonical_format() -> None:
     with pytest.raises(ValidationError, match="consecutive YYYY-YY"):
         EvidenceEnvelope(
             evidence_id="ev", capability="standings", source="fixture",
-            observed_at=datetime(2026, 9, 15), season="2025-27", rows={})
+            observed_at=datetime(2026, 9, 15, tzinfo=UTC), season="2025-27", rows={})
+
+
+def test_evidence_contract_requires_timezone_aware_observation_time() -> None:
+    from datetime import datetime
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="observed_at must include timezone"):
+        EvidenceEnvelope(
+            evidence_id="ev", capability="standings", source="fixture",
+            observed_at=datetime(2026, 9, 15), rows={"wins": 61},
+        )

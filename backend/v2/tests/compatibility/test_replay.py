@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 
 import pytest
 
@@ -12,7 +12,7 @@ from v2.tests.compatibility.replay import load_replay, save_replay
 def test_replay_round_trip_is_prompt_free(tmp_path):
     item = EvidenceEnvelope(
         evidence_id="ev", capability="ratings", source="fixture",
-        observed_at=datetime(2026, 9, 14), rows={"net": 8.2},
+        observed_at=datetime(2026, 9, 14, tzinfo=UTC), rows={"net": 8.2},
     )
     path = tmp_path / "replay.json"
     save_replay(path, "ratings", "abc123", [([item], [{"name": "ratings", "status": "ok"}])])

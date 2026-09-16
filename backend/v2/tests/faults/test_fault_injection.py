@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+from datetime import UTC, datetime
 
 import pytest
 from pydantic import ValidationError
@@ -57,7 +57,7 @@ def test_malformed_evidence_is_rejected_at_contract_wall():
 def test_contradictory_evidence_can_be_preserved_for_verifier():
     first = EvidenceEnvelope(
         evidence_id="a", capability="standings", source="one",
-        observed_at=datetime(2026, 9, 14), rows={"wins": 54},
+        observed_at=datetime(2026, 9, 14, tzinfo=UTC), rows={"wins": 54},
     )
     second = first.model_copy(update={"evidence_id": "b", "source": "two", "rows": {"wins": 55}})
     report = VerificationReport(
