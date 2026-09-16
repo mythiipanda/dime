@@ -952,3 +952,18 @@ def test_checkpoint_rejects_noninteger_attempt_counts() -> None:
             ExecutionCheckpoint(
                 run_id="run", task=_task(), plan=_plan(), attempts={"one": count},
             )
+
+
+def test_project_store_rejects_invalid_boundary_inputs(tmp_path: Path) -> None:
+    store = ProjectStore(tmp_path / "projects.sqlite3")
+    for goal in (" ", None):
+        with pytest.raises((TypeError, ValueError), match="project goal"):
+            store.create(goal)
+    project = store.create("Celtics outlook")
+    for project_id in (" ", None):
+        with pytest.raises(ValueError, match="project id"):
+            store.get(project_id)
+        with pytest.raises(ValueError, match="project id"):
+            store.update(project_id, goal="new")
+    with pytest.raises(ValueError, match="requires changes"):
+        store.update(project.id)

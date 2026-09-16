@@ -28,6 +28,10 @@ class ProjectStore:
         self._lock = _path_lock(self._path)
 
     def create(self, goal: str) -> Project:
+        if not isinstance(goal, str):
+            raise TypeError("project goal must be a string")
+        if not goal.strip():
+            raise ValueError("project goal must be non-empty")
         project_id = uuid4().hex
         project = Project(id=project_id, goal=goal, run_id=f"project-{project_id}")
         with self._lock, self._connect() as connection:
@@ -38,6 +42,7 @@ class ProjectStore:
         return project
 
     def get(self, project_id: str) -> Project | None:
+        self._validate_project_id(project_id)
         with self._lock, self._connect() as connection:
             row = connection.execute(
                 "SELECT data FROM projects WHERE id = ?", (project_id,)
@@ -54,6 +59,9 @@ class ProjectStore:
         )
 
     def update(self, project_id: str, **changes: object) -> Project:
+        self._validate_project_id(project_id)
+        if not changes:
+            raise ValueError("project update requires changes")
         allowed = {"goal", "status", "result", "error"}
         unknown = sorted(set(changes) - allowed)
         if unknown:
@@ -87,6 +95,11 @@ class ProjectStore:
                 (project.model_dump_json(), project_id),
             )
         return project
+
+    @staticmethod
+    def _validate_project_id(project_id: str) -> None:
+        if not isinstance(project_id, str) or not project_id.strip():
+            raise ValueError("project id must be a non-empty string")
 
     def _connect(self) -> sqlite3.Connection:
         if self._path.is_symlink():
