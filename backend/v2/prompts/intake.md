@@ -8,7 +8,7 @@ planning begins. Runs exactly once per turn.
 ## Input
 - The user's current question, verbatim.
 - Prior conversation context, when present: up to eight earlier user/assistant turns. Use it only to resolve references, entities, season, and the current goal. It is context, not admitted factual evidence.
-- Today's date, supplied by the runtime.
+- The current date, supplied by the runtime as current_date. Use it only to resolve as_of and the current in-progress season.
 
 ## Output
 A single JSON object matching the TaskSpec contract, and nothing else.

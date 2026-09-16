@@ -160,3 +160,13 @@ async def test_semantic_verifier_receives_vintage_and_source_scope() -> None:
     assert compact["source"] == "v1:get_trade_value:salary"
     assert compact["vintages"] == {"salary_season": "2026-27"}
     assert compact["task_season_scoped"] is False
+
+
+@pytest.mark.anyio
+async def test_intake_receives_explicit_current_date() -> None:
+    stub = StubModel([{"goal": "record", "mode": "quick", "deliverable": "answer"}])
+    intake = ModelIntake(stub, **stage_kwargs())
+    await intake.understand("current record")
+    current_date = stub.calls[0]["payload"]["current_date"]
+    assert len(current_date) == 10
+    assert current_date.count("-") == 2

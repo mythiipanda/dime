@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping, Sequence
+from datetime import UTC, datetime
 from typing import Any, Protocol, TypeVar
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -124,6 +125,7 @@ class ModelIntake(ModelStage):
     ) -> TaskSpec:
         task = await self._generate({
             "question": request,
+            "current_date": datetime.now(UTC).date().isoformat(),
             "conversation_context": [
                 turn.model_dump(mode="json") for turn in context[-8:]
             ],
