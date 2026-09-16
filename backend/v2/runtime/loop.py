@@ -147,7 +147,11 @@ class Runtime:
             node_id: errors for node_id, errors in execution.errors.items()
             if node_id in failed_nodes
         }
-        if ((draft.gaps or empty_evidence_gaps or unresolved_errors)
+        skipped_nodes = [
+            node.id for node in execution.plan.nodes
+            if node.status.value == "skipped"
+        ]
+        if ((draft.gaps or empty_evidence_gaps or unresolved_errors or skipped_nodes)
                 and verification.status == VerificationStatus.PASS):
             verification = verification.model_copy(
                 update={"status": VerificationStatus.PARTIAL}
@@ -157,6 +161,12 @@ class Runtime:
             *_verification_gaps(
                 draft, verification, unresolved_errors, evidence_ids=set(evidence)),
             *empty_evidence_gaps,
+            *[
+                Gap(kind=GapKind.EXECUTION_FAILURE,
+                    message=f"execution skipped node {node_id}",
+                    blocks=[f"node:{node_id}"])
+                for node_id in skipped_nodes
+            ],
         ]
         result = RuntimeResult(
             task=task,

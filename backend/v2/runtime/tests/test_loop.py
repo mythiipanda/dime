@@ -412,3 +412,31 @@ async def test_partial_repair_instruction_surfaces_as_typed_gap() -> None:
         "Add a second source for role context",
     ]
     assert result.gaps[0].kind == "missing_evidence"
+
+
+@pytest.mark.anyio
+async def test_skipped_execution_node_prevents_clean_pass() -> None:
+    class SkippedExecutor:
+        async def execute(self, task, plan, run_id=None):
+            from v2.runtime.models import ExecutionResult
+            from v2.contracts import PlanStatus
+            skipped = plan.nodes[0].model_copy(update={"status": PlanStatus.SKIPPED})
+            return ExecutionResult(plan=Plan(nodes=[skipped]))
+
+    class EmptySynthesizer:
+        async def synthesize(self, task, evidence):
+            return DraftReport(sections=["No answer"], claims=[])
+
+    instance = Runtime(
+        intake=Intake(), planner=Planner(), executor=SkippedExecutor(),
+        synthesizer=EmptySynthesizer(),
+        mechanical_verifier=SequenceVerifier(VerificationStatus.PASS),
+        semantic_verifier=SequenceVerifier(VerificationStatus.PASS),
+    )
+    result = await instance.run("answer")
+
+    assert result.verification.status == VerificationStatus.PARTIAL
+    assert len(result.gaps) == 1
+    assert result.gaps[0].kind == "execution_failure"
+    assert result.gaps[0].message == "execution skipped node facts"
+    assert result.gaps[0].blocks == ["node:facts"]
