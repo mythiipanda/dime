@@ -962,3 +962,23 @@ async def test_two_team_winner_request_requires_prediction_even_if_intake_choose
         capability_catalog={"team_ratings": {}, "game_prediction": {}},
     ).understand("Who wins Celtics vs Knicks?")
     assert task.required_evidence == ["team_ratings", "game_prediction"]
+    assert task.season is None
+
+
+@pytest.mark.anyio
+async def test_implicit_matchup_season_is_pinned_to_prediction_data_vintage():
+    from app.tools._core import SEASON
+    stub = StubModel([{
+        "goal": "predict Celtics vs Knicks", "mode": "quick",
+        "deliverable": "winner", "entities": [
+            {"id": "bos", "type": "team", "display_name": "Boston Celtics"},
+            {"id": "nyk", "type": "team", "display_name": "New York Knicks"},
+        ], "season": {"value": "2026-27", "source": "default", "confidence": 0.9},
+        "required_evidence": ["game_prediction"],
+    }])
+    task = await ModelIntake(
+        stub, provider="stub", model_name="stub",
+        capability_catalog={"game_prediction": {}},
+    ).understand("Who wins Celtics vs Knicks?")
+    assert task.season.value == SEASON
+    assert task.season.source == "default"

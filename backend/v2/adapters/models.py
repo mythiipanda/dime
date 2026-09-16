@@ -291,6 +291,12 @@ class ModelIntake(ModelStage):
             required_evidence = list(dict.fromkeys([
                 *required_evidence, "game_prediction",
             ]))
+        if ("game_prediction" in required_evidence and task.season is not None
+                and task.season.source == "default"):
+            from app.tools._core import SEASON
+            task = task.model_copy(update={
+                "season": task.season.model_copy(update={"value": SEASON}),
+            })
         task = task.model_copy(update={
             "required_evidence": required_evidence,
         })
