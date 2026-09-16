@@ -117,6 +117,25 @@ async def test_duplicate_evidence_identity_uses_remaining_attempt_budget() -> No
 
 
 @pytest.mark.anyio
+async def test_capability_error_is_bounded_for_result_and_stream_contracts() -> None:
+    class NoisyCapability:
+        name = "fake"
+        task_season_scoped = True
+
+        async def execute(self, node, task, evidence):
+            raise RuntimeError("x" * 5000)
+
+    result = await PlanExecutor({"fake": NoisyCapability()}).execute(
+        TaskSpec(goal="answer", mode=RunMode.QUICK, deliverable="text"),
+        Plan(nodes=[node("a")]),
+    )
+
+    assert result.plan.nodes[0].status == PlanStatus.FAILED
+    assert len(result.errors["a"][0]) == 4000
+    assert result.errors["a"][0].startswith("RuntimeError: ")
+
+
+@pytest.mark.anyio
 async def test_unknown_capability_fails_preflight() -> None:
     with pytest.raises(ValueError, match="exactly one registered capability"):
         await PlanExecutor({}).execute(

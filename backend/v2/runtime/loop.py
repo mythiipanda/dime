@@ -18,7 +18,7 @@ from v2.contracts import (
 )
 from v2.runtime.executor import PlanExecutor
 from v2.runtime.interfaces import Intake, Planner, Repairer, Synthesizer, Verifier
-from v2.runtime.ledger import LedgerKind, RunLedger, TerminalReason
+from v2.runtime.ledger import LedgerKind, RunLedger, TerminalReason, exception_text
 from v2.runtime.models import ExecutionResult, RuntimeResult
 from v2.domain.evidence import iter_values
 
@@ -218,7 +218,7 @@ class Runtime:
                 self._ledger.append(
                     LedgerKind.STEP_END, turn_id=turn_id, step_id=step_id,
                     data={"reason": reason.value,
-                          "error": f"{type(exc).__name__}: {exc}"},
+                          "error": exception_text(exc)},
                 )
             self._report_progress(step_id, "failed")
             raise
@@ -238,7 +238,7 @@ class Runtime:
         self._ledger.append(
             LedgerKind.TURN_END, turn_id=turn_id,
             data={"reason": reason.value,
-                  "error": f"{type(exc).__name__}: {exc}"},
+                  "error": exception_text(exc)},
         )
 
     async def _verify(self, task, draft, evidence) -> VerificationReport:

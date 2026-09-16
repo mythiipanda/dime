@@ -68,6 +68,8 @@ class ExecutionResult(BaseModel):
                 raise ValueError(f"execution node {node.id!r} has too many errors")
             if any(not error.strip() for error in node_errors):
                 raise ValueError(f"execution node {node.id!r} has empty errors")
+            if any(len(error) > 4000 for error in node_errors):
+                raise ValueError(f"execution node {node.id!r} has oversized errors")
             if len(node_errors) != len(set(node_errors)):
                 raise ValueError(f"execution node {node.id!r} has duplicate errors")
             if node.status.value == "failed" and not node_errors:

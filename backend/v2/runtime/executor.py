@@ -7,6 +7,7 @@ from v2.contracts import EvidenceEnvelope, Plan, PlanNode, PlanStatus, TaskSpec
 from v2.runtime.checkpoints import CheckpointStore, ExecutionCheckpoint
 from v2.runtime.interfaces import Capability
 from v2.runtime.models import ExecutionResult
+from v2.runtime.ledger import exception_text
 from v2.domain.evidence import admit_evidence
 
 
@@ -348,7 +349,7 @@ class PlanExecutor:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001
-                message = f"{type(exc).__name__}: {exc}"
+                message = exception_text(exc)
                 node_errors = errors.setdefault(node.id, [])
                 if message not in node_errors:
                     node_errors.append(message)

@@ -5,7 +5,7 @@ from typing import Any
 
 from v2.contracts import EvidenceEnvelope, PlanNode, TaskSpec
 from v2.runtime.interfaces import Capability
-from v2.runtime.ledger import LedgerKind
+from v2.runtime.ledger import LedgerKind, exception_text
 
 
 class RecordedCapability:
@@ -71,7 +71,7 @@ class RecordedCapability:
                 turn_id=self._turn_id,
                 step_id=node.id,
                 call_id=call_id,
-                data={"status": "failed", "error": f"{type(exc).__name__}: {exc}"},
+                data={"status": "failed", "error": exception_text(exc)},
             )
             raise
         self._ledger.append(

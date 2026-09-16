@@ -40,6 +40,12 @@ class TerminalReason(StrEnum):
     TIMEOUT = "timeout"
 
 
+def exception_text(exc: BaseException, *, max_length: int = 4000) -> str:
+    prefix = f"{type(exc).__name__}: "
+    detail = str(exc)
+    return prefix + detail[:max(0, max_length - len(prefix))]
+
+
 class RequestEnvelope(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 

@@ -29,7 +29,7 @@ from v2.contracts import (
     VerificationReport,
 )
 from v2.prompts import load_prompt
-from v2.runtime.ledger import RequestEnvelope
+from v2.runtime.ledger import RequestEnvelope, exception_text
 from v2.skills import SkillLibrary, skill_hashes
 
 T = TypeVar("T", bound=BaseModel)
@@ -379,7 +379,7 @@ class RecordedStructuredModel:
                 LedgerKind.ASSISTANT_ATTEMPT,
                 turn_id=self._turn_id,
                 call_id=call_id,
-                data={"status": "failed", "error": f"{type(exc).__name__}: {exc}"},
+                data={"status": "failed", "error": exception_text(exc)},
             )
             raise
         actual_provider = getattr(self._model, "last_provider", None)
