@@ -201,7 +201,14 @@ async def _record_v2_shadow(
             duration_ms=int((time.monotonic() - started) * 1000),
         )
 
-    primary = await v1_outcome
+    remaining_s = timeout_s - (time.monotonic() - started)
+    if remaining_s <= 0 and not v1_outcome.done():
+        return
+    try:
+        primary = await asyncio.wait_for(
+            asyncio.shield(v1_outcome), timeout=max(0.001, remaining_s))
+    except asyncio.TimeoutError:
+        return
     comparison = compare_outcomes(question, primary, v2_outcome)
     path = os.environ.get(
         "DIME_V2_SHADOW_STORE", str(CARDS_DIR.parent / "v2-shadow.jsonl"))

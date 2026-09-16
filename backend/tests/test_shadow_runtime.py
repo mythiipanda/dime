@@ -196,6 +196,31 @@ def test_v2_shadow_runtime_has_bounded_wall_clock(monkeypatch, tmp_path):
     assert records[0].v2.status == "failed"
 
 
+def test_whole_shadow_task_does_not_wait_forever_for_primary(monkeypatch, tmp_path):
+    class QuickRuntime:
+        async def run(self, *args, **kwargs):
+            raise RuntimeError("stop before projection")
+
+    monkeypatch.setattr(
+        "app.providers.resolve_model_id", lambda model: ("inception", "model"))
+    monkeypatch.setattr(
+        "v2.runtime.assembly.build_runtime", lambda **kwargs: (QuickRuntime(), object()))
+    store_path = tmp_path / "shadow.jsonl"
+    monkeypatch.setenv("DIME_V2_SHADOW_STORE", str(store_path))
+    monkeypatch.setenv("DIME_V2_SHADOW_TIMEOUT_SECONDS", "1")
+
+    async def exercise():
+        primary = asyncio.get_running_loop().create_future()
+        await asyncio.wait_for(
+            routes._record_v2_shadow("record?", None, [], primary),
+            timeout=1.5,
+        )
+        assert not primary.done()
+
+    asyncio.run(exercise())
+    assert not store_path.exists()
+
+
 def test_v2_shadow_timeout_rejects_unbounded_configuration(monkeypatch):
     for value in ("0", "3601"):
         monkeypatch.setenv("DIME_V2_SHADOW_TIMEOUT_SECONDS", value)
