@@ -125,3 +125,17 @@ def test_unsupported_claim_result_requires_a_reason() -> None:
 def test_claim_kind_rejects_inapplicable_or_duplicate_support(payload, error) -> None:
     with pytest.raises(ValidationError, match=error):
         Claim.model_validate(payload)
+
+
+@pytest.mark.parametrize("field,value", [
+    ("goal", "  "),
+    ("deliverable", ""),
+    ("subquestions", ["role", "role"]),
+    ("assumptions", [""]),
+    ("open_questions", ["which season?", "which season?"]),
+])
+def test_task_scope_rejects_empty_or_duplicate_semantics(field, value) -> None:
+    payload = {"goal": "record", "mode": "quick", "deliverable": "answer",
+               field: value}
+    with pytest.raises(ValidationError, match=field):
+        TaskSpec.model_validate(payload)

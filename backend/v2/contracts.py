@@ -79,13 +79,18 @@ class TaskSpec(BaseModel):
 
     @model_validator(mode="after")
     def validate_scope(self) -> "TaskSpec":
-        if len(self.required_evidence) != len(set(self.required_evidence)):
-            raise ValueError("required_evidence must not contain duplicates")
+        if not self.goal.strip() or not self.deliverable.strip():
+            raise ValueError("task goal and deliverable must be non-empty")
+        for field_name in ("subquestions", "required_evidence", "assumptions",
+                           "open_questions", "skills"):
+            values = getattr(self, field_name)
+            if any(not value.strip() for value in values):
+                raise ValueError(f"{field_name} must not contain empty values")
+            if len(values) != len(set(values)):
+                raise ValueError(f"{field_name} must not contain duplicates")
         entity_keys = [(item.type, item.id) for item in self.entities]
         if len(entity_keys) != len(set(entity_keys)):
             raise ValueError("entities must not contain duplicate identities")
-        if len(self.skills) != len(set(self.skills)):
-            raise ValueError("skills must not contain duplicates")
         return self
 
 
