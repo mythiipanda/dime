@@ -580,3 +580,24 @@ def test_run_ledger_rejects_decreasing_timestamps() -> None:
     ]
     with pytest.raises(ValueError, match="timestamps must be nondecreasing"):
         RunLedger("run", entries)
+
+
+def test_run_ledger_clamps_backward_wall_clock(monkeypatch) -> None:
+    from datetime import UTC, datetime, timedelta
+    import v2.runtime.ledger as ledger_module
+
+    first_time = datetime(2026, 9, 15, tzinfo=UTC)
+    times = iter([first_time, first_time - timedelta(seconds=1)])
+
+    class Clock:
+        @classmethod
+        def now(cls, tz):
+            return next(times)
+
+    monkeypatch.setattr(ledger_module, "datetime", Clock)
+    ledger = RunLedger("run")
+    first = ledger.append(
+        LedgerKind.TURN_START, turn_id="turn", data={"request": "answer"})
+    second = ledger.append(
+        LedgerKind.TURN_END, turn_id="turn", data={"reason": "complete"})
+    assert first.recorded_at == second.recorded_at == first_time

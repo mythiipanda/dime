@@ -383,11 +383,14 @@ class RunLedger:
             else:
                 raise ValueError("tool result status must be ok or failed")
             self._results.add(call_id)
+        recorded_at = datetime.now(UTC)
+        if self._entries and recorded_at < self._entries[-1].recorded_at:
+            recorded_at = self._entries[-1].recorded_at
         entry = LedgerEntry(
             sequence=len(self._entries) + 1,
             run_id=self.run_id,
             kind=kind,
-            recorded_at=datetime.now(UTC),
+            recorded_at=recorded_at,
             turn_id=turn_id,
             step_id=step_id,
             call_id=call_id,
