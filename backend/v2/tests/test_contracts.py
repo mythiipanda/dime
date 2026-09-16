@@ -201,3 +201,13 @@ def test_claim_result_rejects_duplicate_reasons() -> None:
 
     with pytest.raises(ValidationError, match="reasons must not contain duplicates"):
         ClaimResult(claim_index=0, supported=False, reasons=["bad", "bad"])
+
+
+def test_claim_source_and_verified_claim_reject_ambiguous_identity() -> None:
+    from v2.contracts import ClaimSource, VerifiedClaim
+
+    with pytest.raises(ValidationError, match="source identity must be non-empty"):
+        ClaimSource(evidence_id="ev", source=" ", capability="standings")
+    claim = Claim(text="Observed.", kind="observed", evidence_ids=["ev"])
+    with pytest.raises(ValidationError, match="evidence_ids must not contain duplicates"):
+        VerifiedClaim(claim_index=0, claim=claim, evidence_ids=["ev", "ev"])

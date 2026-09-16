@@ -260,6 +260,14 @@ class ClaimSource(BaseModel):
     source: str
     capability: str
 
+    @model_validator(mode="after")
+    def validate_identity(self) -> "ClaimSource":
+        if not all(value.strip() for value in (
+            self.evidence_id, self.source, self.capability
+        )):
+            raise ValueError("claim source identity must be non-empty")
+        return self
+
 
 class VerifiedClaim(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -268,6 +276,15 @@ class VerifiedClaim(BaseModel):
     claim: Claim
     evidence_ids: list[str] = Field(default_factory=list)
     sources: list[ClaimSource] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_references(self) -> "VerifiedClaim":
+        if len(self.evidence_ids) != len(set(self.evidence_ids)):
+            raise ValueError("verified claim evidence_ids must not contain duplicates")
+        source_ids = [item.evidence_id for item in self.sources]
+        if len(source_ids) != len(set(source_ids)):
+            raise ValueError("verified claim sources must not contain duplicates")
+        return self
 
 
 class ClaimResult(BaseModel):
