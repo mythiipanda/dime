@@ -318,3 +318,11 @@ def test_shadow_route_honors_non_publish_policy():
     source = inspect.getsource(quick_answer_stream)
     assert "if policy.publish:" in source
     assert source.index("if policy.publish:") < source.index("FinalAnswer(")
+
+
+def test_chat_route_configures_durable_checkpoint_directory():
+    import inspect
+    from v2.api.routes import quick_answer_stream
+    source = inspect.getsource(quick_answer_stream)
+    assert "DIME_V2_CHECKPOINT_DIR" in source
+    assert 'model_copy(update={"checkpoint_dir": checkpoint_dir})' in source

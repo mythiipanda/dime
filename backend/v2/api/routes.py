@@ -128,9 +128,12 @@ async def quick_answer_stream(body: QuickAnswerBody):
 
     ledger_dir = os.environ.get(
         "DIME_V2_LEDGER_DIR", str(_BACKEND / "data" / "v2-ledgers"))
+    checkpoint_dir = Path(os.environ.get(
+        "DIME_V2_CHECKPOINT_DIR", str(_BACKEND / "data" / "v2-checkpoints")))
     policy = (ExecutionPolicy.shadow(ledger_dir=ledger_dir)
               if os.environ.get("DIME_RUNTIME_V2", "off").lower() == "shadow"
               else ExecutionPolicy.live(ledger_dir=ledger_dir))
+    policy = policy.model_copy(update={"checkpoint_dir": checkpoint_dir})
     runtime, ledger = build_runtime(
         provider=provider, model_name=model_name, run_id=run_id,
         progress=progress, policy=policy)
