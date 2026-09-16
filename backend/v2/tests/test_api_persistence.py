@@ -638,3 +638,13 @@ async def test_checkpoint_rejects_pending_node_without_attempts_remaining(
         await PlanExecutor(
             {"fake": FakeCapability("fake", {})}, checkpoint_store=checkpoints,
         ).execute(_task(), _plan(), run_id="exhausted")
+
+
+def test_api_request_contracts_reject_unknown_fields() -> None:
+    from pydantic import ValidationError
+    from v2.api.routes import CreateProjectBody, QuickAnswerBody
+
+    with pytest.raises(ValidationError, match="invented"):
+        CreateProjectBody.model_validate({"goal": "analyze", "invented": True})
+    with pytest.raises(ValidationError, match="invented"):
+        QuickAnswerBody.model_validate({"q": "analyze", "invented": True})

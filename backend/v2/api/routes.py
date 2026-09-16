@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from v2.projects.service import ProjectStore
 
@@ -62,6 +62,8 @@ def revision() -> dict[str, str]:
 
 
 class CreateProjectBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     goal: str = Field(min_length=1, max_length=2000)
 
 
@@ -89,6 +91,8 @@ from v2.contracts import ConversationTurn
 
 
 class QuickAnswerBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     q: str = Field(min_length=1, max_length=2000)
     model: str | None = None
     history: list[ConversationTurn] = Field(default_factory=list, max_length=8)
