@@ -166,3 +166,25 @@ async def test_runtime_ledger_closes_failed_stage_and_turn() -> None:
         LedgerKind.STEP_END, LedgerKind.TURN_END]
     assert ledger.entries[-2].data["reason"] == "failed"
     assert ledger.entries[-1].data["reason"] == "failed"
+
+@pytest.mark.anyio
+async def test_runtime_passes_typed_context_to_intake() -> None:
+    from v2.contracts import ConversationTurn
+
+    class ContextIntake:
+        async def understand(self, request, context=()):
+            assert request == "Now assess his role"
+            assert context[0].content == "Tell me about the Celtics"
+            return TaskSpec(goal=request, mode=RunMode.QUICK, deliverable="text")
+
+    instance = Runtime(
+        intake=ContextIntake(), planner=Planner(),
+        executor=PlanExecutor({"fake": FakeCapability("fake", {"value": 42})}),
+        synthesizer=Synthesizer(),
+        mechanical_verifier=SequenceVerifier(VerificationStatus.PASS),
+        semantic_verifier=SequenceVerifier(VerificationStatus.PASS),
+    )
+    await instance.run(
+        "Now assess his role",
+        context=(ConversationTurn(role="user", content="Tell me about the Celtics"),),
+    )

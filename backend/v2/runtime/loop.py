@@ -5,6 +5,7 @@ from collections.abc import Callable, Iterable
 
 from v2.contracts import (
     ClaimResult,
+    ConversationTurn,
     ClaimSource,
     Gap,
     GapKind,
@@ -42,7 +43,10 @@ class Runtime:
         self._ledger = ledger
         self._progress = progress
 
-    async def run(self, request: str, *, run_id: str | None = None) -> RuntimeResult:
+    async def run(
+        self, request: str, *, run_id: str | None = None,
+        context: tuple[ConversationTurn, ...] = (),
+    ) -> RuntimeResult:
         turn_id = run_id or "turn"
         if self._ledger is not None:
             if run_id is not None and self._ledger.run_id != run_id:
@@ -52,8 +56,9 @@ class Runtime:
                 data={"request": request},
             )
         try:
-            task = await self._stage(
-                turn_id, "understand", self._intake.understand(request))
+            intake_call = (self._intake.understand(request, context)
+                           if context else self._intake.understand(request))
+            task = await self._stage(turn_id, "understand", intake_call)
             plan = await self._stage(
                 turn_id, "plan", self._planner.plan(task))
             execution = await self._stage(

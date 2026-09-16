@@ -53,6 +53,11 @@ class SeasonRef(BaseModel):
     confidence: float = Field(ge=0, le=1)
 
 
+class ConversationTurn(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=2000)
+
+
 class TaskSpec(BaseModel):
     goal: str
     mode: RunMode

@@ -4,6 +4,7 @@ from collections.abc import Mapping, Sequence
 from typing import Protocol
 
 from v2.contracts import (
+    ConversationTurn,
     DraftReport,
     EvidenceEnvelope,
     Plan,
@@ -14,7 +15,9 @@ from v2.contracts import (
 
 
 class Intake(Protocol):
-    async def understand(self, request: str) -> TaskSpec: ...
+    async def understand(
+        self, request: str, context: Sequence[ConversationTurn] = ()
+    ) -> TaskSpec: ...
 
 
 class Planner(Protocol):

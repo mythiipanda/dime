@@ -116,3 +116,26 @@ async def test_model_repair_receives_only_typed_admitted_context():
     assert payload["skills"] == []
     assert payload["admitted_evidence"][0]["evidence_id"] == "ev"
     assert repaired.claims[0].text == "Boston won 61 games."
+
+@pytest.mark.anyio
+async def test_intake_receives_bounded_followup_context_without_full_skill_bodies():
+    from v2.contracts import ConversationTurn
+
+    stub = StubModel([{
+        "goal": "assess Jaylen Brown trade value on Boston",
+        "mode": "deep_dive", "deliverable": "analysis",
+        "skills": ["trade-analysis"],
+    }])
+    intake = ModelIntake(stub, **stage_kwargs())
+    context = [
+        ConversationTurn(role="user", content=f"turn {index}")
+        for index in range(10)
+    ]
+    task = await intake.understand(
+        "Now assess his value on that team", context=context)
+    payload = stub.calls[0]["payload"]
+    assert [turn["content"] for turn in payload["conversation_context"]] == [
+        f"turn {index}" for index in range(2, 10)
+    ]
+    assert task.skills == ["trade-analysis"]
+    assert all("instructions" not in item for item in payload["skill_catalog"])

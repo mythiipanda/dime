@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from app.providers import ProviderName, invoke_with_fallback
 from v2.contracts import (
+    ConversationTurn,
     DraftReport,
     EvidenceEnvelope,
     Plan,
@@ -118,9 +119,14 @@ class ModelIntake(ModelStage):
         super().__init__(*args, **kwargs)
         self._catalog = dict(capability_catalog)
 
-    async def understand(self, request: str) -> TaskSpec:
+    async def understand(
+        self, request: str, context: Sequence[ConversationTurn] = ()
+    ) -> TaskSpec:
         task = await self._generate({
             "question": request,
+            "conversation_context": [
+                turn.model_dump(mode="json") for turn in context[-8:]
+            ],
             "capability_catalog": self._catalog,
             "skill_catalog": self._skills.catalog(),
         })

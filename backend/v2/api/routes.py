@@ -84,9 +84,13 @@ def get_project(project_id: str) -> dict:
         raise HTTPException(status_code=404, detail="project not found")
     return project.model_dump(mode="json")
 
+from v2.contracts import ConversationTurn
+
+
 class QuickAnswerBody(BaseModel):
     q: str = Field(min_length=1, max_length=2000)
     model: str | None = None
+    history: list[ConversationTurn] = Field(default_factory=list, max_length=8)
 
 
 def _answer_text(result) -> str:
@@ -132,7 +136,8 @@ async def quick_answer_stream(body: QuickAnswerBody):
         progress=progress, policy=policy)
 
     async def generate():
-        task = asyncio.create_task(runtime.run(body.q, run_id=run_id))
+        task = asyncio.create_task(runtime.run(
+            body.q, run_id=run_id, context=tuple(body.history)))
         while not task.done() or not queue.empty():
             try:
                 event = await asyncio.wait_for(queue.get(), timeout=0.1)

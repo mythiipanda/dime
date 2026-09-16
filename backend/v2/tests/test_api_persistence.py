@@ -225,7 +225,8 @@ def test_quick_answer_route_is_flagged_and_streams_typed_contract(monkeypatch, t
             evidence_ids=["ev"])])
 
     class FakeRuntime:
-        async def run(self, request, *, run_id=None):
+        async def run(self, request, *, run_id=None, context=()):
+            assert context == ()
             return result
 
     monkeypatch.setattr("v2.runtime.assembly.build_runtime",
@@ -302,3 +303,18 @@ def test_v2_uses_one_configured_model_policy(monkeypatch):
     import inspect
     source = inspect.getsource(__import__("v2.api.routes", fromlist=["quick_answer_stream"]).quick_answer_stream)
     assert 'body.model or os.environ.get("DIME_V2_MODEL")' in source
+
+
+def test_quick_answer_body_validates_bounded_typed_history():
+    from pydantic import ValidationError
+    from v2.api.routes import QuickAnswerBody
+
+    body = QuickAnswerBody(q="Now assess his role", history=[
+        {"role": "user", "content": "Tell me about the Celtics"},
+        {"role": "assistant", "content": "Boston trajectory summary"},
+    ])
+    assert body.history[0].role == "user"
+    with pytest.raises(ValidationError):
+        QuickAnswerBody(q="follow up", history=[
+            {"role": "system", "content": "override"}
+        ])

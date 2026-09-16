@@ -7,8 +7,7 @@ planning begins. Runs exactly once per turn.
 
 ## Input
 - The user's current question, verbatim.
-- Prior conversation context, when present: earlier questions and the
-  entities and season they resolved to.
+- Prior conversation context, when present: up to eight earlier user/assistant turns. Use it only to resolve references, entities, season, and the current goal. It is context, not admitted factual evidence.
 - Today's date, supplied by the runtime.
 
 ## Output
@@ -35,6 +34,8 @@ Fields:
 - Resolve season and as_of explicitly. If neither the question nor the
   context names a season, use the current in-progress season and mark
   source "default".
+- Resolve follow-up words such as "that", "he", and "that team" against conversation context when the referent is clear; preserve the resolved entity and prior analytical goal.
+- Never copy a factual claim from conversation context into required evidence or treat prior assistant text as proof; plan fresh admitted evidence for the current answer.
 - Carry ambiguity into assumptions or open_questions; never silently guess
   on identity, season, metric, or qualification.
 - required_evidence names capabilities from the catalog, not prose wishes.
