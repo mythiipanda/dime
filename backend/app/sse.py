@@ -16,9 +16,11 @@ async def with_heartbeat(
     queue: asyncio.Queue[str | None] = asyncio.Queue()
 
     async def drain() -> None:
-        async for chunk in inner:
-            await queue.put(chunk)
-        await queue.put(None)
+        try:
+            async for chunk in inner:
+                await queue.put(chunk)
+        finally:
+            await queue.put(None)
 
     task = asyncio.create_task(drain())
     try:
@@ -29,7 +31,10 @@ async def with_heartbeat(
                 yield emit_sse("ping", {"ok": True})
                 continue
             if item is None:
+                await task
                 return
             yield item
     finally:
-        task.cancel()
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)

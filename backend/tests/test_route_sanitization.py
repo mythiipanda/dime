@@ -175,3 +175,44 @@ def test_sse_framing_fails_closed_if_projection_is_bypassed():
 
     with pytest.raises(ValueError, match="JSON compliant"):
         emit_sse("custom_data", {"value": math.nan})
+
+
+def test_heartbeat_propagates_inner_stream_failure_without_hanging():
+    import asyncio
+    import pytest
+    from app.sse import with_heartbeat
+
+    async def broken():
+        yield "first"
+        raise RuntimeError("stream failed")
+
+    async def exercise():
+        chunks = []
+        with pytest.raises(RuntimeError, match="stream failed"):
+            async for chunk in with_heartbeat(broken(), interval_s=0.01):
+                chunks.append(chunk)
+        return chunks
+
+    assert asyncio.run(asyncio.wait_for(exercise(), timeout=0.2)) == ["first"]
+
+
+def test_heartbeat_cancellation_closes_inner_stream():
+    import asyncio
+    from app.sse import with_heartbeat
+
+    closed = asyncio.Event()
+
+    async def hanging():
+        try:
+            yield "first"
+            await asyncio.Event().wait()
+        finally:
+            closed.set()
+
+    async def exercise():
+        stream = with_heartbeat(hanging(), interval_s=10)
+        assert await anext(stream) == "first"
+        await stream.aclose()
+        await asyncio.wait_for(closed.wait(), timeout=0.2)
+
+    asyncio.run(exercise())
