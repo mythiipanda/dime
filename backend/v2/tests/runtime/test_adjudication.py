@@ -215,3 +215,25 @@ def test_runtime_result_rejects_missing_verified_supported_claim() -> None:
                 ClaimResult(claim_index=0, supported=True)]),
             verified_claims=[],
         )
+
+
+def test_runtime_result_rejects_task_scoped_evidence_from_wrong_season() -> None:
+    import pytest
+    from datetime import UTC, datetime
+    from pydantic import ValidationError
+    from v2.contracts import EvidenceEnvelope, Plan, PlanNode, SeasonRef, TaskSpec
+    from v2.runtime.models import ExecutionResult, RuntimeResult
+
+    evidence = EvidenceEnvelope(
+        evidence_id="old", capability="standings", source="fixture",
+        observed_at=datetime.now(UTC), season="2024-25", rows={"wins": 61})
+    execution = ExecutionResult(
+        plan=Plan(nodes=[PlanNode(id="facts", description="facts",
+            capability_hints=["standings"], status="complete")]),
+        evidence=[evidence], attempts={"facts": 1})
+    with pytest.raises(ValidationError, match="does not match task season"):
+        RuntimeResult(
+            task=TaskSpec(goal="record", mode="quick", deliverable="text",
+                season=SeasonRef(value="2025-26", source="user", confidence=1)),
+            execution=execution, draft=DraftReport(sections=[], claims=[]),
+            verification=VerificationReport(status="partial"))

@@ -96,6 +96,15 @@ class RuntimeResult(BaseModel):
             raise ValueError(
                 f"verification claim indices are outside the draft: {invalid_indices}")
         evidence = {item.evidence_id: item for item in self.execution.evidence}
+        if self.task.season is not None:
+            wrong_season = [
+                item.evidence_id for item in evidence.values()
+                if item.task_season_scoped
+                and item.season != self.task.season.value
+            ]
+            if wrong_season:
+                raise ValueError(
+                    f"runtime evidence does not match task season: {wrong_season}")
         seen: set[int] = set()
         evidence_ids = set(evidence)
         for gap in self.gaps:
