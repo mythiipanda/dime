@@ -43,7 +43,7 @@ class WebSearchResponse(BaseModel):
 
 
 class WebFetchRequest(BaseModel):
-    search_evidence_id: str = Field(min_length=1)
+    search_evidence_id: str | None = Field(default=None, min_length=1)
     result_rank: int = Field(ge=1, le=8)
 
 
@@ -252,14 +252,23 @@ class WebFetchCapability:
         from v2.contracts import EvidenceEnvelope
 
         request = WebFetchRequest.model_validate(node.arguments)
-        matches = [
-            item for item in evidence
-            if item.evidence_id == request.search_evidence_id
-            and item.capability == "web_search"
+        search_parents = [
+            item for item in evidence if item.capability == "web_search"
         ]
-        if len(matches) != 1:
-            raise ValueError("web_fetch requires its selected web_search parent evidence")
-        parent = matches[0]
+        if request.search_evidence_id is None:
+            if len(search_parents) != 1:
+                raise ValueError(
+                    "web_fetch requires exactly one web_search dependency")
+            parent = search_parents[0]
+        else:
+            matches = [
+                item for item in search_parents
+                if item.evidence_id == request.search_evidence_id
+            ]
+            if len(matches) != 1:
+                raise ValueError(
+                    "web_fetch requires its selected web_search parent evidence")
+            parent = matches[0]
         selected = next(
             (row for row in parent.rows if row.get("rank") == request.result_rank),
             None,

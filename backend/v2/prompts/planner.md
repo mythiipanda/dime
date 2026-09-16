@@ -35,6 +35,7 @@ A single JSON object matching the Plan contract, and nothing else:
 - Every subquestion and every required_evidence entry maps to at least one
   node.
 - Nodes produce evidence, never prose answers.
+- A web_fetch node must depend on exactly one web_search node. Set result_rank in arguments; omit search_evidence_id because the executor binds the fetch to its content-addressed parent result after search executes.
 
 ## Stop condition
 Stop when the fewest nodes covering all required evidence are planned.

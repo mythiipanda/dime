@@ -29,9 +29,10 @@ async def test_duckduckgo_is_typed_and_labeled_best_effort(monkeypatch):
     assert "no official full-results API" in response.warnings[0]
 
 
-def test_fetch_request_requires_search_rank():
+def test_fetch_request_requires_valid_search_rank_but_can_bind_dependency():
     from pydantic import ValidationError
     from v2.adapters.web import WebFetchRequest
+    assert WebFetchRequest(result_rank=1).search_evidence_id is None
     with pytest.raises(ValidationError):
         WebFetchRequest(search_evidence_id="", result_rank=0)
 
@@ -195,3 +196,43 @@ async def test_web_fetch_capability_rejects_unselected_or_unrelated_source():
     with pytest.raises(ValueError, match="selected web_search parent"):
         await WebFetchCapability().execute(
             node, TaskSpec(goal="role", mode="quick", deliverable="answer"), [parent])
+
+
+@pytest.mark.anyio
+async def test_planned_web_dag_binds_fetch_to_content_addressed_parent():
+    from datetime import UTC, datetime
+    from v2.adapters.web import (WebFetchCapability, WebPage,
+                                 WebSearchCapability, WebSearchResponse)
+    from v2.contracts import Plan, PlanNode, TaskSpec
+    from v2.runtime import PlanExecutor
+
+    class Search:
+        name = "fixture-search"
+        async def search(self, request):
+            return WebSearchResponse(provider=self.name, query=request.query,
+                observed_at=datetime(2026, 9, 15, tzinfo=UTC),
+                results=[WebSearchResult(rank=1, url="https://example.com/story",
+                    title="Story", snippet="Discovery")], coverage="fixture")
+
+    class Fetch:
+        name = "fixture-fetch"
+        async def fetch(self, result):
+            return WebPage(url=result.url, title=result.title,
+                retrieved_at=datetime(2026, 9, 15, tzinfo=UTC),
+                markdown="Full source", content_hash="a" * 64)
+
+    plan = Plan(nodes=[
+        PlanNode(id="discover", description="current source",
+            capability_hints=["web_search"],
+            arguments={"query": "current Jaylen Brown role"},
+            completion_test="one selected source"),
+        PlanNode(id="extract", description="full page", depends_on=["discover"],
+            capability_hints=["web_fetch"], arguments={"result_rank": 1},
+            completion_test="page text"),
+    ])
+    result = await PlanExecutor({
+        "web_search": WebSearchCapability(Search()),
+        "web_fetch": WebFetchCapability(Fetch()),
+    }).execute(TaskSpec(goal="role", mode="quick", deliverable="answer"), plan)
+    assert result.evidence[1].lineage == [result.evidence[0].evidence_id]
+    assert result.evidence[1].rows["markdown"] == "Full source"
