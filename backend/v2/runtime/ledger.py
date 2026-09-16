@@ -43,13 +43,13 @@ class TerminalReason(StrEnum):
 class RequestEnvelope(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    provider: str
-    model: str
-    route: str
-    prompt_hash: str
-    context_hash: str
-    tool_schema_hash: str
-    planner_version: str
+    provider: str = Field(max_length=256)
+    model: str = Field(max_length=256)
+    route: str = Field(max_length=256)
+    prompt_hash: str = Field(max_length=64)
+    context_hash: str = Field(max_length=64)
+    tool_schema_hash: str = Field(max_length=64)
+    planner_version: str = Field(max_length=64)
     budgets: dict[str, StrictInt | StrictFloat] = Field(default_factory=dict, max_length=32)
     skill_hashes: dict[str, str] = Field(default_factory=dict, max_length=32)
 
@@ -115,12 +115,12 @@ class LedgerEntry(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     sequence: StrictInt = Field(ge=1)
-    run_id: str
+    run_id: str = Field(max_length=256)
     kind: LedgerKind
     recorded_at: datetime
-    turn_id: str
-    step_id: str | None = None
-    call_id: str | None = None
+    turn_id: str = Field(max_length=256)
+    step_id: str | None = Field(default=None, max_length=256)
+    call_id: str | None = Field(default=None, max_length=512)
     data: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")

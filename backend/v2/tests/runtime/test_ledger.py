@@ -641,3 +641,13 @@ def test_ledger_sequence_is_a_strict_integer(value) -> None:
         LedgerEntry(sequence=value, run_id="run", kind="turn/start",
                     recorded_at=datetime.now(UTC), turn_id="turn",
                     data={"request": "question"})
+
+
+def test_ledger_identity_text_has_hard_limits() -> None:
+    from datetime import UTC, datetime
+    from pydantic import ValidationError
+    from v2.runtime.ledger import LedgerEntry
+    with pytest.raises(ValidationError, match="at most 256 characters"):
+        LedgerEntry(sequence=1, run_id="x" * 257, kind="turn/start",
+                    recorded_at=datetime.now(UTC), turn_id="turn",
+                    data={"request": "question"})
