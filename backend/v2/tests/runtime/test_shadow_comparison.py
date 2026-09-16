@@ -113,6 +113,15 @@ def test_shadow_persisted_contracts_reject_unknown_fields() -> None:
         })
 
 
+def test_shadow_outcome_rejects_unknown_status() -> None:
+    import pytest
+    from pydantic import ValidationError
+
+    for status in ("", "success", "PASS"):
+        with pytest.raises(ValidationError, match="Input should be"):
+            outcome(status=status)
+
+
 def test_ok_shadow_outcome_rejects_incomplete_claim_support() -> None:
     import pytest
     from pydantic import ValidationError

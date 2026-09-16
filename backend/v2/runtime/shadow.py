@@ -28,10 +28,17 @@ class DifferenceKind(StrEnum):
     FAILURE = "failure"
 
 
+class OutcomeStatus(StrEnum):
+    OK = "ok"
+    PARTIAL = "partial"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
 class RunOutcome(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    status: str
+    status: OutcomeStatus
     answer: str = ""
     capabilities: list[str] = Field(default_factory=list)
     evidence_count: int = 0
@@ -41,8 +48,6 @@ class RunOutcome(BaseModel):
 
     @model_validator(mode="after")
     def validate_metrics(self) -> "RunOutcome":
-        if not self.status.strip():
-            raise ValueError("shadow outcome status must be non-empty")
         if any(not name.strip() for name in self.capabilities):
             raise ValueError("shadow outcome capabilities must be non-empty")
         if len(self.capabilities) != len(set(self.capabilities)):
@@ -51,7 +56,7 @@ class RunOutcome(BaseModel):
             raise ValueError("shadow outcome counts must be non-negative")
         if self.supported_claims > self.total_claims:
             raise ValueError("supported claims cannot exceed total claims")
-        if self.status == "ok" and self.supported_claims != self.total_claims:
+        if self.status == OutcomeStatus.OK and self.supported_claims != self.total_claims:
             raise ValueError("ok shadow outcome requires every claim to be supported")
         if self.duration_ms is not None and self.duration_ms < 0:
             raise ValueError("shadow outcome duration must be non-negative")
@@ -92,7 +97,7 @@ class ShadowComparison(BaseModel):
 
 def _difference_kinds(v1: RunOutcome, v2: RunOutcome) -> list[DifferenceKind]:
     differences: list[DifferenceKind] = []
-    if v1.status != "ok" or v2.status != "ok":
+    if v1.status != OutcomeStatus.OK or v2.status != OutcomeStatus.OK:
         differences.append(DifferenceKind.FAILURE)
     if _canon(v1.answer) != _canon(v2.answer):
         differences.append(DifferenceKind.ANSWER)
