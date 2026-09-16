@@ -506,6 +506,14 @@ async def test_restored_failure_budget_skips_independent_pending_nodes(
     ]
 
 
+def test_checkpoint_rejects_blank_run_identity() -> None:
+    from pydantic import ValidationError
+    from v2.runtime.checkpoints import ExecutionCheckpoint
+
+    with pytest.raises(ValidationError, match="run id must be non-empty"):
+        ExecutionCheckpoint(run_id=" ", task=_task(), plan=_plan())
+
+
 def test_checkpoint_rejects_unknown_persisted_fields() -> None:
     from datetime import UTC, datetime
     from pydantic import ValidationError

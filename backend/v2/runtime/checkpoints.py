@@ -5,7 +5,7 @@ import tempfile
 from pathlib import Path
 from typing import Protocol
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from v2.contracts import EvidenceEnvelope, Plan, TaskSpec
 
@@ -19,6 +19,12 @@ class ExecutionCheckpoint(BaseModel):
     evidence_by_node: dict[str, EvidenceEnvelope] = Field(default_factory=dict)
     attempts: dict[str, int] = Field(default_factory=dict)
     errors: dict[str, list[str]] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_identity(self) -> "ExecutionCheckpoint":
+        if not self.run_id.strip():
+            raise ValueError("checkpoint run id must be non-empty")
+        return self
 
 
 class CheckpointStore(Protocol):
