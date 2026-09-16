@@ -100,3 +100,17 @@ def test_activation_hash_covers_resource_contents(tmp_path: Path):
     resource.write_text("second", encoding="utf-8")
     second = SkillLibrary(tmp_path).activate(["example"])[0]["content_hash"]
     assert first != second
+
+
+def test_library_rejects_symlinked_root(tmp_path: Path):
+    outside = tmp_path / "outside"
+    package = outside / "example"
+    package.mkdir(parents=True)
+    (package / "SKILL.md").write_text(
+        "---\nname: example\ndescription: Example skill\n---\nInstructions",
+        encoding="utf-8",
+    )
+    root = tmp_path / "skills"
+    root.symlink_to(outside, target_is_directory=True)
+    with pytest.raises(ValueError, match="root cannot be a symlink"):
+        SkillLibrary(root).catalog()

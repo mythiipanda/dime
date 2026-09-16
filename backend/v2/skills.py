@@ -54,6 +54,8 @@ class SkillLibrary:
 
     @cached_property
     def skills(self) -> dict[str, Skill]:
+        if self.root.is_symlink():
+            raise ValueError("skill library root cannot be a symlink")
         if not self.root.exists():
             return {}
         loaded: dict[str, Skill] = {}
