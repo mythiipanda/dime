@@ -294,3 +294,31 @@ async def test_verifier_structured_output_rejects_unknown_fields() -> None:
             TaskSpec(goal="empty", mode="quick", deliverable="answer"),
             DraftReport(sections=[], claims=[]), {},
         )
+
+
+@pytest.mark.anyio
+async def test_model_repair_cannot_retain_rejected_claim_unchanged() -> None:
+    from v2.contracts import Claim, DraftReport, TaskSpec, VerificationReport
+
+    rejected = Claim(
+        text="Boston won 62 games.", kind="observed", evidence_ids=["ev"])
+    stub = StubModel([{
+        "sections": ["Record"], "claims": [rejected.model_dump(mode="json")],
+    }])
+    repairer = ModelRepairer(stub, provider="stub", model_name="stub-model")
+    report = VerificationReport(
+        status="repair", claim_results=[{
+            "claim_index": 0, "supported": False,
+            "reasons": ["uncited numeral 62"],
+        }],
+    )
+    evidence = EvidenceEnvelope(
+        evidence_id="ev", capability="standings", source="fixture",
+        observed_at=datetime.now(UTC), rows={"team": "Boston", "wins": 61},
+    )
+    with pytest.raises(ValueError, match="retained a rejected claim"):
+        await repairer.repair(
+            TaskSpec(goal="record", mode="quick", deliverable="answer"),
+            DraftReport(sections=["Record"], claims=[rejected]),
+            {"ev": evidence}, report,
+        )

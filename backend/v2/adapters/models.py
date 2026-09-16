@@ -257,7 +257,24 @@ class ModelRepairer(ModelStage):
                 item.model_dump(mode="json") for item in evidence.values()
             ],
         })
-        return _validate_draft(repaired, list(evidence.values()))
+        repaired = _validate_draft(repaired, list(evidence.values()))
+        repaired_keys = {
+            (claim.text, claim.kind, tuple(claim.evidence_ids),
+             claim.calculation_id, claim.confidence)
+            for claim in repaired.claims
+        }
+        rejected = {
+            (draft.claims[result.claim_index].text,
+             draft.claims[result.claim_index].kind,
+             tuple(draft.claims[result.claim_index].evidence_ids),
+             draft.claims[result.claim_index].calculation_id,
+             draft.claims[result.claim_index].confidence)
+            for result in verification.claim_results
+            if not result.supported and result.claim_index < len(draft.claims)
+        }
+        if rejected & repaired_keys:
+            raise ValueError("repair retained a rejected claim unchanged")
+        return repaired
 
 
 class ModelSemanticVerifier(ModelStage):
