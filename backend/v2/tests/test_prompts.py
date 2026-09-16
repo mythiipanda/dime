@@ -86,3 +86,23 @@ def test_load_prompt_is_cached():
 def test_load_prompt_missing_name_raises():
     with pytest.raises(FileNotFoundError):
         load_prompt("does_not_exist")
+
+
+def test_load_prompt_rejects_path_traversal():
+    with pytest.raises(ValueError, match="prompt name"):
+        load_prompt("../contracts")
+
+
+def test_load_prompt_rejects_symlink(monkeypatch, tmp_path):
+    outside = tmp_path / "outside.md"
+    outside.write_text("external", encoding="utf-8")
+    prompts_dir = tmp_path / "prompts"
+    prompts_dir.mkdir()
+    (prompts_dir / "external.md").symlink_to(outside)
+    monkeypatch.setattr(prompts, "_PROMPTS_DIR", prompts_dir)
+    load_prompt.cache_clear()
+    try:
+        with pytest.raises(ValueError, match="cannot be a symlink"):
+            load_prompt("external")
+    finally:
+        load_prompt.cache_clear()
