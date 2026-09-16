@@ -198,6 +198,9 @@ class PlanExecutor:
                 raise ValueError(
                     f"checkpoint node {node_id!r} skipped but carries errors")
             attempts = checkpoint.attempts.get(node_id, 0)
+            if node.status == PlanStatus.SKIPPED and attempts:
+                raise ValueError(
+                    f"checkpoint node {node_id!r} skipped but carries attempts")
             if attempts < 0 or attempts > node.max_attempts:
                 raise ValueError(
                     f"checkpoint node {node_id!r} has invalid attempt count {attempts}")

@@ -75,6 +75,8 @@ class ExecutionResult(BaseModel):
                     f"execution node {node.id!r} has no attempts remaining")
             if node.status.value == "skipped" and node_errors:
                 raise ValueError(f"skipped node {node.id!r} cannot carry errors")
+            if node.status.value == "skipped" and count:
+                raise ValueError(f"skipped node {node.id!r} cannot carry attempts")
         return self
 
 

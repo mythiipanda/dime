@@ -400,3 +400,12 @@ def test_execution_result_rejects_failed_node_with_attempts_remaining() -> None:
             plan=Plan(nodes=[failed]), attempts={"failed": 1},
             errors={"failed": ["failure"]},
         )
+
+
+def test_execution_result_rejects_skipped_node_with_attempts() -> None:
+    from pydantic import ValidationError
+    from v2.runtime.models import ExecutionResult
+
+    skipped = node("skipped").model_copy(update={"status": PlanStatus.SKIPPED})
+    with pytest.raises(ValidationError, match="cannot carry attempts"):
+        ExecutionResult(plan=Plan(nodes=[skipped]), attempts={"skipped": 1})
