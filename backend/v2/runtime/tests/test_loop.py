@@ -223,6 +223,28 @@ async def test_runtime_revalidates_repairer_output() -> None:
 
 
 @pytest.mark.anyio
+async def test_exhausted_repair_bounds_combined_draft_gaps() -> None:
+    class MaxFindingVerifier:
+        async def verify(self, task, draft, evidence):
+            return VerificationReport(
+                status=VerificationStatus.REPAIR,
+                claim_results=[{
+                    "claim_index": index, "supported": True,
+                } for index, _claim in enumerate(draft.claims)],
+                missing_branches=[f"missing-{index}" for index in range(128)],
+                repair_instructions=[f"repair-{index}" for index in range(128)],
+            )
+
+    result = await runtime(
+        MaxFindingVerifier(), MaxFindingVerifier(), Repairer(),
+    ).run("answer")
+
+    assert result.verification.status == VerificationStatus.PARTIAL
+    assert len(result.draft.gaps) == 128
+    assert result.draft.gaps == [f"missing-{index}" for index in range(128)]
+
+
+@pytest.mark.anyio
 async def test_exhausted_repair_returns_named_partial() -> None:
     class RejectingVerifier:
         async def verify(self, task, draft, evidence):

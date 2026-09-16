@@ -131,9 +131,11 @@ class Runtime:
                     *verification.missing_branches,
                     *verification.contradictions,
                     *verification.repair_instructions,
-                ]
+                ],
+                limit=128,
             )
-            draft = draft.model_copy(update={"gaps": gaps})
+            draft = DraftReport.model_validate(
+                draft.model_copy(update={"gaps": gaps}).model_dump())
             verification = verification.model_copy(
                 update={"status": VerificationStatus.PARTIAL}
             )
