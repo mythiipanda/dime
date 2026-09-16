@@ -504,3 +504,18 @@ async def test_restored_failure_budget_skips_independent_pending_nodes(
     assert [node.status for node in result.plan.nodes] == [
         PlanStatus.FAILED, PlanStatus.SKIPPED,
     ]
+
+
+def test_checkpoint_rejects_unknown_persisted_fields() -> None:
+    from datetime import UTC, datetime
+    from pydantic import ValidationError
+    from v2.runtime.checkpoints import ExecutionCheckpoint
+
+    payload = {
+        "run_id": "run",
+        "task": {"goal": "answer", "mode": "quick", "deliverable": "text"},
+        "plan": {"nodes": []},
+        "saved_at": datetime.now(UTC).isoformat(),
+    }
+    with pytest.raises(ValidationError, match="saved_at"):
+        ExecutionCheckpoint.model_validate(payload)

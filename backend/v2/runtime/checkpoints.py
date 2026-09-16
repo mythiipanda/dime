@@ -5,12 +5,14 @@ import tempfile
 from pathlib import Path
 from typing import Protocol
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from v2.contracts import EvidenceEnvelope, Plan, TaskSpec
 
 
 class ExecutionCheckpoint(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     run_id: str
     task: TaskSpec
     plan: Plan
