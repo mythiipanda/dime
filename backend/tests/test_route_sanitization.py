@@ -88,3 +88,24 @@ def test_draft_answer_tokens_are_not_published_before_final_guard():
         "text": "Boston won 99 games and private evidence says so.",
     })
     assert public == {"text": ""}
+
+
+def test_remaining_public_events_drop_unknown_internal_fields():
+    cases = [
+        ("node_update", {"node": "tools", "status": "complete", "plan": "private"},
+         {"node": "tools", "status": "complete"}),
+        ("custom_data", {"node": "analytics", "tables": [], "ledger": "private"},
+         {"node": "analytics", "tables": []}),
+        ("final_answer", {"text": "answer", "carry": {"teams": ["Boston"]},
+                          "verification": "private"},
+         {"text": "answer", "carry": {"teams": ["Boston"]}}),
+        ("suggestions", {"items": ["next"], "prompt": "private"},
+         {"items": ["next"]}),
+        ("graph_end", {"ok": True, "runtime": "private"}, {"ok": True}),
+    ]
+    for event_type, payload, expected in cases:
+        assert _sanitize_sse_event(event_type, payload) == expected
+
+
+def test_unknown_event_type_fails_closed():
+    assert _sanitize_sse_event("internal_debug", {"secret": "value"}) == {}

@@ -77,7 +77,17 @@ def _sanitize_sse_event(etype: str, data: dict) -> dict:
             return out
         return {k: data[k] for k in ("node", "label", "status", "rows")
                 if k in data}
-    return data
+    public_fields = {
+        "node_update": ("node", "status"),
+        "custom_data": ("node", "tables", "unverified_numbers"),
+        "final_answer": ("text", "carry"),
+        "suggestions": ("items",),
+        "graph_end": ("ok",),
+    }
+    fields = public_fields.get(etype)
+    if fields is None or not isinstance(data, dict):
+        return {}
+    return {key: data[key] for key in fields if key in data}
 
 
 def _shadow_enabled() -> bool:
