@@ -34,6 +34,20 @@ def test_request_envelope_hashes_exact_model_inputs() -> None:
         first.route = "other"
 
 
+def test_ledger_entry_bounds_top_level_payload_fields() -> None:
+    from datetime import UTC, datetime
+    from pydantic import ValidationError
+    from v2.runtime.ledger import LedgerEntry
+
+    with pytest.raises(ValidationError, match="at most 64"):
+        LedgerEntry(
+            sequence=1, run_id="run", kind="step/start",
+            recorded_at=datetime.now(UTC),
+            turn_id="turn", step_id="step",
+            data={str(index): index for index in range(65)},
+        )
+
+
 def test_tool_call_identity_is_immutable() -> None:
     ledger = RunLedger("run")
     ledger.append(LedgerKind.TOOL_CALL, turn_id="t", step_id="s", call_id="c",

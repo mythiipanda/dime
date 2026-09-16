@@ -127,7 +127,7 @@ class LedgerEntry(BaseModel):
     turn_id: str = Field(max_length=256)
     step_id: str | None = Field(default=None, max_length=256)
     call_id: str | None = Field(default=None, max_length=512)
-    data: dict[str, Any] = Field(default_factory=dict)
+    data: dict[str, Any] = Field(default_factory=dict, max_length=64)
 
     @model_validator(mode="after")
     def validate_timestamp(self) -> "LedgerEntry":
