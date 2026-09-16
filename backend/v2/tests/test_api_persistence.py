@@ -783,3 +783,17 @@ def test_stream_event_rejects_duplicate_string_lists() -> None:
         Suggestions(items=["Compare players", "Compare players"])
     with pytest.raises(ValidationError, match="must not contain duplicates"):
         CustomData(node="verify", unverified_numbers=["61", "61"])
+
+
+def test_checkpoint_save_fsyncs_directory_after_replace(tmp_path, monkeypatch) -> None:
+    from v2.runtime.checkpoints import ExecutionCheckpoint
+
+    calls = []
+    real_fsync = __import__("os").fsync
+    def record(fd):
+        calls.append(fd)
+        return real_fsync(fd)
+    monkeypatch.setattr("v2.runtime.checkpoints.os.fsync", record)
+    FileCheckpointStore(tmp_path).save(ExecutionCheckpoint(
+        run_id="durable", task=_task(), plan=_plan()))
+    assert len(calls) == 2
