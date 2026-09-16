@@ -299,3 +299,10 @@ def test_season_ref_requires_consecutive_canonical_format(value) -> None:
     from v2.contracts import SeasonRef
     with pytest.raises(ValidationError, match="consecutive YYYY-YY"):
         SeasonRef(value=value, source="user", confidence=1)
+
+
+def test_evidence_season_requires_canonical_format() -> None:
+    with pytest.raises(ValidationError, match="consecutive YYYY-YY"):
+        EvidenceEnvelope(
+            evidence_id="ev", capability="standings", source="fixture",
+            observed_at=datetime(2026, 9, 15), season="2025-27", rows={})

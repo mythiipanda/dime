@@ -57,6 +57,13 @@ class EntityRef(BaseModel):
         return self
 
 
+def _is_canonical_season(value: str) -> bool:
+    parts = value.split("-")
+    return (len(parts) == 2 and len(parts[0]) == 4 and len(parts[1]) == 2
+            and all(part.isdigit() for part in parts)
+            and int(parts[1]) == (int(parts[0]) + 1) % 100)
+
+
 class SeasonRef(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -68,10 +75,7 @@ class SeasonRef(BaseModel):
     def validate_identity(self) -> "SeasonRef":
         if not self.value.strip():
             raise ValueError("season value must be non-empty")
-        parts = self.value.split("-")
-        if (len(parts) != 2 or len(parts[0]) != 4 or len(parts[1]) != 2
-                or not all(part.isdigit() for part in parts)
-                or int(parts[1]) != (int(parts[0]) + 1) % 100):
+        if not _is_canonical_season(self.value):
             raise ValueError("season must use consecutive YYYY-YY format")
         return self
 
@@ -211,6 +215,8 @@ class EvidenceEnvelope(BaseModel):
             value = getattr(self, field_name)
             if value is not None and not value.strip():
                 raise ValueError(f"evidence {field_name} must be non-empty when present")
+        if self.season is not None and not _is_canonical_season(self.season):
+            raise ValueError("evidence season must use consecutive YYYY-YY format")
         for field_name in ("vintages", "units", "metric_definitions"):
             values = getattr(self, field_name)
             if any(not str(key).strip() or not str(value).strip()
