@@ -37,3 +37,8 @@ def test_policy_rejects_unknown_configuration_fields() -> None:
         ExecutionPolicy.model_validate({
             "mode": "live", "publish": True, "publsh": False,
         })
+
+
+def test_replay_path_is_rejected_outside_replay_mode() -> None:
+    with pytest.raises(ValidationError, match="only in replay mode"):
+        ExecutionPolicy(mode="live", replay_path="fixture.json", publish=True)
