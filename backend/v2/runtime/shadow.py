@@ -40,7 +40,7 @@ class RunOutcome(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     status: OutcomeStatus
-    answer: str = ""
+    answer: str = Field(default="", max_length=200_000)
     capabilities: list[str] = Field(default_factory=list, max_length=32)
     evidence_count: StrictInt = 0
     supported_claims: StrictInt = 0
@@ -67,8 +67,8 @@ class RunOutcome(BaseModel):
 class ShadowComparison(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    comparison_id: str
-    request_hash: str
+    comparison_id: str = Field(max_length=24)
+    request_hash: str = Field(max_length=64)
     v1: RunOutcome
     v2: RunOutcome
     differences: list[DifferenceKind] = Field(default_factory=list, max_length=4)

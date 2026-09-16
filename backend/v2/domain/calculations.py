@@ -22,8 +22,8 @@ class CalculationOperation(StrEnum):
 class CalculationInput(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    evidence_id: str = Field(min_length=1)
-    path: str = Field(min_length=1)
+    evidence_id: str = Field(min_length=1, max_length=256)
+    path: str = Field(min_length=1, max_length=1000)
 
     @model_validator(mode="after")
     def validate_identity(self) -> "CalculationInput":
@@ -35,11 +35,11 @@ class CalculationInput(BaseModel):
 class Calculation(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    calculation_id: str = Field(min_length=1)
+    calculation_id: str = Field(min_length=1, max_length=256)
     operation: CalculationOperation
     inputs: list[CalculationInput] = Field(max_length=256)
     result: Decimal
-    unit: str | None = None
+    unit: str | None = Field(default=None, max_length=256)
     subject_input: StrictInt | None = Field(default=None, ge=0)
 
     @model_validator(mode="after")

@@ -119,3 +119,9 @@ def test_calculation_input_list_has_a_hard_limit() -> None:
                     for index in range(257)],
             result=Decimal("1"),
         )
+
+
+def test_calculation_identity_text_has_hard_limits() -> None:
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError, match="at most 1000 characters"):
+        CalculationInput(evidence_id="ev", path="x" * 1001)
