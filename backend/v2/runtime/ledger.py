@@ -472,7 +472,9 @@ class FileLedger:
 
     @property
     def entries(self) -> tuple[LedgerEntry, ...]:
-        return self.ledger.entries
+        with self._lock:
+            self.ledger = RunLedger(self.run_id, self._read())
+            return self.ledger.entries
 
     def append(self, *args: Any, **kwargs: Any) -> LedgerEntry:
         with self._lock:

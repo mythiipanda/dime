@@ -509,6 +509,15 @@ def test_file_ledgers_for_same_path_share_lock_and_refresh_state(tmp_path) -> No
     assert [entry.sequence for entry in FileLedger(path, "run").entries] == [1, 2]
 
 
+def test_file_ledger_entries_refresh_after_independent_writer(tmp_path) -> None:
+    path = tmp_path / "run.jsonl"
+    reader = FileLedger(path, "run")
+    writer = FileLedger(path, "run")
+    writer.append(
+        LedgerKind.TURN_START, turn_id="turn", data={"request": "answer"})
+    assert [entry.sequence for entry in reader.entries] == [1]
+
+
 def test_file_ledger_load_is_serialized_with_same_path_writes(tmp_path) -> None:
     path = tmp_path / "run.jsonl"
     first = FileLedger(path, "run")
