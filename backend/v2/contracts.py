@@ -213,6 +213,12 @@ class ClaimResult(BaseModel):
     supported: bool
     reasons: list[str] = Field(default_factory=list)
 
+    @model_validator(mode="after")
+    def validate_reason(self) -> "ClaimResult":
+        if not self.supported and not self.reasons:
+            raise ValueError("unsupported claim result requires a reason")
+        return self
+
 
 class VerificationReport(BaseModel):
     model_config = ConfigDict(extra="forbid")
