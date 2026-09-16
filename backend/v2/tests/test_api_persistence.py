@@ -324,7 +324,25 @@ def test_failed_stream_tool_result_keeps_its_call_identity(monkeypatch):
             ledger.append(
                 LedgerKind.TOOL_CALL, turn_id=run_id, step_id="salary",
                 call_id="tool:salary:1",
-                data={"name": "contracts", "args": {}},
+                data={
+                    "name": "contracts",
+                    "args": {
+                        "node": {
+                            "id": "salary", "description": "private plan text",
+                            "depends_on": [], "capability_hints": ["contracts"],
+                            "arguments": {"team": "BOS"}, "max_attempts": 1,
+                            "status": "pending",
+                        },
+                        "task": {
+                            "goal": "private normalized task", "mode": "quick",
+                            "deliverable": "answer", "entities": [], "season": None,
+                            "as_of": None, "subquestions": [],
+                            "required_evidence": [], "assumptions": [],
+                            "open_questions": [], "skills": [],
+                        },
+                        "evidence_ids": [],
+                    },
+                },
             )
             ledger.append(
                 LedgerKind.TOOL_RESULT, turn_id=run_id, step_id="salary",
@@ -352,6 +370,9 @@ def test_failed_stream_tool_result_keeps_its_call_identity(monkeypatch):
     assert '"name":"tool"' not in response.text
     assert 'contracts failed' in response.text
     assert 'source unavailable' not in response.text
+    assert '"args":{"team":"BOS"}' in response.text
+    assert 'private normalized task' not in response.text
+    assert 'private plan text' not in response.text
 
 
 def test_answer_text_publishes_only_adjudicated_model_prose():

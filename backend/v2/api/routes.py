@@ -176,10 +176,12 @@ async def quick_answer_stream(body: QuickAnswerBody):
         }
         for entry in entries:
             if entry.kind == LedgerKind.TOOL_CALL:
+                recorded_args = entry.data["args"]
+                node_args = recorded_args.get("node", {}).get("arguments", {})
                 yield ToolCall(
                     node=entry.step_id or "execute",
                     name=str(entry.data["name"]),
-                    args=entry.data["args"],
+                    args=node_args,
                 )
             elif entry.kind == LedgerKind.TOOL_RESULT:
                 payload = entry.data
