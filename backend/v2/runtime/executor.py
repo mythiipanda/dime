@@ -19,10 +19,15 @@ class PlanExecutor:
         max_failures: int | None = None,
         checkpoint_store: CheckpointStore | None = None,
     ) -> None:
-        if max_concurrency < 1:
-            raise ValueError("max_concurrency must be positive")
-        if max_failures is not None and max_failures < 1:
-            raise ValueError("max_failures must be positive")
+        if not isinstance(max_concurrency, int) or isinstance(max_concurrency, bool):
+            raise TypeError("max_concurrency must be an integer")
+        if not 1 <= max_concurrency <= 16:
+            raise ValueError("max_concurrency must be between 1 and 16")
+        if max_failures is not None:
+            if not isinstance(max_failures, int) or isinstance(max_failures, bool):
+                raise TypeError("max_failures must be an integer or None")
+            if not 1 <= max_failures <= 10:
+                raise ValueError("max_failures must be between 1 and 10")
         self._capabilities = dict(capabilities)
         self._max_concurrency = max_concurrency
         self._max_failures = max_failures

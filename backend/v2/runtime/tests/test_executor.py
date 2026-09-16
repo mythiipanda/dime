@@ -24,6 +24,25 @@ def node(
     )
 
 
+@pytest.mark.parametrize("field,value,error", [
+    ("max_concurrency", 0, "between 1 and 16"),
+    ("max_concurrency", 17, "between 1 and 16"),
+    ("max_concurrency", True, "must be an integer"),
+    ("max_concurrency", 1.5, "must be an integer"),
+    ("max_failures", 0, "between 1 and 10"),
+    ("max_failures", 11, "between 1 and 10"),
+    ("max_failures", False, "must be an integer or None"),
+    ("max_failures", 1.5, "must be an integer or None"),
+])
+def test_executor_rejects_invalid_operational_limits(field, value, error) -> None:
+    with pytest.raises((TypeError, ValueError), match=error):
+        PlanExecutor({"fake": FakeCapability("fake", {})}, **{field: value})
+
+
+def test_executor_allows_explicit_unlimited_failure_budget() -> None:
+    PlanExecutor({"fake": FakeCapability("fake", {})}, max_failures=None)
+
+
 @pytest.mark.anyio
 async def test_executes_dag_and_preserves_lineage() -> None:
     plan = Plan(nodes=[node("a"), node("b"), node("c", parents=["a", "b"])])
