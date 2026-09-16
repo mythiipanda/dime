@@ -540,9 +540,27 @@ def test_adapter_rejects_unordered_warning_payloads() -> None:
         )
 
 
+@pytest.mark.parametrize("rows", [
+    {"team": "LAKERS", "payroll": 0, "players": []},
+    {"team": "LAL", "payroll": 200_000_000, "players": []},
+    [],
+])
+def test_contract_ledger_fails_closed_on_empty_payroll_roster(rows) -> None:
+    payload = {
+        "ok": True, "rows": rows,
+        "meta": {"source": "salary-sheet", "season": "2026-27"},
+    }
+    with pytest.raises(AdapterError, match="contract ledger"):
+        call_capability(
+            "contracts", {"team": "LAKERS"},
+            tools={"get_cap_ledger": FakeTool(payload)},
+        )
+
+
 def test_adapter_preserves_source_as_of_and_warns_on_bad_date() -> None:
     payload = {
-        "ok": True, "rows": {"team": "BOS", "payroll": 200_000_000},
+        "ok": True, "rows": {"team": "BOS", "payroll": 200_000_000,
+                              "players": [{"player": "Example", "salary": 1}]},
         "meta": {"source": "salary-sheet", "season": "2026-27",
                  "salary_date": "2026-09-14T03:20:00Z"},
     }

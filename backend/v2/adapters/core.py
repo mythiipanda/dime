@@ -74,6 +74,15 @@ def build_envelope(
     rows = result.get("rows")
     if rows is None:
         raise AdapterError(f"{spec.tool_name}: result carries no rows")
+    if spec.name == "contracts":
+        if not isinstance(rows, Mapping):
+            raise AdapterError(f"{spec.tool_name}: contract ledger must be an object")
+        payroll = rows.get("payroll")
+        players = rows.get("players")
+        if (isinstance(payroll, bool) or not isinstance(payroll, (int, float))
+                or payroll <= 0 or not isinstance(players, list) or not players):
+            raise AdapterError(
+                f"{spec.tool_name}: contract ledger has no usable payroll roster")
     raw_meta = result.get("meta")
     if raw_meta is not None and not isinstance(raw_meta, Mapping):
         raise AdapterError(f"{spec.tool_name}: result meta must be an object")
