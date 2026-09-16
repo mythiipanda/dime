@@ -462,6 +462,7 @@ class RunLedger:
 class FileLedger:
     def __init__(self, path: str | Path, run_id: str) -> None:
         self.path = Path(path)
+        self._reject_symlinked_path()
         self._lock = _ledger_path_lock(self.path)
         with self._lock:
             self.ledger = RunLedger(run_id, self._read())
@@ -496,9 +497,15 @@ class FileLedger:
             self.ledger = staged
             return entry
 
-    def _read(self) -> list[LedgerEntry]:
+    def _reject_symlinked_path(self) -> None:
         if self.path.is_symlink():
             raise ValueError("ledger file cannot be a symlink")
+        parent = self.path.parent
+        if any(component.is_symlink() for component in (parent, *parent.parents)):
+            raise ValueError("ledger file parent cannot be a symlink")
+
+    def _read(self) -> list[LedgerEntry]:
+        self._reject_symlinked_path()
         if not self.path.exists():
             return []
         text = self.path.read_text()

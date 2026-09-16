@@ -620,3 +620,12 @@ def test_run_ledger_clamps_backward_wall_clock(monkeypatch) -> None:
     second = ledger.append(
         LedgerKind.TURN_END, turn_id="turn", data={"reason": "complete"})
     assert first.recorded_at == second.recorded_at == first_time
+
+
+def test_file_ledger_rejects_symlinked_parent(tmp_path) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    parent = tmp_path / "parent"
+    parent.symlink_to(outside, target_is_directory=True)
+    with pytest.raises(ValueError, match="parent cannot be a symlink"):
+        FileLedger(parent / "run.jsonl", "run")
