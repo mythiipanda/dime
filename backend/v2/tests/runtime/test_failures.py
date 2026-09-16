@@ -59,3 +59,14 @@ def test_failure_intake_rejects_blank_identity_and_duplicate_tags() -> None:
         ScenarioCandidate(**candidate, tags=["regression", "regression"])
     with pytest.raises(ValidationError, match="trace id must be non-empty"):
         ScenarioCandidate(**candidate, trace_id=" ")
+
+
+def test_candidate_intake_deduplicates_across_concurrent_store_instances(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+
+    path = tmp_path / "candidates.jsonl"
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        candidates = list(pool.map(
+            lambda _index: CandidateStore(path).add(observation()), range(20)))
+    assert len({item.candidate_id for item in candidates}) == 1
+    assert CandidateStore(path).read() == [candidates[0]]

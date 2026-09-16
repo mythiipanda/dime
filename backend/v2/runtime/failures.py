@@ -2,11 +2,21 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from enum import StrEnum
 from pathlib import Path
 from threading import Lock
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+_CANDIDATE_LOCKS_GUARD = Lock()
+_CANDIDATE_LOCKS: dict[Path, Lock] = {}
+
+
+def _candidate_path_lock(path: Path) -> Lock:
+    resolved = path.resolve()
+    with _CANDIDATE_LOCKS_GUARD:
+        return _CANDIDATE_LOCKS.setdefault(resolved, Lock())
 
 
 class CandidateState(StrEnum):
@@ -87,19 +97,34 @@ class ScenarioCandidate(BaseModel):
 class CandidateStore:
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
-        self._lock = Lock()
+        self._lock = _candidate_path_lock(self.path)
 
     def add(self, item: FailureObservation) -> ScenarioCandidate:
         candidate = ScenarioCandidate.from_observation(item)
-        current = {entry.candidate_id: entry for entry in self.read()}
-        if candidate.candidate_id in current:
-            return current[candidate.candidate_id]
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        with self._lock, self.path.open("a", encoding="utf-8") as handle:
-            handle.write(candidate.model_dump_json() + "\n")
-        return candidate
+        with self._lock:
+            current = {entry.candidate_id: entry for entry in self._read()}
+            if candidate.candidate_id in current:
+                return current[candidate.candidate_id]
+            parent_was_missing = not self.path.parent.exists()
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            file_was_missing = not self.path.exists()
+            with self.path.open("a", encoding="utf-8") as handle:
+                handle.write(candidate.model_dump_json() + "\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            if parent_was_missing or file_was_missing:
+                directory_fd = os.open(self.path.parent, os.O_RDONLY)
+                try:
+                    os.fsync(directory_fd)
+                finally:
+                    os.close(directory_fd)
+            return candidate
 
     def read(self) -> list[ScenarioCandidate]:
+        with self._lock:
+            return self._read()
+
+    def _read(self) -> list[ScenarioCandidate]:
         if not self.path.exists():
             return []
         return [ScenarioCandidate.model_validate_json(line)
