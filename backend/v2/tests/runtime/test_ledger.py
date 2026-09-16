@@ -49,11 +49,17 @@ def test_tool_call_identity_is_immutable() -> None:
 
 def test_failed_attempts_remain_in_log_but_not_model_history() -> None:
     ledger = RunLedger("run")
+    envelope = RequestEnvelope.freeze(
+        provider="p", model="m", route="answer", prompt="p", context={},
+        tool_schemas={}, planner_version="v2")
+    for call_id in ("c1", "c2"):
+        ledger.append(LedgerKind.MODEL_REQUEST, turn_id="t", call_id=call_id,
+                      data=envelope.model_dump(mode="json"))
     ledger.append(LedgerKind.ASSISTANT_ATTEMPT, turn_id="t", call_id="c1",
                   data={"status": "rejected", "text": "unsupported"})
     ledger.append(LedgerKind.ASSISTANT_ATTEMPT, turn_id="t", call_id="c2",
                   data={"status": "accepted", "text": "grounded"})
-    assert len(ledger.entries) == 2
+    assert len(ledger.entries) == 4
     assert ledger.model_history("t") == [{"status": "accepted", "text": "grounded"}]
 
 
@@ -274,3 +280,20 @@ def test_request_envelope_loaded_contract_validates_identity_and_maps() -> None:
 def test_model_call_events_require_call_id(kind) -> None:
     with pytest.raises(ValueError, match="require call_id"):
         RunLedger("run").append(kind, turn_id="turn", data={})
+
+
+def test_model_request_attempt_pairing_is_strict() -> None:
+    envelope = RequestEnvelope.freeze(
+        provider="p", model="m", route="answer", prompt="p", context={},
+        tool_schemas={}, planner_version="v2")
+    ledger = RunLedger("run")
+    with pytest.raises(ValueError, match="earlier model request"):
+        ledger.append(LedgerKind.ASSISTANT_ATTEMPT, turn_id="t", call_id="m1",
+                      data={"status": "failed", "error": "bad"})
+    ledger.append(LedgerKind.MODEL_REQUEST, turn_id="t", call_id="m1",
+                  data=envelope.model_dump(mode="json"))
+    ledger.append(LedgerKind.ASSISTANT_ATTEMPT, turn_id="t", call_id="m1",
+                  data={"status": "failed", "error": "bad"})
+    with pytest.raises(ValueError, match="only one assistant attempt"):
+        ledger.append(LedgerKind.ASSISTANT_ATTEMPT, turn_id="t", call_id="m1",
+                      data={"status": "accepted", "output": {}})

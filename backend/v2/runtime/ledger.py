@@ -116,6 +116,8 @@ class RunLedger:
             raise ValueError("ledger sequence must be contiguous")
         self._calls: dict[str, str] = {}
         self._results: set[str] = set()
+        self._model_requests: set[str] = set()
+        self._model_attempts: set[str] = set()
         open_turns: set[str] = set()
         open_steps: set[tuple[str, str]] = set()
         closed_turns: set[str] = set()
@@ -149,6 +151,19 @@ class RunLedger:
                 if key not in open_steps:
                     raise ValueError("step end requires an open step")
                 open_steps.remove(key)
+            if entry.kind == LedgerKind.MODEL_REQUEST:
+                if not entry.call_id:
+                    raise ValueError("model request requires call_id")
+                if entry.call_id in self._model_requests:
+                    raise ValueError("model request call id must be unique")
+                RequestEnvelope.model_validate(entry.data)
+                self._model_requests.add(entry.call_id)
+            elif entry.kind == LedgerKind.ASSISTANT_ATTEMPT:
+                if not entry.call_id or entry.call_id not in self._model_requests:
+                    raise ValueError("assistant attempt requires an earlier model request")
+                if entry.call_id in self._model_attempts:
+                    raise ValueError("model request may have only one assistant attempt")
+                self._model_attempts.add(entry.call_id)
             if entry.kind == LedgerKind.TOOL_CALL and entry.call_id:
                 if set(entry.data) != {"name", "args"}:
                     raise ValueError("tool call data must contain exactly name and args")
@@ -222,6 +237,17 @@ class RunLedger:
         if kind in (LedgerKind.TOOL_CALL, LedgerKind.TOOL_RESULT,
                     LedgerKind.MODEL_REQUEST, LedgerKind.ASSISTANT_ATTEMPT)                 and not call_id:
             raise ValueError("call events require call_id")
+        if kind == LedgerKind.MODEL_REQUEST:
+            if call_id in self._model_requests:
+                raise ValueError("model request call id must be unique")
+            RequestEnvelope.model_validate(payload)
+            self._model_requests.add(call_id)
+        elif kind == LedgerKind.ASSISTANT_ATTEMPT:
+            if call_id not in self._model_requests:
+                raise ValueError("assistant attempt requires an earlier model request")
+            if call_id in self._model_attempts:
+                raise ValueError("model request may have only one assistant attempt")
+            self._model_attempts.add(call_id)
         if kind == LedgerKind.TOOL_CALL:
             if set(payload) != {"name", "args"}:
                 raise ValueError("tool call data must contain exactly name and args")
