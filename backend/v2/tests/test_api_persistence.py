@@ -977,3 +977,24 @@ def test_checkpoint_store_rejects_symlinked_parent_directory(tmp_path: Path) -> 
     parent.symlink_to(outside, target_is_directory=True)
     with pytest.raises(ValueError, match="parent cannot be a symlink"):
         FileCheckpointStore(parent / "checkpoints")
+
+
+def test_project_store_rejects_symlinked_parent_directory(tmp_path: Path) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    parent = tmp_path / "parent"
+    parent.symlink_to(outside, target_is_directory=True)
+    with pytest.raises(ValueError, match="parent cannot be a symlink"):
+        ProjectStore(parent / "projects.sqlite3")
+    assert list(outside.iterdir()) == []
+
+
+def test_project_store_rechecks_parent_before_connect(tmp_path: Path) -> None:
+    parent = tmp_path / "parent"
+    store = ProjectStore(parent / "projects.sqlite3")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    parent.symlink_to(outside, target_is_directory=True)
+    with pytest.raises(ValueError, match="parent cannot be a symlink"):
+        store.list()
+    assert list(outside.iterdir()) == []

@@ -23,8 +23,7 @@ def _path_lock(path: Path) -> Lock:
 class ProjectStore:
     def __init__(self, path: str | Path) -> None:
         self._path = Path(path)
-        if self._path.is_symlink():
-            raise ValueError("project store cannot be a symlink")
+        self._reject_symlinked_path()
         self._lock = _path_lock(self._path)
 
     def create(self, goal: str) -> Project:
@@ -101,9 +100,15 @@ class ProjectStore:
         if not isinstance(project_id, str) or not project_id.strip():
             raise ValueError("project id must be a non-empty string")
 
-    def _connect(self) -> sqlite3.Connection:
+    def _reject_symlinked_path(self) -> None:
         if self._path.is_symlink():
             raise ValueError("project store cannot be a symlink")
+        parent = self._path.parent
+        if any(component.is_symlink() for component in (parent, *parent.parents)):
+            raise ValueError("project store parent cannot be a symlink")
+
+    def _connect(self) -> sqlite3.Connection:
+        self._reject_symlinked_path()
         self._path.parent.mkdir(parents=True, exist_ok=True)
         connection = sqlite3.connect(self._path, timeout=10)
         connection.execute("PRAGMA journal_mode=WAL")
