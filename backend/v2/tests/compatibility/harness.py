@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import date
 import json
 import os
 import subprocess
@@ -11,7 +12,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable
 import math
 
-from v2.contracts import EvidenceEnvelope, VerificationReport, VerificationStatus
+from v2.contracts import EvidenceEnvelope, SeasonRef, VerificationReport, VerificationStatus
 from v2.runtime.ledger import LedgerEntry
 from v2.runtime.projections import admitted_evidence, tool_attempts
 
@@ -189,6 +190,29 @@ def load_pack(path: Path) -> dict[str, Any]:
         if "xfail" in scenario and not isinstance(scenario["xfail"], bool):
             raise ValueError(
                 f"compatibility scenario {scenario_id} xfail must be boolean")
+        if "season" in scenario:
+            season = scenario["season"]
+            if not isinstance(season, str):
+                raise ValueError(
+                    f"compatibility scenario {scenario_id} season must be canonical")
+            try:
+                SeasonRef(value=season, source="resolved", confidence=1)
+            except ValueError as exc:
+                raise ValueError(
+                    f"compatibility scenario {scenario_id} season must be canonical") from exc
+        if "as_of" in scenario:
+            as_of = scenario["as_of"]
+            if not isinstance(as_of, str):
+                raise ValueError(
+                    f"compatibility scenario {scenario_id} as_of must use YYYY-MM-DD")
+            try:
+                parsed_as_of = date.fromisoformat(as_of)
+            except ValueError as exc:
+                raise ValueError(
+                    f"compatibility scenario {scenario_id} as_of must use YYYY-MM-DD") from exc
+            if parsed_as_of.isoformat() != as_of:
+                raise ValueError(
+                    f"compatibility scenario {scenario_id} as_of must use YYYY-MM-DD")
         budget = scenario.get("budget", {})
         allowed_budget = {"max_seconds", "max_seconds_per_turn", "max_tool_calls"}
         if not isinstance(budget, dict) or set(budget) - allowed_budget:

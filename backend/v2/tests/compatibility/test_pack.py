@@ -206,6 +206,10 @@ def test_pack_validates_budget_and_evidence_contracts(tmp_path, changes, error):
     ({"banned": [" "]}, "banned must contain"),
     ({"comment": " "}, "comment must be non-empty"),
     ({"xfail": "false"}, "xfail must be boolean"),
+    ({"season": "2025-27"}, "season must be canonical"),
+    ({"season": 2025}, "season must be canonical"),
+    ({"as_of": "2026-02-30"}, "as_of must use YYYY-MM-DD"),
+    ({"as_of": "20260914"}, "as_of must use YYYY-MM-DD"),
 ])
 def test_pack_validates_scenario_metadata(tmp_path, changes, error):
     import json
