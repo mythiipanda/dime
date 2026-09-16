@@ -56,6 +56,20 @@ def test_percent_scaling_and_declared_constant_are_supported():
     assert verify_mechanical(task(), report(claim), [evidence()], allowed_constants=[82]).status == VerificationStatus.PASS
 
 
+def test_maximum_rejected_claims_do_not_overflow_repair_report():
+    claims = [Claim(
+        text=f"Unsupported value {index + 1000}.", kind="judgment",
+    ) for index in range(128)]
+    draft = DraftReport(sections=["Also 999999."], claims=claims)
+
+    result = verify_mechanical(task(), draft, [])
+
+    assert result.status == VerificationStatus.REPAIR
+    assert len(result.claim_results) == 128
+    assert len(result.repair_instructions) == 128
+    assert all(not item.supported for item in result.claim_results)
+
+
 def test_entity_season_and_as_of_mismatches_fail():
     bad = evidence(entities=[EntityRef(id="NYK", type="team", display_name="New York Knicks")],
                    season="2024-25", as_of=date(2026, 4, 16))

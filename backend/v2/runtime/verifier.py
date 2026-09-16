@@ -341,7 +341,8 @@ def verify_mechanical(
     repairs = [
         f"Repair claim {result.claim_index}: {'; '.join(result.reasons)}"
         for result in failed
-    ] + report_repairs
+    ]
+    repairs.extend(report_repairs[:max(0, 128 - len(repairs))])
     return VerificationReport(
         status=(VerificationStatus.REPAIR if repairs else VerificationStatus.PASS),
         claim_results=results,
