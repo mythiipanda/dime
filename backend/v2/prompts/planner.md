@@ -42,3 +42,9 @@ Do not add contingency or nice-to-have nodes.
   each player's current team from the TaskSpec and conversation context; if a
   team is genuinely unresolved, omit the trade-value node and leave that
   evidence branch uncovered rather than issuing a partial call.
+- The TaskSpec season is the performance season. Use it for every
+  task-season-scoped player/team performance capability, including reports,
+  evaluations, comparisons, ratings, and on/off. A contracts envelope may use
+  a later salary season, but that salary vintage must never replace the
+  performance season. Only trade-legality salary matching inherits the contract
+  season through its dependency.

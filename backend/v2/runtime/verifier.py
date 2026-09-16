@@ -105,16 +105,18 @@ def _claim_seasons_supported(claim: Claim,
 
 
 def _canonical_entity(entity) -> tuple[str, str]:
-    if entity.type == "team":
-        try:
-            from app.tools._core import coerce_team_id
+    try:
+        from app.tools._core import coerce_team_id
+        from app.tools.player import coerce_player_id
+        resolver = {"team": coerce_team_id, "player": coerce_player_id}.get(entity.type)
+        if resolver is not None:
             for candidate in (entity.id, entity.display_name):
                 try:
-                    return ("team", str(coerce_team_id(candidate)))
+                    return (entity.type, str(resolver(candidate)))
                 except (TypeError, ValueError):
                     continue
-        except ImportError:
-            pass
+    except ImportError:
+        pass
     normalized = " ".join(
         entity.id.casefold().replace("-", " ").replace("_", " ").split())
     return (entity.type, normalized)

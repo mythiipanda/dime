@@ -311,7 +311,8 @@ def _task_arguments(name: str, node: Any, task: Any, evidence: Iterable[Evidence
     season = getattr(task, "season", None)
     if season is not None:
         spec = CAPABILITIES[name]
-        if spec.season_arg and spec.season_arg not in arguments:
+        if spec.season_arg and (spec.task_season_scoped
+                                or spec.season_arg not in arguments):
             arguments[spec.season_arg] = season.value
     if name == "trades" and "season" not in arguments:
         for item in evidence:

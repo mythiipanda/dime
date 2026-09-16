@@ -854,3 +854,14 @@ async def test_tool_capability_strips_unsupported_planner_arguments() -> None:
         "team_a": "BOS", "players_a": "Jaylen Brown",
         "team_b": "LAC", "players_b": "Paul George",
     }
+
+
+def test_performance_capabilities_override_planner_contract_season():
+    from v2.adapters.core import _task_arguments
+    from v2.contracts import PlanNode, SeasonRef, TaskSpec
+    task = TaskSpec(goal="compare", mode="quick", deliverable="answer",
+                    season=SeasonRef(value="2025-26", source="context", confidence=1))
+    for capability in ("player_report", "player_evaluation", "player_comparison"):
+        node = PlanNode(id=capability, description="performance",
+                        capability_hints=[capability], arguments={"season": "2026-27"})
+        assert _task_arguments(capability, node, task, [])["season"] == "2025-26"

@@ -160,7 +160,10 @@ def _answer_text(result) -> str:
         elif any(token in folded for token in (
             "source identity", "identify or query a tool", "ensure contract evidence",
             "qualification evidence", "coverage evidence", "recomputable",
-            "team-code mismatch", "replacement-analysis",
+            "team-code mismatch", "replacement-analysis", "add claims",
+            "document ", "retrieve ", "fetch ", "gather ", "synthesize ",
+            "impact & role", "contract terms", "peer comparison",
+            "trade value estimate",
         )):
             message = "Some requested evidence was not strong enough to verify."
         if message and message not in gaps:

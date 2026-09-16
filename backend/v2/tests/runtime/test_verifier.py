@@ -308,3 +308,17 @@ def test_observed_rank_accepts_matching_explicit_rank_value():
                   evidence_ids=["standings"])
     result = verify_mechanical(task(), report(claim), [ranked])
     assert not any("rank claim" in reason for reason in result.claim_results[0].reasons)
+
+
+def test_player_alias_ids_match_on_canonical_identity():
+    from v2.contracts import EvidenceEnvelope
+    player_task = task().model_copy(update={"entities": [EntityRef(
+        id="jaylen-brown", type="player", display_name="Jaylen Brown")]})
+    player_evidence = evidence(entities=[EntityRef(
+        id="1627759", type="player", display_name="Jaylen Brown")],
+        rows={"player": "Jaylen Brown", "player_id": "1627759", "ppg": 28.7})
+    for text in ("Jaylen Brown averaged 28.7 points.",
+                 "He averaged 28.7 points."):
+        claim = Claim(text=text, kind="observed", evidence_ids=["standings"])
+        result = verify_mechanical(player_task, report(claim), [player_evidence])
+        assert result.status == VerificationStatus.PASS
