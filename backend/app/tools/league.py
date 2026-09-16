@@ -606,12 +606,62 @@ def get_leaders(stat_category: str = "PTS", season: str = SEASON) -> dict[str, A
     to the official league leaderboard and excludes tiny samples.
     """
     stat_category = clamp_stat(stat_category)
-    table = f"silver_leaders_{stat_category.lower()}"
-    rows, meta = _warehouse_or_live(
-        table, "_season = ?",
-        [season], lambda: nba_stats.leaders(stat_category, season), season,
-    )
-    meta["stat_category"] = stat_category
+    # Rate leaderboards need explicit volume floors. They cannot reuse raw
+    # total-stat boards without either reporting the wrong unit (SPG) or
+    # elevating tiny-sample efficiency outliers (TS%).
+    if stat_category in {"TS_PCT", "SPG"}:
+        con = store.connect(read_only=True)
+        try:
+            if stat_category == "TS_PCT":
+                raw = con.execute(
+                    "SELECT PLAYER_NAME, TEAM_ABBREVIATION, GP, MIN, TS_PCT "
+                    "FROM silver_advanced WHERE _season = ? "
+                    "AND GP * MIN >= 1000 ORDER BY TS_PCT DESC, GP * MIN DESC",
+                    [season],
+                ).fetchall()
+                rows = [
+                    {"RANK": index, "PLAYER": row[0], "TEAM": row[1],
+                     "GP": row[2], "MIN": row[3],
+                     "TS_PCT": round(float(row[4]) * 100, 1)}
+                    for index, row in enumerate(raw, 1)
+                ]
+                qualification = "1,000+ total minutes"
+                value = lambda row: f"{row['TS_PCT']:.1f}% true shooting"
+            else:
+                raw = con.execute(
+                    "SELECT PLAYER, TEAM, GP, STL / CAST(GP AS DOUBLE) AS SPG "
+                    "FROM silver_leaders_pts WHERE _season = ? AND GP >= 20 "
+                    "ORDER BY SPG DESC, STL DESC",
+                    [season],
+                ).fetchall()
+                rows = [
+                    {"RANK": index, "PLAYER": row[0], "TEAM": row[1],
+                     "GP": row[2], "SPG": round(float(row[3]), 2)}
+                    for index, row in enumerate(raw, 1)
+                ]
+                qualification = "20+ games"
+                value = lambda row: f"{row['SPG']:.2f} steals per game"
+        finally:
+            con.close()
+        meta = {
+            "source": "warehouse", "season": season,
+            "stat_category": stat_category, "rows": len(rows),
+            "qualification": qualification,
+        }
+        if rows:
+            lead = rows[0]
+            meta["deterministic_answer"] = (
+                f"{lead['PLAYER']} leads qualified players at {value(lead)} "
+                f"in {season}. Qualification: {qualification}; "
+                f"{lead['GP']} games."
+            )
+    else:
+        table = f"silver_leaders_{stat_category.lower()}"
+        rows, meta = _warehouse_or_live(
+            table, "_season = ?",
+            [season], lambda: nba_stats.leaders(stat_category, season), season,
+        )
+        meta["stat_category"] = stat_category
     # silver_leaders_fg3_pct is not materialized. The PTS leaders table
     # contains the complete shooting columns, so build the official 3P%
     # board from it. NBA qualification is 82 makes in an 82-game season

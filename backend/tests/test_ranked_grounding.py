@@ -45,3 +45,24 @@ def test_named_team_ratings_is_one_call():
     assert out["rows"][0]["TEAM"] == "GSW"
     assert "113.8 offense" in out["meta"]["deterministic_answer"]
     assert "114.4 defense" in out["meta"]["deterministic_answer"]
+
+
+def test_true_shooting_leader_is_qualified_and_one_call():
+    st = _drain("Who leads the league in true shooting percentage this season?")
+    assert [c.split(":")[0] for c in st["calls_made"]] == ["get_leaders"]
+    out = st["tool_results"][0]
+    assert out["meta"]["stat_category"] == "TS_PCT"
+    assert out["meta"]["qualification"] == "1,000+ total minutes"
+    assert out["rows"][0]["TS_PCT"] == 77.2
+    assert "77.2% true shooting" in out["meta"]["deterministic_answer"]
+
+
+def test_steals_per_game_leader_carries_sample_size():
+    st = _drain("Who leads the league in steals per game this season?")
+    assert [c.split(":")[0] for c in st["calls_made"]] == ["get_leaders"]
+    out = st["tool_results"][0]
+    assert out["meta"]["stat_category"] == "SPG"
+    assert out["meta"]["qualification"] == "20+ games"
+    assert out["rows"][0]["GP"] >= 20
+    answer = out["meta"]["deterministic_answer"]
+    assert "steals per game" in answer and "games" in answer

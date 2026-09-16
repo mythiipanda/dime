@@ -1690,6 +1690,30 @@ async def _triage_seed(question: str, primary: str, model: str,
             yield _e
         return
 
+    # Qualified rate leaderboards bypass the free-form league desk. This
+    # keeps sample floors and units attached to the exact value users see.
+    _rate_leader = None
+    if (not found_p and not found_t and not state.get("history")
+            and re.search(r"(?:who|which player).*(?:leads?|highest|best)|leaders?",
+                          question, re.IGNORECASE)):
+        if re.search(r"true[ -]?shooting|\bTS%?\b", question, re.IGNORECASE):
+            _rate_leader = "TS_PCT"
+        elif re.search(r"steals?\s+per[ -]?game|\bSPG\b", question,
+                       re.IGNORECASE):
+            _rate_leader = "SPG"
+    if _rate_leader:
+        _rlh: dict[str, Any] = {}
+        async for _e in _triage_tool(
+                "get_leaders",
+                {"stat_category": _rate_leader, "season": "2025-26"},
+                state, _rlh):
+            yield _e
+        _rlout = _rlh.get("out") or {}
+        if _result_status(_rlout) == "ok" and _result_rows(_rlout):
+            async for _e in _triage_terminal(question, state):
+                yield _e
+        return
+
     # F88: percentage leaderboards need a qualification-aware warehouse
     # board, not free-form SQL with an arbitrary attempts threshold.
     if (not found_p and not found_t and not state.get("history")
