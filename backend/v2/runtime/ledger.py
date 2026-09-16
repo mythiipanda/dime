@@ -190,6 +190,11 @@ class RunLedger:
             raise ValueError("ledger run id must be non-empty")
         self.run_id = run_id
         self._entries = list(entries)
+        if any(
+            later.recorded_at < earlier.recorded_at
+            for earlier, later in zip(self._entries, self._entries[1:])
+        ):
+            raise ValueError("ledger timestamps must be nondecreasing")
         if any(entry.run_id != run_id for entry in self._entries):
             raise ValueError("ledger entries must belong to one run")
         if [entry.sequence for entry in self._entries] != list(

@@ -560,3 +560,23 @@ def test_ledger_entry_requires_timezone_aware_recording_time() -> None:
             recorded_at=datetime(2026, 9, 15), turn_id="turn",
             data={"request": "answer"},
         )
+
+
+def test_run_ledger_rejects_decreasing_timestamps() -> None:
+    from datetime import UTC, datetime, timedelta
+    from v2.runtime.ledger import LedgerEntry
+
+    later = datetime(2026, 9, 15, tzinfo=UTC)
+    entries = [
+        LedgerEntry(
+            sequence=1, run_id="run", kind="turn/start", recorded_at=later,
+            turn_id="turn", data={"request": "answer"},
+        ),
+        LedgerEntry(
+            sequence=2, run_id="run", kind="turn/end",
+            recorded_at=later - timedelta(seconds=1), turn_id="turn",
+            data={"reason": "complete"},
+        ),
+    ]
+    with pytest.raises(ValueError, match="timestamps must be nondecreasing"):
+        RunLedger("run", entries)
