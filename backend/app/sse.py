@@ -13,13 +13,18 @@ def emit_sse(event_type: str, data: Any) -> str:
 async def with_heartbeat(
     inner: AsyncIterator[str], interval_s: float = 15.0
 ) -> AsyncGenerator[str, None]:
-    queue: asyncio.Queue[str | None] = asyncio.Queue()
+    queue: asyncio.Queue[str | None] = asyncio.Queue(maxsize=64)
 
     async def drain() -> None:
         try:
             async for chunk in inner:
                 await queue.put(chunk)
-        finally:
+        except asyncio.CancelledError:
+            raise
+        except BaseException:
+            await queue.put(None)
+            raise
+        else:
             await queue.put(None)
 
     task = asyncio.create_task(drain())

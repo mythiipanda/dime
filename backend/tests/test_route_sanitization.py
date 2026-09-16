@@ -216,3 +216,32 @@ def test_heartbeat_cancellation_closes_inner_stream():
         await asyncio.wait_for(closed.wait(), timeout=0.2)
 
     asyncio.run(exercise())
+
+
+def test_heartbeat_applies_backpressure_to_fast_producer():
+    import asyncio
+    from app.sse import with_heartbeat
+
+    produced = 0
+    closed = asyncio.Event()
+
+    async def fast():
+        nonlocal produced
+        try:
+            for index in range(10_000):
+                produced += 1
+                yield str(index)
+        finally:
+            closed.set()
+
+    async def exercise():
+        stream = with_heartbeat(fast(), interval_s=10)
+        assert await anext(stream) == "0"
+        await asyncio.sleep(0.02)
+        # One item was consumed and at most the bounded queue plus the
+        # producer's current blocked put can have advanced.
+        assert produced <= 66
+        await stream.aclose()
+        await asyncio.wait_for(closed.wait(), timeout=0.2)
+
+    asyncio.run(exercise())
