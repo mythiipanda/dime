@@ -217,6 +217,7 @@ class WebSearchCapability:
     """Discover current sources as typed evidence; snippets are not page facts."""
 
     name = "web_search"
+    task_season_scoped = False
 
     def __init__(self, provider: WebSearchProvider | None = None) -> None:
         self._provider = provider or DuckDuckGoSearch()
@@ -250,6 +251,7 @@ class WebFetchCapability:
     """Extract one search-selected result without accepting arbitrary URLs."""
 
     name = "web_fetch"
+    task_season_scoped = False
 
     def __init__(self, provider: WebFetchProvider | None = None) -> None:
         self._provider = provider or JinaReader()
