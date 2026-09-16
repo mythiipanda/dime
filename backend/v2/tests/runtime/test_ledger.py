@@ -254,3 +254,17 @@ def test_request_envelope_requires_nonempty_identity(field) -> None:
     values[field] = " "
     with pytest.raises(ValueError, match=field):
         RequestEnvelope.freeze(**values)
+
+
+def test_request_envelope_loaded_contract_validates_identity_and_maps() -> None:
+    with pytest.raises(Exception, match="prompt_hash"):
+        RequestEnvelope.model_validate({
+            "provider": "p", "model": "m", "route": "r", "prompt_hash": " ",
+            "context_hash": "c", "tool_schema_hash": "t", "planner_version": "v2",
+        })
+    with pytest.raises(Exception, match="budget keys"):
+        RequestEnvelope.model_validate({
+            "provider": "p", "model": "m", "route": "r", "prompt_hash": "p",
+            "context_hash": "c", "tool_schema_hash": "t", "planner_version": "v2",
+            "budgets": {" ": 1},
+        })

@@ -9,7 +9,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Any, Iterable
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class LedgerKind(StrEnum):
@@ -42,6 +42,19 @@ class RequestEnvelope(BaseModel):
     planner_version: str
     budgets: dict[str, int | float] = Field(default_factory=dict)
     skill_hashes: dict[str, str] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_identity(self):
+        for name in ("provider", "model", "route", "prompt_hash", "context_hash",
+                     "tool_schema_hash", "planner_version"):
+            if not getattr(self, name).strip():
+                raise ValueError(f"{name} must be non-empty")
+        if any(not key.strip() for key in self.budgets):
+            raise ValueError("budget keys must be non-empty")
+        if any(not key.strip() or not value.strip()
+               for key, value in self.skill_hashes.items()):
+            raise ValueError("skill hashes must be non-empty")
+        return self
 
     @classmethod
     def freeze(
