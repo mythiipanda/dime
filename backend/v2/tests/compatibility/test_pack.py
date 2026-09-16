@@ -137,3 +137,23 @@ def test_pack_rejects_malformed_top_level_contract(tmp_path, change, error):
     path.write_text(json.dumps(payload))
     with pytest.raises(ValueError, match=error):
         load_pack(path)
+
+
+@pytest.mark.parametrize("scenario,error", [
+    ("not-an-object", "scenarios must be objects"),
+    ({"id": " ", "chain": ["q"], "expect": {}}, "id must be non-empty"),
+    ({"id": "x", "chain": [], "expect": {}}, "non-empty text chain"),
+    ({"id": "x", "chain": ["q"]}, "exactly one expectation form"),
+    ({"id": "x", "chain": ["q"], "expect": {}, "expect_turns": [{}]},
+     "exactly one expectation form"),
+    ({"id": "x", "chain": ["q", "followup"], "expect_turns": [{}]},
+     "expectations must match"),
+])
+def test_pack_rejects_malformed_scenario_contract(tmp_path, scenario, error):
+    import json
+    payload = json.loads(PACK.read_text())
+    payload["scenarios"][0] = scenario
+    path = tmp_path / "pack.json"
+    path.write_text(json.dumps(payload))
+    with pytest.raises(ValueError, match=error):
+        load_pack(path)

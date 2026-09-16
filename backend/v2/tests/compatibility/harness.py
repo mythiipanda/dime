@@ -115,13 +115,33 @@ def load_pack(path: Path) -> dict[str, Any]:
         raise ValueError("compatibility scenarios must be a list")
     if len(scenarios) != 35:
         raise ValueError(f"compatibility pack must contain 35 scenarios, got {len(scenarios)}")
-    ids = [scenario["id"] for scenario in scenarios]
-    if len(ids) != len(set(ids)):
-        raise ValueError("compatibility scenario ids must be unique")
     if any(not isinstance(scenario, dict) for scenario in scenarios):
         raise ValueError("compatibility scenarios must be objects")
+    ids: list[str] = []
     for scenario in scenarios:
+        scenario_id = scenario.get("id")
+        chain = scenario.get("chain")
+        if not isinstance(scenario_id, str) or not scenario_id.strip():
+            raise ValueError("compatibility scenario id must be non-empty")
+        if (not isinstance(chain, list) or not chain
+                or any(not isinstance(turn, str) or not turn.strip() for turn in chain)):
+            raise ValueError(
+                f"compatibility scenario {scenario_id} requires a non-empty text chain")
+        has_expect = "expect" in scenario
+        has_turns = "expect_turns" in scenario
+        if has_expect == has_turns:
+            raise ValueError(
+                f"compatibility scenario {scenario_id} requires exactly one expectation form")
+        expectations = (scenario["expect_turns"] if has_turns
+                        else [scenario["expect"]])
+        if (not isinstance(expectations, list) or len(expectations) != len(chain)
+                or any(not isinstance(item, dict) for item in expectations)):
+            raise ValueError(
+                f"compatibility scenario {scenario_id} expectations must match its chain")
+        ids.append(scenario_id)
         scenario["_banned_everywhere"] = banned
+    if len(ids) != len(set(ids)):
+        raise ValueError("compatibility scenario ids must be unique")
     return pack
 
 
