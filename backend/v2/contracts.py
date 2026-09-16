@@ -269,7 +269,7 @@ class Claim(BaseModel):
 
     text: str = Field(min_length=1)
     kind: ClaimKind
-    evidence_ids: list[str] = Field(default_factory=list)
+    evidence_ids: list[str] = Field(default_factory=list, max_length=32)
     calculation_id: str | None = None
     confidence: StrictFloat | None = Field(default=None, ge=0, le=1)
 
@@ -301,9 +301,9 @@ class Claim(BaseModel):
 class DraftReport(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    sections: list[str]
-    claims: list[Claim]
-    gaps: list[str] = Field(default_factory=list)
+    sections: list[str] = Field(max_length=32)
+    claims: list[Claim] = Field(max_length=128)
+    gaps: list[str] = Field(default_factory=list, max_length=128)
 
     @model_validator(mode="after")
     def validate_content(self) -> "DraftReport":
@@ -321,7 +321,7 @@ class Gap(BaseModel):
 
     kind: GapKind
     message: str = Field(min_length=1)
-    evidence_ids: list[str] = Field(default_factory=list)
+    evidence_ids: list[str] = Field(default_factory=list, max_length=32)
     blocks: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -358,7 +358,7 @@ class VerifiedClaim(BaseModel):
 
     claim_index: StrictInt = Field(ge=0)
     claim: Claim
-    evidence_ids: list[str] = Field(default_factory=list)
+    evidence_ids: list[str] = Field(default_factory=list, max_length=32)
     sources: list[ClaimSource] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -399,10 +399,10 @@ class VerificationReport(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     status: VerificationStatus
-    claim_results: list[ClaimResult] = Field(default_factory=list)
-    missing_branches: list[str] = Field(default_factory=list)
-    contradictions: list[str] = Field(default_factory=list)
-    repair_instructions: list[str] = Field(default_factory=list)
+    claim_results: list[ClaimResult] = Field(default_factory=list, max_length=128)
+    missing_branches: list[str] = Field(default_factory=list, max_length=128)
+    contradictions: list[str] = Field(default_factory=list, max_length=128)
+    repair_instructions: list[str] = Field(default_factory=list, max_length=128)
 
     @model_validator(mode="after")
     def validate_status(self) -> "VerificationReport":

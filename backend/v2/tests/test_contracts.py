@@ -13,6 +13,7 @@ from v2.contracts import (
     PlanNode,
     TaskSpec,
     SeasonRef,
+    VerificationReport,
     EntityRef,
 )
 
@@ -396,3 +397,13 @@ def test_plan_node_selection_lists_have_hard_limits() -> None:
     with pytest.raises(ValidationError, match="at most 16 items"):
         PlanNode(id="node", description="work",
                  capability_hints=[f"cap-{index}" for index in range(17)])
+
+
+def test_draft_and_verification_lists_have_hard_limits() -> None:
+    with pytest.raises(ValidationError, match="at most 32 items"):
+        DraftReport(sections=[f"section-{index}" for index in range(33)], claims=[])
+    with pytest.raises(ValidationError, match="at most 128 items"):
+        VerificationReport(
+            status="repair",
+            repair_instructions=[f"repair-{index}" for index in range(129)],
+        )
