@@ -100,3 +100,15 @@ def test_save_replay_leaves_no_partial_or_temporary_file_on_serialization_failur
         save_replay(path, "x", "r", [([], [])])
     assert not path.exists()
     assert not list(tmp_path.glob(".replay-*"))
+
+
+def test_replay_rejects_cross_turn_conflicting_evidence_identity(tmp_path):
+    first = EvidenceEnvelope(
+        evidence_id="same", capability="ratings", source="fixture",
+        observed_at=datetime.now(UTC), rows={"net": 8.2},
+    )
+    second = first.model_copy(update={"rows": {"net": 2.1}})
+    path = tmp_path / "conflict.json"
+    save_replay(path, "x", "r", [([first], []), ([second], [])])
+    with pytest.raises(ValueError, match="conflicting payloads"):
+        load_replay(path)
