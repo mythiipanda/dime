@@ -310,6 +310,48 @@ async def test_stream_cancellation_stops_detached_runtime(monkeypatch):
     await asyncio.wait_for(cancelled.wait(), timeout=1)
 
 
+def test_failed_stream_tool_result_keeps_its_call_identity(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from v2.api import routes
+    from v2.runtime.ledger import LedgerKind, RunLedger
+
+    ledgers = {}
+
+    class BrokenRuntime:
+        async def run(self, request, *, run_id=None, context=()):
+            ledger = ledgers[run_id]
+            ledger.append(
+                LedgerKind.TOOL_CALL, turn_id=run_id, step_id="salary",
+                call_id="tool:salary:1",
+                data={"name": "contracts", "args": {}},
+            )
+            ledger.append(
+                LedgerKind.TOOL_RESULT, turn_id=run_id, step_id="salary",
+                call_id="tool:salary:1",
+                data={"status": "failed", "error": "source unavailable"},
+            )
+            raise RuntimeError("stop")
+
+    monkeypatch.setenv("DIME_RUNTIME_V2", "on")
+    monkeypatch.setattr(
+        "app.providers.resolve_model_id", lambda value: ("openrouter", "fixture"))
+
+    def build(**kwargs):
+        ledger = RunLedger(kwargs["run_id"])
+        ledgers[kwargs["run_id"]] = ledger
+        return BrokenRuntime(), ledger
+
+    monkeypatch.setattr("v2.runtime.assembly.build_runtime", build)
+    app = FastAPI()
+    app.include_router(routes.router, prefix="/api")
+    response = TestClient(app).post(
+        "/api/v2/chat/stream", json={"q": "salary?"})
+
+    assert '"name":"contracts"' in response.text
+    assert '"name":"tool"' not in response.text
+
+
 def test_answer_text_publishes_only_adjudicated_model_prose():
     from datetime import UTC, datetime
     from v2 import contracts

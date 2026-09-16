@@ -168,6 +168,37 @@ async def quick_answer_stream(body: QuickAnswerBody):
         provider=provider, model_name=model_name, run_id=run_id,
         progress=progress, policy=policy)
 
+    def recorded_tool_events():
+        entries = ledger.entries
+        calls = {
+            entry.call_id: entry for entry in entries
+            if entry.kind == LedgerKind.TOOL_CALL and entry.call_id is not None
+        }
+        for entry in entries:
+            if entry.kind == LedgerKind.TOOL_CALL:
+                yield ToolCall(
+                    node=entry.step_id or "execute",
+                    name=str(entry.data["name"]),
+                    args=entry.data["args"],
+                )
+            elif entry.kind == LedgerKind.TOOL_RESULT:
+                payload = entry.data
+                evidence = payload.get("evidence", {})
+                rows = evidence.get("rows")
+                call = calls.get(entry.call_id)
+                name = (
+                    str(evidence["capability"])
+                    if payload.get("status") == "ok"
+                    else str(call.data["name"]) if call is not None else "tool"
+                )
+                yield ToolResult(
+                    node=entry.step_id or "execute",
+                    name=name,
+                    status="ok" if payload.get("status") == "ok" else "fail",
+                    rows=len(rows) if isinstance(rows, list) else None,
+                    error=payload.get("error"),
+                )
+
     async def generate():
         task = asyncio.create_task(runtime.run(
             body.q, run_id=run_id, context=tuple(body.history)))
@@ -181,6 +212,8 @@ async def quick_answer_stream(body: QuickAnswerBody):
             try:
                 result = await task
             except Exception as exc:
+                for event in recorded_tool_events():
+                    yield encode_event(event)
                 yield encode_event(NodeUpdate(
                     node="runtime", status="failed"))
                 if policy.publish:
@@ -191,23 +224,8 @@ async def quick_answer_stream(body: QuickAnswerBody):
                     }, separators=(",", ":")) + "\n\n"
                 yield encode_event(GraphEnd())
                 return
-            for entry in ledger.entries:
-                if entry.kind == LedgerKind.TOOL_CALL:
-                    yield encode_event(ToolCall(
-                        node=entry.step_id or "execute",
-                        name=str(entry.data.get("name", "tool")),
-                        args=entry.data.get("args", {})))
-                elif entry.kind == LedgerKind.TOOL_RESULT:
-                    payload = entry.data
-                    evidence = payload.get("evidence", {})
-                    rows = evidence.get("rows")
-                    row_count = len(rows) if isinstance(rows, list) else None
-                    yield encode_event(ToolResult(
-                        node=entry.step_id or "execute",
-                        name=str(evidence.get("capability", "tool")),
-                        status="ok" if payload.get("status") == "ok" else "fail",
-                        rows=row_count,
-                        error=payload.get("error")))
+            for event in recorded_tool_events():
+                yield encode_event(event)
             yield encode_event(CustomData(
                 node="verify",
                 tables=[item.model_dump(mode="json")
