@@ -70,3 +70,13 @@ def test_calculation_contract_rejects_blank_identity_and_nonfinite_result(schema
     from pydantic import ValidationError
     with pytest.raises(ValidationError, match=error):
         schema.model_validate(payload)
+
+
+def test_non_rank_calculation_rejects_subject_input() -> None:
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="only for rank calculations"):
+        Calculation(
+            calculation_id="sum", operation="add",
+            inputs=[ref("rows[0].PTS")], subject_input=0, result=Decimal("30"),
+        )

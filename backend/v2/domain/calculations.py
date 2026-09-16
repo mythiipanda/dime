@@ -63,6 +63,8 @@ class Calculation(BaseModel):
                               CalculationOperation.RANK_DESC):
             if self.subject_input is None or self.subject_input >= len(self.inputs):
                 raise ValueError("rank calculations require a valid subject input")
+        elif self.subject_input is not None:
+            raise ValueError("subject_input is valid only for rank calculations")
         return self
 
 
