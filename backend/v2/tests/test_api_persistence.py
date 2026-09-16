@@ -886,3 +886,22 @@ def test_file_checkpoint_store_serializes_same_run_writers(tmp_path: Path) -> No
     loaded = store.load("shared")
     assert loaded in checkpoints
     assert not list(tmp_path.glob(".checkpoint-*"))
+
+
+def test_checkpoint_store_rejects_symlinked_directory(tmp_path: Path) -> None:
+    from v2.runtime.checkpoints import ExecutionCheckpoint
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    directory = tmp_path / "checkpoints"
+    directory.symlink_to(outside, target_is_directory=True)
+    store = FileCheckpointStore(directory)
+    checkpoint = ExecutionCheckpoint(run_id="run", task=_task(), plan=_plan())
+    for operation in (
+        lambda: store.load("run"),
+        lambda: store.save(checkpoint),
+        lambda: store.delete("run"),
+    ):
+        with pytest.raises(ValueError, match="directory cannot be a symlink"):
+            operation()
+    assert list(outside.iterdir()) == []

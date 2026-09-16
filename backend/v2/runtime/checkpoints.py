@@ -51,6 +51,7 @@ class FileCheckpointStore:
     def load(self, run_id: str) -> ExecutionCheckpoint | None:
         path = self._path(run_id)
         with _checkpoint_path_lock(path):
+            self._reject_symlinked_directory()
             if path.is_symlink():
                 raise ValueError("checkpoint file cannot be a symlink")
             if not path.exists():
@@ -60,6 +61,7 @@ class FileCheckpointStore:
     def save(self, checkpoint: ExecutionCheckpoint) -> None:
         path = self._path(checkpoint.run_id)
         with _checkpoint_path_lock(path):
+            self._reject_symlinked_directory()
             self._directory.mkdir(parents=True, exist_ok=True)
             if path.is_symlink():
                 raise ValueError("checkpoint file cannot be a symlink")
@@ -78,12 +80,17 @@ class FileCheckpointStore:
     def delete(self, run_id: str) -> None:
         path = self._path(run_id)
         with _checkpoint_path_lock(path):
+            self._reject_symlinked_directory()
             if path.is_symlink():
                 raise ValueError("checkpoint file cannot be a symlink")
             if not path.exists():
                 return
             path.unlink()
             self._fsync_directory()
+
+    def _reject_symlinked_directory(self) -> None:
+        if self._directory.is_symlink():
+            raise ValueError("checkpoint directory cannot be a symlink")
 
     def _fsync_directory(self) -> None:
         directory_fd = os.open(self._directory, os.O_RDONLY)
