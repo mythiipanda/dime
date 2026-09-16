@@ -813,3 +813,22 @@ def test_checkpoint_delete_fsyncs_directory(tmp_path, monkeypatch) -> None:
     store.delete("delete-durable")
     assert len(calls) == 1
     assert store.load("delete-durable") is None
+
+
+def test_checkpoint_store_rejects_symlinked_record(tmp_path: Path) -> None:
+    from v2.runtime.checkpoints import ExecutionCheckpoint
+
+    outside = tmp_path / "outside.json"
+    checkpoint = ExecutionCheckpoint(run_id="run", task=_task(), plan=_plan())
+    outside.write_text(checkpoint.model_dump_json())
+    directory = tmp_path / "checkpoints"
+    directory.mkdir()
+    (directory / "run.json").symlink_to(outside)
+    store = FileCheckpointStore(directory)
+    for operation in (
+        lambda: store.load("run"),
+        lambda: store.save(checkpoint),
+        lambda: store.delete("run"),
+    ):
+        with pytest.raises(ValueError, match="cannot be a symlink"):
+            operation()

@@ -39,6 +39,8 @@ class FileCheckpointStore:
 
     def load(self, run_id: str) -> ExecutionCheckpoint | None:
         path = self._path(run_id)
+        if path.is_symlink():
+            raise ValueError("checkpoint file cannot be a symlink")
         if not path.exists():
             return None
         return ExecutionCheckpoint.model_validate_json(path.read_text())
@@ -46,6 +48,8 @@ class FileCheckpointStore:
     def save(self, checkpoint: ExecutionCheckpoint) -> None:
         self._directory.mkdir(parents=True, exist_ok=True)
         path = self._path(checkpoint.run_id)
+        if path.is_symlink():
+            raise ValueError("checkpoint file cannot be a symlink")
         fd, temporary = tempfile.mkstemp(dir=self._directory, prefix=".checkpoint-")
         try:
             with os.fdopen(fd, "w") as handle:
@@ -64,6 +68,8 @@ class FileCheckpointStore:
 
     def delete(self, run_id: str) -> None:
         path = self._path(run_id)
+        if path.is_symlink():
+            raise ValueError("checkpoint file cannot be a symlink")
         if not path.exists():
             return
         path.unlink()
