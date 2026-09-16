@@ -106,6 +106,9 @@ class ProjectStore:
         parent = self._path.parent
         if any(component.is_symlink() for component in (parent, *parent.parents)):
             raise ValueError("project store parent cannot be a symlink")
+        for suffix in ("-journal", "-wal", "-shm"):
+            if Path(f"{self._path}{suffix}").is_symlink():
+                raise ValueError("project store auxiliary file cannot be a symlink")
 
     def _connect(self) -> sqlite3.Connection:
         self._reject_symlinked_path()

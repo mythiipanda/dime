@@ -998,3 +998,16 @@ def test_project_store_rechecks_parent_before_connect(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="parent cannot be a symlink"):
         store.list()
     assert list(outside.iterdir()) == []
+
+
+@pytest.mark.parametrize("suffix", ["-journal", "-wal", "-shm"])
+def test_project_store_rejects_symlinked_sqlite_auxiliary_files(
+    tmp_path: Path, suffix: str,
+) -> None:
+    path = tmp_path / "projects.sqlite3"
+    outside = tmp_path / "outside"
+    outside.write_text("private")
+    Path(f"{path}{suffix}").symlink_to(outside)
+    with pytest.raises(ValueError, match="auxiliary file cannot be a symlink"):
+        ProjectStore(path)
+    assert outside.read_text() == "private"
