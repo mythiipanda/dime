@@ -149,3 +149,18 @@ def test_ledger_run_identity_must_be_non_empty() -> None:
 def test_ledger_event_identities_must_be_non_empty(kwargs, error) -> None:
     with pytest.raises(ValueError, match=error):
         RunLedger("run").append(LedgerKind.TURN_START, **kwargs)
+
+
+@pytest.mark.parametrize(
+    "data,error",
+    [
+        ({"name": "standings"}, "exactly name and args"),
+        ({"name": " ", "args": {}}, "name must be non-empty"),
+        ({"name": "standings", "args": []}, "args must be an object"),
+    ],
+)
+def test_tool_call_data_shape_is_strict(data, error) -> None:
+    with pytest.raises(ValueError, match=error):
+        RunLedger("run").append(
+            LedgerKind.TOOL_CALL, turn_id="turn", call_id="call", data=data,
+        )

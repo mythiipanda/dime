@@ -136,7 +136,13 @@ class RunLedger:
         if kind in (LedgerKind.TOOL_CALL, LedgerKind.TOOL_RESULT) and not call_id:
             raise ValueError("tool events require call_id")
         if kind == LedgerKind.TOOL_CALL:
-            identity = _hash({"name": payload.get("name"), "args": payload.get("args")})
+            if set(payload) != {"name", "args"}:
+                raise ValueError("tool call data must contain exactly name and args")
+            if not isinstance(payload["name"], str) or not payload["name"].strip():
+                raise ValueError("tool call name must be non-empty")
+            if not isinstance(payload["args"], dict):
+                raise ValueError("tool call args must be an object")
+            identity = _hash({"name": payload["name"], "args": payload["args"]})
             previous = self._calls.get(call_id)
             if previous is not None and previous != identity:
                 raise ValueError("a call id cannot change tool identity or arguments")

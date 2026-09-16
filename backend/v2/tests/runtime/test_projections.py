@@ -60,13 +60,18 @@ def test_successful_tool_projection_rejects_missing_or_extra_evidence_fields():
 def test_tool_attempt_projection_rejects_partial_call_and_status() -> None:
     import pytest
 
-    ledger = RunLedger("run")
-    ledger.append(LedgerKind.TOOL_CALL, turn_id="turn", call_id="call",
-                  data={"name": "standings", "args": {}, "label": "extra"})
-    ledger.append(LedgerKind.TOOL_RESULT, turn_id="turn", call_id="call",
-                  data={"status": "ok", "evidence": {}})
+    from v2.runtime.ledger import LedgerEntry
+
+    call = LedgerEntry(
+        sequence=1, run_id="run", kind="tool/call", recorded_at=datetime.now(UTC), turn_id="turn",
+        call_id="call", data={"name": "standings", "args": {}, "label": "extra"},
+    )
+    result = LedgerEntry(
+        sequence=2, run_id="run", kind="tool/result", recorded_at=datetime.now(UTC),
+        turn_id="turn", call_id="call", data={"status": "ok", "evidence": {}},
+    )
     with pytest.raises(ValueError, match="tool call has unexpected fields"):
-        tool_attempts(ledger.entries)
+        tool_attempts([call, result])
 
     ledger = RunLedger("run")
     ledger.append(LedgerKind.TOOL_CALL, turn_id="turn", call_id="call",
