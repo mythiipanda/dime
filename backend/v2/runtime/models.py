@@ -71,6 +71,11 @@ class RuntimeResult(BaseModel):
         by_index = {item.claim_index: item for item in self.verification.claim_results}
         evidence = {item.evidence_id: item for item in self.execution.evidence}
         seen: set[int] = set()
+        evidence_ids = set(evidence)
+        for gap in self.gaps:
+            unknown = set(gap.evidence_ids) - evidence_ids
+            if unknown:
+                raise ValueError(f"gap cites unknown evidence ids: {sorted(unknown)}")
         for item in self.verified_claims:
             if item.claim_index in seen:
                 raise ValueError("verified claim indices must be unique")

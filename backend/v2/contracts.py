@@ -206,19 +206,25 @@ class DraftReport(BaseModel):
 
 
 class Gap(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     kind: GapKind
-    message: str
+    message: str = Field(min_length=1)
     evidence_ids: list[str] = Field(default_factory=list)
     blocks: list[str] = Field(default_factory=list)
 
 
 class ClaimSource(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     evidence_id: str
     source: str
     capability: str
 
 
 class VerifiedClaim(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     claim_index: int = Field(ge=0)
     claim: Claim
     evidence_ids: list[str] = Field(default_factory=list)

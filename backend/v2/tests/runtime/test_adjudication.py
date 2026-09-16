@@ -128,3 +128,20 @@ def test_runtime_result_rejects_forged_claim_source() -> None:
                     capability="standings")],
             )],
         )
+
+
+def test_runtime_result_rejects_gap_with_unknown_evidence() -> None:
+    import pytest
+    from pydantic import ValidationError
+    from v2.contracts import Gap, Plan, TaskSpec
+    from v2.runtime.models import ExecutionResult, RuntimeResult
+
+    with pytest.raises(ValidationError, match="gap cites unknown evidence"):
+        RuntimeResult(
+            task=TaskSpec(goal="record", mode="quick", deliverable="answer"),
+            execution=ExecutionResult(plan=Plan(nodes=[])),
+            draft=DraftReport(sections=[], claims=[]),
+            verification=VerificationReport(status="partial"),
+            gaps=[Gap(kind="source_conflict", message="conflict",
+                      evidence_ids=["invented"])],
+        )
