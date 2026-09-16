@@ -48,6 +48,98 @@ def _sanitize_sse_event(etype: str, data: dict) -> dict:
     return data
 
 
+def _shadow_enabled() -> bool:
+    return os.environ.get("DIME_RUNTIME_V2", "off").lower() == "shadow"
+
+
+def _v1_shadow_outcome(
+    *, answer: str, capabilities: list[str], evidence_count: int,
+    had_error: bool, duration_ms: int,
+):
+    from v2.adapters.capabilities import CAPABILITIES
+    from v2.runtime.shadow import RunOutcome
+
+    by_tool = {item.tool_name: name for name, item in CAPABILITIES.items()}
+    canonical_capabilities = [
+        by_tool[name] for name in capabilities if name in by_tool
+    ]
+    status = "partial" if answer and had_error else "ok" if answer else "failed"
+    return RunOutcome(
+        status=status,
+        answer=answer,
+        capabilities=list(dict.fromkeys(canonical_capabilities)),
+        evidence_count=evidence_count,
+        supported_claims=0,
+        total_claims=0,
+        duration_ms=duration_ms,
+    )
+
+
+async def _record_v2_shadow(
+    question: str, model: str | None, history: list[dict[str, str]],
+    v1_outcome,
+) -> None:
+    import uuid
+
+    from .providers import resolve_model_id
+    from v2.contracts import ConversationTurn
+    from v2.runtime.assembly import build_runtime
+    from v2.runtime.policy import ExecutionPolicy
+    from v2.runtime.shadow import (
+        RunOutcome, ShadowStore, compare_outcomes, outcome_from_v2,
+    )
+
+    started = time.monotonic()
+    try:
+        provider, model_name = resolve_model_id(
+            model or os.environ.get("DIME_V2_MODEL"))
+        run_id = f"shadow-{uuid.uuid4().hex}"
+        ledger_dir = os.environ.get(
+            "DIME_V2_LEDGER_DIR", str(CARDS_DIR.parent / "v2-ledgers"))
+        checkpoint_dir = Path(os.environ.get(
+            "DIME_V2_CHECKPOINT_DIR", str(CARDS_DIR.parent / "v2-checkpoints")))
+        policy = ExecutionPolicy.shadow(ledger_dir=ledger_dir)
+        policy = ExecutionPolicy.model_validate({
+            **policy.model_dump(), "checkpoint_dir": checkpoint_dir,
+        })
+        runtime, _ = build_runtime(
+            provider=provider, model_name=model_name, run_id=run_id,
+            policy=policy)
+        context = tuple(
+            ConversationTurn(
+                role="user" if item.get("role") in {"human", "user"}
+                else "assistant",
+                content=str(item.get("content", item.get("text", ""))),
+            )
+            for item in history
+            if item.get("role") in {"human", "user", "ai", "assistant"}
+            and str(item.get("content", item.get("text", ""))).strip()
+        )[-8:]
+        result = await runtime.run(question, run_id=run_id, context=context)
+        answer = "\n\n".join(item.claim.text for item in result.verified_claims)
+        if result.gaps:
+            gaps = " ".join(item.message for item in result.gaps)
+            answer = (f"{answer}\n\nWhat I could not verify: {gaps}"
+                      if answer else gaps)
+        v2_outcome = outcome_from_v2(
+            result, answer, int((time.monotonic() - started) * 1000))
+    except BaseException:
+        v2_outcome = RunOutcome(
+            status="failed", duration_ms=int((time.monotonic() - started) * 1000))
+
+    primary = await v1_outcome
+    comparison = compare_outcomes(question, primary, v2_outcome)
+    path = os.environ.get(
+        "DIME_V2_SHADOW_STORE", str(CARDS_DIR.parent / "v2-shadow.jsonl"))
+    ShadowStore(path).append(comparison)
+
+
+def _consume_background_task(task) -> None:
+    try:
+        task.exception()
+    except BaseException:
+        pass
+
 def _allowed(ip: str) -> bool:
     now = time.time()
     window = [t for t in _hits[ip] if now - t < 60]
@@ -93,36 +185,63 @@ async def _stream(
         store.save_chat(thread, "human", question[:2000], owner=client[:80])
 
     async def gen():
+        import asyncio
         import json as _json
 
         final = ""
         tables: list[dict] = []
         suggestions: list[str] = []
-        async for event in run_chat(
-            question[:2000], (model or "")[:200], history, thread
-        ):
-            if event["type"] == "final_answer":
-                final = str(event["data"].get("text", ""))
-            elif event["type"] == "ledger_facts":
-                _lf = event["data"].get("facts")
-                if thread and isinstance(_lf, list):
-                    try:
-                        store.save_facts(thread, [str(f) for f in _lf],
-                                         owner=client[:80])
-                    except Exception:
-                        pass
-            elif event["type"] == "custom_data":
-                data = event["data"]
-                if isinstance(data.get("tables"), list):
-                    tables = data["tables"]
-            elif event["type"] == "suggestions":
-                items = event["data"].get("items", [])
-                if isinstance(items, list):
-                    suggestions = [str(i) for i in items]
-            if event["type"] == "ledger_facts":
-                continue  # internal plumbing - persisted above, not streamed
-            yield emit_sse(event["type"],
-                           _sanitize_sse_event(event["type"], event["data"]))
+        capabilities: list[str] = []
+        had_error = False
+        started = time.monotonic()
+        loop = asyncio.get_running_loop()
+        v1_outcome = loop.create_future() if _shadow_enabled() else None
+        shadow_task = None
+        if v1_outcome is not None:
+            shadow_task = asyncio.create_task(_record_v2_shadow(
+                question[:2000], (model or "")[:200], history, v1_outcome))
+            shadow_task.add_done_callback(_consume_background_task)
+        try:
+            async for event in run_chat(
+                question[:2000], (model or "")[:200], history, thread
+            ):
+                if event["type"] == "final_answer":
+                    final = str(event["data"].get("text", ""))
+                elif event["type"] == "ledger_facts":
+                    _lf = event["data"].get("facts")
+                    if thread and isinstance(_lf, list):
+                        try:
+                            store.save_facts(thread, [str(f) for f in _lf],
+                                             owner=client[:80])
+                        except Exception:
+                            pass
+                elif event["type"] == "tool_call":
+                    name = event["data"].get("name")
+                    if isinstance(name, str) and name.strip():
+                        capabilities.append(name)
+                elif event["type"] == "error":
+                    had_error = True
+                elif event["type"] == "custom_data":
+                    data = event["data"]
+                    if isinstance(data.get("tables"), list):
+                        tables = data["tables"]
+                elif event["type"] == "suggestions":
+                    items = event["data"].get("items", [])
+                    if isinstance(items, list):
+                        suggestions = [str(i) for i in items]
+                if event["type"] == "ledger_facts":
+                    continue  # internal plumbing - persisted above, not streamed
+                yield emit_sse(event["type"],
+                               _sanitize_sse_event(event["type"], event["data"]))
+        finally:
+            if v1_outcome is not None and not v1_outcome.done():
+                v1_outcome.set_result(_v1_shadow_outcome(
+                    answer=final,
+                    capabilities=capabilities,
+                    evidence_count=len(tables),
+                    had_error=had_error,
+                    duration_ms=int((time.monotonic() - started) * 1000),
+                ))
         if thread and final:
             store.save_chat(thread, "ai", final, owner=client[:80])
             store.save_run(thread, question[:2000], final, tables, suggestions)
