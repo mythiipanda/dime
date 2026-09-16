@@ -134,6 +134,8 @@ class ShadowStore:
 
     def append(self, comparison: ShadowComparison) -> None:
         with self._lock:
+            if self.path.is_symlink():
+                raise ValueError("shadow store file cannot be a symlink")
             parent_was_missing = not self.path.parent.exists()
             self.path.parent.mkdir(parents=True, exist_ok=True)
             file_was_missing = not self.path.exists()

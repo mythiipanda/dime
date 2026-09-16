@@ -250,3 +250,6 @@ def test_shadow_store_rejects_symlinked_record(tmp_path):
     store = ShadowStore(path)
     with pytest.raises(ValueError, match="cannot be a symlink"):
         store.read()
+    with pytest.raises(ValueError, match="cannot be a symlink"):
+        store.append(compare_outcomes("request", outcome(), outcome()))
+    assert outside.read_text() == ""
