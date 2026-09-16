@@ -1021,3 +1021,18 @@ def test_checkpoint_store_revalidates_copied_checkpoint(tmp_path: Path) -> None:
     with pytest.raises(ValidationError, match="run id must be non-empty"):
         FileCheckpointStore(tmp_path).save(unsafe)
     assert list(tmp_path.iterdir()) == []
+
+
+def test_executable_hash_rejects_symlinked_source(monkeypatch, tmp_path: Path) -> None:
+    from v2.api import routes
+    backend = tmp_path / "backend"
+    app = backend / "app"
+    v2 = backend / "v2"
+    app.mkdir(parents=True)
+    v2.mkdir()
+    outside = tmp_path / "outside.py"
+    outside.write_text("private")
+    (v2 / "linked.py").symlink_to(outside)
+    monkeypatch.setattr(routes, "_BACKEND", backend)
+    with pytest.raises(ValueError, match="source tree cannot contain symlinks"):
+        routes._executable_sha256()

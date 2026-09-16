@@ -48,6 +48,8 @@ def _executable_sha256() -> str:
     digest = hashlib.sha256()
     for root in (_BACKEND / "app", _BACKEND / "v2"):
         for path in sorted(root.rglob("*")):
+            if path.is_symlink():
+                raise ValueError("executable source tree cannot contain symlinks")
             if path.is_file() and path.suffix in {".py", ".md"}:
                 digest.update(path.relative_to(_BACKEND).as_posix().encode())
                 digest.update(b"\0")
