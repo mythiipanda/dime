@@ -4,6 +4,7 @@ from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
+import math
 from typing import Any
 
 from v2.contracts import EvidenceEnvelope
@@ -33,15 +34,20 @@ def iter_values(evidence: EvidenceEnvelope) -> Iterator[EvidenceValue]:
 def decimal_value(value: Any) -> Decimal | None:
     if isinstance(value, bool) or value is None:
         return None
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if isinstance(value, Decimal) and not value.is_finite():
+        return None
     if isinstance(value, (date, datetime)):
         return None
     text = str(value).strip().replace(",", "").replace("$", "")
     if text.endswith("%") or text[-1:].upper() in {"K", "M", "B"}:
         text = text[:-1]
     try:
-        return Decimal(text)
+        result = Decimal(text)
     except InvalidOperation:
         return None
+    return result if result.is_finite() else None
 
 
 class EvidenceIndex:

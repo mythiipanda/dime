@@ -104,3 +104,9 @@ def test_admission_requires_season_on_season_scoped_evidence() -> None:
     with pytest.raises(EvidenceAdmissionError) as caught:
         admit_evidence(item, required_season="2025-26")
     assert caught.value.issues[0].code == "season_missing"
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), "NaN", "Infinity"])
+def test_decimal_value_rejects_nonfinite_numbers(value):
+    from v2.domain.evidence import decimal_value
+    assert decimal_value(value) is None
