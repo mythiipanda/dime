@@ -36,37 +36,37 @@ class EventType(StrEnum):
 
 class NodeUpdate(StrictEvent):
     type: Literal[EventType.NODE_UPDATE] = EventType.NODE_UPDATE
-    node: str
+    node: str = Field(max_length=256)
     status: Literal["running", "complete", "failed"]
 
 
 class ThoughtStream(StrictEvent):
     type: Literal[EventType.THOUGHT_STREAM] = EventType.THOUGHT_STREAM
-    node: str
-    text: str
+    node: str = Field(max_length=256)
+    text: str = Field(max_length=200_000)
 
 
 class ToolCall(StrictEvent):
     type: Literal[EventType.TOOL_CALL] = EventType.TOOL_CALL
-    node: str
-    name: str
-    args: dict[str, Any] = Field(default_factory=dict)
-    label: str | None = None
-    summary: str | None = None
-    agent: str | None = None
+    node: str = Field(max_length=256)
+    name: str = Field(max_length=256)
+    args: dict[str, Any] = Field(default_factory=dict, max_length=64)
+    label: str | None = Field(default=None, max_length=1000)
+    summary: str | None = Field(default=None, max_length=4000)
+    agent: str | None = Field(default=None, max_length=256)
 
 
 class ToolResult(StrictEvent):
     type: Literal[EventType.TOOL_RESULT] = EventType.TOOL_RESULT
-    node: str
-    name: str
+    node: str = Field(max_length=256)
+    name: str = Field(max_length=256)
     status: Literal["ok", "fail"]
     rows: StrictInt | None = Field(default=None, ge=0)
     ms: StrictInt | None = Field(default=None, ge=0)
-    error: str | None = None
-    summary: str | None = None
-    sql: str | None = None
-    agent: str | None = None
+    error: str | None = Field(default=None, max_length=4000)
+    summary: str | None = Field(default=None, max_length=4000)
+    sql: str | None = Field(default=None, max_length=100_000)
+    agent: str | None = Field(default=None, max_length=256)
 
     @model_validator(mode="after")
     def validate_status(self):
@@ -79,25 +79,25 @@ class ToolResult(StrictEvent):
 
 class Token(StrictEvent):
     type: Literal[EventType.TOKEN] = EventType.TOKEN
-    text: str
+    text: str = Field(max_length=200_000)
 
 
 class CustomData(StrictEvent):
     type: Literal[EventType.CUSTOM_DATA] = EventType.CUSTOM_DATA
-    node: str
-    tables: list[dict[str, Any]] = Field(default_factory=list)
-    unverified_numbers: list[str] = Field(default_factory=list)
+    node: str = Field(max_length=256)
+    tables: list[dict[str, Any]] = Field(default_factory=list, max_length=32)
+    unverified_numbers: list[str] = Field(default_factory=list, max_length=128)
 
 
 class FinalAnswer(StrictEvent):
     type: Literal[EventType.FINAL_ANSWER] = EventType.FINAL_ANSWER
-    text: str
-    carry: dict[str, Any] | None = None
+    text: str = Field(max_length=200_000)
+    carry: dict[str, Any] | None = Field(default=None, max_length=64)
 
 
 class Suggestions(StrictEvent):
     type: Literal[EventType.SUGGESTIONS] = EventType.SUGGESTIONS
-    items: list[str] = Field(default_factory=list)
+    items: list[str] = Field(default_factory=list, max_length=16)
 
 
 class GraphEnd(StrictEvent):

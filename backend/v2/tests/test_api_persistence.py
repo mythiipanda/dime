@@ -1036,3 +1036,10 @@ def test_executable_hash_rejects_symlinked_source(monkeypatch, tmp_path: Path) -
     monkeypatch.setattr(routes, "_BACKEND", backend)
     with pytest.raises(ValueError, match="source tree cannot contain symlinks"):
         routes._executable_sha256()
+
+
+def test_stream_event_text_has_hard_limits() -> None:
+    from pydantic import ValidationError
+    from v2.api.events import ToolResult
+    with pytest.raises(ValidationError, match="at most 4000 characters"):
+        ToolResult(node="execute", name="tool", status="fail", error="x" * 4001)
