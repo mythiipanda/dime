@@ -383,3 +383,27 @@ async def test_model_authored_gap_downgrades_clean_verification_to_partial() -> 
     assert [gap.message for gap in result.gaps] == [
         "The requested split was unavailable",
     ]
+
+
+@pytest.mark.anyio
+async def test_partial_repair_instruction_surfaces_as_typed_gap() -> None:
+    class PartialSemanticVerifier:
+        async def verify(self, task, draft, evidence):
+            return VerificationReport(
+                status=VerificationStatus.PARTIAL,
+                claim_results=[{
+                    "claim_index": index, "supported": True,
+                } for index, _claim in enumerate(draft.claims)],
+                repair_instructions=["Add a second source for role context"],
+            )
+
+    result = await runtime(
+        SequenceVerifier(VerificationStatus.PASS),
+        PartialSemanticVerifier(),
+    ).run("answer")
+
+    assert result.verification.status == VerificationStatus.PARTIAL
+    assert [gap.message for gap in result.gaps] == [
+        "Add a second source for role context",
+    ]
+    assert result.gaps[0].kind == "missing_evidence"

@@ -296,6 +296,8 @@ def _verification_gaps(draft, verification,
                 for message in verification.missing_branches)
     gaps.extend(Gap(kind=GapKind.SOURCE_CONFLICT, message=message)
                 for message in verification.contradictions)
+    gaps.extend(Gap(kind=GapKind.MISSING_EVIDENCE, message=message)
+                for message in verification.repair_instructions)
     for node_id, errors in (execution_errors or {}).items():
         gaps.extend(Gap(kind=GapKind.EXECUTION_FAILURE, message=message,
                         blocks=[f"node:{node_id}"])
