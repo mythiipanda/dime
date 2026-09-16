@@ -1,5 +1,6 @@
 """HTTP boundary. Parse and clamp here. Graph trusts what it receives."""
 
+import asyncio
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -195,6 +196,9 @@ async def _record_v2_shadow(
         v2_outcome = outcome_from_v2(
             result, answer, int((time.monotonic() - started) * 1000))
     except BaseException as exc:
+        if (isinstance(exc, asyncio.CancelledError)
+                and asyncio.current_task().cancelling()):
+            return
         v2_outcome = RunOutcome(
             status=("cancelled" if isinstance(exc, asyncio.CancelledError)
                     else "failed"),
@@ -229,6 +233,15 @@ def _consume_background_task(task) -> None:
         task.exception()
     except BaseException:
         pass
+
+
+async def shutdown_shadow_tasks() -> None:
+    if not _SHADOW_TASKS:
+        return
+    tasks = tuple(_SHADOW_TASKS)
+    for task in tasks:
+        task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
 
 def _allowed(ip: str) -> bool:
     now = time.time()

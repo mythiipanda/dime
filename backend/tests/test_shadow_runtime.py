@@ -161,6 +161,32 @@ def test_inflight_shadow_task_is_retained_until_completion(monkeypatch):
     assert asyncio.run(exercise())
 
 
+def test_shutdown_cancels_and_drains_retained_shadow_tasks():
+    started = asyncio.Event()
+    cancelled = asyncio.Event()
+
+    async def occupied():
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+
+    async def exercise():
+        task = asyncio.create_task(occupied())
+        routes._SHADOW_TASKS.add(task)
+        task.add_done_callback(routes._consume_background_task)
+        await started.wait()
+        await routes.shutdown_shadow_tasks()
+        await asyncio.sleep(0)
+        assert task.cancelled()
+        assert cancelled.is_set()
+        assert routes._SHADOW_TASKS == set()
+
+    asyncio.run(exercise())
+
+
 def test_v2_shadow_runtime_has_bounded_wall_clock(monkeypatch, tmp_path):
     from v2.runtime.shadow import ShadowStore
 
