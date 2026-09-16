@@ -403,7 +403,9 @@ export interface RunInfo {
 
 export async function getRuns(thread: string): Promise<RunInfo[]> {
   try {
-    const res = await fetch(`${BACKEND}/api/v1/threads/${thread}/runs`);
+    const res = await fetch(
+      `${BACKEND}/api/v1/threads/${thread}/runs?client=${encodeURIComponent(getClientId())}`,
+    );
     if (!res.ok) return loadCachedRuns(thread);
     const runs = ((await res.json()).runs || []) as RunInfo[];
     if (runs.length) {
@@ -418,7 +420,7 @@ export async function getRuns(thread: string): Promise<RunInfo[]> {
 }
 
 export function exportUrl(thread: string): string {
-  return `${BACKEND}/api/v1/threads/${thread}/export`;
+  return `${BACKEND}/api/v1/threads/${thread}/export?client=${encodeURIComponent(getClientId())}`;
 }
 
 export interface PlayerHit {

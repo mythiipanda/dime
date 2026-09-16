@@ -354,7 +354,9 @@ async def _stream(
                 ))
         if thread and final:
             store.save_chat(thread, "ai", final, owner=client[:80])
-            store.save_run(thread, question[:2000], final, tables, suggestions)
+            store.save_run(
+                thread, question[:2000], final, tables, suggestions,
+                owner=client[:80])
 
     async for chunk in with_heartbeat(gen()):
         yield chunk
@@ -422,15 +424,15 @@ async def api_sql_rerun(body: SqlRerunBody) -> dict:
 
 
 @router.get("/threads/{thread_id}/runs")
-def thread_runs(thread_id: str) -> dict:
-    return {"runs": store.list_runs(thread_id)}
+def thread_runs(thread_id: str, client: str = Query("")) -> dict:
+    return {"runs": store.list_runs(thread_id, owner=client[:80])}
 
 
 @router.get("/threads/{thread_id}/export")
-def thread_export(thread_id: str):
+def thread_export(thread_id: str, client: str = Query("")):
     from fastapi.responses import PlainTextResponse
 
-    runs = store.list_runs(thread_id)
+    runs = store.list_runs(thread_id, owner=client[:80])
     lines = [f"# Dime analysis thread {thread_id}", ""]
     for r in reversed(runs):
         lines.append(f"## Q: {r['question']}")

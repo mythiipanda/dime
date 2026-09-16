@@ -345,7 +345,7 @@ def list_threads(owner: str = "") -> list[dict[str, str]]:
 
 def save_run(
     thread: str, question: str, answer: str,
-    tables: list[dict], suggestions: list[str],
+    tables: list[dict], suggestions: list[str], owner: str = "",
 ) -> None:
     import json as _json
 
@@ -355,22 +355,27 @@ def save_run(
             con.execute(
                 """CREATE TABLE IF NOT EXISTS runs(
                 thread VARCHAR, question VARCHAR, answer VARCHAR,
-                tables VARCHAR, suggestions VARCHAR, created_at VARCHAR)"""
+                tables VARCHAR, suggestions VARCHAR, created_at VARCHAR,
+                owner VARCHAR)"""
             )
+            cols = [r[1] for r in con.execute(
+                "PRAGMA table_info(runs)").fetchall()]
+            if "owner" not in cols:
+                con.execute("ALTER TABLE runs ADD COLUMN owner VARCHAR DEFAULT ''")
             from datetime import datetime, timezone
 
             con.execute(
-                "INSERT INTO runs VALUES (?,?,?,?,?,?)",
+                "INSERT INTO runs VALUES (?,?,?,?,?,?,?)",
                 [thread, question[:2000], answer[:8000],
                  _json.dumps(tables, default=str)[:60000],
                  _json.dumps(suggestions)[:2000],
-                 datetime.now(timezone.utc).isoformat()],
+                 datetime.now(timezone.utc).isoformat(), owner[:80]],
             )
     finally:
         con.close()
 
 
-def list_runs(thread: str) -> list[dict]:
+def list_runs(thread: str, owner: str = "") -> list[dict]:
     import json as _json
 
     con = connect()
@@ -378,10 +383,15 @@ def list_runs(thread: str) -> list[dict]:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if "runs" not in tables:
             return []
+        cols = {r[1] for r in con.execute(
+            "PRAGMA table_info(runs)").fetchall()}
+        if "owner" not in cols:
+            return []
         rows = con.execute(
             """SELECT question, answer, tables, suggestions, created_at
-            FROM runs WHERE thread = ? ORDER BY created_at DESC""",
-            [thread],
+            FROM runs WHERE thread = ? AND owner = ?
+            ORDER BY created_at DESC""",
+            [thread, owner[:80]],
         ).fetchall()
         out = []
         for r in rows:
