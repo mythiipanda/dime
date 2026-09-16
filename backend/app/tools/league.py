@@ -3908,7 +3908,8 @@ def get_team_trajectory(
                 "error": f"no historical standings through {through_season}"}
     return {
         "tool": "get_team_trajectory", "ok": True,
-        "rows": [{"season": season, "wins": int(wins),
+        "rows": [{"team": str(team), "team_id": str(team_id),
+                  "season": season, "wins": int(wins),
                   "losses": int(losses), "record": f"{int(wins)}-{int(losses)}",
                   "win_pct": round(float(win_pct), 3)}
                  for season, wins, losses, win_pct in rows],

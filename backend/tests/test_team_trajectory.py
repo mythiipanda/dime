@@ -30,4 +30,6 @@ def test_team_trajectory_returns_bounded_regular_season_records(monkeypatch):
     assert [row["record"] for row in result["rows"]] == [
         "56-26", "61-21", "64-18"
     ]
+    assert all(row["team"] == "Boston Celtics" for row in result["rows"])
+    assert all(row["team_id"] == "1610612738" for row in result["rows"])
     assert result["meta"]["coverage"].startswith("regular-season")
