@@ -466,7 +466,11 @@ def test_file_ledger_recovers_only_unterminated_partial_tail(tmp_path) -> None:
         handle.write('{"sequence":2')
     recovered = FileLedger(path, "run")
     assert len(recovered.entries) == 1
+    assert path.read_text().endswith("\n")
+    recovered.append(LedgerKind.TURN_END, turn_id="turn",
+                     data={"reason": "complete"})
+    assert len(FileLedger(path, "run").entries) == 2
 
-    path.write_text(path.read_text() + "\n")
+    path.write_text(path.read_text() + '{"sequence":3\n')
     with pytest.raises(Exception):
         FileLedger(path, "run")

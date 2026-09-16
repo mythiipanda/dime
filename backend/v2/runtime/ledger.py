@@ -476,6 +476,13 @@ class FileLedger:
                 LedgerEntry.model_validate_json(lines[-1])
             except ValueError:
                 lines.pop()
+                normalized = "\n".join(lines) + ("\n" if lines else "")
+            else:
+                normalized = text + "\n"
+            with self.path.open("w", encoding="utf-8") as handle:
+                handle.write(normalized)
+                handle.flush()
+                os.fsync(handle.fileno())
         return [
             LedgerEntry.model_validate_json(line)
             for line in lines
