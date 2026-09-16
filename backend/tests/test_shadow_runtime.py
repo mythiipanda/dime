@@ -91,3 +91,30 @@ def test_v2_shadow_failure_is_recorded_as_failed_comparison(monkeypatch, tmp_pat
     assert records[0].v1.status == "ok"
     assert records[0].v2.status == "failed"
     assert "failure" in records[0].differences
+
+
+def test_v2_shadow_cancellation_is_recorded_as_cancelled(monkeypatch, tmp_path):
+    from v2.runtime.shadow import ShadowStore
+
+    class CancelledRuntime:
+        async def run(self, *args, **kwargs):
+            raise asyncio.CancelledError()
+
+    monkeypatch.setattr(
+        "app.providers.resolve_model_id", lambda model: ("inception", "model"))
+    monkeypatch.setattr(
+        "v2.runtime.assembly.build_runtime", lambda **kwargs: (CancelledRuntime(), object()))
+    store_path = tmp_path / "shadow.jsonl"
+    monkeypatch.setenv("DIME_V2_SHADOW_STORE", str(store_path))
+
+    async def exercise():
+        loop = asyncio.get_running_loop()
+        primary = loop.create_future()
+        primary.set_result(routes._v1_shadow_outcome(
+            answer="v1 answer", capabilities=[], evidence_count=0,
+            had_error=False, duration_ms=1))
+        await routes._record_v2_shadow("record?", None, [], primary)
+
+    asyncio.run(exercise())
+    records = ShadowStore(store_path).read()
+    assert records[0].v2.status == "cancelled"

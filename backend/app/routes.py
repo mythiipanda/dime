@@ -79,6 +79,7 @@ async def _record_v2_shadow(
     question: str, model: str | None, history: list[dict[str, str]],
     v1_outcome,
 ) -> None:
+    import asyncio
     import uuid
 
     from .providers import resolve_model_id
@@ -123,9 +124,12 @@ async def _record_v2_shadow(
                       if answer else gaps)
         v2_outcome = outcome_from_v2(
             result, answer, int((time.monotonic() - started) * 1000))
-    except BaseException:
+    except BaseException as exc:
         v2_outcome = RunOutcome(
-            status="failed", duration_ms=int((time.monotonic() - started) * 1000))
+            status=("cancelled" if isinstance(exc, asyncio.CancelledError)
+                    else "failed"),
+            duration_ms=int((time.monotonic() - started) * 1000),
+        )
 
     primary = await v1_outcome
     comparison = compare_outcomes(question, primary, v2_outcome)
