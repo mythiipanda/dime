@@ -46,3 +46,26 @@ def test_replay_rejects_partial_or_mistyped_structure(tmp_path, payload, error):
     path.write_text(json.dumps(payload))
     with pytest.raises(ValueError, match=error):
         load_replay(path)
+
+
+@pytest.mark.parametrize("nested", [
+    {"evidence": [], "tools": [{"name": "ratings", "args": {"prompt": "hidden"}}]},
+    {"evidence": [{"transcript": "hidden"}], "tools": []},
+])
+def test_replay_rejects_nested_prompt_material(tmp_path, nested):
+    path = tmp_path / "nested.json"
+    path.write_text(json.dumps({
+        "version": 2, "scenario_id": "x", "revision": "r",
+        "turns": [nested],
+    }))
+    with pytest.raises(ValueError, match="forbidden prompt material"):
+        load_replay(path)
+
+
+def test_save_replay_rejects_prompt_material_in_tool_payload(tmp_path):
+    with pytest.raises(ValueError, match="forbidden prompt material"):
+        save_replay(
+            tmp_path / "bad.json", "x", "r",
+            [([], [{"name": "tool", "args": {"question": "hidden"}}])],
+        )
+    assert not (tmp_path / "bad.json").exists()

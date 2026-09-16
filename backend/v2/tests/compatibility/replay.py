@@ -11,6 +11,19 @@ _ALLOWED_TURN = {"evidence", "tools"}
 _FORBIDDEN = {"prompt", "question", "answer", "messages", "transcript"}
 
 
+def _reject_forbidden(value: Any) -> None:
+    if isinstance(value, dict):
+        forbidden = sorted(
+            str(key) for key in value if str(key).casefold() in _FORBIDDEN)
+        if forbidden:
+            raise ValueError(f"replay contains forbidden prompt material: {forbidden}")
+        for child in value.values():
+            _reject_forbidden(child)
+    elif isinstance(value, list):
+        for child in value:
+            _reject_forbidden(child)
+
+
 def save_replay(path: Path, scenario_id: str, revision: str,
                 turns: list[tuple[list[EvidenceEnvelope], list[dict[str, Any]]]]) -> None:
     payload = {
@@ -22,12 +35,14 @@ def save_replay(path: Path, scenario_id: str, revision: str,
             for evidence, tools in turns
         ],
     }
+    _reject_forbidden(payload)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
 
 
 def load_replay(path: Path) -> dict[str, Any]:
     payload = json.loads(path.read_text())
+    _reject_forbidden(payload)
     if not isinstance(payload, dict) or set(payload) != _ALLOWED_TOP_LEVEL:
         raise ValueError("replay contains prompt, missing, or unknown top-level fields")
     if payload["version"] != 2:
