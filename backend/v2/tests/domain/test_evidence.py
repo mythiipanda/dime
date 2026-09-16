@@ -130,6 +130,22 @@ def test_evidence_rows_reject_unbounded_shape() -> None:
         EvidenceEnvelope(**base, rows=nested)
 
 
+def test_evidence_rows_bound_text_keys_and_total_values() -> None:
+    from pydantic import ValidationError
+
+    base = {
+        "evidence_id": "ev", "capability": "test", "source": "fixture",
+        "observed_at": "2026-09-15T00:00:00Z",
+    }
+    with pytest.raises(ValidationError, match="row text"):
+        EvidenceEnvelope(**base, rows={"text": "x" * 200001})
+    with pytest.raises(ValidationError, match="row keys"):
+        EvidenceEnvelope(**base, rows={"x" * 1001: 1})
+    rows = {str(index): list(range(400)) for index in range(250)}
+    with pytest.raises(ValidationError, match="100000 values"):
+        EvidenceEnvelope(**base, rows=rows)
+
+
 def test_evidence_index_revalidates_copied_envelopes() -> None:
     from pydantic import ValidationError
     invalid = envelope("ev").model_copy(update={"source": " "})
