@@ -95,3 +95,13 @@ def test_build_runtime_wires_configured_checkpoint_store(tmp_path, monkeypatch) 
     store = runtime._executor._checkpoint_store
     assert store is not None
     assert store._directory == tmp_path / "checkpoints"
+
+
+def test_build_runtime_rejects_unsafe_run_identity(tmp_path) -> None:
+    from v2.runtime.assembly import build_runtime
+    from v2.runtime.policy import ExecutionPolicy
+
+    with pytest.raises(ValueError, match="run_id may contain only"):
+        build_runtime(provider="inception", model_name="mercury-test",
+                      run_id="../escape",
+                      policy=ExecutionPolicy.live(ledger_dir=tmp_path))

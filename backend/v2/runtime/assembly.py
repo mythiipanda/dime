@@ -88,6 +88,11 @@ def build_runtime(
     policy: ExecutionPolicy | None = None,
     ledger_dir: str | Path | None = None,
 ) -> tuple[Runtime, RunLedger | FileLedger]:
+    if not run_id or any(
+        char not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
+        for char in run_id
+    ):
+        raise ValueError("run_id may contain only letters, numbers, '-' and '_'")
     policy = policy or ExecutionPolicy.live(ledger_dir=ledger_dir)
     resolved_ledger_dir = policy.ledger_dir
     ledger = (FileLedger(Path(resolved_ledger_dir) / f"{run_id}.jsonl", run_id)
