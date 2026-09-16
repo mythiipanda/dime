@@ -288,3 +288,21 @@ def test_web_search_contract_rejects_ambiguous_domains_and_ranks():
         WebSearchResponse(provider="fixture", observed_at=datetime.now(UTC),
             query="Brown role", coverage="fixture", results=[
                 WebSearchResult(rank=2, url="https://example.com", title="A", snippet="")])
+
+
+def test_web_page_contract_rejects_blank_content_and_bad_hash():
+    from datetime import UTC, datetime
+    from pydantic import ValidationError
+    from v2.adapters.web import WebPage
+
+    base = {"url": "https://example.com", "title": "Story",
+            "retrieved_at": datetime.now(UTC), "markdown": "Body",
+            "content_hash": "a" * 64}
+    for changes, error in [
+        ({"markdown": " "}, "title and markdown"),
+        ({"title": " "}, "title and markdown"),
+        ({"publisher": " "}, "publisher"),
+        ({"content_hash": "hash"}, "lowercase sha256"),
+    ]:
+        with pytest.raises(ValidationError, match=error):
+            WebPage(**{**base, **changes})

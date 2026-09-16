@@ -92,6 +92,18 @@ class WebPage(BaseModel):
     markdown: str = Field(max_length=120_000)
     content_hash: str
 
+    @model_validator(mode="after")
+    def validate_page(self) -> "WebPage":
+        if not self.title.strip() or not self.markdown.strip():
+            raise ValueError("web page title and markdown must be non-empty")
+        if self.publisher is not None and not self.publisher.strip():
+            raise ValueError("web page publisher must be non-empty when present")
+        if len(self.content_hash) != 64 or any(
+            char not in "0123456789abcdef" for char in self.content_hash
+        ):
+            raise ValueError("web page content hash must be lowercase sha256")
+        return self
+
 
 class WebSearchProvider(Protocol):
     name: str
