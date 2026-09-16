@@ -1672,3 +1672,19 @@ def test_answer_text_drops_final_showcase_directives_and_deduplicates_age_gap():
     )
     assert _answer_text(result) == (
         "Age-related risk was not available in the retrieved player data.")
+
+
+def test_answer_text_deduplicates_result_outcome_variants():
+    from v2 import contracts
+    from v2.api.routes import _answer_text
+    from v2.runtime.models import ExecutionResult, RuntimeResult
+    result = RuntimeResult(
+        task=contracts.TaskSpec(goal="trajectory", mode="quick", deliverable="answer"),
+        execution=ExecutionResult(plan=contracts.Plan(nodes=[])),
+        draft=contracts.DraftReport(sections=[], claims=[], gaps=[
+            "2024-25 playoff results", "2024-25 playoff outcomes"]),
+        verification=contracts.VerificationReport(status="partial"),
+        gaps=[contracts.Gap(kind="missing_evidence", message="2024-25 playoff results"),
+              contracts.Gap(kind="missing_evidence", message="2024-25 playoff outcomes")],
+    )
+    assert _answer_text(result) == "2024-25 playoff results"

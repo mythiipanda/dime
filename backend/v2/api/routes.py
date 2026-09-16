@@ -144,6 +144,7 @@ def _answer_text(result) -> str:
         item.claim.text for item in result.verified_claims if item.claim.text.strip()))
     text = "\n\n".join(claims)
     gaps: list[str] = []
+    gap_keys: set[str] = set()
     generic_limit = False
     plan = getattr(result.execution, "plan", None)
     capability_names = {
@@ -187,8 +188,18 @@ def _answer_text(result) -> str:
         elif "returned no evidence values" in folded:
             generic_limit = True
             continue
-        if message and message not in gaps:
+        synonyms = {
+            "outcome": "results", "outcomes": "results", "result": "results",
+            "playoff": "playoffs",
+        }
+        key = " ".join(
+            synonyms.get(word.strip(".,:;"), word.strip(".,:;"))
+            for word in message.casefold().split()
+            if word.strip(".,:;") not in {"the", "a", "an"}
+        )
+        if message and key not in gap_keys:
             gaps.append(message)
+            gap_keys.add(key)
     if not gaps and generic_limit:
         gaps.append("Some supporting data was unavailable.")
     if gaps:

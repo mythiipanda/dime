@@ -405,14 +405,18 @@ class ModelSemanticVerifier(ModelStage):
             }
             for item in evidence.values()
         ]
-        report = await self._generate(
-            {
-                "task": task.model_dump(mode="json"),
-                "draft": draft.model_dump(mode="json"),
-                "evidence": compact,
-                "skills": self._skills.activate(task.skills),
-            }
-        )
+        payload = {
+            "task": task.model_dump(mode="json"),
+            "draft": draft.model_dump(mode="json"),
+            "evidence": compact,
+            "skills": self._skills.activate(task.skills),
+        }
+        try:
+            report = await self._generate(payload)
+        except RuntimeError as exc:
+            if str(exc) != "all structured-output providers failed":
+                raise
+            report = await self._generate(payload)
         expected = set(range(len(draft.claims)))
         observed = [item.claim_index for item in report.claim_results]
         if (len(observed) != len(set(observed))

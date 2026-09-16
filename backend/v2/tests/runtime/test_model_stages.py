@@ -690,3 +690,23 @@ async def test_intake_removes_skills_from_required_evidence_and_trade_intent_blo
     assert task.required_evidence == ["contracts"]
     assert task.open_questions == []
     assert task.assumptions == ["Celtics front office current trade intent for Brown"]
+
+@pytest.mark.anyio
+async def test_semantic_verifier_retries_one_failed_structured_generation() -> None:
+    from v2.contracts import Claim, DraftReport, TaskSpec, VerificationReport
+    class Flaky:
+        def __init__(self): self.calls = 0
+        async def generate(self, **call):
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("all structured-output providers failed")
+            return VerificationReport(status="pass", claim_results=[
+                {"claim_index": 0, "supported": True}])
+    model = Flaky()
+    verifier = ModelSemanticVerifier(model, provider="test", model_name="test")
+    report = await verifier.verify(
+        TaskSpec(goal="record", mode="quick", deliverable="answer"),
+        DraftReport(sections=["Record"], claims=[Claim(
+            text="Boston won.", kind="judgment")]), {})
+    assert report.claim_results[0].supported
+    assert model.calls == 2
