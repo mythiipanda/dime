@@ -15,6 +15,14 @@ _FORBIDDEN = {"prompt", "question", "answer", "messages", "transcript"}
 _ALLOWED_TOOL = {"call_id", "name", "args", "status", "error"}
 
 
+def _reject_symlinked_path(path: Path) -> None:
+    if path.is_symlink():
+        raise ValueError("replay file cannot be a symlink")
+    parent = path.parent
+    if any(component.is_symlink() for component in (parent, *parent.parents)):
+        raise ValueError("replay file parent cannot be a symlink")
+
+
 def _validate_tool(tool: Any) -> dict[str, Any]:
     if not isinstance(tool, dict) or set(tool) != _ALLOWED_TOOL:
         raise ValueError("replay tool attempt has missing or unknown fields")
@@ -62,8 +70,7 @@ def save_replay(path: Path, scenario_id: str, revision: str,
     _reject_forbidden(payload)
     for turn in payload["turns"]:
         turn["tools"] = [_validate_tool(tool) for tool in turn["tools"]]
-    if path.is_symlink():
-        raise ValueError("replay file cannot be a symlink")
+    _reject_symlinked_path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(dir=path.parent, prefix=".replay-")
     try:
@@ -84,8 +91,7 @@ def save_replay(path: Path, scenario_id: str, revision: str,
 
 
 def load_replay(path: Path) -> dict[str, Any]:
-    if path.is_symlink():
-        raise ValueError("replay file cannot be a symlink")
+    _reject_symlinked_path(path)
     payload = json.loads(path.read_text())
     _reject_forbidden(payload)
     if not isinstance(payload, dict) or set(payload) != _ALLOWED_TOP_LEVEL:

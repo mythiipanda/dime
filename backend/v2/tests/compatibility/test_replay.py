@@ -161,3 +161,22 @@ def test_replay_accepts_lineage_to_evidence_from_earlier_turn(tmp_path):
     save_replay(path, "x", "r", [([parent], []), ([child], [])])
     replay = load_replay(path)
     assert replay["turns"][1]["evidence"][0] == child
+
+
+def test_replay_io_rejects_symlinked_parent(tmp_path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    parent = tmp_path / "parent"
+    parent.symlink_to(outside, target_is_directory=True)
+    path = parent / "replay.json"
+    item = EvidenceEnvelope(
+        evidence_id="ev", capability="ratings", source="fixture",
+        observed_at=datetime.now(UTC), rows={"net": 8.2},
+    )
+    for operation in (
+        lambda: load_replay(path),
+        lambda: save_replay(path, "x", "r", [([item], [])]),
+    ):
+        with pytest.raises(ValueError, match="parent cannot be a symlink"):
+            operation()
+    assert list(outside.iterdir()) == []
