@@ -519,3 +519,14 @@ def test_checkpoint_rejects_unknown_persisted_fields() -> None:
     }
     with pytest.raises(ValidationError, match="saved_at"):
         ExecutionCheckpoint.model_validate(payload)
+
+
+def test_project_record_rejects_unknown_persisted_fields() -> None:
+    from pydantic import ValidationError
+    from v2.projects.models import Project
+
+    with pytest.raises(ValidationError, match="invented"):
+        Project.model_validate({
+            "id": "p", "goal": "answer", "run_id": "project-p",
+            "invented": True,
+        })

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ProjectStatus(StrEnum):
@@ -14,6 +14,8 @@ class ProjectStatus(StrEnum):
 
 
 class Project(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     id: str
     goal: str
     status: ProjectStatus = ProjectStatus.PENDING
