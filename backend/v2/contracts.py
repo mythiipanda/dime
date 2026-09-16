@@ -168,13 +168,19 @@ class Claim(BaseModel):
 
     @model_validator(mode="after")
     def validate_support(self) -> Claim:
+        if len(self.evidence_ids) != len(set(self.evidence_ids)):
+            raise ValueError("claim evidence_ids must not contain duplicates")
         if self.kind in (ClaimKind.OBSERVED, ClaimKind.DERIVED):
             if not self.evidence_ids:
                 raise ValueError("observed and derived claims require evidence")
         if self.kind == ClaimKind.DERIVED and not self.calculation_id:
             raise ValueError("derived claims require a calculation id")
+        if self.kind != ClaimKind.DERIVED and self.calculation_id is not None:
+            raise ValueError("only derived claims may name a calculation id")
         if self.kind == ClaimKind.PROJECTION and self.confidence is None:
             raise ValueError("projection claims require confidence")
+        if self.kind != ClaimKind.PROJECTION and self.confidence is not None:
+            raise ValueError("only projection claims may name confidence")
         return self
 
 

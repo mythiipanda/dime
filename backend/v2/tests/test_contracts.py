@@ -112,3 +112,16 @@ def test_unsupported_claim_result_requires_a_reason() -> None:
 
     with pytest.raises(ValidationError, match="requires a reason"):
         ClaimResult(claim_index=0, supported=False)
+
+
+@pytest.mark.parametrize("payload,error", [
+    ({"text": "Observed.", "kind": "observed", "evidence_ids": ["ev", "ev"]},
+     "must not contain duplicates"),
+    ({"text": "Observed.", "kind": "observed", "evidence_ids": ["ev"],
+      "calculation_id": "calc"}, "only derived"),
+    ({"text": "Judgment.", "kind": "judgment", "confidence": 0.8},
+     "only projection"),
+])
+def test_claim_kind_rejects_inapplicable_or_duplicate_support(payload, error) -> None:
+    with pytest.raises(ValidationError, match=error):
+        Claim.model_validate(payload)
