@@ -729,3 +729,33 @@ async def test_checkpoint_resume_rejects_duplicate_evidence_identity(tmp_path: P
         await PlanExecutor(
             {"fake": FakeCapability("fake", {})}, checkpoint_store=checkpoints,
         ).execute(_task(), _plan(), run_id="duplicate-evidence")
+
+
+@pytest.mark.parametrize("changes,error", [
+    ({"id": " "}, "identity and goal"),
+    ({"status": "complete"}, "requires result"),
+    ({"status": "failed"}, "requires error"),
+    ({"status": "running", "result": "early"}, "nonterminal"),
+    ({"status": "complete", "result": "done", "error": "bad"}, "no error"),
+])
+def test_project_record_status_contract(changes, error) -> None:
+    from datetime import UTC, datetime
+    from pydantic import ValidationError
+    from v2.projects.models import Project
+
+    values = {"id": "p", "goal": "answer", "run_id": "project-p",
+              "created_at": datetime.now(UTC), "updated_at": datetime.now(UTC)}
+    values.update(changes)
+    with pytest.raises(ValidationError, match=error):
+        Project(**values)
+
+
+def test_project_record_rejects_reverse_timestamps() -> None:
+    from datetime import UTC, datetime, timedelta
+    from pydantic import ValidationError
+    from v2.projects.models import Project
+
+    created = datetime.now(UTC)
+    with pytest.raises(ValidationError, match="cannot precede"):
+        Project(id="p", goal="answer", run_id="project-p", created_at=created,
+                updated_at=created - timedelta(seconds=1))
