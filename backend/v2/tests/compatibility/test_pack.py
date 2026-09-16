@@ -121,3 +121,19 @@ def test_turn_trace_rejects_duplicate_evidence_and_tool_identities():
              {"call_id": "same", "name": "b"})
     with pytest.raises(ValueError, match="call ids must be unique"):
         TurnTrace(1.0, 2, (), tools)
+
+
+@pytest.mark.parametrize("change,error", [
+    ({"version": 2}, "unsupported.*version"),
+    ({"notes": " "}, "notes must be non-empty"),
+    ({"banned_everywhere": ["same", "same"]}, "banned text"),
+    ({"invented": True}, "top-level fields"),
+])
+def test_pack_rejects_malformed_top_level_contract(tmp_path, change, error):
+    import json
+    payload = json.loads(PACK.read_text())
+    payload.update(change)
+    path = tmp_path / "pack.json"
+    path.write_text(json.dumps(payload))
+    with pytest.raises(ValueError, match=error):
+        load_pack(path)

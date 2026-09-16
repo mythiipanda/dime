@@ -97,13 +97,29 @@ class ScenarioResult:
 
 def load_pack(path: Path) -> dict[str, Any]:
     pack = json.loads(path.read_text())
-    scenarios = pack.get("scenarios", [])
+    if not isinstance(pack, dict) or set(pack) != {
+        "version", "notes", "banned_everywhere", "scenarios"
+    }:
+        raise ValueError("compatibility pack has missing or unknown top-level fields")
+    if pack["version"] != 3:
+        raise ValueError("unsupported compatibility pack version")
+    if not isinstance(pack["notes"], str) or not pack["notes"].strip():
+        raise ValueError("compatibility pack notes must be non-empty")
+    banned = pack["banned_everywhere"]
+    if (not isinstance(banned, list)
+            or any(not isinstance(item, str) or not item.strip() for item in banned)
+            or len(banned) != len(set(banned))):
+        raise ValueError("compatibility banned text must be unique non-empty strings")
+    scenarios = pack["scenarios"]
+    if not isinstance(scenarios, list):
+        raise ValueError("compatibility scenarios must be a list")
     if len(scenarios) != 35:
         raise ValueError(f"compatibility pack must contain 35 scenarios, got {len(scenarios)}")
     ids = [scenario["id"] for scenario in scenarios]
     if len(ids) != len(set(ids)):
         raise ValueError("compatibility scenario ids must be unique")
-    banned = pack.get("banned_everywhere", [])
+    if any(not isinstance(scenario, dict) for scenario in scenarios):
+        raise ValueError("compatibility scenarios must be objects")
     for scenario in scenarios:
         scenario["_banned_everywhere"] = banned
     return pack
