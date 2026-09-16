@@ -45,6 +45,7 @@ class PlanExecutor:
                 node.status = PlanStatus.PENDING
             if checkpoint_plan != plan:
                 raise ValueError("checkpoint plan does not match requested plan")
+            self._validate_checkpoint(checkpoint)
             nodes = {
                 node.id: node.model_copy(deep=True) for node in checkpoint.plan.nodes
             }
@@ -148,6 +149,39 @@ class PlanExecutor:
                 } for node in completed_plan.nodes)):
             self._checkpoint_store.delete(run_id)
         return result
+
+    def _validate_checkpoint(self, checkpoint: ExecutionCheckpoint) -> None:
+        nodes = {node.id: node for node in checkpoint.plan.nodes}
+        unknown = (
+            set(checkpoint.evidence_by_node)
+            | set(checkpoint.attempts)
+            | set(checkpoint.errors)
+        ) - nodes.keys()
+        if unknown:
+            raise ValueError(f"checkpoint references unknown nodes: {sorted(unknown)}")
+        for node_id, node in nodes.items():
+            evidence = checkpoint.evidence_by_node.get(node_id)
+            if (node.status == PlanStatus.COMPLETE) != (evidence is not None):
+                raise ValueError(
+                    f"checkpoint node {node_id!r} completion/evidence mismatch")
+            attempts = checkpoint.attempts.get(node_id, 0)
+            if attempts < 0 or attempts > node.max_attempts:
+                raise ValueError(
+                    f"checkpoint node {node_id!r} has invalid attempt count {attempts}")
+            if evidence is None:
+                continue
+            selected = self._selected_name(checkpoint.plan, node_id)
+            if evidence.capability != selected:
+                raise ValueError(
+                    f"checkpoint node {node_id!r} evidence capability mismatch")
+            expected_lineage = [
+                checkpoint.evidence_by_node[parent].evidence_id
+                for parent in node.depends_on
+                if parent in checkpoint.evidence_by_node
+            ]
+            if evidence.lineage != expected_lineage:
+                raise ValueError(
+                    f"checkpoint node {node_id!r} evidence lineage mismatch")
 
     def _preflight(self, task: TaskSpec, plan: Plan) -> None:
         selected: set[str] = set()

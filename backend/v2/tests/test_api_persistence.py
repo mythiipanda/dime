@@ -378,3 +378,39 @@ async def test_checkpoint_resume_rejects_changed_plan_with_same_node_ids(
         await PlanExecutor(
             {"fake": FakeCapability("fake", {})}, checkpoint_store=checkpoints,
         ).execute(_task(), changed, run_id="changed")
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("corruption", ["missing_evidence", "wrong_capability", "unknown_node"])
+async def test_checkpoint_resume_rejects_inconsistent_execution_state(
+    tmp_path: Path, corruption: str,
+) -> None:
+    from datetime import UTC, datetime
+    from v2.contracts import EvidenceEnvelope
+    from v2.runtime.checkpoints import ExecutionCheckpoint
+
+    checkpoints = FileCheckpointStore(tmp_path)
+    plan = _plan()
+    plan.nodes[0].status = PlanStatus.COMPLETE
+    evidence = EvidenceEnvelope(
+        evidence_id="evidence:one", capability="fake", source="fixture",
+        observed_at=datetime.now(UTC), rows={"node": "one"},
+    )
+    evidence_by_node = {"one": evidence}
+    attempts = {"one": 1}
+    if corruption == "missing_evidence":
+        evidence_by_node = {}
+    elif corruption == "wrong_capability":
+        evidence_by_node["one"] = evidence.model_copy(
+            update={"capability": "other"})
+    else:
+        attempts["invented"] = 1
+    checkpoints.save(ExecutionCheckpoint(
+        run_id="corrupt", task=_task(), plan=plan,
+        evidence_by_node=evidence_by_node, attempts=attempts,
+    ))
+
+    with pytest.raises(ValueError, match="checkpoint"):
+        await PlanExecutor(
+            {"fake": FakeCapability("fake", {})}, checkpoint_store=checkpoints,
+        ).execute(_task(), _plan(), run_id="corrupt")
