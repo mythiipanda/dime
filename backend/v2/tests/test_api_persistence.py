@@ -50,12 +50,12 @@ def _plan() -> Plan:
 
 def test_sse_adapter_maps_every_frozen_event() -> None:
     events = [
-        NodeUpdate(node="planner", status="running"),
-        ThoughtStream(node="planner", text="thinking"),
-        ToolCall(node="execute", name="standings", args={"season": "2025-26"}),
-        ToolResult(node="execute", name="standings", status="ok", rows=30, ms=8),
+        NodeUpdate(node="data_retrieval", status="running"),
+        ThoughtStream(node="data_retrieval", text="thinking"),
+        ToolCall(node="tools", name="standings", args={"season": "2025-26"}),
+        ToolResult(node="tools", name="standings", status="ok", rows=30, ms=8),
         Token(text="Boston"),
-        CustomData(node="execute", tables=[{"tool": "standings"}]),
+        CustomData(node="analytics", tables=[{"tool": "standings"}]),
         FinalAnswer(text="answer"),
         Suggestions(items=["compare teams"]),
         GraphEnd(),
@@ -891,6 +891,21 @@ def test_stream_event_contracts_reject_unknown_fields() -> None:
         })
 
 
+def test_stream_events_reject_internal_node_names() -> None:
+    from pydantic import ValidationError
+    from v2.api.events import CustomData, NodeUpdate, ToolCall, ToolResult
+
+    for build in (
+        lambda: NodeUpdate(node="verify", status="running"),
+        lambda: ToolCall(node="salary", name="contracts"),
+        lambda: ToolResult(
+            node="execute", name="contracts", status="fail", error="failed"),
+        lambda: CustomData(node="synthesize"),
+    ):
+        with pytest.raises(ValidationError):
+            build()
+
+
 def test_stream_tool_result_rejects_negative_row_count() -> None:
     from pydantic import ValidationError
     from v2.api.events import ToolResult
@@ -909,7 +924,7 @@ def test_stream_tool_result_rejects_negative_row_count() -> None:
 @pytest.mark.parametrize(
     "event",
     [
-        {"type": "node_update", "node": " ", "status": "complete"},
+        {"type": "node_update", "node": "unknown", "status": "complete"},
         {"type": "token", "text": " "},
         {"type": "final_answer", "text": " "},
         {"type": "suggestions", "items": [" "]},
@@ -919,7 +934,7 @@ def test_stream_event_string_fields_must_be_non_empty(event) -> None:
     from pydantic import ValidationError
     from v2.api.events import EVENT_ADAPTER
 
-    with pytest.raises(ValidationError, match="non-empty|empty values"):
+    with pytest.raises(ValidationError, match="non-empty|empty values|Input should be"):
         EVENT_ADAPTER.validate_python(event)
 
 
@@ -928,9 +943,9 @@ def test_stream_tool_result_status_matches_error() -> None:
     from v2.api.events import ToolResult
 
     with pytest.raises(ValidationError, match="cannot carry an error"):
-        ToolResult(node="execute", name="standings", status="ok", error="bad")
+        ToolResult(node="tools", name="standings", status="ok", error="bad")
     with pytest.raises(ValidationError, match="requires an error"):
-        ToolResult(node="execute", name="standings", status="fail")
+        ToolResult(node="tools", name="standings", status="fail")
 
 
 @pytest.mark.anyio

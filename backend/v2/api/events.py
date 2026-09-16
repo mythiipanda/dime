@@ -36,19 +36,19 @@ class EventType(StrEnum):
 
 class NodeUpdate(StrictEvent):
     type: Literal[EventType.NODE_UPDATE] = EventType.NODE_UPDATE
-    node: str = Field(max_length=256)
+    node: Literal["entry", "data_retrieval", "tools", "analytics", "presentation"]
     status: Literal["running", "complete", "failed"]
 
 
 class ThoughtStream(StrictEvent):
     type: Literal[EventType.THOUGHT_STREAM] = EventType.THOUGHT_STREAM
-    node: str = Field(max_length=256)
+    node: Literal["entry", "data_retrieval", "tools", "analytics", "presentation"]
     text: str = Field(max_length=200_000)
 
 
 class ToolCall(StrictEvent):
     type: Literal[EventType.TOOL_CALL] = EventType.TOOL_CALL
-    node: str = Field(max_length=256)
+    node: Literal["entry", "data_retrieval", "tools", "analytics", "presentation"]
     name: str = Field(max_length=256)
     args: dict[str, Any] = Field(default_factory=dict, max_length=64)
     label: str | None = Field(default=None, max_length=1000)
@@ -58,7 +58,7 @@ class ToolCall(StrictEvent):
 
 class ToolResult(StrictEvent):
     type: Literal[EventType.TOOL_RESULT] = EventType.TOOL_RESULT
-    node: str = Field(max_length=256)
+    node: Literal["entry", "data_retrieval", "tools", "analytics", "presentation"]
     name: str = Field(max_length=256)
     status: Literal["ok", "fail"]
     rows: StrictInt | None = Field(default=None, ge=0)
@@ -84,7 +84,7 @@ class Token(StrictEvent):
 
 class CustomData(StrictEvent):
     type: Literal[EventType.CUSTOM_DATA] = EventType.CUSTOM_DATA
-    node: str = Field(max_length=256)
+    node: Literal["entry", "data_retrieval", "tools", "analytics", "presentation"]
     tables: list[dict[str, Any]] = Field(default_factory=list, max_length=32)
     unverified_numbers: list[str] = Field(default_factory=list, max_length=128)
 
