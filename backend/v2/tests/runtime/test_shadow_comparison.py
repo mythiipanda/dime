@@ -104,6 +104,14 @@ def test_shadow_persisted_contracts_reject_unknown_fields() -> None:
         })
 
 
+def test_ok_shadow_outcome_rejects_incomplete_claim_support() -> None:
+    import pytest
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="every claim"):
+        outcome(status="ok", supported_claims=0, total_claims=1)
+
+
 def test_shadow_comparison_rejects_bad_identity_and_duplicate_differences() -> None:
     import pytest
     from pydantic import ValidationError
