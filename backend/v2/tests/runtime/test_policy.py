@@ -18,8 +18,15 @@ def test_execution_modes_share_one_policy_contract(tmp_path):
     assert not shadow.publish and not evaluation.publish and not replay.publish
 
 
-def test_shadow_never_publishes_and_replay_requires_fixture():
+def test_non_live_modes_never_publish_and_replay_requires_fixture():
     with pytest.raises(ValidationError, match="shadow mode cannot publish"):
         ExecutionPolicy(mode="shadow", publish=True)
     with pytest.raises(ValidationError, match="replay mode requires replay_path"):
         ExecutionPolicy(mode="replay", publish=False)
+
+
+def test_non_live_modes_cannot_be_constructed_as_publishable() -> None:
+    for mode in (ExecutionMode.SHADOW, ExecutionMode.EVAL, ExecutionMode.REPLAY):
+        kwargs = {"replay_path": "fixture.jsonl"} if mode == ExecutionMode.REPLAY else {}
+        with pytest.raises(ValidationError, match=f"{mode.value} mode cannot publish"):
+            ExecutionPolicy(mode=mode, publish=True, **kwargs)

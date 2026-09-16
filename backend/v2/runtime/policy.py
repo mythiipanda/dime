@@ -27,8 +27,8 @@ class ExecutionPolicy(BaseModel):
     def validate_mode(self) -> "ExecutionPolicy":
         if self.mode == ExecutionMode.REPLAY and self.replay_path is None:
             raise ValueError("replay mode requires replay_path")
-        if self.mode == ExecutionMode.SHADOW and self.publish:
-            raise ValueError("shadow mode cannot publish")
+        if self.mode != ExecutionMode.LIVE and self.publish:
+            raise ValueError(f"{self.mode.value} mode cannot publish")
         return self
 
     @classmethod
