@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 from collections.abc import Callable, Iterable
 
 from v2.contracts import (
@@ -231,10 +232,17 @@ class Runtime:
             pass
 
     async def _stage(self, turn_id: str, step_id: str, awaitable):
-        self._report_progress(step_id, "running")
         if self._ledger is not None:
-            self._ledger.append(
-                LedgerKind.STEP_START, turn_id=turn_id, step_id=step_id)
+            try:
+                self._ledger.append(
+                    LedgerKind.STEP_START, turn_id=turn_id, step_id=step_id)
+            except BaseException:
+                if inspect.iscoroutine(awaitable):
+                    awaitable.close()
+                elif isinstance(awaitable, asyncio.Future):
+                    awaitable.cancel()
+                raise
+        self._report_progress(step_id, "running")
         try:
             result = await awaitable
         except BaseException as exc:
@@ -249,11 +257,11 @@ class Runtime:
                 )
             self._report_progress(step_id, "failed")
             raise
-        self._report_progress(step_id, "complete")
         if self._ledger is not None:
             self._ledger.append(
                 LedgerKind.STEP_END, turn_id=turn_id, step_id=step_id,
                 data={"reason": TerminalReason.COMPLETE.value})
+        self._report_progress(step_id, "complete")
         return result
 
     def _close_failed(self, turn_id: str, exc: BaseException) -> None:

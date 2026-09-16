@@ -670,3 +670,63 @@ async def test_runtime_revalidates_component_results() -> None:
     instance._intake = InvalidIntake()
     with pytest.raises(ValueError, match="goal and deliverable"):
         await instance.run("question")
+
+@pytest.mark.anyio
+async def test_progress_never_projects_stage_before_start_is_recorded() -> None:
+    from v2.runtime import RunLedger
+
+    class StartRejectingLedger:
+        def __init__(self):
+            self.run_id = "run"
+            self.inner = RunLedger("run")
+
+        def append(self, kind, **kwargs):
+            if kind.value == "step/start":
+                raise OSError("ledger unavailable")
+            return self.inner.append(kind, **kwargs)
+
+    statuses = []
+    instance = Runtime(
+        intake=Intake(), planner=Planner(), executor=PlanExecutor({}),
+        synthesizer=Synthesizer(),
+        mechanical_verifier=SequenceVerifier(VerificationStatus.PASS),
+        semantic_verifier=SequenceVerifier(VerificationStatus.PASS),
+        ledger=StartRejectingLedger(),
+        progress=lambda step_id, status: statuses.append((step_id, status)),
+    )
+
+    with pytest.raises(OSError, match="ledger unavailable"):
+        await instance.run("answer", run_id="run")
+
+    assert statuses == []
+
+
+@pytest.mark.anyio
+async def test_progress_never_projects_completion_before_end_is_recorded() -> None:
+    from v2.runtime import RunLedger
+
+    class EndRejectingLedger:
+        def __init__(self):
+            self.run_id = "run"
+            self.inner = RunLedger("run")
+
+        def append(self, kind, **kwargs):
+            if kind.value == "step/end" and kwargs.get("data", {}).get("reason") == "complete":
+                raise OSError("ledger unavailable")
+            return self.inner.append(kind, **kwargs)
+
+    statuses = []
+    instance = Runtime(
+        intake=Intake(), planner=Planner(), executor=PlanExecutor({}),
+        synthesizer=Synthesizer(),
+        mechanical_verifier=SequenceVerifier(VerificationStatus.PASS),
+        semantic_verifier=SequenceVerifier(VerificationStatus.PASS),
+        ledger=EndRejectingLedger(),
+        progress=lambda step_id, status: statuses.append((step_id, status)),
+    )
+
+    with pytest.raises((OSError, ValueError)):
+        await instance.run("answer", run_id="run")
+
+    assert ("understand", "running") in statuses
+    assert ("understand", "complete") not in statuses
