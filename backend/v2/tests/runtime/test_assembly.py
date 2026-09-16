@@ -79,3 +79,19 @@ def test_capability_catalog_exposes_real_argument_schemas():
     assert catalog["web_search"]["arguments"]["properties"]["query"]
     assert catalog["web_fetch"]["arguments"]["properties"]["result_rank"]
     assert catalog["web_fetch"]["arguments"]["properties"]["search_evidence_id"]
+
+
+def test_build_runtime_wires_configured_checkpoint_store(tmp_path, monkeypatch) -> None:
+    from v2.runtime.assembly import build_runtime
+    from v2.runtime.policy import ExecutionPolicy
+
+    monkeypatch.setattr("v2.runtime.assembly.ProviderStructuredModel",
+                        lambda *args: object())
+    policy = ExecutionPolicy.live(ledger_dir=tmp_path / "ledgers").model_copy(
+        update={"checkpoint_dir": tmp_path / "checkpoints"})
+    runtime, _ = build_runtime(
+        provider="inception", model_name="mercury-test", run_id="run",
+        policy=policy)
+    store = runtime._executor._checkpoint_store
+    assert store is not None
+    assert store._directory == tmp_path / "checkpoints"

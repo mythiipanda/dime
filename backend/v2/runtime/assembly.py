@@ -19,6 +19,7 @@ from v2.adapters import (
 )
 from v2.contracts import DraftReport, VerificationReport
 from v2.runtime import FileLedger, PlanExecutor, RecordedCapability, RunLedger, Runtime
+from v2.runtime.checkpoints import FileCheckpointStore
 from v2.runtime.policy import ExecutionPolicy
 from v2.runtime.verifier import verify_mechanical
 from v2.adapters.web import WebFetchRequest, WebSearchRequest
@@ -112,7 +113,9 @@ def build_runtime(
                              capability_catalog=catalog, skill_library=skills),
         executor=PlanExecutor(
             capabilities, max_concurrency=policy.max_concurrency,
-            max_failures=policy.max_failures),
+            max_failures=policy.max_failures,
+            checkpoint_store=(FileCheckpointStore(policy.checkpoint_dir)
+                              if policy.checkpoint_dir is not None else None)),
         synthesizer=ModelSynthesizer(
             model, provider=provider, model_name=model_name, skill_library=skills),
         mechanical_verifier=MechanicalVerifier(),
