@@ -131,6 +131,13 @@ class ModelStage:
         budgets: Mapping[str, int | float] | None = None,
         skill_library: SkillLibrary | None = None,
     ) -> None:
+        for name, value in {
+            "provider": provider,
+            "model_name": model_name,
+            "planner_version": planner_version,
+        }.items():
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{name} must be non-empty")
         self._model = model
         self._provider = provider
         self._model_name = model_name

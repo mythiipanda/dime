@@ -355,3 +355,19 @@ async def test_semantic_verifier_receives_all_evidence_qualifiers() -> None:
     assert compact["metric_definitions"] == {"wins": "regular-season wins"}
     assert compact["warnings"] == ["partial season"]
     assert compact["lineage"] == ["parent"]
+
+
+@pytest.mark.parametrize(
+    "kwargs,error",
+    [
+        ({"provider": " ", "model_name": "model"}, "provider"),
+        ({"provider": "inception", "model_name": " "}, "model_name"),
+        ({"provider": "inception", "model_name": "model", "planner_version": " "},
+         "planner_version"),
+    ],
+)
+def test_model_stage_requires_request_identity(kwargs, error) -> None:
+    from v2.adapters.models import ModelSynthesizer
+
+    with pytest.raises(ValueError, match=error):
+        ModelSynthesizer(StubModel({}), **kwargs)
