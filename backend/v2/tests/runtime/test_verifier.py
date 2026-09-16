@@ -233,3 +233,14 @@ def test_task_season_scope_still_rejects_statistical_vintage_mismatch() -> None:
     result = verify_mechanical(task(), report(claim), [wrong])
     assert any("does not match task season" in reason
                for reason in result.claim_results[0].reasons)
+
+
+def test_empty_evidence_cannot_support_a_factual_claim() -> None:
+    empty = evidence(rows=[])
+    claim = Claim(
+        text="Boston remains the best team.", kind=ClaimKind.OBSERVED,
+        evidence_ids=["standings"],
+    )
+    result = verify_mechanical(task(), report(claim), [empty])
+    assert "factual claim cites evidence with no values" in (
+        result.claim_results[0].reasons)
