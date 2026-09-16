@@ -800,3 +800,20 @@ def test_evidence_identity_is_bound_to_non_fetch_source_vintage():
     assert first.as_of != later.as_of
     assert first.vintages != later.vintages
     assert first.evidence_id != later.evidence_id
+
+
+def test_adapter_marks_undeclared_source_identity():
+    payload = {
+        "ok": True,
+        "rows": {"player": "Jaylen Brown", "player_id": "1627759",
+                 "season": "2025-26", "tier": "star"},
+        "meta": {"season": "2025-26"},
+    }
+
+    envelope = call_capability(
+        "player_evaluation", {"player": "Jaylen Brown", "season": "2025-26"},
+        tools={"get_player_evaluation": FakeTool(payload)},
+    )
+
+    assert envelope.source == "v1:get_player_evaluation:unknown"
+    assert envelope.warnings == ["source identity not declared by tool"]

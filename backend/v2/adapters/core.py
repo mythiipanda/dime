@@ -120,6 +120,8 @@ def build_envelope(
     else:
         raise AdapterError(f"{spec.tool_name}: warnings must be text or an array")
     warnings = [*row_warnings, *warnings]
+    if not meta.get("source"):
+        warnings.append("source identity not declared by tool")
     singular_warning = meta.get("warning")
     if singular_warning:
         warnings.append(str(singular_warning))
