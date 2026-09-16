@@ -361,3 +361,26 @@ async def test_recovered_retry_error_does_not_downgrade_verified_result() -> Non
     }
     assert result.verification.status == VerificationStatus.PASS
     assert result.gaps == []
+
+
+@pytest.mark.anyio
+async def test_model_authored_gap_downgrades_clean_verification_to_partial() -> None:
+    class GapSynthesizer:
+        async def synthesize(self, task, evidence):
+            return DraftReport(
+                sections=["No sourced answer"], claims=[],
+                gaps=["The requested split was unavailable"],
+            )
+
+    instance = Runtime(
+        intake=Intake(), planner=Planner(),
+        executor=PlanExecutor({"fake": FakeCapability("fake", {"value": 42})}),
+        synthesizer=GapSynthesizer(),
+        mechanical_verifier=SequenceVerifier(VerificationStatus.PASS),
+        semantic_verifier=SequenceVerifier(VerificationStatus.PASS),
+    )
+    result = await instance.run("answer")
+    assert result.verification.status == VerificationStatus.PARTIAL
+    assert [gap.message for gap in result.gaps] == [
+        "The requested split was unavailable",
+    ]

@@ -126,7 +126,7 @@ class Runtime:
             node_id: errors for node_id, errors in execution.errors.items()
             if node_id in failed_nodes
         }
-        if ((empty_evidence_gaps or unresolved_errors)
+        if ((draft.gaps or empty_evidence_gaps or unresolved_errors)
                 and verification.status == VerificationStatus.PASS):
             verification = verification.model_copy(
                 update={"status": VerificationStatus.PARTIAL}
