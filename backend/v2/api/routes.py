@@ -249,12 +249,7 @@ async def quick_answer_stream(body: QuickAnswerBody):
                 tables=[evidence_table(item)
                         for item in result.execution.evidence]))
             if policy.publish:
-                yield encode_event(FinalAnswer(
-                    text=_answer_text(result),
-                    carry={"run_id": run_id,
-                           "verification": result.verification.status.value,
-                           "verified_claims": len(result.verified_claims),
-                           "gaps": [gap.model_dump(mode="json") for gap in result.gaps]}))
+                yield encode_event(FinalAnswer(text=_answer_text(result)))
             yield encode_event(GraphEnd())
         finally:
             if not task.done():

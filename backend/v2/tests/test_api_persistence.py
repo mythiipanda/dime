@@ -379,6 +379,42 @@ def test_failed_stream_tool_result_keeps_its_call_identity(monkeypatch):
     assert 'private plan text' not in response.text
 
 
+def test_v2_final_answer_does_not_overload_frontend_carry(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from v2.api import routes
+    from v2.runtime.ledger import RunLedger
+
+    monkeypatch.setenv("DIME_RUNTIME_V2", "on")
+    monkeypatch.setattr(
+        "app.providers.resolve_model_id", lambda value: ("openrouter", "fixture"))
+    from types import SimpleNamespace
+    result = SimpleNamespace(
+        verified_claims=[SimpleNamespace(
+            claim=SimpleNamespace(text="Boston won 61 games."))],
+        gaps=[],
+        execution=SimpleNamespace(evidence=[]),
+    )
+
+    class Runtime:
+        async def run(self, request, *, run_id=None, context=()):
+            return result
+
+    monkeypatch.setattr(
+        "v2.runtime.assembly.build_runtime",
+        lambda **kwargs: (Runtime(), RunLedger(kwargs["run_id"])),
+    )
+    app = FastAPI()
+    app.include_router(routes.router, prefix="/api")
+    response = TestClient(app).post(
+        "/api/v2/chat/stream", json={"q": "record?"})
+
+    final_chunk = response.text.split("event: final_answer", 1)[1].split("\n\n", 1)[0]
+    assert '"carry"' not in final_chunk
+    assert '"run_id"' not in final_chunk
+    assert '"gaps"' not in final_chunk
+
+
 def test_answer_text_publishes_only_adjudicated_model_prose():
     from datetime import UTC, datetime
     from v2 import contracts
