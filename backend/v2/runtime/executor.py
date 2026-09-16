@@ -171,6 +171,12 @@ class PlanExecutor:
             if (node.status == PlanStatus.COMPLETE) != (evidence is not None):
                 raise ValueError(
                     f"checkpoint node {node_id!r} completion/evidence mismatch")
+            if node.status == PlanStatus.FAILED and not checkpoint.errors.get(node_id):
+                raise ValueError(
+                    f"checkpoint node {node_id!r} failed without errors")
+            if node.status == PlanStatus.SKIPPED and node_id in checkpoint.errors:
+                raise ValueError(
+                    f"checkpoint node {node_id!r} skipped but carries errors")
             attempts = checkpoint.attempts.get(node_id, 0)
             if attempts < 0 or attempts > node.max_attempts:
                 raise ValueError(

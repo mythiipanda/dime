@@ -557,3 +557,28 @@ async def test_checkpoint_run_identity_must_match_requested_run() -> None:
             {"fake": FakeCapability("fake", {"value": 1})},
             checkpoint_store=WrongRunStore(),
         ).execute(task, plan, run_id="requested-run")
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "status,errors,message",
+    [
+        (PlanStatus.FAILED, {}, "failed without errors"),
+        (PlanStatus.SKIPPED, {"one": ["contradiction"]}, "skipped but carries errors"),
+    ],
+)
+async def test_checkpoint_status_and_errors_must_agree(
+    tmp_path: Path, status, errors, message,
+) -> None:
+    from v2.runtime.checkpoints import ExecutionCheckpoint
+
+    checkpoints = FileCheckpointStore(tmp_path)
+    plan = _plan()
+    plan.nodes[0].status = status
+    checkpoints.save(ExecutionCheckpoint(
+        run_id="status-errors", task=_task(), plan=plan, errors=errors,
+    ))
+    with pytest.raises(ValueError, match=message):
+        await PlanExecutor(
+            {"fake": FakeCapability("fake", {})}, checkpoint_store=checkpoints,
+        ).execute(_task(), _plan(), run_id="status-errors")
