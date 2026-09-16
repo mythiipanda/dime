@@ -42,6 +42,8 @@ class ExecutionCheckpoint(BaseModel):
             raise ValueError("checkpoint nodes cannot carry more than 5 errors")
         if any(not error.strip() for errors in self.errors.values() for error in errors):
             raise ValueError("checkpoint errors must be non-empty")
+        if any(len(error) > 4000 for errors in self.errors.values() for error in errors):
+            raise ValueError("checkpoint errors cannot exceed 4000 characters")
         return self
 
 

@@ -681,6 +681,17 @@ async def test_checkpoint_rejects_duplicate_error_messages(tmp_path: Path) -> No
         ).execute(_task(), _plan(), run_id="duplicate-errors")
 
 
+def test_checkpoint_contract_rejects_oversized_errors() -> None:
+    from pydantic import ValidationError
+    from v2.runtime.checkpoints import ExecutionCheckpoint
+
+    with pytest.raises(ValidationError, match="4000"):
+        ExecutionCheckpoint(
+            run_id="run", task=_task(), plan=_plan(),
+            errors={"one": ["x" * 4001]},
+        )
+
+
 @pytest.mark.anyio
 async def test_checkpoint_rejects_pending_node_without_attempts_remaining(
     tmp_path: Path,
