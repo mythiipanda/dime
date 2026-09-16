@@ -56,3 +56,18 @@ def test_skill_hashes_rejects_malformed_activated_context():
             skill_hashes([changed])
     with pytest.raises(ValueError, match="names must be unique"):
         skill_hashes([valid, valid])
+
+
+def test_activation_rejects_symlinked_resources(tmp_path: Path):
+    package = tmp_path / "example"
+    references = package / "references"
+    references.mkdir(parents=True)
+    (package / "SKILL.md").write_text(
+        "---\nname: example\ndescription: Example skill\n---\nInstructions",
+        encoding="utf-8",
+    )
+    outside = tmp_path / "private.txt"
+    outside.write_text("private", encoding="utf-8")
+    (references / "private.txt").symlink_to(outside)
+    with pytest.raises(ValueError, match="cannot be symlinks"):
+        SkillLibrary(tmp_path).activate(["example"])

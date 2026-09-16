@@ -22,13 +22,17 @@ class Skill:
     content_hash: str
 
     def activated_context(self) -> dict[str, Any]:
-        resources = sorted(
-            str(path.relative_to(self.directory))
-            for folder in ("references", "scripts", "assets")
-            if (root := self.directory / folder).is_dir()
-            for path in root.rglob("*")
-            if path.is_file()
-        )
+        resources: list[str] = []
+        for folder in ("references", "scripts", "assets"):
+            root = self.directory / folder
+            if not root.is_dir():
+                continue
+            for path in root.rglob("*"):
+                if path.is_symlink():
+                    raise ValueError(f"{path}: skill resources cannot be symlinks")
+                if path.is_file():
+                    resources.append(str(path.relative_to(self.directory)))
+        resources.sort()
         return {
             "name": self.name,
             "instructions": self.body,
