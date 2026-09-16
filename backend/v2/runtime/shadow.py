@@ -161,6 +161,35 @@ class ShadowStore:
         if any(component.is_symlink() for component in (parent, *parent.parents)):
             raise ValueError("shadow store parent cannot be a symlink")
 
+    def _lock_path(self) -> Path:
+        return self.path.with_name(f".{self.path.name}.lock")
+
+    def _open_lock(self):
+        lock_path = self._lock_path()
+        if lock_path.is_symlink():
+            raise ValueError("shadow store lock file cannot be a symlink")
+        flags = os.O_RDWR | os.O_CREAT
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        return os.fdopen(os.open(lock_path, flags, 0o600), "a", encoding="utf-8")
+
+    def _repair_incomplete_tail(self) -> None:
+        if not self.path.exists():
+            return
+        text = self.path.read_text()
+        if not text or text.endswith("\n"):
+            return
+        lines = text.splitlines()
+        try:
+            ShadowComparison.model_validate_json(lines[-1])
+        except ValueError:
+            lines.pop()
+        normalized = "\n".join(lines) + ("\n" if lines else "")
+        with self.path.open("w", encoding="utf-8") as handle:
+            handle.write(normalized)
+            handle.flush()
+            os.fsync(handle.fileno())
+
     def append(self, comparison: ShadowComparison) -> None:
         comparison = ShadowComparison.model_validate(comparison.model_dump())
         with self._lock:
@@ -168,17 +197,11 @@ class ShadowStore:
             parent_was_missing = not self.path.parent.exists()
             self.path.parent.mkdir(parents=True, exist_ok=True)
             file_was_missing = not self.path.exists()
-            lock_path = self.path.with_name(f".{self.path.name}.lock")
-            if lock_path.is_symlink():
-                raise ValueError("shadow store lock file cannot be a symlink")
-            flags = os.O_RDWR | os.O_CREAT
-            if hasattr(os, "O_NOFOLLOW"):
-                flags |= os.O_NOFOLLOW
-            lock_fd = os.open(lock_path, flags, 0o600)
-            with os.fdopen(lock_fd, "a", encoding="utf-8") as lock_handle:
+            with self._open_lock() as lock_handle:
                 fcntl.flock(lock_handle, fcntl.LOCK_EX)
                 try:
                     self._reject_symlinked_path()
+                    self._repair_incomplete_tail()
                     with self.path.open("a", encoding="utf-8") as handle:
                         handle.write(comparison.model_dump_json() + "\n")
                         handle.flush()
@@ -197,7 +220,14 @@ class ShadowStore:
             self._reject_symlinked_path()
             if not self.path.exists():
                 return []
-            lines = self.path.read_text().splitlines()
+            with self._open_lock() as lock_handle:
+                fcntl.flock(lock_handle, fcntl.LOCK_EX)
+                try:
+                    self._reject_symlinked_path()
+                    self._repair_incomplete_tail()
+                    lines = self.path.read_text().splitlines()
+                finally:
+                    fcntl.flock(lock_handle, fcntl.LOCK_UN)
             if any(not line.strip() for line in lines):
                 raise ValueError("shadow store cannot contain blank records")
             return [ShadowComparison.model_validate_json(line) for line in lines]

@@ -430,3 +430,27 @@ def test_shadow_store_serializes_independent_processes(tmp_path):
 
     assert sorted(item.comparison_id for item in ShadowStore(path).read()) == sorted(
         item.comparison_id for item in comparisons)
+
+
+def test_shadow_store_repairs_truncated_final_record(tmp_path):
+    path = tmp_path / "shadow.jsonl"
+    store = ShadowStore(path)
+    first = compare_outcomes("first", outcome(), outcome())
+    second = compare_outcomes("second", outcome(), outcome())
+    store.append(first)
+    with path.open("a") as handle:
+        handle.write('{"comparison_id":"truncated')
+
+    assert store.read() == [first]
+    assert path.read_text().endswith("\n")
+    store.append(second)
+    assert store.read() == [first, second]
+
+
+def test_shadow_store_normalizes_complete_record_without_newline(tmp_path):
+    path = tmp_path / "shadow.jsonl"
+    comparison = compare_outcomes("request", outcome(), outcome())
+    path.write_text(comparison.model_dump_json())
+
+    assert ShadowStore(path).read() == [comparison]
+    assert path.read_text().endswith("\n")
