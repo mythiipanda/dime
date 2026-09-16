@@ -8,7 +8,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Any, Mapping
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class DifferenceKind(StrEnum):
@@ -19,6 +19,8 @@ class DifferenceKind(StrEnum):
 
 
 class RunOutcome(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     status: str
     answer: str = ""
     capabilities: list[str] = Field(default_factory=list)
@@ -29,6 +31,8 @@ class RunOutcome(BaseModel):
 
 
 class ShadowComparison(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     comparison_id: str
     request_hash: str
     v1: RunOutcome
@@ -107,6 +111,8 @@ def _hash(value: Any) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
 
 class ShadowGatePolicy(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     minimum_runs: int = Field(default=100, ge=1)
     maximum_failure_rate: float = Field(default=0.01, ge=0, le=1)
     maximum_grounding_drift_rate: float = Field(default=0.01, ge=0, le=1)
@@ -115,6 +121,8 @@ class ShadowGatePolicy(BaseModel):
 
 
 class ShadowGateReport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     total_runs: int
     failure_rate: float
     grounding_drift_rate: float

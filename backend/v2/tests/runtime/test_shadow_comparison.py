@@ -71,3 +71,28 @@ def test_shadow_gate_reports_every_failed_threshold():
     assert not report.ready
     assert len(report.blockers) == 5
     assert report.blockers[0] == "need 1 more shadow runs"
+
+
+def test_shadow_persisted_contracts_reject_unknown_fields() -> None:
+    import pytest
+    from pydantic import ValidationError
+    from v2.runtime.shadow import ShadowComparison, ShadowGatePolicy, ShadowGateReport
+
+    with pytest.raises(ValidationError, match="invented"):
+        RunOutcome.model_validate({
+            "status": "ok", "invented": True,
+        })
+    with pytest.raises(ValidationError, match="invented"):
+        ShadowComparison.model_validate({
+            "comparison_id": "id", "request_hash": "hash",
+            "v1": {"status": "ok"}, "v2": {"status": "ok"},
+            "invented": True,
+        })
+    with pytest.raises(ValidationError, match="invented"):
+        ShadowGatePolicy.model_validate({"invented": True})
+    with pytest.raises(ValidationError, match="invented"):
+        ShadowGateReport.model_validate({
+            "total_runs": 0, "failure_rate": 0, "grounding_drift_rate": 0,
+            "route_drift_rate": 0, "answer_drift_rate": 0, "ready": False,
+            "invented": True,
+        })
