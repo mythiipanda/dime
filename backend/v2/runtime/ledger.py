@@ -114,7 +114,7 @@ class RequestEnvelope(BaseModel):
 class LedgerEntry(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    sequence: int = Field(ge=1)
+    sequence: StrictInt = Field(ge=1)
     run_id: str
     kind: LedgerKind
     recorded_at: datetime

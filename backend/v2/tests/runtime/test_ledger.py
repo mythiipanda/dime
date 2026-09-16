@@ -629,3 +629,15 @@ def test_file_ledger_rejects_symlinked_parent(tmp_path) -> None:
     parent.symlink_to(outside, target_is_directory=True)
     with pytest.raises(ValueError, match="parent cannot be a symlink"):
         FileLedger(parent / "run.jsonl", "run")
+
+
+@pytest.mark.parametrize("value", [True, "1", 1.0])
+def test_ledger_sequence_is_a_strict_integer(value) -> None:
+    from datetime import UTC, datetime
+    from pydantic import ValidationError
+    from v2.runtime.ledger import LedgerEntry
+
+    with pytest.raises(ValidationError):
+        LedgerEntry(sequence=value, run_id="run", kind="turn/start",
+                    recorded_at=datetime.now(UTC), turn_id="turn",
+                    data={"request": "question"})
