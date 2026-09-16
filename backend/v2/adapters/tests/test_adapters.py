@@ -276,6 +276,50 @@ def test_ambiguity_note_and_empty_rows_become_warnings():
     assert "empty result set" in env.warnings
 
 
+def test_adapter_preserves_stale_fallback_and_source_limitations():
+    stale = {
+        **STANDINGS_PAYLOAD,
+        "meta": {**STANDINGS_PAYLOAD["meta"], "stale": True,
+                 "live_error": "upstream timed out"},
+    }
+    envelope = call_capability(
+        "standings", {"season": "2025-26"},
+        tools={"get_standings": FakeTool(stale)},
+    )
+    assert envelope.warnings == [
+        "stale cached fallback: upstream timed out",
+    ]
+
+    limited = {
+        **STANDINGS_PAYLOAD,
+        "meta": {**STANDINGS_PAYLOAD["meta"],
+                 "error": "snapshot coverage is incomplete"},
+    }
+    envelope = call_capability(
+        "standings", {"season": "2025-26"},
+        tools={"get_standings": FakeTool(limited)},
+    )
+    assert envelope.warnings == [
+        "source limitation: snapshot coverage is incomplete",
+    ]
+
+
+def test_adapter_rejects_malformed_fallback_metadata():
+    for changes, error in [
+        ({"stale": "yes"}, "stale marker must be boolean"),
+        ({"error": []}, "source error must be non-empty text"),
+    ]:
+        payload = {
+            **STANDINGS_PAYLOAD,
+            "meta": {**STANDINGS_PAYLOAD["meta"], **changes},
+        }
+        with pytest.raises(AdapterError, match=error):
+            call_capability(
+                "standings", {"season": "2025-26"},
+                tools={"get_standings": FakeTool(payload)},
+            )
+
+
 def test_caller_entities_are_preserved():
     entity = EntityRef(id="1610612738", type="team",
                        display_name="Boston Celtics")

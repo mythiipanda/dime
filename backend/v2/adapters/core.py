@@ -112,6 +112,17 @@ def build_envelope(
     singular_warning = meta.get("warning")
     if singular_warning:
         warnings.append(str(singular_warning))
+    stale = meta.get("stale")
+    if stale is not None and not isinstance(stale, bool):
+        raise AdapterError(f"{spec.tool_name}: stale marker must be boolean")
+    source_error = meta.get("live_error") or meta.get("error")
+    if source_error is not None:
+        if not isinstance(source_error, str) or not source_error.strip():
+            raise AdapterError(f"{spec.tool_name}: source error must be non-empty text")
+        label = "stale cached fallback" if stale else "source limitation"
+        warnings.append(f"{label}: {source_error[:4000]}")
+    elif stale:
+        warnings.append("stale cached fallback")
     if result.get("ambiguity_note"):
         warnings.append(result["ambiguity_note"])
     if isinstance(rows, list) and not rows:
