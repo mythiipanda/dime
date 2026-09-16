@@ -25,13 +25,21 @@ class Skill:
         resources: list[str] = []
         for folder in ("references", "scripts", "assets"):
             root = self.directory / folder
+            if root.is_symlink():
+                raise ValueError(f"{root}: skill resources cannot be symlinks")
             if not root.is_dir():
                 continue
             for path in root.rglob("*"):
                 if path.is_symlink():
                     raise ValueError(f"{path}: skill resources cannot be symlinks")
-                if path.is_file():
-                    resources.append(str(path.relative_to(self.directory)))
+                if not path.is_file():
+                    continue
+                try:
+                    path.resolve().relative_to(self.directory.resolve())
+                except ValueError as exc:
+                    raise ValueError(
+                        f"{path}: skill resource escapes its package") from exc
+                resources.append(str(path.relative_to(self.directory)))
         resources.sort()
         digest = hashlib.sha256()
         digest.update((self.directory / "SKILL.md").read_bytes())
