@@ -759,3 +759,17 @@ def test_project_record_rejects_reverse_timestamps() -> None:
     with pytest.raises(ValidationError, match="cannot precede"):
         Project(id="p", goal="answer", run_id="project-p", created_at=created,
                 updated_at=created - timedelta(seconds=1))
+
+
+@pytest.mark.parametrize("schema,payload,error", [
+    ("project", {"goal": " "}, "goal"),
+    ("quick", {"q": " "}, "question"),
+    ("quick", {"q": "record", "model": " "}, "model"),
+])
+def test_api_request_contracts_reject_blank_fields(schema, payload, error) -> None:
+    from pydantic import ValidationError
+    from v2.api.routes import CreateProjectBody, QuickAnswerBody
+
+    model = CreateProjectBody if schema == "project" else QuickAnswerBody
+    with pytest.raises(ValidationError, match=error):
+        model.model_validate(payload)

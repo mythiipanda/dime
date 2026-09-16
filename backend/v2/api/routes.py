@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from v2.projects.service import ProjectStore
 
@@ -66,6 +66,13 @@ class CreateProjectBody(BaseModel):
 
     goal: str = Field(min_length=1, max_length=2000)
 
+    @field_validator("goal")
+    @classmethod
+    def reject_blank_goal(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("project goal must be non-empty")
+        return value
+
 
 @router.post("/projects", status_code=201)
 def create_project(body: CreateProjectBody) -> dict:
@@ -96,6 +103,20 @@ class QuickAnswerBody(BaseModel):
     q: str = Field(min_length=1, max_length=2000)
     model: str | None = None
     history: list[ConversationTurn] = Field(default_factory=list, max_length=8)
+
+    @field_validator("q")
+    @classmethod
+    def reject_blank_question(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("question must be non-empty")
+        return value
+
+    @field_validator("model")
+    @classmethod
+    def reject_blank_model(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("model must be non-empty when present")
+        return value
 
 
 def _answer_text(result) -> str:
