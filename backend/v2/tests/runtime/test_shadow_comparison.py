@@ -407,3 +407,26 @@ def test_compare_outcomes_revalidates_copied_inputs() -> None:
     invalid = outcome().model_copy(update={"supported_claims": -1})
     with pytest.raises(ValidationError, match="non-negative"):
         compare_outcomes("request", invalid, outcome())
+
+
+def test_shadow_store_serializes_independent_processes(tmp_path):
+    import multiprocessing
+
+    path = tmp_path / "shadow.jsonl"
+    comparisons = [compare_outcomes(f"process {index}", outcome(), outcome())
+                   for index in range(8)]
+
+    def append(item):
+        ShadowStore(path).append(item)
+
+    context = multiprocessing.get_context("fork")
+    processes = [context.Process(target=append, args=(item,))
+                 for item in comparisons]
+    for process in processes:
+        process.start()
+    for process in processes:
+        process.join(timeout=10)
+        assert process.exitcode == 0
+
+    assert sorted(item.comparison_id for item in ShadowStore(path).read()) == sorted(
+        item.comparison_id for item in comparisons)

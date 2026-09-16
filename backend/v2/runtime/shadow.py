@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import math
@@ -167,10 +168,23 @@ class ShadowStore:
             parent_was_missing = not self.path.parent.exists()
             self.path.parent.mkdir(parents=True, exist_ok=True)
             file_was_missing = not self.path.exists()
-            with self.path.open("a", encoding="utf-8") as handle:
-                handle.write(comparison.model_dump_json() + "\n")
-                handle.flush()
-                os.fsync(handle.fileno())
+            lock_path = self.path.with_name(f".{self.path.name}.lock")
+            if lock_path.is_symlink():
+                raise ValueError("shadow store lock file cannot be a symlink")
+            flags = os.O_RDWR | os.O_CREAT
+            if hasattr(os, "O_NOFOLLOW"):
+                flags |= os.O_NOFOLLOW
+            lock_fd = os.open(lock_path, flags, 0o600)
+            with os.fdopen(lock_fd, "a", encoding="utf-8") as lock_handle:
+                fcntl.flock(lock_handle, fcntl.LOCK_EX)
+                try:
+                    self._reject_symlinked_path()
+                    with self.path.open("a", encoding="utf-8") as handle:
+                        handle.write(comparison.model_dump_json() + "\n")
+                        handle.flush()
+                        os.fsync(handle.fileno())
+                finally:
+                    fcntl.flock(lock_handle, fcntl.LOCK_UN)
             if parent_was_missing or file_was_missing:
                 directory_fd = os.open(self.path.parent, os.O_RDONLY)
                 try:
