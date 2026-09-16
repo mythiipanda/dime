@@ -23,6 +23,7 @@ from v2.runtime.checkpoints import FileCheckpointStore
 from v2.runtime.policy import ExecutionMode, ExecutionPolicy
 from v2.runtime.verifier import verify_mechanical
 from v2.adapters.web import WebFetchRequest, WebSearchRequest
+from v2.adapters.capabilities import CAPABILITY_DESCRIPTIONS
 from v2.skills import SkillLibrary
 
 
@@ -50,6 +51,19 @@ class EvidenceBoundRepair:
         return draft.model_copy(update={"claims": claims, "gaps": gaps})
 
 
+
+def _structural_schema(value):
+    if isinstance(value, dict):
+        return {
+            key: _structural_schema(item)
+            for key, item in value.items()
+            if key not in {"description", "title"}
+        }
+    if isinstance(value, list):
+        return [_structural_schema(item) for item in value]
+    return value
+
+
 def capability_catalog() -> dict[str, dict]:
     """Provider-neutral descriptions plus accepted argument schemas."""
     from app.tools import v1_tools
@@ -62,18 +76,17 @@ def capability_catalog() -> dict[str, dict]:
                        if tool is not None and tool.args_schema is not None
                        else {"type": "object", "properties": {}})
         catalog[name] = {
-            "description": ((tool.description or spec.tool_name.replace("_", " "))
-                            if tool is not None else spec.tool_name.replace("_", " ")),
-            "arguments": args_schema,
+            "description": CAPABILITY_DESCRIPTIONS[name],
+            "arguments": _structural_schema(args_schema),
         }
     catalog.update({
         "web_search": {
             "description": "Discover current public sources; snippets are discovery only.",
-            "arguments": WebSearchRequest.model_json_schema(),
+            "arguments": _structural_schema(WebSearchRequest.model_json_schema()),
         },
         "web_fetch": {
             "description": "Extract one selected result from exactly one web_search dependency.",
-            "arguments": WebFetchRequest.model_json_schema(),
+            "arguments": _structural_schema(WebFetchRequest.model_json_schema()),
         },
     })
     return catalog

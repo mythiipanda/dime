@@ -182,5 +182,34 @@ _LIST = [
 
 CAPABILITIES: dict[str, Capability] = {c.name: c for c in _LIST}
 
+CAPABILITY_DESCRIPTIONS: dict[str, str] = {
+    "entity_resolution": "Resolve a player or team name to canonical identity.",
+    "standings": "League standings for one season.",
+    "team_trajectory": "Bounded multi-season regular-season records for one team.",
+    "team_totals": "Team leaderboard for a counting stat, with totals and per-game averages.",
+    "qualified_leaders": "Qualified player leaderboard for one stat category.",
+    "team_ratings": "Team offensive, defensive, and net ratings plus pace and ranks.",
+    "roster": "Team roster and game-log context for one season.",
+    "player_report": "Player season line, advanced profile, shots, and clutch context.",
+    "player_evaluation": "Player tier, advanced profile, modeled value, and comparisons.",
+    "player_comparison": "Side-by-side comparison of two players.",
+    "metric_adjudication": "Cross-metric impact comparison for two players.",
+    "metric_coverage": "Report available and unavailable metrics for an analysis request.",
+    "shots": "Filter and aggregate shots by player, team, zone, period, result, or clock.",
+    "shooting_efficiency": "Player usage, shooting efficiency, PIE, and ratings.",
+    "on_off": "Player on-court and off-court possession splits for one team.",
+    "lineups": "Five-player lineup ratings subject to a possession sample floor.",
+    "clutch": "Player or team stats in the last five minutes with a margin of five or less.",
+    "playoffs": "Playoff wins by team and champion for one season.",
+    "trades": "Check salary-matching legality for players on two trade sides.",
+    "trade_value": "Compare estimated production value, salary, and picks across trade sides.",
+    "contracts": "Team payroll, player salaries, and apron room.",
+    "game_logs": "Filter player or team game logs by stats, opponent, date, or venue.",
+    "four_factors": "Player on-off splits for the four factors.",
+    "team_four_factors": "Team offensive and defensive four-factor profile.",
+}
+
 if len(CAPABILITIES) != len(_LIST):
     raise AssertionError("duplicate capability names")
+if CAPABILITY_DESCRIPTIONS.keys() != CAPABILITIES.keys():
+    raise AssertionError("capability descriptions must cover the catalog exactly")
