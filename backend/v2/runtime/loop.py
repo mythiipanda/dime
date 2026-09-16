@@ -304,7 +304,12 @@ def _verification_gaps(draft, verification,
                     for message in errors)
     for result in verification.claim_results:
         if not result.supported:
+            claim_evidence = (
+                list(draft.claims[result.claim_index].evidence_ids)
+                if result.claim_index < len(draft.claims) else []
+            )
             gaps.extend(Gap(kind=GapKind.UNSUPPORTED_CLAIM, message=reason,
+                            evidence_ids=claim_evidence,
                             blocks=[f"claim:{result.claim_index}"])
                         for reason in result.reasons)
     return list({(gap.kind, gap.message, tuple(gap.blocks)): gap

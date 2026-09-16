@@ -18,6 +18,7 @@ def test_adjudication_keeps_model_prose_and_marks_supported_claims():
     assert claims[0].evidence_ids == ["ev"]
     gaps = _verification_gaps(draft, report)
     assert gaps[0].kind == "unsupported_claim"
+    assert gaps[0].evidence_ids == ["ev"]
     assert gaps[0].blocks == ["claim:1"]
 
 
@@ -308,3 +309,20 @@ def test_runtime_result_rejects_duplicate_typed_gaps() -> None:
             verification=VerificationReport(status="partial"),
             gaps=[gap, gap],
         )
+
+
+def test_unsupported_claim_gap_preserves_multiple_evidence_references() -> None:
+    draft = DraftReport(sections=["Answer"], claims=[
+        Claim(text="The comparison is conclusive.", kind="judgment",
+              evidence_ids=["stats", "salary"]),
+    ])
+    report = VerificationReport(status="partial", claim_results=[
+        ClaimResult(claim_index=0, supported=False, reasons=["sources conflict"]),
+    ])
+
+    gap = _verification_gaps(draft, report)[0]
+
+    assert gap.kind == "unsupported_claim"
+    assert gap.message == "sources conflict"
+    assert gap.evidence_ids == ["stats", "salary"]
+    assert gap.blocks == ["claim:0"]
