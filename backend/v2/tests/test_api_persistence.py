@@ -111,6 +111,18 @@ def test_project_store_round_trip(tmp_path: Path) -> None:
     assert store.list() == [project]
 
 
+def test_project_contract_requires_timezone_aware_timestamps() -> None:
+    from datetime import datetime
+    from pydantic import ValidationError
+    from v2.projects.models import Project
+
+    with pytest.raises(ValidationError, match="must include timezone"):
+        Project(
+            id="abc", goal="answer", run_id="project-abc",
+            created_at=datetime(2026, 9, 15), updated_at=datetime(2026, 9, 15),
+        )
+
+
 def test_project_contract_binds_run_identity() -> None:
     from pydantic import ValidationError
     from v2.projects.models import Project
