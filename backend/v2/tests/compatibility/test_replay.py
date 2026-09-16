@@ -15,7 +15,8 @@ def test_replay_round_trip_is_prompt_free(tmp_path):
         observed_at=datetime(2026, 9, 14, tzinfo=UTC), rows={"net": 8.2},
     )
     path = tmp_path / "replay.json"
-    save_replay(path, "ratings", "abc123", [([item], [{"name": "ratings", "status": "ok"}])])
+    save_replay(path, "ratings", "abc123", [([item], [{"call_id": "call", "name": "ratings", "args": {},
+                                                  "status": "ok", "error": None}])])
     raw = path.read_text().casefold()
     assert all(key not in raw for key in ('"prompt"', '"question"', '"answer"', '"transcript"'))
     replay = load_replay(path)
@@ -66,7 +67,8 @@ def test_save_replay_rejects_prompt_material_in_tool_payload(tmp_path):
     with pytest.raises(ValueError, match="forbidden prompt material"):
         save_replay(
             tmp_path / "bad.json", "x", "r",
-            [([], [{"name": "tool", "args": {"question": "hidden"}}])],
+            [([], [{"call_id": "call", "name": "tool",
+                    "args": {"question": "hidden"}, "status": "ok", "error": None}])],
         )
     assert not (tmp_path / "bad.json").exists()
 
@@ -111,4 +113,25 @@ def test_replay_rejects_cross_turn_conflicting_evidence_identity(tmp_path):
     path = tmp_path / "conflict.json"
     save_replay(path, "x", "r", [([first], []), ([second], [])])
     with pytest.raises(ValueError, match="conflicting payloads"):
+        load_replay(path)
+
+
+@pytest.mark.parametrize("tool,error", [
+    ({"name": "ratings", "status": "ok"}, "missing or unknown"),
+    ({"call_id": " ", "name": "ratings", "args": {}, "status": "ok",
+      "error": None}, "call_id must be non-empty"),
+    ({"call_id": "call", "name": "ratings", "args": [], "status": "ok",
+      "error": None}, "args must be an object"),
+    ({"call_id": "call", "name": "ratings", "args": {}, "status": "ok",
+      "error": "bad"}, "cannot carry an error"),
+    ({"call_id": "call", "name": "ratings", "args": {}, "status": "failed",
+      "error": None}, "requires a non-empty error"),
+])
+def test_replay_rejects_malformed_tool_attempt(tmp_path, tool, error):
+    path = tmp_path / "bad-tool.json"
+    path.write_text(json.dumps({
+        "version": 2, "scenario_id": "x", "revision": "r",
+        "turns": [{"evidence": [], "tools": [tool]}],
+    }))
+    with pytest.raises(ValueError, match=error):
         load_replay(path)

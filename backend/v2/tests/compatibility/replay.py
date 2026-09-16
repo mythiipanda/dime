@@ -11,6 +11,27 @@ from v2.contracts import EvidenceEnvelope
 _ALLOWED_TOP_LEVEL = {"version", "scenario_id", "revision", "turns"}
 _ALLOWED_TURN = {"evidence", "tools"}
 _FORBIDDEN = {"prompt", "question", "answer", "messages", "transcript"}
+_ALLOWED_TOOL = {"call_id", "name", "args", "status", "error"}
+
+
+def _validate_tool(tool: Any) -> dict[str, Any]:
+    if not isinstance(tool, dict) or set(tool) != _ALLOWED_TOOL:
+        raise ValueError("replay tool attempt has missing or unknown fields")
+    if not isinstance(tool["call_id"], str) or not tool["call_id"].strip():
+        raise ValueError("replay tool call_id must be non-empty")
+    if not isinstance(tool["name"], str) or not tool["name"].strip():
+        raise ValueError("replay tool name must be non-empty")
+    if not isinstance(tool["args"], dict):
+        raise ValueError("replay tool args must be an object")
+    if tool["status"] == "ok":
+        if tool["error"] is not None:
+            raise ValueError("successful replay tool cannot carry an error")
+    elif tool["status"] == "failed":
+        if not isinstance(tool["error"], str) or not tool["error"].strip():
+            raise ValueError("failed replay tool requires a non-empty error")
+    else:
+        raise ValueError("replay tool status must be ok or failed")
+    return tool
 
 
 def _reject_forbidden(value: Any) -> None:
@@ -38,6 +59,8 @@ def save_replay(path: Path, scenario_id: str, revision: str,
         ],
     }
     _reject_forbidden(payload)
+    for turn in payload["turns"]:
+        turn["tools"] = [_validate_tool(tool) for tool in turn["tools"]]
     if path.is_symlink():
         raise ValueError("replay file cannot be a symlink")
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -82,6 +105,7 @@ def load_replay(path: Path) -> dict[str, Any]:
         turn["evidence"] = [
             EvidenceEnvelope.model_validate(item) for item in turn["evidence"]
         ]
+        turn["tools"] = [_validate_tool(tool) for tool in turn["tools"]]
         for item in turn["evidence"]:
             previous = seen_evidence.get(item.evidence_id)
             if previous is not None and previous != item:
