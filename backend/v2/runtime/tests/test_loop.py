@@ -153,16 +153,17 @@ async def test_runtime_rejects_incomplete_swappable_mechanical_verifier() -> Non
 
 
 @pytest.mark.anyio
-async def test_runtime_rejects_incomplete_swappable_semantic_verifier() -> None:
+async def test_runtime_preserves_mechanical_support_when_semantic_omits_claim() -> None:
     class IncompleteSemanticVerifier:
         async def verify(self, task, draft, evidence):
-            return VerificationReport(status=VerificationStatus.PASS)
+            return VerificationReport(status=VerificationStatus.PARTIAL)
 
-    with pytest.raises(ValueError, match="adjudicate every claim exactly once"):
-        await runtime(
-            SequenceVerifier(VerificationStatus.PASS),
-            IncompleteSemanticVerifier(),
-        ).run("answer")
+    result = await runtime(
+        SequenceVerifier(VerificationStatus.PASS),
+        IncompleteSemanticVerifier(),
+    ).run("answer")
+    assert [item.claim_index for item in result.verified_claims] == [0]
+    assert result.verification.status == VerificationStatus.PARTIAL
 
 
 def test_verification_merge_respects_report_field_limits() -> None:
@@ -730,3 +731,38 @@ async def test_progress_never_projects_completion_before_end_is_recorded() -> No
 
     assert ("understand", "running") in statuses
     assert ("understand", "complete") not in statuses
+
+@pytest.mark.anyio
+async def test_incomplete_semantic_results_preserve_mechanically_supported_claims() -> None:
+    class TwoClaimSynthesizer:
+        async def synthesize(self, task, evidence):
+            return DraftReport(sections=["Answer"], claims=[
+                Claim(text="First fact", kind="observed", evidence_ids=["evidence:facts"]),
+                Claim(text="Second fact", kind="observed", evidence_ids=["evidence:facts"]),
+            ])
+
+    class Mechanical:
+        async def verify(self, task, draft, evidence):
+            return VerificationReport(status="pass", claim_results=[
+                {"claim_index": 0, "supported": True},
+                {"claim_index": 1, "supported": True},
+            ])
+
+    class IncompleteSemantic:
+        async def verify(self, task, draft, evidence):
+            return VerificationReport(
+                status="partial",
+                claim_results=[{"claim_index": 0, "supported": True}],
+                missing_branches=["another branch was unavailable"],
+            )
+
+    instance = Runtime(
+        intake=Intake(), planner=Planner(),
+        executor=PlanExecutor({"fake": FakeCapability("fake", {"value": 42})}),
+        synthesizer=TwoClaimSynthesizer(), mechanical_verifier=Mechanical(),
+        semantic_verifier=IncompleteSemantic(),
+    )
+    result = await instance.run("answer")
+    assert [item.claim_index for item in result.verified_claims] == [0, 1]
+    assert [item.claim.text for item in result.verified_claims] == ["First fact", "Second fact"]
+    assert result.verification.status == VerificationStatus.PARTIAL

@@ -291,10 +291,11 @@ class Runtime:
         semantic = VerificationReport.model_validate(
             (await self._semantic_verifier.verify(task, draft, evidence)).model_dump()
         )
-        observed = sorted(result.claim_index for result in semantic.claim_results)
-        if observed != expected:
+        observed = [result.claim_index for result in semantic.claim_results]
+        if (len(observed) != len(set(observed))
+                or any(index not in expected for index in observed)):
             raise ValueError(
-                "semantic verifier must adjudicate every claim exactly once")
+                "semantic verifier returned duplicate or unknown claim indices")
         return _merge_verification(mechanical, semantic)
 
 

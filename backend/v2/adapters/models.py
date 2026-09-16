@@ -207,11 +207,17 @@ class ModelPlanner(ModelStage):
         self._catalog = dict(capability_catalog)
 
     async def plan(self, task: TaskSpec) -> Plan:
-        return await self._generate({
+        payload = {
             "task": task.model_dump(mode="json"),
             "capability_catalog": self._catalog,
             "skills": self._skills.activate(task.skills),
-        })
+        }
+        try:
+            return await self._generate(payload)
+        except RuntimeError as exc:
+            if str(exc) != "all structured-output providers failed":
+                raise
+            return await self._generate(payload)
 
 
 def _validate_draft(
@@ -333,11 +339,12 @@ class ModelSemanticVerifier(ModelStage):
                 "skills": self._skills.activate(task.skills),
             }
         )
-        expected = list(range(len(draft.claims)))
-        observed = sorted(item.claim_index for item in report.claim_results)
-        if observed != expected or len(observed) != len(set(observed)):
+        expected = set(range(len(draft.claims)))
+        observed = [item.claim_index for item in report.claim_results]
+        if (len(observed) != len(set(observed))
+                or any(index not in expected for index in observed)):
             raise ValueError(
-                "semantic verifier must adjudicate every claim exactly once")
+                "semantic verifier returned duplicate or unknown claim indices")
         return report
 
 

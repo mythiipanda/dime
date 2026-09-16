@@ -235,18 +235,19 @@ async def test_recorded_model_logs_actual_fallback_provenance() -> None:
 
 
 @pytest.mark.anyio
-async def test_semantic_verifier_rejects_incomplete_claim_adjudication() -> None:
+async def test_semantic_verifier_allows_omitted_claim_adjudication() -> None:
     from v2.contracts import Claim, DraftReport, TaskSpec
 
-    stub = StubModel([{"status": "pass", "claim_results": []}])
+    stub = StubModel([{"status": "partial", "claim_results": []}])
     verifier = ModelSemanticVerifier(stub, provider="stub", model_name="stub-model")
     draft = DraftReport(sections=["Answer"], claims=[Claim(
         text="Boston won 61 games.", kind="observed", evidence_ids=["ev"])])
-    with pytest.raises(ValueError, match="every claim exactly once"):
-        await verifier.verify(
-            TaskSpec(goal="record", mode="quick", deliverable="answer"),
-            draft, {},
-        )
+    report = await verifier.verify(
+        TaskSpec(goal="record", mode="quick", deliverable="answer"),
+        draft, {},
+    )
+    assert report.claim_results == []
+    assert report.status == "partial"
 
 
 @pytest.mark.anyio
@@ -515,3 +516,24 @@ async def test_provider_boundary_does_not_expose_provider_error_text(monkeypatch
 
     assert str(caught.value) == "all structured-output providers failed"
     assert "secret upstream body" not in str(caught.value)
+
+@pytest.mark.anyio
+async def test_planner_retries_one_failed_structured_generation() -> None:
+    from v2.contracts import Plan, TaskSpec
+
+    class Flaky:
+        def __init__(self):
+            self.calls = 0
+        async def generate(self, **call):
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("all structured-output providers failed")
+            return Plan(nodes=[])
+
+    model = Flaky()
+    planner = ModelPlanner(
+        model, provider="test", model_name="test", capability_catalog={})
+    plan = await planner.plan(TaskSpec(
+        goal="trade", mode="quick", deliverable="answer"))
+    assert plan.nodes == []
+    assert model.calls == 2
