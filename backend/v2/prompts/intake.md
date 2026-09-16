@@ -51,3 +51,8 @@ ambiguity is recorded in open_questions. One pass only.
   is an evidence lookup, not a user-answerable ambiguity, when entity resolution
   or contracts are available. Put that lookup in required_evidence and any
   provisional interpretation in assumptions; never put it in open_questions.
+- Contract details, options, current roster context, and front-office risk
+  tolerance are never blocking open questions. Retrieve factual details with
+  available capabilities; state any judgment about organizational preference as
+  an assumption and bound the recommendation around it. Reserve open_questions
+  for identity, season, or a user-owned preference that truly changes the task.

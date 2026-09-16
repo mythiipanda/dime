@@ -47,8 +47,11 @@ def _resolve_entities(rows: Any) -> list[EntityRef]:
 def _player_entity(rows: Any) -> list[EntityRef]:
     if not isinstance(rows, Mapping):
         return []
-    player_id = rows.get("player_id")
-    name = rows.get("player") or rows.get("PLAYER_NAME")
+    line = rows.get("season_line")
+    line = line if isinstance(line, Mapping) else {}
+    player_id = rows.get("player_id") or line.get("PLAYER_ID")
+    name = (rows.get("player") or rows.get("PLAYER_NAME")
+            or line.get("PLAYER") or line.get("PLAYER_NAME"))
     return ([EntityRef(id=str(player_id), type="player", display_name=str(name or player_id))]
             if player_id is not None else [])
 
@@ -123,8 +126,11 @@ _LIST = [
         metric_definitions={"NET_RATING": NET_RATING_DEF},
     ),
     Capability(name="roster", tool_name="get_team_hub"),
-    Capability(name="player_report", tool_name="get_player_report"),
+    Capability(name="player_report", tool_name="get_player_report",
+               extract_entities=_player_entity),
     Capability(name="player_evaluation", tool_name="get_player_evaluation",
+               qualification="Ranks use the tool's declared qualified player pools.",
+               coverage="Current-season player population represented in the warehouse.",
                extract_entities=_player_entity),
     Capability(name="player_comparison", tool_name="get_compare"),
     Capability(name="metric_adjudication", tool_name="compare_metrics"),

@@ -299,3 +299,12 @@ def test_entity_alias_ids_match_on_canonical_display_name():
             result = verify_mechanical(
                 task_with_slug, report(claim), [evidence_with_alias])
             assert result.status == VerificationStatus.PASS
+
+
+def test_observed_rank_accepts_matching_explicit_rank_value():
+    ranked = evidence(rows={"player": "Jaylen Brown", "usage_rank": 3},
+                      qualification="qualified players", coverage="league pool")
+    claim = Claim(text="Brown had usage rank #3.", kind="observed",
+                  evidence_ids=["standings"])
+    result = verify_mechanical(task(), report(claim), [ranked])
+    assert not any("rank claim" in reason for reason in result.claim_results[0].reasons)

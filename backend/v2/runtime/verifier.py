@@ -227,9 +227,14 @@ def _qualification_coverage_reasons(claim: Claim,
         reasons.append("rank claim lacks qualification evidence")
     if not any(envelope.coverage for envelope in envelopes):
         reasons.append("rank claim lacks coverage evidence")
+    claimed_ranks = {
+        Decimal(value) for match in _RANK.finditer(claim.text)
+        for value in match.groups() if value is not None
+    }
     explicit_rank = any(
-        any(item.path.rsplit(".", 1)[-1].casefold() == "rank"
-            and decimal_value(item.value) == 1 for item in iter_values(envelope))
+        any(item.path.rsplit(".", 1)[-1].casefold().endswith("rank")
+            and (not claimed_ranks or decimal_value(item.value) in claimed_ranks)
+            for item in iter_values(envelope))
         for envelope in envelopes
     )
     if not claim.calculation_id and not explicit_rank:

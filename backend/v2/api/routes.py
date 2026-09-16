@@ -155,9 +155,12 @@ def _answer_text(result) -> str:
             message = "The available sources conflict on part of this answer."
         elif gap.kind.value == "execution_failure" or "execution failed" in folded:
             message = "Some requested evidence could not be retrieved."
+        elif "returned no evidence values" in folded:
+            message = "That data was unavailable for this answer."
         elif any(token in folded for token in (
             "source identity", "identify or query a tool", "ensure contract evidence",
             "qualification evidence", "coverage evidence", "recomputable",
+            "team-code mismatch", "replacement-analysis",
         )):
             message = "Some requested evidence was not strong enough to verify."
         if message and message not in gaps:

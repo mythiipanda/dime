@@ -191,18 +191,27 @@ class ModelIntake(ModelStage):
             "skill_catalog": self._skills.catalog(),
         })
         self._skills.activate(task.skills)
-        evidence_questions = [
-            question for question in task.open_questions
-            if (" team " in f" {question.casefold()} "
-                and {"entity_resolution", "contracts"}
-                    & set(task.required_evidence))
-        ]
-        if evidence_questions:
+        resolvable_questions = []
+        for question in task.open_questions:
+            folded = question.casefold()
+            evidence_lookup = bool(set(task.required_evidence)) and any(
+                token in folded for token in (
+                    "team", "contract", "remaining years", "player option",
+                    "roster", "role", "availability", "salary",
+                ))
+            analytical_assumption = any(
+                token in folded for token in (
+                    "risk tolerance", "front office", "preference",
+                    "appetite", "willingness",
+                ))
+            if evidence_lookup or analytical_assumption:
+                resolvable_questions.append(question)
+        if resolvable_questions:
             task = task.model_copy(update={
                 "open_questions": [question for question in task.open_questions
-                                   if question not in evidence_questions],
+                                   if question not in resolvable_questions],
                 "assumptions": list(dict.fromkeys([
-                    *task.assumptions, *evidence_questions])),
+                    *task.assumptions, *resolvable_questions])),
             })
         player_count = sum(entity.type == "player" for entity in task.entities)
         optional_evidence = {"trade_value"}

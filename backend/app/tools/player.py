@@ -2715,7 +2715,8 @@ def get_player_report(player: str | int, season: str = SEASON) -> dict[str, Any]
     return {"tool": "get_player_report", "ok": True,
             "rows": {"season_line": line, "advanced": a,
                      "shot_profile": z, "clutch": crow},
-            "meta": {"season": season, "player": name,
+            "meta": {"source": "warehouse composite",
+                     "season": season, "player": name,
                      "deterministic_answer": "\n".join(lines)}}
 
 
@@ -2820,6 +2821,7 @@ def get_player_evaluation(player: str | int, season: str = SEASON) -> dict[str, 
                  "season": season, "tier": tier, "profile": profile,
                  "modeled_value": value_row, "comps": comp_rows[:5]},
         "meta": {
+            "source": "warehouse composite",
             "season": season,
             "tier_rule": ("superstar = 40+ GP, top-10 PIE and top-25 "
                           "RAPM-lite; star = 40+ GP, top-40 PIE and either "

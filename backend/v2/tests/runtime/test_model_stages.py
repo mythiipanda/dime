@@ -641,3 +641,20 @@ async def test_intake_does_not_hard_require_trade_value() -> None:
                             "player_comparison": {}})
     task = await intake.understand("Brown for George?")
     assert task.required_evidence == ["player_evaluation", "player_comparison"]
+
+@pytest.mark.anyio
+async def test_intake_turns_contract_and_risk_questions_into_assumptions() -> None:
+    questions = [
+        "Specific remaining years and player options on contracts for both players",
+        "Explicit risk tolerance of the Celtics front office for roster changes",
+    ]
+    stub = StubModel([{
+        "goal": "Brown for George", "mode": "quick", "deliverable": "answer",
+        "required_evidence": ["contracts", "player_evaluation"],
+        "open_questions": questions,
+    }])
+    intake = ModelIntake(stub, provider="stub", model_name="stub-model",
+        capability_catalog={"contracts": {}, "player_evaluation": {}})
+    task = await intake.understand("Brown for George?")
+    assert task.open_questions == []
+    assert task.assumptions == questions
