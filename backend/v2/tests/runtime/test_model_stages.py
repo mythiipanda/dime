@@ -138,6 +138,16 @@ async def test_intake_receives_bounded_followup_context_without_full_skill_bodie
 
 
 @pytest.mark.anyio
+async def test_intake_prompt_reserves_open_questions_for_user_blockers():
+    from v2.prompts import load_prompt
+
+    prompt = load_prompt("intake")
+    assert "only user-answerable ambiguities" in prompt
+    assert "Missing evidence, uncertain causes, unspecified explanatory factors" in prompt
+    assert 'Never ask the user to preselect causes for "what changed," "why," role, value, fit, or replaceability' in prompt
+
+
+@pytest.mark.anyio
 async def test_semantic_verifier_receives_vintage_and_source_scope() -> None:
     from v2.adapters.models import ModelSemanticVerifier
     from v2.contracts import Claim, DraftReport, EvidenceEnvelope, TaskSpec

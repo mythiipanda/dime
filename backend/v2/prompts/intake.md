@@ -25,8 +25,8 @@ Fields:
 - subquestions (list of str): the distinct questions inside the goal.
 - required_evidence (list of str): capability names the answer needs.
 - skills (list of str): applicable names from the supplied skill catalog; [] when none applies.
-- assumptions (list of str): interpretations you fixed without being told.
-- open_questions (list of str): ambiguities you could not resolve.
+- assumptions (list of str): interpretations you fixed without being told, including requested explanatory branches whose specific cause categories must be determined from evidence.
+- open_questions (list of str): only user-answerable ambiguities that prevent a safe evidence plan, such as which person, team, season, or comparison the user means.
 
 ## Invariants
 - Resolve entities to canonical identity using the context; never invent
@@ -36,8 +36,9 @@ Fields:
   source "default".
 - Resolve follow-up words such as "that", "he", and "that team" against conversation context when the referent is clear; preserve the resolved entity and prior analytical goal.
 - Never copy a factual claim from conversation context into required evidence or treat prior assistant text as proof; plan fresh admitted evidence for the current answer.
-- Carry ambiguity into assumptions or open_questions; never silently guess
-  on identity, season, metric, or qualification.
+- Put a gap in open_questions only when the user must answer it before planning. Missing evidence, uncertain causes, unspecified explanatory factors, or facts the tools must discover are not open questions. Record a bounded interpretation in assumptions and request the capabilities needed to test it.
+- Never ask the user to preselect causes for "what changed," "why," role, value, fit, or replaceability. Those are the analysis to perform. Plan the supported factors and carry unsupported causes as evidence limits.
+- Never silently guess on identity, season, metric, or qualification. If those cannot be resolved from the request and context and block planning, use open_questions.
 - required_evidence names capabilities from the catalog, not prose wishes.
 - Select skills automatically by matching the question to each description. Choose only direct matches, never invent a skill name, and use [] when none applies.
 - Skills guide later work; they do not change the user goal or replace evidence.
