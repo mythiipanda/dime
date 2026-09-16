@@ -12,7 +12,7 @@ from v2.adapters.models import (
     ModelSemanticVerifier,
     ModelSynthesizer,
 )
-from v2.contracts import EvidenceEnvelope
+from v2.contracts import EvidenceEnvelope, TaskSpec
 
 
 class StubModel:
@@ -578,7 +578,7 @@ async def test_model_repair_preserves_previously_supported_claims() -> None:
 @pytest.mark.anyio
 async def test_tool_capability_binds_dependency_lineage() -> None:
     from v2.adapters import ToolCapability
-    from v2.contracts import EvidenceEnvelope, PlanNode, TaskSpec
+    from v2.contracts import EvidenceEnvelope, TaskSpec, PlanNode, TaskSpec
 
     class Args(BaseModel):
         a: str
@@ -858,6 +858,36 @@ async def test_matchup_winner_requirement_selects_prediction_capability():
         capability_catalog={"game_prediction": {}}, requirement_review=True
     ).understand("Who wins Celtics vs Knicks?")
     assert task.requirements[0].capability_options == ["game_prediction"]
+
+
+@pytest.mark.anyio
+async def test_planner_drops_false_requirement_coverage_from_supplemental_node():
+    task = TaskSpec(
+        goal="compare teams", mode="deep_dive", deliverable="analysis",
+        requirements=[{
+            "id": "health", "description": "rotation health",
+            "capability_options": ["roster"],
+        }],
+    )
+    stub = StubModel([{"nodes": [
+        {
+            "id": "roster", "description": "roster context",
+            "capability_hints": ["roster"],
+            "covers_requirement_ids": ["health"],
+        },
+        {
+            "id": "news", "description": "supplemental discovery",
+            "capability_hints": ["web_search"],
+            "covers_requirement_ids": ["health"],
+            "arguments": {"query": "current injuries"},
+        },
+    ]}])
+    plan = await ModelPlanner(
+        stub, provider="stub", model_name="stub",
+        capability_catalog={"roster": {}, "web_search": {}},
+    ).plan(task)
+    assert plan.nodes[0].covers_requirement_ids == ["health"]
+    assert plan.nodes[1].covers_requirement_ids == []
 
 
 @pytest.mark.anyio

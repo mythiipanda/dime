@@ -371,15 +371,32 @@ class ModelPlanner(ModelStage):
             if str(exc) != "all structured-output providers failed":
                 raise
             plan = await self._generate(payload)
+        plan = self._normalize_requirement_coverage(task, plan)
         feedback = self._coverage_feedback(task, plan)
         if not feedback:
             return plan
-        return await self._generate({
+        replacement = await self._generate({
             **payload,
             "coverage_feedback": {
                 **feedback, "instruction": "Return a complete replacement plan.",
             },
         })
+        return self._normalize_requirement_coverage(task, replacement)
+
+    def _normalize_requirement_coverage(
+        self, task: TaskSpec, plan: Plan,
+    ) -> Plan:
+        requirements = {item.id: item for item in task.requirements}
+        nodes = []
+        for node in plan.nodes:
+            selected = set(node.capability_hints) & self._catalog.keys()
+            valid = [
+                requirement_id for requirement_id in node.covers_requirement_ids
+                if requirement_id in requirements
+                and selected & set(requirements[requirement_id].capability_options)
+            ]
+            nodes.append(node.model_copy(update={"covers_requirement_ids": valid}))
+        return plan.model_copy(update={"nodes": nodes})
 
     def _coverage_feedback(self, task: TaskSpec, plan: Plan) -> dict[str, Any]:
         selected = {
