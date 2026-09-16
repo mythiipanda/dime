@@ -112,6 +112,24 @@ def test_decimal_value_rejects_nonfinite_numbers(value):
     assert decimal_value(value) is None
 
 
+def test_evidence_rows_reject_unbounded_shape() -> None:
+    from pydantic import ValidationError
+
+    base = {
+        "evidence_id": "ev", "capability": "test", "source": "fixture",
+        "observed_at": "2026-09-15T00:00:00Z",
+    }
+    with pytest.raises(ValidationError, match="256 fields"):
+        EvidenceEnvelope(**base, rows={str(index): index for index in range(257)})
+    with pytest.raises(ValidationError, match="10000 items"):
+        EvidenceEnvelope(**base, rows={"values": list(range(10001))})
+    nested = 1
+    for _ in range(17):
+        nested = {"child": nested}
+    with pytest.raises(ValidationError, match="16 levels"):
+        EvidenceEnvelope(**base, rows=nested)
+
+
 def test_evidence_index_revalidates_copied_envelopes() -> None:
     from pydantic import ValidationError
     invalid = envelope("ev").model_copy(update={"source": " "})

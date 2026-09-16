@@ -248,19 +248,25 @@ class EvidenceEnvelope(BaseModel):
         if len(entity_keys) != len(set(entity_keys)):
             raise ValueError("evidence entities must not contain duplicate identities")
 
-        def validate_finite(value: Any) -> None:
+        def validate_rows(value: Any, *, depth: int = 0) -> None:
+            if depth > 16:
+                raise ValueError("evidence rows cannot exceed 16 levels")
             if isinstance(value, float) and not math.isfinite(value):
                 raise ValueError("evidence rows must contain only finite numbers")
             if isinstance(value, Decimal) and not value.is_finite():
                 raise ValueError("evidence rows must contain only finite numbers")
             if isinstance(value, dict):
+                if len(value) > 256:
+                    raise ValueError("evidence row objects cannot exceed 256 fields")
                 for child in value.values():
-                    validate_finite(child)
+                    validate_rows(child, depth=depth + 1)
             elif isinstance(value, list):
+                if len(value) > 10_000:
+                    raise ValueError("evidence row arrays cannot exceed 10000 items")
                 for child in value:
-                    validate_finite(child)
+                    validate_rows(child, depth=depth + 1)
 
-        validate_finite(self.rows)
+        validate_rows(self.rows)
         return self
 
 
