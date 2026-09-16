@@ -3,11 +3,22 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator
 
 
 class StrictEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+    @field_validator("*", mode="after")
+    @classmethod
+    def reject_blank_strings(cls, value):
+        if isinstance(value, str) and not value.strip():
+            raise ValueError("event string fields must be non-empty")
+        if isinstance(value, list) and any(
+            isinstance(item, str) and not item.strip() for item in value
+        ):
+            raise ValueError("event string lists must not contain empty values")
+        return value
 
 
 class EventType(StrEnum):

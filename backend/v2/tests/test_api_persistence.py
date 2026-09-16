@@ -669,3 +669,20 @@ def test_stream_tool_result_rejects_negative_row_count() -> None:
         ToolResult(node="execute", name="standings", status="ok", rows=-1)
     with pytest.raises(ValidationError, match="greater than or equal to 0"):
         ToolResult(node="execute", name="standings", status="ok", ms=-1)
+
+
+@pytest.mark.parametrize(
+    "event",
+    [
+        {"type": "node_update", "node": " ", "status": "complete"},
+        {"type": "token", "text": " "},
+        {"type": "final_answer", "text": " "},
+        {"type": "suggestions", "items": [" "]},
+    ],
+)
+def test_stream_event_string_fields_must_be_non_empty(event) -> None:
+    from pydantic import ValidationError
+    from v2.api.events import EVENT_ADAPTER
+
+    with pytest.raises(ValidationError, match="non-empty|empty values"):
+        EVENT_ADAPTER.validate_python(event)
