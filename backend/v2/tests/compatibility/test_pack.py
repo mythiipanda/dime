@@ -70,3 +70,17 @@ def test_global_banned_text_is_enforced():
                              text="Try a narrower warehouse query")])
     assert not result.passed
     assert any("contains banned text" in failure for failure in result.failures)
+
+
+def test_multi_turn_scenario_requires_expectation_for_every_turn():
+    scenario = {
+        "id": "chain",
+        "chain": ["first", "second"],
+        "expect_turns": [{"contains": ["first"]}],
+    }
+    turns = [
+        TurnTrace(1.0, 0, (), (), text="first"),
+        TurnTrace(1.0, 0, (), (), text="anything passes if ungraded"),
+    ]
+    result = grade_scenario(scenario, turns)
+    assert result.failures == ("expected 2 turn expectations, got 1",)

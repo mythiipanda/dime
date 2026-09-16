@@ -113,6 +113,11 @@ def grade_scenario(scenario: dict[str, Any], turns: list[TurnTrace]) -> Scenario
     if len(turns) != expected_turns:
         return ScenarioResult(scenario["id"], (f"expected {expected_turns} turns, got {len(turns)}",))
     expectations = scenario.get("expect_turns") or [scenario.get("expect", {})]
+    if len(expectations) != expected_turns:
+        return ScenarioResult(
+            scenario["id"],
+            (f"expected {expected_turns} turn expectations, got {len(expectations)}",),
+        )
     banned = [*scenario.get("_banned_everywhere", []),
               *scenario.get("banned", [])]
     for index, (turn, expected) in enumerate(zip(turns, expectations), 1):
