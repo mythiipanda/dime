@@ -382,3 +382,14 @@ def test_web_contracts_reject_tzinfo_without_offset() -> None:
             url="https://example.com", title="Example", retrieved_at=invalid,
             markdown="content", content_hash="a" * 64,
         )
+
+
+@pytest.mark.parametrize("schema,payload", [
+    (WebSearchRequest, {"query": "Brown role", "max_results": True}),
+    (WebSearchResult, {"rank": "1", "url": "https://example.com",
+                       "title": "Story", "snippet": ""}),
+])
+def test_web_selection_coordinates_are_strict_integers(schema, payload):
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        schema.model_validate(payload)

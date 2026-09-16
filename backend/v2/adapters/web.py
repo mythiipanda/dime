@@ -15,14 +15,14 @@ from typing import Any, Literal, Protocol
 from urllib.parse import urlparse
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, StrictInt, model_validator
 
 
 class WebSearchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     query: str = Field(min_length=2, max_length=500)
-    max_results: int = Field(default=5, ge=1, le=8)
+    max_results: StrictInt = Field(default=5, ge=1, le=8)
     freshness: Literal["day", "week", "month", "year"] | None = None
     include_domains: list[str] = Field(default_factory=list, max_length=8)
     exclude_domains: list[str] = Field(default_factory=list, max_length=8)
@@ -44,7 +44,7 @@ class WebSearchRequest(BaseModel):
 class WebSearchResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    rank: int = Field(ge=1)
+    rank: StrictInt = Field(ge=1)
     url: HttpUrl
     title: str
     snippet: str
@@ -91,7 +91,7 @@ class WebFetchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     search_evidence_id: str | None = Field(default=None, min_length=1)
-    result_rank: int = Field(ge=1, le=8)
+    result_rank: StrictInt = Field(ge=1, le=8)
 
 
 class WebPage(BaseModel):

@@ -352,3 +352,12 @@ def test_evidence_rejects_tzinfo_without_utc_offset() -> None:
 def test_truth_bearing_contract_flags_are_strict(schema, payload) -> None:
     with pytest.raises(ValidationError):
         schema.model_validate(payload)
+
+
+@pytest.mark.parametrize("schema,payload", [
+    (PlanNode, {"id": "node", "description": "work", "max_attempts": True}),
+    (ClaimResult, {"claim_index": "0", "supported": False, "reasons": ["bad"]}),
+])
+def test_execution_coordinates_are_strict_integers(schema, payload) -> None:
+    with pytest.raises(ValidationError):
+        schema.model_validate(payload)

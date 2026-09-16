@@ -6,7 +6,7 @@ from enum import StrEnum
 import math
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, model_validator
 
 
 class RunMode(StrEnum):
@@ -133,7 +133,7 @@ class PlanNode(BaseModel):
     depends_on: list[str] = Field(default_factory=list)
     capability_hints: list[str] = Field(default_factory=list)
     arguments: dict[str, Any] = Field(default_factory=dict)
-    max_attempts: int = Field(default=1, ge=1, le=5)
+    max_attempts: StrictInt = Field(default=1, ge=1, le=5)
     status: PlanStatus = PlanStatus.PENDING
 
     @model_validator(mode="after")
@@ -356,7 +356,7 @@ class ClaimSource(BaseModel):
 class VerifiedClaim(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    claim_index: int = Field(ge=0)
+    claim_index: StrictInt = Field(ge=0)
     claim: Claim
     evidence_ids: list[str] = Field(default_factory=list)
     sources: list[ClaimSource] = Field(default_factory=list)
@@ -378,7 +378,7 @@ class VerifiedClaim(BaseModel):
 class ClaimResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    claim_index: int = Field(ge=0)
+    claim_index: StrictInt = Field(ge=0)
     supported: StrictBool
     reasons: list[str] = Field(default_factory=list)
 
