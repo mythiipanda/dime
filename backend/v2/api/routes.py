@@ -103,7 +103,7 @@ class QuickAnswerBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     q: str = Field(min_length=1, max_length=2000)
-    model: str | None = None
+    model: str | None = Field(default=None, max_length=256)
     history: list[ConversationTurn] = Field(default_factory=list, max_length=8)
 
     @field_validator("q")

@@ -207,7 +207,7 @@ class EvidenceEnvelope(BaseModel):
     capability: str = Field(max_length=256)
     source: str = Field(max_length=2000)
     observed_at: datetime
-    season: str | None = None
+    season: str | None = Field(default=None, max_length=7)
     vintages: dict[str, str] = Field(default_factory=dict, max_length=64)
     task_season_scoped: StrictBool = True
     as_of: date | None = None
@@ -215,8 +215,8 @@ class EvidenceEnvelope(BaseModel):
     rows: list[dict[str, Any]] | dict[str, Any]
     units: dict[str, str] = Field(default_factory=dict, max_length=256)
     metric_definitions: dict[str, str] = Field(default_factory=dict, max_length=256)
-    qualification: str | None = None
-    coverage: str | None = None
+    qualification: str | None = Field(default=None, max_length=4000)
+    coverage: str | None = Field(default=None, max_length=4000)
     lineage: list[str] = Field(default_factory=list, max_length=32)
     warnings: list[str] = Field(default_factory=list, max_length=64)
 
@@ -340,7 +340,7 @@ class Gap(BaseModel):
 class ClaimSource(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    evidence_id: str
+    evidence_id: str = Field(max_length=256)
     source: str = Field(max_length=2000)
     capability: str = Field(max_length=256)
 

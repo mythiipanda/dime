@@ -24,7 +24,7 @@ def _checkpoint_path_lock(path: Path) -> Lock:
 class ExecutionCheckpoint(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    run_id: str
+    run_id: str = Field(max_length=256)
     task: TaskSpec
     plan: Plan
     evidence_by_node: dict[str, EvidenceEnvelope] = Field(default_factory=dict, max_length=32)

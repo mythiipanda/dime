@@ -429,3 +429,10 @@ def test_core_text_contracts_have_hard_limits() -> None:
         TaskSpec(goal="x" * 2001, mode="quick", deliverable="text")
     with pytest.raises(ValidationError, match="at most 4000 characters"):
         Claim(text="x" * 4001, kind="opinion")
+
+
+def test_evidence_optional_metadata_text_has_hard_limits() -> None:
+    with pytest.raises(ValidationError, match="at most 4000 characters"):
+        EvidenceEnvelope(evidence_id="ev", capability="test", source="fixture",
+                         observed_at="2026-09-15T00:00:00Z", rows={},
+                         coverage="x" * 4001)
