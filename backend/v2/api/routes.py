@@ -164,7 +164,9 @@ async def quick_answer_stream(body: QuickAnswerBody):
         }.get(node.split(":", 1)[0], "analytics")
 
     def progress(node: str, status: str) -> None:
-        queue.put_nowait(NodeUpdate(node=public_node(node), status=status))
+        public_status = "error" if status == "failed" else status
+        queue.put_nowait(NodeUpdate(
+            node=public_node(node), status=public_status))
 
     ledger_dir = os.environ.get(
         "DIME_V2_LEDGER_DIR", str(_BACKEND / "data" / "v2-ledgers"))
@@ -245,7 +247,7 @@ async def quick_answer_stream(body: QuickAnswerBody):
                 for event in recorded_tool_events():
                     yield encode_event(event)
                 yield encode_event(NodeUpdate(
-                    node=public_node("runtime"), status="failed"))
+                    node=public_node("runtime"), status="error"))
                 if policy.publish:
                     yield "event: error\ndata: " + json.dumps({
                         "message": "Dime could not complete this run.",

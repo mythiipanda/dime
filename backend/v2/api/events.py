@@ -37,7 +37,7 @@ class EventType(StrEnum):
 class NodeUpdate(StrictEvent):
     type: Literal[EventType.NODE_UPDATE] = EventType.NODE_UPDATE
     node: Literal["entry", "data_retrieval", "tools", "analytics", "presentation"]
-    status: Literal["running", "complete", "failed"]
+    status: Literal["running", "complete", "error"]
 
 
 class ThoughtStream(StrictEvent):

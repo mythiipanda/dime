@@ -891,6 +891,15 @@ def test_stream_event_contracts_reject_unknown_fields() -> None:
         })
 
 
+def test_node_failure_uses_frontend_error_status() -> None:
+    from pydantic import ValidationError
+    from v2.api.events import NodeUpdate
+
+    assert NodeUpdate(node="tools", status="error").status == "error"
+    with pytest.raises(ValidationError):
+        NodeUpdate(node="tools", status="failed")
+
+
 def test_stream_events_reject_internal_node_names() -> None:
     from pydantic import ValidationError
     from v2.api.events import CustomData, NodeUpdate, ToolCall, ToolResult
