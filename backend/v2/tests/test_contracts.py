@@ -164,3 +164,20 @@ def test_plan_node_rejects_ambiguous_identity_or_selection(payload, error) -> No
 def test_draft_report_rejects_empty_or_duplicate_content(payload, error) -> None:
     with pytest.raises(ValidationError, match=error):
         DraftReport.model_validate(payload)
+
+
+@pytest.mark.parametrize("payload,error", [
+    ({"status": "partial", "claim_results": [
+        {"claim_index": 0, "supported": True},
+        {"claim_index": 0, "supported": True},
+    ]}, "claim indices must be unique"),
+    ({"status": "partial", "missing_branches": ["salary", "salary"]},
+     "missing_branches must not contain duplicates"),
+    ({"status": "partial", "contradictions": [""]},
+     "contradictions must not contain empty values"),
+])
+def test_verification_report_rejects_duplicate_or_empty_findings(payload, error) -> None:
+    from v2.contracts import VerificationReport
+
+    with pytest.raises(ValidationError, match=error):
+        VerificationReport.model_validate(payload)

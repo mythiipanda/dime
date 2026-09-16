@@ -283,6 +283,16 @@ class VerificationReport(BaseModel):
 
     @model_validator(mode="after")
     def validate_status(self) -> "VerificationReport":
+        indices = [item.claim_index for item in self.claim_results]
+        if len(indices) != len(set(indices)):
+            raise ValueError("verification claim indices must be unique")
+        for field_name in ("missing_branches", "contradictions",
+                           "repair_instructions"):
+            values = getattr(self, field_name)
+            if any(not value.strip() for value in values):
+                raise ValueError(f"{field_name} must not contain empty values")
+            if len(values) != len(set(values)):
+                raise ValueError(f"{field_name} must not contain duplicates")
         findings = (
             any(not item.supported for item in self.claim_results)
             or bool(self.missing_branches)
