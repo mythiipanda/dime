@@ -137,8 +137,11 @@ def grade_scenario(scenario: dict[str, Any], turns: list[TurnTrace]) -> Scenario
     for index, turn in enumerate(turns, 1):
         if max_per_turn is not None and turn.seconds > max_per_turn:
             failures.append(f"T{index}: latency {turn.seconds:.1f}s > {max_per_turn}s budget")
-        if turn.report is not None and turn.report.status == VerificationStatus.REPAIR:
-            failures.append(f"T{index}: verifier rejected report")
+        if turn.report is None:
+            failures.append(f"T{index}: missing verification report")
+        elif turn.report.status != VerificationStatus.PASS:
+            failures.append(
+                f"T{index}: verifier status is {turn.report.status.value}")
     seconds = sum(turn.seconds for turn in turns)
     calls = sum(turn.tool_calls for turn in turns)
     if budget.get("max_seconds") is not None and seconds > budget["max_seconds"]:
