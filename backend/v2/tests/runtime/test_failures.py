@@ -1,3 +1,4 @@
+import pytest
 from v2.runtime.failures import CandidateState, CandidateStore, FailureObservation
 
 
@@ -106,3 +107,12 @@ def test_candidate_store_rejects_symlinked_record(tmp_path):
     path.symlink_to(outside)
     with pytest.raises(ValueError, match="cannot be a symlink"):
         CandidateStore(path).add(observation())
+
+
+def test_candidate_store_rejects_symlinked_parent(tmp_path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    parent = tmp_path / "parent"
+    parent.symlink_to(outside, target_is_directory=True)
+    with pytest.raises(ValueError, match="parent cannot be a symlink"):
+        CandidateStore(parent / "candidates.jsonl")

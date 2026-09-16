@@ -248,11 +248,8 @@ def test_shadow_store_rejects_symlinked_record(tmp_path):
     outside.write_text("")
     path = tmp_path / "shadow.jsonl"
     path.symlink_to(outside)
-    store = ShadowStore(path)
     with pytest.raises(ValueError, match="cannot be a symlink"):
-        store.read()
-    with pytest.raises(ValueError, match="cannot be a symlink"):
-        store.append(compare_outcomes("request", outcome(), outcome()))
+        ShadowStore(path)
     assert outside.read_text() == ""
 
 
@@ -287,3 +284,12 @@ def test_shadow_gate_counts_reject_booleans() -> None:
             total_runs=True, failure_rate=0, grounding_drift_rate=0,
             route_drift_rate=0, answer_drift_rate=0, ready=True,
         )
+
+
+def test_shadow_store_rejects_symlinked_parent(tmp_path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    parent = tmp_path / "parent"
+    parent.symlink_to(outside, target_is_directory=True)
+    with pytest.raises(ValueError, match="parent cannot be a symlink"):
+        ShadowStore(parent / "shadow.jsonl")

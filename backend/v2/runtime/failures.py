@@ -107,7 +107,15 @@ def _candidate_id(
 class CandidateStore:
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
+        self._reject_symlinked_path()
         self._lock = _candidate_path_lock(self.path)
+
+    def _reject_symlinked_path(self) -> None:
+        if self.path.is_symlink():
+            raise ValueError("candidate store file cannot be a symlink")
+        parent = self.path.parent
+        if any(component.is_symlink() for component in (parent, *parent.parents)):
+            raise ValueError("candidate store parent cannot be a symlink")
 
     def add(self, item: FailureObservation) -> ScenarioCandidate:
         candidate = ScenarioCandidate.from_observation(item)
@@ -135,8 +143,7 @@ class CandidateStore:
             return self._read()
 
     def _read(self) -> list[ScenarioCandidate]:
-        if self.path.is_symlink():
-            raise ValueError("candidate store file cannot be a symlink")
+        self._reject_symlinked_path()
         if not self.path.exists():
             return []
         lines = self.path.read_text().splitlines()

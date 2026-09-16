@@ -131,12 +131,19 @@ def compare_outcomes(request: str, v1: RunOutcome, v2: RunOutcome) -> ShadowComp
 class ShadowStore:
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
+        self._reject_symlinked_path()
         self._lock = _shadow_path_lock(self.path)
+
+    def _reject_symlinked_path(self) -> None:
+        if self.path.is_symlink():
+            raise ValueError("shadow store file cannot be a symlink")
+        parent = self.path.parent
+        if any(component.is_symlink() for component in (parent, *parent.parents)):
+            raise ValueError("shadow store parent cannot be a symlink")
 
     def append(self, comparison: ShadowComparison) -> None:
         with self._lock:
-            if self.path.is_symlink():
-                raise ValueError("shadow store file cannot be a symlink")
+            self._reject_symlinked_path()
             parent_was_missing = not self.path.parent.exists()
             self.path.parent.mkdir(parents=True, exist_ok=True)
             file_was_missing = not self.path.exists()
@@ -153,8 +160,7 @@ class ShadowStore:
 
     def read(self) -> list[ShadowComparison]:
         with self._lock:
-            if self.path.is_symlink():
-                raise ValueError("shadow store file cannot be a symlink")
+            self._reject_symlinked_path()
             if not self.path.exists():
                 return []
             lines = self.path.read_text().splitlines()
