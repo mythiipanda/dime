@@ -93,7 +93,8 @@ def build_runtime(
         for char in run_id
     ):
         raise ValueError("run_id may contain only letters, numbers, '-' and '_'")
-    policy = policy or ExecutionPolicy.live(ledger_dir=ledger_dir)
+    policy = (ExecutionPolicy.live(ledger_dir=ledger_dir) if policy is None
+              else ExecutionPolicy.model_validate(policy.model_dump()))
     resolved_ledger_dir = policy.ledger_dir
     ledger = (FileLedger(Path(resolved_ledger_dir) / f"{run_id}.jsonl", run_id)
               if resolved_ledger_dir is not None else RunLedger(run_id))

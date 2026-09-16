@@ -105,3 +105,16 @@ def test_build_runtime_rejects_unsafe_run_identity(tmp_path) -> None:
         build_runtime(provider="inception", model_name="mercury-test",
                       run_id="../escape",
                       policy=ExecutionPolicy.live(ledger_dir=tmp_path))
+
+
+def test_build_runtime_revalidates_mutated_policy(tmp_path, monkeypatch) -> None:
+    from pydantic import ValidationError
+    from v2.runtime.assembly import build_runtime
+    from v2.runtime.policy import ExecutionPolicy
+
+    monkeypatch.setattr("v2.runtime.assembly.ProviderStructuredModel",
+                        lambda *args: object())
+    unsafe = ExecutionPolicy.shadow().model_copy(update={"publish": True})
+    with pytest.raises(ValidationError, match="shadow mode cannot publish"):
+        build_runtime(provider="inception", model_name="mercury-test",
+                      run_id="run", policy=unsafe)

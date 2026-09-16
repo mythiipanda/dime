@@ -380,7 +380,8 @@ def test_chat_route_configures_durable_checkpoint_directory():
     from v2.api.routes import quick_answer_stream
     source = inspect.getsource(quick_answer_stream)
     assert "DIME_V2_CHECKPOINT_DIR" in source
-    assert 'model_copy(update={"checkpoint_dir": checkpoint_dir})' in source
+    assert '"checkpoint_dir": checkpoint_dir' in source
+    assert "ExecutionPolicy.model_validate" in source
 
 
 @pytest.mark.anyio
