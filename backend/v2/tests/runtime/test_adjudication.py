@@ -237,3 +237,18 @@ def test_runtime_result_rejects_task_scoped_evidence_from_wrong_season() -> None
                 season=SeasonRef(value="2025-26", source="user", confidence=1)),
             execution=execution, draft=DraftReport(sections=[], claims=[]),
             verification=VerificationReport(status="partial"))
+
+
+def test_runtime_result_rechecks_required_evidence_at_publication() -> None:
+    import pytest
+    from pydantic import ValidationError
+    from v2.contracts import Plan, TaskSpec
+    from v2.runtime.models import ExecutionResult, RuntimeResult
+
+    with pytest.raises(ValidationError, match="lacks required evidence"):
+        RuntimeResult(
+            task=TaskSpec(goal="trade", mode="deep_dive", deliverable="text",
+                          required_evidence=["contracts"]),
+            execution=ExecutionResult(plan=Plan(nodes=[])),
+            draft=DraftReport(sections=[], claims=[]),
+            verification=VerificationReport(status="partial"))
