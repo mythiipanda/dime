@@ -102,11 +102,11 @@ class TaskSpec(BaseModel):
     entities: list[EntityRef] = Field(default_factory=list)
     season: SeasonRef | None = None
     as_of: date | None = None
-    subquestions: list[str] = Field(default_factory=list)
-    required_evidence: list[str] = Field(default_factory=list)
-    assumptions: list[str] = Field(default_factory=list)
-    open_questions: list[str] = Field(default_factory=list)
-    skills: list[str] = Field(default_factory=list)
+    subquestions: list[str] = Field(default_factory=list, max_length=32)
+    required_evidence: list[str] = Field(default_factory=list, max_length=32)
+    assumptions: list[str] = Field(default_factory=list, max_length=32)
+    open_questions: list[str] = Field(default_factory=list, max_length=32)
+    skills: list[str] = Field(default_factory=list, max_length=16)
 
     @model_validator(mode="after")
     def validate_scope(self) -> "TaskSpec":
@@ -130,8 +130,8 @@ class PlanNode(BaseModel):
 
     id: str = Field(min_length=1)
     description: str = Field(min_length=1)
-    depends_on: list[str] = Field(default_factory=list)
-    capability_hints: list[str] = Field(default_factory=list)
+    depends_on: list[str] = Field(default_factory=list, max_length=32)
+    capability_hints: list[str] = Field(default_factory=list, max_length=16)
     arguments: dict[str, Any] = Field(default_factory=dict)
     max_attempts: StrictInt = Field(default=1, ge=1, le=5)
     status: PlanStatus = PlanStatus.PENDING

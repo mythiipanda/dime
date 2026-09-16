@@ -380,3 +380,19 @@ def test_plan_has_a_hard_execution_node_limit() -> None:
             PlanNode(id=f"node-{index}", description="work")
             for index in range(33)
         ])
+
+
+@pytest.mark.parametrize("field_name,limit", [
+    ("subquestions", 32), ("required_evidence", 32),
+    ("assumptions", 32), ("open_questions", 32), ("skills", 16),
+])
+def test_task_scope_lists_have_hard_limits(field_name, limit) -> None:
+    with pytest.raises(ValidationError, match=f"at most {limit} items"):
+        TaskSpec(goal="answer", mode="quick", deliverable="text",
+                 **{field_name: [f"value-{index}" for index in range(limit + 1)]})
+
+
+def test_plan_node_selection_lists_have_hard_limits() -> None:
+    with pytest.raises(ValidationError, match="at most 16 items"):
+        PlanNode(id="node", description="work",
+                 capability_hints=[f"cap-{index}" for index in range(17)])
