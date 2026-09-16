@@ -3197,6 +3197,34 @@ async def _triage_seed(question: str, primary: str, model: str,
         r"shooting (?:splits?|profile|locations?|map)|zone diet|"
         r"where (?:does|do|did)\b.{0,40}\bshoot",
         question, re.IGNORECASE))
+    _corner_leader = (
+        not found_p and not found_t
+        and re.search(r"corner\s*(?:three|3)s?", question, re.IGNORECASE)
+        and re.search(r"leaders?|leads?|highest|most|top|which|who",
+                      question, re.IGNORECASE)
+    )
+    if _corner_leader and not is_trade and not is_cast:
+        _zh: dict[str, Any] = {}
+        async for _e in _triage_tool(
+                "get_team_shot_zones",
+                {"teams": "league", "season": "2025-26"}, state, _zh):
+            yield _e
+        _zout = _zh.get("out") or {}
+        leader = (_zout.get("zone_leaders") or {}).get("corner_3")
+        if _result_status(_zout) == "ok" and isinstance(leader, dict):
+            share = float(leader.get("share") or 0) * 100
+            delta = float(leader.get("share_delta_pp") or 0)
+            meta = dict(_zout.get("meta") or {})
+            meta["deterministic_answer"] = (
+                f"{leader.get('team')} leads the league in corner-three "
+                f"attempt share at {share:.1f}% in 2025-26 "
+                f"({delta:+.1f} percentage points vs the league baseline).")
+            _zout = {**_zout, "meta": meta}
+            if state["tool_results"]:
+                state["tool_results"][-1] = _zout
+            async for _e in _triage_terminal(question, state):
+                yield _e
+        return
     if _is_shot and found_p and not is_trade and not is_cast:
         # Shot-chart asks used to burn ~22 planner tool calls / 67s on a
         # compare thread (QA F3/#19 latency). One hop, warehouse-first.
