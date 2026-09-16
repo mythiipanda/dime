@@ -336,6 +336,8 @@ class ModelSemanticVerifier(ModelStage):
 
 class RecordedStructuredModel:
     def __init__(self, model: StructuredModel, ledger: Any, *, turn_id: str) -> None:
+        if not turn_id.strip():
+            raise ValueError("recorded model turn id must be non-empty")
         self._model = model
         self._ledger = ledger
         self._turn_id = turn_id
@@ -366,6 +368,9 @@ class RecordedStructuredModel:
                 payload=payload,
                 envelope=envelope,
             )
+            if not isinstance(result, schema):
+                raise TypeError(
+                    f"structured model must return {schema.__name__}")
         except BaseException as exc:
             self._ledger.append(
                 LedgerKind.ASSISTANT_ATTEMPT,

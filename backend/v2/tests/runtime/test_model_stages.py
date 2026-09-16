@@ -371,3 +371,34 @@ def test_model_stage_requires_request_identity(kwargs, error) -> None:
 
     with pytest.raises(ValueError, match=error):
         ModelSynthesizer(StubModel({}), **kwargs)
+
+
+def test_recorded_model_requires_turn_identity():
+    from v2.adapters import RecordedStructuredModel
+    from v2.runtime import RunLedger
+
+    with pytest.raises(ValueError, match="turn id must be non-empty"):
+        RecordedStructuredModel(StubModel([]), RunLedger("run"), turn_id=" ")
+
+
+@pytest.mark.anyio
+async def test_recorded_model_rejects_untyped_output_and_records_failure():
+    from v2.adapters import RecordedStructuredModel
+    from v2.contracts import TaskSpec
+    from v2.runtime import RequestEnvelope, RunLedger
+
+    class Untyped:
+        async def generate(self, **call):
+            return {"goal": "answer"}
+
+    envelope = RequestEnvelope.freeze(
+        provider="p", model="m", route="intake", prompt="prompt",
+        context={}, tool_schemas={}, planner_version="v2",
+    )
+    ledger = RunLedger("run")
+    recorded = RecordedStructuredModel(Untyped(), ledger, turn_id="turn")
+    with pytest.raises(TypeError, match="TaskSpec"):
+        await recorded.generate(
+            schema=TaskSpec, prompt="prompt", payload={}, envelope=envelope,
+        )
+    assert ledger.entries[-1].data["status"] == "failed"
