@@ -106,6 +106,24 @@ async def test_independent_nodes_run_concurrently() -> None:
 
 
 @pytest.mark.anyio
+async def test_executor_rejects_untyped_capability_season_scope() -> None:
+    class Invalid(FakeCapability):
+        task_season_scoped = "false"
+
+    capability = Invalid("fake", {"wins": 61})
+    capability.task_season_scoped = "false"
+    result = await PlanExecutor({"fake": capability}).execute(
+        TaskSpec(goal="record", mode="quick", deliverable="answer"),
+        Plan(nodes=[node("record")]),
+    )
+
+    assert result.plan.nodes[0].status == PlanStatus.FAILED
+    assert result.errors["record"] == [
+        "TypeError: capability task_season_scoped must be boolean",
+    ]
+
+
+@pytest.mark.anyio
 async def test_non_task_season_capability_admits_next_vintage_contracts() -> None:
     from datetime import UTC, datetime
     from v2.contracts import EvidenceEnvelope, SeasonRef

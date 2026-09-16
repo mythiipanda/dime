@@ -323,6 +323,9 @@ class PlanExecutor:
                 result = await capability.execute(node, task, parent_evidence)
                 task_season_scoped = getattr(
                     capability, "task_season_scoped", True)
+                if not isinstance(task_season_scoped, bool):
+                    raise TypeError(
+                        "capability task_season_scoped must be boolean")
                 result = result.model_copy(update={
                     "task_season_scoped": task_season_scoped,
                 })
