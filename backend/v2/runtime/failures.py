@@ -6,7 +6,7 @@ from enum import StrEnum
 from pathlib import Path
 from threading import Lock
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class CandidateState(StrEnum):
@@ -26,6 +26,16 @@ class FailureObservation(BaseModel):
     revision: str
     trace_id: str | None = None
 
+    @model_validator(mode="after")
+    def validate_identity(self) -> "FailureObservation":
+        values = (self.source, self.failure_class, self.summary,
+                  self.expected_relation, self.revision)
+        if any(not value.strip() for value in values):
+            raise ValueError("failure observation fields must be non-empty")
+        if self.trace_id is not None and not self.trace_id.strip():
+            raise ValueError("failure observation trace id must be non-empty")
+        return self
+
 
 class ScenarioCandidate(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -39,6 +49,20 @@ class ScenarioCandidate(BaseModel):
     trace_id: str | None = None
     state: CandidateState = CandidateState.PENDING
     tags: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_identity(self) -> "ScenarioCandidate":
+        values = (self.candidate_id, self.source, self.failure_class, self.summary,
+                  self.expected_relation, self.first_bad_revision)
+        if any(not value.strip() for value in values):
+            raise ValueError("scenario candidate fields must be non-empty")
+        if self.trace_id is not None and not self.trace_id.strip():
+            raise ValueError("scenario candidate trace id must be non-empty")
+        if any(not tag.strip() for tag in self.tags):
+            raise ValueError("scenario candidate tags must be non-empty")
+        if len(self.tags) != len(set(self.tags)):
+            raise ValueError("scenario candidate tags must be unique")
+        return self
 
     @classmethod
     def from_observation(cls, item: FailureObservation) -> "ScenarioCandidate":

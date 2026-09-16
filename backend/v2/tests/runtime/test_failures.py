@@ -41,3 +41,21 @@ def test_failure_intake_contracts_reject_unknown_fields() -> None:
             "summary": "wrong", "expected_relation": "cite source",
             "first_bad_revision": "bad", "invented": True,
         })
+
+
+def test_failure_intake_rejects_blank_identity_and_duplicate_tags() -> None:
+    import pytest
+    from pydantic import ValidationError
+    from v2.runtime.failures import ScenarioCandidate
+
+    base = {"source": "qa", "failure_class": "grounding", "summary": "wrong",
+            "expected_relation": "cite source", "revision": "bad"}
+    with pytest.raises(ValidationError, match="must be non-empty"):
+        FailureObservation(**{**base, "summary": " "})
+    candidate = {"candidate_id": "id", "source": "qa",
+                 "failure_class": "grounding", "summary": "wrong",
+                 "expected_relation": "cite source", "first_bad_revision": "bad"}
+    with pytest.raises(ValidationError, match="tags must be unique"):
+        ScenarioCandidate(**candidate, tags=["regression", "regression"])
+    with pytest.raises(ValidationError, match="trace id must be non-empty"):
+        ScenarioCandidate(**candidate, trace_id=" ")
