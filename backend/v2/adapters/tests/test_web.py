@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+
 import httpx
 import pytest
 
@@ -164,7 +166,7 @@ async def test_web_fetch_capability_only_extracts_selected_parent_result():
             return WebPage(
                 url=result.url, title=result.title,
                 retrieved_at=datetime(2026, 9, 15, tzinfo=UTC),
-                markdown="# Story\nFull sourced text", content_hash="a" * 64)
+                markdown="# Story\nFull sourced text", content_hash=hashlib.sha256("# Story\nFull sourced text".encode()).hexdigest())
 
     node = PlanNode(id="fetch", description="page", depends_on=["search"],
                     capability_hints=["web_fetch"],
@@ -218,7 +220,7 @@ async def test_planned_web_dag_binds_fetch_to_content_addressed_parent():
         async def fetch(self, result):
             return WebPage(url=result.url, title=result.title,
                 retrieved_at=datetime(2026, 9, 15, tzinfo=UTC),
-                markdown="Full source", content_hash="a" * 64)
+                markdown="Full source", content_hash=hashlib.sha256("Full source".encode()).hexdigest())
 
     plan = Plan(nodes=[
         PlanNode(id="discover", description="current source",
@@ -303,6 +305,7 @@ def test_web_page_contract_rejects_blank_content_and_bad_hash():
         ({"title": " "}, "title and markdown"),
         ({"publisher": " "}, "publisher"),
         ({"content_hash": "hash"}, "lowercase sha256"),
+        ({"content_hash": "b" * 64}, "does not match markdown"),
     ]:
         with pytest.raises(ValidationError, match=error):
             WebPage(**{**base, **changes})

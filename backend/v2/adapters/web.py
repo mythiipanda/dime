@@ -6,6 +6,7 @@ not an arbitrary model-authored URL, so publication keeps source identity.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import ipaddress
 import socket
 from collections.abc import Callable, Sequence
@@ -110,6 +111,9 @@ class WebPage(BaseModel):
             char not in "0123456789abcdef" for char in self.content_hash
         ):
             raise ValueError("web page content hash must be lowercase sha256")
+        expected_hash = hashlib.sha256(self.markdown.encode()).hexdigest()
+        if self.content_hash != expected_hash:
+            raise ValueError("web page content hash does not match markdown")
         return self
 
 
@@ -236,8 +240,6 @@ class JinaReader:
         self._client = client
 
     async def fetch(self, result: WebSearchResult) -> WebPage:
-        import hashlib
-
         source_url = await validate_public_url(str(result.url))
         owns_client = self._client is None
         client = self._client or httpx.AsyncClient(
