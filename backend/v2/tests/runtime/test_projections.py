@@ -31,3 +31,27 @@ def test_replay_projection_excludes_prompts_questions_and_answers():
     text = str(payload).casefold()
     assert set(payload) == {"evidence", "tools"}
     assert all(word not in text for word in ("prompt", "question", "answer", "transcript"))
+
+
+def test_successful_tool_projection_rejects_missing_or_extra_evidence_fields():
+    import pytest
+
+    def ledger_with_result(data):
+        ledger = RunLedger("run")
+        ledger.append(LedgerKind.TOOL_CALL, turn_id="turn", step_id="facts",
+                      call_id="call", data={"name": "standings", "args": {}})
+        ledger.append(LedgerKind.TOOL_RESULT, turn_id="turn", step_id="facts",
+                      call_id="call", data=data)
+        return ledger
+
+    missing = ledger_with_result({"status": "ok"})
+    with pytest.raises(ValueError, match="unexpected fields"):
+        admitted_evidence(missing.entries)
+
+    _, evidence = ledger_with_attempt()
+    extra = ledger_with_result({
+        "status": "ok", "evidence": evidence.model_dump(mode="json"),
+        "unverified": True,
+    })
+    with pytest.raises(ValueError, match="unexpected fields"):
+        admitted_evidence(extra.entries)

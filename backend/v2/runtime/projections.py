@@ -12,9 +12,11 @@ def admitted_evidence(entries: Iterable[LedgerEntry]) -> list[EvidenceEnvelope]:
     for entry in entries:
         if entry.kind != LedgerKind.TOOL_RESULT or entry.data.get("status") != "ok":
             continue
+        if set(entry.data) != {"status", "evidence"}:
+            raise ValueError("successful tool result has unexpected fields")
         payload = entry.data.get("evidence")
         if not isinstance(payload, dict):
-            continue
+            raise ValueError("successful tool result requires evidence object")
         item = EvidenceEnvelope.model_validate(payload)
         if item.evidence_id not in seen:
             evidence.append(item)
