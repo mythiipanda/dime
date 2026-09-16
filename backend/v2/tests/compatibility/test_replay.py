@@ -69,3 +69,34 @@ def test_save_replay_rejects_prompt_material_in_tool_payload(tmp_path):
             [([], [{"name": "tool", "args": {"question": "hidden"}}])],
         )
     assert not (tmp_path / "bad.json").exists()
+
+
+def test_replay_io_rejects_symlinked_file(tmp_path):
+    target = tmp_path / "target.json"
+    target.write_text("{}")
+    path = tmp_path / "replay.json"
+    path.symlink_to(target)
+    item = EvidenceEnvelope(
+        evidence_id="ev", capability="ratings", source="fixture",
+        observed_at=datetime.now(UTC), rows={"net": 8.2},
+    )
+    for operation in (
+        lambda: load_replay(path),
+        lambda: save_replay(path, "x", "r", [([item], [])]),
+    ):
+        with pytest.raises(ValueError, match="file cannot be a symlink"):
+            operation()
+    assert target.read_text() == "{}"
+
+
+def test_save_replay_leaves_no_partial_or_temporary_file_on_serialization_failure(
+    tmp_path, monkeypatch,
+):
+    def fail_dump(*args, **kwargs):
+        raise OSError("disk full")
+    monkeypatch.setattr("v2.tests.compatibility.replay.json.dump", fail_dump)
+    path = tmp_path / "replay.json"
+    with pytest.raises(OSError, match="disk full"):
+        save_replay(path, "x", "r", [([], [])])
+    assert not path.exists()
+    assert not list(tmp_path.glob(".replay-*"))
