@@ -6,7 +6,7 @@ from enum import StrEnum
 from pathlib import Path
 from threading import Lock
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class CandidateState(StrEnum):
@@ -17,6 +17,8 @@ class CandidateState(StrEnum):
 
 
 class FailureObservation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     source: str
     failure_class: str
     summary: str
@@ -26,6 +28,8 @@ class FailureObservation(BaseModel):
 
 
 class ScenarioCandidate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     candidate_id: str
     source: str
     failure_class: str

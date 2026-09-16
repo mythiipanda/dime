@@ -23,3 +23,21 @@ def test_candidate_intake_deduplicates_same_failure_shape(tmp_path):
     second = store.add(observation("mixed provenance"))
     assert first.candidate_id == second.candidate_id
     assert store.read() == [first]
+
+
+def test_failure_intake_contracts_reject_unknown_fields() -> None:
+    import pytest
+    from pydantic import ValidationError
+    from v2.runtime.failures import ScenarioCandidate
+
+    with pytest.raises(ValidationError, match="invented"):
+        FailureObservation.model_validate({
+            "source": "qa", "failure_class": "grounding", "summary": "wrong",
+            "expected_relation": "cite source", "revision": "bad", "invented": True,
+        })
+    with pytest.raises(ValidationError, match="invented"):
+        ScenarioCandidate.model_validate({
+            "candidate_id": "id", "source": "qa", "failure_class": "grounding",
+            "summary": "wrong", "expected_relation": "cite source",
+            "first_bad_revision": "bad", "invented": True,
+        })
