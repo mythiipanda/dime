@@ -31,7 +31,7 @@ class TerminalReason(StrEnum):
 
 
 class RequestEnvelope(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     provider: str
     model: str
@@ -71,7 +71,7 @@ class RequestEnvelope(BaseModel):
 
 
 class LedgerEntry(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     sequence: int = Field(ge=1)
     run_id: str

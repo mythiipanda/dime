@@ -83,3 +83,22 @@ def test_file_ledger_exposes_runtime_surface(tmp_path: Path) -> None:
     file.append(LedgerKind.TURN_START, turn_id="t")
     assert file.run_id == "run"
     assert len(file.entries) == 1
+
+
+def test_ledger_contracts_reject_unknown_fields() -> None:
+    from datetime import UTC, datetime
+    from pydantic import ValidationError
+    from v2.runtime.ledger import LedgerEntry
+
+    with pytest.raises(ValidationError, match="extra_field"):
+        RequestEnvelope.model_validate({
+            "provider": "free", "model": "model", "route": "answer",
+            "prompt_hash": "p", "context_hash": "c", "tool_schema_hash": "t",
+            "planner_version": "v2", "extra_field": True,
+        })
+    with pytest.raises(ValidationError, match="extra_field"):
+        LedgerEntry.model_validate({
+            "sequence": 1, "run_id": "run", "kind": "turn/start",
+            "recorded_at": datetime.now(UTC), "turn_id": "turn",
+            "extra_field": True,
+        })
