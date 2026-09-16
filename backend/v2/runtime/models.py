@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from v2.contracts import (
     DraftReport,
@@ -14,6 +14,8 @@ from v2.contracts import (
 
 
 class ExecutionResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     plan: Plan
     evidence: list[EvidenceEnvelope] = Field(default_factory=list)
     attempts: dict[str, int] = Field(default_factory=dict)
@@ -21,6 +23,8 @@ class ExecutionResult(BaseModel):
 
 
 class RuntimeResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     task: TaskSpec
     execution: ExecutionResult
     draft: DraftReport
@@ -28,3 +32,22 @@ class RuntimeResult(BaseModel):
     repaired: bool = False
     verified_claims: list[VerifiedClaim] = Field(default_factory=list)
     gaps: list[Gap] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_publication(self) -> "RuntimeResult":
+        by_index = {item.claim_index: item for item in self.verification.claim_results}
+        seen: set[int] = set()
+        for item in self.verified_claims:
+            if item.claim_index in seen:
+                raise ValueError("verified claim indices must be unique")
+            seen.add(item.claim_index)
+            if item.claim_index >= len(self.draft.claims):
+                raise ValueError("verified claim index is outside the draft")
+            if item.claim != self.draft.claims[item.claim_index]:
+                raise ValueError("verified claim does not match the draft")
+            result = by_index.get(item.claim_index)
+            if result is None or not result.supported:
+                raise ValueError("verified claim lacks supported adjudication")
+            if item.evidence_ids != item.claim.evidence_ids:
+                raise ValueError("verified claim evidence does not match its claim")
+        return self

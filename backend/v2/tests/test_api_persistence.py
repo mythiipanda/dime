@@ -247,7 +247,12 @@ def test_answer_text_publishes_only_adjudicated_model_prose():
         execution=ExecutionResult(plan=contracts.Plan(nodes=[])),
         draft=contracts.DraftReport(
             sections=["Record"], claims=[supported, rejected]),
-        verification=contracts.VerificationReport(status="partial"),
+        verification=contracts.VerificationReport(
+            status="partial", claim_results=[
+                contracts.ClaimResult(claim_index=0, supported=True),
+                contracts.ClaimResult(claim_index=1, supported=False,
+                                      reasons=["uncited numeral 62"]),
+            ]),
         verified_claims=[contracts.VerifiedClaim(
             claim_index=0, claim=supported, evidence_ids=["ev"])],
         gaps=[contracts.Gap(

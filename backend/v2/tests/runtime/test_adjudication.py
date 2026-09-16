@@ -70,3 +70,27 @@ def test_pass_status_without_claim_adjudication_publishes_nothing() -> None:
     ])
     report = VerificationReport(status="pass", claim_results=[])
     assert _verified_claims(draft, report) == []
+
+
+def test_runtime_result_rejects_mismatched_verified_claim() -> None:
+    import pytest
+    from pydantic import ValidationError
+    from v2.contracts import VerifiedClaim
+    from v2.runtime.models import ExecutionResult, RuntimeResult
+    from v2.contracts import Plan, TaskSpec
+
+    draft = DraftReport(sections=["Answer"], claims=[
+        Claim(text="Boston won 61 games.", kind="observed", evidence_ids=["ev"]),
+    ])
+    report = VerificationReport(status="partial", claim_results=[
+        ClaimResult(claim_index=0, supported=False, reasons=["unsupported"]),
+    ])
+    with pytest.raises(ValidationError, match="lacks supported adjudication"):
+        RuntimeResult(
+            task=TaskSpec(goal="record", mode="quick", deliverable="answer"),
+            execution=ExecutionResult(plan=Plan(nodes=[])),
+            draft=draft, verification=report,
+            verified_claims=[VerifiedClaim(
+                claim_index=0, claim=draft.claims[0], evidence_ids=["ev"]),
+            ],
+        )
