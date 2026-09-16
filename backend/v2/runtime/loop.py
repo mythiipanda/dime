@@ -17,6 +17,7 @@ from v2.runtime.executor import PlanExecutor
 from v2.runtime.interfaces import Intake, Planner, Repairer, Synthesizer, Verifier
 from v2.runtime.ledger import LedgerKind, RunLedger, TerminalReason
 from v2.runtime.models import RuntimeResult
+from v2.domain.evidence import iter_values
 
 
 class Runtime:
@@ -116,8 +117,16 @@ class Runtime:
                 update={"status": VerificationStatus.PARTIAL}
             )
 
+        empty_evidence_gaps = _empty_evidence_gaps(execution.evidence)
+        if empty_evidence_gaps and verification.status == VerificationStatus.PASS:
+            verification = verification.model_copy(
+                update={"status": VerificationStatus.PARTIAL}
+            )
         verified_claims = _verified_claims(draft, verification, evidence)
-        gaps = _verification_gaps(draft, verification, execution.errors)
+        gaps = [
+            *_verification_gaps(draft, verification, execution.errors),
+            *empty_evidence_gaps,
+        ]
         result = RuntimeResult(
             task=task,
             execution=execution,
@@ -245,6 +254,18 @@ def _verified_claims(draft, verification, evidence=None) -> list[VerifiedClaim]:
                 if evidence and evidence_id in evidence])
         for index, claim in enumerate(draft.claims)
         if index in supported
+    ]
+
+
+def _empty_evidence_gaps(evidence) -> list[Gap]:
+    return [
+        Gap(
+            kind=GapKind.MISSING_EVIDENCE,
+            message=(f"{item.capability} returned no evidence values"),
+            evidence_ids=[item.evidence_id],
+        )
+        for item in evidence
+        if not any(True for _ in iter_values(item))
     ]
 
 

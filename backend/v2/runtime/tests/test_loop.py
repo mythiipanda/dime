@@ -261,3 +261,23 @@ async def test_unresolved_intake_questions_stop_before_planning() -> None:
     )
     with pytest.raises(ValueError, match="Which Brown"):
         await instance.run("assess Brown")
+
+
+@pytest.mark.anyio
+async def test_empty_evidence_cannot_finish_as_a_clean_pass() -> None:
+    class EmptySynthesizer:
+        async def synthesize(self, task, evidence):
+            return DraftReport(sections=["No sourced answer"], claims=[])
+
+    instance = Runtime(
+        intake=Intake(), planner=Planner(),
+        executor=PlanExecutor({"fake": FakeCapability("fake", [])}),
+        synthesizer=EmptySynthesizer(),
+        mechanical_verifier=SequenceVerifier(VerificationStatus.PASS),
+        semantic_verifier=SequenceVerifier(VerificationStatus.PASS),
+    )
+    result = await instance.run("answer")
+    assert result.verification.status == VerificationStatus.PARTIAL
+    assert len(result.gaps) == 1
+    assert result.gaps[0].kind == "missing_evidence"
+    assert result.gaps[0].evidence_ids == ["evidence:facts"]

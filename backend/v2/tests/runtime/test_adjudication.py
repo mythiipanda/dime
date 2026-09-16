@@ -145,3 +145,19 @@ def test_runtime_result_rejects_gap_with_unknown_evidence() -> None:
             gaps=[Gap(kind="source_conflict", message="conflict",
                       evidence_ids=["invented"])],
         )
+
+
+def test_empty_execution_evidence_becomes_a_cited_typed_gap() -> None:
+    from datetime import UTC, datetime
+    from v2.contracts import EvidenceEnvelope
+    from v2.runtime.loop import _empty_evidence_gaps
+
+    empty = EvidenceEnvelope(
+        evidence_id="search:none", capability="web_search", source="web:fixture",
+        observed_at=datetime.now(UTC), rows=[],
+    )
+    gaps = _empty_evidence_gaps([empty])
+    assert len(gaps) == 1
+    assert gaps[0].kind == "missing_evidence"
+    assert gaps[0].evidence_ids == ["search:none"]
+    assert gaps[0].message == "web_search returned no evidence values"
