@@ -422,3 +422,10 @@ def test_plan_argument_map_has_a_hard_limit() -> None:
     with pytest.raises(ValidationError, match="at most 64 items"):
         PlanNode(id="node", description="work",
                  arguments={f"key-{index}": index for index in range(65)})
+
+
+def test_core_text_contracts_have_hard_limits() -> None:
+    with pytest.raises(ValidationError, match="at most 2000 characters"):
+        TaskSpec(goal="x" * 2001, mode="quick", deliverable="text")
+    with pytest.raises(ValidationError, match="at most 4000 characters"):
+        Claim(text="x" * 4001, kind="opinion")

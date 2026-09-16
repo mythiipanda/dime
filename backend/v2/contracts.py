@@ -46,9 +46,9 @@ class GapKind(StrEnum):
 class EntityRef(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    id: str
+    id: str = Field(max_length=256)
     type: Literal["player", "team", "game", "league"]
-    display_name: str
+    display_name: str = Field(max_length=512)
 
     @model_validator(mode="after")
     def validate_identity(self) -> "EntityRef":
@@ -67,7 +67,7 @@ def _is_canonical_season(value: str) -> bool:
 class SeasonRef(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    value: str
+    value: str = Field(max_length=7)
     source: Literal["user", "context", "default", "resolved"]
     confidence: StrictFloat = Field(ge=0, le=1)
 
@@ -96,9 +96,9 @@ class ConversationTurn(BaseModel):
 class TaskSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    goal: str
+    goal: str = Field(max_length=2000)
     mode: RunMode
-    deliverable: str
+    deliverable: str = Field(max_length=1000)
     entities: list[EntityRef] = Field(default_factory=list, max_length=64)
     season: SeasonRef | None = None
     as_of: date | None = None
@@ -128,8 +128,8 @@ class TaskSpec(BaseModel):
 class PlanNode(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    id: str = Field(min_length=1)
-    description: str = Field(min_length=1)
+    id: str = Field(min_length=1, max_length=256)
+    description: str = Field(min_length=1, max_length=2000)
     depends_on: list[str] = Field(default_factory=list, max_length=32)
     capability_hints: list[str] = Field(default_factory=list, max_length=16)
     arguments: dict[str, Any] = Field(default_factory=dict, max_length=64)
@@ -203,9 +203,9 @@ class Plan(BaseModel):
 class EvidenceEnvelope(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    evidence_id: str = Field(min_length=1)
-    capability: str
-    source: str
+    evidence_id: str = Field(min_length=1, max_length=256)
+    capability: str = Field(max_length=256)
+    source: str = Field(max_length=2000)
     observed_at: datetime
     season: str | None = None
     vintages: dict[str, str] = Field(default_factory=dict, max_length=64)
@@ -267,10 +267,10 @@ class EvidenceEnvelope(BaseModel):
 class Claim(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    text: str = Field(min_length=1)
+    text: str = Field(min_length=1, max_length=4000)
     kind: ClaimKind
     evidence_ids: list[str] = Field(default_factory=list, max_length=32)
-    calculation_id: str | None = None
+    calculation_id: str | None = Field(default=None, max_length=256)
     confidence: StrictFloat | None = Field(default=None, ge=0, le=1)
 
     @model_validator(mode="after")
@@ -320,7 +320,7 @@ class Gap(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     kind: GapKind
-    message: str = Field(min_length=1)
+    message: str = Field(min_length=1, max_length=4000)
     evidence_ids: list[str] = Field(default_factory=list, max_length=32)
     blocks: list[str] = Field(default_factory=list, max_length=64)
 
@@ -341,8 +341,8 @@ class ClaimSource(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     evidence_id: str
-    source: str
-    capability: str
+    source: str = Field(max_length=2000)
+    capability: str = Field(max_length=256)
 
     @model_validator(mode="after")
     def validate_identity(self) -> "ClaimSource":
