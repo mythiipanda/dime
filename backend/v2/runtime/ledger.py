@@ -102,6 +102,21 @@ class LedgerEntry(BaseModel):
     data: dict[str, Any] = Field(default_factory=dict)
 
 
+def _validate_terminal_data(kind: LedgerKind, data: dict[str, Any]) -> None:
+    if kind not in (LedgerKind.STEP_END, LedgerKind.TURN_END):
+        return
+    reason = data.get("reason")
+    if reason not in {item.value for item in TerminalReason}:
+        raise ValueError("terminal ledger event requires a valid reason")
+    if reason == TerminalReason.COMPLETE.value:
+        if "error" in data:
+            raise ValueError("completed terminal event cannot carry an error")
+    else:
+        error = data.get("error")
+        if error is not None and (not isinstance(error, str) or not error.strip()):
+            raise ValueError("terminal event error must be non-empty when present")
+
+
 def _validate_assistant_attempt(data: dict[str, Any]) -> None:
     status = data.get("status")
     if status == "failed":
@@ -152,6 +167,7 @@ class RunLedger:
                 raise ValueError("step events require step_id")
             if entry.kind in (LedgerKind.TURN_START, LedgerKind.TURN_END)                     and entry.step_id is not None:
                 raise ValueError("turn events cannot carry step_id")
+            _validate_terminal_data(entry.kind, entry.data)
             if entry.kind == LedgerKind.TURN_START:
                 if entry.turn_id in open_turns or entry.turn_id in closed_turns:
                     raise ValueError("turn may start only once")
@@ -266,6 +282,7 @@ class RunLedger:
         if kind in (LedgerKind.TOOL_CALL, LedgerKind.TOOL_RESULT,
                     LedgerKind.MODEL_REQUEST, LedgerKind.ASSISTANT_ATTEMPT)                 and not call_id:
             raise ValueError("call events require call_id")
+        _validate_terminal_data(kind, payload)
         if kind == LedgerKind.MODEL_REQUEST:
             if call_id in self._model_requests:
                 raise ValueError("model request call id must be unique")

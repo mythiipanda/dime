@@ -199,9 +199,12 @@ def test_reloaded_ledger_rejects_invalid_turn_and_step_order() -> None:
     from v2.runtime.ledger import LedgerEntry
 
     def entry(sequence, kind, *, step_id=None):
+        data = ({"reason": "complete"}
+                if kind in ("step/end", "turn/end") else {})
         return LedgerEntry(
             sequence=sequence, run_id="run", kind=kind,
             recorded_at=datetime.now(UTC), turn_id="turn", step_id=step_id,
+            data=data,
         )
 
     with pytest.raises(ValueError, match="open turn"):
@@ -219,13 +222,14 @@ def test_reloaded_ledger_rejects_invalid_turn_and_step_order() -> None:
 def test_live_ledger_enforces_turn_and_step_lifecycle() -> None:
     ledger = RunLedger("run")
     with pytest.raises(ValueError, match="open turn"):
-        ledger.append(LedgerKind.TURN_END, turn_id="turn")
+        ledger.append(LedgerKind.TURN_END, turn_id="turn", data={"reason": "complete"})
     ledger.append(LedgerKind.TURN_START, turn_id="turn")
     ledger.append(LedgerKind.STEP_START, turn_id="turn", step_id="plan")
     with pytest.raises(ValueError, match="open steps"):
-        ledger.append(LedgerKind.TURN_END, turn_id="turn")
-    ledger.append(LedgerKind.STEP_END, turn_id="turn", step_id="plan")
-    ledger.append(LedgerKind.TURN_END, turn_id="turn")
+        ledger.append(LedgerKind.TURN_END, turn_id="turn", data={"reason": "complete"})
+    ledger.append(LedgerKind.STEP_END, turn_id="turn", step_id="plan",
+                  data={"reason": "complete"})
+    ledger.append(LedgerKind.TURN_END, turn_id="turn", data={"reason": "complete"})
     with pytest.raises(ValueError, match="follow turn end"):
         ledger.append(LedgerKind.ASSISTANT_ATTEMPT, turn_id="turn")
 
@@ -332,4 +336,18 @@ def test_turn_events_reject_step_identity(kind) -> None:
     if kind == LedgerKind.TURN_END:
         ledger.append(LedgerKind.TURN_START, turn_id="turn")
     with pytest.raises(ValueError, match="cannot carry step_id"):
-        ledger.append(kind, turn_id="turn", step_id="bad")
+        ledger.append(kind, turn_id="turn", step_id="bad",
+                      data={"reason": "complete"} if kind == LedgerKind.TURN_END else {})
+
+
+@pytest.mark.parametrize("kind,kwargs", [
+    (LedgerKind.STEP_END, {"step_id": "plan"}),
+    (LedgerKind.TURN_END, {}),
+])
+def test_terminal_ledger_events_require_reason(kind, kwargs) -> None:
+    ledger = RunLedger("run")
+    ledger.append(LedgerKind.TURN_START, turn_id="turn")
+    if kind == LedgerKind.STEP_END:
+        ledger.append(LedgerKind.STEP_START, turn_id="turn", step_id="plan")
+    with pytest.raises(ValueError, match="valid reason"):
+        ledger.append(kind, turn_id="turn", **kwargs)
