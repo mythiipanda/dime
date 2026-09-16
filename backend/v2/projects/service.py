@@ -67,6 +67,19 @@ class ProjectStore:
             current = Project.model_validate_json(row[0])
             values = current.model_dump()
             values.update(changes)
+            next_status = ProjectStatus(values["status"])
+            allowed_transitions = {
+                ProjectStatus.PENDING: {ProjectStatus.PENDING, ProjectStatus.RUNNING,
+                                        ProjectStatus.FAILED},
+                ProjectStatus.RUNNING: {ProjectStatus.RUNNING, ProjectStatus.COMPLETE,
+                                        ProjectStatus.FAILED},
+                ProjectStatus.COMPLETE: {ProjectStatus.COMPLETE},
+                ProjectStatus.FAILED: {ProjectStatus.FAILED},
+            }
+            if next_status not in allowed_transitions[current.status]:
+                raise ValueError(
+                    f"project status cannot transition from {current.status.value} "
+                    f"to {next_status.value}")
             values["updated_at"] = datetime.now(UTC)
             project = Project.model_validate(values)
             connection.execute(

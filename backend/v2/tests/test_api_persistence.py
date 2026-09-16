@@ -915,3 +915,15 @@ def test_project_store_update_rejects_identity_and_unknown_fields(tmp_path: Path
         with pytest.raises(ValueError, match="unknown fields"):
             store.update(project.id, **changes)
     assert store.get(project.id) == project
+
+
+def test_project_store_rejects_status_regression_and_terminal_rewrite(tmp_path: Path) -> None:
+    store = ProjectStore(tmp_path / "projects.sqlite3")
+    project = store.create("Celtics outlook")
+    store.update(project.id, status="running")
+    with pytest.raises(ValueError, match="running to pending"):
+        store.update(project.id, status="pending")
+    complete = store.update(project.id, status="complete", result="done")
+    with pytest.raises(ValueError, match="complete to running"):
+        store.update(project.id, status="running", result=None)
+    assert store.get(project.id) == complete
