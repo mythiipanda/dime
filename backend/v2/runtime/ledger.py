@@ -10,6 +10,15 @@ from pathlib import Path
 from threading import Lock
 from typing import Any, Iterable
 
+_LEDGER_LOCKS_GUARD = Lock()
+_LEDGER_LOCKS: dict[Path, Lock] = {}
+
+
+def _ledger_path_lock(path: Path) -> Lock:
+    resolved = path.resolve()
+    with _LEDGER_LOCKS_GUARD:
+        return _LEDGER_LOCKS.setdefault(resolved, Lock())
+
 from pydantic import BaseModel, ConfigDict, Field, StrictFloat, StrictInt, model_validator
 
 
@@ -435,7 +444,7 @@ class RunLedger:
 class FileLedger:
     def __init__(self, path: str | Path, run_id: str) -> None:
         self.path = Path(path)
-        self._lock = Lock()
+        self._lock = _ledger_path_lock(self.path)
         self.ledger = RunLedger(run_id, self._read())
 
     @property
@@ -448,7 +457,7 @@ class FileLedger:
 
     def append(self, *args: Any, **kwargs: Any) -> LedgerEntry:
         with self._lock:
-            staged = RunLedger(self.run_id, self.ledger.entries)
+            staged = RunLedger(self.run_id, self._read())
             entry = staged.append(*args, **kwargs)
             parent_was_missing = not self.path.parent.exists()
             self.path.parent.mkdir(parents=True, exist_ok=True)

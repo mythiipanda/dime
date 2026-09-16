@@ -496,3 +496,13 @@ def test_file_ledger_rejects_blank_records(tmp_path) -> None:
     path.write_text(path.read_text() + "\n")
     with pytest.raises(ValueError, match="blank records"):
         FileLedger(path, "run")
+
+
+def test_file_ledgers_for_same_path_share_lock_and_refresh_state(tmp_path) -> None:
+    path = tmp_path / "run.jsonl"
+    first = FileLedger(path, "run")
+    second = FileLedger(path, "run")
+    assert first._lock is second._lock
+    first.append(LedgerKind.TURN_START, turn_id="turn", data={"request": "q"})
+    second.append(LedgerKind.TURN_END, turn_id="turn", data={"reason": "complete"})
+    assert [entry.sequence for entry in FileLedger(path, "run").entries] == [1, 2]
