@@ -56,17 +56,12 @@ async def test_retries_without_weakening_failure() -> None:
 
 
 @pytest.mark.anyio
-async def test_failed_parent_skips_descendant() -> None:
-    result = await PlanExecutor({}).execute(
-        TaskSpec(goal="answer", mode=RunMode.QUICK, deliverable="text"),
-        Plan(nodes=[node("a"), node("b", parents=["a"])]),
-    )
-
-    assert [item.status for item in result.plan.nodes] == [
-        PlanStatus.FAILED,
-        PlanStatus.SKIPPED,
-    ]
-    assert result.errors == {"a": ["no registered capability matches capability hints"]}
+async def test_unknown_capability_fails_preflight() -> None:
+    with pytest.raises(ValueError, match="exactly one registered capability"):
+        await PlanExecutor({}).execute(
+            TaskSpec(goal="answer", mode=RunMode.QUICK, deliverable="text"),
+            Plan(nodes=[node("a"), node("b", parents=["a"])]),
+        )
 
 
 @pytest.mark.anyio
@@ -140,3 +135,49 @@ async def test_task_season_capability_still_rejects_wrong_vintage() -> None:
     result = await PlanExecutor({"standings": Standings()}).execute(task, plan)
     assert result.plan.nodes[0].status == PlanStatus.FAILED
     assert "does not match" in result.errors["record"][0]
+
+
+@pytest.mark.anyio
+async def test_ambiguous_capability_hints_fail_before_any_execution() -> None:
+    calls: list[str] = []
+
+    class Tracking(FakeCapability):
+        async def execute(self, node, task, evidence):
+            calls.append(node.id)
+            return await super().execute(node, task, evidence)
+
+    capabilities = {"one": Tracking("one", {}), "two": Tracking("two", {})}
+    plan = Plan(nodes=[
+        PlanNode(id="valid", description="valid", capability_hints=["one"],
+                 completion_test="done"),
+        PlanNode(id="ambiguous", description="ambiguous",
+                 capability_hints=["one", "two"], completion_test="done"),
+    ])
+    with pytest.raises(ValueError, match="exactly one registered capability"):
+        await PlanExecutor(capabilities).execute(
+            TaskSpec(goal="answer", mode="quick", deliverable="text"), plan)
+    assert calls == []
+
+
+@pytest.mark.anyio
+async def test_invalid_arguments_fail_before_any_execution() -> None:
+    calls: list[str] = []
+
+    class Validated(FakeCapability):
+        def validate_arguments(self, node):
+            if "required" not in node.arguments:
+                raise ValueError("required field missing")
+        async def execute(self, node, task, evidence):
+            calls.append(node.id)
+            return await super().execute(node, task, evidence)
+
+    plan = Plan(nodes=[
+        PlanNode(id="valid", description="valid", capability_hints=["fake"],
+                 arguments={"required": True}, completion_test="done"),
+        PlanNode(id="bad", description="bad", capability_hints=["fake"],
+                 completion_test="done"),
+    ])
+    with pytest.raises(ValueError, match="required field missing"):
+        await PlanExecutor({"fake": Validated("fake", {})}).execute(
+            TaskSpec(goal="answer", mode="quick", deliverable="text"), plan)
+    assert calls == []

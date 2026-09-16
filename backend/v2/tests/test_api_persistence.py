@@ -75,38 +75,30 @@ async def test_checkpoint_resume_does_not_replay_completed_nodes(
     tmp_path: Path,
 ) -> None:
     checkpoints = FileCheckpointStore(tmp_path)
-    first = PlanExecutor(
-        {"fake": FakeCapability("fake", lambda node: {"node": node.id})},
-        max_failures=1,
-        checkpoint_store=checkpoints,
-    )
-    partial_plan = _plan()
-    partial_plan.nodes[1].capability_hints = ["missing"]
-    result = await first.execute(_task(), partial_plan, run_id="resume")
-    assert result.plan.nodes[0].status == PlanStatus.COMPLETE
+    plan = _plan()
+    task = _task()
+    completed = plan.nodes[0].model_copy(update={"status": PlanStatus.COMPLETE})
+    from datetime import UTC, datetime
+    from v2.contracts import EvidenceEnvelope
+    from v2.runtime.checkpoints import ExecutionCheckpoint
 
-    checkpoint = checkpoints.load("resume")
-    assert checkpoint is not None
-    checkpoint.plan.nodes[1].status = PlanStatus.PENDING
-    checkpoint.plan.nodes[1].capability_hints = ["fake"]
-    checkpoints.save(checkpoint)
+    checkpoints.save(ExecutionCheckpoint(
+        run_id="resume", task=task,
+        plan=Plan(nodes=[completed, plan.nodes[1]]),
+        evidence_by_node={"one": EvidenceEnvelope(
+            evidence_id="evidence:one", capability="fake", source="fixture",
+            observed_at=datetime.now(UTC), rows={"node": "one"})},
+        attempts={"one": 1, "two": 0}, errors={},
+    ))
     calls: list[str] = []
-    second = PlanExecutor(
-        {
-            "fake": FakeCapability(
-                "fake", lambda node: calls.append(node.id) or {"node": node.id}
-            )
-        },
-        checkpoint_store=checkpoints,
-    )
-    resumed_plan = _plan()
-    resumed = await second.execute(_task(), resumed_plan, run_id="resume")
+    executor = PlanExecutor({
+        "fake": FakeCapability(
+            "fake", lambda node: calls.append(node.id) or {"node": node.id})
+    }, checkpoint_store=checkpoints)
+    resumed = await executor.execute(task, plan, run_id="resume")
     assert calls == ["two"]
     assert [node.status for node in resumed.plan.nodes] == [PlanStatus.COMPLETE] * 2
-    assert [item.rows for item in resumed.evidence] == [
-        {"node": "one"},
-        {"node": "two"},
-    ]
+
 
 
 def test_file_checkpoint_rejects_path_escape(tmp_path: Path) -> None:

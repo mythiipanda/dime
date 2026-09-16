@@ -221,6 +221,9 @@ class WebSearchCapability:
     def __init__(self, provider: WebSearchProvider | None = None) -> None:
         self._provider = provider or DuckDuckGoSearch()
 
+    def validate_arguments(self, node: Any) -> None:
+        WebSearchRequest.model_validate(node.arguments)
+
     async def execute(self, node: Any, task: Any, evidence: Sequence[Any]):
         from v2.contracts import EvidenceEnvelope
 
@@ -247,6 +250,11 @@ class WebFetchCapability:
 
     def __init__(self, provider: WebFetchProvider | None = None) -> None:
         self._provider = provider or JinaReader()
+
+    def validate_arguments(self, node: Any) -> None:
+        request = WebFetchRequest.model_validate(node.arguments)
+        if request.search_evidence_id is not None:
+            raise ValueError("web_fetch search_evidence_id is bound after search executes")
 
     async def execute(self, node: Any, task: Any, evidence: Sequence[Any]):
         from v2.contracts import EvidenceEnvelope

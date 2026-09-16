@@ -28,6 +28,8 @@ class Capability(Protocol):
     name: str
     task_season_scoped: bool
 
+    def validate_arguments(self, node: PlanNode) -> None: ...
+
     async def execute(
         self,
         node: PlanNode,

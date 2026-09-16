@@ -173,6 +173,13 @@ class ToolCapability:
             lambda node, task, evidence: _task_arguments(
                 self.name, node, task, evidence))
 
+    def validate_arguments(self, node: Any) -> None:
+        registry = self._tools if self._tools is not None else _default_tools()
+        tool = registry.get(CAPABILITIES[self.name].tool_name)
+        schema = getattr(tool, "args_schema", None)
+        if schema is not None:
+            schema.model_validate(dict(getattr(node, "arguments", {}) or {}))
+
     async def execute(
         self,
         node: Any,

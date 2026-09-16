@@ -17,6 +17,11 @@ class RecordedCapability:
         self._turn_id = turn_id
         self._sequence = 0
 
+    def validate_arguments(self, node: PlanNode) -> None:
+        validator = getattr(self._capability, "validate_arguments", None)
+        if validator is not None:
+            validator(node)
+
     async def execute(
         self,
         node: PlanNode,

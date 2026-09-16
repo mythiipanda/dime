@@ -31,6 +31,7 @@ class PlanExecutor:
     async def execute(
         self, task: TaskSpec, plan: Plan, *, run_id: str | None = None
     ) -> ExecutionResult:
+        self._preflight(plan)
         checkpoint = (
             self._checkpoint_store.load(run_id)
             if self._checkpoint_store is not None and run_id is not None
@@ -140,6 +141,36 @@ class PlanExecutor:
             attempts=attempts,
             errors=errors,
         )
+
+    def _preflight(self, plan: Plan) -> None:
+        for node in plan.nodes:
+            matches = [name for name in node.capability_hints
+                       if name in self._capabilities]
+            if len(matches) != 1:
+                raise ValueError(
+                    f"plan node {node.id!r} must select exactly one registered "
+                    f"capability; got {matches!r}")
+            capability = self._capabilities[matches[0]]
+            validator = getattr(capability, "validate_arguments", None)
+            if validator is not None:
+                try:
+                    validator(node)
+                except Exception as exc:
+                    raise ValueError(
+                        f"invalid arguments for plan node {node.id!r}: {exc}") from exc
+            if matches[0] == "web_fetch":
+                parents = [item for item in node.depends_on
+                           if self._selected_name(plan, item) == "web_search"]
+                if len(parents) != 1 or len(node.depends_on) != 1:
+                    raise ValueError(
+                        f"web_fetch node {node.id!r} requires exactly one "
+                        "web_search dependency")
+
+    def _selected_name(self, plan: Plan, node_id: str) -> str | None:
+        parent = next(item for item in plan.nodes if item.id == node_id)
+        matches = [name for name in parent.capability_hints
+                   if name in self._capabilities]
+        return matches[0] if len(matches) == 1 else None
 
     def _save_checkpoint(
         self,
