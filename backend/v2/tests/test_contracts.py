@@ -162,6 +162,15 @@ def test_plan_node_rejects_ambiguous_identity_or_selection(payload, error) -> No
         PlanNode.model_validate(payload)
 
 
+@pytest.mark.parametrize("value", [
+    float("nan"), float("inf"), float("-inf"),
+    {"nested": [1, float("nan")]},
+])
+def test_plan_node_rejects_nonfinite_arguments(value) -> None:
+    with pytest.raises(ValidationError, match="arguments must contain only finite"):
+        PlanNode(id="facts", description="facts", arguments={"value": value})
+
+
 @pytest.mark.parametrize("payload,error", [
     ({"sections": ["Answer", "Answer"], "claims": [], "gaps": ["missing"]},
      "sections must not contain duplicates"),

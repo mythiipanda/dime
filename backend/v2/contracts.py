@@ -146,6 +146,20 @@ class PlanNode(BaseModel):
             raise ValueError("plan node capability hints must not contain duplicates")
         if any(not value.strip() for value in self.capability_hints):
             raise ValueError("plan node capability hints must be non-empty")
+
+        def validate_finite(value: Any) -> None:
+            if isinstance(value, float) and not math.isfinite(value):
+                raise ValueError("plan node arguments must contain only finite numbers")
+            if isinstance(value, Decimal) and not value.is_finite():
+                raise ValueError("plan node arguments must contain only finite numbers")
+            if isinstance(value, dict):
+                for child in value.values():
+                    validate_finite(child)
+            elif isinstance(value, (list, tuple)):
+                for child in value:
+                    validate_finite(child)
+
+        validate_finite(self.arguments)
         return self
 
 
