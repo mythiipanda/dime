@@ -269,3 +269,14 @@ async def test_synthesizer_rejects_unknown_evidence_ids() -> None:
     with pytest.raises(ValueError, match="unknown evidence ids.*invented"):
         await synthesizer.synthesize(
             TaskSpec(goal="record", mode="quick", deliverable="answer"), [])
+
+
+@pytest.mark.anyio
+async def test_intake_rejects_unknown_required_capability() -> None:
+    stub = StubModel([{
+        "goal": "record", "mode": "quick", "deliverable": "answer",
+        "required_evidence": ["invented_tool"],
+    }])
+    intake = ModelIntake(stub, **stage_kwargs())
+    with pytest.raises(ValueError, match="unknown capabilities.*invented_tool"):
+        await intake.understand("record")

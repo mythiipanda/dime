@@ -183,6 +183,9 @@ class ModelIntake(ModelStage):
             "skill_catalog": self._skills.catalog(),
         })
         self._skills.activate(task.skills)
+        unknown = sorted(set(task.required_evidence) - self._catalog.keys())
+        if unknown:
+            raise ValueError(f"intake selected unknown capabilities: {unknown}")
         return task
 
 
