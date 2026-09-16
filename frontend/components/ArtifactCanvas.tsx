@@ -35,6 +35,10 @@ export interface ArtifactItem {
     b?: string;
     season?: string;
     team?: string;
+    as_of?: string;
+    qualification?: string;
+    coverage?: string;
+    warnings?: string[];
   };
   verdict?: string;
 }
@@ -139,6 +143,12 @@ export default function ArtifactCanvas({ artifact, onClose, onAsk }: ArtifactCan
               {artifact.meta?.source ? `Source: ${artifact.meta.source}` : "Source: NBA data"}
             {artifact.meta?.fetched_at ? ` · ${String(artifact.meta.fetched_at).slice(0, 10)}` : ""}
           </div>
+          {(artifact.meta?.qualification || artifact.meta?.coverage || artifact.meta?.warnings?.length) && (
+            <div style={{ fontSize: 11, color: "var(--color-warm-gray)", marginTop: 3 }}>
+              {[artifact.meta?.qualification, artifact.meta?.coverage,
+                ...(artifact.meta?.warnings ?? [])].filter(Boolean).join(" · ")}
+            </div>
+          )}
         </div>
 
         {/* View Switchers & Controls */}

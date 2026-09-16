@@ -18,11 +18,23 @@ export interface ToolCall {
   sql?: string;
 }
 
+export interface EvidenceMeta {
+  source?: string;
+  fetched_at?: string;
+  rows?: number;
+  cached?: boolean;
+  season?: string;
+  as_of?: string;
+  qualification?: string;
+  coverage?: string;
+  warnings?: string[];
+}
+
 export interface ToolResult {
   tool: string;
   ok?: boolean;
   rows?: unknown;
-  meta?: { source?: string; fetched_at?: string; rows?: number; cached?: boolean };
+  meta?: EvidenceMeta;
   error?: string;
 }
 

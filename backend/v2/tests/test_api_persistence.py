@@ -1329,3 +1329,18 @@ def test_frontend_answer_citation_preserves_all_distinct_sources():
     assert 'lines.join("\\n")' in source
     assert "function firstTableMeta(" not in source
     assert "meta={firstTableMeta(m.ai)}" not in source
+
+
+def test_frontend_evidence_views_preserve_limitations():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[3] / "frontend"
+    chat = (root / "lib" / "chat.ts").read_text()
+    inline = (root / "components" / "DataArtifacts.tsx").read_text()
+    canvas = (root / "components" / "ArtifactCanvas.tsx").read_text()
+
+    for field in ("qualification", "coverage", "warnings"):
+        assert field in chat
+        assert field in inline
+        assert field in canvas
+    assert inline.count("<EvidenceLimitations meta={table.meta} />") == 2

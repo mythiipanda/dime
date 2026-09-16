@@ -29,6 +29,19 @@ import { resolveToolName } from "./view-shared";
 import WowyCard from "./WowyCard";
 import ZoneBars, { isZoneRows } from "./ZoneBars";
 
+function EvidenceLimitations({ meta }: {
+  meta?: { qualification?: string; coverage?: string; warnings?: string[] };
+}) {
+  const items = [meta?.qualification, meta?.coverage, ...(meta?.warnings ?? [])]
+    .filter((item): item is string => Boolean(item));
+  if (items.length === 0) return null;
+  return (
+    <div style={{ fontSize: 11, color: "var(--color-warm-gray)", marginTop: 4 }}>
+      {items.join(" · ")}
+    </div>
+  );
+}
+
 function CitePill({ title, meta }: {
   title: string;
   meta?: { source?: string; fetched_at?: string; season?: string };
@@ -132,6 +145,10 @@ export default function DataArtifacts({
       b?: string;
       season?: string;
       team?: string;
+      as_of?: string;
+      qualification?: string;
+      coverage?: string;
+      warnings?: string[];
     };
   }[] = [];
 
@@ -314,6 +331,7 @@ export default function DataArtifacts({
               ? ` · ${String(table.meta.fetched_at).slice(0, 10)}`
               : ""}
           </div>
+          <EvidenceLimitations meta={table.meta} />
           {table.verdict && (
             <div style={{ fontSize: 12, marginTop: 4, color: "var(--color-ink-black)" }}>
               {table.verdict.length > 160
@@ -406,6 +424,7 @@ export default function DataArtifacts({
               </a>
             )}
           </div>
+          <EvidenceLimitations meta={table.meta} />
         </div>
 
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
