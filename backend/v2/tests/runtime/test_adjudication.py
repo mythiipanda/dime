@@ -49,3 +49,16 @@ def test_verified_claim_carries_per_claim_provenance_for_mixed_sources():
     assert claims[0].sources[0].source.startswith("warehouse:")
     assert claims[1].sources[0].source.startswith("fallback:")
     assert claims[0].sources != claims[1].sources
+
+
+def test_execution_errors_surface_as_typed_gaps() -> None:
+    draft = DraftReport(sections=["Trade"], claims=[])
+    report = VerificationReport(status="partial")
+    gaps = _verification_gaps(
+        draft, report,
+        {"salary": ["AdapterError: cap ledger unavailable"]},
+    )
+    assert len(gaps) == 1
+    assert gaps[0].kind == "execution_failure"
+    assert gaps[0].message == "AdapterError: cap ledger unavailable"
+    assert gaps[0].blocks == ["node:salary"]

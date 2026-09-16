@@ -113,7 +113,7 @@ class Runtime:
             )
 
         verified_claims = _verified_claims(draft, verification, evidence)
-        gaps = _verification_gaps(draft, verification)
+        gaps = _verification_gaps(draft, verification, execution.errors)
         result = RuntimeResult(
             task=task,
             execution=execution,
@@ -246,13 +246,18 @@ def _verified_claims(draft, verification, evidence=None) -> list[VerifiedClaim]:
     ]
 
 
-def _verification_gaps(draft, verification) -> list[Gap]:
+def _verification_gaps(draft, verification,
+                       execution_errors=None) -> list[Gap]:
     gaps = [Gap(kind=GapKind.MISSING_EVIDENCE, message=message)
             for message in draft.gaps]
     gaps.extend(Gap(kind=GapKind.MISSING_EVIDENCE, message=message)
                 for message in verification.missing_branches)
     gaps.extend(Gap(kind=GapKind.SOURCE_CONFLICT, message=message)
                 for message in verification.contradictions)
+    for node_id, errors in (execution_errors or {}).items():
+        gaps.extend(Gap(kind=GapKind.EXECUTION_FAILURE, message=message,
+                        blocks=[f"node:{node_id}"])
+                    for message in errors)
     for result in verification.claim_results:
         if not result.supported:
             gaps.extend(Gap(kind=GapKind.UNSUPPORTED_CLAIM, message=reason,
