@@ -407,3 +407,12 @@ def test_draft_and_verification_lists_have_hard_limits() -> None:
             status="repair",
             repair_instructions=[f"repair-{index}" for index in range(129)],
         )
+
+
+def test_evidence_lineage_and_warning_lists_have_hard_limits() -> None:
+    base = {"evidence_id": "ev", "capability": "test", "source": "fixture",
+            "observed_at": "2026-09-15T00:00:00Z", "rows": {}}
+    with pytest.raises(ValidationError, match="at most 32 items"):
+        EvidenceEnvelope(**base, lineage=[f"ev-{index}" for index in range(33)])
+    with pytest.raises(ValidationError, match="at most 64 items"):
+        EvidenceEnvelope(**base, warnings=[f"warning-{index}" for index in range(65)])

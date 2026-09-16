@@ -99,7 +99,7 @@ class TaskSpec(BaseModel):
     goal: str
     mode: RunMode
     deliverable: str
-    entities: list[EntityRef] = Field(default_factory=list)
+    entities: list[EntityRef] = Field(default_factory=list, max_length=64)
     season: SeasonRef | None = None
     as_of: date | None = None
     subquestions: list[str] = Field(default_factory=list, max_length=32)
@@ -211,14 +211,14 @@ class EvidenceEnvelope(BaseModel):
     vintages: dict[str, str] = Field(default_factory=dict)
     task_season_scoped: StrictBool = True
     as_of: date | None = None
-    entities: list[EntityRef] = Field(default_factory=list)
+    entities: list[EntityRef] = Field(default_factory=list, max_length=64)
     rows: list[dict[str, Any]] | dict[str, Any]
     units: dict[str, str] = Field(default_factory=dict)
     metric_definitions: dict[str, str] = Field(default_factory=dict)
     qualification: str | None = None
     coverage: str | None = None
-    lineage: list[str] = Field(default_factory=list)
-    warnings: list[str] = Field(default_factory=list)
+    lineage: list[str] = Field(default_factory=list, max_length=32)
+    warnings: list[str] = Field(default_factory=list, max_length=64)
 
     @model_validator(mode="after")
     def validate_identity(self) -> "EvidenceEnvelope":
@@ -322,7 +322,7 @@ class Gap(BaseModel):
     kind: GapKind
     message: str = Field(min_length=1)
     evidence_ids: list[str] = Field(default_factory=list, max_length=32)
-    blocks: list[str] = Field(default_factory=list)
+    blocks: list[str] = Field(default_factory=list, max_length=64)
 
     @model_validator(mode="after")
     def validate_references(self) -> "Gap":
@@ -359,7 +359,7 @@ class VerifiedClaim(BaseModel):
     claim_index: StrictInt = Field(ge=0)
     claim: Claim
     evidence_ids: list[str] = Field(default_factory=list, max_length=32)
-    sources: list[ClaimSource] = Field(default_factory=list)
+    sources: list[ClaimSource] = Field(default_factory=list, max_length=32)
 
     @model_validator(mode="after")
     def validate_references(self) -> "VerifiedClaim":
@@ -380,7 +380,7 @@ class ClaimResult(BaseModel):
 
     claim_index: StrictInt = Field(ge=0)
     supported: StrictBool
-    reasons: list[str] = Field(default_factory=list)
+    reasons: list[str] = Field(default_factory=list, max_length=64)
 
     @model_validator(mode="after")
     def validate_reason(self) -> "ClaimResult":

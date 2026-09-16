@@ -67,9 +67,9 @@ class WebSearchResponse(BaseModel):
     provider: str
     observed_at: datetime
     query: str
-    results: list[WebSearchResult]
+    results: list[WebSearchResult] = Field(max_length=8)
     coverage: str
-    warnings: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list, max_length=32)
 
     @model_validator(mode="after")
     def validate_response(self) -> "WebSearchResponse":

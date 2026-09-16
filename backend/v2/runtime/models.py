@@ -17,7 +17,7 @@ class ExecutionResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     plan: Plan
-    evidence: list[EvidenceEnvelope] = Field(default_factory=list)
+    evidence: list[EvidenceEnvelope] = Field(default_factory=list, max_length=32)
     attempts: dict[str, StrictInt] = Field(default_factory=dict)
     errors: dict[str, list[str]] = Field(default_factory=dict)
 
@@ -91,8 +91,8 @@ class RuntimeResult(BaseModel):
     draft: DraftReport
     verification: VerificationReport
     repaired: StrictBool = False
-    verified_claims: list[VerifiedClaim] = Field(default_factory=list)
-    gaps: list[Gap] = Field(default_factory=list)
+    verified_claims: list[VerifiedClaim] = Field(default_factory=list, max_length=128)
+    gaps: list[Gap] = Field(default_factory=list, max_length=256)
 
     @model_validator(mode="after")
     def validate_publication(self) -> "RuntimeResult":
