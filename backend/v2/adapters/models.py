@@ -97,6 +97,8 @@ class ProviderStructuredModel:
         models = self._models()
         if not models:
             raise RuntimeError("no configured structured-output provider")
+        self.last_provider = None
+        self.last_model = None
         errors: list[str] = []
         user_prompt = json.dumps(payload, sort_keys=True, default=str)
         for provider, model in models:

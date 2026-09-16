@@ -425,3 +425,31 @@ async def test_recorded_model_marks_same_provider_model_fallback() -> None:
     attempt = next(entry for entry in ledger.entries
                    if entry.kind == LedgerKind.ASSISTANT_ATTEMPT)
     assert attempt.data["used_fallback"] is True
+
+
+@pytest.mark.anyio
+async def test_provider_model_clears_last_success_before_failed_generation(monkeypatch) -> None:
+    from v2.adapters.models import ProviderStructuredModel
+    from v2.contracts import TaskSpec
+    from v2.runtime import RequestEnvelope
+
+    class FailingAgent:
+        def __init__(self, *args, **kwargs): pass
+        async def run(self, prompt):
+            raise RuntimeError("down")
+
+    class StubModel:
+        model_name = "mercury"
+
+    model = ProviderStructuredModel("inception", "mercury")
+    model.last_provider = "inception"
+    model.last_model = "old-success"
+    monkeypatch.setattr(model, "_models", lambda: [("inception", StubModel())])
+    monkeypatch.setattr("v2.adapters.models.Agent", FailingAgent)
+    envelope = RequestEnvelope.freeze(
+        provider="inception", model="mercury", route="intake", prompt="p",
+        context={}, tool_schemas={}, planner_version="v2")
+    with pytest.raises(RuntimeError, match="all structured-output providers failed"):
+        await model.generate(schema=TaskSpec, prompt="p", payload={}, envelope=envelope)
+    assert model.last_provider is None
+    assert model.last_model is None
