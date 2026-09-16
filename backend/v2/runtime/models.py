@@ -102,6 +102,16 @@ class RuntimeResult(BaseModel):
             unknown = set(gap.evidence_ids) - evidence_ids
             if unknown:
                 raise ValueError(f"gap cites unknown evidence ids: {sorted(unknown)}")
+            for block in gap.blocks:
+                if block.startswith("claim:"):
+                    suffix = block.removeprefix("claim:")
+                    if not suffix.isdigit() or int(suffix) >= len(self.draft.claims):
+                        raise ValueError(f"gap blocks unknown claim: {block}")
+                elif block.startswith("node:"):
+                    if block.removeprefix("node:") not in {
+                        node.id for node in self.execution.plan.nodes
+                    }:
+                        raise ValueError(f"gap blocks unknown node: {block}")
         for item in self.verified_claims:
             if item.claim_index in seen:
                 raise ValueError("verified claim indices must be unique")

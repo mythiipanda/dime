@@ -179,3 +179,21 @@ def test_runtime_result_rejects_adjudication_outside_draft() -> None:
                 ClaimResult(claim_index=7, supported=True),
             ]),
         )
+
+
+def test_runtime_result_rejects_gap_with_unknown_structured_block() -> None:
+    import pytest
+    from pydantic import ValidationError
+    from v2.contracts import Gap, Plan, TaskSpec
+    from v2.runtime.models import ExecutionResult, RuntimeResult
+
+    base = dict(
+        task=TaskSpec(goal="answer", mode="quick", deliverable="text"),
+        execution=ExecutionResult(plan=Plan(nodes=[])),
+        draft=DraftReport(sections=[], claims=[]),
+        verification=VerificationReport(status="partial"),
+    )
+    for block in ("claim:0", "node:missing", "claim:bad"):
+        with pytest.raises(ValidationError, match="gap blocks unknown"):
+            RuntimeResult(**base, gaps=[Gap(
+                kind="missing_evidence", message="missing", blocks=[block])])
