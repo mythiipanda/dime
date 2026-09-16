@@ -268,3 +268,17 @@ def test_mechanical_verifier_revalidates_copied_inputs() -> None:
             TaskSpec(goal="answer", mode="quick", deliverable="text"),
             invalid, [],
         )
+
+
+def test_undeclared_source_identity_cannot_support_factual_claim():
+    unknown = evidence(warnings=["source identity not declared by tool"])
+    claim = Claim(
+        text="Boston had 61 wins.", kind=ClaimKind.OBSERVED,
+        evidence_ids=["standings"],
+    )
+
+    result = verify_mechanical(task(), report(claim), [unknown])
+
+    assert result.status == VerificationStatus.REPAIR
+    assert "factual claim cites evidence without declared source identity" in (
+        result.claim_results[0].reasons)

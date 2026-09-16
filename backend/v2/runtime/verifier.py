@@ -293,6 +293,11 @@ def verify_mechanical(
             not any(True for _ in iter_values(envelope)) for envelope in cited
         ):
             reasons.append("factual claim cites evidence with no values")
+        if claim.kind in (ClaimKind.OBSERVED, ClaimKind.DERIVED) and any(
+            "source identity not declared by tool" in envelope.warnings
+            for envelope in cited
+        ):
+            reasons.append("factual claim cites evidence without declared source identity")
         if duplicate_calculations:
             reasons.append("calculation ids must be unique")
 
