@@ -117,6 +117,22 @@ def test_build_runtime_never_executes_unsupported_modes_live(
         )
 
 
+def test_build_runtime_rejects_ambiguous_ledger_configuration(
+    tmp_path, monkeypatch,
+) -> None:
+    from v2.runtime.assembly import build_runtime
+    from v2.runtime.policy import ExecutionPolicy
+
+    monkeypatch.setattr("v2.runtime.assembly.ProviderStructuredModel",
+                        lambda *args: object())
+    with pytest.raises(ValueError, match="configured through policy"):
+        build_runtime(
+            provider="inception", model_name="mercury-test", run_id="run",
+            policy=ExecutionPolicy.live(ledger_dir=tmp_path / "policy"),
+            ledger_dir=tmp_path / "argument",
+        )
+
+
 def test_build_runtime_rejects_unsafe_run_identity(tmp_path) -> None:
     from v2.runtime.assembly import build_runtime
     from v2.runtime.policy import ExecutionPolicy

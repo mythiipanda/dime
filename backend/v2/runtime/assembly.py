@@ -93,6 +93,8 @@ def build_runtime(
         for char in run_id
     ):
         raise ValueError("run_id may contain only letters, numbers, '-' and '_'")
+    if policy is not None and ledger_dir is not None:
+        raise ValueError("ledger_dir must be configured through policy when policy is provided")
     policy = (ExecutionPolicy.live(ledger_dir=ledger_dir) if policy is None
               else ExecutionPolicy.model_validate(policy.model_dump()))
     if policy.mode in {ExecutionMode.REPLAY, ExecutionMode.EVAL}:
