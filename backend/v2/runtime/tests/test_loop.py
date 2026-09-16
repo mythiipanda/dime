@@ -165,6 +165,35 @@ async def test_runtime_rejects_incomplete_swappable_semantic_verifier() -> None:
         ).run("answer")
 
 
+def test_verification_merge_respects_report_field_limits() -> None:
+    from v2.contracts import ClaimResult
+    from v2.runtime.loop import _merge_verification
+
+    mechanical = VerificationReport(
+        status="partial",
+        claim_results=[ClaimResult(
+            claim_index=0, supported=False,
+            reasons=[f"mechanical-{index}" for index in range(64)],
+        )],
+        missing_branches=[f"mechanical-gap-{index}" for index in range(128)],
+    )
+    semantic = VerificationReport(
+        status="partial",
+        claim_results=[ClaimResult(
+            claim_index=0, supported=False,
+            reasons=[f"semantic-{index}" for index in range(64)],
+        )],
+        missing_branches=[f"semantic-gap-{index}" for index in range(128)],
+    )
+
+    merged = _merge_verification(mechanical, semantic)
+
+    assert len(merged.claim_results[0].reasons) == 64
+    assert merged.claim_results[0].reasons == mechanical.claim_results[0].reasons
+    assert len(merged.missing_branches) == 128
+    assert merged.missing_branches == mechanical.missing_branches
+
+
 @pytest.mark.anyio
 async def test_repairs_once_and_reverifies() -> None:
     result = await runtime(

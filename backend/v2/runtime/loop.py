@@ -304,11 +304,13 @@ def _merge_verification(
             [*mechanical.claim_results, *semantic.claim_results]
         ),
         missing_branches=_unique(
-            [*mechanical.missing_branches, *semantic.missing_branches]
+            [*mechanical.missing_branches, *semantic.missing_branches], limit=128
         ),
-        contradictions=_unique([*mechanical.contradictions, *semantic.contradictions]),
+        contradictions=_unique(
+            [*mechanical.contradictions, *semantic.contradictions], limit=128),
         repair_instructions=_unique(
-            [*mechanical.repair_instructions, *semantic.repair_instructions]
+            [*mechanical.repair_instructions, *semantic.repair_instructions],
+            limit=128,
         ),
     )
 
@@ -323,13 +325,14 @@ def _merge_claim_results(results: Iterable[ClaimResult]) -> list[ClaimResult]:
         merged[result.claim_index] = ClaimResult(
             claim_index=result.claim_index,
             supported=current.supported and result.supported,
-            reasons=_unique([*current.reasons, *result.reasons]),
+            reasons=_unique([*current.reasons, *result.reasons], limit=64),
         )
     return [merged[index] for index in sorted(merged)]
 
 
-def _unique(values: Iterable[str]) -> list[str]:
-    return list(dict.fromkeys(value for value in values if value))
+def _unique(values: Iterable[str], *, limit: int | None = None) -> list[str]:
+    unique = list(dict.fromkeys(value for value in values if value))
+    return unique if limit is None else unique[:limit]
 
 
 def _verified_claims(draft, verification, evidence=None) -> list[VerifiedClaim]:
