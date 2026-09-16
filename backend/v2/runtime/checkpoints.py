@@ -38,6 +38,10 @@ class ExecutionCheckpoint(BaseModel):
         if any(isinstance(count, bool) or not isinstance(count, int)
                for count in self.attempts.values()):
             raise ValueError("checkpoint attempt counts must be integers")
+        if any(len(errors) > 5 for errors in self.errors.values()):
+            raise ValueError("checkpoint nodes cannot carry more than 5 errors")
+        if any(not error.strip() for errors in self.errors.values() for error in errors):
+            raise ValueError("checkpoint errors must be non-empty")
         return self
 
 

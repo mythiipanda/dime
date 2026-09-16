@@ -64,6 +64,8 @@ class ExecutionResult(BaseModel):
                 raise ValueError(
                     f"execution node {node.id!r} reached terminal state without an attempt")
             node_errors = self.errors.get(node.id, [])
+            if len(node_errors) > 5:
+                raise ValueError(f"execution node {node.id!r} has too many errors")
             if any(not error.strip() for error in node_errors):
                 raise ValueError(f"execution node {node.id!r} has empty errors")
             if len(node_errors) != len(set(node_errors)):

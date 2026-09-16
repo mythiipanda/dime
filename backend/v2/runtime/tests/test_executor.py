@@ -477,3 +477,12 @@ async def test_executor_revalidates_capability_evidence_before_admission() -> No
     )
     assert result.plan.nodes[0].status == PlanStatus.FAILED
     assert "evidence identity" in result.errors["record"][0]
+
+
+def test_execution_result_bounds_errors_per_node() -> None:
+    from pydantic import ValidationError
+    from v2.runtime.models import ExecutionResult
+    failed = node("failed", attempts=5).model_copy(update={"status": PlanStatus.FAILED})
+    with pytest.raises(ValidationError, match="too many errors"):
+        ExecutionResult(plan=Plan(nodes=[failed]), attempts={"failed": 5},
+                        errors={"failed": [f"error-{index}" for index in range(6)]})
