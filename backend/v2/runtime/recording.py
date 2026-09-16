@@ -47,6 +47,8 @@ class RecordedCapability:
         )
         try:
             result = await self._capability.execute(node, task, evidence)
+            if not isinstance(result, EvidenceEnvelope):
+                raise TypeError("capability must return EvidenceEnvelope")
         except BaseException as exc:
             self._ledger.append(
                 LedgerKind.TOOL_RESULT,

@@ -26,3 +26,22 @@ async def test_recorded_capability_emits_canonical_call_and_result():
         LedgerKind.TOOL_CALL, LedgerKind.TOOL_RESULT]
     assert ledger.entries[0].call_id == ledger.entries[1].call_id
     assert ledger.entries[1].data["evidence"]["evidence_id"] == "ev"
+
+
+@pytest.mark.anyio
+async def test_recorded_capability_rejects_untyped_result_and_records_failure():
+    class Untyped:
+        name = "standings"
+        async def execute(self, node, task, evidence):
+            return {"wins": 61}
+
+    ledger = RunLedger("run")
+    capability = RecordedCapability(Untyped(), ledger, turn_id="turn")
+    with pytest.raises(TypeError, match="EvidenceEnvelope"):
+        await capability.execute(
+            PlanNode(id="record", description="record", capability_hints=["standings"]),
+            TaskSpec(goal="record", mode=RunMode.QUICK, deliverable="text"), [],
+        )
+    assert ledger.entries[-1].data == {
+        "status": "failed", "error": "TypeError: capability must return EvidenceEnvelope"
+    }
