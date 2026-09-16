@@ -311,9 +311,29 @@ def test_execution_result_binds_attempts_and_errors_to_node_state() -> None:
         ExecutionResult(plan=Plan(nodes=[pending]), attempts={"pending": 2})
     failed = pending.model_copy(update={"status": PlanStatus.FAILED})
     with pytest.raises(ValidationError, match="requires errors"):
-        ExecutionResult(plan=Plan(nodes=[failed]))
+        ExecutionResult(plan=Plan(nodes=[failed]), attempts={"pending": 1})
     skipped = pending.model_copy(update={"status": PlanStatus.SKIPPED})
     with pytest.raises(ValidationError, match="cannot carry errors"):
         ExecutionResult(
             plan=Plan(nodes=[skipped]), errors={"pending": ["contradiction"]},
+        )
+
+
+def test_execution_result_rejects_unattempted_completed_or_failed_node() -> None:
+    from datetime import UTC, datetime
+    from pydantic import ValidationError
+    from v2.contracts import EvidenceEnvelope
+    from v2.runtime.models import ExecutionResult
+
+    completed = node("done").model_copy(update={"status": PlanStatus.COMPLETE})
+    evidence = EvidenceEnvelope(
+        evidence_id="done", capability="fake", source="fixture",
+        observed_at=datetime.now(UTC), rows={"value": 1},
+    )
+    with pytest.raises(ValidationError, match="without an attempt"):
+        ExecutionResult(plan=Plan(nodes=[completed]), evidence=[evidence])
+    failed = node("failed").model_copy(update={"status": PlanStatus.FAILED})
+    with pytest.raises(ValidationError, match="without an attempt"):
+        ExecutionResult(
+            plan=Plan(nodes=[failed]), errors={"failed": ["failure"]},
         )

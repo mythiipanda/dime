@@ -116,6 +116,7 @@ def test_runtime_result_rejects_forged_claim_source() -> None:
                     source="warehouse:standings", observed_at=datetime.now(UTC),
                     rows={"wins": 61},
                 )],
+                attempts={"facts": 1},
             ),
             draft=DraftReport(sections=["Answer"], claims=[claim]),
             verification=VerificationReport(status="pass", claim_results=[

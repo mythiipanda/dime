@@ -203,7 +203,7 @@ def test_quick_answer_route_is_flagged_and_streams_typed_contract(monkeypatch, t
         execution=ExecutionResult(
             plan=contracts.Plan(nodes=[contracts.PlanNode(
                 id="facts", description="facts", capability_hints=["standings"],
-                status="complete")]), evidence=[evidence]),
+                status="complete")]), evidence=[evidence], attempts={"facts": 1}),
         draft=contracts.DraftReport(sections=["Record"], claims=[
             contracts.Claim(text="Boston won 61 games.", kind="observed",
                             evidence_ids=["ev"])]),
@@ -582,3 +582,25 @@ async def test_checkpoint_status_and_errors_must_agree(
         await PlanExecutor(
             {"fake": FakeCapability("fake", {})}, checkpoint_store=checkpoints,
         ).execute(_task(), _plan(), run_id="status-errors")
+
+
+@pytest.mark.anyio
+async def test_checkpoint_rejects_unattempted_completed_node(tmp_path: Path) -> None:
+    from datetime import UTC, datetime
+    from v2.contracts import EvidenceEnvelope
+    from v2.runtime.checkpoints import ExecutionCheckpoint
+
+    checkpoints = FileCheckpointStore(tmp_path)
+    plan = _plan()
+    plan.nodes[0].status = PlanStatus.COMPLETE
+    checkpoints.save(ExecutionCheckpoint(
+        run_id="unattempted", task=_task(), plan=plan,
+        evidence_by_node={"one": EvidenceEnvelope(
+            evidence_id="one", capability="fake", source="fixture",
+            observed_at=datetime.now(UTC), rows={"value": 1},
+        )},
+    ))
+    with pytest.raises(ValueError, match="without an attempt"):
+        await PlanExecutor(
+            {"fake": FakeCapability("fake", {})}, checkpoint_store=checkpoints,
+        ).execute(_task(), _plan(), run_id="unattempted")

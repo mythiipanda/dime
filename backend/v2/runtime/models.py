@@ -57,6 +57,9 @@ class ExecutionResult(BaseModel):
             if count > node.max_attempts:
                 raise ValueError(
                     f"execution attempts exceed max_attempts for node {node.id!r}")
+            if node.status.value in {"complete", "failed"} and count == 0:
+                raise ValueError(
+                    f"execution node {node.id!r} reached terminal state without an attempt")
             node_errors = self.errors.get(node.id, [])
             if node.status.value == "failed" and not node_errors:
                 raise ValueError(f"failed node {node.id!r} requires errors")
