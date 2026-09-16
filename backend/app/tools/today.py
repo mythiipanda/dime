@@ -42,27 +42,34 @@ def _scoreboards(season: str) -> tuple[list, list]:
         return last.result(), tonight.result()
 
 
-def _movers_from_delta(delta: Any) -> list:
-    try:
-        drows = delta.get("rows", {}) if delta.get("ok") else {}
-        climbers = (drows.get("climbers", []) or [])[:3]
-        fallers = (drows.get("fallers", []) or [])[:3]
-        movers = [
-            {"PLAYER": c.get("player"), "TEAM": c.get("team"),
-             "RANK_CHANGE": f"+{c.get('rank_change')}",
-             "PTS_CHANGE": c.get("pts_change")}
-            for c in climbers
-        ] + [
-            {"PLAYER": f.get("player"), "TEAM": f.get("team"),
-             "RANK_CHANGE": str(f.get("rank_change")),
-             "PTS_CHANGE": f.get("pts_change")}
-            for f in fallers
-        ]
-        if not movers:
-            movers = [{"note": "no leaderboard movement in the last 7 days"}]
-    except Exception:
-        movers = []
-    return movers
+def normalize_movers(delta: Any, season: str) -> dict[str, Any]:
+    empty = {"climbers": [], "fallers": [], "new_entries": []}
+    if not isinstance(delta, dict) or not delta.get("ok"):
+        error = str(delta.get("error", "")) if isinstance(delta, dict) else ""
+        reason = "snapshots_pending" if "not enough snapshots" in error else "unavailable"
+        return {"tool": "get_leaderboard_deltas", "ok": True, "rows": empty,
+                "meta": {"reason": reason, "season": season}}
+    rows = delta.get("rows")
+    if not isinstance(rows, dict):
+        return {"tool": "get_leaderboard_deltas", "ok": True, "rows": empty,
+                "meta": {"reason": "unavailable", "season": season}}
+    normalized = {key: list(rows.get(key) or [])
+                  for key in ("climbers", "fallers", "new_entries")}
+    return {**delta, "ok": True, "rows": normalized}
+
+
+def _movers_from_delta(delta: Any, season: str) -> list:
+    rows = normalize_movers(delta, season)["rows"]
+    return [
+        *[{"PLAYER": item.get("player"), "TEAM": item.get("team"),
+           "RANK_CHANGE": f"+{item.get('rank_change')}",
+           "PTS_CHANGE": item.get("pts_change")}
+          for item in rows["climbers"][:3]],
+        *[{"PLAYER": item.get("player"), "TEAM": item.get("team"),
+           "RANK_CHANGE": str(item.get("rank_change")),
+           "PTS_CHANGE": item.get("pts_change")}
+          for item in rows["fallers"][:3]],
+    ]
 
 
 def _streaks(season: str) -> list[dict[str, Any]]:
@@ -118,7 +125,7 @@ def get_today(season: str = SEASON) -> dict[str, Any]:
     last_night, tonight = _scoreboards(season)
     return {"tool": "get_today", "ok": True,
             "rows": {"last_night": last_night, "tonight": tonight,
-                     "movers": _movers_from_delta(delta),
+                     "movers": _movers_from_delta(delta, season),
                      "streaks": _streaks(season)},
             "meta": {"date": today, "source": "nba_api+warehouse"}}
 
@@ -158,7 +165,7 @@ def get_morning_briefing(season: str = SEASON) -> dict[str, Any]:
             last_night, tonight = f_sb.result(timeout=40)
             briefing["rows"]["today"] = {
                 "last_night": last_night, "tonight": tonight,
-                "movers": _movers_from_delta(delta_res),
+                "movers": _movers_from_delta(delta_res, season),
                 "streaks": _streaks(season),
             }
         except Exception as e:
