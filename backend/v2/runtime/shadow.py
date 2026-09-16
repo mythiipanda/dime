@@ -236,7 +236,12 @@ def evaluate_shadow_gate(
     comparisons: list[ShadowComparison],
     policy: ShadowGatePolicy | None = None,
 ) -> ShadowGateReport:
-    policy = policy or ShadowGatePolicy()
+    policy = (ShadowGatePolicy() if policy is None
+              else ShadowGatePolicy.model_validate(policy.model_dump()))
+    comparisons = [
+        ShadowComparison.model_validate(item.model_dump())
+        for item in comparisons
+    ]
     ids = [comparison.comparison_id for comparison in comparisons]
     if len(ids) != len(set(ids)):
         raise ValueError("shadow gate comparisons must be unique")

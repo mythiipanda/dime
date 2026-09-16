@@ -304,3 +304,21 @@ def test_shadow_policy_rates_are_strict_floats(field_name) -> None:
     from v2.runtime.shadow import ShadowGatePolicy
     with pytest.raises(ValidationError):
         ShadowGatePolicy(**{field_name: "0.1"})
+
+
+def test_shadow_gate_revalidates_copied_policy() -> None:
+    from pydantic import ValidationError
+    from v2.runtime.shadow import ShadowGatePolicy, evaluate_shadow_gate
+    unsafe = ShadowGatePolicy().model_copy(
+        update={"maximum_failure_rate": float("nan")})
+    with pytest.raises(ValidationError, match="less than or equal"):
+        evaluate_shadow_gate([], unsafe)
+
+
+def test_shadow_gate_revalidates_copied_comparisons() -> None:
+    from pydantic import ValidationError
+    from v2.runtime.shadow import compare_outcomes, evaluate_shadow_gate
+    valid = compare_outcomes("request", outcome(), outcome())
+    unsafe = valid.model_copy(update={"differences": [DifferenceKind.ANSWER]})
+    with pytest.raises(ValidationError, match="do not match recorded outcomes"):
+        evaluate_shadow_gate([unsafe])
