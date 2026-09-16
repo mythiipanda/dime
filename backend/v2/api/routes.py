@@ -149,6 +149,8 @@ def _answer_text(result) -> str:
         folded = message.casefold()
         if folded.startswith("repair claim "):
             continue
+        if gap.kind.value == "unsupported_claim":
+            message = "A drafted claim could not be verified."
         if gap.kind.value == "execution_failure" or "execution failed" in folded:
             message = "Some requested evidence could not be retrieved."
         if message and message not in gaps:

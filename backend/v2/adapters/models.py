@@ -191,6 +191,14 @@ class ModelIntake(ModelStage):
             "skill_catalog": self._skills.catalog(),
         })
         self._skills.activate(task.skills)
+        player_count = sum(entity.type == "player" for entity in task.entities)
+        if player_count < 2:
+            task = task.model_copy(update={
+                "required_evidence": [
+                    name for name in task.required_evidence
+                    if name not in {"trade_value", "player_comparison"}
+                ],
+            })
         unknown = sorted(set(task.required_evidence) - self._catalog.keys())
         if unknown:
             raise ValueError(f"intake selected unknown capabilities: {unknown}")

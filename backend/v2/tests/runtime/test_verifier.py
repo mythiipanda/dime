@@ -282,3 +282,15 @@ def test_undeclared_source_identity_cannot_support_factual_claim():
     assert result.status == VerificationStatus.REPAIR
     assert "factual claim cites evidence without declared source identity" in (
         result.claim_results[0].reasons)
+
+
+def test_entity_alias_ids_match_on_canonical_display_name():
+    from v2.contracts import EvidenceEnvelope
+    task_with_slug = task().model_copy(update={"entities": [EntityRef(
+        id="boston-celtics", type="team", display_name="Boston Celtics")]})
+    evidence_with_numeric_id = evidence(entities=[EntityRef(
+        id="1610612738", type="team", display_name="boston-celtics")])
+    claim = Claim(text="The Boston Celtics finished with 61 wins.",
+                  kind="observed", evidence_ids=["standings"])
+    result = verify_mechanical(task_with_slug, report(claim), [evidence_with_numeric_id])
+    assert result.status == VerificationStatus.PASS

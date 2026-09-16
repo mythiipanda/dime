@@ -593,3 +593,18 @@ async def test_tool_capability_binds_dependency_lineage() -> None:
                      arguments={"a": "Jaylen Brown", "b": "Paul George"}),
             TaskSpec(goal="compare", mode="quick", deliverable="answer"), [parent])
     assert result.lineage == ["parent"]
+
+@pytest.mark.anyio
+async def test_intake_drops_two_sided_evidence_for_one_player_question() -> None:
+    from v2.contracts import EntityRef
+
+    stub = StubModel([{
+        "goal": "Assess trading Brown", "mode": "quick", "deliverable": "answer",
+        "entities": [{"id": "1627759", "type": "player", "display_name": "Jaylen Brown"}],
+        "required_evidence": ["player_evaluation", "trade_value", "player_comparison"],
+    }])
+    intake = ModelIntake(stub, provider="stub", model_name="stub-model",
+        capability_catalog={"player_evaluation": {}, "trade_value": {},
+                            "player_comparison": {}})
+    task = await intake.understand("Should Boston trade Brown?")
+    assert task.required_evidence == ["player_evaluation"]

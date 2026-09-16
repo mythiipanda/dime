@@ -480,7 +480,7 @@ def test_rejected_claim_cannot_publish_after_reverify_warning():
             blocks=["claim:0"])])
     text = _answer_text(result)
     assert "The true-shooting leader" not in text
-    assert text == "uncited numeral 71.2%"
+    assert text == "A drafted claim could not be verified."
 
 def test_v2_uses_one_configured_model_policy(monkeypatch):
     monkeypatch.setenv("DIME_V2_MODEL", "openrouter:openrouter/free")
@@ -1585,3 +1585,23 @@ def test_answer_text_removes_repair_directives_and_repeated_gaps():
         ],
     )
     assert _answer_text(result) == "fit evidence was unavailable"
+
+
+def test_answer_text_hides_mechanical_verifier_reasons():
+    from v2 import contracts
+    from v2.api.routes import _answer_text
+    from v2.runtime.models import ExecutionResult, RuntimeResult
+    result = RuntimeResult(
+        task=contracts.TaskSpec(goal="record", mode="quick", deliverable="answer"),
+        execution=ExecutionResult(plan=contracts.Plan(nodes=[])),
+        draft=contracts.DraftReport(sections=[], claims=[contracts.Claim(
+            text="Boston ranked first.", kind="judgment")]),
+        verification=contracts.VerificationReport(status="partial", claim_results=[
+            contracts.ClaimResult(claim_index=0, supported=False,
+                                  reasons=["rank claim lacks qualification evidence"])]),
+        gaps=[contracts.Gap(kind="unsupported_claim",
+             message="rank claim lacks qualification evidence", blocks=["claim:0"])],
+    )
+    text = _answer_text(result)
+    assert text == "A drafted claim could not be verified."
+    assert "qualification" not in text

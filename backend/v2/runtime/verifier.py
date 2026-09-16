@@ -120,7 +120,19 @@ def _entity_reasons(task: TaskSpec, claim: Claim,
         (entity.type, entity.id.casefold())
         for envelope in envelopes for entity in envelope.entities
     }
-    if task_entities and cited_entities and not task_entities & cited_entities:
+    def normalized_name(value: str) -> str:
+        return " ".join(value.casefold().replace("-", " ").replace("_", " ").split())
+
+    task_names = {
+        (entity.type, normalized_name(entity.display_name)) for entity in task.entities
+    }
+    cited_names = {
+        (entity.type, normalized_name(entity.display_name))
+        for envelope in envelopes for entity in envelope.entities
+    }
+    names_match = bool(task_names & cited_names)
+    if (task_entities and cited_entities and not task_entities & cited_entities
+            and not names_match):
         reasons.append("cited evidence entities do not match the task entities")
     for entity in task.entities:
         if entity.display_name.casefold() not in text and entity.id.casefold() not in text:
@@ -128,7 +140,7 @@ def _entity_reasons(task: TaskSpec, claim: Claim,
         exact = (entity.type, entity.id.casefold(), entity.display_name.casefold())
         if exact not in evidence_entities and not {
             entity.id.casefold(), entity.display_name.casefold()
-        } & row_values:
+        } & row_values and (entity.type, normalized_name(entity.display_name)) not in cited_names:
             reasons.append(f"entity {entity.display_name} is not supported by cited evidence")
     return reasons
 
