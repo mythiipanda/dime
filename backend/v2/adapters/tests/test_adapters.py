@@ -708,3 +708,64 @@ def test_adapter_rejects_malformed_sample_limitations(key, value):
             "shots", {"season": "2025-26"},
             tools={"search_shots": FakeTool(payload)},
         )
+
+
+def test_adapter_admits_source_coverage_note():
+    payload = {
+        "ok": True,
+        "rows": {"matches": [], "total_matches": 0},
+        "meta": {
+            "source": "warehouse",
+            "season": "2025-26",
+            "coverage_note": "regular season logs cover 57 seeded players",
+        },
+    }
+
+    envelope = call_capability(
+        "game_logs", {"player": "Jaylen Brown", "season": "2025-26"},
+        tools={"search_game_logs": FakeTool(payload)},
+    )
+
+    assert envelope.coverage == "regular season logs cover 57 seeded players"
+
+
+def test_trade_value_data_gaps_are_admitted_as_warnings():
+    payload = {
+        "ok": True,
+        "rows": {
+            "team_a": {"team": "BOS"},
+            "team_b": {"team": "LAC"},
+            "data_gaps": [
+                "salary rows missing: residuals unavailable",
+                "team ratings missing: fit unavailable",
+            ],
+        },
+        "meta": {
+            "source": "salary-sheet",
+            "production_season": "2025-26",
+            "salary_season": "2026-27",
+        },
+    }
+
+    envelope = call_capability(
+        "trade_value", {"team_a": "BOS", "players_a": "Jaylen Brown",
+                        "team_b": "LAC", "players_b": "Paul George"},
+        tools={"get_trade_value": FakeTool(payload)},
+    )
+
+    assert envelope.warnings == payload["rows"]["data_gaps"]
+
+
+@pytest.mark.parametrize("data_gaps", ["missing", ["ok", ""], {"gap": "missing"}])
+def test_trade_value_rejects_malformed_data_gaps(data_gaps):
+    payload = {
+        "ok": True,
+        "rows": {"team_a": {}, "team_b": {}, "data_gaps": data_gaps},
+        "meta": {"source": "salary-sheet"},
+    }
+    with pytest.raises(AdapterError, match="data_gaps must be an array"):
+        call_capability(
+            "trade_value", {"team_a": "BOS", "players_a": "Jaylen Brown",
+                            "team_b": "LAC", "players_b": "Paul George"},
+            tools={"get_trade_value": FakeTool(payload)},
+        )

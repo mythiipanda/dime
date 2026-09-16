@@ -89,6 +89,16 @@ def build_envelope(
                 or payroll <= 0 or not isinstance(players, list) or not players):
             raise AdapterError(
                 f"{spec.tool_name}: contract ledger has no usable payroll roster")
+    row_warnings: list[str] = []
+    if spec.name == "trade_value" and isinstance(rows, Mapping):
+        data_gaps = rows.get("data_gaps")
+        if data_gaps is not None:
+            if (not isinstance(data_gaps, list)
+                    or any(not isinstance(value, str) or not value.strip()
+                           for value in data_gaps)):
+                raise AdapterError(
+                    f"{spec.tool_name}: data_gaps must be an array of non-empty text")
+            row_warnings.extend(data_gaps)
     raw_meta = result.get("meta")
     if raw_meta is not None and not isinstance(raw_meta, Mapping):
         raise AdapterError(f"{spec.tool_name}: result meta must be an object")
@@ -109,6 +119,7 @@ def build_envelope(
         warnings = [str(value) for value in warning_values]
     else:
         raise AdapterError(f"{spec.tool_name}: warnings must be text or an array")
+    warnings = [*row_warnings, *warnings]
     singular_warning = meta.get("warning")
     if singular_warning:
         warnings.append(str(singular_warning))
@@ -185,7 +196,8 @@ def build_envelope(
                       for item in _row_values(rows))},
         metric_definitions=dict(spec.metric_definitions),
         qualification=meta.get("qualification") or spec.qualification,
-        coverage=meta.get("coverage") or spec.coverage,
+        coverage=(meta.get("coverage") or meta.get("coverage_note")
+                  or spec.coverage),
         warnings=warnings,
     )
 
