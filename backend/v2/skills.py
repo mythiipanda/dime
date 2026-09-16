@@ -22,6 +22,7 @@ class Skill:
     content_hash: str
 
     def activated_context(self) -> dict[str, Any]:
+        _reject_symlinked_path(self.directory, "skill package")
         resources: list[str] = []
         for folder in ("references", "scripts", "assets"):
             root = self.directory / folder
@@ -62,8 +63,7 @@ class SkillLibrary:
 
     @cached_property
     def skills(self) -> dict[str, Skill]:
-        if self.root.is_symlink():
-            raise ValueError("skill library root cannot be a symlink")
+        _reject_symlinked_path(self.root, "skill library root")
         if not self.root.exists():
             return {}
         loaded: dict[str, Skill] = {}
@@ -112,7 +112,13 @@ def skill_hashes(activated: list[dict[str, Any]]) -> dict[str, str]:
     return hashes
 
 
+def _reject_symlinked_path(path: Path, label: str) -> None:
+    if any(component.is_symlink() for component in (path, *path.parents)):
+        raise ValueError(f"{label} cannot contain symlinks")
+
+
 def _read_skill(path: Path) -> Skill:
+    _reject_symlinked_path(path.parent, "skill package")
     if path.is_symlink():
         raise ValueError(f"{path}: SKILL.md cannot be a symlink")
     text = path.read_text(encoding="utf-8")

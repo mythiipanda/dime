@@ -127,7 +127,7 @@ def test_library_rejects_symlinked_root(tmp_path: Path):
     )
     root = tmp_path / "skills"
     root.symlink_to(outside, target_is_directory=True)
-    with pytest.raises(ValueError, match="root cannot be a symlink"):
+    with pytest.raises(ValueError, match="root cannot contain symlinks"):
         SkillLibrary(root).catalog()
 
 
@@ -144,3 +144,32 @@ def test_activation_rejects_resource_directory_symlink(tmp_path: Path):
     (package / "references").symlink_to(outside, target_is_directory=True)
     with pytest.raises(ValueError, match="cannot be symlinks"):
         SkillLibrary(tmp_path).activate(["example"])
+
+
+def test_library_rejects_symlinked_root_ancestor(tmp_path: Path):
+    outside = tmp_path / "outside"
+    root = outside / "skills"
+    package = root / "example"
+    package.mkdir(parents=True)
+    (package / "SKILL.md").write_text(
+        "---\nname: example\ndescription: Example skill\n---\nInstructions",
+        encoding="utf-8",
+    )
+    linked_parent = tmp_path / "linked-parent"
+    linked_parent.symlink_to(outside, target_is_directory=True)
+    with pytest.raises(ValueError, match="root cannot contain symlinks"):
+        SkillLibrary(linked_parent / "skills").catalog()
+
+
+def test_catalog_rejects_symlinked_skill_package(tmp_path: Path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "SKILL.md").write_text(
+        "---\nname: example\ndescription: Example skill\n---\nInstructions",
+        encoding="utf-8",
+    )
+    root = tmp_path / "skills"
+    root.mkdir()
+    (root / "example").symlink_to(outside, target_is_directory=True)
+    with pytest.raises(ValueError, match="package cannot contain symlinks"):
+        SkillLibrary(root).catalog()
