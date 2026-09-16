@@ -52,7 +52,10 @@ def decimal_value(value: Any) -> Decimal | None:
 
 class EvidenceIndex:
     def __init__(self, envelopes: Iterable[EvidenceEnvelope]) -> None:
-        items = list(envelopes)
+        items = [
+            EvidenceEnvelope.model_validate(item.model_dump())
+            for item in envelopes
+        ]
         ids = [item.evidence_id for item in items]
         if len(ids) != len(set(ids)):
             raise ValueError("evidence ids must be unique")
@@ -125,6 +128,7 @@ def source_integrity_issues(
     required_season: str | None = None,
     expected_teams: Mapping[str, str] | None = None,
 ) -> list[SourceIntegrityIssue]:
+    evidence = EvidenceEnvelope.model_validate(evidence.model_dump())
     issues: list[SourceIntegrityIssue] = []
     if required_season and evidence.season is None:
         issues.append(SourceIntegrityIssue(

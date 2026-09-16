@@ -110,3 +110,10 @@ def test_admission_requires_season_on_season_scoped_evidence() -> None:
 def test_decimal_value_rejects_nonfinite_numbers(value):
     from v2.domain.evidence import decimal_value
     assert decimal_value(value) is None
+
+
+def test_evidence_index_revalidates_copied_envelopes() -> None:
+    from pydantic import ValidationError
+    invalid = envelope("ev").model_copy(update={"source": " "})
+    with pytest.raises(ValidationError, match="evidence identity"):
+        EvidenceIndex([invalid])
