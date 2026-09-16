@@ -142,6 +142,7 @@ class ShadowStore:
             raise ValueError("shadow store parent cannot be a symlink")
 
     def append(self, comparison: ShadowComparison) -> None:
+        comparison = ShadowComparison.model_validate(comparison.model_dump())
         with self._lock:
             self._reject_symlinked_path()
             parent_was_missing = not self.path.parent.exists()

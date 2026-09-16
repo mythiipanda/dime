@@ -116,3 +116,12 @@ def test_candidate_store_rejects_symlinked_parent(tmp_path):
     parent.symlink_to(outside, target_is_directory=True)
     with pytest.raises(ValueError, match="parent cannot be a symlink"):
         CandidateStore(parent / "candidates.jsonl")
+
+
+def test_candidate_store_revalidates_copied_observation(tmp_path):
+    import pytest
+    from pydantic import ValidationError
+    item = observation().model_copy(update={"summary": " "})
+    with pytest.raises(ValidationError, match="fields must be non-empty"):
+        CandidateStore(tmp_path / "candidates.jsonl").add(item)
+    assert not (tmp_path / "candidates.jsonl").exists()

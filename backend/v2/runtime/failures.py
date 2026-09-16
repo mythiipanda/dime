@@ -118,6 +118,7 @@ class CandidateStore:
             raise ValueError("candidate store parent cannot be a symlink")
 
     def add(self, item: FailureObservation) -> ScenarioCandidate:
+        item = FailureObservation.model_validate(item.model_dump())
         candidate = ScenarioCandidate.from_observation(item)
         with self._lock:
             current = {entry.candidate_id: entry for entry in self._read()}

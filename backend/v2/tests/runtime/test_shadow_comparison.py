@@ -322,3 +322,12 @@ def test_shadow_gate_revalidates_copied_comparisons() -> None:
     unsafe = valid.model_copy(update={"differences": [DifferenceKind.ANSWER]})
     with pytest.raises(ValidationError, match="do not match recorded outcomes"):
         evaluate_shadow_gate([unsafe])
+
+
+def test_shadow_store_revalidates_copied_comparison(tmp_path):
+    from pydantic import ValidationError
+    valid = compare_outcomes("request", outcome(), outcome())
+    unsafe = valid.model_copy(update={"comparison_id": "bad"})
+    with pytest.raises(ValidationError, match="does not match recorded outcomes"):
+        ShadowStore(tmp_path / "shadow.jsonl").append(unsafe)
+    assert not (tmp_path / "shadow.jsonl").exists()
