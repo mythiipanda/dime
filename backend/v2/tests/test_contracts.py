@@ -292,3 +292,10 @@ def test_evidence_rejects_nonfinite_row_values(value) -> None:
         EvidenceEnvelope(
             evidence_id="ev", capability="ratings", source="fixture",
             observed_at=datetime(2026, 9, 15), rows={"rating": value})
+
+
+@pytest.mark.parametrize("value", ["2025", "25-26", "2025-27", "2025/26"])
+def test_season_ref_requires_consecutive_canonical_format(value) -> None:
+    from v2.contracts import SeasonRef
+    with pytest.raises(ValidationError, match="consecutive YYYY-YY"):
+        SeasonRef(value=value, source="user", confidence=1)

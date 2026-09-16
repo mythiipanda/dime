@@ -68,6 +68,11 @@ class SeasonRef(BaseModel):
     def validate_identity(self) -> "SeasonRef":
         if not self.value.strip():
             raise ValueError("season value must be non-empty")
+        parts = self.value.split("-")
+        if (len(parts) != 2 or len(parts[0]) != 4 or len(parts[1]) != 2
+                or not all(part.isdigit() for part in parts)
+                or int(parts[1]) != (int(parts[0]) + 1) % 100):
+            raise ValueError("season must use consecutive YYYY-YY format")
         return self
 
 
