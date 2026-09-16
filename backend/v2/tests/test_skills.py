@@ -173,3 +173,14 @@ def test_catalog_rejects_symlinked_skill_package(tmp_path: Path):
     (root / "example").symlink_to(outside, target_is_directory=True)
     with pytest.raises(ValueError, match="package cannot contain symlinks"):
         SkillLibrary(root).catalog()
+
+
+def test_skill_instructions_have_a_hard_size_limit(tmp_path: Path):
+    package = tmp_path / "example"
+    package.mkdir()
+    (package / "SKILL.md").write_text(
+        "---\nname: example\ndescription: Example\n---\n" + "x" * 120_001,
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="instructions are too large"):
+        SkillLibrary(tmp_path).catalog()

@@ -42,6 +42,8 @@ class Skill:
                         f"{path}: skill resource escapes its package") from exc
                 resources.append(str(path.relative_to(self.directory)))
         resources.sort()
+        if len(resources) > 256:
+            raise ValueError("skill package cannot contain more than 256 resources")
         digest = hashlib.sha256()
         digest.update((self.directory / "SKILL.md").read_bytes())
         for resource in resources:
@@ -145,6 +147,8 @@ def _read_skill(path: Path) -> Skill:
     body = body.strip()
     if not body:
         raise ValueError(f"{path}: skill instructions are required")
+    if len(body) > 120_000:
+        raise ValueError(f"{path}: skill instructions are too large")
     return Skill(
         name=name,
         description=description.strip(),
