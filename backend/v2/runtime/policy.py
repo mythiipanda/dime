@@ -3,7 +3,7 @@ from __future__ import annotations
 from enum import StrEnum
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, model_validator
 
 
 class ExecutionMode(StrEnum):
@@ -23,7 +23,7 @@ class ExecutionPolicy(BaseModel):
     ledger_dir: Path | None = None
     checkpoint_dir: Path | None = None
     replay_path: Path | None = None
-    publish: bool = True
+    publish: StrictBool = True
 
     @model_validator(mode="after")
     def validate_mode(self) -> "ExecutionPolicy":

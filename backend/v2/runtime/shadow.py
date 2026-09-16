@@ -10,7 +10,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Any, Mapping
 
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, model_validator
 
 _SHADOW_LOCKS_GUARD = Lock()
 _SHADOW_LOCKS: dict[Path, Lock] = {}
@@ -212,7 +212,7 @@ class ShadowGateReport(BaseModel):
     grounding_drift_rate: float
     route_drift_rate: float
     answer_drift_rate: float
-    ready: bool
+    ready: StrictBool
     blockers: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")

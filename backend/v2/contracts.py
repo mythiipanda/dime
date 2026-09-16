@@ -6,7 +6,7 @@ from enum import StrEnum
 import math
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, model_validator
 
 
 class RunMode(StrEnum):
@@ -209,7 +209,7 @@ class EvidenceEnvelope(BaseModel):
     observed_at: datetime
     season: str | None = None
     vintages: dict[str, str] = Field(default_factory=dict)
-    task_season_scoped: bool = True
+    task_season_scoped: StrictBool = True
     as_of: date | None = None
     entities: list[EntityRef] = Field(default_factory=list)
     rows: list[dict[str, Any]] | dict[str, Any]
@@ -379,7 +379,7 @@ class ClaimResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     claim_index: int = Field(ge=0)
-    supported: bool
+    supported: StrictBool
     reasons: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")

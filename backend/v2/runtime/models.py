@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, model_validator
 
 from v2.contracts import (
     DraftReport,
@@ -90,7 +90,7 @@ class RuntimeResult(BaseModel):
     execution: ExecutionResult
     draft: DraftReport
     verification: VerificationReport
-    repaired: bool = False
+    repaired: StrictBool = False
     verified_claims: list[VerifiedClaim] = Field(default_factory=list)
     gaps: list[Gap] = Field(default_factory=list)
 

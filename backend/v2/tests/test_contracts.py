@@ -5,6 +5,7 @@ from pydantic import ValidationError
 
 from v2.contracts import (
     Claim,
+    ClaimResult,
     ClaimKind,
     DraftReport,
     EvidenceEnvelope,
@@ -340,3 +341,14 @@ def test_evidence_rejects_tzinfo_without_utc_offset() -> None:
             evidence_id="ev", capability="standings", source="fixture",
             observed_at=datetime(2026, 9, 15, tzinfo=MissingOffset()), rows={},
         )
+
+
+@pytest.mark.parametrize("schema,payload", [
+    (EvidenceEnvelope, {"evidence_id": "ev", "capability": "test",
+     "source": "fixture", "observed_at": "2026-09-15T00:00:00Z",
+     "rows": {}, "task_season_scoped": "false"}),
+    (ClaimResult, {"claim_index": 0, "supported": "false", "reasons": ["bad"]}),
+])
+def test_truth_bearing_contract_flags_are_strict(schema, payload) -> None:
+    with pytest.raises(ValidationError):
+        schema.model_validate(payload)
