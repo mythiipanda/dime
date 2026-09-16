@@ -148,6 +148,10 @@ class RunLedger:
                 raise ValueError("ledger step id must be non-empty when present")
             if entry.call_id is not None and not entry.call_id.strip():
                 raise ValueError("ledger call id must be non-empty when present")
+            if entry.kind in (LedgerKind.STEP_START, LedgerKind.STEP_END)                     and not entry.step_id:
+                raise ValueError("step events require step_id")
+            if entry.kind in (LedgerKind.TURN_START, LedgerKind.TURN_END)                     and entry.step_id is not None:
+                raise ValueError("turn events cannot carry step_id")
             if entry.kind == LedgerKind.TURN_START:
                 if entry.turn_id in open_turns or entry.turn_id in closed_turns:
                     raise ValueError("turn may start only once")
@@ -255,6 +259,10 @@ class RunLedger:
             raise ValueError("ledger step id must be non-empty when present")
         if call_id is not None and not call_id.strip():
             raise ValueError("ledger call id must be non-empty when present")
+        if kind in (LedgerKind.STEP_START, LedgerKind.STEP_END) and not step_id:
+            raise ValueError("step events require step_id")
+        if kind in (LedgerKind.TURN_START, LedgerKind.TURN_END) and step_id is not None:
+            raise ValueError("turn events cannot carry step_id")
         if kind in (LedgerKind.TOOL_CALL, LedgerKind.TOOL_RESULT,
                     LedgerKind.MODEL_REQUEST, LedgerKind.ASSISTANT_ATTEMPT)                 and not call_id:
             raise ValueError("call events require call_id")

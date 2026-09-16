@@ -318,3 +318,18 @@ def test_assistant_attempt_payload_shape_is_strict(data) -> None:
                   data=envelope.model_dump(mode="json"))
     with pytest.raises(ValueError, match="assistant attempt"):
         ledger.append(LedgerKind.ASSISTANT_ATTEMPT, turn_id="t", call_id="m1", data=data)
+
+
+@pytest.mark.parametrize("kind", [LedgerKind.STEP_START, LedgerKind.STEP_END])
+def test_step_events_require_step_identity(kind) -> None:
+    with pytest.raises(ValueError, match="require step_id"):
+        RunLedger("run").append(kind, turn_id="turn")
+
+
+@pytest.mark.parametrize("kind", [LedgerKind.TURN_START, LedgerKind.TURN_END])
+def test_turn_events_reject_step_identity(kind) -> None:
+    ledger = RunLedger("run")
+    if kind == LedgerKind.TURN_END:
+        ledger.append(LedgerKind.TURN_START, turn_id="turn")
+    with pytest.raises(ValueError, match="cannot carry step_id"):
+        ledger.append(kind, turn_id="turn", step_id="bad")
