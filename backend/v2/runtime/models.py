@@ -30,9 +30,26 @@ class ExecutionResult(BaseModel):
         evidence_ids = [item.evidence_id for item in self.evidence]
         if len(evidence_ids) != len(set(evidence_ids)):
             raise ValueError("execution evidence ids must be unique")
-        completed = sum(node.status.value == "complete" for node in self.plan.nodes)
-        if completed != len(self.evidence):
+        completed = [
+            node for node in self.plan.nodes if node.status.value == "complete"
+        ]
+        if len(completed) != len(self.evidence):
             raise ValueError("execution evidence must match completed plan nodes")
+        evidence_by_node = dict(zip(
+            (node.id for node in completed), self.evidence, strict=True
+        ))
+        for node, item in zip(completed, self.evidence, strict=True):
+            if item.capability not in node.capability_hints:
+                raise ValueError(
+                    f"execution evidence capability does not match node {node.id!r}")
+            expected_lineage = [
+                evidence_by_node[parent].evidence_id
+                for parent in node.depends_on
+                if parent in evidence_by_node
+            ]
+            if item.lineage != expected_lineage:
+                raise ValueError(
+                    f"execution evidence lineage does not match node {node.id!r}")
         if any(count < 0 for count in self.attempts.values()):
             raise ValueError("execution attempt counts must be non-negative")
         return self

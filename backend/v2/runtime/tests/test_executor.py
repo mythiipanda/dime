@@ -243,3 +243,30 @@ def test_execution_result_requires_one_evidence_per_completed_node() -> None:
         ExecutionResult(plan=Plan(nodes=[pending]), evidence=[evidence])
     with pytest.raises(ValidationError, match="non-negative"):
         ExecutionResult(plan=Plan(nodes=[pending]), attempts={"pending": -1})
+
+
+def test_execution_result_binds_evidence_capability_and_lineage_to_plan() -> None:
+    from datetime import UTC, datetime
+    from pydantic import ValidationError
+    from v2.contracts import EvidenceEnvelope
+    from v2.runtime.models import ExecutionResult
+
+    parent = node("parent").model_copy(update={"status": PlanStatus.COMPLETE})
+    child = node("child", parents=["parent"]).model_copy(
+        update={"status": PlanStatus.COMPLETE})
+    parent_evidence = EvidenceEnvelope(
+        evidence_id="parent-ev", capability="fake", source="fixture",
+        observed_at=datetime.now(UTC), rows={},
+    )
+    child_evidence = EvidenceEnvelope(
+        evidence_id="child-ev", capability="fake", source="fixture",
+        observed_at=datetime.now(UTC), rows={}, lineage=[],
+    )
+    with pytest.raises(ValidationError, match="lineage does not match"):
+        ExecutionResult(
+            plan=Plan(nodes=[parent, child]),
+            evidence=[parent_evidence, child_evidence],
+        )
+    wrong_capability = parent_evidence.model_copy(update={"capability": "other"})
+    with pytest.raises(ValidationError, match="capability does not match"):
+        ExecutionResult(plan=Plan(nodes=[parent]), evidence=[wrong_capability])
