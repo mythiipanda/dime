@@ -475,7 +475,7 @@ def test_adapter_preserves_source_as_of_and_warns_on_bad_date() -> None:
     assert env.warnings == ["unparseable salary_date: unknown"]
 
 
-@pytest.mark.parametrize("meta", ["warehouse", ["season", "2025-26"]])
+@pytest.mark.parametrize("meta", ["warehouse", ["season", "2025-26"], False, 0])
 def test_non_object_result_metadata_fails_closed(meta) -> None:
     payload = {"ok": True, "rows": [{"wins": 61}], "meta": meta}
     with pytest.raises(AdapterError, match="result meta must be an object"):

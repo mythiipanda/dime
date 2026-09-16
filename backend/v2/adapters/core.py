@@ -68,9 +68,10 @@ def build_envelope(
     rows = result.get("rows")
     if rows is None:
         raise AdapterError(f"{spec.tool_name}: result carries no rows")
-    meta = result.get("meta") or {}
-    if not isinstance(meta, Mapping):
+    raw_meta = result.get("meta")
+    if raw_meta is not None and not isinstance(raw_meta, Mapping):
         raise AdapterError(f"{spec.tool_name}: result meta must be an object")
+    meta = raw_meta or {}
     season = meta.get("season")
     if season is None and spec.season_arg:
         season = arguments.get(spec.season_arg)
