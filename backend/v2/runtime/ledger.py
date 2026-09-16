@@ -481,6 +481,8 @@ class FileLedger:
             return entry
 
     def _read(self) -> list[LedgerEntry]:
+        if self.path.is_symlink():
+            raise ValueError("ledger file cannot be a symlink")
         if not self.path.exists():
             return []
         text = self.path.read_text()

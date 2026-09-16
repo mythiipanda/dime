@@ -536,3 +536,14 @@ def test_request_envelope_rejects_malformed_skill_hash() -> None:
             context={}, tool_schemas={}, planner_version="v2",
             skill_hashes={"trade-analysis": "not-a-hash"},
         )
+
+
+def test_file_ledger_rejects_symlinked_record(tmp_path) -> None:
+    outside = tmp_path / "outside.jsonl"
+    outside.write_text("")
+    directory = tmp_path / "ledgers"
+    directory.mkdir()
+    path = directory / "run.jsonl"
+    path.symlink_to(outside)
+    with pytest.raises(ValueError, match="cannot be a symlink"):
+        FileLedger(path, "run")
