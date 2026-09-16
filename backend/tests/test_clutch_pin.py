@@ -44,3 +44,11 @@ def test_team_scope_clutch_not_pinned():
     # "best clutch teams" asks for team scope; the pin is player-only.
     st = _drain("best clutch teams this season")
     assert "get_clutch" not in [c.split(":")[0] for c in st["calls_made"]]
+
+
+def test_team_clutch_fails_closed_without_team_rows():
+    from app.tools.league import get_clutch
+    out = get_clutch.invoke({"scope": "team", "season": "2025-26"})
+    assert out["ok"] is False
+    assert out["rows"] == []
+    assert "team-level" in out["error"]

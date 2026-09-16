@@ -357,6 +357,13 @@ def get_clutch(scope: str = "player", season: str = SEASON,
         [season, entity], lambda: nba_stats.clutch(scope, season), season,
         entity=entity, limit=600,
     )
+    if scope == "team" and not rows:
+        return {
+            "tool": "get_clutch", "ok": False, "rows": [],
+            "error": ("team-level clutch records are unavailable; "
+                      "player clutch wins and losses cannot be aggregated"),
+            "meta": meta,
+        }
     name_col = "TEAM_ABBREVIATION" if scope == "team" else "PLAYER_NAME"
     if player and scope == "player":
         _want = str(player).strip().lower()
