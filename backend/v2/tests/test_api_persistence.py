@@ -1393,3 +1393,44 @@ def test_v2_stream_failure_does_not_publish_exception_type(monkeypatch):
     assert "Dime could not complete this run." in response.text
     assert "RuntimeError" not in response.text
     assert "provider token secret" not in response.text
+
+
+def test_v2_sse_recursively_bounds_structured_public_payloads():
+    import json
+    from v2.api.events import CustomData
+
+    nested = {"leaf": "value"}
+    for _ in range(10):
+        nested = {"child": nested}
+    event = CustomData.model_construct(
+        node="analytics",
+        tables=[{"tool": "x", "rows": nested}] * 1001,
+        unverified_numbers=["9" * 250_000],
+    )
+    payload = encode_event(event).split("data: ", 1)[1].strip()
+    public = json.loads(payload)
+
+    assert len(public["tables"]) == 1000
+    cursor = public["tables"][0]["rows"]
+    for _ in range(5):
+        cursor = cursor["child"]
+    assert cursor["child"] is None
+    assert len(public["unverified_numbers"][0]) == 200_000
+
+
+def test_v2_sse_emits_strict_json_for_non_finite_nested_values():
+    import json
+    import math
+    from v2.api.events import CustomData
+
+    # model_construct simulates a future/unvalidated producer crossing the
+    # final publication boundary.
+    event = CustomData.model_construct(
+        node="analytics", tables=[{"value": math.nan, "other": math.inf}],
+        unverified_numbers=[],
+    )
+    payload = encode_event(event).split("data: ", 1)[1].strip()
+
+    assert json.loads(payload)["tables"] == [{"value": None, "other": None}]
+    assert "NaN" not in payload
+    assert "Infinity" not in payload
