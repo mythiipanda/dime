@@ -103,7 +103,8 @@ def test_ledger_contracts_reject_unknown_fields() -> None:
     with pytest.raises(ValidationError, match="extra_field"):
         RequestEnvelope.model_validate({
             "provider": "free", "model": "model", "route": "answer",
-            "prompt_hash": "p", "context_hash": "c", "tool_schema_hash": "t",
+            "prompt_hash": "a" * 64, "context_hash": "b" * 64,
+            "tool_schema_hash": "c" * 64,
             "planner_version": "v2", "extra_field": True,
         })
     with pytest.raises(ValidationError, match="extra_field"):
@@ -275,12 +276,14 @@ def test_request_envelope_loaded_contract_validates_identity_and_maps() -> None:
     with pytest.raises(Exception, match="prompt_hash"):
         RequestEnvelope.model_validate({
             "provider": "p", "model": "m", "route": "r", "prompt_hash": " ",
-            "context_hash": "c", "tool_schema_hash": "t", "planner_version": "v2",
+            "context_hash": "b" * 64, "tool_schema_hash": "c" * 64,
+            "planner_version": "v2",
         })
     with pytest.raises(Exception, match="budget keys"):
         RequestEnvelope.model_validate({
-            "provider": "p", "model": "m", "route": "r", "prompt_hash": "p",
-            "context_hash": "c", "tool_schema_hash": "t", "planner_version": "v2",
+            "provider": "p", "model": "m", "route": "r", "prompt_hash": "a" * 64,
+            "context_hash": "b" * 64, "tool_schema_hash": "c" * 64,
+            "planner_version": "v2",
             "budgets": {" ": 1},
         })
 
@@ -416,3 +419,13 @@ def test_request_envelope_rejects_invalid_budget_values(value, error) -> None:
         RequestEnvelope.freeze(
             provider="p", model="m", route="answer", prompt="p", context={},
             tool_schemas={}, planner_version="v2", budgets={"seconds": value})
+
+
+@pytest.mark.parametrize("field", ["prompt_hash", "context_hash", "tool_schema_hash"])
+def test_request_envelope_requires_canonical_hashes(field) -> None:
+    envelope = RequestEnvelope.freeze(
+        provider="p", model="m", route="answer", prompt="p", context={},
+        tool_schemas={}, planner_version="v2").model_dump(mode="json")
+    envelope[field] = "not-a-hash"
+    with pytest.raises(Exception, match="lowercase sha256"):
+        RequestEnvelope.model_validate(envelope)

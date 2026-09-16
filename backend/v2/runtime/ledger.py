@@ -50,6 +50,10 @@ class RequestEnvelope(BaseModel):
                      "tool_schema_hash", "planner_version"):
             if not getattr(self, name).strip():
                 raise ValueError(f"{name} must be non-empty")
+        for name in ("prompt_hash", "context_hash", "tool_schema_hash"):
+            value = getattr(self, name)
+            if len(value) != 64 or any(char not in "0123456789abcdef" for char in value):
+                raise ValueError(f"{name} must be lowercase sha256")
         if any(not key.strip() for key in self.budgets):
             raise ValueError("budget keys must be non-empty")
         if any(isinstance(value, bool) or value < 0
