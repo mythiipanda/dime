@@ -14,10 +14,12 @@ from typing import Any, Literal, Protocol
 from urllib.parse import urlparse
 
 import httpx
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 
 class WebSearchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     query: str = Field(min_length=2, max_length=500)
     max_results: int = Field(default=5, ge=1, le=8)
     freshness: Literal["day", "week", "month", "year"] | None = None
@@ -26,6 +28,8 @@ class WebSearchRequest(BaseModel):
 
 
 class WebSearchResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     rank: int = Field(ge=1)
     url: HttpUrl
     title: str
@@ -34,6 +38,8 @@ class WebSearchResult(BaseModel):
 
 
 class WebSearchResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     provider: str
     observed_at: datetime
     query: str
@@ -43,11 +49,15 @@ class WebSearchResponse(BaseModel):
 
 
 class WebFetchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     search_evidence_id: str | None = Field(default=None, min_length=1)
     result_rank: int = Field(ge=1, le=8)
 
 
 class WebPage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     url: HttpUrl
     title: str
     publisher: str | None = None

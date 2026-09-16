@@ -249,3 +249,26 @@ def test_web_preflight_rejects_unknown_arguments() -> None:
     )
     with pytest.raises(ValueError, match="unknown arguments.*url"):
         WebSearchCapability().validate_arguments(node)
+
+
+def test_web_contracts_reject_unknown_fields():
+    from datetime import UTC, datetime
+    from pydantic import ValidationError
+    from v2.adapters.web import (WebFetchRequest, WebPage, WebSearchRequest,
+                                 WebSearchResponse, WebSearchResult)
+
+    cases = [
+        (WebSearchRequest, {"query": "Brown role", "invented": True}),
+        (WebSearchResult, {"rank": 1, "url": "https://example.com",
+                           "title": "title", "snippet": "snippet", "invented": True}),
+        (WebSearchResponse, {"provider": "fixture", "observed_at": datetime.now(UTC),
+                             "query": "Brown", "results": [], "coverage": "fixture",
+                             "invented": True}),
+        (WebFetchRequest, {"result_rank": 1, "invented": True}),
+        (WebPage, {"url": "https://example.com", "title": "title",
+                   "retrieved_at": datetime.now(UTC), "markdown": "body",
+                   "content_hash": "hash", "invented": True}),
+    ]
+    for schema, payload in cases:
+        with pytest.raises(ValidationError, match="invented"):
+            schema.model_validate(payload)
