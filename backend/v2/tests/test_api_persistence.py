@@ -414,3 +414,55 @@ async def test_checkpoint_resume_rejects_inconsistent_execution_state(
         await PlanExecutor(
             {"fake": FakeCapability("fake", {})}, checkpoint_store=checkpoints,
         ).execute(_task(), _plan(), run_id="corrupt")
+
+
+@pytest.mark.anyio
+async def test_checkpoint_resume_preserves_attempt_and_failure_budgets(
+    tmp_path: Path,
+) -> None:
+    from v2.runtime.checkpoints import ExecutionCheckpoint
+
+    checkpoints = FileCheckpointStore(tmp_path)
+    plan = _plan()
+    plan.nodes[0].status = PlanStatus.FAILED
+    checkpoints.save(ExecutionCheckpoint(
+        run_id="budget", task=_task(), plan=plan,
+        attempts={"one": 1}, errors={"one": ["failed once"]},
+    ))
+    calls: list[str] = []
+    result = await PlanExecutor(
+        {"fake": FakeCapability(
+            "fake", lambda node: calls.append(node.id) or {"node": node.id})},
+        max_failures=1, checkpoint_store=checkpoints,
+    ).execute(_task(), _plan(), run_id="budget")
+
+    assert calls == []
+    assert [node.status for node in result.plan.nodes] == [
+        PlanStatus.FAILED, PlanStatus.SKIPPED,
+    ]
+    assert result.attempts == {"one": 1, "two": 0}
+
+
+@pytest.mark.anyio
+async def test_checkpoint_rejects_completed_node_with_incomplete_dependency(
+    tmp_path: Path,
+) -> None:
+    from datetime import UTC, datetime
+    from v2.contracts import EvidenceEnvelope
+    from v2.runtime.checkpoints import ExecutionCheckpoint
+
+    checkpoints = FileCheckpointStore(tmp_path)
+    plan = _plan()
+    plan.nodes[1].status = PlanStatus.COMPLETE
+    checkpoints.save(ExecutionCheckpoint(
+        run_id="order", task=_task(), plan=plan,
+        evidence_by_node={"two": EvidenceEnvelope(
+            evidence_id="evidence:two", capability="fake", source="fixture",
+            observed_at=datetime.now(UTC), rows={"node": "two"},
+        )},
+        attempts={"two": 1},
+    ))
+    with pytest.raises(ValueError, match="completed before its dependencies"):
+        await PlanExecutor(
+            {"fake": FakeCapability("fake", {})}, checkpoint_store=checkpoints,
+        ).execute(_task(), _plan(), run_id="order")

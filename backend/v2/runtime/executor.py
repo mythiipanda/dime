@@ -62,7 +62,9 @@ class PlanExecutor:
             evidence_by_node: dict[str, EvidenceEnvelope] = {}
             attempts = {node_id: 0 for node_id in nodes}
             errors: dict[str, list[str]] = {}
-        failures = 0
+        failures = sum(
+            node.status == PlanStatus.FAILED for node in nodes.values()
+        )
 
         while any(node.status == PlanStatus.PENDING for node in nodes.values()):
             progressed = False
@@ -168,6 +170,12 @@ class PlanExecutor:
             if attempts < 0 or attempts > node.max_attempts:
                 raise ValueError(
                     f"checkpoint node {node_id!r} has invalid attempt count {attempts}")
+            if node.status == PlanStatus.COMPLETE and any(
+                nodes[parent].status != PlanStatus.COMPLETE
+                for parent in node.depends_on
+            ):
+                raise ValueError(
+                    f"checkpoint node {node_id!r} completed before its dependencies")
             if evidence is None:
                 continue
             selected = self._selected_name(checkpoint.plan, node_id)
@@ -263,7 +271,8 @@ class PlanExecutor:
         parent_evidence: Sequence[EvidenceEnvelope] = tuple(
             evidence_by_node[parent] for parent in node.depends_on
         )
-        for _ in range(node.max_attempts):
+        remaining_attempts = node.max_attempts - attempts[node.id]
+        for _ in range(remaining_attempts):
             attempts[node.id] += 1
             try:
                 result = await capability.execute(node, task, parent_evidence)
