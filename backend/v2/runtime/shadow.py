@@ -221,6 +221,9 @@ def evaluate_shadow_gate(
     policy: ShadowGatePolicy | None = None,
 ) -> ShadowGateReport:
     policy = policy or ShadowGatePolicy()
+    ids = [comparison.comparison_id for comparison in comparisons]
+    if len(ids) != len(set(ids)):
+        raise ValueError("shadow gate comparisons must be unique")
     total = len(comparisons)
 
     def rate(kind: DifferenceKind) -> float:

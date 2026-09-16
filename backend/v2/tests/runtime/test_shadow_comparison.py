@@ -61,6 +61,15 @@ def test_shadow_gate_requires_volume_and_bounded_drift():
     assert report.answer_drift_rate == .5
 
 
+def test_shadow_gate_rejects_duplicate_comparisons():
+    import pytest
+    from v2.runtime.shadow import evaluate_shadow_gate
+
+    comparison = compare_outcomes("record?", outcome(), outcome())
+    with pytest.raises(ValueError, match="comparisons must be unique"):
+        evaluate_shadow_gate([comparison, comparison])
+
+
 def test_shadow_gate_reports_every_failed_threshold():
     from v2.runtime.shadow import ShadowGatePolicy, evaluate_shadow_gate
 
