@@ -194,12 +194,9 @@ async def quick_answer_stream(body: QuickAnswerBody):
         }
         for entry in entries:
             if entry.kind == LedgerKind.TOOL_CALL:
-                recorded_args = entry.data["args"]
-                node_args = recorded_args.get("node", {}).get("arguments", {})
                 yield ToolCall(
                     node="tools",
                     name=str(entry.data["name"]),
-                    args=node_args,
                 )
             elif entry.kind == LedgerKind.TOOL_RESULT:
                 payload = entry.data
@@ -257,7 +254,6 @@ async def quick_answer_stream(body: QuickAnswerBody):
                     yield "event: error\ndata: " + json.dumps({
                         "message": "Dime could not complete this run.",
                         "run_id": run_id,
-                        "error_type": type(exc).__name__,
                     }, separators=(",", ":")) + "\n\n"
                 yield encode_event(GraphEnd())
                 return

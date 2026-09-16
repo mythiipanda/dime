@@ -52,7 +52,7 @@ def test_sse_adapter_maps_every_frozen_event() -> None:
     events = [
         NodeUpdate(node="data_retrieval", status="running"),
         ThoughtStream(node="data_retrieval", text="thinking"),
-        ToolCall(node="tools", name="standings", args={"season": "2025-26"}),
+        ToolCall(node="tools", name="standings"),
         ToolResult(node="tools", name="standings", status="ok", rows=30, ms=8),
         Token(text="Boston"),
         CustomData(node="analytics", tables=[{"tool": "standings"}]),
@@ -376,7 +376,8 @@ def test_failed_stream_tool_result_keeps_its_call_identity(monkeypatch):
     assert '"name":"tool"' not in response.text
     assert 'contracts failed' in response.text
     assert 'source unavailable' not in response.text
-    assert '"args":{"team":"BOS"}' in response.text
+    assert '"args"' not in response.text
+    assert '"team":"BOS"' not in response.text
     assert '"node":"tools"' in response.text
     assert '"node":"salary"' not in response.text
     assert 'private normalized task' not in response.text
@@ -1358,3 +1359,37 @@ def test_frontend_citations_include_evidence_limitations():
     for field in ("qualification", "coverage", "warnings"):
         assert f"{field}: meta.{field}" in chat
         assert f"{field}: meta?.{field}" in artifacts
+
+
+def test_v2_tool_call_contract_rejects_raw_arguments():
+    from pydantic import ValidationError
+    from v2.api.events import ToolCall
+
+    with pytest.raises(ValidationError, match="args"):
+        ToolCall(node="tools", name="standings", args={"token": "secret"})
+
+
+def test_v2_stream_failure_does_not_publish_exception_type(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from v2.api import routes
+    from v2.runtime.ledger import RunLedger
+
+    class BrokenRuntime:
+        async def run(self, *args, **kwargs):
+            raise RuntimeError("provider token secret")
+
+    monkeypatch.setenv("DIME_RUNTIME_V2", "on")
+    monkeypatch.setattr(
+        "app.providers.resolve_model_id", lambda value: ("openrouter", "fixture"))
+    monkeypatch.setattr(
+        "v2.runtime.assembly.build_runtime",
+        lambda **kwargs: (BrokenRuntime(), RunLedger(kwargs["run_id"])),
+    )
+    app = FastAPI()
+    app.include_router(routes.router, prefix="/api")
+    response = TestClient(app).post("/api/v2/chat/stream", json={"q": "record?"})
+
+    assert "Dime could not complete this run." in response.text
+    assert "RuntimeError" not in response.text
+    assert "provider token secret" not in response.text

@@ -50,7 +50,6 @@ class ToolCall(StrictEvent):
     type: Literal[EventType.TOOL_CALL] = EventType.TOOL_CALL
     node: Literal["entry", "data_retrieval", "tools", "analytics", "presentation"]
     name: str = Field(max_length=256)
-    args: dict[str, Any] = Field(default_factory=dict, max_length=64)
     label: str | None = Field(default=None, max_length=1000)
     summary: str | None = Field(default=None, max_length=4000)
     agent: str | None = Field(default=None, max_length=256)
