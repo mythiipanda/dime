@@ -93,11 +93,23 @@ class RunLedger:
             range(1, len(self._entries) + 1)
         ):
             raise ValueError("ledger sequence must be contiguous")
-        self._calls = {
-            entry.call_id: _call_identity(entry)
-            for entry in self._entries
-            if entry.kind == LedgerKind.TOOL_CALL and entry.call_id
-        }
+        self._calls: dict[str, str] = {}
+        self._results: set[str] = set()
+        for entry in self._entries:
+            if entry.kind == LedgerKind.TOOL_CALL and entry.call_id:
+                identity = _call_identity(entry)
+                previous = self._calls.get(entry.call_id)
+                if previous is not None and previous != identity:
+                    raise ValueError("a call id cannot change tool identity or arguments")
+                if entry.call_id in self._results:
+                    raise ValueError("tool call cannot follow its result")
+                self._calls[entry.call_id] = identity
+            elif entry.kind == LedgerKind.TOOL_RESULT:
+                if not entry.call_id or entry.call_id not in self._calls:
+                    raise ValueError("tool result requires an earlier tool call")
+                if entry.call_id in self._results:
+                    raise ValueError("tool call may have only one result")
+                self._results.add(entry.call_id)
 
     @property
     def entries(self) -> tuple[LedgerEntry, ...]:
@@ -121,8 +133,14 @@ class RunLedger:
             if previous is not None and previous != identity:
                 raise ValueError("a call id cannot change tool identity or arguments")
             self._calls[call_id] = identity
-        if kind == LedgerKind.TOOL_RESULT and call_id not in self._calls:
-            raise ValueError("tool result requires an earlier tool call")
+        if kind == LedgerKind.TOOL_CALL and call_id in self._results:
+            raise ValueError("tool call cannot follow its result")
+        if kind == LedgerKind.TOOL_RESULT:
+            if call_id not in self._calls:
+                raise ValueError("tool result requires an earlier tool call")
+            if call_id in self._results:
+                raise ValueError("tool call may have only one result")
+            self._results.add(call_id)
         entry = LedgerEntry(
             sequence=len(self._entries) + 1,
             run_id=self.run_id,

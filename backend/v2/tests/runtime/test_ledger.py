@@ -102,3 +102,32 @@ def test_ledger_contracts_reject_unknown_fields() -> None:
             "recorded_at": datetime.now(UTC), "turn_id": "turn",
             "extra_field": True,
         })
+
+
+def test_tool_call_has_exactly_one_terminal_result() -> None:
+    ledger = RunLedger("run")
+    ledger.append(LedgerKind.TOOL_CALL, turn_id="t", call_id="c",
+                  data={"name": "standings", "args": {}})
+    ledger.append(LedgerKind.TOOL_RESULT, turn_id="t", call_id="c",
+                  data={"status": "ok", "evidence": {}})
+    with pytest.raises(ValueError, match="only one result"):
+        ledger.append(LedgerKind.TOOL_RESULT, turn_id="t", call_id="c",
+                      data={"status": "failed", "error": "late"})
+    with pytest.raises(ValueError, match="cannot follow its result"):
+        ledger.append(LedgerKind.TOOL_CALL, turn_id="t", call_id="c",
+                      data={"name": "standings", "args": {}})
+
+
+def test_reloaded_ledger_rejects_duplicate_tool_results() -> None:
+    from datetime import UTC, datetime
+    from v2.runtime.ledger import LedgerEntry
+
+    call = LedgerEntry(sequence=1, run_id="run", kind="tool/call",
+                       recorded_at=datetime.now(UTC), turn_id="t", call_id="c",
+                       data={"name": "standings", "args": {}})
+    result = LedgerEntry(sequence=2, run_id="run", kind="tool/result",
+                         recorded_at=datetime.now(UTC), turn_id="t", call_id="c",
+                         data={"status": "ok", "evidence": {}})
+    duplicate = result.model_copy(update={"sequence": 3})
+    with pytest.raises(ValueError, match="only one result"):
+        RunLedger("run", [call, result, duplicate])
