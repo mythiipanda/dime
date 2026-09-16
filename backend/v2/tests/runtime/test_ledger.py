@@ -474,3 +474,16 @@ def test_file_ledger_recovers_only_unterminated_partial_tail(tmp_path) -> None:
     path.write_text(path.read_text() + '{"sequence":3\n')
     with pytest.raises(Exception):
         FileLedger(path, "run")
+
+
+def test_ledger_tail_recovery_fsyncs_file_and_directory(tmp_path, monkeypatch) -> None:
+    path = tmp_path / "run.jsonl"
+    path.write_text('{"sequence":1')
+    calls = []
+    real_fsync = __import__("os").fsync
+    def record(fd):
+        calls.append(fd)
+        return real_fsync(fd)
+    monkeypatch.setattr("v2.runtime.ledger.os.fsync", record)
+    FileLedger(path, "run")
+    assert len(calls) == 2

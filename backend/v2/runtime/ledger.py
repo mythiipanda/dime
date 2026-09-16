@@ -483,6 +483,11 @@ class FileLedger:
                 handle.write(normalized)
                 handle.flush()
                 os.fsync(handle.fileno())
+            directory_fd = os.open(self.path.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
         return [
             LedgerEntry.model_validate_json(line)
             for line in lines
