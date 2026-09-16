@@ -221,6 +221,16 @@ class DraftReport(BaseModel):
     claims: list[Claim]
     gaps: list[str] = Field(default_factory=list)
 
+    @model_validator(mode="after")
+    def validate_content(self) -> "DraftReport":
+        for field_name in ("sections", "gaps"):
+            values = getattr(self, field_name)
+            if any(not value.strip() for value in values):
+                raise ValueError(f"draft {field_name} must not contain empty values")
+            if len(values) != len(set(values)):
+                raise ValueError(f"draft {field_name} must not contain duplicates")
+        return self
+
 
 class Gap(BaseModel):
     model_config = ConfigDict(extra="forbid")

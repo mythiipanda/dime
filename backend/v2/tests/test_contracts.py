@@ -6,6 +6,7 @@ from pydantic import ValidationError
 from v2.contracts import (
     Claim,
     ClaimKind,
+    DraftReport,
     EvidenceEnvelope,
     Plan,
     PlanNode,
@@ -152,3 +153,14 @@ def test_task_scope_rejects_empty_or_duplicate_semantics(field, value) -> None:
 def test_plan_node_rejects_ambiguous_identity_or_selection(payload, error) -> None:
     with pytest.raises(ValidationError, match=error):
         PlanNode.model_validate(payload)
+
+
+@pytest.mark.parametrize("payload,error", [
+    ({"sections": ["Answer", "Answer"], "claims": [], "gaps": ["missing"]},
+     "sections must not contain duplicates"),
+    ({"sections": [], "claims": [], "gaps": [""]},
+     "gaps must not contain empty values"),
+])
+def test_draft_report_rejects_empty_or_duplicate_content(payload, error) -> None:
+    with pytest.raises(ValidationError, match=error):
+        DraftReport.model_validate(payload)
