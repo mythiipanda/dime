@@ -80,3 +80,14 @@ def test_non_rank_calculation_rejects_subject_input() -> None:
             calculation_id="sum", operation="add",
             inputs=[ref("rows[0].PTS")], subject_input=0, result=Decimal("30"),
         )
+
+
+@pytest.mark.parametrize("value", [True, "0", 0.0])
+def test_rank_subject_index_is_a_strict_integer(value) -> None:
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        Calculation(
+            calculation_id="rank", operation="rank_desc",
+            inputs=[ref("rows[0].PTS")], subject_input=value,
+            result=Decimal("1"),
+        )

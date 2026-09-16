@@ -3,7 +3,7 @@ from __future__ import annotations
 from decimal import Decimal, DivisionByZero, InvalidOperation
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
 
 from v2.domain.evidence import EvidenceIndex, decimal_value
 
@@ -40,7 +40,7 @@ class Calculation(BaseModel):
     inputs: list[CalculationInput]
     result: Decimal
     unit: str | None = None
-    subject_input: int | None = Field(default=None, ge=0)
+    subject_input: StrictInt | None = Field(default=None, ge=0)
 
     @model_validator(mode="after")
     def validate_shape(self) -> "Calculation":
