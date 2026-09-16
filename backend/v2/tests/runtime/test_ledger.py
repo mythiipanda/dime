@@ -569,6 +569,16 @@ def test_ledger_entry_requires_timezone_aware_recording_time() -> None:
             recorded_at=datetime(2026, 9, 15), turn_id="turn",
             data={"request": "answer"},
         )
+    from datetime import tzinfo
+    class MissingOffset(tzinfo):
+        def utcoffset(self, dt):
+            return None
+    with pytest.raises(ValidationError, match="recorded_at must include timezone"):
+        LedgerEntry(
+            sequence=1, run_id="run", kind="turn/start",
+            recorded_at=datetime(2026, 9, 15, tzinfo=MissingOffset()), turn_id="turn",
+            data={"request": "answer"},
+        )
 
 
 def test_run_ledger_rejects_decreasing_timestamps() -> None:

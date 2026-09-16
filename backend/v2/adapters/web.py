@@ -56,7 +56,7 @@ class WebSearchResult(BaseModel):
             raise ValueError("web search result must use HTTP(S)")
         if not self.title.strip():
             raise ValueError("web search result title must be non-empty")
-        if self.published_at is not None and self.published_at.tzinfo is None:
+        if self.published_at is not None and self.published_at.utcoffset() is None:
             raise ValueError("web search published_at must include timezone")
         return self
 
@@ -75,7 +75,7 @@ class WebSearchResponse(BaseModel):
     def validate_response(self) -> "WebSearchResponse":
         if not self.provider.strip() or not self.query.strip() or not self.coverage.strip():
             raise ValueError("web search response metadata must be non-empty")
-        if self.observed_at.tzinfo is None:
+        if self.observed_at.utcoffset() is None:
             raise ValueError("web search observed_at must include timezone")
         ranks = [item.rank for item in self.results]
         if ranks != list(range(1, len(ranks) + 1)):
@@ -109,9 +109,9 @@ class WebPage(BaseModel):
     def validate_page(self) -> "WebPage":
         if not self.title.strip() or not self.markdown.strip():
             raise ValueError("web page title and markdown must be non-empty")
-        if self.retrieved_at.tzinfo is None:
+        if self.retrieved_at.utcoffset() is None:
             raise ValueError("web page retrieved_at must include timezone")
-        if self.published_at is not None and self.published_at.tzinfo is None:
+        if self.published_at is not None and self.published_at.utcoffset() is None:
             raise ValueError("web page published_at must include timezone")
         if self.publisher is not None and not self.publisher.strip():
             raise ValueError("web page publisher must be non-empty when present")

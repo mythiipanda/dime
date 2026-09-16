@@ -225,7 +225,7 @@ class EvidenceEnvelope(BaseModel):
         if (not self.evidence_id.strip() or not self.capability.strip()
                 or not self.source.strip()):
             raise ValueError("evidence identity, capability, and source must be non-empty")
-        if self.observed_at.tzinfo is None:
+        if self.observed_at.utcoffset() is None:
             raise ValueError("evidence observed_at must include timezone")
         for field_name in ("season", "qualification", "coverage"):
             value = getattr(self, field_name)

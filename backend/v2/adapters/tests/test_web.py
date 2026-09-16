@@ -6,7 +6,7 @@ import httpx
 import pytest
 
 from v2.adapters.web import (
-    DuckDuckGoSearch, WebSearchRequest, WebSearchResult,
+    DuckDuckGoSearch, WebPage, WebSearchRequest, WebSearchResponse, WebSearchResult,
     validate_public_url,
 )
 
@@ -355,4 +355,30 @@ def test_web_contracts_reject_naive_publication_times():
             url="https://example.com", title="Example", published_at=naive,
             retrieved_at=datetime.now(UTC), markdown=markdown,
             content_hash=hashlib.sha256(markdown.encode()).hexdigest(),
+        )
+
+
+def test_web_contracts_reject_tzinfo_without_offset() -> None:
+    from datetime import datetime, tzinfo
+    from pydantic import ValidationError
+
+    class MissingOffset(tzinfo):
+        def utcoffset(self, dt):
+            return None
+
+    invalid = datetime(2026, 9, 15, tzinfo=MissingOffset())
+    with pytest.raises(ValidationError, match="published_at must include timezone"):
+        WebSearchResult(
+            rank=1, url="https://example.com", title="Example", snippet="x",
+            published_at=invalid,
+        )
+    with pytest.raises(ValidationError, match="observed_at must include timezone"):
+        WebSearchResponse(
+            provider="fixture", observed_at=invalid, query="q", results=[],
+            coverage="none",
+        )
+    with pytest.raises(ValidationError, match="retrieved_at must include timezone"):
+        WebPage(
+            url="https://example.com", title="Example", retrieved_at=invalid,
+            markdown="content", content_hash="a" * 64,
         )

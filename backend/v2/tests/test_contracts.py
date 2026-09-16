@@ -326,3 +326,17 @@ def test_evidence_contract_requires_timezone_aware_observation_time() -> None:
             evidence_id="ev", capability="standings", source="fixture",
             observed_at=datetime(2026, 9, 15), rows={"wins": 61},
         )
+
+
+def test_evidence_rejects_tzinfo_without_utc_offset() -> None:
+    from datetime import datetime, tzinfo
+
+    class MissingOffset(tzinfo):
+        def utcoffset(self, dt):
+            return None
+
+    with pytest.raises(ValidationError, match="observed_at must include timezone"):
+        EvidenceEnvelope(
+            evidence_id="ev", capability="standings", source="fixture",
+            observed_at=datetime(2026, 9, 15, tzinfo=MissingOffset()), rows={},
+        )

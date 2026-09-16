@@ -31,7 +31,7 @@ class Project(BaseModel):
             raise ValueError("project identity and goal must be non-empty")
         if self.run_id != f"project-{self.id}":
             raise ValueError("project run id must match project identity")
-        if self.created_at.tzinfo is None or self.updated_at.tzinfo is None:
+        if self.created_at.utcoffset() is None or self.updated_at.utcoffset() is None:
             raise ValueError("project timestamps must include timezone")
         if self.updated_at < self.created_at:
             raise ValueError("project updated_at cannot precede created_at")

@@ -121,6 +121,16 @@ def test_project_contract_requires_timezone_aware_timestamps() -> None:
             id="abc", goal="answer", run_id="project-abc",
             created_at=datetime(2026, 9, 15), updated_at=datetime(2026, 9, 15),
         )
+    from datetime import tzinfo
+    class MissingOffset(tzinfo):
+        def utcoffset(self, dt):
+            return None
+    invalid = datetime(2026, 9, 15, tzinfo=MissingOffset())
+    with pytest.raises(ValidationError, match="must include timezone"):
+        Project(
+            id="abc", goal="answer", run_id="project-abc",
+            created_at=invalid, updated_at=invalid,
+        )
 
 
 def test_project_contract_binds_run_identity() -> None:
