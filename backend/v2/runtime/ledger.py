@@ -50,8 +50,8 @@ class RequestEnvelope(BaseModel):
     context_hash: str
     tool_schema_hash: str
     planner_version: str
-    budgets: dict[str, StrictInt | StrictFloat] = Field(default_factory=dict)
-    skill_hashes: dict[str, str] = Field(default_factory=dict)
+    budgets: dict[str, StrictInt | StrictFloat] = Field(default_factory=dict, max_length=32)
+    skill_hashes: dict[str, str] = Field(default_factory=dict, max_length=32)
 
     @model_validator(mode="after")
     def validate_identity(self):

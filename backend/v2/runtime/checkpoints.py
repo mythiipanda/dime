@@ -27,9 +27,9 @@ class ExecutionCheckpoint(BaseModel):
     run_id: str
     task: TaskSpec
     plan: Plan
-    evidence_by_node: dict[str, EvidenceEnvelope] = Field(default_factory=dict)
-    attempts: dict[str, StrictInt] = Field(default_factory=dict)
-    errors: dict[str, list[str]] = Field(default_factory=dict)
+    evidence_by_node: dict[str, EvidenceEnvelope] = Field(default_factory=dict, max_length=32)
+    attempts: dict[str, StrictInt] = Field(default_factory=dict, max_length=32)
+    errors: dict[str, list[str]] = Field(default_factory=dict, max_length=32)
 
     @model_validator(mode="after")
     def validate_identity(self) -> "ExecutionCheckpoint":

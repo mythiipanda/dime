@@ -416,3 +416,9 @@ def test_evidence_lineage_and_warning_lists_have_hard_limits() -> None:
         EvidenceEnvelope(**base, lineage=[f"ev-{index}" for index in range(33)])
     with pytest.raises(ValidationError, match="at most 64 items"):
         EvidenceEnvelope(**base, warnings=[f"warning-{index}" for index in range(65)])
+
+
+def test_plan_argument_map_has_a_hard_limit() -> None:
+    with pytest.raises(ValidationError, match="at most 64 items"):
+        PlanNode(id="node", description="work",
+                 arguments={f"key-{index}": index for index in range(65)})

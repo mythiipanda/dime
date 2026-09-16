@@ -132,7 +132,7 @@ class PlanNode(BaseModel):
     description: str = Field(min_length=1)
     depends_on: list[str] = Field(default_factory=list, max_length=32)
     capability_hints: list[str] = Field(default_factory=list, max_length=16)
-    arguments: dict[str, Any] = Field(default_factory=dict)
+    arguments: dict[str, Any] = Field(default_factory=dict, max_length=64)
     max_attempts: StrictInt = Field(default=1, ge=1, le=5)
     status: PlanStatus = PlanStatus.PENDING
 
@@ -208,13 +208,13 @@ class EvidenceEnvelope(BaseModel):
     source: str
     observed_at: datetime
     season: str | None = None
-    vintages: dict[str, str] = Field(default_factory=dict)
+    vintages: dict[str, str] = Field(default_factory=dict, max_length=64)
     task_season_scoped: StrictBool = True
     as_of: date | None = None
     entities: list[EntityRef] = Field(default_factory=list, max_length=64)
     rows: list[dict[str, Any]] | dict[str, Any]
-    units: dict[str, str] = Field(default_factory=dict)
-    metric_definitions: dict[str, str] = Field(default_factory=dict)
+    units: dict[str, str] = Field(default_factory=dict, max_length=256)
+    metric_definitions: dict[str, str] = Field(default_factory=dict, max_length=256)
     qualification: str | None = None
     coverage: str | None = None
     lineage: list[str] = Field(default_factory=list, max_length=32)
