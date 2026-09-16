@@ -197,8 +197,13 @@ class EvidenceEnvelope(BaseModel):
 
     @model_validator(mode="after")
     def validate_identity(self) -> "EvidenceEnvelope":
-        if not self.capability.strip() or not self.source.strip():
-            raise ValueError("evidence capability and source must be non-empty")
+        if (not self.evidence_id.strip() or not self.capability.strip()
+                or not self.source.strip()):
+            raise ValueError("evidence identity, capability, and source must be non-empty")
+        for field_name in ("season", "qualification", "coverage"):
+            value = getattr(self, field_name)
+            if value is not None and not value.strip():
+                raise ValueError(f"evidence {field_name} must be non-empty when present")
         for field_name in ("vintages", "units", "metric_definitions"):
             values = getattr(self, field_name)
             if any(not str(key).strip() or not str(value).strip()

@@ -65,7 +65,7 @@ def test_admission_fails_closed_on_integrity_issue():
       "lineage": ["parent", "parent"]}, "lineage must not contain duplicates"),
     ({"evidence_id": "ev", "capability": "", "source": "fixture",
       "observed_at": "2026-09-15T00:00:00Z", "rows": {}},
-     "capability and source must be non-empty"),
+     "identity, capability, and source must be non-empty"),
     ({"evidence_id": "ev", "capability": "test", "source": "fixture",
       "observed_at": "2026-09-15T00:00:00Z", "rows": {}, "invented": True},
      "Extra inputs are not permitted"),

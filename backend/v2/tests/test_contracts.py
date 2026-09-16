@@ -263,3 +263,18 @@ def test_conversation_turn_rejects_blank_content() -> None:
 
     with pytest.raises(ValidationError, match="content must be non-empty"):
         ConversationTurn(role="user", content=" ")
+
+
+@pytest.mark.parametrize("changes,error", [
+    ({"evidence_id": " "}, "evidence identity"),
+    ({"season": " "}, "evidence season"),
+    ({"qualification": " "}, "evidence qualification"),
+    ({"coverage": " "}, "evidence coverage"),
+])
+def test_evidence_rejects_blank_optional_metadata(changes, error) -> None:
+    payload = {"evidence_id": "ev", "capability": "standings",
+               "source": "fixture", "observed_at": datetime(2026, 9, 15),
+               "rows": {}}
+    payload.update(changes)
+    with pytest.raises(ValidationError, match=error):
+        EvidenceEnvelope.model_validate(payload)
