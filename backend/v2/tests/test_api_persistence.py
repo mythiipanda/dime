@@ -270,6 +270,10 @@ def test_quick_answer_route_is_flagged_and_streams_typed_contract(monkeypatch, t
     assert response.status_code == 200
     assert response.headers["x-dime-run-id"].startswith("run-")
     assert "event: custom_data" in response.text
+    assert '"tool":"standings"' in response.text
+    assert '"rows":[{"TEAM":"Boston","WINS":61}]' in response.text
+    assert '"source":"fixture"' in response.text
+    assert '"evidence_id"' not in response.text
     assert "event: final_answer" not in response.text
     assert "Boston won 61 games." not in response.text
     assert response.text.rstrip().endswith("data: {}")

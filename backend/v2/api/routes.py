@@ -202,6 +202,21 @@ async def quick_answer_stream(body: QuickAnswerBody):
                            if payload.get("status") == "failed" else None),
                 )
 
+    def evidence_table(item):
+        return {
+            "tool": item.capability,
+            "rows": item.rows,
+            "meta": {
+                "source": item.source,
+                "fetched_at": item.observed_at.isoformat(),
+                "season": item.season,
+                "as_of": item.as_of.isoformat() if item.as_of else None,
+                "qualification": item.qualification,
+                "coverage": item.coverage,
+                "warnings": item.warnings,
+            },
+        }
+
     async def generate():
         task = asyncio.create_task(runtime.run(
             body.q, run_id=run_id, context=tuple(body.history)))
@@ -231,7 +246,7 @@ async def quick_answer_stream(body: QuickAnswerBody):
                 yield encode_event(event)
             yield encode_event(CustomData(
                 node="verify",
-                tables=[item.model_dump(mode="json")
+                tables=[evidence_table(item)
                         for item in result.execution.evidence]))
             if policy.publish:
                 yield encode_event(FinalAnswer(
