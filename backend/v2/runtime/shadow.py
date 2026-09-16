@@ -181,6 +181,9 @@ class ShadowStore:
 
 
 def outcome_from_v2(result: Any, answer: str, duration_ms: int | None = None) -> RunOutcome:
+    from v2.runtime.models import RuntimeResult
+
+    result = RuntimeResult.model_validate(result.model_dump())
     claim_results = result.verification.claim_results
     status = result.verification.status.value
     return RunOutcome(

@@ -237,8 +237,9 @@ def test_shadow_comparison_rejects_forged_derived_fields() -> None:
 
 def test_v2_outcome_deduplicates_reused_capability_route() -> None:
     from datetime import UTC, datetime
-    from types import SimpleNamespace
-    from v2.contracts import EvidenceEnvelope, VerificationReport
+    from v2.contracts import (Claim, ClaimResult, DraftReport, EvidenceEnvelope,
+                              Plan, PlanNode, TaskSpec, VerificationReport)
+    from v2.runtime.models import ExecutionResult, RuntimeResult
     from v2.runtime.shadow import outcome_from_v2
 
     evidence = [
@@ -248,12 +249,38 @@ def test_v2_outcome_deduplicates_reused_capability_route() -> None:
         )
         for index in range(2)
     ]
-    result = SimpleNamespace(
-        verification=VerificationReport(status="pass"),
-        execution=SimpleNamespace(evidence=evidence),
-        draft=SimpleNamespace(claims=[]),
+    claims = [Claim(text=f"Fact {index}.", kind="observed",
+                    evidence_ids=[item.evidence_id])
+              for index, item in enumerate(evidence)]
+    result = RuntimeResult(
+        task=TaskSpec(goal="answer", mode="quick", deliverable="text"),
+        execution=ExecutionResult(
+            plan=Plan(nodes=[PlanNode(
+                id=f"node-{index}", description="facts",
+                capability_hints=["player_report"], status="complete")
+                for index in range(2)]),
+            evidence=evidence, attempts={f"node-{index}": 1 for index in range(2)},
+        ),
+        draft=DraftReport(sections=["Answer"], claims=claims),
+        verification=VerificationReport(status="pass", claim_results=[
+            ClaimResult(claim_index=index, supported=True) for index in range(2)]),
+        verified_claims=[{
+            "claim_index": index, "claim": claim,
+            "evidence_ids": claim.evidence_ids,
+            "sources": [{"evidence_id": item.evidence_id,
+                         "source": item.source,
+                         "capability": item.capability}],
+        } for index, (claim, item) in enumerate(zip(claims, evidence, strict=True))],
     )
     assert outcome_from_v2(result, "answer").capabilities == ["player_report"]
+
+
+def test_v2_outcome_revalidates_runtime_result() -> None:
+    from v2.runtime.shadow import outcome_from_v2
+
+    invalid = outcome(status="partial")
+    with pytest.raises(Exception):
+        outcome_from_v2(invalid, "answer")
 
 
 def test_shadow_store_rejects_symlinked_record(tmp_path):
