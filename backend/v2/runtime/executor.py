@@ -167,9 +167,8 @@ class PlanExecutor:
             errors=errors,
         )
         if (self._checkpoint_store is not None and run_id is not None
-                and all(node.status in {
-                    PlanStatus.COMPLETE, PlanStatus.FAILED, PlanStatus.SKIPPED
-                } for node in completed_plan.nodes)):
+                and all(node.status == PlanStatus.COMPLETE
+                        for node in completed_plan.nodes)):
             self._checkpoint_store.delete(run_id)
         return result
 

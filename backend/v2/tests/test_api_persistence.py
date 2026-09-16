@@ -395,6 +395,23 @@ async def test_completed_execution_removes_checkpoint(tmp_path: Path) -> None:
     assert checkpoints.load("finished") is None
 
 
+@pytest.mark.anyio
+async def test_partial_execution_retains_terminal_checkpoint(tmp_path: Path) -> None:
+    checkpoints = FileCheckpointStore(tmp_path)
+    result = await PlanExecutor(
+        {"fake": FakeCapability("fake", {}, failures_before_success=1)},
+        max_failures=1, checkpoint_store=checkpoints,
+    ).execute(_task(), _plan(), run_id="partial")
+
+    assert [node.status for node in result.plan.nodes] == [
+        PlanStatus.FAILED, PlanStatus.SKIPPED,
+    ]
+    saved = checkpoints.load("partial")
+    assert saved is not None
+    assert saved.plan == result.plan
+    assert saved.errors == result.errors
+
+
 def test_live_route_reports_terminal_runtime_failure(monkeypatch):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
