@@ -1263,3 +1263,32 @@ def test_stream_event_text_has_hard_limits() -> None:
     from v2.api.events import ToolResult
     with pytest.raises(ValidationError, match="at most 4000 characters"):
         ToolResult(node="execute", name="tool", status="fail", error="x" * 4001)
+
+
+def test_answer_text_never_exposes_internal_execution_error():
+    from v2 import contracts
+    from v2.api.routes import _answer_text
+    from v2.runtime.loop import _verification_gaps
+    from v2.runtime.models import ExecutionResult, RuntimeResult
+
+    draft = contracts.DraftReport(sections=["No answer"], claims=[])
+    report = contracts.VerificationReport(status="partial")
+    gaps = _verification_gaps(
+        draft, report,
+        {"salary": ["AdapterError: private warehouse path /secret/db"]},
+    )
+    result = RuntimeResult(
+        task=contracts.TaskSpec(goal="trade", mode="quick", deliverable="answer"),
+        execution=ExecutionResult(plan=contracts.Plan(nodes=[
+            contracts.PlanNode(
+                id="salary", description="salary",
+                capability_hints=["contracts"], max_attempts=1, status="failed",
+            )
+        ]), attempts={"salary": 1}, errors={"salary": ["private"]}),
+        draft=draft, verification=report, gaps=gaps,
+    )
+
+    text = _answer_text(result)
+    assert text == "execution failed for salary"
+    assert "/secret/db" not in text
+    assert "AdapterError" not in text

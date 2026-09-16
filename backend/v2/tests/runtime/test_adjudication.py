@@ -61,7 +61,7 @@ def test_execution_errors_surface_as_typed_gaps() -> None:
     )
     assert len(gaps) == 1
     assert gaps[0].kind == "execution_failure"
-    assert gaps[0].message == "AdapterError: cap ledger unavailable"
+    assert gaps[0].message == "execution failed for salary"
     assert gaps[0].blocks == ["node:salary"]
 
 

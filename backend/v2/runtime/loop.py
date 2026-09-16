@@ -388,9 +388,12 @@ def _verification_gaps(draft, verification, execution_errors=None,
     gaps.extend(Gap(kind=GapKind.MISSING_EVIDENCE, message=message)
                 for message in verification.repair_instructions)
     for node_id, errors in (execution_errors or {}).items():
-        gaps.extend(Gap(kind=GapKind.EXECUTION_FAILURE, message=message,
-                        blocks=[f"node:{node_id}"])
-                    for message in errors)
+        if errors:
+            gaps.append(Gap(
+                kind=GapKind.EXECUTION_FAILURE,
+                message=f"execution failed for {node_id}",
+                blocks=[f"node:{node_id}"],
+            ))
     for result in verification.claim_results:
         if not result.supported:
             claim_evidence = (
