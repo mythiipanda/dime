@@ -3,7 +3,11 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+
+
+class StrictEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
 
 
 class EventType(StrEnum):
@@ -18,19 +22,19 @@ class EventType(StrEnum):
     GRAPH_END = "graph_end"
 
 
-class NodeUpdate(BaseModel):
+class NodeUpdate(StrictEvent):
     type: Literal[EventType.NODE_UPDATE] = EventType.NODE_UPDATE
     node: str
     status: Literal["running", "complete", "failed"]
 
 
-class ThoughtStream(BaseModel):
+class ThoughtStream(StrictEvent):
     type: Literal[EventType.THOUGHT_STREAM] = EventType.THOUGHT_STREAM
     node: str
     text: str
 
 
-class ToolCall(BaseModel):
+class ToolCall(StrictEvent):
     type: Literal[EventType.TOOL_CALL] = EventType.TOOL_CALL
     node: str
     name: str
@@ -40,7 +44,7 @@ class ToolCall(BaseModel):
     agent: str | None = None
 
 
-class ToolResult(BaseModel):
+class ToolResult(StrictEvent):
     type: Literal[EventType.TOOL_RESULT] = EventType.TOOL_RESULT
     node: str
     name: str
@@ -53,30 +57,30 @@ class ToolResult(BaseModel):
     agent: str | None = None
 
 
-class Token(BaseModel):
+class Token(StrictEvent):
     type: Literal[EventType.TOKEN] = EventType.TOKEN
     text: str
 
 
-class CustomData(BaseModel):
+class CustomData(StrictEvent):
     type: Literal[EventType.CUSTOM_DATA] = EventType.CUSTOM_DATA
     node: str
     tables: list[dict[str, Any]] = Field(default_factory=list)
     unverified_numbers: list[str] = Field(default_factory=list)
 
 
-class FinalAnswer(BaseModel):
+class FinalAnswer(StrictEvent):
     type: Literal[EventType.FINAL_ANSWER] = EventType.FINAL_ANSWER
     text: str
     carry: dict[str, Any] | None = None
 
 
-class Suggestions(BaseModel):
+class Suggestions(StrictEvent):
     type: Literal[EventType.SUGGESTIONS] = EventType.SUGGESTIONS
     items: list[str] = Field(default_factory=list)
 
 
-class GraphEnd(BaseModel):
+class GraphEnd(StrictEvent):
     type: Literal[EventType.GRAPH_END] = EventType.GRAPH_END
 
 

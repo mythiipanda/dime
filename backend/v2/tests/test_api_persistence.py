@@ -648,3 +648,14 @@ def test_api_request_contracts_reject_unknown_fields() -> None:
         CreateProjectBody.model_validate({"goal": "analyze", "invented": True})
     with pytest.raises(ValidationError, match="invented"):
         QuickAnswerBody.model_validate({"q": "analyze", "invented": True})
+
+
+def test_stream_event_contracts_reject_unknown_fields() -> None:
+    from pydantic import ValidationError
+    from v2.api.events import EVENT_ADAPTER
+
+    with pytest.raises(ValidationError, match="invented"):
+        EVENT_ADAPTER.validate_python({
+            "type": "node_update", "node": "verify", "status": "complete",
+            "invented": True,
+        })
