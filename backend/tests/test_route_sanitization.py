@@ -35,3 +35,30 @@ def test_thought_tokens_never_publish_raw_model_reasoning():
         "agent": "league",
         "text": "Working through the evidence...",
     }
+
+
+def test_tool_call_drops_raw_arguments_at_public_boundary():
+    public = _sanitize_sse_event("tool_call", {
+        "node": "tools",
+        "name": "text_to_sql",
+        "label": "Querying the warehouse",
+        "summary": "standings for Boston",
+        "agent": "league",
+        "args": {"sql": "select secret from private_table", "token": "abc"},
+    })
+
+    assert public == {
+        "node": "tools", "name": "text_to_sql",
+        "label": "Querying the warehouse", "summary": "standings for Boston",
+        "agent": "league",
+    }
+
+
+def test_successful_tool_result_drops_unknown_internal_fields():
+    public = _sanitize_sse_event("tool_result", {
+        "node": "tools", "name": "standings", "status": "ok", "rows": 30,
+        "internal_trace": "/srv/private", "provider_payload": {"token": "abc"},
+    })
+    assert public == {
+        "node": "tools", "name": "standings", "status": "ok", "rows": 30,
+    }

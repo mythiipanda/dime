@@ -26,8 +26,10 @@ _SHADOW_TASKS: set = set()
 
 
 def _sanitize_sse_event(etype: str, data: dict) -> dict:
-    if etype == "tool_call":
-        return data if isinstance(data, dict) else {}
+    if etype == "tool_call" and isinstance(data, dict):
+        return {key: data[key] for key in (
+            "node", "name", "label", "summary", "agent",
+        ) if key in data}
     if etype == "thought_token" and isinstance(data, dict):
         return {key: data[key] for key in ("node", "agent") if key in data} | {
             "text": "Working through the evidence...",
@@ -40,7 +42,10 @@ def _sanitize_sse_event(etype: str, data: dict) -> dict:
             out["status"] = "fail"
             out["error"] = "Tool failed"
             return out
-        return data
+        return {key: data[key] for key in (
+            "node", "name", "label", "status", "rows", "ms", "summary",
+            "sql", "agent",
+        ) if key in data}
     if etype == "error":
         node = data.get("node") if isinstance(data, dict) else None
         out: dict = {"status": "fail",
