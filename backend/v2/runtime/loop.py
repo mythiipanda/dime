@@ -195,9 +195,16 @@ class Runtime:
             )
         return result
 
+    def _report_progress(self, step_id: str, status: str) -> None:
+        if self._progress is None:
+            return
+        try:
+            self._progress(step_id, status)
+        except Exception:
+            pass
+
     async def _stage(self, turn_id: str, step_id: str, awaitable):
-        if self._progress is not None:
-            self._progress(step_id, "running")
+        self._report_progress(step_id, "running")
         if self._ledger is not None:
             self._ledger.append(
                 LedgerKind.STEP_START, turn_id=turn_id, step_id=step_id)
@@ -213,11 +220,9 @@ class Runtime:
                     data={"reason": reason.value,
                           "error": f"{type(exc).__name__}: {exc}"},
                 )
-            if self._progress is not None:
-                self._progress(step_id, "failed")
+            self._report_progress(step_id, "failed")
             raise
-        if self._progress is not None:
-            self._progress(step_id, "complete")
+        self._report_progress(step_id, "complete")
         if self._ledger is not None:
             self._ledger.append(
                 LedgerKind.STEP_END, turn_id=turn_id, step_id=step_id,

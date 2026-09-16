@@ -217,6 +217,34 @@ async def test_runtime_ledger_owns_turn_and_stage_lifecycle() -> None:
 
 
 @pytest.mark.anyio
+async def test_progress_observer_failure_cannot_break_runtime_or_ledger() -> None:
+    from v2.runtime import LedgerKind, RunLedger
+
+    statuses = []
+
+    def broken_progress(step_id, status):
+        statuses.append((step_id, status))
+        raise RuntimeError("observer unavailable")
+
+    ledger = RunLedger("run")
+    instance = Runtime(
+        intake=Intake(), planner=Planner(),
+        executor=PlanExecutor({"fake": FakeCapability("fake", {"value": 42})}),
+        synthesizer=Synthesizer(),
+        mechanical_verifier=SequenceVerifier(VerificationStatus.PASS),
+        semantic_verifier=SequenceVerifier(VerificationStatus.PASS),
+        ledger=ledger, progress=broken_progress,
+    )
+    result = await instance.run("answer", run_id="run")
+
+    assert result.verification.status == VerificationStatus.PASS
+    assert statuses[0] == ("understand", "running")
+    assert statuses[-1] == ("verify", "complete")
+    assert ledger.entries[-1].kind == LedgerKind.TURN_END
+    assert ledger.entries[-1].data["reason"] == "complete"
+
+
+@pytest.mark.anyio
 async def test_runtime_ledger_closes_failed_stage_and_turn() -> None:
     from v2.runtime import LedgerKind, RunLedger
 
