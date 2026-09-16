@@ -44,6 +44,11 @@ class Skill:
         resources.sort()
         if len(resources) > 256:
             raise ValueError("skill package cannot contain more than 256 resources")
+        total_bytes = sum(
+            (self.directory / resource).stat().st_size for resource in resources
+        )
+        if total_bytes > 5_000_000:
+            raise ValueError("skill resources cannot exceed 5000000 bytes")
         digest = hashlib.sha256()
         digest.update((self.directory / "SKILL.md").read_bytes())
         for resource in resources:

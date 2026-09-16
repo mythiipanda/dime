@@ -184,3 +184,17 @@ def test_skill_instructions_have_a_hard_size_limit(tmp_path: Path):
     )
     with pytest.raises(ValueError, match="instructions are too large"):
         SkillLibrary(tmp_path).catalog()
+
+
+def test_activation_rejects_oversized_resource_bundle(tmp_path: Path):
+    package = tmp_path / "example"
+    assets = package / "assets"
+    assets.mkdir(parents=True)
+    (package / "SKILL.md").write_text(
+        "---\nname: example\ndescription: Example skill\n---\nInstructions",
+        encoding="utf-8",
+    )
+    (assets / "large.bin").write_bytes(b"x" * 5_000_001)
+
+    with pytest.raises(ValueError, match="resources cannot exceed"):
+        SkillLibrary(tmp_path).activate(["example"])
