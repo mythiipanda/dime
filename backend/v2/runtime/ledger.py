@@ -127,6 +127,12 @@ class RunLedger:
         data: dict[str, Any] | None = None,
     ) -> LedgerEntry:
         payload = dict(data or {})
+        if not turn_id.strip():
+            raise ValueError("ledger turn id must be non-empty")
+        if step_id is not None and not step_id.strip():
+            raise ValueError("ledger step id must be non-empty when present")
+        if call_id is not None and not call_id.strip():
+            raise ValueError("ledger call id must be non-empty when present")
         if kind in (LedgerKind.TOOL_CALL, LedgerKind.TOOL_RESULT) and not call_id:
             raise ValueError("tool events require call_id")
         if kind == LedgerKind.TOOL_CALL:

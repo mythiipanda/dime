@@ -136,3 +136,16 @@ def test_reloaded_ledger_rejects_duplicate_tool_results() -> None:
 def test_ledger_run_identity_must_be_non_empty() -> None:
     with pytest.raises(ValueError, match="run id must be non-empty"):
         RunLedger(" ")
+
+
+@pytest.mark.parametrize(
+    "kwargs,error",
+    [
+        ({"turn_id": " "}, "turn id"),
+        ({"turn_id": "t", "step_id": " "}, "step id"),
+        ({"turn_id": "t", "call_id": " "}, "call id"),
+    ],
+)
+def test_ledger_event_identities_must_be_non_empty(kwargs, error) -> None:
+    with pytest.raises(ValueError, match=error):
+        RunLedger("run").append(LedgerKind.TURN_START, **kwargs)
