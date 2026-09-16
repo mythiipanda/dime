@@ -139,7 +139,9 @@ class Plan(BaseModel):
 
 
 class EvidenceEnvelope(BaseModel):
-    evidence_id: str
+    model_config = ConfigDict(extra="forbid")
+
+    evidence_id: str = Field(min_length=1)
     capability: str
     source: str
     observed_at: datetime
@@ -155,6 +157,17 @@ class EvidenceEnvelope(BaseModel):
     coverage: str | None = None
     lineage: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_identity(self) -> "EvidenceEnvelope":
+        if not self.capability.strip() or not self.source.strip():
+            raise ValueError("evidence capability and source must be non-empty")
+        if len(self.lineage) != len(set(self.lineage)):
+            raise ValueError("evidence lineage must not contain duplicates")
+        entity_keys = [(item.type, item.id) for item in self.entities]
+        if len(entity_keys) != len(set(entity_keys)):
+            raise ValueError("evidence entities must not contain duplicate identities")
+        return self
 
 
 class Claim(BaseModel):

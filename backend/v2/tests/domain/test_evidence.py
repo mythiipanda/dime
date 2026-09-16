@@ -57,3 +57,21 @@ def test_admission_fails_closed_on_integrity_issue():
                        expected_teams={"LeBron James": "LAL"})
     assert [issue.code for issue in caught.value.issues] == [
         "season_mismatch", "team_conflict"]
+
+
+@pytest.mark.parametrize("payload,error", [
+    ({"evidence_id": "ev", "capability": "test", "source": "fixture",
+      "observed_at": "2026-09-15T00:00:00Z", "rows": {},
+      "lineage": ["parent", "parent"]}, "lineage must not contain duplicates"),
+    ({"evidence_id": "ev", "capability": "", "source": "fixture",
+      "observed_at": "2026-09-15T00:00:00Z", "rows": {}},
+     "capability and source must be non-empty"),
+    ({"evidence_id": "ev", "capability": "test", "source": "fixture",
+      "observed_at": "2026-09-15T00:00:00Z", "rows": {}, "invented": True},
+     "Extra inputs are not permitted"),
+])
+def test_evidence_contract_rejects_ambiguous_identity(payload, error):
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match=error):
+        EvidenceEnvelope.model_validate(payload)
