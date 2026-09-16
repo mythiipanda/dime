@@ -393,3 +393,10 @@ def test_web_selection_coordinates_are_strict_integers(schema, payload):
     from pydantic import ValidationError
     with pytest.raises(ValidationError):
         schema.model_validate(payload)
+
+
+def test_web_result_text_has_hard_limits():
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError, match="at most 1000 characters"):
+        WebSearchResult(rank=1, url="https://example.com",
+                        title="x" * 1001, snippet="")

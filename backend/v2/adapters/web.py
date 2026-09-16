@@ -46,8 +46,8 @@ class WebSearchResult(BaseModel):
 
     rank: StrictInt = Field(ge=1)
     url: HttpUrl
-    title: str
-    snippet: str
+    title: str = Field(max_length=1000)
+    snippet: str = Field(max_length=5000)
     published_at: datetime | None = None
 
     @model_validator(mode="after")
@@ -64,11 +64,11 @@ class WebSearchResult(BaseModel):
 class WebSearchResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    provider: str
+    provider: str = Field(max_length=256)
     observed_at: datetime
-    query: str
+    query: str = Field(max_length=500)
     results: list[WebSearchResult] = Field(max_length=8)
-    coverage: str
+    coverage: str = Field(max_length=4000)
     warnings: list[str] = Field(default_factory=list, max_length=32)
 
     @model_validator(mode="after")
@@ -90,7 +90,7 @@ class WebSearchResponse(BaseModel):
 class WebFetchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    search_evidence_id: str | None = Field(default=None, min_length=1)
+    search_evidence_id: str | None = Field(default=None, min_length=1, max_length=256)
     result_rank: StrictInt = Field(ge=1, le=8)
 
 
@@ -98,12 +98,12 @@ class WebPage(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     url: HttpUrl
-    title: str
-    publisher: str | None = None
+    title: str = Field(max_length=1000)
+    publisher: str | None = Field(default=None, max_length=1000)
     published_at: datetime | None = None
     retrieved_at: datetime
     markdown: str = Field(max_length=120_000)
-    content_hash: str
+    content_hash: str = Field(max_length=64)
 
     @model_validator(mode="after")
     def validate_page(self) -> "WebPage":
