@@ -118,7 +118,8 @@ class Runtime:
             )
 
         empty_evidence_gaps = _empty_evidence_gaps(execution.evidence)
-        if empty_evidence_gaps and verification.status == VerificationStatus.PASS:
+        if ((empty_evidence_gaps or execution.errors)
+                and verification.status == VerificationStatus.PASS):
             verification = verification.model_copy(
                 update={"status": VerificationStatus.PARTIAL}
             )

@@ -281,3 +281,24 @@ async def test_empty_evidence_cannot_finish_as_a_clean_pass() -> None:
     assert len(result.gaps) == 1
     assert result.gaps[0].kind == "missing_evidence"
     assert result.gaps[0].evidence_ids == ["evidence:facts"]
+
+
+@pytest.mark.anyio
+async def test_execution_failure_prevents_clean_pass_status() -> None:
+    class FailedExecutor:
+        async def execute(self, task, plan, run_id=None):
+            from v2.runtime.models import ExecutionResult
+            from v2.contracts import PlanStatus
+            failed = plan.nodes[0].model_copy(update={"status": PlanStatus.FAILED})
+            return ExecutionResult(
+                plan=Plan(nodes=[failed]), attempts={failed.id: 1},
+                errors={failed.id: ["RuntimeError: source down"]})
+
+    instance = Runtime(
+        intake=Intake(), planner=Planner(), executor=FailedExecutor(),
+        synthesizer=Synthesizer(),
+        mechanical_verifier=SequenceVerifier(VerificationStatus.PASS),
+        semantic_verifier=SequenceVerifier(VerificationStatus.PASS))
+    result = await instance.run("answer")
+    assert result.verification.status == VerificationStatus.PARTIAL
+    assert any(gap.kind == "execution_failure" for gap in result.gaps)
