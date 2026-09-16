@@ -331,6 +331,8 @@ class ClaimResult(BaseModel):
     def validate_reason(self) -> "ClaimResult":
         if not self.supported and not self.reasons:
             raise ValueError("unsupported claim result requires a reason")
+        if self.supported and self.reasons:
+            raise ValueError("supported claim result cannot carry rejection reasons")
         if any(not reason.strip() for reason in self.reasons):
             raise ValueError("claim result reasons must not contain empty values")
         if len(self.reasons) != len(set(self.reasons)):

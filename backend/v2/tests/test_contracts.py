@@ -108,6 +108,13 @@ def test_verification_status_must_match_findings(payload, error) -> None:
         VerificationReport.model_validate(payload)
 
 
+def test_supported_claim_result_rejects_rejection_reasons() -> None:
+    from v2.contracts import ClaimResult
+
+    with pytest.raises(ValidationError, match="cannot carry rejection reasons"):
+        ClaimResult(claim_index=0, supported=True, reasons=["maybe"])
+
+
 def test_unsupported_claim_result_requires_a_reason() -> None:
     from v2.contracts import ClaimResult
 
