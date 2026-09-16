@@ -56,6 +56,7 @@ class RecordedCapability:
             result = await self._capability.execute(node, task, evidence)
             if not isinstance(result, EvidenceEnvelope):
                 raise TypeError("capability must return EvidenceEnvelope")
+            result = EvidenceEnvelope.model_validate(result.model_dump())
             if result.capability != self.name:
                 raise ValueError(
                     f"capability returned {result.capability!r}, expected {self.name!r}")

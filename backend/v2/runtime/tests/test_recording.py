@@ -131,3 +131,21 @@ async def test_recorded_capability_rejects_reused_input_evidence_identity() -> N
             TaskSpec(goal="record", mode=RunMode.QUICK, deliverable="text"), [parent],
         )
     assert ledger.entries[-1].data["status"] == "failed"
+
+
+@pytest.mark.anyio
+async def test_recorded_capability_revalidates_copied_evidence() -> None:
+    class Invalid(Capability):
+        async def execute(self, node, task, evidence):
+            valid = await super().execute(node, task, evidence)
+            return valid.model_copy(update={"source": " "})
+
+    ledger = RunLedger("run")
+    capability = RecordedCapability(Invalid(), ledger, turn_id="turn")
+    with pytest.raises(ValueError, match="evidence identity"):
+        await capability.execute(
+            PlanNode(id="record", description="record",
+                     capability_hints=["standings"]),
+            TaskSpec(goal="record", mode=RunMode.QUICK, deliverable="text"), [],
+        )
+    assert ledger.entries[-1].data["status"] == "failed"
