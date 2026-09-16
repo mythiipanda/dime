@@ -158,7 +158,7 @@ def _answer_text(result) -> str:
         internal = (
             folded.startswith(("repair claim ", "include ", "update ",
                                "retrieve ", "fetch ", "gather ", "synthesize ",
-                               "add ", "document ", "locate "))
+                               "add ", "document ", "locate ", "verify "))
             or "once gaps are resolved" in folded
             or " capability" in folded
             or folded.endswith(" analysis")
@@ -197,7 +197,12 @@ def _answer_text(result) -> str:
             for word in message.casefold().split()
             if word.strip(".,:;") not in {"the", "a", "an"}
         )
-        if message and key not in gap_keys:
+        key_tokens = set(key.split())
+        duplicate = any(
+            key_tokens <= set(existing.split()) or set(existing.split()) <= key_tokens
+            for existing in gap_keys
+        )
+        if message and not duplicate:
             gaps.append(message)
             gap_keys.add(key)
     if not gaps and generic_limit:

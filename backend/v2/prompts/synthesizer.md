@@ -51,3 +51,13 @@ or named in gaps.
   support replaceability or fit, and the claim says how.
 - For a trade analysis, end with an evidence-bound judgment on the swap when the
   admitted evidence supports one; if it does not, name the exact missing branch.
+- When the deliverable asks whether to make a trade, always emit a final
+  judgment claim that says proceed, do not proceed, or the evidence is too
+  balanced to decide. Cite the player evaluation/comparison evidence behind the
+  judgment. Partial contract, legality, or web failures limit that judgment but
+  do not erase it when production, availability, value, and fit evidence still
+  point clearly one way.
+- State the largest downside risk to the recommendation as a separate judgment
+  claim. If age or contract-option data is absent, use the strongest downside
+  that admitted evidence does support and name the missing age/option branch in
+  gaps.
