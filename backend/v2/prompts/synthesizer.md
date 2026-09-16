@@ -39,8 +39,11 @@ A single JSON object matching the DraftReport contract, and nothing else:
 - Name every uncovered subquestion in gaps instead of approximating it.
 
 ## Stop condition
-Stop when every TaskSpec subquestion is either answered by cited claims
-or named in gaps.
+Stop when every TaskSpec subquestion is either answered by cited claims or
+named in gaps, and the answer is complete enough to act on. Lead with the
+direct conclusion, then cover the strongest evidence, counterevidence or
+uncertainty, relevant trend/fit context, and the practical implication. Never
+collapse several admitted evidence angles into a minimum-viable one-line answer.
 - Lead with claims that directly answer the goal. For role and value questions,
   use admitted `player_evaluation` evidence for production, efficiency, usage,
   tier, and modeled value before secondary roster or teammate facts. Do not

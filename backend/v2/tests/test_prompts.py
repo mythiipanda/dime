@@ -121,3 +121,21 @@ def test_load_prompt_rejects_symlinked_directory(monkeypatch, tmp_path):
             load_prompt("intake")
     finally:
         load_prompt.cache_clear()
+
+
+def test_planner_and_synthesizer_require_analyst_depth_without_filler():
+    planner = load_prompt("planner")
+    synth = load_prompt("synthesizer")
+    for phrase in (
+        "Prefer depth over a minimum-viable plan",
+        "modeled value, legality/contracts",
+        "Do not add duplicate, filler, or unrelated nodes",
+    ):
+        assert phrase in planner
+    for phrase in (
+        "complete enough to act on",
+        "counterevidence or\nuncertainty",
+        "practical implication",
+        "minimum-viable one-line answer",
+    ):
+        assert phrase in synth

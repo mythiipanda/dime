@@ -238,9 +238,9 @@ class ModelIntake(ModelStage):
             ],
         })
         player_count = sum(entity.type == "player" for entity in task.entities)
-        optional_evidence = {"trade_value"}
+        optional_evidence = set()
         if player_count < 2:
-            optional_evidence.add("player_comparison")
+            optional_evidence.update({"player_comparison", "trade_value"})
         task = task.model_copy(update={
             "required_evidence": [
                 name for name in task.required_evidence

@@ -627,7 +627,7 @@ async def test_intake_turns_tool_resolvable_team_question_into_assumption() -> N
     assert task.assumptions == ["Which team is Paul George currently on?"]
 
 @pytest.mark.anyio
-async def test_intake_does_not_hard_require_trade_value() -> None:
+async def test_intake_preserves_trade_value_for_two_player_trade() -> None:
     stub = StubModel([{
         "goal": "Brown for George", "mode": "quick", "deliverable": "answer",
         "entities": [
@@ -640,7 +640,8 @@ async def test_intake_does_not_hard_require_trade_value() -> None:
         capability_catalog={"player_evaluation": {}, "trade_value": {},
                             "player_comparison": {}})
     task = await intake.understand("Brown for George?")
-    assert task.required_evidence == ["player_evaluation", "player_comparison"]
+    assert task.required_evidence == [
+        "player_evaluation", "trade_value", "player_comparison"]
 
 @pytest.mark.anyio
 async def test_intake_turns_contract_and_risk_questions_into_assumptions() -> None:

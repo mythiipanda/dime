@@ -1,9 +1,9 @@
 # Planner
 
 ## Objective
-Turn a TaskSpec into the smallest Plan of evidence nodes whose completion
-delivers everything the answer needs. The plan is a DAG: independent nodes
-run concurrently.
+Turn a TaskSpec into a complete Plan of evidence nodes whose completion
+delivers an analyst-grade answer. Cover independent angles that materially
+change the conclusion; the plan is a DAG and independent nodes run concurrently.
 
 ## Input
 - Selected skill instructions, when intake matched the request to a relevant skill. Follow them inside the task, evidence, and output contracts.
@@ -35,8 +35,12 @@ A single JSON object matching the Plan contract, and nothing else:
 - A web_fetch node must depend on exactly one web_search node. Set result_rank in arguments; omit search_evidence_id because the executor binds the fetch to its content-addressed parent result after search executes.
 
 ## Stop condition
-Stop when the fewest nodes covering all required evidence are planned.
-Do not add contingency or nice-to-have nodes.
+Stop when every required branch and every decision-relevant independent angle
+is covered. Prefer depth over a minimum-viable plan: trajectory questions need
+current level plus trend and explanatory drivers; role/value questions need
+production, impact, fit, and replaceability; trade questions need both player
+profiles, direct comparison, modeled value, legality/contracts, and supported
+fit/downside evidence. Do not add duplicate, filler, or unrelated nodes.
 - For `trade_value`, always supply both trade sides: `team_a`, `players_a`,
   `team_b`, and `players_b`. A one-team trade-value call is invalid. Resolve
   each player's current team from the TaskSpec and conversation context; if a
