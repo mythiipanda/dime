@@ -67,6 +67,14 @@ class PlanExecutor:
         )
 
         while any(node.status == PlanStatus.PENDING for node in nodes.values()):
+            if self._max_failures is not None and failures >= self._max_failures:
+                for node in nodes.values():
+                    if node.status == PlanStatus.PENDING:
+                        node.status = PlanStatus.SKIPPED
+                self._save_checkpoint(
+                    run_id, task, plan, nodes, evidence_by_node, attempts, errors
+                )
+                break
             progressed = False
             for node in nodes.values():
                 if node.status != PlanStatus.PENDING:
@@ -126,11 +134,6 @@ class PlanExecutor:
                         run_id, task, plan, nodes, evidence_by_node, attempts, errors
                     )
 
-            if self._max_failures is not None and failures >= self._max_failures:
-                for node in nodes.values():
-                    if node.status == PlanStatus.PENDING:
-                        node.status = PlanStatus.SKIPPED
-                break
             if not progressed:
                 raise RuntimeError("validated plan made no execution progress")
 

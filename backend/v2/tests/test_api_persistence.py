@@ -466,3 +466,33 @@ async def test_checkpoint_rejects_completed_node_with_incomplete_dependency(
         await PlanExecutor(
             {"fake": FakeCapability("fake", {})}, checkpoint_store=checkpoints,
         ).execute(_task(), _plan(), run_id="order")
+
+
+@pytest.mark.anyio
+async def test_restored_failure_budget_skips_independent_pending_nodes(
+    tmp_path: Path,
+) -> None:
+    from v2.runtime.checkpoints import ExecutionCheckpoint
+
+    checkpoints = FileCheckpointStore(tmp_path)
+    plan = Plan(nodes=[
+        PlanNode(id="failed", description="failed", capability_hints=["fake"]),
+        PlanNode(id="independent", description="independent", capability_hints=["fake"]),
+    ])
+    saved = plan.model_copy(deep=True)
+    saved.nodes[0].status = PlanStatus.FAILED
+    checkpoints.save(ExecutionCheckpoint(
+        run_id="failure-limit", task=_task(), plan=saved,
+        attempts={"failed": 1}, errors={"failed": ["failed once"]},
+    ))
+    calls: list[str] = []
+    result = await PlanExecutor(
+        {"fake": FakeCapability(
+            "fake", lambda node: calls.append(node.id) or {"node": node.id})},
+        max_failures=1, checkpoint_store=checkpoints,
+    ).execute(_task(), plan, run_id="failure-limit")
+
+    assert calls == []
+    assert [node.status for node in result.plan.nodes] == [
+        PlanStatus.FAILED, PlanStatus.SKIPPED,
+    ]
