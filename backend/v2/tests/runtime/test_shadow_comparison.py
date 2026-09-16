@@ -266,3 +266,24 @@ def test_shadow_gate_report_rejects_nonfinite_rates(value) -> None:
             total_runs=1, failure_rate=value, grounding_drift_rate=0,
             route_drift_rate=0, answer_drift_rate=0, ready=True,
         )
+
+
+@pytest.mark.parametrize("field", [
+    "evidence_count", "supported_claims", "total_claims", "duration_ms",
+])
+def test_shadow_outcome_rejects_boolean_counts(field) -> None:
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        outcome(**{field: True})
+
+
+def test_shadow_gate_counts_reject_booleans() -> None:
+    from pydantic import ValidationError
+    from v2.runtime.shadow import ShadowGatePolicy, ShadowGateReport
+    with pytest.raises(ValidationError):
+        ShadowGatePolicy(minimum_runs=True)
+    with pytest.raises(ValidationError):
+        ShadowGateReport(
+            total_runs=True, failure_rate=0, grounding_drift_rate=0,
+            route_drift_rate=0, answer_drift_rate=0, ready=True,
+        )

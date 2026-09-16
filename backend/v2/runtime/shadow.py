@@ -10,7 +10,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Any, Mapping
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
 
 _SHADOW_LOCKS_GUARD = Lock()
 _SHADOW_LOCKS: dict[Path, Lock] = {}
@@ -42,10 +42,10 @@ class RunOutcome(BaseModel):
     status: OutcomeStatus
     answer: str = ""
     capabilities: list[str] = Field(default_factory=list)
-    evidence_count: int = 0
-    supported_claims: int = 0
-    total_claims: int = 0
-    duration_ms: int | None = None
+    evidence_count: StrictInt = 0
+    supported_claims: StrictInt = 0
+    total_claims: StrictInt = 0
+    duration_ms: StrictInt | None = None
 
     @model_validator(mode="after")
     def validate_metrics(self) -> "RunOutcome":
@@ -191,7 +191,7 @@ def _hash(value: Any) -> str:
 class ShadowGatePolicy(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    minimum_runs: int = Field(default=100, ge=1)
+    minimum_runs: StrictInt = Field(default=100, ge=1)
     maximum_failure_rate: float = Field(default=0.01, ge=0, le=1)
     maximum_grounding_drift_rate: float = Field(default=0.01, ge=0, le=1)
     maximum_route_drift_rate: float = Field(default=0.05, ge=0, le=1)
@@ -201,7 +201,7 @@ class ShadowGatePolicy(BaseModel):
 class ShadowGateReport(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    total_runs: int
+    total_runs: StrictInt
     failure_rate: float
     grounding_drift_rate: float
     route_drift_rate: float
