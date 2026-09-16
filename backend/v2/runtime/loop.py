@@ -191,6 +191,11 @@ class Runtime:
         if mechanical.status == VerificationStatus.REPAIR:
             return mechanical
         semantic = await self._semantic_verifier.verify(task, draft, evidence)
+        expected = list(range(len(draft.claims)))
+        observed = sorted(result.claim_index for result in semantic.claim_results)
+        if observed != expected:
+            raise ValueError(
+                "semantic verifier must adjudicate every claim exactly once")
         return _merge_verification(mechanical, semantic)
 
 

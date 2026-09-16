@@ -58,6 +58,11 @@ class SequenceVerifier:
         status = self.statuses.pop(0)
         return VerificationReport(
             status=status,
+            claim_results=(
+                [{"claim_index": index, "supported": True}
+                 for index, _claim in enumerate(draft.claims)]
+                if status == VerificationStatus.PASS else []
+            ),
             repair_instructions=(
                 ["repair requested"]
                 if status == VerificationStatus.REPAIR else []
@@ -91,6 +96,19 @@ async def test_passes_verified_quick_slice() -> None:
 
     assert result.verification.status == VerificationStatus.PASS
     assert result.repaired is False
+
+
+@pytest.mark.anyio
+async def test_runtime_rejects_incomplete_swappable_semantic_verifier() -> None:
+    class IncompleteSemanticVerifier:
+        async def verify(self, task, draft, evidence):
+            return VerificationReport(status=VerificationStatus.PASS)
+
+    with pytest.raises(ValueError, match="adjudicate every claim exactly once"):
+        await runtime(
+            SequenceVerifier(VerificationStatus.PASS),
+            IncompleteSemanticVerifier(),
+        ).run("answer")
 
 
 @pytest.mark.anyio
