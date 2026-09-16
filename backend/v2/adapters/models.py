@@ -50,6 +50,8 @@ class ProviderStructuredModel:
     def __init__(self, provider: ProviderName, model: str) -> None:
         self.provider = provider
         self.model = model
+        self.last_provider: ProviderName | None = None
+        self.last_model: str | None = None
 
     def _models(self) -> list[tuple[ProviderName, OpenAIChatModel]]:
         configs = {
@@ -106,6 +108,8 @@ class ProviderStructuredModel:
                     retries=settings.llm_max_retries,
                 )
                 result = await agent.run(user_prompt)
+                self.last_provider = provider
+                self.last_model = model.model_name
                 return result.output
             except Exception as exc:
                 errors.append(f"{provider}: {str(exc)[:160]}")
@@ -315,10 +319,19 @@ class RecordedStructuredModel:
                 data={"status": "failed", "error": f"{type(exc).__name__}: {exc}"},
             )
             raise
+        actual_provider = getattr(self._model, "last_provider", None)
+        actual_model = getattr(self._model, "last_model", None)
         self._ledger.append(
             LedgerKind.ASSISTANT_ATTEMPT,
             turn_id=self._turn_id,
             call_id=call_id,
-            data={"status": "accepted", "output": result.model_dump(mode="json")},
+            data={
+                "status": "accepted",
+                "output": result.model_dump(mode="json"),
+                "provider": actual_provider or envelope.provider,
+                "model": actual_model or envelope.model,
+                "used_fallback": bool(
+                    actual_provider and actual_provider != envelope.provider),
+            },
         )
         return result

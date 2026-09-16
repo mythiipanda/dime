@@ -196,3 +196,29 @@ def test_pydanticai_models_keep_timeout_and_openrouter_attribution(monkeypatch) 
     assert client.timeout == settings.llm_timeout_s
     assert client.max_retries == 0
     assert client.default_headers["X-Title"] == "Dime NBA Analyst"
+
+
+@pytest.mark.anyio
+async def test_recorded_model_logs_actual_fallback_provenance() -> None:
+    from v2.contracts import TaskSpec
+    from v2.runtime import LedgerKind, RequestEnvelope, RunLedger
+    from v2.adapters import RecordedStructuredModel
+
+    class FallbackModel:
+        last_provider = "mistral"
+        last_model = "ministral-test"
+        async def generate(self, **call):
+            return TaskSpec(goal="answer", mode="quick", deliverable="text")
+
+    envelope = RequestEnvelope.freeze(
+        provider="inception", model="mercury-test", route="intake",
+        prompt="prompt", context={}, tool_schemas={}, planner_version="v2")
+    ledger = RunLedger("run")
+    recorded = RecordedStructuredModel(FallbackModel(), ledger, turn_id="turn")
+    await recorded.generate(
+        schema=TaskSpec, prompt="prompt", payload={}, envelope=envelope)
+    attempt = next(entry for entry in ledger.entries
+                   if entry.kind == LedgerKind.ASSISTANT_ATTEMPT)
+    assert attempt.data["provider"] == "mistral"
+    assert attempt.data["model"] == "ministral-test"
+    assert attempt.data["used_fallback"] is True
