@@ -56,6 +56,8 @@ class WebSearchResult(BaseModel):
             raise ValueError("web search result must use HTTP(S)")
         if not self.title.strip():
             raise ValueError("web search result title must be non-empty")
+        if self.published_at is not None and self.published_at.tzinfo is None:
+            raise ValueError("web search published_at must include timezone")
         return self
 
 
@@ -109,6 +111,8 @@ class WebPage(BaseModel):
             raise ValueError("web page title and markdown must be non-empty")
         if self.retrieved_at.tzinfo is None:
             raise ValueError("web page retrieved_at must include timezone")
+        if self.published_at is not None and self.published_at.tzinfo is None:
+            raise ValueError("web page published_at must include timezone")
         if self.publisher is not None and not self.publisher.strip():
             raise ValueError("web page publisher must be non-empty when present")
         if len(self.content_hash) != 64 or any(

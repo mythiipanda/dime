@@ -336,3 +336,23 @@ def test_web_contracts_require_timezone_aware_observation_times() -> None:
             retrieved_at=datetime(2026, 9, 15), markdown="Body",
             content_hash=hashlib.sha256(b"Body").hexdigest(),
         )
+
+
+def test_web_contracts_reject_naive_publication_times():
+    from datetime import UTC, datetime
+    from pydantic import ValidationError
+    from v2.adapters.web import WebPage
+
+    naive = datetime(2026, 9, 15, 10)
+    with pytest.raises(ValidationError, match="search published_at must include timezone"):
+        WebSearchResult(
+            rank=1, url="https://example.com", title="Example", snippet="",
+            published_at=naive,
+        )
+    markdown = "Sourced details"
+    with pytest.raises(ValidationError, match="page published_at must include timezone"):
+        WebPage(
+            url="https://example.com", title="Example", published_at=naive,
+            retrieved_at=datetime.now(UTC), markdown=markdown,
+            content_hash=hashlib.sha256(markdown.encode()).hexdigest(),
+        )
