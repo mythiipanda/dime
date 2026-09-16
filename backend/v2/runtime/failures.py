@@ -68,6 +68,10 @@ class ScenarioCandidate(BaseModel):
             raise ValueError("scenario candidate fields must be non-empty")
         if self.trace_id is not None and not self.trace_id.strip():
             raise ValueError("scenario candidate trace id must be non-empty")
+        expected_id = _candidate_id(
+            self.failure_class, self.summary, self.expected_relation)
+        if self.candidate_id != expected_id:
+            raise ValueError("scenario candidate id does not match failure identity")
         if any(not tag.strip() for tag in self.tags):
             raise ValueError("scenario candidate tags must be non-empty")
         if len(self.tags) != len(set(self.tags)):
@@ -76,15 +80,9 @@ class ScenarioCandidate(BaseModel):
 
     @classmethod
     def from_observation(cls, item: FailureObservation) -> "ScenarioCandidate":
-        identity = {
-            "failure_class": item.failure_class.casefold().strip(),
-            "summary": " ".join(item.summary.casefold().split()),
-            "expected_relation": " ".join(item.expected_relation.casefold().split()),
-        }
-        candidate_id = hashlib.sha256(json.dumps(
-            identity, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:24]
         return cls(
-            candidate_id=candidate_id,
+            candidate_id=_candidate_id(
+                item.failure_class, item.summary, item.expected_relation),
             source=item.source,
             failure_class=item.failure_class,
             summary=item.summary,
@@ -92,6 +90,18 @@ class ScenarioCandidate(BaseModel):
             first_bad_revision=item.revision,
             trace_id=item.trace_id,
         )
+
+
+def _candidate_id(
+    failure_class: str, summary: str, expected_relation: str,
+) -> str:
+    identity = {
+        "failure_class": failure_class.casefold().strip(),
+        "summary": " ".join(summary.casefold().split()),
+        "expected_relation": " ".join(expected_relation.casefold().split()),
+    }
+    return hashlib.sha256(json.dumps(
+        identity, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:24]
 
 
 class CandidateStore:

@@ -52,13 +52,11 @@ def test_failure_intake_rejects_blank_identity_and_duplicate_tags() -> None:
             "expected_relation": "cite source", "revision": "bad"}
     with pytest.raises(ValidationError, match="must be non-empty"):
         FailureObservation(**{**base, "summary": " "})
-    candidate = {"candidate_id": "id", "source": "qa",
-                 "failure_class": "grounding", "summary": "wrong",
-                 "expected_relation": "cite source", "first_bad_revision": "bad"}
+    candidate = ScenarioCandidate.from_observation(FailureObservation(**base)).model_dump()
     with pytest.raises(ValidationError, match="tags must be unique"):
-        ScenarioCandidate(**candidate, tags=["regression", "regression"])
+        ScenarioCandidate(**{**candidate, "tags": ["regression", "regression"]})
     with pytest.raises(ValidationError, match="trace id must be non-empty"):
-        ScenarioCandidate(**candidate, trace_id=" ")
+        ScenarioCandidate(**{**candidate, "trace_id": " "})
 
 
 def test_candidate_intake_deduplicates_across_concurrent_store_instances(tmp_path):
@@ -85,3 +83,15 @@ def test_candidate_store_rejects_blank_and_duplicate_persisted_records(tmp_path)
     path.write_text(record + "\n" + record + "\n")
     with pytest.raises(ValueError, match="duplicate identities"):
         store.read()
+
+
+def test_candidate_contract_rejects_forged_derived_identity() -> None:
+    import pytest
+    from pydantic import ValidationError
+    from v2.runtime.failures import ScenarioCandidate
+
+    candidate = ScenarioCandidate.from_observation(observation())
+    with pytest.raises(ValidationError, match="does not match failure identity"):
+        ScenarioCandidate.model_validate({
+            **candidate.model_dump(), "candidate_id": "0" * 24,
+        })
