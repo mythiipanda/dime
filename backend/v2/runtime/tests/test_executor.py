@@ -300,3 +300,20 @@ async def test_nonseason_entity_resolution_admits_on_season_resolved_task() -> N
     result = await PlanExecutor({"entity_resolution": Resolver()}).execute(task, plan)
     assert result.plan.nodes[0].status == PlanStatus.COMPLETE
     assert result.evidence[0].task_season_scoped is False
+
+
+def test_execution_result_binds_attempts_and_errors_to_node_state() -> None:
+    from pydantic import ValidationError
+    from v2.runtime.models import ExecutionResult
+
+    pending = node("pending")
+    with pytest.raises(ValidationError, match="exceed max_attempts"):
+        ExecutionResult(plan=Plan(nodes=[pending]), attempts={"pending": 2})
+    failed = pending.model_copy(update={"status": PlanStatus.FAILED})
+    with pytest.raises(ValidationError, match="requires errors"):
+        ExecutionResult(plan=Plan(nodes=[failed]))
+    skipped = pending.model_copy(update={"status": PlanStatus.SKIPPED})
+    with pytest.raises(ValidationError, match="cannot carry errors"):
+        ExecutionResult(
+            plan=Plan(nodes=[skipped]), errors={"pending": ["contradiction"]},
+        )

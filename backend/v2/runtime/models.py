@@ -52,6 +52,16 @@ class ExecutionResult(BaseModel):
                     f"execution evidence lineage does not match node {node.id!r}")
         if any(count < 0 for count in self.attempts.values()):
             raise ValueError("execution attempt counts must be non-negative")
+        for node in self.plan.nodes:
+            count = self.attempts.get(node.id, 0)
+            if count > node.max_attempts:
+                raise ValueError(
+                    f"execution attempts exceed max_attempts for node {node.id!r}")
+            node_errors = self.errors.get(node.id, [])
+            if node.status.value == "failed" and not node_errors:
+                raise ValueError(f"failed node {node.id!r} requires errors")
+            if node.status.value == "skipped" and node_errors:
+                raise ValueError(f"skipped node {node.id!r} cannot carry errors")
         return self
 
 
