@@ -421,3 +421,74 @@ def test_web_result_text_has_hard_limits():
     with pytest.raises(ValidationError, match="at most 1000 characters"):
         WebSearchResult(rank=1, url="https://example.com",
                         title="x" * 1001, snippet="")
+
+@pytest.mark.anyio
+async def test_web_search_evidence_identity_is_bound_to_source_vintage():
+    from datetime import UTC, datetime
+    from v2.adapters.web import WebSearchCapability, WebSearchResponse
+    from v2.contracts import PlanNode, TaskSpec
+
+    class Search:
+        name = "fixture-search"
+
+        def __init__(self, observed_at):
+            self.observed_at = observed_at
+
+        async def search(self, request):
+            return WebSearchResponse(
+                provider=self.name, observed_at=self.observed_at,
+                query=request.query,
+                results=[WebSearchResult(
+                    rank=1, url="https://example.com/story",
+                    title="Story", snippet="Discovery only")],
+                coverage="fixture coverage",
+            )
+
+    node = PlanNode(
+        id="search", description="current reporting",
+        capability_hints=["web_search"], arguments={"query": "Jaylen Brown role"})
+    task = TaskSpec(goal="role", mode="quick", deliverable="answer")
+    first = await WebSearchCapability(
+        Search(datetime(2026, 9, 15, tzinfo=UTC))).execute(node, task, [])
+    later = await WebSearchCapability(
+        Search(datetime(2026, 9, 16, tzinfo=UTC))).execute(node, task, [])
+
+    assert first.rows == later.rows
+    assert first.evidence_id != later.evidence_id
+
+@pytest.mark.anyio
+async def test_web_fetch_evidence_identity_is_bound_to_parent_revision():
+    from datetime import UTC, datetime
+    from v2.adapters.web import WebFetchCapability, WebPage
+    from v2.contracts import EvidenceEnvelope, PlanNode, TaskSpec
+
+    class Fetch:
+        name = "fixture-fetch"
+
+        async def fetch(self, result):
+            return WebPage(
+                url=result.url, title=result.title,
+                retrieved_at=datetime(2026, 9, 15, tzinfo=UTC),
+                markdown="Full source",
+                content_hash=hashlib.sha256(b"Full source").hexdigest(),
+            )
+
+    def parent(evidence_id):
+        return EvidenceEnvelope(
+            evidence_id=evidence_id, capability="web_search",
+            source="web:fixture", observed_at=datetime(2026, 9, 15, tzinfo=UTC),
+            rows=[{"rank": 1, "url": "https://example.com/story",
+                   "title": "Story", "snippet": "Discovery"}],
+        )
+
+    node = PlanNode(
+        id="fetch", description="page", depends_on=["search"],
+        capability_hints=["web_fetch"], arguments={"result_rank": 1})
+    task = TaskSpec(goal="role", mode="quick", deliverable="answer")
+    first = await WebFetchCapability(Fetch()).execute(
+        node, task, [parent("web_search:first")])
+    later = await WebFetchCapability(Fetch()).execute(
+        node, task, [parent("web_search:later")])
+
+    assert first.rows == later.rows
+    assert first.evidence_id != later.evidence_id

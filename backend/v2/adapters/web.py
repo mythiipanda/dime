@@ -9,7 +9,7 @@ import asyncio
 import hashlib
 import ipaddress
 import socket
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
 from typing import Any, Literal, Protocol
 from urllib.parse import urlparse
@@ -305,7 +305,14 @@ class WebSearchCapability:
         response = await self._provider.search(request)
         rows = [item.model_dump(mode="json") for item in response.results]
         identity = _web_evidence_id(
-            self.name, request.model_dump(mode="json"), rows)
+            self.name, request.model_dump(mode="json"), rows,
+            source_revision={
+                "provider": response.provider,
+                "observed_at": response.observed_at.isoformat(),
+                "coverage": response.coverage,
+                "warnings": response.warnings,
+            },
+        )
         return EvidenceEnvelope(
             evidence_id=identity,
             capability=self.name,
@@ -365,7 +372,16 @@ class WebFetchCapability:
         page = await self._provider.fetch(result)
         rows = page.model_dump(mode="json")
         identity = _web_evidence_id(
-            self.name, request.model_dump(mode="json"), rows)
+            self.name, request.model_dump(mode="json"), rows,
+            source_revision={
+                "url": page.url,
+                "retrieved_at": page.retrieved_at.isoformat(),
+                "published_at": (
+                    page.published_at.isoformat() if page.published_at else None
+                ),
+                "search_evidence_id": parent.evidence_id,
+            },
+        )
         return EvidenceEnvelope(
             evidence_id=identity,
             capability=self.name,
@@ -378,11 +394,19 @@ class WebFetchCapability:
         )
 
 
-def _web_evidence_id(capability: str, arguments: Any, rows: Any) -> str:
+def _web_evidence_id(
+    capability: str, arguments: Any, rows: Any,
+    *, source_revision: Mapping[str, Any] | None = None,
+) -> str:
     import hashlib
     import json
 
     raw = json.dumps(
-        {"capability": capability, "arguments": arguments, "rows": rows},
+        {
+            "capability": capability,
+            "arguments": arguments,
+            "source_revision": dict(source_revision or {}),
+            "rows": rows,
+        },
         sort_keys=True, separators=(",", ":"), default=str)
     return f"{capability}:{hashlib.sha256(raw.encode()).hexdigest()[:16]}"
