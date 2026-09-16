@@ -198,3 +198,14 @@ def test_activation_rejects_oversized_resource_bundle(tmp_path: Path):
 
     with pytest.raises(ValueError, match="resources cannot exceed"):
         SkillLibrary(tmp_path).activate(["example"])
+
+
+def test_analysis_skills_require_fetched_external_evidence():
+    library = SkillLibrary()
+    trade = library.skills["trade-analysis"].body
+    comparison = library.skills["player-comparison"].body
+    assert "`web_search` -> `web_fetch`" in trade
+    assert "Search snippets are discovery only" in trade
+    assert "several reports repeating the same original report" in trade
+    assert "measured performance separate from reported explanation" in comparison
+    assert "never promote a search snippet" in comparison

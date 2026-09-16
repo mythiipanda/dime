@@ -9,6 +9,7 @@ description: Compare NBA players for a role, roster decision, value question, or
 - Use common definitions, units, qualification rules, and sample windows.
 - Cover scoring volume and efficiency, creation, playmaking, defense, availability, lineup context, and contract only when relevant and supported.
 - Distinguish portable skills from outcomes driven by role or teammates.
+- Keep measured performance separate from reported explanation. When current role, injury, or team context changes the comparison, fetch the selected source page; never promote a search snippet into substantive evidence.
 
 ## Answer
 - Lead with decision-relevant differences rather than a metric dump.

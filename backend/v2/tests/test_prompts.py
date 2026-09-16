@@ -139,3 +139,15 @@ def test_planner_and_synthesizer_require_analyst_depth_without_filler():
         "minimum-viable one-line answer",
     ):
         assert phrase in synth
+    for phrase in (
+        "web_search result is discovery, not substantive evidence",
+        "official or primary source",
+        "Keep measurement and explanation independent",
+    ):
+        assert phrase in planner
+    for phrase in (
+        "Search snippets are discovery evidence only",
+        "Reconcile evidence before concluding",
+        "repetition across pages is not independent evidence",
+    ):
+        assert phrase in synth

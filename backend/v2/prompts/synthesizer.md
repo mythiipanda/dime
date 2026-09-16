@@ -36,6 +36,13 @@ A single JSON object matching the DraftReport contract, and nothing else:
   confidence. judgment = interpretation, labeled as such.
 - Respect qualification and coverage: never state a leader, ranking, or
   total beyond what the envelope's qualification supports.
+- Search snippets are discovery evidence only. Do not use a web_search envelope
+  to support a substantive external claim when fetched-page evidence is absent.
+- Reconcile evidence before concluding: distinguish measured performance from
+  reported explanation, name material source or vintage conflicts, and prefer
+  the more direct source only within its actual coverage. Corroboration raises
+  confidence; repetition across pages is not independent evidence when they
+  cite the same underlying report.
 - Name every uncovered subquestion in gaps instead of approximating it.
 
 ## Stop condition
