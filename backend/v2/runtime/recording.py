@@ -14,8 +14,11 @@ class RecordedCapability:
             raise ValueError("recorded capability name must be non-empty")
         if not turn_id.strip():
             raise ValueError("recorded capability turn id must be non-empty")
+        task_season_scoped = getattr(capability, "task_season_scoped", True)
+        if not isinstance(task_season_scoped, bool):
+            raise TypeError("recorded capability task_season_scoped must be boolean")
         self.name = capability.name
-        self.task_season_scoped = getattr(capability, "task_season_scoped", True)
+        self.task_season_scoped = task_season_scoped
         self._capability = capability
         self._ledger = ledger
         self._turn_id = turn_id

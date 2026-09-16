@@ -57,6 +57,14 @@ def test_recorded_capability_requires_identity() -> None:
         RecordedCapability(Capability(), RunLedger("run"), turn_id=" ")
 
 
+def test_recorded_capability_requires_boolean_season_scope() -> None:
+    class Invalid(Capability):
+        task_season_scoped = "false"
+
+    with pytest.raises(TypeError, match="task_season_scoped must be boolean"):
+        RecordedCapability(Invalid(), RunLedger("run"), turn_id="turn")
+
+
 @pytest.mark.anyio
 async def test_recorded_capability_rejects_wrong_capability_before_admission() -> None:
     class Wrong(Capability):
