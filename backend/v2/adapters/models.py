@@ -5,10 +5,13 @@ from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any, Protocol, TypeVar
 
-from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel
+from pydantic_ai import Agent, NativeOutput
+from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.providers.openai import OpenAIProvider
 
-from app.providers import ProviderName, invoke_with_fallback
+from app.config import settings
+from app.providers import ProviderName
 from v2.contracts import (
     ConversationTurn,
     DraftReport,
@@ -40,6 +43,21 @@ class ProviderStructuredModel:
         self.provider = provider
         self.model = model
 
+    def _model(self) -> OpenAIChatModel:
+        configs = {
+            "mistral": ("https://api.mistral.ai/v1", settings.mistral_api_key),
+            "openrouter": ("https://openrouter.ai/api/v1", settings.openrouter_api_key),
+            "inception": ("https://api.inceptionlabs.ai/v1", settings.inception_api_key),
+            "groq": ("https://api.groq.com/openai/v1", settings.groq_api_key),
+        }
+        base_url, api_key = configs[self.provider]
+        if not api_key:
+            raise RuntimeError(f"{self.provider}: missing key")
+        return OpenAIChatModel(
+            self.model,
+            provider=OpenAIProvider(base_url=base_url, api_key=api_key),
+        )
+
     async def generate(
         self,
         *,
@@ -48,22 +66,14 @@ class ProviderStructuredModel:
         payload: Mapping[str, Any],
         envelope: RequestEnvelope,
     ) -> T:
-        response = await invoke_with_fallback(
-            self.provider,
-            self.model,
-            [
-                SystemMessage(content=prompt),
-                HumanMessage(content=json.dumps(payload, sort_keys=True, default=str)),
-            ],
-            response_format={"type": "json_object"},
+        agent = Agent(
+            self._model(),
+            instructions=prompt,
+            output_type=NativeOutput(schema, strict=True),
+            retries=settings.llm_max_retries,
         )
-        content = response.content
-        if isinstance(content, list):
-            content = "".join(
-                str(item.get("text", "")) if isinstance(item, dict) else str(item)
-                for item in content
-            )
-        return schema.model_validate_json(_json_object(str(content)))
+        result = await agent.run(json.dumps(payload, sort_keys=True, default=str))
+        return result.output
 
 
 class ModelStage:
@@ -228,20 +238,6 @@ class ModelSemanticVerifier(ModelStage):
         )
 
 
-def _json_object(text: str) -> str:
-    text = text.strip()
-    if text.startswith("```"):
-        lines = text.splitlines()
-        if lines and lines[0].startswith("```"):
-            lines = lines[1:]
-        if lines and lines[-1].strip() == "```":
-            lines = lines[:-1]
-        text = "\n".join(lines).strip()
-    start = text.find("{")
-    end = text.rfind("}")
-    if start < 0 or end < start:
-        raise ValueError("model did not return a JSON object")
-    return text[start : end + 1]
 
 class RecordedStructuredModel:
     def __init__(self, model: StructuredModel, ledger: Any, *, turn_id: str) -> None:

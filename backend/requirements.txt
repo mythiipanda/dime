@@ -2,6 +2,7 @@ fastapi==0.121.2
 uvicorn[standard]==0.38.0
 pydantic==2.12.5
 pydantic-settings==2.15.0
+pydantic-ai-slim[openai]==2.43.0
 httpx==0.28.1
 langchain-core==1.6.2
 langchain-openai==1.6.0

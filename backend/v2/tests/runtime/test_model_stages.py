@@ -8,7 +8,6 @@ from v2.adapters.models import (
     ModelRepairer,
     ModelSemanticVerifier,
     ModelSynthesizer,
-    _json_object,
 )
 from v2.contracts import EvidenceEnvelope
 
@@ -63,10 +62,6 @@ async def test_model_backed_stages_form_a_structured_slice():
     assert len({call["envelope"].route for call in stub.calls}) == 4
 
 
-def test_json_object_accepts_fenced_json_and_rejects_prose():
-    assert _json_object('```json\n{"ok": true}\n```') == '{"ok": true}'
-    with pytest.raises(ValueError):
-        _json_object("no object")
 
 @pytest.mark.anyio
 async def test_recorded_model_keeps_success_and_failure_attempts():
