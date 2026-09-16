@@ -326,7 +326,8 @@ class PlanExecutor:
                 if not isinstance(task_season_scoped, bool):
                     raise TypeError(
                         "capability task_season_scoped must be boolean")
-                result = result.model_copy(update={
+                result = EvidenceEnvelope.model_validate({
+                    **result.model_dump(),
                     "task_season_scoped": task_season_scoped,
                 })
                 required_season = (

@@ -454,3 +454,26 @@ def test_execution_result_rejects_noninteger_attempt_counts(count) -> None:
     from v2.runtime.models import ExecutionResult
     with pytest.raises(ValidationError, match="valid integer|attempt counts must be integers"):
         ExecutionResult(plan=Plan(nodes=[node("pending")]), attempts={"pending": count})
+
+
+@pytest.mark.anyio
+async def test_executor_revalidates_capability_evidence_before_admission() -> None:
+    from datetime import UTC, datetime
+    from v2.contracts import EvidenceEnvelope
+
+    class InvalidEvidence:
+        name = "fake"
+        task_season_scoped = True
+        async def execute(self, node, task, evidence):
+            valid = EvidenceEnvelope(
+                evidence_id="ev", capability=self.name, source="fixture",
+                observed_at=datetime.now(UTC), rows={"wins": 61},
+            )
+            return valid.model_copy(update={"source": " "})
+
+    result = await PlanExecutor({"fake": InvalidEvidence()}).execute(
+        TaskSpec(goal="record", mode="quick", deliverable="answer"),
+        Plan(nodes=[node("record")]),
+    )
+    assert result.plan.nodes[0].status == PlanStatus.FAILED
+    assert "evidence identity" in result.errors["record"][0]
