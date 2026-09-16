@@ -1292,3 +1292,18 @@ def test_answer_text_never_exposes_internal_execution_error():
     assert text == "execution failed for salary"
     assert "/secret/db" not in text
     assert "AdapterError" not in text
+
+
+def test_chat_route_fails_closed_on_unknown_runtime_mode(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from v2.api import routes
+
+    monkeypatch.setenv("DIME_RUNTIME_V2", "typo")
+    app = FastAPI()
+    app.include_router(routes.router, prefix="/api")
+
+    response = TestClient(app).post(
+        "/api/v2/chat/stream", json={"q": "record?"})
+
+    assert response.status_code == 404

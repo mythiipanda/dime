@@ -172,9 +172,13 @@ async def quick_answer_stream(body: QuickAnswerBody):
         "DIME_V2_LEDGER_DIR", str(_BACKEND / "data" / "v2-ledgers"))
     checkpoint_dir = Path(os.environ.get(
         "DIME_V2_CHECKPOINT_DIR", str(_BACKEND / "data" / "v2-checkpoints")))
-    policy = (ExecutionPolicy.shadow(ledger_dir=ledger_dir)
-              if os.environ.get("DIME_RUNTIME_V2", "off").lower() == "shadow"
-              else ExecutionPolicy.live(ledger_dir=ledger_dir))
+    runtime_mode = os.environ.get("DIME_RUNTIME_V2", "off").lower()
+    if runtime_mode == "shadow":
+        policy = ExecutionPolicy.shadow(ledger_dir=ledger_dir)
+    elif runtime_mode == "on":
+        policy = ExecutionPolicy.live(ledger_dir=ledger_dir)
+    else:
+        raise HTTPException(status_code=404, detail="not found")
     policy = ExecutionPolicy.model_validate({
         **policy.model_dump(), "checkpoint_dir": checkpoint_dir,
     })
