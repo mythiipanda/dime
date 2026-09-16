@@ -49,8 +49,8 @@ class ToolResult(StrictEvent):
     node: str
     name: str
     status: Literal["ok", "fail"]
-    rows: int | None = None
-    ms: int | None = None
+    rows: int | None = Field(default=None, ge=0)
+    ms: int | None = Field(default=None, ge=0)
     error: str | None = None
     summary: str | None = None
     sql: str | None = None

@@ -659,3 +659,13 @@ def test_stream_event_contracts_reject_unknown_fields() -> None:
             "type": "node_update", "node": "verify", "status": "complete",
             "invented": True,
         })
+
+
+def test_stream_tool_result_rejects_negative_row_count() -> None:
+    from pydantic import ValidationError
+    from v2.api.events import ToolResult
+
+    with pytest.raises(ValidationError, match="greater than or equal to 0"):
+        ToolResult(node="execute", name="standings", status="ok", rows=-1)
+    with pytest.raises(ValidationError, match="greater than or equal to 0"):
+        ToolResult(node="execute", name="standings", status="ok", ms=-1)
