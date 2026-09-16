@@ -117,6 +117,27 @@ class Runtime:
                 update={"status": VerificationStatus.PARTIAL}
             )
 
+        unavailable_claims = {
+            index: sorted(set(claim.evidence_ids) - set(evidence))
+            for index, claim in enumerate(draft.claims)
+            if set(claim.evidence_ids) - set(evidence)
+        }
+        if unavailable_claims:
+            claim_results = [
+                ClaimResult(
+                    claim_index=result.claim_index,
+                    supported=False,
+                    reasons=[f"unknown execution evidence ids: "
+                             f"{unavailable_claims[result.claim_index]}"])
+                if result.supported and result.claim_index in unavailable_claims
+                else result
+                for result in verification.claim_results
+            ]
+            verification = verification.model_copy(update={
+                "status": VerificationStatus.PARTIAL,
+                "claim_results": claim_results,
+            })
+
         empty_evidence_gaps = _empty_evidence_gaps(execution.evidence)
         failed_nodes = {
             node.id for node in execution.plan.nodes
@@ -133,7 +154,8 @@ class Runtime:
             )
         verified_claims = _verified_claims(draft, verification, evidence)
         gaps = [
-            *_verification_gaps(draft, verification, unresolved_errors),
+            *_verification_gaps(
+                draft, verification, unresolved_errors, evidence_ids=set(evidence)),
             *empty_evidence_gaps,
         ]
         result = RuntimeResult(
@@ -288,8 +310,8 @@ def _empty_evidence_gaps(evidence) -> list[Gap]:
     ]
 
 
-def _verification_gaps(draft, verification,
-                       execution_errors=None) -> list[Gap]:
+def _verification_gaps(draft, verification, execution_errors=None,
+                       evidence_ids=None) -> list[Gap]:
     gaps = [Gap(kind=GapKind.MISSING_EVIDENCE, message=message)
             for message in draft.gaps]
     gaps.extend(Gap(kind=GapKind.MISSING_EVIDENCE, message=message)
@@ -308,6 +330,11 @@ def _verification_gaps(draft, verification,
                 list(draft.claims[result.claim_index].evidence_ids)
                 if result.claim_index < len(draft.claims) else []
             )
+            if evidence_ids is not None:
+                claim_evidence = [
+                    evidence_id for evidence_id in claim_evidence
+                    if evidence_id in evidence_ids
+                ]
             gaps.extend(Gap(kind=GapKind.UNSUPPORTED_CLAIM, message=reason,
                             evidence_ids=claim_evidence,
                             blocks=[f"claim:{result.claim_index}"])

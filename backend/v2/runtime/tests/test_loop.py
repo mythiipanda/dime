@@ -332,8 +332,13 @@ async def test_execution_failure_prevents_clean_pass_status() -> None:
         synthesizer=Synthesizer(),
         mechanical_verifier=SequenceVerifier(VerificationStatus.PASS),
         semantic_verifier=SequenceVerifier(VerificationStatus.PASS))
-    with pytest.raises(ValueError, match="verified claim cites unknown execution evidence"):
-        await instance.run("answer")
+    result = await instance.run("answer")
+    assert result.verification.status == VerificationStatus.PARTIAL
+    assert result.verified_claims == []
+    assert any(gap.kind == "execution_failure" for gap in result.gaps)
+    unsupported = [gap for gap in result.gaps if gap.kind == "unsupported_claim"]
+    assert unsupported
+    assert unsupported[0].evidence_ids == []
 
 
 @pytest.mark.anyio
