@@ -255,3 +255,11 @@ def test_verified_claim_requires_exact_source_binding() -> None:
     unknown = ClaimSource(evidence_id="other", source="fixture", capability="standings")
     with pytest.raises(ValidationError, match="belong to its evidence"):
         VerifiedClaim(claim_index=0, claim=claim, evidence_ids=["ev"], sources=[unknown])
+
+
+def test_conversation_turn_rejects_blank_content() -> None:
+    from pydantic import ValidationError
+    from v2.contracts import ConversationTurn
+
+    with pytest.raises(ValidationError, match="content must be non-empty"):
+        ConversationTurn(role="user", content=" ")

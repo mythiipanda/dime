@@ -75,6 +75,12 @@ class ConversationTurn(BaseModel):
     role: Literal["user", "assistant"]
     content: str = Field(min_length=1, max_length=2000)
 
+    @model_validator(mode="after")
+    def validate_content(self) -> "ConversationTurn":
+        if not self.content.strip():
+            raise ValueError("conversation content must be non-empty")
+        return self
+
 
 class TaskSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
