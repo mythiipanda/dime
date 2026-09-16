@@ -30,6 +30,11 @@ class ExecutionResult(BaseModel):
         evidence_ids = [item.evidence_id for item in self.evidence]
         if len(evidence_ids) != len(set(evidence_ids)):
             raise ValueError("execution evidence ids must be unique")
+        completed = sum(node.status.value == "complete" for node in self.plan.nodes)
+        if completed != len(self.evidence):
+            raise ValueError("execution evidence must match completed plan nodes")
+        if any(count < 0 for count in self.attempts.values()):
+            raise ValueError("execution attempt counts must be non-negative")
         return self
 
 

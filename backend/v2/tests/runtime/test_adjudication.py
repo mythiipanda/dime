@@ -100,7 +100,7 @@ def test_runtime_result_rejects_forged_claim_source() -> None:
     import pytest
     from datetime import UTC, datetime
     from pydantic import ValidationError
-    from v2.contracts import ClaimSource, EvidenceEnvelope, Plan, TaskSpec, VerifiedClaim
+    from v2.contracts import ClaimSource, EvidenceEnvelope, Plan, PlanNode, TaskSpec, VerifiedClaim
     from v2.runtime.models import ExecutionResult, RuntimeResult
 
     claim = Claim(text="Boston won 61 games.", kind="observed", evidence_ids=["ev"])
@@ -108,7 +108,9 @@ def test_runtime_result_rejects_forged_claim_source() -> None:
         RuntimeResult(
             task=TaskSpec(goal="record", mode="quick", deliverable="answer"),
             execution=ExecutionResult(
-                plan=Plan(nodes=[]),
+                plan=Plan(nodes=[PlanNode(
+                    id="facts", description="facts", capability_hints=["standings"],
+                    status="complete")]),
                 evidence=[EvidenceEnvelope(
                     evidence_id="ev", capability="standings",
                     source="warehouse:standings", observed_at=datetime.now(UTC),

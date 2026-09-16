@@ -223,3 +223,23 @@ def test_execution_result_rejects_unknown_state_nodes_and_duplicate_evidence() -
     )
     with pytest.raises(ValidationError, match="evidence ids must be unique"):
         ExecutionResult(plan=plan, evidence=[evidence, evidence])
+
+
+def test_execution_result_requires_one_evidence_per_completed_node() -> None:
+    from datetime import UTC, datetime
+    from pydantic import ValidationError
+    from v2.contracts import EvidenceEnvelope
+    from v2.runtime.models import ExecutionResult
+
+    completed = node("done").model_copy(update={"status": PlanStatus.COMPLETE})
+    with pytest.raises(ValidationError, match="match completed plan nodes"):
+        ExecutionResult(plan=Plan(nodes=[completed]))
+    pending = node("pending")
+    evidence = EvidenceEnvelope(
+        evidence_id="ev", capability="fake", source="fixture",
+        observed_at=datetime.now(UTC), rows={},
+    )
+    with pytest.raises(ValidationError, match="match completed plan nodes"):
+        ExecutionResult(plan=Plan(nodes=[pending]), evidence=[evidence])
+    with pytest.raises(ValidationError, match="non-negative"):
+        ExecutionResult(plan=Plan(nodes=[pending]), attempts={"pending": -1})

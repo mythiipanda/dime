@@ -201,7 +201,9 @@ def test_quick_answer_route_is_flagged_and_streams_typed_contract(monkeypatch, t
     result = RuntimeResult(
         task=contracts.TaskSpec(goal="record", mode="quick", deliverable="text"),
         execution=ExecutionResult(
-            plan=contracts.Plan(nodes=[]), evidence=[evidence]),
+            plan=contracts.Plan(nodes=[contracts.PlanNode(
+                id="facts", description="facts", capability_hints=["standings"],
+                status="complete")]), evidence=[evidence]),
         draft=contracts.DraftReport(sections=["Record"], claims=[
             contracts.Claim(text="Boston won 61 games.", kind="observed",
                             evidence_ids=["ev"])]),
