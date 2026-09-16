@@ -102,6 +102,26 @@ class LedgerEntry(BaseModel):
     data: dict[str, Any] = Field(default_factory=dict)
 
 
+def _validate_assistant_attempt(data: dict[str, Any]) -> None:
+    status = data.get("status")
+    if status == "failed":
+        valid = (set(data) == {"status", "error"}
+                 and isinstance(data.get("error"), str)
+                 and bool(data["error"].strip()))
+    elif status == "accepted":
+        valid = (set(data) == {"status", "output", "provider", "model", "used_fallback"}
+                 and isinstance(data.get("output"), dict)
+                 and isinstance(data.get("provider"), str)
+                 and bool(data["provider"].strip())
+                 and isinstance(data.get("model"), str)
+                 and bool(data["model"].strip())
+                 and isinstance(data.get("used_fallback"), bool))
+    else:
+        raise ValueError("assistant attempt status must be accepted or failed")
+    if not valid:
+        raise ValueError("assistant attempt data does not match its status")
+
+
 class RunLedger:
     def __init__(self, run_id: str, entries: Iterable[LedgerEntry] = ()) -> None:
         if not run_id.strip():
@@ -159,6 +179,7 @@ class RunLedger:
                 RequestEnvelope.model_validate(entry.data)
                 self._model_requests.add(entry.call_id)
             elif entry.kind == LedgerKind.ASSISTANT_ATTEMPT:
+                _validate_assistant_attempt(entry.data)
                 if not entry.call_id or entry.call_id not in self._model_requests:
                     raise ValueError("assistant attempt requires an earlier model request")
                 if entry.call_id in self._model_attempts:
@@ -243,6 +264,7 @@ class RunLedger:
             RequestEnvelope.model_validate(payload)
             self._model_requests.add(call_id)
         elif kind == LedgerKind.ASSISTANT_ATTEMPT:
+            _validate_assistant_attempt(payload)
             if call_id not in self._model_requests:
                 raise ValueError("assistant attempt requires an earlier model request")
             if call_id in self._model_attempts:

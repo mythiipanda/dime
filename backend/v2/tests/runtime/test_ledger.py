@@ -56,11 +56,15 @@ def test_failed_attempts_remain_in_log_but_not_model_history() -> None:
         ledger.append(LedgerKind.MODEL_REQUEST, turn_id="t", call_id=call_id,
                       data=envelope.model_dump(mode="json"))
     ledger.append(LedgerKind.ASSISTANT_ATTEMPT, turn_id="t", call_id="c1",
-                  data={"status": "rejected", "text": "unsupported"})
+                  data={"status": "failed", "error": "unsupported"})
     ledger.append(LedgerKind.ASSISTANT_ATTEMPT, turn_id="t", call_id="c2",
-                  data={"status": "accepted", "text": "grounded"})
+                  data={"status": "accepted", "output": {"text": "grounded"},
+                        "provider": "p", "model": "m", "used_fallback": False})
     assert len(ledger.entries) == 4
-    assert ledger.model_history("t") == [{"status": "accepted", "text": "grounded"}]
+    assert ledger.model_history("t") == [{
+        "status": "accepted", "output": {"text": "grounded"},
+        "provider": "p", "model": "m", "used_fallback": False,
+    }]
 
 
 def test_interrupted_run_gets_explicit_terminal_closers() -> None:
@@ -296,4 +300,21 @@ def test_model_request_attempt_pairing_is_strict() -> None:
                   data={"status": "failed", "error": "bad"})
     with pytest.raises(ValueError, match="only one assistant attempt"):
         ledger.append(LedgerKind.ASSISTANT_ATTEMPT, turn_id="t", call_id="m1",
-                      data={"status": "accepted", "output": {}})
+                      data={"status": "accepted", "output": {}, "provider": "p",
+                            "model": "m", "used_fallback": False})
+
+
+@pytest.mark.parametrize("data", [
+    {"status": "failed", "error": " "},
+    {"status": "accepted", "output": {}, "provider": "p", "model": "m"},
+    {"status": "rejected", "error": "bad"},
+])
+def test_assistant_attempt_payload_shape_is_strict(data) -> None:
+    envelope = RequestEnvelope.freeze(
+        provider="p", model="m", route="answer", prompt="p", context={},
+        tool_schemas={}, planner_version="v2")
+    ledger = RunLedger("run")
+    ledger.append(LedgerKind.MODEL_REQUEST, turn_id="t", call_id="m1",
+                  data=envelope.model_dump(mode="json"))
+    with pytest.raises(ValueError, match="assistant attempt"):
+        ledger.append(LedgerKind.ASSISTANT_ATTEMPT, turn_id="t", call_id="m1", data=data)
