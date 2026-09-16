@@ -131,7 +131,7 @@ class PlanExecutor:
                 raise RuntimeError("validated plan made no execution progress")
 
         completed_plan = Plan(nodes=[nodes[node.id] for node in plan.nodes])
-        return ExecutionResult(
+        result = ExecutionResult(
             plan=completed_plan,
             evidence=[
                 evidence_by_node[node.id]
@@ -141,6 +141,12 @@ class PlanExecutor:
             attempts=attempts,
             errors=errors,
         )
+        if (self._checkpoint_store is not None and run_id is not None
+                and all(node.status in {
+                    PlanStatus.COMPLETE, PlanStatus.FAILED, PlanStatus.SKIPPED
+                } for node in completed_plan.nodes)):
+            self._checkpoint_store.delete(run_id)
+        return result
 
     def _preflight(self, task: TaskSpec, plan: Plan) -> None:
         selected: set[str] = set()

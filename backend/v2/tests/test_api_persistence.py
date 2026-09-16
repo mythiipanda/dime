@@ -326,3 +326,14 @@ def test_chat_route_configures_durable_checkpoint_directory():
     source = inspect.getsource(quick_answer_stream)
     assert "DIME_V2_CHECKPOINT_DIR" in source
     assert 'model_copy(update={"checkpoint_dir": checkpoint_dir})' in source
+
+
+@pytest.mark.anyio
+async def test_completed_execution_removes_checkpoint(tmp_path: Path) -> None:
+    checkpoints = FileCheckpointStore(tmp_path)
+    result = await PlanExecutor(
+        {"fake": FakeCapability("fake", {"ok": True})},
+        checkpoint_store=checkpoints,
+    ).execute(_task(), _plan(), run_id="finished")
+    assert all(node.status == PlanStatus.COMPLETE for node in result.plan.nodes)
+    assert checkpoints.load("finished") is None
