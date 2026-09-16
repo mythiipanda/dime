@@ -16,6 +16,7 @@ class FakeCapability:
         failures_before_success: int = 0,
     ) -> None:
         self.name = name
+        self.task_season_scoped = True
         self._rows = rows
         self._failures_remaining = failures_before_success
 

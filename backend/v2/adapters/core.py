@@ -160,6 +160,7 @@ class ToolCapability:
         if name not in CAPABILITIES:
             raise AdapterError(f"unknown capability {name!r}")
         self.name = name
+        self.task_season_scoped = CAPABILITIES[name].task_season_scoped
         self._tools = tools
         self._arguments = arguments or (
             lambda node, task, evidence: _task_arguments(

@@ -54,6 +54,7 @@ class Capability:
     qualification: str | None = None
     coverage: str | None = None
     source_prefix: str = "v1"
+    task_season_scoped: bool = True
     extract_entities: Callable[[Any], list[EntityRef]] | None = None
 
 
@@ -136,8 +137,12 @@ _LIST = [
         qualification="Clutch: last 5 minutes, margin 5 or fewer.",
     ),
     Capability(name="playoffs", tool_name="get_playoffs"),
-    Capability(name="trades", tool_name="get_trade_check", season_arg=None),
-    Capability(name="contracts", tool_name="get_cap_ledger", season_arg=None),
+    Capability(name="trades", tool_name="get_trade_check", season_arg=None,
+               task_season_scoped=False),
+    Capability(name="trade_value", tool_name="get_trade_value", season_arg=None,
+               task_season_scoped=False),
+    Capability(name="contracts", tool_name="get_cap_ledger", season_arg=None,
+               task_season_scoped=False),
     Capability(name="game_logs", tool_name="search_game_logs"),
     Capability(
         name="four_factors",

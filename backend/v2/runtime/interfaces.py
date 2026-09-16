@@ -26,6 +26,7 @@ class Planner(Protocol):
 
 class Capability(Protocol):
     name: str
+    task_season_scoped: bool
 
     async def execute(
         self,

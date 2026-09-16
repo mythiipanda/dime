@@ -90,3 +90,52 @@ async def test_independent_nodes_run_concurrently() -> None:
         TaskSpec(goal="answer", mode=RunMode.QUICK, deliverable="text"), plan
     )
     assert peak == 2
+
+
+@pytest.mark.anyio
+async def test_non_task_season_capability_admits_next_vintage_contracts() -> None:
+    from datetime import UTC, datetime
+    from v2.contracts import EvidenceEnvelope, SeasonRef
+
+    class Contracts:
+        name = "contracts"
+        task_season_scoped = False
+        async def execute(self, node, task, evidence):
+            return EvidenceEnvelope(
+                evidence_id="contracts:2026-27", capability=self.name,
+                source="warehouse:salary", observed_at=datetime.now(UTC),
+                season="2026-27", rows={"player": "Jaylen Brown",
+                                         "salary": 57_100_000})
+
+    plan = Plan(nodes=[PlanNode(
+        id="salary", description="next-season salary",
+        capability_hints=["contracts"], completion_test="salary row")])
+    task = TaskSpec(goal="trade fit", mode="deep_dive", deliverable="analysis",
+                    season=SeasonRef(value="2025-26", source="user", confidence=1))
+    result = await PlanExecutor({"contracts": Contracts()}).execute(task, plan)
+    assert result.plan.nodes[0].status == PlanStatus.COMPLETE
+    assert result.evidence[0].season == "2026-27"
+
+
+@pytest.mark.anyio
+async def test_task_season_capability_still_rejects_wrong_vintage() -> None:
+    from datetime import UTC, datetime
+    from v2.contracts import EvidenceEnvelope, SeasonRef
+
+    class Standings:
+        name = "standings"
+        task_season_scoped = True
+        async def execute(self, node, task, evidence):
+            return EvidenceEnvelope(
+                evidence_id="standings:wrong", capability=self.name,
+                source="warehouse", observed_at=datetime.now(UTC),
+                season="2024-25", rows={"wins": 61})
+
+    plan = Plan(nodes=[PlanNode(
+        id="record", description="record", capability_hints=["standings"],
+        completion_test="record row")])
+    task = TaskSpec(goal="record", mode="quick", deliverable="answer",
+                    season=SeasonRef(value="2025-26", source="user", confidence=1))
+    result = await PlanExecutor({"standings": Standings()}).execute(task, plan)
+    assert result.plan.nodes[0].status == PlanStatus.FAILED
+    assert "does not match" in result.errors["record"][0]

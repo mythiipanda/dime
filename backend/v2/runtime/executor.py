@@ -185,9 +185,12 @@ class PlanExecutor:
             attempts[node.id] += 1
             try:
                 result = await capability.execute(node, task, parent_evidence)
-                result = admit_evidence(
-                    result,
-                    required_season=(task.season.value if task.season else None))
+                required_season = (
+                    task.season.value
+                    if task.season and getattr(capability, "task_season_scoped", True)
+                    else None
+                )
+                result = admit_evidence(result, required_season=required_season)
                 if result.capability != capability.name:
                     raise ValueError(
                         f"capability returned {result.capability!r}, expected {capability.name!r}"

@@ -102,7 +102,7 @@ def test_registry_covers_initial_pack():
         "team_ratings", "roster", "player_report", "player_evaluation", "player_comparison",
         "metric_adjudication", "metric_coverage", "shots",
         "shooting_efficiency", "on_off", "lineups", "clutch", "playoffs",
-        "trades", "contracts", "game_logs", "four_factors",
+        "trades", "trade_value", "contracts", "game_logs", "four_factors",
         "team_four_factors",
     }
     assert set(CAPABILITIES) == expected

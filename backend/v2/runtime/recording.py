@@ -11,6 +11,7 @@ from v2.runtime.ledger import LedgerKind
 class RecordedCapability:
     def __init__(self, capability: Capability, ledger: Any, *, turn_id: str) -> None:
         self.name = capability.name
+        self.task_season_scoped = getattr(capability, "task_season_scoped", True)
         self._capability = capability
         self._ledger = ledger
         self._turn_id = turn_id
