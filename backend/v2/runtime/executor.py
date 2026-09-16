@@ -115,26 +115,32 @@ class PlanExecutor:
                     )
                     for node in batch
                 ]
-                for completed in asyncio.as_completed(tasks):
-                    node, envelope = await completed
-                    if envelope is None:
-                        node.status = PlanStatus.FAILED
-                        failures += 1
-                    else:
-                        if envelope.evidence_id in {
-                            item.evidence_id for item in evidence_by_node.values()
-                        }:
+                try:
+                    for completed in asyncio.as_completed(tasks):
+                        node, envelope = await completed
+                        if envelope is None:
                             node.status = PlanStatus.FAILED
-                            errors.setdefault(node.id, []).append(
-                                f"duplicate evidence id: {envelope.evidence_id}"
-                            )
                             failures += 1
                         else:
-                            node.status = PlanStatus.COMPLETE
-                            evidence_by_node[node.id] = envelope
-                    self._save_checkpoint(
-                        run_id, task, plan, nodes, evidence_by_node, attempts, errors
-                    )
+                            if envelope.evidence_id in {
+                                item.evidence_id for item in evidence_by_node.values()
+                            }:
+                                node.status = PlanStatus.FAILED
+                                errors.setdefault(node.id, []).append(
+                                    f"duplicate evidence id: {envelope.evidence_id}"
+                                )
+                                failures += 1
+                            else:
+                                node.status = PlanStatus.COMPLETE
+                                evidence_by_node[node.id] = envelope
+                        self._save_checkpoint(
+                            run_id, task, plan, nodes, evidence_by_node, attempts, errors
+                        )
+                finally:
+                    for task_handle in tasks:
+                        if not task_handle.done():
+                            task_handle.cancel()
+                    await asyncio.gather(*tasks, return_exceptions=True)
 
             if not progressed:
                 raise RuntimeError("validated plan made no execution progress")

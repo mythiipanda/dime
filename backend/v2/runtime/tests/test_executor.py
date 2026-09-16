@@ -359,3 +359,32 @@ def test_execution_result_rejects_nonterminal_node_without_attempts_remaining() 
     pending = node("pending", attempts=1)
     with pytest.raises(ValidationError, match="no attempts remaining"):
         ExecutionResult(plan=Plan(nodes=[pending]), attempts={"pending": 1})
+
+
+@pytest.mark.anyio
+async def test_cancelling_execution_cancels_every_inflight_node() -> None:
+    started = {"a": asyncio.Event(), "b": asyncio.Event()}
+    cancelled: set[str] = set()
+
+    class BlockingCapability:
+        name = "fake"
+
+        async def execute(self, node, task, evidence):
+            started[node.id].set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cancelled.add(node.id)
+                raise
+
+    running = asyncio.create_task(PlanExecutor(
+        {"fake": BlockingCapability()}, max_concurrency=2,
+    ).execute(
+        TaskSpec(goal="answer", mode=RunMode.QUICK, deliverable="text"),
+        Plan(nodes=[node("a"), node("b")]),
+    ))
+    await asyncio.gather(*(event.wait() for event in started.values()))
+    running.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await running
+    assert cancelled == {"a", "b"}
