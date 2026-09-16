@@ -31,7 +31,7 @@ class PlanExecutor:
     async def execute(
         self, task: TaskSpec, plan: Plan, *, run_id: str | None = None
     ) -> ExecutionResult:
-        self._preflight(plan)
+        self._preflight(task, plan)
         checkpoint = (
             self._checkpoint_store.load(run_id)
             if self._checkpoint_store is not None and run_id is not None
@@ -142,7 +142,8 @@ class PlanExecutor:
             errors=errors,
         )
 
-    def _preflight(self, plan: Plan) -> None:
+    def _preflight(self, task: TaskSpec, plan: Plan) -> None:
+        selected: set[str] = set()
         for node in plan.nodes:
             matches = [name for name in node.capability_hints
                        if name in self._capabilities]
@@ -150,6 +151,7 @@ class PlanExecutor:
                 raise ValueError(
                     f"plan node {node.id!r} must select exactly one registered "
                     f"capability; got {matches!r}")
+            selected.add(matches[0])
             capability = self._capabilities[matches[0]]
             validator = getattr(capability, "validate_arguments", None)
             if validator is not None:
@@ -165,6 +167,10 @@ class PlanExecutor:
                     raise ValueError(
                         f"web_fetch node {node.id!r} requires exactly one "
                         "web_search dependency")
+        missing = sorted(set(task.required_evidence) - selected)
+        if missing:
+            raise ValueError(
+                f"plan does not cover required evidence: {missing}")
 
     def _selected_name(self, plan: Plan, node_id: str) -> str | None:
         parent = next(item for item in plan.nodes if item.id == node_id)

@@ -181,3 +181,22 @@ async def test_invalid_arguments_fail_before_any_execution() -> None:
         await PlanExecutor({"fake": Validated("fake", {})}).execute(
             TaskSpec(goal="answer", mode="quick", deliverable="text"), plan)
     assert calls == []
+
+
+@pytest.mark.anyio
+async def test_missing_required_evidence_fails_before_execution() -> None:
+    calls: list[str] = []
+
+    class Tracking(FakeCapability):
+        async def execute(self, node, task, evidence):
+            calls.append(node.id)
+            return await super().execute(node, task, evidence)
+
+    task = TaskSpec(
+        goal="trade", mode="deep_dive", deliverable="analysis",
+        required_evidence=["fake", "contracts"],
+    )
+    with pytest.raises(ValueError, match="required evidence.*contracts"):
+        await PlanExecutor({"fake": Tracking("fake", {})}).execute(
+            task, Plan(nodes=[node("only")]))
+    assert calls == []
