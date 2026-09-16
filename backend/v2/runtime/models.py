@@ -89,6 +89,12 @@ class RuntimeResult(BaseModel):
     @model_validator(mode="after")
     def validate_publication(self) -> "RuntimeResult":
         by_index = {item.claim_index: item for item in self.verification.claim_results}
+        invalid_indices = [
+            index for index in by_index if index >= len(self.draft.claims)
+        ]
+        if invalid_indices:
+            raise ValueError(
+                f"verification claim indices are outside the draft: {invalid_indices}")
         evidence = {item.evidence_id: item for item in self.execution.evidence}
         seen: set[int] = set()
         evidence_ids = set(evidence)

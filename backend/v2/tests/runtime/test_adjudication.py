@@ -162,3 +162,20 @@ def test_empty_execution_evidence_becomes_a_cited_typed_gap() -> None:
     assert gaps[0].kind == "missing_evidence"
     assert gaps[0].evidence_ids == ["search:none"]
     assert gaps[0].message == "web_search returned no evidence values"
+
+
+def test_runtime_result_rejects_adjudication_outside_draft() -> None:
+    import pytest
+    from pydantic import ValidationError
+    from v2.contracts import DraftReport, Plan, TaskSpec
+    from v2.runtime.models import ExecutionResult, RuntimeResult
+
+    with pytest.raises(ValidationError, match="outside the draft"):
+        RuntimeResult(
+            task=TaskSpec(goal="answer", mode="quick", deliverable="text"),
+            execution=ExecutionResult(plan=Plan(nodes=[])),
+            draft=DraftReport(sections=["Answer"], claims=[]),
+            verification=VerificationReport(status="pass", claim_results=[
+                ClaimResult(claim_index=7, supported=True),
+            ]),
+        )
