@@ -10,7 +10,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Any, Mapping
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, model_validator
 
 _SHADOW_LOCKS_GUARD = Lock()
 _SHADOW_LOCKS: dict[Path, Lock] = {}
@@ -198,20 +198,20 @@ class ShadowGatePolicy(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     minimum_runs: StrictInt = Field(default=100, ge=1)
-    maximum_failure_rate: float = Field(default=0.01, ge=0, le=1)
-    maximum_grounding_drift_rate: float = Field(default=0.01, ge=0, le=1)
-    maximum_route_drift_rate: float = Field(default=0.05, ge=0, le=1)
-    maximum_answer_drift_rate: float = Field(default=0.10, ge=0, le=1)
+    maximum_failure_rate: StrictFloat = Field(default=0.01, ge=0, le=1)
+    maximum_grounding_drift_rate: StrictFloat = Field(default=0.01, ge=0, le=1)
+    maximum_route_drift_rate: StrictFloat = Field(default=0.05, ge=0, le=1)
+    maximum_answer_drift_rate: StrictFloat = Field(default=0.10, ge=0, le=1)
 
 
 class ShadowGateReport(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     total_runs: StrictInt
-    failure_rate: float
-    grounding_drift_rate: float
-    route_drift_rate: float
-    answer_drift_rate: float
+    failure_rate: StrictFloat
+    grounding_drift_rate: StrictFloat
+    route_drift_rate: StrictFloat
+    answer_drift_rate: StrictFloat
     ready: StrictBool
     blockers: list[str] = Field(default_factory=list)
 

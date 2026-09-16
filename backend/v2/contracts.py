@@ -6,7 +6,7 @@ from enum import StrEnum
 import math
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, model_validator
 
 
 class RunMode(StrEnum):
@@ -69,7 +69,7 @@ class SeasonRef(BaseModel):
 
     value: str
     source: Literal["user", "context", "default", "resolved"]
-    confidence: float = Field(ge=0, le=1)
+    confidence: StrictFloat = Field(ge=0, le=1)
 
     @model_validator(mode="after")
     def validate_identity(self) -> "SeasonRef":
@@ -271,7 +271,7 @@ class Claim(BaseModel):
     kind: ClaimKind
     evidence_ids: list[str] = Field(default_factory=list)
     calculation_id: str | None = None
-    confidence: float | None = Field(default=None, ge=0, le=1)
+    confidence: StrictFloat | None = Field(default=None, ge=0, le=1)
 
     @model_validator(mode="after")
     def validate_support(self) -> Claim:

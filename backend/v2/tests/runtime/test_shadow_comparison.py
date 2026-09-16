@@ -293,3 +293,14 @@ def test_shadow_store_rejects_symlinked_parent(tmp_path):
     parent.symlink_to(outside, target_is_directory=True)
     with pytest.raises(ValueError, match="parent cannot be a symlink"):
         ShadowStore(parent / "shadow.jsonl")
+
+
+@pytest.mark.parametrize("field_name", [
+    "maximum_failure_rate", "maximum_grounding_drift_rate",
+    "maximum_route_drift_rate", "maximum_answer_drift_rate",
+])
+def test_shadow_policy_rates_are_strict_floats(field_name) -> None:
+    from pydantic import ValidationError
+    from v2.runtime.shadow import ShadowGatePolicy
+    with pytest.raises(ValidationError):
+        ShadowGatePolicy(**{field_name: "0.1"})

@@ -12,6 +12,7 @@ from v2.contracts import (
     Plan,
     PlanNode,
     TaskSpec,
+    SeasonRef,
     EntityRef,
 )
 
@@ -359,5 +360,15 @@ def test_truth_bearing_contract_flags_are_strict(schema, payload) -> None:
     (ClaimResult, {"claim_index": "0", "supported": False, "reasons": ["bad"]}),
 ])
 def test_execution_coordinates_are_strict_integers(schema, payload) -> None:
+    with pytest.raises(ValidationError):
+        schema.model_validate(payload)
+
+
+@pytest.mark.parametrize("schema,payload", [
+    (SeasonRef, {"value": "2025-26", "source": "user", "confidence": "1"}),
+    (Claim, {"text": "Boston projects higher.", "kind": "projection",
+             "confidence": True, "evidence_ids": ["ev"]}),
+])
+def test_confidence_values_are_strict_floats(schema, payload) -> None:
     with pytest.raises(ValidationError):
         schema.model_validate(payload)
