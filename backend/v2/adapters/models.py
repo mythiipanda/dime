@@ -99,7 +99,6 @@ class ProviderStructuredModel:
             raise RuntimeError("no configured structured-output provider")
         self.last_provider = None
         self.last_model = None
-        errors: list[str] = []
         user_prompt = json.dumps(payload, sort_keys=True, default=str)
         for provider, model in models:
             try:
@@ -113,9 +112,9 @@ class ProviderStructuredModel:
                 self.last_provider = provider
                 self.last_model = model.model_name
                 return result.output
-            except Exception as exc:
-                errors.append(f"{provider}: {str(exc)[:160]}")
-        raise RuntimeError("all structured-output providers failed: " + " | ".join(errors))
+            except Exception:
+                continue
+        raise RuntimeError("all structured-output providers failed")
 
 
 class ModelStage:

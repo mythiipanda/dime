@@ -476,3 +476,32 @@ async def test_recorded_model_revalidates_copied_structured_output():
             schema=TaskSpec, prompt="prompt", payload={}, envelope=envelope,
         )
     assert ledger.entries[-1].data["status"] == "failed"
+
+
+@pytest.mark.anyio
+async def test_provider_boundary_does_not_expose_provider_error_text(monkeypatch):
+    from v2.adapters.models import ProviderStructuredModel
+    from v2.contracts import TaskSpec
+    from v2.runtime import RequestEnvelope
+
+    class FailingAgent:
+        def __init__(self, *args, **kwargs): pass
+        async def run(self, prompt):
+            raise RuntimeError("secret upstream body")
+
+    class StubModel:
+        model_name = "mercury"
+
+    model = ProviderStructuredModel("inception", "mercury")
+    monkeypatch.setattr(model, "_models", lambda: [("inception", StubModel())])
+    monkeypatch.setattr("v2.adapters.models.Agent", FailingAgent)
+    envelope = RequestEnvelope.freeze(
+        provider="inception", model="mercury", route="intake", prompt="p",
+        context={}, tool_schemas={}, planner_version="v2")
+
+    with pytest.raises(RuntimeError) as caught:
+        await model.generate(
+            schema=TaskSpec, prompt="p", payload={}, envelope=envelope)
+
+    assert str(caught.value) == "all structured-output providers failed"
+    assert "secret upstream body" not in str(caught.value)
