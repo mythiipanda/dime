@@ -7,9 +7,11 @@ from v2.runtime.ledger import LedgerEntry, LedgerKind
 
 
 def admitted_evidence(entries: Iterable[LedgerEntry]) -> list[EvidenceEnvelope]:
+    records = list(entries)
+    tool_attempts(records)
     evidence: list[EvidenceEnvelope] = []
     seen: dict[str, EvidenceEnvelope] = {}
-    for entry in entries:
+    for entry in records:
         if entry.kind != LedgerKind.TOOL_RESULT or entry.data.get("status") != "ok":
             continue
         if set(entry.data) != {"status", "evidence"}:
@@ -55,8 +57,17 @@ def tool_attempts(entries: Iterable[LedgerEntry]) -> list[dict[str, Any]]:
         if not isinstance(call.data["args"], dict):
             raise ValueError("tool call requires an args object")
         status = entry.data.get("status")
-        if status not in {"ok", "failed"}:
+        if status == "ok":
+            valid = (set(entry.data) == {"status", "evidence"}
+                     and isinstance(entry.data.get("evidence"), dict))
+        elif status == "failed":
+            valid = (set(entry.data) == {"status", "error"}
+                     and isinstance(entry.data.get("error"), str)
+                     and bool(entry.data["error"].strip()))
+        else:
             raise ValueError("tool result status must be ok or failed")
+        if not valid:
+            raise ValueError("tool result data does not match its status")
         attempts.append({
             "call_id": entry.call_id,
             "name": call.data["name"],
