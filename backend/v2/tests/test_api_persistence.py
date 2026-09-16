@@ -167,6 +167,10 @@ def test_revision_and_feature_flagged_project_endpoints(
 
     monkeypatch.setenv("DIME_RUNTIME_V2", "off")
     assert client.get("/api/projects").status_code == 404
+    monkeypatch.setenv("DIME_RUNTIME_V2", "shadow")
+    assert client.get("/api/projects").status_code == 404
+    assert client.post(
+        "/api/projects", json={"goal": "must not persist"}).status_code == 404
     monkeypatch.setenv("DIME_RUNTIME_V2", "on")
     created = client.post("/api/projects", json={"goal": "Celtics outlook"})
     assert created.status_code == 201
@@ -268,16 +272,9 @@ def test_quick_answer_route_is_flagged_and_streams_typed_contract(monkeypatch, t
     app.include_router(routes.router, prefix="/api")
     response = TestClient(app).post("/api/v2/chat/stream", json={"q": "record?"})
 
-    assert response.status_code == 200
-    assert response.headers["x-dime-run-id"].startswith("run-")
-    assert response.text == "event: graph_end\ndata: {}\n\n"
-    for private in (
-        "event: custom_data", '"tool":"standings"',
-        '"rows":[{"TEAM":"Boston","WINS":61}]', '"source":"fixture"',
-        '"fetched_at":"2026-09-10"', "event: final_answer",
-        "Boston won 61 games.",
-    ):
-        assert private not in response.text
+    assert response.status_code == 404
+    assert "x-dime-run-id" not in response.headers
+    assert "Boston won 61 games." not in response.text
 
 
 @pytest.mark.anyio
@@ -1499,6 +1496,7 @@ def test_shadow_stream_failure_stays_silent(monkeypatch):
     app.include_router(routes.router, prefix="/api")
     response = TestClient(app).post("/api/v2/chat/stream", json={"q": "record?"})
 
-    assert response.text == "event: graph_end\ndata: {}\n\n"
-    for private in ("secret_tool", "private", "provider secret", "error"):
+    assert response.status_code == 404
+    assert "x-dime-run-id" not in response.headers
+    for private in ("secret_tool", "private", "provider secret"):
         assert private not in response.text

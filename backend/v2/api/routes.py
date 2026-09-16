@@ -19,7 +19,7 @@ _PROJECTS = ProjectStore(
 
 
 def _projects_enabled() -> bool:
-    return os.environ.get("DIME_RUNTIME_V2", "off").lower() in {"shadow", "on"}
+    return os.environ.get("DIME_RUNTIME_V2", "off").lower() == "on"
 
 
 def _require_projects() -> None:
