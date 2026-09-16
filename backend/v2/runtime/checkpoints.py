@@ -50,6 +50,9 @@ class CheckpointStore(Protocol):
 class FileCheckpointStore:
     def __init__(self, directory: str | Path) -> None:
         self._directory = Path(directory)
+        parent = self._directory.parent
+        if any(component.is_symlink() for component in (parent, *parent.parents)):
+            raise ValueError("checkpoint directory parent cannot be a symlink")
 
     def load(self, run_id: str) -> ExecutionCheckpoint | None:
         path = self._path(run_id)
@@ -94,6 +97,9 @@ class FileCheckpointStore:
     def _reject_symlinked_directory(self) -> None:
         if self._directory.is_symlink():
             raise ValueError("checkpoint directory cannot be a symlink")
+        parent = self._directory.parent
+        if any(component.is_symlink() for component in (parent, *parent.parents)):
+            raise ValueError("checkpoint directory parent cannot be a symlink")
 
     def _fsync_directory(self) -> None:
         directory_fd = os.open(self._directory, os.O_RDONLY)

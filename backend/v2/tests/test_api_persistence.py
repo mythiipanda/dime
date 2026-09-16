@@ -967,3 +967,12 @@ def test_project_store_rejects_invalid_boundary_inputs(tmp_path: Path) -> None:
             store.update(project_id, goal="new")
     with pytest.raises(ValueError, match="requires changes"):
         store.update(project.id)
+
+
+def test_checkpoint_store_rejects_symlinked_parent_directory(tmp_path: Path) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    parent = tmp_path / "parent"
+    parent.symlink_to(outside, target_is_directory=True)
+    with pytest.raises(ValueError, match="parent cannot be a symlink"):
+        FileCheckpointStore(parent / "checkpoints")
