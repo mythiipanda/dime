@@ -899,3 +899,24 @@ def test_game_prediction_envelope_preserves_matchup_arguments_and_units():
         "total_ci90": "points", "margin_ci90": "points",
     }
     assert env.rows["matchup"] == {"home": "NYK", "away": "BOS"}
+
+
+def test_prediction_uses_tool_default_season_for_implicit_matchup_date():
+    from v2.adapters.core import _task_arguments
+    from v2.contracts import EntityRef, PlanNode, SeasonRef, TaskSpec
+
+    task = TaskSpec(
+        goal="predict matchup", mode="quick", deliverable="winner",
+        season=SeasonRef(value="2026-27", source="default", confidence=0.9),
+        entities=[
+            EntityRef(id="bos", type="team", display_name="Boston Celtics"),
+            EntityRef(id="nyk", type="team", display_name="New York Knicks"),
+        ],
+    )
+    node = PlanNode(
+        id="prediction", description="predict", capability_hints=["game_prediction"],
+        arguments={"a": "team-celtics", "b": "team-knicks", "season": "2026-27"},
+    )
+    assert _task_arguments("game_prediction", node, task, []) == {
+        "a": "Boston Celtics", "b": "New York Knicks",
+    }

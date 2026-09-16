@@ -927,3 +927,38 @@ async def test_model_repair_requires_distinct_replacements_for_shared_evidence()
     assert stub.calls[1]["payload"]["required_replacements"][0]["claim_index"] == 1
     assert [claim.text for claim in repaired.claims] == [
         "Boston was first.", "San Antonio was third."]
+
+
+@pytest.mark.anyio
+async def test_matchup_optional_date_does_not_block_general_prediction():
+    stub = StubModel([{
+        "goal": "predict Celtics vs Knicks", "mode": "quick",
+        "deliverable": "winner", "required_evidence": ["game_prediction"],
+        "open_questions": [
+            "What is the specific date of the game you are interested in?"
+        ],
+    }])
+    task = await ModelIntake(
+        stub, provider="stub", model_name="stub",
+        capability_catalog={"game_prediction": {}},
+    ).understand("Who wins Celtics vs Knicks?")
+    assert task.open_questions == []
+    assert task.assumptions == [
+        "What is the specific date of the game you are interested in?"
+    ]
+
+
+@pytest.mark.anyio
+async def test_two_team_winner_request_requires_prediction_even_if_intake_chooses_ratings():
+    stub = StubModel([{
+        "goal": "predict Celtics vs Knicks", "mode": "quick",
+        "deliverable": "winner", "entities": [
+            {"id": "bos", "type": "team", "display_name": "Boston Celtics"},
+            {"id": "nyk", "type": "team", "display_name": "New York Knicks"},
+        ], "required_evidence": ["team_ratings"], "skills": ["league-ratings"],
+    }])
+    task = await ModelIntake(
+        stub, provider="stub", model_name="stub",
+        capability_catalog={"team_ratings": {}, "game_prediction": {}},
+    ).understand("Who wins Celtics vs Knicks?")
+    assert task.required_evidence == ["team_ratings", "game_prediction"]

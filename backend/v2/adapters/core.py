@@ -329,4 +329,13 @@ def _task_arguments(name: str, node: Any, task: Any, evidence: Iterable[Evidence
             if salary_season:
                 arguments["season"] = salary_season
                 break
+    if name == "game_prediction":
+        if season is not None and season.source == "default":
+            arguments.pop("season", None)
+        teams = [entity for entity in task.entities if entity.type == "team"]
+        if len(teams) == 2:
+            for key, entity in zip(("a", "b"), teams, strict=True):
+                candidate = str(arguments.get(key, "")).strip()
+                if candidate not in {entity.id, entity.display_name}:
+                    arguments[key] = entity.display_name or entity.id
     return arguments

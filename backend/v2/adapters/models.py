@@ -227,7 +227,15 @@ class ModelIntake(ModelStage):
                     "risk tolerance", "front office", "preference",
                     "appetite", "willingness", "trade intent",
                 ))
-            if evidence_lookup or analytical_assumption:
+            optional_capability_argument = (
+                "game_prediction" in task.required_evidence
+                and any(token in folded for token in (
+                    "specific upcoming game", "specific game date",
+                    "general matchup", "which game", "game date",
+                    "specific date", "date of the game",
+                ))
+            )
+            if evidence_lookup or analytical_assumption or optional_capability_argument:
                 resolvable_questions.append(question)
         if resolvable_questions:
             task = task.model_copy(update={
@@ -271,6 +279,17 @@ class ModelIntake(ModelStage):
             required_evidence = list(dict.fromkeys([
                 *required_evidence,
                 *(name for name in baseline if name in self._catalog),
+            ]))
+        if ("game_prediction" in self._catalog
+                and len([entity for entity in task.entities
+                         if entity.type == "team"]) == 2
+                and any(token in request.casefold() for token in (
+                    "who wins", "who will win", "win probability",
+                    "predict", "prediction", "projected score",
+                    "projected total", "pre-game", "pregame",
+                ))):
+            required_evidence = list(dict.fromkeys([
+                *required_evidence, "game_prediction",
             ]))
         task = task.model_copy(update={
             "required_evidence": required_evidence,
