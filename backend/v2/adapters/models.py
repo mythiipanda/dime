@@ -497,8 +497,12 @@ class ModelRepairer(ModelStage):
               if self._key(claim) not in supported_keys
               and self._key(claim) not in rejected_keys],
         ]
+        # Repair can rewrite claims, but it cannot author new publication gaps.
+        # Gaps come from execution or independent verification; carrying the
+        # repair model's diagnosis forward can leave a stale limitation after
+        # the rejected branch has been replaced and reverified.
         return DraftReport.model_validate(repaired.model_copy(
-            update={"claims": claims}).model_dump())
+            update={"claims": claims, "gaps": list(original.gaps)}).model_dump())
 
     async def repair(
         self,

@@ -871,6 +871,7 @@ async def test_model_repair_keeps_corrected_rejected_branch():
             "text": "San Antonio ranked third at 118.7 points per 100 possessions.",
             "kind": "observed", "evidence_ids": ["ratings"],
         }],
+        "gaps": ["Houston was incorrectly third and should be replaced."],
     }])
     repairer = ModelRepairer(stub, provider="stub", model_name="stub")
     evidence = EvidenceEnvelope(evidence_id="ratings", capability="team_ratings",
@@ -889,6 +890,7 @@ async def test_model_repair_keeps_corrected_rejected_branch():
     )
     assert [claim.text for claim in repaired.claims] == [
         "San Antonio ranked third at 118.7 points per 100 possessions."]
+    assert repaired.gaps == []
 
 
 @pytest.mark.anyio
