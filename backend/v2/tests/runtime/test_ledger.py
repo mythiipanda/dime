@@ -49,9 +49,9 @@ def test_tool_call_identity_is_immutable() -> None:
 
 def test_failed_attempts_remain_in_log_but_not_model_history() -> None:
     ledger = RunLedger("run")
-    ledger.append(LedgerKind.ASSISTANT_ATTEMPT, turn_id="t",
+    ledger.append(LedgerKind.ASSISTANT_ATTEMPT, turn_id="t", call_id="c1",
                   data={"status": "rejected", "text": "unsupported"})
-    ledger.append(LedgerKind.ASSISTANT_ATTEMPT, turn_id="t",
+    ledger.append(LedgerKind.ASSISTANT_ATTEMPT, turn_id="t", call_id="c2",
                   data={"status": "accepted", "text": "grounded"})
     assert len(ledger.entries) == 2
     assert ledger.model_history("t") == [{"status": "accepted", "text": "grounded"}]
@@ -268,3 +268,9 @@ def test_request_envelope_loaded_contract_validates_identity_and_maps() -> None:
             "context_hash": "c", "tool_schema_hash": "t", "planner_version": "v2",
             "budgets": {" ": 1},
         })
+
+
+@pytest.mark.parametrize("kind", [LedgerKind.MODEL_REQUEST, LedgerKind.ASSISTANT_ATTEMPT])
+def test_model_call_events_require_call_id(kind) -> None:
+    with pytest.raises(ValueError, match="require call_id"):
+        RunLedger("run").append(kind, turn_id="turn", data={})

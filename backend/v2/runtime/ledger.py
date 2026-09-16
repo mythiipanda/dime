@@ -219,8 +219,9 @@ class RunLedger:
             raise ValueError("ledger step id must be non-empty when present")
         if call_id is not None and not call_id.strip():
             raise ValueError("ledger call id must be non-empty when present")
-        if kind in (LedgerKind.TOOL_CALL, LedgerKind.TOOL_RESULT) and not call_id:
-            raise ValueError("tool events require call_id")
+        if kind in (LedgerKind.TOOL_CALL, LedgerKind.TOOL_RESULT,
+                    LedgerKind.MODEL_REQUEST, LedgerKind.ASSISTANT_ATTEMPT)                 and not call_id:
+            raise ValueError("call events require call_id")
         if kind == LedgerKind.TOOL_CALL:
             if set(payload) != {"name", "args"}:
                 raise ValueError("tool call data must contain exactly name and args")
