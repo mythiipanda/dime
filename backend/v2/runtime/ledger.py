@@ -393,21 +393,23 @@ class RunLedger:
                 history.append(entry.data)
         return history
 
-    def unfinished_steps(self) -> set[str]:
+    def unfinished_steps(self, turn_id: str | None = None) -> set[str]:
         started = {
             entry.step_id
             for entry in self._entries
             if entry.kind == LedgerKind.STEP_START and entry.step_id
+            and (turn_id is None or entry.turn_id == turn_id)
         }
         ended = {
             entry.step_id
             for entry in self._entries
             if entry.kind == LedgerKind.STEP_END and entry.step_id
+            and (turn_id is None or entry.turn_id == turn_id)
         }
         return started - ended
 
     def close_interrupted(self, turn_id: str, reason: TerminalReason) -> None:
-        for step_id in sorted(self.unfinished_steps()):
+        for step_id in sorted(self.unfinished_steps(turn_id)):
             self.append(
                 LedgerKind.STEP_END,
                 turn_id=turn_id,

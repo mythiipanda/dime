@@ -389,3 +389,19 @@ def test_assistant_attempt_identity_matches_request_and_fallback_flag() -> None:
                   data=envelope.model_dump(mode="json"))
     ledger.append(LedgerKind.ASSISTANT_ATTEMPT, turn_id="t", call_id="m3",
                   data={**accepted, "model": "backup", "used_fallback": True})
+
+
+def test_unfinished_steps_and_interruption_are_turn_scoped() -> None:
+    ledger = RunLedger("run")
+    ledger.append(LedgerKind.TURN_START, turn_id="t1", data={"request": "q1"})
+    ledger.append(LedgerKind.STEP_START, turn_id="t1", step_id="shared")
+    ledger.append(LedgerKind.TURN_START, turn_id="t2", data={"request": "q2"})
+    ledger.append(LedgerKind.STEP_START, turn_id="t2", step_id="shared")
+    ledger.append(LedgerKind.STEP_END, turn_id="t1", step_id="shared",
+                  data={"reason": "complete"})
+
+    assert ledger.unfinished_steps("t1") == set()
+    assert ledger.unfinished_steps("t2") == {"shared"}
+    ledger.close_interrupted("t2", TerminalReason.CANCELLED)
+    assert ledger.entries[-2].turn_id == "t2"
+    assert ledger.entries[-2].step_id == "shared"
