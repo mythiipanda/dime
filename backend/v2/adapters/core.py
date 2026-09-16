@@ -72,7 +72,14 @@ def build_envelope(
     season = meta.get("season")
     if season is None and spec.season_arg:
         season = arguments.get(spec.season_arg)
-    warnings = list(meta.get("warnings") or [])
+    warning_values = meta.get("warnings") or []
+    if isinstance(warning_values, str):
+        warnings = [warning_values]
+    else:
+        warnings = [str(value) for value in warning_values]
+    singular_warning = meta.get("warning")
+    if singular_warning:
+        warnings.append(str(singular_warning))
     if result.get("ambiguity_note"):
         warnings.append(result["ambiguity_note"])
     if isinstance(rows, list) and not rows:

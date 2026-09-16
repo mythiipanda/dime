@@ -428,3 +428,27 @@ def test_trajectory_and_evaluation_extract_canonical_entities() -> None:
         "id": "1610612738", "type": "team", "display_name": "Boston Celtics"}
     assert evaluation.entities[0].model_dump() == {
         "id": "1627759", "type": "player", "display_name": "Jaylen Brown"}
+
+
+@pytest.mark.parametrize(
+    ("meta_warning", "expected"),
+    [
+        ({"warning": "season clamped to 2025-26"}, ["season clamped to 2025-26"]),
+        ({"warnings": "fallback source used"}, ["fallback source used"]),
+        ({"warnings": ["small sample", "partial coverage"]},
+         ["small sample", "partial coverage"]),
+    ],
+)
+def test_adapter_preserves_singular_and_string_source_warnings(
+    meta_warning, expected,
+) -> None:
+    payload = {
+        "ok": True,
+        "rows": [{"team": "Boston", "wins": 61}],
+        "meta": {"source": "fixture", "season": "2025-26", **meta_warning},
+    }
+    env = call_capability(
+        "standings", {"season": "2025-26"},
+        tools={"get_standings": FakeTool(payload)},
+    )
+    assert env.warnings == expected
