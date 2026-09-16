@@ -14,7 +14,7 @@ from typing import Any, Literal, Protocol
 from urllib.parse import urlparse
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
 
 class WebSearchRequest(BaseModel):
@@ -25,6 +25,19 @@ class WebSearchRequest(BaseModel):
     freshness: Literal["day", "week", "month", "year"] | None = None
     include_domains: list[str] = Field(default_factory=list, max_length=8)
     exclude_domains: list[str] = Field(default_factory=list, max_length=8)
+
+    @model_validator(mode="after")
+    def validate_request(self) -> "WebSearchRequest":
+        if not self.query.strip():
+            raise ValueError("web search query must be non-empty")
+        for field in ("include_domains", "exclude_domains"):
+            domains = getattr(self, field)
+            normalized = [_domain(item) for item in domains]
+            if len(normalized) != len(set(normalized)):
+                raise ValueError(f"{field} must not contain duplicate domains")
+        if self.include_domains and self.exclude_domains:
+            raise ValueError("include_domains and exclude_domains are exclusive")
+        return self
 
 
 class WebSearchResult(BaseModel):
@@ -46,6 +59,19 @@ class WebSearchResponse(BaseModel):
     results: list[WebSearchResult]
     coverage: str
     warnings: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_response(self) -> "WebSearchResponse":
+        if not self.provider.strip() or not self.query.strip() or not self.coverage.strip():
+            raise ValueError("web search response metadata must be non-empty")
+        ranks = [item.rank for item in self.results]
+        if ranks != list(range(1, len(ranks) + 1)):
+            raise ValueError("web search result ranks must be contiguous")
+        if any(not warning.strip() for warning in self.warnings):
+            raise ValueError("web search warnings must be non-empty")
+        if len(self.warnings) != len(set(self.warnings)):
+            raise ValueError("web search warnings must be unique")
+        return self
 
 
 class WebFetchRequest(BaseModel):

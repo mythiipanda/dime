@@ -272,3 +272,19 @@ def test_web_contracts_reject_unknown_fields():
     for schema, payload in cases:
         with pytest.raises(ValidationError, match="invented"):
             schema.model_validate(payload)
+
+
+def test_web_search_contract_rejects_ambiguous_domains_and_ranks():
+    from datetime import UTC, datetime
+    from pydantic import ValidationError
+    from v2.adapters.web import WebSearchResponse
+
+    with pytest.raises(ValidationError, match="duplicate domains"):
+        WebSearchRequest(query="Brown role", include_domains=["ESPN.com", "espn.com"])
+    with pytest.raises(ValidationError, match="exclusive"):
+        WebSearchRequest(query="Brown role", include_domains=["espn.com"],
+                         exclude_domains=["nba.com"])
+    with pytest.raises(ValidationError, match="ranks must be contiguous"):
+        WebSearchResponse(provider="fixture", observed_at=datetime.now(UTC),
+            query="Brown role", coverage="fixture", results=[
+                WebSearchResult(rank=2, url="https://example.com", title="A", snippet="")])
