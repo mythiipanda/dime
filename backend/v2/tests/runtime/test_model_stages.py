@@ -402,3 +402,26 @@ async def test_recorded_model_rejects_untyped_output_and_records_failure():
             schema=TaskSpec, prompt="prompt", payload={}, envelope=envelope,
         )
     assert ledger.entries[-1].data["status"] == "failed"
+
+
+@pytest.mark.anyio
+async def test_recorded_model_marks_same_provider_model_fallback() -> None:
+    from v2.adapters import RecordedStructuredModel
+    from v2.contracts import TaskSpec
+    from v2.runtime import LedgerKind, RequestEnvelope, RunLedger
+
+    class ModelFallback:
+        last_provider = "inception"
+        last_model = "mercury-backup"
+        async def generate(self, **call):
+            return TaskSpec(goal="answer", mode="quick", deliverable="text")
+
+    envelope = RequestEnvelope.freeze(
+        provider="inception", model="mercury-primary", route="intake",
+        prompt="prompt", context={}, tool_schemas={}, planner_version="v2")
+    ledger = RunLedger("run")
+    await RecordedStructuredModel(ModelFallback(), ledger, turn_id="turn").generate(
+        schema=TaskSpec, prompt="prompt", payload={}, envelope=envelope)
+    attempt = next(entry for entry in ledger.entries
+                   if entry.kind == LedgerKind.ASSISTANT_ATTEMPT)
+    assert attempt.data["used_fallback"] is True

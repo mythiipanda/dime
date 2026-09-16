@@ -390,8 +390,10 @@ class RecordedStructuredModel:
                 "output": result.model_dump(mode="json"),
                 "provider": actual_provider or envelope.provider,
                 "model": actual_model or envelope.model,
-                "used_fallback": bool(
-                    actual_provider and actual_provider != envelope.provider),
+                "used_fallback": (
+                    (actual_provider or envelope.provider) != envelope.provider
+                    or (actual_model or envelope.model) != envelope.model
+                ),
             },
         )
         return result
