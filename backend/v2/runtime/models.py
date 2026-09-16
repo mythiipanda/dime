@@ -137,4 +137,7 @@ class RuntimeResult(BaseModel):
             ]
             if actual_sources != expected_sources:
                 raise ValueError("verified claim sources do not match execution evidence")
+        supported = {index for index, result in by_index.items() if result.supported}
+        if seen != supported:
+            raise ValueError("verified claims must match supported adjudications")
         return self

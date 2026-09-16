@@ -197,3 +197,21 @@ def test_runtime_result_rejects_gap_with_unknown_structured_block() -> None:
         with pytest.raises(ValidationError, match="gap blocks unknown"):
             RuntimeResult(**base, gaps=[Gap(
                 kind="missing_evidence", message="missing", blocks=[block])])
+
+
+def test_runtime_result_rejects_missing_verified_supported_claim() -> None:
+    import pytest
+    from pydantic import ValidationError
+    from v2.contracts import Plan, TaskSpec
+    from v2.runtime.models import ExecutionResult, RuntimeResult
+
+    draft = DraftReport(sections=["Answer"], claims=[
+        Claim(text="This is my judgment.", kind="judgment")])
+    with pytest.raises(ValidationError, match="match supported adjudications"):
+        RuntimeResult(
+            task=TaskSpec(goal="answer", mode="quick", deliverable="text"),
+            execution=ExecutionResult(plan=Plan(nodes=[])), draft=draft,
+            verification=VerificationReport(status="pass", claim_results=[
+                ClaimResult(claim_index=0, supported=True)]),
+            verified_claims=[],
+        )
