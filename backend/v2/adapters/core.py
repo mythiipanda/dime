@@ -197,6 +197,8 @@ class ToolCapability:
             raise AdapterError(f"unknown capability {name!r}")
         self.name = name
         self.task_season_scoped = CAPABILITIES[name].task_season_scoped
+        if arguments is not None and not callable(arguments):
+            raise TypeError("capability arguments adapter must be callable")
         self._tools = tools
         self._arguments = arguments or (
             lambda node, task, evidence: _task_arguments(
@@ -219,7 +221,10 @@ class ToolCapability:
         task: Any,
         evidence: Iterable[EvidenceEnvelope],
     ) -> EvidenceEnvelope:
-        arguments = dict(self._arguments(node, task, evidence))
+        raw_arguments = self._arguments(node, task, evidence)
+        if not isinstance(raw_arguments, Mapping):
+            raise TypeError("capability arguments adapter must return a mapping")
+        arguments = dict(raw_arguments)
         return await acall_capability(self.name, arguments, tools=self._tools)
 
 

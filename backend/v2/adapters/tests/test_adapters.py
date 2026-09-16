@@ -346,6 +346,25 @@ def test_default_registry_includes_native_coverage_tool():
 
     assert "metric_coverage" in _default_tools()
 
+def test_tool_capability_rejects_noncallable_arguments_adapter() -> None:
+    from v2.adapters import ToolCapability
+    with pytest.raises(TypeError, match="arguments adapter must be callable"):
+        ToolCapability("standings", arguments={})
+
+
+@pytest.mark.anyio
+async def test_tool_capability_rejects_nonmapping_adapted_arguments() -> None:
+    from v2.adapters import ToolCapability
+    from v2.contracts import PlanNode, TaskSpec
+    capability = ToolCapability("standings", arguments=lambda *_: ["bad"] )
+    with pytest.raises(TypeError, match="must return a mapping"):
+        await capability.execute(
+            PlanNode(id="record", description="record",
+                     capability_hints=["standings"]),
+            TaskSpec(goal="record", mode="quick", deliverable="answer"), [],
+        )
+
+
 @pytest.mark.anyio
 async def test_tool_capability_executes_through_runtime_protocol():
     from v2.adapters import ToolCapability
