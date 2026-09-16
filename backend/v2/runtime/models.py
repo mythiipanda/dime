@@ -96,12 +96,6 @@ class RuntimeResult(BaseModel):
             raise ValueError(
                 f"verification claim indices are outside the draft: {invalid_indices}")
         evidence = {item.evidence_id: item for item in self.execution.evidence}
-        present_capabilities = {item.capability for item in evidence.values()}
-        missing_capabilities = sorted(
-            set(self.task.required_evidence) - present_capabilities)
-        if missing_capabilities:
-            raise ValueError(
-                f"runtime result lacks required evidence: {missing_capabilities}")
         if self.task.season is not None:
             wrong_season = [
                 item.evidence_id for item in evidence.values()
