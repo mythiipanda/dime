@@ -8,7 +8,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Any, Mapping
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class DifferenceKind(StrEnum):
@@ -28,6 +28,22 @@ class RunOutcome(BaseModel):
     supported_claims: int = 0
     total_claims: int = 0
     duration_ms: int | None = None
+
+    @model_validator(mode="after")
+    def validate_metrics(self) -> "RunOutcome":
+        if not self.status.strip():
+            raise ValueError("shadow outcome status must be non-empty")
+        if any(not name.strip() for name in self.capabilities):
+            raise ValueError("shadow outcome capabilities must be non-empty")
+        if len(self.capabilities) != len(set(self.capabilities)):
+            raise ValueError("shadow outcome capabilities must be unique")
+        if min(self.evidence_count, self.supported_claims, self.total_claims) < 0:
+            raise ValueError("shadow outcome counts must be non-negative")
+        if self.supported_claims > self.total_claims:
+            raise ValueError("supported claims cannot exceed total claims")
+        if self.duration_ms is not None and self.duration_ms < 0:
+            raise ValueError("shadow outcome duration must be non-negative")
+        return self
 
 
 class ShadowComparison(BaseModel):

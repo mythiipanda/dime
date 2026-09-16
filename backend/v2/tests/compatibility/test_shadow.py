@@ -30,3 +30,19 @@ def test_eval_trace_projects_from_the_same_runtime_ledger():
     assert trace.tool_calls == 1
     assert trace.evidence == (evidence,)
     assert trace.tools[0]["name"] == "standings"
+
+
+def test_shadow_outcome_rejects_impossible_metrics():
+    import pytest
+    from pydantic import ValidationError
+    from v2.runtime.shadow import RunOutcome
+
+    for payload, error in [
+        ({"status": " ", "answer": ""}, "status"),
+        ({"status": "ok", "evidence_count": -1}, "non-negative"),
+        ({"status": "ok", "supported_claims": 2, "total_claims": 1}, "exceed"),
+        ({"status": "ok", "capabilities": ["ratings", "ratings"]}, "unique"),
+        ({"status": "ok", "duration_ms": -1}, "duration"),
+    ]:
+        with pytest.raises(ValidationError, match=error):
+            RunOutcome.model_validate(payload)
