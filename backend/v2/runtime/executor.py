@@ -130,11 +130,15 @@ class PlanExecutor:
                             if envelope.evidence_id in {
                                 item.evidence_id for item in evidence_by_node.values()
                             }:
-                                node.status = PlanStatus.FAILED
-                                errors.setdefault(node.id, []).append(
-                                    f"duplicate evidence id: {envelope.evidence_id}"
-                                )
-                                failures += 1
+                                message = f"duplicate evidence id: {envelope.evidence_id}"
+                                node_errors = errors.setdefault(node.id, [])
+                                if message not in node_errors:
+                                    node_errors.append(message)
+                                if attempts[node.id] < node.max_attempts:
+                                    node.status = PlanStatus.PENDING
+                                else:
+                                    node.status = PlanStatus.FAILED
+                                    failures += 1
                             else:
                                 node.status = PlanStatus.COMPLETE
                                 evidence_by_node[node.id] = envelope

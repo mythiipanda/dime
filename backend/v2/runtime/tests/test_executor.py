@@ -90,6 +90,33 @@ async def test_repeated_identical_failures_return_a_failed_partial_result() -> N
 
 
 @pytest.mark.anyio
+async def test_duplicate_evidence_identity_uses_remaining_attempt_budget() -> None:
+    from datetime import UTC, datetime
+    from v2.contracts import EvidenceEnvelope
+
+    class CollidingCapability:
+        name = "fake"
+        task_season_scoped = True
+
+        async def execute(self, node, task, evidence):
+            return EvidenceEnvelope(
+                evidence_id="same", capability=self.name, source="fixture",
+                observed_at=datetime.now(UTC), rows={"node": node.id},
+            )
+
+    result = await PlanExecutor({"fake": CollidingCapability()}).execute(
+        TaskSpec(goal="answer", mode=RunMode.QUICK, deliverable="text"),
+        Plan(nodes=[node("a"), node("b", attempts=2)]),
+    )
+
+    assert [item.status for item in result.plan.nodes] == [
+        PlanStatus.COMPLETE, PlanStatus.FAILED,
+    ]
+    assert result.attempts == {"a": 1, "b": 2}
+    assert result.errors == {"b": ["duplicate evidence id: same"]}
+
+
+@pytest.mark.anyio
 async def test_unknown_capability_fails_preflight() -> None:
     with pytest.raises(ValueError, match="exactly one registered capability"):
         await PlanExecutor({}).execute(
