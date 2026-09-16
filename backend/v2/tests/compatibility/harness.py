@@ -9,6 +9,7 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable
+import math
 
 from v2.contracts import EvidenceEnvelope, VerificationReport, VerificationStatus
 from v2.runtime.ledger import LedgerEntry
@@ -45,6 +46,14 @@ class TurnTrace:
     tools: tuple[dict[str, Any], ...]
     report: VerificationReport | None = None
     text: str = ""
+
+    def __post_init__(self) -> None:
+        if not math.isfinite(self.seconds) or self.seconds < 0:
+            raise ValueError("turn trace seconds must be finite and non-negative")
+        if isinstance(self.tool_calls, bool) or self.tool_calls < 0:
+            raise ValueError("turn trace tool_calls must be a non-negative integer")
+        if self.tool_calls != len(self.tools):
+            raise ValueError("turn trace tool_calls must match recorded tools")
 
     @classmethod
     def from_ledger(

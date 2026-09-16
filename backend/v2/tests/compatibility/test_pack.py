@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
+
 from v2.contracts import EvidenceEnvelope, VerificationReport
 from v2.tests.compatibility.harness import TurnTrace, grade_scenario, load_pack
 
@@ -43,7 +45,7 @@ def test_grades_equivalent_evidence_not_tool_name():
 def test_missing_evidence_stays_a_failure():
     scenario = next(s for s in load_pack(PACK)["scenarios"] if s["id"] == "f88-team-ratings")
     result = grade_scenario(scenario, [TurnTrace(
-        1.0, 1, (), (), report=VerificationReport(status="pass"))])
+        1.0, 1, (), ({"name": "tool"},), report=VerificationReport(status="pass"))])
     assert not result.passed
     assert any("missing equivalent evidence" in failure for failure in result.failures)
 
@@ -51,16 +53,16 @@ def test_missing_evidence_stays_a_failure():
 def test_qualification_is_behavioral_requirement():
     scenario = next(s for s in load_pack(PACK)["scenarios"] if s["id"] == "f88-qualified-3p-leader")
     unqualified = evidence("qualified_leaders", {"player": "Luke Kennard", "3P%": 47.8})
-    assert not grade_scenario(scenario, [TurnTrace(1.0, 1, (unqualified,), (),
+    assert not grade_scenario(scenario, [TurnTrace(1.0, 1, (unqualified,), ({"name": "tool"},),
         report=VerificationReport(status="pass"), text="Luke Kennard 47.8% on 82+ made threes")]).passed
     qualified = unqualified.model_copy(update={"qualification": "82+ made threes"})
-    assert grade_scenario(scenario, [TurnTrace(1.0, 1, (qualified,), (),
+    assert grade_scenario(scenario, [TurnTrace(1.0, 1, (qualified,), ({"name": "tool"},),
         report=VerificationReport(status="pass"), text="Luke Kennard 47.8% on 82+ made threes")]).passed
 
 
 def test_latency_and_tool_budgets_are_hard_failures():
     scenario = next(s for s in load_pack(PACK)["scenarios"] if s["id"] == "efficiency-simple")
-    result = grade_scenario(scenario, [TurnTrace(20.1, 6, (), (), report=VerificationReport(status="pass"), text="54")])
+    result = grade_scenario(scenario, [TurnTrace(20.1, 6, (), tuple({"name": str(i)} for i in range(6)), report=VerificationReport(status="pass"), text="54")])
     assert set(result.failures) == {
         "latency 20.1s > 20s budget", "6 tool calls > 5 budget",
     }
@@ -70,7 +72,7 @@ def test_global_banned_text_is_enforced():
     scenario = next(s for s in load_pack(PACK)["scenarios"]
                     if s["id"] == "efficiency-simple")
     result = grade_scenario(
-        scenario, [TurnTrace(1.0, 1, (), (), report=VerificationReport(status="pass"),
+        scenario, [TurnTrace(1.0, 1, (), ({"name": "tool"},), report=VerificationReport(status="pass"),
                              text="Try a narrower warehouse query")])
     assert not result.passed
     assert any("contains banned text" in failure for failure in result.failures)
@@ -97,3 +99,15 @@ def test_scenario_requires_clean_verification_for_every_turn():
         1.0, 0, (), (), report=VerificationReport(status="partial"))])
     assert missing.failures == ("T1: missing verification report",)
     assert partial.failures == ("T1: verifier status is partial",)
+
+
+@pytest.mark.parametrize("seconds,tool_calls,tools,error", [
+    (-1.0, 0, (), "seconds"),
+    (float("nan"), 0, (), "seconds"),
+    (1.0, -1, (), "tool_calls"),
+    (1.0, 1, (), "match recorded tools"),
+])
+def test_turn_trace_rejects_impossible_metrics(seconds, tool_calls, tools, error):
+    import pytest
+    with pytest.raises(ValueError, match=error):
+        TurnTrace(seconds, tool_calls, (), tools)
