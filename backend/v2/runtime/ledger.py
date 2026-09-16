@@ -101,6 +101,12 @@ class RunLedger:
         open_steps: set[tuple[str, str]] = set()
         closed_turns: set[str] = set()
         for entry in self._entries:
+            if not entry.turn_id.strip():
+                raise ValueError("ledger turn id must be non-empty")
+            if entry.step_id is not None and not entry.step_id.strip():
+                raise ValueError("ledger step id must be non-empty when present")
+            if entry.call_id is not None and not entry.call_id.strip():
+                raise ValueError("ledger call id must be non-empty when present")
             if entry.kind == LedgerKind.TURN_START:
                 if entry.turn_id in open_turns or entry.turn_id in closed_turns:
                     raise ValueError("turn may start only once")

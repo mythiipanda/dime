@@ -218,3 +218,15 @@ def test_live_ledger_enforces_turn_and_step_lifecycle() -> None:
     ledger.append(LedgerKind.TURN_END, turn_id="turn")
     with pytest.raises(ValueError, match="follow turn end"):
         ledger.append(LedgerKind.ASSISTANT_ATTEMPT, turn_id="turn")
+
+
+def test_reloaded_ledger_rejects_blank_event_identity() -> None:
+    from datetime import UTC, datetime
+    from v2.runtime.ledger import LedgerEntry
+
+    entry = LedgerEntry(
+        sequence=1, run_id="run", kind="turn/start", recorded_at=datetime.now(UTC),
+        turn_id=" ",
+    )
+    with pytest.raises(ValueError, match="turn id must be non-empty"):
+        RunLedger("run", [entry])
