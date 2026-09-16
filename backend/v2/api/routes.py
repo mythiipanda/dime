@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -149,9 +150,15 @@ async def quick_answer_stream(body: QuickAnswerBody):
                 continue
         try:
             result = await task
-        except Exception:
+        except Exception as exc:
             yield encode_event(NodeUpdate(
                 node="runtime", status="failed"))
+            if policy.publish:
+                yield "event: error\ndata: " + json.dumps({
+                    "message": "Dime could not complete this run.",
+                    "run_id": run_id,
+                    "error_type": type(exc).__name__,
+                }, separators=(",", ":")) + "\n\n"
             yield encode_event(GraphEnd())
             return
         for entry in ledger.entries:

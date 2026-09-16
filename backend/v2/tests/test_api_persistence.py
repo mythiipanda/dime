@@ -337,3 +337,26 @@ async def test_completed_execution_removes_checkpoint(tmp_path: Path) -> None:
     ).execute(_task(), _plan(), run_id="finished")
     assert all(node.status == PlanStatus.COMPLETE for node in result.plan.nodes)
     assert checkpoints.load("finished") is None
+
+
+def test_live_route_reports_terminal_runtime_failure(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from v2.api import routes
+    from v2.runtime.ledger import RunLedger
+
+    monkeypatch.setenv("DIME_RUNTIME_V2", "on")
+
+    class BrokenRuntime:
+        async def run(self, request, *, run_id=None, context=()):
+            raise ValueError("private provider detail")
+
+    monkeypatch.setattr("v2.runtime.assembly.build_runtime",
+                        lambda **kwargs: (BrokenRuntime(), RunLedger(kwargs["run_id"])))
+    app = FastAPI()
+    app.include_router(routes.router, prefix="/api")
+    response = TestClient(app).post("/api/v2/chat/stream", json={"q": "record?"})
+    assert "event: error" in response.text
+    assert "Dime could not complete this run." in response.text
+    assert "private provider detail" not in response.text
+    assert response.text.rstrip().endswith("data: {}")
