@@ -1,3 +1,6 @@
+import json
+import math
+
 from app.routes import _sanitize_sse_event
 
 
@@ -147,3 +150,28 @@ def test_structured_public_payloads_are_recursively_bounded():
         cursor = cursor["child"]
     assert cursor["child"] is None
     assert len(public["unverified_numbers"][0]) == 200_000
+
+
+def test_public_projection_rejects_non_finite_numbers_before_json_framing():
+    from app.sse import emit_sse
+
+    public = _sanitize_sse_event("custom_data", {
+        "tables": [{"nan": math.nan, "pos_inf": math.inf,
+                    "neg_inf": -math.inf, "valid": 1.5}],
+    })
+
+    assert public["tables"] == [{
+        "nan": None, "pos_inf": None, "neg_inf": None, "valid": 1.5,
+    }]
+    payload = emit_sse("custom_data", public).split("data: ", 1)[1].strip()
+    assert json.loads(payload) == public
+    assert "NaN" not in payload
+    assert "Infinity" not in payload
+
+
+def test_sse_framing_fails_closed_if_projection_is_bypassed():
+    import pytest
+    from app.sse import emit_sse
+
+    with pytest.raises(ValueError, match="JSON compliant"):
+        emit_sse("custom_data", {"value": math.nan})

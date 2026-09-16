@@ -7,7 +7,7 @@ import json
 
 
 def emit_sse(event_type: str, data: Any) -> str:
-    return f"event: {event_type}\ndata: {json.dumps(data, default=str)}\n\n"
+    return f"event: {event_type}\ndata: {json.dumps(data, default=str, allow_nan=False)}\n\n"
 
 
 async def with_heartbeat(

@@ -1,6 +1,7 @@
 """HTTP boundary. Parse and clamp here. Graph trusts what it receives."""
 
 import asyncio
+import math
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -31,8 +32,10 @@ def _bounded_public_value(value, *, depth: int = 0):
         return None
     if isinstance(value, str):
         return value[:200_000]
-    if value is None or isinstance(value, (bool, int, float)):
+    if value is None or isinstance(value, (bool, int)):
         return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
     if isinstance(value, list):
         return [_bounded_public_value(item, depth=depth + 1)
                 for item in value[:1000]]
