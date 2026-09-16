@@ -147,6 +147,15 @@ def _validate_assistant_attempt(data: dict[str, Any]) -> None:
         raise ValueError("assistant attempt data does not match its status")
 
 
+def _validate_attempt_identity(envelope: RequestEnvelope, data: dict[str, Any]) -> None:
+    if data.get("status") != "accepted":
+        return
+    same_identity = (data["provider"], data["model"]) == (
+        envelope.provider, envelope.model)
+    if data["used_fallback"] == same_identity:
+        raise ValueError("assistant attempt fallback flag must match model identity")
+
+
 class RunLedger:
     def __init__(self, run_id: str, entries: Iterable[LedgerEntry] = ()) -> None:
         if not run_id.strip():
@@ -161,7 +170,7 @@ class RunLedger:
             raise ValueError("ledger sequence must be contiguous")
         self._calls: dict[str, str] = {}
         self._results: set[str] = set()
-        self._model_requests: set[str] = set()
+        self._model_requests: dict[str, RequestEnvelope] = {}
         self._model_attempts: set[str] = set()
         open_turns: set[str] = set()
         open_steps: set[tuple[str, str]] = set()
@@ -207,14 +216,16 @@ class RunLedger:
                     raise ValueError("model request requires call_id")
                 if entry.call_id in self._model_requests:
                     raise ValueError("model request call id must be unique")
-                RequestEnvelope.model_validate(entry.data)
-                self._model_requests.add(entry.call_id)
+                envelope = RequestEnvelope.model_validate(entry.data)
+                self._model_requests[entry.call_id] = envelope
             elif entry.kind == LedgerKind.ASSISTANT_ATTEMPT:
                 _validate_assistant_attempt(entry.data)
                 if not entry.call_id or entry.call_id not in self._model_requests:
                     raise ValueError("assistant attempt requires an earlier model request")
                 if entry.call_id in self._model_attempts:
                     raise ValueError("model request may have only one assistant attempt")
+                _validate_attempt_identity(
+                    self._model_requests[entry.call_id], entry.data)
                 self._model_attempts.add(entry.call_id)
             if entry.kind == LedgerKind.TOOL_CALL and entry.call_id:
                 if set(entry.data) != {"name", "args"}:
@@ -298,14 +309,15 @@ class RunLedger:
         if kind == LedgerKind.MODEL_REQUEST:
             if call_id in self._model_requests:
                 raise ValueError("model request call id must be unique")
-            RequestEnvelope.model_validate(payload)
-            self._model_requests.add(call_id)
+            envelope = RequestEnvelope.model_validate(payload)
+            self._model_requests[call_id] = envelope
         elif kind == LedgerKind.ASSISTANT_ATTEMPT:
             _validate_assistant_attempt(payload)
             if call_id not in self._model_requests:
                 raise ValueError("assistant attempt requires an earlier model request")
             if call_id in self._model_attempts:
                 raise ValueError("model request may have only one assistant attempt")
+            _validate_attempt_identity(self._model_requests[call_id], payload)
             self._model_attempts.add(call_id)
         if kind == LedgerKind.TOOL_CALL:
             if set(payload) != {"name", "args"}:

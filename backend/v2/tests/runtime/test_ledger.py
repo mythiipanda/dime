@@ -367,3 +367,25 @@ def test_step_start_payload_must_be_empty() -> None:
     with pytest.raises(ValueError, match="must be empty"):
         ledger.append(LedgerKind.STEP_START, turn_id="turn", step_id="plan",
                       data={"request": "q"})
+
+
+def test_assistant_attempt_identity_matches_request_and_fallback_flag() -> None:
+    envelope = RequestEnvelope.freeze(
+        provider="p", model="m", route="answer", prompt="p", context={},
+        tool_schemas={}, planner_version="v2")
+    accepted = {"status": "accepted", "output": {}, "provider": "p",
+                "model": "m", "used_fallback": False}
+    for call_id, update in [("m1", {"provider": "other"}),
+                            ("m2", {"used_fallback": True})]:
+        ledger = RunLedger("run")
+        ledger.append(LedgerKind.MODEL_REQUEST, turn_id="t", call_id=call_id,
+                      data=envelope.model_dump(mode="json"))
+        with pytest.raises(ValueError, match="fallback flag"):
+            ledger.append(LedgerKind.ASSISTANT_ATTEMPT, turn_id="t", call_id=call_id,
+                          data={**accepted, **update})
+
+    ledger = RunLedger("run")
+    ledger.append(LedgerKind.MODEL_REQUEST, turn_id="t", call_id="m3",
+                  data=envelope.model_dump(mode="json"))
+    ledger.append(LedgerKind.ASSISTANT_ATTEMPT, turn_id="t", call_id="m3",
+                  data={**accepted, "model": "backup", "used_fallback": True})
