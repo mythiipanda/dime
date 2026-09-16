@@ -8,8 +8,7 @@ run concurrently.
 ## Input
 - Selected skill instructions, when intake matched the request to a relevant skill. Follow them inside the task, evidence, and output contracts.
 - A TaskSpec.
-- The capability catalog: name and one-line description of each available
-  capability.
+- The capability catalog: each available capability with its description and accepted argument JSON schema.
 
 ## Output
 A single JSON object matching the Plan contract, and nothing else:
@@ -18,7 +17,7 @@ A single JSON object matching the Plan contract, and nothing else:
 - description (str): what evidence this node produces.
 - depends_on (list of str): ids that must complete first; [] if independent.
 - capability_hints (list of str): names from the supplied catalog only.
-- arguments (object): explicit tool arguments grounded in the TaskSpec. Use provider-facing ids, not display names. Never invent an id.
+- arguments (object): explicit tool arguments that validate against the selected capability schema and are grounded in the TaskSpec. Use provider-facing ids when the schema requires ids; never invent one.
 - expected_schema (object): the shape of the EvidenceEnvelope rows this
   node should return.
 - completion_test (str): a checkable condition for when the node is done.
@@ -34,6 +33,7 @@ A single JSON object matching the Plan contract, and nothing else:
   parallel.
 - Every subquestion and every required_evidence entry maps to at least one
   node.
+- Every argument name and value shape follows the chosen capability schema; omit optional arguments instead of inventing values.
 - Nodes produce evidence, never prose answers.
 - A web_fetch node must depend on exactly one web_search node. Set result_rank in arguments; omit search_evidence_id because the executor binds the fetch to its content-addressed parent result after search executes.
 

@@ -21,6 +21,7 @@ from v2.contracts import DraftReport, VerificationReport
 from v2.runtime import FileLedger, PlanExecutor, RecordedCapability, RunLedger, Runtime
 from v2.runtime.policy import ExecutionPolicy
 from v2.runtime.verifier import verify_mechanical
+from v2.adapters.web import WebFetchRequest, WebSearchRequest
 from v2.skills import SkillLibrary
 
 
@@ -48,13 +49,33 @@ class EvidenceBoundRepair:
         return draft.model_copy(update={"claims": claims, "gaps": gaps})
 
 
-def capability_catalog() -> dict[str, str]:
-    return {
-        **{name: spec.tool_name.replace("_", " ")
-           for name, spec in CAPABILITIES.items()},
-        "web_search": "discover current public web sources for time-sensitive facts",
-        "web_fetch": "extract one selected web search result as sourced page evidence",
-    }
+def capability_catalog() -> dict[str, dict]:
+    """Provider-neutral descriptions plus accepted argument schemas."""
+    from app.tools import v1_tools
+
+    by_tool = {tool.name: tool for tool in v1_tools}
+    catalog: dict[str, dict] = {}
+    for name, spec in CAPABILITIES.items():
+        tool = by_tool.get(spec.tool_name)
+        args_schema = (tool.args_schema.model_json_schema()
+                       if tool is not None and tool.args_schema is not None
+                       else {"type": "object", "properties": {}})
+        catalog[name] = {
+            "description": ((tool.description or spec.tool_name.replace("_", " "))
+                            if tool is not None else spec.tool_name.replace("_", " ")),
+            "arguments": args_schema,
+        }
+    catalog.update({
+        "web_search": {
+            "description": "Discover current public sources; snippets are discovery only.",
+            "arguments": WebSearchRequest.model_json_schema(),
+        },
+        "web_fetch": {
+            "description": "Extract one selected result from exactly one web_search dependency.",
+            "arguments": WebFetchRequest.model_json_schema(),
+        },
+    })
+    return catalog
 
 
 def build_runtime(

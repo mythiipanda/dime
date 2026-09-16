@@ -66,3 +66,16 @@ def test_evidence_bound_repair_drops_rejected_claims_and_keeps_gap():
     result = asyncio.run(EvidenceBoundRepair().repair(None, draft, {}, report))
     assert [claim.text for claim in result.claims] == ["Grounded 61."]
     assert result.gaps == ["Repair claim 1: uncited numeral 62"]
+
+
+def test_capability_catalog_exposes_real_argument_schemas():
+    from v2.runtime.assembly import capability_catalog
+
+    catalog = capability_catalog()
+    trajectory = catalog["team_trajectory"]
+    assert trajectory["arguments"]["properties"]["team"]
+    assert "team" in trajectory["arguments"].get("required", [])
+    assert trajectory["arguments"]["properties"]["through_season"]
+    assert catalog["web_search"]["arguments"]["properties"]["query"]
+    assert catalog["web_fetch"]["arguments"]["properties"]["result_rank"]
+    assert catalog["web_fetch"]["arguments"]["properties"]["search_evidence_id"]
