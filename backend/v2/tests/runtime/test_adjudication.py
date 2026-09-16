@@ -268,3 +268,20 @@ def test_runtime_result_rejects_partial_without_publication_gap() -> None:
             draft=DraftReport(sections=["Answer"], claims=[]),
             verification=VerificationReport(status="partial"),
         )
+
+
+def test_runtime_result_rejects_duplicate_typed_gaps() -> None:
+    import pytest
+    from pydantic import ValidationError
+    from v2.contracts import Gap, Plan, TaskSpec
+    from v2.runtime.models import ExecutionResult, RuntimeResult
+
+    gap = Gap(kind="missing_evidence", message="missing")
+    with pytest.raises(ValidationError, match="gaps must not contain duplicates"):
+        RuntimeResult(
+            task=TaskSpec(goal="answer", mode="quick", deliverable="text"),
+            execution=ExecutionResult(plan=Plan(nodes=[])),
+            draft=DraftReport(sections=["No answer"], claims=[]),
+            verification=VerificationReport(status="partial"),
+            gaps=[gap, gap],
+        )

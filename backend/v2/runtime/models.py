@@ -112,7 +112,12 @@ class RuntimeResult(BaseModel):
                     f"runtime evidence does not match task season: {wrong_season}")
         seen: set[int] = set()
         evidence_ids = set(evidence)
+        seen_gaps: set[tuple] = set()
         for gap in self.gaps:
+            identity = (gap.kind, gap.message, tuple(gap.evidence_ids), tuple(gap.blocks))
+            if identity in seen_gaps:
+                raise ValueError("runtime gaps must not contain duplicates")
+            seen_gaps.add(identity)
             unknown = set(gap.evidence_ids) - evidence_ids
             if unknown:
                 raise ValueError(f"gap cites unknown evidence ids: {sorted(unknown)}")
