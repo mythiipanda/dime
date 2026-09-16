@@ -77,3 +77,10 @@ def test_policy_rejects_symlinked_path_ancestors(tmp_path, field_name) -> None:
         kwargs.update(mode="live")
     with pytest.raises(ValidationError, match=f"{field_name} parent cannot be a symlink"):
         ExecutionPolicy(**kwargs)
+
+
+@pytest.mark.parametrize("field_name", ["max_concurrency", "max_failures", "repair_attempts"])
+@pytest.mark.parametrize("value", [True, "1", 1.0])
+def test_policy_operational_limits_are_strict_integers(field_name, value) -> None:
+    with pytest.raises(ValidationError):
+        ExecutionPolicy(mode="live", **{field_name: value})
