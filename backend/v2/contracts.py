@@ -204,7 +204,7 @@ class EvidenceEnvelope(BaseModel):
 class Claim(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    text: str
+    text: str = Field(min_length=1)
     kind: ClaimKind
     evidence_ids: list[str] = Field(default_factory=list)
     calculation_id: str | None = None
@@ -212,6 +212,10 @@ class Claim(BaseModel):
 
     @model_validator(mode="after")
     def validate_support(self) -> Claim:
+        if not self.text.strip():
+            raise ValueError("claim text must be non-empty")
+        if any(not evidence_id.strip() for evidence_id in self.evidence_ids):
+            raise ValueError("claim evidence_ids must not contain empty values")
         if len(self.evidence_ids) != len(set(self.evidence_ids)):
             raise ValueError("claim evidence_ids must not contain duplicates")
         if self.kind in (ClaimKind.OBSERVED, ClaimKind.DERIVED):

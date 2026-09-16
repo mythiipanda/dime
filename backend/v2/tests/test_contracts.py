@@ -225,3 +225,13 @@ def test_entity_and_season_identity_must_be_non_empty() -> None:
 def test_projection_requires_scenario_evidence() -> None:
     with pytest.raises(ValidationError, match="projection claims require evidence"):
         Claim(text="Boston projects to improve.", kind="projection", confidence=0.6)
+
+
+@pytest.mark.parametrize("payload,error", [
+    ({"text": " ", "kind": "judgment"}, "claim text must be non-empty"),
+    ({"text": "Observed.", "kind": "observed", "evidence_ids": [""]},
+     "evidence_ids must not contain empty values"),
+])
+def test_claim_rejects_empty_text_or_evidence_identity(payload, error) -> None:
+    with pytest.raises(ValidationError, match=error):
+        Claim.model_validate(payload)
