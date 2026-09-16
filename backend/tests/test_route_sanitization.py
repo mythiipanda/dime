@@ -129,3 +129,21 @@ def test_unknown_event_is_not_framed_on_public_stream(monkeypatch):
     assert "internal_debug" not in stream
     assert "secret" not in stream
     assert "event: graph_end" in stream
+
+
+def test_structured_public_payloads_are_recursively_bounded():
+    nested = {"leaf": "value"}
+    for _ in range(10):
+        nested = {"child": nested}
+    public = _sanitize_sse_event("custom_data", {
+        "node": "analytics",
+        "tables": [{"tool": "x", "rows": nested}] * 1001,
+        "unverified_numbers": ["9" * 250_000],
+    })
+
+    assert len(public["tables"]) == 1000
+    cursor = public["tables"][0]["rows"]
+    for _ in range(6):
+        cursor = cursor["child"]
+    assert cursor["child"] is None
+    assert len(public["unverified_numbers"][0]) == 200_000

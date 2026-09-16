@@ -25,6 +25,24 @@ _hits: dict[str, list[float]] = defaultdict(list)
 _SHADOW_TASKS: set = set()
 
 
+def _bounded_public_value(value, *, depth: int = 0):
+    if depth > 8:
+        return None
+    if isinstance(value, str):
+        return value[:200_000]
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    if isinstance(value, list):
+        return [_bounded_public_value(item, depth=depth + 1)
+                for item in value[:1000]]
+    if isinstance(value, dict):
+        return {
+            str(key)[:1000]: _bounded_public_value(item, depth=depth + 1)
+            for key, item in list(value.items())[:256]
+        }
+    return str(value)[:200_000]
+
+
 def _sanitize_sse_event(etype: str, data: dict) -> dict:
     if etype == "tool_call" and isinstance(data, dict):
         return {key: data[key] for key in (
@@ -87,7 +105,10 @@ def _sanitize_sse_event(etype: str, data: dict) -> dict:
     fields = public_fields.get(etype)
     if fields is None or not isinstance(data, dict):
         return None
-    return {key: data[key] for key in fields if key in data}
+    return {
+        key: _bounded_public_value(data[key])
+        for key in fields if key in data
+    }
 
 
 def _shadow_enabled() -> bool:
