@@ -456,3 +456,17 @@ def test_file_ledger_fsyncs_directory_on_creation(tmp_path, monkeypatch) -> None
     file = FileLedger(tmp_path / "new" / "run.jsonl", "run")
     file.append(LedgerKind.TURN_START, turn_id="turn", data={"request": "q"})
     assert len(calls) == 2
+
+
+def test_file_ledger_recovers_only_unterminated_partial_tail(tmp_path) -> None:
+    path = tmp_path / "run.jsonl"
+    file = FileLedger(path, "run")
+    file.append(LedgerKind.TURN_START, turn_id="turn", data={"request": "q"})
+    with path.open("a") as handle:
+        handle.write('{"sequence":2')
+    recovered = FileLedger(path, "run")
+    assert len(recovered.entries) == 1
+
+    path.write_text(path.read_text() + "\n")
+    with pytest.raises(Exception):
+        FileLedger(path, "run")
