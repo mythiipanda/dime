@@ -154,3 +154,12 @@ def test_tool_attempt_projection_rejects_malformed_result_payloads() -> None:
     )
     with pytest.raises(ValueError, match="does not match its status"):
         tool_attempts([call, failed])
+
+
+def test_projections_revalidate_copied_ledger_entries() -> None:
+    import pytest
+    from pydantic import ValidationError
+    ledger, _ = ledger_with_attempt()
+    invalid = ledger.entries[0].model_copy(update={"sequence": True})
+    with pytest.raises(ValidationError):
+        tool_attempts([invalid, ledger.entries[1]])

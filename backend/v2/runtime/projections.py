@@ -6,8 +6,12 @@ from v2.contracts import EvidenceEnvelope
 from v2.runtime.ledger import LedgerEntry, LedgerKind
 
 
+def _validated_entries(entries: Iterable[LedgerEntry]) -> list[LedgerEntry]:
+    return [LedgerEntry.model_validate(entry.model_dump()) for entry in entries]
+
+
 def admitted_evidence(entries: Iterable[LedgerEntry]) -> list[EvidenceEnvelope]:
-    records = list(entries)
+    records = _validated_entries(entries)
     tool_attempts(records)
     evidence: list[EvidenceEnvelope] = []
     seen: dict[str, EvidenceEnvelope] = {}
@@ -31,8 +35,9 @@ def admitted_evidence(entries: Iterable[LedgerEntry]) -> list[EvidenceEnvelope]:
 
 
 def tool_attempts(entries: Iterable[LedgerEntry]) -> list[dict[str, Any]]:
+    records = _validated_entries(entries)
     calls: dict[str, LedgerEntry] = {}
-    for entry in entries:
+    for entry in records:
         if entry.kind != LedgerKind.TOOL_CALL or not entry.call_id:
             continue
         previous = calls.get(entry.call_id)
@@ -41,7 +46,7 @@ def tool_attempts(entries: Iterable[LedgerEntry]) -> list[dict[str, Any]]:
         calls[entry.call_id] = entry
     attempts: list[dict[str, Any]] = []
     results: set[str] = set()
-    for entry in entries:
+    for entry in records:
         if entry.kind != LedgerKind.TOOL_RESULT or not entry.call_id:
             continue
         call = calls.get(entry.call_id)
