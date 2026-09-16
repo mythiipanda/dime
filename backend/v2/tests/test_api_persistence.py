@@ -1566,3 +1566,22 @@ def test_answer_text_deduplicates_and_sanitizes_internal_gap_labels():
         ],
     )
     assert _answer_text(result) == "Some requested evidence could not be retrieved."
+
+
+def test_answer_text_removes_repair_directives_and_repeated_gaps():
+    from v2 import contracts
+    from v2.api.routes import _answer_text
+    from v2.runtime.models import ExecutionResult, RuntimeResult
+
+    result = RuntimeResult(
+        task=contracts.TaskSpec(goal="trade", mode="quick", deliverable="answer"),
+        execution=ExecutionResult(plan=contracts.Plan(nodes=[])),
+        draft=contracts.DraftReport(sections=[], claims=[]),
+        verification=contracts.VerificationReport(status="partial"),
+        gaps=[
+            contracts.Gap(kind="missing_evidence", message="Repair claim 0: entity mismatch"),
+            contracts.Gap(kind="missing_evidence", message="fit evidence was unavailable"),
+            contracts.Gap(kind="source_conflict", message="fit evidence was unavailable"),
+        ],
+    )
+    assert _answer_text(result) == "fit evidence was unavailable"

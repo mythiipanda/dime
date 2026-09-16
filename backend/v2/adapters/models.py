@@ -272,6 +272,24 @@ class ModelRepairer(ModelStage):
             ],
         })
         repaired = _validate_draft(repaired, list(evidence.values()))
+        supported = [
+            draft.claims[result.claim_index]
+            for result in verification.claim_results
+            if result.supported and result.claim_index < len(draft.claims)
+        ]
+        supported_keys = {
+            (claim.text, claim.kind, tuple(claim.evidence_ids),
+             claim.calculation_id, claim.confidence)
+            for claim in supported
+        }
+        repaired = repaired.model_copy(update={
+            "claims": [
+                *supported,
+                *[claim for claim in repaired.claims
+                  if (claim.text, claim.kind, tuple(claim.evidence_ids),
+                      claim.calculation_id, claim.confidence) not in supported_keys],
+            ],
+        })
         repaired_keys = {
             (claim.text, claim.kind, tuple(claim.evidence_ids),
              claim.calculation_id, claim.confidence)

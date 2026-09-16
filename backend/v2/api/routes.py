@@ -146,7 +146,10 @@ def _answer_text(result) -> str:
     gaps: list[str] = []
     for gap in result.gaps:
         message = gap.message.strip()
-        if gap.kind.value == "execution_failure" or "execution failed" in message.casefold():
+        folded = message.casefold()
+        if folded.startswith("repair claim "):
+            continue
+        if gap.kind.value == "execution_failure" or "execution failed" in folded:
             message = "Some requested evidence could not be retrieved."
         if message and message not in gaps:
             gaps.append(message)

@@ -300,7 +300,10 @@ class ToolCapability:
         if not isinstance(raw_arguments, Mapping):
             raise TypeError("capability arguments adapter must return a mapping")
         arguments = self._validated_arguments(raw_arguments)
-        return await acall_capability(self.name, arguments, tools=self._tools)
+        result = await acall_capability(self.name, arguments, tools=self._tools)
+        return result.model_copy(update={
+            "lineage": [item.evidence_id for item in evidence],
+        })
 
 
 def _task_arguments(name: str, node: Any, task: Any, evidence: Iterable[EvidenceEnvelope]) -> dict[str, Any]:

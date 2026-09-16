@@ -37,3 +37,8 @@ A single JSON object matching the Plan contract, and nothing else:
 ## Stop condition
 Stop when the fewest nodes covering all required evidence are planned.
 Do not add contingency or nice-to-have nodes.
+- For `trade_value`, always supply both trade sides: `team_a`, `players_a`,
+  `team_b`, and `players_b`. A one-team trade-value call is invalid. Resolve
+  each player's current team from the TaskSpec and conversation context; if a
+  team is genuinely unresolved, omit the trade-value node and leave that
+  evidence branch uncovered rather than issuing a partial call.

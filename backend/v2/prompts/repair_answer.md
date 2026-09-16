@@ -33,3 +33,6 @@ Each Claim contains:
 
 ## Stop condition
 Return after one valid DraftReport. Do not output final-answer prose outside its fields.
+- Preserve every claim the verification report marks supported exactly as
+  written, including its entity spelling and evidence ids. Repair only rejected
+  claims; never rewrite or delete supported claims while fixing another claim.

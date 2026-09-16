@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 
 import pytest
+from pydantic import BaseModel
 
 from app.config import settings
 
@@ -537,3 +538,58 @@ async def test_planner_retries_one_failed_structured_generation() -> None:
         goal="trade", mode="quick", deliverable="answer"))
     assert plan.nodes == []
     assert model.calls == 2
+
+@pytest.mark.anyio
+async def test_model_repair_preserves_previously_supported_claims() -> None:
+    from v2.contracts import Claim, DraftReport, TaskSpec, VerificationReport
+
+    supported = Claim(text="Boston finished 56-26.", kind="observed",
+                      evidence_ids=["ev"])
+    rejected = Claim(text="Boston won 99 games.", kind="observed",
+                     evidence_ids=["ev"])
+    stub = StubModel([{
+        "sections": ["Record"],
+        "claims": [{"text": "boston-celtics finished 56-26.",
+                    "kind": "observed", "evidence_ids": ["ev"]}],
+    }])
+    repairer = ModelRepairer(stub, provider="stub", model_name="stub-model")
+    report = VerificationReport(status="repair", claim_results=[
+        {"claim_index": 0, "supported": True},
+        {"claim_index": 1, "supported": False, "reasons": ["uncited 99"]},
+    ])
+    evidence = EvidenceEnvelope(
+        evidence_id="ev", capability="standings", source="fixture",
+        observed_at=datetime.now(UTC), rows={"team": "Boston", "wins": 56})
+    repaired = await repairer.repair(
+        TaskSpec(goal="record", mode="quick", deliverable="answer"),
+        DraftReport(sections=["Record"], claims=[supported, rejected]),
+        {"ev": evidence}, report)
+    assert supported in repaired.claims
+    assert rejected not in repaired.claims
+
+
+@pytest.mark.anyio
+async def test_tool_capability_binds_dependency_lineage() -> None:
+    from v2.adapters import ToolCapability
+    from v2.contracts import EvidenceEnvelope, PlanNode, TaskSpec
+
+    class Args(BaseModel):
+        a: str
+        b: str
+    class CompareTool:
+        name = "get_compare"
+        args_schema = Args
+        async def ainvoke(self, arguments):
+            return {"ok": True, "rows": {"a": arguments["a"], "b": arguments["b"]},
+                    "meta": {"source": "fixture"}}
+
+    parent = EvidenceEnvelope(
+        evidence_id="parent", capability="entity_resolution", source="fixture",
+        observed_at=datetime.now(UTC), rows={"player": "Jaylen Brown"})
+    result = await ToolCapability(
+        "player_comparison", tools={"get_compare": CompareTool()}).execute(
+            PlanNode(id="compare", description="compare",
+                     capability_hints=["player_comparison"],
+                     arguments={"a": "Jaylen Brown", "b": "Paul George"}),
+            TaskSpec(goal="compare", mode="quick", deliverable="answer"), [parent])
+    assert result.lineage == ["parent"]

@@ -16,3 +16,6 @@ description: Analyze an NBA trade, including player role and value, team fit, re
 - State the strongest case for each team and the largest downside.
 - Keep facts tied to evidence. Label projections and judgments.
 - Do not turn a metric edge into a universal value ranking.
+- Every `trade_value` node must name both teams and both player sides. Do not
+  call it with one team, even when the swap wording makes the other side seem
+  implicit.
