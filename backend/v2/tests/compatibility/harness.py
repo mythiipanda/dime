@@ -118,7 +118,15 @@ def load_pack(path: Path) -> dict[str, Any]:
     if any(not isinstance(scenario, dict) for scenario in scenarios):
         raise ValueError("compatibility scenarios must be objects")
     ids: list[str] = []
+    allowed_scenario_keys = {
+        "id", "chain", "expect", "expect_turns", "budget", "comment", "tags",
+        "banned", "as_of", "season", "evidence_requirement", "xfail",
+    }
     for scenario in scenarios:
+        unknown_scenario = sorted(set(scenario) - allowed_scenario_keys)
+        if unknown_scenario:
+            raise ValueError(
+                f"compatibility scenario has unknown fields: {unknown_scenario}")
         scenario_id = scenario.get("id")
         chain = scenario.get("chain")
         if not isinstance(scenario_id, str) or not scenario_id.strip():
@@ -164,6 +172,23 @@ def load_pack(path: Path) -> dict[str, Any]:
                 raise ValueError(
                     f"compatibility scenario {scenario_id} contains_any must contain "
                     "non-empty unique string groups")
+        for field in ("tags", "banned"):
+            values = scenario.get(field, [])
+            if (not isinstance(values, list)
+                    or any(not isinstance(item, str) or not item.strip()
+                           for item in values)
+                    or len(values) != len(set(values))):
+                raise ValueError(
+                    f"compatibility scenario {scenario_id} {field} must contain "
+                    "unique non-empty strings")
+        if "comment" in scenario and (
+            not isinstance(scenario["comment"], str) or not scenario["comment"].strip()
+        ):
+            raise ValueError(
+                f"compatibility scenario {scenario_id} comment must be non-empty")
+        if "xfail" in scenario and not isinstance(scenario["xfail"], bool):
+            raise ValueError(
+                f"compatibility scenario {scenario_id} xfail must be boolean")
         budget = scenario.get("budget", {})
         allowed_budget = {"max_seconds", "max_seconds_per_turn", "max_tool_calls"}
         if not isinstance(budget, dict) or set(budget) - allowed_budget:

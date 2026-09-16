@@ -198,3 +198,20 @@ def test_pack_validates_budget_and_evidence_contracts(tmp_path, changes, error):
     path.write_text(json.dumps(payload))
     with pytest.raises(ValueError, match=error):
         load_pack(path)
+
+
+@pytest.mark.parametrize("changes,error", [
+    ({"typo": True}, "unknown fields"),
+    ({"tags": ["same", "same"]}, "tags must contain"),
+    ({"banned": [" "]}, "banned must contain"),
+    ({"comment": " "}, "comment must be non-empty"),
+    ({"xfail": "false"}, "xfail must be boolean"),
+])
+def test_pack_validates_scenario_metadata(tmp_path, changes, error):
+    import json
+    payload = json.loads(PACK.read_text())
+    payload["scenarios"][0].update(changes)
+    path = tmp_path / "pack.json"
+    path.write_text(json.dumps(payload))
+    with pytest.raises(ValueError, match=error):
+        load_pack(path)
