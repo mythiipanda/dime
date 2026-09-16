@@ -139,3 +139,24 @@ async def test_intake_receives_bounded_followup_context_without_full_skill_bodie
     ]
     assert task.skills == ["trade-analysis"]
     assert all("instructions" not in item for item in payload["skill_catalog"])
+
+
+@pytest.mark.anyio
+async def test_semantic_verifier_receives_vintage_and_source_scope() -> None:
+    from v2.adapters.models import ModelSemanticVerifier
+    from v2.contracts import Claim, DraftReport, EvidenceEnvelope, TaskSpec
+
+    stub = StubModel([{"status": "pass", "claim_results": []}])
+    verifier = ModelSemanticVerifier(stub, provider="stub", model_name="stub-model")
+    task = TaskSpec(goal="trade", mode="deep_dive", deliverable="analysis")
+    draft = DraftReport(sections=["Trade"], claims=[Claim(
+        text="Brown's salary is $57.1M.", kind="observed", evidence_ids=["ev"])])
+    evidence = EvidenceEnvelope(
+        evidence_id="ev", capability="trade_value", source="v1:get_trade_value:salary",
+        observed_at=datetime.now(UTC), vintages={"salary_season": "2026-27"},
+        task_season_scoped=False, rows={"salary": 57_100_000})
+    await verifier.verify(task, draft, {"ev": evidence})
+    compact = stub.calls[0]["payload"]["evidence"][0]
+    assert compact["source"] == "v1:get_trade_value:salary"
+    assert compact["vintages"] == {"salary_season": "2026-27"}
+    assert compact["task_season_scoped"] is False

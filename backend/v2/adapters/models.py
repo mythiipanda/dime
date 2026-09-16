@@ -206,6 +206,10 @@ class ModelSemanticVerifier(ModelStage):
             {
                 "evidence_id": item.evidence_id,
                 "capability": item.capability,
+                "source": item.source,
+                "season": item.season,
+                "vintages": item.vintages,
+                "task_season_scoped": item.task_season_scoped,
                 "qualification": item.qualification,
                 "coverage": item.coverage,
                 "rows": item.rows,

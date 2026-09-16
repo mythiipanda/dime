@@ -368,3 +368,26 @@ def test_multi_vintage_trade_metadata_is_preserved() -> None:
     assert env.vintages == {"production_season": "2025-26",
                             "salary_season": "2026-27"}
     assert env.task_season_scoped is False
+
+
+def test_trade_legality_inherits_salary_vintage_from_contract_parent() -> None:
+    from datetime import UTC, datetime
+    from v2.adapters.core import _task_arguments
+    from v2.contracts import EvidenceEnvelope, PlanNode, SeasonRef, TaskSpec
+
+    contract = EvidenceEnvelope(
+        evidence_id="salary", capability="contracts", source="warehouse",
+        observed_at=datetime.now(UTC), season="2026-27",
+        vintages={"salary_season": "2026-27"}, task_season_scoped=False,
+        rows={"team": "BOS"},
+    )
+    task = TaskSpec(goal="trade", mode="deep_dive", deliverable="analysis",
+                    season=SeasonRef(value="2025-26", source="user", confidence=1))
+    node = PlanNode(
+        id="legal", description="legality", capability_hints=["trades"],
+        arguments={"team_a": "BOS", "players_a": "Jaylen Brown",
+                   "team_b": "LAC", "players_b": "Paul George"},
+        completion_test="legality result",
+    )
+    arguments = _task_arguments("trades", node, task, [contract])
+    assert arguments["season"] == "2026-27"

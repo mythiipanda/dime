@@ -190,4 +190,12 @@ def _task_arguments(name: str, node: Any, task: Any, evidence: Iterable[Evidence
         spec = CAPABILITIES[name]
         if spec.season_arg and spec.season_arg not in arguments:
             arguments[spec.season_arg] = season.value
+    if name == "trades" and "season" not in arguments:
+        for item in evidence:
+            salary_season = item.vintages.get("salary_season")
+            if salary_season is None and item.capability == "contracts":
+                salary_season = item.season
+            if salary_season:
+                arguments["season"] = salary_season
+                break
     return arguments
