@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -9,6 +10,15 @@ from threading import Lock
 from typing import Any, Mapping
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+_SHADOW_LOCKS_GUARD = Lock()
+_SHADOW_LOCKS: dict[Path, Lock] = {}
+
+
+def _shadow_path_lock(path: Path) -> Lock:
+    resolved = path.resolve()
+    with _SHADOW_LOCKS_GUARD:
+        return _SHADOW_LOCKS.setdefault(resolved, Lock())
 
 
 class DifferenceKind(StrEnum):
@@ -100,22 +110,32 @@ def compare_outcomes(request: str, v1: RunOutcome, v2: RunOutcome) -> ShadowComp
 class ShadowStore:
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
-        self._lock = Lock()
+        self._lock = _shadow_path_lock(self.path)
 
     def append(self, comparison: ShadowComparison) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        with self._lock, self.path.open("a", encoding="utf-8") as handle:
-            handle.write(comparison.model_dump_json() + "\n")
-            handle.flush()
+        with self._lock:
+            parent_was_missing = not self.path.parent.exists()
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            file_was_missing = not self.path.exists()
+            with self.path.open("a", encoding="utf-8") as handle:
+                handle.write(comparison.model_dump_json() + "\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            if parent_was_missing or file_was_missing:
+                directory_fd = os.open(self.path.parent, os.O_RDONLY)
+                try:
+                    os.fsync(directory_fd)
+                finally:
+                    os.close(directory_fd)
 
     def read(self) -> list[ShadowComparison]:
-        if not self.path.exists():
-            return []
-        return [
-            ShadowComparison.model_validate_json(line)
-            for line in self.path.read_text().splitlines()
-            if line.strip()
-        ]
+        with self._lock:
+            if not self.path.exists():
+                return []
+            lines = self.path.read_text().splitlines()
+            if any(not line.strip() for line in lines):
+                raise ValueError("shadow store cannot contain blank records")
+            return [ShadowComparison.model_validate_json(line) for line in lines]
 
 
 def outcome_from_v2(result: Any, answer: str, duration_ms: int | None = None) -> RunOutcome:

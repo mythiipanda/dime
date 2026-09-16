@@ -162,3 +162,27 @@ def test_v2_outcome_preserves_nonpassing_verification_status() -> None:
     assert v2_outcome.status == "partial"
     comparison = compare_outcomes("answer?", outcome(status="ok"), v2_outcome)
     assert DifferenceKind.FAILURE in comparison.differences
+
+
+def test_shadow_store_serializes_independent_writers(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+
+    path = tmp_path / "shadow.jsonl"
+    comparisons = [compare_outcomes(f"request {index}", outcome(), outcome())
+                   for index in range(20)]
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(lambda item: ShadowStore(path).append(item), comparisons))
+    assert {item.comparison_id for item in ShadowStore(path).read()} == {
+        item.comparison_id for item in comparisons
+    }
+
+
+def test_shadow_store_rejects_blank_persisted_records(tmp_path):
+    import pytest
+
+    path = tmp_path / "shadow.jsonl"
+    store = ShadowStore(path)
+    store.append(compare_outcomes("request", outcome(), outcome()))
+    path.write_text(path.read_text() + "\n")
+    with pytest.raises(ValueError, match="blank records"):
+        store.read()
