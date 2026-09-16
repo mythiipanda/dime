@@ -350,3 +350,12 @@ def test_execution_result_rejects_invalid_error_messages(errors, message) -> Non
             plan=Plan(nodes=[failed]), attempts={"failed": 1},
             errors={"failed": errors},
         )
+
+
+def test_execution_result_rejects_nonterminal_node_without_attempts_remaining() -> None:
+    from pydantic import ValidationError
+    from v2.runtime.models import ExecutionResult
+
+    pending = node("pending", attempts=1)
+    with pytest.raises(ValidationError, match="no attempts remaining"):
+        ExecutionResult(plan=Plan(nodes=[pending]), attempts={"pending": 1})

@@ -189,6 +189,9 @@ class PlanExecutor:
             if node.status in (PlanStatus.COMPLETE, PlanStatus.FAILED) and attempts == 0:
                 raise ValueError(
                     f"checkpoint node {node_id!r} reached terminal state without an attempt")
+            if node.status in (PlanStatus.PENDING, PlanStatus.RUNNING)                     and attempts >= node.max_attempts:
+                raise ValueError(
+                    f"checkpoint node {node_id!r} has no attempts remaining")
             if node.status == PlanStatus.COMPLETE and any(
                 nodes[parent].status != PlanStatus.COMPLETE
                 for parent in node.depends_on

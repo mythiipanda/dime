@@ -67,6 +67,9 @@ class ExecutionResult(BaseModel):
                 raise ValueError(f"execution node {node.id!r} has duplicate errors")
             if node.status.value == "failed" and not node_errors:
                 raise ValueError(f"failed node {node.id!r} requires errors")
+            if node.status.value in {"pending", "running"} and count >= node.max_attempts:
+                raise ValueError(
+                    f"execution node {node.id!r} has no attempts remaining")
             if node.status.value == "skipped" and node_errors:
                 raise ValueError(f"skipped node {node.id!r} cannot carry errors")
         return self
