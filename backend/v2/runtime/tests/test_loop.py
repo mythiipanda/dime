@@ -458,3 +458,17 @@ async def test_skipped_execution_node_prevents_clean_pass() -> None:
     assert result.gaps[0].kind == "execution_failure"
     assert result.gaps[0].message == "execution skipped node facts"
     assert result.gaps[0].blocks == ["node:facts"]
+
+
+@pytest.mark.anyio
+async def test_runtime_revalidates_component_results() -> None:
+    class InvalidIntake(Intake):
+        async def understand(self, request):
+            valid = await super().understand(request)
+            return valid.model_copy(update={"goal": " "})
+
+    instance = runtime(SequenceVerifier(VerificationStatus.PASS),
+                       SequenceVerifier(VerificationStatus.PASS))
+    instance._intake = InvalidIntake()
+    with pytest.raises(ValueError, match="goal and deliverable"):
+        await instance.run("question")

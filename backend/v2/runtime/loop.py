@@ -11,12 +11,15 @@ from v2.contracts import (
     GapKind,
     VerificationReport,
     VerifiedClaim,
+    DraftReport,
+    Plan,
+    TaskSpec,
     VerificationStatus,
 )
 from v2.runtime.executor import PlanExecutor
 from v2.runtime.interfaces import Intake, Planner, Repairer, Synthesizer, Verifier
 from v2.runtime.ledger import LedgerKind, RunLedger, TerminalReason
-from v2.runtime.models import RuntimeResult
+from v2.runtime.models import ExecutionResult, RuntimeResult
 from v2.domain.evidence import iter_values
 
 
@@ -65,19 +68,21 @@ class Runtime:
         try:
             intake_call = (self._intake.understand(request, context)
                            if context else self._intake.understand(request))
-            task = await self._stage(turn_id, "understand", intake_call)
+            task = TaskSpec.model_validate(
+                (await self._stage(turn_id, "understand", intake_call)).model_dump()
+            )
             if task.open_questions:
                 raise ValueError(
                     "intake left unresolved questions: "
                     + "; ".join(task.open_questions))
-            plan = await self._stage(
-                turn_id, "plan", self._planner.plan(task))
-            execution = await self._stage(
+            plan = Plan.model_validate((await self._stage(
+                turn_id, "plan", self._planner.plan(task))).model_dump())
+            execution = ExecutionResult.model_validate((await self._stage(
                 turn_id, "execute",
-                self._executor.execute(task, plan, run_id=run_id))
-            draft = await self._stage(
+                self._executor.execute(task, plan, run_id=run_id))).model_dump())
+            draft = DraftReport.model_validate((await self._stage(
                 turn_id, "synthesize",
-                self._synthesizer.synthesize(task, execution.evidence))
+                self._synthesizer.synthesize(task, execution.evidence))).model_dump())
         except BaseException as exc:
             self._close_failed(turn_id, exc)
             raise
@@ -231,7 +236,9 @@ class Runtime:
         )
 
     async def _verify(self, task, draft, evidence) -> VerificationReport:
-        mechanical = await self._mechanical_verifier.verify(task, draft, evidence)
+        mechanical = VerificationReport.model_validate(
+            (await self._mechanical_verifier.verify(task, draft, evidence)).model_dump()
+        )
         expected = list(range(len(draft.claims)))
         mechanical_indices = sorted(
             result.claim_index for result in mechanical.claim_results)
@@ -240,7 +247,9 @@ class Runtime:
                 "mechanical verifier must adjudicate every claim exactly once")
         if mechanical.status == VerificationStatus.REPAIR:
             return mechanical
-        semantic = await self._semantic_verifier.verify(task, draft, evidence)
+        semantic = VerificationReport.model_validate(
+            (await self._semantic_verifier.verify(task, draft, evidence)).model_dump()
+        )
         observed = sorted(result.claim_index for result in semantic.claim_results)
         if observed != expected:
             raise ValueError(
