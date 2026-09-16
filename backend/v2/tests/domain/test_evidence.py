@@ -75,3 +75,20 @@ def test_evidence_contract_rejects_ambiguous_identity(payload, error):
 
     with pytest.raises(ValidationError, match=error):
         EvidenceEnvelope.model_validate(payload)
+
+
+@pytest.mark.parametrize("changes,error", [
+    ({"warnings": ["partial", "partial"]}, "warnings must not contain duplicates"),
+    ({"vintages": {"salary_season": ""}}, "vintages must be non-empty"),
+    ({"units": {"wins": " "}}, "units must be non-empty"),
+])
+def test_evidence_metadata_rejects_empty_or_duplicate_values(changes, error):
+    from pydantic import ValidationError
+
+    payload = {
+        "evidence_id": "ev", "capability": "test", "source": "fixture",
+        "observed_at": "2026-09-15T00:00:00Z", "rows": {"wins": 61},
+        **changes,
+    }
+    with pytest.raises(ValidationError, match=error):
+        EvidenceEnvelope.model_validate(payload)

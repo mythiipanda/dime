@@ -193,8 +193,17 @@ class EvidenceEnvelope(BaseModel):
     def validate_identity(self) -> "EvidenceEnvelope":
         if not self.capability.strip() or not self.source.strip():
             raise ValueError("evidence capability and source must be non-empty")
-        if len(self.lineage) != len(set(self.lineage)):
-            raise ValueError("evidence lineage must not contain duplicates")
+        for field_name in ("vintages", "units", "metric_definitions"):
+            values = getattr(self, field_name)
+            if any(not str(key).strip() or not str(value).strip()
+                   for key, value in values.items()):
+                raise ValueError(f"evidence {field_name} must be non-empty")
+        for field_name in ("lineage", "warnings"):
+            values = getattr(self, field_name)
+            if any(not value.strip() for value in values):
+                raise ValueError(f"evidence {field_name} must not contain empty values")
+            if len(values) != len(set(values)):
+                raise ValueError(f"evidence {field_name} must not contain duplicates")
         entity_keys = [(item.type, item.id) for item in self.entities]
         if len(entity_keys) != len(set(entity_keys)):
             raise ValueError("evidence entities must not contain duplicate identities")
