@@ -58,7 +58,14 @@ export interface AiMessage {
   error?: string;
   suggestions?: string[];
   caution?: string[];
-  carry?: { players?: string[]; teams?: string[] };
+  carry?: {
+    players?: string[];
+    teams?: string[];
+    run_id?: string;
+    verification?: string;
+    verified_claims?: number;
+    gaps?: { kind?: string; blocks?: string[] }[];
+  };
 }
 
 export interface ChatMessage {

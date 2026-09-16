@@ -17,8 +17,7 @@ const NODE_LABELS: Record<string, string> = {
 
 function thoughtsFor(ai: AiMessage): string[] {
   // Dedupe identical lines: the backend can emit the same plan text at
-  // a node boundary and again inside the node, and receipts should read
-  // like a receipt, not a log tail.
+  // a node boundary and again inside the node. Keep the work log readable.
   const out: string[] = [];
   const seen = new Set<string>();
   for (const n of AGENT_NODES) {
@@ -70,7 +69,7 @@ function metaLine(c: ToolCall): string {
 }
 
 function ToolRow({ c }: { c: ToolCall }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   const [sqlOpen, setSqlOpen] = useState(false);
   const [rerun, setRerun] = useState<
     | null
@@ -354,9 +353,6 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
   const running = !ai.done;
   const [open, setOpen] = useState(true);
 
-  useEffect(() => {
-    if (ai.text.length > 0 || ai.done) setOpen(false);
-  }, [ai.text, ai.done]);
 
   const runningCall = [...calls].reverse().find((c) => c.status === "running");
   const runningNode = AGENT_NODES.find(
@@ -375,27 +371,24 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
   if (!running && !open) {
     if (!calls.length && !thoughts.length) return null;
     if (!calls.length) {
-      // F80: concept-lane answers pull no stats, so they landed here
-      // and read "Details" while every other answer reads "Receipts" -
-      // QA keys on Receipts and users saw an unfinished-looking card.
-      // Same pill, honestly labeled.
+      // Concept answers may not need a data call. Say that directly.
       return (
         <button
           type="button"
           onClick={() => setOpen(true)}
           className="pill-ghost"
           style={{ fontSize: 12, marginBottom: 8 }}
-          aria-label="Show receipts"
+          aria-label="Show tool calls and checks"
         >
-          <span style={{ color: "var(--color-ash-gray)" }}>Receipts</span>
-          {" · concept · no stats pulled"}
+          <span style={{ color: "var(--color-ash-gray)" }}>Work log</span>
+          {" · No data fetched"}
         </button>
       );
     }
     const secs = ai.thoughtMs ? `${(ai.thoughtMs / 1000).toFixed(1)}s` : "";
     const rows = calls.reduce((n, c) => n + (typeof c.rows === "number" ? c.rows : 0), 0);
     const bits = [
-      `${calls.length} tool${calls.length === 1 ? "" : "s"}`,
+      `${calls.length} tool call${calls.length === 1 ? "" : "s"}`,
       ...(rows ? [`${rows} row${rows === 1 ? "" : "s"}`] : []),
       ...(secs ? [secs] : []),
     ];
@@ -405,9 +398,9 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
         onClick={() => setOpen(true)}
         className="pill-ghost"
         style={{ fontSize: 12, marginBottom: 8 }}
-        aria-label="Show receipts"
+        aria-label="Show tool calls and checks"
       >
-        <span style={{ color: "var(--color-ash-gray)" }}>Receipts</span>
+        <span style={{ color: "var(--color-ash-gray)" }}>Work log</span>
         {" · "}
         {bits.join(" · ")}
       </button>
@@ -445,7 +438,7 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
           />
         )}
         <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--color-ink-black)", display: "inline-flex" }}>
-          {running ? <ThinkLine text={headerText} /> : "Receipts"}
+          {running ? <ThinkLine text={headerText} /> : "Work log"}
         </span>
         <span style={{ fontSize: 11, color: "var(--color-ash-gray)" }}>
           {open ? "▾" : "▸"}
@@ -453,6 +446,26 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
       </button>
       {open && (
         <div style={{ marginTop: 2 }}>
+          {ai.carry?.run_id && (
+            <div style={{ fontSize: 11, color: "var(--color-warm-gray)", padding: "5px 0 8px", display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <span>Run {ai.carry.run_id}</span>
+              {ai.carry.verification && <span>Verification: {ai.carry.verification}</span>}
+              {typeof ai.carry.verified_claims === "number" && <span>{ai.carry.verified_claims} checked claim{ai.carry.verified_claims === 1 ? "" : "s"}</span>}
+            </div>
+          )}
+          {(ai.carry?.gaps?.length ?? 0) > 0 && (
+            <details open style={{ fontSize: 11, color: "var(--color-warm-gray)", marginBottom: 8 }}>
+              <summary style={{ cursor: "pointer", fontWeight: 600 }}>Missing or blocked evidence ({ai.carry!.gaps!.length})</summary>
+              <ul style={{ margin: "5px 0 0", paddingLeft: 18 }}>
+                {ai.carry!.gaps!.map((gap, index) => (
+                  <li key={`${gap.kind}-${index}`}>
+                    {(gap.kind || "unknown gap").replace(/_/g, " ")}
+                    {gap.blocks?.length ? `, blocks ${gap.blocks.join(", ")}` : ""}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
           {!hasActivity && running && (
             <div style={{ fontSize: 12, color: "var(--color-ash-gray)", padding: "4px 0" }}>
               Starting…
@@ -469,7 +482,7 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
           {running && live.map((l, i) => {
             const isLive = running && i === live.length - 1;
             const prefix = l.agent
-              ? `${l.agent.charAt(0).toUpperCase() + l.agent.slice(1)} desk · `
+              ? `${l.agent.charAt(0).toUpperCase() + l.agent.slice(1)} check · `
               : "";
             return (
               <div

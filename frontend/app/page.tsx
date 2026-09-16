@@ -318,7 +318,7 @@ export default function Home() {
 
           {tab === "chat" ? (
             <div className="chat-split" style={{ height: "100%", display: "flex", overflow: "hidden" }}>
-              {/* Chat Stream (expands to 100% when no artifact, 52% when artifact active) */}
+              {/* Chat stream */}
               <div
                 className="chat-pane"
                 style={{
@@ -342,7 +342,7 @@ export default function Home() {
                 )}
               </div>
 
-              {/* Right Artifact Canvas Pane (Claude / Manus Style) */}
+              {/* Full dataset panel */}
               {activeArtifact && (
                 <div
                   className="artifact-pane"

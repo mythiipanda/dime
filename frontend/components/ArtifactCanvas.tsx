@@ -113,7 +113,7 @@ export default function ArtifactCanvas({ artifact, onClose, onAsk }: ArtifactCan
         boxSizing: "border-box",
       }}
     >
-      {/* Artifact Canvas Header */}
+      {/* Data panel header */}
       <div
         style={{
           display: "flex",
@@ -204,7 +204,7 @@ export default function ArtifactCanvas({ artifact, onClose, onAsk }: ArtifactCan
             </button>
           )}
 
-          {/* Close Canvas Button */}
+          {/* Close data panel button */}
           <button
             type="button"
             onClick={onClose}
@@ -217,14 +217,14 @@ export default function ArtifactCanvas({ artifact, onClose, onAsk }: ArtifactCan
               alignItems: "center",
               cursor: "pointer",
             }}
-            title="Close canvas (⌘ Esc)"
+            title="Close data panel (⌘ Esc)"
           >
             ✕
           </button>
         </div>
       </div>
 
-      {/* Artifact Canvas Body */}
+      {/* Data panel body */}
       <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "20px" }}>
         {artifact.meta?.sql && (
           <details

@@ -131,10 +131,9 @@ export default function DataArtifacts({
   const [heat, setHeat] = useState(false);
   const [viewMode, setViewMode] = useState<"table" | "chart" | "court">("table");
   const [showInline, setShowInline] = useState(false);
-  // S2: datasets are citations, collapsed to a receipt strip by
-  // default and expandable in place (direction: "tables stop being
-  // dumps below the answer - they ARE the citation").
-  const [expanded, setExpanded] = useState(false);
+  // Fetched data is part of the answer and doubles as the debugging view.
+  // Keep it open instead of hiding it behind a summary strip.
+  const [expanded, setExpanded] = useState(true);
 
   const tables: {
     tool: string;
@@ -270,7 +269,7 @@ export default function DataArtifacts({
       >
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-ink-black)" }}>
-            {rawTitle} is open in Canvas
+            {rawTitle} is open in the data panel
           </span>
         </div>
         <button
@@ -369,9 +368,9 @@ export default function DataArtifacts({
               });
               setShowInline(false);
             }}
-            title="Open in dedicated side canvas"
+            title="Open the full dataset beside the answer"
           >
-            Canvas
+            Open full data
           </button>
         )}
         <button
@@ -381,7 +380,7 @@ export default function DataArtifacts({
           onClick={() => setExpanded(true)}
           title="Show the evidence table inline"
         >
-          Evidence ▸
+          Show data ▸
         </button>
       </div>
     );
@@ -439,7 +438,7 @@ export default function DataArtifacts({
             className="pill-ghost interactive-tactile"
             style={{ fontSize: 11, padding: "3px 10px" }}
             onClick={() => setExpanded(false)}
-            title="Collapse back to the receipt strip"
+            title="Collapse this dataset"
           >
             ▸ Collapse
           </button>
@@ -469,9 +468,9 @@ export default function DataArtifacts({
                 });
                 setShowInline(false);
               }}
-              title="Open in dedicated side canvas"
+              title="Open the full dataset beside the answer"
             >
-              <span>Canvas</span>
+              <span>Open full data</span>
               <svg
                 width="10"
                 height="10"
@@ -563,6 +562,33 @@ export default function DataArtifacts({
           )}
         </div>
       </div>
+
+      {tables.length > 1 && (
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: "var(--color-warm-gray)", marginBottom: 6 }}>
+            Fetched datasets ({tables.length})
+          </div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {tables.map((item, index) => {
+              const name = toolOf(item);
+              const label = (name || item.tool || `dataset ${index + 1}`)
+                .replace("get_", "").replace(/_/g, " ");
+              const count = (() => {
+                const rows = (item.rows as { rows?: unknown } | undefined)?.rows ?? item.rows;
+                return Array.isArray(rows) ? rows.length : null;
+              })();
+              return (
+                <button key={`${name}-${index}`} type="button"
+                  className={page === index ? "tab-active" : "pill-ghost"}
+                  style={{ fontSize: 11, padding: "3px 9px" }}
+                  onClick={() => setPage(index)}>
+                  {index + 1}. {label}{count !== null ? ` (${count})` : ""}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {table.meta?.sql && (
         <details
