@@ -62,3 +62,11 @@ def test_execution_errors_surface_as_typed_gaps() -> None:
     assert gaps[0].kind == "execution_failure"
     assert gaps[0].message == "AdapterError: cap ledger unavailable"
     assert gaps[0].blocks == ["node:salary"]
+
+
+def test_pass_status_without_claim_adjudication_publishes_nothing() -> None:
+    draft = DraftReport(sections=["Answer"], claims=[
+        Claim(text="Boston won 61 games.", kind="observed", evidence_ids=["ev"]),
+    ])
+    report = VerificationReport(status="pass", claim_results=[])
+    assert _verified_claims(draft, report) == []

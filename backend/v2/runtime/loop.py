@@ -233,8 +233,6 @@ def _verified_claims(draft, verification, evidence=None) -> list[VerifiedClaim]:
         result.claim_index for result in verification.claim_results
         if result.supported
     }
-    if not verification.claim_results and verification.status == VerificationStatus.PASS:
-        supported = set(range(len(draft.claims)))
     return [
         VerifiedClaim(
             claim_index=index, claim=claim,
