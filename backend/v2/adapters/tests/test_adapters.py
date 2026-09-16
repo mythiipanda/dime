@@ -172,6 +172,32 @@ def test_evidence_id_is_stable_and_content_addressed():
     assert third.evidence_id != first.evidence_id
 
 
+def test_evidence_identity_and_as_of_are_bound_to_source_revision():
+    first_payload = {
+        **STANDINGS_PAYLOAD,
+        "meta": {**STANDINGS_PAYLOAD["meta"],
+                 "fetched_at": "2026-09-10T12:30:00+00:00"},
+    }
+    later_payload = {
+        **first_payload,
+        "meta": {**first_payload["meta"],
+                 "fetched_at": "2026-09-15T12:30:00+00:00"},
+    }
+
+    first = call_capability(
+        "standings", {"season": "2025-26"},
+        tools={"get_standings": FakeTool(first_payload)},
+    )
+    later = call_capability(
+        "standings", {"season": "2025-26"},
+        tools={"get_standings": FakeTool(later_payload)},
+    )
+
+    assert first.evidence_id != later.evidence_id
+    assert first.as_of.isoformat() == "2026-09-10"
+    assert later.as_of.isoformat() == "2026-09-15"
+
+
 def test_qualification_prefers_meta_then_capability_default():
     env = call_capability("qualified_leaders",
                           {"stat_category": "FG3_PCT", "season": "2025-26"},

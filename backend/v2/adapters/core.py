@@ -21,11 +21,17 @@ def _canonical(value: Any) -> str:
     return json.dumps(value, sort_keys=True, default=str, separators=(",", ":"))
 
 
-def evidence_id(capability: str, arguments: Mapping[str, Any], rows: Any) -> str:
-    """Stable id: identical capability + arguments + payload dedupe to one id."""
-    digest = hashlib.sha256(_canonical(
-        {"capability": capability, "arguments": dict(arguments), "rows": rows}
-    ).encode()).hexdigest()
+def evidence_id(
+    capability: str, arguments: Mapping[str, Any], rows: Any,
+    *, source_revision: Mapping[str, Any] | None = None,
+) -> str:
+    """Stable id for one exact query, source revision, and payload."""
+    digest = hashlib.sha256(_canonical({
+        "capability": capability,
+        "arguments": dict(arguments),
+        "source_revision": dict(source_revision or {}),
+        "rows": rows,
+    }).encode()).hexdigest()
     return f"{capability}:{digest[:16]}"
 
 
@@ -111,7 +117,7 @@ def build_envelope(
     if isinstance(rows, list) and not rows:
         warnings.append("empty result set")
     as_of = None
-    for key in ("as_of", "salary_date", "production_date"):
+    for key in ("as_of", "salary_date", "production_date", "fetched_at"):
         value = meta.get(key)
         if value:
             try:
@@ -137,7 +143,13 @@ def build_envelope(
         if str(key).endswith("_season") and value is not None
     }
     return EvidenceEnvelope(
-        evidence_id=evidence_id(spec.name, arguments, rows),
+        evidence_id=evidence_id(
+            spec.name, arguments, rows,
+            source_revision={
+                "source": meta.get("source", "unknown"),
+                "fetched_at": meta.get("fetched_at"),
+            },
+        ),
         capability=spec.name,
         source=f"{spec.source_prefix}:{spec.tool_name}:{meta.get('source', 'unknown')}",
         observed_at=observed_at or datetime.now(timezone.utc),
