@@ -22,6 +22,7 @@ CARDS_DIR = Path(__file__).resolve().parent.parent / "data" / "cards"
 _DEBATE_FILE_RE = re.compile(r"^debate_[A-Za-z0-9]+_vs_[A-Za-z0-9]+_[0-9]+\.html$")
 
 _hits: dict[str, list[float]] = defaultdict(list)
+_SHADOW_TASKS: set = set()
 
 
 def _sanitize_sse_event(etype: str, data: dict) -> dict:
@@ -139,6 +140,7 @@ async def _record_v2_shadow(
 
 
 def _consume_background_task(task) -> None:
+    _SHADOW_TASKS.discard(task)
     try:
         task.exception()
     except BaseException:
@@ -204,6 +206,7 @@ async def _stream(
         if v1_outcome is not None:
             shadow_task = asyncio.create_task(_record_v2_shadow(
                 question[:2000], (model or "")[:200], history, v1_outcome))
+            _SHADOW_TASKS.add(shadow_task)
             shadow_task.add_done_callback(_consume_background_task)
         try:
             async for event in run_chat(

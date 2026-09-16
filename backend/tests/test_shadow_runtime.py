@@ -135,3 +135,27 @@ def test_v1_shadow_projection_is_bounded_and_cannot_break_primary():
     assert len(result.answer) == 200_000
     assert len(result.capabilities) <= 32
     assert len(result.capabilities) == len(set(result.capabilities))
+
+def test_inflight_shadow_task_is_retained_until_completion(monkeypatch):
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def shadow(question, model, history, primary):
+        started.set()
+        await primary
+        await release.wait()
+
+    async def exercise():
+        monkeypatch.setenv("DIME_RUNTIME_V2", "shadow")
+        monkeypatch.setattr(routes, "run_chat", lambda *args, **kwargs: _events())
+        monkeypatch.setattr(routes, "_record_v2_shadow", shadow)
+        chunks = [chunk async for chunk in routes._stream("record?", None)]
+        await started.wait()
+        assert len(routes._SHADOW_TASKS) == 1
+        release.set()
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        assert routes._SHADOW_TASKS == set()
+        return chunks
+
+    assert asyncio.run(exercise())
