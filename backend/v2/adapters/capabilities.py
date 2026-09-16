@@ -192,6 +192,17 @@ _LIST = [
                task_season_scoped=False),
     Capability(name="contracts", tool_name="get_cap_ledger", season_arg=None,
                task_season_scoped=False),
+    Capability(
+        name="game_prediction", tool_name="get_game_prediction",
+        units={"win_prob": FRACTION, "win_prob_ci90": FRACTION,
+               "projected_score": "points", "projected_total": "points",
+               "total_ci90": "points", "margin_ci90": "points"},
+        metric_definitions={
+            "win_probability": "Share of Monte Carlo simulations won.",
+        },
+        qualification="Pre-game estimate from 10,000 seeded simulations by default.",
+        coverage="Two-team matchup using season ratings, pace, and available injury data.",
+    ),
     Capability(name="game_logs", tool_name="search_game_logs"),
     Capability(
         name="four_factors",
@@ -236,6 +247,7 @@ CAPABILITY_DESCRIPTIONS: dict[str, str] = {
     "trades": "Check salary-matching legality for players on two trade sides.",
     "trade_value": "Compare estimated production value, salary, and picks across trade sides.",
     "contracts": "Team payroll, player salaries, and apron room.",
+    "game_prediction": "Pre-game Monte Carlo estimate for a two-team matchup.",
     "game_logs": "Filter player or team game logs by stats, opponent, date, or venue.",
     "four_factors": "Player on-off splits for the four factors.",
     "team_four_factors": "Team offensive and defensive four-factor profile.",

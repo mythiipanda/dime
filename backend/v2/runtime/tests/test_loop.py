@@ -263,7 +263,7 @@ async def test_exhausted_repair_returns_named_partial() -> None:
     )
 
     assert result.verification.status == VerificationStatus.PARTIAL
-    assert result.draft.gaps == ["clutch context", "add clutch evidence"]
+    assert result.draft.gaps == ["clutch context"]
 
 @pytest.mark.anyio
 async def test_runtime_ledger_owns_turn_and_stage_lifecycle() -> None:
@@ -591,9 +591,8 @@ async def test_partial_repair_instruction_surfaces_as_typed_gap() -> None:
 
     assert result.verification.status == VerificationStatus.PARTIAL
     assert [gap.message for gap in result.gaps] == [
-        "Add a second source for role context",
+        "verification did not establish complete support",
     ]
-    assert result.gaps[0].kind == "missing_evidence"
 
 
 @pytest.mark.anyio
@@ -766,3 +765,11 @@ async def test_incomplete_semantic_results_preserve_mechanically_supported_claim
     assert [item.claim_index for item in result.verified_claims] == [0, 1]
     assert [item.claim.text for item in result.verified_claims] == ["First fact", "Second fact"]
     assert result.verification.status == VerificationStatus.PARTIAL
+
+
+def test_unresolved_repair_instructions_do_not_become_public_gaps():
+    from v2.runtime.loop import _verification_gaps
+    report = VerificationReport(status="repair", repair_instructions=[
+        "Replace Houston with San Antonio in claim 1.",
+    ])
+    assert _verification_gaps(DraftReport(sections=[], claims=[]), report) == []

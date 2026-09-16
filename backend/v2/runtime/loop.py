@@ -131,7 +131,6 @@ class Runtime:
                     *draft.gaps,
                     *verification.missing_branches,
                     *verification.contradictions,
-                    *verification.repair_instructions,
                 ],
                 limit=128,
             )
@@ -386,9 +385,6 @@ def _verification_gaps(draft, verification, execution_errors=None,
                 for message in verification.missing_branches)
     gaps.extend(Gap(kind=GapKind.SOURCE_CONFLICT, message=message)
                 for message in verification.contradictions)
-    gaps.extend(Gap(kind=GapKind.MISSING_EVIDENCE, message=message)
-                for message in verification.repair_instructions
-                if not message.casefold().startswith("repair claim "))
     for node_id, errors in (execution_errors or {}).items():
         if errors:
             gaps.append(Gap(

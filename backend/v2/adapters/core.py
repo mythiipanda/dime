@@ -78,6 +78,11 @@ def build_envelope(
         raise AdapterError(
             f"{spec.tool_name}: {result.get('error') or 'unknown error'}")
     rows = result.get("rows")
+    if rows is None and spec.name == "game_prediction":
+        fields = ("matchup", "estimate", "inputs", "methodology",
+                  "assumptions", "limitations")
+        if isinstance(result.get("estimate"), Mapping):
+            rows = {key: result[key] for key in fields if key in result}
     if rows is None:
         raise AdapterError(f"{spec.tool_name}: result carries no rows")
     if spec.name == "contracts":
@@ -195,8 +200,10 @@ def build_envelope(
         entities=envelope_entities,
         rows=rows,
         units={key: unit for key, unit in spec.units.items()
-               if any(key.casefold() == item.path.rsplit(".", 1)[-1].casefold()
-                      for item in _row_values(rows))},
+               if any(key.casefold() in {
+                   segment.split("[", 1)[0].casefold()
+                   for segment in item.path.split(".")
+               } for item in _row_values(rows))},
         metric_definitions=dict(spec.metric_definitions),
         qualification=meta.get("qualification") or spec.qualification,
         coverage=(meta.get("coverage") or meta.get("coverage_note")

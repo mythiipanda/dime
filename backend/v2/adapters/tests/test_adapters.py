@@ -96,6 +96,21 @@ COMPARE_PAYLOAD = {
 }
 
 
+PREDICTION_PAYLOAD = {
+    "tool": "get_game_prediction", "ok": True,
+    "matchup": {"home": "NYK", "away": "BOS"},
+    "estimate": {
+        "win_prob": {"NYK": 0.43, "BOS": 0.57},
+        "win_prob_ci90": {"NYK": [0.42, 0.44], "BOS": [0.56, 0.58]},
+        "projected_score": {"NYK": 111.2, "BOS": 115.7},
+        "projected_total": 226.9, "total_ci90": [200, 250],
+        "margin_ci90": [-25, 28],
+    },
+    "inputs": {"n_sims": 10000},
+    "methodology": ["Monte Carlo"], "assumptions": [], "limitations": [],
+    "meta": {"source": "warehouse", "season": "2025-26", "n_sims": 10000},
+}
+
 @pytest.mark.anyio
 async def test_tool_invocation_ignores_noncallable_ainvoke() -> None:
     class SyncTool:
@@ -124,6 +139,7 @@ def test_registry_covers_initial_pack():
         "shooting_efficiency", "on_off", "lineups", "clutch", "playoffs",
         "trades", "trade_value", "contracts", "game_logs", "four_factors",
         "team_four_factors", "player_ratings", "playoff_team_ratings",
+        "game_prediction",
     }
     assert set(CAPABILITIES) == expected
     tool_names = [c.tool_name for c in CAPABILITIES.values()]
@@ -865,3 +881,21 @@ def test_performance_capabilities_override_planner_contract_season():
         node = PlanNode(id=capability, description="performance",
                         capability_hints=[capability], arguments={"season": "2026-27"})
         assert _task_arguments(capability, node, task, [])["season"] == "2025-26"
+
+
+def test_game_prediction_envelope_preserves_matchup_arguments_and_units():
+    tool = FakeTool(PREDICTION_PAYLOAD)
+    env = call_capability("game_prediction", {
+        "a": "Boston Celtics", "b": "New York Knicks", "season": "2025-26",
+    }, tools={"get_game_prediction": tool})
+    assert tool.calls == [{
+        "a": "Boston Celtics", "b": "New York Knicks", "season": "2025-26",
+    }]
+    assert env.capability == "game_prediction"
+    assert env.season == "2025-26"
+    assert env.units == {
+        "win_prob": "fraction_0_1", "win_prob_ci90": "fraction_0_1",
+        "projected_score": "points", "projected_total": "points",
+        "total_ci90": "points", "margin_ci90": "points",
+    }
+    assert env.rows["matchup"] == {"home": "NYK", "away": "BOS"}

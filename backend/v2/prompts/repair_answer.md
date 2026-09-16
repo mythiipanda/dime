@@ -25,7 +25,8 @@ Each Claim contains:
 
 ## Invariants
 - Do not add a fact, number, date, entity, season, rank, or unit absent from admitted evidence.
-- Remove unsupported claims or rewrite them to match cited evidence.
+- Rewrite every rejected claim when its cited admitted evidence can support a corrected version. Remove it only when no admitted evidence can satisfy that answer branch.
+- Preserve one claim for every previously represented TaskSpec subquestion; a repair must not turn a correctable branch into an omission.
 - Preserve evidence_ids on every observed or derived claim.
 - Keep derived claims tied to their existing calculation_id.
 - Name source conflicts and missing authority specifically in gaps.

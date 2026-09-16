@@ -314,9 +314,10 @@ async def test_model_repair_cannot_retain_rejected_claim_unchanged() -> None:
 
     rejected = Claim(
         text="Boston won 62 games.", kind="observed", evidence_ids=["ev"])
-    stub = StubModel([{
-        "sections": ["Record"], "claims": [rejected.model_dump(mode="json")],
-    }])
+    stub = StubModel([
+        {"sections": ["Record"], "claims": [rejected.model_dump(mode="json")]},
+        {"sections": [], "claims": []},
+    ])
     repairer = ModelRepairer(stub, provider="stub", model_name="stub-model")
     report = VerificationReport(
         status="repair", claim_results=[{
@@ -334,6 +335,12 @@ async def test_model_repair_cannot_retain_rejected_claim_unchanged() -> None:
         {"ev": evidence}, report,
     )
     assert repaired.claims == []
+    assert repaired.gaps == [
+        "A rejected evidence branch could not be corrected from the available data."]
+    assert stub.calls[1]["payload"]["required_replacements"] == [{
+        "claim_index": 0, "kind": "observed", "evidence_ids": ["ev"],
+        "calculation_id": None,
+    }]
 
 
 @pytest.mark.anyio
@@ -828,3 +835,95 @@ async def test_planner_replans_when_first_plan_omits_required_evidence():
         "missing_required_evidence": ["team_ratings"],
         "instruction": "Return a complete replacement plan.",
     }
+
+
+@pytest.mark.anyio
+async def test_matchup_winner_requirement_selects_prediction_capability():
+    stub = StubModel([{
+        "goal": "predict Celtics vs Knicks", "mode": "quick",
+        "deliverable": "winner", "entities": [
+            {"id": "1610612738", "type": "team", "display_name": "Boston Celtics"},
+            {"id": "1610612752", "type": "team", "display_name": "New York Knicks"},
+        ], "required_evidence": [],
+    }, {
+        "requirements": [{
+            "id": "winner", "description": "predict the matchup winner",
+            "capability_options": ["game_prediction"],
+        }],
+        "missing_subquestions": [], "missing_skills": [],
+    }])
+    task = await ModelIntake(stub, provider="stub", model_name="stub",
+        capability_catalog={"game_prediction": {}}, requirement_review=True
+    ).understand("Who wins Celtics vs Knicks?")
+    assert task.requirements[0].capability_options == ["game_prediction"]
+
+
+@pytest.mark.anyio
+async def test_model_repair_keeps_corrected_rejected_branch():
+    from v2.contracts import (
+        Claim, DraftReport, EvidenceEnvelope, TaskSpec, VerificationReport,
+    )
+    stub = StubModel([{
+        "sections": ["Offense"],
+        "claims": [{
+            "text": "San Antonio ranked third at 118.7 points per 100 possessions.",
+            "kind": "observed", "evidence_ids": ["ratings"],
+        }],
+    }])
+    repairer = ModelRepairer(stub, provider="stub", model_name="stub")
+    evidence = EvidenceEnvelope(evidence_id="ratings", capability="team_ratings",
+        source="warehouse", observed_at=datetime.now(UTC), season="2025-26",
+        rows=[{"RANK": 3, "TEAM": "San Antonio", "OFF_RATING": 118.7}],
+        qualification="All teams", coverage="Full league")
+    draft = DraftReport(sections=["Offense"], claims=[Claim(
+        text="Houston ranked third at 118.7 points per 100 possessions.",
+        kind="observed", evidence_ids=["ratings"])])
+    verification = VerificationReport(status="repair", claim_results=[{
+        "claim_index": 0, "supported": False, "reasons": ["entity rank mismatch"]}],
+        repair_instructions=["Repair claim 0 using the cited ranking row."])
+    repaired = await repairer.repair(
+        TaskSpec(goal="rank offense", mode="quick", deliverable="answer"),
+        draft, {"ratings": evidence}, verification,
+    )
+    assert [claim.text for claim in repaired.claims] == [
+        "San Antonio ranked third at 118.7 points per 100 possessions."]
+
+
+@pytest.mark.anyio
+async def test_model_repair_requires_distinct_replacements_for_shared_evidence():
+    from v2.contracts import Claim, DraftReport, TaskSpec, VerificationReport
+
+    claims = [
+        Claim(text="Boston was first.", kind="observed", evidence_ids=["ratings"]),
+        Claim(text="Houston was third.", kind="observed", evidence_ids=["ratings"]),
+    ]
+    stub = StubModel([
+        {"sections": ["Ratings"], "claims": [{
+            "text": "Boston was first.", "kind": "observed",
+            "evidence_ids": ["ratings"],
+        }]},
+        {"sections": ["Ratings"], "claims": [
+            {"text": "Boston was first.", "kind": "observed",
+             "evidence_ids": ["ratings"]},
+            {"text": "San Antonio was third.", "kind": "observed",
+             "evidence_ids": ["ratings"]},
+        ]},
+    ])
+    repairer = ModelRepairer(stub, provider="stub", model_name="stub")
+    evidence = EvidenceEnvelope(
+        evidence_id="ratings", capability="team_ratings", source="warehouse",
+        observed_at=datetime.now(UTC), rows=[
+            {"rank": 1, "team": "Boston"}, {"rank": 3, "team": "San Antonio"}],
+    )
+    verification = VerificationReport(status="repair", claim_results=[
+        {"claim_index": 0, "supported": True},
+        {"claim_index": 1, "supported": False, "reasons": ["rank mismatch"]},
+    ])
+    repaired = await repairer.repair(
+        TaskSpec(goal="rank teams", mode="quick", deliverable="answer"),
+        DraftReport(sections=["Ratings"], claims=claims), {"ratings": evidence},
+        verification,
+    )
+    assert stub.calls[1]["payload"]["required_replacements"][0]["claim_index"] == 1
+    assert [claim.text for claim in repaired.claims] == [
+        "Boston was first.", "San Antonio was third."]

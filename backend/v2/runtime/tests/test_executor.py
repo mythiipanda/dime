@@ -603,3 +603,36 @@ async def test_requirement_coverage_rejects_semantically_wrong_capability() -> N
     )])
     with pytest.raises(ValueError, match="cannot satisfy requirement"):
         await executor.execute(task, wrong)
+
+
+@pytest.mark.anyio
+async def test_matchup_plan_executes_prediction_with_covered_requirement():
+    from v2.contracts import Plan, PlanNode, TaskSpec
+
+    class Prediction(FakeCapability):
+        def __init__(self):
+            super().__init__("game_prediction", rows={"winner": "Boston Celtics"})
+            self.calls = []
+        async def execute(self, node, task, evidence):
+            self.calls.append(dict(node.arguments))
+            return await super().execute(node, task, evidence)
+
+    capability = Prediction()
+    task = TaskSpec(
+        goal="Who wins Celtics vs Knicks?", mode="quick", deliverable="winner",
+        required_evidence=["game_prediction"],
+        requirements=[{"id": "winner", "description": "predict matchup winner",
+                       "capability_options": ["game_prediction"]}],
+    )
+    plan = Plan(nodes=[PlanNode(
+        id="prediction", description="simulate matchup",
+        capability_hints=["game_prediction"],
+        arguments={"a": "Boston Celtics", "b": "New York Knicks",
+                   "season": "2025-26"},
+        covers_requirement_ids=["winner"],
+    )])
+    result = await PlanExecutor({"game_prediction": capability}).execute(task, plan)
+    assert capability.calls == [{
+        "a": "Boston Celtics", "b": "New York Knicks", "season": "2025-26",
+    }]
+    assert result.evidence[0].capability == "game_prediction"

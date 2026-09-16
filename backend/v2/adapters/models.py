@@ -400,6 +400,75 @@ class ModelRepairer(ModelStage):
     route = "repair"
     schema = DraftReport
 
+    @staticmethod
+    def _key(claim: Claim) -> tuple[Any, ...]:
+        return (claim.text, claim.kind, tuple(claim.evidence_ids),
+                claim.calculation_id, claim.confidence)
+
+    @classmethod
+    def _missing_replacements(
+        cls, original: DraftReport, repaired: DraftReport,
+        verification: VerificationReport,
+    ) -> list[dict[str, Any]]:
+        supported_keys = {
+            cls._key(original.claims[result.claim_index])
+            for result in verification.claim_results
+            if result.supported and result.claim_index < len(original.claims)
+        }
+        rejected_keys = {
+            cls._key(original.claims[result.claim_index])
+            for result in verification.claim_results
+            if not result.supported and result.claim_index < len(original.claims)
+        }
+        candidates = [claim for claim in repaired.claims
+                      if cls._key(claim) not in supported_keys
+                      and cls._key(claim) not in rejected_keys]
+        assigned: set[int] = set()
+        requirements: list[dict[str, Any]] = []
+        for result in verification.claim_results:
+            if result.supported or result.claim_index >= len(original.claims):
+                continue
+            claim = original.claims[result.claim_index]
+            match = next((index for index, item in enumerate(candidates)
+                          if index not in assigned
+                          and set(item.evidence_ids) & set(claim.evidence_ids)
+                          and (claim.calculation_id is None
+                               or item.calculation_id == claim.calculation_id)), None)
+            if match is not None:
+                assigned.add(match)
+                continue
+            requirements.append({
+                "claim_index": result.claim_index,
+                "kind": claim.kind.value,
+                "evidence_ids": claim.evidence_ids,
+                "calculation_id": claim.calculation_id,
+            })
+        return requirements
+
+    def _merge_supported(
+        self, original: DraftReport, repaired: DraftReport,
+        verification: VerificationReport,
+    ) -> DraftReport:
+        supported = [
+            original.claims[result.claim_index]
+            for result in verification.claim_results
+            if result.supported and result.claim_index < len(original.claims)
+        ]
+        supported_keys = {self._key(claim) for claim in supported}
+        rejected_keys = {
+            self._key(original.claims[result.claim_index])
+            for result in verification.claim_results
+            if not result.supported and result.claim_index < len(original.claims)
+        }
+        claims = [
+            *supported,
+            *[claim for claim in repaired.claims
+              if self._key(claim) not in supported_keys
+              and self._key(claim) not in rejected_keys],
+        ]
+        return DraftReport.model_validate(repaired.model_copy(
+            update={"claims": claims}).model_dump())
+
     async def repair(
         self,
         task: TaskSpec,
@@ -407,7 +476,7 @@ class ModelRepairer(ModelStage):
         evidence: Mapping[str, EvidenceEnvelope],
         verification: VerificationReport,
     ) -> DraftReport:
-        repaired = await self._generate({
+        payload = {
             "task": task.model_dump(mode="json"),
             "draft": draft.model_dump(mode="json"),
             "verification": verification.model_dump(mode="json"),
@@ -415,48 +484,25 @@ class ModelRepairer(ModelStage):
             "admitted_evidence": [
                 item.model_dump(mode="json") for item in evidence.values()
             ],
-        })
-        repaired = _validate_draft(repaired, list(evidence.values()))
-        supported = [
-            draft.claims[result.claim_index]
-            for result in verification.claim_results
-            if result.supported and result.claim_index < len(draft.claims)
-        ]
-        supported_keys = {
-            (claim.text, claim.kind, tuple(claim.evidence_ids),
-             claim.calculation_id, claim.confidence)
-            for claim in supported
         }
-        repaired = repaired.model_copy(update={
-            "claims": [
-                *supported,
-                *[claim for claim in repaired.claims
-                  if (claim.text, claim.kind, tuple(claim.evidence_ids),
-                      claim.calculation_id, claim.confidence) not in supported_keys],
-            ],
-        })
-        repaired_keys = {
-            (claim.text, claim.kind, tuple(claim.evidence_ids),
-             claim.calculation_id, claim.confidence)
-            for claim in repaired.claims
-        }
-        rejected = {
-            (draft.claims[result.claim_index].text,
-             draft.claims[result.claim_index].kind,
-             tuple(draft.claims[result.claim_index].evidence_ids),
-             draft.claims[result.claim_index].calculation_id,
-             draft.claims[result.claim_index].confidence)
-            for result in verification.claim_results
-            if not result.supported and result.claim_index < len(draft.claims)
-        }
-        retained = rejected & repaired_keys
-        if retained:
+        repaired = _validate_draft(
+            await self._generate(payload), list(evidence.values()))
+        repaired = self._merge_supported(draft, repaired, verification)
+        missing = self._missing_replacements(draft, repaired, verification)
+        if missing:
+            repaired = _validate_draft(await self._generate({
+                **payload,
+                "previous_repair": repaired.model_dump(mode="json"),
+                "required_replacements": missing,
+            }), list(evidence.values()))
+            repaired = self._merge_supported(draft, repaired, verification)
+            missing = self._missing_replacements(draft, repaired, verification)
+        if missing:
             repaired = repaired.model_copy(update={
-                "claims": [
-                    claim for claim in repaired.claims
-                    if (claim.text, claim.kind, tuple(claim.evidence_ids),
-                        claim.calculation_id, claim.confidence) not in retained
-                ],
+                "gaps": list(dict.fromkeys([
+                    *repaired.gaps,
+                    "A rejected evidence branch could not be corrected from the available data.",
+                ])),
             })
         return DraftReport.model_validate(repaired.model_dump())
 
