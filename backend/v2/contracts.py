@@ -42,12 +42,16 @@ class GapKind(StrEnum):
 
 
 class EntityRef(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     id: str
     type: Literal["player", "team", "game", "league"]
     display_name: str
 
 
 class SeasonRef(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     value: str
     source: Literal["user", "context", "default", "resolved"]
     confidence: float = Field(ge=0, le=1)
@@ -59,6 +63,8 @@ class ConversationTurn(BaseModel):
 
 
 class TaskSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     goal: str
     mode: RunMode
     deliverable: str
@@ -96,6 +102,8 @@ class PlanNode(BaseModel):
 
 
 class Plan(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     nodes: list[PlanNode]
 
     @model_validator(mode="after")
@@ -150,6 +158,8 @@ class EvidenceEnvelope(BaseModel):
 
 
 class Claim(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     text: str
     kind: ClaimKind
     evidence_ids: list[str] = Field(default_factory=list)
@@ -169,6 +179,8 @@ class Claim(BaseModel):
 
 
 class DraftReport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     sections: list[str]
     claims: list[Claim]
     gaps: list[str] = Field(default_factory=list)
@@ -195,12 +207,16 @@ class VerifiedClaim(BaseModel):
 
 
 class ClaimResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     claim_index: int = Field(ge=0)
     supported: bool
     reasons: list[str] = Field(default_factory=list)
 
 
 class VerificationReport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     status: VerificationStatus
     claim_results: list[ClaimResult] = Field(default_factory=list)
     missing_branches: list[str] = Field(default_factory=list)

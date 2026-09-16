@@ -279,3 +279,18 @@ async def test_intake_rejects_unknown_required_capability() -> None:
     intake = ModelIntake(stub, **stage_kwargs())
     with pytest.raises(ValueError, match="unknown capabilities.*invented_tool"):
         await intake.understand("record")
+
+
+@pytest.mark.anyio
+async def test_verifier_structured_output_rejects_unknown_fields() -> None:
+    from v2.contracts import DraftReport, TaskSpec
+
+    stub = StubModel([{
+        "status": "pass", "claim_results": [], "confidence": 1.0,
+    }])
+    verifier = ModelSemanticVerifier(stub, provider="stub", model_name="stub-model")
+    with pytest.raises(Exception, match="Extra inputs are not permitted"):
+        await verifier.verify(
+            TaskSpec(goal="empty", mode="quick", deliverable="answer"),
+            DraftReport(sections=[], claims=[]), {},
+        )

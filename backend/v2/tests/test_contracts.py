@@ -82,3 +82,15 @@ def test_plan_node_rejects_unenforced_model_fields() -> None:
             description="facts",
             expected_schema={"wins": "integer"},
         )
+
+
+@pytest.mark.parametrize("model,payload", [
+    (TaskSpec, {"goal": "record", "mode": "quick", "deliverable": "answer",
+                "invented_scope": "ignored"}),
+    (Plan, {"nodes": [], "invented_node_group": []}),
+    (Claim, {"text": "Judgment.", "kind": "judgment",
+             "invented_citation": "ev"}),
+])
+def test_model_authored_contracts_reject_unknown_fields(model, payload) -> None:
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        model.model_validate(payload)
