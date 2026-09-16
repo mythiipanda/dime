@@ -72,6 +72,10 @@ class RequestEnvelope(BaseModel):
         if any(not key.strip() or not value.strip()
                for key, value in self.skill_hashes.items()):
             raise ValueError("skill hashes must be non-empty")
+        if any(len(value) != 64 or any(
+            char not in "0123456789abcdef" for char in value
+        ) for value in self.skill_hashes.values()):
+            raise ValueError("skill hashes must be lowercase sha256")
         return self
 
     @classmethod

@@ -527,3 +527,12 @@ def test_file_ledger_load_is_serialized_with_same_path_writes(tmp_path) -> None:
         assert not finished.wait(timeout=0.05)
     thread.join(timeout=1)
     assert finished.is_set()
+
+
+def test_request_envelope_rejects_malformed_skill_hash() -> None:
+    with pytest.raises(ValueError, match="skill hashes must be lowercase sha256"):
+        RequestEnvelope.freeze(
+            provider="p", model="m", route="r", prompt="prompt",
+            context={}, tool_schemas={}, planner_version="v2",
+            skill_hashes={"trade-analysis": "not-a-hash"},
+        )
