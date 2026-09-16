@@ -241,8 +241,9 @@ class Claim(BaseModel):
         if self.kind in (ClaimKind.OBSERVED, ClaimKind.DERIVED):
             if not self.evidence_ids:
                 raise ValueError("observed and derived claims require evidence")
-        if self.kind == ClaimKind.DERIVED and not self.calculation_id:
-            raise ValueError("derived claims require a calculation id")
+        if (self.kind == ClaimKind.DERIVED
+                and (self.calculation_id is None or not self.calculation_id.strip())):
+            raise ValueError("derived claims require a non-empty calculation id")
         if self.kind != ClaimKind.DERIVED and self.calculation_id is not None:
             raise ValueError("only derived claims may name a calculation id")
         if self.kind == ClaimKind.PROJECTION and self.confidence is None:

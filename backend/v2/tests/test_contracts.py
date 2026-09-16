@@ -278,3 +278,9 @@ def test_evidence_rejects_blank_optional_metadata(changes, error) -> None:
     payload.update(changes)
     with pytest.raises(ValidationError, match=error):
         EvidenceEnvelope.model_validate(payload)
+
+
+def test_derived_claim_rejects_blank_calculation_identity() -> None:
+    with pytest.raises(ValidationError, match="non-empty calculation id"):
+        Claim(text="Derived.", kind="derived", evidence_ids=["ev"],
+              calculation_id=" ")
