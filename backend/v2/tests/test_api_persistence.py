@@ -1509,3 +1509,42 @@ def test_frontend_can_select_native_v2_chat_runtime():
     assert 'process.env.NEXT_PUBLIC_CHAT_RUNTIME === "v2"' in source
     assert '"/api/v2/chat/stream"' in source
     assert 'JSON.stringify({ q, model, thread, client: getClientId() })' in source
+
+
+def test_answer_text_does_not_publish_verifier_repair_diagnostics():
+    from datetime import UTC, datetime
+    from v2 import contracts
+    from v2.api.routes import _answer_text
+    from v2.runtime.loop import _verification_gaps
+    from v2.runtime.models import ExecutionResult, RuntimeResult
+
+    supported = contracts.Claim(
+        text="Boston went 56-26.", kind="observed", evidence_ids=["ev"])
+    evidence = contracts.EvidenceEnvelope(
+        evidence_id="ev", capability="standings", source="fixture",
+        observed_at=datetime.now(UTC), rows={"record": "56-26"})
+    report = contracts.VerificationReport(
+        status="partial",
+        claim_results=[contracts.ClaimResult(claim_index=0, supported=True)],
+        repair_instructions=["Repair claim 1: execution failed for changes"],
+    )
+    result = RuntimeResult(
+        task=contracts.TaskSpec(goal="changes", mode="quick", deliverable="answer"),
+        execution=ExecutionResult(plan=contracts.Plan(nodes=[contracts.PlanNode(
+            id="facts", description="facts", capability_hints=["standings"],
+            status="complete")]), evidence=[evidence], attempts={"facts": 1}),
+        draft=contracts.DraftReport(sections=["Record"], claims=[supported]),
+        verification=report,
+        verified_claims=[contracts.VerifiedClaim(
+            claim_index=0, claim=supported, evidence_ids=["ev"],
+            sources=[contracts.ClaimSource(
+                evidence_id="ev", source="fixture", capability="standings")])],
+        gaps=[contracts.Gap(
+            kind="missing_evidence",
+            message="verification did not establish complete support")],
+    )
+
+    text = _answer_text(result)
+    assert text.startswith("Boston went 56-26.")
+    assert "Repair claim" not in text
+    assert "execution failed" not in text

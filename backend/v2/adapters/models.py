@@ -280,9 +280,16 @@ class ModelRepairer(ModelStage):
             for result in verification.claim_results
             if not result.supported and result.claim_index < len(draft.claims)
         }
-        if rejected & repaired_keys:
-            raise ValueError("repair retained a rejected claim unchanged")
-        return repaired
+        retained = rejected & repaired_keys
+        if retained:
+            repaired = repaired.model_copy(update={
+                "claims": [
+                    claim for claim in repaired.claims
+                    if (claim.text, claim.kind, tuple(claim.evidence_ids),
+                        claim.calculation_id, claim.confidence) not in retained
+                ],
+            })
+        return DraftReport.model_validate(repaired.model_dump())
 
 
 class ModelSemanticVerifier(ModelStage):

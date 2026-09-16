@@ -326,12 +326,12 @@ async def test_model_repair_cannot_retain_rejected_claim_unchanged() -> None:
         evidence_id="ev", capability="standings", source="fixture",
         observed_at=datetime.now(UTC), rows={"team": "Boston", "wins": 61},
     )
-    with pytest.raises(ValueError, match="retained a rejected claim"):
-        await repairer.repair(
-            TaskSpec(goal="record", mode="quick", deliverable="answer"),
-            DraftReport(sections=["Record"], claims=[rejected]),
-            {"ev": evidence}, report,
-        )
+    repaired = await repairer.repair(
+        TaskSpec(goal="record", mode="quick", deliverable="answer"),
+        DraftReport(sections=["Record"], claims=[rejected]),
+        {"ev": evidence}, report,
+    )
+    assert repaired.claims == []
 
 
 @pytest.mark.anyio
