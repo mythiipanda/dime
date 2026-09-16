@@ -234,6 +234,32 @@ def test_caller_entities_are_preserved():
     assert env.entities == [entity]
 
 
+def test_extracted_and_caller_entities_deduplicate_or_reject_conflict():
+    entity = EntityRef(id="1610612738", type="team", display_name="Boston Celtics")
+    env = call_capability(
+        "team_trajectory", {"team": "Boston", "through_season": "2025-26"},
+        entities=[entity],
+        tools={"get_team_trajectory": FakeTool({
+            "ok": True,
+            "rows": [{"team_id": "1610612738", "team": "Boston Celtics",
+                      "season": "2025-26", "wins": 61}],
+            "meta": {"source": "fixture"},
+        })},
+    )
+    assert env.entities == [entity]
+    conflicting = entity.model_copy(update={"display_name": "Different Team"})
+    with pytest.raises(AdapterError, match="conflicting entity identity"):
+        call_capability(
+            "team_trajectory", {"team": "Boston", "through_season": "2025-26"},
+            entities=[conflicting],
+            tools={"get_team_trajectory": FakeTool({
+                "ok": True,
+                "rows": [{"team_id": "1610612738", "team": "Boston Celtics"}],
+                "meta": {"source": "fixture"},
+            })},
+        )
+
+
 def test_observed_at_is_deterministic_when_injected():
     spec = CAPABILITIES["standings"]
     when = datetime(2026, 9, 14, 18, 0, tzinfo=timezone.utc)

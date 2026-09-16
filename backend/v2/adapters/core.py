@@ -99,6 +99,15 @@ def build_envelope(
     envelope_entities = list(entities or [])
     if spec.extract_entities is not None:
         envelope_entities = spec.extract_entities(rows) + envelope_entities
+    deduplicated_entities: dict[tuple[str, str], EntityRef] = {}
+    for entity in envelope_entities:
+        key = (entity.type, entity.id)
+        existing = deduplicated_entities.get(key)
+        if existing is not None and existing != entity:
+            raise AdapterError(
+                f"conflicting entity identity {entity.type}:{entity.id}")
+        deduplicated_entities[key] = entity
+    envelope_entities = list(deduplicated_entities.values())
     vintages = {
         str(key): str(value).split(" (", 1)[0]
         for key, value in meta.items()
