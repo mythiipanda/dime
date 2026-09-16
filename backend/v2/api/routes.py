@@ -144,30 +144,49 @@ def _answer_text(result) -> str:
         item.claim.text for item in result.verified_claims if item.claim.text.strip()))
     text = "\n\n".join(claims)
     gaps: list[str] = []
+    generic_limit = False
+    plan = getattr(result.execution, "plan", None)
+    capability_names = {
+        node.capability_hints[0].casefold()
+        for node in (plan.nodes if plan is not None else [])
+        if len(node.capability_hints) == 1
+    }
     for gap in result.gaps:
         message = gap.message.strip()
         folded = message.casefold()
-        if folded.startswith("repair claim "):
+        internal = (
+            folded.startswith(("repair claim ", "include ", "update ",
+                               "retrieve ", "fetch ", "gather ", "synthesize ",
+                               "add claims", "document "))
+            or "once gaps are resolved" in folded
+            or " capability" in folded
+            or any(name.replace("_", " ") in folded or name in folded
+                   for name in capability_names)
+            or any(token in folded for token in (
+                "source identity", "identify or query a tool",
+                "ensure contract evidence", "qualification evidence",
+                "coverage evidence", "recomputable", "team-code mismatch",
+                "replacement-analysis", "impact & role", "contract terms",
+                "peer comparison", "trade value estimate",
+            ))
+        )
+        if internal:
             continue
         if gap.kind.value == "unsupported_claim":
-            message = "A drafted claim could not be verified."
-        elif gap.kind.value == "source_conflict":
+            generic_limit = True
+            continue
+        if gap.kind.value == "source_conflict":
             message = "The available sources conflict on part of this answer."
         elif gap.kind.value == "execution_failure" or "execution failed" in folded:
-            message = "Some requested evidence could not be retrieved."
+            generic_limit = True
+            continue
         elif "returned no evidence values" in folded:
-            message = "That data was unavailable for this answer."
-        elif any(token in folded for token in (
-            "source identity", "identify or query a tool", "ensure contract evidence",
-            "qualification evidence", "coverage evidence", "recomputable",
-            "team-code mismatch", "replacement-analysis", "add claims",
-            "document ", "retrieve ", "fetch ", "gather ", "synthesize ",
-            "impact & role", "contract terms", "peer comparison",
-            "trade value estimate",
-        )):
-            message = "Some requested evidence was not strong enough to verify."
+            generic_limit = True
+            continue
         if message and message not in gaps:
             gaps.append(message)
+    if not gaps and generic_limit:
+        gaps.append("Some supporting data was unavailable.")
     if gaps:
         gap_text = " ".join(gaps)
         text = f"{text}\n\nWhat I could not verify: {gap_text}" if text else gap_text

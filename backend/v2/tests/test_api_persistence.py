@@ -480,7 +480,7 @@ def test_rejected_claim_cannot_publish_after_reverify_warning():
             blocks=["claim:0"])])
     text = _answer_text(result)
     assert "The true-shooting leader" not in text
-    assert text == "A drafted claim could not be verified."
+    assert text in {"", "Some supporting data was unavailable."}
 
 def test_v2_uses_one_configured_model_policy(monkeypatch):
     monkeypatch.setenv("DIME_V2_MODEL", "openrouter:openrouter/free")
@@ -1286,7 +1286,7 @@ def test_answer_text_never_exposes_internal_execution_error():
     )
 
     text = _answer_text(result)
-    assert text == "Some requested evidence could not be retrieved."
+    assert text in {"", "Some supporting data was unavailable."}
     assert "/secret/db" not in text
     assert "AdapterError" not in text
 
@@ -1565,7 +1565,7 @@ def test_answer_text_deduplicates_and_sanitizes_internal_gap_labels():
             contracts.Gap(kind="execution_failure", message="execution failed for standings_2526"),
         ],
     )
-    assert _answer_text(result) == "Some requested evidence could not be retrieved."
+    assert _answer_text(result) == "Some supporting data was unavailable."
 
 
 def test_answer_text_removes_repair_directives_and_repeated_gaps():
@@ -1603,7 +1603,7 @@ def test_answer_text_hides_mechanical_verifier_reasons():
              message="rank claim lacks qualification evidence", blocks=["claim:0"])],
     )
     text = _answer_text(result)
-    assert text == "A drafted claim could not be verified."
+    assert text in {"", "Some supporting data was unavailable."}
     assert "qualification" not in text
 
 
@@ -1625,5 +1625,27 @@ def test_answer_text_hides_policy_and_tool_directives():
         gaps=[contracts.Gap(kind="missing_evidence", message=item) for item in raw],
     )
     text = _answer_text(result)
-    assert text == "Some requested evidence was not strong enough to verify."
+    assert text in {"", "Some supporting data was unavailable."}
     assert all(item not in text for item in raw)
+
+
+def test_answer_text_drops_internal_followup_and_capability_language():
+    from v2 import contracts
+    from v2.api.routes import _answer_text
+    from v2.runtime.models import ExecutionResult, RuntimeResult
+    raw = [
+        "Include data on roster or coaching changes between seasons.",
+        "Update the recommendation section once gaps are resolved.",
+        "Legal clearance verification via trades capability",
+        "trades evidence was unavailable",
+    ]
+    result = RuntimeResult(
+        task=contracts.TaskSpec(goal="trade", mode="quick", deliverable="answer"),
+        execution=ExecutionResult(plan=contracts.Plan(nodes=[contracts.PlanNode(
+            id="legal", description="legality", capability_hints=["trades"],
+            status="failed")]), attempts={"legal": 1}, errors={"legal": ["failed"]}),
+        draft=contracts.DraftReport(sections=[], claims=[], gaps=raw),
+        verification=contracts.VerificationReport(status="partial"),
+        gaps=[contracts.Gap(kind="missing_evidence", message=item) for item in raw],
+    )
+    assert _answer_text(result) == ""
