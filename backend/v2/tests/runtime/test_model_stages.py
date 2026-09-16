@@ -2,6 +2,8 @@ from datetime import UTC, datetime
 
 import pytest
 
+from app.config import settings
+
 from v2.adapters.models import (
     ModelIntake,
     ModelPlanner,
@@ -165,3 +167,16 @@ async def test_intake_receives_explicit_current_date() -> None:
     current_date = stub.calls[0]["payload"]["current_date"]
     assert len(current_date) == 10
     assert current_date.count("-") == 2
+
+
+def test_pydanticai_provider_boundary_preserves_ordered_fallback(monkeypatch) -> None:
+    from v2.adapters.models import ProviderStructuredModel
+
+    monkeypatch.setattr("v2.adapters.models.settings.inception_api_key", "primary")
+    monkeypatch.setattr("v2.adapters.models.settings.mistral_api_key", "fallback")
+    monkeypatch.setattr("v2.adapters.models.settings.openrouter_api_key", "")
+    monkeypatch.setattr("v2.adapters.models.settings.groq_api_key", "")
+    models = ProviderStructuredModel("inception", "mercury-test")._models()
+    assert [provider for provider, _ in models] == ["inception", "mistral"]
+    assert models[0][1].model_name == "mercury-test"
+    assert models[1][1].model_name == settings.mistral_model

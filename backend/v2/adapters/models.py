@@ -11,7 +11,14 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from app.config import settings
-from app.providers import ProviderName
+from app.providers import (
+    GROQ_DEFAULT,
+    INCEPTION_DEFAULT,
+    MISTRAL_DEFAULT,
+    OPENROUTER_DEFAULT,
+    ProviderName,
+    fallback_order,
+)
 from v2.contracts import (
     ConversationTurn,
     DraftReport,
@@ -43,20 +50,27 @@ class ProviderStructuredModel:
         self.provider = provider
         self.model = model
 
-    def _model(self) -> OpenAIChatModel:
+    def _models(self) -> list[tuple[ProviderName, OpenAIChatModel]]:
         configs = {
-            "mistral": ("https://api.mistral.ai/v1", settings.mistral_api_key),
-            "openrouter": ("https://openrouter.ai/api/v1", settings.openrouter_api_key),
-            "inception": ("https://api.inceptionlabs.ai/v1", settings.inception_api_key),
-            "groq": ("https://api.groq.com/openai/v1", settings.groq_api_key),
+            "mistral": ("https://api.mistral.ai/v1", settings.mistral_api_key,
+                        settings.mistral_model or MISTRAL_DEFAULT),
+            "openrouter": ("https://openrouter.ai/api/v1", settings.openrouter_api_key,
+                           settings.openrouter_model or OPENROUTER_DEFAULT),
+            "inception": ("https://api.inceptionlabs.ai/v1", settings.inception_api_key,
+                          settings.inception_model or INCEPTION_DEFAULT),
+            "groq": ("https://api.groq.com/openai/v1", settings.groq_api_key,
+                     settings.groq_model or GROQ_DEFAULT),
         }
-        base_url, api_key = configs[self.provider]
-        if not api_key:
-            raise RuntimeError(f"{self.provider}: missing key")
-        return OpenAIChatModel(
-            self.model,
-            provider=OpenAIProvider(base_url=base_url, api_key=api_key),
-        )
+        models: list[tuple[ProviderName, OpenAIChatModel]] = []
+        for provider in fallback_order(self.provider):
+            base_url, api_key, fallback_model = configs[provider]
+            if not api_key:
+                continue
+            models.append((provider, OpenAIChatModel(
+                self.model if provider == self.provider else fallback_model,
+                provider=OpenAIProvider(base_url=base_url, api_key=api_key),
+            )))
+        return models
 
     async def generate(
         self,
@@ -66,14 +80,24 @@ class ProviderStructuredModel:
         payload: Mapping[str, Any],
         envelope: RequestEnvelope,
     ) -> T:
-        agent = Agent(
-            self._model(),
-            instructions=prompt,
-            output_type=NativeOutput(schema, strict=True),
-            retries=settings.llm_max_retries,
-        )
-        result = await agent.run(json.dumps(payload, sort_keys=True, default=str))
-        return result.output
+        models = self._models()
+        if not models:
+            raise RuntimeError("no configured structured-output provider")
+        errors: list[str] = []
+        user_prompt = json.dumps(payload, sort_keys=True, default=str)
+        for provider, model in models:
+            try:
+                agent = Agent(
+                    model,
+                    instructions=prompt,
+                    output_type=NativeOutput(schema, strict=True),
+                    retries=settings.llm_max_retries,
+                )
+                result = await agent.run(user_prompt)
+                return result.output
+            except Exception as exc:
+                errors.append(f"{provider}: {str(exc)[:160]}")
+        raise RuntimeError("all structured-output providers failed: " + " | ".join(errors))
 
 
 class ModelStage:
