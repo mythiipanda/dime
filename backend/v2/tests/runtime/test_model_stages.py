@@ -322,3 +322,36 @@ async def test_model_repair_cannot_retain_rejected_claim_unchanged() -> None:
             DraftReport(sections=["Record"], claims=[rejected]),
             {"ev": evidence}, report,
         )
+
+
+@pytest.mark.anyio
+async def test_semantic_verifier_receives_all_evidence_qualifiers() -> None:
+    from datetime import date
+    from v2.contracts import Claim, DraftReport, EntityRef, TaskSpec
+
+    stub = StubModel([{"status": "pass", "claim_results": [
+        {"claim_index": 0, "supported": True},
+    ]}])
+    verifier = ModelSemanticVerifier(stub, provider="stub", model_name="stub-model")
+    evidence = EvidenceEnvelope(
+        evidence_id="ev", capability="standings", source="fixture",
+        observed_at=datetime(2026, 9, 15, tzinfo=UTC), as_of=date(2026, 4, 15),
+        entities=[EntityRef(id="BOS", type="team", display_name="Boston Celtics")],
+        rows={"wins": 61}, units={"wins": "games"},
+        metric_definitions={"wins": "regular-season wins"},
+        warnings=["partial season"], lineage=["parent"],
+    )
+    await verifier.verify(
+        TaskSpec(goal="record", mode="quick", deliverable="answer"),
+        DraftReport(sections=["Answer"], claims=[Claim(
+            text="Boston won 61 games.", kind="observed", evidence_ids=["ev"])]),
+        {"ev": evidence},
+    )
+    compact = stub.calls[0]["payload"]["evidence"][0]
+    assert compact["observed_at"] == "2026-09-15T00:00:00+00:00"
+    assert compact["as_of"] == "2026-04-15"
+    assert compact["entities"][0]["id"] == "BOS"
+    assert compact["units"] == {"wins": "games"}
+    assert compact["metric_definitions"] == {"wins": "regular-season wins"}
+    assert compact["warnings"] == ["partial season"]
+    assert compact["lineage"] == ["parent"]

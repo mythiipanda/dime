@@ -293,11 +293,19 @@ class ModelSemanticVerifier(ModelStage):
                 "evidence_id": item.evidence_id,
                 "capability": item.capability,
                 "source": item.source,
+                "observed_at": item.observed_at.isoformat(),
                 "season": item.season,
                 "vintages": item.vintages,
                 "task_season_scoped": item.task_season_scoped,
+                "as_of": item.as_of.isoformat() if item.as_of else None,
+                "entities": [entity.model_dump(mode="json")
+                             for entity in item.entities],
+                "units": item.units,
+                "metric_definitions": item.metric_definitions,
                 "qualification": item.qualification,
                 "coverage": item.coverage,
+                "warnings": item.warnings,
+                "lineage": item.lineage,
                 "rows": item.rows,
             }
             for item in evidence.values()
