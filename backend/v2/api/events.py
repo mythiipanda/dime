@@ -3,7 +3,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator, model_validator
 
 
 class StrictEvent(BaseModel):
@@ -66,6 +66,14 @@ class ToolResult(StrictEvent):
     summary: str | None = None
     sql: str | None = None
     agent: str | None = None
+
+    @model_validator(mode="after")
+    def validate_status(self):
+        if self.status == "ok" and self.error is not None:
+            raise ValueError("successful tool result cannot carry an error")
+        if self.status == "fail" and self.error is None:
+            raise ValueError("failed tool result requires an error")
+        return self
 
 
 class Token(StrictEvent):

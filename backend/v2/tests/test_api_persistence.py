@@ -686,3 +686,13 @@ def test_stream_event_string_fields_must_be_non_empty(event) -> None:
 
     with pytest.raises(ValidationError, match="non-empty|empty values"):
         EVENT_ADAPTER.validate_python(event)
+
+
+def test_stream_tool_result_status_matches_error() -> None:
+    from pydantic import ValidationError
+    from v2.api.events import ToolResult
+
+    with pytest.raises(ValidationError, match="cannot carry an error"):
+        ToolResult(node="execute", name="standings", status="ok", error="bad")
+    with pytest.raises(ValidationError, match="requires an error"):
+        ToolResult(node="execute", name="standings", status="fail")
