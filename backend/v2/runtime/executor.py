@@ -38,6 +38,8 @@ class PlanExecutor:
             else None
         )
         if checkpoint is not None:
+            if checkpoint.run_id != run_id:
+                raise ValueError("checkpoint run id does not match requested run")
             if checkpoint.task != task:
                 raise ValueError("checkpoint task does not match requested task")
             checkpoint_plan = checkpoint.plan.model_copy(deep=True)

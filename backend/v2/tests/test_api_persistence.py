@@ -530,3 +530,30 @@ def test_project_record_rejects_unknown_persisted_fields() -> None:
             "id": "p", "goal": "answer", "run_id": "project-p",
             "invented": True,
         })
+
+
+@pytest.mark.anyio
+async def test_checkpoint_run_identity_must_match_requested_run() -> None:
+    from v2.runtime.checkpoints import ExecutionCheckpoint
+
+    class WrongRunStore:
+        def load(self, run_id):
+            return ExecutionCheckpoint(
+                run_id="other-run",
+                task=TaskSpec(goal="answer", mode="quick", deliverable="text"),
+                plan=Plan(nodes=[PlanNode(
+                    id="one", description="one", capability_hints=["fake"])]),
+            )
+        def save(self, checkpoint):
+            raise AssertionError("mismatched checkpoint was saved")
+        def delete(self, run_id):
+            raise AssertionError("mismatched checkpoint was deleted")
+
+    task = TaskSpec(goal="answer", mode="quick", deliverable="text")
+    plan = Plan(nodes=[PlanNode(
+        id="one", description="one", capability_hints=["fake"])])
+    with pytest.raises(ValueError, match="run id does not match"):
+        await PlanExecutor(
+            {"fake": FakeCapability("fake", {"value": 1})},
+            checkpoint_store=WrongRunStore(),
+        ).execute(task, plan, run_id="requested-run")
