@@ -30,12 +30,18 @@ def evidence_id(capability: str, arguments: Mapping[str, Any], rows: Any) -> str
 
 
 async def ainvoke_tool(tool: Any, arguments: Mapping[str, Any]) -> dict[str, Any]:
-    if hasattr(tool, "ainvoke"):
-        result = await tool.ainvoke(dict(arguments))
-    elif hasattr(tool, "invoke"):
-        result = await asyncio.to_thread(tool.invoke, dict(arguments))
-    else:
+    ainvoke = getattr(tool, "ainvoke", None)
+    invoke = getattr(tool, "invoke", None)
+    if callable(ainvoke):
+        result = await ainvoke(dict(arguments))
+    elif callable(invoke):
+        result = await asyncio.to_thread(invoke, dict(arguments))
+    elif callable(tool):
         result = tool(**dict(arguments))
+        if inspect.isawaitable(result):
+            result = await result
+    else:
+        raise AdapterError("tool must be callable or expose invoke/ainvoke")
         if inspect.isawaitable(result):
             result = await result
     if not isinstance(result, dict):

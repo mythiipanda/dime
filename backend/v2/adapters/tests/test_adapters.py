@@ -96,6 +96,26 @@ COMPARE_PAYLOAD = {
 }
 
 
+@pytest.mark.anyio
+async def test_tool_invocation_ignores_noncallable_ainvoke() -> None:
+    class SyncTool:
+        ainvoke = None
+        def invoke(self, arguments):
+            return {"ok": True, "rows": arguments}
+
+    from v2.adapters.core import ainvoke_tool
+    assert await ainvoke_tool(SyncTool(), {"value": 1}) == {
+        "ok": True, "rows": {"value": 1},
+    }
+
+
+@pytest.mark.anyio
+async def test_tool_invocation_rejects_noncallable_tool() -> None:
+    from v2.adapters.core import ainvoke_tool
+    with pytest.raises(AdapterError, match="must be callable"):
+        await ainvoke_tool(object(), {})
+
+
 def test_registry_covers_initial_pack():
     expected = {
         "entity_resolution", "standings", "team_trajectory", "team_totals", "qualified_leaders",
