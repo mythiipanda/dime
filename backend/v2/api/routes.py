@@ -172,12 +172,13 @@ async def quick_answer_stream(body: QuickAnswerBody):
             node="verify",
             tables=[item.model_dump(mode="json")
                     for item in result.execution.evidence]))
-        yield encode_event(FinalAnswer(
-            text=_answer_text(result),
-            carry={"run_id": run_id,
-                   "verification": result.verification.status.value,
-                   "verified_claims": len(result.verified_claims),
-                   "gaps": [gap.model_dump(mode="json") for gap in result.gaps]}))
+        if policy.publish:
+            yield encode_event(FinalAnswer(
+                text=_answer_text(result),
+                carry={"run_id": run_id,
+                       "verification": result.verification.status.value,
+                       "verified_claims": len(result.verified_claims),
+                       "gaps": [gap.model_dump(mode="json") for gap in result.gaps]}))
         yield encode_event(GraphEnd())
 
     return StreamingResponse(generate(), media_type="text/event-stream",

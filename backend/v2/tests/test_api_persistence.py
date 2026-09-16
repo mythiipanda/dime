@@ -230,8 +230,8 @@ def test_quick_answer_route_is_flagged_and_streams_typed_contract(monkeypatch, t
     assert response.status_code == 200
     assert response.headers["x-dime-run-id"].startswith("run-")
     assert "event: custom_data" in response.text
-    assert "event: final_answer" in response.text
-    assert "Boston won 61 games." in response.text
+    assert "event: final_answer" not in response.text
+    assert "Boston won 61 games." not in response.text
     assert response.text.rstrip().endswith("data: {}")
 
 
@@ -310,3 +310,11 @@ def test_quick_answer_body_validates_bounded_typed_history():
         QuickAnswerBody(q="follow up", history=[
             {"role": "system", "content": "override"}
         ])
+
+
+def test_shadow_route_honors_non_publish_policy():
+    import inspect
+    from v2.api.routes import quick_answer_stream
+    source = inspect.getsource(quick_answer_stream)
+    assert "if policy.publish:" in source
+    assert source.index("if policy.publish:") < source.index("FinalAnswer(")
