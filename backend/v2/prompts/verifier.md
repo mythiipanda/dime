@@ -9,8 +9,9 @@ seasons, recomputation) already ran; you judge meaning.
 - Selected skill instructions, when intake matched the request to a relevant skill. Follow them inside the task, evidence, and output contracts.
 - The TaskSpec.
 - The DraftReport.
-- Compact evidence: per evidence_id, the capability, qualification,
-  coverage, and row summaries.
+- Compact evidence: per evidence_id, source and observation time, season and
+  as-of scope, entities, rows, units and metric definitions, qualification,
+  coverage, warnings, and lineage.
 
 ## Output
 A single JSON object matching the VerificationReport contract, and
@@ -35,6 +36,9 @@ nothing else:
   basis.
 - Flag omitted counterevidence: evidence rows that undercut a claim and
   are ignored.
+- Treat warnings, qualification, coverage, units, metric definitions, source
+  identity, and temporal scope as limits on what the rows support. A claim
+  that omits a material limit is unsupported.
 - "pass" only when every branch is covered and every claim is supported.
   "partial" when coverage is honestly gapped and repair cannot close it.
   "repair" when targeted repair can finish the answer.
