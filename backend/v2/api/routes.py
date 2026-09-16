@@ -151,8 +151,20 @@ async def quick_answer_stream(body: QuickAnswerBody):
         body.model or os.environ.get("DIME_V2_MODEL"))
     queue: asyncio.Queue = asyncio.Queue()
 
+    def public_node(node: str) -> str:
+        return {
+            "understand": "entry",
+            "plan": "data_retrieval",
+            "execute": "tools",
+            "synthesize": "analytics",
+            "verify": "analytics",
+            "repair": "analytics",
+            "reverify": "analytics",
+            "runtime": "presentation",
+        }.get(node.split(":", 1)[0], "analytics")
+
     def progress(node: str, status: str) -> None:
-        queue.put_nowait(NodeUpdate(node=node, status=status))
+        queue.put_nowait(NodeUpdate(node=public_node(node), status=status))
 
     ledger_dir = os.environ.get(
         "DIME_V2_LEDGER_DIR", str(_BACKEND / "data" / "v2-ledgers"))
@@ -179,7 +191,7 @@ async def quick_answer_stream(body: QuickAnswerBody):
                 recorded_args = entry.data["args"]
                 node_args = recorded_args.get("node", {}).get("arguments", {})
                 yield ToolCall(
-                    node=entry.step_id or "execute",
+                    node="tools",
                     name=str(entry.data["name"]),
                     args=node_args,
                 )
@@ -194,7 +206,7 @@ async def quick_answer_stream(body: QuickAnswerBody):
                     else str(call.data["name"]) if call is not None else "tool"
                 )
                 yield ToolResult(
-                    node=entry.step_id or "execute",
+                    node="tools",
                     name=name,
                     status="ok" if payload.get("status") == "ok" else "fail",
                     rows=len(rows) if isinstance(rows, list) else None,
@@ -233,7 +245,7 @@ async def quick_answer_stream(body: QuickAnswerBody):
                 for event in recorded_tool_events():
                     yield encode_event(event)
                 yield encode_event(NodeUpdate(
-                    node="runtime", status="failed"))
+                    node=public_node("runtime"), status="failed"))
                 if policy.publish:
                     yield "event: error\ndata: " + json.dumps({
                         "message": "Dime could not complete this run.",
@@ -245,7 +257,7 @@ async def quick_answer_stream(body: QuickAnswerBody):
             for event in recorded_tool_events():
                 yield encode_event(event)
             yield encode_event(CustomData(
-                node="verify",
+                node="analytics",
                 tables=[evidence_table(item)
                         for item in result.execution.evidence]))
             if policy.publish:

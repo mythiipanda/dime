@@ -375,6 +375,8 @@ def test_failed_stream_tool_result_keeps_its_call_identity(monkeypatch):
     assert 'contracts failed' in response.text
     assert 'source unavailable' not in response.text
     assert '"args":{"team":"BOS"}' in response.text
+    assert '"node":"tools"' in response.text
+    assert '"node":"salary"' not in response.text
     assert 'private normalized task' not in response.text
     assert 'private plan text' not in response.text
 
@@ -513,6 +515,8 @@ def test_shadow_route_honors_non_publish_policy():
     source = inspect.getsource(quick_answer_stream)
     assert "if policy.publish:" in source
     assert source.index("if policy.publish:") < source.index("FinalAnswer(")
+    assert 'node="analytics"' in source
+    assert 'node="verify"' not in source
 
 
 def test_chat_route_configures_durable_checkpoint_directory():
