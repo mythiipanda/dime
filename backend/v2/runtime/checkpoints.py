@@ -63,7 +63,15 @@ class FileCheckpointStore:
                 os.unlink(temporary)
 
     def delete(self, run_id: str) -> None:
-        self._path(run_id).unlink(missing_ok=True)
+        path = self._path(run_id)
+        if not path.exists():
+            return
+        path.unlink()
+        directory_fd = os.open(self._directory, os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
 
     def _path(self, run_id: str) -> Path:
         if not run_id or any(

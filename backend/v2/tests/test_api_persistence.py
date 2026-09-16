@@ -797,3 +797,19 @@ def test_checkpoint_save_fsyncs_directory_after_replace(tmp_path, monkeypatch) -
     FileCheckpointStore(tmp_path).save(ExecutionCheckpoint(
         run_id="durable", task=_task(), plan=_plan()))
     assert len(calls) == 2
+
+
+def test_checkpoint_delete_fsyncs_directory(tmp_path, monkeypatch) -> None:
+    from v2.runtime.checkpoints import ExecutionCheckpoint
+
+    store = FileCheckpointStore(tmp_path)
+    store.save(ExecutionCheckpoint(run_id="delete-durable", task=_task(), plan=_plan()))
+    calls = []
+    real_fsync = __import__("os").fsync
+    def record(fd):
+        calls.append(fd)
+        return real_fsync(fd)
+    monkeypatch.setattr("v2.runtime.checkpoints.os.fsync", record)
+    store.delete("delete-durable")
+    assert len(calls) == 1
+    assert store.load("delete-durable") is None
