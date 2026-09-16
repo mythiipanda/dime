@@ -26,10 +26,12 @@ _SHADOW_TASKS: set = set()
 
 
 def _sanitize_sse_event(etype: str, data: dict) -> dict:
-    if etype in ("tool_call", "thought_token"):
-        # Streaming contract: tool activity + live LLM token events pass
-        # through unchanged.
+    if etype == "tool_call":
         return data if isinstance(data, dict) else {}
+    if etype == "thought_token" and isinstance(data, dict):
+        return {key: data[key] for key in ("node", "agent") if key in data} | {
+            "text": "Working through the evidence...",
+        }
     if etype == "tool_result" and isinstance(data, dict):
         if data.get("status") in {"fail", "failed", "error"} or data.get("error"):
             out = {key: data[key] for key in (

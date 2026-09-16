@@ -21,3 +21,17 @@ def test_tool_result_failure_hides_provider_and_transport_details():
 def test_successful_tool_result_keeps_public_receipt():
     receipt = {"node": "tools", "name": "standings", "status": "ok", "rows": 30}
     assert _sanitize_sse_event("tool_result", receipt) == receipt
+
+
+def test_thought_tokens_never_publish_raw_model_reasoning():
+    public = _sanitize_sse_event("thought_token", {
+        "node": "data_retrieval",
+        "agent": "league",
+        "text": "I should query private_table then inspect /srv/secrets",
+    })
+
+    assert public == {
+        "node": "data_retrieval",
+        "agent": "league",
+        "text": "Working through the evidence...",
+    }
