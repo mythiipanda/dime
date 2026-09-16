@@ -7,6 +7,7 @@ import tempfile
 from typing import Any
 
 from v2.contracts import EvidenceEnvelope
+from v2.domain.evidence import EvidenceIndex
 
 _ALLOWED_TOP_LEVEL = {"version", "scenario_id", "revision", "turns"}
 _ALLOWED_TURN = {"evidence", "tools"}
@@ -112,4 +113,5 @@ def load_replay(path: Path) -> dict[str, Any]:
                 raise ValueError(
                     f"replay evidence id {item.evidence_id} has conflicting payloads")
             seen_evidence[item.evidence_id] = item
+    EvidenceIndex(seen_evidence.values())
     return payload

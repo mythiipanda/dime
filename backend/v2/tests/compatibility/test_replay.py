@@ -135,3 +135,29 @@ def test_replay_rejects_malformed_tool_attempt(tmp_path, tool, error):
     }))
     with pytest.raises(ValueError, match=error):
         load_replay(path)
+
+
+def test_replay_rejects_unknown_cross_turn_evidence_lineage(tmp_path):
+    orphan = EvidenceEnvelope(
+        evidence_id="child", capability="calculation", source="runtime",
+        observed_at=datetime.now(UTC), rows={"gap": 9}, lineage=["missing"],
+    )
+    path = tmp_path / "orphan.json"
+    save_replay(path, "x", "r", [([orphan], [])])
+    with pytest.raises(ValueError, match="unknown evidence lineage"):
+        load_replay(path)
+
+
+def test_replay_accepts_lineage_to_evidence_from_earlier_turn(tmp_path):
+    parent = EvidenceEnvelope(
+        evidence_id="parent", capability="standings", source="fixture",
+        observed_at=datetime.now(UTC), rows={"wins": 61},
+    )
+    child = EvidenceEnvelope(
+        evidence_id="child", capability="calculation", source="runtime",
+        observed_at=datetime.now(UTC), rows={"gap": 9}, lineage=["parent"],
+    )
+    path = tmp_path / "lineage.json"
+    save_replay(path, "x", "r", [([parent], []), ([child], [])])
+    replay = load_replay(path)
+    assert replay["turns"][1]["evidence"][0] == child
