@@ -95,3 +95,14 @@ def test_candidate_contract_rejects_forged_derived_identity() -> None:
         ScenarioCandidate.model_validate({
             **candidate.model_dump(), "candidate_id": "0" * 24,
         })
+
+
+def test_candidate_store_rejects_symlinked_record(tmp_path):
+    import pytest
+
+    outside = tmp_path / "outside.jsonl"
+    outside.write_text("")
+    path = tmp_path / "candidates.jsonl"
+    path.symlink_to(outside)
+    with pytest.raises(ValueError, match="cannot be a symlink"):
+        CandidateStore(path).add(observation())

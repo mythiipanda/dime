@@ -145,6 +145,8 @@ class ShadowStore:
 
     def read(self) -> list[ShadowComparison]:
         with self._lock:
+            if self.path.is_symlink():
+                raise ValueError("shadow store file cannot be a symlink")
             if not self.path.exists():
                 return []
             lines = self.path.read_text().splitlines()

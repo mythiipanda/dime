@@ -220,3 +220,15 @@ def test_v2_outcome_deduplicates_reused_capability_route() -> None:
         draft=SimpleNamespace(claims=[]),
     )
     assert outcome_from_v2(result, "answer").capabilities == ["player_report"]
+
+
+def test_shadow_store_rejects_symlinked_record(tmp_path):
+    import pytest
+
+    outside = tmp_path / "outside.jsonl"
+    outside.write_text("")
+    path = tmp_path / "shadow.jsonl"
+    path.symlink_to(outside)
+    store = ShadowStore(path)
+    with pytest.raises(ValueError, match="cannot be a symlink"):
+        store.read()

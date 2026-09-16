@@ -135,6 +135,8 @@ class CandidateStore:
             return self._read()
 
     def _read(self) -> list[ScenarioCandidate]:
+        if self.path.is_symlink():
+            raise ValueError("candidate store file cannot be a symlink")
         if not self.path.exists():
             return []
         lines = self.path.read_text().splitlines()
