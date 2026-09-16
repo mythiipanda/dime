@@ -331,3 +331,10 @@ def test_shadow_store_revalidates_copied_comparison(tmp_path):
     with pytest.raises(ValidationError, match="does not match recorded outcomes"):
         ShadowStore(tmp_path / "shadow.jsonl").append(unsafe)
     assert not (tmp_path / "shadow.jsonl").exists()
+
+
+def test_compare_outcomes_revalidates_copied_inputs() -> None:
+    from pydantic import ValidationError
+    invalid = outcome().model_copy(update={"supported_claims": -1})
+    with pytest.raises(ValidationError, match="non-negative"):
+        compare_outcomes("request", invalid, outcome())
