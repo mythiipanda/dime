@@ -450,11 +450,19 @@ class FileLedger:
         with self._lock:
             staged = RunLedger(self.run_id, self.ledger.entries)
             entry = staged.append(*args, **kwargs)
+            parent_was_missing = not self.path.parent.exists()
             self.path.parent.mkdir(parents=True, exist_ok=True)
+            file_was_missing = not self.path.exists()
             with self.path.open("a", encoding="utf-8") as handle:
                 handle.write(entry.model_dump_json() + "\n")
                 handle.flush()
                 os.fsync(handle.fileno())
+            if file_was_missing or parent_was_missing:
+                directory_fd = os.open(self.path.parent, os.O_RDONLY)
+                try:
+                    os.fsync(directory_fd)
+                finally:
+                    os.close(directory_fd)
             self.ledger = staged
             return entry
 

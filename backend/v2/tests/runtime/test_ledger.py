@@ -444,3 +444,15 @@ def test_file_ledger_write_failure_does_not_mutate_memory(tmp_path, monkeypatch)
     with pytest.raises(OSError, match="disk full"):
         file.append(LedgerKind.TURN_START, turn_id="turn", data={"request": "q"})
     assert file.entries == ()
+
+
+def test_file_ledger_fsyncs_directory_on_creation(tmp_path, monkeypatch) -> None:
+    calls = []
+    real_fsync = __import__("os").fsync
+    def record(fd):
+        calls.append(fd)
+        return real_fsync(fd)
+    monkeypatch.setattr("v2.runtime.ledger.os.fsync", record)
+    file = FileLedger(tmp_path / "new" / "run.jsonl", "run")
+    file.append(LedgerKind.TURN_START, turn_id="turn", data={"request": "q"})
+    assert len(calls) == 2
