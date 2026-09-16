@@ -164,6 +164,8 @@ async def quick_answer_stream(body: QuickAnswerBody):
         }.get(node.split(":", 1)[0], "analytics")
 
     def progress(node: str, status: str) -> None:
+        if not policy.publish:
+            return
         public_status = "error" if status == "failed" else status
         queue.put_nowait(NodeUpdate(
             node=public_node(node), status=public_status))
@@ -246,24 +248,24 @@ async def quick_answer_stream(body: QuickAnswerBody):
             try:
                 result = await task
             except Exception as exc:
-                for event in recorded_tool_events():
-                    yield encode_event(event)
-                yield encode_event(NodeUpdate(
-                    node=public_node("runtime"), status="error"))
                 if policy.publish:
+                    for event in recorded_tool_events():
+                        yield encode_event(event)
+                    yield encode_event(NodeUpdate(
+                        node=public_node("runtime"), status="error"))
                     yield "event: error\ndata: " + json.dumps({
                         "message": "Dime could not complete this run.",
                         "run_id": run_id,
                     }, separators=(",", ":")) + "\n\n"
                 yield encode_event(GraphEnd())
                 return
-            for event in recorded_tool_events():
-                yield encode_event(event)
-            yield encode_event(CustomData(
-                node="analytics",
-                tables=[evidence_table(item)
-                        for item in result.execution.evidence]))
             if policy.publish:
+                for event in recorded_tool_events():
+                    yield encode_event(event)
+                yield encode_event(CustomData(
+                    node="analytics",
+                    tables=[evidence_table(item)
+                            for item in result.execution.evidence]))
                 yield encode_event(FinalAnswer(text=_answer_text(result)))
             yield encode_event(GraphEnd())
         finally:

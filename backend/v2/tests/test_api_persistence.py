@@ -270,15 +270,14 @@ def test_quick_answer_route_is_flagged_and_streams_typed_contract(monkeypatch, t
 
     assert response.status_code == 200
     assert response.headers["x-dime-run-id"].startswith("run-")
-    assert "event: custom_data" in response.text
-    assert '"tool":"standings"' in response.text
-    assert '"rows":[{"TEAM":"Boston","WINS":61}]' in response.text
-    assert '"source":"fixture"' in response.text
-    assert '"fetched_at":"2026-09-10"' in response.text
-    assert '"evidence_id"' not in response.text
-    assert "event: final_answer" not in response.text
-    assert "Boston won 61 games." not in response.text
-    assert response.text.rstrip().endswith("data: {}")
+    assert response.text == "event: graph_end\ndata: {}\n\n"
+    for private in (
+        "event: custom_data", '"tool":"standings"',
+        '"rows":[{"TEAM":"Boston","WINS":61}]', '"source":"fixture"',
+        '"fetched_at":"2026-09-10"', "event: final_answer",
+        "Boston won 61 games.",
+    ):
+        assert private not in response.text
 
 
 @pytest.mark.anyio
@@ -1464,3 +1463,42 @@ def test_v2_sse_boundary_hides_draft_reasoning_and_diagnostics():
         "provider token secret", "private provider summary",
     ):
         assert secret not in combined
+
+
+def test_shadow_stream_failure_stays_silent(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from v2.api import routes
+    from v2.runtime.ledger import LedgerKind, RunLedger
+
+    ledgers = {}
+
+    class BrokenRuntime:
+        async def run(self, request, *, run_id=None, context=()):
+            ledger = ledgers[run_id]
+            ledger.append(
+                LedgerKind.TOOL_CALL, turn_id=run_id, call_id="call",
+                data={"name": "secret_tool", "args": {"token": "private"}},
+            )
+            ledger.append(
+                LedgerKind.TOOL_RESULT, turn_id=run_id, call_id="call",
+                data={"status": "failed", "error": "provider secret"},
+            )
+            raise RuntimeError("private failure")
+
+    def build(**kwargs):
+        ledger = RunLedger(kwargs["run_id"])
+        ledgers[kwargs["run_id"]] = ledger
+        return BrokenRuntime(), ledger
+
+    monkeypatch.setenv("DIME_RUNTIME_V2", "shadow")
+    monkeypatch.setattr(
+        "app.providers.resolve_model_id", lambda value: ("openrouter", "fixture"))
+    monkeypatch.setattr("v2.runtime.assembly.build_runtime", build)
+    app = FastAPI()
+    app.include_router(routes.router, prefix="/api")
+    response = TestClient(app).post("/api/v2/chat/stream", json={"q": "record?"})
+
+    assert response.text == "event: graph_end\ndata: {}\n\n"
+    for private in ("secret_tool", "private", "provider secret", "error"):
+        assert private not in response.text
