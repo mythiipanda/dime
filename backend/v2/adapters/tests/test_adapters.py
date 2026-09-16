@@ -405,3 +405,28 @@ def test_tool_capability_preflight_rejects_unknown_arguments() -> None:
     )
     with pytest.raises(ValueError, match="unknown arguments.*invented"):
         capability.validate_arguments(node)
+
+
+def test_trajectory_and_evaluation_extract_canonical_entities() -> None:
+    trajectory = call_capability(
+        "team_trajectory", {"team": "Boston Celtics", "through_season": "2025-26"},
+        tools={"get_team_trajectory": FakeTool({
+            "ok": True,
+            "rows": [{"team": "Boston Celtics", "team_id": "1610612738",
+                      "season": "2025-26", "record": "56-26"}],
+            "meta": {"source": "fixture", "through_season": "2025-26"},
+        })},
+    )
+    evaluation = call_capability(
+        "player_evaluation", {"player": "Jaylen Brown", "season": "2025-26"},
+        tools={"get_player_evaluation": FakeTool({
+            "ok": True,
+            "rows": {"player": "Jaylen Brown", "player_id": "1627759",
+                     "season": "2025-26", "tier": "star"},
+            "meta": {"source": "fixture", "season": "2025-26"},
+        })},
+    )
+    assert trajectory.entities[0].model_dump() == {
+        "id": "1610612738", "type": "team", "display_name": "Boston Celtics"}
+    assert evaluation.entities[0].model_dump() == {
+        "id": "1627759", "type": "player", "display_name": "Jaylen Brown"}

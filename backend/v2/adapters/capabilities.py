@@ -44,6 +44,27 @@ def _resolve_entities(rows: Any) -> list[EntityRef]:
     return out
 
 
+def _player_entity(rows: Any) -> list[EntityRef]:
+    if not isinstance(rows, Mapping):
+        return []
+    player_id = rows.get("player_id")
+    name = rows.get("player") or rows.get("PLAYER_NAME")
+    return ([EntityRef(id=str(player_id), type="player", display_name=str(name or player_id))]
+            if player_id is not None else [])
+
+
+def _team_entities(rows: Any) -> list[EntityRef]:
+    items = rows if isinstance(rows, list) else [rows]
+    found: dict[str, EntityRef] = {}
+    for item in items:
+        if not isinstance(item, Mapping) or item.get("team_id") is None:
+            continue
+        ref = EntityRef(id=str(item["team_id"]), type="team",
+                        display_name=str(item.get("team") or item["team_id"]))
+        found[ref.id] = ref
+    return list(found.values())
+
+
 @dataclass(frozen=True)
 class Capability:
     name: str
@@ -78,6 +99,7 @@ _LIST = [
         season_arg="through_season",
         units={"wins": COUNT, "losses": COUNT, "win_pct": FRACTION},
         coverage="Bounded regular-season records, newest first.",
+        extract_entities=_team_entities,
     ),
     Capability(
         name="team_totals",
@@ -101,7 +123,8 @@ _LIST = [
     ),
     Capability(name="roster", tool_name="get_team_hub"),
     Capability(name="player_report", tool_name="get_player_report"),
-    Capability(name="player_evaluation", tool_name="get_player_evaluation"),
+    Capability(name="player_evaluation", tool_name="get_player_evaluation",
+               extract_entities=_player_entity),
     Capability(name="player_comparison", tool_name="get_compare"),
     Capability(name="metric_adjudication", tool_name="compare_metrics"),
     Capability(name="metric_coverage", tool_name="metric_coverage", source_prefix="v2"),
