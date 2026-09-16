@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any, Protocol, TypeVar
@@ -191,6 +192,23 @@ class ModelIntake(ModelStage):
             "skill_catalog": self._skills.catalog(),
         })
         self._skills.activate(task.skills)
+        if (task.season is not None and task.season.source == "default"
+                and "trade-analysis" in task.skills):
+            context_seasons = [
+                season for turn in context
+                for season in re.findall(r"\b20\d{2}-\d{2}\b", turn.content)
+            ]
+            if context_seasons:
+                task = task.model_copy(update={
+                    "season": task.season.model_copy(update={
+                        "value": context_seasons[-1], "source": "context",
+                        "confidence": 1.0,
+                    }),
+                    "assumptions": list(dict.fromkeys([
+                        *task.assumptions,
+                        "Performance uses the prior context season; contracts may use the forward trade window.",
+                    ])),
+                })
         resolvable_questions = []
         for question in task.open_questions:
             folded = question.casefold()

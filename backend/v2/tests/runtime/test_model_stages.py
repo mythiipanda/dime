@@ -658,3 +658,20 @@ async def test_intake_turns_contract_and_risk_questions_into_assumptions() -> No
     task = await intake.understand("Brown for George?")
     assert task.open_questions == []
     assert task.assumptions == questions
+
+@pytest.mark.anyio
+async def test_followup_trade_uses_context_performance_season_not_forward_default() -> None:
+    from v2.contracts import ConversationTurn
+    stub = StubModel([{
+        "goal": "Brown for George", "mode": "quick", "deliverable": "answer",
+        "season": {"value": "2026-27", "source": "default", "confidence": 0.9},
+        "skills": ["trade-analysis"],
+    }])
+    intake = ModelIntake(stub, provider="stub", model_name="stub-model",
+        capability_catalog={})
+    task = await intake.understand("What about Brown for Paul George?", context=(
+        ConversationTurn(role="user", content="Assess Brown in 2025-26."),
+        ConversationTurn(role="assistant", content="Brown's 2025-26 role was large."),
+    ))
+    assert task.season.value == "2025-26"
+    assert task.season.source == "context"

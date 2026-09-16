@@ -56,3 +56,7 @@ ambiguity is recorded in open_questions. One pass only.
   available capabilities; state any judgment about organizational preference as
   an assumption and bound the recommendation around it. Reserve open_questions
   for identity, season, or a user-owned preference that truly changes the task.
+- For a trade follow-up, keep the last played performance season from the
+  conversation as TaskSpec.season. Do not replace it with the forward contract
+  or transaction window. Contract and legality capabilities carry their own
+  later salary vintage separately.

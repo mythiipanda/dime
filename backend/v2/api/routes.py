@@ -160,6 +160,7 @@ def _answer_text(result) -> str:
                                "add claims", "document "))
             or "once gaps are resolved" in folded
             or " capability" in folded
+            or folded.endswith(" analysis")
             or any(name.replace("_", " ") in folded or name in folded
                    for name in capability_names)
             or any(token in folded for token in (
