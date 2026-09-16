@@ -57,6 +57,12 @@ class RequestEnvelope(BaseModel):
         budgets: dict[str, int | float] | None = None,
         skill_hashes: dict[str, str] | None = None,
     ) -> "RequestEnvelope":
+        for name, value in {
+            "provider": provider, "model": model, "route": route,
+            "planner_version": planner_version,
+        }.items():
+            if not value.strip():
+                raise ValueError(f"{name} must be non-empty")
         return cls(
             provider=provider,
             model=model,

@@ -242,3 +242,15 @@ def test_reloaded_ledger_rejects_malformed_tool_payload() -> None:
     )
     with pytest.raises(ValueError, match="exactly name and args"):
         RunLedger("run", [call])
+
+
+@pytest.mark.parametrize("field", ["provider", "model", "route", "planner_version"])
+def test_request_envelope_requires_nonempty_identity(field) -> None:
+    values = {
+        "provider": "provider", "model": "model", "route": "answer",
+        "prompt": "prompt", "context": {}, "tool_schemas": {},
+        "planner_version": "v2",
+    }
+    values[field] = " "
+    with pytest.raises(ValueError, match=field):
+        RequestEnvelope.freeze(**values)
