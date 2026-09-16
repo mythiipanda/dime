@@ -5,8 +5,8 @@ from v2.tests.compatibility.harness import ShadowRunner, TurnTrace
 def test_shadow_failure_does_not_change_primary_result():
     scenario = {"id": "x", "chain": ["q"], "budget": {"max_tool_calls": 1}}
     runner = ShadowRunner(
-        lambda _: [TurnTrace(0.1, 1, (), ({"name": "tool"},), report=VerificationReport(status="pass"))],
-        lambda _: [TurnTrace(0.1, 2, (), ({"name": "a"}, {"name": "b"}), report=VerificationReport(status="pass"))],
+        lambda _: [TurnTrace(0.1, 1, (), ({"call_id": "call", "name": "tool"},), report=VerificationReport(status="pass"))],
+        lambda _: [TurnTrace(0.1, 2, (), ({"call_id": "a", "name": "a"}, {"call_id": "b", "name": "b"}), report=VerificationReport(status="pass"))],
     )
     result = runner.run(scenario)
     assert result["primary"].passed

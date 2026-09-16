@@ -37,7 +37,7 @@ def test_grades_equivalent_evidence_not_tool_name():
     scenario = next(s for s in load_pack(PACK)["scenarios"] if s["id"] == "f88-team-ratings")
     turn = TurnTrace(1.0, 1, (evidence("team_ratings", {
         "offense": 113.8, "defense": 114.4, "net": -0.5,
-    }),), ({"name": "a_new_planner_chosen_tool"},),
+    }),), ({"call_id": "call", "name": "a_new_planner_chosen_tool"},),
         report=VerificationReport(status="pass"), text="113.8 offense, 114.4 defense, -0.5 net")
     assert grade_scenario(scenario, [turn]).passed
 
@@ -45,7 +45,7 @@ def test_grades_equivalent_evidence_not_tool_name():
 def test_missing_evidence_stays_a_failure():
     scenario = next(s for s in load_pack(PACK)["scenarios"] if s["id"] == "f88-team-ratings")
     result = grade_scenario(scenario, [TurnTrace(
-        1.0, 1, (), ({"name": "tool"},), report=VerificationReport(status="pass"))])
+        1.0, 1, (), ({"call_id": "call", "name": "tool"},), report=VerificationReport(status="pass"))])
     assert not result.passed
     assert any("missing equivalent evidence" in failure for failure in result.failures)
 
@@ -53,16 +53,16 @@ def test_missing_evidence_stays_a_failure():
 def test_qualification_is_behavioral_requirement():
     scenario = next(s for s in load_pack(PACK)["scenarios"] if s["id"] == "f88-qualified-3p-leader")
     unqualified = evidence("qualified_leaders", {"player": "Luke Kennard", "3P%": 47.8})
-    assert not grade_scenario(scenario, [TurnTrace(1.0, 1, (unqualified,), ({"name": "tool"},),
+    assert not grade_scenario(scenario, [TurnTrace(1.0, 1, (unqualified,), ({"call_id": "call", "name": "tool"},),
         report=VerificationReport(status="pass"), text="Luke Kennard 47.8% on 82+ made threes")]).passed
     qualified = unqualified.model_copy(update={"qualification": "82+ made threes"})
-    assert grade_scenario(scenario, [TurnTrace(1.0, 1, (qualified,), ({"name": "tool"},),
+    assert grade_scenario(scenario, [TurnTrace(1.0, 1, (qualified,), ({"call_id": "call", "name": "tool"},),
         report=VerificationReport(status="pass"), text="Luke Kennard 47.8% on 82+ made threes")]).passed
 
 
 def test_latency_and_tool_budgets_are_hard_failures():
     scenario = next(s for s in load_pack(PACK)["scenarios"] if s["id"] == "efficiency-simple")
-    result = grade_scenario(scenario, [TurnTrace(20.1, 6, (), tuple({"name": str(i)} for i in range(6)), report=VerificationReport(status="pass"), text="54")])
+    result = grade_scenario(scenario, [TurnTrace(20.1, 6, (), tuple({"call_id": str(i), "name": str(i)} for i in range(6)), report=VerificationReport(status="pass"), text="54")])
     assert set(result.failures) == {
         "latency 20.1s > 20s budget", "6 tool calls > 5 budget",
     }
@@ -72,7 +72,7 @@ def test_global_banned_text_is_enforced():
     scenario = next(s for s in load_pack(PACK)["scenarios"]
                     if s["id"] == "efficiency-simple")
     result = grade_scenario(
-        scenario, [TurnTrace(1.0, 1, (), ({"name": "tool"},), report=VerificationReport(status="pass"),
+        scenario, [TurnTrace(1.0, 1, (), ({"call_id": "call", "name": "tool"},), report=VerificationReport(status="pass"),
                              text="Try a narrower warehouse query")])
     assert not result.passed
     assert any("contains banned text" in failure for failure in result.failures)
@@ -111,3 +111,13 @@ def test_turn_trace_rejects_impossible_metrics(seconds, tool_calls, tools, error
     import pytest
     with pytest.raises(ValueError, match=error):
         TurnTrace(seconds, tool_calls, (), tools)
+
+
+def test_turn_trace_rejects_duplicate_evidence_and_tool_identities():
+    item = evidence()
+    with pytest.raises(ValueError, match="evidence ids must be unique"):
+        TurnTrace(1.0, 0, (item, item), ())
+    tools = ({"call_id": "same", "name": "a"},
+             {"call_id": "same", "name": "b"})
+    with pytest.raises(ValueError, match="call ids must be unique"):
+        TurnTrace(1.0, 2, (), tools)

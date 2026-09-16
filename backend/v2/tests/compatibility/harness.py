@@ -54,6 +54,15 @@ class TurnTrace:
             raise ValueError("turn trace tool_calls must be a non-negative integer")
         if self.tool_calls != len(self.tools):
             raise ValueError("turn trace tool_calls must match recorded tools")
+        evidence_ids = [item.evidence_id for item in self.evidence]
+        if len(evidence_ids) != len(set(evidence_ids)):
+            raise ValueError("turn trace evidence ids must be unique")
+        call_ids = [tool.get("call_id") for tool in self.tools]
+        if any(not isinstance(call_id, str) or not call_id.strip()
+               for call_id in call_ids):
+            raise ValueError("turn trace tools require non-empty call ids")
+        if len(call_ids) != len(set(call_ids)):
+            raise ValueError("turn trace tool call ids must be unique")
 
     @classmethod
     def from_ledger(
