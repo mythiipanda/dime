@@ -23,6 +23,8 @@ def _path_lock(path: Path) -> Lock:
 class ProjectStore:
     def __init__(self, path: str | Path) -> None:
         self._path = Path(path)
+        if self._path.is_symlink():
+            raise ValueError("project store cannot be a symlink")
         self._lock = _path_lock(self._path)
 
     def create(self, goal: str) -> Project:
@@ -70,6 +72,8 @@ class ProjectStore:
         return project
 
     def _connect(self) -> sqlite3.Connection:
+        if self._path.is_symlink():
+            raise ValueError("project store cannot be a symlink")
         self._path.parent.mkdir(parents=True, exist_ok=True)
         connection = sqlite3.connect(self._path, timeout=10)
         connection.execute("PRAGMA journal_mode=WAL")

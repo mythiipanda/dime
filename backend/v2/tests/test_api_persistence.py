@@ -111,6 +111,15 @@ def test_project_store_round_trip(tmp_path: Path) -> None:
     assert store.list() == [project]
 
 
+def test_project_store_rejects_symlinked_database(tmp_path: Path) -> None:
+    outside = tmp_path / "outside.sqlite3"
+    outside.touch()
+    path = tmp_path / "projects.sqlite3"
+    path.symlink_to(outside)
+    with pytest.raises(ValueError, match="cannot be a symlink"):
+        ProjectStore(path)
+
+
 def test_revision_and_feature_flagged_project_endpoints(
     monkeypatch, tmp_path: Path
 ) -> None:
