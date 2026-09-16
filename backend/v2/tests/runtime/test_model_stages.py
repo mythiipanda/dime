@@ -793,7 +793,9 @@ async def test_requirement_review_repairs_omitted_compound_branches():
         stub, provider="stub", model_name="stub-model",
         capability_catalog=catalog, requirement_review=True,
     ).understand("Rank the best offensive and defensive teams and players, including playoffs")
-    assert task.required_evidence == ["playoffs"]
+    assert task.required_evidence == [
+        "playoffs", "team_ratings", "player_ratings", "playoff_team_ratings",
+    ]
     assert [item.id for item in task.requirements] == [
         "regular_team_ratings", "player_ratings", "playoff_team_ratings",
     ]
@@ -982,3 +984,24 @@ async def test_implicit_matchup_season_is_pinned_to_prediction_data_vintage():
     ).understand("Who wins Celtics vs Knicks?")
     assert task.season.value == SEASON
     assert task.season.source == "default"
+
+
+@pytest.mark.anyio
+async def test_league_ratings_skill_requires_rating_populations_not_scoring_leaders():
+    stub = StubModel([{
+        "goal": "rank offense and defense", "mode": "deep_dive",
+        "deliverable": "team player and playoff rankings",
+        "skills": ["league-ratings"],
+        "required_evidence": ["qualified_leaders"],
+    }])
+    catalog = {name: {} for name in (
+        "qualified_leaders", "team_ratings", "player_ratings",
+        "playoff_team_ratings",
+    )}
+    task = await ModelIntake(
+        stub, provider="stub", model_name="stub", capability_catalog=catalog,
+    ).understand("best offensive and defensive teams and players plus playoff ratings")
+    assert task.required_evidence == [
+        "qualified_leaders", "team_ratings", "player_ratings",
+        "playoff_team_ratings",
+    ]
