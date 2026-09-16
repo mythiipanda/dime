@@ -131,6 +131,12 @@ class RunLedger:
                     raise ValueError("step end requires an open step")
                 open_steps.remove(key)
             if entry.kind == LedgerKind.TOOL_CALL and entry.call_id:
+                if set(entry.data) != {"name", "args"}:
+                    raise ValueError("tool call data must contain exactly name and args")
+                if not isinstance(entry.data["name"], str)                         or not entry.data["name"].strip():
+                    raise ValueError("tool call name must be non-empty")
+                if not isinstance(entry.data["args"], dict):
+                    raise ValueError("tool call args must be an object")
                 identity = _call_identity(entry)
                 previous = self._calls.get(entry.call_id)
                 if previous is not None and previous != identity:
@@ -143,6 +149,18 @@ class RunLedger:
                     raise ValueError("tool result requires an earlier tool call")
                 if entry.call_id in self._results:
                     raise ValueError("tool call may have only one result")
+                status = entry.data.get("status")
+                if status == "ok":
+                    valid = (set(entry.data) == {"status", "evidence"}
+                             and isinstance(entry.data.get("evidence"), dict))
+                elif status == "failed":
+                    valid = (set(entry.data) == {"status", "error"}
+                             and isinstance(entry.data.get("error"), str)
+                             and bool(entry.data["error"].strip()))
+                else:
+                    raise ValueError("tool result status must be ok or failed")
+                if not valid:
+                    raise ValueError("tool result data does not match its status")
                 self._results.add(entry.call_id)
 
     @property

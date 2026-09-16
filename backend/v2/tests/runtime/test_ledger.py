@@ -230,3 +230,15 @@ def test_reloaded_ledger_rejects_blank_event_identity() -> None:
     )
     with pytest.raises(ValueError, match="turn id must be non-empty"):
         RunLedger("run", [entry])
+
+
+def test_reloaded_ledger_rejects_malformed_tool_payload() -> None:
+    from datetime import UTC, datetime
+    from v2.runtime.ledger import LedgerEntry
+
+    call = LedgerEntry(
+        sequence=1, run_id="run", kind="tool/call", recorded_at=datetime.now(UTC),
+        turn_id="turn", call_id="call", data={"name": "standings"},
+    )
+    with pytest.raises(ValueError, match="exactly name and args"):
+        RunLedger("run", [call])
