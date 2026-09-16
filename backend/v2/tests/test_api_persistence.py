@@ -266,6 +266,7 @@ def test_quick_answer_route_is_flagged_and_streams_typed_contract(monkeypatch, t
 
 
 def test_answer_text_publishes_only_adjudicated_model_prose():
+    from datetime import UTC, datetime
     from v2 import contracts
     from v2.api.routes import _answer_text
     from v2.runtime.models import ExecutionResult, RuntimeResult
@@ -274,9 +275,16 @@ def test_answer_text_publishes_only_adjudicated_model_prose():
         text="Boston won 61 games.", kind="observed", evidence_ids=["ev"])
     rejected = contracts.Claim(
         text="Boston won 62 games.", kind="observed", evidence_ids=["ev"])
+    evidence = contracts.EvidenceEnvelope(
+        evidence_id="ev", capability="standings", source="fixture",
+        observed_at=datetime.now(UTC), rows={"wins": 61})
     result = RuntimeResult(
         task=contracts.TaskSpec(goal="record", mode="quick", deliverable="text"),
-        execution=ExecutionResult(plan=contracts.Plan(nodes=[])),
+        execution=ExecutionResult(
+            plan=contracts.Plan(nodes=[contracts.PlanNode(
+                id="facts", description="facts", capability_hints=["standings"],
+                status="complete")]),
+            evidence=[evidence], attempts={"facts": 1}),
         draft=contracts.DraftReport(
             sections=["Record"], claims=[supported, rejected]),
         verification=contracts.VerificationReport(
@@ -286,7 +294,9 @@ def test_answer_text_publishes_only_adjudicated_model_prose():
                                       reasons=["uncited numeral 62"]),
             ]),
         verified_claims=[contracts.VerifiedClaim(
-            claim_index=0, claim=supported, evidence_ids=["ev"])],
+            claim_index=0, claim=supported, evidence_ids=["ev"],
+            sources=[contracts.ClaimSource(
+                evidence_id="ev", source="fixture", capability="standings")])],
         gaps=[contracts.Gap(
             kind="source_conflict",
             message="salary evidence is 2026-27, not 2025-26",

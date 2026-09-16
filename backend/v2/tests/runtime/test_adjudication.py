@@ -131,6 +131,29 @@ def test_runtime_result_rejects_forged_claim_source() -> None:
         )
 
 
+def test_runtime_result_rejects_verified_claim_with_unknown_execution_evidence() -> None:
+    import pytest
+    from pydantic import ValidationError
+    from v2.contracts import Plan, TaskSpec, VerifiedClaim
+    from v2.runtime.models import ExecutionResult, RuntimeResult
+
+    claim = Claim(text="Boston won 61 games.", kind="observed",
+                  evidence_ids=["invented"])
+    draft = DraftReport(sections=["Answer"], claims=[claim])
+    with pytest.raises(ValidationError, match="verified claim cites unknown execution evidence"):
+        RuntimeResult(
+            task=TaskSpec(goal="record", mode="quick", deliverable="answer"),
+            execution=ExecutionResult(plan=Plan(nodes=[])),
+            draft=draft,
+            verification=VerificationReport(status="pass", claim_results=[
+                ClaimResult(claim_index=0, supported=True),
+            ]),
+            verified_claims=[VerifiedClaim(
+                claim_index=0, claim=claim, evidence_ids=["invented"]
+            )],
+        )
+
+
 def test_runtime_result_rejects_gap_with_unknown_evidence() -> None:
     import pytest
     from pydantic import ValidationError

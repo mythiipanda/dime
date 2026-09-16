@@ -144,6 +144,12 @@ class RuntimeResult(BaseModel):
                 raise ValueError("verified claim lacks supported adjudication")
             if item.evidence_ids != item.claim.evidence_ids:
                 raise ValueError("verified claim evidence does not match its claim")
+            unknown_claim_evidence = set(item.evidence_ids) - evidence_ids
+            if unknown_claim_evidence:
+                raise ValueError(
+                    "verified claim cites unknown execution evidence ids: "
+                    f"{sorted(unknown_claim_evidence)}"
+                )
             expected_sources = [
                 (evidence_id, evidence[evidence_id].source,
                  evidence[evidence_id].capability)
