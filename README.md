@@ -43,6 +43,22 @@ Questions with one right answer (records, four factors, Finals results,
 rankings) are answered by code reading the warehouse, not by the model
 recalling numbers.
 
+### Experimental Jev decision layer
+
+Dime includes an optional TypeSafe Jev adapter for bounded decisions. Dime code
+first resolves entities, seasons, data vintages, and prerequisites. It then
+builds a finite candidate set. Jev can classify evidence, judge an eval result,
+route a model request, or select one valid tool and its typed arguments.
+
+Jev does not plan the analysis or verify factual claims. PydanticAI remains the
+structured-output boundary, and Dime's deterministic checks decide what can be
+published. An `unresolved` selection blocks the decision. API errors return
+control to the existing path instead of executing a guessed call.
+
+The adapter is experimental and disabled by default. It imports
+`typesafe-sdk` only when an enabled caller constructs it, so the SDK and its
+private package index are not required for a normal install.
+
 ![Dime in the light theme](assets/readme/chat-light.png)
 
 ## Data

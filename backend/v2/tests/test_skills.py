@@ -208,4 +208,19 @@ def test_analysis_skills_require_fetched_external_evidence():
     assert "Search snippets are discovery only" in trade
     assert "several reports repeating the same original report" in trade
     assert "measured performance separate from reported explanation" in comparison
-    assert "never promote a search snippet" in comparison
+    assert "Never promote a search snippet" in comparison
+
+
+def test_analysis_skills_encode_questions_contradictions_and_completion():
+    library = SkillLibrary()
+    trade = library.skills["trade-analysis"].body
+    comparison = library.skills["player-comparison"].body
+    injury = library.skills["injury-impact"].body
+    assert "function-by-function inheritance map" in trade
+    assert "Surplus value" in trade and "Market price" in trade
+    assert "A legal trade can be bad" in trade
+    assert "strongest counterargument" in trade
+    assert "On/off diagnoses team changes" in comparison
+    assert "conditional winners" in comparison
+    assert "Raw on/off never establishes" in injury
+    assert "signal that changes the projection" in injury

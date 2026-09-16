@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     llm_max_retries: int = 1
     chat_rate_per_minute: int = 20
     default_timeout_seconds: int = 10
+    dime_jev_enabled: bool = False
+    typesafe_api_key: str = ""
+    typesafe_model: str = "jev-1.13.0"
+    typesafe_timeout_seconds: float = 2.0
+    dime_jev_shadow_log: str = ""
 
     @property
     def cors_origins(self) -> list[str]:
