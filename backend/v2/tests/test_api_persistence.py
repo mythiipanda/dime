@@ -871,3 +871,18 @@ def test_checkpoint_store_rejects_symlinked_record(tmp_path: Path) -> None:
     ):
         with pytest.raises(ValueError, match="cannot be a symlink"):
             operation()
+
+
+def test_file_checkpoint_store_serializes_same_run_writers(tmp_path: Path) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+    from v2.runtime.checkpoints import ExecutionCheckpoint
+
+    store = FileCheckpointStore(tmp_path)
+    checkpoints = [ExecutionCheckpoint(
+        run_id="shared", task=_task(), plan=_plan(), attempts={"one": index % 2}
+    ) for index in range(20)]
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(store.save, checkpoints))
+    loaded = store.load("shared")
+    assert loaded in checkpoints
+    assert not list(tmp_path.glob(".checkpoint-*"))

@@ -3,11 +3,22 @@ from __future__ import annotations
 import os
 import tempfile
 from pathlib import Path
+from threading import Lock
 from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from v2.contracts import EvidenceEnvelope, Plan, TaskSpec
+
+
+_CHECKPOINT_LOCKS_GUARD = Lock()
+_CHECKPOINT_LOCKS: dict[Path, Lock] = {}
+
+
+def _checkpoint_path_lock(path: Path) -> Lock:
+    resolved = path.resolve()
+    with _CHECKPOINT_LOCKS_GUARD:
+        return _CHECKPOINT_LOCKS.setdefault(resolved, Lock())
 
 
 class ExecutionCheckpoint(BaseModel):
@@ -39,40 +50,42 @@ class FileCheckpointStore:
 
     def load(self, run_id: str) -> ExecutionCheckpoint | None:
         path = self._path(run_id)
-        if path.is_symlink():
-            raise ValueError("checkpoint file cannot be a symlink")
-        if not path.exists():
-            return None
-        return ExecutionCheckpoint.model_validate_json(path.read_text())
+        with _checkpoint_path_lock(path):
+            if path.is_symlink():
+                raise ValueError("checkpoint file cannot be a symlink")
+            if not path.exists():
+                return None
+            return ExecutionCheckpoint.model_validate_json(path.read_text())
 
     def save(self, checkpoint: ExecutionCheckpoint) -> None:
-        self._directory.mkdir(parents=True, exist_ok=True)
         path = self._path(checkpoint.run_id)
-        if path.is_symlink():
-            raise ValueError("checkpoint file cannot be a symlink")
-        fd, temporary = tempfile.mkstemp(dir=self._directory, prefix=".checkpoint-")
-        try:
-            with os.fdopen(fd, "w") as handle:
-                handle.write(checkpoint.model_dump_json())
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary, path)
-            directory_fd = os.open(self._directory, os.O_RDONLY)
+        with _checkpoint_path_lock(path):
+            self._directory.mkdir(parents=True, exist_ok=True)
+            if path.is_symlink():
+                raise ValueError("checkpoint file cannot be a symlink")
+            fd, temporary = tempfile.mkstemp(dir=self._directory, prefix=".checkpoint-")
             try:
-                os.fsync(directory_fd)
+                with os.fdopen(fd, "w") as handle:
+                    handle.write(checkpoint.model_dump_json())
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                os.replace(temporary, path)
+                self._fsync_directory()
             finally:
-                os.close(directory_fd)
-        finally:
-            if os.path.exists(temporary):
-                os.unlink(temporary)
+                if os.path.exists(temporary):
+                    os.unlink(temporary)
 
     def delete(self, run_id: str) -> None:
         path = self._path(run_id)
-        if path.is_symlink():
-            raise ValueError("checkpoint file cannot be a symlink")
-        if not path.exists():
-            return
-        path.unlink()
+        with _checkpoint_path_lock(path):
+            if path.is_symlink():
+                raise ValueError("checkpoint file cannot be a symlink")
+            if not path.exists():
+                return
+            path.unlink()
+            self._fsync_directory()
+
+    def _fsync_directory(self) -> None:
         directory_fd = os.open(self._directory, os.O_RDONLY)
         try:
             os.fsync(directory_fd)
