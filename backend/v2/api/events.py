@@ -14,10 +14,11 @@ class StrictEvent(BaseModel):
     def reject_blank_strings(cls, value):
         if isinstance(value, str) and not value.strip():
             raise ValueError("event string fields must be non-empty")
-        if isinstance(value, list) and any(
-            isinstance(item, str) and not item.strip() for item in value
-        ):
-            raise ValueError("event string lists must not contain empty values")
+        if isinstance(value, list) and all(isinstance(item, str) for item in value):
+            if any(not item.strip() for item in value):
+                raise ValueError("event string lists must not contain empty values")
+            if len(value) != len(set(value)):
+                raise ValueError("event string lists must not contain duplicates")
         return value
 
 

@@ -773,3 +773,13 @@ def test_api_request_contracts_reject_blank_fields(schema, payload, error) -> No
     model = CreateProjectBody if schema == "project" else QuickAnswerBody
     with pytest.raises(ValidationError, match=error):
         model.model_validate(payload)
+
+
+def test_stream_event_rejects_duplicate_string_lists() -> None:
+    from pydantic import ValidationError
+    from v2.api.events import CustomData, Suggestions
+
+    with pytest.raises(ValidationError, match="must not contain duplicates"):
+        Suggestions(items=["Compare players", "Compare players"])
+    with pytest.raises(ValidationError, match="must not contain duplicates"):
+        CustomData(node="verify", unverified_numbers=["61", "61"])
