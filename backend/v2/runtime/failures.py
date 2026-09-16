@@ -127,5 +127,11 @@ class CandidateStore:
     def _read(self) -> list[ScenarioCandidate]:
         if not self.path.exists():
             return []
-        return [ScenarioCandidate.model_validate_json(line)
-                for line in self.path.read_text().splitlines() if line.strip()]
+        lines = self.path.read_text().splitlines()
+        if any(not line.strip() for line in lines):
+            raise ValueError("candidate store cannot contain blank records")
+        candidates = [ScenarioCandidate.model_validate_json(line) for line in lines]
+        ids = [candidate.candidate_id for candidate in candidates]
+        if len(ids) != len(set(ids)):
+            raise ValueError("candidate store cannot contain duplicate identities")
+        return candidates

@@ -70,3 +70,18 @@ def test_candidate_intake_deduplicates_across_concurrent_store_instances(tmp_pat
             lambda _index: CandidateStore(path).add(observation()), range(20)))
     assert len({item.candidate_id for item in candidates}) == 1
     assert CandidateStore(path).read() == [candidates[0]]
+
+
+def test_candidate_store_rejects_blank_and_duplicate_persisted_records(tmp_path):
+    import pytest
+
+    path = tmp_path / "candidates.jsonl"
+    store = CandidateStore(path)
+    candidate = store.add(observation())
+    record = candidate.model_dump_json()
+    path.write_text(record + "\n\n")
+    with pytest.raises(ValueError, match="blank records"):
+        store.read()
+    path.write_text(record + "\n" + record + "\n")
+    with pytest.raises(ValueError, match="duplicate identities"):
+        store.read()
