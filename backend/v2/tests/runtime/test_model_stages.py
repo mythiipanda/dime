@@ -711,3 +711,50 @@ async def test_semantic_verifier_retries_one_failed_structured_generation() -> N
             text="Boston won.", kind="judgment")]), {})
     assert report.claim_results[0].supported
     assert model.calls == 2
+
+@pytest.mark.anyio
+async def test_trade_skill_requires_complete_two_player_evidence_baseline() -> None:
+    from v2.contracts import TaskSpec
+
+    stub = StubModel([{
+        "goal": "Brown for George", "mode": "deep_dive",
+        "deliverable": "trade analysis",
+        "entities": [
+            {"id": "1627759", "type": "player", "display_name": "Jaylen Brown"},
+            {"id": "202331", "type": "player", "display_name": "Paul George"},
+        ],
+        "skills": ["trade-analysis"],
+        "required_evidence": ["player_evaluation"],
+    }])
+    catalog = {name: {} for name in (
+        "player_report", "player_evaluation", "player_comparison",
+        "trade_value", "contracts", "trades",
+    )}
+    task = await ModelIntake(
+        stub, provider="stub", model_name="stub", capability_catalog=catalog,
+    ).understand("Would Brown for Paul George make sense?")
+    assert task.required_evidence == [
+        "player_evaluation", "player_report", "player_comparison",
+        "trade_value", "contracts", "trades",
+    ]
+
+
+@pytest.mark.anyio
+async def test_trade_skill_baseline_does_not_expand_one_player_question() -> None:
+    stub = StubModel([{
+        "goal": "Should Boston trade Brown", "mode": "deep_dive",
+        "deliverable": "analysis",
+        "entities": [
+            {"id": "1627759", "type": "player", "display_name": "Jaylen Brown"},
+        ],
+        "skills": ["trade-analysis"],
+        "required_evidence": ["player_evaluation", "trade_value"],
+    }])
+    catalog = {name: {} for name in (
+        "player_report", "player_evaluation", "player_comparison",
+        "trade_value", "contracts", "trades",
+    )}
+    task = await ModelIntake(
+        stub, provider="stub", model_name="stub", capability_catalog=catalog,
+    ).understand("Should Boston trade Brown?")
+    assert task.required_evidence == ["player_evaluation"]

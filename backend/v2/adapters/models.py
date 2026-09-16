@@ -241,11 +241,21 @@ class ModelIntake(ModelStage):
         optional_evidence = set()
         if player_count < 2:
             optional_evidence.update({"player_comparison", "trade_value"})
+        required_evidence = [
+            name for name in task.required_evidence
+            if name not in optional_evidence
+        ]
+        if "trade-analysis" in task.skills and player_count >= 2:
+            baseline = (
+                "player_report", "player_evaluation", "player_comparison",
+                "trade_value", "contracts", "trades",
+            )
+            required_evidence = list(dict.fromkeys([
+                *required_evidence,
+                *(name for name in baseline if name in self._catalog),
+            ]))
         task = task.model_copy(update={
-            "required_evidence": [
-                name for name in task.required_evidence
-                if name not in optional_evidence
-            ],
+            "required_evidence": required_evidence,
         })
         unknown = sorted(set(task.required_evidence) - self._catalog.keys())
         if unknown:
