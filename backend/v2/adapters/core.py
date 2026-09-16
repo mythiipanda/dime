@@ -62,7 +62,7 @@ def build_envelope(
     entities: Iterable[EntityRef] | None = None,
     observed_at: datetime | None = None,
 ) -> EvidenceEnvelope:
-    if not result.get("ok"):
+    if result.get("ok") is not True:
         raise AdapterError(
             f"{spec.tool_name}: {result.get('error') or 'unknown error'}")
     rows = result.get("rows")

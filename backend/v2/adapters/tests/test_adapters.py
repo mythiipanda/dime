@@ -483,3 +483,13 @@ def test_non_object_result_metadata_fails_closed(meta) -> None:
             "standings", {"season": "2025-26"},
             tools={"get_standings": FakeTool(payload)},
         )
+
+
+@pytest.mark.parametrize("ok", [1, "true", {"truthy": True}])
+def test_non_boolean_success_flag_fails_closed(ok) -> None:
+    payload = {"ok": ok, "rows": [{"wins": 61}], "meta": {}}
+    with pytest.raises(AdapterError, match="unknown error"):
+        call_capability(
+            "standings", {"season": "2025-26"},
+            tools={"get_standings": FakeTool(payload)},
+        )
