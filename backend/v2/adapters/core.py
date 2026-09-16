@@ -178,7 +178,11 @@ class ToolCapability:
         tool = registry.get(CAPABILITIES[self.name].tool_name)
         schema = getattr(tool, "args_schema", None)
         if schema is not None:
-            schema.model_validate(dict(getattr(node, "arguments", {}) or {}))
+            arguments = dict(getattr(node, "arguments", {}) or {})
+            unknown = sorted(set(arguments) - set(schema.model_fields))
+            if unknown:
+                raise ValueError(f"unknown arguments: {unknown}")
+            schema.model_validate(arguments)
 
     async def execute(
         self,

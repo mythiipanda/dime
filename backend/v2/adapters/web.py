@@ -222,6 +222,9 @@ class WebSearchCapability:
         self._provider = provider or DuckDuckGoSearch()
 
     def validate_arguments(self, node: Any) -> None:
+        unknown = sorted(set(node.arguments) - set(WebSearchRequest.model_fields))
+        if unknown:
+            raise ValueError(f"unknown arguments: {unknown}")
         WebSearchRequest.model_validate(node.arguments)
 
     async def execute(self, node: Any, task: Any, evidence: Sequence[Any]):
@@ -252,6 +255,9 @@ class WebFetchCapability:
         self._provider = provider or JinaReader()
 
     def validate_arguments(self, node: Any) -> None:
+        unknown = sorted(set(node.arguments) - set(WebFetchRequest.model_fields))
+        if unknown:
+            raise ValueError(f"unknown arguments: {unknown}")
         request = WebFetchRequest.model_validate(node.arguments)
         if request.search_evidence_id is not None:
             raise ValueError("web_fetch search_evidence_id is bound after search executes")

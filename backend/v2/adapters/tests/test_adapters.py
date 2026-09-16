@@ -391,3 +391,17 @@ def test_trade_legality_inherits_salary_vintage_from_contract_parent() -> None:
     )
     arguments = _task_arguments("trades", node, task, [contract])
     assert arguments["season"] == "2026-27"
+
+
+def test_tool_capability_preflight_rejects_unknown_arguments() -> None:
+    from v2.adapters import ToolCapability
+    from v2.contracts import PlanNode
+
+    capability = ToolCapability("standings")
+    node = PlanNode(
+        id="record", description="record", capability_hints=["standings"],
+        arguments={"season": "2025-26", "invented": True},
+        completion_test="record returned",
+    )
+    with pytest.raises(ValueError, match="unknown arguments.*invented"):
+        capability.validate_arguments(node)

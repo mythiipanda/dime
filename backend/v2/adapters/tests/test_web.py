@@ -236,3 +236,16 @@ async def test_planned_web_dag_binds_fetch_to_content_addressed_parent():
     }).execute(TaskSpec(goal="role", mode="quick", deliverable="answer"), plan)
     assert result.evidence[1].lineage == [result.evidence[0].evidence_id]
     assert result.evidence[1].rows["markdown"] == "Full source"
+
+
+def test_web_preflight_rejects_unknown_arguments() -> None:
+    from v2.adapters.web import WebSearchCapability
+    from v2.contracts import PlanNode
+
+    node = PlanNode(
+        id="search", description="search", capability_hints=["web_search"],
+        arguments={"query": "Jaylen Brown role", "url": "https://example.com"},
+        completion_test="results returned",
+    )
+    with pytest.raises(ValueError, match="unknown arguments.*url"):
+        WebSearchCapability().validate_arguments(node)
