@@ -97,13 +97,25 @@ class TaskSpec(BaseModel):
 class PlanNode(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    id: str
-    description: str
+    id: str = Field(min_length=1)
+    description: str = Field(min_length=1)
     depends_on: list[str] = Field(default_factory=list)
     capability_hints: list[str] = Field(default_factory=list)
     arguments: dict[str, Any] = Field(default_factory=dict)
     max_attempts: int = Field(default=1, ge=1, le=5)
     status: PlanStatus = PlanStatus.PENDING
+
+    @model_validator(mode="after")
+    def validate_selection(self) -> "PlanNode":
+        if not self.id.strip() or not self.description.strip():
+            raise ValueError("plan node id and description must be non-empty")
+        if len(self.depends_on) != len(set(self.depends_on)):
+            raise ValueError("plan node dependencies must not contain duplicates")
+        if len(self.capability_hints) != len(set(self.capability_hints)):
+            raise ValueError("plan node capability hints must not contain duplicates")
+        if any(not value.strip() for value in self.capability_hints):
+            raise ValueError("plan node capability hints must be non-empty")
+        return self
 
 
 class Plan(BaseModel):

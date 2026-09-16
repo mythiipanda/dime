@@ -139,3 +139,16 @@ def test_task_scope_rejects_empty_or_duplicate_semantics(field, value) -> None:
                field: value}
     with pytest.raises(ValidationError, match=field):
         TaskSpec.model_validate(payload)
+
+
+@pytest.mark.parametrize("payload,error", [
+    ({"id": " ", "description": "facts"}, "non-empty"),
+    ({"id": "facts", "description": " "}, "non-empty"),
+    ({"id": "facts", "description": "facts", "depends_on": ["a", "a"]},
+     "dependencies must not contain duplicates"),
+    ({"id": "facts", "description": "facts", "capability_hints": ["x", "x"]},
+     "capability hints must not contain duplicates"),
+])
+def test_plan_node_rejects_ambiguous_identity_or_selection(payload, error) -> None:
+    with pytest.raises(ValidationError, match=error):
+        PlanNode.model_validate(payload)
