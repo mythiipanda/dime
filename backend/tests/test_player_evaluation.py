@@ -61,3 +61,23 @@ def test_plain_comps_question_stays_on_comps_lane():
     st = _drain("Who are the closest comparable players to Jaylen Brown?")
     names = [c.split(":", 1)[0] for c in st["calls_made"]]
     assert names == ["get_comps"]
+
+
+
+def test_contract_ledger_accepts_canonical_team_slug(monkeypatch):
+    from app.tools import league
+
+    monkeypatch.setattr(league, "_payroll", lambda team, con: (
+        57078728, [{"player": "Jaylen Brown", "salary": 57078728}]))
+    monkeypatch.setattr(league, "_payroll_source", lambda con: "salary sheet")
+    monkeypatch.setattr(league, "_salary_date", lambda con: "2026-09-08")
+    monkeypatch.setattr(league, "_salary_vintage", lambda con: ("2026-27", 1, None))
+
+    class Connection:
+        def close(self): pass
+    monkeypatch.setattr("app.store.connect", lambda *args, **kwargs: Connection())
+
+    out = league.get_cap_ledger.invoke({"team": "boston-celtics"})
+    assert out["ok"] is True
+    assert out["rows"]["team"] == "BOS"
+    assert out["rows"]["players"][0]["player"] == "Jaylen Brown"

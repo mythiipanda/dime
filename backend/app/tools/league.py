@@ -1691,7 +1691,17 @@ def _salary_date(con: object = None) -> str | None:
 def get_cap_ledger(team: str = "") -> dict[str, Any]:
     """Payroll plus apron room for one abbreviation. 2026-27 thresholds."""
     if not team:
-        return {"tool": "get_cap_ledger", "ok": False, "error": "abbreviation needed"}
+        return {"tool": "get_cap_ledger", "ok": False, "error": "team needed"}
+    from nba_api.stats.static import teams as _teams
+    from ._core import coerce_team_id
+    try:
+        team_id = coerce_team_id(team)
+        team = next(
+            item["abbreviation"] for item in _teams.get_teams()
+            if item["id"] == team_id)
+    except (ValueError, StopIteration):
+        return {"tool": "get_cap_ledger", "ok": False,
+                "error": f"unknown team: {team}"}
     from .. import store as _store
 
     con = _store.connect()

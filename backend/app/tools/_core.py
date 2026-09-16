@@ -361,6 +361,7 @@ def coerce_team_id(value: object) -> int:
     except (TypeError, ValueError):
         pass
     raw = NICKNAMES.get(raw.lower(), raw)
+    raw = raw.replace("-", " ").replace("_", " ")
     from nba_api.stats.static import teams
 
     name = raw.lower()

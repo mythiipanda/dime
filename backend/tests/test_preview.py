@@ -213,3 +213,5 @@ def test_abbrev_resolution_prefers_exact_abbrev():
     assert coerce_team_id("NOP") == 1610612740
     assert coerce_team_id("LAL") == 1610612747
     assert coerce_team_id("Los Angeles Lakers") == 1610612747
+    assert coerce_team_id("boston-celtics") == 1610612738
+    assert coerce_team_id("Boston_Celtics") == 1610612738
