@@ -45,3 +45,13 @@ async def test_recorded_capability_rejects_untyped_result_and_records_failure():
     assert ledger.entries[-1].data == {
         "status": "failed", "error": "TypeError: capability must return EvidenceEnvelope"
     }
+
+
+def test_recorded_capability_requires_identity() -> None:
+    class Blank(Capability):
+        name = " "
+
+    with pytest.raises(ValueError, match="name must be non-empty"):
+        RecordedCapability(Blank(), RunLedger("run"), turn_id="turn")
+    with pytest.raises(ValueError, match="turn id must be non-empty"):
+        RecordedCapability(Capability(), RunLedger("run"), turn_id=" ")

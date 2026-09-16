@@ -10,6 +10,10 @@ from v2.runtime.ledger import LedgerKind
 
 class RecordedCapability:
     def __init__(self, capability: Capability, ledger: Any, *, turn_id: str) -> None:
+        if not isinstance(capability.name, str) or not capability.name.strip():
+            raise ValueError("recorded capability name must be non-empty")
+        if not turn_id.strip():
+            raise ValueError("recorded capability turn id must be non-empty")
         self.name = capability.name
         self.task_season_scoped = getattr(capability, "task_season_scoped", True)
         self._capability = capability
