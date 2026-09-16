@@ -179,8 +179,9 @@ def _metric_unit_reasons(claim: Claim,
     text = claim.text.casefold()
     for envelope in envelopes:
         row_keys = {
-            item.path.rsplit(".", 1)[-1].casefold()
+            segment.split("[", 1)[0].casefold()
             for item in iter_values(envelope)
+            for segment in item.path.split(".")
         }
         declared = {key.casefold() for key in envelope.metric_definitions}
         unknown_units = set(key.casefold() for key in envelope.units) - row_keys - declared
@@ -198,6 +199,10 @@ def _metric_unit_reasons(claim: Claim,
             if unit_name in {"percent", "percent_0_100", "fraction_0_1"}:
                 if not percent_shown:
                     reasons.append(f"metric {metric} is stated without a percent unit")
+            elif unit_name == "points_per_100_possessions":
+                if not re.search(r"points?\s+per\s+100\s+possessions?", text):
+                    reasons.append(
+                        f"metric {metric} is stated without its declared unit {unit}")
             elif unit_name.replace("_", " ") not in text:
                 reasons.append(f"metric {metric} is stated without its declared unit {unit}")
     return reasons
@@ -330,6 +335,12 @@ def verify_mechanical(
         supported_numbers = _numeric_values(cited) | calculation_values | allowed_numbers
         for raw in _number_tokens(claim.text):
             if _DATE.fullmatch(raw) or _SEASON.fullmatch(raw):
+                continue
+            if (raw == "100" and "points_per_100_possessions" in {
+                    unit.casefold() for envelope in cited
+                    for unit in envelope.units.values()}
+                    and re.search(r"points?\s+per\s+100\s+possessions?",
+                                  claim.text, re.IGNORECASE)):
                 continue
             if not (_canon_number(raw) & supported_numbers):
                 reasons.append(f"uncited numeral {raw}")

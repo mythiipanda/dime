@@ -331,3 +331,29 @@ def test_natural_language_rating_unit_matches_declared_machine_unit():
     result = verify_mechanical(TaskSpec(goal="ratings", mode="quick", deliverable="answer"), report(claim), [ev], allowed_constants=[1])
     assert result.status == "pass"
     assert result.claim_results[0].supported
+
+
+def test_nested_prediction_metrics_match_declared_units():
+    ev = evidence(
+        rows={"estimate": {"win_prob": {"BOS": 0.548},
+                           "projected_score": {"BOS": 113.6}}},
+        units={"win_prob": "fraction_0_1", "projected_score": "points"},
+    )
+    claim = Claim(
+        text="Boston had a 54.8 percent win probability.", kind="observed",
+        evidence_ids=[ev.evidence_id],
+    )
+    report = verify_mechanical(task(), DraftReport(sections=[], claims=[claim]), [ev])
+    assert report.claim_results[0].supported is True
+
+def test_prediction_probability_with_nested_metric_is_publishable():
+    ev = evidence(
+        rows={"estimate": {"win_prob": {"BOS": 0.548, "NYK": 0.452}}},
+        units={"win_prob": "fraction_0_1"},
+    )
+    claim = Claim(
+        text="Boston has a 54.8 percent win probability.", kind="observed",
+        evidence_ids=[ev.evidence_id],
+    )
+    result = verify_mechanical(task(), report(claim), [ev])
+    assert result.status == "pass"
