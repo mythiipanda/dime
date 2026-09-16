@@ -328,8 +328,27 @@ def thread_export(thread_id: str):
         lines.append(r["answer"] or "")
         lines.append("")
         for t in r["tables"] if isinstance(r["tables"], list) else []:
-            if isinstance(t, dict):
-                lines.append(f"Source table: {t.get('tool', '?')}")
+            if not isinstance(t, dict):
+                continue
+            lines.append(f"Source table: {t.get('tool', '?')}")
+            meta = t.get("meta") if isinstance(t.get("meta"), dict) else {}
+            source = meta.get("source")
+            fetched_at = meta.get("fetched_at")
+            season = meta.get("season")
+            identity = [
+                f"source {source}" if source else "",
+                f"season {season}" if season else "",
+                f"fetched {str(fetched_at)[:10]}" if fetched_at else "",
+            ]
+            if any(identity):
+                lines.append("Evidence: " + ", ".join(filter(None, identity)))
+            limits = [meta.get("qualification"), meta.get("coverage")]
+            warnings = meta.get("warnings")
+            if isinstance(warnings, list):
+                limits.extend(str(item) for item in warnings if str(item).strip())
+            for limit in limits:
+                if isinstance(limit, str) and limit.strip():
+                    lines.append(f"Limit: {limit}")
         lines.append("")
     return PlainTextResponse("\n".join(lines), media_type="text/markdown")
 
