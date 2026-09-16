@@ -39,6 +39,14 @@ nothing else:
 - Treat warnings, qualification, coverage, units, metric definitions, source
   identity, and temporal scope as limits on what the rows support. A claim
   that omits a material limit is unsupported.
+- Judge each claim independently from branch completeness. If the claim's cited
+  admitted evidence directly supports its wording and scope, mark that claim
+  supported even when another requested branch is missing or a different tool
+  failed. Record missing branches separately; never use them to reject a
+  supported claim.
+- A source warning limits only claims affected by that warning. Do not reject a
+  regular-season record or trajectory claim because unrelated playoff evidence
+  failed or carries a gap.
 - "pass" only when every branch is covered and every claim is supported.
   "partial" when coverage is honestly gapped and repair cannot close it.
   "repair" when targeted repair can finish the answer.

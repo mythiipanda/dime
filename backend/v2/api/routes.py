@@ -140,10 +140,18 @@ class QuickAnswerBody(BaseModel):
 
 
 def _answer_text(result) -> str:
-    claims = [item.claim.text for item in result.verified_claims]
+    claims = list(dict.fromkeys(
+        item.claim.text for item in result.verified_claims if item.claim.text.strip()))
     text = "\n\n".join(claims)
-    if result.gaps:
-        gap_text = " ".join(gap.message for gap in result.gaps)
+    gaps: list[str] = []
+    for gap in result.gaps:
+        message = gap.message.strip()
+        if gap.kind.value == "execution_failure" or "execution failed" in message.casefold():
+            message = "Some requested evidence could not be retrieved."
+        if message and message not in gaps:
+            gaps.append(message)
+    if gaps:
+        gap_text = " ".join(gaps)
         text = f"{text}\n\nWhat I could not verify: {gap_text}" if text else gap_text
     return text
 

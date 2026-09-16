@@ -275,16 +275,20 @@ class ToolCapability:
             lambda node, task, evidence: _task_arguments(
                 self.name, node, task, evidence))
 
-    def validate_arguments(self, node: Any) -> None:
+    def _validated_arguments(self, arguments: Mapping[str, Any]) -> dict[str, Any]:
         registry = self._tools if self._tools is not None else _default_tools()
         tool = registry.get(CAPABILITIES[self.name].tool_name)
         schema = getattr(tool, "args_schema", None)
-        if schema is not None:
-            arguments = dict(getattr(node, "arguments", {}) or {})
-            unknown = sorted(set(arguments) - set(schema.model_fields))
-            if unknown:
-                raise ValueError(f"unknown arguments: {unknown}")
-            schema.model_validate(arguments)
+        values = dict(arguments)
+        if schema is None:
+            return values
+        accepted = {key: value for key, value in values.items()
+                    if key in schema.model_fields}
+        schema.model_validate(accepted)
+        return accepted
+
+    def validate_arguments(self, node: Any) -> None:
+        self._validated_arguments(dict(getattr(node, "arguments", {}) or {}))
 
     async def execute(
         self,
@@ -295,7 +299,7 @@ class ToolCapability:
         raw_arguments = self._arguments(node, task, evidence)
         if not isinstance(raw_arguments, Mapping):
             raise TypeError("capability arguments adapter must return a mapping")
-        arguments = dict(raw_arguments)
+        arguments = self._validated_arguments(raw_arguments)
         return await acall_capability(self.name, arguments, tools=self._tools)
 
 

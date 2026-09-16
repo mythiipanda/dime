@@ -532,7 +532,7 @@ def test_trade_legality_inherits_salary_vintage_from_contract_parent() -> None:
     assert arguments["season"] == "2026-27"
 
 
-def test_tool_capability_preflight_rejects_unknown_arguments() -> None:
+def test_tool_capability_preflight_ignores_unknown_arguments() -> None:
     from v2.adapters import ToolCapability
     from v2.contracts import PlanNode
 
@@ -541,8 +541,7 @@ def test_tool_capability_preflight_rejects_unknown_arguments() -> None:
         id="record", description="record", capability_hints=["standings"],
         arguments={"season": "2025-26", "invented": True},
     )
-    with pytest.raises(ValueError, match="unknown arguments.*invented"):
-        capability.validate_arguments(node)
+    capability.validate_arguments(node)
 
 
 def test_trajectory_and_evaluation_extract_canonical_entities() -> None:
@@ -817,3 +816,41 @@ def test_adapter_marks_undeclared_source_identity():
 
     assert envelope.source == "v1:get_player_evaluation:unknown"
     assert envelope.warnings == ["source identity not declared by tool"]
+
+@pytest.mark.anyio
+async def test_tool_capability_strips_unsupported_planner_arguments() -> None:
+    from pydantic import BaseModel
+    from v2.adapters import ToolCapability
+    from v2.contracts import PlanNode, TaskSpec
+
+    class Args(BaseModel):
+        team_a: str
+        players_a: str
+        team_b: str
+        players_b: str
+
+    class TradeValueTool:
+        name = "get_trade_value"
+        args_schema = Args
+        def __init__(self):
+            self.arguments = None
+        async def ainvoke(self, arguments):
+            self.arguments = arguments
+            return {"ok": True, "rows": {"winner": "BOS"},
+                    "meta": {"source": "fixture"}}
+
+    tool = TradeValueTool()
+    capability = ToolCapability("trade_value", tools={"get_trade_value": tool})
+    node = PlanNode(
+        id="value", description="value", capability_hints=["trade_value"],
+        arguments={"team_a": "BOS", "players_a": "Jaylen Brown",
+                   "team_b": "LAC", "players_b": "Paul George",
+                   "season": "2025-26"},
+    )
+    capability.validate_arguments(node)
+    await capability.execute(
+        node, TaskSpec(goal="trade", mode="quick", deliverable="answer"), [])
+    assert tool.arguments == {
+        "team_a": "BOS", "players_a": "Jaylen Brown",
+        "team_b": "LAC", "players_b": "Paul George",
+    }

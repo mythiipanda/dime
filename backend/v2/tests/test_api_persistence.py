@@ -1286,7 +1286,7 @@ def test_answer_text_never_exposes_internal_execution_error():
     )
 
     text = _answer_text(result)
-    assert text == "execution failed for salary"
+    assert text == "Some requested evidence could not be retrieved."
     assert "/secret/db" not in text
     assert "AdapterError" not in text
 
@@ -1548,3 +1548,21 @@ def test_answer_text_does_not_publish_verifier_repair_diagnostics():
     assert text.startswith("Boston went 56-26.")
     assert "Repair claim" not in text
     assert "execution failed" not in text
+
+
+def test_answer_text_deduplicates_and_sanitizes_internal_gap_labels():
+    from v2 import contracts
+    from v2.api.routes import _answer_text
+    from v2.runtime.models import ExecutionResult, RuntimeResult
+
+    result = RuntimeResult(
+        task=contracts.TaskSpec(goal="record", mode="quick", deliverable="answer"),
+        execution=ExecutionResult(plan=contracts.Plan(nodes=[])),
+        draft=contracts.DraftReport(sections=[], claims=[]),
+        verification=contracts.VerificationReport(status="partial"),
+        gaps=[
+            contracts.Gap(kind="execution_failure", message="execution failed for playoffs_2425"),
+            contracts.Gap(kind="execution_failure", message="execution failed for standings_2526"),
+        ],
+    )
+    assert _answer_text(result) == "Some requested evidence could not be retrieved."
