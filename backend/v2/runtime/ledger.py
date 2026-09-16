@@ -97,7 +97,33 @@ class RunLedger:
             raise ValueError("ledger sequence must be contiguous")
         self._calls: dict[str, str] = {}
         self._results: set[str] = set()
+        open_turns: set[str] = set()
+        open_steps: set[tuple[str, str]] = set()
+        closed_turns: set[str] = set()
         for entry in self._entries:
+            if entry.kind == LedgerKind.TURN_START:
+                if entry.turn_id in open_turns or entry.turn_id in closed_turns:
+                    raise ValueError("turn may start only once")
+                open_turns.add(entry.turn_id)
+            elif entry.kind == LedgerKind.TURN_END:
+                if entry.turn_id not in open_turns:
+                    raise ValueError("turn end requires an open turn")
+                if any(turn == entry.turn_id for turn, _ in open_steps):
+                    raise ValueError("turn cannot end with open steps")
+                open_turns.remove(entry.turn_id)
+                closed_turns.add(entry.turn_id)
+            elif entry.turn_id in closed_turns:
+                raise ValueError("events cannot follow turn end")
+            if entry.kind == LedgerKind.STEP_START and entry.step_id:
+                key = (entry.turn_id, entry.step_id)
+                if key in open_steps:
+                    raise ValueError("step may start only once before ending")
+                open_steps.add(key)
+            elif entry.kind == LedgerKind.STEP_END and entry.step_id:
+                key = (entry.turn_id, entry.step_id)
+                if key not in open_steps:
+                    raise ValueError("step end requires an open step")
+                open_steps.remove(key)
             if entry.kind == LedgerKind.TOOL_CALL and entry.call_id:
                 identity = _call_identity(entry)
                 previous = self._calls.get(entry.call_id)

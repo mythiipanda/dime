@@ -182,3 +182,25 @@ def test_tool_result_data_shape_is_strict(data, error) -> None:
                   data={"name": "standings", "args": {}})
     with pytest.raises(ValueError, match=error):
         ledger.append(LedgerKind.TOOL_RESULT, turn_id="turn", call_id="call", data=data)
+
+
+def test_reloaded_ledger_rejects_invalid_turn_and_step_order() -> None:
+    from datetime import UTC, datetime
+    from v2.runtime.ledger import LedgerEntry
+
+    def entry(sequence, kind, *, step_id=None):
+        return LedgerEntry(
+            sequence=sequence, run_id="run", kind=kind,
+            recorded_at=datetime.now(UTC), turn_id="turn", step_id=step_id,
+        )
+
+    with pytest.raises(ValueError, match="open turn"):
+        RunLedger("run", [entry(1, "turn/end")])
+    with pytest.raises(ValueError, match="open step"):
+        RunLedger("run", [entry(1, "turn/start"), entry(2, "step/end", step_id="plan")])
+    with pytest.raises(ValueError, match="open steps"):
+        RunLedger("run", [entry(1, "turn/start"), entry(2, "step/start", step_id="plan"),
+                          entry(3, "turn/end")])
+    with pytest.raises(ValueError, match="follow turn end"):
+        RunLedger("run", [entry(1, "turn/start"), entry(2, "turn/end"),
+                          entry(3, "assistant/attempt")])
