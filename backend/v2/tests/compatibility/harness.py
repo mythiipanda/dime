@@ -138,6 +138,32 @@ def load_pack(path: Path) -> dict[str, Any]:
                 or any(not isinstance(item, dict) for item in expectations)):
             raise ValueError(
                 f"compatibility scenario {scenario_id} expectations must match its chain")
+        allowed_expectation_keys = {"contains", "contains_any", "not_contains"}
+        for expectation in expectations:
+            unknown = sorted(set(expectation) - allowed_expectation_keys)
+            if unknown:
+                raise ValueError(
+                    f"compatibility scenario {scenario_id} has unknown expectation fields: "
+                    f"{unknown}")
+            for field in ("contains", "not_contains"):
+                values = expectation.get(field, [])
+                if (not isinstance(values, list)
+                        or any(not isinstance(item, str) or not item.strip()
+                               for item in values)
+                        or len(values) != len(set(values))):
+                    raise ValueError(
+                        f"compatibility scenario {scenario_id} {field} must contain "
+                        "unique non-empty strings")
+            alternatives = expectation.get("contains_any", [])
+            if (not isinstance(alternatives, list)
+                    or any(not isinstance(group, list) or not group
+                           or any(not isinstance(item, str) or not item.strip()
+                                  for item in group)
+                           or len(group) != len(set(group))
+                           for group in alternatives)):
+                raise ValueError(
+                    f"compatibility scenario {scenario_id} contains_any must contain "
+                    "non-empty unique string groups")
         ids.append(scenario_id)
         scenario["_banned_everywhere"] = banned
     if len(ids) != len(set(ids)):

@@ -157,3 +157,24 @@ def test_pack_rejects_malformed_scenario_contract(tmp_path, scenario, error):
     path.write_text(json.dumps(payload))
     with pytest.raises(ValueError, match=error):
         load_pack(path)
+
+
+@pytest.mark.parametrize("expectation,error", [
+    ({"contains": ["value"], "invented": []}, "unknown expectation fields"),
+    ({"contains": [" "]}, "contains must contain"),
+    ({"not_contains": ["same", "same"]}, "not_contains must contain"),
+    ({"contains_any": []}, None),
+    ({"contains_any": [[]]}, "contains_any must contain"),
+    ({"contains_any": [["same", "same"]]}, "contains_any must contain"),
+])
+def test_pack_validates_expectation_contract(tmp_path, expectation, error):
+    import json
+    payload = json.loads(PACK.read_text())
+    payload["scenarios"][0]["expect"] = expectation
+    path = tmp_path / "pack.json"
+    path.write_text(json.dumps(payload))
+    if error is None:
+        assert load_pack(path)["scenarios"][0]["expect"] == expectation
+    else:
+        with pytest.raises(ValueError, match=error):
+            load_pack(path)
