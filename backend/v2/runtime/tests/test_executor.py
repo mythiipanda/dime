@@ -200,3 +200,14 @@ async def test_missing_required_evidence_fails_before_execution() -> None:
         await PlanExecutor({"fake": Tracking("fake", {})}).execute(
             task, Plan(nodes=[node("only")]))
     assert calls == []
+
+
+@pytest.mark.anyio
+async def test_model_plan_cannot_predeclare_node_complete() -> None:
+    plan = Plan(nodes=[PlanNode(
+        id="facts", description="facts", capability_hints=["fake"],
+        completion_test="done", status=PlanStatus.COMPLETE,
+    )])
+    with pytest.raises(ValueError, match="must start pending"):
+        await PlanExecutor({"fake": FakeCapability("fake", {})}).execute(
+            TaskSpec(goal="answer", mode="quick", deliverable="text"), plan)

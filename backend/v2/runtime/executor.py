@@ -151,6 +151,10 @@ class PlanExecutor:
     def _preflight(self, task: TaskSpec, plan: Plan) -> None:
         selected: set[str] = set()
         for node in plan.nodes:
+            if node.status != PlanStatus.PENDING:
+                raise ValueError(
+                    f"new plan node {node.id!r} must start pending, got "
+                    f"{node.status.value!r}")
             matches = [name for name in node.capability_hints
                        if name in self._capabilities]
             if len(matches) != 1:
