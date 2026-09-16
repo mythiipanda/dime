@@ -102,6 +102,16 @@ class LedgerEntry(BaseModel):
     data: dict[str, Any] = Field(default_factory=dict)
 
 
+def _validate_start_data(kind: LedgerKind, data: dict[str, Any]) -> None:
+    if kind == LedgerKind.TURN_START:
+        if (set(data) != {"request"}
+                or not isinstance(data.get("request"), str)
+                or not data["request"].strip()):
+            raise ValueError("turn start requires exactly one non-empty request")
+    elif kind == LedgerKind.STEP_START and data:
+        raise ValueError("step start data must be empty")
+
+
 def _validate_terminal_data(kind: LedgerKind, data: dict[str, Any]) -> None:
     if kind not in (LedgerKind.STEP_END, LedgerKind.TURN_END):
         return
@@ -167,6 +177,7 @@ class RunLedger:
                 raise ValueError("step events require step_id")
             if entry.kind in (LedgerKind.TURN_START, LedgerKind.TURN_END)                     and entry.step_id is not None:
                 raise ValueError("turn events cannot carry step_id")
+            _validate_start_data(entry.kind, entry.data)
             _validate_terminal_data(entry.kind, entry.data)
             if entry.kind == LedgerKind.TURN_START:
                 if entry.turn_id in open_turns or entry.turn_id in closed_turns:
@@ -282,6 +293,7 @@ class RunLedger:
         if kind in (LedgerKind.TOOL_CALL, LedgerKind.TOOL_RESULT,
                     LedgerKind.MODEL_REQUEST, LedgerKind.ASSISTANT_ATTEMPT)                 and not call_id:
             raise ValueError("call events require call_id")
+        _validate_start_data(kind, payload)
         _validate_terminal_data(kind, payload)
         if kind == LedgerKind.MODEL_REQUEST:
             if call_id in self._model_requests:

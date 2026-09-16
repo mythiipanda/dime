@@ -69,7 +69,7 @@ def test_failed_attempts_remain_in_log_but_not_model_history() -> None:
 
 def test_interrupted_run_gets_explicit_terminal_closers() -> None:
     ledger = RunLedger("run")
-    ledger.append(LedgerKind.TURN_START, turn_id="t")
+    ledger.append(LedgerKind.TURN_START, turn_id="t", data={"request": "q"})
     ledger.append(LedgerKind.STEP_START, turn_id="t", step_id="planner")
     ledger.close_interrupted("t", TerminalReason.CANCELLED)
     assert [entry.kind for entry in ledger.entries[-2:]] == [
@@ -81,7 +81,7 @@ def test_interrupted_run_gets_explicit_terminal_closers() -> None:
 def test_file_ledger_is_append_only_and_reloadable(tmp_path: Path) -> None:
     path = tmp_path / "run.jsonl"
     file = FileLedger(path, "run")
-    file.append(LedgerKind.TURN_START, turn_id="t")
+    file.append(LedgerKind.TURN_START, turn_id="t", data={"request": "q"})
     file.append(LedgerKind.TURN_END, turn_id="t", data={"reason": "complete"})
     loaded = FileLedger(path, "run")
     assert loaded.ledger.entries == file.ledger.entries
@@ -90,7 +90,7 @@ def test_file_ledger_is_append_only_and_reloadable(tmp_path: Path) -> None:
 
 def test_file_ledger_exposes_runtime_surface(tmp_path: Path) -> None:
     file = FileLedger(tmp_path / "run.jsonl", "run")
-    file.append(LedgerKind.TURN_START, turn_id="t")
+    file.append(LedgerKind.TURN_START, turn_id="t", data={"request": "q"})
     assert file.run_id == "run"
     assert len(file.entries) == 1
 
@@ -158,7 +158,7 @@ def test_ledger_run_identity_must_be_non_empty() -> None:
 )
 def test_ledger_event_identities_must_be_non_empty(kwargs, error) -> None:
     with pytest.raises(ValueError, match=error):
-        RunLedger("run").append(LedgerKind.TURN_START, **kwargs)
+        RunLedger("run").append(LedgerKind.TURN_START, data={"request": "q"}, **kwargs)
 
 
 @pytest.mark.parametrize(
@@ -200,7 +200,8 @@ def test_reloaded_ledger_rejects_invalid_turn_and_step_order() -> None:
 
     def entry(sequence, kind, *, step_id=None):
         data = ({"reason": "complete"}
-                if kind in ("step/end", "turn/end") else {})
+                if kind in ("step/end", "turn/end")
+                else {"request": "q"} if kind == "turn/start" else {})
         return LedgerEntry(
             sequence=sequence, run_id="run", kind=kind,
             recorded_at=datetime.now(UTC), turn_id="turn", step_id=step_id,
@@ -223,7 +224,7 @@ def test_live_ledger_enforces_turn_and_step_lifecycle() -> None:
     ledger = RunLedger("run")
     with pytest.raises(ValueError, match="open turn"):
         ledger.append(LedgerKind.TURN_END, turn_id="turn", data={"reason": "complete"})
-    ledger.append(LedgerKind.TURN_START, turn_id="turn")
+    ledger.append(LedgerKind.TURN_START, turn_id="turn", data={"request": "q"})
     ledger.append(LedgerKind.STEP_START, turn_id="turn", step_id="plan")
     with pytest.raises(ValueError, match="open steps"):
         ledger.append(LedgerKind.TURN_END, turn_id="turn", data={"reason": "complete"})
@@ -334,10 +335,11 @@ def test_step_events_require_step_identity(kind) -> None:
 def test_turn_events_reject_step_identity(kind) -> None:
     ledger = RunLedger("run")
     if kind == LedgerKind.TURN_END:
-        ledger.append(LedgerKind.TURN_START, turn_id="turn")
+        ledger.append(LedgerKind.TURN_START, turn_id="turn", data={"request": "q"})
     with pytest.raises(ValueError, match="cannot carry step_id"):
         ledger.append(kind, turn_id="turn", step_id="bad",
-                      data={"reason": "complete"} if kind == LedgerKind.TURN_END else {})
+                      data=({"reason": "complete"} if kind == LedgerKind.TURN_END
+                            else {"request": "q"}))
 
 
 @pytest.mark.parametrize("kind,kwargs", [
@@ -346,8 +348,22 @@ def test_turn_events_reject_step_identity(kind) -> None:
 ])
 def test_terminal_ledger_events_require_reason(kind, kwargs) -> None:
     ledger = RunLedger("run")
-    ledger.append(LedgerKind.TURN_START, turn_id="turn")
+    ledger.append(LedgerKind.TURN_START, turn_id="turn", data={"request": "q"})
     if kind == LedgerKind.STEP_END:
         ledger.append(LedgerKind.STEP_START, turn_id="turn", step_id="plan")
     with pytest.raises(ValueError, match="valid reason"):
         ledger.append(kind, turn_id="turn", **kwargs)
+
+
+@pytest.mark.parametrize("data", [{}, {"request": " "}, {"request": "q", "extra": True}])
+def test_turn_start_payload_shape_is_strict(data) -> None:
+    with pytest.raises(ValueError, match="non-empty request"):
+        RunLedger("run").append(LedgerKind.TURN_START, turn_id="turn", data=data)
+
+
+def test_step_start_payload_must_be_empty() -> None:
+    ledger = RunLedger("run")
+    ledger.append(LedgerKind.TURN_START, turn_id="turn", data={"request": "q"})
+    with pytest.raises(ValueError, match="must be empty"):
+        ledger.append(LedgerKind.STEP_START, turn_id="turn", step_id="plan",
+                      data={"request": "q"})
