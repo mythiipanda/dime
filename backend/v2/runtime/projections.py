@@ -36,11 +36,20 @@ def tool_attempts(entries: Iterable[LedgerEntry]) -> list[dict[str, Any]]:
         call = calls.get(entry.call_id)
         if call is None:
             continue
+        if set(call.data) != {"name", "args"}:
+            raise ValueError("tool call has unexpected fields")
+        if not isinstance(call.data["name"], str) or not call.data["name"].strip():
+            raise ValueError("tool call requires a non-empty name")
+        if not isinstance(call.data["args"], dict):
+            raise ValueError("tool call requires an args object")
+        status = entry.data.get("status")
+        if status not in {"ok", "failed"}:
+            raise ValueError("tool result status must be ok or failed")
         attempts.append({
             "call_id": entry.call_id,
-            "name": call.data.get("name"),
-            "args": call.data.get("args", {}),
-            "status": entry.data.get("status"),
+            "name": call.data["name"],
+            "args": call.data["args"],
+            "status": status,
             "error": entry.data.get("error"),
         })
     return attempts

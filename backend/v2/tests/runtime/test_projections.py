@@ -55,3 +55,23 @@ def test_successful_tool_projection_rejects_missing_or_extra_evidence_fields():
     })
     with pytest.raises(ValueError, match="unexpected fields"):
         admitted_evidence(extra.entries)
+
+
+def test_tool_attempt_projection_rejects_partial_call_and_status() -> None:
+    import pytest
+
+    ledger = RunLedger("run")
+    ledger.append(LedgerKind.TOOL_CALL, turn_id="turn", call_id="call",
+                  data={"name": "standings", "args": {}, "label": "extra"})
+    ledger.append(LedgerKind.TOOL_RESULT, turn_id="turn", call_id="call",
+                  data={"status": "ok", "evidence": {}})
+    with pytest.raises(ValueError, match="tool call has unexpected fields"):
+        tool_attempts(ledger.entries)
+
+    ledger = RunLedger("run")
+    ledger.append(LedgerKind.TOOL_CALL, turn_id="turn", call_id="call",
+                  data={"name": "standings", "args": {}})
+    ledger.append(LedgerKind.TOOL_RESULT, turn_id="turn", call_id="call",
+                  data={"status": "success"})
+    with pytest.raises(ValueError, match="status must be ok or failed"):
+        tool_attempts(ledger.entries)
