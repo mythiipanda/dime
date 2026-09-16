@@ -58,7 +58,7 @@ class ScenarioCandidate(BaseModel):
     first_bad_revision: str
     trace_id: str | None = None
     state: CandidateState = CandidateState.PENDING
-    tags: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list, max_length=32)
 
     @model_validator(mode="after")
     def validate_identity(self) -> "ScenarioCandidate":

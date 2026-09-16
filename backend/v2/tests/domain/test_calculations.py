@@ -108,3 +108,14 @@ def test_calculation_validation_rejects_invalid_tolerance(tolerance) -> None:
                         inputs=[ref("rows[0].PTS")], result=Decimal("30"))
     with pytest.raises(ValueError, match="tolerance must be finite and non-negative"):
         validate_calculation(valid, index(), tolerance)
+
+
+def test_calculation_input_list_has_a_hard_limit() -> None:
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError, match="at most 256 items"):
+        Calculation(
+            calculation_id="sum", operation="add",
+            inputs=[CalculationInput(evidence_id="box", path=f"rows.{index}")
+                    for index in range(257)],
+            result=Decimal("1"),
+        )

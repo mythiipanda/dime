@@ -41,7 +41,7 @@ class RunOutcome(BaseModel):
 
     status: OutcomeStatus
     answer: str = ""
-    capabilities: list[str] = Field(default_factory=list)
+    capabilities: list[str] = Field(default_factory=list, max_length=32)
     evidence_count: StrictInt = 0
     supported_claims: StrictInt = 0
     total_claims: StrictInt = 0
@@ -71,7 +71,7 @@ class ShadowComparison(BaseModel):
     request_hash: str
     v1: RunOutcome
     v2: RunOutcome
-    differences: list[DifferenceKind] = Field(default_factory=list)
+    differences: list[DifferenceKind] = Field(default_factory=list, max_length=4)
 
     @model_validator(mode="after")
     def validate_identity(self) -> "ShadowComparison":
@@ -216,7 +216,7 @@ class ShadowGateReport(BaseModel):
     route_drift_rate: StrictFloat
     answer_drift_rate: StrictFloat
     ready: StrictBool
-    blockers: list[str] = Field(default_factory=list)
+    blockers: list[str] = Field(default_factory=list, max_length=5)
 
     @model_validator(mode="after")
     def validate_report(self) -> "ShadowGateReport":

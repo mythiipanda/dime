@@ -37,7 +37,7 @@ class Calculation(BaseModel):
 
     calculation_id: str = Field(min_length=1)
     operation: CalculationOperation
-    inputs: list[CalculationInput]
+    inputs: list[CalculationInput] = Field(max_length=256)
     result: Decimal
     unit: str | None = None
     subject_input: StrictInt | None = Field(default=None, ge=0)
