@@ -81,3 +81,10 @@ def test_curated_thought_stream_status_remains_visible():
         "node": "data_retrieval", "text": "Reading standings from the warehouse.",
     })
     assert public["text"] == "Reading standings from the warehouse."
+
+
+def test_draft_answer_tokens_are_not_published_before_final_guard():
+    public = _sanitize_sse_event("token", {
+        "text": "Boston won 99 games and private evidence says so.",
+    })
+    assert public == {"text": ""}

@@ -30,6 +30,9 @@ def _sanitize_sse_event(etype: str, data: dict) -> dict:
         return {key: data[key] for key in (
             "node", "name", "label", "summary", "agent",
         ) if key in data}
+    if etype == "token":
+        # Draft prose has not passed the final numerical/grounding guard yet.
+        return {"text": ""}
     if etype == "thought_token" and isinstance(data, dict):
         return {key: data[key] for key in ("node", "agent") if key in data} | {
             "text": "Working through the evidence...",
