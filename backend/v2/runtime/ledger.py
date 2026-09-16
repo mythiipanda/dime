@@ -3,13 +3,14 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import math
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 from threading import Lock
 from typing import Any, Iterable
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictFloat, StrictInt, model_validator
 
 
 class LedgerKind(StrEnum):
@@ -40,7 +41,7 @@ class RequestEnvelope(BaseModel):
     context_hash: str
     tool_schema_hash: str
     planner_version: str
-    budgets: dict[str, int | float] = Field(default_factory=dict)
+    budgets: dict[str, StrictInt | StrictFloat] = Field(default_factory=dict)
     skill_hashes: dict[str, str] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -51,6 +52,10 @@ class RequestEnvelope(BaseModel):
                 raise ValueError(f"{name} must be non-empty")
         if any(not key.strip() for key in self.budgets):
             raise ValueError("budget keys must be non-empty")
+        if any(isinstance(value, bool) or value < 0
+               or isinstance(value, float) and not math.isfinite(value)
+               for value in self.budgets.values()):
+            raise ValueError("budget values must be finite non-negative numbers")
         if any(not key.strip() or not value.strip()
                for key, value in self.skill_hashes.items()):
             raise ValueError("skill hashes must be non-empty")
@@ -67,7 +72,7 @@ class RequestEnvelope(BaseModel):
         context: Any,
         tool_schemas: Any,
         planner_version: str,
-        budgets: dict[str, int | float] | None = None,
+        budgets: dict[str, StrictInt | StrictFloat] | None = None,
         skill_hashes: dict[str, str] | None = None,
     ) -> "RequestEnvelope":
         for name, value in {

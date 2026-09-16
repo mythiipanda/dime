@@ -405,3 +405,14 @@ def test_unfinished_steps_and_interruption_are_turn_scoped() -> None:
     ledger.close_interrupted("t2", TerminalReason.CANCELLED)
     assert ledger.entries[-2].turn_id == "t2"
     assert ledger.entries[-2].step_id == "shared"
+
+
+@pytest.mark.parametrize("value,error", [
+    (-1, "finite non-negative"), (float("nan"), "finite non-negative"),
+    (float("inf"), "finite non-negative"), (True, "valid integer|valid number"),
+])
+def test_request_envelope_rejects_invalid_budget_values(value, error) -> None:
+    with pytest.raises(Exception, match=error):
+        RequestEnvelope.freeze(
+            provider="p", model="m", route="answer", prompt="p", context={},
+            tool_schemas={}, planner_version="v2", budgets={"seconds": value})
