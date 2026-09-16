@@ -444,6 +444,9 @@ _PREDICT_RX = re.compile(
 _PREDICT_LIVE_RX = re.compile(r"\blive\b|\bin[\s-]*game\b", re.IGNORECASE)
 _PREDICT_TITLE_RX = re.compile(
     r"championship|\btitle\b|\bfinals\b|\bring\b", re.IGNORECASE)
+_PREDICT_SERIES_RX = re.compile(
+    r"\bbest[\s-]?of[\s-]?(?:five|seven|5|7)\b|\bplayoff series\b|"
+    r"\bseries\b", re.IGNORECASE)
 # Unambiguous impact-estimate phrasing: an estimate/impact pairing
 # within one clause ("estimate X's impact", "his estimated per-100
 # impact"), or "how good has/is [player]". RAPTOR/WAR/peak/career-arc
@@ -1499,6 +1502,26 @@ async def _triage_seed(question: str, primary: str, model: str,
         r"supporting cast|\bcast\b|teammates?|rotation depth|"
         r"around (him|her|them)|better team\b|deeper team\b",
         question, re.IGNORECASE))
+    is_series_predict = (
+        len(found_t) >= 2
+        and _PREDICT_RX.search(question)
+        and _PREDICT_SERIES_RX.search(question)
+        and not state.get("history")
+    )
+    if is_series_predict:
+        message = (
+            "I can't simulate a best-of-seven series yet. The available "
+            "prediction model is for one game, so using it here would "
+            "misrepresent a single-game estimate as a series forecast."
+        )
+        state["tool_results"].append({
+            "tool": "series_prediction_unavailable",
+            "rows": [{"status": "unavailable", "reason": message}],
+            "meta": {"deterministic_answer": message},
+        })
+        async for _e in _triage_terminal(question, state):
+            yield _e
+        return
     is_predict = (
         len(found_t) >= 2
         and _PREDICT_RX.search(question)

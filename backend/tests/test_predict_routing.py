@@ -183,3 +183,15 @@ def test_prediction_wrapper_carries_deterministic_answer():
     answer = st["tool_results"][0]["meta"]["deterministic_answer"]
     assert "54.8%" in answer
     assert "2.0-point edge" in answer
+
+
+def test_best_of_seven_does_not_masquerade_as_game_prediction():
+    st = _drain(
+        "Who wins a best-of-seven playoff series, Celtics or Knicks?")
+    assert "get_game_prediction" not in _tool_names(st)
+    assert st["round"] in (MAX_TOOL_ROUNDS, DEEP_TOOL_ROUNDS)
+    out = st["tool_results"][-1]
+    assert out["tool"] == "series_prediction_unavailable"
+    answer = out["meta"]["deterministic_answer"]
+    assert "can't simulate a best-of-seven series yet" in answer
+    assert "one game" in answer

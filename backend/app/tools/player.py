@@ -676,15 +676,28 @@ def compare_metrics(a: str | int, b: str | int, season: str = SEASON) -> dict[st
         _metric_row("ts", "true shooting", "scoring efficiency",
                     ma.get("TS_PCT"), mb.get("TS_PCT"), na, nb),
     ]
-    decided = [r for r in rows if r["leader"] in ("a", "b")]
+    # RAPTOR ended after 2021-22. Keep those rows visible as historical
+    # context, but never let an old vintage vote on a current-season verdict.
+    # Its total/offense/defense/WAR columns are one model family, so counting
+    # them as four independent current votes would manufacture agreement.
+    raptor_current = bool(vintage) and vintage == {season}
+    for row in rows:
+        row["eligible_for_verdict"] = (
+            row["metric"] not in {"raptor", "raptor_o", "raptor_d", "war"}
+            or raptor_current
+        )
+        if not row["eligible_for_verdict"] and row["leader"] in ("a", "b"):
+            row["note"] += " Historical context only; excluded from verdict."
+    decided = [r for r in rows if r["leader"] in ("a", "b")
+               and r["eligible_for_verdict"]]
     va = sum(1 for r in decided if r["leader"] == "a")
     vb = sum(1 for r in decided if r["leader"] == "b")
     if not decided:
-        agreement, verdict = "none", "No shared metrics cover both players."
+        agreement, verdict = "none", "No current-season shared metrics cover both players."
     elif va == len(decided):
-        agreement, verdict = "agree", f"Every metric favors {na}."
+        agreement, verdict = "agree", f"Every verdict-eligible metric favors {na}."
     elif vb == len(decided):
-        agreement, verdict = "agree", f"Every metric favors {nb}."
+        agreement, verdict = "agree", f"Every verdict-eligible metric favors {nb}."
     else:
         split = [r["label"] for r in decided if r["leader"] == ("a" if va >= vb else "b")]
         agreement, verdict = (

@@ -424,3 +424,41 @@ def test_text_to_sql_allowlist_covers_current_analysis_tables():
         "silver_advanced", "silver_player_season", "silver_on_off",
         "silver_four_factors", "silver_four_factors_team", "silver_cap_players",
     } <= set(_SQL_TABLES)
+
+
+def test_compare_metrics_stale_raptor_is_context_not_four_votes(monkeypatch):
+    from app.tools import player
+
+    rows = {
+        "silver_raptor_player": {
+            "Shai Gilgeous-Alexander": [10.0, 6.0, 16.0, 20.0, "2021-22"],
+            "Nikola Jokic": [1.0, 1.0, 2.0, 3.0, "2021-22"],
+        },
+        "silver_rapm": {"1628983": [1.0], "203999": [2.0]},
+    }
+
+    def fake_read(query, params):
+        if "silver_raptor_player" in query:
+            value = rows["silver_raptor_player"].get(params[0])
+            if not value:
+                return []
+            keys = ["RAPTOR_OFFENSE", "RAPTOR_DEFENSE", "RAPTOR_TOTAL",
+                    "WAR_TOTAL", "_season"]
+            return [dict(zip(keys, value))]
+        if "silver_rapm" in query:
+            value = rows["silver_rapm"].get(str(params[1]))
+            return [{"rapm": value[0]}] if value else []
+        return []
+
+    monkeypatch.setattr(player, "_read_df", fake_read)
+    out = player.compare_metrics.invoke({
+        "a": "Shai Gilgeous-Alexander", "b": "Nikola Jokic",
+        "season": "2025-26",
+    })
+    metrics = out["rows"]["metrics"]
+    historical = metrics[:4]
+    assert all(not row["eligible_for_verdict"] for row in historical)
+    assert all("Historical context only" in row["note"] for row in historical)
+    assert out["rows"]["verdict"].startswith(
+        "Every verdict-eligible metric favors Nikola Jokic")
+    assert "2021-22 vintage" in out["rows"]["verdict"]
