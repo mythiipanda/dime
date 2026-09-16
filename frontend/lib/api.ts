@@ -228,7 +228,9 @@ export async function postChatStream(
   }
   let res: Response;
   try {
-    res = await fetch(`${BACKEND}/api/v1/chat/stream`, {
+    const runtime = process.env.NEXT_PUBLIC_CHAT_RUNTIME === "v2" ? "v2" : "v1";
+    const endpoint = runtime === "v2" ? "/api/v2/chat/stream" : "/api/v1/chat/stream";
+    res = await fetch(`${BACKEND}${endpoint}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ q, model, thread, client: getClientId() }),

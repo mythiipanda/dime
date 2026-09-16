@@ -1500,3 +1500,12 @@ def test_shadow_stream_failure_stays_silent(monkeypatch):
     assert "x-dime-run-id" not in response.headers
     for private in ("secret_tool", "private", "provider secret"):
         assert private not in response.text
+
+
+def test_frontend_can_select_native_v2_chat_runtime():
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[3] / "frontend" / "lib" / "api.ts").read_text()
+    assert 'process.env.NEXT_PUBLIC_CHAT_RUNTIME === "v2"' in source
+    assert '"/api/v2/chat/stream"' in source
+    assert 'JSON.stringify({ q, model, thread, client: getClientId() })' in source

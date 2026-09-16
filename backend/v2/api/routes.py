@@ -7,15 +7,18 @@ import subprocess
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from v2.projects.service import ProjectStore
+from v2.conversations import ConversationStore
 
 router = APIRouter()
 _BACKEND = Path(__file__).resolve().parents[2]
 _PROJECTS = ProjectStore(
     os.environ.get("DIME_PROJECT_STORE", str(_BACKEND / "data" / "v2-projects.sqlite3"))
 )
+_CONVERSATIONS = ConversationStore(os.environ.get(
+    "DIME_CONVERSATION_STORE", str(_BACKEND / "data" / "v2-conversations.sqlite3")))
 
 
 def _projects_enabled() -> bool:
@@ -105,6 +108,8 @@ class QuickAnswerBody(BaseModel):
     q: str = Field(min_length=1, max_length=2000)
     model: str | None = Field(default=None, max_length=256)
     history: list[ConversationTurn] = Field(default_factory=list, max_length=8)
+    thread: str | None = Field(default=None, min_length=1, max_length=80)
+    client: str | None = Field(default=None, min_length=1, max_length=80)
 
     @field_validator("q")
     @classmethod
@@ -119,6 +124,19 @@ class QuickAnswerBody(BaseModel):
         if value is not None and not value.strip():
             raise ValueError("model must be non-empty when present")
         return value
+
+    @field_validator("thread", "client")
+    @classmethod
+    def reject_blank_identity(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("thread and client must be non-empty when present")
+        return value
+
+    @model_validator(mode="after")
+    def require_complete_conversation_identity(self):
+        if (self.thread is None) != (self.client is None):
+            raise ValueError("thread and client must be provided together")
+        return self
 
 
 def _answer_text(result) -> str:
@@ -187,6 +205,9 @@ async def quick_answer_stream(body: QuickAnswerBody):
     runtime, ledger = build_runtime(
         provider=provider, model_name=model_name, run_id=run_id,
         progress=progress, policy=policy)
+    context = tuple(body.history)
+    if body.thread is not None and body.client is not None:
+        context = tuple(_CONVERSATIONS.read(body.client, body.thread))
 
     def recorded_tool_events():
         entries = ledger.entries
@@ -237,7 +258,7 @@ async def quick_answer_stream(body: QuickAnswerBody):
 
     async def generate():
         task = asyncio.create_task(runtime.run(
-            body.q, run_id=run_id, context=tuple(body.history)))
+            body.q, run_id=run_id, context=context))
         try:
             while not task.done() or not queue.empty():
                 try:
@@ -266,7 +287,11 @@ async def quick_answer_stream(body: QuickAnswerBody):
                     node="analytics",
                     tables=[evidence_table(item)
                             for item in result.execution.evidence]))
-                yield encode_event(FinalAnswer(text=_answer_text(result)))
+                answer = _answer_text(result)
+                yield encode_event(FinalAnswer(text=answer))
+                if body.thread is not None and body.client is not None:
+                    _CONVERSATIONS.append_exchange(
+                        body.client, body.thread, body.q, answer)
             yield encode_event(GraphEnd())
         finally:
             if not task.done():
