@@ -32,6 +32,12 @@ def test_comparison_classifies_answer_route_grounding_and_failure():
     ]
 
 
+def test_equal_non_ok_outcomes_remain_failure_drift() -> None:
+    comparison = compare_outcomes(
+        "record?", outcome(status="partial"), outcome(status="partial"))
+    assert comparison.differences == [DifferenceKind.FAILURE]
+
+
 def test_shadow_store_is_append_only(tmp_path):
     store = ShadowStore(tmp_path / "shadow.jsonl")
     comparison = compare_outcomes("record?", outcome(), outcome())

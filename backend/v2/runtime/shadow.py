@@ -70,7 +70,7 @@ class ShadowComparison(BaseModel):
 
 def compare_outcomes(request: str, v1: RunOutcome, v2: RunOutcome) -> ShadowComparison:
     differences: list[DifferenceKind] = []
-    if v1.status != v2.status or v1.status != "ok":
+    if v1.status != "ok" or v2.status != "ok":
         differences.append(DifferenceKind.FAILURE)
     if _canon(v1.answer) != _canon(v2.answer):
         differences.append(DifferenceKind.ANSWER)
