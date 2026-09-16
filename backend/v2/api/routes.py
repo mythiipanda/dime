@@ -196,7 +196,8 @@ async def quick_answer_stream(body: QuickAnswerBody):
                     name=name,
                     status="ok" if payload.get("status") == "ok" else "fail",
                     rows=len(rows) if isinstance(rows, list) else None,
-                    error=payload.get("error"),
+                    error=(f"{name} failed"
+                           if payload.get("status") == "failed" else None),
                 )
 
     async def generate():

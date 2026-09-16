@@ -350,6 +350,8 @@ def test_failed_stream_tool_result_keeps_its_call_identity(monkeypatch):
 
     assert '"name":"contracts"' in response.text
     assert '"name":"tool"' not in response.text
+    assert 'contracts failed' in response.text
+    assert 'source unavailable' not in response.text
 
 
 def test_answer_text_publishes_only_adjudicated_model_prose():
