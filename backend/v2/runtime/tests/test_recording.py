@@ -75,3 +75,27 @@ async def test_recorded_capability_rejects_wrong_capability_before_admission() -
         )
     assert ledger.entries[-1].data["status"] == "failed"
     assert all(entry.data.get("status") != "ok" for entry in ledger.entries)
+
+
+@pytest.mark.anyio
+async def test_recorded_capability_rejects_mislabeled_lineage_before_admission() -> None:
+    parent = EvidenceEnvelope(
+        evidence_id="parent", capability="standings", source="fixture",
+        observed_at=datetime.now(UTC), rows={},
+    )
+
+    class WrongLineage(Capability):
+        async def execute(self, node, task, evidence):
+            return EvidenceEnvelope(
+                evidence_id="ev", capability=self.name, source="fixture",
+                observed_at=datetime.now(UTC), rows={}, lineage=[],
+            )
+
+    ledger = RunLedger("run")
+    capability = RecordedCapability(WrongLineage(), ledger, turn_id="turn")
+    with pytest.raises(ValueError, match="lineage does not match"):
+        await capability.execute(
+            PlanNode(id="record", description="record", capability_hints=["standings"]),
+            TaskSpec(goal="record", mode=RunMode.QUICK, deliverable="text"), [parent],
+        )
+    assert ledger.entries[-1].data["status"] == "failed"

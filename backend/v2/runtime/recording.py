@@ -56,6 +56,9 @@ class RecordedCapability:
             if result.capability != self.name:
                 raise ValueError(
                     f"capability returned {result.capability!r}, expected {self.name!r}")
+            expected_lineage = [item.evidence_id for item in evidence]
+            if result.lineage != expected_lineage:
+                raise ValueError("capability result lineage does not match its inputs")
         except BaseException as exc:
             self._ledger.append(
                 LedgerKind.TOOL_RESULT,
