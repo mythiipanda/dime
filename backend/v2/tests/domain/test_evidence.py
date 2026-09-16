@@ -92,3 +92,15 @@ def test_evidence_metadata_rejects_empty_or_duplicate_values(changes, error):
     }
     with pytest.raises(ValidationError, match=error):
         EvidenceEnvelope.model_validate(payload)
+
+
+def test_admission_requires_season_on_season_scoped_evidence() -> None:
+    from v2.domain.evidence import EvidenceAdmissionError, admit_evidence
+
+    item = EvidenceEnvelope(
+        evidence_id="standings", capability="standings", source="fixture",
+        observed_at=datetime(2026, 9, 15), rows={"wins": 61},
+    )
+    with pytest.raises(EvidenceAdmissionError) as caught:
+        admit_evidence(item, required_season="2025-26")
+    assert caught.value.issues[0].code == "season_missing"

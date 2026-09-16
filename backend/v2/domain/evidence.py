@@ -120,7 +120,11 @@ def source_integrity_issues(
     expected_teams: Mapping[str, str] | None = None,
 ) -> list[SourceIntegrityIssue]:
     issues: list[SourceIntegrityIssue] = []
-    if required_season and evidence.season and evidence.season != required_season:
+    if required_season and evidence.season is None:
+        issues.append(SourceIntegrityIssue(
+            "season_missing",
+            f"season-scoped evidence does not declare required season {required_season}"))
+    elif required_season and evidence.season != required_season:
         issues.append(SourceIntegrityIssue(
             "season_mismatch",
             f"evidence season {evidence.season} does not match {required_season}"))
