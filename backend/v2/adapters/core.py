@@ -84,8 +84,10 @@ def build_envelope(
     warning_values = meta.get("warnings") or []
     if isinstance(warning_values, str):
         warnings = [warning_values]
-    else:
+    elif isinstance(warning_values, (list, tuple)):
         warnings = [str(value) for value in warning_values]
+    else:
+        raise AdapterError(f"{spec.tool_name}: warnings must be text or an array")
     singular_warning = meta.get("warning")
     if singular_warning:
         warnings.append(str(singular_warning))

@@ -519,6 +519,22 @@ def test_adapter_preserves_singular_and_string_source_warnings(
     assert env.warnings == expected
 
 
+def test_adapter_rejects_unordered_warning_payloads() -> None:
+    payload = {
+        "ok": True,
+        "rows": [{"team": "Boston", "wins": 61}],
+        "meta": {
+            "source": "fixture", "season": "2025-26",
+            "warnings": {"first": "small sample", "second": "fallback"},
+        },
+    }
+    with pytest.raises(AdapterError, match="warnings must be text or an array"):
+        call_capability(
+            "standings", {"season": "2025-26"},
+            tools={"get_standings": FakeTool(payload)},
+        )
+
+
 def test_adapter_preserves_source_as_of_and_warns_on_bad_date() -> None:
     payload = {
         "ok": True, "rows": {"team": "BOS", "payroll": 200_000_000},
