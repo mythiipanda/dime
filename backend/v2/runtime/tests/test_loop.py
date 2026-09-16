@@ -188,3 +188,23 @@ async def test_runtime_passes_typed_context_to_intake() -> None:
         "Now assess his role",
         context=(ConversationTurn(role="user", content="Tell me about the Celtics"),),
     )
+
+
+@pytest.mark.anyio
+async def test_semantic_verifier_never_sees_mechanically_rejected_draft() -> None:
+    class MechanicalReject:
+        async def verify(self, task, draft, evidence):
+            return VerificationReport(
+                status="repair",
+                claim_results=[{"claim_index": 0, "supported": False,
+                                "reasons": ["uncited numeral 43"]}],
+            )
+
+    class SemanticMustNotRun:
+        async def verify(self, task, draft, evidence):
+            raise AssertionError("semantic verifier saw ungrounded draft")
+
+    result = await runtime(MechanicalReject(), SemanticMustNotRun()).run("answer")
+    assert result.verification.status == VerificationStatus.PARTIAL
+    assert result.verified_claims == []
+    assert result.gaps[0].message == "uncited numeral 43"

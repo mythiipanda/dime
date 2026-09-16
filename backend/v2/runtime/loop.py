@@ -170,6 +170,8 @@ class Runtime:
 
     async def _verify(self, task, draft, evidence) -> VerificationReport:
         mechanical = await self._mechanical_verifier.verify(task, draft, evidence)
+        if mechanical.status == VerificationStatus.REPAIR:
+            return mechanical
         semantic = await self._semantic_verifier.verify(task, draft, evidence)
         return _merge_verification(mechanical, semantic)
 
