@@ -206,3 +206,20 @@ async def test_model_plan_cannot_predeclare_node_complete() -> None:
     with pytest.raises(ValueError, match="must start pending"):
         await PlanExecutor({"fake": FakeCapability("fake", {})}).execute(
             TaskSpec(goal="answer", mode="quick", deliverable="text"), plan)
+
+
+def test_execution_result_rejects_unknown_state_nodes_and_duplicate_evidence() -> None:
+    from datetime import UTC, datetime
+    from pydantic import ValidationError
+    from v2.contracts import EvidenceEnvelope
+    from v2.runtime.models import ExecutionResult
+
+    plan = Plan(nodes=[node("known")])
+    with pytest.raises(ValidationError, match="unknown nodes"):
+        ExecutionResult(plan=plan, attempts={"invented": 1})
+    evidence = EvidenceEnvelope(
+        evidence_id="same", capability="fake", source="fixture",
+        observed_at=datetime.now(UTC), rows={},
+    )
+    with pytest.raises(ValidationError, match="evidence ids must be unique"):
+        ExecutionResult(plan=plan, evidence=[evidence, evidence])

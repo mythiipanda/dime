@@ -21,6 +21,17 @@ class ExecutionResult(BaseModel):
     attempts: dict[str, int] = Field(default_factory=dict)
     errors: dict[str, list[str]] = Field(default_factory=dict)
 
+    @model_validator(mode="after")
+    def validate_execution(self) -> "ExecutionResult":
+        nodes = {node.id: node for node in self.plan.nodes}
+        unknown = (set(self.attempts) | set(self.errors)) - nodes.keys()
+        if unknown:
+            raise ValueError(f"execution references unknown nodes: {sorted(unknown)}")
+        evidence_ids = [item.evidence_id for item in self.evidence]
+        if len(evidence_ids) != len(set(evidence_ids)):
+            raise ValueError("execution evidence ids must be unique")
+        return self
+
 
 class RuntimeResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
