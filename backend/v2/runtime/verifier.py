@@ -333,6 +333,11 @@ def verify_mechanical(
         )
         reasons.extend(calculation_reasons)
         supported_numbers = _numeric_values(cited) | calculation_values | allowed_numbers
+        for envelope in cited:
+            for qualifier in (envelope.qualification, envelope.coverage):
+                if qualifier:
+                    for token in _number_tokens(qualifier):
+                        supported_numbers.update(_canon_number(token))
         for raw in _number_tokens(claim.text):
             if _DATE.fullmatch(raw) or _SEASON.fullmatch(raw):
                 continue

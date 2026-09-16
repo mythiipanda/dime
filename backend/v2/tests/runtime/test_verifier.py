@@ -357,3 +357,18 @@ def test_prediction_probability_with_nested_metric_is_publishable():
     )
     result = verify_mechanical(task(), report(claim), [ev])
     assert result.status == "pass"
+
+
+def test_qualification_numeral_is_supported_for_population_claim():
+    ev = evidence(rows={"PLAYER": "Nikola Jokic", "OFF_RATING": 126.1})
+    ev = ev.model_copy(update={
+        "qualification": "1,000+ total minutes",
+        "units": {"OFF_RATING": "points_per_100_possessions"},
+    })
+    claim = Claim(
+        text=("Among players with 1,000+ total minutes, Nikola Jokic led with "
+              "a 126.1 points per 100 possessions offensive rating."),
+        kind="observed", evidence_ids=[ev.evidence_id],
+    )
+    result = verify_mechanical(task(), report(claim), [ev])
+    assert result.status == "pass"
