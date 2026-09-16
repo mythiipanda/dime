@@ -98,6 +98,8 @@ def skill_hashes(activated: list[dict[str, Any]]) -> dict[str, str]:
 
 
 def _read_skill(path: Path) -> Skill:
+    if path.is_symlink():
+        raise ValueError(f"{path}: SKILL.md cannot be a symlink")
     text = path.read_text(encoding="utf-8")
     if not text.startswith("---\n"):
         raise ValueError(f"{path}: SKILL.md must start with YAML frontmatter")

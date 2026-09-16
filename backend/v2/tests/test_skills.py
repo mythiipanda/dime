@@ -71,3 +71,16 @@ def test_activation_rejects_symlinked_resources(tmp_path: Path):
     (references / "private.txt").symlink_to(outside)
     with pytest.raises(ValueError, match="cannot be symlinks"):
         SkillLibrary(tmp_path).activate(["example"])
+
+
+def test_catalog_rejects_symlinked_skill_definition(tmp_path: Path):
+    package = tmp_path / "example"
+    package.mkdir()
+    outside = tmp_path / "outside.md"
+    outside.write_text(
+        "---\nname: example\ndescription: Example skill\n---\nInstructions",
+        encoding="utf-8",
+    )
+    (package / "SKILL.md").symlink_to(outside)
+    with pytest.raises(ValueError, match="SKILL.md cannot be a symlink"):
+        SkillLibrary(tmp_path).catalog()
