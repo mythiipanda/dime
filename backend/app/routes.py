@@ -86,7 +86,7 @@ def _sanitize_sse_event(etype: str, data: dict) -> dict:
     }
     fields = public_fields.get(etype)
     if fields is None or not isinstance(data, dict):
-        return {}
+        return None
     return {key: data[key] for key in fields if key in data}
 
 
@@ -279,8 +279,10 @@ async def _stream(
                         suggestions = [str(i) for i in items]
                 if event["type"] == "ledger_facts":
                     continue  # internal plumbing - persisted above, not streamed
-                yield emit_sse(event["type"],
-                               _sanitize_sse_event(event["type"], event["data"]))
+                public_data = _sanitize_sse_event(
+                    event["type"], event["data"])
+                if public_data is not None:
+                    yield emit_sse(event["type"], public_data)
         finally:
             if v1_outcome is not None and not v1_outcome.done():
                 v1_outcome.set_result(_v1_shadow_outcome(

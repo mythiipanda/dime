@@ -108,4 +108,24 @@ def test_remaining_public_events_drop_unknown_internal_fields():
 
 
 def test_unknown_event_type_fails_closed():
-    assert _sanitize_sse_event("internal_debug", {"secret": "value"}) == {}
+    assert _sanitize_sse_event("internal_debug", {"secret": "value"}) is None
+
+
+def test_unknown_event_is_not_framed_on_public_stream(monkeypatch):
+    import asyncio
+    from app import routes
+
+    async def events():
+        yield {"type": "internal_debug", "data": {"secret": "value"}}
+        yield {"type": "graph_end", "data": {"ok": True}}
+
+    monkeypatch.setenv("DIME_RUNTIME_V2", "off")
+    monkeypatch.setattr(routes, "run_chat", lambda *args, **kwargs: events())
+
+    async def collect():
+        return "".join([chunk async for chunk in routes._stream("q", None)])
+
+    stream = asyncio.run(collect())
+    assert "internal_debug" not in stream
+    assert "secret" not in stream
+    assert "event: graph_end" in stream
