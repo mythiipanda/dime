@@ -44,7 +44,10 @@ function EvidenceLimitations({ meta }: {
 
 function CitePill({ title, meta }: {
   title: string;
-  meta?: { source?: string; fetched_at?: string; season?: string };
+  meta?: {
+    source?: string; fetched_at?: string; season?: string;
+    qualification?: string; coverage?: string; warnings?: string[];
+  };
 }) {
   const [done, setDone] = useState(false);
   return (
@@ -60,6 +63,9 @@ function CitePill({ title, meta }: {
             source: meta?.source,
             fetchedAt: meta?.fetched_at,
             season: meta?.season,
+            qualification: meta?.qualification,
+            coverage: meta?.coverage,
+            warnings: meta?.warnings,
           }))
           .then(() => {
             setDone(true);

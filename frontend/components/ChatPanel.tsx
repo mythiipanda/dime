@@ -184,7 +184,10 @@ function CopyButton({ text }: { text: string }) {
 
 function CiteButton({ text, sources }: {
   text: string;
-  sources: { source?: string; fetched_at?: string; season?: string }[];
+  sources: {
+    source?: string; fetched_at?: string; season?: string;
+    qualification?: string; coverage?: string; warnings?: string[];
+  }[];
 }) {
   const [done, setDone] = useState(false);
   return (
@@ -197,6 +200,9 @@ function CiteButton({ text, sources }: {
           source: meta.source,
           fetchedAt: meta.fetched_at,
           season: meta.season,
+          qualification: meta.qualification,
+          coverage: meta.coverage,
+          warnings: meta.warnings,
         }));
         navigator.clipboard
           .writeText(`${text}\n\n${lines.join("\n")}`)
@@ -214,17 +220,25 @@ function CiteButton({ text, sources }: {
 
 function tableSources(ai: AiMessage | undefined): {
   source?: string; fetched_at?: string; season?: string;
+  qualification?: string; coverage?: string; warnings?: string[];
 }[] {
   if (!ai) return [];
-  const sources: { source?: string; fetched_at?: string; season?: string }[] = [];
+  const sources: {
+    source?: string; fetched_at?: string; season?: string;
+    qualification?: string; coverage?: string; warnings?: string[];
+  }[] = [];
   const seen = new Set<string>();
   for (const node of Object.values(ai.nodes)) {
     for (const table of node?.tables ?? []) {
       const meta = table.meta as {
         source?: string; fetched_at?: string; season?: string;
+        qualification?: string; coverage?: string; warnings?: string[];
       } | undefined;
       if (!meta?.source) continue;
-      const key = JSON.stringify([meta.source, meta.fetched_at, meta.season]);
+      const key = JSON.stringify([
+        meta.source, meta.fetched_at, meta.season, meta.qualification,
+        meta.coverage, meta.warnings,
+      ]);
       if (!seen.has(key)) {
         seen.add(key);
         sources.push(meta);

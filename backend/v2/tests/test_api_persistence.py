@@ -1344,3 +1344,17 @@ def test_frontend_evidence_views_preserve_limitations():
         assert field in inline
         assert field in canvas
     assert inline.count("<EvidenceLimitations meta={table.meta} />") == 2
+
+
+def test_frontend_citations_include_evidence_limitations():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[3] / "frontend"
+    citation = (root / "lib" / "api.ts").read_text()
+    chat = (root / "components" / "ChatPanel.tsx").read_text()
+    artifacts = (root / "components" / "DataArtifacts.tsx").read_text()
+
+    assert 'Limits: ${limitations.join(" ")}' in citation
+    for field in ("qualification", "coverage", "warnings"):
+        assert f"{field}: meta.{field}" in chat
+        assert f"{field}: meta?.{field}" in artifacts

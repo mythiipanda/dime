@@ -497,6 +497,9 @@ export interface CitationInput {
   source?: string;
   fetchedAt?: string;
   season?: string;
+  qualification?: string;
+  coverage?: string;
+  warnings?: string[];
 }
 
 export function buildCitation(c: CitationInput): string {
@@ -506,7 +509,12 @@ export function buildCitation(c: CitationInput): string {
     c.season ? `covering ${c.season}` : "",
     c.fetchedAt ? `fetched ${String(c.fetchedAt).slice(0, 10)}` : "",
   ].filter(Boolean);
-  return `${bits.join(", ")} — Dime NBA Analyst`;
+  const limitations = [c.qualification, c.coverage, ...(c.warnings ?? [])]
+    .filter(Boolean);
+  const suffix = limitations.length > 0
+    ? `. Limits: ${limitations.join(" ")}`
+    : "";
+  return `${bits.join(", ")} — Dime NBA Analyst${suffix}`;
 }
 
 export function tableKind(t: { kind?: string; tool?: string }): string {
