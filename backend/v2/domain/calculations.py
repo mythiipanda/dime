@@ -89,6 +89,7 @@ def _input_values(calculation: Calculation,
 
 
 def recompute(calculation: Calculation, evidence: EvidenceIndex) -> Decimal:
+    calculation = Calculation.model_validate(calculation.model_dump())
     values = _input_values(calculation, evidence)
     try:
         if calculation.operation == CalculationOperation.ADD:
@@ -116,6 +117,9 @@ def recompute(calculation: Calculation, evidence: EvidenceIndex) -> Decimal:
 
 def validate_calculation(calculation: Calculation, evidence: EvidenceIndex,
                          tolerance: Decimal = Decimal("0.000001")) -> str | None:
+    calculation = Calculation.model_validate(calculation.model_dump())
+    if not tolerance.is_finite() or tolerance < 0:
+        raise ValueError("calculation tolerance must be finite and non-negative")
     actual = recompute(calculation, evidence)
     if abs(actual - calculation.result) > tolerance:
         return (

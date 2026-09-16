@@ -91,3 +91,20 @@ def test_rank_subject_index_is_a_strict_integer(value) -> None:
             inputs=[ref("rows[0].PTS")], subject_input=value,
             result=Decimal("1"),
         )
+
+
+def test_calculation_evaluation_revalidates_copied_contract() -> None:
+    from pydantic import ValidationError
+    valid = Calculation(calculation_id="sum", operation="add",
+                        inputs=[ref("rows[0].PTS")], result=Decimal("30"))
+    invalid = valid.model_copy(update={"result": Decimal("NaN")})
+    with pytest.raises(ValidationError, match="finite"):
+        recompute(invalid, index())
+
+
+@pytest.mark.parametrize("tolerance", [Decimal("NaN"), Decimal("-0.1")])
+def test_calculation_validation_rejects_invalid_tolerance(tolerance) -> None:
+    valid = Calculation(calculation_id="sum", operation="add",
+                        inputs=[ref("rows[0].PTS")], result=Decimal("30"))
+    with pytest.raises(ValueError, match="tolerance must be finite and non-negative"):
+        validate_calculation(valid, index(), tolerance)
