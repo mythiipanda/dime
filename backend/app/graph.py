@@ -1652,6 +1652,18 @@ async def _triage_seed(question: str, primary: str, model: str,
     # never manufactures LeBron James as a second comparison subject.
     _unavailable_metrics = re.findall(
         r"\b(EPM|LEBRON|DARKO|DRIP)\b", question, re.IGNORECASE)
+    # "LeBron" is both a player's given name and a proprietary metric.
+    # Entity detection has already established name context, so do not let
+    # the metric-coverage lane steal ordinary LeBron James questions.
+    if found_p:
+        player_words = {
+            word.upper() for name in found_p
+            for word in re.findall(r"[A-Za-z]+", name)
+        }
+        _unavailable_metrics = [
+            metric for metric in _unavailable_metrics
+            if metric.upper() not in player_words
+        ]
     if (_unavailable_metrics and len(found_p) <= 1
             and not state.get("history")):
         _uniq = list(dict.fromkeys(m.upper() for m in _unavailable_metrics))

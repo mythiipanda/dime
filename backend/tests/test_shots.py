@@ -22,6 +22,24 @@ from app.tools.shots import (ZONE_KEYS, ZONE_LABEL_MAP, disambiguate_last_name,
                              summarize_by_zone, zone_of_label)
 
 
+def _require_full_shot_pack():
+    from app import store
+    con = store.connect()
+    try:
+        count, teams, players = con.execute(
+            "SELECT COUNT(*), COUNT(DISTINCT TEAM_ID), "
+            "COUNT(DISTINCT PLAYER_ID) FROM silver_shots "
+            "WHERE _season = '2025-26'"
+        ).fetchone()
+    finally:
+        con.close()
+    if count < 20000 or teams < 30 or players < 100:
+        pytest.skip(
+            "release pack has partial silver_shots coverage "
+            f"({count} rows, {teams} teams, {players} players)"
+        )
+
+
 def _shot(zone, made, period=4, game="g1"):
     return {"zone": zone, "made": made, "period": period, "game_id": game}
 
@@ -192,6 +210,7 @@ def test_seconds_left_and_clock_format():
 
 
 def test_tool_tatum_corner3_4th_matches_verified_numbers():
+    _require_full_shot_pack()
     res = search_shots.invoke(
         {"player": "Tatum", "zones": "corner_3", "periods": "4th"})
     assert res["ok"] is True
@@ -205,6 +224,7 @@ def test_tool_tatum_corner3_4th_matches_verified_numbers():
 
 
 def test_tool_small_sample_flag_off_for_big_lines():
+    _require_full_shot_pack()
     res = search_shots.invoke({"team": "BOS", "zones": "rim"})
     assert res["ok"] is True
     agg = res["aggregate"]
@@ -214,6 +234,7 @@ def test_tool_small_sample_flag_off_for_big_lines():
 
 
 def test_tool_group_by_player_leaderboard():
+    _require_full_shot_pack()
     res = search_shots.invoke({"periods": "4th", "group_by": "player"})
     assert res["ok"] is True
     rows = res["by_player"]
@@ -229,6 +250,7 @@ def test_tool_group_by_player_leaderboard():
 
 
 def test_tool_group_by_team():
+    _require_full_shot_pack()
     res = search_shots.invoke({"periods": "4th", "group_by": "team"})
     assert res["ok"] is True
     rows = res["by_team"]
@@ -253,6 +275,7 @@ def test_tool_4th_includes_ot_by_default():
 
 
 def test_tool_disambiguation_returns_candidates():
+    _require_full_shot_pack()
     res = search_shots.invoke({"player": "Williams"})
     assert res["ok"] is True
     assert "disambiguation" in res
@@ -325,6 +348,7 @@ def test_tool_sample_rows_are_a_season_mix():
 
 
 def test_tool_performance_smoke():
+    _require_full_shot_pack()
     start = time.perf_counter()
     res = search_shots.invoke(
         {"periods": "4th", "late_clock": "300", "group_by": "player"})
@@ -422,6 +446,7 @@ def test_group_by_team_leaderboard():
 
 
 def test_group_by_player_small_sample():
+    _require_full_shot_pack()
     res = search_shots.invoke(
         {"player": "Tatum", "zones": "corner_3", "periods": "4th"})
     assert res["ok"] is True
@@ -451,6 +476,7 @@ def test_late_clock_includes_ot_by_default():
 
 
 def test_disambiguation_returns_candidates():
+    _require_full_shot_pack()
     res = search_shots.invoke({"player": "Williams"})
     assert res["ok"] is True
     assert "disambiguation" in res
@@ -581,6 +607,9 @@ def test_individual_shot_rows_keep_canonical_player_and_team_ids(monkeypatch):
             if "COUNT(*) FROM silver_shots WHERE _season" in sql:
                 self.description = [("count_star()",)]
                 self._rows = [(1,)]
+            elif "COUNT(*) AS n" in sql:
+                self.description = [("n",)]
+                self._rows = [(0,)]
             elif "GROUP BY 1" in sql:
                 self.description = []
                 self._rows = []

@@ -77,6 +77,17 @@ def test_trade_value_single_connection():
 def test_trade_check_single_connection():
     """get_trade_check must do all warehouse reads on one connection."""
     store = _needs_warehouse()
+    probe = store.connect()
+    try:
+        vintages = {str(row[0]) for row in probe.execute(
+            "SELECT DISTINCT _season FROM silver_cap_players").fetchall()}
+    finally:
+        probe.close()
+    if vintages and "2025-26" not in vintages:
+        pytest.skip(
+            "release pack salary vintage is not 2025-26: "
+            + ", ".join(sorted(vintages))
+        )
     real_connect = store.connect
     calls = []
 

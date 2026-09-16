@@ -10,6 +10,8 @@ Hermetic except the warehouse read (local duckdb).
 """
 
 import sys
+
+import pytest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -17,11 +19,26 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.tools import get_team_four_factors, v1_tools  # noqa: E402
 
 
+def _require_team_four_factors_pack():
+    from app import store
+    con = store.connect()
+    try:
+        tables = {row[0] for row in con.execute("SHOW TABLES").fetchall()}
+    finally:
+        con.close()
+    if "silver_four_factors_team" not in tables:
+        pytest.skip(
+            "release pack omits silver_four_factors_team; "
+            "run scripts/build_team_four_factors.py"
+        )
+
+
 def test_tool_registered():
     assert "get_team_four_factors" in [t.name for t in v1_tools]
 
 
 def test_full_board_30_teams():
+    _require_team_four_factors_pack()
     r = get_team_four_factors.invoke({})
     assert r["ok"], r.get("error")
     assert len(r["rows"]) == 30
@@ -35,6 +52,7 @@ def test_full_board_30_teams():
 
 
 def test_team_scope_and_names():
+    _require_team_four_factors_pack()
     for q in ("Thunder", "OKC", "Oklahoma City Thunder"):
         r = get_team_four_factors.invoke({"team": q})
         assert r["ok"], (q, r.get("error"))
@@ -43,12 +61,14 @@ def test_team_scope_and_names():
 
 
 def test_unknown_team_is_honest():
+    _require_team_four_factors_pack()
     r = get_team_four_factors.invoke({"team": "Seattle SuperSonics"})
     assert not r["ok"]
     assert "unknown team" in r["error"]
 
 
 def test_factor_identities():
+    _require_team_four_factors_pack()
     # eFG > FG% relationship and ORB+DRB consistency with opp mirror
     r = get_team_four_factors.invoke({"team": "DEN"})
     row = r["rows"][0]
