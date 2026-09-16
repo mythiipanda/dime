@@ -212,7 +212,7 @@ class Runtime:
             verification=verification,
             repaired=repaired,
             verified_claims=verified_claims,
-            gaps=gaps,
+            gaps=gaps[:256],
         )
         if self._ledger is not None:
             self._ledger.append(

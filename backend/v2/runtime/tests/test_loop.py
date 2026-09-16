@@ -596,6 +596,41 @@ async def test_partial_repair_instruction_surfaces_as_typed_gap() -> None:
 
 
 @pytest.mark.anyio
+async def test_runtime_bounds_combined_typed_publication_gaps() -> None:
+    class ManyGapSynthesizer:
+        async def synthesize(self, task, evidence):
+            return DraftReport(
+                sections=["No answer"], claims=[],
+                gaps=[f"draft-{index}" for index in range(128)],
+            )
+
+    class ManyFindingVerifier:
+        async def verify(self, task, draft, evidence):
+            return VerificationReport(
+                status=VerificationStatus.PARTIAL,
+                missing_branches=[f"missing-{index}" for index in range(128)],
+                contradictions=[f"conflict-{index}" for index in range(128)],
+            )
+
+    instance = Runtime(
+        intake=Intake(), planner=Planner(),
+        executor=PlanExecutor({"fake": FakeCapability("fake", {"value": 42})}),
+        synthesizer=ManyGapSynthesizer(),
+        mechanical_verifier=ManyFindingVerifier(),
+        semantic_verifier=ManyFindingVerifier(),
+    )
+    result = await instance.run("answer")
+
+    assert len(result.gaps) == 256
+    assert [gap.message for gap in result.gaps[:128]] == [
+        f"draft-{index}" for index in range(128)
+    ]
+    assert [gap.message for gap in result.gaps[128:]] == [
+        f"missing-{index}" for index in range(128)
+    ]
+
+
+@pytest.mark.anyio
 async def test_skipped_execution_node_prevents_clean_pass() -> None:
     class SkippedExecutor:
         async def execute(self, task, plan, run_id=None):
