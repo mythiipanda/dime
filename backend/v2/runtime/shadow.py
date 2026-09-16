@@ -59,6 +59,8 @@ class RunOutcome(BaseModel):
             raise ValueError("supported claims cannot exceed total claims")
         if self.status == OutcomeStatus.OK and self.supported_claims != self.total_claims:
             raise ValueError("ok shadow outcome requires every claim to be supported")
+        if self.status == OutcomeStatus.OK and not self.answer.strip():
+            raise ValueError("ok shadow outcome requires a non-empty answer")
         if self.duration_ms is not None and self.duration_ms < 0:
             raise ValueError("shadow outcome duration must be non-negative")
         return self

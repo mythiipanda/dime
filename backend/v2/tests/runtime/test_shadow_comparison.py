@@ -21,6 +21,13 @@ def test_equal_outcomes_have_no_differences_and_hide_request():
     assert len(comparison.request_hash) == 64
 
 
+def test_ok_shadow_outcome_cannot_encode_blank_success():
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError, match="non-empty answer"):
+        outcome(answer=" ")
+
+
 def test_comparison_classifies_answer_route_grounding_and_failure():
     comparison = compare_outcomes(
         "record?", outcome(), outcome(
