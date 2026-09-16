@@ -18,6 +18,10 @@ def load_prompt(name: str) -> str:
     if not isinstance(name, str) or not _PROMPT_NAME.fullmatch(name):
         raise ValueError("prompt name must use lowercase letters, numbers, and underscores")
     path = _PROMPTS_DIR / f"{name}.md"
+    if _PROMPTS_DIR.is_symlink() or any(
+        component.is_symlink() for component in _PROMPTS_DIR.parents
+    ):
+        raise ValueError("prompt directory cannot be a symlink")
     if path.is_symlink():
         raise ValueError("prompt file cannot be a symlink")
     return path.read_text(encoding="utf-8")

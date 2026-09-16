@@ -106,3 +106,18 @@ def test_load_prompt_rejects_symlink(monkeypatch, tmp_path):
             load_prompt("external")
     finally:
         load_prompt.cache_clear()
+
+
+def test_load_prompt_rejects_symlinked_directory(monkeypatch, tmp_path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "intake.md").write_text("external", encoding="utf-8")
+    prompts_dir = tmp_path / "prompts"
+    prompts_dir.symlink_to(outside, target_is_directory=True)
+    monkeypatch.setattr(prompts, "_PROMPTS_DIR", prompts_dir)
+    load_prompt.cache_clear()
+    try:
+        with pytest.raises(ValueError, match="directory cannot be a symlink"):
+            load_prompt("intake")
+    finally:
+        load_prompt.cache_clear()
