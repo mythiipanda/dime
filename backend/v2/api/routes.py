@@ -222,7 +222,8 @@ async def quick_answer_stream(body: QuickAnswerBody):
             "rows": item.rows,
             "meta": {
                 "source": item.source,
-                "fetched_at": item.observed_at.isoformat(),
+                "fetched_at": (item.as_of.isoformat()
+                               if item.as_of else item.observed_at.isoformat()),
                 "season": item.season,
                 "as_of": item.as_of.isoformat() if item.as_of else None,
                 "qualification": item.qualification,

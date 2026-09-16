@@ -225,7 +225,7 @@ async def test_cancelled_execution_resumes_started_node(tmp_path: Path) -> None:
 
 
 def test_quick_answer_route_is_flagged_and_streams_typed_contract(monkeypatch, tmp_path):
-    from datetime import UTC, datetime
+    from datetime import UTC, date, datetime
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     from v2 import contracts
@@ -236,7 +236,8 @@ def test_quick_answer_route_is_flagged_and_streams_typed_contract(monkeypatch, t
     monkeypatch.setenv("DIME_RUNTIME_V2", "shadow")
     evidence = contracts.EvidenceEnvelope(
         evidence_id="ev", capability="standings", source="fixture",
-        observed_at=datetime.now(UTC), rows=[{"TEAM": "Boston", "WINS": 61}])
+        observed_at=datetime.now(UTC), as_of=date(2026, 9, 10),
+        rows=[{"TEAM": "Boston", "WINS": 61}])
     result = RuntimeResult(
         task=contracts.TaskSpec(goal="record", mode="quick", deliverable="text"),
         execution=ExecutionResult(
@@ -273,6 +274,7 @@ def test_quick_answer_route_is_flagged_and_streams_typed_contract(monkeypatch, t
     assert '"tool":"standings"' in response.text
     assert '"rows":[{"TEAM":"Boston","WINS":61}]' in response.text
     assert '"source":"fixture"' in response.text
+    assert '"fetched_at":"2026-09-10"' in response.text
     assert '"evidence_id"' not in response.text
     assert "event: final_answer" not in response.text
     assert "Boston won 61 games." not in response.text
