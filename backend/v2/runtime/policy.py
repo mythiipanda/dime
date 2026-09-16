@@ -33,6 +33,12 @@ class ExecutionPolicy(BaseModel):
             raise ValueError("replay_path is valid only in replay mode")
         if self.mode != ExecutionMode.LIVE and self.publish:
             raise ValueError(f"{self.mode.value} mode cannot publish")
+        for field_name in ("ledger_dir", "checkpoint_dir"):
+            path = getattr(self, field_name)
+            if path is not None and path.is_symlink():
+                raise ValueError(f"{field_name} cannot be a symlink")
+        if self.replay_path is not None and self.replay_path.is_symlink():
+            raise ValueError("replay_path cannot be a symlink")
         return self
 
     @classmethod

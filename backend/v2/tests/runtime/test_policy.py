@@ -42,3 +42,22 @@ def test_policy_rejects_unknown_configuration_fields() -> None:
 def test_replay_path_is_rejected_outside_replay_mode() -> None:
     with pytest.raises(ValidationError, match="only in replay mode"):
         ExecutionPolicy(mode="live", replay_path="fixture.json", publish=True)
+
+
+def test_policy_rejects_symlinked_storage_roots(tmp_path) -> None:
+    target = tmp_path / "target"
+    target.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(target, target_is_directory=True)
+    for field_name in ("ledger_dir", "checkpoint_dir"):
+        with pytest.raises(ValidationError, match=f"{field_name} cannot be a symlink"):
+            ExecutionPolicy(mode="live", **{field_name: link})
+
+
+def test_policy_rejects_symlinked_replay_fixture(tmp_path) -> None:
+    target = tmp_path / "fixture.json"
+    target.write_text("{}")
+    link = tmp_path / "link.json"
+    link.symlink_to(target)
+    with pytest.raises(ValidationError, match="replay_path cannot be a symlink"):
+        ExecutionPolicy(mode="replay", replay_path=link, publish=False)
