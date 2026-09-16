@@ -373,6 +373,7 @@ class RecordedStructuredModel:
             if not isinstance(result, schema):
                 raise TypeError(
                     f"structured model must return {schema.__name__}")
+            result = schema.model_validate(result.model_dump())
         except BaseException as exc:
             self._ledger.append(
                 LedgerKind.ASSISTANT_ATTEMPT,

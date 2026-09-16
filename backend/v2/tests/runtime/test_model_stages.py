@@ -453,3 +453,26 @@ async def test_provider_model_clears_last_success_before_failed_generation(monke
         await model.generate(schema=TaskSpec, prompt="p", payload={}, envelope=envelope)
     assert model.last_provider is None
     assert model.last_model is None
+
+
+@pytest.mark.anyio
+async def test_recorded_model_revalidates_copied_structured_output():
+    from v2.adapters import RecordedStructuredModel
+    from v2.contracts import TaskSpec
+    from v2.runtime import RequestEnvelope, RunLedger
+
+    class Invalid:
+        async def generate(self, **call):
+            valid = TaskSpec(goal="answer", mode="quick", deliverable="text")
+            return valid.model_copy(update={"goal": " "})
+
+    envelope = RequestEnvelope.freeze(
+        provider="p", model="m", route="intake", prompt="prompt",
+        context={}, tool_schemas={}, planner_version="v2",
+    )
+    ledger = RunLedger("run")
+    with pytest.raises(ValueError, match="goal and deliverable"):
+        await RecordedStructuredModel(Invalid(), ledger, turn_id="turn").generate(
+            schema=TaskSpec, prompt="prompt", payload={}, envelope=envelope,
+        )
+    assert ledger.entries[-1].data["status"] == "failed"
