@@ -181,3 +181,23 @@ def test_verification_report_rejects_duplicate_or_empty_findings(payload, error)
 
     with pytest.raises(ValidationError, match=error):
         VerificationReport.model_validate(payload)
+
+
+@pytest.mark.parametrize("payload,error", [
+    ({"kind": "missing_evidence", "message": " ", "blocks": []},
+     "message must be non-empty"),
+    ({"kind": "missing_evidence", "message": "missing", "blocks": ["x", "x"]},
+     "blocks must not contain duplicates"),
+])
+def test_gap_rejects_empty_or_duplicate_references(payload, error) -> None:
+    from v2.contracts import Gap
+
+    with pytest.raises(ValidationError, match=error):
+        Gap.model_validate(payload)
+
+
+def test_claim_result_rejects_duplicate_reasons() -> None:
+    from v2.contracts import ClaimResult
+
+    with pytest.raises(ValidationError, match="reasons must not contain duplicates"):
+        ClaimResult(claim_index=0, supported=False, reasons=["bad", "bad"])

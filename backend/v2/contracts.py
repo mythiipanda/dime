@@ -240,6 +240,18 @@ class Gap(BaseModel):
     evidence_ids: list[str] = Field(default_factory=list)
     blocks: list[str] = Field(default_factory=list)
 
+    @model_validator(mode="after")
+    def validate_references(self) -> "Gap":
+        if not self.message.strip():
+            raise ValueError("gap message must be non-empty")
+        for field_name in ("evidence_ids", "blocks"):
+            values = getattr(self, field_name)
+            if any(not value.strip() for value in values):
+                raise ValueError(f"gap {field_name} must not contain empty values")
+            if len(values) != len(set(values)):
+                raise ValueError(f"gap {field_name} must not contain duplicates")
+        return self
+
 
 class ClaimSource(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -269,6 +281,10 @@ class ClaimResult(BaseModel):
     def validate_reason(self) -> "ClaimResult":
         if not self.supported and not self.reasons:
             raise ValueError("unsupported claim result requires a reason")
+        if any(not reason.strip() for reason in self.reasons):
+            raise ValueError("claim result reasons must not contain empty values")
+        if len(self.reasons) != len(set(self.reasons)):
+            raise ValueError("claim result reasons must not contain duplicates")
         return self
 
 
