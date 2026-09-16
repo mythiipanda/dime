@@ -242,12 +242,11 @@ def test_v2_shadow_timeout_rejects_unbounded_configuration(monkeypatch):
             raise AssertionError("invalid timeout accepted")
 
 
-def test_shadow_capacity_is_bounded_and_overflow_is_recorded(monkeypatch, tmp_path):
-    from v2.runtime.shadow import ShadowStore
-
-    store_path = tmp_path / "shadow.jsonl"
+def test_shadow_capacity_drops_overflow_without_allocating_more_tasks(
+    monkeypatch, tmp_path,
+):
     monkeypatch.setenv("DIME_RUNTIME_V2", "shadow")
-    monkeypatch.setenv("DIME_V2_SHADOW_STORE", str(store_path))
+    monkeypatch.setenv("DIME_V2_SHADOW_STORE", str(tmp_path / "shadow.jsonl"))
     monkeypatch.setenv("DIME_V2_SHADOW_MAX_INFLIGHT", "1")
     blocker = asyncio.Event()
 
@@ -260,19 +259,15 @@ def test_shadow_capacity_is_bounded_and_overflow_is_recorded(monkeypatch, tmp_pa
         existing.add_done_callback(routes._consume_background_task)
         monkeypatch.setattr(routes, "run_chat", lambda *args, **kwargs: _events())
         chunks = [chunk async for chunk in routes._stream("record?", None)]
-        for _ in range(10):
-            if store_path.exists():
-                break
-            await asyncio.sleep(0)
+        assert routes._SHADOW_TASKS == {existing}
+        assert not (tmp_path / "shadow.jsonl").exists()
         blocker.set()
         await existing
+        await asyncio.sleep(0)
+        assert routes._SHADOW_TASKS == set()
         return chunks
 
     assert asyncio.run(exercise())
-    records = ShadowStore(store_path).read()
-    assert len(records) == 1
-    assert records[0].v1.status == "ok"
-    assert records[0].v2.status == "failed"
 
 
 def test_shadow_capacity_configuration_is_bounded_without_touching_v1(monkeypatch):
