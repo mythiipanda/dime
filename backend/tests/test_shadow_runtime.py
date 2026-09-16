@@ -118,3 +118,20 @@ def test_v2_shadow_cancellation_is_recorded_as_cancelled(monkeypatch, tmp_path):
     asyncio.run(exercise())
     records = ShadowStore(store_path).read()
     assert records[0].v2.status == "cancelled"
+
+
+def test_v1_shadow_projection_is_bounded_and_cannot_break_primary():
+    from v2.adapters.capabilities import CAPABILITIES
+
+    tool_names = [item.tool_name for item in CAPABILITIES.values()]
+    result = routes._v1_shadow_outcome(
+        answer="x" * 250_000,
+        capabilities=tool_names + tool_names,
+        evidence_count=100,
+        had_error=False,
+        duration_ms=1,
+    )
+
+    assert len(result.answer) == 200_000
+    assert len(result.capabilities) <= 32
+    assert len(result.capabilities) == len(set(result.capabilities))

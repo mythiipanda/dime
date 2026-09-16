@@ -66,8 +66,8 @@ def _v1_shadow_outcome(
     status = "partial" if answer and had_error else "ok" if answer else "failed"
     return RunOutcome(
         status=status,
-        answer=answer,
-        capabilities=list(dict.fromkeys(canonical_capabilities)),
+        answer=answer[:200_000],
+        capabilities=list(dict.fromkeys(canonical_capabilities))[:32],
         evidence_count=evidence_count,
         supported_claims=None,
         total_claims=None,
