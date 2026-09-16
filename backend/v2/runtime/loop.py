@@ -35,6 +35,10 @@ class Runtime:
         ledger: RunLedger | None = None,
         progress: Callable[[str, str], None] | None = None,
     ) -> None:
+        if not isinstance(repair_attempts, int) or isinstance(repair_attempts, bool):
+            raise TypeError("repair_attempts must be an integer")
+        if not 0 <= repair_attempts <= 2:
+            raise ValueError("repair_attempts must be between 0 and 2")
         self._intake = intake
         self._planner = planner
         self._executor = executor

@@ -86,6 +86,24 @@ def runtime(mechanical, semantic, repairer=None) -> Runtime:
     )
 
 
+@pytest.mark.parametrize("attempts,error", [
+    (-1, "between 0 and 2"),
+    (3, "between 0 and 2"),
+    (True, "must be an integer"),
+    (1.5, "must be an integer"),
+])
+def test_runtime_rejects_invalid_repair_budget(attempts, error) -> None:
+    with pytest.raises((TypeError, ValueError), match=error):
+        Runtime(
+            intake=Intake(), planner=Planner(),
+            executor=PlanExecutor({"fake": FakeCapability("fake", {"value": 42})}),
+            synthesizer=Synthesizer(),
+            mechanical_verifier=SequenceVerifier(VerificationStatus.PASS),
+            semantic_verifier=SequenceVerifier(VerificationStatus.PASS),
+            repair_attempts=attempts,
+        )
+
+
 @pytest.mark.anyio
 async def test_passes_verified_quick_slice() -> None:
     result = await runtime(
