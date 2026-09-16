@@ -8,7 +8,7 @@ from v2.runtime.ledger import LedgerEntry, LedgerKind
 
 def admitted_evidence(entries: Iterable[LedgerEntry]) -> list[EvidenceEnvelope]:
     evidence: list[EvidenceEnvelope] = []
-    seen: set[str] = set()
+    seen: dict[str, EvidenceEnvelope] = {}
     for entry in entries:
         if entry.kind != LedgerKind.TOOL_RESULT or entry.data.get("status") != "ok":
             continue
@@ -18,9 +18,13 @@ def admitted_evidence(entries: Iterable[LedgerEntry]) -> list[EvidenceEnvelope]:
         if not isinstance(payload, dict):
             raise ValueError("successful tool result requires evidence object")
         item = EvidenceEnvelope.model_validate(payload)
-        if item.evidence_id not in seen:
+        previous = seen.get(item.evidence_id)
+        if previous is not None and previous != item:
+            raise ValueError(
+                f"evidence id {item.evidence_id} has conflicting payloads")
+        if previous is None:
             evidence.append(item)
-            seen.add(item.evidence_id)
+            seen[item.evidence_id] = item
     return evidence
 
 

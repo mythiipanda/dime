@@ -85,3 +85,19 @@ def test_tool_attempt_projection_rejects_partial_call_and_status() -> None:
     )
     with pytest.raises(ValueError, match="status must be ok or failed"):
         tool_attempts([call, bad_status])
+
+
+def test_admitted_evidence_rejects_conflicting_duplicate_identity() -> None:
+    import pytest
+
+    ledger, evidence = ledger_with_attempt()
+    duplicate = ledger.entries[-1].model_copy(update={
+        "sequence": 3,
+        "data": {"status": "ok", "evidence": evidence.model_copy(
+            update={"rows": {"wins": 55}}).model_dump(mode="json")},
+    })
+    with pytest.raises(ValueError, match="conflicting payloads"):
+        admitted_evidence([*ledger.entries, duplicate])
+
+    identical = ledger.entries[-1].model_copy(update={"sequence": 3})
+    assert admitted_evidence([*ledger.entries, identical]) == [evidence]
