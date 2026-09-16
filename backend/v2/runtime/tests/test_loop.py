@@ -58,11 +58,10 @@ class SequenceVerifier:
         status = self.statuses.pop(0)
         return VerificationReport(
             status=status,
-            claim_results=(
-                [{"claim_index": index, "supported": True}
-                 for index, _claim in enumerate(draft.claims)]
-                if status == VerificationStatus.PASS else []
-            ),
+            claim_results=[
+                {"claim_index": index, "supported": True}
+                for index, _claim in enumerate(draft.claims)
+            ],
             repair_instructions=(
                 ["repair requested"]
                 if status == VerificationStatus.REPAIR else []
@@ -99,6 +98,19 @@ async def test_passes_verified_quick_slice() -> None:
 
 
 @pytest.mark.anyio
+async def test_runtime_rejects_incomplete_swappable_mechanical_verifier() -> None:
+    class IncompleteMechanicalVerifier:
+        async def verify(self, task, draft, evidence):
+            return VerificationReport(status=VerificationStatus.PASS)
+
+    with pytest.raises(ValueError, match="mechanical verifier must adjudicate"):
+        await runtime(
+            IncompleteMechanicalVerifier(),
+            SequenceVerifier(VerificationStatus.PASS),
+        ).run("answer")
+
+
+@pytest.mark.anyio
 async def test_runtime_rejects_incomplete_swappable_semantic_verifier() -> None:
     class IncompleteSemanticVerifier:
         async def verify(self, task, draft, evidence):
@@ -130,6 +142,9 @@ async def test_exhausted_repair_returns_named_partial() -> None:
         async def verify(self, task, draft, evidence):
             return VerificationReport(
                 status=VerificationStatus.REPAIR,
+                claim_results=[{
+                    "claim_index": index, "supported": True,
+                } for index, _claim in enumerate(draft.claims)],
                 missing_branches=["clutch context"],
                 repair_instructions=["add clutch evidence"],
             )

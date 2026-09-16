@@ -188,10 +188,15 @@ class Runtime:
 
     async def _verify(self, task, draft, evidence) -> VerificationReport:
         mechanical = await self._mechanical_verifier.verify(task, draft, evidence)
+        expected = list(range(len(draft.claims)))
+        mechanical_indices = sorted(
+            result.claim_index for result in mechanical.claim_results)
+        if mechanical_indices != expected:
+            raise ValueError(
+                "mechanical verifier must adjudicate every claim exactly once")
         if mechanical.status == VerificationStatus.REPAIR:
             return mechanical
         semantic = await self._semantic_verifier.verify(task, draft, evidence)
-        expected = list(range(len(draft.claims)))
         observed = sorted(result.claim_index for result in semantic.claim_results)
         if observed != expected:
             raise ValueError(
