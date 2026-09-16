@@ -256,6 +256,10 @@ def verify_mechanical(
     calculations: Sequence[Calculation] = (),
     allowed_constants: Iterable[int | float | Decimal | str] = (),
 ) -> VerificationReport:
+    task = TaskSpec.model_validate(task.model_dump())
+    draft = DraftReport.model_validate(draft.model_dump())
+    evidence = [EvidenceEnvelope.model_validate(item.model_dump()) for item in evidence]
+    calculations = [Calculation.model_validate(item.model_dump()) for item in calculations]
     try:
         index = EvidenceIndex(evidence)
     except ValueError as exc:

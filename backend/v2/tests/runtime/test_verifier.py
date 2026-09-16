@@ -244,3 +244,13 @@ def test_empty_evidence_cannot_support_a_factual_claim() -> None:
     result = verify_mechanical(task(), report(claim), [empty])
     assert "factual claim cites evidence with no values" in (
         result.claim_results[0].reasons)
+
+
+def test_mechanical_verifier_revalidates_copied_inputs() -> None:
+    valid = DraftReport(sections=["Answer"], claims=[])
+    invalid = valid.model_copy(update={"sections": [" "]})
+    with pytest.raises(ValueError, match="sections must not contain empty"):
+        verify_mechanical(
+            TaskSpec(goal="answer", mode="quick", deliverable="text"),
+            invalid, [],
+        )
