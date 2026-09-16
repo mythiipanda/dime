@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 from dataclasses import dataclass
 from enum import StrEnum
@@ -212,7 +213,9 @@ class ShadowGateReport(BaseModel):
     def validate_report(self) -> "ShadowGateReport":
         rates = (self.failure_rate, self.grounding_drift_rate,
                  self.route_drift_rate, self.answer_drift_rate)
-        if self.total_runs < 0 or any(rate < 0 or rate > 1 for rate in rates):
+        if (self.total_runs < 0
+                or any(not math.isfinite(rate) or rate < 0 or rate > 1
+                       for rate in rates)):
             raise ValueError("shadow gate counts and rates are out of range")
         if any(not blocker.strip() for blocker in self.blockers):
             raise ValueError("shadow gate blockers must be non-empty")

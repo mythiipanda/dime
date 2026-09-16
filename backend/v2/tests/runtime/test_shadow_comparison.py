@@ -1,3 +1,4 @@
+import pytest
 from v2.runtime.shadow import (
     DifferenceKind, RunOutcome, ShadowStore, compare_outcomes,
 )
@@ -253,3 +254,15 @@ def test_shadow_store_rejects_symlinked_record(tmp_path):
     with pytest.raises(ValueError, match="cannot be a symlink"):
         store.append(compare_outcomes("request", outcome(), outcome()))
     assert outside.read_text() == ""
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_shadow_gate_report_rejects_nonfinite_rates(value) -> None:
+    from pydantic import ValidationError
+    from v2.runtime.shadow import ShadowGateReport
+
+    with pytest.raises(ValidationError, match="rates are out of range"):
+        ShadowGateReport(
+            total_runs=1, failure_rate=value, grounding_drift_rate=0,
+            route_drift_rate=0, answer_drift_rate=0, ready=True,
+        )
