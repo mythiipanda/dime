@@ -85,6 +85,8 @@ class LedgerEntry(BaseModel):
 
 class RunLedger:
     def __init__(self, run_id: str, entries: Iterable[LedgerEntry] = ()) -> None:
+        if not run_id.strip():
+            raise ValueError("ledger run id must be non-empty")
         self.run_id = run_id
         self._entries = list(entries)
         if any(entry.run_id != run_id for entry in self._entries):

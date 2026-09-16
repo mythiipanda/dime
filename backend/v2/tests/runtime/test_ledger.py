@@ -131,3 +131,8 @@ def test_reloaded_ledger_rejects_duplicate_tool_results() -> None:
     duplicate = result.model_copy(update={"sequence": 3})
     with pytest.raises(ValueError, match="only one result"):
         RunLedger("run", [call, result, duplicate])
+
+
+def test_ledger_run_identity_must_be_non_empty() -> None:
+    with pytest.raises(ValueError, match="run id must be non-empty"):
+        RunLedger(" ")
