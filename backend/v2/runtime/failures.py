@@ -29,12 +29,12 @@ class CandidateState(StrEnum):
 class FailureObservation(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    source: str
-    failure_class: str
-    summary: str
-    expected_relation: str
-    revision: str
-    trace_id: str | None = None
+    source: str = Field(max_length=2000)
+    failure_class: str = Field(max_length=256)
+    summary: str = Field(max_length=4000)
+    expected_relation: str = Field(max_length=4000)
+    revision: str = Field(max_length=256)
+    trace_id: str | None = Field(default=None, max_length=256)
 
     @model_validator(mode="after")
     def validate_identity(self) -> "FailureObservation":
@@ -50,13 +50,13 @@ class FailureObservation(BaseModel):
 class ScenarioCandidate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    candidate_id: str
-    source: str
-    failure_class: str
-    summary: str
-    expected_relation: str
-    first_bad_revision: str
-    trace_id: str | None = None
+    candidate_id: str = Field(max_length=24)
+    source: str = Field(max_length=2000)
+    failure_class: str = Field(max_length=256)
+    summary: str = Field(max_length=4000)
+    expected_relation: str = Field(max_length=4000)
+    first_bad_revision: str = Field(max_length=256)
+    trace_id: str | None = Field(default=None, max_length=256)
     state: CandidateState = CandidateState.PENDING
     tags: list[str] = Field(default_factory=list, max_length=32)
 

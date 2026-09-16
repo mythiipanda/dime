@@ -125,3 +125,12 @@ def test_candidate_store_revalidates_copied_observation(tmp_path):
     with pytest.raises(ValidationError, match="fields must be non-empty"):
         CandidateStore(tmp_path / "candidates.jsonl").add(item)
     assert not (tmp_path / "candidates.jsonl").exists()
+
+
+def test_failure_observation_text_has_hard_limits():
+    import pytest
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError, match="at most 4000 characters"):
+        FailureObservation(source="fixture", failure_class="wrong",
+                           summary="x" * 4001, expected_relation="expected",
+                           revision="abc")

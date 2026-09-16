@@ -16,14 +16,14 @@ class ProjectStatus(StrEnum):
 class Project(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    id: str
-    goal: str
+    id: str = Field(max_length=64)
+    goal: str = Field(max_length=2000)
     status: ProjectStatus = ProjectStatus.PENDING
-    run_id: str
+    run_id: str = Field(max_length=64)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-    result: str | None = None
-    error: str | None = None
+    result: str | None = Field(default=None, max_length=200_000)
+    error: str | None = Field(default=None, max_length=4000)
 
     @model_validator(mode="after")
     def validate_state(self) -> "Project":
