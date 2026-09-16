@@ -471,6 +471,8 @@ class FileLedger:
             return []
         text = self.path.read_text()
         lines = text.splitlines()
+        if any(not line.strip() for line in lines):
+            raise ValueError("ledger cannot contain blank records")
         if text and not text.endswith("\n"):
             try:
                 LedgerEntry.model_validate_json(lines[-1])
@@ -491,7 +493,6 @@ class FileLedger:
         return [
             LedgerEntry.model_validate_json(line)
             for line in lines
-            if line.strip()
         ]
 
 

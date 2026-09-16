@@ -487,3 +487,12 @@ def test_ledger_tail_recovery_fsyncs_file_and_directory(tmp_path, monkeypatch) -
     monkeypatch.setattr("v2.runtime.ledger.os.fsync", record)
     FileLedger(path, "run")
     assert len(calls) == 2
+
+
+def test_file_ledger_rejects_blank_records(tmp_path) -> None:
+    path = tmp_path / "run.jsonl"
+    file = FileLedger(path, "run")
+    file.append(LedgerKind.TURN_START, turn_id="turn", data={"request": "q"})
+    path.write_text(path.read_text() + "\n")
+    with pytest.raises(ValueError, match="blank records"):
+        FileLedger(path, "run")
