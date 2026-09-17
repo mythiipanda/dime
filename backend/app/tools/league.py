@@ -2785,6 +2785,15 @@ def get_rookie_leaders(stat: str = "ppg", min_value: float = 0,
         "tool": "get_rookie_leaders", "ok": True, "rows": rows,
         "meta": {
             "season": season,
+            "source": ("warehouse silver_player_season plus prior-season "
+                       "silver player populations"),
+            "method": ("filter to first NBA season by excluding every player "
+                       "name present in any prior warehouse season, then rank "
+                       f"descending by {col}"),
+            "stat": col,
+            "stat_unit": ("fraction_0_1" if col in {"FG_PCT", "FG3_PCT", "FT_PCT"}
+                          else "games" if col == "GP"
+                          else "per_game"),
             "rookie_definition": (
                 "first NBA season: no player row in any prior season"),
             "floors": f"GP >= {int(min_gp)}, {col} >= {float(min_value)}",

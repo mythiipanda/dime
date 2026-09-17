@@ -253,6 +253,11 @@ def get_award_race(award: str, season: str = SEASON) -> dict[str, Any]:
                         "direction": "higher-is-better" if sign > 0 else "lower-is-better"}
                        for feat, weight, sign in comps],
         "source": "warehouse (nba_api)",
+        "method": ("weighted sum of within-qualified-pool population z-scores; "
+                   "higher composite score ranks first"),
+        "score_unit": "weighted_z_score",
+        "score_definition": ("dimensionless model score; not points, probability, "
+                             "vote share, or an official award result"),
         "advanced_metrics": "EPM/LEBRON/DARKO/RAPTOR not in warehouse; not fabricated",
     }
     if spec.get("proxy_caveat"):
