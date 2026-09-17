@@ -48,6 +48,16 @@ def get_injuries(team: str = "", player: str = "",
             want,
         )
         rows = [r for r in rows if full.lower() in str(r.get("display_name", "")).lower()]
+    meta = dict(meta)
+    if not rows and not player:
+        # A team/league-wide empty report is not proof that every player is
+        # available. It can also mean the source snapshot is missing, stale,
+        # or returned no listings. Only a named-player lookup has the tool's
+        # explicit negative semantics below.
+        meta["empty_meaning"] = "no listed rows at source vintage; availability unknown"
+        meta["warning"] = (
+            "empty team or league injury report does not establish universal availability"
+        )
     out = {"tool": "get_injuries", "ok": True, "rows": rows, "meta": meta}
     if player and not rows:
         out["player_note"] = (

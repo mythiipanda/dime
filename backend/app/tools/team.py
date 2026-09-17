@@ -1185,11 +1185,20 @@ async def get_injury_impact(team: str = "", season: str = SEASON) -> dict[str, A
         below = net is not None and float(net) < 0
     except (TypeError, ValueError):
         below = False
-    impact = "high" if len(out) >= 2 and below else "moderate" if out else "low"
+    availability_known = bool(out or questionable)
+    impact = ("high" if len(out) >= 2 and below else
+              "moderate" if out else "low" if availability_known else "unknown")
+    meta = {"source": "espn+nba_api+warehouse", "season": season,
+            "heuristic": "OUT>=2 and net<0 -> high; OUT>=1 -> moderate; "
+            "listed players with no OUT -> low; empty report -> unknown; "
+            "OUT = 'out' in status text, questionable = other listings"}
+    if not availability_known:
+        meta["warning"] = (
+            "empty injury rows do not establish that all players are available"
+        )
     return {"tool": "get_injury_impact", "ok": True,
             "rows": {"team": abbr, "out": out, "questionable": questionable,
+                     "availability_known": availability_known,
                      "net_rating": net, "net_rank": rank, "last10": last10,
                      "impact": impact},
-            "meta": {"source": "espn+nba_api+warehouse", "season": season,
-                     "heuristic": "OUT>=2 and net<0 -> high; OUT>=1 -> moderate; else low; "
-                     "OUT = 'out' in status text, questionable = other listings"}}
+            "meta": meta}
