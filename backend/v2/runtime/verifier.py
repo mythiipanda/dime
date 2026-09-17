@@ -150,6 +150,51 @@ def _entity_reasons(task: TaskSpec, claim: Claim,
     return reasons
 
 
+def _row_entity_value_reasons(claim: Claim,
+                              envelopes: Sequence[EvidenceEnvelope]) -> list[str]:
+    """Bind a claim's numerals to the row for its named entity.
+
+    Envelope-wide numeric membership is insufficient for population tables:
+    an adjacent team's value can otherwise verify under the requested team's
+    prose. This generic check narrows structured list rows by identity fields
+    before testing the claim's non-date/season numerals.
+    """
+    text = " ".join(claim.text.casefold().split())
+    identity_keys = {
+        "team", "team_name", "team_abbreviation", "player", "player_name",
+        "full_name", "name",
+    }
+    for envelope in envelopes:
+        if not isinstance(envelope.rows, list) or len(envelope.rows) < 2:
+            continue
+        rows = [row for row in envelope.rows if isinstance(row, Mapping)]
+        matched = []
+        for row in rows:
+            identities = [
+                str(value).strip().casefold()
+                for key, value in row.items()
+                if key.casefold() in identity_keys and value is not None
+            ]
+            if any(value and value in text for value in identities):
+                matched.append(row)
+        if not matched:
+            continue
+        row_envelope = envelope.model_copy(update={"rows": matched})
+        row_numbers = _numeric_values([row_envelope])
+        unsupported = []
+        for raw in _number_tokens(claim.text):
+            if _DATE.fullmatch(raw) or _SEASON.fullmatch(raw) or raw == "100":
+                continue
+            if not (_canon_number(raw) & row_numbers):
+                unsupported.append(raw)
+        if unsupported:
+            return [
+                "claim numerals do not match the named entity row: "
+                + ", ".join(unsupported)
+            ]
+    return []
+
+
 def _scope_reasons(task: TaskSpec,
                    envelopes: Sequence[EvidenceEnvelope]) -> list[str]:
     reasons: list[str] = []
@@ -374,6 +419,7 @@ def verify_mechanical(
         for value in _claim_seasons_supported(claim, cited):
             reasons.append(f"uncited season {value}")
         reasons.extend(_entity_reasons(task, claim, cited))
+        reasons.extend(_row_entity_value_reasons(claim, cited))
         reasons.extend(_scope_reasons(task, cited))
         reasons.extend(_mixed_source_reasons(claim, cited))
         reasons.extend(_cross_evidence_calculation_reasons(claim, cited))

@@ -395,3 +395,44 @@ def test_universal_cross_evidence_claim_requires_declared_calculation():
                   evidence_ids=["regular", "playoffs"])
     result = verify_mechanical(task(), report(claim), [regular, playoffs])
     assert "cross-evidence comparison lacks a declared calculation" in result.claim_results[0].reasons
+
+
+def test_population_claim_numerals_must_match_named_entity_row():
+    table = evidence(
+        rows=[
+            {"TEAM_NAME": "Boston Celtics", "OFF_RATING": 111.4, "DEF_RATING": 108.8},
+            {"TEAM_NAME": "Cleveland Cavaliers", "OFF_RATING": 109.7, "DEF_RATING": 112.3},
+        ],
+        units={"OFF_RATING": "points_per_100_possessions",
+               "DEF_RATING": "points_per_100_possessions"},
+    )
+    wrong = Claim(
+        text="Cleveland Cavaliers had an offensive rating of 111.4 points per 100 possessions.",
+        kind="observed", evidence_ids=[table.evidence_id],
+    )
+    result = verify_mechanical(
+        TaskSpec(goal="Cleveland rating", mode="quick", deliverable="answer"),
+        report(wrong), [table],
+    )
+    assert result.status == VerificationStatus.REPAIR
+    assert any("named entity row" in reason
+               for reason in result.claim_results[0].reasons)
+
+
+def test_population_claim_accepts_numeral_from_named_entity_row():
+    table = evidence(
+        rows=[
+            {"TEAM_NAME": "Boston Celtics", "OFF_RATING": 111.4},
+            {"TEAM_NAME": "Cleveland Cavaliers", "OFF_RATING": 109.7},
+        ],
+        units={"OFF_RATING": "points_per_100_possessions"},
+    )
+    right = Claim(
+        text="Cleveland Cavaliers had an offensive rating of 109.7 points per 100 possessions.",
+        kind="observed", evidence_ids=[table.evidence_id],
+    )
+    result = verify_mechanical(
+        TaskSpec(goal="Cleveland rating", mode="quick", deliverable="answer"),
+        report(right), [table],
+    )
+    assert result.status == VerificationStatus.PASS
