@@ -557,6 +557,12 @@ def get_playoffs(season: str = SEASON) -> dict[str, Any]:
             wins[team] = wins.get(team, 0) + 1
         else:
             losses[team] = losses.get(team, 0) + 1
+    if not rows and meta.get("error"):
+        # Missing source coverage is not a verified zero-game population.
+        # Fail the capability so conditional branches cannot turn an unseeded
+        # season into "team completed zero playoff games."
+        return {"tool": "get_playoffs", "ok": False,
+                "error": str(meta["error"])}
     table = sorted(
         ((t, w) for t, w in wins.items()), key=lambda x: x[1], reverse=True)
     champ = table[0][0] if table and table[0][1] >= 12 else ""
