@@ -372,3 +372,26 @@ def test_qualification_numeral_is_supported_for_population_claim():
     )
     result = verify_mechanical(task(), report(claim), [ev])
     assert result.status == "pass"
+
+
+def test_cross_evidence_comparison_requires_declared_calculation():
+    regular = evidence(evidence_id="regular", capability="team_ratings",
+        rows=[{"TEAM": "Boston Celtics", "OFF_RATING": 120.0}],
+        units={"OFF_RATING": "points_per_100_possessions"})
+    playoffs = evidence(evidence_id="playoffs", capability="playoff_team_ratings",
+        rows=[{"TEAM": "Boston Celtics", "OFF_RATING": 111.4}],
+        units={"OFF_RATING": "points_per_100_possessions"})
+    claim = Claim(
+        text="Boston's offensive rating dropped from 120.0 to 111.4 points per 100 possessions.",
+        kind="observed", evidence_ids=["regular", "playoffs"])
+    result = verify_mechanical(task(), report(claim), [regular, playoffs])
+    assert "cross-evidence comparison lacks a declared calculation" in result.claim_results[0].reasons
+
+
+def test_universal_cross_evidence_claim_requires_declared_calculation():
+    regular = evidence(evidence_id="regular", rows=[{"TEAM": "Boston Celtics", "OFF_RATING": 120.0}])
+    playoffs = evidence(evidence_id="playoffs", rows=[{"TEAM": "Boston Celtics", "OFF_RATING": 111.4}])
+    claim = Claim(text="Every playoff team declined.", kind="judgment",
+                  evidence_ids=["regular", "playoffs"])
+    result = verify_mechanical(task(), report(claim), [regular, playoffs])
+    assert "cross-evidence comparison lacks a declared calculation" in result.claim_results[0].reasons

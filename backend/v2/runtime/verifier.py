@@ -249,6 +249,25 @@ def _qualification_coverage_reasons(claim: Claim,
     return reasons
 
 
+
+
+def _cross_evidence_calculation_reasons(
+    claim: Claim, envelopes: Sequence[EvidenceEnvelope],
+) -> list[str]:
+    """Require declared calculations for comparisons assembled across envelopes."""
+    if claim.calculation_id or len(envelopes) < 2:
+        return []
+    text = claim.text.casefold()
+    compares = re.search(
+        r"\b(?:from .{0,80} to|declin(?:e|ed)|drop(?:ped)?|fell|rose|increase[ds]?|"
+        r"decrease[ds]?|difference|gap|change[ds]?)\b",
+        text,
+    )
+    universal = re.search(r"\b(?:all|every|each|none)\b", text)
+    if compares or universal:
+        return ["cross-evidence comparison lacks a declared calculation"]
+    return []
+
 def _calculation_reasons(claim: Claim, calculations: Mapping[str, Calculation],
                          evidence: EvidenceIndex) -> tuple[list[str], set[Decimal]]:
     if not claim.calculation_id:
@@ -357,6 +376,7 @@ def verify_mechanical(
         reasons.extend(_entity_reasons(task, claim, cited))
         reasons.extend(_scope_reasons(task, cited))
         reasons.extend(_mixed_source_reasons(claim, cited))
+        reasons.extend(_cross_evidence_calculation_reasons(claim, cited))
         reasons.extend(_metric_unit_reasons(claim, cited))
         reasons.extend(_qualification_coverage_reasons(claim, cited))
 
