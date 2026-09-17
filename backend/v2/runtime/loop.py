@@ -205,9 +205,13 @@ class Runtime:
             if node.status.value == "failed"
         }
         redundant_failures = _redundant_failed_nodes(task, execution)
+        represented_failures = _failures_represented_by_precise_gaps(
+            task, execution, [*draft.gaps, *verification.missing_branches])
         unresolved_errors = {
             node_id: errors for node_id, errors in execution.errors.items()
-            if node_id in failed_nodes and node_id not in redundant_failures
+            if node_id in failed_nodes
+            and node_id not in redundant_failures
+            and node_id not in represented_failures
         }
         skipped_nodes = [
             node.id for node in execution.plan.nodes
@@ -229,7 +233,12 @@ class Runtime:
         verified_claims = _verified_claims(draft, verification, evidence)
         gaps = [
             *_verification_gaps(
-                draft, verification, unresolved_errors, evidence_ids=set(evidence)),
+                draft, verification, unresolved_errors, evidence_ids=set(evidence),
+                satisfied_requirement_ids={
+                    requirement_id for node in execution.plan.nodes
+                    if node.status.value == "complete"
+                    for requirement_id in node.covers_requirement_ids
+                }),
             *empty_evidence_gaps,
             *uncovered_requirement_gaps,
             *empty_draft_gaps,
@@ -525,6 +534,34 @@ def _verified_claims(draft, verification, evidence=None) -> list[VerifiedClaim]:
     ]
 
 
+def _failures_represented_by_precise_gaps(
+    task: TaskSpec, execution: ExecutionResult, messages: Iterable[str],
+) -> set[str]:
+    requirements = {item.id: item for item in task.requirements}
+    stop = {"a", "an", "and", "for", "in", "of", "the", "to", "with"}
+    def terms(value: str) -> set[str]:
+        return set(re.findall(r"[a-z0-9]+", value.casefold())) - stop
+    gap_terms = [terms(message) for message in messages]
+    represented = set()
+    for node in execution.plan.nodes:
+        if node.status.value != "failed":
+            continue
+        descriptions = [
+            requirements[item].description for item in node.covers_requirement_ids
+            if item in requirements
+        ]
+        if any(
+            overlap >= min(3, len(wanted), len(observed))
+            for description in descriptions
+            for wanted in [terms(description)]
+            for observed in gap_terms
+            for overlap in [len(wanted & observed)]
+            if wanted and observed
+        ):
+            represented.add(node.id)
+    return represented
+
+
 def _redundant_failed_nodes(task: TaskSpec, execution: ExecutionResult) -> set[str]:
     """Identify failed narrower calls already covered by completed evidence."""
     from v2.runtime.subsumption import (
@@ -602,7 +639,7 @@ def _empty_evidence_gaps(evidence) -> list[Gap]:
 
 
 def _verification_gaps(draft, verification, execution_errors=None,
-                       evidence_ids=None) -> list[Gap]:
+                       evidence_ids=None, satisfied_requirement_ids=None) -> list[Gap]:
     missing_messages = [*draft.gaps]
     def message_terms(message: str) -> set[str]:
         return {
@@ -618,8 +655,15 @@ def _verification_gaps(draft, verification, execution_errors=None,
             for other_terms in map(message_terms, missing_messages)
         ):
             missing_messages.append(message)
-    gaps = [Gap(kind=GapKind.MISSING_EVIDENCE, message=message)
-            for message in missing_messages]
+    satisfied_requirement_ids = satisfied_requirement_ids or set()
+    gaps = [Gap(
+        kind=(GapKind.SYNTHESIS_INCOMPLETE
+              if any(requirement_id.casefold().replace("_", " ") in
+                     message.casefold().replace("_", " ")
+                     for requirement_id in satisfied_requirement_ids)
+              else GapKind.MISSING_EVIDENCE),
+        message=message,
+    ) for message in missing_messages]
     gaps.extend(Gap(kind=GapKind.SOURCE_CONFLICT, message=message)
                 for message in verification.contradictions)
     for node_id, errors in (execution_errors or {}).items():

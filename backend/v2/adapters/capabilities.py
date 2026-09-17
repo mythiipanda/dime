@@ -56,6 +56,22 @@ def _player_entity(rows: Any) -> list[EntityRef]:
             if player_id is not None else [])
 
 
+def _player_entities(rows: Any) -> list[EntityRef]:
+    items = rows if isinstance(rows, list) else [rows]
+    found: dict[str, EntityRef] = {}
+    for item in items:
+        if not isinstance(item, Mapping):
+            continue
+        player_id = item.get("PLAYER_ID") or item.get("player_id")
+        name = item.get("PLAYER_NAME") or item.get("PLAYER") or item.get("player")
+        if player_id is None:
+            continue
+        ref = EntityRef(id=str(player_id), type="player",
+                        display_name=str(name or player_id))
+        found[ref.id] = ref
+    return list(found.values())
+
+
 def _team_entities(rows: Any) -> list[EntityRef]:
     items = rows if isinstance(rows, list) else [rows]
     found: dict[str, EntityRef] = {}
@@ -137,6 +153,7 @@ _LIST = [
                "FG3_PCT": FRACTION, "FT_PCT": FRACTION},
         qualification="Qualified players only (NBA leaderboard minimums).",
         coverage="Source-ranked qualified leaderboard; returned rows preserve population ranks.",
+        extract_entities=_player_entities,
     ),
     Capability(
         name="team_splits", tool_name="get_team_splits",
@@ -203,11 +220,13 @@ _LIST = [
     ),
     Capability(name="roster", tool_name="get_team_hub"),
     Capability(name="player_report", tool_name="get_player_report",
-               extract_entities=_player_entity),
+               extract_entities=_player_entity,
+               dependent_entity_arguments={"player": "player"}),
     Capability(name="player_evaluation", tool_name="get_player_evaluation",
                qualification="Ranks use the tool's declared qualified player pools.",
                coverage="Current-season player population represented in the warehouse.",
-               extract_entities=_player_entity),
+               extract_entities=_player_entity,
+               dependent_entity_arguments={"player": "player"}),
     Capability(name="player_comparison", tool_name="get_compare"),
     Capability(name="metric_adjudication", tool_name="compare_metrics"),
     Capability(name="metric_coverage", tool_name="metric_coverage", source_prefix="v2"),
@@ -277,7 +296,8 @@ _LIST = [
         qualification="Pre-game estimate from 10,000 seeded simulations by default.",
         coverage="Two-team matchup using season ratings, pace, and available injury data.",
     ),
-    Capability(name="game_logs", tool_name="search_game_logs"),
+    Capability(name="game_logs", tool_name="search_game_logs",
+               dependent_entity_arguments={"player": "player"}),
     Capability(
         name="four_factors",
         tool_name="get_four_factors",

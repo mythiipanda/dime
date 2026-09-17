@@ -947,3 +947,25 @@ def test_warehouse_freshness_preserves_tri_state_status_and_cadence():
     assert env.rows[1]["stale"] is None
     assert env.rows[0]["expected"] == "daily in season"
     assert "missing timestamps remain unknown" in env.coverage
+
+@pytest.mark.anyio
+async def test_dependent_player_argument_is_bound_from_parent_evidence():
+    from datetime import UTC, datetime
+    from v2.adapters.core import ToolCapability
+    from v2.contracts import EvidenceEnvelope, PlanNode, TaskSpec
+    parent = EvidenceEnvelope(evidence_id="leaders", capability="qualified_leaders",
+        source="fixture", observed_at=datetime.now(UTC),
+        entities=[{"id":"1628983","type":"player","display_name":"Shai Gilgeous-Alexander"}],
+        rows=[{"PLAYER_ID":1628983,"PLAYER_NAME":"Shai Gilgeous-Alexander"}])
+    class Tool:
+        name="get_player_evaluation"
+        args_schema=None
+        async def ainvoke(self, args):
+            assert args["player"] == "Shai Gilgeous-Alexander"
+            return {"ok":True,"rows":{"player_id":1628983,"player":"Shai Gilgeous-Alexander"},
+                    "meta":{"source":"fixture","season":"2025-26"}}
+    result = await ToolCapability("player_evaluation", tools={"get_player_evaluation":Tool()}).execute(
+        PlanNode(id="profile",description="profile",depends_on=["leaders"],
+                 capability_hints=["player_evaluation"],arguments={"season":"2025-26"}),
+        TaskSpec(goal="profile",mode="quick",deliverable="answer"),[parent])
+    assert result.entities[0].display_name == "Shai Gilgeous-Alexander"

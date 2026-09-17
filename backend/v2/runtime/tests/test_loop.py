@@ -1123,3 +1123,20 @@ def test_verification_gaps_merge_semantically_duplicate_missing_branch():
     gaps = _verification_gaps(draft, verification)
     assert [gap.message for gap in gaps] == [
         "What were Luka's primary stats in the 2023-24 playoffs?"]
+
+def test_precise_root_gap_suppresses_redundant_execution_failure():
+    from datetime import UTC, datetime
+    from v2.contracts import EvidenceEnvelope, PlanStatus
+    from v2.runtime.loop import _failures_represented_by_precise_gaps
+    from v2.runtime.models import ExecutionResult
+    task = TaskSpec(goal="comparison", mode="quick", deliverable="answer",
+        requirements=[{"id":"playoff_stats",
+                       "description":"Player performance statistics in the playoffs",
+                       "capability_options":["game_logs"]}])
+    plan = Plan(nodes=[PlanNode(id="po_logs", description="playoff logs",
+        capability_hints=["game_logs"], covers_requirement_ids=["playoff_stats"],
+        status=PlanStatus.FAILED)])
+    execution = ExecutionResult(plan=plan, attempts={"po_logs":1},
+                                errors={"po_logs":["source unavailable"]})
+    assert _failures_represented_by_precise_gaps(task, execution,
+        ["Playoff performance statistics for the player are unavailable"]) == {"po_logs"}

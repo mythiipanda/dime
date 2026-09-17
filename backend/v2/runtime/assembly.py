@@ -86,6 +86,7 @@ def capability_catalog() -> dict[str, dict]:
         catalog[name] = {
             "description": CAPABILITY_DESCRIPTIONS[name],
             "arguments": _structural_schema(args_schema),
+            "dependent_entity_arguments": dict(spec.dependent_entity_arguments),
         }
     catalog.update({
         "web_search": {

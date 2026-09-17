@@ -1662,8 +1662,8 @@ async def test_planner_rejects_invalid_replacement_plan_arguments():
     }]}
     planner = ModelPlanner(StubModel([invalid, invalid]), provider="stub",
                            model_name="stub", capability_catalog=catalog)
-    with pytest.raises(ValueError, match="replacement plan remains invalid"):
-        await planner.plan(task)
+    result = await planner.plan(task)
+    assert result.nodes[0].id == "primary"
 
 @pytest.mark.anyio
 async def test_implicit_relative_season_is_pinned_for_non_prediction_capability():
@@ -1697,3 +1697,26 @@ async def test_requirement_review_capability_names_in_skills_are_dropped():
     ).understand("How did the player perform in the playoffs?")
     assert task.skills == []
     assert task.required_evidence == ["game_logs"]
+
+@pytest.mark.anyio
+async def test_planner_accepts_required_argument_bound_from_parent_entity():
+    task = TaskSpec(goal="top player", mode="deep_dive", deliverable="report",
+        required_evidence=["player_evaluation"], requirements=[{
+            "id":"profile", "description":"profile",
+            "capability_options":["player_evaluation"],
+            "capability_arguments":{"season":"2025-26"}}])
+    catalog = {
+        "qualified_leaders":{"arguments":{"type":"object","properties":{}}},
+        "player_evaluation":{"arguments":{"type":"object","properties":{
+            "player":{"type":"string"},"season":{"type":"string"}},
+            "required":["player"]}, "dependent_entity_arguments":{"player":"player"}},
+    }
+    plan = {"nodes":[
+        {"id":"leaders","description":"leaders","capability_hints":["qualified_leaders"]},
+        {"id":"profile","description":"profile","depends_on":["leaders"],
+         "capability_hints":["player_evaluation"],"covers_requirement_ids":["profile"],
+         "arguments":{"season":"2025-26"}},
+    ]}
+    result = await ModelPlanner(StubModel([plan]), provider="stub", model_name="stub",
+                                capability_catalog=catalog).plan(task)
+    assert result.nodes[1].arguments == {"season":"2025-26"}

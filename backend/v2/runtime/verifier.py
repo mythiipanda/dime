@@ -545,6 +545,7 @@ def verify_mechanical(
     task_text = " ".join((task.goal, task.deliverable, *task.subquestions)).casefold()
     requested_metrics = {
         "TS_PCT": ("true shooting", "shooting efficiency", "efficiency"),
+        "FG3_PCT": ("three-point", "three point", "shooting split", "shooting percentage"),
     }
     for metric, aliases in requested_metrics.items():
         if not any(alias in task_text for alias in aliases):

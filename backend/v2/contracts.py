@@ -41,6 +41,7 @@ class GapKind(StrEnum):
     SOURCE_CONFLICT = "source_conflict"
     UNSUPPORTED_CLAIM = "unsupported_claim"
     EXECUTION_FAILURE = "execution_failure"
+    SYNTHESIS_INCOMPLETE = "synthesis_incomplete"
 
 
 class EntityRef(BaseModel):

@@ -507,10 +507,15 @@ class ModelPlanner(ModelStage):
             task, self._normalize_requirement_coverage(task, replacement))
         remaining = self._coverage_feedback(task, replacement)
         if remaining:
-            raise ValueError(
-                "replacement plan remains invalid after coverage repair: "
-                f"{remaining}"
-            )
+            original_remaining = self._coverage_feedback(task, plan)
+            if not original_remaining:
+                return plan
+            def issue_count(feedback: Mapping[str, Any]) -> int:
+                return sum(
+                    len(value) if isinstance(value, (list, dict)) else 1
+                    for value in feedback.values()
+                )
+            return replacement if issue_count(remaining) <= issue_count(original_remaining) else plan
         return replacement
 
     def _normalize_plan(self, task: TaskSpec, plan: Plan) -> Plan:
@@ -673,7 +678,9 @@ class ModelPlanner(ModelStage):
             nodes.append(node.model_copy(update={"covers_requirement_ids": valid}))
         return plan.model_copy(update={"nodes": nodes})
 
-    def _missing_required_arguments(self, node: PlanNode) -> list[str]:
+    def _missing_required_arguments(
+        self, node: PlanNode, plan: Plan | None = None,
+    ) -> list[str]:
         selected = [name for name in node.capability_hints if name in self._catalog]
         if len(selected) != 1:
             return []
@@ -686,16 +693,20 @@ class ModelPlanner(ModelStage):
         required = schema.get("required", [])
         if not isinstance(required, list):
             return []
+        declarations = catalog_entry.get("dependent_entity_arguments", {})
         return sorted(
             key for key in required
             if isinstance(key, str) and key not in node.arguments
+            and not (plan is not None and node.depends_on
+                     and isinstance(declarations, Mapping)
+                     and key in declarations)
         )
 
     def _coverage_feedback(self, task: TaskSpec, plan: Plan) -> dict[str, Any]:
         invalid_arguments = {
-            node.id: self._missing_required_arguments(node)
+            node.id: self._missing_required_arguments(node, plan)
             for node in plan.nodes
-            if self._missing_required_arguments(node)
+            if self._missing_required_arguments(node, plan)
         }
         valid_nodes = [
             node for node in plan.nodes if node.id not in invalid_arguments

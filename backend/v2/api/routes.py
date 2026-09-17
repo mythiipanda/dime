@@ -177,6 +177,8 @@ def _answer_text(result) -> str:
             continue
         if folded in {"player age risk assessment", "age risk assessment"}:
             message = "Age-related risk was not available in the retrieved player data."
+        if gap.kind.value == "synthesis_incomplete":
+            continue
         if gap.kind.value == "unsupported_claim":
             generic_limit = True
             continue

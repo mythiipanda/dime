@@ -77,3 +77,5 @@ collapse several admitted evidence angles into a minimum-viable one-line answer.
   claim. If age or contract-option data is absent, use the strongest downside
   that admitted evidence does support and name the missing age/option branch in
   gaps.
+- When the deliverable requests an exact number of reasons, factors, risks, or examples, select and rank exactly that many. Do not append additional unranked items from admitted evidence.
+- For a phase comparison, carry every requested metric present in admitted evidence for the available phase, even when the other phase is unavailable.

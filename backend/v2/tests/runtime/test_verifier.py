@@ -686,3 +686,17 @@ def test_named_row_matcher_leaves_rank_numeral_to_rank_verifier():
     result = verify_mechanical(TaskSpec(goal="best record", mode="quick",
         deliverable="answer"), DraftReport(sections=["Record"], claims=[claim]), [ev])
     assert result.status == "pass"
+
+def test_requested_three_point_metric_cannot_be_omitted_from_comparison():
+    from v2.contracts import EvidenceEnvelope
+    ev = EvidenceEnvelope(evidence_id="player", capability="player_report",
+        source="fixture", observed_at=datetime.now(UTC),
+        rows={"season_line":{"PPG":33.9,"TS_PCT":.617,"FG3_PCT":.382}})
+    task = TaskSpec(goal="phase comparison", mode="quick",
+                    deliverable="scoring, efficiency, and shooting splits")
+    draft = DraftReport(sections=["Regular season"], claims=[Claim(
+        text="He averaged 33.9 points on 61.7% true shooting.", kind="observed",
+        evidence_ids=["player"])])
+    result = verify_mechanical(task, draft, [ev])
+    assert result.status == "repair"
+    assert "requested fg3 metric" in result.repair_instructions[-1]

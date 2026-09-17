@@ -335,6 +335,14 @@ def _task_arguments(name: str, node: Any, task: Any, evidence: Iterable[Evidence
             if salary_season:
                 arguments["season"] = salary_season
                 break
+    declarations = CAPABILITIES[name].dependent_entity_arguments
+    for argument, entity_type in declarations.items():
+        if arguments.get(argument) is not None:
+            continue
+        candidates = [entity for item in evidence for entity in item.entities
+                      if entity.type == entity_type]
+        if candidates:
+            arguments[argument] = candidates[0].display_name or candidates[0].id
     if name == "game_prediction":
         if season is not None and season.source == "default":
             arguments.pop("season", None)
