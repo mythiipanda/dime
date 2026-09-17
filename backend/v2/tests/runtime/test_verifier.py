@@ -574,3 +574,22 @@ def test_best_record_claim_requires_complete_wins_losses_record():
     )])
     accepted = verify_mechanical(task, complete, [evidence])
     assert accepted.status == "pass"
+
+def test_count_metrics_use_natural_metric_nouns() -> None:
+    from datetime import UTC, datetime
+    from v2.contracts import Claim, DraftReport, EvidenceEnvelope, TaskSpec
+    from v2.runtime.verifier import verify_mechanical
+
+    evidence = EvidenceEnvelope(
+        evidence_id="standings", capability="standings", source="fixture",
+        observed_at=datetime.now(UTC), units={"WINS": "count", "LOSSES": "count"},
+        qualification="All NBA teams", coverage="Full standings table",
+        rows=[{"team": "Oklahoma City Thunder", "WINS": 64, "LOSSES": 18}],
+    )
+    draft = DraftReport(sections=["Record"], claims=[Claim(
+        text="Oklahoma City Thunder had the best record at 64-18.",
+        kind="observed", evidence_ids=["standings"],
+    )])
+    assert verify_mechanical(TaskSpec(
+        goal="best record", mode="quick", deliverable="answer"),
+        draft, [evidence]).status == "pass"

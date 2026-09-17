@@ -140,6 +140,7 @@ class Runtime:
             self._close_failed(turn_id, exc, started=turn_started)
             raise
         pre_repair_draft = draft.model_copy(deep=True)
+        pre_repair_verification = verification.model_copy(deep=True)
         repaired = False
 
         for attempt in range(self._repair_attempts):
@@ -241,10 +242,15 @@ class Runtime:
                 kind=GapKind.MISSING_EVIDENCE,
                 message="verification did not establish complete support",
             ))
+        pre_repair_supported = {
+            result.claim_index for result in pre_repair_verification.claim_results
+            if result.supported
+        }
         pre_repair_keys = {
             (claim.text, claim.kind, tuple(claim.evidence_ids), claim.calculation_id)
-            for claim in pre_repair_draft.claims
-            if claim.kind.value in {"observed", "derived"}
+            for index, claim in enumerate(pre_repair_draft.claims)
+            if index in pre_repair_supported
+            and claim.kind.value in {"observed", "derived"}
         }
         published_keys = {
             (claim.text, claim.kind, tuple(claim.evidence_ids), claim.calculation_id)

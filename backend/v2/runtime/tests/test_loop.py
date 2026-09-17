@@ -930,3 +930,49 @@ async def test_redundant_failed_capability_does_not_create_false_partial():
     assert result.verification.status == VerificationStatus.PASS
     assert result.gaps == []
     assert result.structural_flags == ["false_partial_downgrade"]
+
+@pytest.mark.anyio
+async def test_runtime_does_not_flag_corrected_rejected_claim_as_stripped_supported_branch():
+    from v2.contracts import Claim, DraftReport
+
+    class OriginalDraft:
+        async def synthesize(self, task, evidence):
+            return DraftReport(sections=["Answer"], claims=[
+                Claim(text="Atlanta had the best record.", kind="observed",
+                      evidence_ids=[evidence[0].evidence_id]),
+                Claim(text="Atlanta finished 60-22.", kind="observed",
+                      evidence_ids=[evidence[0].evidence_id]),
+            ])
+
+    class CorrectRejected:
+        async def repair(self, task, draft, evidence, verification):
+            return DraftReport(sections=["Answer"], claims=[
+                draft.claims[1],
+                Claim(text="Atlanta had the best record at 60-22.", kind="observed",
+                      evidence_ids=draft.claims[0].evidence_ids),
+            ])
+
+    class RejectFirstThenPass:
+        def __init__(self): self.calls = 0
+        async def verify(self, task, draft, evidence):
+            self.calls += 1
+            return VerificationReport(
+                status=(VerificationStatus.REPAIR if self.calls == 1
+                        else VerificationStatus.PASS),
+                claim_results=[
+                    {"claim_index": index,
+                     "supported": self.calls > 1 or index == 1,
+                     "reasons": (["incomplete record"]
+                                 if self.calls == 1 and index == 0 else [])}
+                    for index, _claim in enumerate(draft.claims)
+                ],
+            )
+
+    instance = runtime(
+        RejectFirstThenPass(),
+        SequenceVerifier(VerificationStatus.PASS, VerificationStatus.PASS),
+        CorrectRejected(),
+    )
+    instance._synthesizer = OriginalDraft()
+    result = await instance.run("best record")
+    assert result.structural_flags == []

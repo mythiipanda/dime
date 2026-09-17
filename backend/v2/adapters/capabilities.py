@@ -112,6 +112,8 @@ _LIST = [
         units={"WINS": COUNT, "LOSSES": COUNT, "WinPCT": FRACTION,
                "PointsPG": PER_GAME, "OppPointsPG": PER_GAME,
                "DiffPointsPG": PER_GAME},
+        qualification="All NBA teams in the selected regular season.",
+        coverage="Full regular-season standings table.",
     ),
     Capability(
         name="team_trajectory",

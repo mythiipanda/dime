@@ -255,6 +255,11 @@ def _metric_unit_reasons(claim: Claim,
                 if not re.search(r"points?\s+per\s+100\s+possessions?", text):
                     reasons.append(
                         f"metric {metric} is stated without its declared unit {unit}")
+            elif unit_name == "count":
+                # Count is dimensionless. Natural metric nouns such as wins,
+                # losses, games, and points already carry the measure; forcing
+                # the literal word "count" creates broken answer prose.
+                continue
             elif unit_name.replace("_", " ") not in text:
                 reasons.append(f"metric {metric} is stated without its declared unit {unit}")
     return reasons
