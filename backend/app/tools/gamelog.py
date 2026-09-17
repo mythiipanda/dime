@@ -163,23 +163,42 @@ def _load_player_games(pid: int, season: str) -> list[dict[str, Any]]:
     return _load_games(_table_for(False), season, pid)
 
 
-def _playoff_coverage() -> str:
-    """Seasons present in the playoff table, for explicit no-data errors."""
+def _playoff_coverage(season: str | None = None) -> str:
+    """Describe player-log coverage and the separate team-game slice."""
     try:
         con = store.connect(read_only=True)
         try:
-            seasons = sorted(
-                r[0] for r in con.execute(
+            tables = {row[0] for row in con.execute("SHOW TABLES").fetchall()}
+            player_seasons = (sorted(
+                row[0] for row in con.execute(
                     "SELECT DISTINCT _season FROM silver_playoff_gamelogs"
-                ).fetchall() if r[0]
-            )
+                ).fetchall() if row[0]
+            ) if "silver_playoff_gamelogs" in tables else [])
+            team_rows = 0
+            if season and "silver_hist_gamelogs" in tables:
+                cols = {row[1] for row in con.execute(
+                    "PRAGMA table_info(silver_hist_gamelogs)").fetchall()}
+                if "season_type" in cols:
+                    team_rows = int(con.execute(
+                        "SELECT count(*) FROM silver_hist_gamelogs "
+                        "WHERE _season = ? AND season_type = 'playoffs'",
+                        [season],
+                    ).fetchone()[0])
         finally:
             con.close()
     except Exception:
-        seasons = []
-    if not seasons:
-        return "no playoff seasons stored yet"
-    return "playoff coverage: " + ", ".join(seasons)
+        player_seasons, team_rows = [], 0
+    player_text = (
+        "player gamelog coverage: " + ", ".join(player_seasons)
+        if player_seasons else "no player playoff gamelog seasons stored yet"
+    )
+    if season:
+        team_text = (
+            f"; team playoff game slice exists for {season} ({team_rows} team-game rows)"
+            if team_rows else f"; no team playoff game slice stored for {season}"
+        )
+        return player_text + team_text
+    return player_text
 
 
 def playoff_inactive_note(pid: int, season: str, name: str | None = None) -> str | None:
@@ -492,7 +511,7 @@ def search_game_logs(
             return {"tool": "search_game_logs", "ok": False,
                     "error": f"no {scope} gamelog data in the warehouse"
                              f" ({season})"
-                             + (f"; {_playoff_coverage()}" if playoffs
+                             + (f"; {_playoff_coverage(season)}" if playoffs
                                 else "")}
         label = player if player is not None else f"player {pid}"
         err = (f"no {scope} gamelog data for {label} in the warehouse"
@@ -500,7 +519,7 @@ def search_game_logs(
         if playoffs:
             note = (playoff_inactive_note(pid, season, label)
                     if pid is not None else None)
-            err += f"; {note}" if note else f"; {_playoff_coverage()}"
+            err += f"; {note}" if note else f"; {_playoff_coverage(season)}"
         return {"tool": "search_game_logs", "ok": False, "error": err}
     matched = [g for g in games if _matches(g, filters)]
     lim = _clamp_limit(limit)
