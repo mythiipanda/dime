@@ -434,17 +434,21 @@ class ModelIntake(ModelStage):
             raise ValueError(
                 f"requirement review selected unknown capabilities: {unknown_evidence}"
             )
-        # Search discovers a source; fetch turns that selected source into
-        # admissible external evidence. A requirement that accepts discovery
-        # therefore also accepts its evidence-producing refinement. Keeping
-        # this closure in the typed ledger lets the planner attach the fetch to
-        # the same evidence clause without weakening capability validation.
+        # Close requirement choices over evidence-producing refinements and
+        # declared broader capabilities. This lets one successful broad report
+        # satisfy a narrow branch (for the same subject/season) instead of
+        # forcing a redundant narrow call whose failure can falsely downgrade
+        # the complete evidence.
+        from v2.runtime.subsumption import capability_subsumes
         requirements = [
             requirement.model_copy(update={
                 "capability_options": list(dict.fromkeys([
                     *requirement.capability_options,
                     *(["web_fetch"] if "web_search" in requirement.capability_options
                       else []),
+                    *(candidate for candidate in self._catalog
+                      if any(capability_subsumes(candidate, narrower)
+                             for narrower in requirement.capability_options)),
                 ])),
             })
             for requirement in review.requirements

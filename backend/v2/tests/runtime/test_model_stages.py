@@ -1564,3 +1564,52 @@ async def test_requirement_review_retries_one_provider_exhaustion() -> None:
 
     assert task.goal == "leaders"
     assert model.calls == 3
+@pytest.mark.anyio
+async def test_requirement_review_closes_narrow_option_over_broader_capability():
+    stub = StubModel([{
+        "goal": "player line", "mode": "quick", "deliverable": "answer",
+        "entities": [{"id": "luka", "type": "player", "display_name": "Luka"}],
+        "required_evidence": ["player_report", "shooting_efficiency"],
+    }, {
+        "requirements": [{
+            "id": "shooting", "description": "shooting splits",
+            "capability_options": ["shooting_efficiency"],
+            "capability_arguments": {"player": "luka", "season": "2022-23"},
+        }],
+    }])
+    task = await ModelIntake(
+        stub, provider="stub", model_name="stub", requirement_review=True,
+        capability_catalog={"player_report": {}, "shooting_efficiency": {}},
+    ).understand("Luka's 2022-23 line")
+    assert task.requirements[0].capability_options == [
+        "shooting_efficiency", "player_report"]
+
+@pytest.mark.anyio
+async def test_planner_subsumes_report_and_shooting_split_requirements():
+    task = TaskSpec(
+        goal="player line", mode="quick", deliverable="answer",
+        requirements=[
+            {"id": "line", "description": "season line",
+             "capability_options": ["player_report"],
+             "capability_arguments": {"player": "luka", "season": "2022-23"}},
+            {"id": "shooting", "description": "shooting splits",
+             "capability_options": ["shooting_efficiency", "player_report"],
+             "capability_arguments": {"player": "luka", "season": "2022-23"}},
+        ],
+    )
+    stub = StubModel([{"nodes": [
+        {"id": "report", "description": "full report",
+         "capability_hints": ["player_report"],
+         "covers_requirement_ids": ["line"],
+         "arguments": {"player": "luka", "season": "2022-23"}},
+        {"id": "shooting", "description": "shooting splits",
+         "capability_hints": ["shooting_efficiency"],
+         "covers_requirement_ids": ["shooting"],
+         "arguments": {"player": "luka", "season": "2022-23"}},
+    ]}])
+    plan = await ModelPlanner(
+        stub, provider="stub", model_name="stub",
+        capability_catalog={"player_report": {}, "shooting_efficiency": {}},
+    ).plan(task)
+    assert [node.id for node in plan.nodes] == ["report"]
+    assert plan.nodes[0].covers_requirement_ids == ["line", "shooting"]
