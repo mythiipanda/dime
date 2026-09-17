@@ -1441,6 +1441,7 @@ async def test_synthesizer_rejects_declared_calculation_for_evidence_requirement
         await ModelSynthesizer(
             stub, provider="stub", model_name="stub",
         ).synthesize(task, [])
+@pytest.mark.anyio
 async def test_provider_structured_failure_preserves_sanitized_diagnostics(monkeypatch):
     from v2.adapters.models import ProviderStructuredModel
     from v2.runtime import RequestEnvelope
