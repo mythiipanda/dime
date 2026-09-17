@@ -11,6 +11,21 @@ from v2.runtime.ledger import exception_text
 from v2.domain.evidence import admit_evidence
 
 
+def _canonical_entity_value(entity_type: str, value: object) -> str:
+    """Canonicalize a provider-facing entity selector when a resolver exists."""
+    text = str(value).strip()
+    try:
+        from app.tools._core import coerce_team_id
+        from app.tools.player import coerce_player_id
+        resolver = {"team": coerce_team_id, "player": coerce_player_id}.get(
+            entity_type)
+        if resolver is not None:
+            return str(resolver(text))
+    except (ImportError, TypeError, ValueError):
+        pass
+    return " ".join(text.casefold().replace("-", " ").replace("_", " ").split())
+
+
 class PlanExecutor:
     def __init__(
         self,
@@ -347,6 +362,8 @@ class PlanExecutor:
         for _ in range(remaining_attempts):
             attempts[node.id] += 1
             try:
+                self._validate_dependent_entity_arguments(
+                    capability, node, parent_evidence)
                 result = await capability.execute(node, task, parent_evidence)
                 task_season_scoped = getattr(
                     capability, "task_season_scoped", True)
@@ -376,6 +393,46 @@ class PlanExecutor:
                 if message not in node_errors:
                     node_errors.append(message)
         return node, None
+
+    @staticmethod
+    def _validate_dependent_entity_arguments(
+        capability: Capability, node: PlanNode,
+        parent_evidence: Sequence[EvidenceEnvelope],
+    ) -> None:
+        """Keep dependent calls bound to the identities their parents resolved.
+
+        A provider argument is checked only when the capability declares its
+        entity semantics and the node directly depends on entity resolution.
+        This avoids guessing semantics from argument names while preventing a
+        model from resolving one entity and silently calling the next tool for
+        another.
+        """
+        declarations = getattr(capability, "dependent_entity_arguments", {})
+        resolved = [item for item in parent_evidence
+                    if item.capability == "entity_resolution"]
+        if not declarations or not resolved:
+            return
+        entities = [entity for item in resolved for entity in item.entities]
+        for argument, entity_type in declarations.items():
+            value = node.arguments.get(argument)
+            if value is None or (isinstance(value, str) and not value.strip()):
+                continue
+            candidates = [entity for entity in entities
+                          if entity.type == entity_type]
+            if not candidates:
+                raise ValueError(
+                    f"dependent argument {argument!r} requires a resolved "
+                    f"{entity_type} identity")
+            actual = _canonical_entity_value(entity_type, value)
+            expected = {
+                _canonical_entity_value(entity_type, candidate)
+                for entity in candidates
+                for candidate in (entity.id, entity.display_name)
+            }
+            if actual not in expected:
+                raise ValueError(
+                    f"dependent argument {argument!r} does not match its "
+                    f"resolved {entity_type} identity")
 
     def _select_capability(self, node: PlanNode) -> Capability | None:
         return next(

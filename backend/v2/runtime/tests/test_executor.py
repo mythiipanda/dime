@@ -636,3 +636,82 @@ async def test_matchup_plan_executes_prediction_with_covered_requirement():
         "a": "Boston Celtics", "b": "New York Knicks", "season": "2025-26",
     }]
     assert result.evidence[0].capability == "game_prediction"
+
+@pytest.mark.anyio
+async def test_dependent_entity_argument_cannot_drift_from_resolution():
+    from datetime import UTC, datetime
+    from v2.contracts import EntityRef, EvidenceEnvelope
+
+    class Resolver:
+        name = "entity_resolution"
+        task_season_scoped = False
+        async def execute(self, node, task, evidence):
+            return EvidenceEnvelope(
+                evidence_id="resolved:tatum", capability=self.name,
+                source="fixture", observed_at=datetime.now(UTC), rows={},
+                entities=[EntityRef(id="1628369", type="player",
+                                    display_name="Jayson Tatum")],
+            )
+
+    class TeamImpact(FakeCapability):
+        dependent_entity_arguments = {"team": "team"}
+        def __init__(self):
+            super().__init__("injury_impact", rows={"team": "ATL"})
+            self.called = False
+        async def execute(self, node, task, evidence):
+            self.called = True
+            return await super().execute(node, task, evidence)
+
+    impact = TeamImpact()
+    plan = Plan(nodes=[
+        PlanNode(id="resolve", description="resolve player",
+                 capability_hints=["entity_resolution"]),
+        PlanNode(id="impact", description="team injury impact",
+                 depends_on=["resolve"], capability_hints=["injury_impact"],
+                 arguments={"team": "ATL"}),
+    ])
+    result = await PlanExecutor({
+        "entity_resolution": Resolver(), "injury_impact": impact,
+    }).execute(TaskSpec(goal="Tatum availability", mode="quick",
+                       deliverable="condition"), plan)
+
+    assert impact.called is False
+    assert result.plan.nodes[1].status == PlanStatus.FAILED
+    assert result.errors["impact"] == [
+        "ValueError: dependent argument 'team' requires a resolved team identity"
+    ]
+
+
+@pytest.mark.anyio
+async def test_dependent_entity_argument_accepts_canonical_alias():
+    from datetime import UTC, datetime
+    from v2.contracts import EntityRef, EvidenceEnvelope
+
+    class Resolver:
+        name = "entity_resolution"
+        task_season_scoped = False
+        async def execute(self, node, task, evidence):
+            return EvidenceEnvelope(
+                evidence_id="resolved:boston", capability=self.name,
+                source="fixture", observed_at=datetime.now(UTC), rows={},
+                entities=[EntityRef(id="1610612738", type="team",
+                                    display_name="Boston Celtics")],
+            )
+
+    class TeamImpact(FakeCapability):
+        dependent_entity_arguments = {"team": "team"}
+
+    plan = Plan(nodes=[
+        PlanNode(id="resolve", description="resolve team",
+                 capability_hints=["entity_resolution"]),
+        PlanNode(id="impact", description="team injury impact",
+                 depends_on=["resolve"], capability_hints=["injury_impact"],
+                 arguments={"team": "BOS"}),
+    ])
+    result = await PlanExecutor({
+        "entity_resolution": Resolver(),
+        "injury_impact": TeamImpact("injury_impact", rows={"team": "BOS"}),
+    }).execute(TaskSpec(goal="Boston availability", mode="quick",
+                       deliverable="condition"), plan)
+
+    assert result.plan.nodes[1].status == PlanStatus.COMPLETE

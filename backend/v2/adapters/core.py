@@ -279,6 +279,8 @@ class ToolCapability:
             raise AdapterError(f"unknown capability {name!r}")
         self.name = name
         self.task_season_scoped = CAPABILITIES[name].task_season_scoped
+        self.dependent_entity_arguments = dict(
+            CAPABILITIES[name].dependent_entity_arguments)
         if arguments is not None and not callable(arguments):
             raise TypeError("capability arguments adapter must be callable")
         self._tools = tools

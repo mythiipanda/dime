@@ -80,6 +80,10 @@ class Capability:
     source_prefix: str = "v1"
     task_season_scoped: bool = True
     extract_entities: Callable[[Any], list[EntityRef]] | None = None
+    # Provider arguments whose identity must be established by a direct
+    # entity-resolution dependency before execution. Keys are tool argument
+    # names; values are EntityRef types.
+    dependent_entity_arguments: Mapping[str, str] = field(default_factory=dict)
 
 
 _LIST = [
@@ -138,6 +142,7 @@ _LIST = [
     Capability(
         name="injury_impact", tool_name="get_injury_impact",
         coverage="Current injury rows combined with team rating and recent-form context.",
+        dependent_entity_arguments={"team": "team"},
     ),
     Capability(
         name="lineup_matchups", tool_name="get_lineup_matchup_matrix",
