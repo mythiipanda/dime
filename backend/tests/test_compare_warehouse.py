@@ -208,8 +208,9 @@ def test_warehouse_miss_falls_back_to_live(warehouse, monkeypatch):
     result = asyncio.run(pm.get_compare.ainvoke(
         {"a": "1628983", "b": "1630162", "season": SEASON}))
     assert result["ok"] is True
-    mine = [c for c in calls if c.get("player_id") == 1628983]
-    assert len(mine) == 1
+    # A fallback row with a warehouse-style MATCHUP resolves team locally;
+    # CommonPlayerInfo is unnecessary, but on/off still receives that team.
+    assert calls == []
     assert onoff_rec.calls
     assert onoff_rec.calls[0].get("team_id") == 1610612747
 
