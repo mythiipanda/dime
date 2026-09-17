@@ -1200,3 +1200,50 @@ async def test_synthesizer_accepts_declared_or_blocked_calculation_ledger():
         stub, provider="stub", model_name="stub",
     ).synthesize(task, [evidence])
     assert draft.blocked_calculation_requirement_ids == ["def_change", "net_change"]
+
+@pytest.mark.anyio
+async def test_planner_dedupes_semantic_calls_and_keeps_other_branches():
+    task = TaskSpec(
+        goal="league assists leader", mode="quick", deliverable="answer",
+        requirements=[{
+            "id": "assists", "description": "assists leaderboard",
+            "capability_options": ["team_totals"],
+            "capability_arguments": {"stat": "AST"},
+        }],
+    )
+    stub = StubModel([{"nodes": [
+        {"id": "assists_a", "description": "assists",
+         "capability_hints": ["team_totals"], "arguments": {"stat": "AST"},
+         "covers_requirement_ids": ["assists"]},
+        {"id": "assists_b", "description": "duplicate assists",
+         "capability_hints": ["team_totals"], "arguments": {"stat": "AST"},
+         "covers_requirement_ids": ["assists"]},
+        {"id": "unasked_points", "description": "unasked points",
+         "capability_hints": ["team_totals"], "arguments": {"stat": "PTS"}},
+    ]}])
+    plan = await ModelPlanner(
+        stub, provider="stub", model_name="stub",
+        capability_catalog={"team_totals": {}},
+    ).plan(task)
+    assert [node.id for node in plan.nodes] == ["assists_a", "unasked_points"]
+    assert plan.nodes[0].covers_requirement_ids == ["assists"]
+
+
+@pytest.mark.anyio
+async def test_planner_keeps_same_call_when_parent_lineage_differs():
+    task = TaskSpec(goal="compare", mode="quick", deliverable="answer")
+    stub = StubModel([{"nodes": [
+        {"id": "left", "description": "left", "capability_hints": ["resolve"],
+         "arguments": {"query": "same"}},
+        {"id": "right", "description": "right", "capability_hints": ["resolve"],
+         "arguments": {"query": "other"}},
+        {"id": "left_stats", "description": "stats", "depends_on": ["left"],
+         "capability_hints": ["stats"], "arguments": {"season": "2025-26"}},
+        {"id": "right_stats", "description": "stats", "depends_on": ["right"],
+         "capability_hints": ["stats"], "arguments": {"season": "2025-26"}},
+    ]}])
+    plan = await ModelPlanner(
+        stub, provider="stub", model_name="stub",
+        capability_catalog={"resolve": {}, "stats": {}},
+    ).plan(task)
+    assert len(plan.nodes) == 4

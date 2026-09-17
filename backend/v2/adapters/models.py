@@ -381,7 +381,8 @@ class ModelPlanner(ModelStage):
             if str(exc) != "all structured-output providers failed":
                 raise
             plan = await self._generate(payload)
-        plan = self._normalize_requirement_coverage(task, plan)
+        plan = self._normalize_plan(
+            task, self._normalize_requirement_coverage(task, plan))
         feedback = self._coverage_feedback(task, plan)
         if not feedback:
             return plan
@@ -391,7 +392,44 @@ class ModelPlanner(ModelStage):
                 **feedback, "instruction": "Return a complete replacement plan.",
             },
         })
-        return self._normalize_requirement_coverage(task, replacement)
+        return self._normalize_plan(
+            task, self._normalize_requirement_coverage(task, replacement))
+
+    def _normalize_plan(self, task: TaskSpec, plan: Plan) -> Plan:
+        """Coalesce identical semantic calls while preserving graph lineage."""
+        import json
+
+        canonical: dict[tuple[str, str, tuple[str, ...]], PlanNode] = {}
+        aliases: dict[str, str] = {}
+        kept: list[PlanNode] = []
+        for node in plan.nodes:
+            selected = tuple(sorted(
+                name for name in node.capability_hints if name in self._catalog))
+            dependencies = tuple(aliases.get(parent, parent)
+                                 for parent in node.depends_on)
+            key = ("|".join(selected), json.dumps(
+                node.arguments, sort_keys=True, separators=(",", ":"),
+                default=str), dependencies)
+            previous = canonical.get(key)
+            if previous is None:
+                normalized = node.model_copy(update={"depends_on": list(dependencies)})
+                canonical[key] = normalized
+                kept.append(normalized)
+                continue
+            aliases[node.id] = previous.id
+            merged = list(dict.fromkeys([
+                *previous.covers_requirement_ids, *node.covers_requirement_ids]))
+            replacement = previous.model_copy(
+                update={"covers_requirement_ids": merged})
+            canonical[key] = replacement
+            kept[kept.index(previous)] = replacement
+
+        if aliases:
+            kept = [node.model_copy(update={
+                "depends_on": list(dict.fromkeys(
+                    aliases.get(parent, parent) for parent in node.depends_on))
+            }) for node in kept]
+        return plan.model_copy(update={"nodes": kept})
 
     @staticmethod
     def _arguments_cover(expected: Mapping[str, Any], actual: Mapping[str, Any]) -> bool:
