@@ -260,6 +260,7 @@ export async function postChatStream(
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buf = "";
+  let terminal = false;
   try {
   for (;;) {
     let read: ReadableStreamReadResult<Uint8Array>;
@@ -288,8 +289,10 @@ export async function postChatStream(
         .map((l) => l.slice(5).trim());
       if (!typeLine || !dataLines.length) continue;
       try {
+        const eventType = typeLine.slice(6).trim();
+        if (eventType === "graph_end") terminal = true;
         handlers.onEvent(
-          typeLine.slice(6).trim(),
+          eventType,
           JSON.parse(dataLines.join("\n")),
         );
       } catch {
@@ -299,6 +302,12 @@ export async function postChatStream(
   }
   } finally {
     clearInterval(watchdog);
+  }
+  if (!terminal) {
+    handlers.onError(
+      "Connection to the backend ended before the run completed. Try again.",
+    );
+    return;
   }
   handlers.onDone();
 }
