@@ -594,3 +594,20 @@ def test_count_metrics_use_natural_metric_nouns() -> None:
     assert verify_mechanical(TaskSpec(
         goal="best record", mode="quick", deliverable="answer"),
         draft, [evidence]).status == "pass"
+
+def test_player_evidence_does_not_conflict_with_team_only_task_entity():
+    from datetime import UTC, datetime
+    from v2.contracts import EvidenceEnvelope
+    task = TaskSpec(goal="top team contributor", mode="quick", deliverable="answer",
+                    entities=[{"id": "1610612760", "type": "team",
+                               "display_name": "Oklahoma City Thunder"}])
+    ev = EvidenceEnvelope(
+        evidence_id="player", capability="player_report", source="fixture",
+        observed_at=datetime.now(UTC),
+        entities=[{"id": "1628983", "type": "player",
+                   "display_name": "Shai Gilgeous-Alexander"}],
+        rows={"player": "Shai Gilgeous-Alexander", "PPG": 31.1})
+    claim = Claim(text="Shai Gilgeous-Alexander averaged 31.1 points per game.",
+                  kind="observed", evidence_ids=["player"])
+    result = verify_mechanical(task, DraftReport(sections=["Answer"], claims=[claim]), [ev])
+    assert result.status == "pass"

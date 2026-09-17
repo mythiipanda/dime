@@ -1611,3 +1611,32 @@ async def test_planner_subsumes_report_and_shooting_split_requirements():
     ).plan(task)
     assert [node.id for node in plan.nodes] == ["report"]
     assert plan.nodes[0].covers_requirement_ids == ["line", "shooting"]
+
+@pytest.mark.anyio
+async def test_player_phase_comparison_uses_report_for_regular_and_logs_for_playoffs():
+    task = TaskSpec(
+        goal="compare player regular season and playoffs", mode="quick",
+        deliverable="comparison", requirements=[
+            {"id": "regular", "description": "regular season player stats",
+             "capability_options": ["game_logs", "player_report"],
+             "capability_arguments": {"player": "luka", "season": "2023-24", "playoffs": False}},
+            {"id": "playoffs", "description": "playoff player stats",
+             "capability_options": ["game_logs"],
+             "capability_arguments": {"player": "luka", "season": "2023-24", "playoffs": True}},
+        ])
+    stub = StubModel([{"nodes": [
+        {"id": "regular", "description": "regular logs",
+         "capability_hints": ["game_logs"], "covers_requirement_ids": ["regular"],
+         "arguments": {"player": "luka", "season": "2023-24", "playoffs": False}},
+        {"id": "playoffs", "description": "playoff logs",
+         "capability_hints": ["game_logs"], "covers_requirement_ids": ["playoffs"],
+         "arguments": {"player": "luka", "season": "2023-24", "playoffs": True}},
+    ]}])
+    plan = await ModelPlanner(
+        stub, provider="stub", model_name="stub",
+        capability_catalog={"game_logs": {}, "player_report": {}},
+    ).plan(task)
+    assert [(node.id, node.capability_hints, node.arguments) for node in plan.nodes] == [
+        ("regular", ["player_report"], {"player": "luka", "season": "2023-24"}),
+        ("playoffs", ["game_logs"], {"player": "luka", "season": "2023-24", "playoffs": True}),
+    ]

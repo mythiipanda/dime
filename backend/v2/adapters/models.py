@@ -444,6 +444,11 @@ class ModelIntake(ModelStage):
                     *(candidate for candidate in self._catalog
                       if any(capability_subsumes(candidate, narrower)
                              for narrower in requirement.capability_options)),
+                    *(["player_report"]
+                      if "game_logs" in requirement.capability_options
+                      and requirement.capability_arguments.get("playoffs") is False
+                      and "player" in requirement.capability_arguments
+                      and "player_report" in self._catalog else []),
                 ])),
             })
             for requirement in review.requirements
@@ -494,6 +499,30 @@ class ModelPlanner(ModelStage):
         )
 
         requirements = {item.id: item for item in task.requirements}
+        # A non-playoff player-stat clause can be answered more directly by the
+        # season aggregate report than by scanning game logs. When requirement
+        # review admits that alternative, normalize only the typed regular-
+        # season node; playoff=True logs remain separate and untouched.
+        plan = plan.model_copy(update={"nodes": [
+            node.model_copy(update={
+                "capability_hints": ["player_report"],
+                "arguments": {
+                    key: value for key, value in node.arguments.items()
+                    if key in {"player", "season"}
+                },
+            })
+            if ("game_logs" in node.capability_hints
+                and node.arguments.get("playoffs") is False
+                and node.arguments.get("player") is not None
+                and "player_report" in self._catalog
+                and any(
+                    requirement_id in requirements
+                    and "player_report" in requirements[requirement_id].capability_options
+                    for requirement_id in node.covers_requirement_ids
+                ))
+            else node
+            for node in plan.nodes
+        ]})
         selected = {
             node.id: next((name for name in node.capability_hints
                            if name in self._catalog), None)

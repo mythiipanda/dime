@@ -139,7 +139,13 @@ def _entity_reasons(task: TaskSpec, claim: Claim,
         _canonical_entity(entity)
         for envelope in envelopes for entity in envelope.entities
     }
-    if task_entities and cited_entities and not task_entities & cited_entities:
+    shared_types = ({kind for kind, _identity in task_entities}
+                    & {kind for kind, _identity in cited_entities})
+    if any(
+        not ({item for item in task_entities if item[0] == kind}
+             & {item for item in cited_entities if item[0] == kind})
+        for kind in shared_types
+    ):
         reasons.append("cited evidence entities do not match the task entities")
     for entity in task.entities:
         if entity.display_name.casefold() not in text and entity.id.casefold() not in text:
