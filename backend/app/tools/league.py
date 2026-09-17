@@ -4036,7 +4036,10 @@ def get_warehouse_freshness() -> dict[str, Any]:
     stale_n = sum(1 for r in rows if r["stale"])
     unknown_n = sum(1 for r in rows if r["stale"] is None)
     return {"tool": "get_warehouse_freshness", "ok": True, "rows": rows,
-            "meta": {"tables": len(rows), "stale": stale_n, "unknown": unknown_n,
+            "meta": {"source": "warehouse",
+                     "generated_at": now.isoformat(),
+                     "tables": len(rows), "stale": stale_n,
+                     "unknown": unknown_n,
                      "in_season": now.month in _IN_SEASON_MONTHS}}
 
 

@@ -91,6 +91,18 @@ _LIST = [
         extract_entities=_resolve_entities,
     ),
     Capability(
+        name="warehouse_freshness",
+        tool_name="get_warehouse_freshness",
+        season_arg=None,
+        task_season_scoped=False,
+        units={"rows": COUNT, "age_hours": "hours"},
+        coverage=(
+            "All silver warehouse tables with row count, last observed fetch, "
+            "expected cadence, and tri-state stale status. Static tables are "
+            "never marked stale; missing timestamps remain unknown."
+        ),
+    ),
+    Capability(
         name="standings",
         tool_name="get_standings",
         units={"WINS": COUNT, "LOSSES": COUNT, "WinPCT": FRACTION,
@@ -273,6 +285,7 @@ CAPABILITIES: dict[str, Capability] = {c.name: c for c in _LIST}
 
 CAPABILITY_DESCRIPTIONS: dict[str, str] = {
     "entity_resolution": "Resolve a player or team name to canonical identity.",
+    "warehouse_freshness": "Authoritative warehouse table freshness, cadence, row counts, and stale status.",
     "standings": "League standings for one season.",
     "team_trajectory": "Bounded multi-season regular-season records for one team.",
     "team_totals": "Team leaderboard for a counting stat, with totals and per-game averages.",

@@ -56,3 +56,13 @@ def test_rest_splits_expose_all_three_buckets_with_samples():
 def test_rookie_capability_declares_first_season_qualification():
     from v2.adapters import CAPABILITIES
     assert "no player row in any prior" in CAPABILITIES["rookie_leaders"].qualification
+
+
+def test_warehouse_freshness_declares_authoritative_source_and_generation_time():
+    from app.tools.league import get_warehouse_freshness
+    result = get_warehouse_freshness.invoke({})
+    assert result["ok"] is True
+    assert result["meta"]["source"] == "warehouse"
+    assert result["meta"]["generated_at"]
+    assert all({"table", "rows", "last_fetch", "age_hours", "expected", "stale"}
+               <= set(row) for row in result["rows"])

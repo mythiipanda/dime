@@ -140,7 +140,11 @@ def build_envelope(
                 raise AdapterError(
                     f"{spec.tool_name}: {key} must be non-empty text")
             warnings.append(limitation)
-    stale = meta.get("stale")
+    # Most tools use meta.stale as a cached-fallback boolean. The warehouse
+    # freshness panel owns a different, documented shape: meta.stale is the
+    # count of stale tables, while each row carries a tri-state stale marker.
+    stale = (None if spec.name == "warehouse_freshness"
+             else meta.get("stale"))
     if stale is not None and not isinstance(stale, bool):
         raise AdapterError(f"{spec.tool_name}: stale marker must be boolean")
     source_error = meta.get("live_error") or meta.get("error")

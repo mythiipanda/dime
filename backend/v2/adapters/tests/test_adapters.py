@@ -133,7 +133,7 @@ async def test_tool_invocation_rejects_noncallable_tool() -> None:
 
 def test_registry_covers_initial_pack():
     expected = {
-        "entity_resolution", "standings", "team_trajectory", "team_totals", "qualified_leaders",
+        "entity_resolution", "warehouse_freshness", "standings", "team_trajectory", "team_totals", "qualified_leaders",
         "team_ratings", "roster", "player_report", "player_evaluation", "player_comparison",
         "metric_adjudication", "metric_coverage", "shots",
         "shooting_efficiency", "on_off", "lineups", "clutch", "playoffs",
@@ -922,3 +922,28 @@ def test_prediction_uses_tool_default_season_for_implicit_matchup_date():
     assert _task_arguments("game_prediction", node, task, []) == {
         "a": "Boston Celtics", "b": "New York Knicks",
     }
+
+
+def test_warehouse_freshness_preserves_tri_state_status_and_cadence():
+    payload = {
+        "tool": "get_warehouse_freshness", "ok": True,
+        "rows": [
+            {"table": "silver_injuries", "rows": 12,
+             "last_fetch": "2026-09-12T00:00:00+00:00",
+             "age_hours": 120.0, "expected": "daily in season", "stale": True},
+            {"table": "silver_hist_shots", "rows": 100,
+             "last_fetch": None, "age_hours": None,
+             "expected": "static", "stale": None},
+        ],
+        "meta": {"source": "warehouse", "tables": 2, "stale": 1,
+                 "unknown": 1, "generated_at": "2026-09-17T04:00:00+00:00"},
+    }
+    env = call_capability(
+        "warehouse_freshness", {},
+        tools={"get_warehouse_freshness": FakeTool(payload)},
+    )
+    assert env.season is None
+    assert env.rows[0]["stale"] is True
+    assert env.rows[1]["stale"] is None
+    assert env.rows[0]["expected"] == "daily in season"
+    assert "missing timestamps remain unknown" in env.coverage
