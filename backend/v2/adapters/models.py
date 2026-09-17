@@ -381,6 +381,20 @@ class ModelIntake(ModelStage):
         task = task.model_copy(update={
             "required_evidence": required_evidence,
         })
+        if task.season is not None:
+            task = task.model_copy(update={
+                "requirements": [
+                    requirement.model_copy(update={
+                        "capability_arguments": {
+                            **requirement.capability_arguments,
+                            "season": task.season.value,
+                        },
+                    })
+                    if "season" in requirement.capability_arguments
+                    else requirement
+                    for requirement in task.requirements
+                ],
+            })
         unknown = sorted(set(task.required_evidence) - self._catalog.keys())
         if unknown:
             raise ValueError(f"intake selected unknown capabilities: {unknown}")

@@ -1475,3 +1475,26 @@ async def test_provider_structured_failure_preserves_sanitized_diagnostics(monke
         "provider": "inception", "exception_type": "TimeoutError",
         "message_class": "timeout",
     }]
+async def test_intake_season_normalization_propagates_to_requirement_arguments():
+    from app.tools._core import SEASON
+
+    stub = StubModel([
+        {
+            "goal": "current leaders", "mode": "quick", "deliverable": "answer",
+            "season": {"value": "2026-27", "source": "default", "confidence": 0.9},
+            "required_evidence": ["game_prediction"],
+        },
+        {
+            "requirements": [{
+                "id": "prediction", "description": "current prediction",
+                "capability_options": ["game_prediction"],
+                "capability_arguments": {"season": "2026-27"},
+            }],
+        },
+    ])
+    task = await ModelIntake(
+        stub, provider="stub", model_name="stub",
+        capability_catalog={"game_prediction": {}}, requirement_review=True,
+    ).understand("current prediction")
+    assert task.season.value == SEASON
+    assert task.requirements[0].capability_arguments["season"] == SEASON
