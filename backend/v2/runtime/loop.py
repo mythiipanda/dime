@@ -105,6 +105,7 @@ class Runtime:
         except BaseException as exc:
             self._close_failed(turn_id, exc)
             raise
+        pre_repair_draft = draft.model_copy(deep=True)
         repaired = False
 
         for attempt in range(self._repair_attempts):
@@ -205,12 +206,26 @@ class Runtime:
                 kind=GapKind.MISSING_EVIDENCE,
                 message="verification did not establish complete support",
             ))
+        pre_repair_keys = {
+            (claim.text, claim.kind, tuple(claim.evidence_ids), claim.calculation_id)
+            for claim in pre_repair_draft.claims
+            if claim.kind.value in {"observed", "derived"}
+        }
+        published_keys = {
+            (claim.text, claim.kind, tuple(claim.evidence_ids), claim.calculation_id)
+            for claim in draft.claims
+        }
+        structural_flags = (
+            ["repair_stripped_evidence_claim"]
+            if repaired and pre_repair_keys - published_keys else []
+        )
         result = RuntimeResult(
             task=task,
             execution=execution,
             draft=draft,
             verification=verification,
             repaired=repaired,
+            structural_flags=structural_flags,
             verified_claims=verified_claims,
             gaps=gaps[:256],
         )

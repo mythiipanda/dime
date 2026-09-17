@@ -1761,3 +1761,9 @@ def test_evidence_export_separates_source_vintage_from_observation_time():
     assert '"source_as_of": item.as_of.isoformat()' in source
     assert '"observed_at": item.observed_at.isoformat()' in source
     assert 'else item.observed_at.isoformat()' not in source
+
+
+def test_final_carry_exports_structural_flags():
+    from v2.api import routes
+    source = Path(routes.__file__).read_text()
+    assert '"structural_flags": list(getattr(result, "structural_flags", []))' in source

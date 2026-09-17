@@ -95,11 +95,16 @@ class RuntimeResult(BaseModel):
     draft: DraftReport
     verification: VerificationReport
     repaired: StrictBool = False
+    structural_flags: list[str] = Field(default_factory=list, max_length=32)
     verified_claims: list[VerifiedClaim] = Field(default_factory=list, max_length=128)
     gaps: list[Gap] = Field(default_factory=list, max_length=256)
 
     @model_validator(mode="after")
     def validate_publication(self) -> "RuntimeResult":
+        if any(not flag.strip() for flag in self.structural_flags):
+            raise ValueError("runtime structural flags must not be empty")
+        if len(self.structural_flags) != len(set(self.structural_flags)):
+            raise ValueError("runtime structural flags must not contain duplicates")
         by_index = {item.claim_index: item for item in self.verification.claim_results}
         invalid_indices = [
             index for index in by_index if index >= len(self.draft.claims)

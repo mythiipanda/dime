@@ -773,3 +773,39 @@ def test_unresolved_repair_instructions_do_not_become_public_gaps():
         "Replace Houston with San Antonio in claim 1.",
     ])
     assert _verification_gaps(DraftReport(sections=[], claims=[]), report) == []
+
+@pytest.mark.anyio
+async def test_runtime_flags_repair_that_strips_evidence_claim():
+    from v2.contracts import Claim, DraftReport
+
+    class EvidenceDraft:
+        async def synthesize(self, task, evidence):
+            return DraftReport(sections=["Answer"], claims=[Claim(
+                text="Atlanta led with 2462 assists.", kind="observed",
+                evidence_ids=[evidence[0].evidence_id],
+            )])
+
+    class StripRepair:
+        async def repair(self, task, draft, evidence, verification):
+            return DraftReport(sections=["Repaired"], claims=[],
+                               gaps=["leader claim was rejected"])
+
+    instance = runtime(
+        SequenceVerifier(VerificationStatus.REPAIR, VerificationStatus.PASS),
+        SequenceVerifier(VerificationStatus.PASS, VerificationStatus.PASS),
+        StripRepair(),
+    )
+    instance._synthesizer = EvidenceDraft()
+    result = await instance.run("team assist leader")
+
+    assert result.structural_flags == ["repair_stripped_evidence_claim"]
+
+
+@pytest.mark.anyio
+async def test_runtime_does_not_flag_repair_that_preserves_evidence_claim():
+    result = await runtime(
+        SequenceVerifier(VerificationStatus.REPAIR, VerificationStatus.PASS),
+        SequenceVerifier(VerificationStatus.PASS, VerificationStatus.PASS),
+        Repairer(),
+    ).run("answer")
+    assert result.structural_flags == []

@@ -378,6 +378,7 @@ async def quick_answer_stream(body: QuickAnswerBody):
                     "run_id": run_id,
                     "verification": result.verification.status.value,
                     "verified_claims": len(result.verified_claims),
+                    "structural_flags": list(getattr(result, "structural_flags", [])),
                     "gaps": [gap.model_dump(mode="json") for gap in result.gaps],
                 }
                 yield encode_event(FinalAnswer(text=answer, carry=carry))
