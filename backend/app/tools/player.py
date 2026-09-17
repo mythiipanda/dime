@@ -384,6 +384,15 @@ async def get_compare(
                 res[key] = val if isinstance(val, dict) else {}
         if not games:
             games = res.get("intel", {}).get("rows", []) or []
+        if not games:
+            # Missing source population is not a zero-game season and must not
+            # flow through max(gp, 1) into confident 0.0 player statistics.
+            return {
+                "name": _display_name(who), "player_id": pid,
+                "missing_population": True,
+                "missing": ["season_game_logs"],
+                "sub_call_errors": sub_errors,
+            }
         matchup = [str(g.get("MATCHUP") or "").split(" ")[0] for g in games]
         team_abbr = (_Counter(m for m in matchup if m).most_common(1)
                      or [("", 0)])[0][0]
@@ -519,6 +528,15 @@ async def get_compare(
         }
 
     left, right = await _asyncio.gather(one(a), one(b))
+    missing_sides = [side for side, item in (("a", left), ("b", right))
+                     if item.get("missing_population")]
+    if missing_sides:
+        return {"tool": "get_compare", "ok": False,
+                "error": ("player comparison source population is missing "
+                          f"for side(s): {', '.join(missing_sides)}"),
+                "rows": {"a": left, "b": right},
+                "meta": {"source": "warehouse", "season": season,
+                         "missing_sides": missing_sides}}
     ta, tb = str(left.get("team") or ""), str(right.get("team") or "")
     if ta and ta == tb:
         try:

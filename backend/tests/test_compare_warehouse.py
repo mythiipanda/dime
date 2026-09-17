@@ -150,9 +150,13 @@ class _EmptyDictStub:
 
 class _IntelStub:
     async def ainvoke(self, args):
-        if int(args.get("player_id", 0)) == 1628983:
-            return {"ok": True, "rows": []}
-        return {"ok": True, "rows": []}
+        pid = int(args.get("player_id", 0))
+        return {"ok": True, "rows": [{
+            "Player_ID": pid, "MATCHUP": "LAL vs. BOS", "PTS": 10,
+            "REB": 2, "AST": 3, "FGA": 8, "FGM": 4, "FG3A": 2,
+            "FG3M": 1, "FTA": 2, "FTM": 1, "MIN": 20,
+            "STL": 0, "BLK": 0, "TOV": 1,
+        }]}
 
 
 def _patch_no_live(monkeypatch):
@@ -349,3 +353,17 @@ def test_last5_failure_surfaced_in_meta(warehouse, monkeypatch):
     assert result["rows"]["a"]["last5"] == []
     assert "a.last" in result["meta"]["sub_call_errors"]
     assert "RuntimeError" in result["meta"]["sub_call_errors"]["a.last"]
+
+def test_missing_population_never_becomes_zero_player_line(warehouse, monkeypatch):
+    monkeypatch.setattr(pm, "get_player_intel", _EmptyStub())
+    monkeypatch.setattr(pm, "get_last_x", _EmptyStub())
+    monkeypatch.setattr(pm, "get_advanced", _EmptyDictStub())
+    monkeypatch.setattr(pm, "get_shot_zones", _EmptyStub())
+    result = asyncio.run(pm.get_compare.ainvoke(
+        {"a": "1628983", "b": "1630162", "season": "2026-27"}))
+    assert result["ok"] is False
+    assert "source population is missing" in result["error"]
+    for side in ("a", "b"):
+        assert result["rows"][side]["missing_population"] is True
+        assert "ppg" not in result["rows"][side]
+        assert "ts_pct" not in result["rows"][side]
