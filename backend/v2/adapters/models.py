@@ -253,6 +253,14 @@ class ModelIntake(ModelStage):
                     ),
                 },
             })
+        # Skill selection is advisory model output. Capability-like or otherwise
+        # unknown names must not turn a valid evidence plan into a pre-tool
+        # crash; retain only installed skills. Capability validation remains
+        # strict in required_evidence and typed requirements.
+        task = task.model_copy(update={
+            "skills": [name for name in task.skills
+                       if name in self._skills.skills],
+        })
         self._skills.activate(task.skills)
         if (task.season is not None and task.season.source == "default"
                 and "trade-analysis" in task.skills):
@@ -319,6 +327,10 @@ class ModelIntake(ModelStage):
                 "skills": list(dict.fromkeys([
                     *task.skills, *review.missing_skills,
                 ])),
+            })
+            task = task.model_copy(update={
+                "skills": [name for name in task.skills
+                           if name in self._skills.skills],
             })
             self._skills.activate(task.skills)
         player_count = sum(entity.type == "player" for entity in task.entities)

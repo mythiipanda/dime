@@ -1680,3 +1680,20 @@ async def test_implicit_relative_season_is_pinned_for_non_prediction_capability(
     ).understand("Who are the three point leaders this season?")
     assert task.season.value == SEASON
     assert task.season.source == "default"
+
+@pytest.mark.anyio
+async def test_requirement_review_capability_names_in_skills_are_dropped():
+    stub = StubModel([{
+        "goal": "player playoffs", "mode": "deep_dive", "deliverable": "report",
+        "required_evidence": ["game_logs"], "skills": ["game-logs", "roster"],
+    }, {
+        "requirements": [{"id": "logs", "description": "logs",
+                          "capability_options": ["game_logs"]}],
+        "missing_skills": ["player-evaluation"],
+    }])
+    task = await ModelIntake(
+        stub, provider="stub", model_name="stub",
+        capability_catalog={"game_logs": {}}, requirement_review=True,
+    ).understand("How did the player perform in the playoffs?")
+    assert task.skills == []
+    assert task.required_evidence == ["game_logs"]

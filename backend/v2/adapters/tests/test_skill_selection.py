@@ -56,9 +56,12 @@ async def test_should_not_trigger_general_fact_question_loads_no_skill():
 
 
 @pytest.mark.anyio
-async def test_hallucinated_selection_fails_before_planning():
+async def test_hallucinated_advisory_skill_is_dropped_before_planning():
     model = SelectionModel("not-installed")
     intake = ModelIntake(model, provider="test", model_name="test",
                          capability_catalog={})
-    with pytest.raises(ValueError, match="unknown skills"):
-        await intake.understand("anything")
+    task = await intake.understand("anything")
+    assert task.skills == []
+    planner = ModelPlanner(model, provider="test", model_name="test",
+                           capability_catalog={})
+    assert (await planner.plan(task)).nodes == []
