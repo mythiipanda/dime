@@ -559,13 +559,22 @@ class ModelSynthesizer(ModelStage):
     async def synthesize(
         self, task: TaskSpec, evidence: Sequence[EvidenceEnvelope]
     ) -> DraftReport:
-        draft = await self._generate(
-            {
-                "task": task.model_dump(mode="json"),
-                "evidence": [item.model_dump(mode="json") for item in evidence],
-                "skills": self._skills.activate(task.skills),
-            }
-        )
+        payload = {
+            "task": task.model_dump(mode="json"),
+            "evidence": [item.model_dump(mode="json") for item in evidence],
+            "skills": self._skills.activate(task.skills),
+        }
+        try:
+            draft = await self._generate(payload)
+        except RuntimeError as exc:
+            if str(exc) != "all structured-output providers failed":
+                raise
+            # Execution is already complete at this stage. Give a transient
+            # structured-output outage one fresh bounded attempt rather than
+            # discarding all successfully collected evidence. The accepted
+            # result still crosses the same DraftReport boundary and the
+            # independent publication verifiers remain authoritative.
+            draft = await self._generate(payload)
         return _validate_draft(draft, evidence, task)
 
 

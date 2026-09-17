@@ -1178,6 +1178,50 @@ async def test_playoff_translation_skill_requires_independent_material_branches(
     ]
 
 @pytest.mark.anyio
+async def test_synthesizer_retries_one_failed_structured_generation() -> None:
+    from v2.contracts import Claim, DraftReport, TaskSpec
+
+    class Flaky:
+        def __init__(self):
+            self.calls = 0
+
+        async def generate(self, **call):
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("all structured-output providers failed")
+            return DraftReport(sections=["Record"], claims=[Claim(
+                text="Boston had the best record.", kind="judgment")])
+
+    model = Flaky()
+    draft = await ModelSynthesizer(
+        model, provider="test", model_name="test",
+    ).synthesize(
+        TaskSpec(goal="best record", mode="quick", deliverable="answer"), [])
+
+    assert draft.sections == ["Record"]
+    assert model.calls == 2
+
+
+@pytest.mark.anyio
+async def test_synthesizer_does_not_retry_unrelated_runtime_error() -> None:
+    class Broken:
+        def __init__(self):
+            self.calls = 0
+
+        async def generate(self, **call):
+            self.calls += 1
+            raise RuntimeError("contract bug")
+
+    model = Broken()
+    with pytest.raises(RuntimeError, match="contract bug"):
+        await ModelSynthesizer(
+            model, provider="test", model_name="test",
+        ).synthesize(
+            TaskSpec(goal="record", mode="quick", deliverable="answer"), [])
+    assert model.calls == 1
+
+
+@pytest.mark.anyio
 async def test_synthesizer_requires_every_independent_calculation_or_named_block():
     from datetime import UTC, datetime
     from v2.contracts import EvidenceEnvelope, TaskSpec
