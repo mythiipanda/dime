@@ -70,3 +70,49 @@ def test_player_population_is_historical_season_scoped(tmp_path):
         assert seed.player_ids(con) == [10, 20]
     finally:
         con.close()
+
+
+def test_all_team_seed_promotes_every_historical_playoff_season(tmp_path, monkeypatch):
+    path = tmp_path / "warehouse.duckdb"
+    frame = pl.concat([
+        _hist_frame(),
+        _hist_frame().with_columns([
+            pl.lit(2023).alias("season"),
+            pl.lit("22022").alias("season_id"),
+            pl.lit("g0").alias("game_id"),
+            pl.lit("2023-04-20").alias("game_date"),
+        ]),
+    ], how="vertical_relaxed")
+    con = duckdb.connect(str(path))
+    con.register("rows", frame.to_arrow())
+    con.execute("CREATE TABLE silver_hist_gamelogs AS SELECT * FROM rows")
+    con.close()
+    monkeypatch.setattr(store, "DB_PATH", path)
+    monkeypatch.setattr(store, "LOCK_PATH", tmp_path / ".write.lock")
+
+    assert seed.seed_all_team_rows() == {"2022-23": 2, "2023-24": 2}
+    # A second promotion replaces each season rather than appending duplicates.
+    assert seed.seed_all_team_rows() == {"2022-23": 2, "2023-24": 2}
+    con = duckdb.connect(str(path), read_only=True)
+    try:
+        assert con.execute(
+            "SELECT _season, count(*) FROM silver_playoffs GROUP BY 1 ORDER BY 1"
+        ).fetchall() == [("2022-23", 2), ("2023-24", 2)]
+    finally:
+        con.close()
+
+
+def test_available_team_seasons_uses_only_playoff_rows(tmp_path):
+    path = tmp_path / "warehouse.duckdb"
+    frame = pl.concat([
+        _hist_frame(),
+        _hist_frame().with_columns([
+            pl.lit(2025).alias("season"),
+            pl.lit("regular-season").alias("season_type"),
+        ]),
+    ], how="vertical_relaxed")
+    con = duckdb.connect(str(path))
+    con.register("rows", frame.to_arrow())
+    con.execute("CREATE TABLE silver_hist_gamelogs AS SELECT * FROM rows")
+    assert seed.available_team_seasons(con) == [2024]
+    con.close()
