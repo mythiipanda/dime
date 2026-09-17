@@ -554,7 +554,7 @@ async def test_model_authored_gap_downgrades_clean_verification_to_partial() -> 
 
 
 @pytest.mark.anyio
-async def test_unexplained_partial_verification_returns_typed_gap() -> None:
+async def test_unexplained_partial_verification_does_not_create_generic_gap() -> None:
     class UnexplainedPartialVerifier:
         async def verify(self, task, draft, evidence):
             return VerificationReport(
@@ -569,10 +569,8 @@ async def test_unexplained_partial_verification_returns_typed_gap() -> None:
         UnexplainedPartialVerifier(),
     ).run("answer")
 
-    assert result.verification.status == VerificationStatus.PARTIAL
-    assert [gap.message for gap in result.gaps] == [
-        "verification did not establish complete support",
-    ]
+    assert result.verification.status == VerificationStatus.PASS
+    assert result.gaps == []
     assert result.verified_claims[0].claim.text == "42"
 
 
@@ -1059,3 +1057,69 @@ async def test_semantic_missing_branch_cannot_erase_recomputed_calculation():
     assert result.verification.status == VerificationStatus.PASS
     assert result.verified_claims[0].claim.text.endswith("2 points.")
     assert result.gaps == []
+
+@pytest.mark.anyio
+async def test_failed_alternative_is_redundant_when_requirement_is_fulfilled():
+    from datetime import UTC, datetime
+    from v2.contracts import EvidenceEnvelope
+    from v2.runtime.loop import _redundant_failed_nodes
+    from v2.runtime.models import ExecutionResult
+    from v2.contracts import PlanStatus
+    task = TaskSpec(goal="regular stats", mode="quick", deliverable="answer",
+                    requirements=[{"id":"regular", "description":"regular stats",
+                    "capability_options":["game_logs","player_report"]}])
+    plan = Plan(nodes=[
+        PlanNode(id="logs", description="logs", capability_hints=["game_logs"],
+                 covers_requirement_ids=["regular"], arguments={"player":"luka"},
+                 status=PlanStatus.FAILED),
+        PlanNode(id="report", description="report", capability_hints=["player_report"],
+                 covers_requirement_ids=["regular"], arguments={"player":"luka"},
+                 status=PlanStatus.COMPLETE),
+    ])
+    evidence = EvidenceEnvelope(
+        evidence_id="report", capability="player_report", source="fixture",
+        observed_at=datetime.now(UTC), rows={"PPG": 33.9})
+    assert _redundant_failed_nodes(task, ExecutionResult(
+        plan=plan, evidence=[evidence], attempts={"logs":1,"report":1}, errors={"logs":["missing"]})) == {"logs"}
+
+@pytest.mark.anyio
+async def test_semantic_missing_branch_is_removed_when_requirement_has_values():
+    class InjuryIntake:
+        async def understand(self, request):
+            return TaskSpec(goal=request, mode="quick", deliverable="answer",
+                requirements=[{"id":"injury_status", "description":"injury status",
+                               "capability_options":["injuries"]}])
+    class InjuryPlanner:
+        async def plan(self, task):
+            return Plan(nodes=[PlanNode(id="injuries", description="injuries",
+                capability_hints=["injuries"], covers_requirement_ids=["injury_status"])])
+    class InjurySynth:
+        async def synthesize(self, task, evidence):
+            return DraftReport(sections=["Answer"], claims=[Claim(
+                text="BOS is day-to-day.", kind="observed",
+                evidence_ids=[evidence[0].evidence_id])])
+    class InjurySemantic:
+        async def verify(self, task, draft, evidence):
+            return VerificationReport(status="repair", claim_results=[{
+                "claim_index":0, "supported":True}],
+                missing_branches=["injury_status"],
+                repair_instructions=["Add the injury status branch"])
+    instance = Runtime(
+        intake=InjuryIntake(), planner=InjuryPlanner(),
+        executor=PlanExecutor({"injuries": FakeCapability("injuries", {"BOS":"day-to-day"})}),
+        synthesizer=InjurySynth(),
+        mechanical_verifier=SequenceVerifier(VerificationStatus.PASS),
+        semantic_verifier=InjurySemantic(), repairer=None)
+    result = await instance.run("prediction reasons")
+    assert result.verification.status == VerificationStatus.PASS
+    assert result.gaps == []
+
+def test_verification_gaps_merge_semantically_duplicate_missing_branch():
+    from v2.runtime.loop import _verification_gaps
+    draft = DraftReport(sections=[], claims=[], gaps=[
+        "What were Luka's primary stats in the 2023-24 playoffs?"])
+    verification = VerificationReport(status="partial", missing_branches=[
+        "Luka 2023-24 playoff stats and efficiency"])
+    gaps = _verification_gaps(draft, verification)
+    assert [gap.message for gap in gaps] == [
+        "What were Luka's primary stats in the 2023-24 playoffs?"]

@@ -669,3 +669,20 @@ def test_complete_record_accepts_explicit_wins_and_losses_prose():
               "with 64 wins and 18 losses."),
         kind="observed", evidence_ids=["standings"])])
     assert verify_mechanical(task, draft, [ev]).status == "pass"
+
+def test_named_row_matcher_leaves_rank_numeral_to_rank_verifier():
+    from v2.contracts import EvidenceEnvelope
+    ev = EvidenceEnvelope(
+        evidence_id="standings", capability="standings", source="fixture",
+        observed_at=datetime.now(UTC), qualification="All NBA teams",
+        coverage="Full standings", rows=[
+            {"team":"Oklahoma City Thunder", "WINS":64, "LOSSES":18,
+             "LeagueRank":1},
+            {"team":"Boston Celtics", "WINS":56, "LOSSES":26,
+             "LeagueRank":3},
+        ])
+    claim = Claim(text="Oklahoma City ranked 1st at 64-18.", kind="observed",
+                  evidence_ids=["standings"])
+    result = verify_mechanical(TaskSpec(goal="best record", mode="quick",
+        deliverable="answer"), DraftReport(sections=["Record"], claims=[claim]), [ev])
+    assert result.status == "pass"

@@ -195,8 +195,13 @@ def _row_entity_value_reasons(
         return []
     row_numbers = _numeric_values(matched_envelopes) | (calculation_values or set())
     unsupported = []
+    rank_numbers = {
+        value for match in _RANK.finditer(claim.text)
+        for value in match.groups() if value is not None
+    }
     for raw in _number_tokens(claim.text):
-        if _DATE.fullmatch(raw) or _SEASON.fullmatch(raw) or raw == "100":
+        if (_DATE.fullmatch(raw) or _SEASON.fullmatch(raw) or raw == "100"
+                or raw in rank_numbers):
             continue
         if not (_canon_number(raw) & row_numbers):
             unsupported.append(raw)

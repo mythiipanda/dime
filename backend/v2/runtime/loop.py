@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import re
 import time
 from collections.abc import Callable, Iterable
 
@@ -408,6 +409,44 @@ class Runtime:
                     and not semantic.repair_instructions
                     and all(item.supported for item in semantic.claim_results)):
                 semantic = semantic.model_copy(update={"status": VerificationStatus.PASS})
+        populated_capabilities = {
+            item.capability for item in evidence.values()
+            if any(True for _ in iter_values(item))
+        }
+        satisfied_requirements = [
+            requirement for requirement in task.requirements
+            if set(requirement.capability_options) & populated_capabilities
+        ]
+        def repeats_satisfied_requirement(message: str) -> bool:
+            folded = " ".join(message.casefold().replace("_", " ").split())
+            return any(
+                requirement.id.replace("_", " ").casefold() in folded
+                or requirement.description.casefold() in folded
+                for requirement in satisfied_requirements
+            )
+        if satisfied_requirements:
+            semantic = semantic.model_copy(update={
+                "missing_branches": [item for item in semantic.missing_branches
+                                     if not repeats_satisfied_requirement(item)],
+                "repair_instructions": [item for item in semantic.repair_instructions
+                                        if not repeats_satisfied_requirement(item)],
+            })
+            if (semantic.status == VerificationStatus.REPAIR
+                    and not semantic.missing_branches
+                    and not semantic.contradictions
+                    and not semantic.repair_instructions
+                    and all(item.supported for item in semantic.claim_results)):
+                semantic = semantic.model_copy(update={"status": VerificationStatus.PASS})
+        # Status without a failed claim or a concrete finding carries no
+        # actionable publication meaning. Do not manufacture a generic caveat
+        # from unexplained semantic doubt.
+        if (semantic.status == VerificationStatus.PARTIAL
+                and sorted(item.claim_index for item in semantic.claim_results) == expected
+                and all(item.supported for item in semantic.claim_results)
+                and not semantic.missing_branches
+                and not semantic.contradictions
+                and not semantic.repair_instructions):
+            semantic = semantic.model_copy(update={"status": VerificationStatus.PASS})
         observed = [result.claim_index for result in semantic.claim_results]
         if (len(observed) != len(set(observed))
                 or any(index not in expected for index in observed)):
@@ -501,6 +540,13 @@ def _redundant_failed_nodes(task: TaskSpec, execution: ExecutionResult) -> set[s
     for failed in execution.plan.nodes:
         if failed.status.value != "failed":
             continue
+        failed_requirements = set(failed.covers_requirement_ids)
+        if failed_requirements and any(
+            failed_requirements <= set(node.covers_requirement_ids)
+            for node in completed.values()
+        ):
+            redundant.add(failed.id)
+            continue
         narrow_name = next(iter(failed.capability_hints), "")
         for broader in completed.values():
             broad_name = next(iter(broader.capability_hints), "")
@@ -557,10 +603,23 @@ def _empty_evidence_gaps(evidence) -> list[Gap]:
 
 def _verification_gaps(draft, verification, execution_errors=None,
                        evidence_ids=None) -> list[Gap]:
+    missing_messages = [*draft.gaps]
+    def message_terms(message: str) -> set[str]:
+        return {
+            token for token in re.findall(r"[a-z0-9]+", message.casefold())
+            if token not in {"a", "an", "and", "for", "in", "of", "the",
+                             "to", "was", "were", "what", "with"}
+        }
+    for message in verification.missing_branches:
+        terms = message_terms(message)
+        if not any(
+            terms and other_terms
+            and len(terms & other_terms) >= min(3, len(terms), len(other_terms))
+            for other_terms in map(message_terms, missing_messages)
+        ):
+            missing_messages.append(message)
     gaps = [Gap(kind=GapKind.MISSING_EVIDENCE, message=message)
-            for message in draft.gaps]
-    gaps.extend(Gap(kind=GapKind.MISSING_EVIDENCE, message=message)
-                for message in verification.missing_branches)
+            for message in missing_messages]
     gaps.extend(Gap(kind=GapKind.SOURCE_CONFLICT, message=message)
                 for message in verification.contradictions)
     for node_id, errors in (execution_errors or {}).items():
