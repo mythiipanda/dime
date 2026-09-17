@@ -358,8 +358,20 @@ class ModelIntake(ModelStage):
                 *required_evidence,
                 *(name for name in baseline if name in self._catalog),
             ]))
-        if "league-ratings" in task.skills and "game_prediction" not in required_evidence:
-            baseline = ("team_ratings", "player_ratings", "playoff_team_ratings")
+        if ("league-ratings" in task.skills
+                and "game_prediction" not in required_evidence):
+            # The ratings skill is methodology, not permission to widen a
+            # single-population ranking into player and playoff boards. Add
+            # those boards only when the request itself names those scopes;
+            # requirement review remains the authority for compound asks.
+            folded_request = request.casefold()
+            baseline = ["team_ratings"]
+            if any(token in folded_request for token in (
+                    "player", "players", "individual")):
+                baseline.append("player_ratings")
+            if any(token in folded_request for token in (
+                    "playoff", "playoffs", "postseason")):
+                baseline.append("playoff_team_ratings")
             required_evidence = list(dict.fromkeys([
                 *required_evidence,
                 *(name for name in baseline if name in self._catalog),

@@ -68,3 +68,11 @@ def test_warehouse_freshness_declares_authoritative_source_and_generation_time()
     assert result["meta"]["generated_at"]
     assert all({"table", "rows", "last_fetch", "age_hours", "expected", "stale"}
                <= set(row) for row in result["rows"])
+
+def test_team_ratings_exposes_rankable_ts_and_turnover_metrics():
+    from v2.adapters.capabilities import CAPABILITIES, CAPABILITY_DESCRIPTIONS
+    spec = CAPABILITIES["team_ratings"]
+    assert spec.units["TS_PCT"] == "percent_0_100"
+    assert spec.units["TM_TOV_PCT"] == "percent_0_100"
+    description = CAPABILITY_DESCRIPTIONS["team_ratings"]
+    assert "lower is better for DEF_RATING and TM_TOV_PCT" in description

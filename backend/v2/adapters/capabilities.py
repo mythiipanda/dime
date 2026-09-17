@@ -213,8 +213,11 @@ _LIST = [
         name="team_ratings",
         tool_name="get_ratings",
         units={"OFF_RATING": POINTS_PER_100, "DEF_RATING": POINTS_PER_100,
-               "NET_RATING": POINTS_PER_100, "PACE": "possessions_per_48"},
-        metric_definitions={"NET_RATING": NET_RATING_DEF},
+               "NET_RATING": POINTS_PER_100, "PACE": "possessions_per_48",
+               "TS_PCT": PERCENT, "TM_TOV_PCT": PERCENT},
+        metric_definitions={"NET_RATING": NET_RATING_DEF,
+                            "TS_PCT": TS_DEF,
+                            "TM_TOV_PCT": "Team turnovers per 100 possessions; lower is better."},
         qualification="All NBA teams in the selected regular season.",
         coverage="Full regular-season team rating table.",
     ),
@@ -330,7 +333,10 @@ CAPABILITY_DESCRIPTIONS: dict[str, str] = {
     "player_shot_zones": "One player's shot-zone makes, attempts, efficiency, and attempt share.",
     "rest_splits": "Team records by zero, one, and two-plus days of rest, with sample sizes.",
     "rookie_leaders": "First-year NBA player leaderboard using prior-season exclusion, never age as a proxy.",
-    "team_ratings": "Team offensive, defensive, and net ratings plus pace and ranks.",
+    "team_ratings": ("Regular-season team rating board: offensive, defensive, and net rating, "
+                     "pace, true shooting percentage (TS_PCT), and team turnover percentage "
+                     "(TM_TOV_PCT), with rank metadata. Ranking direction is metric-specific: "
+                     "lower is better for DEF_RATING and TM_TOV_PCT; higher is better otherwise."),
     "roster": "Team roster and game-log context for one season.",
     "player_report": "Player season line, advanced profile, shots, and clutch context.",
     "player_evaluation": "Player tier, advanced profile, modeled value, and comparisons.",

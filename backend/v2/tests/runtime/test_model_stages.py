@@ -1721,3 +1721,16 @@ async def test_planner_accepts_required_argument_bound_from_parent_entity():
     result = await ModelPlanner(StubModel([plan]), provider="stub", model_name="stub",
                                 capability_catalog=catalog).plan(task)
     assert result.nodes[1].arguments == {"season":"2025-26"}
+
+@pytest.mark.anyio
+async def test_single_team_rating_rank_does_not_force_player_or_playoff_boards():
+    stub = StubModel([{
+        "goal": "lowest defense", "mode": "quick", "deliverable": "ranking",
+        "skills": ["league-ratings"], "required_evidence": ["team_ratings"],
+    }])
+    catalog = {name: {} for name in (
+        "team_ratings", "player_ratings", "playoff_team_ratings")}
+    task = await ModelIntake(
+        stub, provider="stub", model_name="stub", capability_catalog=catalog,
+    ).understand("Which team has the lowest defensive rating this season?")
+    assert task.required_evidence == ["team_ratings"]
