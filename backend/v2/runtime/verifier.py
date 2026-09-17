@@ -320,11 +320,16 @@ def _record_completeness_reasons(
                 matching_rows.append((wins, losses))
     if not matching_rows:
         return []
+    numeric_pairs = re.findall(r"(\d+)\s*[-–]\s*(\d+)", claim.text)
+    lexical_pairs = re.findall(
+        r"(\d+)\s+wins?\b.{0,32}?\b(\d+)\s+loss(?:es)?\b",
+        claim.text, re.IGNORECASE,
+    )
     if not any(
         (_canon_number(wins) & _canon_number(raw_wins))
         and (_canon_number(losses) & _canon_number(raw_losses))
         for wins, losses in matching_rows
-        for raw_wins, raw_losses in re.findall(r"(\d+)\s*[-–]\s*(\d+)", claim.text)
+        for raw_wins, raw_losses in (*numeric_pairs, *lexical_pairs)
     ):
         return ["best-record claim must state the complete wins-losses record"]
     return []
@@ -519,8 +524,12 @@ def verify_mechanical(
         for row in envelope.rows if isinstance(row, Mapping)
     ]
     if record_task and standings_rows:
-        has_complete_record = any(re.search(
-            r"\b\d+\s*[-–]\s*\d+\b", claim.text)
+        has_complete_record = any(
+            re.search(r"\b\d+\s*[-–]\s*\d+\b", claim.text)
+            or re.search(
+                r"\b\d+\s+wins?\b.{0,32}?\b\d+\s+loss(?:es)?\b",
+                claim.text, re.IGNORECASE,
+            )
             for claim in draft.claims)
         if not has_complete_record:
             report_repairs.append(

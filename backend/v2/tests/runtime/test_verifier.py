@@ -653,3 +653,19 @@ def test_requested_supported_efficiency_metric_cannot_be_omitted():
         text="Luka averaged 33.9 points on 61.7% true shooting.",
         kind="observed", evidence_ids=["player"])]})
     assert verify_mechanical(requested, included, [ev]).status == "pass"
+
+def test_complete_record_accepts_explicit_wins_and_losses_prose():
+    from v2.contracts import EvidenceEnvelope
+    ev = EvidenceEnvelope(
+        evidence_id="standings", capability="standings", source="fixture",
+        observed_at=datetime.now(UTC), qualification="All NBA teams",
+        coverage="Full standings", rows=[{
+            "team": "Oklahoma City Thunder", "WINS": 64, "LOSSES": 18,
+            "LeagueRank": 1,
+        }])
+    task = TaskSpec(goal="best record", mode="quick", deliverable="team and record")
+    draft = DraftReport(sections=["Record"], claims=[Claim(
+        text=("The Oklahoma City Thunder had the best record, finishing "
+              "with 64 wins and 18 losses."),
+        kind="observed", evidence_ids=["standings"])])
+    assert verify_mechanical(task, draft, [ev]).status == "pass"
