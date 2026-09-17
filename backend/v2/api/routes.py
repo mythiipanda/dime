@@ -230,9 +230,25 @@ async def quick_answer_stream(body: QuickAnswerBody):
     from v2.runtime.policy import ExecutionPolicy
 
     run_id = f"run-{uuid.uuid4().hex}"
-    provider, model_name = resolve_model_id(
-        body.model or os.environ.get("DIME_V2_MODEL"))
     queue: asyncio.Queue = asyncio.Queue()
+
+    def setup_error_stream():
+        async def generate_error():
+            yield "event: error\ndata: " + json.dumps({
+                "message": "Dime could not start this run.",
+                "run_id": run_id,
+            }, separators=(",", ":")) + "\n\n"
+            yield "event: graph_end\ndata: {}\n\n"
+        return StreamingResponse(
+            generate_error(), media_type="text/event-stream",
+            headers={"X-Dime-Run-Id": run_id}, status_code=200,
+        )
+
+    try:
+        provider, model_name = resolve_model_id(
+            body.model or os.environ.get("DIME_V2_MODEL"))
+    except Exception:
+        return setup_error_stream()
 
     def public_node(node: str) -> str:
         return {
@@ -267,9 +283,12 @@ async def quick_answer_stream(body: QuickAnswerBody):
     policy = ExecutionPolicy.model_validate({
         **policy.model_dump(), "checkpoint_dir": checkpoint_dir,
     })
-    runtime, ledger = build_runtime(
-        provider=provider, model_name=model_name, run_id=run_id,
-        progress=progress, policy=policy)
+    try:
+        runtime, ledger = build_runtime(
+            provider=provider, model_name=model_name, run_id=run_id,
+            progress=progress, policy=policy)
+    except Exception:
+        return setup_error_stream()
     context = tuple(body.history)
     if body.thread is not None and body.client is not None:
         context = tuple(_CONVERSATIONS.read(body.client, body.thread))

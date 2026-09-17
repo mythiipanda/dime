@@ -1710,3 +1710,45 @@ def test_answer_text_drops_verify_directive_and_bare_label_duplicate():
         gaps=[contracts.Gap(kind="missing_evidence", message=item) for item in messages],
     )
     assert _answer_text(result) == messages[0]
+
+
+def test_live_route_reports_pre_stream_setup_failure_as_sse(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from v2.api import routes
+
+    monkeypatch.setenv("DIME_RUNTIME_V2", "on")
+    monkeypatch.setattr(
+        "v2.runtime.assembly.build_runtime",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("private setup detail")),
+    )
+    app = FastAPI()
+    app.include_router(routes.router, prefix="/api")
+    response = TestClient(app).post("/api/v2/chat/stream", json={"q": "record?"})
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert response.headers["x-dime-run-id"].startswith("run-")
+    assert "event: error" in response.text
+    assert "Dime could not start this run." in response.text
+    assert response.headers["x-dime-run-id"] in response.text
+    assert "private setup detail" not in response.text
+    assert response.text.rstrip().endswith("data: {}")
+
+
+def test_live_route_reports_model_resolution_failure_as_sse(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from v2.api import routes
+
+    monkeypatch.setenv("DIME_RUNTIME_V2", "on")
+    monkeypatch.setattr(
+        "app.providers.resolve_model_id",
+        lambda *_: (_ for _ in ()).throw(ValueError("private model detail")),
+    )
+    app = FastAPI()
+    app.include_router(routes.router, prefix="/api")
+    response = TestClient(app).post("/api/v2/chat/stream", json={"q": "record?"})
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert "event: error" in response.text
+    assert "private model detail" not in response.text
