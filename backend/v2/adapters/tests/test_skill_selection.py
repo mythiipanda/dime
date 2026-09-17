@@ -22,6 +22,7 @@ class SelectionModel:
     ("Would Brown for Paul George make sense for both teams?", "trade-analysis"),
     ("How much does Tatum's absence change Boston?", "injury-impact"),
     ("Compare Brown and Paul George as second options", "player-comparison"),
+    ("Will this team's regular-season profile translate to the playoffs?", "playoff-translation"),
 ])
 @pytest.mark.anyio
 async def test_should_trigger_selected_skill_is_loaded_for_planning(question, expected):

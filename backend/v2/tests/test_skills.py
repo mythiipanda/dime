@@ -10,7 +10,7 @@ def test_builtin_catalog_is_agent_skills_metadata_only():
     catalog = library.catalog()
     assert {item["name"] for item in catalog} == {
         "trade-analysis", "injury-impact", "player-comparison",
-        "league-ratings",
+        "league-ratings", "playoff-translation",
     }
     assert all(set(item) == {"name", "description"} for item in catalog)
     assert all("# " not in item["description"] for item in catalog)
@@ -225,3 +225,8 @@ def test_analysis_skills_encode_questions_contradictions_and_completion():
     assert "conditional winners" in comparison
     assert "Raw on/off never establishes" in injury
     assert "signal that changes the projection" in injury
+    translation = library.skills["playoff-translation"].body
+    assert "Keep populations separate" in translation
+    assert "offense, defense, late-game execution, rotation durability, and availability risk" in translation
+    assert "strongest counterargument" in translation
+    assert "requires a declared calculation" in translation

@@ -286,6 +286,15 @@ class ModelIntake(ModelStage):
                 *required_evidence,
                 *(name for name in baseline if name in self._catalog),
             ]))
+        if "playoff-translation" in task.skills:
+            baseline = (
+                "team_ratings", "playoff_team_ratings", "clutch",
+                "injuries", "roster",
+            )
+            required_evidence = list(dict.fromkeys([
+                *required_evidence,
+                *(name for name in baseline if name in self._catalog),
+            ]))
         if ("game_prediction" in self._catalog
                 and len([entity for entity in task.entities
                          if entity.type == "team"]) == 2

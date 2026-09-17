@@ -1111,3 +1111,22 @@ def test_requirement_argument_matching_is_generic_and_nested():
         {"season": "2024-25", "stat_category": "FG3_PCT"},
         {"season": "2025-26", "stat_category": "PTS"},
     )
+
+@pytest.mark.anyio
+async def test_playoff_translation_skill_requires_independent_material_branches():
+    stub = StubModel([{
+        "goal": "test whether a team profile translates to playoffs",
+        "mode": "deep_dive", "deliverable": "analyst briefing",
+        "skills": ["playoff-translation"],
+        "required_evidence": ["team_ratings"],
+    }])
+    catalog = {name: {} for name in (
+        "team_ratings", "playoff_team_ratings", "clutch", "injuries",
+        "roster", "team_splits",
+    )}
+    task = await ModelIntake(
+        stub, provider="stub", model_name="stub", capability_catalog=catalog,
+    ).understand("Will the profile translate to the playoffs?")
+    assert task.required_evidence == [
+        "team_ratings", "playoff_team_ratings", "clutch", "injuries", "roster",
+    ]
