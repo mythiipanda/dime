@@ -119,6 +119,27 @@ _LIST = [
         coverage="Source-ranked qualified leaderboard; returned rows preserve population ranks.",
     ),
     Capability(
+        name="team_splits", tool_name="get_team_splits",
+        units={"GP": COUNT, "W": COUNT, "L": COUNT, "PPG": PER_GAME},
+        coverage="Home, away, result, last-10, and monthly splits from cached team games.",
+    ),
+    Capability(
+        name="injury_impact", tool_name="get_injury_impact",
+        coverage="Current injury rows combined with team rating and recent-form context.",
+    ),
+    Capability(
+        name="lineup_matchups", tool_name="get_lineup_matchup_matrix",
+        units={"shared_minutes": MINUTES, "NET_RATING": POINTS_PER_100},
+        qualification="Both teams' lineups meet the configured season-minute floor.",
+        coverage="Observed shared play-level possessions for the selected team matchup.",
+    ),
+    Capability(
+        name="competitive_ratings", tool_name="get_competitive_ratings",
+        units={"mov": "points", "competitive_mov": "points"},
+        qualification="Competitive-game sample meets the configured games floor.",
+        coverage="Selected warehouse season and season type with blowouts separated.",
+    ),
+    Capability(
         name="injuries", tool_name="get_injuries",
         season_arg=None, task_season_scoped=False,
         coverage="Current warehouse injury rows with source freshness metadata.",
@@ -256,6 +277,10 @@ CAPABILITY_DESCRIPTIONS: dict[str, str] = {
     "team_trajectory": "Bounded multi-season regular-season records for one team.",
     "team_totals": "Team leaderboard for a counting stat, with totals and per-game averages.",
     "qualified_leaders": "Qualified player leaderboard for one stat category.",
+    "team_splits": "Team home/away, result, last-10, and monthly records and scoring.",
+    "injury_impact": "Current injuries combined with team ratings and recent form.",
+    "lineup_matchups": "Observed lineup-vs-lineup shared possessions for two teams with sample flags.",
+    "competitive_ratings": "Team margin performance with blowouts separated from competitive games.",
     "injuries": "Current team or player injury rows with designation and source freshness.",
     "team_shot_zones": "League or selected-team zone attempt share and efficiency with league baselines.",
     "player_shot_zones": "One player's shot-zone makes, attempts, efficiency, and attempt share.",
