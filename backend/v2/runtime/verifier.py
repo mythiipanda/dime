@@ -525,6 +525,32 @@ def verify_mechanical(
         if not has_complete_record:
             report_repairs.append(
                 "State the best team's complete wins-losses record in W-L form.")
+    # Requested metrics that exist in admitted evidence are deliverable
+    # requirements, not optional detail. Keep this as metric vocabulary rather
+    # than query/entity cases, and compare against the exact admitted value.
+    task_text = " ".join((task.goal, task.deliverable, *task.subquestions)).casefold()
+    requested_metrics = {
+        "TS_PCT": ("true shooting", "shooting efficiency", "efficiency"),
+    }
+    for metric, aliases in requested_metrics.items():
+        if not any(alias in task_text for alias in aliases):
+            continue
+        values = []
+        for envelope in evidence:
+            for item in iter_values(envelope):
+                path = str(getattr(item, "path", "")).upper()
+                if path.rsplit(".", 1)[-1] == metric and item.value is not None:
+                    values.append(item.value)
+        if not values:
+            continue
+        claimed = _numeric_values([])
+        for claim in draft.claims:
+            for token in _number_tokens(claim.text):
+                claimed.update(_canon_number(token))
+        if not any(_canon_number(value) & claimed for value in values):
+            label = metric.replace("_PCT", "").replace("_", " ").lower()
+            report_repairs.append(
+                f"State the requested {label} metric from admitted evidence.")
     if unclaimed_tokens:
         report_repairs.append(
             "Move factual section values into claims with evidence: "

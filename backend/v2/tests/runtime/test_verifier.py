@@ -632,3 +632,24 @@ def test_record_deliverable_requires_explicit_wins_losses_rendering():
         text="Oklahoma City had the best record at 64-18.", kind="observed",
         evidence_ids=["standings"])]})
     assert verify_mechanical(task, complete, [ev]).status == "pass"
+
+def test_requested_supported_efficiency_metric_cannot_be_omitted():
+    from v2.contracts import EvidenceEnvelope
+    ev = EvidenceEnvelope(
+        evidence_id="player", capability="player_report", source="fixture",
+        observed_at=datetime.now(UTC), rows={"season_line": {
+            "PLAYER": "Luka Doncic", "PPG": 33.9, "RPG": 9.2,
+            "APG": 9.8, "TS_PCT": .617,
+        }})
+    requested = TaskSpec(goal="compare performance", mode="deep_dive",
+                         deliverable="key metrics and efficiency")
+    omitted = DraftReport(sections=["Performance"], claims=[Claim(
+        text="Luka averaged 33.9 points, 9.2 rebounds and 9.8 assists.",
+        kind="observed", evidence_ids=["player"])])
+    result = verify_mechanical(requested, omitted, [ev])
+    assert result.status == "repair"
+    assert "requested ts metric" in result.repair_instructions[-1]
+    included = omitted.model_copy(update={"claims": [Claim(
+        text="Luka averaged 33.9 points on 61.7% true shooting.",
+        kind="observed", evidence_ids=["player"])]})
+    assert verify_mechanical(requested, included, [ev]).status == "pass"

@@ -34,3 +34,24 @@ def test_compound_route_beats_first_matching_average_lane():
 def test_simple_average_stays_simple():
     st=_drain("What did LeBron average this season?")
     assert [x.split(":",1)[0] for x in st["calls_made"]] == ["get_season_averages"]
+
+def test_historical_report_stays_warehouse_bounded(monkeypatch):
+    from app.tools import player as module
+    line = {"PLAYER_ID": 1, "PLAYER": "Test Player", "GP": 70,
+            "PPG": 20.0, "RPG": 5.0, "APG": 6.0, "TS_PCT": .617}
+    class Fake:
+        def __init__(self, result=None): self.result = result
+        def invoke(self, _):
+            if self.result is None: raise AssertionError("live enrichment")
+            return self.result
+    monkeypatch.setattr(module, "coerce_player_id", lambda _: 1)
+    monkeypatch.setattr(module, "get_season_averages",
+                        Fake({"ok": True, "rows": [line]}))
+    monkeypatch.setattr(module, "get_advanced", Fake())
+    monkeypatch.setattr(module, "get_shot_zones", Fake())
+    import app.tools.league as league
+    monkeypatch.setattr(league, "get_clutch", Fake())
+    out = module.get_player_report.invoke({"player": "Test Player", "season": "2023-24"})
+    assert out["ok"]
+    assert out["rows"]["advanced"] is None
+    assert "61.7% true shooting" in out["meta"]["deterministic_answer"]

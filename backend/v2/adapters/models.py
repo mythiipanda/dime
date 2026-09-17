@@ -488,8 +488,15 @@ class ModelPlanner(ModelStage):
                 **feedback, "instruction": "Return a complete replacement plan.",
             },
         })
-        return self._normalize_plan(
+        replacement = self._normalize_plan(
             task, self._normalize_requirement_coverage(task, replacement))
+        remaining = self._coverage_feedback(task, replacement)
+        if remaining:
+            raise ValueError(
+                "replacement plan remains invalid after coverage repair: "
+                f"{remaining}"
+            )
+        return replacement
 
     def _normalize_plan(self, task: TaskSpec, plan: Plan) -> Plan:
         """Coalesce duplicate and capability-subsumed semantic calls."""

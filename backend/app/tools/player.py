@@ -2694,23 +2694,37 @@ def get_player_report(player: str | int, season: str = SEASON) -> dict[str, Any]
     except ValueError as exc:
         return {"tool": "get_player_report", "ok": False, "error": str(exc)}
     avg = get_season_averages.invoke({"player_id": pid, "season": season})
-    adv = get_advanced.invoke({"player": pid, "season": season})
-    shots = get_shot_zones.invoke({"player_id": pid, "season": season})
-    clutch = get_clutch.invoke({"scope": "player", "season": season,
-                                "player": str(player)})
     if not avg.get("ok") or not avg.get("rows"):
         return {"tool": "get_player_report", "ok": False,
                 "error": avg.get("error", "season line unavailable")}
     line = avg["rows"][0]
+    # Historical season reports must stay warehouse-bounded. The optional
+    # advanced/shot enrichments fall back to slow live NBA endpoints when a
+    # historical population is not cached, even though the complete season
+    # line already answers the aggregate and efficiency branch. Current-season
+    # reports retain the richer composite behavior.
+    historical = season != SEASON
+    adv = ({"ok": False} if historical else
+           get_advanced.invoke({"player": pid, "season": season}))
+    shots = ({"ok": False} if historical else
+             get_shot_zones.invoke({"player_id": pid, "season": season}))
+    clutch = ({"ok": False} if historical else
+              get_clutch.invoke({"scope": "player", "season": season,
+                                 "player": str(player)}))
     name = str(line.get("PLAYER") or player)
     a = adv.get("rows") if adv.get("ok") and isinstance(adv.get("rows"), dict) else None
     z = shots.get("rows") if shots.get("ok") and isinstance(shots.get("rows"), list) else []
     cr = clutch.get("rows") if clutch.get("ok") and isinstance(clutch.get("rows"), list) else []
     crow = next((r for r in cr if str(r.get("PLAYER_NAME", "")).lower() == name.lower()), None)
     top_zones = sorted(z, key=lambda r: float(r.get("share") or 0), reverse=True)[:3]
+    efficiency = line.get("TS_PCT")
+    efficiency_text = (
+        f" {100 * float(efficiency):.1f}% true shooting."
+        if isinstance(efficiency, (int, float)) else ""
+    )
     lines = [
         f"{name}, {season}: {line.get('PPG'):g} PPG, {line.get('RPG'):g} RPG, "
-        f"{line.get('APG'):g} APG in {line.get('GP'):g} games.",
+        f"{line.get('APG'):g} APG in {line.get('GP'):g} games." + efficiency_text,
     ]
     if a:
         lines.append(f"Advanced: {a.get('TS_PCT'):g}% true shooting, "

@@ -9,6 +9,12 @@ from typing import Any
 # a query router.
 CAPABILITY_SUBSUMPTIONS: dict[str, frozenset[str]] = {
     "player_report": frozenset({"shooting_efficiency"}),
+    # The prediction envelope already carries both teams' ratings and the
+    # injury inputs/adjustments used by the model. Re-fetching those complete
+    # league populations adds no independent support for an exact matchup.
+    "game_prediction": frozenset({
+        "team_ratings", "injuries", "injury_impact",
+    }),
 }
 
 

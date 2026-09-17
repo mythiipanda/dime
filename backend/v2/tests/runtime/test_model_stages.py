@@ -1640,3 +1640,27 @@ async def test_player_phase_comparison_uses_report_for_regular_and_logs_for_play
         ("regular", ["player_report"], {"player": "luka", "season": "2023-24"}),
         ("playoffs", ["game_logs"], {"player": "luka", "season": "2023-24", "playoffs": True}),
     ]
+
+@pytest.mark.anyio
+async def test_planner_rejects_invalid_replacement_plan_arguments():
+    from v2.contracts import TaskSpec
+    task = TaskSpec(
+        goal="evaluate player", mode="deep_dive", deliverable="report",
+        required_evidence=["player_evaluation"], requirements=[{
+            "id": "primary", "description": "primary player",
+            "capability_options": ["player_evaluation"],
+        }],
+    )
+    catalog = {"player_evaluation": {"description": "player profile", "arguments": {
+        "type": "object", "properties": {"player": {"type": "string"}},
+        "required": ["player"],
+    }}}
+    invalid = {"nodes": [{
+        "id": "primary", "description": "profile",
+        "capability_hints": ["player_evaluation"],
+        "covers_requirement_ids": ["primary"], "arguments": {},
+    }]}
+    planner = ModelPlanner(StubModel([invalid, invalid]), provider="stub",
+                           model_name="stub", capability_catalog=catalog)
+    with pytest.raises(ValueError, match="replacement plan remains invalid"):
+        await planner.plan(task)
