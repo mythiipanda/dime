@@ -139,6 +139,52 @@ async def test_intake_receives_bounded_followup_context_without_full_skill_bodie
 
 
 @pytest.mark.anyio
+async def test_followup_intake_resolves_context_reference_before_user_blocker():
+    from v2.contracts import ConversationTurn
+
+    stub = StubModel([
+        {
+            "goal": "Explain that success and whether he can sustain it",
+            "mode": "deep_dive", "deliverable": "analysis",
+            "entities": [
+                {"id": "1610612760", "type": "team",
+                 "display_name": "Oklahoma City Thunder"},
+            ],
+            "open_questions": ["Who does he refer to?"],
+        },
+        {
+            "goal": "Explain Oklahoma City's success and whether Shai can sustain it",
+            "mode": "deep_dive", "deliverable": "analysis",
+            "entities": [
+                {"id": "1610612760", "type": "team",
+                 "display_name": "Oklahoma City Thunder"},
+                {"id": "1628983", "type": "player",
+                 "display_name": "Shai Gilgeous-Alexander"},
+            ],
+        },
+    ])
+    intake = ModelIntake(stub, **stage_kwargs())
+    task = await intake.understand(
+        "What drove that success, and can he sustain it?", context=(
+            ConversationTurn(role="user", content="Assess Oklahoma City."),
+            ConversationTurn(
+                role="assistant",
+                content="Oklahoma City led the league behind Shai Gilgeous-Alexander."),
+        ))
+
+    assert task.open_questions == []
+    assert [entity.display_name for entity in task.entities] == [
+        "Oklahoma City Thunder", "Shai Gilgeous-Alexander",
+    ]
+    assert len(stub.calls) == 2
+    feedback = stub.calls[1]["payload"]["resolution_feedback"]
+    assert feedback["unresolved_questions"] == ["Who does he refer to?"]
+    assert stub.calls[1]["payload"]["prior_intake"]["open_questions"] == [
+        "Who does he refer to?",
+    ]
+
+
+@pytest.mark.anyio
 async def test_intake_prompt_reserves_open_questions_for_user_blockers():
     from v2.prompts import load_prompt
 

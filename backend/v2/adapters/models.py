@@ -187,7 +187,7 @@ class ModelIntake(ModelStage):
     async def understand(
         self, request: str, context: Sequence[ConversationTurn] = ()
     ) -> TaskSpec:
-        task = await self._generate({
+        payload = {
             "question": request,
             "current_date": datetime.now(UTC).date().isoformat(),
             "conversation_context": [
@@ -195,7 +195,31 @@ class ModelIntake(ModelStage):
             ],
             "capability_catalog": self._catalog,
             "skill_catalog": self._skills.catalog(),
-        })
+        }
+        task = await self._generate(payload)
+        # Follow-up turns get one bounded typed resolution pass before the
+        # runtime treats open_questions as user blockers. The first intake can
+        # notice a pronoun or elliptical reference yet still fail to bind it
+        # to entities in prior evidence. Re-running the same TaskSpec boundary
+        # with the unresolved questions made explicit lets the intake resolve
+        # from conversation evidence without weakening schema validation or
+        # teaching the runtime query-specific names.
+        if context and task.open_questions:
+            task = await self._generate({
+                **payload,
+                "prior_intake": task.model_dump(mode="json"),
+                "resolution_feedback": {
+                    "unresolved_questions": list(task.open_questions),
+                    "instruction": (
+                        "Resolve references and omitted subjects from the "
+                        "bounded conversation context before leaving a user "
+                        "question open. Preserve an open question only when "
+                        "the context supports multiple materially different "
+                        "referents or supplies none. Return a complete "
+                        "replacement TaskSpec."
+                    ),
+                },
+            })
         self._skills.activate(task.skills)
         if (task.season is not None and task.season.source == "default"
                 and "trade-analysis" in task.skills):
