@@ -1499,3 +1499,45 @@ async def test_intake_season_normalization_propagates_to_requirement_arguments()
     ).understand("current prediction")
     assert task.season.value == SEASON
     assert task.requirements[0].capability_arguments["season"] == SEASON
+async def test_planner_replans_call_missing_catalog_required_arguments():
+    task = TaskSpec(
+        goal="current roster", mode="quick", deliverable="answer",
+        required_evidence=["roster"],
+        requirements=[{
+            "id": "team_roster", "description": "team roster",
+            "capability_options": ["roster"],
+        }],
+    )
+    catalog = {"roster": {
+        "description": "Team roster",
+        "arguments": {
+            "type": "object", "properties": {
+                "team_id": {"type": "integer"},
+                "season": {"type": "string"},
+            }, "required": ["team_id"],
+        },
+    }}
+    stub = StubModel([
+        {"nodes": [{
+            "id": "team_roster", "description": "roster",
+            "capability_hints": ["roster"],
+            "covers_requirement_ids": ["team_roster"],
+            "arguments": {"season": "2025-26"},
+        }]},
+        {"nodes": [{
+            "id": "team_roster", "description": "roster",
+            "capability_hints": ["roster"],
+            "covers_requirement_ids": ["team_roster"],
+            "arguments": {"team_id": 1610612760, "season": "2025-26"},
+        }]},
+    ])
+    plan = await ModelPlanner(
+        stub, provider="stub", model_name="stub", capability_catalog=catalog,
+    ).plan(task)
+    assert plan.nodes[0].arguments["team_id"] == 1610612760
+    assert stub.calls[1]["payload"]["coverage_feedback"] == {
+        "missing_required_evidence": ["roster"],
+        "missing_requirement_ids": ["team_roster"],
+        "missing_required_arguments": {"team_roster": ["team_id"]},
+        "instruction": "Return a complete replacement plan.",
+    }

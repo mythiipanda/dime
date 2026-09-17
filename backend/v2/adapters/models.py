@@ -610,16 +610,42 @@ class ModelPlanner(ModelStage):
             nodes.append(node.model_copy(update={"covers_requirement_ids": valid}))
         return plan.model_copy(update={"nodes": nodes})
 
+    def _missing_required_arguments(self, node: PlanNode) -> list[str]:
+        selected = [name for name in node.capability_hints if name in self._catalog]
+        if len(selected) != 1:
+            return []
+        catalog_entry = self._catalog.get(selected[0])
+        if not isinstance(catalog_entry, Mapping):
+            return []
+        schema = catalog_entry.get("arguments")
+        if not isinstance(schema, Mapping):
+            return []
+        required = schema.get("required", [])
+        if not isinstance(required, list):
+            return []
+        return sorted(
+            key for key in required
+            if isinstance(key, str) and key not in node.arguments
+        )
+
     def _coverage_feedback(self, task: TaskSpec, plan: Plan) -> dict[str, Any]:
+        invalid_arguments = {
+            node.id: self._missing_required_arguments(node)
+            for node in plan.nodes
+            if self._missing_required_arguments(node)
+        }
+        valid_nodes = [
+            node for node in plan.nodes if node.id not in invalid_arguments
+        ]
         selected = {
-            name for node in plan.nodes for name in node.capability_hints
+            name for node in valid_nodes for name in node.capability_hints
             if name in self._catalog
         }
         missing_evidence = sorted(set(task.required_evidence) - selected)
         requirements = {item.id: item for item in task.requirements}
         covered: set[str] = set()
         mismatched: list[str] = []
-        for node in plan.nodes:
+        for node in valid_nodes:
             node_capabilities = set(node.capability_hints) & self._catalog.keys()
             for requirement_id in node.covers_requirement_ids:
                 requirement = requirements.get(requirement_id)
@@ -637,6 +663,8 @@ class ModelPlanner(ModelStage):
             feedback["missing_requirement_ids"] = missing_requirements
         if mismatched:
             feedback["mismatched_requirement_ids"] = sorted(set(mismatched))
+        if invalid_arguments:
+            feedback["missing_required_arguments"] = invalid_arguments
         return feedback
 
 
