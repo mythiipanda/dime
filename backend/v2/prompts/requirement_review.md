@@ -10,12 +10,12 @@ Independently turn every distinct evidence clause in the user's question into a 
 
 ## Output
 One JSON object matching RequirementReview:
-- requirements: every evidence clause as {id, description, capability_options}. IDs are stable short snake_case names. capability_options lists catalog capabilities that together are required for that clause; use separate requirements when the user asks for separate populations, metrics, scopes, or phases.
+- requirements: every evidence clause as {id, description, capability_options, capability_arguments}. IDs are stable short snake_case names. capability_options lists catalog capabilities that can satisfy that clause. capability_arguments contains provider-facing argument constraints shared by those options, such as stat_category, season, season_type, qualification, or entity id. Use separate requirements when the user asks for separate populations, metrics, scopes, seasons, or phases.
 - missing_subquestions: requested answer branches absent from the draft.
 - missing_skills: catalog skill names directly required by those branches.
 
 ## Invariants
-Use an empty list only when its category is complete or absent. Never invent catalog names. Distinguish populations, phases, metrics, and comparison sides named by the user. A generic nearby capability does not cover a requested metric or population. Each requirement must be satisfiable by one selected capability; if two capabilities are both required, make two requirement rows.
+Use an empty list only when its category is complete or absent. Never invent catalog names. Distinguish populations, phases, metrics, vintages, and comparison sides named by the user. Preserve explicit requested values in capability_arguments using the selected capability schema's exact argument names and enum spellings. A generic nearby capability or wrong argument does not cover a requested metric, population, or vintage. Each requirement must be satisfiable by one selected capability; if two capabilities are both required, make two requirement rows. Never invent an argument absent from every listed capability schema.
 
 ## Stop condition
 Stop after every evidence clause in the original request has exactly one requirement row and every omitted analytical branch or skill is listed.

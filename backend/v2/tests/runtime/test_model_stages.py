@@ -1060,3 +1060,54 @@ async def test_league_ratings_skill_requires_rating_populations_not_scoring_lead
         "qualified_leaders", "team_ratings", "player_ratings",
         "playoff_team_ratings",
     ]
+
+@pytest.mark.anyio
+async def test_planner_rejects_wrong_metric_argument_as_false_coverage():
+    from v2.contracts import TaskSpec
+
+    task = TaskSpec(
+        goal="compare a percentage across seasons", mode="deep_dive",
+        deliverable="ranked change",
+        requirements=[{
+            "id": "later_percentage", "description": "later qualified percentage",
+            "capability_options": ["qualified_leaders"],
+            "capability_arguments": {"stat_category": "FG3_PCT", "season": "2025-26"},
+        }],
+    )
+    stub = StubModel([
+        {"nodes": [{
+            "id": "wrong_stat", "description": "later leaders",
+            "capability_hints": ["qualified_leaders"],
+            "covers_requirement_ids": ["later_percentage"],
+            "arguments": {"stat_category": "PTS", "season": "2025-26"},
+        }]},
+        {"nodes": [{
+            "id": "right_stat", "description": "later percentage leaders",
+            "capability_hints": ["qualified_leaders"],
+            "covers_requirement_ids": ["later_percentage"],
+            "arguments": {"stat_category": "FG3_PCT", "season": "2025-26"},
+        }]},
+    ])
+    plan = await ModelPlanner(
+        stub, provider="stub", model_name="stub",
+        capability_catalog={"qualified_leaders": {}},
+    ).plan(task)
+    assert plan.nodes[0].arguments["stat_category"] == "FG3_PCT"
+    assert plan.nodes[0].covers_requirement_ids == ["later_percentage"]
+    assert stub.calls[1]["payload"]["coverage_feedback"] == {
+        "missing_requirement_ids": ["later_percentage"],
+        "instruction": "Return a complete replacement plan.",
+    }
+
+
+def test_requirement_argument_matching_is_generic_and_nested():
+    from v2.adapters.models import ModelPlanner
+
+    assert ModelPlanner._arguments_cover(
+        {"season": ["2024-25", "2025-26"], "filters": {"qualified": True}},
+        {"season": "2025-26", "filters": {"qualified": True, "limit": 10}},
+    )
+    assert not ModelPlanner._arguments_cover(
+        {"season": "2024-25", "stat_category": "FG3_PCT"},
+        {"season": "2025-26", "stat_category": "PTS"},
+    )

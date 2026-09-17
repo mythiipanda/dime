@@ -383,6 +383,31 @@ class ModelPlanner(ModelStage):
         })
         return self._normalize_requirement_coverage(task, replacement)
 
+    @staticmethod
+    def _arguments_cover(expected: Mapping[str, Any], actual: Mapping[str, Any]) -> bool:
+        """Whether actual arguments satisfy a typed requirement constraint.
+
+        This is deliberately capability-agnostic: requirement review names the
+        provider-facing argument and exact value. Lists mean any acceptable
+        value; nested objects use recursive subset matching.
+        """
+        for key, wanted in expected.items():
+            if key not in actual:
+                return False
+            got = actual[key]
+            if isinstance(wanted, Mapping):
+                if not isinstance(got, Mapping) or not ModelPlanner._arguments_cover(wanted, got):
+                    return False
+            elif isinstance(wanted, list):
+                if got not in wanted:
+                    return False
+            elif isinstance(wanted, str) and isinstance(got, str):
+                if wanted.strip().casefold() != got.strip().casefold():
+                    return False
+            elif wanted != got:
+                return False
+        return True
+
     def _normalize_requirement_coverage(
         self, task: TaskSpec, plan: Plan,
     ) -> Plan:
@@ -394,6 +419,8 @@ class ModelPlanner(ModelStage):
                 requirement_id for requirement_id in node.covers_requirement_ids
                 if requirement_id in requirements
                 and selected & set(requirements[requirement_id].capability_options)
+                and self._arguments_cover(
+                    requirements[requirement_id].capability_arguments, node.arguments)
             ]
             nodes.append(node.model_copy(update={"covers_requirement_ids": valid}))
         return plan.model_copy(update={"nodes": nodes})

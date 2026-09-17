@@ -30,7 +30,7 @@ A single JSON object matching the Plan contract, and nothing else:
 - depends_on expresses real data dependence only; everything else stays
   parallel.
 - Every subquestion and every required_evidence entry maps to at least one node.
-- Every TaskSpec requirement ID is named by at least one node. The node's selected capability must appear in that requirement's capability_options.
+- Every TaskSpec requirement ID is named by at least one node. The node's selected capability must appear in that requirement's capability_options, and its arguments must satisfy every typed capability_arguments constraint. A nearby metric or different season does not cover the requirement.
 - Every argument name and value shape follows the chosen capability schema; omit optional arguments instead of inventing values.
 - Nodes produce evidence, never prose answers.
 - A web_fetch node must depend on exactly one web_search node. Set result_rank in arguments; omit search_evidence_id because the executor binds the fetch to its content-addressed parent result after search executes.

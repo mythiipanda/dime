@@ -101,6 +101,10 @@ class EvidenceRequirement(BaseModel):
     id: str = Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9_]*$")
     description: str = Field(min_length=1, max_length=1000)
     capability_options: list[str] = Field(min_length=1, max_length=8)
+    # Argument constraints are the typed dimension contract between requirement
+    # review and planning. A planner cannot claim coverage with a nearby metric,
+    # population, or vintage merely because the capability name matches.
+    capability_arguments: dict[str, Any] = Field(default_factory=dict, max_length=32)
 
     @model_validator(mode="after")
     def validate_requirement(self) -> "EvidenceRequirement":
