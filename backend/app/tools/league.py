@@ -402,6 +402,7 @@ def get_playoff_team_ratings(
     season = clamp_season(season)
     limit = max(1, min(int(limit), 30))
     con = store.connect(read_only=True)
+    source_as_of = None
     try:
         raw = con.execute(
             """
@@ -425,6 +426,10 @@ def get_playoff_team_ratings(
             """,
             [season, limit],
         ).fetchall()
+        source_as_of = con.execute(
+            "SELECT MAX(_fetched_at) FROM silver_playoffs WHERE _season = ?",
+            [season],
+        ).fetchone()[0]
     finally:
         con.close()
     rows = [
@@ -436,6 +441,8 @@ def get_playoff_team_ratings(
         "tool": "get_playoff_team_ratings", "ok": True, "rows": rows,
         "meta": {
             "source": "warehouse:silver_playoffs", "season": season,
+            "as_of": str(source_as_of) if source_as_of else None,
+            "method": "NBA box-score estimated possessions",
             "coverage": "Completed playoff games only.",
             "qualification": "All playoff teams; estimated possessions use the NBA box-score formula.",
         },

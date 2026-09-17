@@ -1752,3 +1752,12 @@ def test_live_route_reports_model_resolution_failure_as_sse(monkeypatch):
     assert response.headers["content-type"].startswith("text/event-stream")
     assert "event: error" in response.text
     assert "private model detail" not in response.text
+
+
+def test_evidence_export_separates_source_vintage_from_observation_time():
+    import inspect
+    from v2.api.routes import quick_answer_stream
+    source = inspect.getsource(quick_answer_stream)
+    assert '"source_as_of": item.as_of.isoformat()' in source
+    assert '"observed_at": item.observed_at.isoformat()' in source
+    assert 'else item.observed_at.isoformat()' not in source

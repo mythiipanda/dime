@@ -330,8 +330,10 @@ async def quick_answer_stream(body: QuickAnswerBody):
             "rows": item.rows,
             "meta": {
                 "source": item.source,
-                "fetched_at": (item.as_of.isoformat()
-                               if item.as_of else item.observed_at.isoformat()),
+                # Keep source vintage and runtime observation time distinct.
+                # observed_at must never masquerade as source fetched_at.
+                "source_as_of": item.as_of.isoformat() if item.as_of else None,
+                "observed_at": item.observed_at.isoformat(),
                 "season": item.season,
                 "as_of": item.as_of.isoformat() if item.as_of else None,
                 "qualification": item.qualification,
