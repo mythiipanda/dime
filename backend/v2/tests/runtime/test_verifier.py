@@ -544,3 +544,33 @@ def test_draft_declared_calculation_is_recomputed_by_assembly_verifier():
                      evidence_ids=[ev.evidence_id], calculation_id="ppg_gap")])
     result = asyncio.run(MechanicalVerifier().verify(task(), draft, {ev.evidence_id: ev}))
     assert result.status == VerificationStatus.PASS
+
+
+def test_best_record_claim_requires_complete_wins_losses_record():
+    from datetime import UTC, datetime
+    from v2.contracts import Claim, DraftReport, EvidenceEnvelope, TaskSpec
+    from v2.runtime.verifier import verify_mechanical
+
+    evidence = EvidenceEnvelope(
+        evidence_id="standings", capability="standings", source="fixture",
+        observed_at=datetime.now(UTC), qualification="All NBA teams",
+        coverage="Full standings table", rows=[{
+            "team": "Oklahoma City Thunder", "wins": 64, "losses": 18,
+            "win_pct": 78.0, "RANK": 1,
+        }],
+    )
+    task = TaskSpec(goal="best record", mode="quick", deliverable="answer")
+    incomplete = DraftReport(sections=["Record"], claims=[Claim(
+        text="Oklahoma City Thunder had the best record with 64 wins and a 78.0% win percentage.",
+        kind="observed", evidence_ids=["standings"],
+    )])
+    rejected = verify_mechanical(task, incomplete, [evidence])
+    assert rejected.status == "repair"
+    assert "complete wins-losses record" in rejected.claim_results[0].reasons[-1]
+
+    complete = DraftReport(sections=["Record"], claims=[Claim(
+        text="Oklahoma City Thunder had the best record at 64-18 with a 78.0% win percentage.",
+        kind="observed", evidence_ids=["standings"],
+    )])
+    accepted = verify_mechanical(task, complete, [evidence])
+    assert accepted.status == "pass"

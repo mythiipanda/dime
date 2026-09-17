@@ -274,6 +274,51 @@ def _mixed_source_reasons(claim: Claim,
     return ["mixed-source claim does not label differing provenance"]
 
 
+def _record_completeness_reasons(
+    claim: Claim, envelopes: Sequence[EvidenceEnvelope],
+) -> list[str]:
+    """A best-record claim must publish the complete W-L record.
+
+    Win percentage and wins alone can identify the row, but omitting losses
+    makes the answer incomplete and can hide a mismatched denominator. This
+    check is schema-driven and applies to any standings-like row carrying both
+    wins and losses.
+    """
+    text = claim.text.casefold()
+    if not re.search(r"\b(?:best|top|leading|leader|highest)\b.*\brecord\b", text):
+        return []
+    matching_rows = []
+    for envelope in envelopes:
+        if not isinstance(envelope.rows, list):
+            continue
+        for row in envelope.rows:
+            if not isinstance(row, Mapping):
+                continue
+            normalized = {str(key).casefold(): value for key, value in row.items()}
+            wins = normalized.get("wins", normalized.get("w"))
+            losses = normalized.get("losses", normalized.get("l"))
+            if wins is None or losses is None:
+                continue
+            identities = [
+                str(value).strip().casefold()
+                for key, value in normalized.items()
+                if key in {"team", "team_name", "abbrev", "team_abbreviation"}
+                and value is not None
+            ]
+            if not identities or any(identity in text for identity in identities):
+                matching_rows.append((wins, losses))
+    if not matching_rows:
+        return []
+    if not any(
+        (_canon_number(wins) & _canon_number(raw_wins))
+        and (_canon_number(losses) & _canon_number(raw_losses))
+        for wins, losses in matching_rows
+        for raw_wins, raw_losses in re.findall(r"(\d+)\s*[-–]\s*(\d+)", claim.text)
+    ):
+        return ["best-record claim must state the complete wins-losses record"]
+    return []
+
+
 def _qualification_coverage_reasons(claim: Claim,
                                     envelopes: Sequence[EvidenceEnvelope]) -> list[str]:
     if not _RANK.search(claim.text) and not re.search(
@@ -433,6 +478,7 @@ def verify_mechanical(
         reasons.extend(_cross_evidence_calculation_reasons(claim, cited))
         reasons.extend(_metric_unit_reasons(claim, cited))
         reasons.extend(_qualification_coverage_reasons(claim, cited))
+        reasons.extend(_record_completeness_reasons(claim, cited))
 
         unique_reasons = list(dict.fromkeys(reasons))
         results.append(ClaimResult(

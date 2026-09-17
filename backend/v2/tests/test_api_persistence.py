@@ -483,7 +483,10 @@ def test_rejected_claim_cannot_publish_after_reverify_warning():
             blocks=["claim:0"])])
     text = _answer_text(result)
     assert "The true-shooting leader" not in text
-    assert text in {"", "Some supporting data was unavailable."}
+    assert text in {
+        "I could not verify a publishable answer from the available data.",
+        "Some supporting data was unavailable.",
+    }
 
 def test_v2_uses_one_configured_model_policy(monkeypatch):
     monkeypatch.setenv("DIME_V2_MODEL", "openrouter:openrouter/free")
@@ -1289,7 +1292,10 @@ def test_answer_text_never_exposes_internal_execution_error():
     )
 
     text = _answer_text(result)
-    assert text in {"", "Some supporting data was unavailable."}
+    assert text in {
+        "I could not verify a publishable answer from the available data.",
+        "Some supporting data was unavailable.",
+    }
     assert "/secret/db" not in text
     assert "AdapterError" not in text
 
@@ -1606,7 +1612,10 @@ def test_answer_text_hides_mechanical_verifier_reasons():
              message="rank claim lacks qualification evidence", blocks=["claim:0"])],
     )
     text = _answer_text(result)
-    assert text in {"", "Some supporting data was unavailable."}
+    assert text in {
+        "I could not verify a publishable answer from the available data.",
+        "Some supporting data was unavailable.",
+    }
     assert "qualification" not in text
 
 
@@ -1628,7 +1637,10 @@ def test_answer_text_hides_policy_and_tool_directives():
         gaps=[contracts.Gap(kind="missing_evidence", message=item) for item in raw],
     )
     text = _answer_text(result)
-    assert text in {"", "Some supporting data was unavailable."}
+    assert text in {
+        "I could not verify a publishable answer from the available data.",
+        "Some supporting data was unavailable.",
+    }
     assert all(item not in text for item in raw)
 
 
@@ -1651,7 +1663,9 @@ def test_answer_text_drops_internal_followup_and_capability_language():
         verification=contracts.VerificationReport(status="partial"),
         gaps=[contracts.Gap(kind="missing_evidence", message=item) for item in raw],
     )
-    assert _answer_text(result) == ""
+    assert _answer_text(result) == (
+        "I could not verify a publishable answer from the available data."
+    )
 
 
 def test_answer_text_drops_final_showcase_directives_and_deduplicates_age_gap():
@@ -1813,3 +1827,45 @@ def test_live_route_exposes_structured_pre_tool_timeout_and_stage_latency(monkey
     assert '"stage_latencies_ms":{"understand":12}' in events
     assert "private timeout detail" not in events
     assert events.rstrip().endswith("event: graph_end\ndata: {}")
+
+
+def test_answer_text_never_leaves_final_sse_blank_after_filtered_gaps():
+    from v2 import contracts
+    from v2.api.routes import _answer_text
+    from v2.runtime.models import ExecutionResult, RuntimeResult
+
+    result = RuntimeResult(
+        task=contracts.TaskSpec(goal="record", mode="quick", deliverable="answer"),
+        execution=ExecutionResult(plan=contracts.Plan(nodes=[contracts.PlanNode(
+            id="facts", description="facts", capability_hints=["standings"],
+            status="failed")]), attempts={"facts": 1},
+            errors={"facts": ["source unavailable"]}),
+        draft=contracts.DraftReport(sections=[], claims=[]),
+        verification=contracts.VerificationReport(status="partial"),
+        gaps=[contracts.Gap(
+            kind="execution_failure", message="execution failed for facts",
+            blocks=["node:facts"])],
+    )
+    answer = _answer_text(result)
+    assert answer == "Some supporting data was unavailable."
+    assert encode_event(FinalAnswer(text=answer)).startswith("event: final_answer")
+
+
+def test_answer_text_has_nonempty_fallback_when_all_internal_gaps_are_filtered():
+    from v2 import contracts
+    from v2.api.routes import _answer_text
+    from v2.runtime.models import ExecutionResult, RuntimeResult
+
+    result = RuntimeResult(
+        task=contracts.TaskSpec(goal="trade", mode="quick", deliverable="answer"),
+        execution=ExecutionResult(plan=contracts.Plan(nodes=[])),
+        draft=contracts.DraftReport(sections=[], claims=[]),
+        verification=contracts.VerificationReport(status="partial"),
+        gaps=[contracts.Gap(
+            kind="missing_evidence", message="Verify contract salary")],
+    )
+    answer = _answer_text(result)
+    assert answer == "I could not verify a publishable answer from the available data."
+    stream_tail = encode_event(FinalAnswer(text=answer)) + encode_event(GraphEnd())
+    assert "event: final_answer" in stream_tail
+    assert stream_tail.endswith("event: graph_end\ndata: {}\n\n")

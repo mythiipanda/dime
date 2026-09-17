@@ -210,7 +210,12 @@ def _answer_text(result) -> str:
     if gaps:
         gap_text = " ".join(gaps)
         text = f"{text}\n\nWhat I could not verify: {gap_text}" if text else gap_text
-    return text
+    # FinalAnswer rejects blank text. A repaired run can legitimately finish
+    # with no publishable claim while every internal gap is filtered as a
+    # diagnostic. Returning a non-empty public limitation keeps the SSE
+    # lifecycle intact through final_answer and graph_end instead of raising
+    # after custom_data has already reached the client.
+    return text or "I could not verify a publishable answer from the available data."
 
 
 @router.post("/v2/chat/stream")
