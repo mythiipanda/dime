@@ -41,3 +41,18 @@ def test_every_rating_board_declares_rank_scope() -> None:
         assert envelope.rows
         assert envelope.qualification
         assert envelope.coverage
+
+
+def test_rest_splits_expose_all_three_buckets_with_samples():
+    from v2.adapters import call_capability
+    result = call_capability("rest_splits", {"team_abbrev": "DEN", "season": "2025-26"})
+    buckets = result.rows["rest_buckets"]
+    assert set(buckets) == {"zero_days", "one_day", "two_plus_days"}
+    for values in buckets.values():
+        assert values["games"] == values["wins"] + values["losses"]
+        assert values["win_pct"] is None or 0 <= values["win_pct"] <= 1
+
+
+def test_rookie_capability_declares_first_season_qualification():
+    from v2.adapters import CAPABILITIES
+    assert "no player row in any prior" in CAPABILITIES["rookie_leaders"].qualification

@@ -139,7 +139,7 @@ def test_registry_covers_initial_pack():
         "shooting_efficiency", "on_off", "lineups", "clutch", "playoffs",
         "trades", "trade_value", "contracts", "game_logs", "four_factors",
         "team_four_factors", "player_ratings", "playoff_team_ratings",
-        "game_prediction",
+        "game_prediction", "rest_splits", "rookie_leaders",
     }
     assert set(CAPABILITIES) == expected
     tool_names = [c.tool_name for c in CAPABILITIES.values()]

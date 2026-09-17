@@ -1330,18 +1330,25 @@ def get_rest(team_abbrev: str = "", season: str = SEASON) -> dict[str, Any]:
                   for t, d, w in rows if d]
     except (TypeError, ValueError):
         return {"tool": "get_rest", "ok": False, "error": "bad dates"}
-    b2b_w = b2b_l = rest_w = rest_l = 0
+    buckets = {
+        "zero_days": {"wins": 0, "losses": 0},
+        "one_day": {"wins": 0, "losses": 0},
+        "two_plus_days": {"wins": 0, "losses": 0},
+    }
     prev = None
     for t, d, w in parsed:
         if prev and prev[0] == t:
             gap = (d - prev[1]).days
-            if gap <= 1:
-                b2b_w += w == "W"
-                b2b_l += w != "W"
-            elif gap >= 3:
-                rest_w += w == "W"
-                rest_l += w != "W"
+            bucket = ("zero_days" if gap <= 1 else
+                      "one_day" if gap == 2 else "two_plus_days")
+            outcome = "wins" if w == "W" else "losses"
+            buckets[bucket][outcome] += 1
         prev = (t, d)
+    for values in buckets.values():
+        games = values["wins"] + values["losses"]
+        values["games"] = games
+        values["win_pct"] = (round(values["wins"] / games, 3)
+                             if games else None)
     _rmeta: dict[str, Any] = {"source": "warehouse", "season": season}
     from ._core import season_static as _season_static
     if _season_static(season):
@@ -1352,9 +1359,17 @@ def get_rest(team_abbrev: str = "", season: str = SEASON) -> dict[str, Any]:
                           "splits. No NBA games until preseason, so no "
                           "upcoming back-to-backs exist right now.")
     return {"tool": "get_rest", "ok": True,
-            "rows": {"back_to_back": f"{b2b_w}-{b2b_l}",
-                     "three_plus_rest": f"{rest_w}-{rest_l}"},
-            "meta": _rmeta}
+            "rows": {
+                "rest_buckets": buckets,
+                "back_to_back": (f"{buckets['zero_days']['wins']}-"
+                                 f"{buckets['zero_days']['losses']}"),
+                "three_plus_rest": (f"{buckets['two_plus_days']['wins']}-"
+                                    f"{buckets['two_plus_days']['losses']}"),
+            },
+            "meta": {**_rmeta, "qualification": (
+                "Rest days before each game: zero, one, or two-plus; the first "
+                "game for each team has no prior-game baseline and is excluded."),
+                "coverage": f"{len(parsed)} dated team-games in the selected scope."}}
 
 
 """Shared ELO engine. get_win_prob and get_elo build ratings from the same

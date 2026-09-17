@@ -119,6 +119,22 @@ _LIST = [
         coverage="Source-ranked qualified leaderboard; returned rows preserve population ranks.",
     ),
     Capability(
+        name="rest_splits", tool_name="get_rest",
+        units={"wins": COUNT, "losses": COUNT, "games": COUNT,
+               "win_pct": FRACTION},
+        qualification=("Rest days before each game: zero, one, or two-plus; "
+                       "first game per team excluded."),
+        coverage="All dated team-games in the selected season scope.",
+    ),
+    Capability(
+        name="rookie_leaders", tool_name="get_rookie_leaders",
+        units={"GP": COUNT, "MPG": MINUTES, "PPG": PER_GAME,
+               "RPG": PER_GAME, "APG": PER_GAME},
+        qualification=("First NBA season only: no player row in any prior "
+                       "warehouse season; configurable games/stat floors."),
+        coverage="Current-season players represented in the warehouse.",
+    ),
+    Capability(
         name="team_ratings",
         tool_name="get_ratings",
         units={"OFF_RATING": POINTS_PER_100, "DEF_RATING": POINTS_PER_100,
@@ -224,6 +240,8 @@ CAPABILITY_DESCRIPTIONS: dict[str, str] = {
     "team_trajectory": "Bounded multi-season regular-season records for one team.",
     "team_totals": "Team leaderboard for a counting stat, with totals and per-game averages.",
     "qualified_leaders": "Qualified player leaderboard for one stat category.",
+    "rest_splits": "Team records by zero, one, and two-plus days of rest, with sample sizes.",
+    "rookie_leaders": "First-year NBA player leaderboard using prior-season exclusion, never age as a proxy.",
     "team_ratings": "Team offensive, defensive, and net ratings plus pace and ranks.",
     "roster": "Team roster and game-log context for one season.",
     "player_report": "Player season line, advanced profile, shots, and clutch context.",
