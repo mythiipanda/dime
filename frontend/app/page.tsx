@@ -34,16 +34,16 @@ export default function Home() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [preset, setPreset] = useState<string | null>(null);
   const [exploreKey, setExploreKey] = useState(0);
-  const [themeTick, setThemeTick] = useState(0);
+  // The server renders dark by default (see layout.tsx). Keep the first client
+  // render identical, then apply the saved preference after hydration.
+  const [themeDark, setThemeDark] = useState(true);
   useEffect(() => {
     try {
-      const t = localStorage.getItem("dime_theme") || "dark";
-      document.documentElement.classList.toggle("dark", t === "dark");
+      const dark = (localStorage.getItem("dime_theme") || "dark") === "dark";
+      document.documentElement.classList.toggle("dark", dark);
+      setThemeDark(dark);
     } catch {}
   }, []);
-  const themeDark = typeof window !== "undefined" &&
-    (themeTick >= 0) &&
-    document.documentElement.classList.contains("dark");
   const [paletteKey, setPaletteKey] = useState(0);
   const [activeSection, setActiveSection] = useState("leaders");
   const [showOnboarding, setShowOnboarding] = useState(false);
@@ -287,7 +287,7 @@ export default function Home() {
                 const dark = !el.classList.contains("dark");
                 el.classList.toggle("dark", dark);
                 try { localStorage.setItem("dime_theme", dark ? "dark" : "light"); } catch {}
-                setThemeTick((n) => n + 1);
+                setThemeDark(dark);
               }}
               className="pill-ghost interactive-tactile"
               style={{ fontSize: 11, padding: "3px 10px", lineHeight: 1.4 }}

@@ -7,9 +7,11 @@ interface ModelPickerProps {
   models: ModelOption[];
   value: string | null;
   onChange: (id: string | null) => void;
+  status?: "loading" | "ready" | "error";
+  onRetry?: () => void;
 }
 
-export default function ModelPicker({ models, value, onChange }: ModelPickerProps) {
+export default function ModelPicker({ models, value, onChange, status = "ready", onRetry }: ModelPickerProps) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -26,7 +28,7 @@ export default function ModelPicker({ models, value, onChange }: ModelPickerProp
   }, []);
 
   const formatName = (id?: string) => {
-    if (!id) return "Offline";
+    if (!id) return status === "loading" ? "Loading models..." : "Models unavailable";
     if (id.includes("mercury")) return "Mercury 2.5";
     if (id.includes("ministral")) return "Ministral 8B";
     if (id.includes("gpt-oss")) return "GPT-OSS 20B";
@@ -59,7 +61,7 @@ export default function ModelPicker({ models, value, onChange }: ModelPickerProp
           left: 0,
         }}
       >
-        {!models.length && <option value="">Offline</option>}
+        {!models.length && <option value="">{status === "loading" ? "Loading models..." : "Models unavailable"}</option>}
         {models.map((m) => (
           <option key={m.id} value={m.id}>
             {m.id}
@@ -70,7 +72,10 @@ export default function ModelPicker({ models, value, onChange }: ModelPickerProp
       {/* Custom Bespoke Trigger Button */}
       <button
         type="button"
-        onClick={() => setOpen(!open)}
+        onClick={() => {
+          if (status === "error" && !models.length) onRetry?.();
+          else setOpen(!open);
+        }}
         className="interactive-tactile"
         style={{
           display: "inline-flex",
@@ -85,7 +90,7 @@ export default function ModelPicker({ models, value, onChange }: ModelPickerProp
           color: "var(--color-ink-black)",
           cursor: "pointer",
         }}
-        title="Switch AI reasoning model"
+        title={status === "error" && !models.length ? "Retry loading models" : "Switch AI reasoning model"}
       >
         <span>{formatName(selectedModel?.id)}</span>
         <svg
@@ -137,6 +142,15 @@ export default function ModelPicker({ models, value, onChange }: ModelPickerProp
             Available Reasoning Models
           </div>
 
+          {status === "error" && (
+            <button
+              type="button"
+              onClick={() => { onRetry?.(); setOpen(false); }}
+              style={{ border: "none", background: "transparent", color: "var(--color-cyan-edge)", cursor: "pointer", padding: "8px 10px", textAlign: "left" }}
+            >
+              Retry loading models
+            </button>
+          )}
           {models.map((m) => {
             const isSelected = (value || models[0]?.id) === m.id;
             return (

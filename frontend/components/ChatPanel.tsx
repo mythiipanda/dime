@@ -278,6 +278,8 @@ function LinkButton({ index }: { index: number }) {
 export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, activeArtifactId }: Props) {
   const [models, setModels] = useState<ModelOption[]>([]);
   const [model, setModel] = useState<string | null>(null);
+  const [modelStatus, setModelStatus] = useState<"loading" | "ready" | "error">("loading");
+  const modelRequest = useRef(0);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [debateOpen, setDebateOpen] = useState(false);
   const [debateTopic, setDebateTopic] = useState<string | undefined>(undefined);
@@ -306,14 +308,40 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
     timer.current = null;
   };
 
+  const loadModels = async (automatic = false) => {
+    const request = ++modelRequest.current;
+    setModelStatus("loading");
+    const delays = automatic ? [0, 500, 1500] : [0];
+    let lastError: unknown;
+    for (const delay of delays) {
+      if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+      if (request !== modelRequest.current) return;
+      try {
+        const response = await getModels();
+        if (!Array.isArray(response.models) || response.models.length === 0) {
+          throw new Error("models response did not contain a nonempty array");
+        }
+        if (request !== modelRequest.current) return;
+        setModels(response.models);
+        const def = response.models.find((x) => x.default) || response.models[0];
+        setModel((current) => response.models.some((x) => x.id === current) ? current : def.id);
+        setModelStatus("ready");
+        return;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    if (request !== modelRequest.current) return;
+    // Keep a previous successful list usable if a refresh fails.
+    setModelStatus("error");
+    if (process.env.NODE_ENV !== "production") {
+      console.error("Failed to load model list", lastError);
+    }
+  };
+
   useEffect(() => {
-    getModels()
-      .then((m) => {
-        setModels(m.models);
-        const def = m.models.find((x) => x.default) || m.models[0];
-        setModel(def ? def.id : null);
-      })
-      .catch(() => setModels([]));
+    void loadModels(true);
+    return () => { modelRequest.current += 1; };
   }, []);
 
   useEffect(() => {
@@ -528,7 +556,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
             />
 
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 4 }}>
-              <ModelPicker models={models} value={model} onChange={setModel} />
+              <ModelPicker models={models} value={model} onChange={setModel} status={modelStatus} onRetry={() => void loadModels(false)} />
 
               {busy ? (
                 <button
@@ -835,7 +863,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                   boxShadow: "var(--shadow-card)",
                 }}
               >
-                <ModelPicker models={models} value={model} onChange={setModel} />
+                <ModelPicker models={models} value={model} onChange={setModel} status={modelStatus} onRetry={() => void loadModels(false)} />
 
                 <textarea
                   ref={inputRef}
