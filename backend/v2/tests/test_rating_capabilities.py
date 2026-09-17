@@ -76,3 +76,13 @@ def test_team_ratings_exposes_rankable_ts_and_turnover_metrics():
     assert spec.units["TM_TOV_PCT"] == "percent_0_100"
     description = CAPABILITY_DESCRIPTIONS["team_ratings"]
     assert "lower is better for DEF_RATING and TM_TOV_PCT" in description
+
+def test_team_ratings_rows_preserve_ts_and_turnover_values():
+    from unittest.mock import patch
+    from app.tools.league import get_ratings
+    rows = [{"TEAM_ID": 1, "TEAM_NAME": "A", "TS_PCT": .612,
+             "TM_TOV_PCT": 11.4, "TS_PCT_RANK": 1, "TM_TOV_PCT_RANK": 2}]
+    with patch("app.tools.league._warehouse_or_live", return_value=(rows, {"source":"fixture"})):
+        out = get_ratings.invoke({"season":"2025-26"})
+    assert out["rows"][0]["TS_PCT"] == .612
+    assert out["rows"][0]["TM_TOV_PCT"] == 11.4

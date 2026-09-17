@@ -361,7 +361,9 @@ def get_ratings(season: str = SEASON, team: str = "") -> dict[str, Any]:
     )
     keep = ["TEAM_NAME", "GP", "W", "L",
             "OFF_RATING", "DEF_RATING", "NET_RATING", "PACE",
-            "OFF_RATING_RANK", "DEF_RATING_RANK", "NET_RATING_RANK"]
+            "TS_PCT", "TM_TOV_PCT",
+            "OFF_RATING_RANK", "DEF_RATING_RANK", "NET_RATING_RANK",
+            "TS_PCT_RANK", "TM_TOV_PCT_RANK"]
     slim = []
     for r in rows:
         d = {k: r.get(k) for k in keep if k in r}
