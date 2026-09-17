@@ -608,9 +608,21 @@ def _validate_draft(
         declared = {item.requirement_id for item in draft.calculations
                     if item.requirement_id is not None}
         blocked = set(draft.blocked_calculation_requirement_ids)
-        unknown_ids = (declared | blocked) - required
-        if unknown_ids:
-            raise ValueError(f"draft references unknown calculation requirements: {sorted(unknown_ids)}")
+        # blocked_calculation_requirement_ids is a model-authored convenience
+        # field, not authority to reclassify ordinary evidence requirements as
+        # calculations. Ignore non-calculation IDs here; ordinary requirement
+        # coverage is owned by the typed plan/execution boundary. A declared
+        # calculation linked to an unknown ID remains malformed and fails.
+        unknown_declared = declared - required
+        if unknown_declared:
+            raise ValueError(
+                "draft calculations reference unknown calculation requirements: "
+                f"{sorted(unknown_declared)}")
+        blocked &= required
+        if blocked != set(draft.blocked_calculation_requirement_ids):
+            draft = draft.model_copy(update={
+                "blocked_calculation_requirement_ids": sorted(blocked),
+            })
         missing = required - declared - blocked
         if missing:
             raise ValueError(f"draft omits required calculations without a blocking gap: {sorted(missing)}")

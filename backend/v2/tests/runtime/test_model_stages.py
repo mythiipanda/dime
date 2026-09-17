@@ -1390,3 +1390,51 @@ async def test_planner_prunes_capability_subsumed_same_subject_call():
     ).plan(task)
     assert [node.id for node in plan.nodes] == ["report"]
     assert plan.nodes[0].covers_requirement_ids == ["efficiency"]
+
+@pytest.mark.anyio
+async def test_synthesizer_cannot_reclassify_evidence_requirement_as_calculation_block():
+    task = TaskSpec(
+        goal="qualified three point leaders", mode="quick",
+        deliverable="leaderboard",
+        requirements=[{
+            "id": "three_point_pct_leaders",
+            "description": "qualified three point percentage leaders",
+            "capability_options": ["qualified_leaders"],
+        }],
+    )
+    stub = StubModel([{
+        "sections": ["Leaders"], "claims": [],
+        "blocked_calculation_requirement_ids": ["three_point_pct_leaders"],
+        "gaps": [],
+    }])
+    draft = await ModelSynthesizer(
+        stub, provider="stub", model_name="stub",
+    ).synthesize(task, [])
+    assert draft.blocked_calculation_requirement_ids == []
+
+
+@pytest.mark.anyio
+async def test_synthesizer_rejects_declared_calculation_for_evidence_requirement():
+    task = TaskSpec(
+        goal="qualified three point leaders", mode="quick",
+        deliverable="leaderboard",
+        requirements=[{
+            "id": "three_point_pct_leaders",
+            "description": "qualified three point percentage leaders",
+            "capability_options": ["qualified_leaders"],
+        }],
+    )
+    stub = StubModel([{
+        "sections": ["Leaders"], "claims": [],
+        "calculations": [{
+            "calculation_id": "wrong_class",
+            "requirement_id": "three_point_pct_leaders",
+            "operation": "mean", "inputs": [{
+                "evidence_id": "leaders", "path": "rows.value",
+            }], "result": 0,
+        }],
+    }])
+    with pytest.raises(ValueError, match="unknown calculation requirements"):
+        await ModelSynthesizer(
+            stub, provider="stub", model_name="stub",
+        ).synthesize(task, [])
