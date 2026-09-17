@@ -976,3 +976,46 @@ async def test_runtime_does_not_flag_corrected_rejected_claim_as_stripped_suppor
     instance._synthesizer = OriginalDraft()
     result = await instance.run("best record")
     assert result.structural_flags == []
+@pytest.mark.anyio
+async def test_uncovered_requirement_preserves_supported_partial_branch():
+    class PartialIntake:
+        async def understand(self, request):
+            return TaskSpec(
+                goal=request, mode="deep_dive", deliverable="answer",
+                requirements=[
+                    {"id": "record", "description": "identify best record",
+                     "capability_options": ["fake"]},
+                    {"id": "unknown_player", "description":
+                     "evaluate the contributor whose identity is not grounded",
+                     "capability_options": ["player_report"]},
+                ],
+            )
+
+    class PartialPlanner:
+        async def plan(self, task):
+            return Plan(nodes=[PlanNode(
+                id="record", description="record", capability_hints=["fake"],
+                covers_requirement_ids=["record"],
+            )])
+
+    class PartialSynthesizer:
+        async def synthesize(self, task, evidence):
+            return DraftReport(sections=["Answer"], claims=[Claim(
+                text="42", kind=ClaimKind.OBSERVED,
+                evidence_ids=[evidence[0].evidence_id],
+            )])
+
+    result = await Runtime(
+        intake=PartialIntake(), planner=PartialPlanner(),
+        executor=PlanExecutor({"fake": FakeCapability("fake", {"value": 42})}),
+        synthesizer=PartialSynthesizer(),
+        mechanical_verifier=SequenceVerifier(VerificationStatus.PASS),
+        semantic_verifier=SequenceVerifier(VerificationStatus.PASS),
+    ).run("Who led, and evaluate the unknown contributor")
+
+    assert len(result.verified_claims) == 1
+    assert result.verification.status == VerificationStatus.PARTIAL
+    assert [(gap.message, gap.blocks) for gap in result.gaps] == [
+        ("Uncovered requirement: evaluate the contributor whose identity is not grounded",
+         ["requirement:unknown_player"]),
+    ]

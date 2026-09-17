@@ -198,6 +198,7 @@ class Runtime:
             })
 
         empty_evidence_gaps = _empty_evidence_gaps(execution.evidence)
+        uncovered_requirement_gaps = _uncovered_requirement_gaps(task, execution)
         failed_nodes = {
             node.id for node in execution.plan.nodes
             if node.status.value == "failed"
@@ -213,13 +214,13 @@ class Runtime:
         ]
         empty_draft_gaps = ([] if (
             draft.claims or draft.gaps or empty_evidence_gaps
-            or unresolved_errors or skipped_nodes
+            or uncovered_requirement_gaps or unresolved_errors or skipped_nodes
         ) else [Gap(
             kind=GapKind.MISSING_EVIDENCE,
             message="synthesis produced no publishable claims",
         )])
-        if ((draft.gaps or empty_evidence_gaps or empty_draft_gaps
-                or unresolved_errors or skipped_nodes)
+        if ((draft.gaps or empty_evidence_gaps or uncovered_requirement_gaps
+                or empty_draft_gaps or unresolved_errors or skipped_nodes)
                 and verification.status == VerificationStatus.PASS):
             verification = verification.model_copy(
                 update={"status": VerificationStatus.PARTIAL}
@@ -229,6 +230,7 @@ class Runtime:
             *_verification_gaps(
                 draft, verification, unresolved_errors, evidence_ids=set(evidence)),
             *empty_evidence_gaps,
+            *uncovered_requirement_gaps,
             *empty_draft_gaps,
             *[
                 Gap(kind=GapKind.EXECUTION_FAILURE,
@@ -476,6 +478,32 @@ def _redundant_failed_nodes(task: TaskSpec, execution: ExecutionResult) -> set[s
                 redundant.add(failed.id)
                 break
     return redundant
+
+
+def _uncovered_requirement_gaps(
+    task: TaskSpec, execution: ExecutionResult,
+) -> list[Gap]:
+    """Name clauses no executable plan node could honestly cover.
+
+    The planner gets one bounded replacement attempt before execution. A model
+    can still leave a clause uncovered when its required subject or argument is
+    only discoverable at runtime. That is a supported partial, not a reason to
+    suppress independent executable branches.
+    """
+    covered = {
+        requirement_id
+        for node in execution.plan.nodes
+        for requirement_id in node.covers_requirement_ids
+    }
+    return [
+        Gap(
+            kind=GapKind.MISSING_EVIDENCE,
+            message=f"Uncovered requirement: {requirement.description}",
+            blocks=[f"requirement:{requirement.id}"],
+        )
+        for requirement in task.requirements
+        if requirement.id not in covered
+    ]
 
 
 def _empty_evidence_gaps(evidence) -> list[Gap]:

@@ -143,6 +143,11 @@ class RuntimeResult(BaseModel):
                         node.id for node in self.execution.plan.nodes
                     }:
                         raise ValueError(f"gap blocks unknown node: {block}")
+                elif block.startswith("requirement:"):
+                    if block.removeprefix("requirement:") not in {
+                        item.id for item in self.task.requirements
+                    }:
+                        raise ValueError(f"gap blocks unknown requirement: {block}")
         for item in self.verified_claims:
             if item.claim_index in seen:
                 raise ValueError("verified claim indices must be unique")

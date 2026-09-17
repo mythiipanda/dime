@@ -304,9 +304,12 @@ class PlanExecutor:
             raise ValueError(
                 f"plan covers unknown requirements: {sorted(unknown_requirement_ids)}"
             )
-        uncovered = sorted(known_requirements.keys() - covered.keys())
-        if uncovered:
-            raise ValueError(f"plan leaves requirements uncovered: {uncovered}")
+        # Typed requirements get one model repair in ModelPlanner. If the
+        # replacement still cannot ground an executable requirement, run the
+        # supported branches and publish that clause as a typed gap instead of
+        # failing before every tool call. Unknown IDs and false capability
+        # coverage above remain hard errors. The legacy required_evidence set
+        # stays a hard completeness contract.
         missing = sorted(set(task.required_evidence) - selected)
         if missing:
             raise ValueError(
