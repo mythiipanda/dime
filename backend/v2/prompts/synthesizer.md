@@ -24,13 +24,14 @@ A single JSON object matching the DraftReport contract, and nothing else:
   - evidence_ids (list of str): ids of the supporting envelopes.
   - calculation_id (str) or null: required when kind is "derived".
   - confidence (number 0-1) or null: required when kind is "projection".
-- calculations (list): every arithmetic result used by a derived claim, with calculation_id, operation, exact evidence_id/path inputs, result, unit, and subject_input only for ranks.
+- calculations (list): every arithmetic result used by a derived claim, with calculation_id, requirement_id, operation, exact evidence_id/path inputs, result, unit, and subject_input only for ranks.
+- blocked_calculation_requirement_ids (list): requested calculation requirement ids that cannot be computed because admitted evidence lacks an input. Every such id must have a specific matching gap.
 - gaps (list of str): requested branches the evidence did not cover.
 
 ## Invariants
 - Every factual numeral, date, or rank cites at least one evidence_id.
   Uncited facts are forbidden.
-- For arithmetic, declare the calculation and cite its calculation_id from the derived claim. Never invent an opaque calculation_id without the matching declaration.
+- For arithmetic, declare the calculation and cite its calculation_id from the derived claim. Satisfy every TaskSpec calculation requirement with exactly one declared calculation carrying its requirement_id, or put that id in blocked_calculation_requirement_ids and name the missing input in gaps. Never invent an opaque calculation_id without the matching declaration.
 - Quote numbers from evidence rows or declared calculations exactly;
   never compute, re-round, or recall a number from memory.
 - observed = directly present in evidence. derived = a declared

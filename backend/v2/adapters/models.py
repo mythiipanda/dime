@@ -258,6 +258,7 @@ class ModelIntake(ModelStage):
                 ])),
                 "required_evidence": task.required_evidence,
                 "requirements": review.requirements,
+                "calculation_requirements": review.calculation_requirements,
                 "skills": list(dict.fromkeys([
                     *task.skills, *review.missing_skills,
                 ])),
@@ -465,7 +466,8 @@ class ModelPlanner(ModelStage):
 
 
 def _validate_draft(
-    draft: DraftReport, evidence: Sequence[EvidenceEnvelope]
+    draft: DraftReport, evidence: Sequence[EvidenceEnvelope],
+    task: TaskSpec | None = None,
 ) -> DraftReport:
     known = {item.evidence_id for item in evidence}
     unknown = sorted({evidence_id for claim in draft.claims
@@ -473,6 +475,17 @@ def _validate_draft(
                       if evidence_id not in known})
     if unknown:
         raise ValueError(f"draft cites unknown evidence ids: {unknown}")
+    if task is not None:
+        required = {item.id for item in task.calculation_requirements}
+        declared = {item.requirement_id for item in draft.calculations
+                    if item.requirement_id is not None}
+        blocked = set(draft.blocked_calculation_requirement_ids)
+        unknown_ids = (declared | blocked) - required
+        if unknown_ids:
+            raise ValueError(f"draft references unknown calculation requirements: {sorted(unknown_ids)}")
+        missing = required - declared - blocked
+        if missing:
+            raise ValueError(f"draft omits required calculations without a blocking gap: {sorted(missing)}")
     return draft
 
 
@@ -491,7 +504,7 @@ class ModelSynthesizer(ModelStage):
                 "skills": self._skills.activate(task.skills),
             }
         )
-        return _validate_draft(draft, evidence)
+        return _validate_draft(draft, evidence, task)
 
 
 class ModelRepairer(ModelStage):
@@ -570,7 +583,8 @@ class ModelRepairer(ModelStage):
         # repair model's diagnosis forward can leave a stale limitation after
         # the rejected branch has been replaced and reverified.
         return DraftReport.model_validate(repaired.model_copy(
-            update={"claims": claims, "calculations": list(original.calculations), "gaps": list(original.gaps)}).model_dump())
+            update={"claims": claims, "calculations": list(original.calculations),
+                    "blocked_calculation_requirement_ids": list(original.blocked_calculation_requirement_ids), "gaps": list(original.gaps)}).model_dump())
 
     async def repair(
         self,

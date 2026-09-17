@@ -25,6 +25,7 @@ Fields:
 - subquestions (list of str): the distinct questions inside the goal.
 - required_evidence (list of str): capability names the answer needs.
 - requirements (list): leave empty; the independent requirement review builds the clause ledger after intake.
+- calculation_requirements (list): leave empty; independent requirement review identifies explicit arithmetic deliverables.
 - skills (list of str): applicable names from the supplied skill catalog; [] when none applies.
 - assumptions (list of str): interpretations you fixed without being told, including requested explanatory branches whose specific cause categories must be determined from evidence.
 - open_questions (list of str): only user-answerable ambiguities that prevent a safe evidence plan, such as which person, team, season, or comparison the user means.

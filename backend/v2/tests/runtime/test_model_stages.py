@@ -1130,3 +1130,73 @@ async def test_playoff_translation_skill_requires_independent_material_branches(
     assert task.required_evidence == [
         "team_ratings", "playoff_team_ratings", "clutch", "injuries", "roster",
     ]
+
+@pytest.mark.anyio
+async def test_synthesizer_requires_every_independent_calculation_or_named_block():
+    from datetime import UTC, datetime
+    from v2.contracts import EvidenceEnvelope, TaskSpec
+
+    task = TaskSpec(
+        goal="compare regular season and playoffs", mode="deep_dive",
+        deliverable="three rating changes",
+        calculation_requirements=[
+            {"id": "off_change", "description": "playoff minus regular offense"},
+            {"id": "def_change", "description": "playoff minus regular defense"},
+            {"id": "net_change", "description": "playoff minus regular net"},
+        ],
+    )
+    evidence = EvidenceEnvelope(
+        evidence_id="ratings", capability="team_ratings", source="fixture",
+        observed_at=datetime.now(UTC), rows={"off": 120.0, "playoff_off": 111.4},
+    )
+    stub = StubModel([{
+        "sections": ["Changes"], "claims": [],
+        "calculations": [{
+            "calculation_id": "off", "requirement_id": "off_change",
+            "operation": "subtract", "inputs": [
+                {"evidence_id": "ratings", "path": "rows.playoff_off"},
+                {"evidence_id": "ratings", "path": "rows.off"},
+            ], "result": -8.6,
+        }],
+        "blocked_calculation_requirement_ids": [], "gaps": [],
+    }])
+    with pytest.raises(ValueError, match="def_change.*net_change"):
+        await ModelSynthesizer(
+            stub, provider="stub", model_name="stub",
+        ).synthesize(task, [evidence])
+
+
+@pytest.mark.anyio
+async def test_synthesizer_accepts_declared_or_blocked_calculation_ledger():
+    from datetime import UTC, datetime
+    from v2.contracts import EvidenceEnvelope, TaskSpec
+
+    task = TaskSpec(
+        goal="compare regular season and playoffs", mode="deep_dive",
+        deliverable="three rating changes",
+        calculation_requirements=[
+            {"id": "off_change", "description": "offense change"},
+            {"id": "def_change", "description": "defense change"},
+            {"id": "net_change", "description": "net change"},
+        ],
+    )
+    evidence = EvidenceEnvelope(
+        evidence_id="ratings", capability="team_ratings", source="fixture",
+        observed_at=datetime.now(UTC), rows={"off": 120.0, "playoff_off": 111.4},
+    )
+    stub = StubModel([{
+        "sections": ["Changes"], "claims": [],
+        "calculations": [{
+            "calculation_id": "off", "requirement_id": "off_change",
+            "operation": "subtract", "inputs": [
+                {"evidence_id": "ratings", "path": "rows.playoff_off"},
+                {"evidence_id": "ratings", "path": "rows.off"},
+            ], "result": -8.6,
+        }],
+        "blocked_calculation_requirement_ids": ["def_change", "net_change"],
+        "gaps": ["defense and net inputs missing"],
+    }])
+    draft = await ModelSynthesizer(
+        stub, provider="stub", model_name="stub",
+    ).synthesize(task, [evidence])
+    assert draft.blocked_calculation_requirement_ids == ["def_change", "net_change"]

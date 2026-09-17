@@ -93,6 +93,13 @@ class ConversationTurn(BaseModel):
         return self
 
 
+class CalculationRequirement(BaseModel):
+    """One independently requested arithmetic deliverable."""
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9_]*$")
+    description: str = Field(min_length=1, max_length=1000)
+
+
 class EvidenceRequirement(BaseModel):
     """One independently reviewable clause of the user's evidence request."""
 
@@ -130,6 +137,8 @@ class TaskSpec(BaseModel):
     required_evidence: list[str] = Field(default_factory=list, max_length=32)
     requirements: list[EvidenceRequirement] = Field(
         default_factory=list, max_length=32)
+    calculation_requirements: list[CalculationRequirement] = Field(
+        default_factory=list, max_length=32)
     assumptions: list[str] = Field(default_factory=list, max_length=32)
     open_questions: list[str] = Field(default_factory=list, max_length=32)
     skills: list[str] = Field(default_factory=list, max_length=16)
@@ -148,6 +157,9 @@ class TaskSpec(BaseModel):
         requirement_ids = [item.id for item in self.requirements]
         if len(requirement_ids) != len(set(requirement_ids)):
             raise ValueError("requirements must not contain duplicate ids")
+        calculation_ids = [item.id for item in self.calculation_requirements]
+        if len(calculation_ids) != len(set(calculation_ids)):
+            raise ValueError("calculation requirements must not contain duplicate ids")
         entity_keys = [(item.type, item.id) for item in self.entities]
         if len(entity_keys) != len(set(entity_keys)):
             raise ValueError("entities must not contain duplicate identities")
@@ -161,6 +173,8 @@ class RequirementReview(BaseModel):
 
     requirements: list[EvidenceRequirement] = Field(
         default_factory=list, max_length=32)
+    calculation_requirements: list[CalculationRequirement] = Field(
+        default_factory=list, max_length=32)
     missing_subquestions: list[str] = Field(default_factory=list, max_length=32)
     missing_skills: list[str] = Field(default_factory=list, max_length=16)
 
@@ -169,6 +183,9 @@ class RequirementReview(BaseModel):
         requirement_ids = [item.id for item in self.requirements]
         if len(requirement_ids) != len(set(requirement_ids)):
             raise ValueError("requirements must not contain duplicate ids")
+        calculation_ids = [item.id for item in self.calculation_requirements]
+        if len(calculation_ids) != len(set(calculation_ids)):
+            raise ValueError("calculation requirements must not contain duplicate ids")
         for field_name in ("missing_subquestions", "missing_skills"):
             values = getattr(self, field_name)
             if any(not value.strip() for value in values):
@@ -384,6 +401,7 @@ class DeclaredCalculation(BaseModel):
     """Model-declared arithmetic, recomputed by deterministic verification."""
     model_config = ConfigDict(extra="forbid", frozen=True)
     calculation_id: str = Field(min_length=1, max_length=256)
+    requirement_id: str | None = Field(default=None, max_length=64)
     operation: Literal["add", "subtract", "multiply", "divide", "percent",
                        "mean", "rank_desc", "rank_asc"]
     inputs: list[DeclaredCalculationInput] = Field(min_length=1, max_length=256)
@@ -398,6 +416,7 @@ class DraftReport(BaseModel):
     sections: list[str] = Field(max_length=32)
     claims: list[Claim] = Field(max_length=128)
     calculations: list[DeclaredCalculation] = Field(default_factory=list, max_length=128)
+    blocked_calculation_requirement_ids: list[str] = Field(default_factory=list, max_length=32)
     gaps: list[str] = Field(default_factory=list, max_length=128)
 
     @model_validator(mode="after")
@@ -405,6 +424,13 @@ class DraftReport(BaseModel):
         calculation_ids = [item.calculation_id for item in self.calculations]
         if len(calculation_ids) != len(set(calculation_ids)):
             raise ValueError("draft calculation ids must be unique")
+        requirement_ids = [item.requirement_id for item in self.calculations
+                           if item.requirement_id is not None]
+        if len(requirement_ids) != len(set(requirement_ids)):
+            raise ValueError("draft calculations must not duplicate requirement ids")
+        if len(self.blocked_calculation_requirement_ids) != len(
+                set(self.blocked_calculation_requirement_ids)):
+            raise ValueError("blocked calculation requirement ids must be unique")
         for field_name in ("sections", "gaps"):
             values = getattr(self, field_name)
             if any(not value.strip() for value in values):

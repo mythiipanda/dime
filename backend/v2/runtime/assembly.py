@@ -29,7 +29,15 @@ from v2.skills import SkillLibrary
 
 class MechanicalVerifier:
     async def verify(self, task, draft, evidence) -> VerificationReport:
-        return verify_mechanical(task, draft, list(evidence.values()), draft.calculations)
+        from v2.domain.calculations import Calculation
+        calculations = [
+            Calculation.model_validate({
+                key: value for key, value in item.model_dump().items()
+                if key != "requirement_id"
+            })
+            for item in draft.calculations
+        ]
+        return verify_mechanical(task, draft, list(evidence.values()), calculations)
 
 
 class EvidenceBoundRepair:
