@@ -344,8 +344,42 @@ def coerce_player_id(value: object) -> int:
     except (TypeError, ValueError):
         pass
     key = raw.lower()
+    # Intake/entity stages may emit URL-style stable slugs rather than display
+    # names. Normalize those slugs before static matching. When both ends are
+    # name tokens ("curry-stephen"), try natural and reversed order; accept
+    # only an exact normalized full-name match. This does not weaken fuzzy
+    # ambiguity handling for ordinary user text.
+    if "-" in key or "_" in key:
+        slug_tokens = [token for token in key.replace("_", "-").split("-")
+                       if token]
+        candidates = [" ".join(slug_tokens)]
+        if len(slug_tokens) >= 2:
+            candidates.append(" ".join([*slug_tokens[1:], slug_tokens[0]]))
+        for candidate in candidates:
+            ranked = score_player_candidates(candidate)
+            if ranked and _norm_name(ranked[0][1].get("full_name", "")) == _norm_name(candidate):
+                return int(ranked[0][1]["id"])
     try:
-        return _coerce_player_id_cached(key)
+        resolved = _coerce_player_id_cached(key)
+        # Static NBA identity can disagree with the frozen warehouse identity
+        # for duplicate/suffix records. Prefer the exact warehouse season row
+        # when the static id has no current gamelogs and the exact display name
+        # maps to one warehouse id with rows.
+        try:
+            has_logs = store.connect(read_only=True).execute(
+                "SELECT count(*) n FROM silver_player_gamelogs WHERE Player_ID=? AND _season=?",
+                [resolved, SEASON]).fetchone()[0]
+            if not has_logs:
+                matches = store.connect(read_only=True).execute(
+                    "SELECT DISTINCT s.PLAYER_ID FROM silver_player_season s "
+                    "JOIN silver_player_gamelogs g ON g.Player_ID=s.PLAYER_ID AND g._season=s._season "
+                    "WHERE lower(s.PLAYER)=lower(?) AND s._season=?",
+                    [raw, SEASON]).fetchall()
+                if len(matches) == 1:
+                    return int(matches[0][0])
+        except Exception:
+            pass
+        return resolved
     except ValueError as exc:
         msg = str(exc)
         prefix = f"unknown player: {key}"
