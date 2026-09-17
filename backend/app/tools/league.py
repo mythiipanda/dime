@@ -1,5 +1,7 @@
 """League desk. Standings, leaders, hustle, ratings, history, draft."""
 
+import ast
+import json
 import re
 from typing import Any
 from langchain_core.tools import tool
@@ -23,6 +25,26 @@ def get_injuries(team: str = "", player: str = "",
         "silver_injuries", "_season = ?",
         [season], lambda: espn.injuries(season), season,
     )
+    # Warehouse adapters can persist provider-native nested injury arrays as
+    # JSON or Python-literal strings. Normalize them before filtering and
+    # evidence export so named-player lookup sees the actual athlete and the
+    # verifier can bind nested dates/statuses as typed values.
+    normalized_rows = []
+    for row in rows:
+        row = dict(row)
+        raw = row.get("injuries")
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                try:
+                    raw = ast.literal_eval(raw)
+                except (SyntaxError, ValueError):
+                    raw = []
+            row["injuries"] = raw if isinstance(raw, list) else []
+        normalized_rows.append(row)
+    rows = normalized_rows
+
     note = None
     if player:
         try:
@@ -35,9 +57,15 @@ def get_injuries(team: str = "", player: str = "",
         except Exception:
             note = None
         low = str(player).strip().lower()
-        rows = [r for r in rows
-                if low in str(r.get("player") or r.get("name")
-                                or "").lower()]
+        rows = [
+            r for r in rows
+            if low in str(r.get("player") or r.get("name") or "").lower()
+            or any(
+                low in str((item.get("athlete") or {}).get("displayName", "")).lower()
+                for item in (r.get("injuries") or [])
+                if isinstance(item, dict)
+            )
+        ]
     if team:
         from nba_api.stats.static import teams as _teams
 
