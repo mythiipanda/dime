@@ -119,6 +119,22 @@ _LIST = [
         coverage="Source-ranked qualified leaderboard; returned rows preserve population ranks.",
     ),
     Capability(
+        name="injuries", tool_name="get_injuries",
+        season_arg=None, task_season_scoped=False,
+        coverage="Current warehouse injury rows with source freshness metadata.",
+    ),
+    Capability(
+        name="team_shot_zones", tool_name="get_team_shot_zones",
+        units={"attempt_share": FRACTION, "efg": FRACTION},
+        qualification="Geometric shot zones with pooled league baselines.",
+        coverage="All teams represented in the selected historical shot table.",
+    ),
+    Capability(
+        name="player_shot_zones", tool_name="get_shot_zones",
+        units={"share": FRACTION, "FG_PCT": FRACTION},
+        qualification="One resolved player; source-specific zone granularity applies.",
+    ),
+    Capability(
         name="rest_splits", tool_name="get_rest",
         units={"wins": COUNT, "losses": COUNT, "games": COUNT,
                "win_pct": FRACTION},
@@ -240,6 +256,9 @@ CAPABILITY_DESCRIPTIONS: dict[str, str] = {
     "team_trajectory": "Bounded multi-season regular-season records for one team.",
     "team_totals": "Team leaderboard for a counting stat, with totals and per-game averages.",
     "qualified_leaders": "Qualified player leaderboard for one stat category.",
+    "injuries": "Current team or player injury rows with designation and source freshness.",
+    "team_shot_zones": "League or selected-team zone attempt share and efficiency with league baselines.",
+    "player_shot_zones": "One player's shot-zone makes, attempts, efficiency, and attempt share.",
     "rest_splits": "Team records by zero, one, and two-plus days of rest, with sample sizes.",
     "rookie_leaders": "First-year NBA player leaderboard using prior-season exclusion, never age as a proxy.",
     "team_ratings": "Team offensive, defensive, and net ratings plus pace and ranks.",
