@@ -155,18 +155,19 @@ def _entity_reasons(task: TaskSpec, claim: Claim,
 
 def _row_entity_value_reasons(claim: Claim,
                               envelopes: Sequence[EvidenceEnvelope]) -> list[str]:
-    """Bind a claim's numerals to the row for its named entity.
+    """Bind claim numerals to named-entity rows across cited evidence.
 
-    Envelope-wide numeric membership is insufficient for population tables:
-    an adjacent team's value can otherwise verify under the requested team's
-    prose. This generic check narrows structured list rows by identity fields
-    before testing the claim's non-date/season numerals.
+    A claim may legitimately cite several population envelopes for different
+    metrics on the same entity. Test against the union of matching entity rows,
+    never against an unrelated adjacent row and never require every envelope to
+    repeat every cited metric.
     """
     text = " ".join(claim.text.casefold().split())
     identity_keys = {
-        "team", "team_name", "team_abbreviation", "player", "player_name",
-        "full_name", "name",
+        "team", "team_name", "team_abbreviation", "abbrev",
+        "player", "player_name", "full_name", "name",
     }
+    matched_envelopes = []
     for envelope in envelopes:
         if not isinstance(envelope.rows, list) or len(envelope.rows) < 2:
             continue
@@ -180,21 +181,22 @@ def _row_entity_value_reasons(claim: Claim,
             ]
             if any(value and value in text for value in identities):
                 matched.append(row)
-        if not matched:
+        if matched:
+            matched_envelopes.append(envelope.model_copy(update={"rows": matched}))
+    if not matched_envelopes:
+        return []
+    row_numbers = _numeric_values(matched_envelopes)
+    unsupported = []
+    for raw in _number_tokens(claim.text):
+        if _DATE.fullmatch(raw) or _SEASON.fullmatch(raw) or raw == "100":
             continue
-        row_envelope = envelope.model_copy(update={"rows": matched})
-        row_numbers = _numeric_values([row_envelope])
-        unsupported = []
-        for raw in _number_tokens(claim.text):
-            if _DATE.fullmatch(raw) or _SEASON.fullmatch(raw) or raw == "100":
-                continue
-            if not (_canon_number(raw) & row_numbers):
-                unsupported.append(raw)
-        if unsupported:
-            return [
-                "claim numerals do not match the named entity row: "
-                + ", ".join(unsupported)
-            ]
+        if not (_canon_number(raw) & row_numbers):
+            unsupported.append(raw)
+    if unsupported:
+        return [
+            "claim numerals do not match the named entity rows: "
+            + ", ".join(unsupported)
+        ]
     return []
 
 

@@ -124,7 +124,9 @@ _LIST = [
     Capability(
         name="team_totals",
         tool_name="get_team_leaders",
-        units={"GP": COUNT},
+        units={"GP": COUNT, "TOTAL": COUNT, "PER_GAME": PER_GAME},
+        qualification="All teams represented in deduplicated regular-season player game logs.",
+        coverage="Source-ranked full team population for the selected counting stat.",
     ),
     Capability(
         name="qualified_leaders",

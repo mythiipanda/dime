@@ -475,3 +475,57 @@ def test_hyphenated_metric_labels_do_not_hide_real_measurements():
     )
     assert result.status == VerificationStatus.REPAIR
     assert any("61.00%" in reason for reason in result.claim_results[0].reasons)
+
+
+def test_named_entity_values_can_span_multiple_population_envelopes():
+    totals = evidence(
+        evidence_id="totals",
+        rows=[
+            {"TEAM": "Atlanta Hawks", "AST": 2462, "GP": 82, "PER_GAME": 30.0},
+            {"TEAM": "Boston Celtics", "AST": 2021, "GP": 82, "PER_GAME": 24.6},
+        ],
+    )
+    standings = evidence(
+        evidence_id="standings",
+        rows=[
+            {"team": "Atlanta Hawks", "WINS": 42, "LOSSES": 40},
+            {"team": "Boston Celtics", "WINS": 56, "LOSSES": 26},
+        ],
+    )
+    claim = Claim(
+        text="Atlanta Hawks led with 2462 assists in 82 games, or 30.0 per game.",
+        kind="observed", evidence_ids=["totals", "standings"],
+    )
+    result = verify_mechanical(
+        TaskSpec(goal="team assist leader", mode="quick", deliverable="answer"),
+        report(claim), [totals, standings],
+    )
+    assert not any("named entity row" in reason
+                   for reason in result.claim_results[0].reasons)
+
+
+def test_named_entity_values_still_reject_adjacent_rows_across_envelopes():
+    totals = evidence(
+        evidence_id="totals",
+        rows=[
+            {"TEAM": "Atlanta Hawks", "AST": 2462},
+            {"TEAM": "Boston Celtics", "AST": 2021},
+        ],
+    )
+    standings = evidence(
+        evidence_id="standings",
+        rows=[
+            {"team": "Atlanta Hawks", "WINS": 42},
+            {"team": "Boston Celtics", "WINS": 56},
+        ],
+    )
+    claim = Claim(
+        text="Atlanta Hawks had 2021 assists and 56 wins.",
+        kind="observed", evidence_ids=["totals", "standings"],
+    )
+    result = verify_mechanical(
+        TaskSpec(goal="Atlanta totals", mode="quick", deliverable="answer"),
+        report(claim), [totals, standings],
+    )
+    assert any("named entity rows" in reason
+               for reason in result.claim_results[0].reasons)
