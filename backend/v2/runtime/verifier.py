@@ -507,6 +507,24 @@ def verify_mechanical(
         if token not in claim_tokens
     ]
     report_repairs = []
+    # A record deliverable backed by standings is incomplete unless the final
+    # report prints wins and losses together. Checking across the report (not
+    # only inside a single superlative claim) catches the common split shape:
+    # "best record" followed by wins and win percentage but no losses.
+    record_task = bool(re.search(r"\brecord\b", " ".join(
+        (task.goal, task.deliverable, *task.subquestions)), re.IGNORECASE))
+    standings_rows = [
+        row for envelope in evidence if envelope.capability == "standings"
+        and isinstance(envelope.rows, list)
+        for row in envelope.rows if isinstance(row, Mapping)
+    ]
+    if record_task and standings_rows:
+        has_complete_record = any(re.search(
+            r"\b\d+\s*[-–]\s*\d+\b", claim.text)
+            for claim in draft.claims)
+        if not has_complete_record:
+            report_repairs.append(
+                "State the best team's complete wins-losses record in W-L form.")
     if unclaimed_tokens:
         report_repairs.append(
             "Move factual section values into claims with evidence: "

@@ -611,3 +611,24 @@ def test_player_evidence_does_not_conflict_with_team_only_task_entity():
                   kind="observed", evidence_ids=["player"])
     result = verify_mechanical(task, DraftReport(sections=["Answer"], claims=[claim]), [ev])
     assert result.status == "pass"
+
+def test_record_deliverable_requires_explicit_wins_losses_rendering():
+    from datetime import UTC, datetime
+    from v2.contracts import EvidenceEnvelope
+    ev = EvidenceEnvelope(
+        evidence_id="standings", capability="standings", source="fixture",
+        observed_at=datetime.now(UTC), qualification="All NBA teams",
+        coverage="Full standings", rows=[{
+            "team":"Oklahoma City Thunder", "WINS":64, "LOSSES":18,
+            "WinPCT":.78, "LeagueRank":1}])
+    task = TaskSpec(goal="best record", mode="quick", deliverable="team and record")
+    incomplete = DraftReport(sections=["Record"], claims=[Claim(
+        text="Oklahoma City led with 64 wins and a .780 win percentage.",
+        kind="observed", evidence_ids=["standings"])])
+    result = verify_mechanical(task, incomplete, [ev])
+    assert result.status == "repair"
+    assert "wins-losses record in W-L form" in result.repair_instructions[-1]
+    complete = incomplete.model_copy(update={"claims":[Claim(
+        text="Oklahoma City had the best record at 64-18.", kind="observed",
+        evidence_ids=["standings"])]})
+    assert verify_mechanical(task, complete, [ev]).status == "pass"

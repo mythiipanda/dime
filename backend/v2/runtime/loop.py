@@ -371,6 +371,43 @@ class Runtime:
         semantic = VerificationReport.model_validate(
             (await self._semantic_verifier.verify(task, draft, evidence)).model_dump()
         )
+        # Deterministic calculation verification owns whether a requested
+        # arithmetic branch exists. A semantic verifier may overlook a derived
+        # claim already tied to a recomputed calculation (for example a margin)
+        # and ask for it again. Remove only missing-branch/instruction text that
+        # names a satisfied calculation requirement; claim adjudication remains
+        # untouched.
+        satisfied_calculation_ids = {
+            calculation.requirement_id
+            for calculation in draft.calculations
+            if calculation.requirement_id is not None
+            and any(claim.calculation_id == calculation.calculation_id
+                    for claim in draft.claims)
+        }
+        satisfied_calculations = [
+            requirement for requirement in task.calculation_requirements
+            if requirement.id in satisfied_calculation_ids
+        ]
+        def repeats_satisfied_calculation(message: str) -> bool:
+            folded = " ".join(message.casefold().replace("_", " ").split())
+            return any(
+                requirement.id.replace("_", " ").casefold() in folded
+                or requirement.description.casefold() in folded
+                for requirement in satisfied_calculations
+            )
+        if satisfied_calculations:
+            semantic = semantic.model_copy(update={
+                "missing_branches": [item for item in semantic.missing_branches
+                                     if not repeats_satisfied_calculation(item)],
+                "repair_instructions": [item for item in semantic.repair_instructions
+                                        if not repeats_satisfied_calculation(item)],
+            })
+            if (semantic.status == VerificationStatus.REPAIR
+                    and not semantic.missing_branches
+                    and not semantic.contradictions
+                    and not semantic.repair_instructions
+                    and all(item.supported for item in semantic.claim_results)):
+                semantic = semantic.model_copy(update={"status": VerificationStatus.PASS})
         observed = [result.claim_index for result in semantic.claim_results]
         if (len(observed) != len(set(observed))
                 or any(index not in expected for index in observed)):

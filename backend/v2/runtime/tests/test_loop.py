@@ -1019,3 +1019,43 @@ async def test_uncovered_requirement_preserves_supported_partial_branch():
         ("Uncovered requirement: evaluate the contributor whose identity is not grounded",
          ["requirement:unknown_player"]),
     ]
+
+@pytest.mark.anyio
+async def test_semantic_missing_branch_cannot_erase_recomputed_calculation():
+    from v2.contracts import CalculationRequirement, EvidenceEnvelope
+    from v2.domain.calculations import Calculation
+    from datetime import UTC, datetime
+
+    class MarginIntake:
+        async def understand(self, request):
+            return TaskSpec(goal=request, mode="quick", deliverable="score and margin",
+                            calculation_requirements=[CalculationRequirement(
+                                id="margin", description="projected margin")])
+    class MarginSynth:
+        async def synthesize(self, task, evidence):
+            return DraftReport(
+                sections=["Projection"],
+                claims=[Claim(text="Boston's projected margin is 2 points.",
+                              kind="derived", evidence_ids=[evidence[0].evidence_id],
+                              calculation_id="margin_calc")],
+                calculations=[{"calculation_id":"margin_calc", "requirement_id":"margin",
+                               "operation":"subtract", "inputs":[
+                                   {"evidence_id":evidence[0].evidence_id,"path":"home"},
+                                   {"evidence_id":evidence[0].evidence_id,"path":"away"}],
+                               "result":"2", "unit":"points"}])
+    class SemanticMiss:
+        async def verify(self, task, draft, evidence):
+            return VerificationReport(
+                status="repair", claim_results=[{"claim_index":0,"supported":True}],
+                missing_branches=["margin"],
+                repair_instructions=["Add the projected margin of 2 points."])
+    instance = Runtime(
+        intake=MarginIntake(), planner=Planner(),
+        executor=PlanExecutor({"fake": FakeCapability("fake", {"home":113.6,"away":111.6})}),
+        synthesizer=MarginSynth(),
+        mechanical_verifier=SequenceVerifier(VerificationStatus.PASS),
+        semantic_verifier=SemanticMiss())
+    result = await instance.run("project score and margin")
+    assert result.verification.status == VerificationStatus.PASS
+    assert result.verified_claims[0].claim.text.endswith("2 points.")
+    assert result.gaps == []

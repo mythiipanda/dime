@@ -462,3 +462,8 @@ def test_compare_metrics_stale_raptor_is_context_not_four_votes(monkeypatch):
     assert out["rows"]["verdict"].startswith(
         "Every verdict-eligible metric favors Nikola Jokic")
     assert "2021-22 vintage" in out["rows"]["verdict"]
+
+def test_clamp_stat_normalizes_three_point_percentage_aliases():
+    from app.tools import clamp_stat
+    for value in ("3P", "3P%", "3PT", "3PT%", "three-point-percentage"):
+        assert clamp_stat(value) == "FG3_PCT"
