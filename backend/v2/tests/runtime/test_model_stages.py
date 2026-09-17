@@ -1734,3 +1734,20 @@ async def test_single_team_rating_rank_does_not_force_player_or_playoff_boards()
         stub, provider="stub", model_name="stub", capability_catalog=catalog,
     ).understand("Which team has the lowest defensive rating this season?")
     assert task.required_evidence == ["team_ratings"]
+
+@pytest.mark.anyio
+async def test_pair_comparison_normalizes_entity_query_list_before_execution():
+    from v2.contracts import TaskSpec
+    planner = ModelPlanner(
+        StubModel([]), provider="stub", model_name="stub",
+        capability_catalog={"entity_resolution": {}, "player_comparison": {}},
+    )
+    task = TaskSpec(goal="compare", mode="quick", deliverable="text")
+    plan = __import__('v2.contracts', fromlist=['Plan']).Plan.model_validate({"nodes": [
+        {"id":"resolve", "description":"pair", "capability_hints":["entity_resolution"],
+         "arguments":{"query":["Myles Turner","Luka Doncic"]}},
+        {"id":"compare", "description":"stats", "capability_hints":["player_comparison"],
+         "arguments":{"a":"Myles Turner","b":"Luka Doncic"}},
+    ]})
+    normalized = planner._normalize_plan(task, plan)
+    assert normalized.nodes[0].arguments["query"] == "Myles Turner, Luka Doncic"

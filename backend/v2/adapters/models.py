@@ -538,6 +538,19 @@ class ModelPlanner(ModelStage):
         )
 
         requirements = {item.id: item for item in task.requirements}
+        # Entity resolution accepts one query string. Requirement review can
+        # preserve a pair as a list; normalize that shape before execution so
+        # an auxiliary resolver cannot crash a valid direct comparison plan.
+        plan = plan.model_copy(update={"nodes": [
+            node.model_copy(update={
+                "arguments": {**node.arguments, "query": ", ".join(
+                    str(value) for value in node.arguments["query"])}
+            })
+            if ("entity_resolution" in node.capability_hints
+                and isinstance(node.arguments.get("query"), list))
+            else node
+            for node in plan.nodes
+        ]})
         # A non-playoff player-stat clause can be answered more directly by the
         # season aggregate report than by scanning game logs. When requirement
         # review admits that alternative, normalize only the typed regular-
