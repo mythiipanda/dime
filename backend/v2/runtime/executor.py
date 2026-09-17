@@ -312,8 +312,11 @@ class PlanExecutor:
         # stays a hard completeness contract.
         missing = sorted(set(task.required_evidence) - selected)
         if missing:
+            uncovered = sorted(known_requirements.keys() - covered.keys())
+            detail = (f"; uncovered requirement ids: {uncovered}"
+                      if uncovered else "")
             raise ValueError(
-                f"plan does not cover required evidence: {missing}")
+                f"plan does not cover required evidence: {missing}{detail}")
 
     def _selected_name(self, plan: Plan, node_id: str) -> str | None:
         parent = next(item for item in plan.nodes if item.id == node_id)

@@ -584,7 +584,8 @@ def test_count_metrics_use_natural_metric_nouns() -> None:
         evidence_id="standings", capability="standings", source="fixture",
         observed_at=datetime.now(UTC), units={"WINS": "count", "LOSSES": "count"},
         qualification="All NBA teams", coverage="Full standings table",
-        rows=[{"team": "Oklahoma City Thunder", "WINS": 64, "LOSSES": 18}],
+        rows=[{"team": "Oklahoma City Thunder", "WINS": 64, "LOSSES": 18,
+               "LeagueRank": 1}],
     )
     draft = DraftReport(sections=["Record"], claims=[Claim(
         text="Oklahoma City Thunder had the best record at 64-18.",
