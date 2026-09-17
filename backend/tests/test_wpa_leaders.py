@@ -185,3 +185,22 @@ def test_tool_registered():
     from app import tools
 
     assert "get_wpa_leaders" in tools.TOOL_NAMES
+
+
+def test_display_name_builds_static_index_once(monkeypatch):
+    import app.tools.wpa as wpa
+    calls = 0
+
+    def players():
+        nonlocal calls
+        calls += 1
+        return [{"id": 1, "full_name": "One Player"},
+                {"id": 2, "full_name": "Two Player"}]
+
+    from nba_api.stats.static import players as static_players
+    monkeypatch.setattr(static_players, "get_players", players)
+    monkeypatch.setattr(wpa, "_PLAYER_NAMES", None)
+    assert wpa._display_name(1, "One") == "One Player"
+    assert wpa._display_name(2, "Two") == "Two Player"
+    assert wpa._display_name(3, "Three") == "Three"
+    assert calls == 1

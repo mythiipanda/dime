@@ -10,6 +10,7 @@ from .wpamodel import TIPOFF_SEC, seconds_remaining, win_probability
 
 MIN_YEAR, MAX_YEAR = 2021, 2025
 MIN_EVENTS_DEFAULT = 100
+_PLAYER_NAMES: dict[int, str] | None = None
 
 
 def season_label(end_year: int) -> str:
@@ -55,21 +56,22 @@ def _parse_score(raw: object) -> int | None:
 
 
 def _display_name(person_id: object, fallback: str) -> str:
-    try:
-        from nba_api.stats.static import players as _players
-    except Exception:
-        return fallback
+    global _PLAYER_NAMES
     try:
         pid = int(str(person_id))
     except (TypeError, ValueError):
         return fallback
-    try:
-        for row in _players.get_players():
-            if int(row.get("id")) == pid:
-                return str(row.get("full_name") or fallback)
-    except (TypeError, ValueError):
-        pass
-    return fallback
+    if _PLAYER_NAMES is None:
+        try:
+            from nba_api.stats.static import players as _players
+            _PLAYER_NAMES = {
+                int(row["id"]): str(row.get("full_name") or "")
+                for row in _players.get_players()
+                if row.get("id") is not None
+            }
+        except (ImportError, KeyError, TypeError, ValueError):
+            _PLAYER_NAMES = {}
+    return _PLAYER_NAMES.get(pid) or fallback
 
 
 def _credit(players: dict[str, dict[str, Any]], gid: str,
@@ -88,11 +90,14 @@ def _credit(players: dict[str, dict[str, Any]], gid: str,
         return
     signed = delta if is_home else -delta
     key = str(pid)
-    entry = players.setdefault(key, {
-        "player_id": pid, "player": name, "wpa": 0.0,
-        "events": 0, "plus_events": 0, "minus_events": 0,
-        "games": set(), "teams": Counter(),
-    })
+    entry = players.get(key)
+    if entry is None:
+        entry = {
+            "player_id": pid, "player": name, "wpa": 0.0,
+            "events": 0, "plus_events": 0, "minus_events": 0,
+            "games": set(), "teams": Counter(),
+        }
+        players[key] = entry
     entry["wpa"] += signed
     entry["events"] += 1
     if signed > 0:
