@@ -1435,10 +1435,11 @@ async def test_synthesizer_rejects_declared_calculation_for_evidence_requirement
             }], "result": 0,
         }],
     }])
-    with pytest.raises(ValueError, match="unknown calculation requirements"):
-        await ModelSynthesizer(
-            stub, provider="stub", model_name="stub",
-        ).synthesize(task, [])
+    draft = await ModelSynthesizer(
+        stub, provider="stub", model_name="stub",
+    ).synthesize(task, [])
+    assert draft.calculations[0].requirement_id is None
+    assert draft.calculations[0].calculation_id == "wrong_class"
 @pytest.mark.anyio
 async def test_provider_structured_failure_preserves_sanitized_diagnostics(monkeypatch):
     from v2.adapters.models import ProviderStructuredModel

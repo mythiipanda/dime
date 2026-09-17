@@ -764,9 +764,20 @@ def _validate_draft(
         # calculation linked to an unknown ID remains malformed and fails.
         unknown_declared = declared - required
         if unknown_declared:
-            raise ValueError(
-                "draft calculations reference unknown calculation requirements: "
-                f"{sorted(unknown_declared)}")
+            # A model may attach an arithmetic result to the evidence
+            # requirement whose rows supplied its inputs. Preserve the
+            # calculation and lineage, but do not let that class mismatch
+            # terminate an otherwise publishable supported-partial run.
+            # Only calculation requirements own requirement_id.
+            draft = draft.model_copy(update={
+                "calculations": [
+                    calculation.model_copy(update={"requirement_id": None})
+                    if calculation.requirement_id in unknown_declared
+                    else calculation
+                    for calculation in draft.calculations
+                ],
+            })
+            declared -= unknown_declared
         blocked &= required
         if blocked != set(draft.blocked_calculation_requirement_ids):
             draft = draft.model_copy(update={
