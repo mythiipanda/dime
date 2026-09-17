@@ -840,3 +840,28 @@ async def test_pre_tool_timeout_closes_stage_and_turn_without_execution() -> Non
     assert [entry.data["reason"] for entry in terminal] == ["timeout", "timeout"]
     assert all(entry.data["duration_ms"] >= 0 for entry in terminal)
     assert not any(entry.kind == LedgerKind.TOOL_CALL for entry in ledger.entries)
+
+
+@pytest.mark.anyio
+async def test_verified_claim_sources_preserve_per_fact_vintage() -> None:
+    from datetime import UTC, date, datetime
+    from v2.contracts import EvidenceEnvelope
+    from v2.runtime.loop import _verified_claims
+
+    claim = Claim(text="The salary is $57.1M.", kind="observed",
+                  evidence_ids=["salary"] )
+    draft = DraftReport(sections=["Answer"], claims=[claim])
+    verification = VerificationReport(
+        status="pass", claim_results=[{
+            "claim_index": 0, "supported": True, "reasons": []}])
+    envelope = EvidenceEnvelope(
+        evidence_id="salary", capability="trade_value", source="fixture",
+        observed_at=datetime(2026, 9, 17, tzinfo=UTC),
+        as_of=date(2026, 7, 1), vintages={"salary_season": "2026-27"},
+        task_season_scoped=False, rows={"salary": 57_100_000})
+
+    source = _verified_claims(
+        draft, verification, {"salary": envelope})[0].sources[0]
+    assert source.vintages == {"salary_season": "2026-27"}
+    assert source.as_of == date(2026, 7, 1)
+    assert source.observed_at == datetime(2026, 9, 17, tzinfo=UTC)

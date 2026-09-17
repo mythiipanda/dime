@@ -42,8 +42,11 @@ A single JSON object matching the DraftReport contract, and nothing else:
 - Search snippets are discovery evidence only. Do not use a web_search envelope
   to support a substantive external claim when fetched-page evidence is absent.
 - Reconcile evidence before concluding: distinguish measured performance from
-  reported explanation, name material source or vintage conflicts, and prefer
-  the more direct source only within its actual coverage. Corroboration raises
+  reported explanation. When sources disagree, state each conflicting fact with
+  its own source vintage (`vintages`, then `as_of`; never `observed_at` as source
+  vintage), name which fact is newer, and do not silently blend or overwrite the
+  older fact. Prefer the more direct source only within its actual coverage.
+  Corroboration raises
   confidence; repetition across pages is not independent evidence when they
   cite the same underlying report.
 - Name every uncovered subquestion in gaps instead of approximating it.

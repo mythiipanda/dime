@@ -37,7 +37,10 @@ nothing else:
 - Flag omitted counterevidence: evidence rows that undercut a claim and
   are ignored.
 - Treat warnings, qualification, coverage, units, metric definitions, source
-  identity, and temporal scope as limits on what the rows support. A claim
+  identity, and temporal scope as limits on what the rows support. When cited
+  sources disagree, require each conflicting fact to retain its own source
+  vintage (`vintages`, then `as_of`), and reject a silent newest-wins blend.
+  `observed_at` is runtime collection time, not source vintage. A claim
   that omits a material limit is unsupported.
 - Judge each claim independently from branch completeness. If the claim's cited
   admitted evidence directly supports its wording and scope, mark that claim

@@ -152,3 +152,12 @@ def test_planner_and_synthesizer_require_analyst_depth_without_filler():
         "repetition across pages is not independent evidence",
     ):
         assert phrase in synth
+
+
+def test_synthesis_and_verification_require_per_fact_source_vintage() -> None:
+    synth = load_prompt("synthesizer")
+    verifier = load_prompt("verifier")
+    for prompt in (synth, verifier):
+        assert "each conflicting fact" in prompt
+        assert "`vintages`, then `as_of`" in prompt
+        assert "`observed_at`" in prompt

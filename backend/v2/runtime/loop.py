@@ -428,7 +428,10 @@ def _verified_claims(draft, verification, evidence=None) -> list[VerifiedClaim]:
             sources=[ClaimSource(
                 evidence_id=evidence_id,
                 source=evidence[evidence_id].source,
-                capability=evidence[evidence_id].capability)
+                capability=evidence[evidence_id].capability,
+                observed_at=evidence[evidence_id].observed_at,
+                as_of=evidence[evidence_id].as_of,
+                vintages=dict(evidence[evidence_id].vintages))
                 for evidence_id in claim.evidence_ids
                 if evidence and evidence_id in evidence])
         for index, claim in enumerate(draft.claims)

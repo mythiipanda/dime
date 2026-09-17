@@ -467,6 +467,9 @@ class ClaimSource(BaseModel):
     evidence_id: str = Field(max_length=256)
     source: str = Field(max_length=2000)
     capability: str = Field(max_length=256)
+    observed_at: datetime | None = None
+    as_of: date | None = None
+    vintages: dict[str, str] = Field(default_factory=dict, max_length=64)
 
     @model_validator(mode="after")
     def validate_identity(self) -> "ClaimSource":
@@ -474,6 +477,11 @@ class ClaimSource(BaseModel):
             self.evidence_id, self.source, self.capability
         )):
             raise ValueError("claim source identity must be non-empty")
+        if self.observed_at is not None and self.observed_at.utcoffset() is None:
+            raise ValueError("claim source observed_at must include timezone")
+        if any(not str(key).strip() or not str(value).strip()
+               for key, value in self.vintages.items()):
+            raise ValueError("claim source vintages must be non-empty")
         return self
 
 
