@@ -1475,6 +1475,7 @@ async def test_provider_structured_failure_preserves_sanitized_diagnostics(monke
         "provider": "inception", "exception_type": "TimeoutError",
         "message_class": "timeout",
     }]
+@pytest.mark.anyio
 async def test_intake_season_normalization_propagates_to_requirement_arguments():
     from app.tools._core import SEASON
 
