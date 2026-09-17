@@ -153,8 +153,10 @@ def _entity_reasons(task: TaskSpec, claim: Claim,
     return reasons
 
 
-def _row_entity_value_reasons(claim: Claim,
-                              envelopes: Sequence[EvidenceEnvelope]) -> list[str]:
+def _row_entity_value_reasons(
+    claim: Claim, envelopes: Sequence[EvidenceEnvelope],
+    calculation_values: set[Decimal] | None = None,
+) -> list[str]:
     """Bind claim numerals to named-entity rows across cited evidence.
 
     A claim may legitimately cite several population envelopes for different
@@ -185,7 +187,7 @@ def _row_entity_value_reasons(claim: Claim,
             matched_envelopes.append(envelope.model_copy(update={"rows": matched}))
     if not matched_envelopes:
         return []
-    row_numbers = _numeric_values(matched_envelopes)
+    row_numbers = _numeric_values(matched_envelopes) | (calculation_values or set())
     unsupported = []
     for raw in _number_tokens(claim.text):
         if _DATE.fullmatch(raw) or _SEASON.fullmatch(raw) or raw == "100":
@@ -424,7 +426,8 @@ def verify_mechanical(
         for value in _claim_seasons_supported(claim, cited):
             reasons.append(f"uncited season {value}")
         reasons.extend(_entity_reasons(task, claim, cited))
-        reasons.extend(_row_entity_value_reasons(claim, cited))
+        reasons.extend(_row_entity_value_reasons(
+            claim, cited, calculation_values))
         reasons.extend(_scope_reasons(task, cited))
         reasons.extend(_mixed_source_reasons(claim, cited))
         reasons.extend(_cross_evidence_calculation_reasons(claim, cited))

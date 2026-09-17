@@ -374,15 +374,37 @@ class Claim(BaseModel):
         return self
 
 
+class DeclaredCalculationInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    evidence_id: str = Field(min_length=1, max_length=256)
+    path: str = Field(min_length=1, max_length=1000)
+
+
+class DeclaredCalculation(BaseModel):
+    """Model-declared arithmetic, recomputed by deterministic verification."""
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    calculation_id: str = Field(min_length=1, max_length=256)
+    operation: Literal["add", "subtract", "multiply", "divide", "percent",
+                       "mean", "rank_desc", "rank_asc"]
+    inputs: list[DeclaredCalculationInput] = Field(min_length=1, max_length=256)
+    result: Decimal
+    unit: str | None = Field(default=None, max_length=256)
+    subject_input: StrictInt | None = Field(default=None, ge=0)
+
+
 class DraftReport(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     sections: list[str] = Field(max_length=32)
     claims: list[Claim] = Field(max_length=128)
+    calculations: list[DeclaredCalculation] = Field(default_factory=list, max_length=128)
     gaps: list[str] = Field(default_factory=list, max_length=128)
 
     @model_validator(mode="after")
     def validate_content(self) -> "DraftReport":
+        calculation_ids = [item.calculation_id for item in self.calculations]
+        if len(calculation_ids) != len(set(calculation_ids)):
+            raise ValueError("draft calculation ids must be unique")
         for field_name in ("sections", "gaps"):
             values = getattr(self, field_name)
             if any(not value.strip() for value in values):

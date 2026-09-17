@@ -529,3 +529,18 @@ def test_named_entity_values_still_reject_adjacent_rows_across_envelopes():
     )
     assert any("named entity rows" in reason
                for reason in result.claim_results[0].reasons)
+
+
+def test_draft_declared_calculation_is_recomputed_by_assembly_verifier():
+    import asyncio
+    from v2.runtime.assembly import MechanicalVerifier
+    ev = evidence(rows=[{"player": "A", "ppg": 21.0}, {"player": "B", "ppg": 18.5}])
+    draft = DraftReport(sections=["Gap"], calculations=[{
+        "calculation_id": "ppg_gap", "operation": "subtract",
+        "inputs": [{"evidence_id": ev.evidence_id, "path": "rows[0].ppg"},
+                   {"evidence_id": ev.evidence_id, "path": "rows[1].ppg"}],
+        "result": "2.5", "unit": "points_per_game",
+    }], claims=[Claim(text="A leads B by 2.5 points per game.", kind="derived",
+                     evidence_ids=[ev.evidence_id], calculation_id="ppg_gap")])
+    result = asyncio.run(MechanicalVerifier().verify(task(), draft, {ev.evidence_id: ev}))
+    assert result.status == VerificationStatus.PASS

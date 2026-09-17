@@ -29,7 +29,7 @@ from v2.skills import SkillLibrary
 
 class MechanicalVerifier:
     async def verify(self, task, draft, evidence) -> VerificationReport:
-        return verify_mechanical(task, draft, list(evidence.values()))
+        return verify_mechanical(task, draft, list(evidence.values()), draft.calculations)
 
 
 class EvidenceBoundRepair:

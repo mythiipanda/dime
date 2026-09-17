@@ -570,7 +570,7 @@ class ModelRepairer(ModelStage):
         # repair model's diagnosis forward can leave a stale limitation after
         # the rejected branch has been replaced and reverified.
         return DraftReport.model_validate(repaired.model_copy(
-            update={"claims": claims, "gaps": list(original.gaps)}).model_dump())
+            update={"claims": claims, "calculations": list(original.calculations), "gaps": list(original.gaps)}).model_dump())
 
     async def repair(
         self,

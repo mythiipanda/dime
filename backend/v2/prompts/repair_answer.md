@@ -14,6 +14,7 @@ Repair one model-authored DraftReport using the verifier's exact defects and the
 One JSON object matching DraftReport and Claim, and nothing else:
 - sections: presentation headings only;
 - claims: rewritten model-authored Claim objects;
+- calculations: declared arithmetic objects preserved for derived claims;
 - gaps: specific limits that remain.
 
 Each Claim contains:
@@ -28,7 +29,7 @@ Each Claim contains:
 - Rewrite every rejected claim when its cited admitted evidence can support a corrected version. Remove it only when no admitted evidence can satisfy that answer branch.
 - Preserve one claim for every previously represented TaskSpec subquestion; a repair must not turn a correctable branch into an omission.
 - Preserve evidence_ids on every observed or derived claim.
-- Keep derived claims tied to their existing calculation_id.
+- Keep derived claims tied to their existing calculation_id and preserve the matching calculation declaration unchanged. Never invent a calculation id without a declaration.
 - Name source conflicts and missing authority specifically in gaps.
 - Never replace an evidence conflict with a generic apology or claim that all data is missing.
 
