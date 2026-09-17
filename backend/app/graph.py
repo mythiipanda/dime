@@ -659,6 +659,14 @@ def _detect_entities(question: str) -> tuple[list[str], list[str]]:
             found_p.append(fn)
             break
     found_t = []
+    exact_team_names = {
+        t.get("full_name", "") for t in teams
+        if t.get("full_name", "") and t["full_name"].lower() in q
+    }
+    exact_cities = {
+        (t.get("city") or "").lower() for t in teams
+        if t.get("full_name", "") in exact_team_names
+    }
     race_words = re.search(
         r"magic number|standings|playoff race|\bseed\b|tanking|lottery",
         q)
@@ -669,7 +677,7 @@ def _detect_entities(question: str) -> tuple[list[str], list[str]]:
         if (full.lower() in q
                 or (nick and not race_words
                     and re.search(r"\b" + re.escape(nick) + r"\b", q))
-                or (city and not race_words
+                or (city and city not in exact_cities and not race_words
                     and re.search(r"\b" + re.escape(city) + r"\b", q))
                 # F68/F69: abbreviations match case-SENSITIVELY -
                 # case-insensitive matching read the word "was" as WAS

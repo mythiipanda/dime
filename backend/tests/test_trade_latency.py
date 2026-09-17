@@ -221,3 +221,17 @@ def test_desk_cache_dedupes_trade_desks():
                if r.get("tool") == "delegate_league"]
     assert len(results) == 2
     assert results[1].get("deduped") is True
+
+
+def test_full_team_names_do_not_inject_same_city_team():
+    from app.graph import _detect_entities, _trade_sides
+
+    question = ("Who wins this trade on value: Anthony Edwards "
+                "(Minnesota Timberwolves) for Luka Doncic "
+                "(Los Angeles Lakers)?")
+    players, teams = _detect_entities(question)
+    assert teams == ["Los Angeles Lakers", "Minnesota Timberwolves"]
+    sides = _trade_sides(question, players, teams, "2025-26")
+    assert sides is not None
+    assert {sides["team_a"], sides["team_b"]} == {"MIN", "LAL"}
+    assert "LAC" not in sides.values()
