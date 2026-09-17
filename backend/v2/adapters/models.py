@@ -54,6 +54,27 @@ class ProviderStructuredModel:
         self.model = model
         self.last_provider: ProviderName | None = None
         self.last_model: str | None = None
+        self.last_failures: list[dict[str, str]] = []
+
+    @staticmethod
+    def _failure_class(exc: BaseException) -> str:
+        """Bounded provider diagnostics without payloads or raw responses."""
+        name = type(exc).__name__.casefold()
+        detail = str(exc).casefold()
+        if "timeout" in name or "timed out" in detail:
+            return "timeout"
+        if "rate" in name or "429" in detail or "rate limit" in detail:
+            return "rate_limit"
+        if "auth" in name or "401" in detail or "403" in detail:
+            return "authentication"
+        if ("validation" in name or "schema" in detail
+                or "structured" in detail or "json" in detail):
+            return "structured_output"
+        if "context" in detail or "token" in detail and "limit" in detail:
+            return "context_limit"
+        if "connect" in name or "network" in detail:
+            return "network"
+        return "provider_error"
 
     def _models(self) -> list[tuple[ProviderName, OpenAIChatModel]]:
         configs = {
@@ -101,6 +122,7 @@ class ProviderStructuredModel:
             raise RuntimeError("no configured structured-output provider")
         self.last_provider = None
         self.last_model = None
+        self.last_failures = []
         user_prompt = json.dumps(payload, sort_keys=True, default=str)
         for provider, model in models:
             try:
@@ -114,9 +136,20 @@ class ProviderStructuredModel:
                 self.last_provider = provider
                 self.last_model = model.model_name
                 return result.output
-            except Exception:
+            except Exception as exc:
+                self.last_failures.append({
+                    "provider": provider,
+                    "exception_type": type(exc).__name__[:120],
+                    "message_class": self._failure_class(exc),
+                })
                 continue
-        raise RuntimeError("all structured-output providers failed")
+        summary = ", ".join(
+            f"{item['provider']}:{item['exception_type']}:{item['message_class']}"
+            for item in self.last_failures
+        )
+        raise RuntimeError(
+            "all structured-output providers failed"
+            + (f" [{summary}]" if summary else ""))
 
 
 class ModelStage:
@@ -410,7 +443,7 @@ class ModelPlanner(ModelStage):
         try:
             plan = await self._generate(payload)
         except RuntimeError as exc:
-            if str(exc) != "all structured-output providers failed":
+            if not str(exc).startswith("all structured-output providers failed"):
                 raise
             plan = await self._generate(payload)
         plan = self._normalize_plan(
@@ -645,7 +678,7 @@ class ModelSynthesizer(ModelStage):
         try:
             draft = await self._generate(payload)
         except RuntimeError as exc:
-            if str(exc) != "all structured-output providers failed":
+            if not str(exc).startswith("all structured-output providers failed"):
                 raise
             # Execution is already complete at this stage. Give a transient
             # structured-output outage one fresh bounded attempt rather than
@@ -815,7 +848,7 @@ class ModelSemanticVerifier(ModelStage):
         try:
             report = await self._generate(payload)
         except RuntimeError as exc:
-            if str(exc) != "all structured-output providers failed":
+            if not str(exc).startswith("all structured-output providers failed"):
                 raise
             report = await self._generate(payload)
         expected = set(range(len(draft.claims)))

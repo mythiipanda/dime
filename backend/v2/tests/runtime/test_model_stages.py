@@ -568,7 +568,10 @@ async def test_provider_boundary_does_not_expose_provider_error_text(monkeypatch
         await model.generate(
             schema=TaskSpec, prompt="p", payload={}, envelope=envelope)
 
-    assert str(caught.value) == "all structured-output providers failed"
+    assert str(caught.value) == (
+        "all structured-output providers failed "
+        "[inception:RuntimeError:provider_error]"
+    )
     assert "secret upstream body" not in str(caught.value)
 
 @pytest.mark.anyio
@@ -1438,3 +1441,36 @@ async def test_synthesizer_rejects_declared_calculation_for_evidence_requirement
         await ModelSynthesizer(
             stub, provider="stub", model_name="stub",
         ).synthesize(task, [])
+async def test_provider_structured_failure_preserves_sanitized_diagnostics(monkeypatch):
+    from v2.adapters.models import ProviderStructuredModel
+    from v2.runtime import RequestEnvelope
+
+    class FailingAgent:
+        def __init__(self, *args, **kwargs):
+            pass
+        async def run(self, prompt):
+            assert "secret payload" in prompt
+            raise TimeoutError("secret upstream body and bearer token")
+
+    monkeypatch.setattr("v2.adapters.models.Agent", FailingAgent)
+    model = ProviderStructuredModel("inception", "mercury-2.5")
+    monkeypatch.setattr(model, "_models", lambda: [
+        ("inception", type("M", (), {"model_name": "mercury-2.5"})()),
+    ])
+    envelope = RequestEnvelope.freeze(
+        provider="inception", model="mercury-2.5", route="synthesizer",
+        prompt="prompt", context={}, tool_schemas={}, planner_version="v2",
+    )
+    with pytest.raises(RuntimeError) as caught:
+        await model.generate(
+            schema=TaskSpec, prompt="prompt",
+            payload={"evidence": "secret payload"}, envelope=envelope,
+        )
+    text = str(caught.value)
+    assert "inception:TimeoutError:timeout" in text
+    assert "secret payload" not in text
+    assert "secret upstream" not in text
+    assert model.last_failures == [{
+        "provider": "inception", "exception_type": "TimeoutError",
+        "message_class": "timeout",
+    }]
