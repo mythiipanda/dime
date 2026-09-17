@@ -367,8 +367,11 @@ class ModelIntake(ModelStage):
             required_evidence = list(dict.fromkeys([
                 *required_evidence, "game_prediction",
             ]))
-        if ("game_prediction" in required_evidence and task.season is not None
-                and task.season.source == "default"):
+        # A model-defaulted relative season is not authoritative. Pin every
+        # such TaskSpec to the application's populated current-season contract,
+        # not only prediction asks, before requirement arguments are rewritten.
+        # Explicit user/context seasons remain untouched.
+        if task.season is not None and task.season.source == "default":
             from app.tools._core import SEASON
             task = task.model_copy(update={
                 "season": task.season.model_copy(update={"value": SEASON}),

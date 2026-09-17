@@ -1664,3 +1664,19 @@ async def test_planner_rejects_invalid_replacement_plan_arguments():
                            model_name="stub", capability_catalog=catalog)
     with pytest.raises(ValueError, match="replacement plan remains invalid"):
         await planner.plan(task)
+
+@pytest.mark.anyio
+async def test_implicit_relative_season_is_pinned_for_non_prediction_capability():
+    from app.tools._core import SEASON
+    stub = StubModel([{
+        "goal": "three point leaders this season", "mode": "quick",
+        "deliverable": "leaders", "season": {
+            "value": "2099-00", "source": "default", "confidence": .9,
+        }, "required_evidence": ["qualified_leaders"],
+    }])
+    task = await ModelIntake(
+        stub, provider="stub", model_name="stub",
+        capability_catalog={"qualified_leaders": {}},
+    ).understand("Who are the three point leaders this season?")
+    assert task.season.value == SEASON
+    assert task.season.source == "default"
