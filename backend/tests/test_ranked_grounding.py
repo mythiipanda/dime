@@ -1,5 +1,6 @@
 """F88 deterministic qualification and named-team ratings routes."""
 import asyncio
+import pytest
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -66,3 +67,48 @@ def test_steals_per_game_leader_carries_sample_size():
     assert out["rows"][0]["GP"] >= 20
     answer = out["meta"]["deterministic_answer"]
     assert "steals per game" in answer and "games" in answer
+
+
+def test_fg3_percentage_leaders_carry_direction_volume_and_shooting_counts(monkeypatch):
+    class Result:
+        @staticmethod
+        def fetchall():
+            return [
+                ("A", "AAA", 70, 1800, 140, 300, 0.467),
+                ("B", "BBB", 72, 1900, 150, 350, 0.429),
+            ]
+
+    class Connection:
+        def execute(self, query, params):
+            assert "FG3A >= ?" in query
+            assert "FG3_PCT ASC" in query
+            assert params == ["2025-26", 0, 300]
+            return Result()
+        def close(self):
+            pass
+
+    monkeypatch.setattr(
+        "app.tools.league._warehouse_or_live",
+        lambda *args, **kwargs: ([], {"source": "fixture", "rows": 0}),
+    )
+    monkeypatch.setattr("app.tools.league.store.connect", lambda **_: Connection())
+    out = get_leaders.invoke({
+        "stat_category": "FG3_PCT", "season": "2025-26",
+        "ranking_direction": "asc", "min_attempts": 300,
+    })
+    assert out["meta"]["stat_category"] == "FG3_PCT"
+    assert out["meta"]["ranking_direction"] == "asc"
+    assert out["meta"]["min_attempts"] == 300
+    assert out["meta"]["qualification"] == "300+ three-point attempts"
+    assert out["rows"][0] == {
+        "RANK": 1, "PLAYER": "A", "TEAM": "AAA", "FG3_PCT": 0.467,
+        "FG3M": 140, "FG3A": 300, "GP": 70, "MIN": 1800,
+        "PERCENTILE": 100.0,
+    }
+
+
+def test_leader_routing_rejects_invalid_direction_and_volume():
+    with pytest.raises(ValueError, match="ranking_direction"):
+        get_leaders.invoke({"ranking_direction": "sideways"})
+    with pytest.raises(ValueError, match="min_attempts"):
+        get_leaders.invoke({"min_attempts": -1})

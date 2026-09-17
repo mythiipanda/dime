@@ -744,8 +744,15 @@ def get_playoffs(season: str = SEASON) -> dict[str, Any]:
 
 
 @tool
-def get_leaders(stat_category: str = "PTS", season: str = SEASON) -> dict[str, Any]:
-    """League leaders for one stat category like PTS, REB, AST.
+def get_leaders(
+    stat_category: str = "PTS", season: str = SEASON,
+    ranking_direction: str = "desc", min_attempts: int = 0,
+) -> dict[str, Any]:
+    """Qualified league leaderboard for one stat category.
+
+    ranking_direction is ``desc`` for highest-first or ``asc`` for
+    lowest-first. min_attempts carries an explicit user volume floor for
+    percentage metrics; zero keeps the league qualification.
 
     Percentage boards use the NBA minimums carried by the warehouse
     instead of an arbitrary attempts floor. For 3P%, the qualification is
@@ -753,6 +760,14 @@ def get_leaders(stat_category: str = "PTS", season: str = SEASON) -> dict[str, A
     to the official league leaderboard and excludes tiny samples.
     """
     stat_category = clamp_stat(stat_category)
+    direction = str(ranking_direction).strip().casefold()
+    if direction not in {"asc", "desc"}:
+        raise ValueError("ranking_direction must be 'asc' or 'desc'")
+    if isinstance(min_attempts, bool) or not isinstance(min_attempts, int):
+        raise TypeError("min_attempts must be an integer")
+    if not 0 <= min_attempts <= 5000:
+        raise ValueError("min_attempts must be between 0 and 5000")
+    order = "ASC" if direction == "asc" else "DESC"
     # Rate leaderboards need explicit volume floors. They cannot reuse raw
     # total-stat boards without either reporting the wrong unit (SPG) or
     # elevating tiny-sample efficiency outliers (TS%).
@@ -763,8 +778,8 @@ def get_leaders(stat_category: str = "PTS", season: str = SEASON) -> dict[str, A
                 raw = con.execute(
                     "SELECT PLAYER_NAME, TEAM_ABBREVIATION, GP, MIN, TS_PCT "
                     "FROM silver_advanced WHERE _season = ? "
-                    "AND GP * MIN >= 1000 ORDER BY TS_PCT DESC, GP * MIN DESC",
-                    [season],
+                    f"AND GP * MIN >= ? ORDER BY TS_PCT {order}, GP * MIN DESC",
+                    [season, max(1000, min_attempts)],
                 ).fetchall()
                 rows = [
                     {"RANK": index, "PLAYER": row[0], "TEAM": row[1],
@@ -778,7 +793,7 @@ def get_leaders(stat_category: str = "PTS", season: str = SEASON) -> dict[str, A
                 raw = con.execute(
                     "SELECT PLAYER, TEAM, GP, STL / CAST(GP AS DOUBLE) AS SPG "
                     "FROM silver_leaders_pts WHERE _season = ? AND GP >= 20 "
-                    "ORDER BY SPG DESC, STL DESC",
+                    f"ORDER BY SPG {order}, STL DESC",
                     [season],
                 ).fetchall()
                 rows = [
@@ -793,6 +808,7 @@ def get_leaders(stat_category: str = "PTS", season: str = SEASON) -> dict[str, A
         meta = {
             "source": "warehouse", "season": season,
             "stat_category": stat_category, "rows": len(rows),
+            "ranking_direction": direction, "min_attempts": min_attempts,
             "qualification": qualification,
         }
         if rows:
@@ -821,8 +837,9 @@ def get_leaders(stat_category: str = "PTS", season: str = SEASON) -> dict[str, A
                 raw = con.execute(
                     "SELECT PLAYER, TEAM, GP, MIN, FG3M, FG3A, FG3_PCT "
                     "FROM silver_leaders_pts WHERE _season = ? "
-                    "AND FG3M >= 82 ORDER BY FG3_PCT DESC, FG3M DESC",
-                    [season]).fetchall()
+                    f"AND FG3M >= ? AND FG3A >= ? "
+                    f"ORDER BY FG3_PCT {order}, FG3M DESC",
+                    [season, 0 if min_attempts else 82, min_attempts]).fetchall()
             finally:
                 con.close()
             rows = [
@@ -831,9 +848,15 @@ def get_leaders(stat_category: str = "PTS", season: str = SEASON) -> dict[str, A
                  "FG3_PCT": r[6]}
                 for i, r in enumerate(raw, 1)
             ]
+            qualification = (
+                f"{min_attempts}+ three-point attempts"
+                if min_attempts else "82+ made threes"
+            )
             meta = {"source": "warehouse", "season": season,
                     "stat_category": stat_category, "rows": len(rows),
-                    "qualification": "82+ made threes"}
+                    "ranking_direction": direction,
+                    "min_attempts": min_attempts,
+                    "qualification": qualification}
             if rows:
                 leaders = "; ".join(
                     f"{row['PLAYER']} {row['FG3_PCT'] * 100:.1f}% "
@@ -842,9 +865,10 @@ def get_leaders(stat_category: str = "PTS", season: str = SEASON) -> dict[str, A
                 )
                 meta["deterministic_answer"] = (
                     f"Qualified three-point percentage leaders: {leaders}. "
-                    "Qualification: 82+ made threes.")
+                    f"Qualification: {qualification}.")
         except Exception:
             rows = []
+
     try:
         total = int(meta.get("rows") or len(rows) or 0)
         for r in rows:

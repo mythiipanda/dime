@@ -1117,7 +1117,10 @@ async def test_planner_rejects_wrong_metric_argument_as_false_coverage():
         requirements=[{
             "id": "later_percentage", "description": "later qualified percentage",
             "capability_options": ["qualified_leaders"],
-            "capability_arguments": {"stat_category": "FG3_PCT", "season": "2025-26"},
+            "capability_arguments": {
+                "stat_category": "FG3_PCT", "season": "2025-26",
+                "ranking_direction": "desc", "min_attempts": 100,
+            },
         }],
     )
     stub = StubModel([
@@ -1125,20 +1128,29 @@ async def test_planner_rejects_wrong_metric_argument_as_false_coverage():
             "id": "wrong_stat", "description": "later leaders",
             "capability_hints": ["qualified_leaders"],
             "covers_requirement_ids": ["later_percentage"],
-            "arguments": {"stat_category": "PTS", "season": "2025-26"},
+            "arguments": {
+                "stat_category": "PTS", "season": "2025-26",
+                "ranking_direction": "desc", "min_attempts": 100,
+            },
         }]},
         {"nodes": [{
             "id": "right_stat", "description": "later percentage leaders",
             "capability_hints": ["qualified_leaders"],
             "covers_requirement_ids": ["later_percentage"],
-            "arguments": {"stat_category": "FG3_PCT", "season": "2025-26"},
+            "arguments": {
+                "stat_category": "FG3_PCT", "season": "2025-26",
+                "ranking_direction": "desc", "min_attempts": 100,
+            },
         }]},
     ])
     plan = await ModelPlanner(
         stub, provider="stub", model_name="stub",
         capability_catalog={"qualified_leaders": {}},
     ).plan(task)
-    assert plan.nodes[0].arguments["stat_category"] == "FG3_PCT"
+    assert plan.nodes[0].arguments == {
+        "stat_category": "FG3_PCT", "season": "2025-26",
+        "ranking_direction": "desc", "min_attempts": 100,
+    }
     assert plan.nodes[0].covers_requirement_ids == ["later_percentage"]
     assert stub.calls[1]["payload"]["coverage_feedback"] == {
         "missing_requirement_ids": ["later_percentage"],
