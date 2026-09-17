@@ -1174,23 +1174,21 @@ def test_requirement_argument_matching_is_generic_and_nested():
     )
 
 @pytest.mark.anyio
-async def test_playoff_translation_skill_requires_independent_material_branches():
+async def test_playoff_translation_skill_does_not_force_unrequested_capabilities():
     stub = StubModel([{
-        "goal": "test whether a team profile translates to playoffs",
-        "mode": "deep_dive", "deliverable": "analyst briefing",
+        "goal": "compare one player's regular season with his playoffs",
+        "mode": "quick", "deliverable": "comparison",
         "skills": ["playoff-translation"],
-        "required_evidence": ["team_ratings"],
+        "required_evidence": ["player_report", "game_logs"],
     }])
     catalog = {name: {} for name in (
-        "team_ratings", "playoff_team_ratings", "clutch", "injuries",
-        "roster", "team_splits",
+        "player_report", "game_logs", "team_ratings", "playoff_team_ratings",
+        "clutch", "injuries", "roster",
     )}
     task = await ModelIntake(
         stub, provider="stub", model_name="stub", capability_catalog=catalog,
-    ).understand("Will the profile translate to the playoffs?")
-    assert task.required_evidence == [
-        "team_ratings", "playoff_team_ratings", "clutch", "injuries", "roster",
-    ]
+    ).understand("Compare his regular season with his playoffs")
+    assert task.required_evidence == ["player_report", "game_logs"]
 
 @pytest.mark.anyio
 async def test_synthesizer_retries_one_failed_structured_generation() -> None:
