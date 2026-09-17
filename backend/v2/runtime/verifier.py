@@ -22,7 +22,10 @@ from v2.domain.calculations import Calculation, validate_calculation
 from v2.domain.evidence import EvidenceIndex, decimal_value, iter_values
 
 _NUMBER = re.compile(
-    r"(?<![A-Za-z0-9])(?:\d{4}-\d{2}-\d{2}|\d{4}-\d{2}|[-+]?\$?\d[\d,]*(?:\.\d+)?(?:%|[KMB])?)(?![A-Za-z0-9])",
+    # Hyphenated lexical labels such as "3-point" and "5-man" name a
+    # metric or lineup shape; their digits are not asserted measurements.
+    # Date/season alternatives remain first so 2025-26 is still one token.
+    r"(?<![A-Za-z0-9])(?:\d{4}-\d{2}-\d{2}|\d{4}-\d{2}|[-+]?\$?\d[\d,]*(?:\.\d+)?(?:%|[KMB])?)(?![A-Za-z0-9]|-[A-Za-z])",
     re.IGNORECASE,
 )
 _DATE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")

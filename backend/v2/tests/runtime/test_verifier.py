@@ -436,3 +436,42 @@ def test_population_claim_accepts_numeral_from_named_entity_row():
         report(right), [table],
     )
     assert result.status == VerificationStatus.PASS
+
+
+def test_metric_name_digit_is_not_treated_as_an_asserted_measurement():
+    table = evidence(
+        rows=[
+            {"team": "LEAGUE", "corner_3_efg": 0.5746},
+            {"team": "BOS", "corner_3_efg": 0.6043},
+        ],
+        units={"corner_3_efg": "fraction_0_1"},
+    )
+    claim = Claim(
+        text="Boston's corner 3-point efficiency was 60.43%.",
+        kind="observed", evidence_ids=[table.evidence_id],
+    )
+    result = verify_mechanical(
+        TaskSpec(goal="Boston shot zones", mode="quick", deliverable="answer"),
+        report(claim), [table],
+    )
+    assert result.status == VerificationStatus.PASS
+
+
+def test_hyphenated_metric_labels_do_not_hide_real_measurements():
+    table = evidence(
+        rows=[
+            {"team": "LEAGUE", "corner_3_efg": 0.5746},
+            {"team": "BOS", "corner_3_efg": 0.6043},
+        ],
+        units={"corner_3_efg": "fraction_0_1"},
+    )
+    claim = Claim(
+        text="Boston's 3-point efficiency was 61.00%.",
+        kind="observed", evidence_ids=[table.evidence_id],
+    )
+    result = verify_mechanical(
+        TaskSpec(goal="Boston shot zones", mode="quick", deliverable="answer"),
+        report(claim), [table],
+    )
+    assert result.status == VerificationStatus.REPAIR
+    assert any("61.00%" in reason for reason in result.claim_results[0].reasons)
