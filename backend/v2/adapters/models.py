@@ -403,15 +403,28 @@ class ModelIntake(ModelStage):
     async def _review_requirements(
         self, request: str, task: TaskSpec,
     ) -> RequirementReview:
-        review = await self._generate_as(
-            prompt_name="requirement_review", route="requirement_review",
-            schema=RequirementReview, payload={
-                "question": request,
-                "draft_task": task.model_dump(mode="json"),
-                "capability_catalog": self._catalog,
-                "skill_catalog": self._skills.catalog(),
-            },
-        )
+        payload = {
+            "question": request,
+            "draft_task": task.model_dump(mode="json"),
+            "capability_catalog": self._catalog,
+            "skill_catalog": self._skills.catalog(),
+        }
+        try:
+            review = await self._generate_as(
+                prompt_name="requirement_review", route="requirement_review",
+                schema=RequirementReview, payload=payload,
+            )
+        except RuntimeError as exc:
+            if not str(exc).startswith("all structured-output providers failed"):
+                raise
+            # A transient provider failure after a successful intake used to
+            # terminate the run before planning. Match the bounded recovery
+            # already owned by planner, synthesizer, and semantic verification:
+            # retry the same typed boundary once, never parse or repair text.
+            review = await self._generate_as(
+                prompt_name="requirement_review", route="requirement_review",
+                schema=RequirementReview, payload=payload,
+            )
         unknown_evidence = sorted(
             {capability for requirement in review.requirements
              for capability in requirement.capability_options}

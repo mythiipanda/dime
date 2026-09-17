@@ -1542,3 +1542,25 @@ async def test_planner_replans_call_missing_catalog_required_arguments():
         "missing_required_arguments": {"team_roster": ["team_id"]},
         "instruction": "Return a complete replacement plan.",
     }
+
+@pytest.mark.anyio
+async def test_requirement_review_retries_one_provider_exhaustion() -> None:
+    class FlakyReview:
+        def __init__(self):
+            self.calls = 0
+        async def generate(self, **call):
+            self.calls += 1
+            if self.calls == 1:
+                return TaskSpec(goal="leaders", mode="quick", deliverable="answer")
+            if self.calls == 2:
+                raise RuntimeError("all structured-output providers failed [inception:ModelHTTPError:provider_error]")
+            return call["schema"].model_validate({"requirements": []})
+
+    model = FlakyReview()
+    task = await ModelIntake(
+        model, provider="stub", model_name="stub",
+        capability_catalog={}, requirement_review=True,
+    ).understand("leaders")
+
+    assert task.goal == "leaders"
+    assert model.calls == 3
