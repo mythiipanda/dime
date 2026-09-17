@@ -865,3 +865,68 @@ async def test_verified_claim_sources_preserve_per_fact_vintage() -> None:
     assert source.vintages == {"salary_season": "2026-27"}
     assert source.as_of == date(2026, 7, 1)
     assert source.observed_at == datetime(2026, 9, 17, tzinfo=UTC)
+
+@pytest.mark.anyio
+async def test_redundant_failed_capability_does_not_create_false_partial():
+    from v2.runtime.models import ExecutionResult
+    from v2.contracts import PlanStatus
+
+    class RedundantIntake:
+        async def understand(self, request):
+            return TaskSpec(
+                goal=request, mode="quick", deliverable="answer",
+                requirements=[{
+                    "id": "efficiency", "description": "player efficiency",
+                    "capability_options": [
+                        "player_report", "shooting_efficiency"],
+                }],
+            )
+
+    class RedundantPlanner:
+        async def plan(self, task):
+            return Plan(nodes=[
+                PlanNode(
+                    id="report", description="full report",
+                    capability_hints=["player_report"],
+                    arguments={"player_id": 201939, "season": "2025-26"},
+                    covers_requirement_ids=["efficiency"],
+                ),
+                PlanNode(
+                    id="efficiency", description="redundant efficiency",
+                    capability_hints=["shooting_efficiency"],
+                    arguments={"player_id": 201939, "season": "2025-26"},
+                    covers_requirement_ids=["efficiency"],
+                ),
+            ])
+
+    class RedundantExecutor:
+        async def execute(self, task, plan, run_id=None):
+            evidence = await FakeCapability(
+                "player_report", {"TS_PCT": 0.65},
+            ).execute(plan.nodes[0], task, ())
+            return ExecutionResult(
+                plan=Plan(nodes=[
+                    plan.nodes[0].model_copy(update={"status": PlanStatus.COMPLETE}),
+                    plan.nodes[1].model_copy(update={"status": PlanStatus.FAILED}),
+                ]),
+                evidence=[evidence], attempts={"report": 1, "efficiency": 1},
+                errors={"efficiency": ["TimeoutError: source timed out"]},
+            )
+
+    class ReportSynthesizer:
+        async def synthesize(self, task, evidence):
+            return DraftReport(sections=["Answer"], claims=[Claim(
+                text="His true shooting percentage was 65%.",
+                kind="observed", evidence_ids=["evidence:report"],
+            )])
+
+    result = await Runtime(
+        intake=RedundantIntake(), planner=RedundantPlanner(),
+        executor=RedundantExecutor(), synthesizer=ReportSynthesizer(),
+        mechanical_verifier=SequenceVerifier(VerificationStatus.PASS),
+        semantic_verifier=SequenceVerifier(VerificationStatus.PASS),
+    ).run("Assess his scoring efficiency")
+
+    assert result.verification.status == VerificationStatus.PASS
+    assert result.gaps == []
+    assert result.structural_flags == ["false_partial_downgrade"]

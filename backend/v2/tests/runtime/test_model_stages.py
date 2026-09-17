@@ -1337,3 +1337,44 @@ async def test_planner_keeps_same_call_when_parent_lineage_differs():
         capability_catalog={"resolve": {}, "stats": {}},
     ).plan(task)
     assert len(plan.nodes) == 4
+
+@pytest.mark.anyio
+async def test_intake_drops_capability_subsumed_required_evidence():
+    stub = StubModel([{
+        "goal": "Assess Curry's scoring efficiency", "mode": "quick",
+        "deliverable": "answer", "entities": [{
+            "id": "201939", "type": "player", "display_name": "Stephen Curry",
+        }],
+        "required_evidence": ["player_report", "shooting_efficiency"],
+    }])
+    task = await ModelIntake(
+        stub, provider="stub", model_name="stub",
+        capability_catalog={"player_report": {}, "shooting_efficiency": {}},
+    ).understand("Assess Curry's scoring efficiency")
+    assert task.required_evidence == ["player_report"]
+
+
+@pytest.mark.anyio
+async def test_planner_prunes_capability_subsumed_same_subject_call():
+    task = TaskSpec(
+        goal="Curry efficiency", mode="quick", deliverable="answer",
+        requirements=[{
+            "id": "efficiency", "description": "Curry shooting efficiency",
+            "capability_options": ["player_report", "shooting_efficiency"],
+        }],
+    )
+    stub = StubModel([{"nodes": [
+        {"id": "report", "description": "full report",
+         "capability_hints": ["player_report"],
+         "arguments": {"player_id": 201939, "season": "2025-26"}},
+        {"id": "efficiency", "description": "redundant efficiency",
+         "capability_hints": ["shooting_efficiency"],
+         "arguments": {"player_id": 201939, "season": "2025-26"},
+         "covers_requirement_ids": ["efficiency"]},
+    ]}])
+    plan = await ModelPlanner(
+        stub, provider="stub", model_name="stub",
+        capability_catalog={"player_report": {}, "shooting_efficiency": {}},
+    ).plan(task)
+    assert [node.id for node in plan.nodes] == ["report"]
+    assert plan.nodes[0].covers_requirement_ids == ["efficiency"]

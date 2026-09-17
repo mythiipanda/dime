@@ -296,6 +296,14 @@ class ModelIntake(ModelStage):
             name for name in task.required_evidence
             if name not in optional_evidence
         ]
+        from v2.runtime.subsumption import capability_subsumes
+        required_evidence = [
+            name for name in required_evidence
+            if not any(
+                other != name and capability_subsumes(other, name)
+                for other in required_evidence
+            )
+        ]
         if "trade-analysis" in task.skills and player_count >= 2:
             baseline = (
                 "player_report", "player_evaluation", "player_comparison",
@@ -420,8 +428,66 @@ class ModelPlanner(ModelStage):
             task, self._normalize_requirement_coverage(task, replacement))
 
     def _normalize_plan(self, task: TaskSpec, plan: Plan) -> Plan:
-        """Coalesce identical semantic calls while preserving graph lineage."""
+        """Coalesce duplicate and capability-subsumed semantic calls."""
         import json
+        from v2.runtime.subsumption import (
+            arguments_share_subject, capability_subsumes,
+        )
+
+        requirements = {item.id: item for item in task.requirements}
+        selected = {
+            node.id: next((name for name in node.capability_hints
+                           if name in self._catalog), None)
+            for node in plan.nodes
+        }
+        subsumed: dict[str, str] = {}
+        for narrower in plan.nodes:
+            narrow_name = selected[narrower.id]
+            if narrow_name is None:
+                continue
+            for broader in plan.nodes:
+                broad_name = selected[broader.id]
+                if (broader.id == narrower.id or broad_name is None
+                        or not capability_subsumes(broad_name, narrow_name)
+                        or not arguments_share_subject(
+                            broader.arguments, narrower.arguments)):
+                    continue
+                transferable = all(
+                    requirement_id in requirements
+                    and broad_name in requirements[requirement_id].capability_options
+                    for requirement_id in narrower.covers_requirement_ids
+                )
+                if transferable:
+                    subsumed[narrower.id] = broader.id
+                    break
+        if subsumed:
+            kept_nodes = []
+            for node in plan.nodes:
+                if node.id in subsumed:
+                    continue
+                absorbed = [
+                    item for item in plan.nodes
+                    if subsumed.get(item.id) == node.id
+                ]
+                kept_nodes.append(node.model_copy(update={
+                    "covers_requirement_ids": list(dict.fromkeys([
+                        *node.covers_requirement_ids,
+                        *(requirement_id for item in absorbed
+                          for requirement_id in item.covers_requirement_ids),
+                    ])),
+                    "depends_on": list(dict.fromkeys(
+                        subsumed.get(parent, parent) for parent in node.depends_on
+                        if subsumed.get(parent, parent) != node.id
+                    )),
+                }))
+            plan = plan.model_copy(update={"nodes": [
+                node.model_copy(update={
+                    "depends_on": list(dict.fromkeys(
+                        subsumed.get(parent, parent) for parent in node.depends_on
+                        if subsumed.get(parent, parent) != node.id
+                    ))
+                }) for node in kept_nodes
+            ]})
 
         canonical: dict[tuple[str, str, tuple[str, ...]], PlanNode] = {}
         aliases: dict[str, str] = {}

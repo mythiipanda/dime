@@ -201,9 +201,10 @@ class Runtime:
             node.id for node in execution.plan.nodes
             if node.status.value == "failed"
         }
+        redundant_failures = _redundant_failed_nodes(task, execution)
         unresolved_errors = {
             node_id: errors for node_id, errors in execution.errors.items()
-            if node_id in failed_nodes
+            if node_id in failed_nodes and node_id not in redundant_failures
         }
         skipped_nodes = [
             node.id for node in execution.plan.nodes
@@ -249,10 +250,11 @@ class Runtime:
             (claim.text, claim.kind, tuple(claim.evidence_ids), claim.calculation_id)
             for claim in draft.claims
         }
-        structural_flags = (
-            ["repair_stripped_evidence_claim"]
-            if repaired and pre_repair_keys - published_keys else []
-        )
+        structural_flags = []
+        if repaired and pre_repair_keys - published_keys:
+            structural_flags.append("repair_stripped_evidence_claim")
+        if redundant_failures:
+            structural_flags.append("false_partial_downgrade")
         result = RuntimeResult(
             task=task,
             execution=execution,
@@ -437,6 +439,37 @@ def _verified_claims(draft, verification, evidence=None) -> list[VerifiedClaim]:
         for index, claim in enumerate(draft.claims)
         if index in supported
     ]
+
+
+def _redundant_failed_nodes(task: TaskSpec, execution: ExecutionResult) -> set[str]:
+    """Identify failed narrower calls already covered by completed evidence."""
+    from v2.runtime.subsumption import (
+        arguments_share_subject, capability_subsumes,
+    )
+
+    completed = {
+        node.id: node for node in execution.plan.nodes
+        if node.status.value == "complete"
+    }
+    requirements = {item.id: item for item in task.requirements}
+    redundant: set[str] = set()
+    for failed in execution.plan.nodes:
+        if failed.status.value != "failed":
+            continue
+        narrow_name = next(iter(failed.capability_hints), "")
+        for broader in completed.values():
+            broad_name = next(iter(broader.capability_hints), "")
+            if (capability_subsumes(broad_name, narrow_name)
+                    and arguments_share_subject(
+                        broader.arguments, failed.arguments)
+                    and all(
+                        requirement_id in requirements
+                        and broad_name in requirements[requirement_id].capability_options
+                        for requirement_id in failed.covers_requirement_ids
+                    )):
+                redundant.add(failed.id)
+                break
+    return redundant
 
 
 def _empty_evidence_gaps(evidence) -> list[Gap]:
