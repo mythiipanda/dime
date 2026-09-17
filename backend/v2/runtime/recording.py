@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from typing import Any
+import time
 
 from v2.contracts import EvidenceEnvelope, PlanNode, TaskSpec
 from v2.runtime.interfaces import Capability
@@ -52,6 +53,7 @@ class RecordedCapability:
             call_id=call_id,
             data=data,
         )
+        started = time.perf_counter()
         try:
             result = await self._capability.execute(node, task, evidence)
             if not isinstance(result, EvidenceEnvelope):
@@ -71,7 +73,9 @@ class RecordedCapability:
                 turn_id=self._turn_id,
                 step_id=node.id,
                 call_id=call_id,
-                data={"status": "failed", "error": exception_text(exc)},
+                data={"status": "failed", "error": exception_text(exc),
+                      "duration_ms": max(0, round(
+                          (time.perf_counter() - started) * 1000))},
             )
             raise
         self._ledger.append(
@@ -79,6 +83,8 @@ class RecordedCapability:
             turn_id=self._turn_id,
             step_id=node.id,
             call_id=call_id,
-            data={"status": "ok", "evidence": result.model_dump(mode="json")},
+            data={"status": "ok", "evidence": result.model_dump(mode="json"),
+                  "duration_ms": max(0, round(
+                      (time.perf_counter() - started) * 1000))},
         )
         return result

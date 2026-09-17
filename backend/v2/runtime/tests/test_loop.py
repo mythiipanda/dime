@@ -289,7 +289,11 @@ async def test_runtime_ledger_owns_turn_and_stage_lifecycle() -> None:
             if entry.kind == LedgerKind.STEP_END]
     assert starts == ["understand", "plan", "execute", "synthesize", "verify"]
     assert ends == starts
-    assert ledger.entries[-1].data == {"reason": "complete", "verification": "pass"}
+    assert ledger.entries[-1].data["reason"] == "complete"
+    assert ledger.entries[-1].data["verification"] == "pass"
+    assert ledger.entries[-1].data["duration_ms"] >= 0
+    assert all(entry.data["duration_ms"] >= 0 for entry in ledger.entries
+               if entry.kind == LedgerKind.STEP_END)
 
 
 @pytest.mark.anyio
@@ -809,3 +813,30 @@ async def test_runtime_does_not_flag_repair_that_preserves_evidence_claim():
         Repairer(),
     ).run("answer")
     assert result.structural_flags == []
+
+
+@pytest.mark.anyio
+async def test_pre_tool_timeout_closes_stage_and_turn_without_execution() -> None:
+    import asyncio
+    from v2.runtime import LedgerKind, PreToolTimeoutError, RunLedger
+
+    class SlowIntake:
+        async def understand(self, request):
+            await asyncio.sleep(0.05)
+            return TaskSpec(goal=request, mode=RunMode.QUICK, deliverable="text")
+
+    ledger = RunLedger("run")
+    instance = Runtime(
+        intake=SlowIntake(), planner=Planner(), executor=PlanExecutor({}),
+        synthesizer=Synthesizer(),
+        mechanical_verifier=SequenceVerifier(VerificationStatus.PASS),
+        semantic_verifier=SequenceVerifier(VerificationStatus.PASS),
+        ledger=ledger, pre_tool_timeout_s=0.001)
+    with pytest.raises(PreToolTimeoutError, match="intake and planning exceeded"):
+        await instance.run("answer", run_id="run")
+
+    terminal = [entry for entry in ledger.entries
+                if entry.kind in {LedgerKind.STEP_END, LedgerKind.TURN_END}]
+    assert [entry.data["reason"] for entry in terminal] == ["timeout", "timeout"]
+    assert all(entry.data["duration_ms"] >= 0 for entry in terminal)
+    assert not any(entry.kind == LedgerKind.TOOL_CALL for entry in ledger.entries)

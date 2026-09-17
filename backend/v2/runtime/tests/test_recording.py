@@ -26,6 +26,7 @@ async def test_recorded_capability_emits_canonical_call_and_result():
         LedgerKind.TOOL_CALL, LedgerKind.TOOL_RESULT]
     assert ledger.entries[0].call_id == ledger.entries[1].call_id
     assert ledger.entries[1].data["evidence"]["evidence_id"] == "ev"
+    assert ledger.entries[1].data["duration_ms"] >= 0
 
 
 @pytest.mark.anyio
@@ -42,9 +43,10 @@ async def test_recorded_capability_rejects_untyped_result_and_records_failure():
             PlanNode(id="record", description="record", capability_hints=["standings"]),
             TaskSpec(goal="record", mode=RunMode.QUICK, deliverable="text"), [],
         )
-    assert ledger.entries[-1].data == {
-        "status": "failed", "error": "TypeError: capability must return EvidenceEnvelope"
-    }
+    assert ledger.entries[-1].data["status"] == "failed"
+    assert ledger.entries[-1].data["error"] == (
+        "TypeError: capability must return EvidenceEnvelope")
+    assert ledger.entries[-1].data["duration_ms"] >= 0
 
 
 def test_recorded_capability_requires_identity() -> None:

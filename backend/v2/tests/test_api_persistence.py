@@ -1767,3 +1767,49 @@ def test_final_carry_exports_structural_flags():
     from v2.api import routes
     source = Path(routes.__file__).read_text()
     assert '"structural_flags": list(getattr(result, "structural_flags", []))' in source
+
+
+def test_live_route_exposes_structured_pre_tool_timeout_and_stage_latency(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from v2.api import routes
+    from v2.runtime import LedgerKind, PreToolTimeoutError, RunLedger
+
+    ledgers = {}
+
+    class TimedOutRuntime:
+        async def run(self, request, *, run_id=None, context=()):
+            ledger = ledgers[run_id]
+            ledger.append(LedgerKind.TURN_START, turn_id=run_id,
+                          data={"request": request})
+            ledger.append(LedgerKind.STEP_START, turn_id=run_id,
+                          step_id="understand")
+            ledger.append(LedgerKind.STEP_END, turn_id=run_id,
+                          step_id="understand", data={
+                              "reason": "timeout", "duration_ms": 12,
+                              "error": "private timeout detail",
+                          })
+            ledger.append(LedgerKind.TURN_END, turn_id=run_id, data={
+                "reason": "timeout", "error": "private timeout detail",
+            })
+            raise PreToolTimeoutError("private timeout detail")
+
+    def build(**kwargs):
+        ledger = RunLedger(kwargs["run_id"])
+        ledgers[kwargs["run_id"]] = ledger
+        return TimedOutRuntime(), ledger
+
+    monkeypatch.setenv("DIME_RUNTIME_V2", "on")
+    monkeypatch.setattr(
+        "app.providers.resolve_model_id", lambda value: ("openrouter", "fixture"))
+    monkeypatch.setattr("v2.runtime.assembly.build_runtime", build)
+    app = FastAPI()
+    app.include_router(routes.router, prefix="/api")
+    response = TestClient(app).post(
+        "/api/v2/chat/stream", json={"q": "record?"})
+
+    events = response.text
+    assert '"code":"pre_tool_timeout"' in events
+    assert '"stage_latencies_ms":{"understand":12}' in events
+    assert "private timeout detail" not in events
+    assert events.rstrip().endswith("event: graph_end\ndata: {}")

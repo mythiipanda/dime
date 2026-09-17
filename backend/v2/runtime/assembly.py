@@ -108,6 +108,7 @@ def build_runtime(
     progress: Callable[[str, str], None] | None = None,
     policy: ExecutionPolicy | None = None,
     ledger_dir: str | Path | None = None,
+    pre_tool_timeout_s: float | None = None,
 ) -> tuple[Runtime, RunLedger | FileLedger]:
     if not run_id or any(
         char not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
@@ -159,5 +160,6 @@ def build_runtime(
         repair_attempts=policy.repair_attempts,
         ledger=ledger,
         progress=progress,
+        pre_tool_timeout_s=pre_tool_timeout_s,
     )
     return runtime, ledger

@@ -9,7 +9,7 @@ from v2.runtime.ledger import (
     RunLedger,
     TerminalReason,
 )
-from v2.runtime.loop import Runtime
+from v2.runtime.loop import PreToolTimeoutError, Runtime
 from v2.runtime.models import ExecutionResult, RuntimeResult
 from v2.runtime.recording import RecordedCapability
 from v2.runtime.verifier import (
@@ -31,6 +31,7 @@ __all__ = [
     "TerminalReason",
     "Intake",
     "PlanExecutor",
+    "PreToolTimeoutError",
     "Planner",
     "Repairer",
     "RecordedCapability",

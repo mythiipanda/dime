@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import time
 from collections.abc import Callable, Iterable
 
 from v2.contracts import (
@@ -24,6 +25,10 @@ from v2.runtime.models import ExecutionResult, RuntimeResult
 from v2.domain.evidence import iter_values
 
 
+class PreToolTimeoutError(TimeoutError):
+    """Intake and planning exceeded the configured pre-tool budget."""
+
+
 class Runtime:
     def __init__(
         self,
@@ -38,6 +43,7 @@ class Runtime:
         repair_attempts: int = 1,
         ledger: RunLedger | None = None,
         progress: Callable[[str, str], None] | None = None,
+        pre_tool_timeout_s: float | None = None,
     ) -> None:
         if not isinstance(repair_attempts, int) or isinstance(repair_attempts, bool):
             raise TypeError("repair_attempts must be an integer")
@@ -52,7 +58,13 @@ class Runtime:
         self._repairer = repairer
         self._repair_attempts = repair_attempts
         self._ledger = ledger
+        if (pre_tool_timeout_s is not None
+                and (isinstance(pre_tool_timeout_s, bool)
+                     or not isinstance(pre_tool_timeout_s, (int, float))
+                     or pre_tool_timeout_s <= 0)):
+            raise ValueError("pre_tool_timeout_s must be a positive number or None")
         self._progress = progress
+        self._pre_tool_timeout_s = pre_tool_timeout_s
 
     async def run(
         self, request: str, *, run_id: str | None = None,
@@ -70,6 +82,7 @@ class Runtime:
         if len(context) > 8:
             raise ValueError("runtime context cannot exceed 8 turns")
         turn_id = run_id or "turn"
+        turn_started = time.perf_counter()
         if self._ledger is not None:
             if run_id is not None and self._ledger.run_id != run_id:
                 raise ValueError("ledger run id does not match runtime run id")
@@ -78,17 +91,38 @@ class Runtime:
                 data={"request": request},
             )
         try:
-            intake_call = (self._intake.understand(request, context)
-                           if context else self._intake.understand(request))
-            task = TaskSpec.model_validate(
-                (await self._stage(turn_id, "understand", intake_call)).model_dump()
-            )
-            if task.open_questions:
-                raise ValueError(
-                    "intake left unresolved questions: "
-                    + "; ".join(task.open_questions))
-            plan = Plan.model_validate((await self._stage(
-                turn_id, "plan", self._planner.plan(task))).model_dump())
+            async def prepare(deadline: float | None = None):
+                def remaining() -> float | None:
+                    if deadline is None:
+                        return None
+                    return max(0.000001, deadline - time.perf_counter())
+
+                intake_call = (self._intake.understand(request, context)
+                               if context else self._intake.understand(request))
+                prepared_task = TaskSpec.model_validate(
+                    (await self._stage(
+                        turn_id, "understand", intake_call,
+                        timeout_s=remaining())).model_dump()
+                )
+                if prepared_task.open_questions:
+                    raise ValueError(
+                        "intake left unresolved questions: "
+                        + "; ".join(prepared_task.open_questions))
+                prepared_plan = Plan.model_validate((await self._stage(
+                    turn_id, "plan", self._planner.plan(prepared_task),
+                    timeout_s=remaining())).model_dump())
+                return prepared_task, prepared_plan
+
+            if self._pre_tool_timeout_s is None:
+                task, plan = await prepare()
+            else:
+                try:
+                    task, plan = await prepare(
+                        time.perf_counter() + self._pre_tool_timeout_s)
+                except TimeoutError as exc:
+                    raise PreToolTimeoutError(
+                        f"intake and planning exceeded "
+                        f"{self._pre_tool_timeout_s:g} seconds") from exc
             execution = ExecutionResult.model_validate((await self._stage(
                 turn_id, "execute",
                 self._executor.execute(task, plan, run_id=run_id))).model_dump())
@@ -96,14 +130,14 @@ class Runtime:
                 turn_id, "synthesize",
                 self._synthesizer.synthesize(task, execution.evidence))).model_dump())
         except BaseException as exc:
-            self._close_failed(turn_id, exc)
+            self._close_failed(turn_id, exc, started=turn_started)
             raise
         evidence = {item.evidence_id: item for item in execution.evidence}
         try:
             verification = await self._stage(
                 turn_id, "verify", self._verify(task, draft, evidence))
         except BaseException as exc:
-            self._close_failed(turn_id, exc)
+            self._close_failed(turn_id, exc, started=turn_started)
             raise
         pre_repair_draft = draft.model_copy(deep=True)
         repaired = False
@@ -123,7 +157,7 @@ class Runtime:
                     turn_id, f"reverify{suffix}",
                     self._verify(task, draft, evidence))
             except BaseException as exc:
-                self._close_failed(turn_id, exc)
+                self._close_failed(turn_id, exc, started=turn_started)
                 raise
 
         if verification.status == VerificationStatus.REPAIR:
@@ -233,7 +267,9 @@ class Runtime:
             self._ledger.append(
                 LedgerKind.TURN_END, turn_id=turn_id,
                 data={"reason": TerminalReason.COMPLETE.value,
-                      "verification": verification.status.value},
+                      "verification": verification.status.value,
+                      "duration_ms": max(0, round(
+                          (time.perf_counter() - turn_started) * 1000))},
             )
         return result
 
@@ -245,7 +281,11 @@ class Runtime:
         except Exception:
             pass
 
-    async def _stage(self, turn_id: str, step_id: str, awaitable):
+    async def _stage(
+        self, turn_id: str, step_id: str, awaitable,
+        *, timeout_s: float | None = None,
+    ):
+        started = time.perf_counter()
         if self._ledger is not None:
             try:
                 self._ledger.append(
@@ -258,36 +298,52 @@ class Runtime:
                 raise
         self._report_progress(step_id, "running")
         try:
-            result = await awaitable
+            if timeout_s is None:
+                result = await awaitable
+            else:
+                async with asyncio.timeout(timeout_s):
+                    result = await awaitable
         except BaseException as exc:
             if self._ledger is not None:
                 reason = (TerminalReason.CANCELLED
                           if isinstance(exc, asyncio.CancelledError)
+                          else TerminalReason.TIMEOUT
+                          if isinstance(exc, TimeoutError)
                           else TerminalReason.FAILED)
                 self._ledger.append(
                     LedgerKind.STEP_END, turn_id=turn_id, step_id=step_id,
                     data={"reason": reason.value,
-                          "error": exception_text(exc)},
+                          "error": exception_text(exc),
+                          "duration_ms": max(0, round(
+                              (time.perf_counter() - started) * 1000))},
                 )
             self._report_progress(step_id, "failed")
             raise
         if self._ledger is not None:
             self._ledger.append(
                 LedgerKind.STEP_END, turn_id=turn_id, step_id=step_id,
-                data={"reason": TerminalReason.COMPLETE.value})
+                data={"reason": TerminalReason.COMPLETE.value,
+                      "duration_ms": max(0, round(
+                          (time.perf_counter() - started) * 1000))})
         self._report_progress(step_id, "complete")
         return result
 
-    def _close_failed(self, turn_id: str, exc: BaseException) -> None:
+    def _close_failed(
+        self, turn_id: str, exc: BaseException, *, started: float,
+    ) -> None:
         if self._ledger is None:
             return
         reason = (TerminalReason.CANCELLED
                   if isinstance(exc, asyncio.CancelledError)
+                  else TerminalReason.TIMEOUT
+                  if isinstance(exc, (TimeoutError, PreToolTimeoutError))
                   else TerminalReason.FAILED)
         self._ledger.append(
             LedgerKind.TURN_END, turn_id=turn_id,
             data={"reason": reason.value,
-                  "error": exception_text(exc)},
+                  "error": exception_text(exc),
+                  "duration_ms": max(0, round(
+                      (time.perf_counter() - started) * 1000))},
         )
 
     async def _verify(self, task, draft, evidence) -> VerificationReport:

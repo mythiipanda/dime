@@ -1,5 +1,6 @@
 """Process boundary. All env parsing and validation lives here."""
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -18,6 +19,7 @@ class Settings(BaseSettings):
     cors_allowed_origins: str = "http://localhost:3000"
     llm_timeout_s: int = 60
     llm_max_retries: int = 1
+    dime_v2_pre_tool_timeout_s: float = Field(default=45.0, gt=0)
     chat_rate_per_minute: int = 20
     default_timeout_seconds: int = 10
 

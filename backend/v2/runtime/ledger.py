@@ -149,6 +149,11 @@ def _validate_start_data(kind: LedgerKind, data: dict[str, Any]) -> None:
 def _validate_terminal_data(kind: LedgerKind, data: dict[str, Any]) -> None:
     if kind not in (LedgerKind.STEP_END, LedgerKind.TURN_END):
         return
+    duration_ms = data.get("duration_ms")
+    if (duration_ms is not None
+            and (not isinstance(duration_ms, int) or isinstance(duration_ms, bool)
+                 or duration_ms < 0)):
+        raise ValueError("terminal duration_ms must be a non-negative integer")
     reason = data.get("reason")
     if reason not in {item.value for item in TerminalReason}:
         raise ValueError("terminal ledger event requires a valid reason")
@@ -286,15 +291,23 @@ class RunLedger:
                 if entry.call_id in self._results:
                     raise ValueError("tool call may have only one result")
                 status = entry.data.get("status")
+                duration_ms = entry.data.get("duration_ms")
+                allowed_duration = (
+                    {"duration_ms"} if "duration_ms" in entry.data else set())
                 if status == "ok":
-                    valid = (set(entry.data) == {"status", "evidence"}
+                    valid = (set(entry.data) == {"status", "evidence"} | allowed_duration
                              and isinstance(entry.data.get("evidence"), dict))
                 elif status == "failed":
-                    valid = (set(entry.data) == {"status", "error"}
+                    valid = (set(entry.data) == {"status", "error"} | allowed_duration
                              and isinstance(entry.data.get("error"), str)
                              and bool(entry.data["error"].strip()))
                 else:
                     raise ValueError("tool result status must be ok or failed")
+                if (duration_ms is not None
+                        and (not isinstance(duration_ms, int)
+                             or isinstance(duration_ms, bool) or duration_ms < 0)):
+                    raise ValueError(
+                        "tool result duration_ms must be a non-negative integer")
                 if not valid:
                     raise ValueError("tool result data does not match its status")
                 self._results.add(entry.call_id)
@@ -378,16 +391,25 @@ class RunLedger:
             if call_id in self._results:
                 raise ValueError("tool call may have only one result")
             status = payload.get("status")
+            duration_ms = payload.get("duration_ms")
+            allowed_duration = ({"duration_ms"} if "duration_ms" in payload else set())
             if status == "ok":
-                if set(payload) != {"status", "evidence"}                         or not isinstance(payload.get("evidence"), dict):
+                if (set(payload) != {"status", "evidence"} | allowed_duration
+                        or not isinstance(payload.get("evidence"), dict)):
                     raise ValueError(
                         "successful tool result requires exactly status and evidence object")
             elif status == "failed":
-                if set(payload) != {"status", "error"}                         or not isinstance(payload.get("error"), str)                         or not payload["error"].strip():
+                if (set(payload) != {"status", "error"} | allowed_duration
+                        or not isinstance(payload.get("error"), str)
+                        or not payload["error"].strip()):
                     raise ValueError(
                         "failed tool result requires exactly status and non-empty error")
             else:
                 raise ValueError("tool result status must be ok or failed")
+            if (duration_ms is not None
+                    and (not isinstance(duration_ms, int) or isinstance(duration_ms, bool)
+                         or duration_ms < 0)):
+                raise ValueError("tool result duration_ms must be a non-negative integer")
             self._results.add(call_id)
         recorded_at = datetime.now(UTC)
         if self._entries and recorded_at < self._entries[-1].recorded_at:

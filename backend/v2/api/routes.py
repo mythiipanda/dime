@@ -221,6 +221,7 @@ async def quick_answer_stream(body: QuickAnswerBody):
 
     from fastapi.responses import StreamingResponse
     from app.providers import resolve_model_id
+    from app.config import settings
     from v2.api.events import (
         CustomData, FinalAnswer, GraphEnd, NodeUpdate, ToolCall, ToolResult,
     )
@@ -286,7 +287,8 @@ async def quick_answer_stream(body: QuickAnswerBody):
     try:
         runtime, ledger = build_runtime(
             provider=provider, model_name=model_name, run_id=run_id,
-            progress=progress, policy=policy)
+            progress=progress, policy=policy,
+            pre_tool_timeout_s=settings.dime_v2_pre_tool_timeout_s)
     except Exception:
         return setup_error_stream()
     context = tuple(body.history)
@@ -320,9 +322,19 @@ async def quick_answer_stream(body: QuickAnswerBody):
                     name=name,
                     status="ok" if payload.get("status") == "ok" else "fail",
                     rows=len(rows) if isinstance(rows, list) else None,
+                    ms=payload.get("duration_ms"),
                     error=(f"{name} failed"
                            if payload.get("status") == "failed" else None),
                 )
+
+    def stage_latencies_ms():
+        return {
+            entry.step_id: entry.data["duration_ms"]
+            for entry in ledger.entries
+            if entry.kind == LedgerKind.STEP_END
+            and entry.step_id is not None
+            and isinstance(entry.data.get("duration_ms"), int)
+        }
 
     def evidence_table(item):
         return {
@@ -363,6 +375,10 @@ async def quick_answer_stream(body: QuickAnswerBody):
                     yield "event: error\ndata: " + json.dumps({
                         "message": "Dime could not complete this run.",
                         "run_id": run_id,
+                        "code": ("pre_tool_timeout"
+                                 if type(exc).__name__ == "PreToolTimeoutError"
+                                 else "runtime_failure"),
+                        "stage_latencies_ms": stage_latencies_ms(),
                     }, separators=(",", ":")) + "\n\n"
                 yield encode_event(GraphEnd())
                 return
@@ -380,6 +396,7 @@ async def quick_answer_stream(body: QuickAnswerBody):
                     "verified_claims": len(result.verified_claims),
                     "structural_flags": list(getattr(result, "structural_flags", [])),
                     "gaps": [gap.model_dump(mode="json") for gap in result.gaps],
+                    "stage_latencies_ms": stage_latencies_ms(),
                 }
                 yield encode_event(FinalAnswer(text=answer, carry=carry))
                 if body.thread is not None and body.client is not None:
