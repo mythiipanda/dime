@@ -1499,6 +1499,7 @@ async def test_intake_season_normalization_propagates_to_requirement_arguments()
     ).understand("current prediction")
     assert task.season.value == SEASON
     assert task.requirements[0].capability_arguments["season"] == SEASON
+@pytest.mark.anyio
 async def test_planner_replans_call_missing_catalog_required_arguments():
     task = TaskSpec(
         goal="current roster", mode="quick", deliverable="answer",
