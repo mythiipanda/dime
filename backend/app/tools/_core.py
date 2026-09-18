@@ -72,7 +72,7 @@ TTL_BOX = 3600
 TTL_LEADERS = 12 * 3600
 
 STAT_CATEGORIES = frozenset({
-    "PTS", "REB", "AST", "STL", "BLK", "MIN", "FGM", "FGA",
+    "PTS", "REB", "AST", "STL", "BLK", "PPG", "RPG", "APG", "SPG", "BPG", "MIN", "FGM", "FGA",
     "FG_PCT", "FG3M", "FG3A", "FG3_PCT", "FTM", "FTA", "FT_PCT",
     "OREB", "DREB", "TOV", "PF", "EFF", "DD2", "TD3",
     "USG_PCT", "TOV_PCT", "TS_PCT", "SPG", "PIE",

@@ -2206,3 +2206,15 @@ async def test_model_valid_path_wrong_result_remains_for_mechanical_rejection():
     report=verify_mechanical(task,draft,[ev],[calculation])
     assert report.status.value=="repair"
     assert any("does not recompute" in reason for reason in report.claim_results[0].reasons)
+
+
+def test_calculation_validation_accepts_ordinary_rate_rounding_but_not_wrong_value():
+    from v2.domain.calculations import Calculation, validate_calculation
+    from v2.domain.evidence import EvidenceIndex
+    ev=EvidenceEnvelope(evidence_id="rate",capability="leaders",source="fixture",observed_at=datetime.now(UTC),rows={"total":200,"gp":64})
+    base={"calculation_id":"bpg","operation":"divide","inputs":[{"evidence_id":"rate","path":"rows.total"},{"evidence_id":"rate","path":"rows.gp"}]}
+    rounded=Calculation.model_validate({**base,"result":"3.1"})
+    wrong=Calculation.model_validate({**base,"result":"99"})
+    index=EvidenceIndex([ev])
+    assert validate_calculation(rounded,index) is None
+    assert "does not recompute" in validate_calculation(wrong,index)

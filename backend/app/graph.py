@@ -1706,9 +1706,15 @@ async def _triage_seed(question: str, primary: str, model: str,
                           question, re.IGNORECASE)):
         if re.search(r"true[ -]?shooting|\bTS%?\b", question, re.IGNORECASE):
             _rate_leader = "TS_PCT"
-        elif re.search(r"steals?\s+per[ -]?game|\bSPG\b", question,
-                       re.IGNORECASE):
-            _rate_leader = "SPG"
+        else:
+            for pattern, category in ((r"points?\s+per[ -]?game|\bPPG\b", "PPG"),
+                                      (r"rebounds?\s+per[ -]?game|\bRPG\b", "RPG"),
+                                      (r"assists?\s+per[ -]?game|\bAPG\b", "APG"),
+                                      (r"steals?\s+per[ -]?game|\bSPG\b", "SPG"),
+                                      (r"blocks?\s+per[ -]?game|\bBPG\b", "BPG")):
+                if re.search(pattern, question, re.IGNORECASE):
+                    _rate_leader = category
+                    break
     if _rate_leader:
         _rlh: dict[str, Any] = {}
         async for _e in _triage_tool(

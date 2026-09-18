@@ -815,7 +815,7 @@ def get_leaders(
     # Rate leaderboards need explicit volume floors. They cannot reuse raw
     # total-stat boards without either reporting the wrong unit (SPG) or
     # elevating tiny-sample efficiency outliers (TS%).
-    if stat_category in {"TS_PCT", "SPG"}:
+    if stat_category in {"TS_PCT", "PPG", "RPG", "APG", "SPG", "BPG"}:
         con = store.connect(read_only=True)
         try:
             if stat_category == "TS_PCT":
@@ -834,19 +834,26 @@ def get_leaders(
                 qualification = "1,000+ total minutes"
                 value = lambda row: f"{row['TS_PCT']:.1f}% true shooting"
             else:
+                rate_to_total = {"PPG": "PTS", "RPG": "REB", "APG": "AST",
+                                 "SPG": "STL", "BPG": "BLK"}
+                total_stat = rate_to_total[stat_category]
+                table = f"silver_leaders_{total_stat.lower()}"
                 raw = con.execute(
-                    "SELECT PLAYER, TEAM, GP, STL / CAST(GP AS DOUBLE) AS SPG "
-                    "FROM silver_leaders_pts WHERE _season = ? AND GP >= 20 "
-                    f"ORDER BY SPG {order}, STL DESC",
+                    f"SELECT PLAYER, TEAM, GP, {total_stat} / CAST(GP AS DOUBLE) AS RATE "
+                    f"FROM {table} WHERE _season = ? AND GP > 0 "
+                    f"ORDER BY RATE {order}, GP DESC, PLAYER",
                     [season],
                 ).fetchall()
                 rows = [
                     {"RANK": index, "PLAYER": row[0], "TEAM": row[1],
-                     "GP": row[2], "SPG": round(float(row[3]), 2)}
+                     "GP": row[2], stat_category: float(row[3])}
                     for index, row in enumerate(raw, 1)
                 ]
-                qualification = "20+ games"
-                value = lambda row: f"{row['SPG']:.2f} steals per game"
+                qualification = "games played shown; no implicit GP floor"
+                label = {"PPG": "points", "RPG": "rebounds",
+                         "APG": "assists", "SPG": "steals",
+                         "BPG": "blocks"}[stat_category]
+                value = lambda row: f"{row[stat_category]:.2f} {label} per game"
         finally:
             con.close()
         meta = {

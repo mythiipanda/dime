@@ -129,7 +129,14 @@ def validate_calculation(calculation: Calculation, evidence: EvidenceIndex,
     if not tolerance.is_finite() or tolerance < 0:
         raise ValueError("calculation tolerance must be finite and non-negative")
     actual = recompute(calculation, evidence)
-    if abs(actual - calculation.result) > tolerance:
+    # A declared calculation is also a publication value. When it carries
+    # fewer decimal places than the exact recomputation, accept ordinary
+    # half-unit rounding at its declared precision. This remains narrow:
+    # grossly wrong values (for example 99 for a computed 1) still fail.
+    displayed_places = max(0, -calculation.result.as_tuple().exponent)
+    display_tolerance = Decimal(5).scaleb(-(displayed_places + 1))
+    effective_tolerance = max(tolerance, display_tolerance)
+    if abs(actual - calculation.result) > effective_tolerance:
         return (
             f"calculation {calculation.calculation_id} does not recompute "
             f"(declared {calculation.result}, computed {actual})"

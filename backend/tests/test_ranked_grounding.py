@@ -63,8 +63,8 @@ def test_steals_per_game_leader_carries_sample_size():
     assert [c.split(":")[0] for c in st["calls_made"]] == ["get_leaders"]
     out = st["tool_results"][0]
     assert out["meta"]["stat_category"] == "SPG"
-    assert out["meta"]["qualification"] == "20+ games"
-    assert out["rows"][0]["GP"] >= 20
+    assert out["meta"]["qualification"] == "games played shown; no implicit GP floor"
+    assert out["rows"][0]["GP"] > 0
     answer = out["meta"]["deterministic_answer"]
     assert "steals per game" in answer and "games" in answer
 
@@ -133,3 +133,14 @@ def test_team_metric_rank_binds_requested_field_and_direction(
     assert out["rows"][0]["TEAM_NAME"] == team
     answer = out["meta"]["deterministic_answer"]
     assert team in answer and value in answer
+
+
+def test_blocks_per_game_uses_full_blocks_totals_and_unrounded_sort():
+    st = _drain("Who leads the NBA in blocks per game this season? Give the top five with games played.")
+    assert [c.split(":")[0] for c in st["calls_made"]] == ["get_leaders"]
+    out = st["tool_results"][0]
+    assert out["meta"]["stat_category"] == "BPG"
+    assert [r["PLAYER"] for r in out["rows"][:5]] == [
+        "Victor Wembanyama", "Alex Sarr", "Zach Edey", "Chet Holmgren", "Jay Huff"]
+    assert all(r["GP"] for r in out["rows"][:5])
+    assert out["rows"][2]["BPG"] > out["rows"][3]["BPG"] > out["rows"][4]["BPG"]
