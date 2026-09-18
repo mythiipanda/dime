@@ -345,11 +345,19 @@ def get_standings_deep(season: str = SEASON, top: int = 5) -> dict[str, Any]:
 
 
 @tool
-def get_ratings(season: str = SEASON, team: str = "") -> dict[str, Any]:
-    """Team offensive, defensive, and net ratings plus pace and ranks.
+def get_ratings(
+    season: str = SEASON,
+    team: str = "",
+    requested_metric: str = "",
+    ranking_direction: str = "",
+) -> dict[str, Any]:
+    """Team ratings, optionally bound to one requested ranked metric.
 
-    Optional team narrows a direct team-ratings question to one row and
-    supplies a payload-built answer, avoiding lineup and SQL detours.
+    ``requested_metric`` is the evidence identity carried from a ranked-team
+    plan. With ``ranking_direction`` (``asc`` or ``desc``), rows are ordered
+    by that exact field and the payload owns the leader claim. This prevents
+    unrelated numerals in the same expanded row from competing during claim
+    admission. ``team`` still narrows a direct team-ratings question.
     """
     from nba_api.stats.static import teams as _teams
 
@@ -369,6 +377,40 @@ def get_ratings(season: str = SEASON, team: str = "") -> dict[str, Any]:
         d = {k: r.get(k) for k in keep if k in r}
         d["TEAM"] = abbrev.get(r.get("TEAM_ID"), str(r.get("TEAM_NAME") or ""))
         slim.append(d)
+    metric = str(requested_metric or "").strip().upper()
+    direction = str(ranking_direction or "").strip().lower()
+    allowed_metrics = {
+        "OFF_RATING": "offensive rating",
+        "DEF_RATING": "defensive rating",
+        "NET_RATING": "net rating",
+        "PACE": "pace",
+        "TS_PCT": "true shooting",
+        "TM_TOV_PCT": "turnover percentage",
+    }
+    if metric:
+        if metric not in allowed_metrics:
+            return {"tool": "get_ratings", "ok": False,
+                    "error": f"unsupported requested_metric: {metric}"}
+        if direction not in {"asc", "desc"}:
+            return {"tool": "get_ratings", "ok": False,
+                    "error": "ranking_direction must be 'asc' or 'desc'"}
+        present = [r for r in slim if r.get(metric) is not None]
+        present.sort(key=lambda r: float(r[metric]),
+                     reverse=direction == "desc")
+        slim = present
+        meta.update({"requested_metric": metric,
+                     "stat_category": metric,
+                     "ranking_direction": direction,
+                     "claim_value_field": metric,
+                     "claim_entity_field": "TEAM_NAME"})
+        if slim:
+            leader = slim[0]
+            raw = float(leader[metric])
+            value = f"{raw:.3f}" if metric in {"TS_PCT", "TM_TOV_PCT"} else f"{raw:g}"
+            meta["deterministic_answer"] = (
+                f"{leader.get('TEAM_NAME') or leader.get('TEAM')} had the "
+                f"{'lowest' if direction == 'asc' else 'highest'} "
+                f"{allowed_metrics[metric]} in {season}: {value}.")
     if team:
         want = str(team).strip().lower()
         slim = [r for r in slim if (
@@ -376,7 +418,7 @@ def get_ratings(season: str = SEASON, team: str = "") -> dict[str, Any]:
             or want in str(r.get("TEAM_NAME") or "").lower()
             or str(r.get("TEAM_NAME") or "").lower() in want)]
         meta["team"] = team
-        if slim:
+        if slim and not metric:
             r = slim[0]
             meta["deterministic_answer"] = (
                 f"{r.get('TEAM_NAME') or r.get('TEAM')} ratings, {season}: "

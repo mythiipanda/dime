@@ -1741,6 +1741,43 @@ async def _triage_seed(question: str, primary: str, model: str,
                 yield _e
         return
 
+    # Team metric rankings carry the requested field and direction through
+    # retrieval and publication. A full ratings row contains many unrelated
+    # numerals; without this identity the verifier can match the right team to
+    # the wrong field or reject the supported value entirely.
+    _team_rank_metric = None
+    if (not found_p and not found_t and not state.get("history")
+            and re.search(r"\bwhich\s+team\b|\bwhat\s+team\b|"
+                          r"\bteam\s+(?:has|had|with)\b", question,
+                          re.IGNORECASE)
+            and re.search(r"\b(?:highest|lowest|best|worst)\b", question,
+                          re.IGNORECASE)):
+        for _pat, _key in (
+            (r"defensive rating|defense rating", "DEF_RATING"),
+            (r"offensive rating|offense rating", "OFF_RATING"),
+            (r"net rating", "NET_RATING"),
+            (r"true[ -]?shooting|\bTS%?\b", "TS_PCT"),
+            (r"turnover (?:percentage|percent|rate)|\bTOV%\b", "TM_TOV_PCT"),
+            (r"\bpace\b", "PACE"),
+        ):
+            if re.search(_pat, question, re.IGNORECASE):
+                _team_rank_metric = _key
+                break
+    if _team_rank_metric:
+        _direction = ("asc" if re.search(r"\blowest|worst\b", question,
+                                          re.IGNORECASE) else "desc")
+        _trh: dict[str, Any] = {}
+        async for _e in _triage_tool(
+                "get_ratings",
+                {"season": "2025-26", "requested_metric": _team_rank_metric,
+                 "ranking_direction": _direction}, state, _trh):
+            yield _e
+        _trout = _trh.get("out") or {}
+        if _result_status(_trout) == "ok" and _result_rows(_trout):
+            async for _e in _triage_terminal(question, state):
+                yield _e
+        return
+
     # F88: a named team's plain ratings question is one get_ratings call.
     # The old planner wandered through lineup stats, a league delegate,
     # standings, and two Python calls before returning the team row.

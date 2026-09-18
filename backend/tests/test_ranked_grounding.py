@@ -112,3 +112,24 @@ def test_leader_routing_rejects_invalid_direction_and_volume():
         get_leaders.invoke({"ranking_direction": "sideways"})
     with pytest.raises(ValueError, match="min_attempts"):
         get_leaders.invoke({"min_attempts": -1})
+
+
+@pytest.mark.parametrize(("question", "metric", "direction", "team", "value"), [
+    ("Which team has the lowest defensive rating in 2025-26? Give the value.",
+     "DEF_RATING", "asc", "Oklahoma City Thunder", "106.5"),
+    ("Which team has the highest true shooting in 2025-26? Give the value.",
+     "TS_PCT", "desc", "Denver Nuggets", "0.616"),
+    ("Which team has the lowest turnover percentage in 2025-26? Give the value.",
+     "TM_TOV_PCT", "asc", "Oklahoma City Thunder", "0.124"),
+])
+def test_team_metric_rank_binds_requested_field_and_direction(
+        question, metric, direction, team, value):
+    st = _drain(question)
+    assert [c.split(":")[0] for c in st["calls_made"]] == ["get_ratings"]
+    out = st["tool_results"][0]
+    assert out["meta"]["requested_metric"] == metric
+    assert out["meta"]["ranking_direction"] == direction
+    assert out["meta"]["claim_value_field"] == metric
+    assert out["rows"][0]["TEAM_NAME"] == team
+    answer = out["meta"]["deterministic_answer"]
+    assert team in answer and value in answer
