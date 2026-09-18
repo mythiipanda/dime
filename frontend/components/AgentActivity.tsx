@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { AiMessage, NodeName, ToolCall } from "../lib/chat";
 import ThinkLine from "./ThinkLine";
+import ActivityTimeline from "./ActivityTimeline";
 import { rerunSql, type SqlRerunRows } from "../lib/api";
 
 const AGENT_NODES: NodeName[] = ["entry", "data_retrieval", "tools", "analytics"];
@@ -366,7 +367,7 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
         ? `${NODE_LABELS[runningNode] || runningNode}…`
         : "Starting…";
 
-  const hasActivity = thoughts.length > 0 || calls.length > 0 || live.length > 0;
+  const hasActivity = thoughts.length > 0 || calls.length > 0 || live.length > 0 || (ai.activity?.length ?? 0) > 0;
 
   if (!running && !open) {
     if (!calls.length && !thoughts.length) return null;
@@ -438,7 +439,7 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
           />
         )}
         <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--color-ink-black)", display: "inline-flex" }}>
-          {running ? <ThinkLine text={headerText} /> : "Work log"}
+          {running ? <ThinkLine text="Live activity" /> : "Work log"}
         </span>
         <span style={{ fontSize: 11, color: "var(--color-ash-gray)" }}>
           {open ? "▾" : "▸"}
@@ -466,12 +467,15 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
               </ul>
             </details>
           )}
+          {(ai.activity?.length ?? 0) > 0 && (
+            <ActivityTimeline items={ai.activity!} running={running} />
+          )}
           {!hasActivity && running && (
             <div style={{ fontSize: 12, color: "var(--color-ash-gray)", padding: "4px 0" }}>
-              Starting…
+              Waiting for the first runtime event…
             </div>
           )}
-          {(running || calls.length === 0) && thoughts.map((t, i) => (
+          {!ai.activity?.length && (running || calls.length === 0) && thoughts.map((t, i) => (
             <div
               key={`t-${i}`}
               style={{ fontSize: 12.5, color: "var(--color-warm-gray)", padding: "2px 0" }}
@@ -479,7 +483,7 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
               {t}
             </div>
           ))}
-          {running && live.map((l, i) => {
+          {!ai.activity?.length && running && live.map((l, i) => {
             const isLive = running && i === live.length - 1;
             const prefix = l.agent
               ? `${l.agent.charAt(0).toUpperCase() + l.agent.slice(1)} check · `
@@ -495,7 +499,7 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
               </div>
             );
           })}
-          {calls.length > 0 && (
+          {!ai.activity?.length && calls.length > 0 && (
             <div style={{ marginTop: thoughts.length ? 6 : 0 }}>
               {calls.map((c, i) => (
                 <ToolRow key={`c-${i}`} c={c} />

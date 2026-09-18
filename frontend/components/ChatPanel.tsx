@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
+  ActivityKind,
   AiMessage,
   ChatMessage,
   ModelOption,
@@ -34,6 +35,46 @@ function applyEvent(ai: AiMessage, type: string, data: unknown): AiMessage {
     if (!next.nodes[n]) next.nodes[n] = emptyNode();
     return next.nodes[n]!;
   };
+  const activityTypes = new Set([
+    "stage_summary", "plan_update", "node_update", "thought_stream",
+    "thought_token", "tool_call", "tool_result", "evidence_update",
+    "verification_update",
+  ]);
+  if (activityTypes.has(type)) {
+    const eventId = typeof d.event_id === "string"
+      ? d.event_id
+      : `legacy:${next.activity?.length || 0}:${type}`;
+    if (!(next.activity || []).some((item) => item.eventId === eventId)) {
+      const label = (value: unknown) => String(value || "").replace(/_/g, " ");
+      const titles: Record<string, string> = {
+        stage_summary: label(d.title) || `Stage: ${label(d.stage || d.node)}`,
+        plan_update: label(d.title) || `Plan: ${label(d.capability || d.plan_node_id)}`,
+        node_update: label(d.title) || label(d.node) || "Runtime stage",
+        thought_stream: label(d.agent) ? `${label(d.agent)} thought` : "Reasoning",
+        thought_token: label(d.agent) ? `${label(d.agent)} thought` : "Reasoning",
+        tool_call: label(d.label || d.name) || "Tool call",
+        tool_result: `${label(d.name) || "Tool"} result`,
+        evidence_update: label(d.title) || `Evidence: ${label(d.capability || d.evidence_id)}`,
+        verification_update: label(d.title) || "Verification",
+      };
+      const summary = d.summary ?? d.text ?? d.reason ?? d.message;
+      next.activity = [...(next.activity || []), {
+        eventId,
+        sequence: typeof d.sequence === "number" ? d.sequence : undefined,
+        kind: type as ActivityKind,
+        node: d.node as NodeName | undefined,
+        title: titles[type] || label(type),
+        summary: typeof summary === "string" ? summary : undefined,
+        status: typeof d.status === "string" ? d.status : undefined,
+        emittedAt: typeof d.emitted_at === "string" ? d.emitted_at : undefined,
+        data: { ...d },
+      }].sort((a, b) =>
+        a.sequence !== undefined && b.sequence !== undefined
+          ? a.sequence - b.sequence
+          : 0,
+      );
+    }
+  }
   if (type === "node_update") {
     const node = d.node as NodeName;
     const status = d.status;

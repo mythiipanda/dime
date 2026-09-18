@@ -5,6 +5,30 @@ export type NodeName =
   | "analytics"
   | "presentation";
 
+
+export type ActivityKind =
+  | "stage_summary"
+  | "plan_update"
+  | "node_update"
+  | "thought_stream"
+  | "thought_token"
+  | "tool_call"
+  | "tool_result"
+  | "evidence_update"
+  | "verification_update";
+
+export interface ActivityRecord {
+  eventId: string;
+  sequence?: number;
+  kind: ActivityKind;
+  node?: NodeName;
+  title: string;
+  summary?: string;
+  status?: string;
+  emittedAt?: string;
+  data: Record<string, unknown>;
+}
+
 export interface ToolCall {
   name: string;
   args: Record<string, unknown>;
@@ -58,6 +82,7 @@ export interface AiMessage {
   error?: string;
   suggestions?: string[];
   caution?: string[];
+  activity?: ActivityRecord[];
   carry?: {
     players?: string[];
     teams?: string[];
