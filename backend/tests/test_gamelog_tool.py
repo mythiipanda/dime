@@ -48,3 +48,12 @@ def test_suffix_name_keeps_bound_identity_label():
     assert out["rows"]["player_id"] == 896
     assert out["rows"]["player"] == "Tim Hardaway Jr."
     assert out["rows"]["total"] == 80
+
+def test_filtered_population_carries_full_precision_aggregate_inputs():
+    from app.tools import gamelog
+    out = gamelog.search_game_logs.invoke({"player":"Stephen Curry", "home_away":"home"})
+    rows = out["rows"]
+    assert rows["total"] == 23
+    from decimal import Decimal
+    assert rows["average_pts"] == Decimal("576") / Decimal("23")
+    assert rows["window_start"] <= rows["window_end"]

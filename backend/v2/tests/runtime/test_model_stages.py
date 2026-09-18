@@ -1817,3 +1817,81 @@ def test_typed_team_metric_precedes_model_argument(required_metric, required_dir
     args = planner._normalize_plan(task, plan).nodes[0].arguments
     assert args["requested_metric"] == expected_metric
     assert args.get("ranking_direction") == expected_direction
+
+@pytest.mark.anyio
+async def test_team_rank_synthesis_is_deterministic_and_uses_requested_field_only():
+    from v2.adapters.models import ModelSynthesizer
+    from v2.contracts import EvidenceEnvelope
+    task = TaskSpec(goal="lowest turnover", mode="quick", deliverable="team and value",
+        requirements=[{"id":"metric","description":"TOV", "capability_options":["team_ratings"],
+            "capability_arguments":{"requested_metric":"TM_TOV_PCT","ranking_direction":"asc"}}])
+    ev = EvidenceEnvelope(evidence_id="ratings", capability="team_ratings", source="fixture",
+        observed_at=datetime.now(UTC), season="2025-26", rows=[
+            {"TEAM_NAME":"Oklahoma City Thunder","TM_TOV_PCT":.124,"DEF_RATING":106.5,"TM_TOV_PCT_RANK":1},
+            {"TEAM_NAME":"Denver Nuggets","TM_TOV_PCT":.128,"DEF_RATING":116}],
+        metric_definitions={"__requested_metric__":"TM_TOV_PCT"},
+        qualification="all teams", coverage="full board")
+    stub = StubModel([])
+    draft = await ModelSynthesizer(stub, provider="stub", model_name="stub").synthesize(task,[ev])
+    assert stub.calls == []
+    assert len(draft.claims) == 1
+    assert draft.claims[0].text == ("Oklahoma City Thunder had the lowest turnover percentage "
+                                    "in 2025-26: 0.124.")
+    assert "106.5" not in draft.claims[0].text and "12.4" not in draft.claims[0].text
+
+@pytest.mark.anyio
+async def test_game_log_aggregate_synthesis_uses_full_population_and_signed_delta():
+    from decimal import Decimal
+    task = TaskSpec(goal="home away scoring", mode="quick", deliverable="averages counts difference",
+        calculation_requirements=[{"id":"difference", "description":"home minus away scoring difference"}])
+    def ev(eid, split, total, avg):
+        return EvidenceEnvelope(evidence_id=eid, capability="game_logs", source="fixture",
+            observed_at=datetime.now(UTC), season="2025-26",
+            rows={"player":"Stephen Curry", "filters":f"{split} games", "total":total,
+                  "average_pts":Decimal(avg), "matches":[]})
+    stub = StubModel([])
+    draft = await ModelSynthesizer(stub, provider="stub", model_name="stub").synthesize(
+        task, [ev("home", "home", 23, "25.04347826086956521739130435"),
+               ev("away", "away", 20, "28.3")])
+    assert stub.calls == []
+    assert [claim.text for claim in draft.claims] == [
+        "Stephen Curry averaged 25.0 points per game in 23 home games in 2025-26.",
+        "Stephen Curry averaged 28.3 points per game in 20 away games in 2025-26.",
+        "The home-minus-away scoring difference was -3.3 points per game."]
+    assert draft.calculations[-1].result == Decimal("-3.25652173913043478260869565")
+    assert all(inp.evidence_id in {"home", "away"} for calc in draft.calculations for inp in calc.inputs)
+
+
+@pytest.mark.anyio
+async def test_pair_synthesis_failure_class_has_deterministic_supported_answer():
+    task = TaskSpec(goal="compare players", mode="quick", deliverable="points TS and margin",
+        calculation_requirements=[
+            {"id":"leader", "description":"identify who scores more"},
+            {"id":"margin", "description":"points per game margin difference"}])
+    pair = EvidenceEnvelope(evidence_id="pair", capability="player_comparison", source="fixture",
+        observed_at=datetime.now(UTC), season="2025-26",
+        rows={"a":{"name":"Myles Turner","ppg":11.9},
+              "b":{"name":"Luka Dončić","ppg":33.5}})
+    turner = EvidenceEnvelope(evidence_id="turner", capability="shooting_efficiency", source="fixture",
+        observed_at=datetime.now(UTC), season="2025-26",
+        rows={"PLAYER_NAME":"Myles Turner","TS_PCT":58.4})
+    luka = EvidenceEnvelope(evidence_id="luka", capability="shooting_efficiency", source="fixture",
+        observed_at=datetime.now(UTC), season="2025-26",
+        rows={"PLAYER_NAME":"Luka Dončić","TS_PCT":61.6})
+    class Down:
+        calls = []
+        async def generate(self, **call):
+            self.calls.append(call)
+            raise RuntimeError("all structured-output providers failed")
+    down = Down()
+    draft = await ModelSynthesizer(down, provider="stub", model_name="stub").synthesize(
+        task, [pair, turner, luka])
+    assert down.calls == []
+    assert [claim.text for claim in draft.claims] == [
+        "Myles Turner averaged 11.9 points per game in 2025-26.",
+        "Luka Dončić averaged 33.5 points per game in 2025-26.",
+        "Luka Dončić scored more points per game than Myles Turner.",
+        "Luka Dončić scored 21.6 points per game more than Myles Turner.",
+        "Myles Turner had a 58.4% true shooting percentage.",
+        "Luka Dončić had a 61.6% true shooting percentage."]
+    assert [calc.requirement_id for calc in draft.calculations] == ["leader", "margin"]

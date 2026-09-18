@@ -12,6 +12,7 @@ PTS/REB/AST/STL/BLK."""
 
 import datetime as _dt
 from collections import Counter
+from decimal import Decimal
 from typing import Any
 
 from langchain_core.tools import tool
@@ -622,6 +623,13 @@ def search_game_logs(
             "scope": "playoffs" if playoffs else "regular",
             "filters": _describe_filters(filters, playoffs),
             "total": len(matched),
+            # Canonical aggregate inputs cover the full filtered population,
+            # independent of the returned-row cap. Keep full precision here;
+            # presentation rounds only after derived arithmetic is complete.
+            "average_pts": (Decimal(sum(g["pts"] for g in matched)) / Decimal(len(matched))
+                            if matched else None),
+            "window_start": (min((g["date"] for g in matched), default=None)),
+            "window_end": (max((g["date"] for g in matched), default=None)),
             "returned": min(len(matched), lim),
             "capped": capped,
             "record": record,

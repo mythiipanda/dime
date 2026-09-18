@@ -23,6 +23,7 @@ from app.providers import (
 )
 from v2.contracts import (
     ConversationTurn,
+    Claim,
     DraftReport,
     EvidenceEnvelope,
     Plan,
@@ -917,6 +918,173 @@ def _validate_draft(
     return draft
 
 
+def _deterministic_game_log_draft(
+    task: TaskSpec, evidence: Sequence[EvidenceEnvelope],
+) -> DraftReport | None:
+    """Build typed home/away scoring aggregates from admitted log evidence."""
+    from decimal import Decimal
+    logs = [item for item in evidence
+            if item.capability == "game_logs" and isinstance(item.rows, Mapping)]
+    home = next((item for item in logs if item.rows.get("filters") == "home games"), None)
+    away = next((item for item in logs if item.rows.get("filters") == "away games"), None)
+    asks_delta = any("home" in item.description.casefold()
+                     and "away" in item.description.casefold()
+                     for item in task.calculation_requirements)
+    if not (home and away and asks_delta):
+        return None
+    try:
+        home_avg = Decimal(str(home.rows["average_pts"]))
+        away_avg = Decimal(str(away.rows["average_pts"]))
+        home_n = int(home.rows["total"]); away_n = int(away.rows["total"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    delta = home_avg - away_avg
+    requirement_id = next(item.id for item in task.calculation_requirements
+                          if "home" in item.description.casefold()
+                          and "away" in item.description.casefold())
+    player = home.rows.get("player") or away.rows.get("player") or "The player"
+    season = home.season or away.season or "the selected season"
+    def one(value: Decimal) -> str:
+        return f"{value.quantize(Decimal('0.1'))}"
+    calculations = [
+        {"calculation_id":"home_mean_pts", "operation":"mean",
+         "inputs":[{"evidence_id":home.evidence_id,"path":"rows.matches[].pts"}],
+         "result":home_avg, "unit":"points_per_game"},
+        {"calculation_id":"away_mean_pts", "operation":"mean",
+         "inputs":[{"evidence_id":away.evidence_id,"path":"rows.matches[].pts"}],
+         "result":away_avg, "unit":"points_per_game"},
+        {"calculation_id":"home_minus_away", "requirement_id":requirement_id,
+         "operation":"subtract",
+         "inputs":[{"evidence_id":home.evidence_id,"path":"rows.average_pts"},
+                   {"evidence_id":away.evidence_id,"path":"rows.average_pts"}],
+         "result":delta, "unit":"points_per_game"},
+    ]
+    claims = [
+        Claim(text=f"{player} averaged {one(home_avg)} points per game in {home_n} home games in {season}.",
+              kind="derived", evidence_ids=[home.evidence_id], calculation_id="home_mean_pts"),
+        Claim(text=f"{player} averaged {one(away_avg)} points per game in {away_n} away games in {season}.",
+              kind="derived", evidence_ids=[away.evidence_id], calculation_id="away_mean_pts"),
+        Claim(text=f"The home-minus-away scoring difference was {one(delta)} points per game.",
+              kind="derived", evidence_ids=[home.evidence_id,away.evidence_id], calculation_id="home_minus_away"),
+    ]
+    return DraftReport(sections=["Home and away scoring"], claims=claims,
+        calculations=calculations, blocked_calculation_requirement_ids=[], gaps=[])
+
+
+def _deterministic_player_comparison_draft(
+    task: TaskSpec, evidence: Sequence[EvidenceEnvelope],
+) -> DraftReport | None:
+    """Project comparison facts and typed margin from canonical pair evidence."""
+    from decimal import Decimal
+    item = next((ev for ev in evidence
+                 if ev.capability == "player_comparison"
+                 and isinstance(ev.rows, Mapping)), None)
+    if item is None:
+        return None
+    requirements = {req.id: req.description.casefold()
+                    for req in task.calculation_requirements}
+    difference_id = next((rid for rid, text in requirements.items()
+                          if any(word in text for word in ("margin", "difference", "by how much"))), None)
+    leader_id = next((rid for rid, text in requirements.items()
+                      if any(word in text for word in ("higher", "leader", "scores more"))), None)
+    if not (difference_id or leader_id):
+        return None
+    try:
+        a = item.rows["a"]; b = item.rows["b"]
+        a_name, b_name = str(a["name"]), str(b["name"])
+        a_ppg, b_ppg = Decimal(str(a["ppg"])), Decimal(str(b["ppg"]))
+    except (KeyError, TypeError, ValueError):
+        return None
+    high_name, high_ppg, high_path = ((a_name, a_ppg, "rows.a.ppg")
+                                      if a_ppg >= b_ppg
+                                      else (b_name, b_ppg, "rows.b.ppg"))
+    low_name, low_ppg, low_path = ((b_name, b_ppg, "rows.b.ppg")
+                                   if a_ppg >= b_ppg
+                                   else (a_name, a_ppg, "rows.a.ppg"))
+    calculations = []
+    claims = [
+        Claim(text=f"{a_name} averaged {a_ppg} points per game in {item.season or 'the selected season'}.",
+              kind="observed", evidence_ids=[item.evidence_id]),
+        Claim(text=f"{b_name} averaged {b_ppg} points per game in {item.season or 'the selected season'}.",
+              kind="observed", evidence_ids=[item.evidence_id]),
+    ]
+    if leader_id:
+        calculations.append({"calculation_id":"ppg_leader_rank",
+            "requirement_id":leader_id, "operation":"rank_desc",
+            "inputs":[{"evidence_id":item.evidence_id,"path":high_path},
+                      {"evidence_id":item.evidence_id,"path":low_path}],
+            "result":1, "unit":"rank", "subject_input":0})
+        claims.append(Claim(text=f"{high_name} scored more points per game than {low_name}.",
+                            kind="derived", evidence_ids=[item.evidence_id],
+                            calculation_id="ppg_leader_rank"))
+    if difference_id:
+        margin = high_ppg - low_ppg
+        calculations.append({"calculation_id":"ppg_difference",
+            "requirement_id":difference_id, "operation":"subtract",
+            "inputs":[{"evidence_id":item.evidence_id,"path":high_path},
+                      {"evidence_id":item.evidence_id,"path":low_path}],
+            "result":margin,"unit":"points per game"})
+        claims.append(Claim(
+            text=f"{high_name} scored {margin} points per game more than {low_name}.",
+            kind="derived", evidence_ids=[item.evidence_id],
+            calculation_id="ppg_difference"))
+    shooting = {str(ev.rows.get("PLAYER_NAME")): ev for ev in evidence
+                if ev.capability == "shooting_efficiency"
+                and isinstance(ev.rows, Mapping)
+                and ev.rows.get("PLAYER_NAME") and ev.rows.get("TS_PCT") is not None}
+    for name in (a_name, b_name):
+        ev = shooting.get(name)
+        if ev is not None:
+            claims.append(Claim(text=f"{name} had a {ev.rows['TS_PCT']}% true shooting percentage.",
+                                kind="observed", evidence_ids=[ev.evidence_id]))
+    return DraftReport(sections=["Player comparison"], claims=claims,
+        calculations=calculations,
+        blocked_calculation_requirement_ids=[], gaps=[])
+
+
+def _deterministic_rank_draft(
+    task: TaskSpec, evidence: Sequence[EvidenceEnvelope],
+) -> DraftReport | None:
+    """Project one typed team-rating rank into a canonical claim.
+
+    The tool result is already sorted by the requested direction and carries
+    the requested metric identity. Publication uses only the first row's named
+    metric, never free-form synthesis over the expanded row.
+    """
+    labels = {"DEF_RATING": "defensive rating",
+              "TS_PCT": "true shooting percentage",
+              "TM_TOV_PCT": "turnover percentage"}
+    directions = {"asc": "lowest", "desc": "highest"}
+    for item in evidence:
+        if item.capability != "team_ratings" or not isinstance(item.rows, list) or not item.rows:
+            continue
+        metric = item.metric_definitions.get("__requested_metric__")
+        if metric not in labels:
+            continue
+        row = item.rows[0]
+        team = row.get("TEAM_NAME") or row.get("TEAM")
+        value = row.get(metric)
+        if not team or value is None:
+            continue
+        direction = next((
+            requirement.capability_arguments.get("ranking_direction")
+            for requirement in task.requirements
+            if "team_ratings" in requirement.capability_options
+            and requirement.capability_arguments.get("requested_metric") == metric
+        ), None)
+        direction = direction if direction in directions else (
+            "asc" if metric in {"DEF_RATING", "TM_TOV_PCT"} else "desc")
+        return DraftReport(
+            sections=["Team rating leader"],
+            claims=[Claim(
+                text=(f"{team} had the {directions[direction]} "
+                      f"{labels[metric]} in {item.season or 'the selected season'}: "
+                      f"{value}."),
+                kind="observed", evidence_ids=[item.evidence_id])],
+            calculations=[], blocked_calculation_requirement_ids=[], gaps=[])
+    return None
+
+
 class ModelSynthesizer(ModelStage):
     prompt_name = "synthesizer"
     route = "synthesizer"
@@ -925,6 +1093,11 @@ class ModelSynthesizer(ModelStage):
     async def synthesize(
         self, task: TaskSpec, evidence: Sequence[EvidenceEnvelope]
     ) -> DraftReport:
+        canonical = (_deterministic_rank_draft(task, evidence)
+                     or _deterministic_game_log_draft(task, evidence)
+                     or _deterministic_player_comparison_draft(task, evidence))
+        if canonical is not None:
+            return _validate_draft(canonical, evidence, task)
         payload = {
             "task": task.model_dump(mode="json"),
             "evidence": [item.model_dump(mode="json") for item in evidence],
@@ -940,7 +1113,19 @@ class ModelSynthesizer(ModelStage):
             # discarding all successfully collected evidence. The accepted
             # result still crosses the same DraftReport boundary and the
             # independent publication verifiers remain authoritative.
-            draft = await self._generate(payload)
+            try:
+                draft = await self._generate(payload)
+            except RuntimeError as retry_exc:
+                if not str(retry_exc).startswith("all structured-output providers failed"):
+                    raise
+                # Tools already succeeded. Preserve evidence through a typed
+                # partial rather than throwing it away; deterministic builders
+                # above still publish any canonical projections they own.
+                draft = DraftReport(
+                    sections=["Available evidence"], claims=[], calculations=[],
+                    blocked_calculation_requirement_ids=[
+                        item.id for item in task.calculation_requirements],
+                    gaps=["Answer synthesis provider was unavailable; admitted evidence is preserved."])
         return _validate_draft(draft, evidence, task)
 
 
