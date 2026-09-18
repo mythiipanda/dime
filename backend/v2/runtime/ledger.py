@@ -168,12 +168,26 @@ def _validate_terminal_data(kind: LedgerKind, data: dict[str, Any]) -> None:
 
 def _validate_assistant_attempt(data: dict[str, Any]) -> None:
     status = data.get("status")
+    attempt_keys = {"provider_attempts"}
+    provider_attempts = data.get("provider_attempts", [])
+    attempts_valid = isinstance(provider_attempts, list) and all(
+        isinstance(item, dict)
+        and isinstance(item.get("provider"), str)
+        and isinstance(item.get("model"), str)
+        and isinstance(item.get("attempt_number"), int)
+        and item["attempt_number"] >= 1
+        and isinstance(item.get("message_class"), str)
+        and isinstance(item.get("latency_ms"), int)
+        and item["latency_ms"] >= 0
+        for item in provider_attempts)
     if status == "failed":
-        valid = (set(data) == {"status", "error"}
+        valid = (set(data) in ({"status", "error"}, {"status", "error", *attempt_keys})
                  and isinstance(data.get("error"), str)
-                 and bool(data["error"].strip()))
+                 and bool(data["error"].strip()) and attempts_valid)
     elif status == "accepted":
-        valid = (set(data) == {"status", "output", "provider", "model", "used_fallback"}
+        valid = (set(data) in ({"status", "output", "provider", "model", "used_fallback"},
+                              {"status", "output", "provider", "model", "used_fallback", *attempt_keys})
+                 and attempts_valid
                  and isinstance(data.get("output"), dict)
                  and isinstance(data.get("provider"), str)
                  and bool(data["provider"].strip())

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import random
 import re
+import time
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any, Protocol, TypeVar
@@ -65,6 +68,8 @@ class ProviderStructuredModel:
         detail = str(exc).casefold()
         if "timeout" in name or "timed out" in detail:
             return "timeout"
+        if any(code in detail for code in ("500", "502", "503", "504")):
+            return "server_error"
         if "rate" in name or "429" in detail or "rate limit" in detail:
             return "rate_limit"
         if "auth" in name or "401" in detail or "403" in detail:
@@ -126,25 +131,64 @@ class ProviderStructuredModel:
         self.last_model = None
         self.last_failures = []
         user_prompt = json.dumps(payload, sort_keys=True, default=str)
-        for provider, model in models:
-            try:
-                agent = Agent(
-                    model,
-                    instructions=prompt,
-                    output_type=NativeOutput(schema, strict=True),
-                    retries=settings.llm_max_retries,
-                )
-                result = await agent.run(user_prompt)
-                self.last_provider = provider
-                self.last_model = model.model_name
-                return result.output
-            except Exception as exc:
-                self.last_failures.append({
-                    "provider": provider,
-                    "exception_type": type(exc).__name__[:120],
-                    "message_class": self._failure_class(exc),
-                })
-                continue
+        is_intake = envelope.route == "intake"
+        intake_deadline = time.monotonic() + 18.0 if is_intake else None
+        budget_exhausted = False
+        for model_index, (provider, model) in enumerate(models):
+            max_attempts = 2 if is_intake and model_index == 0 else 1
+            for attempt_number in range(1, max_attempts + 1):
+                remaining = ((intake_deadline - time.monotonic())
+                             if intake_deadline is not None else None)
+                if remaining is not None and remaining <= 0:
+                    budget_exhausted = True
+                    break
+                started = time.perf_counter()
+                try:
+                    agent = Agent(
+                        model,
+                        instructions=prompt,
+                        output_type=NativeOutput(schema, strict=True),
+                        # PydanticAI owns one bounded schema-repair pass. Outer
+                        # retries below are reserved for transient transport.
+                        retries=settings.llm_max_retries,
+                    )
+                    run = agent.run(user_prompt)
+                    result = (await asyncio.wait_for(
+                        run, timeout=min(6.0, remaining))
+                        if is_intake and remaining is not None else await run)
+                    self.last_provider = provider
+                    self.last_model = model.model_name
+                    return result.output
+                except Exception as exc:
+                    failure_class = self._failure_class(exc)
+                    self.last_failures.append({
+                        "provider": provider,
+                        "model": model.model_name,
+                        "attempt_number": attempt_number,
+                        "exception_type": type(exc).__name__[:120],
+                        "message_class": failure_class,
+                        "latency_ms": max(0, round(
+                            (time.perf_counter() - started) * 1000)),
+                    })
+                    transient = failure_class in {
+                        "timeout", "rate_limit", "network", "server_error",
+                        "provider_error",
+                    }
+                    if (attempt_number < max_attempts and transient):
+                        await asyncio.sleep(random.uniform(0.04, 0.12))
+                        continue
+                    break
+            if budget_exhausted:
+                break
+        if budget_exhausted:
+            self.last_failures.append({
+                "provider": "intake",
+                "model": "deadline",
+                "attempt_number": len(self.last_failures) + 1,
+                "exception_type": "TimeoutError",
+                "message_class": "intake_deadline",
+                "latency_ms": 0,
+            })
         summary = ", ".join(
             f"{item['provider']}:{item['exception_type']}:{item['message_class']}"
             for item in self.last_failures
@@ -1466,7 +1510,9 @@ class RecordedStructuredModel:
                 LedgerKind.ASSISTANT_ATTEMPT,
                 turn_id=self._turn_id,
                 call_id=call_id,
-                data={"status": "failed", "error": exception_text(exc)},
+                data={"status": "failed", "error": exception_text(exc),
+                      "provider_attempts": list(getattr(
+                          self._model, "last_failures", []))},
             )
             raise
         actual_provider = getattr(self._model, "last_provider", None)
@@ -1484,6 +1530,8 @@ class RecordedStructuredModel:
                     (actual_provider or envelope.provider) != envelope.provider
                     or (actual_model or envelope.model) != envelope.model
                 ),
+                "provider_attempts": list(getattr(
+                    self._model, "last_failures", [])),
             },
         )
         return result

@@ -570,7 +570,7 @@ async def test_provider_boundary_does_not_expose_provider_error_text(monkeypatch
 
     assert str(caught.value) == (
         "all structured-output providers failed "
-        "[inception:RuntimeError:provider_error]"
+        "[inception:RuntimeError:provider_error, inception:RuntimeError:provider_error]"
     )
     assert "secret upstream body" not in str(caught.value)
 
@@ -1470,10 +1470,13 @@ async def test_provider_structured_failure_preserves_sanitized_diagnostics(monke
     assert "inception:TimeoutError:timeout" in text
     assert "secret payload" not in text
     assert "secret upstream" not in text
-    assert model.last_failures == [{
+    assert len(model.last_failures) == 1
+    assert {key: model.last_failures[0][key] for key in (
+        "provider", "exception_type", "message_class")} == {
         "provider": "inception", "exception_type": "TimeoutError",
-        "message_class": "timeout",
-    }]
+        "message_class": "timeout"}
+    assert model.last_failures[0]["attempt_number"] == 1
+    assert model.last_failures[0]["latency_ms"] >= 0
 @pytest.mark.anyio
 async def test_intake_season_normalization_propagates_to_requirement_arguments():
     from app.tools._core import SEASON
@@ -1999,3 +2002,121 @@ async def test_pair_ts_projection_normalizes_fraction_and_percent(raw,shown):
     ts=EvidenceEnvelope(evidence_id="t",capability="shooting_efficiency",source="f",observed_at=datetime.now(UTC),rows={"PLAYER_NAME":"A","TS_PCT":raw})
     draft=await ModelSynthesizer(StubModel([]),provider="stub",model_name="stub").synthesize(task,[pair,ts])
     assert any(shown in claim.text for claim in draft.claims)
+
+@pytest.mark.anyio
+async def test_intake_primary_transient_retries_then_succeeds(monkeypatch):
+    from v2.adapters.models import ProviderStructuredModel
+    from v2.runtime import RequestEnvelope
+    calls=[]
+    class A:
+        def __init__(self,*a,**k):pass
+        async def run(self,prompt):
+            calls.append(prompt)
+            if len(calls)==1: raise TimeoutError("temporary")
+            return type("R",(),{"output":TaskSpec(goal="ok",mode="quick",deliverable="x")})()
+    class M:model_name="primary"
+    monkeypatch.setattr("v2.adapters.models.Agent",A);monkeypatch.setattr("v2.adapters.models.random.uniform",lambda a,b:0)
+    m=ProviderStructuredModel("inception","primary");monkeypatch.setattr(m,"_models",lambda:[("inception",M())])
+    e=RequestEnvelope.freeze(provider="inception",model="primary",route="intake",prompt="p",context={},tool_schemas={},planner_version="v2")
+    out=await m.generate(schema=TaskSpec,prompt="p",payload={"same":"input"},envelope=e)
+    assert out.goal=="ok" and len(calls)==2
+    assert [(x["attempt_number"],x["message_class"]) for x in m.last_failures]==[(1,"timeout")]
+
+
+@pytest.mark.anyio
+async def test_intake_primary_exhausted_then_secondary_success(monkeypatch):
+    from v2.adapters.models import ProviderStructuredModel
+    from v2.runtime import RequestEnvelope
+    calls=[]
+    class A:
+        def __init__(self,model,*a,**k):self.model=model
+        async def run(self,prompt):
+            calls.append((self.model.model_name,prompt))
+            if self.model.model_name=="primary":raise TimeoutError("temporary")
+            return type("R",(),{"output":TaskSpec(goal="ok",mode="quick",deliverable="x")})()
+    class M:
+        def __init__(self,n):self.model_name=n
+    monkeypatch.setattr("v2.adapters.models.Agent",A);monkeypatch.setattr("v2.adapters.models.random.uniform",lambda a,b:0)
+    m=ProviderStructuredModel("inception","primary");monkeypatch.setattr(m,"_models",lambda:[("inception",M("primary")),("mistral",M("secondary"))])
+    e=RequestEnvelope.freeze(provider="inception",model="primary",route="intake",prompt="p",context={},tool_schemas={},planner_version="v2")
+    await m.generate(schema=TaskSpec,prompt="p",payload={"same":"input"},envelope=e)
+    assert [x[0] for x in calls]==["primary","primary","secondary"]
+    assert m.last_provider=="mistral" and m.last_model=="secondary"
+
+
+@pytest.mark.anyio
+async def test_intake_schema_failure_does_not_outer_retry(monkeypatch):
+    from pydantic import ValidationError
+    from v2.adapters.models import ProviderStructuredModel
+    from v2.runtime import RequestEnvelope
+    calls=[]
+    class A:
+        def __init__(self,model,*a,**k):self.model=model
+        async def run(self,prompt):
+            calls.append(self.model.model_name)
+            if self.model.model_name=="primary":TaskSpec.model_validate({"goal":""})
+            return type("R",(),{"output":TaskSpec(goal="ok",mode="quick",deliverable="x")})()
+    class M:
+        def __init__(self,n):self.model_name=n
+    monkeypatch.setattr("v2.adapters.models.Agent",A)
+    m=ProviderStructuredModel("inception","primary");monkeypatch.setattr(m,"_models",lambda:[("inception",M("primary")),("mistral",M("secondary"))])
+    e=RequestEnvelope.freeze(provider="inception",model="primary",route="intake",prompt="p",context={},tool_schemas={},planner_version="v2")
+    await m.generate(schema=TaskSpec,prompt="p",payload={},envelope=e)
+    assert calls==["primary","secondary"]
+    assert m.last_failures[0]["message_class"]=="structured_output"
+
+@pytest.mark.anyio
+async def test_recorded_intake_ledger_carries_provider_attempt_diagnostics():
+    from v2.adapters import RecordedStructuredModel
+    from v2.runtime import RequestEnvelope, RunLedger
+    class M:
+        last_provider="secondary";last_model="backup"
+        last_failures=[{"provider":"primary","model":"main","attempt_number":1,
+            "exception_type":"TimeoutError","message_class":"timeout","latency_ms":12}]
+        async def generate(self,**call):return TaskSpec(goal="ok",mode="quick",deliverable="x")
+    envelope=RequestEnvelope.freeze(provider="primary",model="main",route="intake",prompt="p",context={},tool_schemas={},planner_version="v2")
+    ledger=RunLedger("run")
+    await RecordedStructuredModel(M(),ledger,turn_id="turn").generate(schema=TaskSpec,prompt="p",payload={},envelope=envelope)
+    attempt=ledger.entries[-1].data
+    assert attempt["provider_attempts"]==M.last_failures
+    assert attempt["used_fallback"] is True
+
+@pytest.mark.anyio
+async def test_intake_global_deadline_stops_many_provider_chain(monkeypatch):
+    from v2.adapters.models import ProviderStructuredModel
+    from v2.runtime import RequestEnvelope
+    calls=[]; clock=type("Clock",(),{"value":0})()
+    class A:
+        def __init__(self,model,*a,**k):self.model=model
+        async def run(self,prompt):
+            calls.append(self.model.model_name);clock.value += 7;raise TimeoutError("x")
+    class M:
+        def __init__(self,n):self.model_name=n
+    monkeypatch.setattr("v2.adapters.models.Agent",A)
+    monkeypatch.setattr("v2.adapters.models.time.monotonic",lambda:clock.value)
+    monkeypatch.setattr("v2.adapters.models.time.perf_counter",lambda:0)
+    monkeypatch.setattr("v2.adapters.models.random.uniform",lambda a,b:0)
+    models=[("inception",M("m0")),("mistral",M("m1")),("groq",M("m2")),("openrouter",M("m3"))]
+    m=ProviderStructuredModel("inception","m0");monkeypatch.setattr(m,"_models",lambda:models)
+    e=RequestEnvelope.freeze(provider="inception",model="m0",route="intake",prompt="p",context={},tool_schemas={},planner_version="v2")
+    with pytest.raises(RuntimeError,match="intake_deadline"):
+        await m.generate(schema=TaskSpec,prompt="p",payload={},envelope=e)
+    assert calls==["m0","m0","m1"]
+    assert m.last_failures[-1]["message_class"]=="intake_deadline"
+
+
+@pytest.mark.anyio
+async def test_exhausted_intake_ledger_keeps_complete_attempt_diagnostics():
+    from v2.adapters import RecordedStructuredModel
+    from v2.runtime import RequestEnvelope,RunLedger
+    diagnostics=[{"provider":"p","model":"m","attempt_number":1,"exception_type":"TimeoutError","message_class":"timeout","latency_ms":6},
+                 {"provider":"intake","model":"deadline","attempt_number":2,"exception_type":"TimeoutError","message_class":"intake_deadline","latency_ms":0}]
+    class M:
+        last_failures=diagnostics
+        async def generate(self,**call):raise RuntimeError("all structured-output providers failed")
+    e=RequestEnvelope.freeze(provider="p",model="m",route="intake",prompt="p",context={},tool_schemas={},planner_version="v2")
+    ledger=RunLedger("run")
+    with pytest.raises(RuntimeError):
+        await RecordedStructuredModel(M(),ledger,turn_id="turn").generate(schema=TaskSpec,prompt="p",payload={},envelope=e)
+    assert ledger.entries[-1].data["provider_attempts"]==diagnostics
+    assert len(ledger.entries)==2
