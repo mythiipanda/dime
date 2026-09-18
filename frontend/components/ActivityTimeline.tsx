@@ -18,7 +18,7 @@ const COLORS: Record<string, string> = {
 };
 
 function compactDetails(item: ActivityRecord) {
-  const hidden = new Set(["event_id", "sequence", "emitted_at", "node", "title", "summary", "text", "status"]);
+  const hidden = new Set(["event_id", "sequence", "correlation_id", "transition", "emitted_at", "node", "title", "summary", "text", "status"]);
   return Object.fromEntries(Object.entries(item.data).filter(([key, value]) =>
     !hidden.has(key) && value !== undefined && value !== null && value !== ""));
 }
@@ -27,7 +27,7 @@ function EventRow({ item, active }: { item: ActivityRecord; active: boolean }) {
   const [open, setOpen] = useState(false);
   const details = compactDetails(item);
   const hasDetails = Object.keys(details).length > 0;
-  const status = item.status || (active ? "running" : "complete");
+  const status = item.status || item.transition || (active ? "running" : "complete");
   const time = item.emittedAt ? new Date(item.emittedAt).toLocaleTimeString([], {
     hour: "numeric", minute: "2-digit", second: "2-digit",
   }) : "";
@@ -44,7 +44,7 @@ function EventRow({ item, active }: { item: ActivityRecord; active: boolean }) {
         style={{ background: "none", border: 0, padding: "5px 0 7px", textAlign: "left", cursor: hasDetails ? "pointer" : "default", minWidth: 0 }}>
         <span style={{ display: "flex", alignItems: "baseline", gap: 7 }}>
           <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--color-ink-black)" }}>{item.title}</span>
-          {item.status && <span style={{ fontSize: 10.5, color: COLORS[status.toLowerCase()] || "var(--color-ash-gray)", textTransform: "capitalize" }}>{item.status.replace(/_/g, " ")}</span>}
+          {(item.transition || item.status) && <span style={{ fontSize: 10.5, color: COLORS[status.toLowerCase()] || "var(--color-ash-gray)", textTransform: "capitalize" }}>{(item.transition || item.status || "").replace(/_/g, " ")}</span>}
           {time && <span style={{ marginLeft: "auto", fontSize: 10.5, color: "var(--color-ash-gray)" }}>{time}</span>}
         </span>
         {item.summary && <span style={{ display: "block", marginTop: 2, whiteSpace: "pre-wrap", fontSize: 12, lineHeight: 1.45, color: "var(--color-warm-gray)" }}>{item.summary}</span>}

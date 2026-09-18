@@ -61,6 +61,8 @@ function applyEvent(ai: AiMessage, type: string, data: unknown): AiMessage {
       next.activity = [...(next.activity || []), {
         eventId,
         sequence: typeof d.sequence === "number" ? d.sequence : undefined,
+        correlationId: typeof d.correlation_id === "string" ? d.correlation_id : undefined,
+        transition: typeof d.transition === "string" ? d.transition : undefined,
         kind: type as ActivityKind,
         node: d.node as NodeName | undefined,
         title: titles[type] || label(type),

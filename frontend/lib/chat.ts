@@ -20,6 +20,8 @@ export type ActivityKind =
 export interface ActivityRecord {
   eventId: string;
   sequence?: number;
+  correlationId?: string;
+  transition?: string;
   kind: ActivityKind;
   node?: NodeName;
   title: string;
