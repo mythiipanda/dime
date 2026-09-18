@@ -65,3 +65,24 @@ def test_fallback_skips_probe_failed_provider(monkeypatch):
     assert out.content == "ok"
     assert "mistral" not in calls, "probe-failed primary was not skipped"
     assert calls[0] == "openrouter"
+
+
+def test_invoke_exposes_accepted_provider_and_sanitized_attempts(monkeypatch):
+    _reset(); calls=[]
+    class C:
+        def __init__(self,name): self.name=name
+        async def ainvoke(self,messages,**kwargs):
+            calls.append(self.name)
+            if self.name=='mistral': raise TimeoutError('secret payload must not leak')
+            class R: content='ok'
+            return R()
+    monkeypatch.setattr(prov,'get_llm',lambda name,model=None:C(name))
+    out=asyncio.run(prov.invoke_with_fallback('mistral','primary-model',[]))
+    assert out.content=='ok'
+    assert out.provider=='openrouter'
+    assert out.model==prov.OPENROUTER_DEFAULT
+    assert out.elapsed_ms>=0
+    assert out.provider_attempts==({'provider':'mistral','model':'primary-model',
+        'attempt_number':1,'exception_type':'TimeoutError','message_class':'timeout',
+        'latency_ms':out.provider_attempts[0]['latency_ms']},)
+    assert 'secret' not in str(out.provider_attempts)

@@ -5,6 +5,8 @@ Routes clamp the model id at the boundary before anything else runs.
 """
 
 from typing import Any, Literal
+from dataclasses import dataclass
+import time
 import json
 from langchain_core.messages import BaseMessage
 from langchain_openai import ChatOpenAI
@@ -108,6 +110,33 @@ def get_llm(name: ProviderName, model: str | None = None) -> ChatOpenAI | None:
     )
 
 
+
+@dataclass(frozen=True)
+class ProviderInvocation:
+    """Accepted response plus bounded provider provenance."""
+    response: Any
+    provider: ProviderName
+    model: str
+    elapsed_ms: int
+    provider_attempts: tuple[dict[str, Any], ...]
+
+    @property
+    def content(self) -> Any:
+        return getattr(self.response, "content", None)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.response, name)
+
+
+def _failure_class(exc: BaseException) -> str:
+    name = type(exc).__name__.casefold(); detail = str(exc).casefold()
+    if "timeout" in name or "timed out" in detail: return "timeout"
+    if any(code in detail for code in ("500", "502", "503", "504")): return "server_error"
+    if "429" in detail or "rate" in name or "rate limit" in detail: return "rate_limit"
+    if "connect" in name or "network" in detail: return "network"
+    if "401" in detail or "403" in detail or "auth" in name: return "authentication"
+    return "provider_error"
+
 def fallback_order(primary: ProviderName) -> list[ProviderName]:
     rest: list[ProviderName] = ["mistral", "openrouter", "inception", "groq"]
     rest.remove(primary)
@@ -176,24 +205,45 @@ async def invoke_with_fallback(
     model: str,
     messages: list[BaseMessage],
     **kwargs: Any,
-) -> Any:
-    """Try providers in order. Raise the last error only if all fail."""
-    errors: list[str] = []
-    for name in fallback_order(primary):
+) -> ProviderInvocation:
+    """Try providers in order; return response with bounded provenance."""
+    attempts: list[dict[str, Any]] = []
+    started_all = time.perf_counter()
+    for number, name in enumerate(fallback_order(primary), 1):
+        accepted_model = model if name == primary else {
+            "mistral": settings.mistral_model or MISTRAL_DEFAULT,
+            "openrouter": settings.openrouter_model or OPENROUTER_DEFAULT,
+            "inception": settings.inception_model or INCEPTION_DEFAULT,
+            "groq": settings.groq_model or GROQ_DEFAULT,
+        }[name]
         verdict = probe_verdict(name)
         if verdict is False:
-            errors.append(f"{name}: probe failed recently")
+            attempts.append({"provider": name, "model": accepted_model,
+                "attempt_number": number, "message_class": "probe_failed",
+                "latency_ms": 0})
             continue
-        client = get_llm(name, model if name == primary else None)
+        client = get_llm(name, accepted_model)
         if client is None:
-            errors.append(f"{name}: missing key")
+            attempts.append({"provider": name, "model": accepted_model,
+                "attempt_number": number, "message_class": "missing_key",
+                "latency_ms": 0})
             continue
+        started = time.perf_counter()
         try:
-            return await client.ainvoke(messages, **kwargs)
+            response = await client.ainvoke(messages, **kwargs)
+            return ProviderInvocation(response=response, provider=name,
+                model=accepted_model,
+                elapsed_ms=int((time.perf_counter() - started_all) * 1000),
+                provider_attempts=tuple(attempts))
         except Exception as exc:
-            errors.append(f"{name}: {str(exc)[:160]}")
+            attempts.append({"provider": name, "model": accepted_model,
+                "attempt_number": number, "exception_type": type(exc).__name__,
+                "message_class": _failure_class(exc),
+                "latency_ms": int((time.perf_counter() - started) * 1000)})
             note_provider_failure(name)
-    raise RuntimeError("all providers failed: " + " | ".join(errors))
+    detail = " | ".join(
+        f"{a['provider']}:{a['message_class']}" for a in attempts)
+    raise RuntimeError("all providers failed: " + detail)
 
 
 async def astream_with_fallback(
