@@ -300,6 +300,7 @@ _LIST = [
         coverage="Two-team matchup using season ratings, pace, and available injury data.",
     ),
     Capability(name="game_logs", tool_name="search_game_logs",
+               extract_entities=_player_entity,
                dependent_entity_arguments={"player": "player"}),
     Capability(
         name="four_factors",

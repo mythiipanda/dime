@@ -467,3 +467,10 @@ def test_clamp_stat_normalizes_three_point_percentage_aliases():
     from app.tools import clamp_stat
     for value in ("3P", "3P%", "3PT", "3PT%", "three-point-percentage"):
         assert clamp_stat(value) == "FG3_PCT"
+
+def test_resolve_entity_uses_warehouse_canonical_id_for_exact_suffix_name():
+    res = tools.resolve_entity.invoke({"query": "Tim Hardaway Jr."})
+    player = res["rows"]["players"][0]
+    assert player["id"] == 896
+    assert player["static_id"] == 203501
+    assert player["identity_source"] == "warehouse_exact_name"

@@ -208,7 +208,11 @@ def build_envelope(
                    segment.split("[", 1)[0].casefold()
                    for segment in item.path.split(".")
                } for item in _row_values(rows))},
-        metric_definitions=dict(spec.metric_definitions),
+        metric_definitions={
+            **dict(spec.metric_definitions),
+            **({"__requested_metric__": str(meta["requested_metric"])}
+               if meta.get("requested_metric") else {}),
+        },
         qualification=meta.get("qualification") or spec.qualification,
         coverage=(meta.get("coverage") or meta.get("coverage_note")
                   or spec.coverage),

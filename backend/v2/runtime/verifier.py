@@ -193,6 +193,28 @@ def _row_entity_value_reasons(
             matched_envelopes.append(envelope.model_copy(update={"rows": matched}))
     if not matched_envelopes:
         return []
+    # Ranked metric evidence carries the requested field identity from the
+    # typed plan. When a claim names no entity ("that team", "the exact
+    # value"), bind numerals to that field across the leader row instead of
+    # comparing against every unrelated numeral or rejecting the value merely
+    # because the entity was stated in a preceding supported claim.
+    requested_metrics = {
+        envelope.metric_definitions.get("__requested_metric__")
+        for envelope in envelopes
+        if envelope.metric_definitions.get("__requested_metric__")
+    }
+    if not matched_envelopes and len(requested_metrics) == 1:
+        metric = next(iter(requested_metrics))
+        scoped = []
+        for envelope in envelopes:
+            if (not isinstance(envelope.rows, list) or not envelope.rows
+                    or not isinstance(envelope.rows[0], Mapping)):
+                continue
+            value = envelope.rows[0].get(metric)
+            if value is not None:
+                scoped.append(envelope.model_copy(update={"rows": [{metric: value}]}))
+        if scoped:
+            matched_envelopes = scoped
     row_numbers = _numeric_values(matched_envelopes) | (calculation_values or set())
     unsupported = []
     rank_numbers = {

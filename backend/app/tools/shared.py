@@ -15,12 +15,26 @@ def resolve_entity(query: str) -> dict[str, Any]:
     try:
         from nba_api.stats.static import teams
 
-        from ._core import _norm_name, score_player_candidates
+        from ._core import (_norm_name, coerce_player_id,
+                            score_player_candidates)
 
         raw = (query or "").strip()
         nq = _norm_name(raw)
         ranked = score_player_candidates(raw)
         p = [{**r, "score": s} for s, r in ranked[:8]]
+        # Exact display names must expose the same canonical identity that
+        # dependent warehouse tools consume. Static and warehouse ids can
+        # differ for suffix/duplicate records; preserve the static id only as
+        # provenance rather than silently switching identity downstream.
+        if p and _norm_name(p[0].get("full_name", "")) == nq:
+            try:
+                canonical_id = coerce_player_id(raw)
+            except ValueError:
+                canonical_id = p[0].get("id")
+            if canonical_id != p[0].get("id"):
+                p[0]["static_id"] = p[0].get("id")
+                p[0]["id"] = canonical_id
+                p[0]["identity_source"] = "warehouse_exact_name"
         t = teams.find_teams_by_full_name(raw)[:8]
         if not t:
             all_t = teams.get_teams()
@@ -42,13 +56,14 @@ def resolve_entity(query: str) -> dict[str, Any]:
         )
         if exact_team and not (ranked and ranked[0][0] >= 0.95):
             ranked = []
+            p = []
         suggestions: list[str] = []
         top = ranked[0][0] if ranked else 0.0
         out = {
             "tool": "resolve_entity",
             "ok": True,
             "rows": {
-                "players": [{**x, "score": s} for s, x in ranked],
+                "players": p,
                 "teams": t,
                 "exact": top >= 0.95,
                 "suggestions": suggestions,

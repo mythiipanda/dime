@@ -26,6 +26,7 @@ from v2.contracts import (
     DraftReport,
     EvidenceEnvelope,
     Plan,
+    PlanNode,
     RequirementReview,
     TaskSpec,
     VerificationReport,
@@ -538,6 +539,56 @@ class ModelPlanner(ModelStage):
         )
 
         requirements = {item.id: item for item in task.requirements}
+        # Dependent identity calls must never run as unbound roots. Providers
+        # may omit an explicit resolver even when intake has a clear entity;
+        # normalize that plan shape by adding one resolver parent per distinct
+        # typed subject. The executor then enforces exact canonical agreement.
+        if "entity_resolution" in self._catalog:
+            existing = {node.id for node in plan.nodes}
+            added = []
+            normalized_nodes = []
+            resolver_for: dict[tuple[str, str], str] = {}
+            for node in plan.nodes:
+                selected_name = next((name for name in node.capability_hints
+                                      if name in self._catalog), None)
+                entry = self._catalog.get(selected_name, {}) if selected_name else {}
+                declarations = (entry.get("dependent_entity_arguments", {})
+                                if isinstance(entry, Mapping) else {})
+                dependencies = list(node.depends_on)
+                for argument, entity_type in declarations.items():
+                    value = node.arguments.get(argument)
+                    if value is None or (isinstance(value, str) and not value.strip()):
+                        continue
+                    has_resolver = any(
+                        parent in existing and any(
+                            candidate.id == parent
+                            and "entity_resolution" in candidate.capability_hints
+                            for candidate in plan.nodes)
+                        for parent in dependencies)
+                    if has_resolver:
+                        continue
+                    key = (str(entity_type), str(value).strip().casefold())
+                    resolver_id = resolver_for.get(key)
+                    if resolver_id is None:
+                        base = f"resolve_{str(entity_type).replace('-', '_')}"
+                        resolver_id = base
+                        suffix = 2
+                        while resolver_id in existing:
+                            resolver_id = f"{base}_{suffix}"
+                            suffix += 1
+                        existing.add(resolver_id)
+                        resolver_for[key] = resolver_id
+                        added.append(PlanNode(
+                            id=resolver_id,
+                            description=f"Resolve {entity_type} identity for dependent tools",
+                            capability_hints=["entity_resolution"],
+                            arguments={"query": value},
+                        ))
+                    dependencies.append(resolver_id)
+                normalized_nodes.append(node.model_copy(update={
+                    "depends_on": list(dict.fromkeys(dependencies))}))
+            if added:
+                plan = plan.model_copy(update={"nodes": [*added, *normalized_nodes]})
         # Entity resolution accepts one query string. Requirement review can
         # preserve a pair as a list; normalize that shape before execution so
         # an auxiliary resolver cannot crash a valid direct comparison plan.

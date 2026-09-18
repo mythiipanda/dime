@@ -700,3 +700,27 @@ def test_requested_three_point_metric_cannot_be_omitted_from_comparison():
     result = verify_mechanical(task, draft, [ev])
     assert result.status == "repair"
     assert "requested fg3 metric" in result.repair_instructions[-1]
+
+def test_requested_metric_binds_pronoun_value_claim_to_leader_row():
+    from datetime import UTC, datetime
+    from v2.contracts import EvidenceEnvelope
+    ev = EvidenceEnvelope(
+        evidence_id="ratings", capability="team_ratings", source="fixture",
+        observed_at=datetime.now(UTC), season="2025-26",
+        qualification="All NBA teams", coverage="Full team ratings table",
+        metric_definitions={"__requested_metric__": "TM_TOV_PCT"},
+        rows=[
+            {"TEAM_NAME":"Oklahoma City Thunder", "TM_TOV_PCT":.124,
+             "DEF_RATING":106.5, "TM_TOV_PCT_RANK":1},
+            {"TEAM_NAME":"Denver Nuggets", "TM_TOV_PCT":.128,
+             "DEF_RATING":116.0, "TM_TOV_PCT_RANK":2},
+        ])
+    draft = DraftReport(sections=["TOV"], claims=[
+        Claim(text="Oklahoma City had the lowest turnover percentage.",
+              kind="observed", evidence_ids=["ratings"]),
+        Claim(text="The exact value for that team was 0.124.",
+              kind="observed", evidence_ids=["ratings"]),
+    ])
+    result = verify_mechanical(TaskSpec(goal="lowest turnover rate", mode="quick",
+        deliverable="team and value"), draft, [ev])
+    assert result.status == "pass"

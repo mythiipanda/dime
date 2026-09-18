@@ -590,7 +590,13 @@ def search_game_logs(
             },
         }
     assert pid is not None
-    name = _resolve_name(pid, str(player))
+    # ``player`` is the bound identity label from intake/resolution. Static
+    # catalogs can attach a historical namesake label to a warehouse id, so
+    # keep the supplied non-numeric display name after successful canonical
+    # resolution instead of relabeling the evidence as another person.
+    supplied_name = str(player).strip() if player is not None else ""
+    name = (supplied_name if supplied_name and not supplied_name.isdigit()
+            else _resolve_name(pid, supplied_name or str(pid)))
     matched = _dedupe_games(matched)
     if best_game:
         # "best game" / "career high": the single max-points game.

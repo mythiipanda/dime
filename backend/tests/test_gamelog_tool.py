@@ -40,3 +40,11 @@ def test_missing_player_playoff_rows_name_player_gap_and_team_slice(monkeypatch)
     assert "no playoff gamelog data for Luka Doncic" in out["error"]
     assert "player gamelog coverage: 2025-26" in out["error"]
     assert "team playoff game slice exists for 2023-24 (164 team-game rows)" in out["error"]
+
+def test_suffix_name_keeps_bound_identity_label():
+    from app.tools import gamelog
+    out = gamelog.search_game_logs.invoke({"player": "Tim Hardaway Jr.", "season": "2025-26"})
+    assert out["ok"]
+    assert out["rows"]["player_id"] == 896
+    assert out["rows"]["player"] == "Tim Hardaway Jr."
+    assert out["rows"]["total"] == 80

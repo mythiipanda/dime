@@ -1751,3 +1751,24 @@ async def test_pair_comparison_normalizes_entity_query_list_before_execution():
     ]})
     normalized = planner._normalize_plan(task, plan)
     assert normalized.nodes[0].arguments["query"] == "Myles Turner, Luka Doncic"
+
+def test_dependent_player_tool_gets_entity_resolution_parent_when_provider_omits_it():
+    from v2.contracts import Plan
+    catalog = {
+        "entity_resolution": {"arguments": {"type": "object", "properties": {
+            "query": {"type": "string"}}, "required": ["query"]}},
+        "game_logs": {"arguments": {"type": "object", "properties": {
+            "player": {"type": "string"}, "season": {"type": "string"}}},
+            "dependent_entity_arguments": {"player": "player"}},
+    }
+    planner = ModelPlanner(StubModel([]), provider="stub", model_name="stub",
+                           capability_catalog=catalog)
+    task = TaskSpec(goal="threshold", mode="quick", deliverable="answer")
+    plan = Plan.model_validate({"nodes": [{
+        "id": "logs", "description": "logs", "capability_hints": ["game_logs"],
+        "arguments": {"player": "Tim Hardaway Jr.", "season": "2025-26"},
+    }]})
+    normalized = planner._normalize_plan(task, plan)
+    assert [node.id for node in normalized.nodes] == ["resolve_player", "logs"]
+    assert normalized.nodes[0].arguments == {"query": "Tim Hardaway Jr."}
+    assert normalized.nodes[1].depends_on == ["resolve_player"]
