@@ -575,7 +575,7 @@ async def test_provider_boundary_does_not_expose_provider_error_text(monkeypatch
     assert "secret upstream body" not in str(caught.value)
 
 @pytest.mark.anyio
-async def test_planner_retries_one_failed_structured_generation() -> None:
+async def test_planner_does_not_outer_retry_failed_structured_generation() -> None:
     from v2.contracts import Plan, TaskSpec
 
     class Flaky:
@@ -590,10 +590,9 @@ async def test_planner_retries_one_failed_structured_generation() -> None:
     model = Flaky()
     planner = ModelPlanner(
         model, provider="test", model_name="test", capability_catalog={})
-    plan = await planner.plan(TaskSpec(
-        goal="trade", mode="quick", deliverable="answer"))
-    assert plan.nodes == []
-    assert model.calls == 2
+    with pytest.raises(RuntimeError, match="all structured-output providers failed"):
+        await planner.plan(TaskSpec(goal="trade", mode="quick", deliverable="answer"))
+    assert model.calls == 1
 
 @pytest.mark.anyio
 async def test_model_repair_preserves_previously_supported_claims() -> None:
@@ -749,7 +748,7 @@ async def test_intake_removes_skills_from_required_evidence_and_trade_intent_blo
     assert task.assumptions == ["Celtics front office current trade intent for Brown"]
 
 @pytest.mark.anyio
-async def test_semantic_verifier_retries_one_failed_structured_generation() -> None:
+async def test_semantic_verifier_does_not_outer_retry_failed_generation() -> None:
     from v2.contracts import Claim, DraftReport, TaskSpec, VerificationReport
     class Flaky:
         def __init__(self): self.calls = 0
@@ -761,12 +760,12 @@ async def test_semantic_verifier_retries_one_failed_structured_generation() -> N
                 {"claim_index": 0, "supported": True}])
     model = Flaky()
     verifier = ModelSemanticVerifier(model, provider="test", model_name="test")
-    report = await verifier.verify(
-        TaskSpec(goal="record", mode="quick", deliverable="answer"),
-        DraftReport(sections=["Record"], claims=[Claim(
-            text="Boston won.", kind="judgment")]), {})
-    assert report.claim_results[0].supported
-    assert model.calls == 2
+    with pytest.raises(RuntimeError, match="all structured-output providers failed"):
+        await verifier.verify(
+            TaskSpec(goal="record", mode="quick", deliverable="answer"),
+            DraftReport(sections=["Record"], claims=[Claim(
+                text="Boston won.", kind="judgment")]), {})
+    assert model.calls == 1
 
 @pytest.mark.anyio
 async def test_trade_skill_requires_complete_two_player_evidence_baseline() -> None:
@@ -1438,8 +1437,8 @@ async def test_synthesizer_rejects_declared_calculation_for_evidence_requirement
     draft = await ModelSynthesizer(
         stub, provider="stub", model_name="stub",
     ).synthesize(task, [])
-    assert draft.calculations[0].requirement_id is None
-    assert draft.calculations[0].calculation_id == "wrong_class"
+    assert draft.claims == [] and draft.calculations == []
+    assert "outside admitted evidence" in draft.gaps[0]
 @pytest.mark.anyio
 async def test_provider_structured_failure_preserves_sanitized_diagnostics(monkeypatch):
     from v2.adapters.models import ProviderStructuredModel
@@ -1851,7 +1850,7 @@ async def test_game_log_aggregate_synthesis_uses_full_population_and_signed_delt
         return EvidenceEnvelope(evidence_id=eid, capability="game_logs", source="fixture",
             observed_at=datetime.now(UTC), season="2025-26",
             rows={"player":"Stephen Curry", "filters":f"{split} games", "total":total,
-                  "average_pts":Decimal(avg), "matches":[]})
+                  "average_pts":Decimal(avg), "matches":[{"pts":Decimal(avg)} for _ in range(total)]})
     stub = StubModel([])
     draft = await ModelSynthesizer(stub, provider="stub", model_name="stub").synthesize(
         task, [ev("home", "home", 23, "25.04347826086956521739130435"),
@@ -2178,3 +2177,26 @@ async def test_run_model_deadline_is_shared_across_sequential_routes(monkeypatch
     assert clock.value==21
     assert len(calls)==3
     assert m.last_failures[-1]["message_class"]=="planner_deadline"
+
+@pytest.mark.anyio
+async def test_review_combined_home_away_requirement_expands_before_planning():
+    stub=StubModel([{"goal":"splits","mode":"quick","deliverable":"home and away averages",
+        "entities":[{"id":"curry","type":"player","display_name":"Stephen Curry"}]},
+        {"requirements":[{"id":"combined","description":"combined splits","capability_options":["game_logs"],"capability_arguments":{"player":"Stephen Curry","season":"2025-26","home_away":None}}]}])
+    task=await ModelIntake(stub,provider="stub",model_name="stub",capability_catalog={"game_logs":{}},requirement_review=True).understand("Compare home and away")
+    assert [(r.id,r.capability_arguments["home_away"]) for r in task.requirements]==[("combined_home","home"),("combined_away","away")]
+
+
+def test_verifier_prompt_closes_completeness_over_requested_metrics_only():
+    from v2.prompts import load_prompt
+    p=load_prompt("verifier")
+    assert "Never demand a metric merely because evidence happens to contain it" in p
+    assert "FG3_PCT" in p
+
+@pytest.mark.anyio
+async def test_model_valid_path_wrong_result_remains_for_mechanical_rejection():
+    task=TaskSpec(goal="delta",mode="quick",deliverable="delta",calculation_requirements=[{"id":"d","description":"delta"}])
+    ev=EvidenceEnvelope(evidence_id="e",capability="x",source="f",observed_at=datetime.now(UTC),rows={"a":2,"b":1})
+    stub=StubModel([{"sections":[],"claims":[{"text":"Difference 99.","kind":"derived","evidence_ids":["e"],"calculation_id":"bad"}],"calculations":[{"calculation_id":"bad","requirement_id":"d","operation":"subtract","inputs":[{"evidence_id":"e","path":"rows.a"},{"evidence_id":"e","path":"rows.b"}],"result":99}]}])
+    draft=await ModelSynthesizer(stub,provider="s",model_name="s").synthesize(task,[ev])
+    assert draft.calculations[0].result==99

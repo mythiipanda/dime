@@ -50,7 +50,8 @@ nothing else:
 - A source warning limits only claims affected by that warning. Do not reject a
   regular-season record or trajectory claim because unrelated playoff evidence
   failed or carries a gap.
-- "pass" only when every branch is covered and every claim is supported.
+- Completeness is closed over TaskSpec goal, deliverable, subquestions, requirements, and calculation_requirements. Never demand a metric merely because evidence happens to contain it. In particular, do not introduce shooting fields such as FG3_PCT when the TaskSpec requests only points and true shooting.
+- "pass" only when every requested branch is covered and every claim is supported.
   "partial" when coverage is honestly gapped and repair cannot close it.
   "repair" when targeted repair can finish the answer.
 

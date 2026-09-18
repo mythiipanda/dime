@@ -1203,3 +1203,24 @@ async def test_review_fallback_materialized_pair_requirement_executes_once_and_p
     assert result.verification.status==VerificationStatus.PASS
     assert result.verified_claims and result.gaps==[]
     assert all("resolution" not in r.id for r in result.task.requirements)
+
+@pytest.mark.anyio
+async def test_invalid_model_calculation_path_is_safe_partial_not_runtime_failure():
+    from datetime import UTC,datetime
+    from v2.adapters.models import ModelSynthesizer
+    from v2.contracts import EvidenceEnvelope, PlanStatus
+    class IntakeCalc:
+        async def understand(self,request):return TaskSpec(goal="split",mode="quick",deliverable="difference",calculation_requirements=[{"id":"delta","description":"difference"}])
+    class PlannerCalc:
+        async def plan(self,task):return Plan(nodes=[PlanNode(id="facts",description="facts",capability_hints=["fake"])])
+    class ExecCalc:
+        async def execute(self,task,plan,run_id=None):
+            from v2.runtime.models import ExecutionResult
+            ev=EvidenceEnvelope(evidence_id="ev",capability="fake",source="f",observed_at=datetime.now(UTC),rows={"a":2,"b":1})
+            return ExecutionResult(plan=Plan(nodes=[plan.nodes[0].model_copy(update={"status":PlanStatus.COMPLETE})]),evidence=[ev],attempts={"facts":1},errors={})
+    class DraftModel:
+        async def generate(self,**call):return call["schema"].model_validate({"sections":[],"claims":[{"text":"Wrong difference 99.","kind":"derived","evidence_ids":["ev"],"calculation_id":"bad"}],"calculations":[{"calculation_id":"bad","requirement_id":"delta","operation":"subtract","inputs":[{"evidence_id":"ev","path":"rows.missing"},{"evidence_id":"ev","path":"rows.b"}],"result":99}]})
+    result=await Runtime(intake=IntakeCalc(),planner=PlannerCalc(),executor=ExecCalc(),synthesizer=ModelSynthesizer(DraftModel(),provider="p",model_name="m"),mechanical_verifier=SequenceVerifier(VerificationStatus.PASS),semantic_verifier=SequenceVerifier(VerificationStatus.PASS)).run("split")
+    assert result.verification.status==VerificationStatus.PARTIAL
+    assert result.verified_claims==[]
+    assert any("outside admitted evidence" in gap.message for gap in result.gaps)

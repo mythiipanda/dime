@@ -558,6 +558,25 @@ class ModelIntake(ModelStage):
         # forcing a redundant narrow call whose failure can falsely downgrade
         # the complete evidence.
         from v2.runtime.subsumption import capability_subsumes
+        # A combined home/away game-log requirement with a null filter cannot
+        # preserve split populations. Expand it into two typed requirements
+        # before planning so execution never dispatches home_away=None.
+        scope = " ".join([request, task.goal, task.deliverable, *task.subquestions]).casefold()
+        expanded = []
+        for requirement in review.requirements:
+            args = requirement.capability_arguments
+            if ("game_logs" in requirement.capability_options
+                    and "home" in scope and "away" in scope
+                    and args.get("home_away") not in {"home", "away"}):
+                for split in ("home", "away"):
+                    expanded.append(requirement.model_copy(update={
+                        "id": f"{requirement.id}_{split}",
+                        "description": f"{split.title()} split: {requirement.description}",
+                        "capability_arguments": {**args, "home_away": split},
+                    }))
+            else:
+                expanded.append(requirement)
+        review = review.model_copy(update={"requirements": expanded})
         requirements = [
             requirement.model_copy(update={
                 "capability_options": list(dict.fromkeys([
@@ -594,12 +613,7 @@ class ModelPlanner(ModelStage):
             "capability_catalog": self._catalog,
             "skills": self._skills.activate(task.skills),
         }
-        try:
-            plan = await self._generate(payload)
-        except RuntimeError as exc:
-            if not str(exc).startswith("all structured-output providers failed"):
-                raise
-            plan = await self._generate(payload)
+        plan = await self._generate(payload)
         plan = self._normalize_plan(
             task, self._normalize_requirement_coverage(task, plan))
         feedback = self._coverage_feedback(task, plan)
@@ -1039,6 +1053,12 @@ def _canonicalize_calculation_requirements(task: TaskSpec) -> TaskSpec:
     return task.model_copy(update={"calculation_requirements": normalized})
 
 
+class InvalidDraftCalculation(ValueError):
+    def __init__(self, message: str, requirement_ids: Sequence[str] = ()) -> None:
+        super().__init__(message)
+        self.requirement_ids = tuple(requirement_ids)
+
+
 def _validate_draft(
     draft: DraftReport, evidence: Sequence[EvidenceEnvelope],
     task: TaskSpec | None = None,
@@ -1049,6 +1069,21 @@ def _validate_draft(
                       if evidence_id not in known})
     if unknown:
         raise ValueError(f"draft cites unknown evidence ids: {unknown}")
+    from v2.domain.evidence import EvidenceIndex
+    from v2.domain.calculations import Calculation
+    index = EvidenceIndex(evidence)
+    for declared in draft.calculations:
+        calculation = Calculation.model_validate({key: value for key, value in declared.model_dump().items()
+                                                  if key != "requirement_id"})
+        try:
+            from v2.domain.calculations import recompute
+            recompute(calculation, index)
+        except (KeyError, ValueError) as exc:
+            requirement_ids = ([declared.requirement_id]
+                               if declared.requirement_id is not None else [])
+            raise InvalidDraftCalculation(
+                f"draft calculation path is outside admitted evidence: {exc}",
+                requirement_ids) from exc
     if task is not None:
         required = {item.id for item in task.calculation_requirements}
         declared = {item.requirement_id for item in draft.calculations
@@ -1342,7 +1377,29 @@ class ModelSynthesizer(ModelStage):
                     blocked_calculation_requirement_ids=[
                         item.id for item in task.calculation_requirements],
                     gaps=["Answer synthesis provider was unavailable; admitted evidence is preserved."])
-        return _validate_draft(draft, evidence, task)
+        try:
+            return _validate_draft(draft, evidence, task)
+        except InvalidDraftCalculation as exc:
+            invalid_ids = set(exc.requirement_ids)
+            invalid_calculations = {
+                item.calculation_id for item in draft.calculations
+                if item.requirement_id in invalid_ids or not invalid_ids
+            }
+            safe_claims = [claim for claim in draft.claims
+                           if claim.calculation_id not in invalid_calculations]
+            safe_calculations = [item for item in draft.calculations
+                                 if item.calculation_id not in invalid_calculations]
+            blocked = sorted(set(draft.blocked_calculation_requirement_ids)
+                             | invalid_ids)
+            partial = draft.model_copy(update={
+                "claims": safe_claims,
+                "calculations": safe_calculations,
+                "blocked_calculation_requirement_ids": blocked,
+                "gaps": list(dict.fromkeys([
+                    *draft.gaps, str(exc),
+                ])),
+            })
+            return _validate_draft(partial, evidence, task)
 
 
 class ModelRepairer(ModelStage):
@@ -1501,12 +1558,7 @@ class ModelSemanticVerifier(ModelStage):
             "evidence": compact,
             "skills": self._skills.activate(task.skills),
         }
-        try:
-            report = await self._generate(payload)
-        except RuntimeError as exc:
-            if not str(exc).startswith("all structured-output providers failed"):
-                raise
-            report = await self._generate(payload)
+        report = await self._generate(payload)
         expected = set(range(len(draft.claims)))
         observed = [item.claim_index for item in report.claim_results]
         if (len(observed) != len(set(observed))
