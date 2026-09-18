@@ -628,21 +628,22 @@ class ModelPlanner(ModelStage):
                 requirements[rid].capability_arguments
                 for rid in node.covers_requirement_ids if rid in requirements
             ]
-            raw_metric = args.get("requested_metric")
-            if raw_metric is None:
-                raw_metric = next((item.get("requested_metric")
-                                   for item in requirement_args
-                                   if item.get("requested_metric") is not None), None)
+            requirement_metric = next((item.get("requested_metric")
+                                       for item in requirement_args
+                                       if item.get("requested_metric") is not None), None)
+            raw_metric = (requirement_metric if requirement_metric is not None
+                          else args.get("requested_metric"))
             key = str(raw_metric or "").strip()
             metric = (key if key in ranked_metrics
                       else metric_aliases.get(key.casefold().replace("-", "_")))
             if metric in ranked_metrics:
                 args["requested_metric"] = metric
-                raw_direction = args.get("ranking_direction")
-                if raw_direction is None:
-                    raw_direction = next((item.get("ranking_direction")
-                                          for item in requirement_args
-                                          if item.get("ranking_direction") is not None), None)
+                requirement_direction = next((item.get("ranking_direction")
+                                                for item in requirement_args
+                                                if item.get("ranking_direction") is not None), None)
+                raw_direction = (requirement_direction
+                                 if requirement_direction is not None
+                                 else args.get("ranking_direction"))
                 direction_aliases = {"ascending":"asc", "lowest":"asc",
                                      "minimum":"asc", "descending":"desc",
                                      "highest":"desc", "maximum":"desc"}

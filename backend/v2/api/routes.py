@@ -381,12 +381,13 @@ async def quick_answer_stream(body: QuickAnswerBody):
                     failed_stage = next((
                         entry.step_id for entry in reversed(ledger.entries)
                         if entry.kind == LedgerKind.STEP_END
-                        and entry.data.get("reason") == "failed"), None)
+                        and entry.data.get("reason") in {"failed", "timeout"}), None)
                     # No TaskSpec/evidence exists when intake's structured
                     # provider is unavailable. Return a typed non-factual
                     # refusal rather than an error event; downstream stages
                     # retain A3's evidence-preserving partial behavior.
-                    if failed_stage == "understand":
+                    if (failed_stage == "understand"
+                            and type(exc).__name__ != "PreToolTimeoutError"):
                         yield encode_event(NodeUpdate(
                             node=public_node("runtime"), status="complete"))
                         yield encode_event(FinalAnswer(

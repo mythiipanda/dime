@@ -1869,3 +1869,34 @@ def test_answer_text_has_nonempty_fallback_when_all_internal_gaps_are_filtered()
     stream_tail = encode_event(FinalAnswer(text=answer)) + encode_event(GraphEnd())
     assert "event: final_answer" in stream_tail
     assert stream_tail.endswith("event: graph_end\ndata: {}\n\n")
+
+def test_intake_provider_failure_yields_typed_partial_final_without_error(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from v2.api import routes
+    from v2.runtime import LedgerKind, RunLedger
+    ledgers = {}
+    class BrokenIntakeRuntime:
+        async def run(self, request, *, run_id=None, context=()):
+            ledger = ledgers[run_id]
+            ledger.append(LedgerKind.STEP_START, turn_id=run_id,
+                          step_id="understand")
+            ledger.append(LedgerKind.STEP_END, turn_id=run_id, step_id="understand",
+                          data={"reason":"failed", "duration_ms":7,
+                                "error":"private provider detail"})
+            raise RuntimeError("private provider detail")
+    def build(**kwargs):
+        ledger = RunLedger(kwargs["run_id"]); ledgers[kwargs["run_id"]] = ledger
+        return BrokenIntakeRuntime(), ledger
+    monkeypatch.setenv("DIME_RUNTIME_V2", "on")
+    monkeypatch.setattr("app.providers.resolve_model_id",
+                        lambda value:("openrouter","fixture"))
+    monkeypatch.setattr("v2.runtime.assembly.build_runtime", build)
+    app = FastAPI(); app.include_router(routes.router, prefix="/api")
+    response = TestClient(app).post("/api/v2/chat/stream", json={"q":"record?"})
+    assert "event: error" not in response.text
+    assert "event: final_answer" in response.text
+    assert '"verification":"partial"' in response.text
+    assert '"verified_claims":0' in response.text
+    assert response.text.rstrip().endswith("event: graph_end\ndata: {}")
+    assert "private provider detail" not in response.text

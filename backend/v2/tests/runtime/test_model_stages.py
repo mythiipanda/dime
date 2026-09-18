@@ -1789,3 +1789,31 @@ def test_team_rating_arguments_are_canonicalized_from_typed_requirement():
     normalized = planner._normalize_plan(task, plan)
     assert normalized.nodes[0].arguments["requested_metric"] == "TM_TOV_PCT"
     assert normalized.nodes[0].arguments["ranking_direction"] == "asc"
+
+@pytest.mark.parametrize(("required_metric", "required_direction", "model_metric", "expected_metric", "expected_direction"), [
+    ("TS_PCT", "desc", "DEF_RATING", "TS_PCT", "desc"),
+    ("TM_TOV_PCT", "asc", "pace", "TM_TOV_PCT", "asc"),
+    (None, None, "true shooting", "TS_PCT", "desc"),
+    (None, None, "pace", "pace", None),
+])
+def test_typed_team_metric_precedes_model_argument(required_metric, required_direction,
+        model_metric, expected_metric, expected_direction):
+    from v2.contracts import Plan
+    requirement_args = ({"requested_metric": required_metric,
+                         "ranking_direction": required_direction}
+                        if required_metric else {})
+    requirements = ([{"id":"metric", "description":"ranked metric",
+                      "capability_options":["team_ratings"],
+                      "capability_arguments":requirement_args}]
+                    if required_metric else [])
+    task = TaskSpec(goal="rank", mode="quick", deliverable="answer",
+                    requirements=requirements)
+    plan = Plan.model_validate({"nodes":[{"id":"ratings","description":"rates",
+        "capability_hints":["team_ratings"],
+        "covers_requirement_ids":["metric"] if required_metric else [],
+        "arguments":{"requested_metric":model_metric}}]})
+    planner = ModelPlanner(StubModel([]), provider="stub", model_name="stub",
+                           capability_catalog={"team_ratings":{}})
+    args = planner._normalize_plan(task, plan).nodes[0].arguments
+    assert args["requested_metric"] == expected_metric
+    assert args.get("ranking_direction") == expected_direction
