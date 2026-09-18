@@ -1565,7 +1565,7 @@ async def test_requirement_review_retries_one_provider_exhaustion() -> None:
     ).understand("leaders")
 
     assert task.goal == "leaders"
-    assert model.calls == 3
+    assert model.calls == 2
 @pytest.mark.anyio
 async def test_requirement_review_closes_narrow_option_over_broader_capability():
     stub = StubModel([{
@@ -2071,7 +2071,7 @@ async def test_recorded_intake_ledger_carries_provider_attempt_diagnostics():
     from v2.runtime import RequestEnvelope, RunLedger
     class M:
         last_provider="secondary";last_model="backup"
-        last_failures=[{"provider":"primary","model":"main","attempt_number":1,
+        last_failures=[{"route":"intake","provider":"primary","model":"main","attempt_number":1,
             "exception_type":"TimeoutError","message_class":"timeout","latency_ms":12}]
         async def generate(self,**call):return TaskSpec(goal="ok",mode="quick",deliverable="x")
     envelope=RequestEnvelope.freeze(provider="primary",model="main",route="intake",prompt="p",context={},tool_schemas={},planner_version="v2")
@@ -2109,8 +2109,8 @@ async def test_intake_global_deadline_stops_many_provider_chain(monkeypatch):
 async def test_exhausted_intake_ledger_keeps_complete_attempt_diagnostics():
     from v2.adapters import RecordedStructuredModel
     from v2.runtime import RequestEnvelope,RunLedger
-    diagnostics=[{"provider":"p","model":"m","attempt_number":1,"exception_type":"TimeoutError","message_class":"timeout","latency_ms":6},
-                 {"provider":"intake","model":"deadline","attempt_number":2,"exception_type":"TimeoutError","message_class":"intake_deadline","latency_ms":0}]
+    diagnostics=[{"route":"intake","provider":"p","model":"m","attempt_number":1,"exception_type":"TimeoutError","message_class":"timeout","latency_ms":6},
+                 {"route":"intake","provider":"intake","model":"deadline","attempt_number":2,"exception_type":"TimeoutError","message_class":"intake_deadline","latency_ms":0}]
     class M:
         last_failures=diagnostics
         async def generate(self,**call):raise RuntimeError("all structured-output providers failed")
@@ -2120,3 +2120,61 @@ async def test_exhausted_intake_ledger_keeps_complete_attempt_diagnostics():
         await RecordedStructuredModel(M(),ledger,turn_id="turn").generate(schema=TaskSpec,prompt="p",payload={},envelope=e)
     assert ledger.entries[-1].data["provider_attempts"]==diagnostics
     assert len(ledger.entries)==2
+
+@pytest.mark.anyio
+async def test_requirement_review_exhaustion_preserves_intake_without_blocker():
+    class ReviewDown:
+        calls=0
+        async def generate(self,**call):
+            self.calls+=1
+            if self.calls==1:
+                return TaskSpec(goal="pair",mode="quick",deliverable="answer",
+                    entities=[
+                        {"id":"myles-turner","type":"player","display_name":"Myles Turner"},
+                        {"id":"luka-doncic","type":"player","display_name":"Luka Doncic"}],
+                    season={"value":"2025-26","source":"user","confidence":1.0},
+                    required_evidence=["player_comparison"])
+            raise RuntimeError("all structured-output providers failed [x]")
+    model=ReviewDown()
+    task=await ModelIntake(model,provider="stub",model_name="stub",
+        capability_catalog={"player_comparison":{}},requirement_review=True).understand("pair")
+    assert task.required_evidence==["player_comparison"]
+    assert len(task.requirements)==1
+    assert task.requirements[0].capability_options==["player_comparison"]
+    assert task.requirements[0].id=="required_player_comparison"
+    assert task.requirements[0].capability_arguments=={
+        "a":"Myles Turner","b":"Luka Doncic","season":"2025-26"}
+    assert task.open_questions==[]
+    assert model.calls==2
+
+
+def test_route_policy_table_bounds_model_owned_routes():
+    from v2.adapters.models import ROUTE_POLICIES
+    assert ROUTE_POLICIES["requirement_review"]["total_budget_s"] <= 12
+    assert ROUTE_POLICIES["planner"]["total_budget_s"] <= 12
+    assert ROUTE_POLICIES["synthesizer"]["deterministic_fallback"] is True
+    assert ROUTE_POLICIES["semantic_verifier"]["deterministic_fallback"] is True
+
+@pytest.mark.anyio
+async def test_run_model_deadline_is_shared_across_sequential_routes(monkeypatch):
+    from v2.adapters.models import ProviderStructuredModel
+    from v2.runtime import RequestEnvelope
+    from v2.runtime.budget import RUN_MODEL_DEADLINE
+    clock=type("Clock",(),{"value":0})();calls=[]
+    class A:
+        def __init__(self,model,*a,**k):self.model=model
+        async def run(self,prompt):
+            calls.append(self.model.model_name);clock.value += 7;raise TimeoutError("x")
+    class M:model_name="m"
+    monkeypatch.setattr("v2.adapters.models.Agent",A)
+    monkeypatch.setattr("v2.adapters.models.time.monotonic",lambda:clock.value)
+    monkeypatch.setattr("v2.adapters.models.time.perf_counter",lambda:0)
+    monkeypatch.setattr("v2.adapters.models.random.uniform",lambda a,b:0)
+    RUN_MODEL_DEADLINE.set(20)
+    m=ProviderStructuredModel("inception","m");monkeypatch.setattr(m,"_models",lambda:[("inception",M())])
+    def env(route):return RequestEnvelope.freeze(provider="inception",model="m",route=route,prompt="p",context={},tool_schemas={},planner_version="v2")
+    with pytest.raises(RuntimeError):await m.generate(schema=TaskSpec,prompt="p",payload={},envelope=env("intake"))
+    with pytest.raises(RuntimeError):await m.generate(schema=TaskSpec,prompt="p",payload={},envelope=env("planner"))
+    assert clock.value==21
+    assert len(calls)==3
+    assert m.last_failures[-1]["message_class"]=="planner_deadline"

@@ -172,6 +172,7 @@ def _validate_assistant_attempt(data: dict[str, Any]) -> None:
     provider_attempts = data.get("provider_attempts", [])
     attempts_valid = isinstance(provider_attempts, list) and all(
         isinstance(item, dict)
+        and isinstance(item.get("route"), str)
         and isinstance(item.get("provider"), str)
         and isinstance(item.get("model"), str)
         and isinstance(item.get("attempt_number"), int)

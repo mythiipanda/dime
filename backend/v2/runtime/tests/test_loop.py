@@ -1169,3 +1169,37 @@ async def test_repair_provider_failure_preserves_supported_claims_as_partial():
     assert result.verification.status == VerificationStatus.PARTIAL
     assert result.verified_claims[0].claim.text == "42"
     assert any("Model repair was unavailable" in gap.message for gap in result.gaps)
+
+@pytest.mark.anyio
+async def test_review_fallback_materialized_pair_requirement_executes_once_and_passes():
+    from v2.contracts import EvidenceEnvelope
+    from v2.runtime.models import ExecutionResult
+    from v2.contracts import PlanStatus
+    calls=[]
+    class PairIntake:
+        async def understand(self,request):
+            return TaskSpec(goal="pair",mode="quick",deliverable="facts",
+                entities=[{"id":"myles-turner","type":"player","display_name":"Myles Turner"},
+                          {"id":"luka-doncic","type":"player","display_name":"Luka Doncic"}],
+                season={"value":"2025-26","source":"user","confidence":1.0},
+                requirements=[{"id":"required_player_comparison",
+                    "description":"Required intake evidence: player_comparison",
+                    "capability_options":["player_comparison"],
+                    "capability_arguments":{"a":"Myles Turner","b":"Luka Doncic","season":"2025-26"}}])
+    class PairPlanner:
+        async def plan(self,task):
+            r=task.requirements[0]
+            return Plan(nodes=[PlanNode(id="pair",description="pair",capability_hints=["player_comparison"],covers_requirement_ids=[r.id],arguments=r.capability_arguments)])
+    class CountingExecutor:
+        async def execute(self,task,plan,run_id=None):
+            calls.append(plan.nodes[0].arguments)
+            ev=EvidenceEnvelope(evidence_id="pair",capability="player_comparison",source="fake",observed_at=__import__('datetime').datetime.now(__import__('datetime').UTC),season="2025-26",entities=task.entities,rows={"a":{"name":"Myles Turner","ppg":11.9},"b":{"name":"Luka Doncic","ppg":33.5}})
+            return ExecutionResult(plan=Plan(nodes=[plan.nodes[0].model_copy(update={"status":PlanStatus.COMPLETE})]),evidence=[ev],attempts={"pair":1},errors={})
+    class PairSynth:
+        async def synthesize(self,task,evidence):
+            return DraftReport(sections=["Pair"],claims=[Claim(text="Luka Doncic averaged 33.5 points per game.",kind="observed",evidence_ids=["pair"])])
+    result=await Runtime(intake=PairIntake(),planner=PairPlanner(),executor=CountingExecutor(),synthesizer=PairSynth(),mechanical_verifier=SequenceVerifier(VerificationStatus.PASS),semantic_verifier=SequenceVerifier(VerificationStatus.PASS)).run("pair")
+    assert calls==[{"a":"Myles Turner","b":"Luka Doncic","season":"2025-26"}]
+    assert result.verification.status==VerificationStatus.PASS
+    assert result.verified_claims and result.gaps==[]
+    assert all("resolution" not in r.id for r in result.task.requirements)

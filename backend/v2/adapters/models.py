@@ -37,6 +37,7 @@ from v2.contracts import (
 )
 from v2.prompts import load_prompt
 from v2.runtime.ledger import RequestEnvelope, exception_text
+from v2.runtime.budget import RUN_MODEL_DEADLINE
 from v2.skills import SkillLibrary, skill_hashes
 
 T = TypeVar("T", bound=BaseModel)
@@ -51,6 +52,32 @@ class StructuredModel(Protocol):
         payload: Mapping[str, Any],
         envelope: RequestEnvelope,
     ) -> T: ...
+
+
+ROUTE_POLICIES: dict[str, dict[str, Any]] = {
+    "intake": {"primary_attempts": 2, "attempt_timeout_s": 6.0,
+               "total_budget_s": 18.0, "secondary_limit": 1,
+               "transient_classes": frozenset({"timeout", "rate_limit", "network", "server_error", "provider_error"}),
+               "deterministic_fallback": False},
+    "requirement_review": {"primary_attempts": 2, "attempt_timeout_s": 4.0,
+               "total_budget_s": 12.0, "secondary_limit": 1,
+               "transient_classes": frozenset({"timeout", "rate_limit", "network", "server_error", "provider_error"}),
+               "deterministic_fallback": True},
+    "planner": {"primary_attempts": 2, "attempt_timeout_s": 4.0,
+               "total_budget_s": 12.0, "secondary_limit": 1,
+               "transient_classes": frozenset({"timeout", "rate_limit", "network", "server_error", "provider_error"}),
+               "deterministic_fallback": False},
+    "synthesizer": {"primary_attempts": 1, "attempt_timeout_s": 6.0,
+               "total_budget_s": 6.0, "secondary_limit": 0,
+               "transient_classes": frozenset(), "deterministic_fallback": True},
+    "semantic_verifier": {"primary_attempts": 1, "attempt_timeout_s": 6.0,
+               "total_budget_s": 6.0, "secondary_limit": 0,
+               "transient_classes": frozenset(), "deterministic_fallback": True},
+}
+_DEFAULT_ROUTE_POLICY = {"primary_attempts": 1, "attempt_timeout_s": 6.0,
+    "total_budget_s": 12.0, "secondary_limit": 1,
+    "transient_classes": frozenset({"timeout", "rate_limit", "network", "server_error", "provider_error"}),
+    "deterministic_fallback": False}
 
 
 class ProviderStructuredModel:
@@ -131,15 +158,18 @@ class ProviderStructuredModel:
         self.last_model = None
         self.last_failures = []
         user_prompt = json.dumps(payload, sort_keys=True, default=str)
-        is_intake = envelope.route == "intake"
-        intake_deadline = time.monotonic() + 18.0 if is_intake else None
+        policy = ROUTE_POLICIES.get(envelope.route, _DEFAULT_ROUTE_POLICY)
+        now = time.monotonic()
+        run_deadline = RUN_MODEL_DEADLINE.get()
+        deadline = min(now + float(policy["total_budget_s"]),
+                       run_deadline if run_deadline is not None else float("inf"))
         budget_exhausted = False
-        for model_index, (provider, model) in enumerate(models):
-            max_attempts = 2 if is_intake and model_index == 0 else 1
+        candidates = models[:1 + int(policy["secondary_limit"])]
+        for model_index, (provider, model) in enumerate(candidates):
+            max_attempts = int(policy["primary_attempts"]) if model_index == 0 else 1
             for attempt_number in range(1, max_attempts + 1):
-                remaining = ((intake_deadline - time.monotonic())
-                             if intake_deadline is not None else None)
-                if remaining is not None and remaining <= 0:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
                     budget_exhausted = True
                     break
                 started = time.perf_counter()
@@ -153,15 +183,15 @@ class ProviderStructuredModel:
                         retries=settings.llm_max_retries,
                     )
                     run = agent.run(user_prompt)
-                    result = (await asyncio.wait_for(
-                        run, timeout=min(6.0, remaining))
-                        if is_intake and remaining is not None else await run)
+                    result = await asyncio.wait_for(
+                        run, timeout=min(float(policy["attempt_timeout_s"]), remaining))
                     self.last_provider = provider
                     self.last_model = model.model_name
                     return result.output
                 except Exception as exc:
                     failure_class = self._failure_class(exc)
                     self.last_failures.append({
+                        "route": envelope.route,
                         "provider": provider,
                         "model": model.model_name,
                         "attempt_number": attempt_number,
@@ -170,23 +200,23 @@ class ProviderStructuredModel:
                         "latency_ms": max(0, round(
                             (time.perf_counter() - started) * 1000)),
                     })
-                    transient = failure_class in {
-                        "timeout", "rate_limit", "network", "server_error",
-                        "provider_error",
-                    }
+                    transient = failure_class in policy["transient_classes"]
                     if (attempt_number < max_attempts and transient):
                         await asyncio.sleep(random.uniform(0.04, 0.12))
                         continue
                     break
             if budget_exhausted:
                 break
+        budget_exhausted = (budget_exhausted or (
+            time.monotonic() >= deadline and len(models) > len(candidates)))
         if budget_exhausted:
             self.last_failures.append({
-                "provider": "intake",
+                "route": envelope.route,
+                "provider": envelope.route,
                 "model": "deadline",
                 "attempt_number": len(self.last_failures) + 1,
                 "exception_type": "TimeoutError",
-                "message_class": "intake_deadline",
+                "message_class": f"{envelope.route}_deadline",
                 "latency_ms": 0,
             })
         summary = ", ".join(
@@ -485,14 +515,34 @@ class ModelIntake(ModelStage):
         except RuntimeError as exc:
             if not str(exc).startswith("all structured-output providers failed"):
                 raise
-            # A transient provider failure after a successful intake used to
-            # terminate the run before planning. Match the bounded recovery
-            # already owned by planner, synthesizer, and semantic verification:
-            # retry the same typed boundary once, never parse or repair text.
-            review = await self._generate_as(
-                prompt_name="requirement_review", route="requirement_review",
-                schema=RequirementReview, payload=payload,
-            )
+            # Intake already crossed the typed boundary. On exhausted transient
+            # review providers, retain exactly its evidence and calculations;
+            # do not invent resolver requirements or user-visible blockers.
+            from v2.contracts import EvidenceRequirement
+            requirements = list(task.requirements)
+            existing_capabilities = {capability for item in requirements
+                                     for capability in item.capability_options}
+            entities = [item.display_name for item in task.entities]
+            for capability in task.required_evidence:
+                if capability in existing_capabilities:
+                    continue
+                arguments: dict[str, Any] = {}
+                if task.season is not None:
+                    arguments["season"] = task.season.value
+                if capability == "player_comparison" and len(entities) >= 2:
+                    arguments.update({"a": entities[0], "b": entities[1]})
+                elif capability.startswith("player_") and entities:
+                    arguments["player"] = entities[0]
+                requirement_id = f"required_{re.sub(r'[^a-z0-9]+', '_', capability.casefold()).strip('_')}"
+                requirements.append(EvidenceRequirement(
+                    id=requirement_id,
+                    description=f"Required intake evidence: {capability}",
+                    capability_options=[capability],
+                    capability_arguments=arguments))
+            review = RequirementReview(
+                requirements=requirements,
+                calculation_requirements=list(task.calculation_requirements),
+                missing_subquestions=[], missing_skills=[])
         unknown_evidence = sorted(
             {capability for requirement in review.requirements
              for capability in requirement.capability_options}

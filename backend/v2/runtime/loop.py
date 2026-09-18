@@ -24,6 +24,7 @@ from v2.runtime.interfaces import Intake, Planner, Repairer, Synthesizer, Verifi
 from v2.runtime.ledger import LedgerKind, RunLedger, TerminalReason, exception_text
 from v2.runtime.models import ExecutionResult, RuntimeResult
 from v2.domain.evidence import iter_values
+from v2.runtime.budget import RUN_MODEL_DEADLINE
 
 
 class PreToolTimeoutError(TimeoutError):
@@ -84,6 +85,10 @@ class Runtime:
             raise ValueError("runtime context cannot exceed 8 turns")
         turn_id = run_id or "turn"
         turn_started = time.perf_counter()
+        # Reserve 30 seconds of the 90-second E2E contract for tools,
+        # verification, rendering, and cancellation. Structured routes share
+        # the remaining absolute deadline instead of summing fresh budgets.
+        RUN_MODEL_DEADLINE.set(turn_started + 60.0)
         if self._ledger is not None:
             if run_id is not None and self._ledger.run_id != run_id:
                 raise ValueError("ledger run id does not match runtime run id")
