@@ -1894,7 +1894,7 @@ async def test_pair_synthesis_failure_class_has_deterministic_supported_answer()
         "Luka Dončić scored 21.6 points per game more than Myles Turner.",
         "Myles Turner had a 58.4% true shooting percentage.",
         "Luka Dončić had a 61.6% true shooting percentage."]
-    assert [calc.requirement_id for calc in draft.calculations] == ["leader"]
+    assert [calc.requirement_id for calc in draft.calculations] == ["ppg_margin"]
 
 @pytest.mark.anyio
 async def test_game_log_builder_maps_separate_mean_requirements():
@@ -1911,7 +1911,7 @@ async def test_game_log_builder_maps_separate_mean_requirements():
                   "average_pts":Decimal(avg),"matches":[{"pts":Decimal(avg)},{"pts":Decimal(avg)}]})
     draft = await ModelSynthesizer(StubModel([]), provider="stub", model_name="stub").synthesize(
         task,[ev("home","home","25"),ev("away","away","28")])
-    assert [calc.requirement_id for calc in draft.calculations] == ["h","a","d"]
+    assert [calc.requirement_id for calc in draft.calculations] == ["home_mean","away_mean","home_away_delta"]
 
 
 @pytest.mark.anyio
@@ -1928,7 +1928,7 @@ async def test_pair_builder_maps_ppg_and_ts_difference_without_duplicate_ids():
             observed_at=datetime.now(UTC), season="2025-26",rows={"PLAYER_NAME":name,"TS_PCT":value})
     draft = await ModelSynthesizer(StubModel([]), provider="stub", model_name="stub").synthesize(
         task,[pair,ts("mt","Myles Turner",58.4),ts("ld","Luka Dončić",61.6)])
-    assert [calc.requirement_id for calc in draft.calculations] == ["p","t"]
+    assert [calc.requirement_id for calc in draft.calculations] == ["ppg_margin","ts_margin"]
     assert len({calc.requirement_id for calc in draft.calculations}) == 2
 
 @pytest.mark.anyio
@@ -1974,3 +1974,28 @@ def test_draft_validator_rejects_duplicate_requirement_ownership():
              "inputs":[{"evidence_id":"e","path":"rows.x"}],"result":1},
             {"calculation_id":"b","requirement_id":"same","operation":"mean",
              "inputs":[{"evidence_id":"e","path":"rows.y"}],"result":2}]})
+
+@pytest.mark.anyio
+async def test_sample_size_calc_artifacts_are_observed_not_blocked():
+    from v2.adapters.models import _canonicalize_calculation_requirements
+    task=TaskSpec(goal="home away scoring",mode="quick",deliverable="averages sample sizes and difference",
+        requirements=[{"id":"logs","description":"logs","capability_options":["game_logs"]}],
+        calculation_requirements=[
+            {"id":"h","description":"Home scoring average points per game."},
+            {"id":"a","description":"Away scoring average points per game."},
+            {"id":"hs","description":"Home sample size (number of games)."},
+            {"id":"as","description":"Away sample size (number of games)."},
+            {"id":"d","description":"Home-minus-away scoring difference."}])
+    normalized=_canonicalize_calculation_requirements(task)
+    assert [x.id for x in normalized.calculation_requirements] == ["home_mean","away_mean","home_away_delta"]
+
+
+@pytest.mark.parametrize("raw,shown", [(0.584,"58.4%"),(58.4,"58.4%")])
+@pytest.mark.anyio
+async def test_pair_ts_projection_normalizes_fraction_and_percent(raw,shown):
+    task=TaskSpec(goal="compare points",mode="quick",deliverable="PPG difference",
+        calculation_requirements=[{"id":"d","description":"PPG difference"}])
+    pair=EvidenceEnvelope(evidence_id="p",capability="player_comparison",source="f",observed_at=datetime.now(UTC),season="2025-26",rows={"a":{"name":"A","ppg":1},"b":{"name":"B","ppg":2}})
+    ts=EvidenceEnvelope(evidence_id="t",capability="shooting_efficiency",source="f",observed_at=datetime.now(UTC),rows={"PLAYER_NAME":"A","TS_PCT":raw})
+    draft=await ModelSynthesizer(StubModel([]),provider="stub",model_name="stub").synthesize(task,[pair,ts])
+    assert any(shown in claim.text for claim in draft.claims)

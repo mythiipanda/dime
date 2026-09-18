@@ -724,3 +724,20 @@ def test_requested_metric_binds_pronoun_value_claim_to_leader_row():
     result = verify_mechanical(TaskSpec(goal="lowest turnover rate", mode="quick",
         deliverable="team and value"), draft, [ev])
     assert result.status == "pass"
+
+@pytest.mark.parametrize("shown,exact,supported", [
+    ("-3.26","-3.25652173913043478260869565",True),
+    ("3.26","3.25652173913043478260869565",True),
+    ("3.26","-3.25652173913043478260869565",False),
+    ("-3.80","-3.25652173913043478260869565",False),
+])
+def test_derived_display_rounding_uses_recomputed_calculation(shown, exact, supported):
+    from v2.contracts import Claim, DraftReport, EvidenceEnvelope, TaskSpec
+    from v2.domain.calculations import Calculation
+    from v2.runtime.verifier import verify_mechanical
+    from datetime import UTC, datetime
+    evidence=[EvidenceEnvelope(evidence_id="a",capability="x",source="fixture",observed_at=datetime.now(UTC),rows={"value":exact})]
+    calculation=Calculation(calculation_id="delta",operation="mean",inputs=[{"evidence_id":"a","path":"rows.value"}],result=exact)
+    draft=DraftReport(sections=[],claims=[Claim(text=f"The difference was {shown} points.",kind="derived",evidence_ids=["a"],calculation_id="delta")])
+    result=verify_mechanical(TaskSpec(goal="x",mode="quick",deliverable="x"),draft,evidence,[calculation])
+    assert result.claim_results[0].supported is supported

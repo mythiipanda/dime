@@ -908,15 +908,17 @@ def _canonicalize_calculation_requirements(task: TaskSpec) -> TaskSpec:
             requested.append("ts_margin")
     if not requested:
         return task
-    assignments: dict[str, str] = {}
+    kinds: set[str] = set()
     unused = list(task.calculation_requirements)
     def classify(description: str) -> str | None:
         text = description.casefold()
+        if ("sample size" in text or "number of games" in text or "game count" in text):
+            return "observed_sample_size"
         if "home" in text and "away" not in text and any(x in text for x in ("average", "mean", "ppg")):
             return "home_mean"
         if "away" in text and "home" not in text and any(x in text for x in ("average", "mean", "ppg")):
             return "away_mean"
-        if "home" in text and "away" in text and any(x in text for x in ("difference", "minus", "margin", "gap")):
+        if "home" in text and "away" in text and any(x in text for x in ("difference", "minus", "margin", "gap", "subtract")):
             return "home_away_delta"
         if "true shooting" in text or "ts%" in text:
             return "ts_margin"
@@ -925,25 +927,20 @@ def _canonicalize_calculation_requirements(task: TaskSpec) -> TaskSpec:
         return None
     for requirement in list(unused):
         kind = classify(requirement.description)
-        if kind in requested and kind not in assignments:
-            assignments[kind] = requirement.id
+        if kind == "observed_sample_size":
             unused.remove(requirement)
-    # A collapsed comparison requirement owns the arithmetic margin. The
-    # accompanying leader statement is evidence-backed by the same result,
-    # not a second declaration tied to the same requirement ID.
-    normalized = []
-    used_ids = {requirement.id for requirement in task.calculation_requirements}
-    for kind in requested:
-        canonical_id, description = _CANONICAL_CALCULATIONS[kind]
-        requirement_id = assignments.get(kind)
-        if requirement_id is None:
-            requirement_id = canonical_id
-            suffix = 2
-            while requirement_id in used_ids:
-                requirement_id = f"{canonical_id}_{suffix}"; suffix += 1
-            used_ids.add(requirement_id)
-        normalized.append(CalculationRequirement(id=requirement_id, description=description))
-    # Preserve unrelated explicit calculations as blocked-able typed work.
+        elif kind in requested:
+            kinds.add(kind)
+            unused.remove(requirement)
+    # Canonical identities own the DraftReport boundary. Provider IDs are
+    # provenance only and cannot create duplicate semantic ownership.
+    kinds.update(requested)
+    normalized = [CalculationRequirement(
+        id=_CANONICAL_CALCULATIONS[kind][0],
+        description=_CANONICAL_CALCULATIONS[kind][1])
+        for kind in requested if kind in kinds]
+    # Preserve only genuinely unrelated arithmetic work. Same-kind duplicates
+    # and observed sample-size artifacts were consumed above.
     normalized.extend(unused)
     return task.model_copy(update={"calculation_requirements": normalized})
 
@@ -1135,13 +1132,17 @@ def _deterministic_player_comparison_draft(
     matched = [(name, next((ev for candidate, ev in by_name.items()
                             if display_name(candidate) == name), None))
                for name in (a_name, b_name)]
+    def percent_value(raw: Any) -> Decimal:
+        value = Decimal(str(raw))
+        return value * 100 if abs(value) <= 1 else value
     for name, ev in matched:
         if ev is not None:
-            claims.append(Claim(text=f"{name} had a {ev.rows['TS_PCT']}% true shooting percentage.",
+            value = percent_value(ev.rows["TS_PCT"]).normalize()
+            claims.append(Claim(text=f"{name} had a {value}% true shooting percentage.",
                                 kind="observed", evidence_ids=[ev.evidence_id]))
     if len(matched) == 2 and all(ev is not None for _, ev in matched):
         (name_a, ev_a), (name_b, ev_b) = matched
-        ts_a, ts_b = Decimal(str(ev_a.rows["TS_PCT"])), Decimal(str(ev_b.rows["TS_PCT"]))
+        ts_a, ts_b = percent_value(ev_a.rows["TS_PCT"]), percent_value(ev_b.rows["TS_PCT"])
         hi_name, hi_ev, hi_ts, lo_name, lo_ev, lo_ts = ((name_a, ev_a, ts_a, name_b, ev_b, ts_b)
             if ts_a >= ts_b else (name_b, ev_b, ts_b, name_a, ev_a, ts_a))
         for index, rid in enumerate(ts_ids):

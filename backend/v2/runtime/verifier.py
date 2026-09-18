@@ -60,6 +60,23 @@ def _canon_number(raw: Any) -> set[Decimal]:
     return values
 
 
+def _matches_calculation_display(raw: str, values: set[Decimal]) -> bool:
+    """Accept ordinary rounded display of an already-recomputed calculation."""
+    parsed = decimal_value(raw)
+    if parsed is None or not values:
+        return False
+    # Publication rounding may shorten precision, but it cannot flip sign.
+    places = max(0, len(raw.rstrip("%").replace(",", "").split(".", 1)[1])
+                 if "." in raw.rstrip("%").replace(",", "") else 0)
+    tolerance = Decimal(5).scaleb(-(places + 1))
+    for exact in values:
+        if ((parsed > 0) != (exact > 0) or (parsed < 0) != (exact < 0)):
+            continue
+        if abs(parsed - exact) <= tolerance:
+            return True
+    return False
+
+
 def _number_tokens(text: str) -> list[str]:
     label_numbers = {match.start(1) for match in _LIST_LABEL.finditer(text)}
     return [match.group(0) for match in _NUMBER.finditer(text)
@@ -506,7 +523,10 @@ def verify_mechanical(
                     and re.search(r"points?\s+per\s+100\s+possessions?",
                                   claim.text, re.IGNORECASE)):
                 continue
-            if not (_canon_number(raw) & supported_numbers):
+            if not (_canon_number(raw) & supported_numbers
+                    or (claim.kind == ClaimKind.DERIVED
+                        and claim.calculation_id
+                        and _matches_calculation_display(raw, calculation_values))):
                 reasons.append(f"uncited numeral {raw}")
 
         for value in _claim_dates_supported(claim, cited):
