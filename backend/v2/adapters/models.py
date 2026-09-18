@@ -197,14 +197,18 @@ class ProviderStructuredModel:
                     result = await asyncio.wait_for(
                         run, timeout=min(float(policy["attempt_timeout_s"]), remaining))
                     self.last_provider = provider
-                    self.last_model = model.model_name
+                    self.last_model = (
+                        f"mistral_free_limit:{model.model_name}"
+                        if provider == "mistral" else model.model_name
+                    )
                     return result.output
                 except Exception as exc:
                     failure_class = self._failure_class(exc)
                     self.last_failures.append({
                         "route": envelope.route,
                         "provider": provider,
-                        "model": model.model_name,
+                        "model": (f"mistral_free_limit:{model.model_name}"
+                                  if provider == "mistral" else model.model_name),
                         "attempt_number": attempt_number,
                         "exception_type": type(exc).__name__[:120],
                         "message_class": failure_class,

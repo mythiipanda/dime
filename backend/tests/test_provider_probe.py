@@ -82,7 +82,36 @@ def test_invoke_exposes_accepted_provider_and_sanitized_attempts(monkeypatch):
     assert out.provider=='openrouter'
     assert out.model==prov.OPENROUTER_DEFAULT
     assert out.elapsed_ms>=0
-    assert out.provider_attempts==({'provider':'mistral','model':'primary-model',
+    assert out.provider_attempts==({'provider':'mistral','model':prov._mistral_free_model(),
         'attempt_number':1,'exception_type':'TimeoutError','message_class':'timeout',
         'latency_ms':out.provider_attempts[0]['latency_ms']},)
     assert 'secret' not in str(out.provider_attempts)
+
+
+def test_paid_openrouter_primary_provenance_matches_constructed_free_slug(monkeypatch):
+    _reset(); seen=[]
+    class C:
+        async def ainvoke(self,messages,**kwargs):
+            class R: content='ok'
+            return R()
+    def fake_get(name, model=None):
+        seen.append((name,model)); return C()
+    monkeypatch.setattr(prov,'get_llm',fake_get)
+    out=asyncio.run(prov.invoke_with_fallback(
+        'openrouter','openai/gpt-4o',[]))
+    assert out.provider=='openrouter'
+    assert prov.is_free_model(out.provider,out.model)
+    assert seen[0]==('openrouter',out.model)
+
+
+def test_arbitrary_mistral_primary_provenance_matches_free_limit(monkeypatch):
+    _reset(); seen=[]
+    class C:
+        async def ainvoke(self,messages,**kwargs):
+            class R: content='ok'
+            return R()
+    monkeypatch.setattr(prov,'get_llm',lambda n,model=None: seen.append((n,model)) or C())
+    out=asyncio.run(prov.invoke_with_fallback('mistral','arbitrary-paid',[]))
+    assert out.provider=='mistral'
+    assert out.model==prov._mistral_free_model()
+    assert seen[0]==('mistral',out.model)

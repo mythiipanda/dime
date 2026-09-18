@@ -38,7 +38,8 @@ def is_free_model(provider: str, slug: str) -> bool:
     """One authority for whether a Dime model can incur zero paid credits."""
     value = str(slug or "").strip()
     if provider == "openrouter":
-        return value == OPENROUTER_AUTO or value.endswith(":free")
+        return value == OPENROUTER_AUTO or (
+            value in OPENROUTER_ALLOWLIST and value.endswith(":free"))
     if provider == "mistral":
         # Mistral ids do not carry pricing. The configured owner-approved
         # free-limit model is the only active choice for this provider.
@@ -86,6 +87,10 @@ def resolve_model_id(model_id: str | None) -> tuple[ProviderName, str]:
 
 
 def get_llm(name: ProviderName, model: str | None = None) -> ChatOpenAI | None:
+    # Configured credentials are not activation. Future reactivation needs an
+    # explicit policy change here; direct callers cannot bypass route clamping.
+    if name not in FREE_PROVIDER_ORDER:
+        return None
     if name == "mistral":
         if not settings.mistral_api_key:
             return None
@@ -93,26 +98,6 @@ def get_llm(name: ProviderName, model: str | None = None) -> ChatOpenAI | None:
             model=_mistral_free_model(),
             base_url="https://api.mistral.ai/v1",
             api_key=settings.mistral_api_key,
-            timeout=settings.llm_timeout_s,
-            max_retries=settings.llm_max_retries,
-        )
-    if name == "inception":
-        if not settings.inception_api_key:
-            return None
-        return ChatOpenAI(
-            model=model or settings.inception_model or INCEPTION_DEFAULT,
-            base_url="https://api.inceptionlabs.ai/v1",
-            api_key=settings.inception_api_key,
-            timeout=settings.llm_timeout_s,
-            max_retries=settings.llm_max_retries,
-        )
-    if name == "groq":
-        if not settings.groq_api_key:
-            return None
-        return ChatOpenAI(
-            model=model or settings.groq_model or GROQ_DEFAULT,
-            base_url="https://api.groq.com/openai/v1",
-            api_key=settings.groq_api_key,
             timeout=settings.llm_timeout_s,
             max_retries=settings.llm_max_retries,
         )
@@ -233,12 +218,10 @@ async def invoke_with_fallback(
     attempts: list[dict[str, Any]] = []
     started_all = time.perf_counter()
     for number, name in enumerate(fallback_order(primary), 1):
-        accepted_model = model if name == primary else {
-            "mistral": _mistral_free_model(),
-            "openrouter": _openrouter_free_model(),
-            "inception": settings.inception_model or INCEPTION_DEFAULT,
-            "groq": settings.groq_model or GROQ_DEFAULT,
-        }[name]
+        accepted_model = (
+            _openrouter_free_model(model if name == primary else None)
+            if name == "openrouter" else _mistral_free_model()
+        )
         verdict = probe_verdict(name)
         if verdict is False:
             attempts.append({"provider": name, "model": accepted_model,
@@ -282,7 +265,11 @@ async def astream_with_fallback(
         if verdict is False:
             errors.append(f"{name}: probe failed recently")
             continue
-        client = get_llm(name, model if name == primary else None)
+        accepted_model = (
+            _openrouter_free_model(model if name == primary else None)
+            if name == "openrouter" else _mistral_free_model()
+        )
+        client = get_llm(name, accepted_model)
         if client is None:
             errors.append(f"{name}: missing key")
             continue
@@ -316,7 +303,11 @@ async def astream_chunks_with_fallback(
         if verdict is False:
             errors.append(f"{name}: probe failed recently")
             continue
-        client = get_llm(name, model if name == primary else None)
+        accepted_model = (
+            _openrouter_free_model(model if name == primary else None)
+            if name == "openrouter" else _mistral_free_model()
+        )
+        client = get_llm(name, accepted_model)
         if client is None:
             errors.append(f"{name}: missing key")
             continue
