@@ -1894,4 +1894,83 @@ async def test_pair_synthesis_failure_class_has_deterministic_supported_answer()
         "Luka Dončić scored 21.6 points per game more than Myles Turner.",
         "Myles Turner had a 58.4% true shooting percentage.",
         "Luka Dončić had a 61.6% true shooting percentage."]
-    assert [calc.requirement_id for calc in draft.calculations] == ["leader", "margin"]
+    assert [calc.requirement_id for calc in draft.calculations] == ["leader"]
+
+@pytest.mark.anyio
+async def test_game_log_builder_maps_separate_mean_requirements():
+    from decimal import Decimal
+    task = TaskSpec(goal="splits", mode="quick", deliverable="all",
+        calculation_requirements=[
+            {"id":"h","description":"home scoring average"},
+            {"id":"a","description":"away scoring average"},
+            {"id":"d","description":"home minus away difference"}])
+    def ev(eid, split, avg):
+        return EvidenceEnvelope(evidence_id=eid, capability="game_logs", source="fixture",
+            observed_at=datetime.now(UTC), season="2025-26",
+            rows={"player":"Stephen Curry","filters":f"{split} games","total":2,
+                  "average_pts":Decimal(avg),"matches":[{"pts":Decimal(avg)},{"pts":Decimal(avg)}]})
+    draft = await ModelSynthesizer(StubModel([]), provider="stub", model_name="stub").synthesize(
+        task,[ev("home","home","25"),ev("away","away","28")])
+    assert [calc.requirement_id for calc in draft.calculations] == ["h","a","d"]
+
+
+@pytest.mark.anyio
+async def test_pair_builder_maps_ppg_and_ts_difference_without_duplicate_ids():
+    task = TaskSpec(goal="compare", mode="quick", deliverable="differences",
+        calculation_requirements=[
+            {"id":"p","description":"points per game difference"},
+            {"id":"t","description":"true shooting percentage difference"}])
+    pair = EvidenceEnvelope(evidence_id="pair", capability="player_comparison", source="fixture",
+        observed_at=datetime.now(UTC), season="2025-26",
+        rows={"a":{"name":"Myles Turner","ppg":11.9},"b":{"name":"Luka Dončić","ppg":33.5}})
+    def ts(eid,name,value):
+        return EvidenceEnvelope(evidence_id=eid, capability="shooting_efficiency", source="fixture",
+            observed_at=datetime.now(UTC), season="2025-26",rows={"PLAYER_NAME":name,"TS_PCT":value})
+    draft = await ModelSynthesizer(StubModel([]), provider="stub", model_name="stub").synthesize(
+        task,[pair,ts("mt","Myles Turner",58.4),ts("ld","Luka Dončić",61.6)])
+    assert [calc.requirement_id for calc in draft.calculations] == ["p","t"]
+    assert len({calc.requirement_id for calc in draft.calculations}) == 2
+
+@pytest.mark.anyio
+async def test_canonicalizer_creates_split_requirements_from_deliverable():
+    from v2.adapters.models import _canonicalize_calculation_requirements
+    task = TaskSpec(goal="Curry splits", mode="quick",
+        deliverable="home and away means, sample sizes, and home-minus-away delta",
+        requirements=[{"id":"logs","description":"logs","capability_options":["game_logs"]}])
+    normalized = _canonicalize_calculation_requirements(task)
+    assert [(x.id,x.description) for x in normalized.calculation_requirements] == [
+        ("home_mean","Canonical home points-per-game mean"),
+        ("away_mean","Canonical away points-per-game mean"),
+        ("home_away_delta","Canonical home-minus-away points-per-game difference")]
+
+
+def test_canonicalizer_wording_permutations_produce_identical_split_kinds():
+    from v2.adapters.models import _canonicalize_calculation_requirements
+    variants = [
+        ["Stephen Curry's home scoring average (PPG) for 2025-26",
+         "Stephen Curry's away scoring average (PPG) for 2025-26",
+         "Difference between home and away scoring average for Stephen Curry in 2025-26"],
+        ["Calculate home-minus-away scoring difference"],
+        [],
+    ]
+    outputs=[]
+    for descriptions in variants:
+        task=TaskSpec(goal="Compare home and away scoring",mode="quick",
+            deliverable="each average, sample size, and home-minus-away difference",
+            requirements=[{"id":"logs","description":"logs","capability_options":["game_logs"]}],
+            calculation_requirements=[{"id":f"r{i}","description":d} for i,d in enumerate(descriptions)])
+        outputs.append([x.description for x in _canonicalize_calculation_requirements(task).calculation_requirements])
+    assert outputs[0] == outputs[1] == outputs[2]
+
+
+def test_draft_validator_rejects_duplicate_requirement_ownership():
+    from v2.adapters.models import _validate_draft
+    from v2.contracts import DraftReport
+    task=TaskSpec(goal="x",mode="quick",deliverable="x",
+        calculation_requirements=[{"id":"same","description":"one"}])
+    with pytest.raises(ValueError, match="must not duplicate requirement ids"):
+        DraftReport.model_validate({"sections":[],"claims":[],"calculations":[
+            {"calculation_id":"a","requirement_id":"same","operation":"mean",
+             "inputs":[{"evidence_id":"e","path":"rows.x"}],"result":1},
+            {"calculation_id":"b","requirement_id":"same","operation":"mean",
+             "inputs":[{"evidence_id":"e","path":"rows.y"}],"result":2}]})

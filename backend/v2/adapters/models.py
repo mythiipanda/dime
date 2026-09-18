@@ -422,7 +422,7 @@ class ModelIntake(ModelStage):
         unknown = sorted(set(task.required_evidence) - self._catalog.keys())
         if unknown:
             raise ValueError(f"intake selected unknown capabilities: {unknown}")
-        return task
+        return _canonicalize_calculation_requirements(task)
 
     async def _review_requirements(
         self, request: str, task: TaskSpec,
@@ -871,6 +871,83 @@ class ModelPlanner(ModelStage):
         return feedback
 
 
+_CANONICAL_CALCULATIONS = {
+    "home_mean": ("home_mean", "Canonical home points-per-game mean"),
+    "away_mean": ("away_mean", "Canonical away points-per-game mean"),
+    "home_away_delta": ("home_away_delta", "Canonical home-minus-away points-per-game difference"),
+    "ppg_margin": ("ppg_margin", "Canonical points-per-game margin"),
+    "ts_margin": ("ts_margin", "Canonical true-shooting percentage-point margin"),
+}
+
+
+def _canonicalize_calculation_requirements(task: TaskSpec) -> TaskSpec:
+    """Normalize arithmetic intent once, while preserving provider-owned IDs."""
+    from v2.contracts import CalculationRequirement
+    scope = " ".join([task.goal, task.deliverable, *task.subquestions,
+                      *(item.description for item in task.calculation_requirements)]).casefold()
+    evidence_caps = {cap for requirement in task.requirements
+                     for cap in requirement.capability_options}
+    split_shape = ("home" in scope and "away" in scope
+                   and ("game_logs" in evidence_caps or "scor" in scope or "average" in scope))
+    pair_shape = ("player_comparison" in evidence_caps
+                  or sum(entity.type == "player" for entity in task.entities) >= 2
+                  or ("compare" in scope and any(token in scope for token in ("points", "scor", "true shooting"))))
+    requested = []
+    if split_shape:
+        requested.extend(["home_mean", "away_mean"])
+        if any(token in scope for token in ("difference", "minus", "margin", "gap")):
+            requested.append("home_away_delta")
+    elif pair_shape:
+        if any(token in scope for token in ("who scores more", "by how much", "point", "ppg", "scor")):
+            requested.append("ppg_margin")
+        explicit_ts_delta = any(
+            ("true shooting" in item.description.casefold() or "ts%" in item.description.casefold())
+            and any(token in item.description.casefold() for token in ("difference", "margin", "gap"))
+            for item in task.calculation_requirements)
+        if "true shooting" in scope and (explicit_ts_delta or "differences" in scope):
+            requested.append("ts_margin")
+    if not requested:
+        return task
+    assignments: dict[str, str] = {}
+    unused = list(task.calculation_requirements)
+    def classify(description: str) -> str | None:
+        text = description.casefold()
+        if "home" in text and "away" not in text and any(x in text for x in ("average", "mean", "ppg")):
+            return "home_mean"
+        if "away" in text and "home" not in text and any(x in text for x in ("average", "mean", "ppg")):
+            return "away_mean"
+        if "home" in text and "away" in text and any(x in text for x in ("difference", "minus", "margin", "gap")):
+            return "home_away_delta"
+        if "true shooting" in text or "ts%" in text:
+            return "ts_margin"
+        if any(x in text for x in ("point", "ppg", "scor")):
+            return "ppg_margin"
+        return None
+    for requirement in list(unused):
+        kind = classify(requirement.description)
+        if kind in requested and kind not in assignments:
+            assignments[kind] = requirement.id
+            unused.remove(requirement)
+    # A collapsed comparison requirement owns the arithmetic margin. The
+    # accompanying leader statement is evidence-backed by the same result,
+    # not a second declaration tied to the same requirement ID.
+    normalized = []
+    used_ids = {requirement.id for requirement in task.calculation_requirements}
+    for kind in requested:
+        canonical_id, description = _CANONICAL_CALCULATIONS[kind]
+        requirement_id = assignments.get(kind)
+        if requirement_id is None:
+            requirement_id = canonical_id
+            suffix = 2
+            while requirement_id in used_ids:
+                requirement_id = f"{canonical_id}_{suffix}"; suffix += 1
+            used_ids.add(requirement_id)
+        normalized.append(CalculationRequirement(id=requirement_id, description=description))
+    # Preserve unrelated explicit calculations as blocked-able typed work.
+    normalized.extend(unused)
+    return task.model_copy(update={"calculation_requirements": normalized})
+
+
 def _validate_draft(
     draft: DraftReport, evidence: Sequence[EvidenceEnvelope],
     task: TaskSpec | None = None,
@@ -921,16 +998,13 @@ def _validate_draft(
 def _deterministic_game_log_draft(
     task: TaskSpec, evidence: Sequence[EvidenceEnvelope],
 ) -> DraftReport | None:
-    """Build typed home/away scoring aggregates from admitted log evidence."""
+    """Build typed split aggregates and signed differences from admitted logs."""
     from decimal import Decimal
     logs = [item for item in evidence
             if item.capability == "game_logs" and isinstance(item.rows, Mapping)]
     home = next((item for item in logs if item.rows.get("filters") == "home games"), None)
     away = next((item for item in logs if item.rows.get("filters") == "away games"), None)
-    asks_delta = any("home" in item.description.casefold()
-                     and "away" in item.description.casefold()
-                     for item in task.calculation_requirements)
-    if not (home and away and asks_delta):
+    if not (home and away and task.calculation_requirements):
         return None
     try:
         home_avg = Decimal(str(home.rows["average_pts"]))
@@ -938,69 +1012,94 @@ def _deterministic_game_log_draft(
         home_n = int(home.rows["total"]); away_n = int(away.rows["total"])
     except (KeyError, TypeError, ValueError):
         return None
+    home_ids, away_ids, delta_ids, unknown_ids = [], [], [], []
+    descriptions = {value[1]: kind for kind, value in _CANONICAL_CALCULATIONS.items()}
+    for requirement in task.calculation_requirements:
+        kind = descriptions.get(requirement.description)
+        if kind == "home_mean": home_ids.append(requirement.id)
+        elif kind == "away_mean": away_ids.append(requirement.id)
+        elif kind == "home_away_delta": delta_ids.append(requirement.id)
+        else: unknown_ids.append(requirement.id)
+    if not (home_ids or away_ids or delta_ids):
+        return None
     delta = home_avg - away_avg
-    requirement_id = next(item.id for item in task.calculation_requirements
-                          if "home" in item.description.casefold()
-                          and "away" in item.description.casefold())
     player = home.rows.get("player") or away.rows.get("player") or "The player"
     season = home.season or away.season or "the selected season"
     def one(value: Decimal) -> str:
         return f"{value.quantize(Decimal('0.1'))}"
-    calculations = [
-        {"calculation_id":"home_mean_pts", "operation":"mean",
-         "inputs":[{"evidence_id":home.evidence_id,"path":"rows.matches[].pts"}],
-         "result":home_avg, "unit":"points_per_game"},
-        {"calculation_id":"away_mean_pts", "operation":"mean",
-         "inputs":[{"evidence_id":away.evidence_id,"path":"rows.matches[].pts"}],
-         "result":away_avg, "unit":"points_per_game"},
-        {"calculation_id":"home_minus_away", "requirement_id":requirement_id,
-         "operation":"subtract",
-         "inputs":[{"evidence_id":home.evidence_id,"path":"rows.average_pts"},
-                   {"evidence_id":away.evidence_id,"path":"rows.average_pts"}],
-         "result":delta, "unit":"points_per_game"},
-    ]
-    claims = [
-        Claim(text=f"{player} averaged {one(home_avg)} points per game in {home_n} home games in {season}.",
-              kind="derived", evidence_ids=[home.evidence_id], calculation_id="home_mean_pts"),
-        Claim(text=f"{player} averaged {one(away_avg)} points per game in {away_n} away games in {season}.",
-              kind="derived", evidence_ids=[away.evidence_id], calculation_id="away_mean_pts"),
-        Claim(text=f"The home-minus-away scoring difference was {one(delta)} points per game.",
-              kind="derived", evidence_ids=[home.evidence_id,away.evidence_id], calculation_id="home_minus_away"),
-    ]
+    calculations, claims = [], []
+    def add_mean(label, item, value, count, requirement_ids):
+        ids = requirement_ids or [None]
+        for index, requirement_id in enumerate(ids):
+            calculation_id = f"{label}_mean_pts" + (f"_{index + 1}" if index else "")
+            calculations.append({"calculation_id":calculation_id,
+                "requirement_id":requirement_id, "operation":"mean",
+                "inputs":[{"evidence_id":item.evidence_id,"path":"rows.matches[].pts"}],
+                "result":value, "unit":"points_per_game"})
+            if index == 0:
+                claims.append(Claim(
+                    text=f"{player} averaged {one(value)} points per game in {count} {label} games in {season}.",
+                    kind="derived", evidence_ids=[item.evidence_id], calculation_id=calculation_id))
+    add_mean("home", home, home_avg, home_n, home_ids)
+    add_mean("away", away, away_avg, away_n, away_ids)
+    for index, requirement_id in enumerate(delta_ids):
+        calculation_id = "home_minus_away" + (f"_{index + 1}" if index else "")
+        calculations.append({"calculation_id":calculation_id,
+            "requirement_id":requirement_id, "operation":"subtract",
+            "inputs":[{"evidence_id":home.evidence_id,"path":"rows.average_pts"},
+                      {"evidence_id":away.evidence_id,"path":"rows.average_pts"}],
+            "result":delta, "unit":"points_per_game"})
+        if index == 0:
+            claims.append(Claim(
+                text=f"The home-minus-away scoring difference was {one(delta)} points per game.",
+                kind="derived", evidence_ids=[home.evidence_id, away.evidence_id],
+                calculation_id=calculation_id))
     return DraftReport(sections=["Home and away scoring"], claims=claims,
-        calculations=calculations, blocked_calculation_requirement_ids=[], gaps=[])
+        calculations=calculations,
+        blocked_calculation_requirement_ids=unknown_ids,
+        gaps=(["Some requested calculations could not be mapped to the admitted split evidence."]
+              if unknown_ids else []))
 
 
 def _deterministic_player_comparison_draft(
     task: TaskSpec, evidence: Sequence[EvidenceEnvelope],
 ) -> DraftReport | None:
-    """Project comparison facts and typed margin from canonical pair evidence."""
+    """Project comparison facts and typed differences from canonical evidence."""
     from decimal import Decimal
     item = next((ev for ev in evidence
                  if ev.capability == "player_comparison"
                  and isinstance(ev.rows, Mapping)), None)
-    if item is None:
+    if item is None or not task.calculation_requirements:
         return None
-    requirements = {req.id: req.description.casefold()
-                    for req in task.calculation_requirements}
-    difference_id = next((rid for rid, text in requirements.items()
-                          if any(word in text for word in ("margin", "difference", "by how much"))), None)
-    leader_id = next((rid for rid, text in requirements.items()
-                      if any(word in text for word in ("higher", "leader", "scores more"))), None)
-    if not (difference_id or leader_id):
+    descriptions = {value[1]: kind for kind, value in _CANONICAL_CALCULATIONS.items()}
+    ppg_ids, ts_ids, leader_ids, unknown_ids = [], [], [], []
+    for requirement in task.calculation_requirements:
+        kind = descriptions.get(requirement.description)
+        if kind == "ppg_margin": ppg_ids.append(requirement.id)
+        elif kind == "ts_margin": ts_ids.append(requirement.id)
+        else: unknown_ids.append(requirement.id)
+    if not (ppg_ids or ts_ids or leader_ids):
         return None
     try:
         a = item.rows["a"]; b = item.rows["b"]
-        a_name, b_name = str(a["name"]), str(b["name"])
         a_ppg, b_ppg = Decimal(str(a["ppg"])), Decimal(str(b["ppg"]))
     except (KeyError, TypeError, ValueError):
         return None
+    shooting = [ev for ev in evidence if ev.capability == "shooting_efficiency"
+                and isinstance(ev.rows, Mapping) and ev.rows.get("PLAYER_NAME")
+                and ev.rows.get("TS_PCT") is not None]
+    def display_name(raw):
+        raw_text = str(raw)
+        key = raw_text.casefold().replace("_", " ").replace("č", "c").replace("ć", "c")
+        candidates = [entity.display_name for entity in task.entities]
+        candidates += [str(ev.rows["PLAYER_NAME"]) for ev in shooting]
+        return next((name for name in candidates
+                     if name.casefold().replace("č", "c").replace("ć", "c") == key), raw_text)
+    a_name, b_name = display_name(a.get("name")), display_name(b.get("name"))
     high_name, high_ppg, high_path = ((a_name, a_ppg, "rows.a.ppg")
-                                      if a_ppg >= b_ppg
-                                      else (b_name, b_ppg, "rows.b.ppg"))
+                                      if a_ppg >= b_ppg else (b_name, b_ppg, "rows.b.ppg"))
     low_name, low_ppg, low_path = ((b_name, b_ppg, "rows.b.ppg")
-                                   if a_ppg >= b_ppg
-                                   else (a_name, a_ppg, "rows.a.ppg"))
+                                   if a_ppg >= b_ppg else (a_name, a_ppg, "rows.a.ppg"))
     calculations = []
     claims = [
         Claim(text=f"{a_name} averaged {a_ppg} points per game in {item.season or 'the selected season'}.",
@@ -1008,38 +1107,59 @@ def _deterministic_player_comparison_draft(
         Claim(text=f"{b_name} averaged {b_ppg} points per game in {item.season or 'the selected season'}.",
               kind="observed", evidence_ids=[item.evidence_id]),
     ]
-    if leader_id:
-        calculations.append({"calculation_id":"ppg_leader_rank",
-            "requirement_id":leader_id, "operation":"rank_desc",
-            "inputs":[{"evidence_id":item.evidence_id,"path":high_path},
-                      {"evidence_id":item.evidence_id,"path":low_path}],
+    for index, rid in enumerate(leader_ids):
+        cid = "ppg_leader_rank" + (f"_{index + 1}" if index else "")
+        calculations.append({"calculation_id":cid, "requirement_id":rid,
+            "operation":"rank_desc", "inputs":[
+                {"evidence_id":item.evidence_id,"path":high_path},
+                {"evidence_id":item.evidence_id,"path":low_path}],
             "result":1, "unit":"rank", "subject_input":0})
+        if index == 0:
+            claims.append(Claim(text=f"{high_name} scored more points per game than {low_name}.",
+                kind="derived", evidence_ids=[item.evidence_id], calculation_id=cid))
+    if ppg_ids:
         claims.append(Claim(text=f"{high_name} scored more points per game than {low_name}.",
-                            kind="derived", evidence_ids=[item.evidence_id],
-                            calculation_id="ppg_leader_rank"))
-    if difference_id:
+                            kind="observed", evidence_ids=[item.evidence_id]))
+    for index, rid in enumerate(ppg_ids):
+        cid = "ppg_difference" + (f"_{index + 1}" if index else "")
         margin = high_ppg - low_ppg
-        calculations.append({"calculation_id":"ppg_difference",
-            "requirement_id":difference_id, "operation":"subtract",
-            "inputs":[{"evidence_id":item.evidence_id,"path":high_path},
-                      {"evidence_id":item.evidence_id,"path":low_path}],
+        calculations.append({"calculation_id":cid, "requirement_id":rid,
+            "operation":"subtract", "inputs":[
+                {"evidence_id":item.evidence_id,"path":high_path},
+                {"evidence_id":item.evidence_id,"path":low_path}],
             "result":margin,"unit":"points per game"})
-        claims.append(Claim(
-            text=f"{high_name} scored {margin} points per game more than {low_name}.",
-            kind="derived", evidence_ids=[item.evidence_id],
-            calculation_id="ppg_difference"))
-    shooting = {str(ev.rows.get("PLAYER_NAME")): ev for ev in evidence
-                if ev.capability == "shooting_efficiency"
-                and isinstance(ev.rows, Mapping)
-                and ev.rows.get("PLAYER_NAME") and ev.rows.get("TS_PCT") is not None}
-    for name in (a_name, b_name):
-        ev = shooting.get(name)
+        if index == 0:
+            claims.append(Claim(text=f"{high_name} scored {margin} points per game more than {low_name}.",
+                kind="derived", evidence_ids=[item.evidence_id], calculation_id=cid))
+    by_name = {str(ev.rows["PLAYER_NAME"]): ev for ev in shooting}
+    matched = [(name, next((ev for candidate, ev in by_name.items()
+                            if display_name(candidate) == name), None))
+               for name in (a_name, b_name)]
+    for name, ev in matched:
         if ev is not None:
             claims.append(Claim(text=f"{name} had a {ev.rows['TS_PCT']}% true shooting percentage.",
                                 kind="observed", evidence_ids=[ev.evidence_id]))
+    if len(matched) == 2 and all(ev is not None for _, ev in matched):
+        (name_a, ev_a), (name_b, ev_b) = matched
+        ts_a, ts_b = Decimal(str(ev_a.rows["TS_PCT"])), Decimal(str(ev_b.rows["TS_PCT"]))
+        hi_name, hi_ev, hi_ts, lo_name, lo_ev, lo_ts = ((name_a, ev_a, ts_a, name_b, ev_b, ts_b)
+            if ts_a >= ts_b else (name_b, ev_b, ts_b, name_a, ev_a, ts_a))
+        for index, rid in enumerate(ts_ids):
+            cid = "ts_difference" + (f"_{index + 1}" if index else "")
+            calculations.append({"calculation_id":cid, "requirement_id":rid,
+                "operation":"subtract", "inputs":[
+                    {"evidence_id":hi_ev.evidence_id,"path":"rows.TS_PCT"},
+                    {"evidence_id":lo_ev.evidence_id,"path":"rows.TS_PCT"}],
+                "result":hi_ts-lo_ts,"unit":"percentage points"})
+            if index == 0:
+                claims.append(Claim(text=f"{hi_name}'s true shooting was {hi_ts-lo_ts} percentage points higher than {lo_name}'s.",
+                    kind="derived", evidence_ids=[hi_ev.evidence_id, lo_ev.evidence_id], calculation_id=cid))
+    elif ts_ids:
+        unknown_ids.extend(ts_ids)
     return DraftReport(sections=["Player comparison"], claims=claims,
-        calculations=calculations,
-        blocked_calculation_requirement_ids=[], gaps=[])
+        calculations=calculations, blocked_calculation_requirement_ids=unknown_ids,
+        gaps=(["Some requested calculations could not be mapped to admitted comparison evidence."]
+              if unknown_ids else []))
 
 
 def _deterministic_rank_draft(
@@ -1093,6 +1213,7 @@ class ModelSynthesizer(ModelStage):
     async def synthesize(
         self, task: TaskSpec, evidence: Sequence[EvidenceEnvelope]
     ) -> DraftReport:
+        task = _canonicalize_calculation_requirements(task)
         canonical = (_deterministic_rank_draft(task, evidence)
                      or _deterministic_game_log_draft(task, evidence)
                      or _deterministic_player_comparison_draft(task, evidence))
