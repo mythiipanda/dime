@@ -377,16 +377,39 @@ async def quick_answer_stream(body: QuickAnswerBody):
                 if policy.publish:
                     for event in recorded_tool_events():
                         yield encode_event(event)
-                    yield encode_event(NodeUpdate(
-                        node=public_node("runtime"), status="error"))
-                    yield "event: error\ndata: " + json.dumps({
-                        "message": "Dime could not complete this run.",
-                        "run_id": run_id,
-                        "code": ("pre_tool_timeout"
-                                 if type(exc).__name__ == "PreToolTimeoutError"
-                                 else "runtime_failure"),
-                        "stage_latencies_ms": stage_latencies_ms(),
-                    }, separators=(",", ":")) + "\n\n"
+                    latencies = stage_latencies_ms()
+                    failed_stage = next((
+                        entry.step_id for entry in reversed(ledger.entries)
+                        if entry.kind == LedgerKind.STEP_END
+                        and entry.data.get("reason") == "failed"), None)
+                    # No TaskSpec/evidence exists when intake's structured
+                    # provider is unavailable. Return a typed non-factual
+                    # refusal rather than an error event; downstream stages
+                    # retain A3's evidence-preserving partial behavior.
+                    if failed_stage == "understand":
+                        yield encode_event(NodeUpdate(
+                            node=public_node("runtime"), status="complete"))
+                        yield encode_event(FinalAnswer(
+                            text=("I could not interpret this request reliably "
+                                  "because the analysis provider was unavailable. "
+                                  "No factual answer was published."),
+                            carry={"run_id": run_id, "verification": "partial",
+                                   "verified_claims": 0, "structural_flags": [],
+                                   "gaps": [{"kind": "execution_failure",
+                                              "message": "Request interpretation provider unavailable",
+                                              "evidence_ids": [], "blocks": []}],
+                                   "stage_latencies_ms": latencies}))
+                    else:
+                        yield encode_event(NodeUpdate(
+                            node=public_node("runtime"), status="error"))
+                        yield "event: error\ndata: " + json.dumps({
+                            "message": "Dime could not complete this run.",
+                            "run_id": run_id,
+                            "code": ("pre_tool_timeout"
+                                     if type(exc).__name__ == "PreToolTimeoutError"
+                                     else "runtime_failure"),
+                            "stage_latencies_ms": latencies,
+                        }, separators=(",", ":")) + "\n\n"
                 yield encode_event(GraphEnd())
                 return
             if policy.publish:

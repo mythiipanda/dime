@@ -1772,3 +1772,20 @@ def test_dependent_player_tool_gets_entity_resolution_parent_when_provider_omits
     assert [node.id for node in normalized.nodes] == ["resolve_player", "logs"]
     assert normalized.nodes[0].arguments == {"query": "Tim Hardaway Jr."}
     assert normalized.nodes[1].depends_on == ["resolve_player"]
+
+def test_team_rating_arguments_are_canonicalized_from_typed_requirement():
+    from v2.contracts import Plan
+    catalog = {"team_ratings": {}}
+    planner = ModelPlanner(StubModel([]), provider="stub", model_name="stub",
+                           capability_catalog=catalog)
+    task = TaskSpec(goal="lowest turnover", mode="quick", deliverable="answer",
+        requirements=[{"id":"metric","description":"team TOV",
+            "capability_options":["team_ratings"],
+            "capability_arguments":{"requested_metric":"TM_TOV_PCT",
+                                    "ranking_direction":"asc"}}])
+    plan = Plan.model_validate({"nodes":[{"id":"ratings","description":"rates",
+        "capability_hints":["team_ratings"],"covers_requirement_ids":["metric"],
+        "arguments":{"requested_metric":"turnover percentage"}}]})
+    normalized = planner._normalize_plan(task, plan)
+    assert normalized.nodes[0].arguments["requested_metric"] == "TM_TOV_PCT"
+    assert normalized.nodes[0].arguments["ranking_direction"] == "asc"

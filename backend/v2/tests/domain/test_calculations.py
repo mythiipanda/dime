@@ -125,3 +125,13 @@ def test_calculation_identity_text_has_hard_limits() -> None:
     from pydantic import ValidationError
     with pytest.raises(ValidationError, match="at most 1000 characters"):
         CalculationInput(evidence_id="ev", path="x" * 1001)
+
+def test_mean_expands_canonical_list_selector_and_preserves_zero():
+    evidence = EvidenceIndex([EvidenceEnvelope(
+        evidence_id="logs", capability="game_logs", source="fixture",
+        observed_at=datetime.now(UTC),
+        rows={"matches":[{"pts":10},{"pts":0},{"pts":20}]})])
+    calc = Calculation(calculation_id="avg", operation="mean",
+        inputs=[{"evidence_id":"logs","path":"rows.matches[].pts"}],
+        result=10)
+    assert recompute(calc, evidence) == Decimal("10")

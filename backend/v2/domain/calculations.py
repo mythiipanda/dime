@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from decimal import Decimal, DivisionByZero, InvalidOperation
 from enum import StrEnum
+import re
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
 
@@ -70,21 +71,28 @@ class Calculation(BaseModel):
 
 def _input_values(calculation: Calculation,
                   evidence: EvidenceIndex) -> list[Decimal]:
-    indexed = {
-        (value.evidence_id, value.path): value.value
-        for value in evidence.values(input_.evidence_id
-                                     for input_ in calculation.inputs)
-    }
+    indexed = list(evidence.values(
+        dict.fromkeys(input_.evidence_id for input_ in calculation.inputs)))
     values: list[Decimal] = []
     for input_ in calculation.inputs:
-        raw = indexed.get((input_.evidence_id, input_.path))
-        value = decimal_value(raw)
-        if value is None:
+        # Canonical aggregate selectors use [] for every row in a list. The
+        # evidence index stores concrete paths (matches[0].pts, ...); expand
+        # the selector deterministically and preserve numeric zero values.
+        pattern = re.escape(input_.path).replace(r"\[\]", r"\[\d+\]")
+        matches = [item.value for item in indexed
+                   if item.evidence_id == input_.evidence_id
+                   and re.fullmatch(pattern, item.path)]
+        for raw in matches:
+            value = decimal_value(raw)
+            if value is None:
+                raise ValueError(
+                    f"calculation input is missing or non-numeric: "
+                    f"{input_.evidence_id}:{input_.path}")
+            values.append(value)
+        if not matches:
             raise ValueError(
                 f"calculation input is missing or non-numeric: "
-                f"{input_.evidence_id}:{input_.path}"
-            )
-        values.append(value)
+                f"{input_.evidence_id}:{input_.path}")
     return values
 
 

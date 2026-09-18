@@ -602,6 +602,57 @@ class ModelPlanner(ModelStage):
             else node
             for node in plan.nodes
         ]})
+        # Canonicalize ranked team metric arguments from typed requirement
+        # constraints before dispatch. Provider plans may omit direction or use
+        # human synonyms; only the closed tool enum reaches execution. When no
+        # mapping is supported, leave the arguments untouched so the graceful
+        # A3 fallback reports the typed gap rather than guessing.
+        metric_aliases = {
+            "def_rating": "DEF_RATING", "defensive_rating": "DEF_RATING",
+            "defense": "DEF_RATING", "defensive rating": "DEF_RATING",
+            "ts_pct": "TS_PCT", "true_shooting": "TS_PCT",
+            "true shooting": "TS_PCT", "true shooting percentage": "TS_PCT",
+            "tm_tov_pct": "TM_TOV_PCT", "turnover_percentage": "TM_TOV_PCT",
+            "turnover percentage": "TM_TOV_PCT", "turnover rate": "TM_TOV_PCT",
+        }
+        ranked_metrics = {"DEF_RATING", "TS_PCT", "TM_TOV_PCT"}
+        ranked_directions = {"DEF_RATING": "asc", "TS_PCT": "desc",
+                             "TM_TOV_PCT": "asc"}
+        canonical_nodes = []
+        for node in plan.nodes:
+            if "team_ratings" not in node.capability_hints:
+                canonical_nodes.append(node)
+                continue
+            args = dict(node.arguments)
+            requirement_args = [
+                requirements[rid].capability_arguments
+                for rid in node.covers_requirement_ids if rid in requirements
+            ]
+            raw_metric = args.get("requested_metric")
+            if raw_metric is None:
+                raw_metric = next((item.get("requested_metric")
+                                   for item in requirement_args
+                                   if item.get("requested_metric") is not None), None)
+            key = str(raw_metric or "").strip()
+            metric = (key if key in ranked_metrics
+                      else metric_aliases.get(key.casefold().replace("-", "_")))
+            if metric in ranked_metrics:
+                args["requested_metric"] = metric
+                raw_direction = args.get("ranking_direction")
+                if raw_direction is None:
+                    raw_direction = next((item.get("ranking_direction")
+                                          for item in requirement_args
+                                          if item.get("ranking_direction") is not None), None)
+                direction_aliases = {"ascending":"asc", "lowest":"asc",
+                                     "minimum":"asc", "descending":"desc",
+                                     "highest":"desc", "maximum":"desc"}
+                direction = str(raw_direction or "").strip().casefold()
+                direction = direction_aliases.get(direction, direction)
+                args["ranking_direction"] = (direction if direction in {"asc", "desc"}
+                                               else ranked_directions[metric])
+            canonical_nodes.append(node.model_copy(update={"arguments": args}))
+        plan = plan.model_copy(update={"nodes": canonical_nodes})
+
         # A non-playoff player-stat clause can be answered more directly by the
         # season aggregate report than by scanning game logs. When requirement
         # review admits that alternative, normalize only the typed regular-
