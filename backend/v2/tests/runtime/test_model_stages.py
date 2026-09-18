@@ -2200,3 +2200,9 @@ async def test_model_valid_path_wrong_result_remains_for_mechanical_rejection():
     stub=StubModel([{"sections":[],"claims":[{"text":"Difference 99.","kind":"derived","evidence_ids":["e"],"calculation_id":"bad"}],"calculations":[{"calculation_id":"bad","requirement_id":"d","operation":"subtract","inputs":[{"evidence_id":"e","path":"rows.a"},{"evidence_id":"e","path":"rows.b"}],"result":99}]}])
     draft=await ModelSynthesizer(stub,provider="s",model_name="s").synthesize(task,[ev])
     assert draft.calculations[0].result==99
+    from v2.domain.calculations import Calculation
+    from v2.runtime.verifier import verify_mechanical
+    calculation=Calculation.model_validate({key:value for key,value in draft.calculations[0].model_dump().items() if key != "requirement_id"})
+    report=verify_mechanical(task,draft,[ev],[calculation])
+    assert report.status.value=="repair"
+    assert any("does not recompute" in reason for reason in report.claim_results[0].reasons)
