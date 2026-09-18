@@ -34,31 +34,53 @@ OPENROUTER_ALLOWLIST: frozenset[str] = frozenset(
 )
 
 
+def is_free_model(provider: str, slug: str) -> bool:
+    """One authority for whether a Dime model can incur zero paid credits."""
+    value = str(slug or "").strip()
+    if provider == "openrouter":
+        return value == OPENROUTER_AUTO or value.endswith(":free")
+    if provider == "mistral":
+        # Mistral ids do not carry pricing. The configured owner-approved
+        # free-limit model is the only active choice for this provider.
+        return value == (settings.mistral_model or MISTRAL_DEFAULT)
+    return False
+
+
+def _openrouter_free_model(slug: str | None = None) -> str:
+    value = str(slug or settings.openrouter_model or "").strip()
+    if value in OPENROUTER_ALLOWLIST and is_free_model("openrouter", value):
+        return value
+    if value == OPENROUTER_AUTO:
+        return value
+    return OPENROUTER_DEFAULT
+
+
+def _mistral_free_model() -> str:
+    return settings.mistral_model or MISTRAL_DEFAULT
+
+
 def _default_provider() -> tuple[ProviderName, str]:
     if settings.openrouter_api_key:
-        return ("openrouter", settings.openrouter_model or OPENROUTER_DEFAULT)
-    return ("mistral", settings.mistral_model or MISTRAL_DEFAULT)
+        return ("openrouter", _openrouter_free_model())
+    return ("mistral", _mistral_free_model())
 
 
 def resolve_model_id(model_id: str | None) -> tuple[ProviderName, str]:
-    """Clamp a raw model string to one provider plus one allowed model."""
+    """Clamp every boundary value to an owner-approved free model."""
     raw = (model_id or "").strip()
     if raw.startswith("openrouter:"):
         slug = raw.split(":", 1)[1]
-        if slug == OPENROUTER_AUTO or slug in OPENROUTER_ALLOWLIST:
-            return ("openrouter", slug)
-        return ("openrouter", settings.openrouter_model or OPENROUTER_DEFAULT)
+        return ("openrouter", _openrouter_free_model(slug))
     if raw.startswith("mistral:"):
-        slug = raw.split(":", 1)[1] or settings.mistral_model
-        return ("mistral", slug)
+        return ("mistral", _mistral_free_model())
     if raw.startswith("inception:") or raw.startswith("groq:"):
-        # Paid/exhausted providers are deliberately outside the runtime lane.
         return _default_provider()
     if raw:
-        if ":free" in raw or "/" in raw:
-            if raw == OPENROUTER_AUTO or raw in OPENROUTER_ALLOWLIST:
-                return ("openrouter", raw)
-            return ("openrouter", settings.openrouter_model or OPENROUTER_DEFAULT)
+        if raw == OPENROUTER_AUTO or (raw in OPENROUTER_ALLOWLIST
+                                      and is_free_model("openrouter", raw)):
+            return ("openrouter", raw)
+        if "/" in raw or ":free" in raw:
+            return ("openrouter", _openrouter_free_model(raw))
         return _default_provider()
     return _default_provider()
 
@@ -68,7 +90,7 @@ def get_llm(name: ProviderName, model: str | None = None) -> ChatOpenAI | None:
         if not settings.mistral_api_key:
             return None
         return ChatOpenAI(
-            model=model or settings.mistral_model or MISTRAL_DEFAULT,
+            model=_mistral_free_model(),
             base_url="https://api.mistral.ai/v1",
             api_key=settings.mistral_api_key,
             timeout=settings.llm_timeout_s,
@@ -97,7 +119,7 @@ def get_llm(name: ProviderName, model: str | None = None) -> ChatOpenAI | None:
     if not settings.openrouter_api_key:
         return None
     return ChatOpenAI(
-        model=model or settings.openrouter_model or OPENROUTER_DEFAULT,
+        model=_openrouter_free_model(model),
         base_url="https://openrouter.ai/api/v1",
         api_key=settings.openrouter_api_key,
         timeout=settings.llm_timeout_s,
@@ -212,8 +234,8 @@ async def invoke_with_fallback(
     started_all = time.perf_counter()
     for number, name in enumerate(fallback_order(primary), 1):
         accepted_model = model if name == primary else {
-            "mistral": settings.mistral_model or MISTRAL_DEFAULT,
-            "openrouter": settings.openrouter_model or OPENROUTER_DEFAULT,
+            "mistral": _mistral_free_model(),
+            "openrouter": _openrouter_free_model(),
             "inception": settings.inception_model or INCEPTION_DEFAULT,
             "groq": settings.groq_model or GROQ_DEFAULT,
         }[name]
@@ -340,19 +362,23 @@ def accumulate_tool_calls(tc_chunks: list[dict]) -> list[dict]:
 
 
 def models_catalog() -> dict[str, Any]:
-    """Expose only owner-approved free-runtime choices."""
+    """Expose only model options accepted by the same free-model predicate."""
     default_id = f"{_default_provider()[0]}:{_default_provider()[1]}"
+    slugs = sorted(slug for slug in OPENROUTER_ALLOWLIST
+                   if is_free_model("openrouter", slug))
     options = [
         {"id": f"openrouter:{slug}", "engine": "openrouter",
          "default": default_id == f"openrouter:{slug}"}
-        for slug in sorted(OPENROUTER_ALLOWLIST)
+        for slug in slugs
     ]
-    options.append({"id": f"openrouter:{OPENROUTER_AUTO}",
-                    "engine": "openrouter",
-                    "default": default_id == f"openrouter:{OPENROUTER_AUTO}"})
-    options.append({"id": f"mistral:{settings.mistral_model or MISTRAL_DEFAULT}",
-                    "engine": "mistral",
-                    "default": default_id.startswith("mistral:")})
+    if is_free_model("openrouter", OPENROUTER_AUTO):
+        options.append({"id": f"openrouter:{OPENROUTER_AUTO}",
+                        "engine": "openrouter",
+                        "default": default_id == f"openrouter:{OPENROUTER_AUTO}"})
+    mistral = _mistral_free_model()
+    if is_free_model("mistral", mistral):
+        options.append({"id": f"mistral:{mistral}", "engine": "mistral",
+                        "default": default_id == f"mistral:{mistral}"})
     return {"models": options, "available": {
         "openrouter": bool(settings.openrouter_api_key),
         "mistral": bool(settings.mistral_api_key),

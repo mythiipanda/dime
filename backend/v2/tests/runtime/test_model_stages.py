@@ -237,7 +237,7 @@ def test_pydanticai_provider_boundary_uses_only_active_free_rotation(monkeypatch
     monkeypatch.setattr("v2.adapters.models.settings.groq_api_key", "configured-paused")
     models = ProviderStructuredModel("inception", "mercury-test")._models()
     assert [provider for provider, _ in models] == ["openrouter", "mistral"]
-    assert models[0][1].model_name == settings.openrouter_model
+    assert models[0][1].model_name.endswith(":free")
     assert models[1][1].model_name == settings.mistral_model
 
 

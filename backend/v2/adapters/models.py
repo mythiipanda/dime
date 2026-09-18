@@ -24,6 +24,9 @@ from app.providers import (
     OPENROUTER_DEFAULT,
     ProviderName,
     fallback_order,
+    _mistral_free_model,
+    _openrouter_free_model,
+    is_free_model,
 )
 from v2.contracts import (
     ConversationTurn,
@@ -114,9 +117,9 @@ class ProviderStructuredModel:
     def _models(self) -> list[tuple[ProviderName, OpenAIChatModel]]:
         configs = {
             "mistral": ("https://api.mistral.ai/v1", settings.mistral_api_key,
-                        settings.mistral_model or MISTRAL_DEFAULT),
+                        _mistral_free_model()),
             "openrouter": ("https://openrouter.ai/api/v1", settings.openrouter_api_key,
-                           settings.openrouter_model or OPENROUTER_DEFAULT),
+                           _openrouter_free_model()),
             "inception": ("https://api.inceptionlabs.ai/v1", settings.inception_api_key,
                           settings.inception_model or INCEPTION_DEFAULT),
             "groq": ("https://api.groq.com/openai/v1", settings.groq_api_key,
@@ -138,8 +141,15 @@ class ProviderStructuredModel:
                 max_retries=0,
                 default_headers=headers,
             )
+            requested = self.model if provider == self.provider else fallback_model
+            if provider == "openrouter":
+                accepted_model = _openrouter_free_model(requested)
+            else:
+                accepted_model = _mistral_free_model()
+            if not is_free_model(provider, accepted_model):
+                continue
             models.append((provider, OpenAIChatModel(
-                self.model if provider == self.provider else fallback_model,
+                accepted_model,
                 provider=OpenAIProvider(openai_client=client),
             )))
         return models
