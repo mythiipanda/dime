@@ -7,6 +7,7 @@ import re
 import time
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any, Protocol, TypeVar
 
 from openai import AsyncOpenAI
@@ -306,6 +307,88 @@ class ModelIntake(ModelStage):
             "skill_catalog": self._skills.catalog(),
         }
         task = await self._generate(payload)
+        def semantic_intake_ok(candidate: TaskSpec) -> bool:
+            source = request.casefold()
+            # Referential turns are accepted or blocked by the antecedent
+            # guard below; semantic anchors live in prior context, not here.
+            if re.search(r"\b(that player|that team|he|him|his|they|their)\b", source):
+                return True
+            semantic = " ".join([candidate.goal, candidate.deliverable,
+                *(entity.display_name for entity in candidate.entities),
+                candidate.season.value if candidate.season else ""]).casefold()
+            metric_aliases = {
+                "blocks": ("block", "blocks", "bpg", "rim protection"),
+                "assists": ("assist", "assists", "apg", "dimes"),
+                "points": ("point", "points", "ppg", "scoring"),
+                "rebounds": ("rebound", "rebounds", "rpg", "boards"),
+                "steals": ("steal", "steals", "spg"),
+                "true shooting": ("true shooting", "ts%", "ts pct"),
+                "turnovers": ("turnover", "turnovers", "tov"),
+            }
+            requested_metrics = [aliases for aliases in metric_aliases.values()
+                if any(re.search(rf"(?<![a-z0-9]){re.escape(alias)}(?![a-z0-9])", source)
+                       for alias in aliases)]
+            if any(not any(alias in semantic for alias in aliases)
+                   for aliases in requested_metrics):
+                return False
+            source_seasons = set(re.findall(r"\b20\d{2}-\d{2}\b", source))
+            if source_seasons and not source_seasons <= set(re.findall(r"\b20\d{2}-\d{2}\b", semantic)):
+                return False
+            # Preserve explicit operation and output shape, including N.
+            number_words = {"one":"1","two":"2","three":"3","four":"4","five":"5",
+                            "six":"6","seven":"7","eight":"8","nine":"9","ten":"10"}
+            top = re.search(r"\btop\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b", source)
+            if top:
+                n = number_words.get(top.group(1), top.group(1))
+                if not (re.search(rf"\btop\s+(?:{n}|" + "|".join(k for k,v in number_words.items() if v==n) + r")\b", semantic)):
+                    return False
+            for patterns in (("compare", "comparison", "versus", " vs "),
+                             ("home and away", "home-away", "home versus away"),
+                             ("last ", "recent ")):
+                if any(token in source for token in patterns) and not any(token in semantic for token in patterns):
+                    return False
+            # Capitalized multi-token names are explicit entity anchors.
+            names = re.findall(r"\b(?:[A-Z][A-Za-zÀ-ž'’-]+\s+){1,3}[A-Z][A-Za-zÀ-ž'’-]+\b", request)
+            names = [name for name in names if name.casefold() not in {
+                "which players", "who leads", "give the", "compare the", "national basketball association"}]
+            if any(not all(part.casefold() in semantic for part in name.split()) for name in names):
+                return False
+            conversational = bool(re.search(
+                r"(?:sure|happy to|what(?:'s| is) your question|please (?:ask|provide)|how can i help)",
+                candidate.deliverable, re.IGNORECASE))
+            if conversational:
+                return False
+            if requested_metrics or source_seasons or top or names:
+                return True
+            # Anchor-free requests need meaningful phrase similarity; pure
+            # referential turns are handled by the dedicated guard below.
+            stop = {"the","and","that","this","with","from","have","what","which",
+                    "who","give","tell","please","nba","season","player","team","game",
+                    "leaders","leader","top","rate","compare","points","how","did"}
+            a={t for t in re.findall(r"[a-z0-9]+",source) if len(t)>2 and t not in stop}
+            b={t for t in re.findall(r"[a-z0-9]+",semantic) if len(t)>2 and t not in stop}
+            return not a or len(a & b) / len(a) >= Decimal("0.5")
+        if not semantic_intake_ok(task):
+            task = await self._generate({
+                **payload,
+                "prior_intake": task.model_dump(mode="json"),
+                "resolution_feedback": {
+                    "instruction": (
+                        "The prior TaskSpec was schema-valid but did not preserve "
+                        "the source request. Return a replacement whose goal, "
+                        "entities, season, and deliverable describe the actual "
+                        "request. Never return conversational filler or a question."
+                    ),
+                },
+            })
+            if not semantic_intake_ok(task):
+                task = task.model_copy(update={
+                    "entities": [], "required_evidence": [], "requirements": [],
+                    "calculation_requirements": [],
+                    "open_questions": list(dict.fromkeys([*task.open_questions,
+                        "I could not preserve the requested entities, metric, season, and output shape. Could you restate the request?",
+                    ])),
+                })
         # Follow-up turns get one bounded typed resolution pass before the
         # runtime treats open_questions as user blockers. The first intake can
         # notice a pronoun or elliptical reference yet still fail to bind it
@@ -391,7 +474,33 @@ class ModelIntake(ModelStage):
                 if name not in set(task.skills)
             ],
         })
-        if self._requirement_review:
+        # A referential follow-up may proceed only from an antecedent named in
+        # bounded conversation text. This is reference grounding, not factual
+        # verification; evidence verification remains downstream. Structured
+        # validity cannot license an invented entity when context is absent.
+        folded_request = request.casefold()
+        referent_types = {kind for kind, patterns in {
+            "player": (r"\bthat player\b", r"\bhe\b", r"\bhim\b", r"\bhis\b", r"\bdid he\b"),
+            "team": (r"\bthat team\b", r"\bthey\b", r"\btheir\b", r"\bdid they\b"),
+        }.items() if any(re.search(pattern, folded_request) for pattern in patterns)}
+        if referent_types:
+            context_text = " ".join(turn.content.casefold() for turn in context)
+            grounded_types = {entity.type for entity in task.entities
+                if (entity.display_name.casefold() in context_text
+                    or (len(entity.id.strip()) >= 3 and re.search(
+                        rf"(?<![a-z0-9]){re.escape(entity.id.casefold())}(?![a-z0-9])",
+                        context_text)))}
+            missing_types = sorted(referent_types - grounded_types)
+            if missing_types:
+                labels = " and ".join(missing_types)
+                task = task.model_copy(update={
+                    "entities": [entity for entity in task.entities
+                                 if entity.type not in missing_types],
+                    "open_questions": list(dict.fromkeys([
+                        *task.open_questions, f"Which {labels} do you mean?",
+                    ])),
+                })
+        if self._requirement_review and not task.open_questions:
             review = await self._review_requirements(request, task)
             task = task.model_copy(update={
                 "subquestions": list(dict.fromkeys([

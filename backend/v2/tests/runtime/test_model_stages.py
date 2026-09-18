@@ -2218,3 +2218,105 @@ def test_calculation_validation_accepts_ordinary_rate_rounding_but_not_wrong_val
     index=EvidenceIndex([ev])
     assert validate_calculation(rounded,index) is None
     assert "does not recompute" in validate_calculation(wrong,index)
+
+@pytest.mark.anyio
+async def test_followup_does_not_invent_referent_after_content_free_prior_turn():
+    from v2.contracts import ConversationTurn
+    stub=StubModel([{"goal":"compare Oklahoma City defense","mode":"quick","deliverable":"answer",
+        "entities":[{"id":"1610612760","type":"team","display_name":"Oklahoma City Thunder"}],
+        "required_evidence":[]}])
+    intake=ModelIntake(stub,**stage_kwargs())
+    task=await intake.understand("How does that player compare with that team?",context=(
+        ConversationTurn(role="user",content="Tell me more about that player."),
+        ConversationTurn(role="assistant",content="Some supporting data was unavailable."),))
+    assert task.entities==[]
+    assert "Which player and team do you mean?" in task.open_questions
+
+@pytest.mark.anyio
+async def test_followup_accepts_only_explicit_verified_antecedent_types():
+    from v2.contracts import ConversationTurn
+    stub=StubModel([{"goal":"compare Victor Wembanyama with San Antonio Spurs","mode":"quick","deliverable":"answer",
+        "entities":[{"id":"wemby","type":"player","display_name":"Victor Wembanyama"},{"id":"sas","type":"team","display_name":"San Antonio Spurs"}]}])
+    intake=ModelIntake(stub,**stage_kwargs())
+    task=await intake.understand("How does that player compare with that team?",context=(
+        ConversationTurn(role="assistant",content="Victor Wembanyama leads for the San Antonio Spurs."),))
+    assert task.open_questions==[]
+    assert {e.type for e in task.entities}=={"player","team"}
+
+@pytest.mark.anyio
+async def test_schema_valid_conversational_taskspec_gets_bounded_semantic_repair():
+    stub=StubModel([
+        {"goal":"answer","mode":"quick","deliverable":"Sure, what's your question?"},
+        {"goal":"rank NBA blocks per game this season","mode":"quick","deliverable":"top five blocks-per-game leaders with games played","season":{"value":"2025-26","source":"default","confidence":1.0}},
+    ])
+    intake=ModelIntake(stub,**stage_kwargs())
+    task=await intake.understand("Who leads the NBA in blocks per game this season? Give the top five with games played.")
+    assert len(stub.calls)==2
+    assert "blocks" in task.goal and "games played" in task.deliverable
+    assert stub.calls[1]["payload"]["prior_intake"]["deliverable"].startswith("Sure")
+
+@pytest.mark.anyio
+async def test_repeated_schema_valid_semantic_mismatch_is_rejected_before_planning():
+    stub=StubModel([
+        {"goal":"weather","mode":"quick","deliverable":"forecast"},
+        {"goal":"baseball standings","mode":"quick","deliverable":"rank teams"},
+    ])
+    intake=ModelIntake(stub,**stage_kwargs())
+    task=await intake.understand("Who leads the NBA in blocks per game this season?")
+    assert len(stub.calls)==2
+    assert task.required_evidence==[] and task.entities==[]
+    assert any("could not preserve" in q for q in task.open_questions)
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(("user_text","expected"),[
+    ("How did he do?","Which player do you mean?"),
+    ("How did they compare?","Which team do you mean?"),
+])
+async def test_pronoun_only_empty_context_blocks_invented_referent(user_text,expected):
+    stub=StubModel([{"goal":"player team performance","mode":"quick","deliverable":"compare performance",
+        "entities":[{"id":"p","type":"player","display_name":"Invented Player"},
+                    {"id":"t","type":"team","display_name":"Invented Team"}]}])
+    intake=ModelIntake(stub,**stage_kwargs())
+    task=await intake.understand(user_text,context=())
+    assert not any(e.type in ({"player"} if "player" in expected else {"team"}) for e in task.entities)
+    assert expected in task.open_questions
+    assert len(stub.calls)==1
+
+@pytest.mark.anyio
+async def test_empty_context_strips_invented_player_and_team_before_requirement_review():
+    class CountReview(ModelIntake):
+        review_calls=0
+        async def _review_requirements(self,*a,**k):
+            self.review_calls+=1;raise AssertionError("review must not run")
+    stub=StubModel([{"goal":"player team compare","mode":"quick","deliverable":"compare player team",
+        "entities":[{"id":"p","type":"player","display_name":"Invented Player"},
+                    {"id":"t","type":"team","display_name":"Invented Team"}]}])
+    intake=CountReview(stub,**stage_kwargs(),requirement_review=True)
+    task=await intake.understand("How does that player compare with that team?",context=())
+    assert task.entities==[]
+    assert "Which player and team do you mean?" in task.open_questions
+    assert intake.review_calls==0
+
+@pytest.mark.anyio
+async def test_explicit_player_context_does_not_license_invented_team():
+    from v2.contracts import ConversationTurn
+    stub=StubModel([{"goal":"compare Victor Wembanyama to invented team","mode":"quick","deliverable":"answer",
+        "entities":[{"id":"w","type":"player","display_name":"Victor Wembanyama"},
+                    {"id":"t","type":"team","display_name":"Invented Team"}]}])
+    task=await ModelIntake(stub,**stage_kwargs()).understand(
+        "How does that player compare with that team?",context=(ConversationTurn(role="assistant",content="Victor Wembanyama led the board."),))
+    assert [(e.type,e.display_name) for e in task.entities]==[("player","Victor Wembanyama")]
+    assert "Which team do you mean?" in task.open_questions
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(("question","bad"),[
+ ("Who leads the NBA in blocks per game this season? Give the top five with games played.",{"goal":"NBA assists leaders this season","mode":"quick","deliverable":"top five assists with games played"}),
+ ("Compare Myles Turner and Luka Doncic on PPG and true shooting this season.",{"goal":"compare Curry and Durant points this season","mode":"quick","deliverable":"player comparison"}),
+ ("Who led blocks in 2025-26?",{"goal":"blocks leaders in 2026-27","mode":"quick","deliverable":"rank blocks","season":{"value":"2026-27","source":"default","confidence":1.0}}),
+])
+async def test_intake_semantic_anchor_mismatch_cannot_pass_on_generic_words(question,bad):
+    stub=StubModel([bad,bad])
+    task=await ModelIntake(stub,**stage_kwargs()).understand(question)
+    assert len(stub.calls)==2
+    assert task.entities==[] and task.required_evidence==[]
+    assert any("could not preserve" in q for q in task.open_questions)
