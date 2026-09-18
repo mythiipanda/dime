@@ -2222,9 +2222,10 @@ def test_calculation_validation_accepts_ordinary_rate_rounding_but_not_wrong_val
 @pytest.mark.anyio
 async def test_followup_does_not_invent_referent_after_content_free_prior_turn():
     from v2.contracts import ConversationTurn
-    stub=StubModel([{"goal":"compare Oklahoma City defense","mode":"quick","deliverable":"answer",
+    value={"goal":"compare Oklahoma City defense","mode":"quick","deliverable":"answer",
         "entities":[{"id":"1610612760","type":"team","display_name":"Oklahoma City Thunder"}],
-        "required_evidence":[]}])
+        "required_evidence":[]}
+    stub=StubModel([value,value])
     intake=ModelIntake(stub,**stage_kwargs())
     task=await intake.understand("How does that player compare with that team?",context=(
         ConversationTurn(role="user",content="Tell me more about that player."),
@@ -2320,3 +2321,24 @@ async def test_intake_semantic_anchor_mismatch_cannot_pass_on_generic_words(ques
     assert len(stub.calls)==2
     assert task.entities==[] and task.required_evidence==[]
     assert any("could not preserve" in q for q in task.open_questions)
+
+@pytest.mark.anyio
+async def test_referential_context_still_rejects_conversational_filler_then_blocks():
+    from v2.contracts import ConversationTurn
+    bad={"goal":"Victor Wembanyama performance","mode":"quick","deliverable":"Sure, what's your question?","entities":[{"id":"w","type":"player","display_name":"Victor Wembanyama"}]}
+    stub=StubModel([bad,bad]);task=await ModelIntake(stub,**stage_kwargs()).understand("How did he do?",context=(ConversationTurn(role="assistant",content="Victor Wembanyama led the board."),))
+    assert len(stub.calls)==2 and task.required_evidence==[] and task.entities==[]
+    assert any("could not preserve" in q for q in task.open_questions)
+
+@pytest.mark.anyio
+async def test_referential_current_metric_must_survive_semantic_intake():
+    from v2.contracts import ConversationTurn
+    bad={"goal":"Victor Wembanyama defense","mode":"quick","deliverable":"defensive summary","entities":[{"id":"w","type":"player","display_name":"Victor Wembanyama"}]}
+    stub=StubModel([bad,bad]);task=await ModelIntake(stub,**stage_kwargs()).understand("How did he shoot?",context=(ConversationTurn(role="assistant",content="Victor Wembanyama led the board."),))
+    assert len(stub.calls)==2 and any("could not preserve" in q for q in task.open_questions)
+
+@pytest.mark.anyio
+async def test_explicit_context_entity_performance_summary_passes():
+    stub=StubModel([{"goal":"summarize Victor Wembanyama performance","mode":"quick","deliverable":"performance summary","entities":[{"id":"w","type":"player","display_name":"Victor Wembanyama"}]}])
+    task=await ModelIntake(stub,**stage_kwargs()).understand("Summarize Victor Wembanyama's performance")
+    assert len(stub.calls)==1 and task.entities[0].display_name=="Victor Wembanyama"

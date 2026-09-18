@@ -309,14 +309,14 @@ class ModelIntake(ModelStage):
         task = await self._generate(payload)
         def semantic_intake_ok(candidate: TaskSpec) -> bool:
             source = request.casefold()
-            # Referential turns are accepted or blocked by the antecedent
-            # guard below; semantic anchors live in prior context, not here.
-            if re.search(r"\b(that player|that team|he|him|his|they|their)\b", source):
-                return True
+            referential = bool(re.search(
+                r"\b(that player|that team|he|him|his|they|their)\b", source))
+            context_source = " ".join(turn.content.casefold() for turn in context)
             semantic = " ".join([candidate.goal, candidate.deliverable,
                 *(entity.display_name for entity in candidate.entities),
                 candidate.season.value if candidate.season else ""]).casefold()
             metric_aliases = {
+                "shooting": ("shoot", "shooting", "field goal", "fg%", "true shooting", "ts%"),
                 "blocks": ("block", "blocks", "bpg", "rim protection"),
                 "assists": ("assist", "assists", "apg", "dimes"),
                 "points": ("point", "points", "ppg", "scoring"),
@@ -349,15 +349,44 @@ class ModelIntake(ModelStage):
                     return False
             # Capitalized multi-token names are explicit entity anchors.
             names = re.findall(r"\b(?:[A-Z][A-Za-zÀ-ž'’-]+\s+){1,3}[A-Z][A-Za-zÀ-ž'’-]+\b", request)
+            prefixes = ("Summarize ", "Compare ", "Explain ", "Assess ", "Evaluate ")
+            names = [next((name[len(prefix):] for prefix in prefixes
+                          if name.startswith(prefix)), name) for name in names]
             names = [name for name in names if name.casefold() not in {
                 "which players", "who leads", "give the", "compare the", "national basketball association"}]
-            if any(not all(part.casefold() in semantic for part in name.split()) for name in names):
+            if names and candidate.entities:
+                if not any(entity.display_name.casefold() in source
+                           for entity in candidate.entities) and any(
+                    not any(all(part.casefold() in entity.display_name.casefold()
+                                for part in name.split())
+                            for entity in candidate.entities) for name in names):
+                    return False
+            elif any(not all(part.casefold() in semantic for part in name.split()) for name in names):
                 return False
             conversational = bool(re.search(
                 r"(?:sure|happy to|what(?:'s| is) your question|please (?:ask|provide)|how can i help)",
                 candidate.deliverable, re.IGNORECASE))
             if conversational:
                 return False
+            if referential:
+                # Empty context and per-type mismatches are handled by the
+                # dedicated referent guard below. With context, at least one
+                # candidate entity must name an antecedent; an additional
+                # invented type is stripped by that guard without a model retry.
+                if not context_source:
+                    return True
+                if not candidate.entities:
+                    return True
+                grounded = any(
+                    entity.display_name.casefold() in context_source
+                    or (len(entity.id.strip()) >= 3 and re.search(
+                        rf"(?<![a-z0-9]){re.escape(entity.id.casefold())}(?![a-z0-9])",
+                        context_source))
+                    for entity in candidate.entities)
+                # A generic failed/empty prior assistant answer establishes no
+                # antecedent even if the earlier user repeated the pronoun.
+                return grounded or not re.search(
+                    r"unavailable|could not|failed|error", context_source)
             if requested_metrics or source_seasons or top or names:
                 return True
             # Anchor-free requests need meaningful phrase similarity; pure
@@ -396,7 +425,8 @@ class ModelIntake(ModelStage):
         # with the unresolved questions made explicit lets the intake resolve
         # from conversation evidence without weakening schema validation or
         # teaching the runtime query-specific names.
-        if context and task.open_questions:
+        if (context and task.open_questions
+                and not any("could not preserve" in q for q in task.open_questions)):
             task = await self._generate({
                 **payload,
                 "prior_intake": task.model_dump(mode="json"),
