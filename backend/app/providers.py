@@ -15,9 +15,15 @@ from .config import settings
 
 ProviderName = Literal["mistral", "openrouter", "inception", "groq"]
 
-# Owner-selected zero-paid-credit policy. Inception and Groq remain parseable
-# for old persisted model ids, but are never selected or attempted.
+# Inception reactivation is a two-part gate: explicit policy plus a key.
+# Retained credentials alone never activate a paid provider. Groq stays paused.
 FREE_PROVIDER_ORDER: tuple[ProviderName, ...] = ("openrouter", "mistral")
+
+
+def active_provider_order() -> tuple[ProviderName, ...]:
+    return ((*FREE_PROVIDER_ORDER, "inception")
+            if settings.dime_enable_inception and settings.inception_api_key
+            else FREE_PROVIDER_ORDER)
 
 MISTRAL_DEFAULT = "ministral-8b-2512"
 OPENROUTER_DEFAULT = "nvidia/nemotron-3-super-120b-a12b:free"
@@ -61,6 +67,8 @@ def _mistral_free_model() -> str:
 
 
 def _default_provider() -> tuple[ProviderName, str]:
+    if settings.dime_enable_inception and settings.inception_api_key:
+        return ("inception", settings.inception_model or INCEPTION_DEFAULT)
     if settings.openrouter_api_key:
         return ("openrouter", _openrouter_free_model())
     return ("mistral", _mistral_free_model())
@@ -74,7 +82,11 @@ def resolve_model_id(model_id: str | None) -> tuple[ProviderName, str]:
         return ("openrouter", _openrouter_free_model(slug))
     if raw.startswith("mistral:"):
         return ("mistral", _mistral_free_model())
-    if raw.startswith("inception:") or raw.startswith("groq:"):
+    if raw.startswith("inception:"):
+        if settings.dime_enable_inception and settings.inception_api_key:
+            return ("inception", settings.inception_model or INCEPTION_DEFAULT)
+        return _default_provider()
+    if raw.startswith("groq:"):
         return _default_provider()
     if raw:
         if raw == OPENROUTER_AUTO or (raw in OPENROUTER_ALLOWLIST
@@ -89,7 +101,7 @@ def resolve_model_id(model_id: str | None) -> tuple[ProviderName, str]:
 def get_llm(name: ProviderName, model: str | None = None) -> ChatOpenAI | None:
     # Configured credentials are not activation. Future reactivation needs an
     # explicit policy change here; direct callers cannot bypass route clamping.
-    if name not in FREE_PROVIDER_ORDER:
+    if name not in active_provider_order():
         return None
     if name == "mistral":
         if not settings.mistral_api_key:
@@ -98,6 +110,14 @@ def get_llm(name: ProviderName, model: str | None = None) -> ChatOpenAI | None:
             model=_mistral_free_model(),
             base_url="https://api.mistral.ai/v1",
             api_key=settings.mistral_api_key,
+            timeout=settings.llm_timeout_s,
+            max_retries=settings.llm_max_retries,
+        )
+    if name == "inception":
+        return ChatOpenAI(
+            model=settings.inception_model or INCEPTION_DEFAULT,
+            base_url="https://api.inceptionlabs.ai/v1",
+            api_key=settings.inception_api_key,
             timeout=settings.llm_timeout_s,
             max_retries=settings.llm_max_retries,
         )
@@ -145,7 +165,7 @@ def _failure_class(exc: BaseException) -> str:
 
 def fallback_order(primary: ProviderName) -> list[ProviderName]:
     """Free-only provider order; never attempt paid/exhausted providers."""
-    allowed = list(FREE_PROVIDER_ORDER)
+    allowed = list(active_provider_order())
     if primary not in allowed:
         primary = allowed[0]
     return [primary, *(name for name in allowed if name != primary)]
@@ -220,7 +240,9 @@ async def invoke_with_fallback(
     for number, name in enumerate(fallback_order(primary), 1):
         accepted_model = (
             _openrouter_free_model(model if name == primary else None)
-            if name == "openrouter" else _mistral_free_model()
+            if name == "openrouter" else
+            _mistral_free_model() if name == "mistral" else
+            settings.inception_model or INCEPTION_DEFAULT
         )
         verdict = probe_verdict(name)
         if verdict is False:
@@ -267,7 +289,9 @@ async def astream_with_fallback(
             continue
         accepted_model = (
             _openrouter_free_model(model if name == primary else None)
-            if name == "openrouter" else _mistral_free_model()
+            if name == "openrouter" else
+            _mistral_free_model() if name == "mistral" else
+            settings.inception_model or INCEPTION_DEFAULT
         )
         client = get_llm(name, accepted_model)
         if client is None:
@@ -305,7 +329,9 @@ async def astream_chunks_with_fallback(
             continue
         accepted_model = (
             _openrouter_free_model(model if name == primary else None)
-            if name == "openrouter" else _mistral_free_model()
+            if name == "openrouter" else
+            _mistral_free_model() if name == "mistral" else
+            settings.inception_model or INCEPTION_DEFAULT
         )
         client = get_llm(name, accepted_model)
         if client is None:
@@ -370,7 +396,14 @@ def models_catalog() -> dict[str, Any]:
     if is_free_model("mistral", mistral):
         options.append({"id": f"mistral:{mistral}", "engine": "mistral",
                         "default": default_id == f"mistral:{mistral}"})
-    return {"models": options, "available": {
+    if settings.dime_enable_inception and settings.inception_api_key:
+        inception = settings.inception_model or INCEPTION_DEFAULT
+        options.append({"id": f"inception:{inception}", "engine": "inception",
+                        "default": default_id == f"inception:{inception}"})
+    available = {
         "openrouter": bool(settings.openrouter_api_key),
         "mistral": bool(settings.mistral_api_key),
-    }}
+    }
+    if settings.dime_enable_inception and settings.inception_api_key:
+        available["inception"] = True
+    return {"models": options, "available": available}

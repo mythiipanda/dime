@@ -144,9 +144,12 @@ class ProviderStructuredModel:
             requested = self.model if provider == self.provider else fallback_model
             if provider == "openrouter":
                 accepted_model = _openrouter_free_model(requested)
-            else:
+            elif provider == "mistral":
                 accepted_model = _mistral_free_model()
-            if not is_free_model(provider, accepted_model):
+            else:
+                accepted_model = settings.inception_model or INCEPTION_DEFAULT
+            if (provider != "inception"
+                    and not is_free_model(provider, accepted_model)):
                 continue
             models.append((provider, OpenAIChatModel(
                 accepted_model,
