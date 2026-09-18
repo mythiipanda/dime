@@ -226,16 +226,18 @@ async def test_intake_receives_explicit_current_date() -> None:
     assert current_date.count("-") == 2
 
 
-def test_pydanticai_provider_boundary_preserves_ordered_fallback(monkeypatch) -> None:
+def test_pydanticai_provider_boundary_uses_only_active_free_rotation(monkeypatch) -> None:
     from v2.adapters.models import ProviderStructuredModel
 
-    monkeypatch.setattr("v2.adapters.models.settings.inception_api_key", "primary")
-    monkeypatch.setattr("v2.adapters.models.settings.mistral_api_key", "fallback")
-    monkeypatch.setattr("v2.adapters.models.settings.openrouter_api_key", "")
-    monkeypatch.setattr("v2.adapters.models.settings.groq_api_key", "")
+    # Inception stays configured for a future key rotation, but configured is
+    # not active: Dime's own model stages may only select free providers.
+    monkeypatch.setattr("v2.adapters.models.settings.inception_api_key", "configured-paused")
+    monkeypatch.setattr("v2.adapters.models.settings.mistral_api_key", "free-limit")
+    monkeypatch.setattr("v2.adapters.models.settings.openrouter_api_key", "free-key")
+    monkeypatch.setattr("v2.adapters.models.settings.groq_api_key", "configured-paused")
     models = ProviderStructuredModel("inception", "mercury-test")._models()
-    assert [provider for provider, _ in models] == ["inception", "mistral"]
-    assert models[0][1].model_name == "mercury-test"
+    assert [provider for provider, _ in models] == ["openrouter", "mistral"]
+    assert models[0][1].model_name == settings.openrouter_model
     assert models[1][1].model_name == settings.mistral_model
 
 

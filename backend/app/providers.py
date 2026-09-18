@@ -15,6 +15,10 @@ from .config import settings
 
 ProviderName = Literal["mistral", "openrouter", "inception", "groq"]
 
+# Owner-selected zero-paid-credit policy. Inception and Groq remain parseable
+# for old persisted model ids, but are never selected or attempted.
+FREE_PROVIDER_ORDER: tuple[ProviderName, ...] = ("openrouter", "mistral")
+
 MISTRAL_DEFAULT = "ministral-8b-2512"
 OPENROUTER_DEFAULT = "nvidia/nemotron-3-super-120b-a12b:free"
 OPENROUTER_AUTO = "openrouter/free"
@@ -31,10 +35,8 @@ OPENROUTER_ALLOWLIST: frozenset[str] = frozenset(
 
 
 def _default_provider() -> tuple[ProviderName, str]:
-    if settings.inception_api_key:
-        return ("inception", settings.inception_model or INCEPTION_DEFAULT)
-    if settings.groq_api_key:
-        return ("groq", settings.groq_model or GROQ_DEFAULT)
+    if settings.openrouter_api_key:
+        return ("openrouter", settings.openrouter_model or OPENROUTER_DEFAULT)
     return ("mistral", settings.mistral_model or MISTRAL_DEFAULT)
 
 
@@ -49,12 +51,9 @@ def resolve_model_id(model_id: str | None) -> tuple[ProviderName, str]:
     if raw.startswith("mistral:"):
         slug = raw.split(":", 1)[1] or settings.mistral_model
         return ("mistral", slug)
-    if raw.startswith("inception:"):
-        slug = raw.split(":", 1)[1] or settings.inception_model
-        return ("inception", slug)
-    if raw.startswith("groq:"):
-        slug = raw.split(":", 1)[1] or settings.groq_model
-        return ("groq", slug)
+    if raw.startswith("inception:") or raw.startswith("groq:"):
+        # Paid/exhausted providers are deliberately outside the runtime lane.
+        return _default_provider()
     if raw:
         if ":free" in raw or "/" in raw:
             if raw == OPENROUTER_AUTO or raw in OPENROUTER_ALLOWLIST:
@@ -138,9 +137,11 @@ def _failure_class(exc: BaseException) -> str:
     return "provider_error"
 
 def fallback_order(primary: ProviderName) -> list[ProviderName]:
-    rest: list[ProviderName] = ["mistral", "openrouter", "inception", "groq"]
-    rest.remove(primary)
-    return [primary, *rest]
+    """Free-only provider order; never attempt paid/exhausted providers."""
+    allowed = list(FREE_PROVIDER_ORDER)
+    if primary not in allowed:
+        primary = allowed[0]
+    return [primary, *(name for name in allowed if name != primary)]
 
 
 # --- Provider probes (qm pattern: verify, don't assume) -------------
@@ -339,31 +340,20 @@ def accumulate_tool_calls(tc_chunks: list[dict]) -> list[dict]:
 
 
 def models_catalog() -> dict[str, Any]:
+    """Expose only owner-approved free-runtime choices."""
     default_id = f"{_default_provider()[0]}:{_default_provider()[1]}"
     options = [
-        {
-            "id": f"mistral:{settings.mistral_model or MISTRAL_DEFAULT}",
-            "engine": "mistral",
-            "default": default_id.startswith("mistral:"),
-        }
+        {"id": f"openrouter:{slug}", "engine": "openrouter",
+         "default": default_id == f"openrouter:{slug}"}
+        for slug in sorted(OPENROUTER_ALLOWLIST)
     ]
-    for slug in sorted(OPENROUTER_ALLOWLIST):
-        options.append({"id": f"openrouter:{slug}", "engine": "openrouter"})
-    options.append({"id": f"openrouter:{OPENROUTER_AUTO}", "engine": "openrouter"})
-    options.append({
-        "id": f"inception:{settings.inception_model or INCEPTION_DEFAULT}",
-        "engine": "inception",
-        "default": default_id.startswith("inception:"),
-    })
-    options.append({
-        "id": f"groq:{settings.groq_model or GROQ_DEFAULT}",
-        "engine": "groq",
-        "default": default_id.startswith("groq:"),
-    })
-    available = {
-        "mistral": bool(settings.mistral_api_key),
+    options.append({"id": f"openrouter:{OPENROUTER_AUTO}",
+                    "engine": "openrouter",
+                    "default": default_id == f"openrouter:{OPENROUTER_AUTO}"})
+    options.append({"id": f"mistral:{settings.mistral_model or MISTRAL_DEFAULT}",
+                    "engine": "mistral",
+                    "default": default_id.startswith("mistral:")})
+    return {"models": options, "available": {
         "openrouter": bool(settings.openrouter_api_key),
-        "inception": bool(settings.inception_api_key),
-        "groq": bool(settings.groq_api_key),
-    }
-    return {"models": options, "available": available}
+        "mistral": bool(settings.mistral_api_key),
+    }}
