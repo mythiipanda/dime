@@ -1140,3 +1140,32 @@ def test_precise_root_gap_suppresses_redundant_execution_failure():
                                 errors={"po_logs":["source unavailable"]})
     assert _failures_represented_by_precise_gaps(task, execution,
         ["Playoff performance statistics for the player are unavailable"]) == {"po_logs"}
+
+@pytest.mark.anyio
+async def test_semantic_provider_failure_preserves_mechanically_verified_subset():
+    class FailingSemantic:
+        async def verify(self, task, draft, evidence):
+            raise RuntimeError("provider unavailable")
+    instance = runtime(SequenceVerifier(VerificationStatus.PASS), FailingSemantic())
+    result = await instance.run("answer")
+    assert result.verification.status == VerificationStatus.PARTIAL
+    assert result.verified_claims[0].claim.text == "42"
+    assert any("Semantic completeness review was unavailable" in gap.message
+               for gap in result.gaps)
+
+@pytest.mark.anyio
+async def test_repair_provider_failure_preserves_supported_claims_as_partial():
+    class MixedMechanical:
+        async def verify(self, task, draft, evidence):
+            return VerificationReport(status=VerificationStatus.REPAIR,
+                claim_results=[{"claim_index":0,"supported":True}],
+                repair_instructions=["rewrite unsupported branch"])
+    class FailingRepair:
+        async def repair(self, task, draft, evidence, verification):
+            raise RuntimeError("all structured-output providers failed [fixture]")
+    instance = runtime(MixedMechanical(), SequenceVerifier(VerificationStatus.PASS),
+                       FailingRepair())
+    result = await instance.run("answer")
+    assert result.verification.status == VerificationStatus.PARTIAL
+    assert result.verified_claims[0].claim.text == "42"
+    assert any("Model repair was unavailable" in gap.message for gap in result.gaps)

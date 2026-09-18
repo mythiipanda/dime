@@ -311,12 +311,17 @@ class PlanExecutor:
         # coverage above remain hard errors. The legacy required_evidence set
         # stays a hard completeness contract.
         missing = sorted(set(task.required_evidence) - selected)
-        if missing:
-            uncovered = sorted(known_requirements.keys() - covered.keys())
+        uncovered = sorted(known_requirements.keys() - covered.keys())
+        if missing and (not known_requirements or uncovered):
             detail = (f"; uncovered requirement ids: {uncovered}"
                       if uncovered else "")
             raise ValueError(
                 f"plan does not cover required evidence: {missing}{detail}")
+        # Once requirement review has produced typed clauses and every clause
+        # is covered, those clauses
+        # own executable coverage. A stale/coarser intake required_evidence
+        # label must not abort supported branches before tools run; uncovered
+        # typed clauses are published as precise gaps after execution.
 
     def _selected_name(self, plan: Plan, node_id: str) -> str | None:
         parent = next(item for item in plan.nodes if item.id == node_id)

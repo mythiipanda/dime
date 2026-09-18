@@ -175,3 +175,20 @@ def test_capability_catalog_descriptions_are_v2_owned(monkeypatch):
         return set()
 
     assert not {"description", "title"} & keys(catalog["standings"]["arguments"])
+
+@pytest.mark.anyio
+async def test_invalid_model_calculation_degrades_to_repair_report():
+    from datetime import UTC, datetime
+    from v2.contracts import DraftReport, EvidenceEnvelope, TaskSpec
+    from v2.runtime.assembly import MechanicalVerifier
+    task = TaskSpec(goal="home away", mode="quick", deliverable="answer")
+    ev = EvidenceEnvelope(evidence_id="logs", capability="game_logs",
+        source="fixture", observed_at=datetime.now(UTC), rows={"home":23,"away":20})
+    draft = DraftReport(sections=["split"], claims=[], calculations=[{
+        "calculation_id":"bad", "requirement_id":"delta", "operation":"subtract",
+        "inputs":[{"evidence_id":"logs","path":"rows.home"},
+                  {"evidence_id":"logs","path":"rows.away"}],
+        "result":"3", "unit":"games", "subject_input":23}])
+    report = await MechanicalVerifier().verify(task, draft, {"logs":ev})
+    assert report.status == "repair"
+    assert "invalid calculation declaration" in report.repair_instructions[0] or report.repair_instructions

@@ -158,9 +158,45 @@ class Runtime:
                 verification = await self._stage(
                     turn_id, f"reverify{suffix}",
                     self._verify(task, draft, evidence))
-            except BaseException as exc:
-                self._close_failed(turn_id, exc, started=turn_started)
+            except asyncio.CancelledError:
+                self._close_failed(turn_id, asyncio.CancelledError(), started=turn_started)
                 raise
+            except RuntimeError as exc:
+                if not str(exc).startswith("all structured-output providers failed"):
+                    self._close_failed(turn_id, exc, started=turn_started)
+                    raise
+                # A model repair outage must not turn an evidence-bearing run
+                # into a runtime failure. Apply the deterministic fallback:
+                # keep only claims already marked supported, preserve concrete
+                # verifier findings as gaps, and continue to a partial result.
+                supported = {
+                    item.claim_index for item in verification.claim_results
+                    if item.supported
+                }
+                draft = draft.model_copy(update={
+                    "claims": [claim for index, claim in enumerate(draft.claims)
+                               if index in supported],
+                    "calculations": [calculation for calculation in draft.calculations
+                                     if any(claim.calculation_id == calculation.calculation_id
+                                            for index, claim in enumerate(draft.claims)
+                                            if index in supported)],
+                    "gaps": _unique([
+                        *draft.gaps, *verification.missing_branches,
+                        *verification.contradictions,
+                        *verification.repair_instructions,
+                        "Model repair was unavailable; unsupported claims were withheld."
+                    ], limit=128),
+                })
+                verification = VerificationReport(
+                    status=VerificationStatus.PARTIAL,
+                    claim_results=[ClaimResult(
+                        claim_index=index, supported=True)
+                        for index, _claim in enumerate(draft.claims)],
+                    missing_branches=[
+                        "Model repair was unavailable; unsupported claims were withheld."
+                    ],
+                )
+                break
 
         if verification.status == VerificationStatus.REPAIR:
             gaps = _unique(
@@ -378,9 +414,27 @@ class Runtime:
                 "mechanical verifier must adjudicate every claim exactly once")
         if mechanical.status == VerificationStatus.REPAIR:
             return mechanical
-        semantic = VerificationReport.model_validate(
-            (await self._semantic_verifier.verify(task, draft, evidence)).model_dump()
-        )
+        try:
+            semantic = VerificationReport.model_validate(
+                (await self._semantic_verifier.verify(task, draft, evidence)).model_dump()
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            # Mechanical verification is the deterministic publication
+            # authority. A provider/schema failure in the advisory semantic
+            # pass must not discard evidence and already-supported claims.
+            # Preserve the mechanical adjudication and attach one precise
+            # limitation so the run terminates as a supported partial.
+            if all(item.supported for item in mechanical.claim_results):
+                return mechanical.model_copy(update={
+                    "status": VerificationStatus.PARTIAL,
+                    "missing_branches": [
+                        "Semantic completeness review was unavailable; "
+                        "published claims passed deterministic verification."
+                    ],
+                })
+            return mechanical
         # Deterministic calculation verification owns whether a requested
         # arithmetic branch exists. A semantic verifier may overlook a derived
         # claim already tied to a recomputed calculation (for example a margin)

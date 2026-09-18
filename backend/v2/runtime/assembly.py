@@ -29,14 +29,28 @@ from v2.skills import SkillLibrary
 
 class MechanicalVerifier:
     async def verify(self, task, draft, evidence) -> VerificationReport:
+        from pydantic import ValidationError
+        from v2.contracts import ClaimResult, VerificationStatus
         from v2.domain.calculations import Calculation
-        calculations = [
-            Calculation.model_validate({
-                key: value for key, value in item.model_dump().items()
-                if key != "requirement_id"
-            })
-            for item in draft.calculations
-        ]
+        try:
+            calculations = [
+                Calculation.model_validate({
+                    key: value for key, value in item.model_dump().items()
+                    if key != "requirement_id"
+                })
+                for item in draft.calculations
+            ]
+        except (TypeError, ValueError, ValidationError) as exc:
+            reason = f"invalid calculation declaration: {exc}"
+            return VerificationReport(
+                status=VerificationStatus.REPAIR,
+                claim_results=[ClaimResult(
+                    claim_index=index, supported=False, reasons=[reason])
+                    for index, _claim in enumerate(draft.claims)],
+                repair_instructions=[
+                    "Remove or correct the invalid calculation declaration; "
+                    "publish only claims supported directly by admitted evidence."],
+            )
         return verify_mechanical(task, draft, list(evidence.values()), calculations)
 
 

@@ -715,3 +715,15 @@ async def test_dependent_entity_argument_accepts_canonical_alias():
                        deliverable="condition"), plan)
 
     assert result.plan.nodes[1].status == PlanStatus.COMPLETE
+
+@pytest.mark.anyio
+async def test_typed_requirements_allow_supported_execution_when_intake_evidence_is_stale():
+    task = TaskSpec(goal="phase compare", mode="quick", deliverable="answer",
+        required_evidence=["player_report", "shooting_efficiency"], requirements=[{
+            "id":"regular", "description":"regular line",
+            "capability_options":["player_report"]}])
+    plan = Plan(nodes=[PlanNode(id="regular", description="regular",
+        capability_hints=["player_report"], covers_requirement_ids=["regular"])])
+    result = await PlanExecutor({"player_report": FakeCapability(
+        "player_report", {"ppg": 33.9})}).execute(task, plan)
+    assert result.evidence[0].capability == "player_report"
