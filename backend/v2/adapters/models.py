@@ -1451,15 +1451,16 @@ def _deterministic_player_comparison_draft(
 def _deterministic_rank_draft(
     task: TaskSpec, evidence: Sequence[EvidenceEnvelope],
 ) -> DraftReport | None:
-    """Project one typed team-rating rank into a canonical claim.
-
-    The tool result is already sorted by the requested direction and carries
-    the requested metric identity. Publication uses only the first row's named
-    metric, never free-form synthesis over the expanded row.
-    """
+    """Project one typed team-rating extremum from the requested metric only."""
+    from v2.domain.evidence import decimal_value
     labels = {"DEF_RATING": "defensive rating",
               "TS_PCT": "true shooting percentage",
               "TM_TOV_PCT": "turnover percentage"}
+    metric_terms = {
+        "DEF_RATING": ("defensive rating", "def rating", "def_rating"),
+        "TS_PCT": ("true shooting percentage", "true shooting", "ts%", "ts_pct"),
+        "TM_TOV_PCT": ("turnover percentage", "turnover rate", "tm_tov_pct"),
+    }
     directions = {"asc": "lowest", "desc": "highest"}
     for item in evidence:
         if item.capability != "team_ratings" or not isinstance(item.rows, list) or not item.rows:
@@ -1467,27 +1468,81 @@ def _deterministic_rank_draft(
         metric = item.metric_definitions.get("__requested_metric__")
         if metric not in labels:
             continue
-        row = item.rows[0]
-        team = row.get("TEAM_NAME") or row.get("TEAM")
-        value = row.get(metric)
-        if not team or value is None:
+        owner = next((requirement for requirement in task.requirements
+                      if "team_ratings" in requirement.capability_options
+                      and requirement.capability_arguments.get("requested_metric") == metric), None)
+        if owner is None:
             continue
-        direction = next((
-            requirement.capability_arguments.get("ranking_direction")
-            for requirement in task.requirements
-            if "team_ratings" in requirement.capability_options
-            and requirement.capability_arguments.get("requested_metric") == metric
-        ), None)
+        direction = owner.capability_arguments.get("ranking_direction")
         direction = direction if direction in directions else (
             "asc" if metric in {"DEF_RATING", "TM_TOV_PCT"} else "desc")
+        numeric = []
+        for row_index, candidate in enumerate(item.rows):
+            value = decimal_value(candidate.get(metric))
+            team = candidate.get("TEAM_NAME") or candidate.get("TEAM")
+            if value is not None and team:
+                numeric.append((row_index, value, str(team)))
+        if not numeric:
+            continue
+        extreme = (min(value for _, value, _ in numeric) if direction == "asc"
+                   else max(value for _, value, _ in numeric))
+        winners = [(index, value, team) for index, value, team in numeric if value == extreme]
+
+        # Calculation requirements are not typed to a subject. If the task
+        # carries any team entity, fail closed: prose cannot prove that an
+        # extremum request is global rather than scoped to that team.
+        has_team_subject = any(entity.type == "team" for entity in task.entities)
+        eligible, blocked = [], []
+        for requirement in task.calculation_requirements:
+            text = " ".join(requirement.description.casefold().split())
+            names_different_metric = any(
+                any(term in text for term in terms)
+                for other, terms in metric_terms.items() if other != metric)
+            names_metric = any(term in text for term in metric_terms[metric])
+            asks_low = any(token in text for token in ("lowest", "minimum", " min "))
+            asks_high = any(token in text for token in ("highest", "maximum", " max "))
+            asks_leader = ("leader" in text or "rank first" in text or "rank #1" in text)
+            conflicting = asks_low and asks_high
+            agrees = ((direction == "asc" and asks_low and not asks_high)
+                      or (direction == "desc" and asks_high and not asks_low)
+                      or (asks_leader and not asks_low and not asks_high))
+            if (not has_team_subject and names_metric and agrees
+                    and not conflicting and not names_different_metric):
+                eligible.append(requirement)
+            else:
+                blocked.append(requirement.id)
+
+        # A tied extremum does not identify one team. Refuse to fabricate a
+        # unique winner or attach a one-subject calculation to a plural fact.
+        if len(winners) != 1:
+            return DraftReport(
+                sections=["Team rating leader"], claims=[], calculations=[],
+                blocked_calculation_requirement_ids=[item.id for item in task.calculation_requirements],
+                gaps=[f"The requested {labels[metric]} extremum is tied across {len(winners)} teams."])
+
+        winner_index, value, team = winners[0]
+        inputs = [{"evidence_id": item.evidence_id, "path": f"rows[{row_index}].{metric}"}
+                  for row_index, _, _ in numeric]
+        subject_input = next(index for index, (row_index, _, _) in enumerate(numeric)
+                             if row_index == winner_index)
+        calculations = [{
+            "calculation_id": f"requested_metric_rank_{index + 1}",
+            "requirement_id": requirement.id,
+            "operation": "rank_asc" if direction == "asc" else "rank_desc",
+            "inputs": inputs, "subject_input": subject_input, "result": 1, "unit": "rank",
+        } for index, requirement in enumerate(eligible)]
+        calculation_id = calculations[0]["calculation_id"] if calculations else None
         return DraftReport(
             sections=["Team rating leader"],
             claims=[Claim(
-                text=(f"{team} had the {directions[direction]} "
-                      f"{labels[metric]} in {item.season or 'the selected season'}: "
-                      f"{value}."),
-                kind="observed", evidence_ids=[item.evidence_id])],
-            calculations=[], blocked_calculation_requirement_ids=[], gaps=[])
+                text=(f"{team} had the {directions[direction]} {labels[metric]} "
+                      f"in {item.season or 'the selected season'}: {value}."),
+                kind="derived" if calculation_id else "observed",
+                evidence_ids=[item.evidence_id], calculation_id=calculation_id)],
+            calculations=calculations,
+            blocked_calculation_requirement_ids=blocked,
+            gaps=(["Some requested calculations do not match the admitted metric and direction."]
+                  if blocked else []))
     return None
 
 

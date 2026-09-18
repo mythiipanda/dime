@@ -2344,3 +2344,121 @@ async def test_explicit_context_entity_performance_summary_passes():
     stub=StubModel([{"goal":"summarize Victor Wembanyama performance","mode":"quick","deliverable":"performance summary","entities":[{"id":"w","type":"player","display_name":"Victor Wembanyama"}]}])
     task=await ModelIntake(stub,**stage_kwargs()).understand("Summarize Victor Wembanyama's performance")
     assert len(stub.calls)==1 and task.entities[0].display_name=="Victor Wembanyama"
+
+@pytest.mark.anyio
+async def test_team_rank_deterministic_draft_satisfies_rank_calculation_requirement():
+    from v2.adapters.models import ModelSynthesizer
+    from v2.contracts import EvidenceEnvelope
+    task = TaskSpec(goal="lowest defense", mode="quick", deliverable="team and value",
+        requirements=[{"id":"metric","description":"def rating", "capability_options":["team_ratings"],
+            "capability_arguments":{"requested_metric":"DEF_RATING","ranking_direction":"asc"}}],
+        calculation_requirements=[{"id":"lowest_def_rating_lookup",
+            "description":"Identify the team with the minimum defensive rating and extract its value."}])
+    ev = EvidenceEnvelope(evidence_id="ratings", capability="team_ratings", source="fixture",
+        observed_at=datetime.now(UTC), season="2025-26", rows=[
+            {"TEAM_NAME":"Oklahoma City Thunder","DEF_RATING":106.5},
+            {"TEAM_NAME":"Detroit Pistons","DEF_RATING":108.9},
+            {"TEAM_NAME":"San Antonio Spurs","DEF_RATING":110.4}],
+        metric_definitions={"__requested_metric__":"DEF_RATING"})
+    stub = StubModel([])
+    draft = await ModelSynthesizer(stub, provider="stub", model_name="stub").synthesize(task,[ev])
+    assert stub.calls == []
+    assert draft.claims[0].text == ("Oklahoma City Thunder had the lowest defensive rating "
+                                    "in 2025-26: 106.5.")
+    assert draft.claims[0].kind.value == "derived"
+    assert draft.calculations[0].requirement_id == "lowest_def_rating_lookup"
+    assert draft.calculations[0].operation == "rank_asc"
+    assert draft.calculations[0].result == 1
+    assert draft.blocked_calculation_requirement_ids == []
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("rows,direction,description,expected_team,expected_subject,blocked", [
+    ([{"TEAM_NAME":"Detroit Pistons","DEF_RATING":108.9}, {"TEAM_NAME":"Oklahoma City Thunder","DEF_RATING":106.5}], "asc", "Identify the team with the minimum defensive rating.", "Oklahoma City Thunder", 1, False),
+    ([{"TEAM_NAME":"Null Team","DEF_RATING":None}, {"TEAM_NAME":"Oklahoma City Thunder","DEF_RATING":106.5}, {"TEAM_NAME":"Detroit Pistons","DEF_RATING":108.9}], "asc", "Identify the team with the lowest defensive rating.", "Oklahoma City Thunder", 0, False),
+    ([{"TEAM_NAME":"Low","TS_PCT":.55}, {"TEAM_NAME":"High","TS_PCT":.61}], "desc", "Identify the true shooting percentage leader.", "High", 1, False),
+    ([{"TEAM_NAME":"Low","DEF_RATING":106.5}, {"TEAM_NAME":"High","DEF_RATING":108.9}], "asc", "Identify the team with the maximum defensive rating.", "Low", None, True),
+    ([{"TEAM_NAME":"Low","DEF_RATING":106.5}, {"TEAM_NAME":"High","DEF_RATING":108.9}], "asc", "Identify the team average salary.", "Low", None, True),
+    ([{"TEAM_NAME":"Low","DEF_RATING":106.5}, {"TEAM_NAME":"Detroit Pistons","DEF_RATING":108.9}], "asc", "What rank is Detroit by defensive rating?", "Low", None, True),
+])
+async def test_team_rank_calculation_adversarial(rows,direction,description,expected_team,expected_subject,blocked):
+    from v2.adapters.models import ModelSynthesizer
+    from v2.contracts import EvidenceEnvelope
+    metric = "TS_PCT" if any("TS_PCT" in row for row in rows) else "DEF_RATING"
+    task = TaskSpec(goal="rating leader", mode="quick", deliverable="team and value",
+        requirements=[{"id":"metric","description":"rating", "capability_options":["team_ratings"],
+            "capability_arguments":{"requested_metric":metric,"ranking_direction":direction}}],
+        calculation_requirements=[{"id":"calc", "description":description}])
+    ev = EvidenceEnvelope(evidence_id="ratings", capability="team_ratings", source="fixture",
+        observed_at=datetime.now(UTC), season="2025-26", rows=rows,
+        metric_definitions={"__requested_metric__":metric})
+    draft = await ModelSynthesizer(StubModel([]),provider="stub",model_name="stub").synthesize(task,[ev])
+    assert expected_team in draft.claims[0].text
+    if blocked:
+        assert draft.calculations == [] and draft.blocked_calculation_requirement_ids == ["calc"]
+        assert draft.claims[0].kind.value == "observed"
+    else:
+        assert draft.calculations[0].subject_input == expected_subject
+        assert draft.calculations[0].result == 1
+        assert draft.claims[0].calculation_id == draft.calculations[0].calculation_id
+
+@pytest.mark.anyio
+async def test_team_rank_conflicting_requirements_only_matching_direction_is_owned():
+    from v2.adapters.models import ModelSynthesizer
+    from v2.contracts import EvidenceEnvelope
+    task=TaskSpec(goal="lowest defense",mode="quick",deliverable="team",
+        requirements=[{"id":"metric","description":"defense","capability_options":["team_ratings"],"capability_arguments":{"requested_metric":"DEF_RATING","ranking_direction":"asc"}}],
+        calculation_requirements=[{"id":"low","description":"minimum defensive rating"},{"id":"high","description":"maximum defensive rating"}])
+    ev=EvidenceEnvelope(evidence_id="r",capability="team_ratings",source="fixture",observed_at=datetime.now(UTC),season="2025-26",rows=[{"TEAM_NAME":"High","DEF_RATING":110},{"TEAM_NAME":"Low","DEF_RATING":100}],metric_definitions={"__requested_metric__":"DEF_RATING"})
+    draft=await ModelSynthesizer(StubModel([]),provider="stub",model_name="stub").synthesize(task,[ev])
+    assert [c.requirement_id for c in draft.calculations]==["low"]
+    assert draft.blocked_calculation_requirement_ids==["high"]
+    assert draft.calculations[0].subject_input==1
+
+@pytest.mark.anyio
+async def test_team_rank_tie_fails_closed():
+    from v2.adapters.models import ModelSynthesizer
+    from v2.contracts import EvidenceEnvelope
+    task=TaskSpec(goal="lowest defense",mode="quick",deliverable="team",requirements=[{"id":"metric","description":"defense","capability_options":["team_ratings"],"capability_arguments":{"requested_metric":"DEF_RATING","ranking_direction":"asc"}}],calculation_requirements=[{"id":"low","description":"minimum defensive rating"}])
+    ev=EvidenceEnvelope(evidence_id="r",capability="team_ratings",source="fixture",observed_at=datetime.now(UTC),rows=[{"TEAM_NAME":"A","DEF_RATING":100},{"TEAM_NAME":"B","DEF_RATING":100}],metric_definitions={"__requested_metric__":"DEF_RATING"})
+    draft=await ModelSynthesizer(StubModel([]),provider="stub",model_name="stub").synthesize(task,[ev])
+    assert draft.claims==[] and draft.calculations==[]
+    assert draft.blocked_calculation_requirement_ids==["low"]
+    assert "tied" in draft.gaps[0]
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("description", [
+    "Determine whether Detroit has the minimum defensive rating.",
+    "Is Detroit the team with the lowest defensive rating?",
+    "Compare Detroit to the defensive-rating minimum.",
+])
+async def test_team_entity_extremum_requirements_fail_closed_without_typed_global_scope(description):
+    from v2.adapters.models import ModelSynthesizer
+    from v2.contracts import EntityRef, EvidenceEnvelope
+    from v2.domain.calculations import Calculation
+    from v2.runtime.verifier import verify_mechanical
+    task=TaskSpec(goal=description,mode="quick",deliverable="answer",
+        entities=[EntityRef(type="team",id="DET",display_name="Detroit Pistons")],
+        requirements=[{"id":"metric","description":"defense board","capability_options":["team_ratings"],"capability_arguments":{"requested_metric":"DEF_RATING","ranking_direction":"asc"}}],
+        calculation_requirements=[{"id":"scope","description":description}])
+    ev=EvidenceEnvelope(evidence_id="r",capability="team_ratings",source="fixture",observed_at=datetime.now(UTC),season="2025-26",qualification="all teams",coverage="full board",rows=[{"TEAM_NAME":"Detroit Pistons","DEF_RATING":108.9},{"TEAM_NAME":"Oklahoma City Thunder","DEF_RATING":106.5}],metric_definitions={"__requested_metric__":"DEF_RATING"})
+    draft=await ModelSynthesizer(StubModel([]),provider="stub",model_name="stub").synthesize(task,[ev])
+    assert draft.calculations==[] and draft.blocked_calculation_requirement_ids==["scope"]
+    assert draft.claims[0].calculation_id is None
+    result=verify_mechanical(task,draft,[ev],[])
+    assert result.status.value != "pass"
+
+@pytest.mark.anyio
+async def test_team_rank_eligible_unsorted_draft_passes_mechanical_verifier():
+    from v2.adapters.models import ModelSynthesizer
+    from v2.contracts import EvidenceEnvelope
+    from v2.domain.calculations import Calculation
+    from v2.runtime.verifier import verify_mechanical
+    task=TaskSpec(goal="lowest defense",mode="quick",deliverable="team and value",
+        requirements=[{"id":"metric","description":"full defensive rating board","capability_options":["team_ratings"],"capability_arguments":{"requested_metric":"DEF_RATING","ranking_direction":"asc"}}],
+        calculation_requirements=[{"id":"low","description":"minimum defensive rating"}])
+    ev=EvidenceEnvelope(evidence_id="r",capability="team_ratings",source="fixture",observed_at=datetime.now(UTC),season="2025-26",qualification="all teams",coverage="full board",rows=[{"TEAM_NAME":"Detroit Pistons","DEF_RATING":108.9},{"TEAM_NAME":"Oklahoma City Thunder","DEF_RATING":106.5},{"TEAM_NAME":"San Antonio Spurs","DEF_RATING":110.4}],metric_definitions={"__requested_metric__":"DEF_RATING"})
+    draft=await ModelSynthesizer(StubModel([]),provider="stub",model_name="stub").synthesize(task,[ev])
+    calculations=[Calculation.model_validate({k:v for k,v in item.model_dump().items() if k!="requirement_id"}) for item in draft.calculations]
+    result=verify_mechanical(task,draft,[ev],calculations)
+    assert result.status.value == "pass"
+    assert result.claim_results[0].supported is True
