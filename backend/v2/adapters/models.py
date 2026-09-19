@@ -103,7 +103,26 @@ SAFE_PYDANTIC_ERROR_TYPES = frozenset({
     "model_type", "string_type", "int_type", "int_parsing", "bool_type",
     "list_type", "dict_type", "greater_than_equal", "too_long",
     "too_short", "value_error",
+    "claim_unsupported_missing_reason", "claim_supported_has_reasons",
+    "verification_duplicate_claim_index", "verification_finding_empty",
+    "verification_finding_duplicate", "verification_pass_with_findings",
+    "verification_repair_without_findings",
 })
+SAFE_FAILURE_VALIDATION_SUBTYPES = frozenset({
+    "unsupported_claim_missing_reason", "supported_claim_has_reasons",
+    "pass_with_findings", "repair_without_findings", "duplicate_claim_index",
+    "duplicate_or_empty_finding", "other_contract_invariant",
+    "not_applicable",
+})
+_VALIDATION_SUBTYPE_BY_ERROR_TYPE = {
+    "claim_unsupported_missing_reason": "unsupported_claim_missing_reason",
+    "claim_supported_has_reasons": "supported_claim_has_reasons",
+    "verification_pass_with_findings": "pass_with_findings",
+    "verification_repair_without_findings": "repair_without_findings",
+    "verification_duplicate_claim_index": "duplicate_claim_index",
+    "verification_finding_empty": "duplicate_or_empty_finding",
+    "verification_finding_duplicate": "duplicate_or_empty_finding",
+}
 
 
 def _safe_exception_name(value: type[BaseException] | str) -> str:
@@ -209,11 +228,32 @@ class ProviderStructuredModel:
             ]
         schema_bytes = json.dumps(
             schema_json, sort_keys=True, separators=(",", ":")).encode()
+        validation_subtypes = {
+            _VALIDATION_SUBTYPE_BY_ERROR_TYPE[error["type"]]
+            for error in validation_errors
+            if error["type"] in _VALIDATION_SUBTYPE_BY_ERROR_TYPE
+        }
+        has_unrecognized_validation_error = any(
+            error["type"] not in _VALIDATION_SUBTYPE_BY_ERROR_TYPE
+            for error in validation_errors
+        )
+        if phase != "json_or_schema_validation":
+            validation_subtype = "not_applicable"
+        elif not validation_errors:
+            validation_subtype = "other_contract_invariant"
+        else:
+            validation_subtype = (
+                next(iter(validation_subtypes))
+                if len(validation_subtypes) == 1
+                and not has_unrecognized_validation_error
+                else "other_contract_invariant"
+            )
         return {
             "failure_top_class": _safe_exception_name(type(exc)),
             "failure_class_chain": classes,
             "failure_phase": phase,
             "failure_validation_errors": validation_errors,
+            "failure_validation_subtype": validation_subtype,
             "failure_schema_sha256": hashlib.sha256(schema_bytes).hexdigest(),
             "failure_route": route,
         }

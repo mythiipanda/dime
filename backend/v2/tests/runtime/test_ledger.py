@@ -669,14 +669,47 @@ def test_ledger_identity_text_has_hard_limits() -> None:
 @pytest.mark.parametrize('mutate',[lambda x:x.update(failure_top_class=''),lambda x:x.update(failure_class_chain=['x']*13),lambda x:x.update(failure_phase='secret'),lambda x:x.update(failure_validation_errors=[{'type':'x','loc':['x'],'extra':'y'}]),lambda x:x.update(failure_validation_errors=[{'type':'x','loc':['x']*17}]),lambda x:x.update(failure_schema_sha256='BAD'),lambda x:x.update(failure_route='planner')])
 def test_assistant_attempt_rejects_malformed_safe_taxonomy(mutate):
     from v2.runtime import LedgerEntry
-    attempt={'route':'semantic_verifier','provider':'inception','model':'mercury-2.5','attempt_number':1,'exception_type':'UnexpectedModelBehavior','message_class':'structured_output','latency_ms':1,'failure_top_class':'UnexpectedModelBehavior','failure_class_chain':['UnexpectedModelBehavior'],'failure_phase':'no_tool_or_empty','failure_validation_errors':[],'failure_schema_sha256':'a'*64,'failure_route':'semantic_verifier'}
+    attempt={'route':'semantic_verifier','provider':'inception','model':'mercury-2.5','attempt_number':1,'exception_type':'UnexpectedModelBehavior','message_class':'structured_output','latency_ms':1,'failure_top_class':'UnexpectedModelBehavior','failure_class_chain':['UnexpectedModelBehavior'],'failure_phase':'no_tool_or_empty','failure_validation_errors':[],'failure_validation_subtype':'not_applicable','failure_schema_sha256':'a'*64,'failure_route':'semantic_verifier'}
     mutate(attempt)
     with pytest.raises(ValueError):LedgerEntry(sequence=1,run_id='run',kind='assistant/attempt',turn_id='run',call_id='model:1',data={'status':'failed','error':'bounded','provider_attempts':[attempt]})
 
 @pytest.mark.parametrize('field,value',[('failure_top_class','PrivateClass'),('failure_class_chain',['PrivateClass']),('failure_route','private_route')])
 def test_assistant_attempt_rejects_unclosed_taxonomy_identifiers(field,value):
     from v2.runtime import LedgerEntry
-    attempt={'route':'semantic_verifier','provider':'inception','model':'mercury-2.5','attempt_number':1,'exception_type':'UnexpectedModelBehavior','message_class':'structured_output','latency_ms':1,'failure_top_class':'UnexpectedModelBehavior','failure_class_chain':['UnexpectedModelBehavior'],'failure_phase':'no_tool_or_empty','failure_validation_errors':[],'failure_schema_sha256':'a'*64,'failure_route':'semantic_verifier'}
+    attempt={'route':'semantic_verifier','provider':'inception','model':'mercury-2.5','attempt_number':1,'exception_type':'UnexpectedModelBehavior','message_class':'structured_output','latency_ms':1,'failure_top_class':'UnexpectedModelBehavior','failure_class_chain':['UnexpectedModelBehavior'],'failure_phase':'no_tool_or_empty','failure_validation_errors':[],'failure_validation_subtype':'not_applicable','failure_schema_sha256':'a'*64,'failure_route':'semantic_verifier'}
     attempt[field]=value
     if field=='failure_route':attempt['route']=value
     with pytest.raises(ValueError):LedgerEntry(sequence=1,run_id='run',kind='assistant/attempt',turn_id='run',call_id='model:1',data={'status':'failed','error':'bounded','provider_attempts':[attempt]})
+
+
+@pytest.mark.parametrize('value',['', 'private_subtype', None, 1])
+def test_assistant_attempt_rejects_unclosed_validation_subtype(value):
+    from v2.runtime import LedgerEntry
+    attempt={'route':'semantic_verifier','provider':'inception','model':'mercury-2.5','attempt_number':1,'exception_type':'UnexpectedModelBehavior','message_class':'structured_output','latency_ms':1,'failure_top_class':'UnexpectedModelBehavior','failure_class_chain':['UnexpectedModelBehavior'],'failure_phase':'json_or_schema_validation','failure_validation_errors':[],'failure_validation_subtype':value,'failure_schema_sha256':'a'*64,'failure_route':'semantic_verifier'}
+    with pytest.raises(ValueError):LedgerEntry(sequence=1,run_id='run',kind='assistant/attempt',turn_id='run',call_id='model:1',data={'status':'failed','error':'bounded','provider_attempts':[attempt]})
+
+
+
+def test_assistant_attempt_accepts_not_applicable_validation_subtype():
+    from v2.runtime import LedgerEntry
+    attempt={'route':'semantic_verifier','provider':'inception','model':'mercury-2.5','attempt_number':1,'exception_type':'APITimeoutError','message_class':'timeout','latency_ms':1,'failure_top_class':'APITimeoutError','failure_class_chain':['APITimeoutError'],'failure_phase':'timeout','failure_validation_errors':[],'failure_validation_subtype':'not_applicable','failure_schema_sha256':'a'*64,'failure_route':'semantic_verifier'}
+    from datetime import UTC,datetime
+    LedgerEntry(sequence=1,run_id='run',kind='assistant/attempt',recorded_at=datetime.now(UTC),turn_id='run',call_id='model:1',data={'status':'failed','error':'bounded','provider_attempts':[attempt]})
+
+
+@pytest.mark.parametrize(('phase','subtype'),[
+    ('timeout','other_contract_invariant'),
+    ('json_or_schema_validation','not_applicable'),
+])
+def test_assistant_attempt_rejects_phase_subtype_mismatch(phase,subtype):
+    from v2.runtime import RunLedger
+    attempt={'route':'semantic_verifier','provider':'inception','model':'mercury-2.5','attempt_number':1,'exception_type':'UnexpectedModelBehavior','message_class':'structured_output','latency_ms':1,'failure_top_class':'UnexpectedModelBehavior','failure_class_chain':['UnexpectedModelBehavior'],'failure_phase':phase,'failure_validation_errors':[],'failure_validation_subtype':subtype,'failure_schema_sha256':'a'*64,'failure_route':'semantic_verifier'}
+    ledger=RunLedger('run');ledger.append('model/request',turn_id='run',call_id='model:1',data={'provider':'inception','model':'mercury-2.5','route':'semantic_verifier','prompt_hash':'a'*64,'context_hash':'b'*64,'tool_schema_hash':'c'*64,'planner_version':'v2','budgets':{},'skill_hashes':{}})
+    with pytest.raises(ValueError):ledger.append('assistant/attempt',turn_id='run',call_id='model:1',data={'status':'failed','error':'bounded','provider_attempts':[attempt]})
+
+
+def test_assistant_attempt_accepts_validation_other_contract_subtype():
+    from v2.runtime import RunLedger
+    attempt={'route':'semantic_verifier','provider':'inception','model':'mercury-2.5','attempt_number':1,'exception_type':'UnexpectedModelBehavior','message_class':'structured_output','latency_ms':1,'failure_top_class':'UnexpectedModelBehavior','failure_class_chain':['UnexpectedModelBehavior'],'failure_phase':'json_or_schema_validation','failure_validation_errors':[],'failure_validation_subtype':'other_contract_invariant','failure_schema_sha256':'a'*64,'failure_route':'semantic_verifier'}
+    ledger=RunLedger('run');ledger.append('model/request',turn_id='run',call_id='model:1',data={'provider':'inception','model':'mercury-2.5','route':'semantic_verifier','prompt_hash':'a'*64,'context_hash':'b'*64,'tool_schema_hash':'c'*64,'planner_version':'v2','budgets':{},'skill_hashes':{}})
+    ledger.append('assistant/attempt',turn_id='run',call_id='model:1',data={'status':'failed','error':'bounded','provider_attempts':[attempt]})

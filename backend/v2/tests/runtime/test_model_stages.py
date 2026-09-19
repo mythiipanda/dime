@@ -2558,7 +2558,7 @@ async def test_safe_failure_taxonomy_exact_native_openai_path(kind,phase):
     assert safe['failure_route']=='semantic_verifier'
     assert len(safe['failure_schema_sha256'])==64
     assert sentinel not in json.dumps(safe)
-    assert set(safe)=={'failure_top_class','failure_class_chain','failure_phase','failure_validation_errors','failure_schema_sha256','failure_route'}
+    assert set(safe)=={'failure_top_class','failure_class_chain','failure_phase','failure_validation_errors','failure_validation_subtype','failure_schema_sha256','failure_route'}
 
 
 def test_safe_failure_taxonomy_nested_exception_group_redacts_messages():
@@ -2655,3 +2655,113 @@ async def test_actual_attempt_redacts_dynamic_exception_type_and_ledger_serializ
     assert sentinel not in encoded
     attempt=ledger.entries[-1].data['provider_attempts'][0]
     assert attempt['exception_type']=='<unknown-exception>' and attempt['failure_top_class']=='<unknown-exception>'
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(('content','subtype'),[
+    ({'status':'repair','claim_results':[{'claim_index':0,'supported':False}]},'unsupported_claim_missing_reason'),
+    ({'status':'pass','claim_results':[{'claim_index':0,'supported':True,'reasons':['bounded']}]},'supported_claim_has_reasons'),
+    ({'status':'pass','repair_instructions':['bounded']},'pass_with_findings'),
+    ({'status':'repair','claim_results':[{'claim_index':0,'supported':True}]},'repair_without_findings'),
+    ({'status':'partial','claim_results':[{'claim_index':0,'supported':True},{'claim_index':0,'supported':True}]},'duplicate_claim_index'),
+    ({'status':'partial','missing_branches':['bounded','bounded']},'duplicate_or_empty_finding'),
+])
+async def test_safe_failure_validation_subtype_exact_native_openai_path(content,subtype):
+    import httpx,json
+    from openai import AsyncOpenAI
+    from pydantic_ai import Agent,NativeOutput
+    from pydantic_ai.models.openai import OpenAIChatModel
+    from pydantic_ai.providers.openai import OpenAIProvider
+    from v2.adapters.models import ProviderStructuredModel
+    from v2.contracts import VerificationReport
+    sentinel='SECRET_SENTINEL_MUST_NOT_LEAK'
+    def handler(request):
+        body=json.dumps(content).replace('bounded',sentinel)
+        return httpx.Response(200,json={'id':'x','object':'chat.completion','created':0,'model':'fake','choices':[{'index':0,'message':{'role':'assistant','content':body},'finish_reason':'stop'}]})
+    client=AsyncOpenAI(api_key='fake',base_url='https://fake.invalid/v1',http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),max_retries=0)
+    model=OpenAIChatModel('fake',provider=OpenAIProvider(openai_client=client))
+    try:
+        with pytest.raises(Exception) as caught:
+            await Agent(model,output_type=NativeOutput(VerificationReport,strict=True),retries=0).run('bounded')
+        safe=ProviderStructuredModel._safe_failure_taxonomy(caught.value,schema=VerificationReport,route='semantic_verifier')
+    finally: await client.close()
+    assert safe['failure_validation_subtype']==subtype
+    assert sentinel not in json.dumps(safe)
+
+
+def test_safe_failure_validation_subtype_nested_and_dynamic_fallback():
+    import json
+    from pydantic import ValidationError
+    from pydantic_core import PydanticCustomError
+    from v2.adapters.models import ProviderStructuredModel
+    from v2.contracts import VerificationReport
+    sentinel='SECRET_SENTINEL_MUST_NOT_LEAK'
+    try: VerificationReport.model_validate({'status':'repair','claim_results':[{'claim_index':0,'supported':False}]})
+    except ValidationError as exc: known=exc
+    dynamic=ValidationError.from_exception_data('x',[{'type':PydanticCustomError(sentinel,sentinel),'loc':('claim_results',0),'input':sentinel}])
+    safe=ProviderStructuredModel._safe_failure_taxonomy(ExceptionGroup(sentinel,[RuntimeError(sentinel),known]),schema=VerificationReport,route='semantic_verifier')
+    assert safe['failure_validation_subtype']=='unsupported_claim_missing_reason'
+    assert sentinel not in json.dumps(safe)
+    fallback=ProviderStructuredModel._safe_failure_taxonomy(ExceptionGroup('bounded',[dynamic]),schema=VerificationReport,route='semantic_verifier')
+    assert fallback['failure_validation_subtype']=='other_contract_invariant'
+    assert sentinel not in json.dumps(fallback)
+
+
+@pytest.mark.parametrize(('errors','expected'),[
+    (['known','dynamic'],'other_contract_invariant'),
+    (['known','generic'],'other_contract_invariant'),
+    (['known','different_known'],'other_contract_invariant'),
+    (['known','known'],'unsupported_claim_missing_reason'),
+])
+def test_safe_failure_validation_subtype_conservative_mixed_groups(errors,expected):
+    import json
+    from pydantic import ValidationError
+    from pydantic_core import PydanticCustomError
+    from v2.adapters.models import ProviderStructuredModel
+    from v2.contracts import VerificationReport
+    sentinel='SECRET_SENTINEL_MUST_NOT_LEAK'
+    def make(kind):
+        if kind=='known':
+            try: VerificationReport.model_validate({'status':'repair','claim_results':[{'claim_index':0,'supported':False}]})
+            except ValidationError as exc: return exc
+        if kind=='different_known':
+            try: VerificationReport.model_validate({'status':'pass','claim_results':[{'claim_index':0,'supported':True,'reasons':['bounded']}]})
+            except ValidationError as exc: return exc
+        if kind=='generic':
+            return ValidationError.from_exception_data('x',[{'type':'value_error','loc':('claim_results',0),'input':'bounded','ctx':{'error':ValueError('bounded')}}])
+        return ValidationError.from_exception_data('x',[{'type':PydanticCustomError(sentinel,sentinel),'loc':('claim_results',0),'input':sentinel}])
+    grouped=ExceptionGroup('bounded',[make(kind) for kind in errors])
+    safe=ProviderStructuredModel._safe_failure_taxonomy(grouped,schema=VerificationReport,route='semantic_verifier')
+    assert safe['failure_validation_subtype']==expected
+    assert sentinel not in json.dumps(safe)
+
+
+@pytest.mark.parametrize(('exc','phase'),[
+    (__import__('openai').APITimeoutError(__import__('httpx').Request('GET','https://test.invalid')),'timeout'),
+    (__import__('openai').APIConnectionError(request=__import__('httpx').Request('GET','https://test.invalid')),'transport'),
+    (__import__('pydantic_ai.exceptions',fromlist=['ModelHTTPError']).ModelHTTPError(503,'bounded'),'http'),
+    (__import__('pydantic_ai.exceptions',fromlist=['ContentFilterError']).ContentFilterError('bounded'),'content_filter'),
+    (__import__('pydantic_ai.exceptions',fromlist=['UnexpectedModelBehavior']).UnexpectedModelBehavior('bounded'),'no_tool_or_empty'),
+])
+def test_safe_failure_validation_subtype_not_applicable_outside_validation(exc,phase):
+    from v2.adapters.models import ProviderStructuredModel
+    from v2.contracts import VerificationReport
+    safe=ProviderStructuredModel._safe_failure_taxonomy(exc,schema=VerificationReport,route='semantic_verifier')
+    assert safe['failure_phase']==phase
+    assert safe['failure_validation_errors']==[]
+    assert safe['failure_validation_subtype']=='not_applicable'
+
+
+def test_safe_failure_validation_subtype_validation_phase_without_recoverable_error_is_other():
+    from pydantic_ai.exceptions import UnexpectedModelBehavior
+    from v2.adapters.models import ProviderStructuredModel
+    from v2.contracts import VerificationReport
+    validation_marker=type('ValidationError',(RuntimeError,),{})('bounded')
+    try: raise validation_marker
+    except Exception as cause:
+        try: raise UnexpectedModelBehavior('bounded') from cause
+        except UnexpectedModelBehavior as exc: wrapped=exc
+    safe=ProviderStructuredModel._safe_failure_taxonomy(wrapped,schema=VerificationReport,route='semantic_verifier')
+    assert safe['failure_phase']=='json_or_schema_validation'
+    assert safe['failure_validation_errors']==[]
+    assert safe['failure_validation_subtype']=='other_contract_invariant'

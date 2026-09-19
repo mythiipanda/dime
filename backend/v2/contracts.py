@@ -7,6 +7,7 @@ import math
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, model_validator
+from pydantic_core import PydanticCustomError
 from typing import Annotated
 
 
@@ -536,9 +537,9 @@ class ClaimResult(BaseModel):
     @model_validator(mode="after")
     def validate_reason(self) -> "ClaimResult":
         if not self.supported and not self.reasons:
-            raise ValueError("unsupported claim result requires a reason")
+            raise PydanticCustomError("claim_unsupported_missing_reason", "unsupported claim result requires a reason")
         if self.supported and self.reasons:
-            raise ValueError("supported claim result cannot carry rejection reasons")
+            raise PydanticCustomError("claim_supported_has_reasons", "supported claim result cannot carry rejection reasons")
         if any(not reason.strip() for reason in self.reasons):
             raise ValueError("claim result reasons must not contain empty values")
         if len(self.reasons) != len(set(self.reasons)):
@@ -559,14 +560,18 @@ class VerificationReport(BaseModel):
     def validate_status(self) -> "VerificationReport":
         indices = [item.claim_index for item in self.claim_results]
         if len(indices) != len(set(indices)):
-            raise ValueError("verification claim indices must be unique")
+            raise PydanticCustomError("verification_duplicate_claim_index", "verification claim indices must be unique")
         for field_name in ("missing_branches", "contradictions",
                            "repair_instructions"):
             values = getattr(self, field_name)
             if any(not value.strip() for value in values):
-                raise ValueError(f"{field_name} must not contain empty values")
+                raise PydanticCustomError(
+                    "verification_finding_empty",
+                    f"{field_name} must not contain empty values")
             if len(values) != len(set(values)):
-                raise ValueError(f"{field_name} must not contain duplicates")
+                raise PydanticCustomError(
+                    "verification_finding_duplicate",
+                    f"{field_name} must not contain duplicates")
         findings = (
             any(not item.supported for item in self.claim_results)
             or bool(self.missing_branches)
@@ -574,7 +579,7 @@ class VerificationReport(BaseModel):
             or bool(self.repair_instructions)
         )
         if self.status == VerificationStatus.PASS and findings:
-            raise ValueError("pass status contradicts verification findings")
+            raise PydanticCustomError("verification_pass_with_findings", "pass status contradicts verification findings")
         if self.status == VerificationStatus.REPAIR and not findings:
-            raise ValueError("repair status requires an actionable finding")
+            raise PydanticCustomError("verification_repair_without_findings", "repair status requires an actionable finding")
         return self

@@ -175,10 +175,11 @@ def _validate_assistant_attempt(data: dict[str, Any]) -> None:
                          "exception_type", "message_class", "latency_ms",
                          "failure_top_class", "failure_class_chain",
                          "failure_phase", "failure_validation_errors",
-                         "failure_schema_sha256", "failure_route"}
+                         "failure_validation_subtype", "failure_schema_sha256",
+                         "failure_route"}
     from v2.adapters.models import (
         MODEL_ROUTES, SAFE_FAILURE_EXCEPTION_CLASSES, SAFE_FAILURE_PHASES,
-        SAFE_PYDANTIC_ERROR_TYPES,
+        SAFE_PYDANTIC_ERROR_TYPES, SAFE_FAILURE_VALIDATION_SUBTYPES,
     )
     safe_exception_names = {*SAFE_FAILURE_EXCEPTION_CLASSES, "<unknown-exception>"}
     safe_error_types = {*SAFE_PYDANTIC_ERROR_TYPES, "<unknown-error-type>"}
@@ -186,8 +187,8 @@ def _validate_assistant_attempt(data: dict[str, Any]) -> None:
         return isinstance(value, str) and bool(value.strip()) and len(value) <= limit
     def safe_taxonomy(item: dict[str, Any]) -> bool:
         subtype = {"failure_top_class", "failure_class_chain", "failure_phase",
-                   "failure_validation_errors", "failure_schema_sha256",
-                   "failure_route"}
+                   "failure_validation_errors", "failure_validation_subtype",
+                   "failure_schema_sha256", "failure_route"}
         present = subtype & set(item)
         if not present:
             return True
@@ -209,6 +210,12 @@ def _validate_assistant_attempt(data: dict[str, Any]) -> None:
                     and all((isinstance(part, int) and not isinstance(part, bool))
                             or safe_string(part) for part in error["loc"])
                     for error in errors)
+            and item["failure_validation_subtype"] in SAFE_FAILURE_VALIDATION_SUBTYPES
+            and (
+                item["failure_validation_subtype"] != "not_applicable"
+                if item["failure_phase"] == "json_or_schema_validation"
+                else item["failure_validation_subtype"] == "not_applicable"
+            )
             and isinstance(item["failure_schema_sha256"], str)
             and re.fullmatch(r"[0-9a-f]{64}", item["failure_schema_sha256"])
             is not None
