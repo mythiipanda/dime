@@ -2019,3 +2019,110 @@ def test_full_http_sse_and_activity_omit_private_failure_taxonomy(monkeypatch,tm
     for key in ('failure_top_class','failure_class_chain','failure_phase','failure_validation_errors','failure_validation_subtype','failure_schema_sha256','provider_attempts','exception_type'):
         assert key not in combined
     assert sentinel not in combined
+
+
+
+
+
+
+
+def _write_expected_manifest(path, manifest):
+    import json
+    path.write_text(json.dumps(manifest.as_dict()))
+    return path
+
+
+def test_runtime_asset_manifest_is_deeply_immutable(monkeypatch):
+    from v2.api import routes
+    manifest=routes.runtime_asset_manifest()
+    with pytest.raises((TypeError,AttributeError)):manifest.revision='x'
+    with pytest.raises(TypeError):manifest.prompt_sha256['semantic_verifier']='x'
+    with pytest.raises(TypeError):manifest.warehouse['sha256']='x'
+    with pytest.raises(TypeError):manifest.module_sha256['routes']='x'
+    copied=manifest.as_dict();copied['prompt_sha256']['semantic_verifier']='x'
+    assert manifest.prompt_sha256['semantic_verifier']!='x'
+
+
+def test_preflight_exact_match_and_each_mismatch(monkeypatch,tmp_path):
+    import json
+    from v2.api import routes
+    observed=routes.runtime_asset_manifest();exact=_write_expected_manifest(tmp_path/'exact.json',observed)
+    assert routes.preflight_runtime_assets(exact) is observed
+    for field in ('revision','executable_sha256','module_sha256','warehouse','prompt_sha256'):
+        candidate=observed.as_dict()
+        if isinstance(candidate[field],dict):candidate[field][next(iter(candidate[field]))]='wrong'
+        else:candidate[field]='wrong'
+        path=tmp_path/f'{field}.json';path.write_text(json.dumps(candidate))
+        with pytest.raises(RuntimeError,match='does not match'):routes.preflight_runtime_assets(path)
+
+
+def test_registry_completeness_rejects_missing_and_extra(monkeypatch):
+    from v2.api import routes
+    from v2.adapters import models
+    original=dict(models._PROVIDER_ROUTE_PROMPT_NAMES)
+    for changed in ({k:v for k,v in original.items() if k!='planner'}, {**original,'extra':'intake'}):
+        monkeypatch.setattr(models,'_PROVIDER_ROUTE_PROMPT_NAMES',changed)
+        monkeypatch.setattr(models,'_PROVIDER_ROUTE_PROMPTS',None)
+        routes.runtime_asset_manifest.cache_clear()
+        with pytest.raises(RuntimeError,match='incomplete or has extra'):routes.runtime_asset_manifest()
+    monkeypatch.setattr(models,'_PROVIDER_ROUTE_PROMPT_NAMES',original);monkeypatch.setattr(models,'_PROVIDER_ROUTE_PROMPTS',None);routes.runtime_asset_manifest.cache_clear()
+
+
+def test_loaded_module_hash_detects_old_import_against_new_expected(monkeypatch,tmp_path):
+    import json
+    from v2.api import routes
+    old=routes.runtime_asset_manifest();expected=old.as_dict();expected['module_sha256']['routes']='new-loaded-code-hash'
+    path=tmp_path/'new.json';path.write_text(json.dumps(expected))
+    with pytest.raises(RuntimeError,match='does not match'):routes.preflight_runtime_assets(path)
+
+
+def test_real_lifespan_freezes_manifest_and_runtime_prompts(monkeypatch,tmp_path):
+    from app import main
+    from v2.api import routes
+    from v2.adapters import models
+    routes.runtime_asset_manifest.cache_clear();models._PROVIDER_ROUTE_PROMPTS=None
+    observed=routes.runtime_asset_manifest();path=_write_expected_manifest(tmp_path/'expected.json',observed)
+    monkeypatch.setenv('DIME_EXPECTED_ASSET_MANIFEST',str(path))
+    with TestClient(main.app) as client:
+        first=client.get('/api/revision').json();assert first==observed.as_dict()
+        assert first['prompt_sha256']['semantic_verifier']==hashlib.sha256(models.provider_route_prompt('semantic_verifier','verifier').encode()).hexdigest()
+        verifier_path=routes._BACKEND/'v2/prompts/verifier.md';original=verifier_path.read_bytes()
+        try:
+            verifier_path.write_bytes(b'later verifier')
+            assert client.get('/api/revision').json()==first
+            assert hashlib.sha256(models.provider_route_prompt('semantic_verifier','verifier').encode()).hexdigest()==first['prompt_sha256']['semantic_verifier']
+        finally:verifier_path.write_bytes(original)
+
+
+def test_lifespan_fails_before_serving_on_expected_mismatch(monkeypatch,tmp_path):
+    import json
+    from app import main
+    from v2.api import routes
+    expected=routes.runtime_asset_manifest().as_dict();expected['revision']='wrong'
+    path=tmp_path/'wrong.json';path.write_text(json.dumps(expected));monkeypatch.setenv('DIME_EXPECTED_ASSET_MANIFEST',str(path))
+    with pytest.raises(RuntimeError,match='does not match'):
+        with TestClient(main.app):pass
+
+
+def test_loaded_behavior_fingerprint_changes_on_import_time_registry_binding(monkeypatch):
+    from v2.api import routes
+    from v2.adapters import models
+    original=routes._loaded_behavior_sha256(models,{"provider_route_prompt_names":models._PROVIDER_ROUTE_PROMPT_NAMES})
+    changed=dict(models._PROVIDER_ROUTE_PROMPT_NAMES);changed['semantic_verifier']='different_import_time_binding'
+    changed_hash=routes._loaded_behavior_sha256(models,{"provider_route_prompt_names":changed})
+    assert changed_hash!=original
+    observed=routes.runtime_asset_manifest().as_dict();expected={**observed,"module_sha256":{**observed['module_sha256'],"models":changed_hash}}
+    assert expected['executable_sha256']==observed['executable_sha256']
+    assert expected['module_sha256']['models']!=observed['module_sha256']['models']
+
+
+def test_preflight_rejects_expected_manifest_inside_executable_roots(tmp_path):
+    import json
+    from v2.api import routes
+    inside=routes._BACKEND/'v2'/'expected-assets-test.json'
+    try:
+        inside.write_text(json.dumps(routes.runtime_asset_manifest().as_dict()))
+        with pytest.raises(RuntimeError,match='external to executable roots'):
+            routes.preflight_runtime_assets(inside)
+    finally:
+        inside.unlink(missing_ok=True)

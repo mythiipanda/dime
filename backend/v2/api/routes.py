@@ -4,8 +4,13 @@ import hashlib
 import json
 import os
 import subprocess
+import inspect
+import marshal
 from pathlib import Path
 from functools import lru_cache
+from dataclasses import dataclass
+from types import MappingProxyType, ModuleType
+from typing import Mapping
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -20,6 +25,16 @@ _PROJECTS = ProjectStore(
 )
 _CONVERSATIONS = ConversationStore(os.environ.get(
     "DIME_CONVERSATION_STORE", str(_BACKEND / "data" / "v2-conversations.sqlite3")))
+
+
+def _imported_module_code_sha256() -> str:
+    code = __loader__.get_code(__name__) if __loader__ is not None else None
+    if code is None:
+        raise RuntimeError("routes module has no loader code identity")
+    return hashlib.sha256(marshal.dumps(code)).hexdigest()
+
+
+_LOADED_MODULE_CODE_SHA256 = _imported_module_code_sha256()
 
 
 def _projects_enabled() -> bool:
@@ -71,10 +86,89 @@ def runtime_warehouse_identity() -> dict[str, str]:
             "sha256": identity["warehouse_sha256"]}
 
 
+@dataclass(frozen=True)
+class RuntimeAssetManifest:
+    revision: str
+    executable_sha256: str
+    module_sha256: Mapping[str, str]
+    warehouse: Mapping[str, str]
+    prompt_sha256: Mapping[str, str]
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "revision": self.revision,
+            "executable_sha256": self.executable_sha256,
+            "module_sha256": dict(self.module_sha256),
+            "warehouse": dict(self.warehouse),
+            "prompt_sha256": dict(self.prompt_sha256),
+        }
+
+
+def _loaded_behavior_sha256(module: ModuleType, config: Mapping[str, object]) -> str:
+    """Bind import-time module code plus canonical runtime configuration."""
+    code_hash = getattr(module, "_LOADED_MODULE_CODE_SHA256", None)
+    if not isinstance(code_hash, str) or len(code_hash) != 64:
+        raise RuntimeError("module lacks import-time code identity")
+    encoded = json.dumps(config, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(code_hash.encode() + b"\0" + encoded).hexdigest()
+
+
+@lru_cache(maxsize=1)
+def runtime_asset_manifest() -> RuntimeAssetManifest:
+    """Deeply immutable identity of code, data, and prompts bound at startup."""
+    from v2.adapters import models
+    prompts = models.bind_provider_route_prompts()
+    expected_routes = set(models._PROVIDER_ROUTE_PROMPT_NAMES)
+    if set(prompts) != expected_routes or expected_routes != {
+            "intake", "requirement_review", "planner", "synthesizer",
+            "repair", "semantic_verifier"}:
+        raise RuntimeError("provider prompt registry is incomplete or has extra routes")
+    for module in (__import__(__name__, fromlist=["x"]), models):
+        path = Path(module.__file__).resolve()
+        if not path.is_relative_to(_BACKEND):
+            raise RuntimeError("runtime module resolved outside the backend root")
+    return RuntimeAssetManifest(
+        revision=_revision(), executable_sha256=_executable_sha256(),
+        module_sha256=MappingProxyType({
+            "routes": _loaded_behavior_sha256(
+                __import__(__name__, fromlist=["x"]),
+                {"provider_routes": sorted(models._PROVIDER_ROUTE_PROMPT_NAMES)}),
+            "models": _loaded_behavior_sha256(
+                models, {"provider_route_prompt_names":
+                         models._PROVIDER_ROUTE_PROMPT_NAMES}),
+        }),
+        warehouse=MappingProxyType(dict(runtime_warehouse_identity())),
+        prompt_sha256=MappingProxyType({
+            route: hashlib.sha256(prompt.encode()).hexdigest()
+            for route, prompt in prompts.items()
+        }),
+    )
+
+
+def preflight_runtime_assets(expected_path: str | Path | None = None) -> RuntimeAssetManifest:
+    """Fail startup unless one promotion-generated expected manifest matches."""
+    configured = expected_path or os.environ.get("DIME_EXPECTED_ASSET_MANIFEST")
+    if not configured:
+        raise RuntimeError("DIME_EXPECTED_ASSET_MANIFEST is required")
+    manifest_path = Path(configured).resolve()
+    executable_roots = ((_BACKEND / "app").resolve(), (_BACKEND / "v2").resolve())
+    if any(manifest_path.is_relative_to(root) for root in executable_roots):
+        raise RuntimeError("expected asset manifest must be external to executable roots")
+    expected = json.loads(manifest_path.read_text())
+    required = {"revision", "executable_sha256", "module_sha256",
+                "warehouse", "prompt_sha256"}
+    if set(expected) != required:
+        raise RuntimeError("expected asset manifest has wrong fields")
+    observed = runtime_asset_manifest()
+    if expected != observed.as_dict():
+        raise RuntimeError("startup asset manifest does not match expected pins")
+    return observed
+
+
 @router.get("/revision")
 def revision() -> dict:
-    return {"revision": _revision(), "executable_sha256": _executable_sha256(),
-            "warehouse": dict(runtime_warehouse_identity())}
+    # Round-trip gives callers a copy while preserving startup-bound identity.
+    return runtime_asset_manifest().as_dict()
 
 
 def public_evidence_table(item):

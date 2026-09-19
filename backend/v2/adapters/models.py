@@ -6,6 +6,7 @@ import hashlib
 import random
 import re
 import time
+import marshal
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -49,6 +50,16 @@ from v2.runtime.budget import RUN_MODEL_DEADLINE
 from v2.skills import SkillLibrary, skill_hashes
 
 T = TypeVar("T", bound=BaseModel)
+
+
+def _imported_module_code_sha256() -> str:
+    code = __loader__.get_code(__name__) if __loader__ is not None else None
+    if code is None:
+        raise RuntimeError("provider models module has no loader code identity")
+    return hashlib.sha256(marshal.dumps(code)).hexdigest()
+
+
+_LOADED_MODULE_CODE_SHA256 = _imported_module_code_sha256()
 
 
 class StructuredModel(Protocol):
@@ -392,6 +403,35 @@ class ProviderStructuredModel:
             + (f" [{summary}]" if summary else ""))
 
 
+_PROVIDER_ROUTE_PROMPT_NAMES = {
+    "intake": "intake",
+    "requirement_review": "requirement_review",
+    "planner": "planner",
+    "synthesizer": "synthesizer",
+    "repair": "repair_answer",
+    "semantic_verifier": "verifier",
+}
+_PROVIDER_ROUTE_PROMPTS: dict[str, str] | None = None
+
+
+def bind_provider_route_prompts() -> dict[str, str]:
+    """Freeze the exact prompt text used by every provider route."""
+    global _PROVIDER_ROUTE_PROMPTS
+    if _PROVIDER_ROUTE_PROMPTS is None:
+        _PROVIDER_ROUTE_PROMPTS = {
+            route: load_prompt(name)
+            for route, name in _PROVIDER_ROUTE_PROMPT_NAMES.items()
+        }
+    return dict(_PROVIDER_ROUTE_PROMPTS)
+
+
+def provider_route_prompt(route: str, prompt_name: str) -> str:
+    expected = _PROVIDER_ROUTE_PROMPT_NAMES.get(route)
+    if expected != prompt_name:
+        raise ValueError("provider route and prompt name are not registered")
+    return bind_provider_route_prompts()[route]
+
+
 class ModelStage:
     prompt_name: str
     route: str
@@ -434,7 +474,7 @@ class ModelStage:
         self, *, prompt_name: str, route: str, schema: type[BaseModel],
         payload: Mapping[str, Any],
     ) -> Any:
-        prompt = load_prompt(prompt_name)
+        prompt = provider_route_prompt(route, prompt_name)
         envelope = RequestEnvelope.freeze(
             provider=self._provider, model=self._model_name, route=route,
             prompt=prompt, context=payload,
