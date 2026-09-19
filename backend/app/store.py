@@ -11,6 +11,7 @@ import fcntl
 import os
 import polars as pl
 import time
+import hashlib
 
 from .sources.base import FetchResult
 
@@ -19,6 +20,14 @@ DB_PATH = Path(os.environ.get("DIME_WAREHOUSE") or
 LOCK_PATH = DB_PATH.parent / ".write.lock"
 
 PROVENANCE_COLS = ["_source", "_season", "_fetched_at"]
+
+
+def warehouse_identity() -> dict[str, str]:
+    path = DB_PATH.resolve()
+    expected = (Path(__file__).resolve().parent.parent / "data" / "warehouse.duckdb").resolve()
+    return {"warehouse_id": "frozen-eval" if path == expected else "configured-runtime",
+            "warehouse_sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+
 
 
 @contextmanager

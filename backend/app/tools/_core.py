@@ -473,68 +473,48 @@ def _re_match(pattern: str, text: str):
     return _re.match(pattern, text)
 
 
-def _warehouse_or_live(
-    table: str,
-    where: str,
-    params: list[object],
-    fetch: Any,
-    season: str,
-    entity: str = "",
-    limit: int = MAX_ROWS,
-    live_first: bool = False,
-    ttl_s: float | None = None,
-) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    frame = None
-    if not live_first:
+def _bound_warehouse_read(table, where, params):
+    # Join the same interprocess lock as writers so an ordinary save cannot
+    # race either hash or the query. External mutation that ignores the lock
+    # remains detectable by the post-read identity check.
+    with store.write_guard():
+        before = store.warehouse_identity()
         frame = store.read_frame(table, where, params)
+        if store.warehouse_identity() != before:
+            raise RuntimeError("warehouse identity changed during query")
+        return frame, before
+
+
+def _warehouse_or_live(table: str, where: str, params: list[object], fetch: Any, season: str,
+    entity: str = "", limit: int = MAX_ROWS, live_first: bool = False, ttl_s: float | None = None):
+    frame = None; identity = None
+    if not live_first:
+        frame, identity = _bound_warehouse_read(table, where, params)
         if frame is not None and frame.height > 0 and ttl_s is not None:
             age = _cache_age_s(frame)
-            if age is not None and age > ttl_s:
-                frame = None
+            if age is not None and age > ttl_s: frame = None
     if frame is None or frame.height == 0:
         if season_static(season):
-            # Static season: never burn ~24s on a blocked live refetch.
-            frame = store.read_frame(table, where, params)
+            frame, identity = _bound_warehouse_read(table, where, params)
             if frame is not None and frame.height > 0:
-                meta: dict[str, Any] = {"rows": frame.height, "cached": True,
-                                        "static_season": True}
-                if "_source" in frame.columns:
-                    meta["source"] = frame["_source"][0]
-                    meta["fetched_at"] = frame["_fetched_at"][0]
+                meta = {"rows": frame.height, "cached": True, "static_season": True, **identity}
+                if "_source" in frame.columns: meta.update(source=frame["_source"][0], fetched_at=frame["_fetched_at"][0])
                 return frame.head(limit).to_dicts(), meta
-            return [], {"source": "warehouse", "static_season": True,
-                        "error": f"no seeded rows for {table} ({season}); "
-                                 "season complete, live refetch disabled"}
+            return [], {"source":"warehouse","static_season":True,"error":f"no seeded rows for {table} ({season}); season complete, live refetch disabled", **(identity or {})}
         live: FetchResult = fetch()
         if not live.ok or live.frame.height == 0:
-            frame = store.read_frame(table, where, params)
+            frame, identity = _bound_warehouse_read(table, where, params)
             if frame is not None and frame.height > 0:
-                meta: dict[str, Any] = {
-                    "rows": frame.height, "cached": True, "stale": True,
-                    "live_error": live.error or "empty upstream response",
-                }
-                if "_source" in frame.columns:
-                    meta["source"] = frame["_source"][0]
-                    meta["fetched_at"] = frame["_fetched_at"][0]
-                return frame.head(limit).to_dicts(), meta
-            return [], {"source": live.meta.source,
-                        "error": live.error or "empty upstream response"}
+                meta={"rows":frame.height,"cached":True,"stale":True,"live_error":live.error or "empty upstream response",**identity}
+                if "_source" in frame.columns:meta.update(source=frame["_source"][0],fetched_at=frame["_fetched_at"][0])
+                return frame.head(limit).to_dicts(),meta
+            return [],{"source":live.meta.source,"error":live.error or "empty upstream response",**(identity or {})}
         store.save_frame(table, live, entity)
-        frame = store.read_frame(table, where, params)
+        frame, identity = _bound_warehouse_read(table, where, params)
         if frame.height == 0:
-            frame = live.frame.with_columns(
-                [
-                    pl.lit(live.meta.source).alias("_source"),
-                    pl.lit(live.meta.season).alias("_season"),
-                    pl.lit(live.meta.fetched_at).alias("_fetched_at"),
-                ]
-            )
-        return frame.head(limit).to_dicts(), {
-            "rows": frame.height, "cached": False,
-            "source": live.meta.source, "fetched_at": live.meta.fetched_at,
-        }
-    meta: dict[str, Any] = {"rows": frame.height, "cached": True}
-    if "_source" in frame.columns:
-        meta["source"] = frame["_source"][0]
-        meta["fetched_at"] = frame["_fetched_at"][0]
-    return frame.head(limit).to_dicts(), meta
+            frame=live.frame.with_columns([pl.lit(live.meta.source).alias("_source"),pl.lit(live.meta.season).alias("_season"),pl.lit(live.meta.fetched_at).alias("_fetched_at")])
+            return frame.head(limit).to_dicts(),{"rows":frame.height,"cached":False,"source":live.meta.source,"fetched_at":live.meta.fetched_at,"lineage_kind":"live"}
+        return frame.head(limit).to_dicts(),{"rows":frame.height,"cached":False,"source":live.meta.source,"fetched_at":live.meta.fetched_at,**identity}
+    meta={"rows":frame.height,"cached":True,**(identity or {})}
+    if "_source" in frame.columns:meta.update(source=frame["_source"][0],fetched_at=frame["_fetched_at"][0])
+    return frame.head(limit).to_dicts(),meta

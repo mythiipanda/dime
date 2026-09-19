@@ -217,6 +217,9 @@ def build_envelope(
         coverage=(meta.get("coverage") or meta.get("coverage_note")
                   or spec.coverage),
         warnings=warnings,
+        lineage=([f"warehouse:{meta['warehouse_id']}:{meta['warehouse_sha256']}"]
+                 if meta.get("warehouse_id") and meta.get("warehouse_sha256") else
+                 ["live-source"] if meta.get("lineage_kind") == "live" else []),
     )
 
 

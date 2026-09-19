@@ -157,3 +157,48 @@ def test_team_rating_tool_enum_and_planner_vocabulary_stay_aligned():
         assert canonical_team_rating_metric(metric) == metric
         for alias in aliases:
             assert canonical_team_rating_metric(alias) == metric
+
+def test_bound_warehouse_read_paths_and_lineage(monkeypatch,tmp_path):
+    import hashlib
+    from app import store
+    from app.tools import _core
+    from app.sources.base import FetchResult, FetchMeta
+    import polars as pl
+    db=tmp_path/'warehouse.duckdb';db.write_bytes(b'initial');monkeypatch.setattr(store,'DB_PATH',db)
+    class F:
+        height=1;columns=[]
+        def head(self,n):return self
+        def to_dicts(self):return [{'x':1}]
+    monkeypatch.setattr(store,'read_frame',lambda *a,**k:F())
+    rows,meta=_core._warehouse_or_live('t','x=?',[1],lambda:None,'2025-26')
+    assert meta['warehouse_sha256']==hashlib.sha256(b'initial').hexdigest()
+    # Intentional save completes before post-save read identity is captured.
+    monkeypatch.setattr(store,'read_frame',lambda *a,**k:None if db.read_bytes()==b'initial' else F())
+    live=FetchResult(frame=pl.DataFrame({'x':[1]}),meta=FetchMeta(source='live',season='2025-26',fetched_at='2026-09-19'),ok=True)
+    monkeypatch.setattr(store,'save_frame',lambda *a,**k:db.write_bytes(b'post-save'))
+    rows,meta=_core._warehouse_or_live('t','x=?',[1],lambda:live,'2026-27',live_first=True)
+    assert meta['warehouse_sha256']==hashlib.sha256(b'post-save').hexdigest()
+    # Mid-read external mutation fails.
+    def mutate(*a,**k):db.write_bytes(b'external');return F()
+    monkeypatch.setattr(store,'read_frame',mutate)
+    with pytest.raises(RuntimeError,match='identity changed'):_core._bound_warehouse_read('t','x=?',[1])
+
+
+def test_stale_fallback_binds_fallback_read_and_legitimate_writer_is_serialized(monkeypatch,tmp_path):
+    from contextlib import contextmanager
+    from app import store
+    from app.tools import _core
+    from app.sources.base import empty
+    db=tmp_path/'warehouse.duckdb';db.write_bytes(b'stable');monkeypatch.setattr(store,'DB_PATH',db)
+    class F:
+        height=1;columns=[]
+        def head(self,n):return self
+        def to_dicts(self):return [{'x':1}]
+    calls=[]
+    @contextmanager
+    def guard():calls.append('lock');yield
+    monkeypatch.setattr(store,'write_guard',guard)
+    monkeypatch.setattr(store,'read_frame',lambda *a,**k:(calls.append('read') or F()))
+    rows,meta=_core._warehouse_or_live('t','x=?',[1],lambda:empty('live','2026-27','down'),'2026-27',live_first=True)
+    assert meta['stale'] is True and meta['warehouse_sha256']==store.warehouse_identity()['warehouse_sha256']
+    assert calls[:2]==['lock','read']
