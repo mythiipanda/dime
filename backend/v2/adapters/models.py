@@ -81,7 +81,7 @@ ROUTE_POLICIES: dict[str, dict[str, Any]] = {
                "total_budget_s": 18.0, "secondary_limit": 1,
                "transient_classes": frozenset({"timeout", "rate_limit", "network", "server_error", "provider_error"}),
                "deterministic_fallback": False},
-    "requirement_review": {"primary_attempts": 2, "attempt_timeout_s": 4.0,
+    "requirement_review": {"primary_attempts": 2, "attempt_timeout_s": 8.0,
                "total_budget_s": 12.0, "secondary_limit": 1,
                "transient_classes": frozenset({"timeout", "rate_limit", "network", "server_error", "provider_error"}),
                "deterministic_fallback": True},
