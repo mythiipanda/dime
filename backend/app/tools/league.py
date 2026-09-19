@@ -9,6 +9,7 @@ from langchain_core.tools import tool
 from .. import store
 from ..sources import nba_stats
 from ._core import SEASON, TTL_LEADERS, TTL_SCOREBOARD_PAST, clamp_stat, _warehouse_or_live, is_past_game_date
+from .rating_metrics import TEAM_RATING_METRICS
 
 
 @tool
@@ -379,14 +380,7 @@ def get_ratings(
         slim.append(d)
     metric = str(requested_metric or "").strip().upper()
     direction = str(ranking_direction or "").strip().lower()
-    allowed_metrics = {
-        "OFF_RATING": "offensive rating",
-        "DEF_RATING": "defensive rating",
-        "NET_RATING": "net rating",
-        "PACE": "pace",
-        "TS_PCT": "true shooting",
-        "TM_TOV_PCT": "turnover percentage",
-    }
+    allowed_metrics = TEAM_RATING_METRICS
     if metric:
         if metric not in allowed_metrics:
             return {"tool": "get_ratings", "ok": False,
