@@ -436,3 +436,62 @@ def test_evidence_optional_metadata_text_has_hard_limits() -> None:
         EvidenceEnvelope(evidence_id="ev", capability="test", source="fixture",
                          observed_at="2026-09-15T00:00:00Z", rows={},
                          coverage="x" * 4001)
+
+
+def test_source_identity_is_typed_frozen_and_does_not_change_evidence_id():
+    from datetime import UTC,datetime
+    from v2.contracts import EvidenceEnvelope
+    base=dict(evidence_id='stable',capability='x',source='fixture',observed_at=datetime.now(UTC),rows=[])
+    plain=EvidenceEnvelope(**base);bound=EvidenceEnvelope(**base,source_identity={'kind':'warehouse','warehouse_id':'frozen-eval','sha256':'a'*64})
+    assert plain.evidence_id==bound.evidence_id=='stable' and bound.lineage==[]
+    for bad in [
+      {'kind':'warehouse','warehouse_id':'frozen-eval','sha256':'BAD'},
+      {'kind':'unknown'},
+      {'kind':'live','source':'https://private','extra':'x'}]:
+        with pytest.raises(Exception):EvidenceEnvelope(**base,source_identity=bad)
+
+
+def test_generated_evidence_id_unchanged_by_source_identity():
+    from datetime import UTC,datetime
+    from v2.adapters.capabilities import CAPABILITIES
+    from v2.adapters.core import build_envelope
+    result={'ok':True,'rows':[{'TEAM_NAME':'A'}],'meta':{'source':'nba_api','season':'2025-26'}}
+    plain=build_envelope(CAPABILITIES['team_ratings'],{'season':'2025-26'},result,observed_at=datetime.now(UTC))
+    bound=build_envelope(CAPABILITIES['team_ratings'],{'season':'2025-26'},{'ok':True,'rows':[{'TEAM_NAME':'A'}],'meta':{'source':'nba_api','season':'2025-26','warehouse_id':'frozen-eval','warehouse_sha256':'a'*64}},observed_at=plain.observed_at)
+    assert plain.evidence_id==bound.evidence_id
+    assert bound.source_identity.model_dump()=={'kind':'warehouse','warehouse_id':'frozen-eval','sha256':'a'*64}
+
+@pytest.mark.parametrize('meta',[{'warehouse_id':'frozen-eval'},{'warehouse_sha256':'a'*64},{'warehouse_id':'frozen-eval','warehouse_sha256':'a'*64,'lineage_kind':'live','source':'nba_api'}])
+def test_build_envelope_rejects_partial_or_conflicting_source_markers(meta):
+    from v2.adapters.capabilities import CAPABILITIES
+    from v2.adapters.core import build_envelope,AdapterError
+    with pytest.raises(AdapterError):build_envelope(CAPABILITIES['team_ratings'],{}, {'ok':True,'rows':[],'meta':meta})
+
+def test_build_envelope_maps_explicit_live_source_identity():
+    from v2.adapters.capabilities import CAPABILITIES
+    from v2.adapters.core import build_envelope
+    item=build_envelope(CAPABILITIES['team_ratings'],{}, {'ok':True,'rows':[],'meta':{'lineage_kind':'live','source':'nba_api'}})
+    assert item.source_identity.model_dump()=={'kind':'live','source':'nba_api'}
+
+@pytest.mark.parametrize('meta',[
+ {'warehouse_id':'','warehouse_sha256':''},
+ {'warehouse_id':'','warehouse_sha256':'a'*64},
+ {'warehouse_id':'frozen-eval','warehouse_sha256':''},
+ {'warehouse_id':'unknown','warehouse_sha256':'a'*64},
+ {'warehouse_id':'frozen-eval','warehouse_sha256':'BAD'},
+ {'warehouse_id':'frozen-eval','warehouse_sha256':'A'*64},
+ {'warehouse_id':''}, {'lineage_kind':'unknown'},
+ {'lineage_kind':'live','source':'nba_api','warehouse_id':'','warehouse_sha256':''},
+])
+def test_build_envelope_rejects_empty_or_unknown_provenance_markers(meta):
+    from v2.adapters.capabilities import CAPABILITIES
+    from v2.adapters.core import build_envelope,AdapterError
+    with pytest.raises(AdapterError,match='source identity|source identity kind'):
+        build_envelope(CAPABILITIES['team_ratings'],{}, {'ok':True,'rows':[],'meta':meta})
+
+
+def test_bare_display_source_is_not_inferred_as_live_provenance():
+    from v2.adapters.capabilities import CAPABILITIES
+    from v2.adapters.core import build_envelope
+    item=build_envelope(CAPABILITIES['team_ratings'],{}, {'ok':True,'rows':[],'meta':{'source':'nba_api'}})
+    assert item.source=='v1:get_ratings:nba_api' and item.source_identity is None

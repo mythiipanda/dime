@@ -66,6 +66,18 @@ def revision() -> dict[str, str]:
     return {"revision": _revision(), "executable_sha256": _executable_sha256()}
 
 
+def public_evidence_table(item):
+    """Bounded public projection; internal provenance never crosses SSE."""
+    return {"tool": item.capability, "rows": item.rows, "meta": {
+        "source": item.source,
+        "source_as_of": item.as_of.isoformat() if item.as_of else None,
+        "observed_at": item.observed_at.isoformat(), "season": item.season,
+        "as_of": item.as_of.isoformat() if item.as_of else None,
+        "qualification": item.qualification, "coverage": item.coverage,
+        "warnings": item.warnings,
+    }}
+
+
 class CreateProjectBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -368,24 +380,6 @@ async def quick_answer_stream(body: QuickAnswerBody):
             and isinstance(entry.data.get("duration_ms"), int)
         }
 
-    def evidence_table(item):
-        return {
-            "tool": item.capability,
-            "rows": item.rows,
-            "meta": {
-                "source": item.source,
-                # Keep source vintage and runtime observation time distinct.
-                # observed_at must never masquerade as source fetched_at.
-                "source_as_of": item.as_of.isoformat() if item.as_of else None,
-                "observed_at": item.observed_at.isoformat(),
-                "season": item.season,
-                "as_of": item.as_of.isoformat() if item.as_of else None,
-                "qualification": item.qualification,
-                "coverage": item.coverage,
-                "warnings": item.warnings,
-            },
-        }
-
     async def generate():
         task = asyncio.create_task(runtime.run(
             body.q, run_id=run_id, context=context))
@@ -449,7 +443,7 @@ async def quick_answer_stream(body: QuickAnswerBody):
                         continue
                 yield encode_event(CustomData(
                     node="analytics",
-                    tables=[evidence_table(item)
+                    tables=[public_evidence_table(item)
                             for item in result.execution.evidence]))
                 answer = _answer_text(result)
                 carry = {

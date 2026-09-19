@@ -2464,3 +2464,64 @@ async def test_team_rank_eligible_unsorted_draft_passes_mechanical_verifier():
     result=verify_mechanical(task,draft,[ev],calculations)
     assert result.status.value == "pass"
     assert result.claim_results[0].supported is True
+
+@pytest.mark.anyio
+async def test_review_outage_preserves_typed_team_rating_metric():
+    class M:
+        calls=0
+        async def generate(self,**call):
+            self.calls+=1
+            if self.calls==1:return TaskSpec(goal='lowest defense',mode='quick',deliverable='team/value',season={'value':'2025-26','source':'user','confidence':1},required_evidence=['team_ratings'])
+            raise RuntimeError('all structured-output providers failed [timeout]')
+    task=await ModelIntake(M(),provider='stub',model_name='stub',capability_catalog={'team_ratings':{}},requirement_review=True).understand('Which team has the lowest defensive rating in 2025-26? Give the value.')
+    assert task.requirements[0].capability_arguments=={'season':'2025-26','requested_metric':'DEF_RATING','ranking_direction':'asc'}
+
+@pytest.mark.parametrize(('question','metric','direction'),[
+ ('Which team has the highest defensive rating in 2025-26?','DEF_RATING','desc'),
+ ('Which team has the lowest pace in 2025-26?','PACE','asc'),
+])
+@pytest.mark.anyio
+async def test_review_outage_preserves_requested_extremum(question,metric,direction):
+    class M:
+        calls=0
+        async def generate(self,**call):
+            self.calls+=1
+            if self.calls==1:return TaskSpec(goal='rank',mode='quick',deliverable='team',season={'value':'2025-26','source':'user','confidence':1},required_evidence=['team_ratings'],skills=['league-ratings'])
+            raise RuntimeError('all structured-output providers failed [timeout]')
+    task=await ModelIntake(M(),provider='stub',model_name='stub',capability_catalog={'team_ratings':{}},requirement_review=True).understand(question)
+    assert task.requirements[0].capability_arguments['requested_metric']==metric
+    assert task.requirements[0].capability_arguments['ranking_direction']==direction
+
+@pytest.mark.anyio
+async def test_review_outage_conflicting_extremum_fails_closed():
+    class M:
+        calls=0
+        async def generate(self,**call):
+            self.calls+=1
+            if self.calls==1:return TaskSpec(goal='rank',mode='quick',deliverable='team',season={'value':'2025-26','source':'user','confidence':1},required_evidence=['team_ratings'],skills=['league-ratings'])
+            raise RuntimeError('all structured-output providers failed [timeout]')
+    task=TaskSpec(goal='rank',mode='quick',deliverable='team',season={'value':'2025-26','source':'user','confidence':1},required_evidence=['team_ratings'])
+    task=await ModelIntake(M(),provider='stub',model_name='stub',capability_catalog={'team_ratings':{}},requirement_review=True)._review_requirements('highest and lowest pace',task)
+    assert task.requirements==[]
+
+@pytest.mark.parametrize(('word','direction'),[('best defensive rating','asc'),('worst defensive rating','desc')])
+@pytest.mark.anyio
+async def test_review_outage_defensive_rating_semantic_extrema(word,direction):
+    class M:
+        async def generate(self,**call):
+            raise RuntimeError('all structured-output providers failed [timeout]')
+    base=TaskSpec(goal='rank',mode='quick',deliverable='team',required_evidence=['team_ratings'])
+    review=await ModelIntake(M(),provider='stub',model_name='stub',capability_catalog={'team_ratings':{}},requirement_review=True)._review_requirements('Which team has the '+word+'?',base)
+    task=base.model_copy(update={'requirements':review.requirements})
+    assert task.requirements[0].capability_arguments['ranking_direction']==direction
+
+@pytest.mark.anyio
+async def test_semantic_verifier_projection_does_not_send_source_identity():
+    from datetime import UTC,datetime
+    from v2.contracts import EvidenceEnvelope,DraftReport
+    stub=StubModel([{'status':'pass','claim_results':[]}])
+    verifier=ModelSemanticVerifier(stub,provider='stub',model_name='stub')
+    ev=EvidenceEnvelope(evidence_id='e',capability='x',source='fixture',observed_at=datetime.now(UTC),rows=[],source_identity={'kind':'warehouse','warehouse_id':'frozen-eval','sha256':'a'*64})
+    await verifier.verify(TaskSpec(goal='g',mode='quick',deliverable='d'),DraftReport(sections=['x'],claims=[]),{'e':ev})
+    projected=stub.calls[0]['payload']['evidence'][0]
+    assert 'source_identity' not in projected and 'a'*64 not in repr(projected)

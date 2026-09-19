@@ -741,3 +741,13 @@ def test_derived_display_rounding_uses_recomputed_calculation(shown, exact, supp
     draft=DraftReport(sections=[],claims=[Claim(text=f"The difference was {shown} points.",kind="derived",evidence_ids=["a"],calculation_id="delta")])
     result=verify_mechanical(TaskSpec(goal="x",mode="quick",deliverable="x"),draft,evidence,[calculation])
     assert result.claim_results[0].supported is supported
+
+
+def test_mechanical_verifier_ignores_source_identity_as_claim_content():
+    from datetime import UTC,datetime
+    from v2.contracts import EvidenceEnvelope,TaskSpec,DraftReport,Claim
+    from v2.runtime.verifier import verify_mechanical
+    base=dict(evidence_id='e',capability='x',source='fixture',observed_at=datetime.now(UTC),rows=[{'TEAM_NAME':'A','VALUE':1}])
+    plain=EvidenceEnvelope(**base);bound=EvidenceEnvelope(**base,source_identity={'kind':'warehouse','warehouse_id':'frozen-eval','sha256':'a'*64})
+    task=TaskSpec(goal='g',mode='quick',deliverable='d');draft=DraftReport(sections=['x'],claims=[Claim(text='A has value 1',kind='observed',evidence_ids=['e'])])
+    assert verify_mechanical(task,draft,[plain])==verify_mechanical(task,draft,[bound])

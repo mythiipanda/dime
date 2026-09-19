@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import inspect
+import re
 import json
 from datetime import date, datetime, timezone
 from typing import Any, Callable, Iterable, Mapping
@@ -108,6 +109,26 @@ def build_envelope(
     if raw_meta is not None and not isinstance(raw_meta, Mapping):
         raise AdapterError(f"{spec.tool_name}: result meta must be an object")
     meta = raw_meta or {}
+    has_warehouse_id = "warehouse_id" in meta
+    has_warehouse_sha = "warehouse_sha256" in meta
+    lineage_kind_present = "lineage_kind" in meta
+    if lineage_kind_present and meta.get("lineage_kind") != "live":
+        raise AdapterError(f"{spec.tool_name}: unknown source identity kind")
+    is_live = meta.get("lineage_kind") == "live"
+    if has_warehouse_id != has_warehouse_sha:
+        raise AdapterError(f"{spec.tool_name}: partial warehouse source identity")
+    if has_warehouse_id and has_warehouse_sha:
+        warehouse_id = meta.get("warehouse_id")
+        warehouse_sha = meta.get("warehouse_sha256")
+        if warehouse_id not in {"frozen-eval", "configured-runtime"}:
+            raise AdapterError(f"{spec.tool_name}: invalid warehouse source identity")
+        if (not isinstance(warehouse_sha, str)
+                or re.fullmatch(r"[0-9a-f]{64}", warehouse_sha) is None):
+            raise AdapterError(f"{spec.tool_name}: invalid warehouse source identity")
+    if is_live and (has_warehouse_id or has_warehouse_sha):
+        raise AdapterError(f"{spec.tool_name}: conflicting source identity markers")
+    if is_live and not meta.get("source"):
+        raise AdapterError(f"{spec.tool_name}: live source identity missing")
     season = meta.get("season")
     requested_season = arguments.get(spec.season_arg) if spec.season_arg else None
     if season is None:
@@ -217,9 +238,11 @@ def build_envelope(
         coverage=(meta.get("coverage") or meta.get("coverage_note")
                   or spec.coverage),
         warnings=warnings,
-        lineage=([f"warehouse:{meta['warehouse_id']}:{meta['warehouse_sha256']}"]
-                 if meta.get("warehouse_id") and meta.get("warehouse_sha256") else
-                 ["live-source"] if meta.get("lineage_kind") == "live" else []),
+        source_identity=({"kind": "warehouse", "warehouse_id": str(meta["warehouse_id"]),
+                          "sha256": str(meta["warehouse_sha256"])}
+                         if has_warehouse_id and has_warehouse_sha else
+                         {"kind": "live", "source": str(meta["source"])}
+                         if meta.get("lineage_kind") == "live" and meta.get("source") else None),
     )
 
 

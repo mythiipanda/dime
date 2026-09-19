@@ -7,6 +7,7 @@ import math
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, model_validator
+from typing import Annotated
 
 
 class RunMode(StrEnum):
@@ -278,6 +279,22 @@ class Plan(BaseModel):
         return self
 
 
+class WarehouseSourceIdentity(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    kind: Literal["warehouse"] = "warehouse"
+    warehouse_id: Literal["frozen-eval", "configured-runtime"]
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class LiveSourceIdentity(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    kind: Literal["live"] = "live"
+    source: Literal["nba_api", "basketball_reference", "espn", "fixture"]
+
+
+SourceIdentity = Annotated[WarehouseSourceIdentity | LiveSourceIdentity, Field(discriminator="kind")]
+
+
 class EvidenceEnvelope(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -296,6 +313,7 @@ class EvidenceEnvelope(BaseModel):
     qualification: str | None = Field(default=None, max_length=4000)
     coverage: str | None = Field(default=None, max_length=4000)
     lineage: list[str] = Field(default_factory=list, max_length=32)
+    source_identity: SourceIdentity | None = None
     warnings: list[str] = Field(default_factory=list, max_length=64)
 
     @model_validator(mode="after")

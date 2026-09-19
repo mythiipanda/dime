@@ -687,6 +687,27 @@ class ModelIntake(ModelStage):
                 arguments: dict[str, Any] = {}
                 if task.season is not None:
                     arguments["season"] = task.season.value
+                if capability == "team_ratings":
+                    folded = request.casefold()
+                    def has_phrase(phrase: str) -> bool:
+                        return bool(re.search(rf"(?<![a-z0-9]){re.escape(phrase)}(?![a-z0-9])", folded))
+                    metric_rules = (
+                        (("defensive rating", "defense"), "DEF_RATING"),
+                        (("offensive rating", "offense"), "OFF_RATING"),
+                        (("net rating",), "NET_RATING"), (("pace",), "PACE"),
+                        (("true shooting",), "TS_PCT"),
+                        (("turnover percentage", "turnover rate"), "TM_TOV_PCT"),
+                    )
+                    metric = next((name for aliases, name in metric_rules
+                                   if any(has_phrase(alias) for alias in aliases)), None)
+                    asc = any(has_phrase(token) for token in ("lowest", "fewest", "minimum"))
+                    desc = any(has_phrase(token) for token in ("highest", "most", "maximum"))
+                    if metric == "DEF_RATING":
+                        asc = asc or any(has_phrase(x) for x in ("best defense", "best defensive rating"))
+                        desc = desc or any(has_phrase(x) for x in ("worst defense", "worst defensive rating"))
+                    if metric and asc != desc:
+                        arguments.update(requested_metric=metric,
+                                         ranking_direction="asc" if asc else "desc")
                 if capability == "player_comparison" and len(entities) >= 2:
                     arguments.update({"a": entities[0], "b": entities[1]})
                 elif capability.startswith("player_") and entities:

@@ -1937,3 +1937,14 @@ def test_activity_append_failure_keeps_failed_runtime_tool_fallback_once(monkeyp
     def build(**k):l=RunLedger(k['run_id']);ledgers[k['run_id']]=l;return Broken(),l
     monkeypatch.setattr('v2.runtime.assembly.build_runtime',build);app=FastAPI();app.include_router(routes.router,prefix='/api');text=TestClient(app).post('/api/v2/chat/stream',json={'q':'x'}).text
     assert text.count('event: tool_call')==1 and text.count('event: tool_result')==1 and 'disk full' not in text
+
+
+def test_public_sse_projection_omits_real_envelope_source_identity():
+    from datetime import UTC,datetime
+    from v2.contracts import EvidenceEnvelope
+    from v2.api.events import CustomData
+    from v2.api.sse import encode_event
+    from v2.api.routes import public_evidence_table
+    item=EvidenceEnvelope(evidence_id='e',capability='team_ratings',source='fixture',observed_at=datetime.now(UTC),rows=[],source_identity={'kind':'warehouse','warehouse_id':'frozen-eval','sha256':'a'*64})
+    payload=encode_event(CustomData(node='analytics',tables=[public_evidence_table(item)]))
+    assert 'source_identity' not in payload and 'a'*64 not in payload and 'warehouse_id' not in payload
