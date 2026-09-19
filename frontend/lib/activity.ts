@@ -8,6 +8,19 @@ export const ACTIVITY_TYPES = new Set<string>([
 
 const text = (value: unknown) => String(value || "").replace(/_/g, " ");
 
+export function mergeActivityRecord(
+  items: ActivityRecord[],
+  incoming: ActivityRecord,
+): ActivityRecord[] {
+  if (items.some((item) => item.eventId === incoming.eventId)) return items;
+  return [...items, incoming].sort((a, b) => {
+    if (a.sequence !== undefined && b.sequence !== undefined) return a.sequence - b.sequence;
+    if (a.sequence !== undefined) return -1;
+    if (b.sequence !== undefined) return 1;
+    return 0;
+  });
+}
+
 export function activityRecordFromEvent(
   type: string,
   raw: Record<string, unknown>,
@@ -52,10 +65,10 @@ export function activityRecordFromEvent(
 // raw goals, requirement prose, entity IDs, free-form plan descriptions, source
 // strings, warnings, claim results, repair instructions, and contradiction prose.
 export const ACTIVITY_CONTRACT_FIXTURE: Record<string, unknown>[] = [
-  { type: "tool_call", event_id: "run-a:1", sequence: 1, emitted_at: "2026-09-18T20:00:00Z", phase: "execute", status: "running", title: "Team ratings", transition: "started", correlation_id: "call-1", data: { name: "team_ratings", args: { season: "2025-26" } } },
-  { type: "tool_result", event_id: "run-a:2", sequence: 2, emitted_at: "2026-09-18T20:00:01Z", phase: "execute", status: "complete", title: "Team ratings", transition: "succeeded", correlation_id: "call-1", duration_ms: 14, data: { name: "team_ratings", rows: 30 } },
-  { type: "stage_summary", event_id: "run-a:3", sequence: 3, emitted_at: "2026-09-18T20:00:01Z", phase: "understand", status: "complete", title: "Request understood", transition: "completed", correlation_id: "stage:understand", data: { mode: "quick", season: "2025-26", entity_count: 1, requirement_count: 1 } },
-  { type: "plan_update", event_id: "run-a:4", sequence: 4, emitted_at: "2026-09-18T20:00:01Z", phase: "plan", status: "complete", title: "Plan accepted", transition: "completed", correlation_id: "stage:plan", data: { node_count: 1, nodes: [{ id: "rank", status: "pending", capabilities: ["team_ratings"] }] } },
-  { type: "evidence_update", event_id: "run-a:5", sequence: 5, emitted_at: "2026-09-18T20:00:01Z", phase: "execute", status: "complete", title: "Evidence admitted", transition: "admitted", correlation_id: "evidence-1", data: { capability: "team_ratings", row_count: 30, season: "2025-26", source_as_of: "2026-09-18" } },
-  { type: "verification_update", event_id: "run-a:6", sequence: 6, emitted_at: "2026-09-18T20:00:02Z", phase: "verify", status: "pass", title: "Verification updated", transition: "snapshot", correlation_id: "verification:initial", data: { round: "initial", total_claims: 1, supported_claims: 1, missing_branch_count: 0, blocked_requirement_count: 0 } },
+  { type: "tool_call", event_id: "run-a:1", sequence: 1, emitted_at: "2026-09-18T20:00:00Z", phase: "execute", status: "running", title: "Tool running", transition: "started", correlation_id: "call-1", data: { name: "team_ratings", argument_count: 1, unknown_argument_count: 0 } },
+  { type: "tool_result", event_id: "run-a:2", sequence: 2, emitted_at: "2026-09-18T20:00:01Z", phase: "execute", status: "complete", title: "Tool complete", transition: "succeeded", correlation_id: "call-1", duration_ms: 14, data: { name: "team_ratings", rows: 30 } },
+  { type: "stage_summary", event_id: "run-a:3", sequence: 3, emitted_at: "2026-09-18T20:00:01Z", phase: "understand", status: "complete", title: "Request understood", transition: "completed", correlation_id: "stage:understand", data: { mode: "quick", season: "2025-26", entity_count: 1, requirement_count: 1, calculation_count: 0 } },
+  { type: "plan_update", event_id: "run-a:4", sequence: 4, emitted_at: "2026-09-18T20:00:01Z", phase: "plan", status: "complete", title: "Plan accepted", transition: "completed", correlation_id: "stage:plan", data: { node_count: 1, capabilities: ["team_ratings"], unknown_capability_count: 0 } },
+  { type: "evidence_update", event_id: "run-a:5", sequence: 5, emitted_at: "2026-09-18T20:00:01Z", phase: "execute", status: "complete", title: "Evidence admitted", transition: "admitted", correlation_id: "evidence-1", data: { capability: "team_ratings", rows: 30, season: "2025-26", as_of: "2026-09-18", observed_at: "2026-09-18T20:00:01Z", qualification: "present", coverage: "present", warning_count: 0 } },
+  { type: "verification_update", event_id: "run-a:6", sequence: 6, emitted_at: "2026-09-18T20:00:02Z", phase: "verify", status: "pass", title: "Verification updated", transition: "snapshot", correlation_id: "verification:initial", data: { round: "initial", supported_count: 1, claim_count: 1, missing_count: 0, contradiction_count: 0, repair_count: 0 } },
 ];

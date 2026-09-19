@@ -10,7 +10,7 @@ import {
   emptyNode,
 } from "../lib/chat";
 import { RunInfo, buildCitation, getModels, getRuns, postChatStream } from "../lib/api";
-import { activityRecordFromEvent } from "../lib/activity";
+import { activityRecordFromEvent, mergeActivityRecord } from "../lib/activity";
 import AnswerText from "./AnswerText";
 import { StreamText } from "./StreamText";
 import { ArtifactItem } from "./ArtifactCanvas";
@@ -36,11 +36,7 @@ function applyEvent(ai: AiMessage, type: string, data: unknown): AiMessage {
     return next.nodes[n]!;
   };
   const activity = activityRecordFromEvent(type, d, next.activity?.length || 0);
-  if (activity && !(next.activity || []).some((item) => item.eventId === activity.eventId)) {
-    next.activity = [...(next.activity || []), activity].sort((a, b) =>
-      a.sequence !== undefined && b.sequence !== undefined ? a.sequence - b.sequence : 0,
-    );
-  }
+  if (activity) next.activity = mergeActivityRecord(next.activity || [], activity);
   if (type === "node_update") {
     const node = d.node as NodeName;
     const status = d.status;
