@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 from pathlib import Path
+from functools import lru_cache
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -61,9 +62,19 @@ def _executable_sha256() -> str:
     return digest.hexdigest()
 
 
+@lru_cache(maxsize=1)
+def runtime_warehouse_identity() -> dict[str, str]:
+    """Safe identity of the warehouse bound to this server process."""
+    from app import store
+    identity = store.warehouse_identity()
+    return {"warehouse_id": identity["warehouse_id"],
+            "sha256": identity["warehouse_sha256"]}
+
+
 @router.get("/revision")
-def revision() -> dict[str, str]:
-    return {"revision": _revision(), "executable_sha256": _executable_sha256()}
+def revision() -> dict:
+    return {"revision": _revision(), "executable_sha256": _executable_sha256(),
+            "warehouse": dict(runtime_warehouse_identity())}
 
 
 def public_evidence_table(item):

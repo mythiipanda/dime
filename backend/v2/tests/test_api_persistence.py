@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from pathlib import Path
 
 import pytest
@@ -162,7 +163,10 @@ def test_revision_and_feature_flagged_project_endpoints(
 
     revision = client.get("/api/revision")
     assert revision.status_code == 200
-    assert set(revision.json()) == {"revision", "executable_sha256"}
+    assert set(revision.json()) == {"revision", "executable_sha256", "warehouse"}
+    assert set(revision.json()["warehouse"]) == {"warehouse_id", "sha256"}
+    assert revision.json()["warehouse"]["warehouse_id"] in {"frozen-eval", "configured-runtime"}
+    assert re.fullmatch(r"[0-9a-f]{64}", revision.json()["warehouse"]["sha256"])
     assert len(revision.json()["executable_sha256"]) == hashlib.sha256().digest_size * 2
 
     monkeypatch.setenv("DIME_RUNTIME_V2", "off")
@@ -1948,3 +1952,46 @@ def test_public_sse_projection_omits_real_envelope_source_identity():
     item=EvidenceEnvelope(evidence_id='e',capability='team_ratings',source='fixture',observed_at=datetime.now(UTC),rows=[],source_identity={'kind':'warehouse','warehouse_id':'frozen-eval','sha256':'a'*64})
     payload=encode_event(CustomData(node='analytics',tables=[public_evidence_table(item)]))
     assert 'source_identity' not in payload and 'a'*64 not in payload and 'warehouse_id' not in payload
+
+
+def test_revision_warehouse_identity_is_safe_and_startup_bound(monkeypatch, tmp_path):
+    from app import store
+    from v2.api import routes
+    warehouse = tmp_path / "configured.duckdb"
+    warehouse.write_bytes(b"startup bytes")
+    monkeypatch.setattr(store, "DB_PATH", warehouse)
+    routes.runtime_warehouse_identity.cache_clear()
+    try:
+        first = routes.runtime_warehouse_identity()
+        assert first == {"warehouse_id": "configured-runtime",
+                         "sha256": hashlib.sha256(b"startup bytes").hexdigest()}
+        assert set(first) == {"warehouse_id", "sha256"}
+        assert str(warehouse) not in repr(first)
+        warehouse.write_bytes(b"mutated later")
+        assert routes.runtime_warehouse_identity() == first
+    finally:
+        routes.runtime_warehouse_identity.cache_clear()
+
+
+def test_real_lifespan_freezes_revision_warehouse_endpoint(monkeypatch, tmp_path):
+    from app import main, store
+    from v2.api import routes
+    warehouse = tmp_path / "startup.duckdb"
+    startup = b"startup warehouse bytes"
+    warehouse.write_bytes(startup)
+    monkeypatch.setattr(store, "DB_PATH", warehouse)
+    routes.runtime_warehouse_identity.cache_clear()
+    try:
+        with TestClient(main.app) as client:
+            expected = {"warehouse_id": "configured-runtime",
+                        "sha256": hashlib.sha256(startup).hexdigest()}
+            first = client.get("/api/revision").json()["warehouse"]
+            assert first == expected
+            assert re.fullmatch(r"[0-9a-f]{64}", first["sha256"])
+            warehouse.write_bytes(b"mutated while process is live")
+            assert client.get("/api/revision").json()["warehouse"] == expected
+            # Endpoint callers receive a copy, not the cached dictionary.
+            routes.revision()["warehouse"]["warehouse_id"] = "tampered"
+            assert client.get("/api/revision").json()["warehouse"] == expected
+    finally:
+        routes.runtime_warehouse_identity.cache_clear()

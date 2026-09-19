@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from v2.api.routes import router as v2_router
+from v2.api.routes import router as v2_router, runtime_warehouse_identity
 
 from . import datasets, routes
 from .config import settings
@@ -12,6 +12,8 @@ from .config import settings
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Freeze the safe warehouse identity before accepting requests.
+    runtime_warehouse_identity()
     yield
     await routes.shutdown_shadow_tasks()
 
