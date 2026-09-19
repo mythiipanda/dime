@@ -381,7 +381,7 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
           style={{ fontSize: 12, marginBottom: 8 }}
           aria-label="Show tool calls and checks"
         >
-          <span style={{ color: "var(--color-ash-gray)" }}>Analysis trail</span>
+          <span style={{ color: "var(--color-ash-gray)" }}>How Dime worked</span>
           {" · No data fetched"}
         </button>
       );
@@ -401,7 +401,7 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
         style={{ fontSize: 12, marginBottom: 8 }}
         aria-label="Show tool calls and checks"
       >
-        <span style={{ color: "var(--color-ash-gray)" }}>Analysis trail</span>
+        <span style={{ color: "var(--color-ash-gray)" }}>How Dime worked</span>
         {" · "}
         {bits.join(" · ")}
       </button>
@@ -439,7 +439,7 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
           />
         )}
         <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--color-ink-black)", display: "inline-flex" }}>
-          {running ? <ThinkLine text="Following the evidence" /> : "Analysis trail"}
+          {running ? <ThinkLine text="Working" /> : "How Dime worked"}
         </span>
         <span style={{ fontSize: 11, color: "var(--color-ash-gray)" }}>
           {open ? "▾" : "▸"}
