@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import hashlib
 import random
 import re
 import time
@@ -10,9 +11,10 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, Protocol, TypeVar
 
-from openai import AsyncOpenAI
-from pydantic import BaseModel
+from openai import AsyncOpenAI, APITimeoutError, APIConnectionError, RateLimitError
+from pydantic import BaseModel, ValidationError
 from pydantic_ai import Agent, NativeOutput
+from pydantic_ai.exceptions import ContentFilterError, ModelHTTPError, UnexpectedModelBehavior
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
@@ -86,6 +88,34 @@ _DEFAULT_ROUTE_POLICY = {"primary_attempts": 1, "attempt_timeout_s": 6.0,
     "deterministic_fallback": False}
 
 
+SAFE_FAILURE_EXCEPTION_CLASSES = frozenset({
+    "UnexpectedModelBehavior", "ToolRetryError", "ValidationError",
+    "ContentFilterError", "ExceptionGroup", "BaseExceptionGroup",
+    "TimeoutError", "APITimeoutError", "APIConnectionError",
+    "RateLimitError", "ModelHTTPError", "ConnectError", "NetworkError",
+    "RuntimeError", "ValueError", "TypeError", "JSONDecodeError",
+})
+SAFE_FAILURE_PHASES = frozenset({"content_filter", "no_tool_or_empty",
+    "json_or_schema_validation", "http", "transport", "timeout", "unknown"})
+MODEL_ROUTES = frozenset(ROUTE_POLICIES)
+SAFE_PYDANTIC_ERROR_TYPES = frozenset({
+    "extra_forbidden", "json_invalid", "literal_error", "missing",
+    "model_type", "string_type", "int_type", "int_parsing", "bool_type",
+    "list_type", "dict_type", "greater_than_equal", "too_long",
+    "too_short", "value_error",
+})
+
+
+def _safe_exception_name(value: type[BaseException] | str) -> str:
+    name = value if isinstance(value, str) else value.__name__
+    return name if name in SAFE_FAILURE_EXCEPTION_CLASSES else "<unknown-exception>"
+
+
+def _safe_pydantic_error_type(value: object) -> str:
+    name = str(value)
+    return name if name in SAFE_PYDANTIC_ERROR_TYPES else "<unknown-error-type>"
+
+
 class ProviderStructuredModel:
     def __init__(self, provider: ProviderName, model: str) -> None:
         self.provider = provider
@@ -115,6 +145,78 @@ class ProviderStructuredModel:
         if "connect" in name or "network" in detail:
             return "network"
         return "provider_error"
+
+    @staticmethod
+    def _safe_failure_taxonomy(exc: BaseException, *, schema: type[BaseModel],
+                               route: str) -> dict[str, Any]:
+        """Private bounded diagnostics; never serialize messages or bodies."""
+        classes: list[str] = []
+        validation_errors: list[dict[str, Any]] = []
+        pending: list[BaseException] = [exc]
+        seen: set[int] = set()
+        while pending and len(classes) < 12:
+            item = pending.pop(0)
+            if id(item) in seen:
+                continue
+            seen.add(id(item))
+            classes.append(_safe_exception_name(type(item)))
+            if isinstance(item, ValidationError):
+                validation_errors.extend({
+                    "type": _safe_pydantic_error_type(error.get("type", "unknown")),
+                    "loc": [str(part)[:120] for part in error.get("loc", ())[:16]],
+                } for error in item.errors(
+                    include_url=False, include_context=False, include_input=False)[:16])
+            cause = item.__cause__
+            context = item.__context__
+            if isinstance(cause, BaseException):
+                pending.append(cause)
+            if isinstance(context, BaseException) and context is not cause:
+                pending.append(context)
+            if isinstance(item, BaseExceptionGroup):
+                pending.extend(child for child in item.exceptions
+                               if isinstance(child, BaseException))
+        names = set(classes)
+        if isinstance(exc, ContentFilterError) or "ContentFilterError" in names:
+            phase = "content_filter"
+        elif isinstance(exc, (TimeoutError, APITimeoutError)) or names & {
+                "TimeoutError", "APITimeoutError"}:
+            phase = "timeout"
+        elif isinstance(exc, (ModelHTTPError, RateLimitError)) or names & {
+                "ModelHTTPError", "RateLimitError"}:
+            phase = "http"
+        elif isinstance(exc, APIConnectionError) or names & {
+                "APIConnectionError", "ConnectError", "NetworkError"}:
+            phase = "transport"
+        elif isinstance(exc, UnexpectedModelBehavior):
+            phase = ("json_or_schema_validation" if "ValidationError" in names
+                     else "no_tool_or_empty")
+        elif "ValidationError" in names:
+            phase = "json_or_schema_validation"
+        else:
+            phase = "unknown"
+        schema_json = schema.model_json_schema()
+        known_fields: set[str] = set(schema_json.get("properties", {}))
+        for definition in schema_json.get("$defs", {}).values():
+            if isinstance(definition, dict):
+                known_fields.update(definition.get("properties", {}))
+        structural_markers = {"__root__", "union", "list", "dict"}
+        for error in validation_errors:
+            error["loc"] = [
+                part if isinstance(part, int) else
+                part if part in known_fields or part in structural_markers else
+                "<unknown-field>"
+                for part in error["loc"]
+            ]
+        schema_bytes = json.dumps(
+            schema_json, sort_keys=True, separators=(",", ":")).encode()
+        return {
+            "failure_top_class": _safe_exception_name(type(exc)),
+            "failure_class_chain": classes,
+            "failure_phase": phase,
+            "failure_validation_errors": validation_errors,
+            "failure_schema_sha256": hashlib.sha256(schema_bytes).hexdigest(),
+            "failure_route": route,
+        }
 
     def _models(self) -> list[tuple[ProviderName, OpenAIChatModel]]:
         configs = {
@@ -215,10 +317,12 @@ class ProviderStructuredModel:
                         "model": (f"mistral_free_limit:{model.model_name}"
                                   if provider == "mistral" else model.model_name),
                         "attempt_number": attempt_number,
-                        "exception_type": type(exc).__name__[:120],
+                        "exception_type": _safe_exception_name(type(exc)),
                         "message_class": failure_class,
                         "latency_ms": max(0, round(
                             (time.perf_counter() - started) * 1000)),
+                        **self._safe_failure_taxonomy(
+                            exc, schema=schema, route=envelope.route),
                     })
                     transient = failure_class in policy["transient_classes"]
                     if (attempt_number < max_attempts and transient):

@@ -1995,3 +1995,27 @@ def test_real_lifespan_freezes_revision_warehouse_endpoint(monkeypatch, tmp_path
             assert client.get("/api/revision").json()["warehouse"] == expected
     finally:
         routes.runtime_warehouse_identity.cache_clear()
+
+
+
+
+def test_full_http_sse_and_activity_omit_private_failure_taxonomy(monkeypatch,tmp_path):
+    import json
+    from v2.api import routes
+    from v2.api.activity import ActivityJournal
+    from v2.contracts import TaskSpec,DraftReport,VerificationReport
+    from v2.runtime import RunLedger
+    from v2.runtime.models import RuntimeResult
+    from v2.runtime.executor import ExecutionResult
+    from v2.contracts import Plan
+    sentinel='SECRET_SENTINEL_MUST_NOT_LEAK'
+    class Runtime:
+        async def run(self,*a,**k):
+            return RuntimeResult(task=TaskSpec(goal='g',mode='quick',deliverable='d'),execution=ExecutionResult(plan=Plan(nodes=[]),evidence=[],errors={}),draft=DraftReport(sections=[],claims=[]),verification=VerificationReport(status='pass'))
+    def build(**kwargs):
+        ledger=RunLedger(kwargs['run_id']);ledger.append('model/request',turn_id=kwargs['run_id'],call_id='model:1',data={'provider':'inception','model':'mercury-2.5','route':'semantic_verifier','prompt_hash':'a'*64,'context_hash':'b'*64,'tool_schema_hash':'c'*64,'planner_version':'v2','budgets':{},'skill_hashes':{}});ledger.append('assistant/attempt',turn_id=kwargs['run_id'],call_id='model:1',data={'status':'failed','error':sentinel,'provider_attempts':[{'route':'semantic_verifier','provider':'inception','model':'mercury-2.5','attempt_number':1,'exception_type':'UnexpectedModelBehavior','message_class':'structured_output','latency_ms':1,'failure_top_class':'UnexpectedModelBehavior','failure_class_chain':['UnexpectedModelBehavior'],'failure_phase':'no_tool_or_empty','failure_validation_errors':[],'failure_schema_sha256':'a'*64,'failure_route':'semantic_verifier'}]});return Runtime(),ledger
+    monkeypatch.setenv('DIME_RUNTIME_V2','on');monkeypatch.setenv('DIME_V2_ACTIVITY_DIR',str(tmp_path/'activity'));monkeypatch.setattr('app.providers.resolve_model_id',lambda value:('inception','mercury-2.5'));monkeypatch.setattr('v2.runtime.assembly.build_runtime',build)
+    app=FastAPI();app.include_router(routes.router,prefix='/api');response=TestClient(app).post('/api/v2/chat/stream',json={'q':'x'});text=response.text;run_id=response.headers['x-dime-run-id'];activity=[x.model_dump(mode='json') for x in ActivityJournal(tmp_path/'activity'/f'{run_id}.jsonl',run_id).read()];combined=text+json.dumps(activity)
+    for key in ('failure_top_class','failure_class_chain','failure_phase','failure_validation_errors','failure_schema_sha256','provider_attempts','exception_type'):
+        assert key not in combined
+    assert sentinel not in combined

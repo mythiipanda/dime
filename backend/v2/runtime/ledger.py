@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import os
 import math
 from datetime import UTC, datetime
@@ -170,16 +171,65 @@ def _validate_assistant_attempt(data: dict[str, Any]) -> None:
     status = data.get("status")
     attempt_keys = {"provider_attempts"}
     provider_attempts = data.get("provider_attempts", [])
+    safe_attempt_keys = {"route", "provider", "model", "attempt_number",
+                         "exception_type", "message_class", "latency_ms",
+                         "failure_top_class", "failure_class_chain",
+                         "failure_phase", "failure_validation_errors",
+                         "failure_schema_sha256", "failure_route"}
+    from v2.adapters.models import (
+        MODEL_ROUTES, SAFE_FAILURE_EXCEPTION_CLASSES, SAFE_FAILURE_PHASES,
+        SAFE_PYDANTIC_ERROR_TYPES,
+    )
+    safe_exception_names = {*SAFE_FAILURE_EXCEPTION_CLASSES, "<unknown-exception>"}
+    safe_error_types = {*SAFE_PYDANTIC_ERROR_TYPES, "<unknown-error-type>"}
+    def safe_string(value: Any, limit: int = 120) -> bool:
+        return isinstance(value, str) and bool(value.strip()) and len(value) <= limit
+    def safe_taxonomy(item: dict[str, Any]) -> bool:
+        subtype = {"failure_top_class", "failure_class_chain", "failure_phase",
+                   "failure_validation_errors", "failure_schema_sha256",
+                   "failure_route"}
+        present = subtype & set(item)
+        if not present:
+            return True
+        if present != subtype:
+            return False
+        chain = item["failure_class_chain"]
+        errors = item["failure_validation_errors"]
+        return (
+            safe_string(item["failure_top_class"])
+            and isinstance(chain, list) and len(chain) <= 12
+            and all(value in safe_exception_names for value in chain)
+            and item["failure_top_class"] in safe_exception_names
+            and item["failure_phase"] in SAFE_FAILURE_PHASES
+            and isinstance(errors, list) and len(errors) <= 16
+            and all(isinstance(error, dict)
+                    and set(error) == {"type", "loc"}
+                    and error["type"] in safe_error_types
+                    and isinstance(error["loc"], list) and len(error["loc"]) <= 16
+                    and all((isinstance(part, int) and not isinstance(part, bool))
+                            or safe_string(part) for part in error["loc"])
+                    for error in errors)
+            and isinstance(item["failure_schema_sha256"], str)
+            and re.fullmatch(r"[0-9a-f]{64}", item["failure_schema_sha256"])
+            is not None
+            and item["failure_route"] in MODEL_ROUTES
+            and item["failure_route"] == item.get("route")
+        )
     attempts_valid = isinstance(provider_attempts, list) and all(
         isinstance(item, dict)
-        and isinstance(item.get("route"), str)
-        and isinstance(item.get("provider"), str)
-        and isinstance(item.get("model"), str)
+        and set(item) <= safe_attempt_keys
+        and item.get("route") in MODEL_ROUTES
+        and safe_string(item.get("provider"))
+        and safe_string(item.get("model"))
         and isinstance(item.get("attempt_number"), int)
+        and not isinstance(item.get("attempt_number"), bool)
         and item["attempt_number"] >= 1
-        and isinstance(item.get("message_class"), str)
+        and safe_string(item.get("message_class"))
+        and ("exception_type" not in item or item["exception_type"] in safe_exception_names)
         and isinstance(item.get("latency_ms"), int)
+        and not isinstance(item.get("latency_ms"), bool)
         and item["latency_ms"] >= 0
+        and safe_taxonomy(item)
         for item in provider_attempts)
     if status == "failed":
         valid = (set(data) in ({"status", "error"}, {"status", "error", *attempt_keys})

@@ -665,3 +665,18 @@ def test_ledger_identity_text_has_hard_limits() -> None:
         LedgerEntry(sequence=1, run_id="x" * 257, kind="turn/start",
                     recorded_at=datetime.now(UTC), turn_id="turn",
                     data={"request": "question"})
+
+@pytest.mark.parametrize('mutate',[lambda x:x.update(failure_top_class=''),lambda x:x.update(failure_class_chain=['x']*13),lambda x:x.update(failure_phase='secret'),lambda x:x.update(failure_validation_errors=[{'type':'x','loc':['x'],'extra':'y'}]),lambda x:x.update(failure_validation_errors=[{'type':'x','loc':['x']*17}]),lambda x:x.update(failure_schema_sha256='BAD'),lambda x:x.update(failure_route='planner')])
+def test_assistant_attempt_rejects_malformed_safe_taxonomy(mutate):
+    from v2.runtime import LedgerEntry
+    attempt={'route':'semantic_verifier','provider':'inception','model':'mercury-2.5','attempt_number':1,'exception_type':'UnexpectedModelBehavior','message_class':'structured_output','latency_ms':1,'failure_top_class':'UnexpectedModelBehavior','failure_class_chain':['UnexpectedModelBehavior'],'failure_phase':'no_tool_or_empty','failure_validation_errors':[],'failure_schema_sha256':'a'*64,'failure_route':'semantic_verifier'}
+    mutate(attempt)
+    with pytest.raises(ValueError):LedgerEntry(sequence=1,run_id='run',kind='assistant/attempt',turn_id='run',call_id='model:1',data={'status':'failed','error':'bounded','provider_attempts':[attempt]})
+
+@pytest.mark.parametrize('field,value',[('failure_top_class','PrivateClass'),('failure_class_chain',['PrivateClass']),('failure_route','private_route')])
+def test_assistant_attempt_rejects_unclosed_taxonomy_identifiers(field,value):
+    from v2.runtime import LedgerEntry
+    attempt={'route':'semantic_verifier','provider':'inception','model':'mercury-2.5','attempt_number':1,'exception_type':'UnexpectedModelBehavior','message_class':'structured_output','latency_ms':1,'failure_top_class':'UnexpectedModelBehavior','failure_class_chain':['UnexpectedModelBehavior'],'failure_phase':'no_tool_or_empty','failure_validation_errors':[],'failure_schema_sha256':'a'*64,'failure_route':'semantic_verifier'}
+    attempt[field]=value
+    if field=='failure_route':attempt['route']=value
+    with pytest.raises(ValueError):LedgerEntry(sequence=1,run_id='run',kind='assistant/attempt',turn_id='run',call_id='model:1',data={'status':'failed','error':'bounded','provider_attempts':[attempt]})

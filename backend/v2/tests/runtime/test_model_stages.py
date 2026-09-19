@@ -2525,3 +2525,133 @@ async def test_semantic_verifier_projection_does_not_send_source_identity():
     await verifier.verify(TaskSpec(goal='g',mode='quick',deliverable='d'),DraftReport(sections=['x'],claims=[]),{'e':ev})
     projected=stub.calls[0]['payload']['evidence'][0]
     assert 'source_identity' not in projected and 'a'*64 not in repr(projected)
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(('kind','phase'),[
+    ('unknown','json_or_schema_validation'),('malformed','json_or_schema_validation'),
+    ('empty','no_tool_or_empty'),('refusal','content_filter'),
+])
+async def test_safe_failure_taxonomy_exact_native_openai_path(kind,phase):
+    import httpx,json
+    from openai import AsyncOpenAI
+    from pydantic_ai import Agent,NativeOutput
+    from pydantic_ai.models.openai import OpenAIChatModel
+    from pydantic_ai.providers.openai import OpenAIProvider
+    from v2.adapters.models import ProviderStructuredModel
+    from v2.contracts import VerificationReport
+    sentinel='SECRET_SENTINEL_MUST_NOT_LEAK'
+    def handler(request):
+        if kind=='unknown':content=json.dumps({'status':'pass','extra':sentinel})
+        elif kind=='malformed':content='{bad '+sentinel
+        elif kind=='empty':content=''
+        elif kind=='refusal':
+            return httpx.Response(200,json={'id':'x','object':'chat.completion','created':0,'model':'fake','choices':[{'index':0,'message':{'role':'assistant','content':None,'refusal':sentinel},'finish_reason':'stop'}]})
+        return httpx.Response(200,json={'id':'x','object':'chat.completion','created':0,'model':'fake','choices':[{'index':0,'message':{'role':'assistant','content':content},'finish_reason':'stop'}]})
+    client=AsyncOpenAI(api_key='fake',base_url='https://fake.invalid/v1',http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),max_retries=0)
+    model=OpenAIChatModel('fake',provider=OpenAIProvider(openai_client=client))
+    try:
+        with pytest.raises(Exception) as caught:
+            await Agent(model,output_type=NativeOutput(VerificationReport,strict=True),retries=0).run('bounded')
+        safe=ProviderStructuredModel._safe_failure_taxonomy(caught.value,schema=VerificationReport,route='semantic_verifier')
+    finally: await client.close()
+    assert safe['failure_phase']==phase
+    assert safe['failure_route']=='semantic_verifier'
+    assert len(safe['failure_schema_sha256'])==64
+    assert sentinel not in json.dumps(safe)
+    assert set(safe)=={'failure_top_class','failure_class_chain','failure_phase','failure_validation_errors','failure_schema_sha256','failure_route'}
+
+
+def test_safe_failure_taxonomy_nested_exception_group_redacts_messages():
+    import json
+    from pydantic import ValidationError
+    from v2.adapters.models import ProviderStructuredModel
+    from v2.contracts import VerificationReport
+    sentinel='SECRET_SENTINEL_MUST_NOT_LEAK'
+    validation=None
+    try: VerificationReport.model_validate({'status':'pass','extra':sentinel})
+    except ValidationError as exc: validation=exc
+    assert validation is not None
+    grouped=ExceptionGroup(sentinel,[RuntimeError(sentinel),validation])
+    safe=ProviderStructuredModel._safe_failure_taxonomy(grouped,schema=VerificationReport,route='semantic_verifier')
+    assert safe['failure_phase']=='json_or_schema_validation'
+    assert {'ExceptionGroup','RuntimeError','ValidationError'} <= set(safe['failure_class_chain'])
+    assert sentinel not in json.dumps(safe)
+    assert safe['failure_validation_errors']==[{'type':'extra_forbidden','loc':['<unknown-field>']}]
+
+@pytest.mark.parametrize(('exc','phase'),[
+    (__import__('openai').APITimeoutError(__import__('httpx').Request('GET','https://test.invalid')),'timeout'),
+    (__import__('openai').APIConnectionError(request=__import__('httpx').Request('GET','https://test.invalid')),'transport'),
+    (__import__('openai').RateLimitError('limited',response=__import__('httpx').Response(429,request=__import__('httpx').Request('GET','https://test.invalid')),body=None),'http'),
+])
+def test_safe_failure_taxonomy_sdk_exception_parity(exc,phase):
+    from v2.adapters.models import ProviderStructuredModel
+    from v2.contracts import VerificationReport
+    safe=ProviderStructuredModel._safe_failure_taxonomy(exc,schema=VerificationReport,route='semantic_verifier')
+    assert safe['failure_phase']==phase
+
+
+def test_safe_failure_taxonomy_unknown_location_keys_are_constant_redacted():
+    import json
+    from pydantic import ValidationError
+    from v2.adapters.models import ProviderStructuredModel
+    from v2.contracts import VerificationReport
+    sentinel='SECRET_SENTINEL_MUST_NOT_LEAK'
+    try: VerificationReport.model_validate({'status':'partial',sentinel:{sentinel:sentinel}})
+    except ValidationError as exc: validation=exc
+    safe=ProviderStructuredModel._safe_failure_taxonomy(validation,schema=VerificationReport,route='semantic_verifier')
+    assert sentinel not in json.dumps(safe)
+    assert safe['failure_validation_errors']==[{'type':'extra_forbidden','loc':['<unknown-field>']}]
+
+
+def test_safe_failure_taxonomy_redacts_dynamic_exception_class_name_and_error_type():
+    import json
+    from pydantic_core import PydanticCustomError
+    from v2.adapters.models import ProviderStructuredModel,_safe_pydantic_error_type
+    from v2.contracts import VerificationReport
+    sentinel='SECRET_SENTINEL_MUST_NOT_LEAK'
+    Dynamic=type(sentinel,(RuntimeError,),{})
+    grouped=ExceptionGroup('bounded',[Dynamic('bounded')])
+    safe=ProviderStructuredModel._safe_failure_taxonomy(grouped,schema=VerificationReport,route='semantic_verifier')
+    assert safe['failure_class_chain']==['ExceptionGroup','<unknown-exception>']
+    assert sentinel not in json.dumps(safe)
+    assert _safe_pydantic_error_type(sentinel)=='<unknown-error-type>'
+
+@pytest.mark.parametrize(('inner','phase'),[
+    (__import__('openai').APITimeoutError(__import__('httpx').Request('GET','https://test.invalid')),'timeout'),
+    (__import__('openai').APIConnectionError(request=__import__('httpx').Request('GET','https://test.invalid')),'transport'),
+    (__import__('openai').RateLimitError('limited',response=__import__('httpx').Response(429,request=__import__('httpx').Request('GET','https://test.invalid')),body=None),'http'),
+    (__import__('pydantic_ai.exceptions',fromlist=['ModelHTTPError']).ModelHTTPError(503,'mercury'),'http'),
+])
+def test_safe_failure_taxonomy_wrapped_sdk_exception_parity(inner,phase):
+    from pydantic_ai.exceptions import UnexpectedModelBehavior
+    from v2.adapters.models import ProviderStructuredModel
+    from v2.contracts import VerificationReport
+    wrapped=None
+    try: raise inner
+    except Exception as cause:
+        try: raise UnexpectedModelBehavior('bounded') from cause
+        except UnexpectedModelBehavior as exc: wrapped=exc
+    assert wrapped is not None
+    safe=ProviderStructuredModel._safe_failure_taxonomy(wrapped,schema=VerificationReport,route='semantic_verifier')
+    assert safe['failure_phase']==phase
+
+@pytest.mark.anyio
+async def test_actual_attempt_redacts_dynamic_exception_type_and_ledger_serializes(monkeypatch):
+    import json
+    from v2.adapters.models import ProviderStructuredModel
+    from v2.contracts import TaskSpec
+    from v2.runtime import RequestEnvelope,RunLedger
+    from v2.adapters import RecordedStructuredModel
+    sentinel='SECRET_SENTINEL_MUST_NOT_LEAK';Dynamic=type(sentinel,(RuntimeError,),{})
+    class A:
+        def __init__(self,*a,**k):pass
+        async def run(self,*a,**k):raise Dynamic('bounded')
+    class M:model_name='mercury-2.5'
+    monkeypatch.setattr('v2.adapters.models.Agent',A)
+    m=ProviderStructuredModel('inception','mercury-2.5');monkeypatch.setattr(m,'_models',lambda:[('inception',M())])
+    e=RequestEnvelope.freeze(provider='inception',model='mercury-2.5',route='semantic_verifier',prompt='p',context={},tool_schemas={},planner_version='v2');ledger=RunLedger('run');recorded=RecordedStructuredModel(m,ledger,turn_id='run')
+    with pytest.raises(RuntimeError):await recorded.generate(schema=TaskSpec,prompt='p',payload={},envelope=e)
+    encoded=json.dumps([x.model_dump(mode='json') for x in ledger.entries])
+    assert sentinel not in encoded
+    attempt=ledger.entries[-1].data['provider_attempts'][0]
+    assert attempt['exception_type']=='<unknown-exception>' and attempt['failure_top_class']=='<unknown-exception>'
