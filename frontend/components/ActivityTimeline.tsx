@@ -28,6 +28,7 @@ function EventRow({ item, active }: { item: ActivityRecord; active: boolean }) {
   const details = compactDetails(item);
   const hasDetails = Object.keys(details).length > 0;
   const status = item.status || item.transition || (active ? "running" : "complete");
+  const meta = [item.phase?.replace(/_/g, " "), item.durationMs !== undefined ? (item.durationMs < 1000 ? `${item.durationMs}ms` : `${(item.durationMs / 1000).toFixed(1)}s`) : ""].filter(Boolean).join(" · ");
   const time = item.emittedAt ? new Date(item.emittedAt).toLocaleTimeString([], {
     hour: "numeric", minute: "2-digit", second: "2-digit",
   }) : "";
@@ -45,6 +46,7 @@ function EventRow({ item, active }: { item: ActivityRecord; active: boolean }) {
         <span style={{ display: "flex", alignItems: "baseline", gap: 7 }}>
           <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--color-ink-black)" }}>{item.title}</span>
           {(item.transition || item.status) && <span style={{ fontSize: 10.5, color: COLORS[status.toLowerCase()] || "var(--color-ash-gray)", textTransform: "capitalize" }}>{(item.transition || item.status || "").replace(/_/g, " ")}</span>}
+          {meta && <span style={{ fontSize: 10.5, color: "var(--color-ash-gray)" }}>{meta}</span>}
           {time && <span style={{ marginLeft: "auto", fontSize: 10.5, color: "var(--color-ash-gray)" }}>{time}</span>}
         </span>
         {item.summary && <span style={{ display: "block", marginTop: 2, whiteSpace: "pre-wrap", fontSize: 12, lineHeight: 1.45, color: "var(--color-warm-gray)" }}>{item.summary}</span>}

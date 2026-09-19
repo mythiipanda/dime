@@ -22,6 +22,8 @@ export interface ActivityRecord {
   sequence?: number;
   correlationId?: string;
   transition?: string;
+  phase?: string;
+  durationMs?: number;
   kind: ActivityKind;
   node?: NodeName;
   title: string;
