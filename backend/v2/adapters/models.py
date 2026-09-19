@@ -21,7 +21,10 @@ from pydantic_ai.providers.openai import OpenAIProvider
 
 from app.config import settings
 from app.tools.rating_metrics import (TEAM_RATING_METRICS,
-                                      canonical_team_rating_metric)
+                                      RankedTeamConstraintError,
+                                      canonical_ranking_direction,
+                                      canonical_team_rating_metric,
+                                      ranked_team_constraints)
 from app.providers import (
     GROQ_DEFAULT,
     INCEPTION_DEFAULT,
@@ -840,6 +843,202 @@ class ModelIntake(ModelStage):
             raise ValueError(f"intake selected unknown capabilities: {unknown}")
         return _canonicalize_calculation_requirements(task)
 
+    def _capability_argument_names(self, capabilities: Sequence[str]) -> set[str] | None:
+        """Return arguments accepted by every option, or None if unproven."""
+        accepted: list[set[str]] = []
+        for name in capabilities:
+            entry = self._catalog.get(name)
+            schema = entry.get("arguments") if isinstance(entry, Mapping) else None
+            properties = schema.get("properties") if isinstance(schema, Mapping) else None
+            if not isinstance(properties, Mapping):
+                return None
+            accepted.append(set(properties))
+        return set.intersection(*accepted) if accepted else set()
+
+    def _project_capability_arguments(
+        self, arguments: Mapping[str, Any], capabilities: Sequence[str],
+    ) -> dict[str, Any]:
+        """Keep only args proven valid for every selected capability option."""
+        names = self._capability_argument_names(capabilities)
+        if names is None:
+            return {}
+        return {key: value for key, value in arguments.items() if key in names}
+
+    def _project_mixed_requirement_arguments(
+        self, review: RequirementReview,
+    ) -> RequirementReview:
+        """Enforce that every emitted argument is valid for every option."""
+        return review.model_copy(update={"requirements": [
+            item.model_copy(update={
+                "capability_arguments": self._project_capability_arguments(
+                    item.capability_arguments, item.capability_options),
+            }) if len(item.capability_options) > 1 else item
+            for item in review.requirements
+        ]})
+
+    def _strip_ranked_team_branches(
+        self, review: RequirementReview,
+    ) -> RequirementReview:
+        """Remove only team_ratings alternatives and project shared arguments."""
+        requirements = []
+        for item in review.requirements:
+            if "team_ratings" not in item.capability_options:
+                requirements.append(item)
+                continue
+            remaining = [name for name in item.capability_options
+                         if name != "team_ratings"]
+            if remaining:
+                requirements.append(item.model_copy(update={
+                    "capability_options": remaining,
+                    "capability_arguments": self._project_capability_arguments(
+                        item.capability_arguments, remaining),
+                }))
+        return review.model_copy(update={"requirements": requirements})
+
+    def _rebuild_ranked_team_branch(
+        self, review: RequirementReview, task: TaskSpec,
+    ) -> RequirementReview:
+        """Strip lower-authority ranked branches and append at most one typed one."""
+        from v2.contracts import EvidenceRequirement
+        stripped = self._strip_ranked_team_branches(review)
+        typed = [item for item in task.requirements
+                 if "team_ratings" in item.capability_options]
+        if typed:
+            source = typed[0]
+            ranked = source.model_copy(update={
+                "capability_options": ["team_ratings"],
+                "capability_arguments": self._project_capability_arguments(
+                    source.capability_arguments, ["team_ratings"]),
+            })
+        elif "team_ratings" in task.required_evidence:
+            ranked = EvidenceRequirement(
+                id="required_team_ratings",
+                description="Required typed intake evidence: team_ratings",
+                capability_options=["team_ratings"],
+                capability_arguments={})
+        else:
+            return stripped
+        existing_ids = {item.id for item in stripped.requirements}
+        if ranked.id in existing_ids:
+            base = "required_team_ratings"
+            candidate = base
+            suffix = 2
+            while candidate in existing_ids:
+                candidate = f"{base}_{suffix}"
+                suffix += 1
+            ranked = ranked.model_copy(update={"id": candidate})
+        return stripped.model_copy(update={
+            "requirements": [*stripped.requirements, ranked],
+        })
+
+    def _reconcile_ranked_team_review(
+        self, request: str, task: TaskSpec, review: RequirementReview,
+    ) -> RequirementReview:
+        """Restore trusted ranked-team constraints without widening scope."""
+        if "team_ratings" not in task.required_evidence:
+            return review
+        review = self._project_mixed_requirement_arguments(review)
+        trusted_text = " ".join([
+            request, task.goal, task.deliverable, *task.subquestions,
+        ])
+        try:
+            projected = ranked_team_constraints(
+                trusted_text, season=task.season.value if task.season else None)
+        except RankedTeamConstraintError:
+            # Ambiguous trusted intent cannot authorize one ranked call. Strip
+            # only that alternative and preserve every unrelated branch.
+            return self._strip_ranked_team_branches(review)
+        trusted_arguments: dict[str, Any] = {}
+        for requirement in task.requirements:
+            if "team_ratings" not in requirement.capability_options:
+                continue
+            trusted_source = self._project_capability_arguments(
+                requirement.capability_arguments, ["team_ratings"])
+            for key, value in trusted_source.items():
+                canonical = value
+                if key == "requested_metric":
+                    canonical = canonical_team_rating_metric(value)
+                    if canonical is None:
+                        raise RankedTeamConstraintError(
+                            f"unknown typed ranked-team metric alias: {value}")
+                elif key == "ranking_direction":
+                    canonical = canonical_ranking_direction(value)
+                    if canonical is None:
+                        raise RankedTeamConstraintError(
+                            f"unknown typed ranked-team direction alias: {value}")
+                if key in trusted_arguments and trusted_arguments[key] != canonical:
+                    raise RankedTeamConstraintError(
+                        f"conflicting typed intake constraint: {key}")
+                trusted_arguments[key] = canonical
+        if projected is None and not trusted_arguments:
+            # An unranked team-ratings request has no deterministic extremum
+            # contract to restore. Review arguments remain subject to the
+            # closed planner/tool vocabulary.
+            return review
+        established = dict(trusted_arguments)
+        if projected is not None:
+            for key, value in projected.items():
+                prior = established.get(key)
+                if prior is not None and prior != value:
+                    raise RankedTeamConstraintError(
+                        f"typed intake conflicts with trusted question: {key}")
+                established[key] = value
+        ranked = [item for item in review.requirements
+                  if "team_ratings" in item.capability_options]
+        if (len(ranked) != 1
+                or ranked[0].capability_options != ["team_ratings"]):
+            review = self._rebuild_ranked_team_branch(review, task)
+            ranked = [item for item in review.requirements
+                      if "team_ratings" in item.capability_options]
+        if not ranked:
+            from v2.contracts import EvidenceRequirement
+            return review.model_copy(update={"requirements": [
+                *review.requirements,
+                EvidenceRequirement(
+                    id="required_team_ratings",
+                    description="Required typed intake evidence: team_ratings",
+                    capability_options=["team_ratings"],
+                    capability_arguments=established),
+            ]})
+        reconciled = []
+        for requirement in review.requirements:
+            if "team_ratings" not in requirement.capability_options:
+                reconciled.append(requirement)
+                continue
+            arguments = dict(requirement.capability_arguments)
+            raw_metric = arguments.get("requested_metric")
+            if raw_metric is not None:
+                metric = canonical_team_rating_metric(raw_metric)
+                if metric is None:
+                    raise RankedTeamConstraintError(
+                        f"unknown ranked-team metric alias: {raw_metric}")
+                if "requested_metric" in established and metric != established["requested_metric"]:
+                    raise RankedTeamConstraintError(
+                        "review metric conflicts with trusted ranked-team metric")
+            raw_direction = arguments.get("ranking_direction")
+            if raw_direction is not None:
+                direction = canonical_ranking_direction(raw_direction)
+                if direction is None:
+                    raise RankedTeamConstraintError(
+                        f"unknown ranked-team direction alias: {raw_direction}")
+                if "ranking_direction" in established and direction != established["ranking_direction"]:
+                    raise RankedTeamConstraintError(
+                        "review direction conflicts with trusted ranked-team extremum")
+            if "season" in established and arguments.get("season") not in (None, established["season"]):
+                raise RankedTeamConstraintError(
+                    "review season conflicts with trusted typed season")
+            for key, expected in established.items():
+                if key in {"requested_metric", "ranking_direction", "season"}:
+                    continue
+                if key in arguments and arguments[key] != expected:
+                    raise RankedTeamConstraintError(
+                        f"review {key} conflicts with trusted typed scope")
+            arguments.update(established)
+            reconciled.append(requirement.model_copy(update={
+                "capability_arguments": arguments,
+            }))
+        return review.model_copy(update={"requirements": reconciled})
+
     async def _review_requirements(
         self, request: str, task: TaskSpec,
     ) -> RequirementReview:
@@ -871,27 +1070,6 @@ class ModelIntake(ModelStage):
                 arguments: dict[str, Any] = {}
                 if task.season is not None:
                     arguments["season"] = task.season.value
-                if capability == "team_ratings":
-                    folded = request.casefold()
-                    def has_phrase(phrase: str) -> bool:
-                        return bool(re.search(rf"(?<![a-z0-9]){re.escape(phrase)}(?![a-z0-9])", folded))
-                    metric_rules = (
-                        (("defensive rating", "defense"), "DEF_RATING"),
-                        (("offensive rating", "offense"), "OFF_RATING"),
-                        (("net rating",), "NET_RATING"), (("pace",), "PACE"),
-                        (("true shooting",), "TS_PCT"),
-                        (("turnover percentage", "turnover rate"), "TM_TOV_PCT"),
-                    )
-                    metric = next((name for aliases, name in metric_rules
-                                   if any(has_phrase(alias) for alias in aliases)), None)
-                    asc = any(has_phrase(token) for token in ("lowest", "fewest", "minimum"))
-                    desc = any(has_phrase(token) for token in ("highest", "most", "maximum"))
-                    if metric == "DEF_RATING":
-                        asc = asc or any(has_phrase(x) for x in ("best defense", "best defensive rating"))
-                        desc = desc or any(has_phrase(x) for x in ("worst defense", "worst defensive rating"))
-                    if metric and asc != desc:
-                        arguments.update(requested_metric=metric,
-                                         ranking_direction="asc" if asc else "desc")
                 if capability == "player_comparison" and len(entities) >= 2:
                     arguments.update({"a": entities[0], "b": entities[1]})
                 elif capability.startswith("player_") and entities:
@@ -906,6 +1084,19 @@ class ModelIntake(ModelStage):
                 requirements=requirements,
                 calculation_requirements=list(task.calculation_requirements),
                 missing_subquestions=[], missing_skills=[])
+        try:
+            review = self._reconcile_ranked_team_review(request, task, review)
+        except RankedTeamConstraintError:
+            # Requirement review is lower authority than typed intake. Strip
+            # only conflicting ranked alternatives, rebuild at most one trusted
+            # branch, then reconcile through the same projector. If trusted
+            # intake is invalid, leave only unrelated alternatives as typed gaps.
+            safe_review = self._rebuild_ranked_team_branch(review, task)
+            try:
+                review = self._reconcile_ranked_team_review(
+                    request, task, safe_review)
+            except RankedTeamConstraintError:
+                review = self._strip_ranked_team_branches(safe_review)
         unknown_evidence = sorted(
             {capability for requirement in review.requirements
              for capability in requirement.capability_options}
@@ -1109,12 +1300,8 @@ class ModelPlanner(ModelStage):
                 raw_direction = (requirement_direction
                                  if requirement_direction is not None
                                  else args.get("ranking_direction"))
-                direction_aliases = {"ascending":"asc", "lowest":"asc",
-                                     "minimum":"asc", "descending":"desc",
-                                     "highest":"desc", "maximum":"desc"}
-                direction = str(raw_direction or "").strip().casefold()
-                direction = direction_aliases.get(direction, direction)
-                args["ranking_direction"] = (direction if direction in {"asc", "desc"}
+                direction = canonical_ranking_direction(raw_direction)
+                args["ranking_direction"] = (direction if direction is not None
                                                else ranked_directions[metric])
             canonical_nodes.append(node.model_copy(update={"arguments": args}))
         plan = plan.model_copy(update={"nodes": canonical_nodes})

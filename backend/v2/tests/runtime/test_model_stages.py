@@ -2780,3 +2780,436 @@ async def test_semantic_verifier_prompt_exposes_claim_result_alignment():
     prompt=stub.calls[0]['prompt']
     assert '`supported: true` requires exactly `reasons: []`' in prompt
     assert '`supported: false` requires at least one rejection reason' in prompt
+
+def ranked_intake(catalog=None):
+    from v2.runtime.assembly import capability_catalog
+    return ModelIntake(StubModel([]),provider="stub",model_name="stub",
+      capability_catalog=catalog or capability_catalog())
+
+
+@pytest.mark.parametrize(("phrase", "metric", "direction"), [
+    ("lowest offensive rating", "OFF_RATING", "asc"),
+    ("highest defensive rating", "DEF_RATING", "desc"),
+    ("lowest net rating", "NET_RATING", "asc"),
+    ("highest pace", "PACE", "desc"),
+    ("lowest true shooting percentage", "TS_PCT", "asc"),
+    ("highest turnover rate", "TM_TOV_PCT", "desc"),
+])
+def test_ranked_team_projector_covers_closed_metrics_and_directions(phrase, metric, direction):
+    from app.tools.rating_metrics import ranked_team_constraints
+    assert ranked_team_constraints(f"Which team has the {phrase}?", season="2025-26") == {
+        "requested_metric": metric, "ranking_direction": direction,
+        "season": "2025-26",
+    }
+
+@pytest.mark.parametrize("arguments", [
+    {},
+    {"requested_metric": "defensive_rating"},
+    {"requested_metric": "DEF_RATING", "ranking_direction": "minimum"},
+])
+def test_ranked_team_review_restores_trusted_constraints(arguments):
+    from v2.contracts import RequirementReview
+    task=TaskSpec(goal="lowest defensive rating",mode="quick",deliverable="team/value",
+        season={"value":"2025-26","source":"user","confidence":1},
+        subquestions=["Which team is lowest?"], required_evidence=["team_ratings"])
+    review=RequirementReview(requirements=[{"id":"provider_id","description":"provider prose",
+        "capability_options":["team_ratings"],"capability_arguments":{"season":"2025-26",**arguments}}])
+    out=ranked_intake()._reconcile_ranked_team_review(
+        "Which team has the lowest defensive rating?",task,review)
+    assert out.requirements[0].id == "provider_id"
+    assert out.requirements[0].description == "provider prose"
+    assert out.requirements[0].capability_arguments == {
+        "season":"2025-26","requested_metric":"DEF_RATING","ranking_direction":"asc"}
+
+@pytest.mark.parametrize("arguments", [
+    {"requested_metric":"OFF_RATING"},
+    {"requested_metric":"mystery_efficiency"},
+    {"requested_metric":"DEF_RATING","ranking_direction":"desc"},
+    {"requested_metric":"DEF_RATING","season":"2024-25"},
+])
+def test_ranked_team_review_conflicts_fail_closed(arguments):
+    from app.tools.rating_metrics import RankedTeamConstraintError
+    from v2.contracts import RequirementReview
+    task=TaskSpec(goal="lowest defensive rating",mode="quick",deliverable="team/value",
+        season={"value":"2025-26","source":"user","confidence":1},required_evidence=["team_ratings"])
+    review=RequirementReview(requirements=[{"id":"r","description":"ratings",
+        "capability_options":["team_ratings"],"capability_arguments":arguments}])
+    with pytest.raises(RankedTeamConstraintError):
+        ranked_intake()._reconcile_ranked_team_review(
+            "Which team has the lowest defensive rating?",task,review)
+
+def test_ranked_team_projector_ambiguity_and_missing_season():
+    from app.tools.rating_metrics import RankedTeamConstraintError, ranked_team_constraints
+    with pytest.raises(RankedTeamConstraintError):
+        ranked_team_constraints("highest and lowest pace")
+    with pytest.raises(RankedTeamConstraintError):
+        ranked_team_constraints("lowest pace and offensive rating")
+    assert ranked_team_constraints("lowest pace") == {
+        "requested_metric":"PACE","ranking_direction":"asc"}
+
+def test_ranked_team_review_preserves_additions_and_avoids_duplicate_requirement():
+    from v2.contracts import RequirementReview
+    task=TaskSpec(goal="lowest pace",mode="quick",deliverable="team",required_evidence=["team_ratings"])
+    review=RequirementReview(requirements=[
+      {"id":"rank","description":"pace","capability_options":["team_ratings"],"capability_arguments":{}},
+      {"id":"extra","description":"standings","capability_options":["standings"],"capability_arguments":{}},
+    ],missing_subquestions=["context"],missing_skills=["league-ratings"])
+    out=ranked_intake()._reconcile_ranked_team_review("Which team has the lowest pace?",task,review)
+    assert [r.id for r in out.requirements]==["rank","extra"]
+    assert out.missing_subquestions==["context"] and out.missing_skills==["league-ratings"]
+    assert out.requirements[0].capability_arguments=={"requested_metric":"PACE","ranking_direction":"asc"}
+
+@pytest.mark.anyio
+async def test_ranked_team_success_and_fallback_share_projector():
+    from v2.contracts import RequirementReview
+    task=TaskSpec(goal="lowest pace",mode="quick",deliverable="team",
+        season={"value":"2025-26","source":"user","confidence":1},required_evidence=["team_ratings"])
+    review=RequirementReview(requirements=[{"id":"rank","description":"pace",
+        "capability_options":["team_ratings"],"capability_arguments":{}}])
+    successful=ranked_intake()._reconcile_ranked_team_review("Which team has the lowest pace?",task,review)
+    class M:
+        async def generate(self,**call): raise RuntimeError("all structured-output providers failed [timeout]")
+    fallback=await ModelIntake(M(),provider="stub",model_name="stub",
+        capability_catalog={"team_ratings":{}},requirement_review=True)._review_requirements(
+            "Which team has the lowest pace?",task)
+    assert successful.requirements[0].capability_arguments == fallback.requirements[0].capability_arguments
+
+def test_ranked_team_projector_preserves_typed_entity_scope_and_precedence():
+    from v2.contracts import RequirementReview
+    task=TaskSpec(goal="rank pace",mode="quick",deliverable="team",
+        required_evidence=["team_ratings"],requirements=[{
+          "id":"typed","description":"typed scope","capability_options":["team_ratings"],
+          "capability_arguments":{"requested_metric":"PACE","ranking_direction":"desc","team":"Boston Celtics"}}])
+    review=RequirementReview(requirements=[{"id":"review","description":"review wording",
+        "capability_options":["team_ratings"],"capability_arguments":{"requested_metric":"pace"}}])
+    out=ranked_intake()._reconcile_ranked_team_review("Which team has the highest pace?",task,review)
+    assert out.requirements[0].id=="review"
+    assert out.requirements[0].capability_arguments=={
+      "requested_metric":"PACE","ranking_direction":"desc","team":"Boston Celtics"}
+
+
+@pytest.mark.parametrize(("review_scope", "expected_error"), [
+    ({}, False),
+    ({"team":"Boston Celtics"}, False),
+    ({"team":"Los Angeles Lakers"}, True),
+])
+def test_ranked_team_typed_scope_omission_restored_and_conflict_rejected(review_scope, expected_error):
+    from app.tools.rating_metrics import RankedTeamConstraintError
+    from v2.contracts import RequirementReview
+    task=TaskSpec(goal="highest pace",mode="quick",deliverable="team",
+      required_evidence=["team_ratings"],requirements=[{
+        "id":"typed","description":"Boston scope","capability_options":["team_ratings"],
+        "capability_arguments":{"team":"Boston Celtics"}}])
+    review=RequirementReview(requirements=[{
+      "id":"review","description":"pace","capability_options":["team_ratings"],
+      "capability_arguments":{"requested_metric":"pace",**review_scope}}])
+    if expected_error:
+        with pytest.raises(RankedTeamConstraintError):
+            ranked_intake()._reconcile_ranked_team_review(
+              "Which team has the highest pace?",task,review)
+    else:
+        out=ranked_intake()._reconcile_ranked_team_review(
+          "Which team has the highest pace?",task,review)
+        assert out.requirements[0].capability_arguments["team"]=="Boston Celtics"
+
+@pytest.mark.parametrize(("typed_metric", "expected"), [
+    ("offensive", "OFF_RATING"),
+    ("defensive", "DEF_RATING"),
+    ("net", "NET_RATING"),
+    ("pace", "PACE"),
+    ("true shooting", "TS_PCT"),
+    ("turnover rate", "TM_TOV_PCT"),
+])
+@pytest.mark.parametrize(("typed_direction", "expected_direction"), [
+    ("minimum", "asc"), ("maximum", "desc"),
+])
+def test_ranked_team_typed_aliases_use_shared_vocabulary(
+        typed_metric, expected, typed_direction, expected_direction):
+    from v2.contracts import RequirementReview
+    task=TaskSpec(goal="rank teams",mode="quick",deliverable="team",
+      required_evidence=["team_ratings"],requirements=[{
+        "id":"typed","description":"typed","capability_options":["team_ratings"],
+        "capability_arguments":{"requested_metric":typed_metric,
+                                "ranking_direction":typed_direction}}])
+    review=RequirementReview(requirements=[{
+      "id":"review","description":"review","capability_options":["team_ratings"],
+      "capability_arguments":{}}])
+    out=ranked_intake()._reconcile_ranked_team_review("Rank teams",task,review)
+    assert out.requirements[0].capability_arguments=={
+      "requested_metric":expected,"ranking_direction":expected_direction}
+
+@pytest.mark.parametrize("arguments", [
+    {"requested_metric":"mystery"}, {"requested_metric":"pace","ranking_direction":"sideways"},
+])
+def test_ranked_team_unknown_typed_alias_rejected(arguments):
+    from app.tools.rating_metrics import RankedTeamConstraintError
+    from v2.contracts import RequirementReview
+    task=TaskSpec(goal="rank",mode="quick",deliverable="team",
+      required_evidence=["team_ratings"],requirements=[{
+        "id":"typed","description":"typed","capability_options":["team_ratings"],
+        "capability_arguments":arguments}])
+    with pytest.raises(RankedTeamConstraintError):
+      ranked_intake()._reconcile_ranked_team_review("Rank teams",task,RequirementReview())
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("review_arguments", [
+    {"requested_metric":"OFF_RATING"},
+    {"requested_metric":"unknown_metric"},
+])
+async def test_successful_review_conflict_falls_back_without_uncaught_exception(review_arguments):
+    from v2.contracts import RequirementReview
+    class M:
+        calls=0
+        async def generate(self,**call):
+            self.calls+=1
+            if self.calls==1:
+                return TaskSpec(goal="lowest defensive rating",mode="quick",deliverable="team/value",
+                  season={"value":"2025-26","source":"user","confidence":1},
+                  required_evidence=["team_ratings"])
+            return RequirementReview(requirements=[{
+              "id":"bad_review","description":"lower-authority review",
+              "capability_options":["team_ratings"],"capability_arguments":review_arguments}])
+    task=await ModelIntake(M(),provider="stub",model_name="stub",
+      capability_catalog={"team_ratings":{}},requirement_review=True).understand(
+        "Which team has the lowest defensive rating in 2025-26?")
+    assert len(task.requirements)==1
+    assert task.requirements[0].id=="required_team_ratings"
+    assert task.requirements[0].capability_arguments=={
+      "season":"2025-26","requested_metric":"DEF_RATING","ranking_direction":"asc"}
+
+@pytest.mark.anyio
+async def test_ambiguous_trusted_ranked_intent_yields_typed_uncovered_gap_not_exception():
+    from v2.contracts import RequirementReview
+    class M:
+        calls=0
+        async def generate(self,**call):
+            self.calls+=1
+            if self.calls==1:
+                return TaskSpec(goal="highest and lowest pace",mode="quick",deliverable="teams",
+                  required_evidence=["team_ratings"])
+            return RequirementReview(requirements=[{
+              "id":"pace","description":"pace extrema","capability_options":["team_ratings"],
+              "capability_arguments":{"requested_metric":"PACE"}}])
+    task=await ModelIntake(M(),provider="stub",model_name="stub",
+      capability_catalog={"team_ratings":{}},requirement_review=True).understand(
+        "Which teams have the highest and lowest pace?")
+    assert task.required_evidence==["team_ratings"]
+    assert task.requirements==[]
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("typed_arguments", [
+    {"requested_metric":"mystery"},
+    {"requested_metric":"pace","ranking_direction":"sideways"},
+])
+async def test_unknown_typed_alias_end_to_end_yields_uncovered_gap_not_exception(typed_arguments):
+    from v2.contracts import RequirementReview
+    class M:
+        calls=0
+        async def generate(self,**call):
+            self.calls+=1
+            if self.calls==1:
+                return TaskSpec(goal="rank teams",mode="quick",deliverable="team",
+                  required_evidence=["team_ratings"],requirements=[{
+                    "id":"typed","description":"typed","capability_options":["team_ratings"],
+                    "capability_arguments":typed_arguments}])
+            return RequirementReview(requirements=[{
+              "id":"review","description":"review","capability_options":["team_ratings"],
+              "capability_arguments":{}}])
+    from v2.runtime.assembly import capability_catalog
+    task=await ModelIntake(M(),provider="stub",model_name="stub",
+      capability_catalog=capability_catalog(),requirement_review=True).understand("Rank teams")
+    assert task.required_evidence==["team_ratings"]
+    assert task.requirements==[]
+
+def _ranked_multi_clause_task():
+    return TaskSpec(goal="lowest defensive rating",mode="quick",deliverable="team/value",
+      season={"value":"2025-26","source":"user","confidence":1},
+      required_evidence=["team_ratings"])
+
+def test_ranked_branch_strip_preserves_mixed_alternative():
+    from v2.contracts import RequirementReview
+    review=RequirementReview(requirements=[{
+      "id":"mixed","description":"mixed branch",
+      "capability_options":["team_ratings","standings"],
+      "capability_arguments":{"season":"2025-26"}}],missing_subquestions=["context"])
+    out=ranked_intake({"team_ratings":{},"standings":{"arguments":{"type":"object","properties":{"season":{"type":"string"}}}}})._strip_ranked_team_branches(review)
+    assert len(out.requirements)==1
+    assert out.requirements[0].id=="mixed"
+    assert out.requirements[0].capability_options==["standings"]
+    assert out.requirements[0].capability_arguments=={"season":"2025-26"}
+    assert out.missing_subquestions==["context"]
+
+def test_duplicate_ranked_review_clauses_rebuild_one_trusted_clause():
+    from v2.contracts import RequirementReview
+    review=RequirementReview(requirements=[
+      {"id":"a","description":"first","capability_options":["team_ratings"],"capability_arguments":{}},
+      {"id":"b","description":"second","capability_options":["team_ratings"],"capability_arguments":{}},
+    ])
+    out=ranked_intake()._reconcile_ranked_team_review(
+      "Which team has the lowest defensive rating?",_ranked_multi_clause_task(),review)
+    ranked=[r for r in out.requirements if "team_ratings" in r.capability_options]
+    assert len(ranked)==1
+    assert ranked[0].capability_arguments=={
+      "season":"2025-26","requested_metric":"DEF_RATING","ranking_direction":"asc"}
+
+def test_duplicate_mixed_ranked_clauses_preserve_alternatives_and_add_one_ranked():
+    from v2.contracts import RequirementReview
+    review=RequirementReview(requirements=[
+      {"id":"a","description":"first","capability_options":["team_ratings","standings"],"capability_arguments":{}},
+      {"id":"b","description":"second","capability_options":["team_ratings","warehouse_freshness"],"capability_arguments":{}},
+    ],missing_skills=["league-ratings"])
+    out=ranked_intake()._reconcile_ranked_team_review(
+      "Which team has the lowest defensive rating?",_ranked_multi_clause_task(),review)
+    assert [(r.id,r.capability_options) for r in out.requirements]==[
+      ("a",["standings"]),("b",["warehouse_freshness"]),
+      ("required_team_ratings",["team_ratings"])]
+    assert out.missing_skills==["league-ratings"]
+
+def test_ambiguous_ranked_intent_preserves_unrelated_mixed_alternative():
+    from v2.contracts import RequirementReview
+    task=TaskSpec(goal="highest and lowest pace",mode="quick",deliverable="teams",
+      required_evidence=["team_ratings"])
+    review=RequirementReview(requirements=[{
+      "id":"mixed","description":"pace or standings",
+      "capability_options":["team_ratings","standings"],"capability_arguments":{}}])
+    out=ranked_intake()._reconcile_ranked_team_review(
+      "Which teams have the highest and lowest pace?",task,review)
+    assert [(r.id,r.capability_options) for r in out.requirements]==[("mixed",["standings"])]
+
+@pytest.mark.anyio
+async def test_mixed_ranked_conflict_e2e_preserves_alternative_and_one_trusted_branch():
+    from v2.contracts import RequirementReview
+    class M:
+      calls=0
+      async def generate(self,**call):
+        self.calls+=1
+        if self.calls==1:return _ranked_multi_clause_task()
+        return RequirementReview(requirements=[{
+          "id":"mixed","description":"mixed","capability_options":["team_ratings","standings"],
+          "capability_arguments":{"requested_metric":"OFF_RATING"}}])
+    task=await ModelIntake(M(),provider="stub",model_name="stub",
+      capability_catalog={"team_ratings":{},"standings":{}},requirement_review=True).understand(
+       "Which team has the lowest defensive rating?")
+    assert [(r.id,r.capability_options) for r in task.requirements]==[
+      ("mixed",["standings"]),("required_team_ratings",["team_ratings"])]
+    assert task.requirements[-1].capability_arguments=={
+      "season":"2025-26","requested_metric":"DEF_RATING","ranking_direction":"asc"}
+
+def test_duplicate_ranked_requirements_normalize_to_one_plan_call():
+    from v2.contracts import Plan,RequirementReview
+    catalog={"team_ratings":{},"standings":{},"warehouse_freshness":{}}
+    review=RequirementReview(requirements=[
+      {"id":"a","description":"first","capability_options":["team_ratings","standings"],"capability_arguments":{}},
+      {"id":"b","description":"second","capability_options":["team_ratings","warehouse_freshness"],"capability_arguments":{}},
+    ])
+    task=_ranked_multi_clause_task().model_copy(update={"requirements":
+      ranked_intake()._reconcile_ranked_team_review(
+        "Which team has the lowest defensive rating?",_ranked_multi_clause_task(),review).requirements})
+    ranked=next(r for r in task.requirements if "team_ratings" in r.capability_options)
+    plan=Plan.model_validate({"nodes":[
+      {"id":"ratings_1","description":"ratings","capability_hints":["team_ratings"],
+       "covers_requirement_ids":[ranked.id],"arguments":ranked.capability_arguments},
+      {"id":"ratings_2","description":"duplicate ratings","capability_hints":["team_ratings"],
+       "covers_requirement_ids":[ranked.id],"arguments":ranked.capability_arguments},
+    ]})
+    out=ModelPlanner(StubModel([]),provider="stub",model_name="stub",
+      capability_catalog=catalog)._normalize_plan(task,plan)
+    assert len([n for n in out.nodes if "team_ratings" in n.capability_hints])==1
+
+def test_ranked_branch_projection_preserves_only_contract_shared_arguments():
+    from v2.contracts import RequirementReview
+    intake=ranked_intake()
+    review=RequirementReview(requirements=[{
+      "id":"mixed","description":"mixed",
+      "capability_options":["team_ratings","standings"],
+      "capability_arguments":{"season":"2025-26","requested_metric":"OFF_RATING",
+                              "ranking_direction":"desc"}}])
+    stripped=intake._strip_ranked_team_branches(review)
+    assert stripped.requirements[0].capability_options==["standings"]
+    assert stripped.requirements[0].capability_arguments=={"season":"2025-26"}
+
+def test_rebuilt_ranked_branch_drops_foreign_alternative_arguments():
+    from v2.contracts import RequirementReview
+    intake=ranked_intake()
+    task=TaskSpec(goal="lowest pace",mode="quick",deliverable="team",
+      required_evidence=["team_ratings"],requirements=[{
+       "id":"mixed","description":"mixed typed","capability_options":["team_ratings","standings"],
+       "capability_arguments":{"season":"2025-26","requested_metric":"PACE",
+                               "ranking_direction":"asc","standing_type":"conference"}}])
+    out=intake._rebuild_ranked_team_branch(RequirementReview(),task)
+    ranked=out.requirements[0]
+    assert ranked.capability_options==["team_ratings"]
+    assert ranked.capability_arguments=={
+      "season":"2025-26","requested_metric":"PACE","ranking_direction":"asc"}
+
+def test_preserved_and_rebuilt_arguments_validate_against_real_contracts():
+    from v2.contracts import RequirementReview
+    from v2.runtime.assembly import capability_catalog
+    intake=ranked_intake(); catalog=capability_catalog()
+    review=RequirementReview(requirements=[
+      {"id":"a","description":"mixed","capability_options":["team_ratings","standings"],
+       "capability_arguments":{"season":"2025-26","requested_metric":"DEF_RATING"}},
+      {"id":"b","description":"mixed two","capability_options":["team_ratings","warehouse_freshness"],
+       "capability_arguments":{"ranking_direction":"asc"}},
+    ])
+    out=intake._reconcile_ranked_team_review(
+      "Which team has the lowest defensive rating?",_ranked_multi_clause_task(),review)
+    for requirement in out.requirements:
+      for option in requirement.capability_options:
+        properties=catalog[option]["arguments"].get("properties",{})
+        assert set(requirement.capability_arguments) <= set(properties)
+
+@pytest.mark.parametrize("review_arguments", [
+    {},
+    {"season":"2025-26","requested_metric":"defensive",
+     "ranking_direction":"minimum"},
+])
+def test_single_mixed_ranked_happy_path_splits_and_projects_real_contract(review_arguments):
+    from v2.contracts import RequirementReview
+    from v2.runtime.assembly import capability_catalog
+    catalog=capability_catalog(); intake=ranked_intake(catalog)
+    review=RequirementReview(requirements=[{
+      "id":"mixed","description":"ratings or standings",
+      "capability_options":["team_ratings","standings"],
+      "capability_arguments":review_arguments}])
+    out=intake._reconcile_ranked_team_review(
+      "Which team has the lowest defensive rating in 2025-26?",
+      _ranked_multi_clause_task(),review)
+    assert len(out.requirements)==2
+    standings=next(r for r in out.requirements if r.capability_options==["standings"])
+    ranked=next(r for r in out.requirements if r.capability_options==["team_ratings"])
+    assert standings.id=="mixed"
+    assert standings.capability_arguments == (
+      {"season":"2025-26"} if "season" in review_arguments else {})
+    assert ranked.capability_arguments=={
+      "season":"2025-26","requested_metric":"DEF_RATING","ranking_direction":"asc"}
+    assert "requested_metric" not in standings.capability_arguments
+    assert "ranking_direction" not in standings.capability_arguments
+    for requirement in out.requirements:
+      for option in requirement.capability_options:
+        properties=catalog[option]["arguments"].get("properties",{})
+        assert set(requirement.capability_arguments) <= set(properties)
+
+@pytest.mark.parametrize(("review_args", "expected"), [
+    ({"team":"Boston Celtics","season":"2025-26"}, {"season":"2025-26"}),
+    ({"season":"2025-26"}, {"season":"2025-26"}),
+    ({"standing_type":"conference","season":"2025-26"}, {"season":"2025-26"}),
+])
+def test_unranked_mixed_requirement_projects_to_contract_intersection(review_args, expected):
+    from v2.contracts import RequirementReview
+    from v2.runtime.assembly import capability_catalog
+    catalog=capability_catalog(); intake=ranked_intake(catalog)
+    task=TaskSpec(goal="show team context",mode="quick",deliverable="context",
+      required_evidence=["team_ratings"])
+    review=RequirementReview(requirements=[{
+      "id":"mixed","description":"ratings or standings",
+      "capability_options":["team_ratings","standings"],
+      "capability_arguments":review_args}])
+    out=intake._reconcile_ranked_team_review("Show team context",task,review)
+    assert len(out.requirements)==1
+    assert out.requirements[0].capability_options==["team_ratings","standings"]
+    assert out.requirements[0].capability_arguments==expected
+    for requirement in out.requirements:
+      for option in requirement.capability_options:
+        properties=catalog[option]["arguments"].get("properties",{})
+        assert set(requirement.capability_arguments)<=set(properties)
