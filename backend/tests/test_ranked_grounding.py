@@ -144,3 +144,16 @@ def test_blocks_per_game_uses_full_blocks_totals_and_unrounded_sort():
         "Victor Wembanyama", "Alex Sarr", "Zach Edey", "Chet Holmgren", "Jay Huff"]
     assert all(r["GP"] for r in out["rows"][:5])
     assert out["rows"][2]["BPG"] > out["rows"][3]["BPG"] > out["rows"][4]["BPG"]
+
+
+def test_team_rating_tool_enum_and_planner_vocabulary_stay_aligned():
+    from app.tools.rating_metrics import (
+        TEAM_RATING_METRICS, canonical_team_rating_metric,
+    )
+    assert set(TEAM_RATING_METRICS) == {
+        "OFF_RATING", "DEF_RATING", "NET_RATING", "PACE", "TS_PCT", "TM_TOV_PCT",
+    }
+    for metric, aliases in TEAM_RATING_METRICS.items():
+        assert canonical_team_rating_metric(metric) == metric
+        for alias in aliases:
+            assert canonical_team_rating_metric(alias) == metric

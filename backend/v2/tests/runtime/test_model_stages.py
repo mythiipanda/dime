@@ -1798,7 +1798,9 @@ def test_team_rating_arguments_are_canonicalized_from_typed_requirement():
     ("TS_PCT", "desc", "DEF_RATING", "TS_PCT", "desc"),
     ("TM_TOV_PCT", "asc", "pace", "TM_TOV_PCT", "asc"),
     (None, None, "true shooting", "TS_PCT", "desc"),
-    (None, None, "pace", "pace", None),
+    (None, None, "pace", "PACE", "desc"),
+    (None, None, "offensive", "OFF_RATING", "desc"),
+    (None, None, "net", "NET_RATING", "desc"),
 ])
 def test_typed_team_metric_precedes_model_argument(required_metric, required_direction,
         model_metric, expected_metric, expected_direction):

@@ -17,6 +17,8 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
 from app.config import settings
+from app.tools.rating_metrics import (TEAM_RATING_METRICS,
+                                      canonical_team_rating_metric)
 from app.providers import (
     GROQ_DEFAULT,
     INCEPTION_DEFAULT,
@@ -872,17 +874,11 @@ class ModelPlanner(ModelStage):
         # human synonyms; only the closed tool enum reaches execution. When no
         # mapping is supported, leave the arguments untouched so the graceful
         # A3 fallback reports the typed gap rather than guessing.
-        metric_aliases = {
-            "def_rating": "DEF_RATING", "defensive_rating": "DEF_RATING",
-            "defense": "DEF_RATING", "defensive rating": "DEF_RATING",
-            "ts_pct": "TS_PCT", "true_shooting": "TS_PCT",
-            "true shooting": "TS_PCT", "true shooting percentage": "TS_PCT",
-            "tm_tov_pct": "TM_TOV_PCT", "turnover_percentage": "TM_TOV_PCT",
-            "turnover percentage": "TM_TOV_PCT", "turnover rate": "TM_TOV_PCT",
+        ranked_directions = {
+            "DEF_RATING": "asc", "TM_TOV_PCT": "asc",
+            "OFF_RATING": "desc", "NET_RATING": "desc",
+            "PACE": "desc", "TS_PCT": "desc",
         }
-        ranked_metrics = {"DEF_RATING", "TS_PCT", "TM_TOV_PCT"}
-        ranked_directions = {"DEF_RATING": "asc", "TS_PCT": "desc",
-                             "TM_TOV_PCT": "asc"}
         canonical_nodes = []
         for node in plan.nodes:
             if "team_ratings" not in node.capability_hints:
@@ -899,9 +895,8 @@ class ModelPlanner(ModelStage):
             raw_metric = (requirement_metric if requirement_metric is not None
                           else args.get("requested_metric"))
             key = str(raw_metric or "").strip()
-            metric = (key if key in ranked_metrics
-                      else metric_aliases.get(key.casefold().replace("-", "_")))
-            if metric in ranked_metrics:
+            metric = canonical_team_rating_metric(key)
+            if metric in TEAM_RATING_METRICS:
                 args["requested_metric"] = metric
                 requirement_direction = next((item.get("ranking_direction")
                                                 for item in requirement_args
