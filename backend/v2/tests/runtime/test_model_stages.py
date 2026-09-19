@@ -2765,3 +2765,18 @@ def test_safe_failure_validation_subtype_validation_phase_without_recoverable_er
     assert safe['failure_phase']=='json_or_schema_validation'
     assert safe['failure_validation_errors']==[]
     assert safe['failure_validation_subtype']=='other_contract_invariant'
+
+
+@pytest.mark.anyio
+async def test_semantic_verifier_prompt_exposes_claim_result_alignment():
+    from v2.contracts import DraftReport
+    stub=StubModel([{'status':'pass','claim_results':[{'claim_index':0,'supported':True,'reasons':[]}]}])
+    verifier=ModelSemanticVerifier(stub,provider='stub',model_name='stub')
+    task=TaskSpec(goal='g',mode='quick',deliverable='d')
+    draft=DraftReport(sections=['x'],claims=[{'text':'x','kind':'observed','evidence_ids':['e']}])
+    evidence=EvidenceEnvelope(evidence_id='e',capability='x',source='fixture',observed_at=datetime.now(UTC),rows=[{'x':1}])
+    report=await verifier.verify(task,draft,{'e':evidence})
+    assert report.claim_results[0].supported is True and report.claim_results[0].reasons==[]
+    prompt=stub.calls[0]['prompt']
+    assert '`supported: true` requires exactly `reasons: []`' in prompt
+    assert '`supported: false` requires at least one rejection reason' in prompt

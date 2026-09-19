@@ -161,3 +161,12 @@ def test_synthesis_and_verification_require_per_fact_source_vintage() -> None:
         assert "each conflicting fact" in prompt
         assert "`vintages`, then `as_of`" in prompt
         assert "`observed_at`" in prompt
+
+
+
+def test_verifier_prompt_aligns_supported_flag_and_reasons_contract():
+    from v2.prompts import load_prompt
+    prompt=load_prompt('verifier')
+    assert '`supported: true` requires exactly `reasons: []`' in prompt
+    assert '`supported: false` requires at least one rejection reason' in prompt
+    assert 'Do not attach supportive commentary to a supported claim.' in prompt

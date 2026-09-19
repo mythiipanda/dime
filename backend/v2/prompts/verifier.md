@@ -20,7 +20,7 @@ nothing else:
 - claim_results (list of ClaimResult), each:
   - claim_index (int): the claim's position in DraftReport.claims.
   - supported (bool).
-  - reasons (list of str).
+  - reasons (list of str): use `[]` when supported is true; when supported is false, provide one or more unique rejection reasons.
 - missing_branches (list of str): requested branches no claim covers.
 - contradictions (list of str): claims conflicting with evidence or with
   each other.
@@ -31,6 +31,7 @@ nothing else:
 - Never supply replacement facts, numbers, or citations. Report what is
   wrong, never what is right.
 - Adjudicate every claim by index; claim_results covers all claims.
+- Keep each ClaimResult internally aligned: `supported: true` requires exactly `reasons: []`; `supported: false` requires at least one rejection reason. Do not attach supportive commentary to a supported claim.
 - Flag unsupported inference: a claim whose kind overstates its evidence,
   such as judgment presented as observed or a projection with no scenario
   basis.
