@@ -19,8 +19,8 @@
   --color-ember: oklch(0.621 0.192 23.042);           /* red */
   --color-field: oklch(0.961 0.001 286.375);          /* field (inset fill) */
 
-  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", ui-sans-serif, system-ui, sans-serif;
-  --font-body: -apple-system, BlinkMacSystemFont, "SF Pro Text", ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-inter), Inter, ui-sans-serif, system-ui, sans-serif;
+  --font-body: var(--font-inter), Inter, ui-sans-serif, system-ui, sans-serif;
 
   --shadow-card: rgba(0, 0, 0, 0.05) 0px 4px 16px 0px;
   --shadow-preview: rgba(17, 12, 46, 0.12) 0px 12px 45px 0px;
@@ -171,8 +171,8 @@ body {
   color: var(--color-ink-black);
   font-family: var(--font-body);
   font-size: 14px;
-  line-height: 1.64;
-  letter-spacing: -0.15px;
+  line-height: 1.5;
+  letter-spacing: -0.01em;
 }
 
 .display {
