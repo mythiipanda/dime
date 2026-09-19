@@ -34,6 +34,7 @@ class PlanExecutor:
         max_concurrency: int = 4,
         max_failures: int | None = None,
         checkpoint_store: CheckpointStore | None = None,
+        evidence_activity=None,
     ) -> None:
         if not isinstance(max_concurrency, int) or isinstance(max_concurrency, bool):
             raise TypeError("max_concurrency must be an integer")
@@ -45,9 +46,11 @@ class PlanExecutor:
             if not 1 <= max_failures <= 10:
                 raise ValueError("max_failures must be between 1 and 10")
         self._capabilities = dict(capabilities)
+        self.capability_names = frozenset(self._capabilities)
         self._max_concurrency = max_concurrency
         self._max_failures = max_failures
         self._checkpoint_store = checkpoint_store
+        self._evidence_activity = evidence_activity
 
     async def execute(
         self, task: TaskSpec, plan: Plan, *, run_id: str | None = None
@@ -395,6 +398,12 @@ class PlanExecutor:
                     raise ValueError(
                         f"capability returned {result.capability!r}, expected {capability.name!r}"
                     )
+                if self._evidence_activity is not None:
+                    rows = result.rows
+                    try:
+                        self._evidence_activity({"kind":"evidence_update","phase":"execute","status":"complete","title":"Evidence admitted","transition":"admitted","correlation_id":result.evidence_id,"data":{"capability":result.capability,"season":result.season,"as_of":result.as_of.isoformat() if result.as_of else None,"observed_at":result.observed_at.isoformat(),"qualification":"present" if result.qualification else "missing","coverage":"present" if result.coverage else "missing","warning_count":len(result.warnings),"rows":len(rows) if isinstance(rows,list) else None}})
+                    except Exception:
+                        pass
                 return node, result
             except asyncio.CancelledError:
                 raise

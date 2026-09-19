@@ -47,6 +47,15 @@ class ThoughtStream(StrictEvent):
 
 
 class ToolCall(StrictEvent):
+    event_id: str | None = None
+    sequence: StrictInt | None = Field(default=None, ge=1)
+    emitted_at: str | None = None
+    phase: str | None = None
+    correlation_id: str | None = None
+    transition: str | None = None
+    status: str | None = None
+    duration_ms: StrictInt | None = Field(default=None, ge=0)
+    data: dict[str, Any] = Field(default_factory=dict)
     type: Literal[EventType.TOOL_CALL] = EventType.TOOL_CALL
     node: Literal["entry", "data_retrieval", "tools", "analytics", "presentation"]
     name: str = Field(max_length=256)
@@ -56,6 +65,14 @@ class ToolCall(StrictEvent):
 
 
 class ToolResult(StrictEvent):
+    event_id: str | None = None
+    sequence: StrictInt | None = Field(default=None, ge=1)
+    emitted_at: str | None = None
+    phase: str | None = None
+    correlation_id: str | None = None
+    transition: str | None = None
+    duration_ms: StrictInt | None = Field(default=None, ge=0)
+    data: dict[str, Any] = Field(default_factory=dict)
     type: Literal[EventType.TOOL_RESULT] = EventType.TOOL_RESULT
     node: Literal["entry", "data_retrieval", "tools", "analytics", "presentation"]
     name: str = Field(max_length=256)
@@ -103,8 +120,38 @@ class GraphEnd(StrictEvent):
     type: Literal[EventType.GRAPH_END] = EventType.GRAPH_END
 
 
+from v2.api.activity import StageData, PlanData, EvidenceData, VerificationData
+class ActivityBase(StrictEvent):
+    event_id: str = Field(pattern=r'^[A-Za-z0-9_-]+:\d+$')
+    sequence: StrictInt = Field(ge=1)
+    emitted_at: str
+    phase: Literal["understand","plan","execute","verify"]
+    status: Literal["running","complete","failed","pass","partial","repair"]
+    title: Literal["Request understood","Plan accepted","Evidence admitted","Evidence rejected","Verification updated"]
+    correlation_id: str | None = Field(default=None, pattern=r'^activity-\d+$')
+    transition: Literal["started","completed","failed","succeeded","admitted","rejected","snapshot"]
+    duration_ms: StrictInt | None = Field(default=None, ge=0)
+class StageSummary(ActivityBase):
+    type: Literal["stage_summary"]
+    data: StageData
+class PlanUpdate(ActivityBase):
+    type: Literal["plan_update"]
+    data: PlanData
+class EvidenceUpdate(ActivityBase):
+    type: Literal["evidence_update"]
+    data: EvidenceData
+class VerificationUpdate(ActivityBase):
+    type: Literal["verification_update"]
+    data: VerificationData
+ActivityUpdate = StageSummary | PlanUpdate | EvidenceUpdate | VerificationUpdate
+
+
 InternalEvent = Annotated[
-    NodeUpdate
+    StageSummary
+    | PlanUpdate
+    | EvidenceUpdate
+    | VerificationUpdate
+    | NodeUpdate
     | ThoughtStream
     | ToolCall
     | ToolResult

@@ -45,6 +45,7 @@ class Runtime:
         repair_attempts: int = 1,
         ledger: RunLedger | None = None,
         progress: Callable[[str, str], None] | None = None,
+        activity: Callable[[dict], None] | None = None,
         pre_tool_timeout_s: float | None = None,
     ) -> None:
         if not isinstance(repair_attempts, int) or isinstance(repair_attempts, bool):
@@ -66,6 +67,7 @@ class Runtime:
                      or pre_tool_timeout_s <= 0)):
             raise ValueError("pre_tool_timeout_s must be a positive number or None")
         self._progress = progress
+        self._activity = activity
         self._pre_tool_timeout_s = pre_tool_timeout_s
 
     async def run(
@@ -110,6 +112,7 @@ class Runtime:
                         turn_id, "understand", intake_call,
                         timeout_s=remaining())).model_dump()
                 )
+                self._report_activity({"kind":"stage_summary","phase":"understand","status":"complete","title":"Request understood","transition":"completed","correlation_id":"stage:understand","data":{"mode":prepared_task.mode.value,"season":prepared_task.season.value if prepared_task.season else None,"entity_count":len(prepared_task.entities),"requirement_count":len(prepared_task.requirements),"calculation_count":len(prepared_task.calculation_requirements)}})
                 if prepared_task.open_questions:
                     raise ValueError(
                         "intake left unresolved questions: "
@@ -117,6 +120,8 @@ class Runtime:
                 prepared_plan = Plan.model_validate((await self._stage(
                     turn_id, "plan", self._planner.plan(prepared_task),
                     timeout_s=remaining())).model_dump())
+                catalog = getattr(self._executor, "capability_names", frozenset())
+                self._report_activity({"kind":"plan_update","phase":"plan","status":"complete","title":"Plan accepted","transition":"completed","correlation_id":"stage:plan","data":{"node_count":len(prepared_plan.nodes),"capabilities":sorted({cap for n in prepared_plan.nodes for cap in n.capability_hints if cap in catalog}),"unknown_capability_count":sum(1 for n in prepared_plan.nodes for cap in n.capability_hints if cap not in catalog)}})
                 return prepared_task, prepared_plan
 
             if self._pre_tool_timeout_s is None:
@@ -145,6 +150,7 @@ class Runtime:
         except BaseException as exc:
             self._close_failed(turn_id, exc, started=turn_started)
             raise
+        self._verification_activity(verification, "initial")
         pre_repair_draft = draft.model_copy(deep=True)
         pre_repair_verification = verification.model_copy(deep=True)
         repaired = False
@@ -163,6 +169,7 @@ class Runtime:
                 verification = await self._stage(
                     turn_id, f"reverify{suffix}",
                     self._verify(task, draft, evidence))
+                self._verification_activity(verification, f"reverify:{attempt + 1}")
             except asyncio.CancelledError:
                 self._close_failed(turn_id, asyncio.CancelledError(), started=turn_started)
                 raise
@@ -333,6 +340,17 @@ class Runtime:
                           (time.perf_counter() - turn_started) * 1000))},
             )
         return result
+
+    def _report_activity(self, payload: dict) -> None:
+        if self._activity is None:
+            return
+        try:
+            self._activity(payload)
+        except Exception:
+            pass
+
+    def _verification_activity(self, report: VerificationReport, round_id: str) -> None:
+        self._report_activity({"kind":"verification_update","phase":"verify","status":report.status.value,"title":"Verification updated","transition":"snapshot","correlation_id":f"verification:{round_id}","data":{"round":round_id,"supported_count":sum(1 for item in report.claim_results if item.supported),"claim_count":len(report.claim_results),"missing_count":len(report.missing_branches),"contradiction_count":len(report.contradictions),"repair_count":len(report.repair_instructions)}})
 
     def _report_progress(self, step_id: str, status: str) -> None:
         if self._progress is None:

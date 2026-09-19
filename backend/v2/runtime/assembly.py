@@ -121,6 +121,7 @@ def build_runtime(
     model_name: str,
     run_id: str,
     progress: Callable[[str, str], None] | None = None,
+    activity: Callable[[dict], None] | None = None,
     policy: ExecutionPolicy | None = None,
     ledger_dir: str | Path | None = None,
     pre_tool_timeout_s: float | None = None,
@@ -145,14 +146,14 @@ def build_runtime(
         ProviderStructuredModel(provider, model_name), ledger, turn_id=run_id)
     catalog = capability_catalog()
     capabilities = {
-        name: RecordedCapability(ToolCapability(name), ledger, turn_id=run_id)
+        name: RecordedCapability(ToolCapability(name), ledger, turn_id=run_id, activity=activity)
         for name in CAPABILITIES
     }
     capabilities.update({
         "web_search": RecordedCapability(
-            WebSearchCapability(), ledger, turn_id=run_id),
+            WebSearchCapability(), ledger, turn_id=run_id, activity=activity),
         "web_fetch": RecordedCapability(
-            WebFetchCapability(), ledger, turn_id=run_id),
+            WebFetchCapability(), ledger, turn_id=run_id, activity=activity),
     })
     runtime = Runtime(
         intake=ModelIntake(model, provider=provider, model_name=model_name,
@@ -164,7 +165,8 @@ def build_runtime(
             capabilities, max_concurrency=policy.max_concurrency,
             max_failures=policy.max_failures,
             checkpoint_store=(FileCheckpointStore(policy.checkpoint_dir)
-                              if policy.checkpoint_dir is not None else None)),
+                              if policy.checkpoint_dir is not None else None),
+            evidence_activity=activity),
         synthesizer=ModelSynthesizer(
             model, provider=provider, model_name=model_name, skill_library=skills),
         mechanical_verifier=MechanicalVerifier(),
@@ -175,6 +177,7 @@ def build_runtime(
         repair_attempts=policy.repair_attempts,
         ledger=ledger,
         progress=progress,
+        activity=activity,
         pre_tool_timeout_s=pre_tool_timeout_s,
     )
     return runtime, ledger

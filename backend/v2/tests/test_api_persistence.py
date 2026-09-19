@@ -1900,3 +1900,40 @@ def test_intake_provider_failure_yields_typed_partial_final_without_error(monkey
     assert '"verified_claims":0' in response.text
     assert response.text.rstrip().endswith("event: graph_end\ndata: {}")
     assert "private provider detail" not in response.text
+
+def test_activity_journal_setup_failure_does_not_block_normal_runtime(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from v2.api import routes
+    from types import SimpleNamespace
+    from v2.runtime.ledger import RunLedger,LedgerKind
+    ledgers={}
+    class Healthy:
+        async def run(self,*args,run_id=None,**kwargs):
+            ledger=ledgers[run_id];ledger.append(LedgerKind.TURN_START,turn_id=run_id,data={"request":"ok"});ledger.append(LedgerKind.TOOL_CALL,turn_id=run_id,step_id="s",call_id="c",data={"name":"team_ratings","args":{}});ledger.append(LedgerKind.TOOL_RESULT,turn_id=run_id,step_id="s",call_id="c",data={"status":"ok","evidence":{"capability":"team_ratings","rows":[]}})
+            return SimpleNamespace(verified_claims=[],gaps=[],structural_flags=[],verification=SimpleNamespace(status=SimpleNamespace(value="pass")),execution=SimpleNamespace(evidence=[]))
+    monkeypatch.setenv('DIME_RUNTIME_V2','on');monkeypatch.setattr('app.providers.resolve_model_id',lambda value:('openrouter','fixture'))
+    monkeypatch.setattr('v2.api.activity.ActivityJournal',lambda *a,**k:(_ for _ in ()).throw(PermissionError('readonly')))
+    def build(**k):
+        ledger=RunLedger(k['run_id']);ledgers[k['run_id']]=ledger;return Healthy(),ledger
+    monkeypatch.setattr('v2.runtime.assembly.build_runtime',build)
+    app=FastAPI();app.include_router(routes.router,prefix='/api');text=TestClient(app).post('/api/v2/chat/stream',json={'q':'ok?'}).text
+    assert text.count('event: tool_call')==1 and text.count('event: tool_result')==1 and 'final_answer' in text and 'graph_end' in text and 'readonly' not in text
+
+def test_activity_append_failure_keeps_failed_runtime_tool_fallback_once(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from v2.api import routes
+    from v2.runtime.ledger import LedgerKind,RunLedger
+    ledgers={}
+    class Broken:
+        async def run(self,request,run_id=None,context=()):
+            l=ledgers[run_id];l.append(LedgerKind.TOOL_CALL,turn_id=run_id,step_id='s',call_id='c',data={'name':'contracts','args':{}});l.append(LedgerKind.TOOL_RESULT,turn_id=run_id,step_id='s',call_id='c',data={'status':'failed','error':'x'});raise RuntimeError('stop')
+    class BadJournal:
+        def __init__(self,*a,**k):pass
+        def append(self,*a,**k):raise OSError('disk full')
+        def read(self):return []
+    monkeypatch.setenv('DIME_RUNTIME_V2','on');monkeypatch.setattr('app.providers.resolve_model_id',lambda value:('openrouter','fixture'));monkeypatch.setattr('v2.api.activity.ActivityJournal',BadJournal)
+    def build(**k):l=RunLedger(k['run_id']);ledgers[k['run_id']]=l;return Broken(),l
+    monkeypatch.setattr('v2.runtime.assembly.build_runtime',build);app=FastAPI();app.include_router(routes.router,prefix='/api');text=TestClient(app).post('/api/v2/chat/stream',json={'q':'x'}).text
+    assert text.count('event: tool_call')==1 and text.count('event: tool_result')==1 and 'disk full' not in text

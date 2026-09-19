@@ -232,13 +232,42 @@ async def quick_answer_stream(body: QuickAnswerBody):
     from v2.api.events import (
         CustomData, FinalAnswer, GraphEnd, NodeUpdate, ToolCall, ToolResult,
     )
+    from v2.api.activity import ActivityJournal
+    from v2.api.events import EVENT_ADAPTER
     from v2.api.sse import encode_event
     from v2.runtime.assembly import build_runtime
+    from v2.adapters import CAPABILITIES
     from v2.runtime.ledger import LedgerKind
     from v2.runtime.policy import ExecutionPolicy
 
     run_id = f"run-{uuid.uuid4().hex}"
     queue: asyncio.Queue = asyncio.Queue()
+    activity_dir = Path(os.environ.get("DIME_V2_ACTIVITY_DIR", str(_BACKEND / "data" / "v2-activity")))
+    try:
+        activity_journal = ActivityJournal(activity_dir / f"{run_id}.jsonl", run_id)
+    except Exception:
+        activity_journal = None
+
+    def activity(payload: dict) -> None:
+        if not policy.publish or activity_journal is None:
+            return
+        internal = payload.pop("correlation_id", None)
+        internal_keys = getattr(activity, "internal_keys", set())
+        correlation_map = getattr(activity, "correlation_map", {})
+        if internal not in correlation_map:
+            correlation_map[internal] = f"activity-{len(correlation_map) + 1}"
+            activity.correlation_map = correlation_map
+        payload["correlation_id"] = correlation_map[internal]
+        event = activity_journal.append(**payload)
+        common = event.model_dump(mode="json", exclude={"kind"})
+        if event.kind == "tool_call":
+            queue.put_nowait(ToolCall(type="tool_call", node="tools", name=event.data.name, label=event.title, **common))
+        elif event.kind == "tool_result":
+            queue.put_nowait(ToolResult(type="tool_result", node="tools", name=event.data.name, status="ok" if event.transition == "succeeded" else "fail", rows=event.data.rows, ms=event.duration_ms, error=("Tool failed" if event.transition == "failed" else None), **{k:v for k,v in common.items() if k not in {"status","duration_ms"}}))
+        else:
+            queue.put_nowait(EVENT_ADAPTER.validate_python({"type":event.kind, **common}))
+        internal_keys.add((event.kind, internal))
+        activity.internal_keys = internal_keys
 
     def setup_error_stream():
         async def generate_error():
@@ -294,7 +323,7 @@ async def quick_answer_stream(body: QuickAnswerBody):
     try:
         runtime, ledger = build_runtime(
             provider=provider, model_name=model_name, run_id=run_id,
-            progress=progress, policy=policy,
+            progress=progress, activity=activity, policy=policy,
             pre_tool_timeout_s=settings.dime_v2_pre_tool_timeout_s)
     except Exception:
         return setup_error_stream()
@@ -302,37 +331,33 @@ async def quick_answer_stream(body: QuickAnswerBody):
     if body.thread is not None and body.client is not None:
         context = tuple(_CONVERSATIONS.read(body.client, body.thread))
 
-    def recorded_tool_events():
-        entries = ledger.entries
-        calls = {
-            entry.call_id: entry for entry in entries
-            if entry.kind == LedgerKind.TOOL_CALL and entry.call_id is not None
-        }
-        for entry in entries:
-            if entry.kind == LedgerKind.TOOL_CALL:
-                yield ToolCall(
-                    node="tools",
-                    name=str(entry.data["name"]),
-                )
-            elif entry.kind == LedgerKind.TOOL_RESULT:
-                payload = entry.data
-                evidence = payload.get("evidence", {})
-                rows = evidence.get("rows")
-                call = calls.get(entry.call_id)
-                name = (
-                    str(evidence["capability"])
-                    if payload.get("status") == "ok"
-                    else str(call.data["name"]) if call is not None else "tool"
-                )
-                yield ToolResult(
-                    node="tools",
-                    name=name,
-                    status="ok" if payload.get("status") == "ok" else "fail",
-                    rows=len(rows) if isinstance(rows, list) else None,
-                    ms=payload.get("duration_ms"),
-                    error=(f"{name} failed"
-                           if payload.get("status") == "failed" else None),
-                )
+    def missing_tool_events():
+        """Yield sanitized undelivered ledger tool events in ledger order."""
+        try:
+            entries = ledger.entries
+            live_keys = getattr(activity, "internal_keys", set())
+            calls = {entry.call_id: entry for entry in entries
+                     if entry.kind == LedgerKind.TOOL_CALL and entry.call_id is not None}
+            executable = set(CAPABILITIES) | {"web_search", "web_fetch"}
+            for entry in entries:
+                if entry.kind not in {LedgerKind.TOOL_CALL, LedgerKind.TOOL_RESULT}:
+                    continue
+                kind = "tool_call" if entry.kind == LedgerKind.TOOL_CALL else "tool_result"
+                if (kind, entry.call_id) in live_keys:
+                    continue
+                call = entry if entry.kind == LedgerKind.TOOL_CALL else calls.get(entry.call_id)
+                raw_name = call.data.get("name") if call is not None else None
+                name = str(raw_name) if raw_name in executable else "tool"
+                if entry.kind == LedgerKind.TOOL_CALL:
+                    yield ToolCall(node="tools", name=name)
+                else:
+                    payload = entry.data; evidence = payload.get("evidence", {}); rows = evidence.get("rows")
+                    yield ToolResult(node="tools", name=name,
+                        status="ok" if payload.get("status") == "ok" else "fail",
+                        rows=len(rows) if isinstance(rows, list) else None,
+                        ms=payload.get("duration_ms"), error=("Tool failed" if payload.get("status") == "failed" else None))
+        except Exception:
+            return
 
     def stage_latencies_ms():
         return {
@@ -375,8 +400,11 @@ async def quick_answer_stream(body: QuickAnswerBody):
                 result = await task
             except Exception as exc:
                 if policy.publish:
-                    for event in recorded_tool_events():
-                        yield encode_event(event)
+                    for event in missing_tool_events():
+                        try:
+                            yield encode_event(event)
+                        except Exception:
+                            continue
                     latencies = stage_latencies_ms()
                     failed_stage = next((
                         entry.step_id for entry in reversed(ledger.entries)
@@ -414,8 +442,11 @@ async def quick_answer_stream(body: QuickAnswerBody):
                 yield encode_event(GraphEnd())
                 return
             if policy.publish:
-                for event in recorded_tool_events():
-                    yield encode_event(event)
+                for event in missing_tool_events():
+                    try:
+                        yield encode_event(event)
+                    except Exception:
+                        continue
                 yield encode_event(CustomData(
                     node="analytics",
                     tables=[evidence_table(item)
