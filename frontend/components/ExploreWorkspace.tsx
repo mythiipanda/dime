@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type CSSProperties } from "react";
 import DatasetPanel from "./DatasetPanel";
 import DraftPanel from "./DraftPanel";
 import FreshnessPanel from "./FreshnessPanel";
@@ -102,7 +102,8 @@ export default function ExploreWorkspace({
         <ScoreStrip />
 
         <nav className="explore-nav" aria-label="Explore sections">
-          <div className="explore-nav-track">
+          <div className="explore-nav-track" style={{ "--active-index": sections.findIndex(({ id }) => id === activeSection) } as CSSProperties}>
+            <span className="explore-nav-indicator" aria-hidden="true" />
             {sections.map(({ id, label, glyph }) => (
               <button
                 key={id}
