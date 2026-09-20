@@ -4,19 +4,13 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import ArtifactCanvas, { ArtifactItem } from "../components/ArtifactCanvas";
 import ChatPanel from "../components/ChatPanel";
 import CommandPalette from "../components/CommandPalette";
-import DatasetPanel from "../components/DatasetPanel";
-import DraftPanel from "../components/DraftPanel";
-import LineupPanel from "../components/LineupPanel";
-import PlayoffPanel from "../components/PlayoffPanel";
-import FreshnessPanel from "../components/FreshnessPanel";
-import TradePanel from "../components/TradePanel";
-import ScoreStrip from "../components/ScoreStrip";
 import ThreadRail from "../components/ThreadRail";
 import TodayPanel from "../components/TodayPanel";
 import MoversPanel from "../components/MoversPanel";
 import WatchlistPanel from "../components/WatchlistPanel";
 import OnboardingModal from "../components/OnboardingModal";
 import DebateCardModal from "../components/DebateCardModal";
+import ExploreWorkspace from "../components/ExploreWorkspace";
 import { ThreadInfo, getQueryParam, getThreads, setQueryParam } from "../lib/api";
 
 type Tab = "chat" | "data" | "today";
@@ -380,52 +374,12 @@ export default function Home() {
               </div>
             </div>
           ) : (
-            <div style={{ height: "100%", overflowY: "auto" }}>
-              <div style={{ maxWidth: 1100, margin: "0 auto", padding: "24px 20px 80px" }}>
-                <div style={{ marginBottom: 16 }}>
-                  <ScoreStrip />
-                </div>
-
-                <nav aria-label="Explore sections" style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 20, background: "var(--color-pure-white)", padding: "10px 14px", borderRadius: 12, border: "1px solid var(--color-stone-border)" }}>
-                  {[
-                    ["leaders", "Leaders"],
-                    ["shots", "Shots"],
-                    ["trade", "Trade"],
-                    ["lineups", "Lineups"],
-                    ["playoffs", "Playoffs"],
-                  ].map(([id, label]) => (
-                    <button
-                      key={id}
-                      type="button"
-                      className={activeSection === id ? "tab-active" : "pill-ghost"}
-                      aria-selected={activeSection === id}
-                      style={{ fontSize: 12, padding: "5px 12px", border: "1px solid transparent", borderRadius: 6, cursor: "pointer" }}
-                      onClick={() => {
-                        setActiveSection(id);
-                        document.getElementById(`explore-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
-                      }}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </nav>
-
-                <DatasetPanel key={exploreKey} />
-                <div id="explore-trade" style={{ marginTop: 24, scrollMarginTop: 24 }}>
-                  <TradePanel onAskValue={startFromOnboarding} />
-                </div>
-                <div style={{ marginTop: 24 }}>
-                  <DraftPanel />
-                </div>
-                <div id="explore-lineups" style={{ marginTop: 24, scrollMarginTop: 24 }}>
-                  <LineupPanel />
-                </div>
-                <div id="explore-playoffs" style={{ marginTop: 24, scrollMarginTop: 24 }}>
-                  <PlayoffPanel />
-                </div>
-                <FreshnessPanel />
-              </div>
-            </div>
+            <ExploreWorkspace
+              activeSection={activeSection}
+              exploreKey={exploreKey}
+              onActiveSection={setActiveSection}
+              onAsk={startFromOnboarding}
+            />
           )}
         </div>
       </div>
