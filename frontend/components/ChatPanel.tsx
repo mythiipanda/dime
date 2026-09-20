@@ -487,7 +487,6 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
         /* Empty State: Centered Hero Layout (ChatGPT style) */
           <div className="chat-welcome">
           <div className="chat-welcome-heading">
-            <div className="chat-eyebrow"><span className="status-mark" /> NBA intelligence, sourced</div>
             <h1>What do you want to understand?</h1>
             <p>Ask a hard basketball question. Dime will trace the answer back to the data.</p>
           </div>

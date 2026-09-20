@@ -71,10 +71,7 @@ export default function ExploreWorkspace({
       <main className="explore-shell">
         <section className="explore-overview" aria-labelledby="explore-title">
           <div className="explore-overview-head">
-            <div>
-              <div className="explore-kicker"><span className="status-mark" /> 2025-26 data workspace</div>
-              <h1 id="explore-title">Explore</h1>
-            </div>
+            <h1 id="explore-title">Explore</h1>
             <button className="explore-ask" onClick={() => onAsk("What is the most important NBA trend in the data right now?")}>Ask Dime <span>↗</span></button>
           </div>
 

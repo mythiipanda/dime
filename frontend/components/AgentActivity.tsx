@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { AiMessage, NodeName, ToolCall } from "../lib/chat";
-import ThinkLine from "./ThinkLine";
 import ActivityTimeline from "./ActivityTimeline";
 import { rerunSql, type SqlRerunRows } from "../lib/api";
 
@@ -352,162 +351,33 @@ export default function AgentActivity({ ai }: { ai: AiMessage }) {
   const calls = useMemo(() => callsFor(ai), [ai]);
   const live = useMemo(() => liveThoughtsFor(ai), [ai]);
   const running = !ai.done;
-  const [open, setOpen] = useState(true);
-
-
-  const runningCall = [...calls].reverse().find((c) => c.status === "running");
-  const runningNode = AGENT_NODES.find(
-    (n) => ai.nodes[n]?.status === "running",
-  );
-  const headerText = runningCall
-    ? runningCall.label || runningCall.name.replace(/_/g, " ")
-    : ai.streaming || ai.text.length > 0
-      ? "Writing answer"
-      : runningNode
-        ? `${NODE_LABELS[runningNode] || runningNode}…`
-        : "Starting…";
-
   const hasActivity = thoughts.length > 0 || calls.length > 0 || live.length > 0 || (ai.activity?.length ?? 0) > 0;
 
-  if (!running && !open) {
-    if (!calls.length && !thoughts.length) return null;
-    if (!calls.length) {
-      // Concept answers may not need a data call. Say that directly.
-      return (
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="pill-ghost"
-          style={{ fontSize: 12, marginBottom: 8 }}
-          aria-label="Show tool calls and checks"
-        >
-          <span style={{ color: "var(--color-ash-gray)" }}>How Dime worked</span>
-          {" · No data fetched"}
-        </button>
-      );
-    }
-    const secs = ai.thoughtMs ? `${(ai.thoughtMs / 1000).toFixed(1)}s` : "";
-    const rows = calls.reduce((n, c) => n + (typeof c.rows === "number" ? c.rows : 0), 0);
-    const bits = [
-      `${calls.length} tool call${calls.length === 1 ? "" : "s"}`,
-      ...(rows ? [`${rows} row${rows === 1 ? "" : "s"}`] : []),
-      ...(secs ? [secs] : []),
-    ];
-    return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="pill-ghost"
-        style={{ fontSize: 12, marginBottom: 8 }}
-        aria-label="Show tool calls and checks"
-      >
-        <span style={{ color: "var(--color-ash-gray)" }}>How Dime worked</span>
-        {" · "}
-        {bits.join(" · ")}
-      </button>
-    );
+  if (!hasActivity) {
+    return running ? <div role="status" style={{ marginBottom: 10, fontSize: 12, color: "var(--color-ash-gray)" }}>Analyzing…</div> : null;
   }
 
+  if ((ai.activity?.length ?? 0) > 0) {
+    return <div style={{ marginBottom: 10 }}><ActivityTimeline items={ai.activity!} running={running} /></div>;
+  }
+
+  const label = running
+    ? calls.at(-1)?.label || calls.at(-1)?.name.replace(/_/g, " ") || "Analyzing"
+    : calls.length > 0
+      ? `${calls.length} tool call${calls.length === 1 ? "" : "s"}`
+      : "Analysis complete";
+
   return (
-    <div style={{ marginBottom: 10 }}>
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          background: "none",
-          border: "none",
-          padding: "4px 0",
-          cursor: "pointer",
-          width: "100%",
-          textAlign: "left",
-        }}
-      >
-        {running && (
-          <span
-            aria-hidden
-            className="pulse-dot"
-            style={{
-              width: 7,
-              height: 7,
-              borderRadius: 9999,
-              background: "var(--color-cyan-signal)",
-              flexShrink: 0,
-            }}
-          />
-        )}
-        <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--color-ink-black)", display: "inline-flex" }}>
-          {running ? <ThinkLine text="Working" /> : "How Dime worked"}
-        </span>
-        <span style={{ fontSize: 11, color: "var(--color-ash-gray)" }}>
-          {open ? "▾" : "▸"}
-        </span>
-      </button>
-      {open && (
-        <div style={{ marginTop: 2 }}>
-          {ai.carry?.run_id && (
-            <div style={{ fontSize: 11, color: "var(--color-warm-gray)", padding: "5px 0 8px", display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <span>Run {ai.carry.run_id}</span>
-              {ai.carry.verification && <span>Verification: {ai.carry.verification}</span>}
-              {typeof ai.carry.verified_claims === "number" && <span>{ai.carry.verified_claims} checked claim{ai.carry.verified_claims === 1 ? "" : "s"}</span>}
-            </div>
-          )}
-          {(ai.carry?.gaps?.length ?? 0) > 0 && (
-            <details open style={{ fontSize: 11, color: "var(--color-warm-gray)", marginBottom: 8 }}>
-              <summary style={{ cursor: "pointer", fontWeight: 600 }}>Missing or blocked evidence ({ai.carry!.gaps!.length})</summary>
-              <ul style={{ margin: "5px 0 0", paddingLeft: 18 }}>
-                {ai.carry!.gaps!.map((gap, index) => (
-                  <li key={`${gap.kind}-${index}`}>
-                    {(gap.kind || "unknown gap").replace(/_/g, " ")}
-                    {gap.blocks?.length ? `, blocks ${gap.blocks.join(", ")}` : ""}
-                  </li>
-                ))}
-              </ul>
-            </details>
-          )}
-          {(ai.activity?.length ?? 0) > 0 && (
-            <ActivityTimeline items={ai.activity!} running={running} />
-          )}
-          {!hasActivity && running && (
-            <div style={{ fontSize: 12, color: "var(--color-ash-gray)", padding: "4px 0" }}>
-              Waiting for the first runtime event…
-            </div>
-          )}
-          {!ai.activity?.length && (running || calls.length === 0) && thoughts.map((t, i) => (
-            <div
-              key={`t-${i}`}
-              style={{ fontSize: 12.5, color: "var(--color-warm-gray)", padding: "2px 0" }}
-            >
-              {t}
-            </div>
-          ))}
-          {!ai.activity?.length && running && live.map((l, i) => {
-            const isLive = running && i === live.length - 1;
-            const prefix = l.agent
-              ? `${l.agent.charAt(0).toUpperCase() + l.agent.slice(1)} check · `
-              : "";
-            return (
-              <div
-                key={`live-${i}`}
-                style={{ fontSize: 12.5, color: "var(--color-warm-gray)", padding: "2px 0" }}
-              >
-                <span style={{ color: "var(--color-ash-gray)" }}>{prefix}</span>
-                {l.text}
-                {isLive && <span className="caret" aria-hidden />}
-              </div>
-            );
-          })}
-          {!ai.activity?.length && calls.length > 0 && (
-            <div style={{ marginTop: thoughts.length ? 6 : 0 }}>
-              {calls.map((c, i) => (
-                <ToolRow key={`c-${i}`} c={c} />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
+    <details style={{ marginBottom: 10, color: "var(--color-warm-gray)", fontSize: 12 }}>
+      <summary style={{ cursor: "pointer", listStyle: "none" }}>
+        <span aria-hidden style={{ marginRight: 7, color: "var(--color-ash-gray)" }}>{running ? "●" : "✓"}</span>
+        {label}
+      </summary>
+      <div style={{ margin: "7px 0 0 19px", paddingLeft: 10, borderLeft: "1px solid var(--color-stone-border)" }}>
+        {thoughts.map((text, index) => <div key={`thought-${index}`}>{text}</div>)}
+        {live.map((item, index) => <div key={`live-${index}`}>{item.text}</div>)}
+        {calls.map((call, index) => <ToolRow key={`call-${index}`} c={call} />)}
+      </div>
+    </details>
   );
 }
