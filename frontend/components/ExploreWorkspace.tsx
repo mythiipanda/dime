@@ -24,29 +24,11 @@ const sections = [
   { id: "playoffs", label: "Playoffs", glyph: "◇" },
 ];
 
-const prompts = [
-  {
-    eyebrow: "Player lens",
-    title: "Find the signal behind a hot streak",
-    body: "Separate a real role change from a short shooting run.",
-    question: "Which NBA players have the strongest evidence of a sustainable breakout right now?",
-    glyph: "↗",
-  },
-  {
-    eyebrow: "Roster lens",
-    title: "Pressure-test a trade before the headline",
-    body: "Compare value, fit, contract, risk, and replaceability.",
-    question: "Evaluate a realistic high-impact NBA trade through value, fit, contracts, risk, and replaceability.",
-    glyph: "⇄",
-  },
-  {
-    eyebrow: "Team lens",
-    title: "Read the five-man story",
-    body: "Move from lineup numbers to the basketball reason they work.",
-    question: "Which NBA lineups are outperforming expectations, and what explains it?",
-    glyph: "⌁",
-  },
-];
+const quickQuestions = [
+  ["Player", "Compare Luka Dončić and Shai Gilgeous-Alexander this season"],
+  ["Trade", "Evaluate a realistic high-impact NBA trade through value, fit, contracts, risk, and replaceability."],
+  ["Lineup", "Which NBA lineups are outperforming expectations, and what explains it?"],
+] as const;
 
 export default function ExploreWorkspace({
   activeSection,
@@ -87,45 +69,34 @@ export default function ExploreWorkspace({
   return (
     <div ref={scrollRootRef} className="explore-scroll">
       <main className="explore-shell">
-        <section className="explore-hero" aria-labelledby="explore-title">
-          <div className="explore-hero-copy">
-            <div className="explore-kicker"><span className="status-mark" /> Live basketball intelligence</div>
-            <h1 id="explore-title">See the game from every angle.</h1>
-            <p>
-              Move from league-wide signal to the exact player, lineup, shot profile,
-              or roster decision behind it.
-            </p>
-            <div className="explore-hero-actions">
-              <button className="explore-primary" onClick={() => jumpTo("leaders")}>Explore the data <span>↓</span></button>
-              <button className="explore-secondary" onClick={() => onAsk("What is the most important NBA trend in the data right now?")}>Ask Dime <span>↗</span></button>
+        <section className="explore-overview" aria-labelledby="explore-title">
+          <div className="explore-overview-head">
+            <div>
+              <div className="explore-kicker"><span className="status-mark" /> 2025-26 data workspace</div>
+              <h1 id="explore-title">Explore</h1>
+            </div>
+            <button className="explore-ask" onClick={() => onAsk("What is the most important NBA trend in the data right now?")}>Ask Dime <span>↗</span></button>
+          </div>
+
+          <div className="explore-index" aria-label="Available analysis">
+            {sections.map(({ id, label, glyph }, index) => (
+              <button key={id} onClick={() => jumpTo(id)}>
+                <span className="explore-index-number">0{index + 1}</span>
+                <span className="explore-index-glyph">{glyph}</span>
+                <strong>{label}</strong>
+                <span className="explore-index-arrow">↘</span>
+              </button>
+            ))}
+          </div>
+
+          <div className="explore-quick-ask">
+            <span className="explore-quick-label">Start with a question</span>
+            <div>
+              {quickQuestions.map(([label, question]) => (
+                <button key={label} onClick={() => onAsk(question)}><span>{label}</span>{question}<b>↗</b></button>
+              ))}
             </div>
           </div>
-          <div className="explore-orbit" aria-hidden="true">
-            <div className="orbit-ring orbit-ring-one" />
-            <div className="orbit-ring orbit-ring-two" />
-            <div className="orbit-core">D</div>
-            <div className="orbit-chip orbit-chip-top"><span>LIVE</span> League pulse</div>
-            <div className="orbit-chip orbit-chip-bottom">Evidence, not noise</div>
-          </div>
-        </section>
-
-        <section className="explore-prompts" aria-label="Start an analysis">
-          {prompts.map((prompt, index) => (
-            <button
-              key={prompt.eyebrow}
-              className="explore-prompt-card"
-              style={{ "--card-delay": `${index * 60}ms` } as React.CSSProperties}
-              onClick={() => onAsk(prompt.question)}
-            >
-              <span className="prompt-glyph">{prompt.glyph}</span>
-              <span className="prompt-copy">
-                <span className="prompt-eyebrow">{prompt.eyebrow}</span>
-                <strong>{prompt.title}</strong>
-                <span>{prompt.body}</span>
-              </span>
-              <span className="prompt-arrow">↗</span>
-            </button>
-          ))}
         </section>
 
         <ScoreStrip />
