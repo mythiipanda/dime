@@ -482,47 +482,19 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", position: "relative" }}>
+    <div className="chat-workspace">
       {!messages.length ? (
         /* Empty State: Centered Hero Layout (ChatGPT style) */
-          <div
-            style={{
-            flex: 1,
-            display: "flex",
-            flexDirection: "column",
-            justifyContent: "center",
-            alignItems: "center",
-            padding: "40px 20px 80px",
-            maxWidth: 760,
-            width: "100%",
-            margin: "0 auto",
-            boxSizing: "border-box",
-          }}
-        >
-          <div style={{ marginBottom: 22, textAlign: "left" }}>
-            <div style={{ fontSize: 24, fontWeight: 400, color: "var(--color-ash-gray)", lineHeight: 1.3 }}>
-              Dime analyst
-            </div>
-            <div style={{ fontSize: 24, fontWeight: 500, color: "var(--color-ink-black)", lineHeight: 1.3, letterSpacing: "-0.01em" }}>
-              What would you like to know?
-            </div>
+          <div className="chat-welcome">
+          <div className="chat-welcome-heading">
+            <div className="chat-eyebrow"><span className="status-mark" /> NBA intelligence, sourced</div>
+            <h1>What do you want to understand?</h1>
+            <p>Ask a hard basketball question. Dime will trace the answer back to the data.</p>
           </div>
 
           {/* Centered Large Prompt Composer Card */}
           <div
-            className="composer-card"
-            style={{
-              width: "100%",
-              background: "var(--color-pure-white)",
-              border: "1px solid var(--color-stone-border)",
-              borderRadius: 14,
-              boxShadow: "var(--shadow-card)",
-              padding: "14px 16px 12px",
-              boxSizing: "border-box",
-              display: "flex",
-              flexDirection: "column",
-              gap: 12,
-            }}
+            className="composer-card chat-composer chat-composer-hero"
           >
             <textarea
               ref={inputRef}
@@ -555,7 +527,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                   sendText(input);
                 }
               }}
-              placeholder="Compare Luka and SGA by efficiency..."
+              placeholder="Ask about a player, team, lineup, trade, or trend..."
             />
 
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 4 }}>
@@ -594,7 +566,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
 
           {/* Curated 2x2 Prompt Cards (Minimalist Frontier AI style) */}
           {/* harness home suggestions: flat icon links, no cards (harness.html) */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 2, width: "100%", marginTop: 20 }}>
+          <div className="chat-starters">
             {[
               {
                 title: "Compare Luka & Shai",
@@ -622,37 +594,23 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                 type="button"
                 onClick={() => sendText(item.prompt)}
                 disabled={busy}
-                className="sidebar-row"
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  padding: "0 8px",
-                  height: 34,
-                  borderRadius: 8,
-                  background: "transparent",
-                  border: "none",
-                  cursor: busy ? "default" : "pointer",
-                  textAlign: "left",
-                  opacity: busy ? 0.6 : 1,
-                  fontSize: 13,
-                  color: "var(--color-ink-black)",
-                }}
+                className="chat-starter"
               >
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--color-ash-gray)", flexShrink: 0 }}>
                   {item.icon}
                 </svg>
-                {item.title}
+                <span>{item.title}</span>
+                <span className="chat-starter-arrow">↗</span>
               </button>
             ))}
           </div>
         </div>
       ) : (
         /* Active Conversation State: Scrollable Message Stream */
-        <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+        <div className="chat-active">
           <div
             style={{
-              maxWidth: 840,
+              maxWidth: 880,
               width: "100%",
               margin: "0 auto",
               padding: "24px 20px 140px",
@@ -670,14 +628,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                   style={{ alignSelf: "flex-end", maxWidth: "80%", scrollMarginTop: 16 }}
                 >
                   <div
-                    style={{
-                      background: "var(--color-field)",
-                      color: "var(--color-ink-black)",
-                      borderRadius: 12,
-                      padding: "6px 12px",
-                      fontSize: 13,
-                      lineHeight: 1.4,
-                    }}
+                    className="chat-human-bubble"
                   >
                     {m.text}
                   </div>
@@ -686,14 +637,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                 <div
                   key={i}
                   id={`m-${i}`}
-                  style={{
-                    alignSelf: "flex-start",
-                    width: "100%",
-                    display: "flex",
-                    flexDirection: "column",
-                    scrollMarginTop: 16,
-                    animation: "fade-up 400ms cubic-bezier(0.23, 1, 0.32, 1) both",
-                  }}
+                  className="chat-ai-message"
                 >
                   {/* Message Header */}
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
@@ -831,8 +775,8 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
               bottom: 0,
               left: 260,
               right: 0,
-              background: "var(--color-stone-canvas)",
-              padding: "16px 20px 24px",
+              background: "linear-gradient(180deg, transparent, var(--color-stone-canvas) 32%)",
+              padding: "26px 20px 24px",
               zIndex: 40,
               boxSizing: "border-box",
             }}
@@ -854,17 +798,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
               )}
 
               <div
-                className="composer-card"
-                style={{
-                  display: "flex",
-                  gap: 10,
-                  alignItems: "center",
-                  border: "1px solid var(--color-stone-border)",
-                  borderRadius: 14,
-                  padding: "10px 12px 10px 16px",
-                  background: "var(--color-pure-white)",
-                  boxShadow: "var(--shadow-card)",
-                }}
+                className="composer-card chat-composer chat-composer-dock"
               >
                 <ModelPicker models={models} value={model} onChange={setModel} status={modelStatus} onRetry={() => void loadModels(false)} />
 
@@ -895,7 +829,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                       sendText(input);
                     }
                   }}
-              placeholder="Compare Luka and SGA by efficiency..."
+              placeholder="Ask a follow-up..."
                 />
 
                 {busy ? (
