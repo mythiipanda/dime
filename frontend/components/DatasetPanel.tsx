@@ -121,6 +121,22 @@ function Leaders() {
       </div>
       {p.error && <div style={{ color: "var(--color-warm-gray)", marginTop: 8 }}>{p.error}</div>}
       <Meta meta={p.meta} />
+      {Array.isArray(p.rows) && p.rows.length > 0 && (
+        <div className="leader-summary" aria-label={`${cat} leaders at a glance`}>
+          {(p.rows as Record<string, unknown>[]).slice(0, 3).map((row, index) => {
+            const name = String(row.PLAYER_NAME ?? row.player_name ?? row.name ?? `No. ${index + 1}`);
+            const value = row[cat] ?? row[cat.toLowerCase()] ?? row.value ?? "—";
+            return (
+              <div className="leader-summary-item" key={`${name}-${index}`}>
+                <span className="leader-summary-rank">0{index + 1}</span>
+                <strong>{String(value)}</strong>
+                <span className="leader-summary-unit">{cat}</span>
+                <span className="leader-summary-name" title={name}>{name}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
       {p.rows !== null && (
         <div style={{ marginTop: 8 }}>
           <AutoChart table={{ rows: p.rows, meta: { stat_category: cat } }} />

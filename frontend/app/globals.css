@@ -589,3 +589,13 @@ body {
   .chat-welcome-heading, .chat-composer-hero, .chat-starter, .chat-human-bubble, .chat-ai-message { animation: none; opacity: 1; }
   .chat-composer, .chat-starter, .chat-starter-arrow { transition: none; }
 }
+
+
+/* BoardUI stat-card hierarchy, reduced to Dime's existing data and tokens. */
+.leader-summary { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 1px; margin-top: 14px; overflow: hidden; border: 1px solid var(--color-stone-border); border-radius: 10px; background: var(--color-stone-border); }
+.leader-summary-item { min-width: 0; display: grid; grid-template-columns: auto 1fr auto; align-items: baseline; gap: 4px 8px; padding: 12px; background: var(--color-pure-white); }
+.leader-summary-rank { color: var(--color-ash-gray); font-size: 9px; font-variant-numeric: tabular-nums; }
+.leader-summary-item strong { justify-self: end; font-size: 22px; font-weight: 570; letter-spacing: -.035em; font-variant-numeric: tabular-nums; }
+.leader-summary-unit { color: var(--color-ash-gray); font-size: 9px; font-weight: 650; letter-spacing: .06em; }
+.leader-summary-name { grid-column: 1 / -1; overflow: hidden; color: var(--color-warm-gray); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 600px) { .leader-summary-item { padding: 10px 8px; }.leader-summary-item strong { font-size: 18px; }.leader-summary-rank { display: none; } }
