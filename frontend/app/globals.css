@@ -610,3 +610,11 @@ body {
 .command-empty { padding: 28px 14px; color: var(--color-ash-gray); text-align: center; font-size: 11px; }.command-panel footer { display: flex; gap: 13px; padding: 8px 14px; border-top: 1px solid var(--color-stone-border); color: var(--color-ash-gray); font-size: 9px; }
 @keyframes command-backdrop-in { from { opacity: 0; } } @keyframes command-panel-in { from { opacity: 0; transform: translateY(-5px) scale(.99); } }
 @media (prefers-reduced-motion: reduce) { .command-backdrop,.command-panel { animation: none; } }
+
+
+/* transitions.dev panel reveal + beUI state contrast, adapted in place. */
+.chat-answer-reveal { transform-origin: top left; animation: answer-panel-reveal 280ms cubic-bezier(.16,1,.3,1) both; }
+.chat-send { transition: background 180ms ease,color 180ms ease,transform 120ms cubic-bezier(.16,1,.3,1),box-shadow 180ms ease!important; }
+.chat-send:not(:disabled):hover { transform: translateY(-1px); box-shadow: 0 6px 18px color-mix(in oklab,var(--color-ink-black) 18%,transparent); }.chat-send:not(:disabled):active { transform: scale(.92); }.chat-send:focus-visible { outline: 2px solid var(--color-cyan-edge); outline-offset: 3px; }
+@keyframes answer-panel-reveal { from { opacity: 0; transform: translateY(7px); } }
+@media (prefers-reduced-motion: reduce) { .chat-answer-reveal { animation: none; }.chat-send { transition: none!important; } }

@@ -547,7 +547,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                   aria-label="Send"
                   disabled={!input.trim()}
                   onClick={() => sendText(input)}
-                  className="interactive-tactile"
+                  className="interactive-tactile chat-send"
                   style={{
                     width: 28, height: 28, borderRadius: 8, border: "none", cursor: input.trim() ? "pointer" : "default",
                     display: "flex", alignItems: "center", justifyContent: "center",
@@ -637,7 +637,7 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
                 <div
                   key={i}
                   id={`m-${i}`}
-                  className="chat-ai-message"
+                  className="chat-ai-message chat-answer-reveal"
                 >
                   {/* Message Header */}
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
