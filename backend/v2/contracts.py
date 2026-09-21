@@ -49,7 +49,7 @@ class GapKind(StrEnum):
 MAX_INTAKE_CONTEXT_TURNS = 8
 CanonicalDimensionId = Annotated[
     str, Field(min_length=1, max_length=128, pattern=r"^[A-Z][A-Z0-9_]*$")]
-RequirementKind = Literal["evidence", "calculation"]
+RequirementKind = Literal["evidence", "calculation", "task"]
 
 
 
@@ -583,6 +583,137 @@ class EvidenceEnvelope(BaseModel):
         return self
 
 
+class BooleanOutputValue(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    kind: Literal["boolean"] = "boolean"
+    value: StrictBool
+
+
+class IntegerOutputValue(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    kind: Literal["integer"] = "integer"
+    value: StrictInt
+
+    @model_validator(mode="before")
+    @classmethod
+    def exact_integer_type(cls, value: Any) -> Any:
+        raw = value.get("value") if isinstance(value, dict) else None
+        if isinstance(raw, bool) or not isinstance(raw, int):
+            raise ValueError("integer output value requires an integer input")
+        return value
+
+
+class FloatOutputValue(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    kind: Literal["float"] = "float"
+    value: StrictFloat
+
+    @model_validator(mode="before")
+    @classmethod
+    def exact_float_type(cls, value: Any) -> Any:
+        raw = value.get("value") if isinstance(value, dict) else None
+        if not isinstance(raw, float):
+            raise ValueError("float output value requires a float input")
+        return value
+
+    @model_validator(mode="after")
+    def finite(self) -> "FloatOutputValue":
+        if not math.isfinite(self.value):
+            raise ValueError("float output value must be finite")
+        return self
+
+
+class DecimalOutputValue(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    kind: Literal["decimal"] = "decimal"
+    value: str = Field(min_length=1, max_length=1000,
+                       pattern=r"^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$")
+
+    @model_validator(mode="after")
+    def finite(self) -> "DecimalOutputValue":
+        if not Decimal(self.value).is_finite():
+            raise ValueError("decimal output value must be finite")
+        return self
+
+
+class StringOutputValue(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    kind: Literal["string"] = "string"
+    value: str = Field(max_length=200000)
+
+
+AdmittedOutputValue = Annotated[
+    BooleanOutputValue | IntegerOutputValue | FloatOutputValue |
+    DecimalOutputValue | StringOutputValue,
+    Field(discriminator="kind"),
+]
+
+
+class DeclaredOutputUnit(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    kind: Literal["declared"] = "declared"
+    value: str = Field(min_length=1, max_length=256)
+
+
+class UnitlessOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    kind: Literal["unitless"] = "unitless"
+
+
+OutputUnitAuthority = Annotated[
+    DeclaredOutputUnit | UnitlessOutput, Field(discriminator="kind")]
+
+
+class EvidenceOutputBinding(BaseModel):
+    """Immutable claim-local authority for one admitted evidence output."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    requirement_kind: Literal["evidence", "task"] = "evidence"
+    requirement_id: str | None = Field(default=None, min_length=1, max_length=64)
+    output_id: CanonicalDimensionId
+    node_id: str = Field(min_length=1, max_length=256)
+    evidence_id: str = Field(min_length=1, max_length=256)
+    selector: str = Field(min_length=1, max_length=1000)
+    row_selector: str | None = Field(default=None, min_length=1, max_length=1000)
+    value: AdmittedOutputValue
+    subject_entity_type: str | None = Field(default=None, min_length=1, max_length=64)
+    subject_entity_id: str | None = Field(default=None, min_length=1, max_length=256)
+    subject_selector: str | None = Field(default=None, min_length=1, max_length=1000)
+    unit: OutputUnitAuthority
+    domain: str = Field(min_length=1, max_length=256)
+
+    @model_validator(mode="after")
+    def validate_scope(self) -> "EvidenceOutputBinding":
+        if self.requirement_kind == "evidence" and self.requirement_id is None:
+            raise ValueError("evidence binding requires requirement id")
+        if self.requirement_kind == "task" and self.requirement_id is not None:
+            raise ValueError("task binding cannot name requirement id")
+        subject_fields = (self.subject_entity_type, self.subject_entity_id,
+                          self.subject_selector, self.row_selector)
+        if any(value is None for value in subject_fields) and any(
+                value is not None for value in subject_fields):
+            raise ValueError("binding subject type, id, and selector must be supplied together")
+        return self
+
+
+class CalculationOutputBinding(BaseModel):
+    """Immutable claim-local authority for one verified calculation output."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    requirement_kind: Literal["calculation"] = "calculation"
+    requirement_id: str = Field(min_length=1, max_length=64)
+    output_id: CanonicalDimensionId
+    calculation_id: str = Field(min_length=1, max_length=256)
+
+
+ClaimOutputBinding = Annotated[
+    EvidenceOutputBinding | CalculationOutputBinding,
+    Field(discriminator="requirement_kind"),
+]
+
+
 class Claim(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -591,6 +722,7 @@ class Claim(BaseModel):
     evidence_ids: list[str] = Field(default_factory=list, max_length=32)
     calculation_id: str | None = Field(default=None, max_length=256)
     confidence: StrictFloat | None = Field(default=None, ge=0, le=1)
+    output_bindings: list[ClaimOutputBinding] = Field(default_factory=list, max_length=64)
 
     @model_validator(mode="after")
     def validate_support(self) -> Claim:
@@ -600,6 +732,20 @@ class Claim(BaseModel):
             raise ValueError("claim evidence_ids must not contain empty values")
         if len(self.evidence_ids) != len(set(self.evidence_ids)):
             raise ValueError("claim evidence_ids must not contain duplicates")
+        binding_ids = [
+            (item.requirement_kind, item.requirement_id, item.output_id)
+            for item in self.output_bindings
+        ]
+        if len(binding_ids) != len(set(binding_ids)):
+            raise ValueError("claim output bindings must be unique")
+        if any(isinstance(item, EvidenceOutputBinding)
+               and item.evidence_id not in self.evidence_ids
+               for item in self.output_bindings):
+            raise ValueError("claim output binding must cite claim evidence")
+        if any(isinstance(item, CalculationOutputBinding)
+               and item.calculation_id != self.calculation_id
+               for item in self.output_bindings):
+            raise ValueError("claim calculation binding must cite claim calculation")
         if self.kind in (ClaimKind.OBSERVED, ClaimKind.DERIVED):
             if not self.evidence_ids:
                 raise ValueError("observed and derived claims require evidence")
@@ -718,6 +864,7 @@ class VerifiedClaim(BaseModel):
     claim: Claim
     evidence_ids: list[str] = Field(default_factory=list, max_length=32)
     sources: list[ClaimSource] = Field(default_factory=list, max_length=32)
+    output_bindings: list[ClaimOutputBinding] = Field(default_factory=list, max_length=64)
 
     @model_validator(mode="after")
     def validate_references(self) -> "VerifiedClaim":
@@ -730,6 +877,20 @@ class VerifiedClaim(BaseModel):
             raise ValueError("verified claim evidence must match the claim")
         if not set(source_ids) <= set(self.evidence_ids):
             raise ValueError("verified claim sources must belong to its evidence")
+        identities = [
+            (item.requirement_kind, item.requirement_id, item.output_id)
+            for item in self.output_bindings
+        ]
+        if len(identities) != len(set(identities)):
+            raise ValueError("verified claim output bindings must be unique")
+        if any(isinstance(item, EvidenceOutputBinding)
+               and item.evidence_id not in self.evidence_ids
+               for item in self.output_bindings):
+            raise ValueError("verified claim binding must cite claim evidence")
+        if any(isinstance(item, CalculationOutputBinding)
+               and item.calculation_id != self.claim.calculation_id
+               for item in self.output_bindings):
+            raise ValueError("verified calculation binding must cite claim calculation")
         return self
 
 

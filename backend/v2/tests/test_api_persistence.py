@@ -84,7 +84,7 @@ async def test_checkpoint_resume_does_not_replay_completed_nodes(anyio_backend,
     from v2.contracts import EvidenceEnvelope
     from v2.runtime.checkpoints import ExecutionCheckpoint
 
-    checkpoints.save(ExecutionCheckpoint(
+    checkpoints.save(ExecutionCheckpoint(version=2,
         run_id="resume", task=task,
         plan=Plan(nodes=[completed, plan.nodes[1]]),
         evidence_by_node={"one": EvidenceEnvelope(
@@ -257,7 +257,7 @@ def test_quick_answer_route_is_flagged_and_streams_typed_contract(monkeypatch, t
         execution=ExecutionResult(
             plan=contracts.Plan(nodes=[contracts.PlanNode(
                 id="facts", description="facts", capability_hints=["standings"],
-                status="complete")]), evidence=[evidence], attempts={"facts": 1}),
+                status="complete")]), evidence_by_node={"facts": evidence}, attempts={"facts": 1}),
         draft=contracts.DraftReport(sections=["Record"], claims=[
             contracts.Claim(text="Boston won 61 games.", kind="observed",
                             evidence_ids=["ev"])]),
@@ -451,7 +451,7 @@ def test_answer_text_publishes_only_adjudicated_model_prose():
             plan=contracts.Plan(nodes=[contracts.PlanNode(
                 id="facts", description="facts", capability_hints=["standings"],
                 status="complete")]),
-            evidence=[evidence], attempts={"facts": 1}),
+            evidence_by_node={"facts": evidence}, attempts={"facts": 1}),
         draft=contracts.DraftReport(
             sections=["Record"], claims=[supported, rejected]),
         verification=contracts.VerificationReport(
@@ -613,7 +613,7 @@ async def test_checkpoint_resume_rejects_changed_plan_with_same_node_ids(
     original = _plan()
     changed = original.model_copy(deep=True)
     changed.nodes[0].arguments = {"team": "LAL"}
-    checkpoints.save(ExecutionCheckpoint(
+    checkpoints.save(ExecutionCheckpoint(version=2,
         run_id="changed", task=_task(), plan=original,
     ))
 
@@ -648,7 +648,7 @@ async def test_checkpoint_resume_rejects_inconsistent_execution_state(
             update={"capability": "other"})
     else:
         attempts["invented"] = 1
-    checkpoints.save(ExecutionCheckpoint(
+    checkpoints.save(ExecutionCheckpoint(version=2,
         run_id="corrupt", task=_task(), plan=plan,
         evidence_by_node=evidence_by_node, attempts=attempts,
     ))
@@ -668,7 +668,7 @@ async def test_checkpoint_resume_preserves_attempt_and_failure_budgets(
     checkpoints = FileCheckpointStore(tmp_path)
     plan = _plan()
     plan.nodes[0].status = PlanStatus.FAILED
-    checkpoints.save(ExecutionCheckpoint(
+    checkpoints.save(ExecutionCheckpoint(version=2,
         run_id="budget", task=_task(), plan=plan,
         attempts={"one": 1}, errors={"one": ["failed once"]},
     ))
@@ -697,7 +697,7 @@ async def test_checkpoint_rejects_completed_node_with_incomplete_dependency(
     checkpoints = FileCheckpointStore(tmp_path)
     plan = _plan()
     plan.nodes[1].status = PlanStatus.COMPLETE
-    checkpoints.save(ExecutionCheckpoint(
+    checkpoints.save(ExecutionCheckpoint(version=2,
         run_id="order", task=_task(), plan=plan,
         evidence_by_node={"two": EvidenceEnvelope(
             evidence_id="evidence:two", capability="fake", source="fixture",
@@ -724,7 +724,7 @@ async def test_restored_failure_budget_skips_independent_pending_nodes(
     ])
     saved = plan.model_copy(deep=True)
     saved.nodes[0].status = PlanStatus.FAILED
-    checkpoints.save(ExecutionCheckpoint(
+    checkpoints.save(ExecutionCheckpoint(version=2,
         run_id="failure-limit", task=_task(), plan=saved,
         attempts={"failed": 1}, errors={"failed": ["failed once"]},
     ))
@@ -746,7 +746,7 @@ def test_checkpoint_rejects_blank_run_identity() -> None:
     from v2.runtime.checkpoints import ExecutionCheckpoint
 
     with pytest.raises(ValidationError, match="run id must be non-empty"):
-        ExecutionCheckpoint(run_id=" ", task=_task(), plan=_plan())
+        ExecutionCheckpoint(version=2, run_id=" ", task=_task(), plan=_plan())
 
 
 def test_checkpoint_rejects_unknown_persisted_fields() -> None:
@@ -781,7 +781,7 @@ async def test_checkpoint_run_identity_must_match_requested_run() -> None:
 
     class WrongRunStore:
         def load(self, run_id):
-            return ExecutionCheckpoint(
+            return ExecutionCheckpoint(version=2,
                 run_id="other-run",
                 task=TaskSpec(goal="answer", mode="quick", deliverable="text"),
                 plan=Plan(nodes=[PlanNode(
@@ -818,7 +818,7 @@ async def test_checkpoint_status_and_errors_must_agree(
     checkpoints = FileCheckpointStore(tmp_path)
     plan = _plan()
     plan.nodes[0].status = status
-    checkpoints.save(ExecutionCheckpoint(
+    checkpoints.save(ExecutionCheckpoint(version=2,
         run_id="status-errors", task=_task(), plan=plan, errors=errors,
     ))
     with pytest.raises(ValueError, match=message):
@@ -836,7 +836,7 @@ async def test_checkpoint_rejects_unattempted_completed_node(tmp_path: Path) -> 
     checkpoints = FileCheckpointStore(tmp_path)
     plan = _plan()
     plan.nodes[0].status = PlanStatus.COMPLETE
-    checkpoints.save(ExecutionCheckpoint(
+    checkpoints.save(ExecutionCheckpoint(version=2,
         run_id="unattempted", task=_task(), plan=plan,
         evidence_by_node={"one": EvidenceEnvelope(
             evidence_id="one", capability="fake", source="fixture",
@@ -856,7 +856,7 @@ async def test_checkpoint_rejects_duplicate_error_messages(tmp_path: Path) -> No
     checkpoints = FileCheckpointStore(tmp_path)
     plan = _plan()
     plan.nodes[0].status = PlanStatus.FAILED
-    checkpoints.save(ExecutionCheckpoint(
+    checkpoints.save(ExecutionCheckpoint(version=2,
         run_id="duplicate-errors", task=_task(), plan=plan,
         attempts={"one": 1}, errors={"one": ["same", "same"]},
     ))
@@ -871,7 +871,7 @@ def test_checkpoint_contract_rejects_oversized_errors() -> None:
     from v2.runtime.checkpoints import ExecutionCheckpoint
 
     with pytest.raises(ValidationError, match="4000"):
-        ExecutionCheckpoint(
+        ExecutionCheckpoint(version=2,
             run_id="run", task=_task(), plan=_plan(),
             errors={"one": ["x" * 4001]},
         )
@@ -884,7 +884,7 @@ async def test_checkpoint_rejects_pending_node_without_attempts_remaining(
     from v2.runtime.checkpoints import ExecutionCheckpoint
 
     checkpoints = FileCheckpointStore(tmp_path)
-    checkpoints.save(ExecutionCheckpoint(
+    checkpoints.save(ExecutionCheckpoint(version=2,
         run_id="exhausted", task=_task(), plan=_plan(), attempts={"one": 1},
         errors={"one": ["prior attempt failed"]},
     ))
@@ -995,7 +995,7 @@ async def test_checkpoint_resume_rejects_duplicate_evidence_identity(tmp_path: P
         evidence_id="same", capability="fake", source="fixture",
         observed_at=datetime.now(UTC), rows={"node": "one"})
     second = first.model_copy(update={"rows": {"node": "two"}})
-    checkpoints.save(ExecutionCheckpoint(
+    checkpoints.save(ExecutionCheckpoint(version=2,
         run_id="duplicate-evidence", task=_task(), plan=plan,
         evidence_by_node={"one": first, "two": second},
         attempts={"one": 1, "two": 1}))
@@ -1069,7 +1069,7 @@ def test_checkpoint_save_fsyncs_directory_after_replace(tmp_path, monkeypatch) -
         calls.append(fd)
         return real_fsync(fd)
     monkeypatch.setattr("v2.runtime.checkpoints.os.fsync", record)
-    FileCheckpointStore(tmp_path).save(ExecutionCheckpoint(
+    FileCheckpointStore(tmp_path).save(ExecutionCheckpoint(version=2,
         run_id="durable", task=_task(), plan=_plan()))
     assert len(calls) == 2
 
@@ -1078,7 +1078,7 @@ def test_checkpoint_delete_fsyncs_directory(tmp_path, monkeypatch) -> None:
     from v2.runtime.checkpoints import ExecutionCheckpoint
 
     store = FileCheckpointStore(tmp_path)
-    store.save(ExecutionCheckpoint(run_id="delete-durable", task=_task(), plan=_plan()))
+    store.save(ExecutionCheckpoint(version=2, run_id="delete-durable", task=_task(), plan=_plan()))
     calls = []
     real_fsync = __import__("os").fsync
     def record(fd):
@@ -1094,7 +1094,7 @@ def test_checkpoint_store_rejects_symlinked_record(tmp_path: Path) -> None:
     from v2.runtime.checkpoints import ExecutionCheckpoint
 
     outside = tmp_path / "outside.json"
-    checkpoint = ExecutionCheckpoint(run_id="run", task=_task(), plan=_plan())
+    checkpoint = ExecutionCheckpoint(version=2, run_id="run", task=_task(), plan=_plan())
     outside.write_text(checkpoint.model_dump_json())
     directory = tmp_path / "checkpoints"
     directory.mkdir()
@@ -1114,7 +1114,7 @@ def test_file_checkpoint_store_serializes_same_run_writers(tmp_path: Path) -> No
     from v2.runtime.checkpoints import ExecutionCheckpoint
 
     store = FileCheckpointStore(tmp_path)
-    checkpoints = [ExecutionCheckpoint(
+    checkpoints = [ExecutionCheckpoint(version=2,
         run_id="shared", task=_task(), plan=_plan(), attempts={"one": index % 2}
     ) for index in range(20)]
     with ThreadPoolExecutor(max_workers=8) as pool:
@@ -1132,7 +1132,7 @@ def test_checkpoint_store_rejects_symlinked_directory(tmp_path: Path) -> None:
     directory = tmp_path / "checkpoints"
     directory.symlink_to(outside, target_is_directory=True)
     store = FileCheckpointStore(directory)
-    checkpoint = ExecutionCheckpoint(run_id="run", task=_task(), plan=_plan())
+    checkpoint = ExecutionCheckpoint(version=2, run_id="run", task=_task(), plan=_plan())
     for operation in (
         lambda: store.load("run"),
         lambda: store.save(checkpoint),
@@ -1192,7 +1192,7 @@ def test_checkpoint_rejects_noninteger_attempt_counts() -> None:
     from v2.runtime.checkpoints import ExecutionCheckpoint
     for count in (True, 1.5, "1"):
         with pytest.raises(ValidationError, match="valid integer|attempt counts must be integers"):
-            ExecutionCheckpoint(
+            ExecutionCheckpoint(version=2,
                 run_id="run", task=_task(), plan=_plan(), attempts={"one": count},
             )
 
@@ -1258,7 +1258,7 @@ def test_project_store_rejects_symlinked_sqlite_auxiliary_files(
 def test_checkpoint_store_revalidates_copied_checkpoint(tmp_path: Path) -> None:
     from pydantic import ValidationError
     from v2.runtime.checkpoints import ExecutionCheckpoint
-    valid = ExecutionCheckpoint(run_id="run", task=_task(), plan=_plan())
+    valid = ExecutionCheckpoint(version=2, run_id="run", task=_task(), plan=_plan())
     unsafe = valid.model_copy(update={"run_id": " "})
     with pytest.raises(ValidationError, match="run id must be non-empty"):
         FileCheckpointStore(tmp_path).save(unsafe)
@@ -1560,7 +1560,7 @@ def test_answer_text_does_not_publish_verifier_repair_diagnostics():
         task=contracts.TaskSpec(goal="changes", mode="quick", deliverable="answer"),
         execution=ExecutionResult(plan=contracts.Plan(nodes=[contracts.PlanNode(
             id="facts", description="facts", capability_hints=["standings"],
-            status="complete")]), evidence=[evidence], attempts={"facts": 1}),
+            status="complete")]), evidence_by_node={"facts": evidence}, attempts={"facts": 1}),
         draft=contracts.DraftReport(sections=["Record"], claims=[supported]),
         verification=report,
         verified_claims=[contracts.VerifiedClaim(
@@ -2031,7 +2031,7 @@ def test_full_http_sse_and_activity_omit_private_failure_taxonomy(monkeypatch,tm
     sentinel='SECRET_SENTINEL_MUST_NOT_LEAK'
     class Runtime:
         async def run(self,*a,**k):
-            return RuntimeResult(task=TaskSpec(goal='g',mode='quick',deliverable='d'),execution=ExecutionResult(plan=Plan(nodes=[]),evidence=[],errors={}),draft=DraftReport(sections=[],claims=[]),verification=VerificationReport(status='pass'))
+            return RuntimeResult(task=TaskSpec(goal='g',mode='quick',deliverable='d'),execution=ExecutionResult(plan=Plan(nodes=[]),errors={}),draft=DraftReport(sections=[],claims=[]),verification=VerificationReport(status='pass'))
     def build(**kwargs):
         ledger=RunLedger(kwargs['run_id']);ledger.append('model/request',turn_id=kwargs['run_id'],call_id='model:1',data={'provider':'inception','model':'mercury-2.5','route':'semantic_verifier','prompt_hash':'a'*64,'context_hash':'b'*64,'tool_schema_hash':'c'*64,'planner_version':'v2','budgets':{},'skill_hashes':{}});ledger.append('assistant/attempt',turn_id=kwargs['run_id'],call_id='model:1',data={'status':'failed','error':sentinel,'provider_attempts':[{'route':'semantic_verifier','provider':'inception','model':'mercury-2.5','attempt_number':1,'exception_type':'UnexpectedModelBehavior','message_class':'structured_output','latency_ms':1,'failure_top_class':'UnexpectedModelBehavior','failure_class_chain':['UnexpectedModelBehavior'],'failure_phase':'no_tool_or_empty','failure_validation_errors':[],'failure_validation_subtype':'not_applicable','failure_schema_sha256':'a'*64,'failure_route':'semantic_verifier'}]});return Runtime(),ledger
     monkeypatch.setenv('DIME_RUNTIME_V2','on');monkeypatch.setenv('DIME_V2_ACTIVITY_DIR',str(tmp_path/'activity'));monkeypatch.setattr('app.providers.resolve_model_id',lambda value:('inception','mercury-2.5'));monkeypatch.setattr('v2.runtime.assembly.build_runtime',build)

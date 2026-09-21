@@ -845,6 +845,7 @@ async def test_verified_claim_sources_preserve_per_fact_vintage() -> None:
     from datetime import UTC, date, datetime
     from v2.contracts import EvidenceEnvelope
     from v2.runtime.loop import _verified_claims
+    from v2.runtime.models import ExecutionResult
 
     claim = Claim(text="The salary is $57.1M.", kind="observed",
                   evidence_ids=["salary"] )
@@ -858,8 +859,12 @@ async def test_verified_claim_sources_preserve_per_fact_vintage() -> None:
         as_of=date(2026, 7, 1), vintages={"salary_season": "2026-27"},
         task_season_scoped=False, rows={"salary": 57_100_000})
 
-    source = _verified_claims(
-        draft, verification, {"salary": envelope})[0].sources[0]
+    task = TaskSpec(goal="salary", mode="quick", deliverable="answer")
+    execution = ExecutionResult(plan=Plan(nodes=[]))
+    claims, gaps = _verified_claims(
+        task, execution, draft, verification, {"salary": envelope})
+    assert gaps == []
+    source = claims[0].sources[0]
     assert source.vintages == {"salary_season": "2026-27"}
     assert source.as_of == date(2026, 7, 1)
     assert source.observed_at == datetime(2026, 9, 17, tzinfo=UTC)
@@ -907,7 +912,7 @@ async def test_redundant_failed_capability_does_not_create_false_partial():
                     plan.nodes[0].model_copy(update={"status": PlanStatus.COMPLETE}),
                     plan.nodes[1].model_copy(update={"status": PlanStatus.FAILED}),
                 ]),
-                evidence=[evidence], attempts={"report": 1, "efficiency": 1},
+                evidence_by_node={"report": evidence}, attempts={"report": 1, "efficiency": 1},
                 errors={"efficiency": ["TimeoutError: source timed out"]},
             )
 
@@ -1080,7 +1085,7 @@ async def test_failed_alternative_is_redundant_when_requirement_is_fulfilled():
         evidence_id="report", capability="player_report", source="fixture",
         observed_at=datetime.now(UTC), rows={"PPG": 33.9})
     assert _redundant_failed_nodes(task, ExecutionResult(
-        plan=plan, evidence=[evidence], attempts={"logs":1,"report":1}, errors={"logs":["missing"]})) == {"logs"}
+        plan=plan, evidence_by_node={"report": evidence}, attempts={"logs":1,"report":1}, errors={"logs":["missing"]})) == {"logs"}
 
 @pytest.mark.anyio
 async def test_semantic_missing_branch_is_removed_when_requirement_has_values():
@@ -1194,7 +1199,7 @@ async def test_review_fallback_materialized_pair_requirement_executes_once_and_p
         async def execute(self,task,plan,run_id=None):
             calls.append(plan.nodes[0].arguments)
             ev=EvidenceEnvelope(evidence_id="pair",capability="player_comparison",source="fake",observed_at=__import__('datetime').datetime.now(__import__('datetime').UTC),season="2025-26",entities=task.entities,rows={"a":{"name":"Myles Turner","ppg":11.9},"b":{"name":"Luka Doncic","ppg":33.5}})
-            return ExecutionResult(plan=Plan(nodes=[plan.nodes[0].model_copy(update={"status":PlanStatus.COMPLETE})]),evidence=[ev],attempts={"pair":1},errors={})
+            return ExecutionResult(plan=Plan(nodes=[plan.nodes[0].model_copy(update={"status":PlanStatus.COMPLETE})]),evidence_by_node={"pair":ev},attempts={"pair":1},errors={})
     class PairSynth:
         async def synthesize(self,task,evidence):
             return DraftReport(sections=["Pair"],claims=[Claim(text="Luka Doncic averaged 33.5 points per game.",kind="observed",evidence_ids=["pair"])])
@@ -1217,10 +1222,40 @@ async def test_invalid_model_calculation_path_is_safe_partial_not_runtime_failur
         async def execute(self,task,plan,run_id=None):
             from v2.runtime.models import ExecutionResult
             ev=EvidenceEnvelope(evidence_id="ev",capability="fake",source="f",observed_at=datetime.now(UTC),rows={"a":2,"b":1})
-            return ExecutionResult(plan=Plan(nodes=[plan.nodes[0].model_copy(update={"status":PlanStatus.COMPLETE})]),evidence=[ev],attempts={"facts":1},errors={})
+            return ExecutionResult(plan=Plan(nodes=[plan.nodes[0].model_copy(update={"status":PlanStatus.COMPLETE})]),evidence_by_node={"facts":ev},attempts={"facts":1},errors={})
     class DraftModel:
         async def generate(self,**call):return call["schema"].model_validate({"sections":[],"claims":[{"text":"Wrong difference 99.","kind":"derived","evidence_ids":["ev"],"calculation_id":"bad"}],"calculations":[{"calculation_id":"bad","requirement_id":"delta","operation":"subtract","inputs":[{"evidence_id":"ev","path":"rows.missing"},{"evidence_id":"ev","path":"rows.b"}],"result":99}]})
     result=await Runtime(intake=IntakeCalc(),planner=PlannerCalc(),executor=ExecCalc(),synthesizer=ModelSynthesizer(DraftModel(),provider="p",model_name="m"),mechanical_verifier=SequenceVerifier(VerificationStatus.PASS),semantic_verifier=SequenceVerifier(VerificationStatus.PASS)).run("split")
     assert result.verification.status==VerificationStatus.PARTIAL
     assert result.verified_claims==[]
     assert any("outside admitted evidence" in gap.message for gap in result.gaps)
+
+
+def test_binding_rejection_is_atomic_and_returns_typed_gap():
+    from datetime import UTC, datetime
+    from v2.contracts import (EvidenceEnvelope, EvidenceOutputBinding,
+        EvidenceRequirement, Plan, PlanNode, TaskSpec)
+    from v2.runtime.loop import _verified_claims
+    from v2.runtime.models import ExecutionResult
+    good = EvidenceOutputBinding(value={"kind":"integer","value":61}, unit={"kind":"declared","value":"count"}, domain="standings", requirement_id="stats", output_id="WINS",
+        node_id="facts", evidence_id="ev", selector="rows.WINS")
+    bad = EvidenceOutputBinding(value={"kind":"integer","value":0}, unit={"kind":"declared","value":"count"}, domain="standings", requirement_id="stats", output_id="LOSSES",
+        node_id="facts", evidence_id="ev", selector="rows.WINS")
+    claim = Claim(text="record", kind="observed", evidence_ids=["ev"],
+                  output_bindings=[good, bad])
+    draft = DraftReport(sections=[], claims=[claim])
+    task = TaskSpec(goal="record", mode="quick", deliverable="answer",
+        requirements=[EvidenceRequirement(id="stats", description="record",
+            capability_options=["standings"], requested_outputs=["WINS","LOSSES"])])
+    envelope = EvidenceEnvelope(evidence_id="ev", capability="standings",
+        source="fixture", observed_at=datetime.now(UTC), rows={"WINS":61})
+    execution = ExecutionResult(plan=Plan(nodes=[PlanNode(id="facts",
+        description="facts", capability_hints=["standings"],
+        covers_requirement_ids=["stats"], status="complete")]),
+        evidence_by_node={"facts":envelope}, attempts={"facts":1})
+    report = VerificationReport(status="pass", claim_results=[
+        {"claim_index":0,"supported":True}])
+    claims, gaps = _verified_claims(task, execution, draft, report, {"ev":envelope})
+    assert claims[0].output_bindings == []
+    assert len(gaps) == 1 and gaps[0].kind == "synthesis_incomplete"
+    assert gaps[0].blocks == ["claim:0"]

@@ -286,7 +286,7 @@ def test_v2_outcome_deduplicates_reused_capability_route() -> None:
                 id=f"node-{index}", description="facts",
                 capability_hints=["player_report"], status="complete")
                 for index in range(2)]),
-            evidence=evidence, attempts={f"node-{index}": 1 for index in range(2)},
+            evidence_by_node={f"node-{index}": item for index, item in enumerate(evidence)}, attempts={f"node-{index}": 1 for index in range(2)},
         ),
         draft=DraftReport(sections=["Answer"], claims=claims),
         verification=VerificationReport(status="pass", claim_results=[

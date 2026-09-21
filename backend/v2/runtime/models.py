@@ -17,7 +17,12 @@ class ExecutionResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     plan: Plan
-    evidence: list[EvidenceEnvelope] = Field(default_factory=list, max_length=32)
+    evidence_by_node: dict[str, EvidenceEnvelope] = Field(default_factory=dict, max_length=32)
+
+    @property
+    def evidence(self) -> list[EvidenceEnvelope]:
+        """Stable public evidence list; ownership remains explicit by node."""
+        return list(self.evidence_by_node.values())
     attempts: dict[str, StrictInt] = Field(default_factory=dict, max_length=32)
     errors: dict[str, list[str]] = Field(default_factory=dict, max_length=32)
 
@@ -27,25 +32,24 @@ class ExecutionResult(BaseModel):
         unknown = (set(self.attempts) | set(self.errors)) - nodes.keys()
         if unknown:
             raise ValueError(f"execution references unknown nodes: {sorted(unknown)}")
-        evidence_ids = [item.evidence_id for item in self.evidence]
+        unknown_evidence_nodes = set(self.evidence_by_node) - nodes.keys()
+        if unknown_evidence_nodes:
+            raise ValueError(
+                f"execution evidence has unknown owners: {sorted(unknown_evidence_nodes)}")
+        evidence_ids = [item.evidence_id for item in self.evidence_by_node.values()]
         if len(evidence_ids) != len(set(evidence_ids)):
             raise ValueError("execution evidence ids must be unique")
-        completed = [
-            node for node in self.plan.nodes if node.status.value == "complete"
-        ]
-        if len(completed) != len(self.evidence):
-            raise ValueError("execution evidence must match completed plan nodes")
-        evidence_by_node = dict(zip(
-            (node.id for node in completed), self.evidence, strict=True
-        ))
-        for node, item in zip(completed, self.evidence, strict=True):
+        for node_id, item in self.evidence_by_node.items():
+            node = nodes[node_id]
+            if node.status.value != "complete":
+                raise ValueError("execution evidence owner must be complete")
             if item.capability not in node.capability_hints:
                 raise ValueError(
                     f"execution evidence capability does not match node {node.id!r}")
             expected_lineage = [
-                evidence_by_node[parent].evidence_id
+                self.evidence_by_node[parent].evidence_id
                 for parent in node.depends_on
-                if parent in evidence_by_node
+                if parent in self.evidence_by_node
             ]
             if item.lineage != expected_lineage:
                 raise ValueError(
@@ -179,6 +183,12 @@ class RuntimeResult(BaseModel):
             ]
             if actual_sources != expected_sources:
                 raise ValueError("verified claim sources do not match execution evidence")
+            try:
+                admit_verified_claim_bindings(
+                    self.task, self.execution, self.draft, item)
+            except ValueError as exc:
+                raise ValueError(
+                    f"verified claim carries invalid output authority: {exc}") from exc
         supported = {index for index, result in by_index.items() if result.supported}
         if seen != supported:
             raise ValueError("verified claims must match supported adjudications")
@@ -190,3 +200,152 @@ class RuntimeResult(BaseModel):
             raise ValueError(
                 "verification status does not match runtime publication state")
         return self
+
+
+def admit_verified_claim_bindings(
+    task: TaskSpec,
+    execution: ExecutionResult,
+    draft: DraftReport,
+    verified_claim: VerifiedClaim,
+) -> VerifiedClaim:
+    """Atomically validate claim-local output authority; never infer it."""
+    from v2.adapters.capabilities import CAPABILITIES
+    from v2.contracts import EvidenceOutputBinding, CalculationOutputBinding
+    from v2.domain.evidence import iter_values
+    evidence_requirements = {item.id: item for item in task.requirements}
+    calculation_requirements = {item.id: item for item in task.calculation_requirements}
+    evidence_by_id = {item.evidence_id: (node_id, item)
+                      for node_id, item in execution.evidence_by_node.items()}
+    calculations = {item.calculation_id: item for item in draft.calculations}
+    task_entities = {(item.type, item.id) for item in task.entities}
+    for binding in verified_claim.output_bindings:
+        if isinstance(binding, EvidenceOutputBinding):
+            requirement = (evidence_requirements.get(binding.requirement_id)
+                           if binding.requirement_kind == "evidence" else None)
+            allowed_outputs = (requirement.requested_outputs if requirement is not None
+                               else task.requested_outputs)
+            if binding.requirement_kind == "evidence" and requirement is None:
+                raise ValueError("binding names unknown evidence requirement")
+            if binding.output_id not in allowed_outputs:
+                raise ValueError("binding output is outside its authority")
+            owned = evidence_by_id.get(binding.evidence_id)
+            if owned is None or owned[0] != binding.node_id:
+                raise ValueError("binding evidence ownership is invalid")
+            node = next(item for item in execution.plan.nodes if item.id == binding.node_id)
+            evidence = owned[1]
+            if requirement is not None:
+                if binding.requirement_id not in node.covers_requirement_ids:
+                    raise ValueError("binding node does not cover requirement")
+                if evidence.capability not in requirement.capability_options:
+                    raise ValueError("binding capability is outside requirement")
+                if any(node.arguments.get(key) != value
+                       for key, value in requirement.capability_arguments.items()):
+                    raise ValueError("binding node scope does not match requirement")
+            capability = CAPABILITIES.get(evidence.capability)
+            if capability is None:
+                raise ValueError("binding capability lacks catalog authority")
+            leaf = binding.selector.rsplit(".", 1)[-1]
+            leaf = leaf.split("[", 1)[0]
+            if leaf != binding.output_id:
+                raise ValueError("binding selector metric does not match output")
+            catalog_unit = capability.units.get(binding.output_id)
+            evidence_unit = evidence.units.get(binding.output_id)
+            if catalog_unit is not None and evidence_unit is not None \
+                    and catalog_unit != evidence_unit:
+                raise ValueError("catalog and evidence units disagree")
+            authoritative_unit = evidence_unit or catalog_unit
+            if authoritative_unit is None:
+                if binding.unit.kind != "unitless":
+                    raise ValueError("unitless output must be explicit")
+            elif binding.unit.kind != "declared" \
+                    or binding.unit.value != authoritative_unit:
+                raise ValueError("binding unit does not match output authority")
+            if binding.domain != evidence.capability:
+                raise ValueError("binding domain does not match capability")
+            if task.season is not None and evidence.task_season_scoped \
+                    and evidence.season != task.season.value:
+                raise ValueError("binding evidence season is outside task scope")
+            if task.as_of is not None and evidence.as_of != task.as_of:
+                raise ValueError("binding evidence as_of is outside task scope")
+            scoped_entities = task_entities
+            if scoped_entities and binding.subject_entity_id is None:
+                raise ValueError("entity-scoped binding requires selector-local subject")
+            if binding.subject_entity_id is not None:
+                subject = (binding.subject_entity_type, binding.subject_entity_id)
+                if subject not in scoped_entities:
+                    raise ValueError("binding subject is outside requested scope")
+                if not any((entity.type, entity.id) == subject
+                           for entity in evidence.entities):
+                    raise ValueError("binding subject is outside evidence scope")
+                values = [item for item in iter_values(evidence)
+                          if item.path == binding.selector]
+                identity_keys = {
+                    "player": {"PLAYER_ID", "player_id"},
+                    "team": {"TEAM_ID", "team_id"},
+                }.get(binding.subject_entity_type)
+                if identity_keys is None:
+                    raise ValueError("binding subject type lacks identity authority")
+                subject_values = [item.value for item in iter_values(evidence)
+                                  if item.path == binding.subject_selector]
+                subject_leaf = binding.subject_selector.rsplit(".", 1)[-1]
+                if subject_leaf not in identity_keys:
+                    raise ValueError("binding subject selector has wrong entity type")
+                row_root = binding.row_selector
+                if binding.subject_selector != f"{row_root}.{subject_leaf}":
+                    raise ValueError("binding subject must be a direct row child")
+                if row_root is None:
+                    raise ValueError("entity binding requires explicit row selector")
+                def descends(selector: str, root: str) -> bool:
+                    return (selector.startswith(root + ".")
+                            or selector.startswith(root + "["))
+                if not descends(binding.selector, row_root) \
+                        or not descends(binding.subject_selector, row_root):
+                    raise ValueError("binding selectors are outside declared row")
+                if len(subject_values) != 1 or str(subject_values[0]) != binding.subject_entity_id:
+                    raise ValueError("binding selector row does not match subject")
+            else:
+                values = [item for item in iter_values(evidence)
+                          if item.path == binding.selector]
+            if len(values) != 1 or values[0].value is None:
+                raise ValueError("binding selector must locate exactly one value")
+            selected = values[0].value
+            declared = binding.value
+            if declared.kind == "boolean":
+                equal = isinstance(selected, bool) and selected is declared.value
+            elif declared.kind == "integer":
+                equal = (not isinstance(selected, bool)
+                         and isinstance(selected, int)
+                         and selected == declared.value)
+            elif declared.kind == "float":
+                equal = (isinstance(selected, float)
+                         and selected == declared.value)
+            elif declared.kind == "decimal":
+                from decimal import Decimal
+                equal = (isinstance(selected, Decimal)
+                         and selected == Decimal(declared.value))
+            else:
+                equal = isinstance(selected, str) and selected == declared.value
+            if not equal:
+                raise ValueError("binding value does not exactly match selected evidence")
+            if binding.evidence_id not in verified_claim.evidence_ids:
+                raise ValueError("binding evidence is not cited by claim")
+        else:
+            requirement = calculation_requirements.get(binding.requirement_id)
+            if requirement is None or binding.output_id not in requirement.requested_outputs:
+                raise ValueError("binding calculation output is outside requirement")
+            calculation = calculations.get(binding.calculation_id)
+            if calculation is None or calculation.requirement_id != binding.requirement_id:
+                raise ValueError("binding calculation authority is invalid")
+            if verified_claim.claim.calculation_id != binding.calculation_id:
+                raise ValueError("binding calculation is not cited by claim")
+            from v2.domain.calculations import Calculation, validate_calculation
+            from v2.domain.evidence import EvidenceIndex
+            checked = Calculation.model_validate({
+                "calculation_id": calculation.calculation_id,
+                "operation": calculation.operation,
+                "inputs": [item.model_dump() for item in calculation.inputs],
+                "result": calculation.result, "unit": calculation.unit,
+                "subject_input": calculation.subject_input})
+            if validate_calculation(checked, EvidenceIndex(execution.evidence)) is not None:
+                raise ValueError("binding calculation did not pass recomputation")
+    return verified_claim

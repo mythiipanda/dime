@@ -4,7 +4,7 @@ import os
 import tempfile
 from pathlib import Path
 from threading import Lock
-from typing import Protocol
+from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
 
@@ -24,6 +24,7 @@ def _checkpoint_path_lock(path: Path) -> Lock:
 class ExecutionCheckpoint(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    version: Literal[2]
     run_id: str = Field(max_length=256)
     task: TaskSpec
     plan: Plan

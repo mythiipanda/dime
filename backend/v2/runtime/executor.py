@@ -176,11 +176,10 @@ class PlanExecutor:
         completed_plan = Plan(nodes=[nodes[node.id] for node in plan.nodes])
         result = ExecutionResult(
             plan=completed_plan,
-            evidence=[
-                evidence_by_node[node.id]
-                for node in plan.nodes
-                if node.id in evidence_by_node
-            ],
+            evidence_by_node={
+                node.id: evidence_by_node[node.id]
+                for node in plan.nodes if node.id in evidence_by_node
+            },
             attempts=attempts,
             errors=errors,
         )
@@ -346,6 +345,7 @@ class PlanExecutor:
             return
         self._checkpoint_store.save(
             ExecutionCheckpoint(
+                version=2,
                 run_id=run_id,
                 task=task,
                 plan=Plan(nodes=[nodes[node.id] for node in original_plan.nodes]),

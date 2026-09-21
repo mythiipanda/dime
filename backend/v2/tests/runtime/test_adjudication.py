@@ -2,6 +2,24 @@ from v2.contracts import (
     Claim, ClaimResult, DraftReport, VerificationReport,
 )
 from v2.runtime.loop import _verification_gaps, _verified_claims
+from v2.runtime.models import ExecutionResult
+from v2.contracts import Plan, PlanNode, TaskSpec
+
+
+def verified(draft, report, evidence=None):
+    evidence = evidence or {}
+    plan = Plan(nodes=[PlanNode(id=f"n{index}", description="facts",
+        capability_hints=[item.capability], status="complete")
+        for index, item in enumerate(evidence.values())])
+    execution = ExecutionResult(plan=plan,
+        evidence_by_node={f"n{index}": item
+                          for index, item in enumerate(evidence.values())},
+        attempts={f"n{index}": 1 for index in range(len(evidence))})
+    claims, gaps = _verified_claims(
+        TaskSpec(goal="g", mode="quick", deliverable="d"),
+        execution, draft, report, evidence)
+    assert gaps == []
+    return claims
 
 
 def test_adjudication_keeps_model_prose_and_marks_supported_claims():
@@ -13,7 +31,7 @@ def test_adjudication_keeps_model_prose_and_marks_supported_claims():
         ClaimResult(claim_index=0, supported=True),
         ClaimResult(claim_index=1, supported=False, reasons=["uncited numeral 62"]),
     ])
-    claims = _verified_claims(draft, report)
+    claims = verified(draft, report)
     assert [item.claim.text for item in claims] == ["Boston won 61 games."]
     assert claims[0].evidence_ids == ["ev"]
     gaps = _verification_gaps(draft, report)
@@ -46,7 +64,7 @@ def test_verified_claim_carries_per_claim_provenance_for_mixed_sources():
             source="fallback:basketball-reference", observed_at=datetime.now(UTC),
             rows={"player": "Luka", "ppg": 33.5}),
     }
-    claims = _verified_claims(draft, report, evidence)
+    claims = verified(draft, report, evidence)
     assert claims[0].sources[0].source.startswith("warehouse:")
     assert claims[1].sources[0].source.startswith("fallback:")
     assert claims[0].sources != claims[1].sources
@@ -70,7 +88,7 @@ def test_pass_status_without_claim_adjudication_publishes_nothing() -> None:
         Claim(text="Boston won 61 games.", kind="observed", evidence_ids=["ev"]),
     ])
     report = VerificationReport(status="pass", claim_results=[])
-    assert _verified_claims(draft, report) == []
+    assert verified(draft, report) == []
 
 
 def test_runtime_result_rejects_mismatched_verified_claim() -> None:
@@ -112,11 +130,11 @@ def test_runtime_result_rejects_forged_claim_source() -> None:
                 plan=Plan(nodes=[PlanNode(
                     id="facts", description="facts", capability_hints=["standings"],
                     status="complete")]),
-                evidence=[EvidenceEnvelope(
+                evidence_by_node={"facts": EvidenceEnvelope(
                     evidence_id="ev", capability="standings",
                     source="warehouse:standings", observed_at=datetime.now(UTC),
                     rows={"wins": 61},
-                )],
+                )},
                 attempts={"facts": 1},
             ),
             draft=DraftReport(sections=["Answer"], claims=[claim]),
@@ -254,7 +272,7 @@ def test_runtime_result_rejects_task_scoped_evidence_from_wrong_season() -> None
     execution = ExecutionResult(
         plan=Plan(nodes=[PlanNode(id="facts", description="facts",
             capability_hints=["standings"], status="complete")]),
-        evidence=[evidence], attempts={"facts": 1})
+        evidence_by_node={"facts": evidence}, attempts={"facts": 1})
     with pytest.raises(ValidationError, match="does not match task season"):
         RuntimeResult(
             task=TaskSpec(goal="record", mode="quick", deliverable="text",
