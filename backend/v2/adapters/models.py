@@ -38,6 +38,13 @@ from app.providers import (
 )
 from v2.contracts import (
     ConversationTurn,
+    AdmissionBinding,
+    AdmissionReviewTarget,
+    EntityAdmissionSubject,
+    IntakeAdmissionReview,
+    OutputAdmissionSubject,
+    RequirementAdmissionSubject,
+    SeasonAdmissionSubject,
     Claim,
     DraftReport,
     EvidenceEnvelope,
@@ -81,6 +88,9 @@ ROUTE_POLICIES: dict[str, dict[str, Any]] = {
                "total_budget_s": 18.0, "secondary_limit": 1,
                "transient_classes": frozenset({"timeout", "rate_limit", "network", "server_error", "provider_error"}),
                "deterministic_fallback": False},
+    "intake_admission": {"primary_attempts": 1, "attempt_timeout_s": 6.0,
+               "total_budget_s": 6.0, "secondary_limit": 0,
+               "transient_classes": frozenset(), "deterministic_fallback": False},
     "requirement_review": {"primary_attempts": 2, "attempt_timeout_s": 8.0,
                "total_budget_s": 12.0, "secondary_limit": 1,
                "transient_classes": frozenset({"timeout", "rate_limit", "network", "server_error", "provider_error"}),
@@ -408,6 +418,7 @@ class ProviderStructuredModel:
 
 _PROVIDER_ROUTE_PROMPT_NAMES = {
     "intake": "intake",
+    "intake_admission": "intake_admission",
     "requirement_review": "requirement_review",
     "planner": "planner",
     "synthesizer": "synthesizer",
@@ -496,134 +507,142 @@ class ModelIntake(ModelStage):
     route = "intake"
     schema = TaskSpec
 
-    def __init__(self, *args: Any, capability_catalog: Mapping[str, str], **kwargs: Any) -> None:
+    def __init__(self, *args: Any, capability_catalog: Mapping[str, str],
+                 intake_admission: bool = False, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._catalog = dict(capability_catalog)
+        self._intake_admission = intake_admission
+
+    @staticmethod
+    def _bounded_context(context: Sequence[ConversationTurn]) -> tuple[ConversationTurn, ...]:
+        from v2.contracts import MAX_INTAKE_CONTEXT_TURNS
+        return tuple(context[-MAX_INTAKE_CONTEXT_TURNS:])
+
+    @staticmethod
+    def _canonical_json(value: Any) -> bytes:
+        return json.dumps(value, sort_keys=True, separators=(",", ":"),
+                          ensure_ascii=False).encode("utf-8")
+
+    @classmethod
+    def _review_target(cls, request: str, context: Sequence[ConversationTurn],
+                       task: TaskSpec) -> AdmissionReviewTarget:
+        bounded = cls._bounded_context(context)
+        context_value = [{"index": index, "role": turn.role,
+                          "content": turn.content}
+                         for index, turn in enumerate(bounded)]
+        return AdmissionReviewTarget(
+            request_sha256=hashlib.sha256(request.encode("utf-8")).hexdigest(),
+            context_sha256=hashlib.sha256(
+                cls._canonical_json(context_value)).hexdigest(),
+            task_sha256=hashlib.sha256(cls._canonical_json(
+                task.model_dump(mode="json"))).hexdigest())
+
+    @staticmethod
+    def _expected_admission_subjects(task: TaskSpec) -> tuple[Any, ...]:
+        subjects: list[Any] = [
+            EntityAdmissionSubject(kind="entity", entity_id=entity.id,
+                                   entity_type=entity.type)
+            for entity in task.entities]
+        if task.season is not None:
+            subjects.append(SeasonAdmissionSubject(
+                kind="season", value=task.season.value))
+        for requirement in task.requirements:
+            subjects.append(RequirementAdmissionSubject(
+                kind="requirement", requirement_id=requirement.id))
+            requested = getattr(requirement, "requested_outputs", ())
+            subjects.extend(OutputAdmissionSubject(
+                kind="output", requirement_id=requirement.id, output_id=output)
+                for output in requested)
+        return tuple(subjects)
+
+    @classmethod
+    def _source_for_locator(cls, locator: Any, request: str,
+                            context: Sequence[ConversationTurn]) -> str | None:
+        if locator.source == "request":
+            return request
+        bounded = cls._bounded_context(context)
+        if locator.context_turn is None or locator.context_turn >= len(bounded):
+            return None
+        return bounded[locator.context_turn].content
+
+    @classmethod
+    def _validate_review(cls, review: IntakeAdmissionReview, request: str,
+                         context: Sequence[ConversationTurn], task: TaskSpec) -> list[str]:
+        target = cls._review_target(request, context, task)
+        errors: list[str] = []
+        try:
+            review.require_target(target)
+        except ValueError as exc:
+            errors.append(str(exc))
+        expected = cls._expected_admission_subjects(task)
+        expected_ids = {item.model_dump_json() for item in expected}
+        review_ids = {item.model_dump_json() for item in review.expected_subjects}
+        if review_ids != expected_ids or len(review.expected_subjects) != len(expected):
+            errors.append("review expected subjects do not match proposed task")
+        for item in (*review.bindings, *review.unresolved_references):
+            source = cls._source_for_locator(item.locator, request, context)
+            locator = item.locator
+            if (source is None or locator.end > len(source)
+                    or source[locator.start:locator.end] != locator.text):
+                errors.append("review locator does not match frozen source")
+        return list(dict.fromkeys(errors))
+
+    async def _review_admission(self, request: str,
+                                context: Sequence[ConversationTurn],
+                                task: TaskSpec) -> IntakeAdmissionReview:
+        bounded = self._bounded_context(context)
+        expected = self._expected_admission_subjects(task)
+        target = self._review_target(request, bounded, task)
+        return await self._generate_as(
+            prompt_name="intake_admission", route="intake_admission",
+            schema=IntakeAdmissionReview,
+            payload={
+                "target": target.model_dump(mode="json"),
+                "expected_subjects": [item.model_dump(mode="json")
+                                      for item in expected],
+                "question": request,
+                "conversation_context": [
+                    {"index": index, **turn.model_dump(mode="json")}
+                    for index, turn in enumerate(bounded)],
+                "proposed_task": task.model_dump(mode="json"),
+            })
+
+    @classmethod
+    def _apply_review(cls, review: IntakeAdmissionReview, request: str,
+                      context: Sequence[ConversationTurn],
+                      task: TaskSpec) -> TaskSpec:
+        errors = cls._validate_review(review, request, context, task)
+        if review.decision == "admit" and not errors:
+            return task
+        blockers = [finding.code for finding in review.findings]
+        if review.unresolved_references:
+            blockers.append("The request contains an unresolved reference.")
+        blockers.extend(errors)
+        return task.model_copy(update={
+            "entities": [], "required_evidence": [], "requirements": [],
+            "calculation_requirements": [],
+            "open_questions": list(dict.fromkeys([
+                *task.open_questions,
+                *(blockers or ["The request could not be admitted safely."]),
+            ])),
+        })
 
     async def understand(
         self, request: str, context: Sequence[ConversationTurn] = ()
     ) -> TaskSpec:
+        bounded = self._bounded_context(context)
         payload = {
             "question": request,
             "current_date": datetime.now(UTC).date().isoformat(),
-            "conversation_context": [
-                turn.model_dump(mode="json") for turn in context[-8:]
-            ],
+            "conversation_context": [turn.model_dump(mode="json")
+                                     for turn in bounded],
             "capability_catalog": self._catalog,
             "skill_catalog": self._skills.catalog(),
         }
         task = await self._generate(payload)
-        def semantic_intake_ok(candidate: TaskSpec) -> bool:
-            source = request.casefold()
-            referential = bool(re.search(
-                r"\b(that player|that team|he|him|his|they|their)\b", source))
-            context_source = " ".join(turn.content.casefold() for turn in context)
-            semantic = " ".join([candidate.goal, candidate.deliverable,
-                *(entity.display_name for entity in candidate.entities),
-                candidate.season.value if candidate.season else ""]).casefold()
-            metric_aliases = {
-                "shooting": ("shoot", "shooting", "field goal", "fg%", "true shooting", "ts%"),
-                "blocks": ("block", "blocks", "bpg", "rim protection"),
-                "assists": ("assist", "assists", "apg", "dimes"),
-                "points": ("point", "points", "ppg", "scoring"),
-                "rebounds": ("rebound", "rebounds", "rpg", "boards"),
-                "steals": ("steal", "steals", "spg"),
-                "true shooting": ("true shooting", "ts%", "ts pct"),
-                "turnovers": ("turnover", "turnovers", "tov"),
-            }
-            requested_metrics = [aliases for aliases in metric_aliases.values()
-                if any(re.search(rf"(?<![a-z0-9]){re.escape(alias)}(?![a-z0-9])", source)
-                       for alias in aliases)]
-            if any(not any(alias in semantic for alias in aliases)
-                   for aliases in requested_metrics):
-                return False
-            source_seasons = set(re.findall(r"\b20\d{2}-\d{2}\b", source))
-            if source_seasons and not source_seasons <= set(re.findall(r"\b20\d{2}-\d{2}\b", semantic)):
-                return False
-            # Preserve explicit operation and output shape, including N.
-            number_words = {"one":"1","two":"2","three":"3","four":"4","five":"5",
-                            "six":"6","seven":"7","eight":"8","nine":"9","ten":"10"}
-            top = re.search(r"\btop\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b", source)
-            if top:
-                n = number_words.get(top.group(1), top.group(1))
-                if not (re.search(rf"\btop\s+(?:{n}|" + "|".join(k for k,v in number_words.items() if v==n) + r")\b", semantic)):
-                    return False
-            for patterns in (("compare", "comparison", "versus", " vs "),
-                             ("home and away", "home-away", "home versus away"),
-                             ("last ", "recent ")):
-                if any(token in source for token in patterns) and not any(token in semantic for token in patterns):
-                    return False
-            # Capitalized multi-token names are explicit entity anchors.
-            names = re.findall(r"\b(?:[A-Z][A-Za-zÀ-ž'’-]+\s+){1,3}[A-Z][A-Za-zÀ-ž'’-]+\b", request)
-            prefixes = ("Summarize ", "Compare ", "Explain ", "Assess ", "Evaluate ")
-            names = [next((name[len(prefix):] for prefix in prefixes
-                          if name.startswith(prefix)), name) for name in names]
-            names = [name for name in names if name.casefold() not in {
-                "which players", "who leads", "give the", "compare the", "national basketball association"}]
-            if names and candidate.entities:
-                if not any(entity.display_name.casefold() in source
-                           for entity in candidate.entities) and any(
-                    not any(all(part.casefold() in entity.display_name.casefold()
-                                for part in name.split())
-                            for entity in candidate.entities) for name in names):
-                    return False
-            elif any(not all(part.casefold() in semantic for part in name.split()) for name in names):
-                return False
-            conversational = bool(re.search(
-                r"(?:sure|happy to|what(?:'s| is) your question|please (?:ask|provide)|how can i help)",
-                candidate.deliverable, re.IGNORECASE))
-            if conversational:
-                return False
-            if referential:
-                # Empty context and per-type mismatches are handled by the
-                # dedicated referent guard below. With context, at least one
-                # candidate entity must name an antecedent; an additional
-                # invented type is stripped by that guard without a model retry.
-                if not context_source:
-                    return True
-                if not candidate.entities:
-                    return True
-                grounded = any(
-                    entity.display_name.casefold() in context_source
-                    or (len(entity.id.strip()) >= 3 and re.search(
-                        rf"(?<![a-z0-9]){re.escape(entity.id.casefold())}(?![a-z0-9])",
-                        context_source))
-                    for entity in candidate.entities)
-                # A generic failed/empty prior assistant answer establishes no
-                # antecedent even if the earlier user repeated the pronoun.
-                return grounded or not re.search(
-                    r"unavailable|could not|failed|error", context_source)
-            if requested_metrics or source_seasons or top or names:
-                return True
-            # Anchor-free requests need meaningful phrase similarity; pure
-            # referential turns are handled by the dedicated guard below.
-            stop = {"the","and","that","this","with","from","have","what","which",
-                    "who","give","tell","please","nba","season","player","team","game",
-                    "leaders","leader","top","rate","compare","points","how","did"}
-            a={t for t in re.findall(r"[a-z0-9]+",source) if len(t)>2 and t not in stop}
-            b={t for t in re.findall(r"[a-z0-9]+",semantic) if len(t)>2 and t not in stop}
-            return not a or len(a & b) / len(a) >= Decimal("0.5")
-        if not semantic_intake_ok(task):
-            task = await self._generate({
-                **payload,
-                "prior_intake": task.model_dump(mode="json"),
-                "resolution_feedback": {
-                    "instruction": (
-                        "The prior TaskSpec was schema-valid but did not preserve "
-                        "the source request. Return a replacement whose goal, "
-                        "entities, season, and deliverable describe the actual "
-                        "request. Never return conversational filler or a question."
-                    ),
-                },
-            })
-            if not semantic_intake_ok(task):
-                task = task.model_copy(update={
-                    "entities": [], "required_evidence": [], "requirements": [],
-                    "calculation_requirements": [],
-                    "open_questions": list(dict.fromkeys([*task.open_questions,
-                        "I could not preserve the requested entities, metric, season, and output shape. Could you restate the request?",
-                    ])),
-                })
+        if self._intake_admission:
+            review = await self._review_admission(request, bounded, task)
+            task = self._apply_review(review, request, bounded, task)
         # Follow-up turns get one bounded typed resolution pass before the
         # runtime treats open_questions as user blockers. The first intake can
         # notice a pronoun or elliptical reference yet still fail to bind it
@@ -631,8 +650,7 @@ class ModelIntake(ModelStage):
         # with the unresolved questions made explicit lets the intake resolve
         # from conversation evidence without weakening schema validation or
         # teaching the runtime query-specific names.
-        if (context and task.open_questions
-                and not any("could not preserve" in q for q in task.open_questions)):
+        if (context and task.open_questions and not self._intake_admission):
             task = await self._generate({
                 **payload,
                 "prior_intake": task.model_dump(mode="json"),
@@ -710,32 +728,6 @@ class ModelIntake(ModelStage):
                 if name not in set(task.skills)
             ],
         })
-        # A referential follow-up may proceed only from an antecedent named in
-        # bounded conversation text. This is reference grounding, not factual
-        # verification; evidence verification remains downstream. Structured
-        # validity cannot license an invented entity when context is absent.
-        folded_request = request.casefold()
-        referent_types = {kind for kind, patterns in {
-            "player": (r"\bthat player\b", r"\bhe\b", r"\bhim\b", r"\bhis\b", r"\bdid he\b"),
-            "team": (r"\bthat team\b", r"\bthey\b", r"\btheir\b", r"\bdid they\b"),
-        }.items() if any(re.search(pattern, folded_request) for pattern in patterns)}
-        if referent_types:
-            context_text = " ".join(turn.content.casefold() for turn in context)
-            grounded_types = {entity.type for entity in task.entities
-                if (entity.display_name.casefold() in context_text
-                    or (len(entity.id.strip()) >= 3 and re.search(
-                        rf"(?<![a-z0-9]){re.escape(entity.id.casefold())}(?![a-z0-9])",
-                        context_text)))}
-            missing_types = sorted(referent_types - grounded_types)
-            if missing_types:
-                labels = " and ".join(missing_types)
-                task = task.model_copy(update={
-                    "entities": [entity for entity in task.entities
-                                 if entity.type not in missing_types],
-                    "open_questions": list(dict.fromkeys([
-                        *task.open_questions, f"Which {labels} do you mean?",
-                    ])),
-                })
         if self._requirement_review and not task.open_questions:
             review = await self._review_requirements(request, task)
             task = task.model_copy(update={

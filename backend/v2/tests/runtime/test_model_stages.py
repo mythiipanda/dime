@@ -2044,7 +2044,7 @@ async def test_intake_primary_exhausted_then_secondary_success(monkeypatch):
     e=RequestEnvelope.freeze(provider="inception",model="primary",route="intake",prompt="p",context={},tool_schemas={},planner_version="v2")
     await m.generate(schema=TaskSpec,prompt="p",payload={"same":"input"},envelope=e)
     assert [x[0] for x in calls]==["primary","primary","secondary"]
-    assert m.last_provider=="mistral" and m.last_model=="secondary"
+    assert m.last_provider=="mistral" and m.last_model=="mistral_free_limit:secondary"
 
 
 @pytest.mark.anyio
@@ -2224,20 +2224,6 @@ def test_calculation_validation_accepts_ordinary_rate_rounding_but_not_wrong_val
     assert "does not recompute" in validate_calculation(wrong,index)
 
 @pytest.mark.anyio
-async def test_followup_does_not_invent_referent_after_content_free_prior_turn():
-    from v2.contracts import ConversationTurn
-    value={"goal":"compare Oklahoma City defense","mode":"quick","deliverable":"answer",
-        "entities":[{"id":"1610612760","type":"team","display_name":"Oklahoma City Thunder"}],
-        "required_evidence":[]}
-    stub=StubModel([value,value])
-    intake=ModelIntake(stub,**stage_kwargs())
-    task=await intake.understand("How does that player compare with that team?",context=(
-        ConversationTurn(role="user",content="Tell me more about that player."),
-        ConversationTurn(role="assistant",content="Some supporting data was unavailable."),))
-    assert task.entities==[]
-    assert "Which player and team do you mean?" in task.open_questions
-
-@pytest.mark.anyio
 async def test_followup_accepts_only_explicit_verified_antecedent_types():
     from v2.contracts import ConversationTurn
     stub=StubModel([{"goal":"compare Victor Wembanyama with San Antonio Spurs","mode":"quick","deliverable":"answer",
@@ -2248,98 +2234,131 @@ async def test_followup_accepts_only_explicit_verified_antecedent_types():
     assert task.open_questions==[]
     assert {e.type for e in task.entities}=={"player","team"}
 
-@pytest.mark.anyio
-async def test_schema_valid_conversational_taskspec_gets_bounded_semantic_repair():
-    stub=StubModel([
-        {"goal":"answer","mode":"quick","deliverable":"Sure, what's your question?"},
-        {"goal":"rank NBA blocks per game this season","mode":"quick","deliverable":"top five blocks-per-game leaders with games played","season":{"value":"2025-26","source":"default","confidence":1.0}},
-    ])
-    intake=ModelIntake(stub,**stage_kwargs())
-    task=await intake.understand("Who leads the NBA in blocks per game this season? Give the top five with games played.")
-    assert len(stub.calls)==2
-    assert "blocks" in task.goal and "games played" in task.deliverable
-    assert stub.calls[1]["payload"]["prior_intake"]["deliverable"].startswith("Sure")
+class AdmissionModel:
+    def __init__(self, task, review_factory):
+        self.task = task
+        self.review_factory = review_factory
+        self.calls = []
+
+    async def generate(self, **call):
+        self.calls.append(call)
+        if call["envelope"].route == "intake":
+            return call["schema"].model_validate(self.task)
+        if call["envelope"].route == "intake_admission":
+            return call["schema"].model_validate(
+                self.review_factory(call["payload"]))
+        raise AssertionError(call["envelope"].route)
+
+
+def admission_stage_kwargs():
+    return {**stage_kwargs(), "intake_admission": True}
+
+
+def blocked_reference(payload, text, kind="unknown", *, source="request", turn=None):
+    body = (payload["question"] if source == "request" else
+            payload["conversation_context"][turn]["content"])
+    start = body.index(text)
+    return {"target": payload["target"], "decision": "block",
+            "expected_subjects": payload["expected_subjects"],
+            "unresolved_references": [{"kind": kind, "locator": {
+                "source": source, "context_turn": turn, "start": start,
+                "end": start + len(text), "text": text}}]}
+
+
+def blocked_subject(payload, index=0):
+    return {"target": payload["target"], "decision": "block",
+            "expected_subjects": payload["expected_subjects"],
+            "findings": [{"code": "subject_mismatch",
+                "affected_subjects": [payload["expected_subjects"][index]]}]}
+
+
+def admitted(payload, spans):
+    bindings=[]
+    for subject, span in zip(payload["expected_subjects"], spans, strict=True):
+        source, turn, text = span
+        body = (payload["question"] if source == "request" else
+                payload["conversation_context"][turn]["content"])
+        start=body.index(text)
+        bindings.append({"subject":subject,"locator":{"source":source,
+            "context_turn":turn,"start":start,"end":start+len(text),"text":text}})
+    return {"target":payload["target"],"decision":"admit",
+            "expected_subjects":payload["expected_subjects"],"bindings":bindings}
+
 
 @pytest.mark.anyio
-async def test_repeated_schema_valid_semantic_mismatch_is_rejected_before_planning():
-    stub=StubModel([
-        {"goal":"weather","mode":"quick","deliverable":"forecast"},
-        {"goal":"baseball standings","mode":"quick","deliverable":"rank teams"},
-    ])
-    intake=ModelIntake(stub,**stage_kwargs())
-    task=await intake.understand("Who leads the NBA in blocks per game this season?")
-    assert len(stub.calls)==2
-    assert task.required_evidence==[] and task.entities==[]
-    assert any("could not preserve" in q for q in task.open_questions)
+@pytest.mark.parametrize("user_text", ["How did he do?", "How did they compare?"])
+async def test_pronoun_only_empty_context_returns_typed_unresolved_reference(user_text):
+    model=AdmissionModel({"goal":"performance","mode":"quick","deliverable":"answer",
+        "entities":[{"id":"unresolved","type":"league","display_name":"Unresolved subject"}]},
+        lambda payload: blocked_reference(payload, "he" if "he" in user_text else "they"))
+    task=await ModelIntake(model,**admission_stage_kwargs()).understand(user_text)
+    assert task.entities==[] and task.required_evidence==[]
+    assert task.open_questions and "unresolved reference" in task.open_questions[-1]
+    assert [call["envelope"].route for call in model.calls]==["intake","intake_admission"]
 
-@pytest.mark.anyio
-@pytest.mark.parametrize(("user_text","expected"),[
-    ("How did he do?","Which player do you mean?"),
-    ("How did they compare?","Which team do you mean?"),
-])
-async def test_pronoun_only_empty_context_blocks_invented_referent(user_text,expected):
-    stub=StubModel([{"goal":"player team performance","mode":"quick","deliverable":"compare performance",
-        "entities":[{"id":"p","type":"player","display_name":"Invented Player"},
-                    {"id":"t","type":"team","display_name":"Invented Team"}]}])
-    intake=ModelIntake(stub,**stage_kwargs())
-    task=await intake.understand(user_text,context=())
-    assert not any(e.type in ({"player"} if "player" in expected else {"team"}) for e in task.entities)
-    assert expected in task.open_questions
-    assert len(stub.calls)==1
-
-@pytest.mark.anyio
-async def test_empty_context_strips_invented_player_and_team_before_requirement_review():
-    class CountReview(ModelIntake):
-        review_calls=0
-        async def _review_requirements(self,*a,**k):
-            self.review_calls+=1;raise AssertionError("review must not run")
-    stub=StubModel([{"goal":"player team compare","mode":"quick","deliverable":"compare player team",
-        "entities":[{"id":"p","type":"player","display_name":"Invented Player"},
-                    {"id":"t","type":"team","display_name":"Invented Team"}]}])
-    intake=CountReview(stub,**stage_kwargs(),requirement_review=True)
-    task=await intake.understand("How does that player compare with that team?",context=())
-    assert task.entities==[]
-    assert "Which player and team do you mean?" in task.open_questions
-    assert intake.review_calls==0
 
 @pytest.mark.anyio
 async def test_explicit_player_context_does_not_license_invented_team():
     from v2.contracts import ConversationTurn
-    stub=StubModel([{"goal":"compare Victor Wembanyama to invented team","mode":"quick","deliverable":"answer",
+    model=AdmissionModel({"goal":"compare","mode":"quick","deliverable":"answer",
         "entities":[{"id":"w","type":"player","display_name":"Victor Wembanyama"},
-                    {"id":"t","type":"team","display_name":"Invented Team"}]}])
-    task=await ModelIntake(stub,**stage_kwargs()).understand(
-        "How does that player compare with that team?",context=(ConversationTurn(role="assistant",content="Victor Wembanyama led the board."),))
-    assert [(e.type,e.display_name) for e in task.entities]==[("player","Victor Wembanyama")]
-    assert "Which team do you mean?" in task.open_questions
+                    {"id":"t","type":"team","display_name":"Invented Team"}]},
+        lambda payload: blocked_subject(payload,1))
+    task=await ModelIntake(model,**admission_stage_kwargs()).understand(
+        "Compare that player with that team.",context=(
+            ConversationTurn(role="assistant",content="Victor Wembanyama led the board."),))
+    assert task.entities==[] and "subject_mismatch" in task.open_questions
+
 
 @pytest.mark.anyio
-@pytest.mark.parametrize(("question","bad"),[
- ("Who leads the NBA in blocks per game this season? Give the top five with games played.",{"goal":"NBA assists leaders this season","mode":"quick","deliverable":"top five assists with games played"}),
- ("Compare Myles Turner and Luka Doncic on PPG and true shooting this season.",{"goal":"compare Curry and Durant points this season","mode":"quick","deliverable":"player comparison"}),
- ("Who led blocks in 2025-26?",{"goal":"blocks leaders in 2026-27","mode":"quick","deliverable":"rank blocks","season":{"value":"2026-27","source":"default","confidence":1.0}}),
+@pytest.mark.parametrize("bad", [
+ {"goal":"NBA assists leaders","mode":"quick","deliverable":"top assists",
+  "entities":[{"id":"assists","type":"league","display_name":"NBA assists"}]},
+ {"goal":"compare Curry and Durant","mode":"quick","deliverable":"comparison",
+  "entities":[{"id":"curry","type":"player","display_name":"Curry"}]},
+ {"goal":"blocks leaders","mode":"quick","deliverable":"rank blocks",
+  "season":{"value":"2026-27","source":"default","confidence":1.0}},
 ])
-async def test_intake_semantic_anchor_mismatch_cannot_pass_on_generic_words(question,bad):
-    stub=StubModel([bad,bad])
-    task=await ModelIntake(stub,**stage_kwargs()).understand(question)
-    assert len(stub.calls)==2
+async def test_intake_semantic_anchor_mismatch_is_blocked_by_typed_review(bad):
+    model=AdmissionModel(bad,blocked_subject)
+    task=await ModelIntake(model,**admission_stage_kwargs()).understand(
+        "Who led blocks in 2025-26?")
     assert task.entities==[] and task.required_evidence==[]
-    assert any("could not preserve" in q for q in task.open_questions)
+    assert "subject_mismatch" in task.open_questions
+
 
 @pytest.mark.anyio
-async def test_referential_context_still_rejects_conversational_filler_then_blocks():
-    from v2.contracts import ConversationTurn
-    bad={"goal":"Victor Wembanyama performance","mode":"quick","deliverable":"Sure, what's your question?","entities":[{"id":"w","type":"player","display_name":"Victor Wembanyama"}]}
-    stub=StubModel([bad,bad]);task=await ModelIntake(stub,**stage_kwargs()).understand("How did he do?",context=(ConversationTurn(role="assistant",content="Victor Wembanyama led the board."),))
-    assert len(stub.calls)==2 and task.required_evidence==[] and task.entities==[]
-    assert any("could not preserve" in q for q in task.open_questions)
+async def test_explicit_lebron_possessive_is_admitted_without_referent_false_positive():
+    request="Analyze LeBron James and his fit."
+    model=AdmissionModel({"goal":"analyze LeBron fit","mode":"quick","deliverable":"fit",
+        "entities":[{"id":"2544","type":"player","display_name":"LeBron James"}]},
+        lambda payload: admitted(payload,[("request",None,"LeBron James")]))
+    task=await ModelIntake(model,**admission_stage_kwargs()).understand(request)
+    assert [(e.id,e.display_name) for e in task.entities]==[("2544","LeBron James")]
+    assert task.open_questions==[]
+
 
 @pytest.mark.anyio
-async def test_referential_current_metric_must_survive_semantic_intake():
+async def test_unicode_paraphrase_and_context_locator_are_admitted():
     from v2.contracts import ConversationTurn
-    bad={"goal":"Victor Wembanyama defense","mode":"quick","deliverable":"defensive summary","entities":[{"id":"w","type":"player","display_name":"Victor Wembanyama"}]}
-    stub=StubModel([bad,bad]);task=await ModelIntake(stub,**stage_kwargs()).understand("How did he shoot?",context=(ConversationTurn(role="assistant",content="Victor Wembanyama led the board."),))
-    assert len(stub.calls)==2 and any("could not preserve" in q for q in task.open_questions)
+    context=(ConversationTurn(role="assistant",content="Nikola Jokić led Denver."),)
+    model=AdmissionModel({"goal":"summarize center impact","mode":"quick","deliverable":"impact",
+        "entities":[{"id":"203999","type":"player","display_name":"Nikola Jokić"}]},
+        lambda payload: admitted(payload,[("context",0,"Nikola Jokić")]))
+    task=await ModelIntake(model,**admission_stage_kwargs()).understand(
+        "What about the center’s impact?",context=context)
+    assert task.entities[0].display_name=="Nikola Jokić" and not task.open_questions
+
+
+@pytest.mark.anyio
+async def test_copied_goal_cannot_mask_wrong_typed_requirement():
+    task={"goal":"Show LeBron James points","mode":"quick","deliverable":"points",
+          "entities":[{"id":"2544","type":"player","display_name":"LeBron James"}],
+          "requirements":[{"id":"wrong","description":"assists","capability_options":["standings"]}]}
+    model=AdmissionModel(task,lambda payload: blocked_subject(payload,1))
+    result=await ModelIntake(model,**admission_stage_kwargs()).understand(
+        "Show LeBron James points.")
+    assert result.requirements==[] and "subject_mismatch" in result.open_questions
 
 @pytest.mark.anyio
 async def test_explicit_context_entity_performance_summary_passes():
@@ -3213,3 +3232,36 @@ def test_unranked_mixed_requirement_projects_to_contract_intersection(review_arg
       for option in requirement.capability_options:
         properties=catalog[option]["arguments"].get("properties",{})
         assert set(requirement.capability_arguments)<=set(properties)
+
+
+def test_intake_admission_rejects_replay_omission_and_length_correct_wrong_text():
+    from v2.contracts import (AdmissionBinding, IntakeAdmissionReview,
+        SourceLocator, TaskSpec)
+    task=TaskSpec(goal="LeBron",mode="quick",deliverable="answer",
+        entities=[{"id":"2544","type":"player","display_name":"LeBron James"}])
+    request="Ask LeBron James."
+    target=ModelIntake._review_target(request,(),task)
+    subject=ModelIntake._expected_admission_subjects(task)[0]
+    valid=IntakeAdmissionReview(target=target,decision="admit",
+        expected_subjects=[subject],bindings=[AdmissionBinding(subject=subject,
+        locator=SourceLocator(source="request",start=4,end=16,text="LeBron James"))])
+    assert ModelIntake._validate_review(valid,request,(),task)==[]
+    replay=valid.model_copy(update={"target":target.model_copy(update={"task_sha256":"d"*64})})
+    assert any("target does not match" in item for item in ModelIntake._validate_review(replay,request,(),task))
+    omitted=valid.model_copy(update={"expected_subjects":(),"bindings":()})
+    assert any("expected subjects" in item for item in ModelIntake._validate_review(omitted,request,(),task))
+    wrong=valid.model_copy(update={"bindings": (AdmissionBinding(subject=subject,
+        locator=SourceLocator(source="request",start=4,end=16,text="Another Name")),)})
+    assert any("frozen source" in item for item in ModelIntake._validate_review(wrong,request,(),task))
+
+
+def test_intake_admission_context_digest_binds_role_order_and_exact_unicode_text():
+    from v2.contracts import ConversationTurn, TaskSpec
+    task=TaskSpec(goal="impact",mode="quick",deliverable="answer")
+    a=(ConversationTurn(role="user",content="Nikola Jokić?"),
+       ConversationTurn(role="assistant",content="Denver’s center."))
+    b=tuple(reversed(a))
+    c=(ConversationTurn(role="assistant",content="Nikola Jokić?"),
+       ConversationTurn(role="user",content="Denver’s center."))
+    assert ModelIntake._review_target("x",a,task).context_sha256 != ModelIntake._review_target("x",b,task).context_sha256
+    assert ModelIntake._review_target("x",a,task).context_sha256 != ModelIntake._review_target("x",c,task).context_sha256
