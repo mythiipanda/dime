@@ -3338,3 +3338,66 @@ def test_evidence_and_calculation_requirement_ids_cannot_collide():
         TaskSpec(goal="x",mode="quick",deliverable="x",
             requirements=[{"id":"same","description":"e","capability_options":["standings"]}],
             calculation_requirements=[{"id":"same","description":"c"}])
+
+
+class StagedAdmissionModel:
+    def __init__(self, intake, requirement_review, admission_factory):
+        self.intake=intake;self.requirement_review=requirement_review
+        self.admission_factory=admission_factory;self.calls=[]
+    async def generate(self,**call):
+        self.calls.append(call);route=call["envelope"].route
+        value=(self.intake if route=="intake" else self.requirement_review
+               if route=="requirement_review" else self.admission_factory(call["payload"])
+               if route=="intake_admission" else None)
+        if value is None:raise AssertionError(route)
+        return call["schema"].model_validate(value)
+
+
+def _staged_admission(payload, spans, *, decision="admit", block_index=0):
+    if decision=="block": return blocked_subject(payload,block_index)
+    return admitted(payload,spans)
+
+
+@pytest.mark.anyio
+async def test_final_admission_blocks_requirement_review_metric_substitution_before_planning():
+    intake={"goal":"LeBron points","mode":"quick","deliverable":"points",
+            "entities":[{"id":"2544","type":"player","display_name":"LeBron James"}]}
+    wrong={"requirements":[{"id":"scoring","description":"wrong assists",
+        "capability_options":["standings"],"metric_ids":["AST"],"requested_outputs":["AST"]}]}
+    model=StagedAdmissionModel(intake,wrong,lambda payload:blocked_subject(payload,3))
+    task=await ModelIntake(model,**stage_kwargs(),intake_admission=True,
+                          requirement_review=True).understand("Show LeBron James PTS.")
+    assert task.requirements==[] and task.metric_ids==[] and task.skills==[]
+    assert [call["envelope"].route for call in model.calls]==[
+        "intake","requirement_review","intake_admission"]
+
+
+@pytest.mark.anyio
+async def test_final_admission_binds_post_review_evidence_and_calculation_scopes():
+    request="Show LeBron James PTS and PTS change."
+    intake={"goal":"LeBron scoring","mode":"quick","deliverable":"points change",
+            "entities":[{"id":"2544","type":"player","display_name":"LeBron James"}]}
+    reviewed={"requirements":[{"id":"scoring","description":"points",
+        "capability_options":["standings"],"metric_ids":["PTS"],"requested_outputs":["PTS"]}],
+        "calculation_requirements":[{"id":"change","description":"change",
+        "metric_ids":["PTS"],"requested_outputs":["PTS_DELTA"]}]}
+    def approve(payload):
+        spans=[]
+        for item in payload["expected_subjects"]:
+            if item["kind"]=="entity":text="LeBron James"
+            elif item["kind"]=="metric":text="PTS"
+            elif item["kind"]=="output" and item["output_id"]=="PTS_DELTA":text="PTS change"
+            elif item["kind"]=="output":text="PTS"
+            elif item["kind"]=="requirement" and item["requirement_kind"]=="calculation":text="change"
+            elif item["kind"]=="requirement":text="PTS"
+            else:text=request
+            spans.append(("request",None,text))
+        return admitted(payload,spans)
+    model=StagedAdmissionModel(intake,reviewed,approve)
+    task=await ModelIntake(model,**stage_kwargs(),intake_admission=True,
+                          requirement_review=True).understand(request)
+    assert task.requirements[0].metric_ids==["PTS"]
+    assert task.calculation_requirements[0].requested_outputs==["PTS_DELTA"]
+    admission_call=model.calls[-1]
+    assert admission_call["envelope"].route=="intake_admission"
+    assert admission_call["payload"]["target"]["task_sha256"]==ModelIntake._review_target(request,(),task).task_sha256

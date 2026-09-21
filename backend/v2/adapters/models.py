@@ -657,9 +657,6 @@ class ModelIntake(ModelStage):
             "skill_catalog": self._skills.catalog(),
         }
         task = await self._generate(payload)
-        if self._intake_admission:
-            review = await self._review_admission(request, bounded, task)
-            task = self._apply_review(review, request, bounded, task)
         # Follow-up turns get one bounded typed resolution pass before the
         # runtime treats open_questions as user blockers. The first intake can
         # notice a pronoun or elliptical reference yet still fail to bind it
@@ -691,7 +688,6 @@ class ModelIntake(ModelStage):
             "skills": [name for name in task.skills
                        if name in self._skills.skills],
         })
-        self._skills.activate(task.skills)
         if (task.season is not None and task.season.source == "default"
                 and "trade-analysis" in task.skills):
             context_seasons = [
@@ -762,7 +758,6 @@ class ModelIntake(ModelStage):
                 "skills": [name for name in task.skills
                            if name in self._skills.skills],
             })
-            self._skills.activate(task.skills)
         player_count = sum(entity.type == "player" for entity in task.entities)
         optional_evidence = set()
         if player_count < 2:
@@ -850,7 +845,12 @@ class ModelIntake(ModelStage):
         unknown = sorted(set(task.required_evidence) - self._catalog.keys())
         if unknown:
             raise ValueError(f"intake selected unknown capabilities: {unknown}")
-        return _canonicalize_calculation_requirements(task)
+        task = _canonicalize_calculation_requirements(task)
+        if self._intake_admission:
+            review = await self._review_admission(request, bounded, task)
+            task = self._apply_review(review, request, bounded, task)
+        self._skills.activate(task.skills)
+        return task
 
     def _capability_argument_names(self, capabilities: Sequence[str]) -> set[str] | None:
         """Return arguments accepted by every option, or None if unproven."""
