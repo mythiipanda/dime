@@ -15,15 +15,22 @@ from .config import settings
 
 ProviderName = Literal["mistral", "openrouter", "inception", "groq"]
 
+
+class ProviderPolicyError(ValueError):
+    """Requested provider/model is outside the owner-approved policy."""
+
 # Inception reactivation is a two-part gate: explicit policy plus a key.
-# Retained credentials alone never activate a paid provider. Groq stays paused.
-FREE_PROVIDER_ORDER: tuple[ProviderName, ...] = ("openrouter", "mistral")
+# Retained credentials alone never activate a provider. Tony approved one
+# explicit Groq free-tier route as fallback safety on 2026-09-21.
+FREE_PROVIDER_ORDER: tuple[ProviderName, ...] = ("groq", "openrouter", "mistral")
 
 
 def active_provider_order() -> tuple[ProviderName, ...]:
-    return ((*FREE_PROVIDER_ORDER, "inception")
+    free = tuple(name for name in FREE_PROVIDER_ORDER if
+        name != "groq" or (settings.dime_enable_groq and settings.groq_api_key))
+    return ((*free, "inception")
             if settings.dime_enable_inception and settings.inception_api_key
-            else FREE_PROVIDER_ORDER)
+            else free)
 
 MISTRAL_DEFAULT = "ministral-8b-2512"
 OPENROUTER_DEFAULT = "nvidia/nemotron-3-super-120b-a12b:free"
@@ -46,6 +53,8 @@ def is_free_model(provider: str, slug: str) -> bool:
     if provider == "openrouter":
         return value == OPENROUTER_AUTO or (
             value in OPENROUTER_ALLOWLIST and value.endswith(":free"))
+    if provider == "groq":
+        return value == GROQ_DEFAULT
     if provider == "mistral":
         # Mistral ids do not carry pricing. The configured owner-approved
         # free-limit model is the only active choice for this provider.
@@ -62,6 +71,11 @@ def _openrouter_free_model(slug: str | None = None) -> str:
     return OPENROUTER_DEFAULT
 
 
+def _groq_free_model() -> str:
+    value = str(settings.groq_model or "").strip()
+    return value if value == GROQ_DEFAULT else GROQ_DEFAULT
+
+
 def _mistral_free_model() -> str:
     return settings.mistral_model or MISTRAL_DEFAULT
 
@@ -69,6 +83,8 @@ def _mistral_free_model() -> str:
 def _default_provider() -> tuple[ProviderName, str]:
     if settings.dime_enable_inception and settings.inception_api_key:
         return ("inception", settings.inception_model or INCEPTION_DEFAULT)
+    if settings.dime_enable_groq and settings.groq_api_key:
+        return ("groq", _groq_free_model())
     if settings.openrouter_api_key:
         return ("openrouter", _openrouter_free_model())
     return ("mistral", _mistral_free_model())
@@ -76,7 +92,15 @@ def _default_provider() -> tuple[ProviderName, str]:
 
 def resolve_model_id(model_id: str | None) -> tuple[ProviderName, str]:
     """Clamp every boundary value to an owner-approved free model."""
-    raw = (model_id or "").strip()
+    original = model_id or ""
+    raw = original.strip()
+    if original.startswith("groq:"):
+        slug = original.split(":", 1)[1]
+        if slug != GROQ_DEFAULT:
+            raise ProviderPolicyError("unapproved Groq model")
+        if not (settings.dime_enable_groq and settings.groq_api_key):
+            raise ProviderPolicyError("Groq free-tier route is not activated")
+        return ("groq", GROQ_DEFAULT)
     if raw.startswith("openrouter:"):
         slug = raw.split(":", 1)[1]
         return ("openrouter", _openrouter_free_model(slug))
@@ -85,8 +109,6 @@ def resolve_model_id(model_id: str | None) -> tuple[ProviderName, str]:
     if raw.startswith("inception:"):
         if settings.dime_enable_inception and settings.inception_api_key:
             return ("inception", settings.inception_model or INCEPTION_DEFAULT)
-        return _default_provider()
-    if raw.startswith("groq:"):
         return _default_provider()
     if raw:
         if raw == OPENROUTER_AUTO or (raw in OPENROUTER_ALLOWLIST
@@ -112,6 +134,18 @@ def get_llm(name: ProviderName, model: str | None = None) -> ChatOpenAI | None:
             api_key=settings.mistral_api_key,
             timeout=settings.llm_timeout_s,
             max_retries=settings.llm_max_retries,
+        )
+    if name == "groq":
+        if model is not None and model != GROQ_DEFAULT:
+            raise ProviderPolicyError("unapproved Groq model")
+        if not (settings.dime_enable_groq and settings.groq_api_key):
+            return None
+        return ChatOpenAI(
+            model=_groq_free_model(),
+            base_url="https://api.groq.com/openai/v1",
+            api_key=settings.groq_api_key,
+            timeout=settings.llm_timeout_s,
+            max_retries=0,
         )
     if name == "inception":
         return ChatOpenAI(
@@ -242,6 +276,7 @@ async def invoke_with_fallback(
             _openrouter_free_model(model if name == primary else None)
             if name == "openrouter" else
             _mistral_free_model() if name == "mistral" else
+            _groq_free_model() if name == "groq" else
             settings.inception_model or INCEPTION_DEFAULT
         )
         verdict = probe_verdict(name)
@@ -291,6 +326,7 @@ async def astream_with_fallback(
             _openrouter_free_model(model if name == primary else None)
             if name == "openrouter" else
             _mistral_free_model() if name == "mistral" else
+            _groq_free_model() if name == "groq" else
             settings.inception_model or INCEPTION_DEFAULT
         )
         client = get_llm(name, accepted_model)
@@ -331,6 +367,7 @@ async def astream_chunks_with_fallback(
             _openrouter_free_model(model if name == primary else None)
             if name == "openrouter" else
             _mistral_free_model() if name == "mistral" else
+            _groq_free_model() if name == "groq" else
             settings.inception_model or INCEPTION_DEFAULT
         )
         client = get_llm(name, accepted_model)
@@ -396,6 +433,10 @@ def models_catalog() -> dict[str, Any]:
     if is_free_model("mistral", mistral):
         options.append({"id": f"mistral:{mistral}", "engine": "mistral",
                         "default": default_id == f"mistral:{mistral}"})
+    if settings.dime_enable_groq and settings.groq_api_key:
+        groq = _groq_free_model()
+        options.append({"id": f"groq:{groq}", "engine": "groq",
+                        "default": default_id == f"groq:{groq}"})
     if settings.dime_enable_inception and settings.inception_api_key:
         inception = settings.inception_model or INCEPTION_DEFAULT
         options.append({"id": f"inception:{inception}", "engine": "inception",
@@ -404,6 +445,8 @@ def models_catalog() -> dict[str, Any]:
         "openrouter": bool(settings.openrouter_api_key),
         "mistral": bool(settings.mistral_api_key),
     }
+    if settings.dime_enable_groq and settings.groq_api_key:
+        available["groq"] = True
     if settings.dime_enable_inception and settings.inception_api_key:
         available["inception"] = True
     return {"models": options, "available": available}

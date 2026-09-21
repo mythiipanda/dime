@@ -32,7 +32,7 @@ from app.providers import (
     OPENROUTER_DEFAULT,
     ProviderName,
     fallback_order,
-    _mistral_free_model,
+    _groq_free_model, _mistral_free_model,
     _openrouter_free_model,
     is_free_model,
 )
@@ -316,6 +316,8 @@ class ProviderStructuredModel:
                 accepted_model = _openrouter_free_model(requested)
             elif provider == "mistral":
                 accepted_model = _mistral_free_model()
+            elif provider == "groq":
+                accepted_model = _groq_free_model()
             else:
                 accepted_model = settings.inception_model or INCEPTION_DEFAULT
             if (provider != "inception"
@@ -350,7 +352,8 @@ class ProviderStructuredModel:
         budget_exhausted = False
         candidates = models[:1 + int(policy["secondary_limit"])]
         for model_index, (provider, model) in enumerate(candidates):
-            max_attempts = int(policy["primary_attempts"]) if model_index == 0 else 1
+            max_attempts = (1 if provider == "groq" else
+                int(policy["primary_attempts"]) if model_index == 0 else 1)
             for attempt_number in range(1, max_attempts + 1):
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
@@ -364,7 +367,7 @@ class ProviderStructuredModel:
                         output_type=NativeOutput(schema, strict=True),
                         # PydanticAI owns one bounded schema-repair pass. Outer
                         # retries below are reserved for transient transport.
-                        retries=settings.llm_max_retries,
+                        retries=(0 if provider == "groq" else settings.llm_max_retries),
                     )
                     run = agent.run(user_prompt)
                     with anyio.fail_after(

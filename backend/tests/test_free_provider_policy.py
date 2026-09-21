@@ -82,3 +82,41 @@ def test_structured_mistral_success_ledger_identity_is_free_limit(monkeypatch):
     got=asyncio.run(model.generate(schema=Out,prompt="p",payload={},envelope=env))
     assert got.value=="ok"
     assert model.last_model==f"mistral_free_limit:{settings.mistral_model}"
+
+
+def test_groq_free_tier_activation_is_exact_and_ordered(monkeypatch):
+    import app.providers as providers
+    monkeypatch.setattr(settings, "openrouter_api_key", "free")
+    monkeypatch.setattr(settings, "mistral_api_key", "free")
+    monkeypatch.setattr(settings, "inception_api_key", "inception")
+    monkeypatch.setattr(settings, "groq_api_key", "free-tier-key")
+    monkeypatch.setattr(settings, "dime_enable_inception", True)
+    monkeypatch.setattr(settings, "dime_enable_groq", True)
+    monkeypatch.setattr(settings, "groq_model", providers.GROQ_DEFAULT)
+    assert providers.resolve_model_id("inception:any") == (
+        "inception", providers.INCEPTION_DEFAULT)
+    assert providers.fallback_order("inception") == [
+        "inception", "groq", "openrouter", "mistral"]
+    assert providers.is_free_model("groq", "openai/gpt-oss-20b")
+    assert not providers.is_free_model("groq", "openai/gpt-oss-120b")
+    with __import__("pytest").raises(providers.ProviderPolicyError):
+        providers.resolve_model_id("groq:openai/gpt-oss-120b")
+
+
+def test_groq_key_is_inert_without_explicit_activation(monkeypatch):
+    import app.providers as providers
+    monkeypatch.setattr(settings, "dime_enable_groq", False)
+    monkeypatch.setattr(settings, "groq_api_key", "retained")
+    assert "groq" not in providers.active_provider_order()
+    assert providers.get_llm("groq") is None
+
+
+@__import__("pytest").mark.parametrize("slug", [
+    "openai/gpt-oss-120b", "groq/compound", "", "openai/gpt-oss-20B",
+    "openai/gpt-oss-20b ", "openai/gpt-oss-20b-extra"])
+def test_explicit_unlisted_groq_slugs_fail_closed_before_client(monkeypatch, slug):
+    import app.providers as providers
+    monkeypatch.setattr(settings, "dime_enable_groq", True)
+    monkeypatch.setattr(settings, "groq_api_key", "free")
+    with __import__("pytest").raises(providers.ProviderPolicyError):
+        providers.resolve_model_id("groq:" + slug)

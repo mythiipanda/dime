@@ -81,7 +81,7 @@ _CONNECT_RETRIES = 6
 _CONNECT_BACKOFF_S = 0.2
 
 
-def connect(read_only: bool = False) -> duckdb.DuckDBPyConnection:
+def connect(read_only: bool | None = None) -> duckdb.DuckDBPyConnection:
     """Open the warehouse, retrying transient file-lock contention.
 
     DuckDB holds an exclusive file lock while any process keeps a
@@ -94,6 +94,12 @@ def connect(read_only: bool = False) -> duckdb.DuckDBPyConnection:
     redesign.
     """
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    if read_only is None:
+        # The checked/ignored evaluation warehouse is an immutable asset.
+        # Unclassified callers must not checkpoint it. Configured runtime DBs
+        # retain legacy write behavior until their call sites are classified.
+        canonical = (Path(__file__).resolve().parent.parent / "data" / "warehouse.duckdb").resolve()
+        read_only = DB_PATH.resolve() == canonical
     last: Exception | None = None
     for attempt in range(_CONNECT_RETRIES):
         try:
@@ -130,7 +136,7 @@ def save_frame(
             pl.lit(entity).alias("_entity"),
         ]
     )
-    con = connect()
+    con = connect(read_only=False)
     try:
         with write_guard():
             con.register("_incoming", frame.to_arrow())
@@ -174,7 +180,9 @@ def save_frame(
 
 
 def read_frame(table: str, where: str = "", params: list[object] | None = None) -> pl.DataFrame:
-    con = connect()
+    # Reads must never open the frozen warehouse read-write: even transaction-
+    # free DuckDB opens can checkpoint/rewrite physical bytes on close.
+    con = connect(read_only=True)
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if table not in tables:
@@ -193,7 +201,7 @@ def _read_df(sql: str, params: list, tries: int = 5) -> list[dict[str, object]]:
     last: Exception | None = None
     for _ in range(tries):
         try:
-            con = connect()
+            con = connect(read_only=True)
             try:
                 return (
                     con.execute(sql, params)
@@ -209,7 +217,7 @@ def _read_df(sql: str, params: list, tries: int = 5) -> list[dict[str, object]]:
 
 
 def last_fetch(table: str, season: str, entity: str = "") -> str:
-    con = connect()
+    con = connect(read_only=True)
     try:
         row = con.execute(
             """SELECT fetched_at FROM fetch_log

@@ -1,0 +1,49 @@
+{
+  "version": "2026-09-21-groq-free-v2",
+  "primary": {
+    "provider": "inception",
+    "model": "mercury-2.5"
+  },
+  "fallback_order": [
+    "groq",
+    "openrouter",
+    "mistral"
+  ],
+  "groq": {
+    "endpoint": "https://api.groq.com/openai/v1",
+    "model": "openai/gpt-oss-20b",
+    "tier": "free",
+    "allowlist": [
+      "openai/gpt-oss-20b"
+    ],
+    "structured_outputs": "strict_json_schema",
+    "paid_spillover": false,
+    "activation_gate": [
+      "DIME_ENABLE_GROQ=true",
+      "GROQ_API_KEY present"
+    ],
+    "sdk_max_retries": 0,
+    "structured_boundary_max_attempts": 1,
+    "explicit_unlisted_models": "fail_closed_before_network",
+    "account_tier_evidence": {
+      "plan_owner_attestation": "free",
+      "message_id": "phonemsg-01M32X06Q7N7QFG04QWKZQT8CZ",
+      "attested_at": "2026-09-21T17:12:00-04:00",
+      "scope": "current displayed plan only"
+    }
+  },
+  "openrouter_allowlist": [
+    "google/gemma-4-31b-it:free",
+    "nvidia/nemotron-3-super-120b-a12b:free",
+    "nvidia/nemotron-3.5-lightning:free"
+  ],
+  "mistral": {
+    "route": "mistral_free_limit",
+    "model": "ministral-8b-2512"
+  },
+  "metrics": [
+    "strict_inception_clean",
+    "expanded_chain_clean",
+    "zero_provider_failure_rate"
+  ]
+}
