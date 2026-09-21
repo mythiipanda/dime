@@ -29,6 +29,7 @@ class EventType(StrEnum):
     TOOL_RESULT = "tool_result"
     TOKEN = "token"
     CUSTOM_DATA = "custom_data"
+    WORK_LOG = "work_log"
     FINAL_ANSWER = "final_answer"
     SUGGESTIONS = "suggestions"
     GRAPH_END = "graph_end"
@@ -98,6 +99,12 @@ class Token(StrictEvent):
     text: str = Field(max_length=200_000)
 
 
+class WorkLog(StrictEvent):
+    type: Literal[EventType.WORK_LOG] = EventType.WORK_LOG
+    run_id: str = Field(pattern=r"^run-[0-9a-f]{32}$")
+    status: Literal["complete", "partial"]
+
+
 class CustomData(StrictEvent):
     type: Literal[EventType.CUSTOM_DATA] = EventType.CUSTOM_DATA
     node: Literal["entry", "data_retrieval", "tools", "analytics", "presentation"]
@@ -156,6 +163,7 @@ InternalEvent = Annotated[
     | ToolCall
     | ToolResult
     | Token
+    | WorkLog
     | CustomData
     | FinalAnswer
     | Suggestions

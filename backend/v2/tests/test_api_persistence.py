@@ -2146,3 +2146,83 @@ def test_preflight_rejects_expected_manifest_inside_executable_roots(tmp_path):
             routes.preflight_runtime_assets(inside)
     finally:
         inside.unlink(missing_ok=True)
+
+
+def test_typed_public_stream_sanitizes_all_events_and_preserves_lifecycle(monkeypatch,tmp_path):
+    from datetime import UTC,datetime
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from v2 import contracts
+    from v2.api import routes
+    from v2.runtime.ledger import RunLedger
+    from v2.runtime.models import ExecutionResult,RuntimeResult
+    secret="SECRET_NEVER_PUBLIC"
+    binding=contracts.EvidenceOutputBinding(requirement_kind="task",output_id="PTS",
+        node_id="internal-node",evidence_id="internal-evidence",selector="rows.lebron.PTS",
+        row_selector="rows.lebron",subject_entity_type="player",subject_entity_id="23",
+        subject_selector="rows.lebron.PLAYER_ID",value={"kind":"integer","value":25},
+        unit={"kind":"unitless"},domain="player_report")
+    claim=contracts.Claim(text=secret,kind="observed",evidence_ids=["internal-evidence"],output_bindings=[binding])
+    evidence=contracts.EvidenceEnvelope(evidence_id="internal-evidence",capability="player_report",
+        source=secret,observed_at=datetime.now(UTC),entities=[contracts.EntityRef(id="23",type="player",display_name="LeBron")],rows={"lebron":{"PLAYER_ID":"23","PTS":25,"AST":8},"curry":{"PLAYER_ID":"987654321","PTS":987654321}})
+    result=RuntimeResult(task=contracts.TaskSpec(goal="x",mode="quick",deliverable="x",requested_outputs=["PTS"],entities=[contracts.EntityRef(id="23",type="player",display_name="LeBron")]),
+        execution=ExecutionResult(plan=contracts.Plan(nodes=[contracts.PlanNode(id="internal-node",description="x",capability_hints=["player_report"],status="complete")]),evidence_by_node={"internal-node":evidence},attempts={"internal-node":1}),
+        draft=contracts.DraftReport(sections=[],claims=[claim]),verification=contracts.VerificationReport(status="partial",claim_results=[{"claim_index":0,"supported":True}]),
+        verified_claims=[contracts.VerifiedClaim(claim_index=0,claim=claim,evidence_ids=["internal-evidence"],sources=[contracts.ClaimSource(evidence_id="internal-evidence",source=secret,capability="player_report")],output_bindings=[binding])],
+        gaps=[contracts.Gap(kind="missing_evidence",message=secret)])
+    holder={}
+    class Runtime:
+        async def run(self,*a,**k):
+            import asyncio
+            holder["progress"]("verify","running")
+            asyncio.get_running_loop().call_soon(
+                holder["progress"], "verify", "complete")
+            await asyncio.sleep(0)
+            return result
+    def build(**kwargs):
+        holder["progress"]=kwargs["progress"]
+        return Runtime(),RunLedger(kwargs["run_id"])
+    monkeypatch.setenv("DIME_RUNTIME_V2","on");monkeypatch.setenv("DIME_PROJECT_STORE",str(tmp_path/"p.sqlite"))
+    monkeypatch.setattr("app.providers.resolve_model_id",lambda value:("openrouter","fixture"))
+    monkeypatch.setattr("v2.runtime.assembly.build_runtime",build)
+    monkeypatch.setattr(routes,"_PROJECTS",ProjectStore(tmp_path/"p.sqlite"))
+    app=FastAPI();app.include_router(routes.router,prefix="/api")
+    response=TestClient(app).post("/api/v2/chat/stream",json={"q":"x"})
+    text=response.text
+    for forbidden in [secret,"internal-node","internal-evidence","rows.lebron.PTS","curry","AST","987654321"]:
+        assert forbidden not in text
+    assert text.count("event: final_answer")==1 and text.count("event: graph_end")==1
+    assert text.index("event: final_answer") < text.index("event: graph_end")
+    assert text.count("event: work_log")==1
+    assert text.index("event: work_log") < text.index("event: custom_data")
+    assert text.index("event: final_answer") < text.index("event: graph_end")
+    terminal=text[text.index("event: final_answer"):]
+    assert terminal.count("event: ")==2
+    assert response.headers["x-dime-run-id"] in text
+    assert text.count('"node":"analytics","status":"complete"')==1
+
+
+def test_public_stream_projection_failure_abstains_and_terminates(monkeypatch,tmp_path):
+    from datetime import UTC,datetime
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from v2 import contracts
+    from v2.api import routes
+    from v2.runtime.ledger import RunLedger
+    from types import SimpleNamespace
+    secret="FAIL_SECRET"
+    binding=contracts.EvidenceOutputBinding(requirement_kind="task",output_id="WINS",node_id="n",evidence_id="e",selector="rows.WINS",value={"kind":"integer","value":61},unit={"kind":"declared","value":"count"},domain="standings")
+    status=contracts.OutputFinalStatus(requirement_kind="task",output_id="WINS",status="complete",claim_index=0,binding=binding)
+    stale=contracts.EvidenceEnvelope(evidence_id="e",capability="standings",source=secret,observed_at=datetime.now(UTC),rows={"WINS":62})
+    result=SimpleNamespace(output_statuses=[status],draft=contracts.DraftReport(sections=[],claims=[]),execution=SimpleNamespace(evidence=[stale]),verification=SimpleNamespace(status=SimpleNamespace(value="pass")),verified_claims=[],gaps=[],structural_flags=[])
+    holder={}
+    class Runtime:
+        async def run(self,*a,**k):holder["progress"]("verify","running");return result
+    def build(**kwargs):holder["progress"]=kwargs["progress"];return Runtime(),RunLedger(kwargs["run_id"])
+    monkeypatch.setenv("DIME_RUNTIME_V2","on");monkeypatch.setattr("app.providers.resolve_model_id",lambda value:("openrouter","fixture"));monkeypatch.setattr("v2.runtime.assembly.build_runtime",build);monkeypatch.setattr(routes,"_PROJECTS",ProjectStore(tmp_path/"p.sqlite"))
+    app=FastAPI();app.include_router(routes.router,prefix="/api")
+    response=TestClient(app).post("/api/v2/chat/stream",json={"q":"x"});text=response.text
+    assert secret not in text and '"node":"analytics"' not in text
+    assert text.count("event: work_log")==1 and '"status":"partial"' in text
+    assert text.count("event: final_answer")==1 and text.count("event: graph_end")==1
+    assert text.index("event: work_log") < text.index("event: final_answer") < text.index("event: graph_end")

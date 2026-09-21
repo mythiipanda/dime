@@ -256,85 +256,156 @@ class QuickAnswerBody(BaseModel):
         return self
 
 
+def _output_line(result, status) -> str:
+    binding = status.binding
+    identity = (f"{status.requirement_kind}:{status.requirement_id or 'task'}:"
+                f"{status.output_id}")
+    if binding.requirement_kind == "calculation":
+        calculation = next(item for item in result.draft.calculations
+                           if item.calculation_id == binding.calculation_id)
+        value = str(calculation.result)
+        unit = calculation.unit or "unitless"
+        subject = ""
+    else:
+        raw = binding.value
+        value = ("true" if raw.value else "false") if raw.kind == "boolean" else str(raw.value)
+        unit = (binding.unit.value if binding.unit.kind == "declared" else "unitless")
+        subject = (f" [{binding.subject_entity_type}:{binding.subject_entity_id}]"
+                   if binding.subject_entity_id is not None else "")
+    return f"{identity}{subject} = {value} ({unit})"
+
+
 def _answer_text(result) -> str:
-    claims = list(dict.fromkeys(
-        item.claim.text for item in result.verified_claims if item.claim.text.strip()))
-    text = "\n\n".join(claims)
-    gaps: list[str] = []
-    gap_keys: set[str] = set()
-    generic_limit = False
-    plan = getattr(result.execution, "plan", None)
-    capability_names = {
-        node.capability_hints[0].casefold()
-        for node in (plan.nodes if plan is not None else [])
-        if len(node.capability_hints) == 1
+    """Project only deterministically admitted output authority."""
+    lines = [_output_line(result, item) for item in result.output_statuses
+             if item.status == "complete"]
+    for item in result.output_statuses:
+        if item.status != "complete":
+            identity = (f"{item.requirement_kind}:{item.requirement_id or 'task'}:"
+                        f"{item.output_id}")
+            lines.append(f"{identity} could not be verified ({item.status}).")
+    gap_messages = {
+        "missing_evidence": "Some requested outputs could not be verified.",
+        "source_conflict": "Available sources conflict for some requested outputs.",
+        "unsupported_claim": "Some requested outputs were not supported.",
+        "execution_failure": "Some requested data was unavailable.",
+        "synthesis_incomplete": "Some requested outputs could not be published.",
     }
+    kinds = []
     for gap in result.gaps:
-        message = gap.message.strip()
-        folded = message.casefold()
-        internal = (
-            folded.startswith(("repair claim ", "include ", "update ",
-                               "retrieve ", "fetch ", "gather ", "synthesize ",
-                               "add ", "document ", "locate ", "verify "))
-            or "once gaps are resolved" in folded
-            or " capability" in folded
-            or folded.endswith(" analysis")
-            or folded.startswith("official ")
-            or any(name.replace("_", " ") in folded or name in folded
-                   for name in capability_names)
-            or any(token in folded for token in (
-                "source identity", "identify or query a tool",
-                "ensure contract evidence", "qualification evidence",
-                "coverage evidence", "recomputable", "team-code mismatch",
-                "replacement-analysis", "impact & role", "contract terms",
-                "peer comparison", "trade value estimate",
-            ))
-        )
-        if internal:
+        if gap.kind.value not in kinds:
+            kinds.append(gap.kind.value)
+    for kind in kinds:
+        lines.append(gap_messages[kind])
+    return "\n".join(lines) or "I could not verify a publishable answer from the available data."
+
+
+def _public_output_status(result, status) -> dict:
+    item = {"requirement_kind": status.requirement_kind,
+            "requirement_id": status.requirement_id,
+            "output_id": status.output_id, "status": status.status}
+    if status.status == "complete":
+        binding = status.binding
+        if binding.requirement_kind == "calculation":
+            calculation = next(x for x in result.draft.calculations
+                               if x.calculation_id == binding.calculation_id)
+            item.update(value=str(calculation.result),
+                        unit=calculation.unit or "unitless")
+        else:
+            item.update(value=("true" if binding.value.kind == "boolean" and binding.value.value
+                               else "false" if binding.value.kind == "boolean"
+                               else str(binding.value.value)),
+                        unit=(binding.unit.value if binding.unit.kind == "declared"
+                              else "unitless"),
+                        subject_type=binding.subject_entity_type,
+                        subject_id=binding.subject_entity_id)
+    return item
+
+
+def _public_evidence_tables(result) -> list[dict]:
+    from v2.domain.evidence import iter_values
+    from v2.domain.calculations import Calculation, validate_calculation
+    from v2.domain.evidence import EvidenceIndex
+    evidence = {item.evidence_id:item for item in result.execution.evidence}
+    calculations = {item.calculation_id:item for item in result.draft.calculations}
+    tables = []
+    for status in result.output_statuses:
+        if status.status != "complete":
             continue
-        if folded in {"player age risk assessment", "age risk assessment"}:
-            message = "Age-related risk was not available in the retrieved player data."
-        if gap.kind.value == "synthesis_incomplete":
-            continue
-        if gap.kind.value == "unsupported_claim":
-            generic_limit = True
-            continue
-        if gap.kind.value == "source_conflict":
-            message = "The available sources conflict on part of this answer."
-        elif gap.kind.value == "execution_failure" or "execution failed" in folded:
-            generic_limit = True
-            continue
-        elif "returned no evidence values" in folded:
-            generic_limit = True
-            continue
-        synonyms = {
-            "outcome": "results", "outcomes": "results", "result": "results",
-            "playoff": "playoffs",
-        }
-        key = " ".join(
-            synonyms.get(word.strip(".,:;"), word.strip(".,:;"))
-            for word in message.casefold().split()
-            if word.strip(".,:;") not in {"the", "a", "an"}
-        )
-        key_tokens = set(key.split())
-        duplicate = any(
-            key_tokens <= set(existing.split()) or set(existing.split()) <= key_tokens
-            for existing in gap_keys
-        )
-        if message and not duplicate:
-            gaps.append(message)
-            gap_keys.add(key)
-    if not gaps and generic_limit:
-        gaps.append("Some supporting data was unavailable.")
-    if gaps:
-        gap_text = " ".join(gaps)
-        text = f"{text}\n\nWhat I could not verify: {gap_text}" if text else gap_text
-    # FinalAnswer rejects blank text. A repaired run can legitimately finish
-    # with no publishable claim while every internal gap is filtered as a
-    # diagnostic. Returning a non-empty public limitation keeps the SSE
-    # lifecycle intact through final_answer and graph_end instead of raising
-    # after custom_data has already reached the client.
-    return text or "I could not verify a publishable answer from the available data."
+        binding = status.binding
+        if hasattr(binding, "evidence_id"):
+            envelope = evidence.get(binding.evidence_id)
+            if envelope is None:
+                raise ValueError("publication evidence is missing")
+            values=[v.value for v in iter_values(envelope) if v.path==binding.selector]
+            if len(values)!=1:
+                raise ValueError("publication selector must resolve exactly once")
+            selected=values[0]; declared=binding.value
+            if declared.kind=="boolean": equal=isinstance(selected,bool) and selected is declared.value
+            elif declared.kind=="integer": equal=not isinstance(selected,bool) and isinstance(selected,int) and selected==declared.value
+            elif declared.kind=="float": equal=isinstance(selected,float) and selected==declared.value
+            elif declared.kind=="decimal":
+                from decimal import Decimal
+                equal=isinstance(selected,Decimal) and selected==Decimal(declared.value)
+            else: equal=isinstance(selected,str) and selected==declared.value
+            if not equal:
+                raise ValueError("publication evidence changed after admission")
+            tables.append({"output_id":binding.output_id,
+                "subject_type":binding.subject_entity_type,
+                "subject_id":binding.subject_entity_id,
+                "value":str(binding.value.value),
+                "unit":binding.unit.value if binding.unit.kind=="declared" else "unitless",
+                "provenance":{"capability":envelope.capability,
+                              "season":envelope.season,
+                              "as_of":envelope.as_of.isoformat() if envelope.as_of else None}})
+        else:
+            calculation=calculations.get(binding.calculation_id)
+            if calculation is None:
+                raise ValueError("publication calculation is missing")
+            checked=Calculation.model_validate({"calculation_id":calculation.calculation_id,
+                "operation":calculation.operation,"inputs":[x.model_dump() for x in calculation.inputs],
+                "result":calculation.result,"unit":calculation.unit,"subject_input":calculation.subject_input})
+            if validate_calculation(checked,EvidenceIndex(evidence.values())) is not None:
+                raise ValueError("publication calculation no longer recomputes")
+            for input_ in calculation.inputs:
+                envelope=evidence.get(input_.evidence_id)
+                values=[v.value for v in iter_values(envelope)] if envelope else []
+                selected=[v.value for v in iter_values(envelope) if v.path==input_.path] if envelope else []
+                if len(selected)!=1:
+                    raise ValueError("publication calculation input must resolve exactly once")
+                tables.append({"output_id":binding.output_id,
+                    "input_value":str(selected[0]),
+                    "provenance":{"capability":envelope.capability,
+                                  "season":envelope.season,
+                                  "as_of":envelope.as_of.isoformat() if envelope.as_of else None}})
+    return tables
+
+
+def _safe_buffered_event(event):
+    """Closed public-event projection for buffered runtime lifecycle."""
+    from v2.api.events import NodeUpdate, ToolCall, ToolResult
+    kind = str(getattr(event, "type", ""))
+    public_nodes = {"entry", "data_retrieval", "tools", "analytics", "presentation"}
+    if kind == "node_update":
+        if event.node not in public_nodes or event.status not in {"running","complete","error"}:
+            return None
+        return NodeUpdate(node=event.node, status=event.status)
+    if kind == "tool_call":
+        return ToolCall(node="tools", name="tool")
+    if kind == "tool_result":
+        status = getattr(event, "status", None)
+        if status not in {"ok", "fail"}:
+            return None
+        return ToolResult(node="tools", name="tool", status=status,
+                          error="Tool failed" if status == "fail" else None)
+    status = getattr(event, "status", None)
+    phase = getattr(event, "phase", None)
+    phase_nodes = {"understand":"entry","plan":"data_retrieval",
+                   "execute":"tools","verify":"analytics"}
+    if phase in phase_nodes and status in {"running", "complete", "failed"}:
+        return NodeUpdate(node=phase_nodes[phase],
+            status="error" if status == "failed" else status)
+    return None
 
 
 @router.post("/v2/chat/stream")
@@ -347,7 +418,7 @@ async def quick_answer_stream(body: QuickAnswerBody):
     from app.providers import resolve_model_id
     from app.config import settings
     from v2.api.events import (
-        CustomData, FinalAnswer, GraphEnd, NodeUpdate, ToolCall, ToolResult,
+        CustomData, FinalAnswer, GraphEnd, NodeUpdate, ToolCall, ToolResult, WorkLog,
     )
     from v2.api.activity import ActivityJournal
     from v2.api.events import EVENT_ADAPTER
@@ -489,74 +560,58 @@ async def quick_answer_stream(body: QuickAnswerBody):
         task = asyncio.create_task(runtime.run(
             body.q, run_id=run_id, context=context))
         try:
-            while not task.done() or not queue.empty():
-                try:
-                    event = await asyncio.wait_for(queue.get(), timeout=0.1)
-                    yield encode_event(event)
-                except TimeoutError:
-                    continue
+            buffered_events = []
             try:
+                while not task.done() or not queue.empty():
+                    try:
+                        buffered_events.append(
+                            await asyncio.wait_for(queue.get(), timeout=0.1))
+                    except TimeoutError:
+                        continue
                 result = await task
+                while not queue.empty():
+                    buffered_events.append(queue.get_nowait())
+                # Validate every public projection before emitting buffered SSE.
+                public_tables = _public_evidence_tables(result)
+                public_statuses = [_public_output_status(result, item)
+                                   for item in result.output_statuses]
+                answer = _answer_text(result)
             except Exception as exc:
                 if policy.publish:
-                    for event in missing_tool_events():
-                        try:
-                            yield encode_event(event)
-                        except Exception:
-                            continue
-                    latencies = stage_latencies_ms()
-                    failed_stage = next((
-                        entry.step_id for entry in reversed(ledger.entries)
-                        if entry.kind == LedgerKind.STEP_END
-                        and entry.data.get("reason") in {"failed", "timeout"}), None)
-                    # No TaskSpec/evidence exists when intake's structured
-                    # provider is unavailable. Return a typed non-factual
-                    # refusal rather than an error event; downstream stages
-                    # retain A3's evidence-preserving partial behavior.
-                    if (failed_stage == "understand"
-                            and type(exc).__name__ != "PreToolTimeoutError"):
-                        yield encode_event(NodeUpdate(
-                            node=public_node("runtime"), status="complete"))
-                        yield encode_event(FinalAnswer(
-                            text=("I could not interpret this request reliably "
-                                  "because the analysis provider was unavailable. "
-                                  "No factual answer was published."),
-                            carry={"run_id": run_id, "verification": "partial",
-                                   "verified_claims": 0, "structural_flags": [],
-                                   "gaps": [{"kind": "execution_failure",
-                                              "message": "Request interpretation provider unavailable",
-                                              "evidence_ids": [], "blocks": []}],
-                                   "stage_latencies_ms": latencies}))
-                    else:
-                        yield encode_event(NodeUpdate(
-                            node=public_node("runtime"), status="error"))
-                        yield "event: error\ndata: " + json.dumps({
-                            "message": "Dime could not complete this run.",
-                            "run_id": run_id,
-                            "code": ("pre_tool_timeout"
-                                     if type(exc).__name__ == "PreToolTimeoutError"
-                                     else "runtime_failure"),
-                            "stage_latencies_ms": latencies,
-                        }, separators=(",", ":")) + "\n\n"
+                    yield encode_event(WorkLog(run_id=run_id, status="partial"))
+                    yield encode_event(FinalAnswer(
+                        text="I could not verify a publishable answer from the available data.",
+                        carry={"run_id": run_id, "verification": "partial",
+                               "verified_claims": 0, "structural_flags": [],
+                               "gaps": [{"kind": "execution_failure"}],
+                               "stage_latencies_ms": stage_latencies_ms()}))
                 yield encode_event(GraphEnd())
                 return
             if policy.publish:
+                for event in buffered_events:
+                    safe_event = _safe_buffered_event(event)
+                    if safe_event is not None:
+                        yield encode_event(safe_event)
                 for event in missing_tool_events():
                     try:
-                        yield encode_event(event)
+                        safe_event = _safe_buffered_event(event)
+                        if safe_event is not None:
+                            yield encode_event(safe_event)
                     except Exception:
                         continue
+                yield encode_event(WorkLog(
+                    run_id=run_id,
+                    status="complete" if result.verification.status.value == "pass" else "partial"))
                 yield encode_event(CustomData(
                     node="analytics",
-                    tables=[public_evidence_table(item)
-                            for item in result.execution.evidence]))
-                answer = _answer_text(result)
+                    tables=public_tables))
                 carry = {
                     "run_id": run_id,
                     "verification": result.verification.status.value,
                     "verified_claims": len(result.verified_claims),
+                    "output_statuses": public_statuses,
                     "structural_flags": list(getattr(result, "structural_flags", [])),
-                    "gaps": [gap.model_dump(mode="json") for gap in result.gaps],
+                    "gaps": [{"kind": gap.kind.value} for gap in result.gaps],
                     "stage_latencies_ms": stage_latencies_ms(),
                 }
                 yield encode_event(FinalAnswer(text=answer, carry=carry))

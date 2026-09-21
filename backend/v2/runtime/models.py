@@ -10,6 +10,7 @@ from v2.contracts import (
     Gap,
     VerificationReport,
     VerifiedClaim,
+    OutputFinalStatus,
 )
 
 
@@ -102,6 +103,7 @@ class RuntimeResult(BaseModel):
     structural_flags: list[str] = Field(default_factory=list, max_length=32)
     verified_claims: list[VerifiedClaim] = Field(default_factory=list, max_length=128)
     gaps: list[Gap] = Field(default_factory=list, max_length=256)
+    output_statuses: list[OutputFinalStatus] = Field(default_factory=list, max_length=256)
 
     @model_validator(mode="after")
     def validate_publication(self) -> "RuntimeResult":
@@ -199,7 +201,51 @@ class RuntimeResult(BaseModel):
         if self.verification.status.value != expected_status:
             raise ValueError(
                 "verification status does not match runtime publication state")
+        computed = build_output_statuses(self.task, self.verified_claims, self.gaps)
+        if self.output_statuses and self.output_statuses != computed:
+            raise ValueError("stored output status matrix does not match authority")
+        self.output_statuses = computed
         return self
+
+
+def build_output_statuses(task, verified_claims, gaps):
+    """Compute one deterministic status for every typed requested output."""
+    from v2.contracts import OutputFinalStatus
+    admitted = {}
+    rejected = set()
+    for claim in verified_claims:
+        if any(gap.kind.value == "synthesis_incomplete"
+               and f"claim:{claim.claim_index}" in gap.blocks for gap in gaps):
+            rejected.update((binding.requirement_kind, binding.requirement_id,
+                             binding.output_id)
+                            for binding in claim.claim.output_bindings)
+        for binding in claim.output_bindings:
+            key = (binding.requirement_kind, binding.requirement_id,
+                   binding.output_id)
+            if key in admitted:
+                raise ValueError("multiple claims own one requested output")
+            admitted[key] = (claim.claim_index, binding)
+    requested = [
+        *(('task', None, output) for output in task.requested_outputs),
+        *(('evidence', req.id, output) for req in task.requirements
+          for output in req.requested_outputs),
+        *(('calculation', req.id, output) for req in task.calculation_requirements
+          for output in req.requested_outputs),
+    ]
+    if len(requested) != len(set(requested)):
+        raise ValueError("requested output identities must be unique")
+    rows = []
+    for kind, requirement_id, output_id in requested:
+        key = (kind, requirement_id, output_id)
+        owned = admitted.get(key)
+        rows.append(OutputFinalStatus(
+            requirement_kind=kind, requirement_id=requirement_id,
+            output_id=output_id,
+            status=("complete" if owned else
+                    "rejected" if key in rejected else "missing"),
+            claim_index=owned[0] if owned else None,
+            binding=owned[1] if owned else None))
+    return rows
 
 
 def admit_verified_claim_bindings(

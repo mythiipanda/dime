@@ -833,6 +833,31 @@ class Gap(BaseModel):
         return self
 
 
+class OutputFinalStatus(BaseModel):
+    """Deterministic publication status for one typed requested output."""
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    requirement_kind: RequirementKind
+    requirement_id: str | None = Field(default=None, max_length=64)
+    output_id: CanonicalDimensionId
+    status: Literal["complete", "missing", "rejected"]
+    claim_index: StrictInt | None = Field(default=None, ge=0)
+    binding: ClaimOutputBinding | None = None
+
+    @model_validator(mode="after")
+    def validate_status(self) -> "OutputFinalStatus":
+        if self.status == "complete":
+            if self.binding is None or self.claim_index is None:
+                raise ValueError("complete output requires admitted binding and claim")
+        elif self.binding is not None or self.claim_index is not None:
+            raise ValueError("incomplete output cannot carry publication authority")
+        if self.binding is not None:
+            if (self.binding.requirement_kind != self.requirement_kind
+                    or self.binding.requirement_id != self.requirement_id
+                    or self.binding.output_id != self.output_id):
+                raise ValueError("output status identity must match admitted binding")
+        return self
+
+
 class ClaimSource(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
