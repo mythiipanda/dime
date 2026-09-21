@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import asyncio
+import anyio
 import json
 import hashlib
 import random
@@ -367,8 +367,10 @@ class ProviderStructuredModel:
                         retries=settings.llm_max_retries,
                     )
                     run = agent.run(user_prompt)
-                    result = await asyncio.wait_for(
-                        run, timeout=min(float(policy["attempt_timeout_s"]), remaining))
+                    with anyio.fail_after(
+                        min(float(policy["attempt_timeout_s"]), remaining)
+                    ):
+                        result = await run
                     self.last_provider = provider
                     self.last_model = (
                         f"mistral_free_limit:{model.model_name}"
@@ -392,7 +394,7 @@ class ProviderStructuredModel:
                     })
                     transient = failure_class in policy["transient_classes"]
                     if (attempt_number < max_attempts and transient):
-                        await asyncio.sleep(random.uniform(0.04, 0.12))
+                        await anyio.sleep(random.uniform(0.04, 0.12))
                         continue
                     break
             if budget_exhausted:

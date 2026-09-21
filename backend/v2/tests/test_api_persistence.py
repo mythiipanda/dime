@@ -70,9 +70,12 @@ def test_sse_adapter_maps_every_frozen_event() -> None:
 
 
 @pytest.mark.anyio
-async def test_checkpoint_resume_does_not_replay_completed_nodes(
+@pytest.mark.parametrize("anyio_backend", ["asyncio"])
+async def test_checkpoint_resume_does_not_replay_completed_nodes(anyio_backend,
     tmp_path: Path,
 ) -> None:
+    # Dime executor/checkpoint/SSE tasks are supported on the deployed asyncio runtime; Trio is not a production contract.
+    assert anyio_backend == "asyncio"
     checkpoints = FileCheckpointStore(tmp_path)
     plan = _plan()
     task = _task()
@@ -198,7 +201,10 @@ def test_project_store_handles_independent_workers(tmp_path: Path) -> None:
 
 
 @pytest.mark.anyio
-async def test_cancelled_execution_resumes_started_node(tmp_path: Path) -> None:
+@pytest.mark.parametrize("anyio_backend", ["asyncio"])
+async def test_cancelled_execution_resumes_started_node(anyio_backend, tmp_path: Path) -> None:
+    # Dime executor/checkpoint/SSE tasks are supported on the deployed asyncio runtime; Trio is not a production contract.
+    assert anyio_backend == "asyncio"
     import asyncio
 
     checkpoints = FileCheckpointStore(tmp_path)
@@ -282,7 +288,10 @@ def test_quick_answer_route_is_flagged_and_streams_typed_contract(monkeypatch, t
 
 
 @pytest.mark.anyio
-async def test_stream_cancellation_stops_detached_runtime(monkeypatch):
+@pytest.mark.parametrize("anyio_backend", ["asyncio"])
+async def test_stream_cancellation_stops_detached_runtime(anyio_backend, monkeypatch):
+    # Dime executor/checkpoint/SSE tasks are supported on the deployed asyncio runtime; Trio is not a production contract.
+    assert anyio_backend == "asyncio"
     import asyncio
     from v2.api import routes
     from v2.runtime.ledger import RunLedger
@@ -538,7 +547,10 @@ def test_chat_route_configures_durable_checkpoint_directory():
 
 
 @pytest.mark.anyio
-async def test_completed_execution_removes_checkpoint(tmp_path: Path) -> None:
+@pytest.mark.parametrize("anyio_backend", ["asyncio"])
+async def test_completed_execution_removes_checkpoint(anyio_backend, tmp_path: Path) -> None:
+    # Dime executor/checkpoint/SSE tasks are supported on the deployed asyncio runtime; Trio is not a production contract.
+    assert anyio_backend == "asyncio"
     checkpoints = FileCheckpointStore(tmp_path)
     result = await PlanExecutor(
         {"fake": FakeCapability("fake", {"ok": True})},
@@ -549,7 +561,10 @@ async def test_completed_execution_removes_checkpoint(tmp_path: Path) -> None:
 
 
 @pytest.mark.anyio
-async def test_partial_execution_retains_terminal_checkpoint(tmp_path: Path) -> None:
+@pytest.mark.parametrize("anyio_backend", ["asyncio"])
+async def test_partial_execution_retains_terminal_checkpoint(anyio_backend, tmp_path: Path) -> None:
+    # Dime executor/checkpoint/SSE tasks are supported on the deployed asyncio runtime; Trio is not a production contract.
+    assert anyio_backend == "asyncio"
     checkpoints = FileCheckpointStore(tmp_path)
     result = await PlanExecutor(
         {"fake": FakeCapability("fake", {}, failures_before_success=1)},
@@ -1981,6 +1996,11 @@ def test_real_lifespan_freezes_revision_warehouse_endpoint(monkeypatch, tmp_path
     warehouse.write_bytes(startup)
     monkeypatch.setattr(store, "DB_PATH", warehouse)
     routes.runtime_warehouse_identity.cache_clear()
+    routes.runtime_asset_manifest.cache_clear()
+    import json
+    manifest_path = tmp_path / "expected-assets.json"
+    manifest_path.write_text(json.dumps(routes.runtime_asset_manifest().as_dict()))
+    monkeypatch.setenv("DIME_EXPECTED_ASSET_MANIFEST", str(manifest_path))
     try:
         with TestClient(main.app) as client:
             expected = {"warehouse_id": "configured-runtime",

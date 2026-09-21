@@ -2554,11 +2554,14 @@ async def test_semantic_verifier_projection_does_not_send_source_identity():
     assert 'source_identity' not in projected and 'a'*64 not in repr(projected)
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("anyio_backend", ["asyncio"])
 @pytest.mark.parametrize(('kind','phase'),[
     ('unknown','json_or_schema_validation'),('malformed','json_or_schema_validation'),
     ('empty','no_tool_or_empty'),('refusal','content_filter'),
 ])
-async def test_safe_failure_taxonomy_exact_native_openai_path(kind,phase):
+async def test_safe_failure_taxonomy_exact_native_openai_path(anyio_backend,kind,phase):
+    # Native SDK path is validated on Dime's supported asyncio runtime; Trio is upstream, not a production contract.
+    assert anyio_backend == "asyncio"
     import httpx,json
     from openai import AsyncOpenAI
     from pydantic_ai import Agent,NativeOutput
@@ -2685,6 +2688,7 @@ async def test_actual_attempt_redacts_dynamic_exception_type_and_ledger_serializ
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("anyio_backend", ["asyncio"])
 @pytest.mark.parametrize(('content','subtype'),[
     ({'status':'repair','claim_results':[{'claim_index':0,'supported':False}]},'unsupported_claim_missing_reason'),
     ({'status':'pass','claim_results':[{'claim_index':0,'supported':True,'reasons':['bounded']}]},'supported_claim_has_reasons'),
@@ -2693,7 +2697,9 @@ async def test_actual_attempt_redacts_dynamic_exception_type_and_ledger_serializ
     ({'status':'partial','claim_results':[{'claim_index':0,'supported':True},{'claim_index':0,'supported':True}]},'duplicate_claim_index'),
     ({'status':'partial','missing_branches':['bounded','bounded']},'duplicate_or_empty_finding'),
 ])
-async def test_safe_failure_validation_subtype_exact_native_openai_path(content,subtype):
+async def test_safe_failure_validation_subtype_exact_native_openai_path(anyio_backend,content,subtype):
+    # Native SDK path is validated on Dime's supported asyncio runtime; Trio is upstream, not a production contract.
+    assert anyio_backend == "asyncio"
     import httpx,json
     from openai import AsyncOpenAI
     from pydantic_ai import Agent,NativeOutput
