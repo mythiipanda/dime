@@ -3288,8 +3288,8 @@ def test_intake_admission_manifest_covers_zero_entity_task_metrics_outputs_and_c
     dumped=[item.model_dump(mode="json") for item in subjects]
     assert dumped[0]=={"kind":"task","task_id":"request"}
     assert {item.get("metric_id") for item in dumped if item["kind"]=="metric"}=={"PACE"}
-    assert {(item.get("requirement_id"),item.get("output_id")) for item in dumped
-            if item["kind"]=="output"}=={("task","PACE_DELTA"),("pace_delta","PACE_DELTA")}
+    assert {(item.get("owner_kind"),item.get("requirement_id"),item.get("output_id")) for item in dumped
+            if item["kind"]=="output"}=={("task","request","PACE_DELTA"),("calculation","pace_delta","PACE_DELTA")}
     assert any(item.get("requirement_id")=="pace_delta" for item in dumped)
 
 
@@ -3308,3 +3308,33 @@ def test_block_clears_every_action_driving_task_field_before_skill_activation():
     assert blocked.season is None and blocked.as_of is None
     assert blocked.subquestions==[] and blocked.assumptions==[] and blocked.skills==[]
     assert blocked.required_evidence==[] and blocked.metric_ids==[] and blocked.requested_outputs==[]
+
+
+def test_admission_dimension_ids_reject_noncanonical_values_at_task_boundary():
+    from pydantic import ValidationError
+    for value in ("!!!", "A B", "ÉFG", "lower"):
+        with pytest.raises(ValidationError):
+            TaskSpec(goal="x",mode="quick",deliverable="x",metric_ids=[value])
+        with pytest.raises(ValidationError):
+            TaskSpec(goal="x",mode="quick",deliverable="x",requested_outputs=[value])
+
+
+def test_admission_manifest_preserves_same_metric_under_distinct_requirement_scopes():
+    task=TaskSpec(goal="compare",mode="quick",deliverable="answer",requirements=[
+        {"id":"first","description":"first","capability_options":["standings"],"metric_ids":["PACE"]},
+        {"id":"second","description":"second","capability_options":["standings"],"metric_ids":["PACE"]},
+    ])
+    metrics=[item.model_dump(mode="json") for item in ModelIntake._expected_admission_subjects(task)
+             if item.kind=="metric"]
+    assert metrics==[
+        {"kind":"metric","owner_kind":"evidence","owner_id":"first","metric_id":"PACE"},
+        {"kind":"metric","owner_kind":"evidence","owner_id":"second","metric_id":"PACE"},
+    ]
+
+
+def test_evidence_and_calculation_requirement_ids_cannot_collide():
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError,match="ids overlap"):
+        TaskSpec(goal="x",mode="quick",deliverable="x",
+            requirements=[{"id":"same","description":"e","capability_options":["standings"]}],
+            calculation_requirements=[{"id":"same","description":"c"}])

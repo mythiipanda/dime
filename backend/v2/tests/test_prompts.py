@@ -22,6 +22,7 @@ REQUIRED_SECTIONS = ("Objective", "Input", "Output", "Invariants", "Stop conditi
 # prompt's Output section
 OUTPUT_CONTRACTS = {
     "intake": (contracts.TaskSpec,),
+    "intake_admission": (contracts.IntakeAdmissionReview,),
     "planner": (contracts.PlanNode,),
     "requirement_review": (contracts.RequirementReview,),
     "synthesizer": (contracts.DraftReport, contracts.Claim),

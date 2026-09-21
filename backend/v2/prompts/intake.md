@@ -17,6 +17,8 @@ Fields:
 - mode ("quick" | "deep_dive" | "project"): the cheapest mode that can
   satisfy the goal.
 - deliverable (str): what the answer must contain to satisfy the goal.
+- metric_ids (list of canonical uppercase IDs): explicit metrics requested by the user.
+- requested_outputs (list of canonical uppercase IDs): explicit answer outputs requested by the user.
 - entities (list of {id, type, display_name}): canonical NBA entities;
   type is "player" | "team" | "game" | "league".
 - season ({value, source, confidence}) or null: the resolved NBA season,

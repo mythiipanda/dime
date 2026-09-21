@@ -47,6 +47,10 @@ class GapKind(StrEnum):
 
 
 MAX_INTAKE_CONTEXT_TURNS = 8
+CanonicalDimensionId = Annotated[
+    str, Field(min_length=1, max_length=128, pattern=r"^[A-Z][A-Z0-9_]*$")]
+RequirementKind = Literal["evidence", "calculation"]
+
 
 
 class SourceLocator(BaseModel):
@@ -102,8 +106,9 @@ class EntityAdmissionSubject(BaseModel):
 class MetricAdmissionSubject(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     kind: Literal["metric"]
-    metric_id: str = Field(min_length=1, max_length=128,
-                           pattern=r"^[A-Z][A-Z0-9_]*$")
+    owner_kind: Literal["task", "evidence", "calculation"]
+    owner_id: str = Field(min_length=1, max_length=64)
+    metric_id: CanonicalDimensionId
 
 
 class SeasonAdmissionSubject(BaseModel):
@@ -121,6 +126,7 @@ class SeasonAdmissionSubject(BaseModel):
 class RequirementAdmissionSubject(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     kind: Literal["requirement"]
+    requirement_kind: RequirementKind
     requirement_id: str = Field(min_length=1, max_length=64,
                                 pattern=r"^[a-z][a-z0-9_]*$")
 
@@ -128,10 +134,10 @@ class RequirementAdmissionSubject(BaseModel):
 class OutputAdmissionSubject(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     kind: Literal["output"]
+    owner_kind: Literal["task", "evidence", "calculation"]
     requirement_id: str = Field(min_length=1, max_length=64,
                                 pattern=r"^[a-z][a-z0-9_]*$")
-    output_id: str = Field(min_length=1, max_length=128,
-                           pattern=r"^[A-Z][A-Z0-9_]*$")
+    output_id: CanonicalDimensionId
 
 
 AdmissionSubject = Annotated[
@@ -280,15 +286,13 @@ class CalculationRequirement(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str = Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9_]*$")
     description: str = Field(min_length=1, max_length=1000)
-    metric_ids: list[str] = Field(default_factory=list, max_length=16)
-    requested_outputs: list[str] = Field(default_factory=list, max_length=16)
+    metric_ids: list[CanonicalDimensionId] = Field(default_factory=list, max_length=16)
+    requested_outputs: list[CanonicalDimensionId] = Field(default_factory=list, max_length=16)
 
     @model_validator(mode="after")
     def validate_dimensions(self) -> "CalculationRequirement":
         for field_name in ("metric_ids", "requested_outputs"):
             values = getattr(self, field_name)
-            if any(not value or value != value.upper() for value in values):
-                raise ValueError(f"{field_name} must use uppercase canonical ids")
             if len(values) != len(set(values)):
                 raise ValueError(f"{field_name} must not contain duplicates")
         return self
@@ -306,8 +310,8 @@ class EvidenceRequirement(BaseModel):
     # review and planning. A planner cannot claim coverage with a nearby metric,
     # population, or vintage merely because the capability name matches.
     capability_arguments: dict[str, Any] = Field(default_factory=dict, max_length=32)
-    metric_ids: list[str] = Field(default_factory=list, max_length=16)
-    requested_outputs: list[str] = Field(default_factory=list, max_length=16)
+    metric_ids: list[CanonicalDimensionId] = Field(default_factory=list, max_length=16)
+    requested_outputs: list[CanonicalDimensionId] = Field(default_factory=list, max_length=16)
 
     @model_validator(mode="after")
     def validate_requirement(self) -> "EvidenceRequirement":
@@ -319,8 +323,6 @@ class EvidenceRequirement(BaseModel):
             raise ValueError("requirement capabilities must not contain duplicates")
         for field_name in ("metric_ids", "requested_outputs"):
             values = getattr(self, field_name)
-            if any(not value or value != value.upper() for value in values):
-                raise ValueError(f"{field_name} must use uppercase canonical ids")
             if len(values) != len(set(values)):
                 raise ValueError(f"{field_name} must not contain duplicates")
         return self
@@ -332,8 +334,8 @@ class TaskSpec(BaseModel):
     goal: str = Field(max_length=2000)
     mode: RunMode
     deliverable: str = Field(max_length=1000)
-    metric_ids: list[str] = Field(default_factory=list, max_length=32)
-    requested_outputs: list[str] = Field(default_factory=list, max_length=32)
+    metric_ids: list[CanonicalDimensionId] = Field(default_factory=list, max_length=32)
+    requested_outputs: list[CanonicalDimensionId] = Field(default_factory=list, max_length=32)
     entities: list[EntityRef] = Field(default_factory=list, max_length=64)
     season: SeasonRef | None = None
     as_of: date | None = None
@@ -358,15 +360,15 @@ class TaskSpec(BaseModel):
                 raise ValueError(f"{field_name} must not contain empty values")
             if len(values) != len(set(values)):
                 raise ValueError(f"{field_name} must not contain duplicates")
-            if field_name in {"metric_ids", "requested_outputs"} and any(
-                    value != value.upper() for value in values):
-                raise ValueError(f"{field_name} must use uppercase canonical ids")
         requirement_ids = [item.id for item in self.requirements]
         if len(requirement_ids) != len(set(requirement_ids)):
             raise ValueError("requirements must not contain duplicate ids")
         calculation_ids = [item.id for item in self.calculation_requirements]
         if len(calculation_ids) != len(set(calculation_ids)):
             raise ValueError("calculation requirements must not contain duplicate ids")
+        overlap = set(requirement_ids) & set(calculation_ids)
+        if overlap:
+            raise ValueError(f"evidence and calculation requirement ids overlap: {sorted(overlap)}")
         entity_keys = [(item.type, item.id) for item in self.entities]
         if len(entity_keys) != len(set(entity_keys)):
             raise ValueError("entities must not contain duplicate identities")

@@ -1,6 +1,24 @@
 # Intake Admission Review
 
-Independently review the proposed TaskSpec against the exact request and bounded context.
-Return one IntakeAdmissionReview object.
+## Objective
+Independently decide whether one proposed TaskSpec preserves the exact request and bounded context.
 
-The runtime supplies the immutable review target and the complete expected-subject manifest. Copy both exactly. Do not add, remove, rename, or substitute subjects. For an admit, bind every expected subject exactly once to a verbatim request or context span, with exact character offsets and the supplied zero-based bounded-context turn index. For a block, use a typed finding for a mismatched proposed subject or a source-bound unresolved reference when the source does not establish the referent. Never repair the TaskSpec. Never use confidence to waive a mismatch.
+## Input
+- The immutable AdmissionReviewTarget for the exact request, ordered context, and proposed task.
+- The complete expected_subjects manifest derived by deterministic code.
+- The verbatim question, ordered context turns, and proposed TaskSpec.
+
+## Output
+Return one IntakeAdmissionReview object and nothing else. Fields:
+- target: copy the supplied AdmissionReviewTarget exactly.
+- decision: "admit" or "block".
+- expected_subjects: copy the complete supplied manifest exactly.
+- bindings: one AdmissionBinding for every expected subject on admit.
+- unresolved_references: source-bound UnresolvedReference items.
+- findings: typed AdmissionFinding items for mismatches.
+
+## Invariants
+Never add, remove, rename, or substitute subjects. Bind exact verbatim spans with exact character offsets and the supplied zero-based bounded-context turn index. Block invented, omitted, changed, or unresolved action-driving subjects. Never repair the proposed task. Confidence cannot waive a mismatch.
+
+## Stop condition
+Stop after one complete IntakeAdmissionReview. Admit only when every expected subject is bound exactly once and no blocker remains.

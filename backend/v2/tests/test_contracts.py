@@ -616,8 +616,8 @@ def test_explicit_lebron_fixture_binds_complete_typed_subject_manifest():
     subjects = [
         EntityAdmissionSubject(kind="entity", entity_id="2544", entity_type="player"),
         EntityAdmissionSubject(kind="entity", entity_id="1610612755", entity_type="team"),
-        RequirementAdmissionSubject(kind="requirement", requirement_id="fit"),
-        OutputAdmissionSubject(kind="output", requirement_id="fit", output_id="FIT_ASSESSMENT"),
+        RequirementAdmissionSubject(kind="requirement", requirement_kind="evidence", requirement_id="fit"),
+        OutputAdmissionSubject(kind="output", owner_kind="evidence", requirement_id="fit", output_id="FIT_ASSESSMENT"),
     ]
     texts = ["LeBron James", "Philadelphia 76ers", "fit", "fit"]
     bindings = []

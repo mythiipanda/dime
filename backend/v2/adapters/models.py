@@ -548,31 +548,27 @@ class ModelIntake(ModelStage):
         if task.season is not None:
             subjects.append(SeasonAdmissionSubject(
                 kind="season", value=task.season.value))
-        subjects.extend(MetricAdmissionSubject(kind="metric", metric_id=metric)
-                        for metric in task.metric_ids)
+        subjects.extend(MetricAdmissionSubject(
+            kind="metric", owner_kind="task", owner_id="request", metric_id=metric)
+            for metric in task.metric_ids)
         subjects.extend(OutputAdmissionSubject(
-            kind="output", requirement_id="task", output_id=output)
+            kind="output", owner_kind="task", requirement_id="request", output_id=output)
             for output in task.requested_outputs)
-        for requirement in task.requirements:
-            subjects.append(RequirementAdmissionSubject(
-                kind="requirement", requirement_id=requirement.id))
-            subjects.extend(MetricAdmissionSubject(
-                kind="metric", metric_id=metric)
-                for metric in requirement.metric_ids)
-            subjects.extend(OutputAdmissionSubject(
-                kind="output", requirement_id=requirement.id, output_id=output)
-                for output in requirement.requested_outputs)
-        for requirement in task.calculation_requirements:
-            subjects.append(RequirementAdmissionSubject(
-                kind="requirement", requirement_id=requirement.id))
-            subjects.extend(MetricAdmissionSubject(
-                kind="metric", metric_id=metric)
-                for metric in requirement.metric_ids)
-            subjects.extend(OutputAdmissionSubject(
-                kind="output", requirement_id=requirement.id, output_id=output)
-                for output in requirement.requested_outputs)
-        unique={item.model_dump_json():item for item in subjects}
-        return tuple(unique.values())
+        for owner_kind, requirements in (("evidence", task.requirements),
+                                         ("calculation", task.calculation_requirements)):
+            for requirement in requirements:
+                subjects.append(RequirementAdmissionSubject(
+                    kind="requirement", requirement_kind=owner_kind,
+                    requirement_id=requirement.id))
+                subjects.extend(MetricAdmissionSubject(
+                    kind="metric", owner_kind=owner_kind,
+                    owner_id=requirement.id, metric_id=metric)
+                    for metric in requirement.metric_ids)
+                subjects.extend(OutputAdmissionSubject(
+                    kind="output", owner_kind=owner_kind,
+                    requirement_id=requirement.id, output_id=output)
+                    for output in requirement.requested_outputs)
+        return tuple(subjects)
 
     @classmethod
     def _source_for_locator(cls, locator: Any, request: str,
