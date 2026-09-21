@@ -24,6 +24,7 @@ A single JSON object matching the DraftReport contract, and nothing else:
   - evidence_ids (list of str): ids of the supporting envelopes.
   - calculation_id (str) or null: required when kind is "derived".
   - confidence (number 0-1) or null: required when kind is "projection".
+  - output_bindings (list): claim-local typed output proposals naming exact requirement/output, evidence selector/value/subject/unit/domain, or calculation identity. Empty when the claim does not propose requested-output authority. Proposals remain untrusted until deterministic admission.
 - calculations (list): every arithmetic result used by a derived claim, with calculation_id, requirement_id, operation, exact evidence_id/path inputs, result, unit, and subject_input only for ranks.
 - blocked_calculation_requirement_ids (list): requested calculation requirement ids that cannot be computed because admitted evidence lacks an input. Every such id must have a specific matching gap.
 - gaps (list of str): requested branches the evidence did not cover.
