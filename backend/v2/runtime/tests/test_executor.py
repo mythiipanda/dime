@@ -1096,3 +1096,23 @@ def test_broad_row_selector_cannot_join_sibling_subject_and_metric():
     reject([{"PLAYER_ID":"30","stats":{"PTS":25}},
             {"PLAYER_ID":"23","stats":{"PTS":30}}],
            "rows[0].stats.PTS", "rows[1].PLAYER_ID", "rows")
+
+
+@pytest.mark.anyio
+async def test_structured_name_resolution_error_code_survives_checkpoint_replay(tmp_path):
+    from app.tools._core import PlayerNameResolutionUnavailable
+    from v2.runtime.checkpoints import FileCheckpointStore
+    from v2.runtime.models import ExecutionErrorCode
+    class MissingProfile:
+        name = "profile"
+        task_season_scoped = False
+        dependent_entity_arguments = {}
+        async def execute(self, node, task, evidence):
+            raise PlayerNameResolutionUnavailable("Unknown", "no correction")
+    task = TaskSpec(goal="g", mode="quick", deliverable="d")
+    plan = Plan(nodes=[PlanNode(id="profile", description="p", capability_hints=["profile"], max_attempts=1)])
+    store = FileCheckpointStore(tmp_path)
+    result = await PlanExecutor({"profile": MissingProfile()}, checkpoint_store=store).execute(task, plan, run_id="r")
+    assert result.error_codes == {"profile": [ExecutionErrorCode.PROFILE_NAME_RESOLUTION_UNAVAILABLE]}
+    raw = (tmp_path / "r.json").read_text()
+    assert '"profile/name_resolution_unavailable"' in raw

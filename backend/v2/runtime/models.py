@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from enum import StrEnum
+
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, model_validator
 
 from v2.contracts import (
@@ -14,6 +16,10 @@ from v2.contracts import (
 )
 
 
+class ExecutionErrorCode(StrEnum):
+    PROFILE_NAME_RESOLUTION_UNAVAILABLE = "profile/name_resolution_unavailable"
+
+
 class ExecutionResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -26,11 +32,13 @@ class ExecutionResult(BaseModel):
         return list(self.evidence_by_node.values())
     attempts: dict[str, StrictInt] = Field(default_factory=dict, max_length=32)
     errors: dict[str, list[str]] = Field(default_factory=dict, max_length=32)
+    error_codes: dict[str, list[ExecutionErrorCode]] = Field(
+        default_factory=dict, max_length=32)
 
     @model_validator(mode="after")
     def validate_execution(self) -> "ExecutionResult":
         nodes = {node.id: node for node in self.plan.nodes}
-        unknown = (set(self.attempts) | set(self.errors)) - nodes.keys()
+        unknown = (set(self.attempts) | set(self.errors) | set(self.error_codes)) - nodes.keys()
         if unknown:
             raise ValueError(f"execution references unknown nodes: {sorted(unknown)}")
         unknown_evidence_nodes = set(self.evidence_by_node) - nodes.keys()
@@ -60,6 +68,11 @@ class ExecutionResult(BaseModel):
             raise ValueError("execution attempt counts must be integers")
         if any(count < 0 for count in self.attempts.values()):
             raise ValueError("execution attempt counts must be non-negative")
+        for node_id, codes in self.error_codes.items():
+            if len(codes) != len(set(codes)):
+                raise ValueError(f"execution node {node_id!r} has duplicate error codes")
+            if node_id not in self.errors:
+                raise ValueError(f"execution error codes require node errors for {node_id!r}")
         for node in self.plan.nodes:
             count = self.attempts.get(node.id, 0)
             if count > node.max_attempts:

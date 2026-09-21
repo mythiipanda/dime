@@ -44,6 +44,7 @@ class GapKind(StrEnum):
     UNSUPPORTED_CLAIM = "unsupported_claim"
     EXECUTION_FAILURE = "execution_failure"
     SYNTHESIS_INCOMPLETE = "synthesis_incomplete"
+    PROFILE_NAME_RESOLUTION_UNAVAILABLE = "profile/name_resolution_unavailable"
 
 
 MAX_INTAKE_CONTEXT_TURNS = 8
@@ -499,7 +500,25 @@ class LiveSourceIdentity(BaseModel):
     source: Literal["nba_api", "basketball_reference", "espn", "fixture"]
 
 
-SourceIdentity = Annotated[WarehouseSourceIdentity | LiveSourceIdentity, Field(discriminator="kind")]
+class CompositeSourceIdentity(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    kind: Literal["composite"] = "composite"
+    warehouse_id: Literal["frozen-eval", "configured-runtime"]
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    live_sources: list[Literal["nba_api", "basketball_reference", "espn"]] = Field(
+        min_length=1, max_length=8)
+
+    @model_validator(mode="after")
+    def validate_sources(self):
+        if len(self.live_sources) != len(set(self.live_sources)):
+            raise ValueError("composite live sources must be unique")
+        return self
+
+
+SourceIdentity = Annotated[
+    WarehouseSourceIdentity | LiveSourceIdentity | CompositeSourceIdentity,
+    Field(discriminator="kind"),
+]
 
 
 class EvidenceEnvelope(BaseModel):

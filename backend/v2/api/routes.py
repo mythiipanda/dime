@@ -92,6 +92,7 @@ class RuntimeAssetManifest:
     executable_sha256: str
     module_sha256: Mapping[str, str]
     warehouse: Mapping[str, str]
+    semantic_baseline: Mapping[str, str]
     prompt_sha256: Mapping[str, str]
 
     def as_dict(self) -> dict[str, object]:
@@ -100,6 +101,7 @@ class RuntimeAssetManifest:
             "executable_sha256": self.executable_sha256,
             "module_sha256": dict(self.module_sha256),
             "warehouse": dict(self.warehouse),
+            "semantic_baseline": dict(self.semantic_baseline),
             "prompt_sha256": dict(self.prompt_sha256),
         }
 
@@ -138,6 +140,9 @@ def runtime_asset_manifest() -> RuntimeAssetManifest:
                          models._PROVIDER_ROUTE_PROMPT_NAMES}),
         }),
         warehouse=MappingProxyType(dict(runtime_warehouse_identity())),
+        semantic_baseline=__import__(
+            "v2.semantic_baseline", fromlist=["SEMANTIC_BASELINE"]
+        ).SEMANTIC_BASELINE,
         prompt_sha256=MappingProxyType({
             route: hashlib.sha256(prompt.encode()).hexdigest()
             for route, prompt in prompts.items()
@@ -156,7 +161,7 @@ def preflight_runtime_assets(expected_path: str | Path | None = None) -> Runtime
         raise RuntimeError("expected asset manifest must be external to executable roots")
     expected = json.loads(manifest_path.read_text())
     required = {"revision", "executable_sha256", "module_sha256",
-                "warehouse", "prompt_sha256"}
+                "warehouse", "semantic_baseline", "prompt_sha256"}
     if set(expected) != required:
         raise RuntimeError("expected asset manifest has wrong fields")
     observed = runtime_asset_manifest()

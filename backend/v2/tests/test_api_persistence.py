@@ -166,7 +166,7 @@ def test_revision_and_feature_flagged_project_endpoints(
 
     revision = client.get("/api/revision")
     assert revision.status_code == 200
-    assert set(revision.json()) == {"revision", "executable_sha256", "module_sha256", "prompt_sha256", "warehouse"}
+    assert set(revision.json()) == {"revision", "executable_sha256", "module_sha256", "prompt_sha256", "warehouse", "semantic_baseline"}
     assert set(revision.json()["warehouse"]) == {"warehouse_id", "sha256"}
     assert revision.json()["warehouse"]["warehouse_id"] in {"frozen-eval", "configured-runtime"}
     assert re.fullmatch(r"[0-9a-f]{64}", revision.json()["warehouse"]["sha256"])
@@ -1502,6 +1502,7 @@ def test_runtime_asset_manifest_is_deeply_immutable(monkeypatch):
     with pytest.raises((TypeError,AttributeError)):manifest.revision='x'
     with pytest.raises(TypeError):manifest.prompt_sha256['semantic_verifier']='x'
     with pytest.raises(TypeError):manifest.warehouse['sha256']='x'
+    with pytest.raises(TypeError):manifest.semantic_baseline['baseline_id']='x'
     with pytest.raises(TypeError):manifest.module_sha256['routes']='x'
     copied=manifest.as_dict();copied['prompt_sha256']['semantic_verifier']='x'
     assert manifest.prompt_sha256['semantic_verifier']!='x'
@@ -1512,7 +1513,7 @@ def test_preflight_exact_match_and_each_mismatch(monkeypatch,tmp_path):
     from v2.api import routes
     observed=routes.runtime_asset_manifest();exact=_write_expected_manifest(tmp_path/'exact.json',observed)
     assert routes.preflight_runtime_assets(exact) is observed
-    for field in ('revision','executable_sha256','module_sha256','warehouse','prompt_sha256'):
+    for field in ('revision','executable_sha256','module_sha256','warehouse','semantic_baseline','prompt_sha256'):
         candidate=observed.as_dict()
         if isinstance(candidate[field],dict):candidate[field][next(iter(candidate[field]))]='wrong'
         else:candidate[field]='wrong'
@@ -1807,3 +1808,13 @@ def test_no_authority_internal_gap_route_is_nonblank_and_terminal(monkeypatch,tm
     monkeypatch.setenv("DIME_RUNTIME_V2","on");monkeypatch.setattr("app.providers.resolve_model_id",lambda value:("openrouter","fixture"));monkeypatch.setattr("v2.runtime.assembly.build_runtime",lambda **k:(Runtime(),RunLedger(k["run_id"])));monkeypatch.setattr(routes,"_PROJECTS",ProjectStore(tmp_path/"p.sqlite"));app=FastAPI();app.include_router(routes.router,prefix="/api");text=TestClient(app).post("/api/v2/chat/stream",json={"q":"x"}).text
     assert "SECRET" not in text and text.count("event: work_log")==text.count("event: final_answer")==text.count("event: graph_end")==1
     payload=__import__("json").loads(text.split("event: final_answer\ndata: ",1)[1].split("\n\n",1)[0]);assert payload["text"].strip()
+
+
+def test_runtime_manifest_pins_accepted_semantic_baseline():
+    from v2.api import routes
+    assert routes.runtime_asset_manifest().as_dict()["semantic_baseline"] == {
+        "baseline_id": "dime-warehouse-2025-26-finals-v1",
+        "warehouse_sha256": "4099efbefe5c3ba6e0026b837d95cfd421f6844f75a3516e51d00976bfbbe183",
+        "logical_content_id": "81969a2d902583aea99c2d8b1a09673b941c63e649bdf6fb6ce09a8aff591a08",
+        "manifest_self_hash": "c8ba316cc4d50c666208874a5d04d9788a312e450781d057b823a63aadb446ac",
+    }

@@ -1259,3 +1259,57 @@ def test_binding_rejection_is_atomic_and_returns_typed_gap():
     assert claims[0].output_bindings == []
     assert len(gaps) == 1 and gaps[0].kind == "synthesis_incomplete"
     assert gaps[0].blocks == ["claim:0"]
+
+
+def test_unmatched_player_execution_error_becomes_typed_gap():
+    from v2.runtime.loop import _verification_gaps
+    from v2.contracts import DraftReport, VerificationReport, GapKind
+    gaps = _verification_gaps(
+        DraftReport(sections=[], claims=[]),
+        VerificationReport(status="partial"),
+        {"profile": [
+            "PlayerNameResolutionUnavailable: any display message"
+        ]},
+        execution_error_codes={
+            "profile": ["profile/name_resolution_unavailable"]},
+    )
+    assert [(gap.kind, gap.message, gap.blocks) for gap in gaps] == [(
+        GapKind.PROFILE_NAME_RESOLUTION_UNAVAILABLE,
+        "profile/name_resolution unavailable", ["node:profile"])]
+
+
+def test_error_prose_cannot_select_name_resolution_gap_kind():
+    from v2.runtime.loop import _verification_gaps
+    from v2.contracts import DraftReport, VerificationReport, GapKind
+    gaps = _verification_gaps(
+        DraftReport(sections=[], claims=[]), VerificationReport(status="partial"),
+        {"profile": ["RuntimeError: profile/name_resolution unavailable"]},
+        execution_error_codes={},
+    )
+    assert gaps[0].kind == GapKind.EXECUTION_FAILURE
+
+
+@pytest.mark.anyio
+async def test_runtime_caller_maps_structured_execution_code_to_typed_gap():
+    from v2.runtime.models import ExecutionErrorCode, ExecutionResult
+    from v2.contracts import PlanStatus
+    class FailedExecutor:
+        async def execute(self, task, plan, run_id=None):
+            failed = plan.nodes[0].model_copy(update={"status": PlanStatus.FAILED})
+            return ExecutionResult(
+                plan=Plan(nodes=[failed]), attempts={failed.id: 1},
+                errors={failed.id: ["display wording can vary"]},
+                error_codes={failed.id: [
+                    ExecutionErrorCode.PROFILE_NAME_RESOLUTION_UNAVAILABLE]})
+    class EmptySynthesizer:
+        async def synthesize(self, task, evidence):
+            return DraftReport(sections=[], claims=[])
+    instance = Runtime(
+        intake=Intake(), planner=Planner(), executor=FailedExecutor(),
+        synthesizer=EmptySynthesizer(),
+        mechanical_verifier=SequenceVerifier(VerificationStatus.PASS),
+        semantic_verifier=SequenceVerifier(VerificationStatus.PASS))
+    result = await instance.run("unknown player")
+    assert any(gap.kind == "profile/name_resolution_unavailable"
+               for gap in result.gaps)
+    assert not any(gap.kind == "execution_failure" for gap in result.gaps)

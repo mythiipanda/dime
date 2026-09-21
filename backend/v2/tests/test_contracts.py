@@ -641,3 +641,17 @@ def test_unicode_and_punctuation_remain_verbatim_in_source_locator():
     locator = SourceLocator(source="request", start=start,
                             end=start + len(text), text=text)
     assert locator.text == request[locator.start:locator.end]
+
+
+def test_composite_warehouse_identity_is_typed_and_complete():
+    from datetime import UTC, datetime
+    from v2.adapters.capabilities import CAPABILITIES
+    from v2.adapters.core import build_envelope
+    item = build_envelope(CAPABILITIES["injury_impact"], {"season": "2025-26"}, {
+        "ok": True, "rows": {"impact": "unknown"},
+        "meta": {"source": "espn+nba_api+warehouse", "season": "2025-26",
+                 "warehouse_id": "configured-runtime", "warehouse_sha256": "a" * 64}},
+        observed_at=datetime.now(UTC))
+    assert item.source_identity.model_dump() == {
+        "kind": "composite", "warehouse_id": "configured-runtime",
+        "sha256": "a" * 64, "live_sources": ["espn", "nba_api"]}

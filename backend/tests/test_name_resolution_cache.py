@@ -56,3 +56,11 @@ def test_slug_order_and_suffix_warehouse_identity_are_normalized():
     # Static NBA identity currently conflicts with the frozen warehouse row;
     # exact display-name resolution must select the one with season gamelogs.
     assert coerce_player_id("Tim Hardaway Jr.") == 896
+
+
+def test_unmatched_player_emits_typed_name_resolution_gap():
+    coerce_player_id.cache_clear()
+    with pytest.raises(core_mod.PlayerNameResolutionUnavailable) as caught:
+        coerce_player_id("Zzz Not A Player Xyz")
+    assert caught.value.gap_kind == "profile/name_resolution_unavailable"
+    assert "Zzz Not A Player Xyz" in str(caught.value)

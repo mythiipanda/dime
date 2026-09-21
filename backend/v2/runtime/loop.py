@@ -286,7 +286,9 @@ class Runtime:
                 update={"status": VerificationStatus.PARTIAL})
         gaps = [
             *_verification_gaps(
-                draft, verification, unresolved_errors, evidence_ids=set(evidence),
+                draft, verification, unresolved_errors,
+                execution_error_codes=execution.error_codes,
+                evidence_ids=set(evidence),
                 satisfied_requirement_ids={
                     requirement_id for node in execution.plan.nodes
                     if node.status.value == "complete"
@@ -736,7 +738,8 @@ def _empty_evidence_gaps(evidence) -> list[Gap]:
 
 
 def _verification_gaps(draft, verification, execution_errors=None,
-                       evidence_ids=None, satisfied_requirement_ids=None) -> list[Gap]:
+                       execution_error_codes=None, evidence_ids=None,
+                       satisfied_requirement_ids=None) -> list[Gap]:
     missing_messages = [*draft.gaps]
     def message_terms(message: str) -> set[str]:
         return {
@@ -765,9 +768,16 @@ def _verification_gaps(draft, verification, execution_errors=None,
                 for message in verification.contradictions)
     for node_id, errors in (execution_errors or {}).items():
         if errors:
+            name_resolution = (
+                "profile/name_resolution_unavailable"
+                in {str(code) for code in (execution_error_codes or {}).get(node_id, [])}
+            )
             gaps.append(Gap(
-                kind=GapKind.EXECUTION_FAILURE,
-                message=f"execution failed for {node_id}",
+                kind=(GapKind.PROFILE_NAME_RESOLUTION_UNAVAILABLE
+                      if name_resolution else GapKind.EXECUTION_FAILURE),
+                message=("profile/name_resolution unavailable"
+                         if name_resolution
+                         else f"execution failed for {node_id}"),
                 blocks=[f"node:{node_id}"],
             ))
     for result in verification.claim_results:
