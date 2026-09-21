@@ -46,6 +46,94 @@ class GapKind(StrEnum):
     SYNTHESIS_INCOMPLETE = "synthesis_incomplete"
 
 
+class SourceLocator(BaseModel):
+    """Exact model-declared location in the request or bounded context."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    source: Literal["request", "context"]
+    context_turn: StrictInt | None = Field(default=None, ge=0, le=7)
+    start: StrictInt = Field(ge=0, le=2000)
+    end: StrictInt = Field(gt=0, le=2000)
+    text: str = Field(min_length=1, max_length=2000)
+
+    @model_validator(mode="after")
+    def validate_locator(self) -> "SourceLocator":
+        if self.end <= self.start:
+            raise ValueError("source locator end must exceed start")
+        if self.end - self.start != len(self.text):
+            raise ValueError("source locator offsets must match text length")
+        if not self.text.strip():
+            raise ValueError("source locator text must not be blank")
+        if self.source == "request" and self.context_turn is not None:
+            raise ValueError("request locator cannot name a context turn")
+        if self.source == "context" and self.context_turn is None:
+            raise ValueError("context locator requires a context turn")
+        return self
+
+
+class AdmissionBinding(BaseModel):
+    """Typed semantic subject bound to one exact source location."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Literal["entity", "metric", "season", "requirement", "output"]
+    key: str = Field(min_length=1, max_length=256)
+    locator: SourceLocator
+    entity_type: Literal["player", "team", "game", "league"] | None = None
+
+    @model_validator(mode="after")
+    def validate_binding(self) -> "AdmissionBinding":
+        if not self.key.strip():
+            raise ValueError("admission binding key must not be blank")
+        if (self.kind == "entity") != (self.entity_type is not None):
+            raise ValueError("entity type is required only for entity bindings")
+        return self
+
+
+class UnresolvedReference(BaseModel):
+    """A source-bound reference the intake could not safely resolve."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Literal["entity", "player", "team", "game", "league", "unknown"]
+    locator: SourceLocator
+
+
+class IntakeAdmissionReview(BaseModel):
+    """Independent typed decision over one proposed TaskSpec."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    decision: Literal["admit", "block"]
+    bindings: list[AdmissionBinding] = Field(default_factory=list, max_length=128)
+    unresolved_references: list[UnresolvedReference] = Field(
+        default_factory=list, max_length=32)
+    findings: list[str] = Field(default_factory=list, max_length=32)
+
+    @model_validator(mode="after")
+    def validate_review(self) -> "IntakeAdmissionReview":
+        binding_keys = [(item.kind, item.key) for item in self.bindings]
+        if len(binding_keys) != len(set(binding_keys)):
+            raise ValueError("admission review must not duplicate subject bindings")
+        unresolved_keys = [
+            (item.kind, item.locator.source, item.locator.context_turn,
+             item.locator.start, item.locator.end)
+            for item in self.unresolved_references
+        ]
+        if len(unresolved_keys) != len(set(unresolved_keys)):
+            raise ValueError("admission review must not duplicate unresolved references")
+        if any(not finding.strip() for finding in self.findings):
+            raise ValueError("admission review findings must not be blank")
+        if len(self.findings) != len(set(self.findings)):
+            raise ValueError("admission review findings must not contain duplicates")
+        if self.decision == "admit" and (self.unresolved_references or self.findings):
+            raise ValueError("admitted intake cannot retain blockers")
+        if self.decision == "block" and not (self.unresolved_references or self.findings):
+            raise ValueError("blocked intake requires a typed blocker or finding")
+        return self
+
+
 class EntityRef(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

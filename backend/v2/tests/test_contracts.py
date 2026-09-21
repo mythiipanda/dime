@@ -495,3 +495,78 @@ def test_bare_display_source_is_not_inferred_as_live_provenance():
     from v2.adapters.core import build_envelope
     item=build_envelope(CAPABILITIES['team_ratings'],{}, {'ok':True,'rows':[],'meta':{'source':'nba_api'}})
     assert item.source=='v1:get_ratings:nba_api' and item.source_identity is None
+
+
+def test_source_locator_is_exact_frozen_and_source_typed():
+    from v2.contracts import SourceLocator
+    request = SourceLocator(source="request", start=8, end=20, text="LeBron James")
+    assert request.model_dump() == {
+        "source": "request", "context_turn": None,
+        "start": 8, "end": 20, "text": "LeBron James",
+    }
+    with pytest.raises(ValidationError, match="frozen"):
+        request.start = 0
+    with pytest.raises(ValidationError, match="context turn"):
+        SourceLocator(source="request", context_turn=0, start=0, end=1, text="x")
+    with pytest.raises(ValidationError, match="requires a context turn"):
+        SourceLocator(source="context", start=0, end=1, text="x")
+    with pytest.raises(ValidationError, match="offsets must match"):
+        SourceLocator(source="request", start=0, end=2, text="x")
+
+
+def test_admission_binding_requires_entity_type_atomically():
+    from v2.contracts import AdmissionBinding, SourceLocator
+    locator = SourceLocator(source="request", start=0, end=1, text="x")
+    with pytest.raises(ValidationError, match="required only for entity"):
+        AdmissionBinding(kind="entity", key="2544", locator=locator)
+    with pytest.raises(ValidationError, match="required only for entity"):
+        AdmissionBinding(kind="metric", key="PPG", locator=locator,
+                         entity_type="player")
+
+
+def test_intake_admission_review_decision_is_fail_closed():
+    from v2.contracts import IntakeAdmissionReview, SourceLocator, UnresolvedReference
+    locator = SourceLocator(source="request", start=0, end=2, text="he")
+    unresolved = UnresolvedReference(kind="player", locator=locator)
+    with pytest.raises(ValidationError, match="cannot retain blockers"):
+        IntakeAdmissionReview(decision="admit", unresolved_references=[unresolved])
+    with pytest.raises(ValidationError, match="requires a typed blocker"):
+        IntakeAdmissionReview(decision="block")
+    blocked = IntakeAdmissionReview(
+        decision="block", unresolved_references=[unresolved])
+    assert blocked.unresolved_references[0].kind == "player"
+
+
+def test_intake_admission_review_rejects_duplicate_subject_authority():
+    from v2.contracts import AdmissionBinding, IntakeAdmissionReview, SourceLocator
+    locator = SourceLocator(
+        source="request", start=0, end=12, text="LeBron James")
+    binding = AdmissionBinding(
+        kind="entity", key="2544", entity_type="player", locator=locator)
+    with pytest.raises(ValidationError, match="duplicate subject bindings"):
+        IntakeAdmissionReview(decision="admit", bindings=[binding, binding])
+
+
+def test_explicit_lebron_fixture_has_typed_request_identity_not_a_referent():
+    from v2.contracts import AdmissionBinding, IntakeAdmissionReview, SourceLocator
+    request = "Analyze LeBron James and his fit with Philadelphia."
+    text = "LeBron James"
+    start = request.index(text)
+    review = IntakeAdmissionReview(decision="admit", bindings=[
+        AdmissionBinding(
+            kind="entity", key="2544", entity_type="player",
+            locator=SourceLocator(source="request", start=start,
+                                  end=start + len(text), text=text)),
+    ])
+    assert review.bindings[0].locator.text == request[start:start + len(text)]
+    assert review.unresolved_references == []
+
+
+def test_unicode_and_punctuation_remain_verbatim_in_source_locator():
+    from v2.contracts import SourceLocator
+    request = "Compare Nikola Jokić’s impact."
+    text = "Nikola Jokić’s"
+    start = request.index(text)
+    locator = SourceLocator(source="request", start=start,
+                            end=start + len(text), text=text)
+    assert locator.text == request[locator.start:locator.end]
