@@ -46,13 +46,17 @@ class GapKind(StrEnum):
     SYNTHESIS_INCOMPLETE = "synthesis_incomplete"
 
 
+MAX_INTAKE_CONTEXT_TURNS = 8
+
+
 class SourceLocator(BaseModel):
     """Exact model-declared location in the request or bounded context."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     source: Literal["request", "context"]
-    context_turn: StrictInt | None = Field(default=None, ge=0, le=7)
+    context_turn: StrictInt | None = Field(
+        default=None, ge=0, lt=MAX_INTAKE_CONTEXT_TURNS)
     start: StrictInt = Field(ge=0, le=2000)
     end: StrictInt = Field(gt=0, le=2000)
     text: str = Field(min_length=1, max_length=2000)
@@ -72,23 +76,72 @@ class SourceLocator(BaseModel):
         return self
 
 
-class AdmissionBinding(BaseModel):
-    """Typed semantic subject bound to one exact source location."""
+class AdmissionReviewTarget(BaseModel):
+    """Digests of the exact source envelope and proposed TaskSpec reviewed."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    kind: Literal["entity", "metric", "season", "requirement", "output"]
-    key: str = Field(min_length=1, max_length=256)
-    locator: SourceLocator
-    entity_type: Literal["player", "team", "game", "league"] | None = None
+    request_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    context_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    task_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class EntityAdmissionSubject(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    kind: Literal["entity"]
+    entity_id: str = Field(min_length=1, max_length=256)
+    entity_type: Literal["player", "team", "game", "league"]
+
+
+class MetricAdmissionSubject(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    kind: Literal["metric"]
+    metric_id: str = Field(min_length=1, max_length=128,
+                           pattern=r"^[A-Z][A-Z0-9_]*$")
+
+
+class SeasonAdmissionSubject(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    kind: Literal["season"]
+    value: str = Field(max_length=7)
 
     @model_validator(mode="after")
-    def validate_binding(self) -> "AdmissionBinding":
-        if not self.key.strip():
-            raise ValueError("admission binding key must not be blank")
-        if (self.kind == "entity") != (self.entity_type is not None):
-            raise ValueError("entity type is required only for entity bindings")
+    def validate_season(self) -> "SeasonAdmissionSubject":
+        if not _is_canonical_season(self.value):
+            raise ValueError("season admission subject must use consecutive YYYY-YY format")
         return self
+
+
+class RequirementAdmissionSubject(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    kind: Literal["requirement"]
+    requirement_id: str = Field(min_length=1, max_length=64,
+                                pattern=r"^[a-z][a-z0-9_]*$")
+
+
+class OutputAdmissionSubject(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    kind: Literal["output"]
+    requirement_id: str = Field(min_length=1, max_length=64,
+                                pattern=r"^[a-z][a-z0-9_]*$")
+    output_id: str = Field(min_length=1, max_length=128,
+                           pattern=r"^[A-Z][A-Z0-9_]*$")
+
+
+AdmissionSubject = Annotated[
+    EntityAdmissionSubject | MetricAdmissionSubject | SeasonAdmissionSubject |
+    RequirementAdmissionSubject | OutputAdmissionSubject,
+    Field(discriminator="kind"),
+]
+
+
+class AdmissionBinding(BaseModel):
+    """One canonical expected subject bound to one exact source location."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    subject: AdmissionSubject
+    locator: SourceLocator
 
 
 class UnresolvedReference(BaseModel):
@@ -100,38 +153,70 @@ class UnresolvedReference(BaseModel):
     locator: SourceLocator
 
 
+class AdmissionFinding(BaseModel):
+    """Typed mismatch in the proposed intake; prose is diagnostic only."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    code: Literal[
+        "missing_binding", "extraneous_subject", "subject_mismatch",
+        "invalid_locator",
+    ]
+    affected_subjects: tuple[AdmissionSubject, ...] = Field(
+        default_factory=tuple, max_length=32)
+    explanation: str | None = Field(default=None, min_length=1, max_length=1000)
+
+    @model_validator(mode="after")
+    def validate_finding(self) -> "AdmissionFinding":
+        identities = [item.model_dump_json() for item in self.affected_subjects]
+        if len(identities) != len(set(identities)):
+            raise ValueError("admission finding subjects must not contain duplicates")
+        if not self.affected_subjects:
+            raise ValueError("admission finding requires an affected subject")
+        return self
+
+
 class IntakeAdmissionReview(BaseModel):
-    """Independent typed decision over one proposed TaskSpec."""
+    """Frozen independent decision over one exact source/task target."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
+    target: AdmissionReviewTarget
     decision: Literal["admit", "block"]
-    bindings: list[AdmissionBinding] = Field(default_factory=list, max_length=128)
-    unresolved_references: list[UnresolvedReference] = Field(
-        default_factory=list, max_length=32)
-    findings: list[str] = Field(default_factory=list, max_length=32)
+    expected_subjects: tuple[AdmissionSubject, ...] = Field(min_length=1, max_length=128)
+    bindings: tuple[AdmissionBinding, ...] = Field(default_factory=tuple, max_length=128)
+    unresolved_references: tuple[UnresolvedReference, ...] = Field(
+        default_factory=tuple, max_length=32)
+    findings: tuple[AdmissionFinding, ...] = Field(default_factory=tuple, max_length=32)
 
     @model_validator(mode="after")
     def validate_review(self) -> "IntakeAdmissionReview":
-        binding_keys = [(item.kind, item.key) for item in self.bindings]
-        if len(binding_keys) != len(set(binding_keys)):
+        expected = [item.model_dump_json() for item in self.expected_subjects]
+        if len(expected) != len(set(expected)):
+            raise ValueError("expected admission subjects must not contain duplicates")
+        bound = [item.subject.model_dump_json() for item in self.bindings]
+        if len(bound) != len(set(bound)):
             raise ValueError("admission review must not duplicate subject bindings")
-        unresolved_keys = [
+        unresolved = [
             (item.kind, item.locator.source, item.locator.context_turn,
              item.locator.start, item.locator.end)
             for item in self.unresolved_references
         ]
-        if len(unresolved_keys) != len(set(unresolved_keys)):
+        if len(unresolved) != len(set(unresolved)):
             raise ValueError("admission review must not duplicate unresolved references")
-        if any(not finding.strip() for finding in self.findings):
-            raise ValueError("admission review findings must not be blank")
-        if len(self.findings) != len(set(self.findings)):
-            raise ValueError("admission review findings must not contain duplicates")
-        if self.decision == "admit" and (self.unresolved_references or self.findings):
-            raise ValueError("admitted intake cannot retain blockers")
-        if self.decision == "block" and not (self.unresolved_references or self.findings):
+        if self.decision == "admit":
+            if self.unresolved_references or self.findings:
+                raise ValueError("admitted intake cannot retain blockers")
+            if set(bound) != set(expected) or len(bound) != len(expected):
+                raise ValueError("admitted intake must bind every expected subject exactly once")
+        elif not (self.unresolved_references or self.findings):
             raise ValueError("blocked intake requires a typed blocker or finding")
         return self
+
+    def require_target(self, target: AdmissionReviewTarget) -> None:
+        """Reject a well-formed review replayed beside another source/task."""
+        if self.target != target:
+            raise ValueError("intake admission review target does not match")
 
 
 class EntityRef(BaseModel):
