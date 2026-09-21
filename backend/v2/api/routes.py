@@ -578,6 +578,10 @@ async def quick_answer_stream(body: QuickAnswerBody):
                 answer = _answer_text(result)
             except Exception as exc:
                 if policy.publish:
+                    for event in missing_tool_events():
+                        safe_event = _safe_buffered_event(event)
+                        if safe_event is not None:
+                            yield encode_event(safe_event)
                     yield encode_event(WorkLog(run_id=run_id, status="partial"))
                     yield encode_event(FinalAnswer(
                         text="I could not verify a publishable answer from the available data.",
