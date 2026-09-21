@@ -43,6 +43,8 @@ from v2.contracts import (
     EntityAdmissionSubject,
     IntakeAdmissionReview,
     OutputAdmissionSubject,
+    MetricAdmissionSubject,
+    TaskAdmissionSubject,
     RequirementAdmissionSubject,
     SeasonAdmissionSubject,
     Claim,
@@ -539,21 +541,38 @@ class ModelIntake(ModelStage):
 
     @staticmethod
     def _expected_admission_subjects(task: TaskSpec) -> tuple[Any, ...]:
-        subjects: list[Any] = [
-            EntityAdmissionSubject(kind="entity", entity_id=entity.id,
-                                   entity_type=entity.type)
-            for entity in task.entities]
+        subjects: list[Any] = [TaskAdmissionSubject(kind="task")]
+        subjects.extend(EntityAdmissionSubject(
+            kind="entity", entity_id=entity.id, entity_type=entity.type)
+            for entity in task.entities)
         if task.season is not None:
             subjects.append(SeasonAdmissionSubject(
                 kind="season", value=task.season.value))
+        subjects.extend(MetricAdmissionSubject(kind="metric", metric_id=metric)
+                        for metric in task.metric_ids)
+        subjects.extend(OutputAdmissionSubject(
+            kind="output", requirement_id="task", output_id=output)
+            for output in task.requested_outputs)
         for requirement in task.requirements:
             subjects.append(RequirementAdmissionSubject(
                 kind="requirement", requirement_id=requirement.id))
-            requested = getattr(requirement, "requested_outputs", ())
+            subjects.extend(MetricAdmissionSubject(
+                kind="metric", metric_id=metric)
+                for metric in requirement.metric_ids)
             subjects.extend(OutputAdmissionSubject(
                 kind="output", requirement_id=requirement.id, output_id=output)
-                for output in requested)
-        return tuple(subjects)
+                for output in requirement.requested_outputs)
+        for requirement in task.calculation_requirements:
+            subjects.append(RequirementAdmissionSubject(
+                kind="requirement", requirement_id=requirement.id))
+            subjects.extend(MetricAdmissionSubject(
+                kind="metric", metric_id=metric)
+                for metric in requirement.metric_ids)
+            subjects.extend(OutputAdmissionSubject(
+                kind="output", requirement_id=requirement.id, output_id=output)
+                for output in requirement.requested_outputs)
+        unique={item.model_dump_json():item for item in subjects}
+        return tuple(unique.values())
 
     @classmethod
     def _source_for_locator(cls, locator: Any, request: str,
@@ -619,8 +638,10 @@ class ModelIntake(ModelStage):
             blockers.append("The request contains an unresolved reference.")
         blockers.extend(errors)
         return task.model_copy(update={
-            "entities": [], "required_evidence": [], "requirements": [],
-            "calculation_requirements": [],
+            "entities": [], "season": None, "as_of": None,
+            "subquestions": [], "required_evidence": [], "requirements": [],
+            "calculation_requirements": [], "assumptions": [], "skills": [],
+            "metric_ids": [], "requested_outputs": [],
             "open_questions": list(dict.fromkeys([
                 *task.open_questions,
                 *(blockers or ["The request could not be admitted safely."]),

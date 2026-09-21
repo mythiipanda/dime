@@ -2303,7 +2303,7 @@ async def test_explicit_player_context_does_not_license_invented_team():
     model=AdmissionModel({"goal":"compare","mode":"quick","deliverable":"answer",
         "entities":[{"id":"w","type":"player","display_name":"Victor Wembanyama"},
                     {"id":"t","type":"team","display_name":"Invented Team"}]},
-        lambda payload: blocked_subject(payload,1))
+        lambda payload: blocked_subject(payload,2))
     task=await ModelIntake(model,**admission_stage_kwargs()).understand(
         "Compare that player with that team.",context=(
             ConversationTurn(role="assistant",content="Victor Wembanyama led the board."),))
@@ -2331,8 +2331,13 @@ async def test_intake_semantic_anchor_mismatch_is_blocked_by_typed_review(bad):
 async def test_explicit_lebron_possessive_is_admitted_without_referent_false_positive():
     request="Analyze LeBron James and his fit."
     model=AdmissionModel({"goal":"analyze LeBron fit","mode":"quick","deliverable":"fit",
-        "entities":[{"id":"2544","type":"player","display_name":"LeBron James"}]},
-        lambda payload: admitted(payload,[("request",None,"LeBron James")]))
+        "entities":[{"id":"2544","type":"player","display_name":"LeBron James"}],
+        "requirements":[{"id":"fit","description":"fit","capability_options":["standings"],
+                         "requested_outputs":["FIT_ASSESSMENT"]}]},
+        lambda payload: admitted(payload,[("request",None,"Analyze LeBron James and his fit."),
+                                          ("request",None,"LeBron James"),
+                                          ("request",None,"fit"),
+                                          ("request",None,"fit")]))
     task=await ModelIntake(model,**admission_stage_kwargs()).understand(request)
     assert [(e.id,e.display_name) for e in task.entities]==[("2544","LeBron James")]
     assert task.open_questions==[]
@@ -2344,7 +2349,8 @@ async def test_unicode_paraphrase_and_context_locator_are_admitted():
     context=(ConversationTurn(role="assistant",content="Nikola Jokić led Denver."),)
     model=AdmissionModel({"goal":"summarize center impact","mode":"quick","deliverable":"impact",
         "entities":[{"id":"203999","type":"player","display_name":"Nikola Jokić"}]},
-        lambda payload: admitted(payload,[("context",0,"Nikola Jokić")]))
+        lambda payload: admitted(payload,[("request",None,"What about the center’s impact?"),
+                                          ("context",0,"Nikola Jokić")]))
     task=await ModelIntake(model,**admission_stage_kwargs()).understand(
         "What about the center’s impact?",context=context)
     assert task.entities[0].display_name=="Nikola Jokić" and not task.open_questions
@@ -2354,8 +2360,10 @@ async def test_unicode_paraphrase_and_context_locator_are_admitted():
 async def test_copied_goal_cannot_mask_wrong_typed_requirement():
     task={"goal":"Show LeBron James points","mode":"quick","deliverable":"points",
           "entities":[{"id":"2544","type":"player","display_name":"LeBron James"}],
-          "requirements":[{"id":"wrong","description":"assists","capability_options":["standings"]}]}
-    model=AdmissionModel(task,lambda payload: blocked_subject(payload,1))
+          "metric_ids":["AST"], "requested_outputs":["AST"],
+          "requirements":[{"id":"wrong","description":"assists","capability_options":["standings"],
+                           "metric_ids":["AST"],"requested_outputs":["AST"]}]}
+    model=AdmissionModel(task,lambda payload: blocked_subject(payload,2))
     result=await ModelIntake(model,**admission_stage_kwargs()).understand(
         "Show LeBron James points.")
     assert result.requirements==[] and "subject_mismatch" in result.open_questions
@@ -3241,17 +3249,21 @@ def test_intake_admission_rejects_replay_omission_and_length_correct_wrong_text(
         entities=[{"id":"2544","type":"player","display_name":"LeBron James"}])
     request="Ask LeBron James."
     target=ModelIntake._review_target(request,(),task)
-    subject=ModelIntake._expected_admission_subjects(task)[0]
+    subjects=ModelIntake._expected_admission_subjects(task)
     valid=IntakeAdmissionReview(target=target,decision="admit",
-        expected_subjects=[subject],bindings=[AdmissionBinding(subject=subject,
-        locator=SourceLocator(source="request",start=4,end=16,text="LeBron James"))])
+        expected_subjects=subjects,bindings=[
+            AdmissionBinding(subject=subjects[0], locator=SourceLocator(
+                source="request",start=0,end=len(request),text=request)),
+            AdmissionBinding(subject=subjects[1], locator=SourceLocator(
+                source="request",start=4,end=16,text="LeBron James"))])
     assert ModelIntake._validate_review(valid,request,(),task)==[]
     replay=valid.model_copy(update={"target":target.model_copy(update={"task_sha256":"d"*64})})
     assert any("target does not match" in item for item in ModelIntake._validate_review(replay,request,(),task))
     omitted=valid.model_copy(update={"expected_subjects":(),"bindings":()})
     assert any("expected subjects" in item for item in ModelIntake._validate_review(omitted,request,(),task))
-    wrong=valid.model_copy(update={"bindings": (AdmissionBinding(subject=subject,
-        locator=SourceLocator(source="request",start=4,end=16,text="Another Name")),)})
+    wrong=valid.model_copy(update={"bindings": (
+        valid.bindings[0], AdmissionBinding(subject=subjects[1],
+        locator=SourceLocator(source="request",start=4,end=16,text="Another Name")))})
     assert any("frozen source" in item for item in ModelIntake._validate_review(wrong,request,(),task))
 
 
@@ -3265,3 +3277,34 @@ def test_intake_admission_context_digest_binds_role_order_and_exact_unicode_text
        ConversationTurn(role="user",content="Denver’s center."))
     assert ModelIntake._review_target("x",a,task).context_sha256 != ModelIntake._review_target("x",b,task).context_sha256
     assert ModelIntake._review_target("x",a,task).context_sha256 != ModelIntake._review_target("x",c,task).context_sha256
+
+
+def test_intake_admission_manifest_covers_zero_entity_task_metrics_outputs_and_calculations():
+    task=TaskSpec(goal="calculate pace change",mode="quick",deliverable="delta",
+        metric_ids=["PACE"],requested_outputs=["PACE_DELTA"],
+        calculation_requirements=[{"id":"pace_delta","description":"pace change",
+            "metric_ids":["PACE"],"requested_outputs":["PACE_DELTA"]}])
+    subjects=ModelIntake._expected_admission_subjects(task)
+    dumped=[item.model_dump(mode="json") for item in subjects]
+    assert dumped[0]=={"kind":"task","task_id":"request"}
+    assert {item.get("metric_id") for item in dumped if item["kind"]=="metric"}=={"PACE"}
+    assert {(item.get("requirement_id"),item.get("output_id")) for item in dumped
+            if item["kind"]=="output"}=={("task","PACE_DELTA"),("pace_delta","PACE_DELTA")}
+    assert any(item.get("requirement_id")=="pace_delta" for item in dumped)
+
+
+def test_block_clears_every_action_driving_task_field_before_skill_activation():
+    from datetime import date
+    from v2.contracts import (AdmissionFinding, IntakeAdmissionReview,
+                              TaskAdmissionSubject)
+    task=TaskSpec(goal="x",mode="quick",deliverable="x",season={"value":"2025-26","source":"user","confidence":1.0},
+        as_of=date(2026,1,1),subquestions=["q"],required_evidence=["standings"],
+        assumptions=["a"],skills=["trade-analysis"],metric_ids=["PACE"],requested_outputs=["PACE"])
+    subject=TaskAdmissionSubject(kind="task")
+    review=IntakeAdmissionReview(target=ModelIntake._review_target("x",(),task),decision="block",
+        expected_subjects=ModelIntake._expected_admission_subjects(task),findings=[AdmissionFinding(
+            code="subject_mismatch",affected_subjects=[subject])])
+    blocked=ModelIntake._apply_review(review,"x",(),task)
+    assert blocked.season is None and blocked.as_of is None
+    assert blocked.subquestions==[] and blocked.assumptions==[] and blocked.skills==[]
+    assert blocked.required_evidence==[] and blocked.metric_ids==[] and blocked.requested_outputs==[]

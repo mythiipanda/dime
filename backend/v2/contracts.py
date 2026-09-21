@@ -86,6 +86,12 @@ class AdmissionReviewTarget(BaseModel):
     task_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
+class TaskAdmissionSubject(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    kind: Literal["task"]
+    task_id: Literal["request"] = "request"
+
+
 class EntityAdmissionSubject(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     kind: Literal["entity"]
@@ -129,7 +135,7 @@ class OutputAdmissionSubject(BaseModel):
 
 
 AdmissionSubject = Annotated[
-    EntityAdmissionSubject | MetricAdmissionSubject | SeasonAdmissionSubject |
+    TaskAdmissionSubject | EntityAdmissionSubject | MetricAdmissionSubject | SeasonAdmissionSubject |
     RequirementAdmissionSubject | OutputAdmissionSubject,
     Field(discriminator="kind"),
 ]
@@ -274,6 +280,18 @@ class CalculationRequirement(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str = Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9_]*$")
     description: str = Field(min_length=1, max_length=1000)
+    metric_ids: list[str] = Field(default_factory=list, max_length=16)
+    requested_outputs: list[str] = Field(default_factory=list, max_length=16)
+
+    @model_validator(mode="after")
+    def validate_dimensions(self) -> "CalculationRequirement":
+        for field_name in ("metric_ids", "requested_outputs"):
+            values = getattr(self, field_name)
+            if any(not value or value != value.upper() for value in values):
+                raise ValueError(f"{field_name} must use uppercase canonical ids")
+            if len(values) != len(set(values)):
+                raise ValueError(f"{field_name} must not contain duplicates")
+        return self
 
 
 class EvidenceRequirement(BaseModel):
@@ -288,6 +306,8 @@ class EvidenceRequirement(BaseModel):
     # review and planning. A planner cannot claim coverage with a nearby metric,
     # population, or vintage merely because the capability name matches.
     capability_arguments: dict[str, Any] = Field(default_factory=dict, max_length=32)
+    metric_ids: list[str] = Field(default_factory=list, max_length=16)
+    requested_outputs: list[str] = Field(default_factory=list, max_length=16)
 
     @model_validator(mode="after")
     def validate_requirement(self) -> "EvidenceRequirement":
@@ -297,6 +317,12 @@ class EvidenceRequirement(BaseModel):
             raise ValueError("requirement capabilities must be non-empty")
         if len(self.capability_options) != len(set(self.capability_options)):
             raise ValueError("requirement capabilities must not contain duplicates")
+        for field_name in ("metric_ids", "requested_outputs"):
+            values = getattr(self, field_name)
+            if any(not value or value != value.upper() for value in values):
+                raise ValueError(f"{field_name} must use uppercase canonical ids")
+            if len(values) != len(set(values)):
+                raise ValueError(f"{field_name} must not contain duplicates")
         return self
 
 
@@ -306,6 +332,8 @@ class TaskSpec(BaseModel):
     goal: str = Field(max_length=2000)
     mode: RunMode
     deliverable: str = Field(max_length=1000)
+    metric_ids: list[str] = Field(default_factory=list, max_length=32)
+    requested_outputs: list[str] = Field(default_factory=list, max_length=32)
     entities: list[EntityRef] = Field(default_factory=list, max_length=64)
     season: SeasonRef | None = None
     as_of: date | None = None
@@ -324,12 +352,15 @@ class TaskSpec(BaseModel):
         if not self.goal.strip() or not self.deliverable.strip():
             raise ValueError("task goal and deliverable must be non-empty")
         for field_name in ("subquestions", "required_evidence", "assumptions",
-                           "open_questions", "skills"):
+                           "open_questions", "skills", "metric_ids", "requested_outputs"):
             values = getattr(self, field_name)
             if any(not value.strip() for value in values):
                 raise ValueError(f"{field_name} must not contain empty values")
             if len(values) != len(set(values)):
                 raise ValueError(f"{field_name} must not contain duplicates")
+            if field_name in {"metric_ids", "requested_outputs"} and any(
+                    value != value.upper() for value in values):
+                raise ValueError(f"{field_name} must use uppercase canonical ids")
         requirement_ids = [item.id for item in self.requirements]
         if len(requirement_ids) != len(set(requirement_ids)):
             raise ValueError("requirements must not contain duplicate ids")
