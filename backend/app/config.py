@@ -7,6 +7,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
+    nvidia_nim_api_key: str = ""
+    nvidia_nim_model: str = "z-ai/glm-5.3-flash"
     mistral_api_key: str = ""
     mistral_model: str = "ministral-8b-2512"
     openrouter_api_key: str = ""
