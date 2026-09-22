@@ -1,8 +1,4 @@
-"""Two providers. One dict. Ordered fallback. No discovery, no wrapper class.
-
-Graph nodes receive a built ChatOpenAI and never parse model strings.
-Routes clamp the model id at the boundary before anything else runs.
-"""
+"""Provider selection, model clamping, fallback, and health probes."""
 
 from typing import Any, Literal
 from dataclasses import dataclass
@@ -13,11 +9,11 @@ from langchain_openai import ChatOpenAI
 
 from .config import settings
 
-ProviderName = Literal["mistral", "openrouter", "inception", "groq"]
+ProviderName = Literal["nvidia", "mistral", "openrouter", "inception", "groq"]
 
 # Inception reactivation is a two-part gate: explicit policy plus a key.
 # Retained credentials alone never activate a paid provider. Groq stays paused.
-FREE_PROVIDER_ORDER: tuple[ProviderName, ...] = ("openrouter", "mistral")
+FREE_PROVIDER_ORDER: tuple[ProviderName, ...] = ("nvidia", "openrouter", "mistral")
 
 
 def active_provider_order() -> tuple[ProviderName, ...]:
@@ -25,6 +21,10 @@ def active_provider_order() -> tuple[ProviderName, ...]:
             if settings.dime_enable_inception and settings.inception_api_key
             else FREE_PROVIDER_ORDER)
 
+NVIDIA_NIM_BASE_URL = "https://integrate.api.nvidia.com/v1"
+NVIDIA_NIM_DEFAULT = "z-ai/glm-5.3-flash"
+NVIDIA_NIM_MODELS: tuple[str, ...] = (NVIDIA_NIM_DEFAULT,)
+NVIDIA_NIM_ALLOWLIST = frozenset(NVIDIA_NIM_MODELS)
 MISTRAL_DEFAULT = "ministral-8b-2512"
 OPENROUTER_DEFAULT = "nvidia/nemotron-3-super-120b-a12b:free"
 OPENROUTER_AUTO = "openrouter/free"
@@ -43,6 +43,8 @@ OPENROUTER_ALLOWLIST: frozenset[str] = frozenset(
 def is_free_model(provider: str, slug: str) -> bool:
     """One authority for whether a Dime model can incur zero paid credits."""
     value = str(slug or "").strip()
+    if provider == "nvidia":
+        return value in NVIDIA_NIM_ALLOWLIST
     if provider == "openrouter":
         return value == OPENROUTER_AUTO or (
             value in OPENROUTER_ALLOWLIST and value.endswith(":free"))
@@ -51,6 +53,11 @@ def is_free_model(provider: str, slug: str) -> bool:
         # free-limit model is the only active choice for this provider.
         return value == (settings.mistral_model or MISTRAL_DEFAULT)
     return False
+
+
+def _nvidia_nim_model(slug: str | None = None) -> str:
+    value = str(slug or settings.nvidia_nim_model or "").strip()
+    return value if value in NVIDIA_NIM_ALLOWLIST else NVIDIA_NIM_DEFAULT
 
 
 def _openrouter_free_model(slug: str | None = None) -> str:
@@ -67,6 +74,8 @@ def _mistral_free_model() -> str:
 
 
 def _default_provider() -> tuple[ProviderName, str]:
+    if settings.nvidia_nim_api_key:
+        return ("nvidia", _nvidia_nim_model())
     if settings.dime_enable_inception and settings.inception_api_key:
         return ("inception", settings.inception_model or INCEPTION_DEFAULT)
     if settings.openrouter_api_key:
@@ -77,6 +86,8 @@ def _default_provider() -> tuple[ProviderName, str]:
 def resolve_model_id(model_id: str | None) -> tuple[ProviderName, str]:
     """Clamp every boundary value to an owner-approved free model."""
     raw = (model_id or "").strip()
+    if raw.startswith("nvidia:"):
+        return ("nvidia", _nvidia_nim_model(raw.split(":", 1)[1]))
     if raw.startswith("openrouter:"):
         slug = raw.split(":", 1)[1]
         return ("openrouter", _openrouter_free_model(slug))
@@ -89,6 +100,8 @@ def resolve_model_id(model_id: str | None) -> tuple[ProviderName, str]:
     if raw.startswith("groq:"):
         return _default_provider()
     if raw:
+        if raw in NVIDIA_NIM_ALLOWLIST:
+            return ("nvidia", raw)
         if raw == OPENROUTER_AUTO or (raw in OPENROUTER_ALLOWLIST
                                       and is_free_model("openrouter", raw)):
             return ("openrouter", raw)
@@ -103,6 +116,16 @@ def get_llm(name: ProviderName, model: str | None = None) -> ChatOpenAI | None:
     # explicit policy change here; direct callers cannot bypass route clamping.
     if name not in active_provider_order():
         return None
+    if name == "nvidia":
+        if not settings.nvidia_nim_api_key:
+            return None
+        return ChatOpenAI(
+            model=_nvidia_nim_model(model),
+            base_url=NVIDIA_NIM_BASE_URL,
+            api_key=settings.nvidia_nim_api_key,
+            timeout=settings.llm_timeout_s,
+            max_retries=settings.llm_max_retries,
+        )
     if name == "mistral":
         if not settings.mistral_api_key:
             return None
@@ -164,11 +187,9 @@ def _failure_class(exc: BaseException) -> str:
     return "provider_error"
 
 def fallback_order(primary: ProviderName) -> list[ProviderName]:
-    """Free-only provider order; never attempt paid/exhausted providers."""
-    allowed = list(active_provider_order())
-    if primary not in allowed:
-        primary = allowed[0]
-    return [primary, *(name for name in allowed if name != primary)]
+    """Global provider priority; explicit model selection never bypasses it."""
+    del primary
+    return list(active_provider_order())
 
 
 # --- Provider probes (qm pattern: verify, don't assume) -------------
@@ -239,6 +260,8 @@ async def invoke_with_fallback(
     started_all = time.perf_counter()
     for number, name in enumerate(fallback_order(primary), 1):
         accepted_model = (
+            _nvidia_nim_model(model if name == primary else None)
+            if name == "nvidia" else
             _openrouter_free_model(model if name == primary else None)
             if name == "openrouter" else
             _mistral_free_model() if name == "mistral" else
@@ -288,6 +311,8 @@ async def astream_with_fallback(
             errors.append(f"{name}: probe failed recently")
             continue
         accepted_model = (
+            _nvidia_nim_model(model if name == primary else None)
+            if name == "nvidia" else
             _openrouter_free_model(model if name == primary else None)
             if name == "openrouter" else
             _mistral_free_model() if name == "mistral" else
@@ -328,6 +353,8 @@ async def astream_chunks_with_fallback(
             errors.append(f"{name}: probe failed recently")
             continue
         accepted_model = (
+            _nvidia_nim_model(model if name == primary else None)
+            if name == "nvidia" else
             _openrouter_free_model(model if name == primary else None)
             if name == "openrouter" else
             _mistral_free_model() if name == "mistral" else
@@ -384,6 +411,10 @@ def models_catalog() -> dict[str, Any]:
     slugs = sorted(slug for slug in OPENROUTER_ALLOWLIST
                    if is_free_model("openrouter", slug))
     options = [
+        {"id": f"nvidia:{slug}", "engine": "nvidia",
+         "default": default_id == f"nvidia:{slug}"}
+        for slug in NVIDIA_NIM_MODELS
+    ] + [
         {"id": f"openrouter:{slug}", "engine": "openrouter",
          "default": default_id == f"openrouter:{slug}"}
         for slug in slugs
@@ -401,6 +432,7 @@ def models_catalog() -> dict[str, Any]:
         options.append({"id": f"inception:{inception}", "engine": "inception",
                         "default": default_id == f"inception:{inception}"})
     available = {
+        "nvidia": bool(settings.nvidia_nim_api_key),
         "openrouter": bool(settings.openrouter_api_key),
         "mistral": bool(settings.mistral_api_key),
     }
