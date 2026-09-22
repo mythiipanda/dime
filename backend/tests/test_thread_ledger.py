@@ -70,7 +70,9 @@ def test_extract_skips_failed_tools():
     assert _extract_ledger_facts({"tool_results": [bad]}) == []
 
 
-def test_store_roundtrip_and_dedupe():
+def test_store_roundtrip_and_dedupe(monkeypatch, tmp_path):
+    monkeypatch.setattr(store, "STATE_PATH", tmp_path / "state.duckdb")
+    monkeypatch.setattr(store, "STATE_LOCK_PATH", tmp_path / ".state.lock")
     tid = f"test-ledger-{os.getpid()}"
     store.save_facts(tid, ["Fact A", "Fact B"], owner="test")
     store.save_facts(tid, ["Fact A"], owner="test")  # dupe

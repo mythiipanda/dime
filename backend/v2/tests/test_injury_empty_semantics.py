@@ -3,7 +3,7 @@ import pytest
 
 def test_team_injury_impact_source_encodes_empty_report_as_unknown():
     from pathlib import Path
-    source = Path("backend/app/tools/team.py").read_text()
+    source = (Path(__file__).resolve().parents[2] / "app/tools/team.py").read_text()
     assert 'availability_known = bool(out or questionable)' in source
     assert '"low" if availability_known else "unknown"' in source
     assert "empty injury rows do not establish" in source

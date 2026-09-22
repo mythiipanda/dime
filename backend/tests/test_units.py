@@ -29,7 +29,10 @@ def test_resolve_model_clamps_unknown_openrouter():
     assert name == "openrouter"
 
 
-def test_resolve_model_inception():
+def test_resolve_model_inception(monkeypatch):
+    from app.config import settings
+    monkeypatch.setattr(settings, "dime_enable_inception", True)
+    monkeypatch.setattr(settings, "inception_api_key", "test-key")
     assert resolve_model_id("inception:mercury-2.5") == ("inception", "mercury-2.5")
 
 
