@@ -1757,11 +1757,17 @@ async def _triage_seed(question: str, primary: str, model: str,
                 _field = str(_rate_leader)
                 _value = _rltop.get(_field)
                 _unit = {"APG":"assists", "PPG":"points", "RPG":"rebounds",
-                         "SPG":"steals", "BPG":"blocks", "TS_PCT":"true shooting"}.get(_field,_field)
+                         "SPG":"steals", "BPG":"blocks"}.get(_field,_field)
                 _rlout["meta"] = dict(_rlout.get("meta") or {})
-                _rlout["meta"]["deterministic_answer"] = (
-                    f"{_rltop.get('PLAYER')} leads at {float(_value):.2f} {_unit} per game "
-                    f"in 2025-26 ({_rltop.get('GP')} games).")
+                if _field == "TS_PCT":
+                    _answer = (f"{_rltop.get('PLAYER')} leads qualified players at "
+                               f"{float(_value):.1f}% true shooting in 2025-26 "
+                               f"({_rltop.get('GP')} games; 1,000+ total minutes).")
+                else:
+                    _answer = (f"{_rltop.get('PLAYER')} leads at {float(_value):.2f} "
+                               f"{_unit} per game in 2025-26 "
+                               f"({_rltop.get('GP')} games).")
+                _rlout["meta"]["deterministic_answer"] = _answer
             async for _e in _triage_terminal(question, state):
                 yield _e
         return

@@ -27,8 +27,8 @@ class _FakeLLM:
 
 
 def _isolate(tmp_path, monkeypatch):
-    monkeypatch.setattr(store, "DB_PATH", tmp_path / "thread.duckdb")
-    monkeypatch.setattr(store, "LOCK_PATH", tmp_path / ".write.lock")
+    monkeypatch.setattr(store, "STATE_PATH", tmp_path / "thread.duckdb")
+    monkeypatch.setattr(store, "STATE_LOCK_PATH", tmp_path / ".write.lock")
 
 
 def _seed(thread, n):
@@ -38,7 +38,7 @@ def _seed(thread, n):
 
 
 def _rows(thread):
-    con = store.connect()
+    con = store.state_connect()
     try:
         return con.execute(
             """SELECT role, text FROM chat_history
