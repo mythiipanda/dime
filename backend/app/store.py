@@ -32,23 +32,25 @@ def warehouse_identity() -> dict[str, str]:
             "warehouse_sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
 
 
-PINNED_WAREHOUSE_SHA256 = (
-    "4099efbefe5c3ba6e0026b837d95cfd421f6844f75a3516e51d00976bfbbe183"
-)
-"""SHA-256 of the pinned benchmark warehouse (dime-warehouse-2025-26-finals-v1)."""
-
 _PLAYED_GAME_TABLE = "silver_boxscores"
+
+# NBA game-id prefixes: 001 = preseason, 002 = regular season,
+# 004 = playoffs, 009 = play-in.
+_PRESEASON_GAME_ID_PREFIX = "001"
 
 
 def seasons_with_data(table: str = _PLAYED_GAME_TABLE) -> list[str]:
     """Distinct seasons with played-game rows in the warehouse, ascending.
 
-    Derived from the warehouse itself - never a hardcoded season.
+    Preseason rows are excluded so a preseason-only future season cannot be
+    mistaken for the latest played season.
     """
     con = duckdb.connect(str(DB_PATH), read_only=True)
     try:
         rows = con.execute(
-            f"SELECT DISTINCT _season FROM {table} ORDER BY _season"
+            f"SELECT DISTINCT _season FROM {table} "
+            f"WHERE GAME_ID NOT LIKE '{_PRESEASON_GAME_ID_PREFIX}%' "
+            "ORDER BY _season"
         ).fetchall()
     finally:
         con.close()

@@ -219,19 +219,15 @@ _PLANNER_PREFIX = (
 def _planner_season_context() -> str:
     """Season guidance for the planner, derived from the warehouse.
 
-    The planner still owns the season arg; this is context/default only -
-    never question-text regex or keyword routing.
+    Reuses subagents.data_season() so there is exactly one fallback path
+    (which logs a warning), not a second hardcoded one here.
     """
-    try:
-        from .subagents import data_season
-        season = data_season()
-    except Exception:
-        season = "2025-26"
+    from .subagents import data_season
+    season = data_season()
     return (
-        f"The current season is {season}. Pass season {season} always, "
-        "unless the user names a different season explicitly. "
-        f"'This season', 'current season', and 'last season' all mean {season} "
-        "(the latest season with played-game data in the warehouse). "
+        f"Latest season with played-game data in the warehouse: {season}. "
+        "Use it for this/current season; resolve other relative references "
+        "from it."
     )
 
 

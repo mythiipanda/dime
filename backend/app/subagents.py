@@ -7,6 +7,7 @@ stays lean. New desks need a decision row first.
 
 from typing import Any
 import asyncio as _asyncio
+import logging
 import re as _re
 import time as _time
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -15,7 +16,9 @@ from langchain_core.tools import tool
 from .providers import (ProviderName, get_llm, astream_chunks_with_fallback,
                        accumulate_tool_calls, fallback_order)
 
-SEASON = "2025-26"  # fallback only; desk prompts resolve via data_season()
+logger = logging.getLogger(__name__)
+
+SEASON = "2025-26"
 
 _SEASON_CACHE: dict[str, str] = {}
 
@@ -31,7 +34,9 @@ def data_season() -> str:
         try:
             from .store import latest_data_season
             cached = latest_data_season()
-        except Exception:
+        except Exception as exc:
+            logger.warning("data_season(): warehouse unreadable (%s); "
+                           "falling back to %s", exc, SEASON)
             cached = SEASON
         _SEASON_CACHE["season"] = cached
     return cached
@@ -157,8 +162,7 @@ async def _run_desk(
     if client is None:
         return {"agent": desk, "ok": False, "error": f"no key for {provider}",
                 "tool_trace": []}
-    # Latest season with played-game data, through the same prompt channel
-    # the desks always used - never a hardcoded season.
+    # Resolve the season once per desk run and feed it to the brief.
     season = data_season()
     brief = brief.replace("{DATA_SEASON}", season)
     calls_made = 0
