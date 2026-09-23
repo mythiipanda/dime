@@ -1,0 +1,76 @@
+{
+  "capability_id": "web_fetch",
+  "dependent_entity_arguments": {},
+  "properties": [
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "int"
+          ],
+          "constraints": {
+            "maximum": 8,
+            "minimum": 1
+          },
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "66e708c10d29e5229a4abcfd1aac1caccefd7681c5be22a32f3f625f7f595d2c"
+        }
+      ],
+      "compiled_kinds": [
+        "int"
+      ],
+      "default": null,
+      "default_present": false,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "result_rank",
+      "required": true,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "66e708c10d29e5229a4abcfd1aac1caccefd7681c5be22a32f3f625f7f595d2c"
+    },
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "string"
+          ],
+          "constraints": {
+            "maxLength": 256,
+            "minLength": 1
+          },
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "22ccdeb48f624bafdacfb712e743ec4657e45ec75873bfb84d42d95a29ada24c"
+        },
+        {
+          "compiled_kinds": [
+            "null"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "bcde375ebd4cbacf651311181173836b169d5a360c6ac158c6a2cdaf49be3f61"
+        }
+      ],
+      "compiled_kinds": [
+        "string",
+        "null"
+      ],
+      "default": null,
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": true,
+      "property": "search_evidence_id",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "06c8f285a47338a891f3f169c0fadb211d0765880535d8963b4f63aec5c988d8"
+    }
+  ],
+  "reasons": [],
+  "schema_sha256": "dd48c632a8ac507a76bc83e318964c35cb9d9699fc8d1c7b53d7c98b12b2cfdd",
+  "status": "REPRESENTABLE"
+}

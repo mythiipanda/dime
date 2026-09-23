@@ -1,0 +1,159 @@
+{
+  "capability_id": "game_prediction",
+  "dependent_entity_arguments": {},
+  "properties": [
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "string"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "709300bf34f89b7ec383b3333d501da187ed2fb156ff6c750f1b30fd261c9171"
+        }
+      ],
+      "compiled_kinds": [
+        "string"
+      ],
+      "default": "",
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "a",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "709300bf34f89b7ec383b3333d501da187ed2fb156ff6c750f1b30fd261c9171"
+    },
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "string"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "709300bf34f89b7ec383b3333d501da187ed2fb156ff6c750f1b30fd261c9171"
+        }
+      ],
+      "compiled_kinds": [
+        "string"
+      ],
+      "default": "",
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "b",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "709300bf34f89b7ec383b3333d501da187ed2fb156ff6c750f1b30fd261c9171"
+    },
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "string"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "709300bf34f89b7ec383b3333d501da187ed2fb156ff6c750f1b30fd261c9171"
+        }
+      ],
+      "compiled_kinds": [
+        "string"
+      ],
+      "default": "",
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "game_date",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "709300bf34f89b7ec383b3333d501da187ed2fb156ff6c750f1b30fd261c9171"
+    },
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "int"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "6c5124711f0e623ad80e4f0ba41be6f6538431d96cebca6d0e66025ffa4a15c9"
+        }
+      ],
+      "compiled_kinds": [
+        "int"
+      ],
+      "default": 10000,
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "n_sims",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "6c5124711f0e623ad80e4f0ba41be6f6538431d96cebca6d0e66025ffa4a15c9"
+    },
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "string"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "b6f8359b507cc999385a29f3a5a8567183f33e990e14326d61f9808796cc29c4"
+        }
+      ],
+      "compiled_kinds": [
+        "string"
+      ],
+      "default": "2025-26",
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "season",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "b6f8359b507cc999385a29f3a5a8567183f33e990e14326d61f9808796cc29c4"
+    },
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "int"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "7037db4d8b5822623d4701ee8edc85e599530c954b06d5575ce2ae9729e72c07"
+        }
+      ],
+      "compiled_kinds": [
+        "int"
+      ],
+      "default": 7,
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "seed",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "7037db4d8b5822623d4701ee8edc85e599530c954b06d5575ce2ae9729e72c07"
+    }
+  ],
+  "reasons": [],
+  "schema_sha256": "e61d57eb207eb2c3a13bc8b82206a76c9cc55db068b04511e0cc0ac8207cfa8f",
+  "status": "REPRESENTABLE"
+}

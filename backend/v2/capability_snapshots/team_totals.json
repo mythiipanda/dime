@@ -1,0 +1,59 @@
+{
+  "capability_id": "team_totals",
+  "dependent_entity_arguments": {},
+  "properties": [
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "string"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "b6f8359b507cc999385a29f3a5a8567183f33e990e14326d61f9808796cc29c4"
+        }
+      ],
+      "compiled_kinds": [
+        "string"
+      ],
+      "default": "2025-26",
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "season",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "b6f8359b507cc999385a29f3a5a8567183f33e990e14326d61f9808796cc29c4"
+    },
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "string"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "8a6073780ba1723c1b7d79cd5aa932cf5268e996359d550f7dd8cfa8abfa4f38"
+        }
+      ],
+      "compiled_kinds": [
+        "string"
+      ],
+      "default": "AST",
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "stat_category",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "8a6073780ba1723c1b7d79cd5aa932cf5268e996359d550f7dd8cfa8abfa4f38"
+    }
+  ],
+  "reasons": [],
+  "schema_sha256": "367d4125ef5737ab037adb905a6fe98d313a02483d85590855fc99a55265cb61",
+  "status": "REPRESENTABLE"
+}

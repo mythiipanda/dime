@@ -94,6 +94,7 @@ class RuntimeAssetManifest:
     warehouse: Mapping[str, str]
     semantic_baseline: Mapping[str, str]
     prompt_sha256: Mapping[str, str]
+    typed_argument_assets: Mapping[str, str]
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -103,6 +104,7 @@ class RuntimeAssetManifest:
             "warehouse": dict(self.warehouse),
             "semantic_baseline": dict(self.semantic_baseline),
             "prompt_sha256": dict(self.prompt_sha256),
+            "typed_argument_assets": dict(self.typed_argument_assets),
         }
 
 
@@ -114,6 +116,18 @@ def _loaded_behavior_sha256(module: ModuleType, config: Mapping[str, object]) ->
     encoded = json.dumps(config, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(code_hash.encode() + b"\0" + encoded).hexdigest()
 
+
+def _typed_argument_asset_hashes() -> dict[str, str]:
+    """Startup pins for checked typed-wire and capability compiler assets."""
+    paths = {
+        "provider_schema_manifest": _BACKEND / "v2/schema_snapshots/manifest.json",
+        "behavior_losses": _BACKEND / "v2/schema_snapshots/behavior_losses.json",
+        "capability_manifest": _BACKEND / "v2/capability_snapshots/manifest.json",
+        "capability_source": _BACKEND / "v2/capability_snapshots/catalog.source.json",
+        "capability_compiled": _BACKEND / "v2/capability_snapshots/catalog.compiled.json",
+    }
+    return {name: hashlib.sha256(path.read_bytes()).hexdigest()
+            for name, path in paths.items()}
 
 @lru_cache(maxsize=1)
 def runtime_asset_manifest() -> RuntimeAssetManifest:
@@ -147,6 +161,7 @@ def runtime_asset_manifest() -> RuntimeAssetManifest:
             route: hashlib.sha256(prompt.encode()).hexdigest()
             for route, prompt in prompts.items()
         }),
+        typed_argument_assets=MappingProxyType(_typed_argument_asset_hashes()),
     )
 
 
@@ -161,7 +176,8 @@ def preflight_runtime_assets(expected_path: str | Path | None = None) -> Runtime
         raise RuntimeError("expected asset manifest must be external to executable roots")
     expected = json.loads(manifest_path.read_text())
     required = {"revision", "executable_sha256", "module_sha256",
-                "warehouse", "semantic_baseline", "prompt_sha256"}
+                "warehouse", "semantic_baseline", "prompt_sha256",
+                "typed_argument_assets"}
     if set(expected) != required:
         raise RuntimeError("expected asset manifest has wrong fields")
     observed = runtime_asset_manifest()

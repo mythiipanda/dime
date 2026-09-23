@@ -297,8 +297,13 @@ def admit_verified_claim_bindings(
                     raise ValueError("binding node does not cover requirement")
                 if evidence.capability not in requirement.capability_options:
                     raise ValueError("binding capability is outside requirement")
+                selected_arguments = (dict(next(
+                    item.arguments for item in requirement.capability_argument_sets
+                    if item.capability_id == evidence.capability))
+                    if requirement.capability_argument_sets
+                    else requirement.capability_arguments)
                 if any(node.arguments.get(key) != value
-                       for key, value in requirement.capability_arguments.items()):
+                       for key, value in selected_arguments.items()):
                     raise ValueError("binding node scope does not match requirement")
             capability = CAPABILITIES.get(evidence.capability)
             if capability is None:

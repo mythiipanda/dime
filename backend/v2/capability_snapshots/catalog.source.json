@@ -1,0 +1,1165 @@
+{
+  "clutch": {
+    "arguments": {
+      "properties": {
+        "player": {
+          "default": "",
+          "type": "string"
+        },
+        "scope": {
+          "default": "player",
+          "type": "string"
+        },
+        "season": {
+          "default": "2025-26",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "Player or team stats in the last five minutes with a margin of five or less."
+  },
+  "competitive_ratings": {
+    "arguments": {
+      "properties": {
+        "blowout_margin": {
+          "default": 20,
+          "type": "number"
+        },
+        "min_games": {
+          "default": 10,
+          "type": "integer"
+        },
+        "season": {
+          "default": "2025-26",
+          "type": "string"
+        },
+        "season_type": {
+          "default": "regular",
+          "type": "string"
+        },
+        "team": {
+          "default": "league",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "Team margin performance with blowouts separated from competitive games."
+  },
+  "contracts": {
+    "arguments": {
+      "properties": {
+        "team": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "Team payroll, player salaries, and apron room."
+  },
+  "entity_resolution": {
+    "arguments": {
+      "properties": {
+        "query": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "Resolve a player or team name to canonical identity."
+  },
+  "four_factors": {
+    "arguments": {
+      "properties": {
+        "player_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            }
+          ]
+        },
+        "season": {
+          "default": "2025-26",
+          "type": "string"
+        },
+        "team_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            }
+          ]
+        }
+      },
+      "required": [
+        "player_id",
+        "team_id"
+      ],
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "Player on-off splits for the four factors."
+  },
+  "game_logs": {
+    "arguments": {
+      "properties": {
+        "best_game": {
+          "default": false,
+          "type": "boolean"
+        },
+        "double_double": {
+          "default": false,
+          "type": "boolean"
+        },
+        "end_date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "home_away": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "league_wide": {
+          "default": false,
+          "type": "boolean"
+        },
+        "limit": {
+          "default": 50,
+          "type": "integer"
+        },
+        "max_assists": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "max_points": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "max_rebounds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "min_assists": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "min_points": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "min_pra": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "min_rebounds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "month": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "opponent": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "player": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "playoffs": {
+          "default": false,
+          "type": "boolean"
+        },
+        "season": {
+          "default": "2025-26",
+          "type": "string"
+        },
+        "start_date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "team_wide": {
+          "default": false,
+          "type": "boolean"
+        },
+        "triple_double": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "dependent_entity_arguments": {
+      "player": "player"
+    },
+    "description": "Filter player or team game logs by stats, opponent, date, or venue."
+  },
+  "game_prediction": {
+    "arguments": {
+      "properties": {
+        "a": {
+          "default": "",
+          "type": "string"
+        },
+        "b": {
+          "default": "",
+          "type": "string"
+        },
+        "game_date": {
+          "default": "",
+          "type": "string"
+        },
+        "n_sims": {
+          "default": 10000,
+          "type": "integer"
+        },
+        "season": {
+          "default": "2025-26",
+          "type": "string"
+        },
+        "seed": {
+          "default": 7,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "Pre-game Monte Carlo estimate for a two-team matchup."
+  },
+  "injuries": {
+    "arguments": {
+      "properties": {
+        "player": {
+          "default": "",
+          "type": "string"
+        },
+        "season": {
+          "default": "2025-26",
+          "type": "string"
+        },
+        "team": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "Current team or player injury rows with designation and source freshness."
+  },
+  "injury_impact": {
+    "arguments": {
+      "properties": {
+        "season": {
+          "default": "2025-26",
+          "type": "string"
+        },
+        "team": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "dependent_entity_arguments": {
+      "team": "team"
+    },
+    "description": "Current injuries combined with team ratings and recent form."
+  },
+  "lineup_matchups": {
+    "arguments": {
+      "properties": {
+        "min_minutes": {
+          "default": 10,
+          "type": "number"
+        },
+        "season": {
+          "default": "2025-26",
+          "type": "string"
+        },
+        "team_a": {
+          "type": "string"
+        },
+        "team_b": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "team_a",
+        "team_b"
+      ],
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "Observed lineup-vs-lineup shared possessions for two teams with sample flags."
+  },
+  "lineups": {
+    "arguments": {
+      "properties": {
+        "include_small": {
+          "default": false,
+          "type": "boolean"
+        },
+        "limit": {
+          "default": 10,
+          "type": "integer"
+        },
+        "min_possessions": {
+          "default": 100,
+          "type": "integer"
+        },
+        "season": {
+          "default": "2025-26",
+          "type": "string"
+        },
+        "team": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            }
+          ]
+        }
+      },
+      "required": [
+        "team"
+      ],
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "Five-player lineup ratings subject to a possession sample floor."
+  },
+  "metric_adjudication": {
+    "arguments": {
+      "properties": {
+        "a": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            }
+          ]
+        },
+        "b": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            }
+          ]
+        },
+        "season": {
+          "default": "2025-26",
+          "type": "string"
+        }
+      },
+      "required": [
+        "a",
+        "b"
+      ],
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "Cross-metric impact comparison for two players."
+  },
+  "metric_coverage": {
+    "arguments": {
+      "properties": {},
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "Report available and unavailable metrics for an analysis request."
+  },
+  "on_off": {
+    "arguments": {
+      "properties": {
+        "player_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            }
+          ]
+        },
+        "season": {
+          "default": "2025-26",
+          "type": "string"
+        },
+        "team_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            }
+          ]
+        }
+      },
+      "required": [
+        "player_id",
+        "team_id"
+      ],
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "Player on-court and off-court possession splits for one team."
+  },
+  "player_comparison": {
+    "arguments": {
+      "properties": {
+        "a": {
+          "type": "string"
+        },
+        "b": {
+          "type": "string"
+        },
+        "season": {
+          "default": "2025-26",
+          "type": "string"
+        }
+      },
+      "required": [
+        "a",
+        "b"
+      ],
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "Side-by-side comparison of two players."
+  },
+  "player_evaluation": {
+    "arguments": {
+      "properties": {
+        "player": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            }
+          ]
+        },
+        "season": {
+          "default": "2025-26",
+          "type": "string"
+        }
+      },
+      "required": [
+        "player"
+      ],
+      "type": "object"
+    },
+    "dependent_entity_arguments": {
+      "player": "player"
+    },
+    "description": "Player tier, advanced profile, modeled value, and comparisons."
+  },
+  "player_ratings": {
+    "arguments": {
+      "properties": {
+        "limit": {
+          "default": 10,
+          "type": "integer"
+        },
+        "metric": {
+          "default": "offense",
+          "type": "string"
+        },
+        "min_minutes": {
+          "default": 1000,
+          "type": "integer"
+        },
+        "season": {
+          "default": "2025-26",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "Qualified player on-court offensive or defensive rating leaderboard. This is lineup context, not isolated player value."
+  },
+  "player_report": {
+    "arguments": {
+      "properties": {
+        "player": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            }
+          ]
+        },
+        "season": {
+          "default": "2025-26",
+          "type": "string"
+        }
+      },
+      "required": [
+        "player"
+      ],
+      "type": "object"
+    },
+    "dependent_entity_arguments": {
+      "player": "player"
+    },
+    "description": "Player season line, advanced profile, shots, and clutch context."
+  },
+  "player_shot_zones": {
+    "arguments": {
+      "properties": {
+        "player_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            }
+          ]
+        },
+        "season": {
+          "default": "2025-26",
+          "type": "string"
+        }
+      },
+      "required": [
+        "player_id"
+      ],
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "One player's shot-zone makes, attempts, efficiency, and attempt share."
+  },
+  "playoff_team_ratings": {
+    "arguments": {
+      "properties": {
+        "limit": {
+          "default": 30,
+          "type": "integer"
+        },
+        "season": {
+          "default": "2025-26",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "Team offensive, defensive, and net ratings from completed playoff games."
+  },
+  "playoffs": {
+    "arguments": {
+      "properties": {
+        "season": {
+          "default": "2025-26",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "Playoff wins by team and champion for one season."
+  },
+  "qualified_leaders": {
+    "arguments": {
+      "properties": {
+        "min_attempts": {
+          "default": 0,
+          "type": "integer"
+        },
+        "ranking_direction": {
+          "default": "desc",
+          "type": "string"
+        },
+        "season": {
+          "default": "2025-26",
+          "type": "string"
+        },
+        "stat_category": {
+          "default": "PTS",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "Qualified player leaderboard for one stat category; supports ranking_direction and an explicit min_attempts volume floor for percentage boards."
+  },
+  "rest_splits": {
+    "arguments": {
+      "properties": {
+        "season": {
+          "default": "2025-26",
+          "type": "string"
+        },
+        "team_abbrev": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "Team records by zero, one, and two-plus days of rest, with sample sizes."
+  },
+  "rookie_leaders": {
+    "arguments": {
+      "properties": {
+        "limit": {
+          "default": 15,
+          "type": "integer"
+        },
+        "min_gp": {
+          "default": 10,
+          "type": "integer"
+        },
+        "min_value": {
+          "default": 0,
+          "type": "number"
+        },
+        "season": {
+          "default": "2025-26",
+          "type": "string"
+        },
+        "stat": {
+          "default": "ppg",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "First-year NBA player leaderboard using prior-season exclusion, never age as a proxy."
+  },
+  "roster": {
+    "arguments": {
+      "properties": {
+        "season": {
+          "default": "2025-26",
+          "type": "string"
+        },
+        "team_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            }
+          ]
+        }
+      },
+      "required": [
+        "team_id"
+      ],
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "Team roster and game-log context for one season."
+  },
+  "shooting_efficiency": {
+    "arguments": {
+      "properties": {
+        "player": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            }
+          ]
+        },
+        "season": {
+          "default": "2025-26",
+          "type": "string"
+        }
+      },
+      "required": [
+        "player"
+      ],
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "Player usage, shooting efficiency, PIE, and ratings."
+  },
+  "shots": {
+    "arguments": {
+      "properties": {
+        "exclude_heaves": {
+          "default": true,
+          "type": "boolean"
+        },
+        "group_by": {
+          "default": "",
+          "type": "string"
+        },
+        "include_ot": {
+          "default": "auto",
+          "type": "string"
+        },
+        "late_clock": {
+          "default": "",
+          "type": "string"
+        },
+        "limit": {
+          "default": 25,
+          "type": "integer"
+        },
+        "made": {
+          "default": "any",
+          "type": "string"
+        },
+        "periods": {
+          "default": "",
+          "type": "string"
+        },
+        "player": {
+          "default": "",
+          "type": "string"
+        },
+        "season": {
+          "default": "2025-26",
+          "type": "string"
+        },
+        "team": {
+          "default": "",
+          "type": "string"
+        },
+        "three_only": {
+          "default": false,
+          "type": "boolean"
+        },
+        "zones": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "Filter and aggregate shots by player, team, zone, period, result, or clock."
+  },
+  "standings": {
+    "arguments": {
+      "properties": {
+        "season": {
+          "default": "2025-26",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "League standings for one season."
+  },
+  "team_four_factors": {
+    "arguments": {
+      "properties": {
+        "season": {
+          "default": "2025-26",
+          "type": "string"
+        },
+        "team": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "Team offensive and defensive four-factor profile."
+  },
+  "team_ratings": {
+    "arguments": {
+      "properties": {
+        "ranking_direction": {
+          "default": "",
+          "type": "string"
+        },
+        "requested_metric": {
+          "default": "",
+          "type": "string"
+        },
+        "season": {
+          "default": "2025-26",
+          "type": "string"
+        },
+        "team": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "Regular-season team rating board: offensive, defensive, and net rating, pace, true shooting percentage (TS_PCT), and team turnover percentage (TM_TOV_PCT), with rank metadata. Ranking direction is metric-specific: lower is better for DEF_RATING and TM_TOV_PCT; higher is better otherwise."
+  },
+  "team_shot_zones": {
+    "arguments": {
+      "properties": {
+        "season": {
+          "default": "2025-26",
+          "type": "string"
+        },
+        "teams": {
+          "default": "league",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "League or selected-team zone attempt share and efficiency with league baselines."
+  },
+  "team_splits": {
+    "arguments": {
+      "properties": {
+        "season": {
+          "default": "2025-26",
+          "type": "string"
+        },
+        "team": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            }
+          ]
+        }
+      },
+      "required": [
+        "team"
+      ],
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "Team home/away, result, last-10, and monthly records and scoring."
+  },
+  "team_totals": {
+    "arguments": {
+      "properties": {
+        "season": {
+          "default": "2025-26",
+          "type": "string"
+        },
+        "stat_category": {
+          "default": "AST",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "Team leaderboard for a counting stat, with totals and per-game averages."
+  },
+  "team_trajectory": {
+    "arguments": {
+      "properties": {
+        "seasons": {
+          "default": 3,
+          "type": "integer"
+        },
+        "team": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            }
+          ]
+        },
+        "through_season": {
+          "default": "2025-26",
+          "type": "string"
+        }
+      },
+      "required": [
+        "team"
+      ],
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "Bounded multi-season regular-season records for one team."
+  },
+  "trade_value": {
+    "arguments": {
+      "properties": {
+        "picks_a": {
+          "default": "",
+          "type": "string"
+        },
+        "picks_b": {
+          "default": "",
+          "type": "string"
+        },
+        "players_a": {
+          "default": "",
+          "type": "string"
+        },
+        "players_b": {
+          "default": "",
+          "type": "string"
+        },
+        "team_a": {
+          "default": "",
+          "type": "string"
+        },
+        "team_b": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "Compare estimated production value, salary, and picks across trade sides."
+  },
+  "trades": {
+    "arguments": {
+      "properties": {
+        "players_a": {
+          "default": "",
+          "type": "string"
+        },
+        "players_b": {
+          "default": "",
+          "type": "string"
+        },
+        "season": {
+          "default": "2025-26",
+          "type": "string"
+        },
+        "team_a": {
+          "default": "",
+          "type": "string"
+        },
+        "team_b": {
+          "default": "",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "Check salary-matching legality for players on two trade sides."
+  },
+  "warehouse_freshness": {
+    "arguments": {
+      "properties": {},
+      "type": "object"
+    },
+    "dependent_entity_arguments": {},
+    "description": "Authoritative warehouse table freshness, cadence, row counts, and stale status."
+  },
+  "web_fetch": {
+    "arguments": {
+      "additionalProperties": false,
+      "properties": {
+        "result_rank": {
+          "maximum": 8,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "search_evidence_id": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "result_rank"
+      ],
+      "type": "object"
+    },
+    "description": "Extract one selected result from exactly one web_search dependency."
+  },
+  "web_search": {
+    "arguments": {
+      "additionalProperties": false,
+      "properties": {
+        "exclude_domains": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 8,
+          "type": "array"
+        },
+        "freshness": {
+          "anyOf": [
+            {
+              "enum": [
+                "day",
+                "week",
+                "month",
+                "year"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "include_domains": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 8,
+          "type": "array"
+        },
+        "max_results": {
+          "default": 5,
+          "maximum": 8,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "query": {
+          "maxLength": 500,
+          "minLength": 2,
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "type": "object"
+    },
+    "description": "Discover current public sources; snippets are discovery only."
+  }
+}

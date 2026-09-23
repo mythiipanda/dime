@@ -9,6 +9,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, model_validator
 from pydantic_core import PydanticCustomError
 from typing import Annotated
+from v2.arguments import CapabilityArgumentSet
 
 
 class RunMode(StrEnum):
@@ -311,6 +312,7 @@ class EvidenceRequirement(BaseModel):
     # review and planning. A planner cannot claim coverage with a nearby metric,
     # population, or vintage merely because the capability name matches.
     capability_arguments: dict[str, Any] = Field(default_factory=dict, max_length=32)
+    capability_argument_sets: list[CapabilityArgumentSet] = Field(default_factory=list, max_length=8)
     metric_ids: list[CanonicalDimensionId] = Field(default_factory=list, max_length=16)
     requested_outputs: list[CanonicalDimensionId] = Field(default_factory=list, max_length=16)
 
@@ -322,6 +324,11 @@ class EvidenceRequirement(BaseModel):
             raise ValueError("requirement capabilities must be non-empty")
         if len(self.capability_options) != len(set(self.capability_options)):
             raise ValueError("requirement capabilities must not contain duplicates")
+        if self.capability_argument_sets:
+            ids = [item.capability_id for item in self.capability_argument_sets]
+            if len(ids) != len(set(ids)) or set(ids) != set(self.capability_options):
+                raise ValueError("capability argument sets must uniquely cover options")
+            self.capability_argument_sets.sort(key=lambda item: item.capability_id)
         for field_name in ("metric_ids", "requested_outputs"):
             values = getattr(self, field_name)
             if len(values) != len(set(values)):

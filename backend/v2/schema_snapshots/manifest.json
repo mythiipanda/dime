@@ -1,0 +1,32 @@
+{
+  "planner.candidate.json": {
+    "canonical_json_sha256": "081a0fd662e077546bb86805355f112e734756cd4526760af556faf43b7c1e50",
+    "file_sha256": "e3684b24abc8f8d4a9f492df16b19e4da655ba92e9ce88b5ecda5469fd92162e"
+  },
+  "planner.loss.json": {
+    "canonical_json_sha256": "c87fb04500aa444fe34d4cddf373a272c1f8453603a668204cfd50aff27aed46",
+    "file_sha256": "7b1417a54bcb462215e9c53ed62465da76b1e8d12051dd448dbe03d2a9233df2"
+  },
+  "planner.prompt": {
+    "sha256": "0fa56d3ffc25913af940808eb67260cd548c138a6a73a2d15ce4402003a976b2"
+  },
+  "planner.source.json": {
+    "canonical_json_sha256": "8103e2ffa52e2664a323175b4beaf10c1a5e9d843c4a4a949800ab9f49108147",
+    "file_sha256": "451f98756f14d6280b59d30ab81af44fca02ca283a2c4951ce423d7cc757e2bc"
+  },
+  "requirement_review.candidate.json": {
+    "canonical_json_sha256": "eb6bdf43bddecffc554d31f95ff7ed55f344513f9ace2d5b7c75bcdb8efd2a2c",
+    "file_sha256": "f72be1910047be2c54913e3f7f63da0c0d3c2c1c0f1746f192202ce55c78b76a"
+  },
+  "requirement_review.loss.json": {
+    "canonical_json_sha256": "49a4e476acc43a673b0fa97d2896100b3f68b60febb958402d102c0e3e43706a",
+    "file_sha256": "0f966beff398e4b1a2fcad3c5330dedc4de785a8924ed9a0a50ac0d67e08f89c"
+  },
+  "requirement_review.prompt": {
+    "sha256": "dcb92288bc32d619019b5a49360532ed026559a942b4b65fe85b4a4c8eb65d0f"
+  },
+  "requirement_review.source.json": {
+    "canonical_json_sha256": "7e42f33172a1cd0a036826d577b3fa4235b0b64ddf8b5c44c4c920935c497b56",
+    "file_sha256": "265851d753f6e2e2f8fe9b45157737efa338522e006f86129146b6facb2dcca8"
+  }
+}

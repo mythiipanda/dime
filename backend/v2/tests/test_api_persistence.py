@@ -166,7 +166,7 @@ def test_revision_and_feature_flagged_project_endpoints(
 
     revision = client.get("/api/revision")
     assert revision.status_code == 200
-    assert set(revision.json()) == {"revision", "executable_sha256", "module_sha256", "prompt_sha256", "warehouse", "semantic_baseline"}
+    assert set(revision.json()) == {"revision", "executable_sha256", "module_sha256", "prompt_sha256", "warehouse", "semantic_baseline", "typed_argument_assets"}
     assert set(revision.json()["warehouse"]) == {"warehouse_id", "sha256"}
     assert revision.json()["warehouse"]["warehouse_id"] in {"frozen-eval", "configured-runtime"}
     assert re.fullmatch(r"[0-9a-f]{64}", revision.json()["warehouse"]["sha256"])
@@ -1513,7 +1513,7 @@ def test_preflight_exact_match_and_each_mismatch(monkeypatch,tmp_path):
     from v2.api import routes
     observed=routes.runtime_asset_manifest();exact=_write_expected_manifest(tmp_path/'exact.json',observed)
     assert routes.preflight_runtime_assets(exact) is observed
-    for field in ('revision','executable_sha256','module_sha256','warehouse','semantic_baseline','prompt_sha256'):
+    for field in ('revision','executable_sha256','module_sha256','warehouse','semantic_baseline','prompt_sha256','typed_argument_assets'):
         candidate=observed.as_dict()
         if isinstance(candidate[field],dict):candidate[field][next(iter(candidate[field]))]='wrong'
         else:candidate[field]='wrong'

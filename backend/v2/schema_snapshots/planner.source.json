@@ -1,0 +1,344 @@
+{
+  "$defs": {
+    "PlannerNodeWire": {
+      "additionalProperties": false,
+      "properties": {
+        "arguments": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProviderWireArguments"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "capability": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Capability",
+          "type": "string"
+        },
+        "covers_requirement_ids": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 32,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Covers Requirement Ids"
+        },
+        "depends_on": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 32,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Depends On"
+        },
+        "description": {
+          "maxLength": 2048,
+          "title": "Description",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "max_attempts": {
+          "anyOf": [
+            {
+              "maximum": 5,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Max Attempts"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "enum": [
+                "pending",
+                "running",
+                "complete",
+                "failed",
+                "skipped"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Status"
+        }
+      },
+      "required": [
+        "id",
+        "description",
+        "depends_on",
+        "capability",
+        "covers_requirement_ids",
+        "arguments",
+        "max_attempts",
+        "status"
+      ],
+      "title": "PlannerNodeWire",
+      "type": "object"
+    },
+    "ProviderWireArguments": {
+      "additionalProperties": false,
+      "properties": {
+        "entries": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/ProviderWireEntry"
+              },
+              "maxItems": 64,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Entries"
+        }
+      },
+      "required": [
+        "entries"
+      ],
+      "title": "ProviderWireArguments",
+      "type": "object"
+    },
+    "ProviderWireEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "bool_list_value": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "boolean"
+              },
+              "maxItems": 32,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Bool List Value"
+        },
+        "bool_value": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Bool Value"
+        },
+        "decimal_list_value": {
+          "anyOf": [
+            {
+              "items": {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+                "type": "string"
+              },
+              "maxItems": 32,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Decimal List Value"
+        },
+        "decimal_value": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Decimal Value"
+        },
+        "int_list_value": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "integer"
+              },
+              "maxItems": 32,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Int List Value"
+        },
+        "int_value": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Int Value"
+        },
+        "key": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Key",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "null",
+            "bool",
+            "int",
+            "number",
+            "decimal",
+            "string",
+            "bool_list",
+            "int_list",
+            "number_list",
+            "decimal_list",
+            "string_list"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "number_list_value": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "maxItems": 32,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Number List Value"
+        },
+        "number_value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Number Value"
+        },
+        "string_list_value": {
+          "anyOf": [
+            {
+              "items": {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              "maxItems": 32,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "String List Value"
+        },
+        "string_value": {
+          "anyOf": [
+            {
+              "maxLength": 2048,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "String Value"
+        },
+        "value": {
+          "title": "Value",
+          "type": "null"
+        }
+      },
+      "required": [
+        "key",
+        "kind",
+        "value",
+        "bool_value",
+        "int_value",
+        "number_value",
+        "decimal_value",
+        "string_value",
+        "bool_list_value",
+        "int_list_value",
+        "number_list_value",
+        "decimal_list_value",
+        "string_list_value"
+      ],
+      "title": "ProviderWireEntry",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "nodes": {
+      "anyOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/PlannerNodeWire"
+          },
+          "maxItems": 32,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Nodes"
+    }
+  },
+  "required": [
+    "nodes"
+  ],
+  "title": "PlannerOutputWire",
+  "type": "object"
+}

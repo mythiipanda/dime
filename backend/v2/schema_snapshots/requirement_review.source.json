@@ -1,0 +1,417 @@
+{
+  "$defs": {
+    "CalculationRequirementWire": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "maxLength": 2048,
+          "title": "Description",
+          "type": "string"
+        },
+        "id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "metric_ids": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 16,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Metric Ids"
+        },
+        "requested_outputs": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 16,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Requested Outputs"
+        }
+      },
+      "required": [
+        "id",
+        "description",
+        "metric_ids",
+        "requested_outputs"
+      ],
+      "title": "CalculationRequirementWire",
+      "type": "object"
+    },
+    "CapabilityArgumentSetWire": {
+      "additionalProperties": false,
+      "properties": {
+        "arguments": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProviderWireArguments"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "capability_id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Capability Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "capability_id",
+        "arguments"
+      ],
+      "title": "CapabilityArgumentSetWire",
+      "type": "object"
+    },
+    "ProviderWireArguments": {
+      "additionalProperties": false,
+      "properties": {
+        "entries": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/ProviderWireEntry"
+              },
+              "maxItems": 64,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Entries"
+        }
+      },
+      "required": [
+        "entries"
+      ],
+      "title": "ProviderWireArguments",
+      "type": "object"
+    },
+    "ProviderWireEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "bool_list_value": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "boolean"
+              },
+              "maxItems": 32,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Bool List Value"
+        },
+        "bool_value": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Bool Value"
+        },
+        "decimal_list_value": {
+          "anyOf": [
+            {
+              "items": {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+                "type": "string"
+              },
+              "maxItems": 32,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Decimal List Value"
+        },
+        "decimal_value": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Decimal Value"
+        },
+        "int_list_value": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "integer"
+              },
+              "maxItems": 32,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Int List Value"
+        },
+        "int_value": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Int Value"
+        },
+        "key": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+          "title": "Key",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "null",
+            "bool",
+            "int",
+            "number",
+            "decimal",
+            "string",
+            "bool_list",
+            "int_list",
+            "number_list",
+            "decimal_list",
+            "string_list"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "number_list_value": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "maxItems": 32,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Number List Value"
+        },
+        "number_value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Number Value"
+        },
+        "string_list_value": {
+          "anyOf": [
+            {
+              "items": {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              "maxItems": 32,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "String List Value"
+        },
+        "string_value": {
+          "anyOf": [
+            {
+              "maxLength": 2048,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "String Value"
+        },
+        "value": {
+          "title": "Value",
+          "type": "null"
+        }
+      },
+      "required": [
+        "key",
+        "kind",
+        "value",
+        "bool_value",
+        "int_value",
+        "number_value",
+        "decimal_value",
+        "string_value",
+        "bool_list_value",
+        "int_list_value",
+        "number_list_value",
+        "decimal_list_value",
+        "string_list_value"
+      ],
+      "title": "ProviderWireEntry",
+      "type": "object"
+    },
+    "RequirementWire": {
+      "additionalProperties": false,
+      "properties": {
+        "capability_argument_sets": {
+          "items": {
+            "$ref": "#/$defs/CapabilityArgumentSetWire"
+          },
+          "maxItems": 8,
+          "minItems": 1,
+          "title": "Capability Argument Sets",
+          "type": "array"
+        },
+        "capability_options": {
+          "items": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 1,
+          "title": "Capability Options",
+          "type": "array"
+        },
+        "description": {
+          "maxLength": 2048,
+          "title": "Description",
+          "type": "string"
+        },
+        "id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "description",
+        "id",
+        "capability_options",
+        "capability_argument_sets"
+      ],
+      "title": "RequirementWire",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "calculation_requirements": {
+      "anyOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/CalculationRequirementWire"
+          },
+          "maxItems": 32,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Calculation Requirements"
+    },
+    "missing_skills": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 16,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Missing Skills"
+    },
+    "missing_subquestions": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 32,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Missing Subquestions"
+    },
+    "requirements": {
+      "anyOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/RequirementWire"
+          },
+          "maxItems": 32,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Requirements"
+    }
+  },
+  "required": [
+    "requirements",
+    "calculation_requirements",
+    "missing_subquestions",
+    "missing_skills"
+  ],
+  "title": "RequirementReviewWire",
+  "type": "object"
+}

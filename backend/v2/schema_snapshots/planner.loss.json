@@ -1,0 +1,6 @@
+{
+  "candidate_schema_sha256": "081a0fd662e077546bb86805355f112e734756cd4526760af556faf43b7c1e50",
+  "hash_canonicalization": "UTF-8 sorted-key compact JSON",
+  "losses": [],
+  "source_schema_sha256": "8103e2ffa52e2664a323175b4beaf10c1a5e9d843c4a4a949800ab9f49108147"
+}
