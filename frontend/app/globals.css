@@ -613,9 +613,9 @@ body {
 @media (prefers-reduced-motion: reduce) { .interactive-tactile { transition: none; } }
 
 /* .is-exit only plays if the JS delays unmount (see closeArtifact in page.tsx). */
-.artifact-pane { animation: artifact-pane-in 240ms cubic-bezier(.16,1,.3,1) both; }
+.artifact-pane { animation: artifact-pane-in 240ms cubic-bezier(.16,1,.3,1) backwards; }
 @keyframes artifact-pane-in { from { opacity: 0; transform: translateX(12px); } }
-.artifact-pane.is-exit { opacity: 0; transform: translateX(12px); transition: opacity 200ms ease, transform 200ms ease; }
+.artifact-pane.is-exit { animation: none; opacity: 0; transform: translateX(12px); transition: opacity 200ms ease, transform 200ms ease; }
 @media (prefers-reduced-motion: reduce) { .artifact-pane { animation: none; } .artifact-pane.is-exit { transition: none; } }
 
 .onboard-backdrop { animation: onboard-backdrop-in 140ms ease-out both; }
