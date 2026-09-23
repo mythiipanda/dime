@@ -106,10 +106,26 @@ export default function Home() {
     setQueryParam("tab", t, true);
   };
 
+  // The exit timer must never outlive a newer open/close or the component.
+  const artifactCloseTimer = useRef<number | null>(null);
+  useEffect(() => () => {
+    if (artifactCloseTimer.current !== null) window.clearTimeout(artifactCloseTimer.current);
+  }, []);
+
+  const openArtifact = (art: ArtifactItem) => {
+    if (artifactCloseTimer.current !== null) {
+      window.clearTimeout(artifactCloseTimer.current);
+      artifactCloseTimer.current = null;
+    }
+    setArtifactClosing(false);
+    setActiveArtifact(art);
+  };
+
   const closeArtifact = () => {
-    // Keep the pane mounted for a short symmetric exit, then unmount.
+    if (artifactClosing) return;
     setArtifactClosing(true);
-    window.setTimeout(() => {
+    artifactCloseTimer.current = window.setTimeout(() => {
+      artifactCloseTimer.current = null;
       setActiveArtifact(null);
       setArtifactClosing(false);
     }, 200);
@@ -318,7 +334,7 @@ export default function Home() {
                     thread={active}
                     onRunDone={reload}
                     preset={preset}
-                    onOpenArtifact={(art) => setActiveArtifact(art)}
+                    onOpenArtifact={openArtifact}
                     activeArtifactId={activeArtifact?.id}
                   />
                 ) : (
