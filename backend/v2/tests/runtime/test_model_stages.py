@@ -269,19 +269,22 @@ def test_pydanticai_provider_boundary_uses_only_active_free_rotation(monkeypatch
 
     # Inception stays configured for a future key rotation, but configured is
     # not active: Dime's own model stages may only select free providers.
+    monkeypatch.setattr("v2.adapters.models.settings.nvidia_nim_api_key", "nim-key")
     monkeypatch.setattr("v2.adapters.models.settings.inception_api_key", "configured-paused")
     monkeypatch.setattr("v2.adapters.models.settings.mistral_api_key", "free-limit")
     monkeypatch.setattr("v2.adapters.models.settings.openrouter_api_key", "free-key")
     monkeypatch.setattr("v2.adapters.models.settings.groq_api_key", "configured-paused")
     models = ProviderStructuredModel("inception", "mercury-test")._models()
-    assert [provider for provider, _ in models] == ["openrouter", "mistral"]
-    assert models[0][1].model_name.endswith(":free")
-    assert models[1][1].model_name == settings.mistral_model
+    assert [provider for provider, _ in models] == ["nvidia", "openrouter", "mistral"]
+    assert models[0][1].model_name == settings.nvidia_nim_model
+    assert models[1][1].model_name.endswith(":free")
+    assert models[2][1].model_name == settings.mistral_model
 
 
 def test_pydanticai_models_keep_timeout_and_openrouter_attribution(monkeypatch) -> None:
     from v2.adapters.models import ProviderStructuredModel
 
+    monkeypatch.setattr("v2.adapters.models.settings.nvidia_nim_api_key", "")
     monkeypatch.setattr("v2.adapters.models.settings.openrouter_api_key", "key")
     monkeypatch.setattr("v2.adapters.models.settings.mistral_api_key", "")
     monkeypatch.setattr("v2.adapters.models.settings.inception_api_key", "")

@@ -7,13 +7,15 @@ from app.config import settings
 
 def test_every_runtime_fallback_chain_is_free_only():
     for primary in ("openrouter", "mistral", "inception", "groq"):
-        assert fallback_order(primary) in (["openrouter", "mistral"],
-                                            ["mistral", "openrouter"])
+        assert fallback_order(primary)[0] == "nvidia"
+        assert set(fallback_order(primary)) == {"nvidia", "openrouter", "mistral"}
         assert not ({"inception", "groq"} & set(fallback_order(primary)))
 
 
 def test_openrouter_paid_and_stale_slugs_clamp(monkeypatch):
     monkeypatch.setattr(settings, "openrouter_model", "openai/gpt-4o")
+    monkeypatch.setattr(settings, "nvidia_nim_api_key", "")
+    monkeypatch.setattr(settings, "openrouter_api_key", "key")
     for raw in (None, "openrouter:openai/gpt-4o", "openai/gpt-4o"):
         provider, slug = resolve_model_id(raw)
         assert provider == "openrouter"
@@ -32,7 +34,7 @@ def test_mistral_explicit_slug_clamps_to_configured_free_limit(monkeypatch):
 def test_catalog_exposes_only_free_models(monkeypatch):
     monkeypatch.setattr(settings, "openrouter_model", "openai/gpt-4o")
     catalog = models_catalog()
-    assert set(catalog["available"]) == {"openrouter", "mistral"}
+    assert set(catalog["available"]) == {"nvidia", "openrouter", "mistral"}
     for item in catalog["models"]:
         provider, slug = item["id"].split(":", 1)
         assert is_free_model(provider, slug)
@@ -74,6 +76,7 @@ def test_structured_mistral_success_ledger_identity_is_free_limit(monkeypatch):
         def __init__(self,*args,**kwargs): pass
         async def run(self,prompt): return Run()
     monkeypatch.setattr(adapter,"Agent",Agent)
+    monkeypatch.setattr(settings,"nvidia_nim_api_key","")
     monkeypatch.setattr(settings,"openrouter_api_key","")
     monkeypatch.setattr(settings,"mistral_api_key","free-limit")
     model=adapter.ProviderStructuredModel("mistral","arbitrary-input")
@@ -96,7 +99,7 @@ def test_groq_free_tier_activation_is_exact_and_ordered(monkeypatch):
     assert providers.resolve_model_id("inception:any") == (
         "inception", providers.INCEPTION_DEFAULT)
     assert providers.fallback_order("inception") == [
-        "inception", "groq", "openrouter", "mistral"]
+        "nvidia", "groq", "openrouter", "mistral", "inception"]
     assert providers.is_free_model("groq", "openai/gpt-oss-20b")
     assert not providers.is_free_model("groq", "openai/gpt-oss-120b")
     with __import__("pytest").raises(providers.ProviderPolicyError):

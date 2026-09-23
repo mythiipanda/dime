@@ -27,12 +27,15 @@ from app.tools.rating_metrics import (TEAM_RATING_METRICS,
                                       ranked_team_constraints)
 from app.providers import (
     GROQ_DEFAULT,
+    NVIDIA_NIM_BASE_URL,
+    NVIDIA_NIM_DEFAULT,
     INCEPTION_DEFAULT,
     MISTRAL_DEFAULT,
     OPENROUTER_DEFAULT,
     ProviderName,
     fallback_order,
     _groq_free_model, _mistral_free_model,
+    _nvidia_nim_model,
     _openrouter_free_model,
     is_free_model,
 )
@@ -298,6 +301,8 @@ class ProviderStructuredModel:
 
     def _models(self) -> list[tuple[ProviderName, OpenAIChatModel]]:
         configs = {
+            "nvidia": (NVIDIA_NIM_BASE_URL, settings.nvidia_nim_api_key,
+                       _nvidia_nim_model()),
             "mistral": ("https://api.mistral.ai/v1", settings.mistral_api_key,
                         _mistral_free_model()),
             "openrouter": ("https://openrouter.ai/api/v1", settings.openrouter_api_key,
@@ -324,7 +329,9 @@ class ProviderStructuredModel:
                 default_headers=headers,
             )
             requested = self.model if provider == self.provider else fallback_model
-            if provider == "openrouter":
+            if provider == "nvidia":
+                accepted_model = _nvidia_nim_model(requested)
+            elif provider == "openrouter":
                 accepted_model = _openrouter_free_model(requested)
             elif provider == "mistral":
                 accepted_model = _mistral_free_model()
