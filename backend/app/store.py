@@ -18,14 +18,17 @@ from .sources.base import FetchResult
 DB_PATH = Path(os.environ.get("DIME_WAREHOUSE") or
                (Path(__file__).resolve().parent.parent / "data" / "warehouse.duckdb"))
 LOCK_PATH = DB_PATH.parent / ".write.lock"
+CANONICAL_DB_PATH = (Path(__file__).resolve().parent.parent / "data" / "warehouse.duckdb").resolve()
+STATE_PATH = Path(os.environ.get("DIME_STATE_DB") or
+                  (Path(__file__).resolve().parent.parent / "data" / "state.duckdb"))
+STATE_LOCK_PATH = STATE_PATH.parent / ".state-write.lock"
 
 PROVENANCE_COLS = ["_source", "_season", "_fetched_at"]
 
 
 def warehouse_identity() -> dict[str, str]:
     path = DB_PATH.resolve()
-    expected = (Path(__file__).resolve().parent.parent / "data" / "warehouse.duckdb").resolve()
-    return {"warehouse_id": "frozen-eval" if path == expected else "configured-runtime",
+    return {"warehouse_id": "frozen-eval" if path == CANONICAL_DB_PATH else "configured-runtime",
             "warehouse_sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
 
 
@@ -53,6 +56,8 @@ def write_guard(timeout_s: float = 60.0):
 def _connect_once(read_only: bool) -> duckdb.DuckDBPyConnection:
     if read_only:
         return duckdb.connect(str(DB_PATH), read_only=True)
+    if DB_PATH.resolve() == CANONICAL_DB_PATH:
+        raise PermissionError("canonical benchmark warehouse is immutable")
     try:
         con = duckdb.connect(str(DB_PATH))
     except duckdb.IOException as exc:
@@ -81,7 +86,7 @@ _CONNECT_RETRIES = 6
 _CONNECT_BACKOFF_S = 0.2
 
 
-def connect(read_only: bool = False) -> duckdb.DuckDBPyConnection:
+def connect(read_only: bool | None = None) -> duckdb.DuckDBPyConnection:
     """Open the warehouse, retrying transient file-lock contention.
 
     DuckDB holds an exclusive file lock while any process keeps a
@@ -94,6 +99,11 @@ def connect(read_only: bool = False) -> duckdb.DuckDBPyConnection:
     redesign.
     """
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    if read_only is None:
+        # The checked/ignored evaluation warehouse is an immutable asset.
+        # Unclassified callers must not checkpoint it. Configured runtime DBs
+        # retain legacy write behavior until their call sites are classified.
+        read_only = DB_PATH.resolve() == CANONICAL_DB_PATH
     last: Exception | None = None
     for attempt in range(_CONNECT_RETRIES):
         try:
@@ -116,6 +126,32 @@ def connect(read_only: bool = False) -> duckdb.DuckDBPyConnection:
     raise last
 
 
+
+def state_connect() -> duckdb.DuckDBPyConnection:
+    """Writable operational state, physically separate from benchmark data."""
+    STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    if STATE_PATH.resolve() == CANONICAL_DB_PATH:
+        raise PermissionError("operational state cannot target canonical warehouse")
+    return duckdb.connect(str(STATE_PATH))
+
+
+@contextmanager
+def state_write_guard(timeout_s: float = 60.0):
+    STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    start = time.time()
+    with open(STATE_LOCK_PATH, "w") as fh:
+        while True:
+            try:
+                fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB); break
+            except BlockingIOError:
+                if time.time() - start > timeout_s:
+                    raise TimeoutError("state write lock timed out")
+                time.sleep(0.05)
+        try:
+            yield
+        finally:
+            fcntl.flock(fh, fcntl.LOCK_UN)
+
 def save_frame(
     table: str,
     result: FetchResult,
@@ -130,7 +166,7 @@ def save_frame(
             pl.lit(entity).alias("_entity"),
         ]
     )
-    con = connect()
+    con = connect(read_only=False)
     try:
         with write_guard():
             con.register("_incoming", frame.to_arrow())
@@ -174,7 +210,9 @@ def save_frame(
 
 
 def read_frame(table: str, where: str = "", params: list[object] | None = None) -> pl.DataFrame:
-    con = connect()
+    # Reads must never open the frozen warehouse read-write: even transaction-
+    # free DuckDB opens can checkpoint/rewrite physical bytes on close.
+    con = connect(read_only=True)
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if table not in tables:
@@ -193,7 +231,7 @@ def _read_df(sql: str, params: list, tries: int = 5) -> list[dict[str, object]]:
     last: Exception | None = None
     for _ in range(tries):
         try:
-            con = connect()
+            con = connect(read_only=True)
             try:
                 return (
                     con.execute(sql, params)
@@ -209,7 +247,7 @@ def _read_df(sql: str, params: list, tries: int = 5) -> list[dict[str, object]]:
 
 
 def last_fetch(table: str, season: str, entity: str = "") -> str:
-    con = connect()
+    con = connect(read_only=True)
     try:
         row = con.execute(
             """SELECT fetched_at FROM fetch_log
@@ -223,9 +261,9 @@ def last_fetch(table: str, season: str, entity: str = "") -> str:
 
 
 def save_chat(thread: str, role: str, text: str, owner: str = "") -> None:
-    con = connect()
+    con = state_connect()
     try:
-        with write_guard():
+        with state_write_guard():
             con.execute(
                 """CREATE TABLE IF NOT EXISTS chat_history(
                 thread VARCHAR, role VARCHAR, text VARCHAR, created_at VARCHAR,
@@ -247,7 +285,7 @@ def save_chat(thread: str, role: str, text: str, owner: str = "") -> None:
 
 
 def chat_history(thread: str, limit: int = 6) -> list[dict[str, str]]:
-    con = connect()
+    con = state_connect()
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if "chat_history" not in tables:
@@ -268,9 +306,9 @@ def save_facts(thread: str, facts: list[str], owner: str = "") -> None:
     on later turns so follow-ups resolve evidence, not just entities."""
     if not thread or not facts:
         return
-    con = connect()
+    con = state_connect()
     try:
-        with write_guard():
+        with state_write_guard():
             con.execute(
                 """CREATE TABLE IF NOT EXISTS thread_facts(
                 thread VARCHAR, fact VARCHAR, created_at VARCHAR,
@@ -297,7 +335,7 @@ def save_facts(thread: str, facts: list[str], owner: str = "") -> None:
 def thread_facts(thread: str, limit: int = 20) -> list[str]:
     if not thread:
         return []
-    con = connect()
+    con = state_connect()
     try:
         tables = {r[0] for r in con.execute(
             "SELECT table_name FROM information_schema.tables").fetchall()}
@@ -315,7 +353,7 @@ def thread_facts(thread: str, limit: int = 20) -> list[str]:
 
 
 def list_threads(owner: str = "") -> list[dict[str, str]]:
-    con = connect()
+    con = state_connect()
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if "chat_history" not in tables:
@@ -358,9 +396,9 @@ def save_run(
 ) -> None:
     import json as _json
 
-    con = connect()
+    con = state_connect()
     try:
-        with write_guard():
+        with state_write_guard():
             con.execute(
                 """CREATE TABLE IF NOT EXISTS runs(
                 thread VARCHAR, question VARCHAR, answer VARCHAR,
@@ -387,7 +425,7 @@ def save_run(
 def list_runs(thread: str, owner: str = "") -> list[dict]:
     import json as _json
 
-    con = connect()
+    con = state_connect()
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if "runs" not in tables:
@@ -432,7 +470,7 @@ def compact_thread(thread: str, keep_recent: int = 4,
     memo into the new one instead of losing it. LLM failure leaves
     history untouched and reports compacted False.
     """
-    con = connect()
+    con = state_connect()
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if "chat_history" not in tables:
@@ -474,9 +512,9 @@ def compact_thread(thread: str, keep_recent: int = 4,
             return {"compacted": False, "kept": len(rows), "dropped": 0}
     except Exception:
         return {"compacted": False, "kept": len(rows), "dropped": 0}
-    con = connect()
+    con = state_connect()
     try:
-        with write_guard():
+        with state_write_guard():
             from datetime import datetime, timezone
 
             ids = [r[0] for r in older]

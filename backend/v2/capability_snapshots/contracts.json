@@ -1,0 +1,34 @@
+{
+  "capability_id": "contracts",
+  "dependent_entity_arguments": {},
+  "properties": [
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "string"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "709300bf34f89b7ec383b3333d501da187ed2fb156ff6c750f1b30fd261c9171"
+        }
+      ],
+      "compiled_kinds": [
+        "string"
+      ],
+      "default": "",
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "team",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "709300bf34f89b7ec383b3333d501da187ed2fb156ff6c750f1b30fd261c9171"
+    }
+  ],
+  "reasons": [],
+  "schema_sha256": "cbc1e27f32d56e0a02d76859d25bc054dc4a7c6a65c41f32f9e9c2c0ad0cdbb8",
+  "status": "REPRESENTABLE"
+}

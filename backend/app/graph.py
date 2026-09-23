@@ -1029,7 +1029,7 @@ def _trade_sides(question: str, found_p: list[str], found_t: list[str],
     """Deterministic trade sides: players grouped by current team abbrev."""
     from nba_api.stats.static import teams as _static
 
-    from .tools._core import coerce_player_id
+    from .tools._core import _coerce_player_id_cached
 
     def _fold(s: str) -> str:
         return "".join(c for c in unicodedata.normalize("NFKD", s or "")
@@ -1065,7 +1065,7 @@ def _trade_sides(question: str, found_p: list[str], found_t: list[str],
     resolved: list[tuple[str, int]] = []
     for p in found_p:
         try:
-            pid = coerce_player_id(p)
+            pid = _coerce_player_id_cached(str(p).strip().lower())
         except Exception:
             continue
         if pid:
@@ -1698,11 +1698,38 @@ async def _triage_seed(question: str, primary: str, model: str,
             yield _e
         return
 
+    # Total leaderboards also bypass the free-form planner, including
+    # repeat turns. The deterministic answer carries total, GP, and per-game
+    # context so multi-turn repeats cannot degrade to an unverifiable fallback.
+    if (not found_p and not found_t
+            and re.search(r"(?:who|which player).*(?:leads?|most|highest)|leaders?",
+                          question, re.IGNORECASE)
+            and re.search(r"\bassists?\b", question, re.IGNORECASE)
+            and not re.search(r"per[ -]?game|\bAPG\b", question, re.IGNORECASE)):
+        _tlh: dict[str, Any] = {}
+        async for _e in _triage_tool(
+                "get_leaders", {"stat_category": "AST", "season": "2025-26"},
+                state, _tlh):
+            yield _e
+        _tlout = _tlh.get("out") or {}
+        _tlrows = _tlout.get("rows") or []
+        if _result_status(_tlout) == "ok" and isinstance(_tlrows, list) and _tlrows:
+            _top = _tlrows[0]
+            _ast, _gp = _top.get("AST"), _top.get("GP")
+            _apg = round(float(_ast) / float(_gp), 2) if _gp else None
+            _tlout["meta"] = dict(_tlout.get("meta") or {})
+            _tlout["meta"]["deterministic_answer"] = (
+                f"{_top.get('PLAYER')} leads the league with {_ast} assists "
+                f"in {_gp} games ({_apg:.2f} assists per game) in 2025-26.")
+            async for _e in _triage_terminal(question, state):
+                yield _e
+        return
+
     # Qualified rate leaderboards bypass the free-form league desk. This
     # keeps sample floors and units attached to the exact value users see.
     _rate_leader = None
-    if (not found_p and not found_t and not state.get("history")
-            and re.search(r"(?:who|which player).*(?:leads?|highest|best)|leaders?",
+    if (not found_p and not found_t
+            and re.search(r"(?:who|which player).*(?:leads?|highest|best|most)|leaders?",
                           question, re.IGNORECASE)):
         if re.search(r"true[ -]?shooting|\bTS%?\b", question, re.IGNORECASE):
             _rate_leader = "TS_PCT"
@@ -1724,6 +1751,23 @@ async def _triage_seed(question: str, primary: str, model: str,
             yield _e
         _rlout = _rlh.get("out") or {}
         if _result_status(_rlout) == "ok" and _result_rows(_rlout):
+            _rlrows = _rlout.get("rows") or []
+            if isinstance(_rlrows, list) and _rlrows:
+                _rltop = _rlrows[0]
+                _field = str(_rate_leader)
+                _value = _rltop.get(_field)
+                _unit = {"APG":"assists", "PPG":"points", "RPG":"rebounds",
+                         "SPG":"steals", "BPG":"blocks"}.get(_field,_field)
+                _rlout["meta"] = dict(_rlout.get("meta") or {})
+                if _field == "TS_PCT":
+                    _answer = (f"{_rltop.get('PLAYER')} leads qualified players at "
+                               f"{float(_value):.1f}% true shooting in 2025-26 "
+                               f"({_rltop.get('GP')} games; 1,000+ total minutes).")
+                else:
+                    _answer = (f"{_rltop.get('PLAYER')} leads at {float(_value):.2f} "
+                               f"{_unit} per game in 2025-26 "
+                               f"({_rltop.get('GP')} games).")
+                _rlout["meta"]["deterministic_answer"] = _answer
             async for _e in _triage_terminal(question, state):
                 yield _e
         return
@@ -4599,6 +4643,8 @@ async def actual_tool_node(state: DimeState) -> AsyncGenerator[dict[str, Any], N
     by_name = {t.name: t for t in _supervisor_tools(state)}
     pending = state.pop("_pending_calls", [])  # type: ignore[typeddict-unknown-key]
     elapsed: dict[int, int] = {}
+    desk_locks: dict[tuple, asyncio.Lock] = {}
+    entity_locks: dict[str, asyncio.Lock] = {}
 
     async def _run(call: dict[str, Any]) -> dict[str, Any]:
         t0 = time.time()
@@ -4619,35 +4665,36 @@ async def actual_tool_node(state: DimeState) -> AsyncGenerator[dict[str, Any], N
             if name.startswith("delegate_"):
                 dkey = _desk_dedupe_key(
                     name, args if isinstance(args, dict) else {})
-                if dkey is not None and dkey in desk_cache:
-                    elapsed[id(call)] = 0
-                    await _tok_q.put(None)
-                    return {**desk_cache[dkey], "deduped": True}
-                # Stream the desk's raw tokens live while it works.
-                async def _on_tok(t: str) -> None:
-                    await _tok_q.put((name, t))
-
-                out = await asyncio.wait_for(
-                    run_desk_streaming(
-                        name,
-                        args.get("task", "") if isinstance(args, dict) else "",
-                        state["primary"], state["model"],  # type: ignore[arg-type]
-                        on_token=_on_tok),
-                    timeout=DESK_CALL_TIMEOUT_S)
-                if (isinstance(out, dict) and dkey is not None
-                        and _result_status(out) == "ok"):
-                    desk_cache[dkey] = out
+                lock = desk_locks.setdefault(dkey, asyncio.Lock()) if dkey is not None else asyncio.Lock()
+                async with lock:
+                    if dkey is not None and dkey in desk_cache:
+                        elapsed[id(call)] = 0
+                        await _tok_q.put(None)
+                        return {**desk_cache[dkey], "deduped": True}
+                    async def _on_tok(t: str) -> None:
+                        await _tok_q.put((name, t))
+                    out = await asyncio.wait_for(
+                        run_desk_streaming(
+                            name,
+                            args.get("task", "") if isinstance(args, dict) else "",
+                            state["primary"], state["model"],  # type: ignore[arg-type]
+                            on_token=_on_tok),
+                        timeout=DESK_CALL_TIMEOUT_S)
+                    if (isinstance(out, dict) and dkey is not None
+                            and _result_status(out) == "ok"):
+                        desk_cache[dkey] = out
             elif name == "resolve_entity":
                 qnorm = (str(args.get("query", "") or "").strip().casefold()
                          if isinstance(args, dict) else "")
-                if qnorm in entity_cache:
-                    elapsed[id(call)] = 0
-                    await _tok_q.put(None)
-                    return {**entity_cache[qnorm], "deduped": True}
-                out = await asyncio.wait_for(fn.ainvoke(args),
-                                             timeout=TOOL_CALL_TIMEOUT_S)
-                if isinstance(out, dict) and _result_status(out) == "ok":
-                    entity_cache[qnorm] = out
+                async with entity_locks.setdefault(qnorm, asyncio.Lock()):
+                    if qnorm in entity_cache:
+                        elapsed[id(call)] = 0
+                        await _tok_q.put(None)
+                        return {**entity_cache[qnorm], "deduped": True}
+                    out = await asyncio.wait_for(fn.ainvoke(args),
+                                                 timeout=TOOL_CALL_TIMEOUT_S)
+                    if isinstance(out, dict) and _result_status(out) == "ok":
+                        entity_cache[qnorm] = out
             else:
                 out = await asyncio.wait_for(fn.ainvoke(args),
                                              timeout=TOOL_CALL_TIMEOUT_S)

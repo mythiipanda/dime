@@ -1,0 +1,8 @@
+{
+  "capability_id": "metric_coverage",
+  "dependent_entity_arguments": {},
+  "properties": [],
+  "reasons": [],
+  "schema_sha256": "efddc7bd8bbcef73a14eb1ace1ffdaec81e518ef1e13c1e9271d0b8acb694a49",
+  "status": "REPRESENTABLE"
+}

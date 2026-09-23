@@ -109,6 +109,15 @@ def build_envelope(
     if raw_meta is not None and not isinstance(raw_meta, Mapping):
         raise AdapterError(f"{spec.tool_name}: result meta must be an object")
     meta = raw_meta or {}
+    declared_sources = {
+        token.strip() for token in str(meta.get("source") or "").split("+")
+        if token.strip()
+    }
+    if "warehouse" in declared_sources and not (
+            "warehouse_id" in meta or "warehouse_sha256" in meta):
+        from app import store as _store
+        bound_identity = _store.warehouse_identity()
+        meta = {**meta, **bound_identity}
     has_warehouse_id = "warehouse_id" in meta
     has_warehouse_sha = "warehouse_sha256" in meta
     lineage_kind_present = "lineage_kind" in meta
@@ -238,11 +247,19 @@ def build_envelope(
         coverage=(meta.get("coverage") or meta.get("coverage_note")
                   or spec.coverage),
         warnings=warnings,
-        source_identity=({"kind": "warehouse", "warehouse_id": str(meta["warehouse_id"]),
-                          "sha256": str(meta["warehouse_sha256"])}
-                         if has_warehouse_id and has_warehouse_sha else
-                         {"kind": "live", "source": str(meta["source"])}
-                         if meta.get("lineage_kind") == "live" and meta.get("source") else None),
+        source_identity=(
+            {"kind": "composite",
+             "warehouse_id": str(meta["warehouse_id"]),
+             "sha256": str(meta["warehouse_sha256"]),
+             "live_sources": sorted(declared_sources - {"warehouse"})}
+            if has_warehouse_id and has_warehouse_sha
+            and "warehouse" in declared_sources
+            and declared_sources - {"warehouse"} else
+            {"kind": "warehouse", "warehouse_id": str(meta["warehouse_id"]),
+             "sha256": str(meta["warehouse_sha256"])}
+            if has_warehouse_id and has_warehouse_sha else
+            {"kind": "live", "source": str(meta["source"])}
+            if meta.get("lineage_kind") == "live" and meta.get("source") else None),
     )
 
 

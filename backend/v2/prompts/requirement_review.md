@@ -10,8 +10,8 @@ Independently turn every distinct evidence clause in the user's question into a 
 
 ## Output
 One JSON object matching RequirementReview:
-- requirements: every evidence clause as {id, description, capability_options, capability_arguments}. IDs are stable short snake_case names. capability_options lists catalog capabilities that can satisfy that clause. capability_arguments contains provider-facing argument constraints shared by those options, such as stat_category, season, season_type, qualification, or entity id. Use separate requirements when the user asks for separate populations, metrics, scopes, seasons, or phases.
-- calculation_requirements: one `{id, description}` row per explicitly requested independent arithmetic result. Three requested metric changes require three rows; do not collapse them into one generic comparison.
+- requirements: every evidence clause as {id, description, capability_options, capability_arguments, metric_ids, requested_outputs}. IDs are stable short snake_case names. capability_options lists catalog capabilities that can satisfy that clause. capability_arguments contains provider-facing argument constraints shared by those options, such as stat_category, season, season_type, qualification, or entity id. Use separate requirements when the user asks for separate populations, metrics, scopes, seasons, or phases.
+- calculation_requirements: one `{id, description, metric_ids, requested_outputs}` row per explicitly requested independent arithmetic result. Three requested metric changes require three rows; do not collapse them into one generic comparison.
 - missing_subquestions: requested answer branches absent from the draft.
 - missing_skills: catalog skill names directly required by those branches.
 

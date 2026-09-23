@@ -446,16 +446,10 @@ def test_request_envelope_requires_canonical_hashes(field) -> None:
         RequestEnvelope.model_validate(envelope)
 
 
-def test_file_ledger_write_failure_does_not_mutate_memory(tmp_path, monkeypatch) -> None:
-    file = FileLedger(tmp_path / "run.jsonl", "run")
-    original_open = Path.open
-
-    def fail_open(path, *args, **kwargs):
-        if path == file.path:
-            raise OSError("disk full")
-        return original_open(path, *args, **kwargs)
-
-    monkeypatch.setattr(Path, "open", fail_open)
+def test_file_ledger_write_failure_does_not_mutate_memory(tmp_path) -> None:
+    class Fail:
+        def write(self, fd, payload): raise OSError("disk full")
+    file = FileLedger(tmp_path / "run.jsonl", "run", _writer=Fail())
     with pytest.raises(OSError, match="disk full"):
         file.append(LedgerKind.TURN_START, turn_id="turn", data={"request": "q"})
     assert file.entries == ()
@@ -473,35 +467,20 @@ def test_file_ledger_fsyncs_directory_on_creation(tmp_path, monkeypatch) -> None
     assert len(calls) == 2
 
 
-def test_file_ledger_recovers_only_unterminated_partial_tail(tmp_path) -> None:
+def test_file_ledger_rejects_unterminated_partial_tail(tmp_path) -> None:
     path = tmp_path / "run.jsonl"
     file = FileLedger(path, "run")
     file.append(LedgerKind.TURN_START, turn_id="turn", data={"request": "q"})
-    with path.open("a") as handle:
-        handle.write('{"sequence":2')
-    recovered = FileLedger(path, "run")
-    assert len(recovered.entries) == 1
-    assert path.read_text().endswith("\n")
-    recovered.append(LedgerKind.TURN_END, turn_id="turn",
-                     data={"reason": "complete"})
-    assert len(FileLedger(path, "run").entries) == 2
-
-    path.write_text(path.read_text() + '{"sequence":3\n')
-    with pytest.raises(Exception):
+    with path.open("a") as handle: handle.write('{"sequence":2')
+    with pytest.raises(ValueError, match="incomplete trailing record"):
         FileLedger(path, "run")
 
 
 def test_ledger_tail_recovery_fsyncs_file_and_directory(tmp_path, monkeypatch) -> None:
     path = tmp_path / "run.jsonl"
     path.write_text('{"sequence":1')
-    calls = []
-    real_fsync = __import__("os").fsync
-    def record(fd):
-        calls.append(fd)
-        return real_fsync(fd)
-    monkeypatch.setattr("v2.runtime.ledger.os.fsync", record)
-    FileLedger(path, "run")
-    assert len(calls) == 2
+    with pytest.raises(ValueError, match="incomplete trailing record"):
+        FileLedger(path, "run")
 
 
 def test_file_ledger_rejects_blank_records(tmp_path) -> None:

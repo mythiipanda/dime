@@ -23,7 +23,8 @@ Each Claim contains:
 - kind: observed, derived, projection, or judgment;
 - evidence_ids: admitted sources supporting the claim;
 - calculation_id: required for a derived claim;
-- confidence: required for a projection claim.
+- confidence: required for a projection claim;
+- output_bindings: claim-local typed output proposals. Preserve valid existing proposals when the repaired claim still states that exact output; otherwise remove or replace them with exact requirement/output, evidence selector/value/subject/unit/domain, or calculation identity proposals for deterministic admission.
 
 ## Invariants
 - Do not add a fact, number, date, entity, season, rank, or unit absent from admitted evidence.

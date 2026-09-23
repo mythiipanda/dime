@@ -1,0 +1,59 @@
+{
+  "capability_id": "rest_splits",
+  "dependent_entity_arguments": {},
+  "properties": [
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "string"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "b6f8359b507cc999385a29f3a5a8567183f33e990e14326d61f9808796cc29c4"
+        }
+      ],
+      "compiled_kinds": [
+        "string"
+      ],
+      "default": "2025-26",
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "season",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "b6f8359b507cc999385a29f3a5a8567183f33e990e14326d61f9808796cc29c4"
+    },
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "string"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "709300bf34f89b7ec383b3333d501da187ed2fb156ff6c750f1b30fd261c9171"
+        }
+      ],
+      "compiled_kinds": [
+        "string"
+      ],
+      "default": "",
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "team_abbrev",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "709300bf34f89b7ec383b3333d501da187ed2fb156ff6c750f1b30fd261c9171"
+    }
+  ],
+  "reasons": [],
+  "schema_sha256": "7a8c49ec70e5b6c730bdd2738080808db4a79a88756bd7c8e85ab5abee9742ff",
+  "status": "REPRESENTABLE"
+}

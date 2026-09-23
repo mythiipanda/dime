@@ -5,6 +5,7 @@ import json
 import re
 import os
 import math
+import fcntl
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
@@ -559,12 +560,43 @@ class RunLedger:
         )
 
 
+class _LedgerWriter:
+    """Internal write seam; not reachable from runtime configuration."""
+    def write(self, fd: int, payload: bytes) -> None:
+        view = memoryview(payload)
+        while view:
+            written = os.write(fd, view)
+            if written <= 0:
+                raise OSError("ledger write made no progress")
+            view = view[written:]
+
+
+def _canonical_ledger_path(directory: str | Path, run_id: str) -> Path:
+    if not run_id or any(char not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_" for char in run_id):
+        raise ValueError("run_id may contain only letters, numbers, '-' and '_'")
+    root = Path(directory).expanduser().resolve(strict=False)
+    if root.exists() and root.is_symlink():
+        raise ValueError("ledger directory cannot be a symlink")
+    candidate = (root / f"{run_id}.jsonl").resolve(strict=False)
+    if candidate.parent != root:
+        raise ValueError("ledger path escapes configured directory")
+    return candidate
+
 class FileLedger:
-    def __init__(self, path: str | Path, run_id: str) -> None:
-        self.path = Path(path)
+    def __init__(self, path: str | Path, run_id: str, *, _writer: _LedgerWriter | None = None) -> None:
+        supplied = Path(path)
+        if supplied.is_symlink():
+            raise ValueError("ledger file cannot be a symlink")
+        if any(component.is_symlink() for component in (supplied.parent, *supplied.parent.parents)):
+            raise ValueError("ledger file parent cannot be a symlink")
+        self.path = _canonical_ledger_path(supplied.parent, run_id)
+        if supplied.name != self.path.name or supplied.resolve(strict=False) != self.path:
+            raise ValueError("ledger path must be canonical <ledger_dir>/<run_id>.jsonl")
         self._reject_symlinked_path()
+        self._lock_path = self.path.with_name(self.path.name + ".lock")
         self._lock = _ledger_path_lock(self.path)
-        with self._lock:
+        self._writer = _writer or _LedgerWriter()
+        with self._critical_section():
             self.ledger = RunLedger(run_id, self._read())
 
     @property
@@ -573,66 +605,65 @@ class FileLedger:
 
     @property
     def entries(self) -> tuple[LedgerEntry, ...]:
-        with self._lock:
+        with self._critical_section():
             self.ledger = RunLedger(self.run_id, self._read())
             return self.ledger.entries
 
-    def append(self, *args: Any, **kwargs: Any) -> LedgerEntry:
+    from contextlib import contextmanager
+    @contextmanager
+    def _critical_section(self):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._lock:
-            staged = RunLedger(self.run_id, self._read())
-            entry = staged.append(*args, **kwargs)
-            parent_was_missing = not self.path.parent.exists()
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            file_was_missing = not self.path.exists()
-            with self.path.open("a", encoding="utf-8") as handle:
-                handle.write(entry.model_dump_json() + "\n")
-                handle.flush()
-                os.fsync(handle.fileno())
-            if file_was_missing or parent_was_missing:
-                directory_fd = os.open(self.path.parent, os.O_RDONLY)
+            with self._lock_path.open("a+b") as lock_handle:
+                fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
                 try:
-                    os.fsync(directory_fd)
+                    yield
                 finally:
-                    os.close(directory_fd)
+                    fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+
+    def append(self, *args: Any, **kwargs: Any) -> LedgerEntry:
+        expected_sequence = kwargs.pop("_expected_sequence", None)
+        with self._critical_section():
+            staged = RunLedger(self.run_id, self._read())
+            actual_sequence = len(staged.entries) + 1
+            if expected_sequence is not None and expected_sequence != actual_sequence:
+                raise ValueError("ledger sequence changed before append")
+            entry = staged.append(*args, **kwargs)
+            payload = (entry.model_dump_json() + "\n").encode()
+            file_was_missing = not self.path.exists()
+            fd = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+            offset = os.lseek(fd, 0, os.SEEK_END)
+            try:
+                self._writer.write(fd, payload)
+                os.fsync(fd)
+            except BaseException:
+                os.ftruncate(fd, offset)
+                os.fsync(fd)
+                raise
+            finally:
+                os.close(fd)
+            if file_was_missing:
+                directory_fd = os.open(self.path.parent, os.O_RDONLY)
+                try: os.fsync(directory_fd)
+                finally: os.close(directory_fd)
             self.ledger = staged
             return entry
 
     def _reject_symlinked_path(self) -> None:
-        if self.path.is_symlink():
-            raise ValueError("ledger file cannot be a symlink")
+        if self.path.is_symlink(): raise ValueError("ledger file cannot be a symlink")
         parent = self.path.parent
         if any(component.is_symlink() for component in (parent, *parent.parents)):
             raise ValueError("ledger file parent cannot be a symlink")
 
     def _read(self) -> list[LedgerEntry]:
         self._reject_symlinked_path()
-        if not self.path.exists():
-            return []
-        text = self.path.read_text()
-        lines = text.splitlines()
-        if any(not line.strip() for line in lines):
-            raise ValueError("ledger cannot contain blank records")
-        if text and not text.endswith("\n"):
-            try:
-                LedgerEntry.model_validate_json(lines[-1])
-            except ValueError:
-                lines.pop()
-                normalized = "\n".join(lines) + ("\n" if lines else "")
-            else:
-                normalized = text + "\n"
-            with self.path.open("w", encoding="utf-8") as handle:
-                handle.write(normalized)
-                handle.flush()
-                os.fsync(handle.fileno())
-            directory_fd = os.open(self.path.parent, os.O_RDONLY)
-            try:
-                os.fsync(directory_fd)
-            finally:
-                os.close(directory_fd)
-        return [
-            LedgerEntry.model_validate_json(line)
-            for line in lines
-        ]
+        if not self.path.exists(): return []
+        raw = self.path.read_bytes()
+        if raw and not raw.endswith(b"\n"):
+            raise ValueError("ledger has an incomplete trailing record")
+        lines = raw.splitlines()
+        if any(not line.strip() for line in lines): raise ValueError("ledger cannot contain blank records")
+        return [LedgerEntry.model_validate_json(line) for line in lines]
 
 
 def _hash(value: Any) -> str:

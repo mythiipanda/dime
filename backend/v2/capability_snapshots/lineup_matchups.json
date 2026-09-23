@@ -1,0 +1,109 @@
+{
+  "capability_id": "lineup_matchups",
+  "dependent_entity_arguments": {},
+  "properties": [
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "number"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "cf6537a1ad90fc1536ff1761562296d8dc181bc2cb60a914cb388ebc1cdfdbee"
+        }
+      ],
+      "compiled_kinds": [
+        "number"
+      ],
+      "default": 10,
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "min_minutes",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "cf6537a1ad90fc1536ff1761562296d8dc181bc2cb60a914cb388ebc1cdfdbee"
+    },
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "string"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "b6f8359b507cc999385a29f3a5a8567183f33e990e14326d61f9808796cc29c4"
+        }
+      ],
+      "compiled_kinds": [
+        "string"
+      ],
+      "default": "2025-26",
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "season",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "b6f8359b507cc999385a29f3a5a8567183f33e990e14326d61f9808796cc29c4"
+    },
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "string"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "00404e686415370f1711c4d7acfa2905444d3cf23cef2e10c47d445ebe690f96"
+        }
+      ],
+      "compiled_kinds": [
+        "string"
+      ],
+      "default": null,
+      "default_present": false,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "team_a",
+      "required": true,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "00404e686415370f1711c4d7acfa2905444d3cf23cef2e10c47d445ebe690f96"
+    },
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "string"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "00404e686415370f1711c4d7acfa2905444d3cf23cef2e10c47d445ebe690f96"
+        }
+      ],
+      "compiled_kinds": [
+        "string"
+      ],
+      "default": null,
+      "default_present": false,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "team_b",
+      "required": true,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "00404e686415370f1711c4d7acfa2905444d3cf23cef2e10c47d445ebe690f96"
+    }
+  ],
+  "reasons": [],
+  "schema_sha256": "20880ba61b60f18d7470abc2ed4954420b8299ba4a65cefbbd20cd4410ead7b6",
+  "status": "REPRESENTABLE"
+}

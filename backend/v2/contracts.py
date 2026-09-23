@@ -9,6 +9,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, model_validator
 from pydantic_core import PydanticCustomError
 from typing import Annotated
+from v2.arguments import CapabilityArgumentSet
 
 
 class RunMode(StrEnum):
@@ -44,6 +45,192 @@ class GapKind(StrEnum):
     UNSUPPORTED_CLAIM = "unsupported_claim"
     EXECUTION_FAILURE = "execution_failure"
     SYNTHESIS_INCOMPLETE = "synthesis_incomplete"
+    PROFILE_NAME_RESOLUTION_UNAVAILABLE = "profile/name_resolution_unavailable"
+
+
+MAX_INTAKE_CONTEXT_TURNS = 8
+CanonicalDimensionId = Annotated[
+    str, Field(min_length=1, max_length=128, pattern=r"^[A-Z][A-Z0-9_]*$")]
+RequirementKind = Literal["evidence", "calculation", "task"]
+
+
+
+class SourceLocator(BaseModel):
+    """Exact model-declared location in the request or bounded context."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    source: Literal["request", "context"]
+    context_turn: StrictInt | None = Field(
+        default=None, ge=0, lt=MAX_INTAKE_CONTEXT_TURNS)
+    start: StrictInt = Field(ge=0, le=2000)
+    end: StrictInt = Field(gt=0, le=2000)
+    text: str = Field(min_length=1, max_length=2000)
+
+    @model_validator(mode="after")
+    def validate_locator(self) -> "SourceLocator":
+        if self.end <= self.start:
+            raise ValueError("source locator end must exceed start")
+        if self.end - self.start != len(self.text):
+            raise ValueError("source locator offsets must match text length")
+        if not self.text.strip():
+            raise ValueError("source locator text must not be blank")
+        if self.source == "request" and self.context_turn is not None:
+            raise ValueError("request locator cannot name a context turn")
+        if self.source == "context" and self.context_turn is None:
+            raise ValueError("context locator requires a context turn")
+        return self
+
+
+class AdmissionReviewTarget(BaseModel):
+    """Digests of the exact source envelope and proposed TaskSpec reviewed."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    request_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    context_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    task_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class TaskAdmissionSubject(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    kind: Literal["task"]
+    task_id: Literal["request"] = "request"
+
+
+class EntityAdmissionSubject(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    kind: Literal["entity"]
+    entity_id: str = Field(min_length=1, max_length=256)
+    entity_type: Literal["player", "team", "game", "league"]
+
+
+class MetricAdmissionSubject(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    kind: Literal["metric"]
+    owner_kind: Literal["task", "evidence", "calculation"]
+    owner_id: str = Field(min_length=1, max_length=64)
+    metric_id: CanonicalDimensionId
+
+
+class SeasonAdmissionSubject(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    kind: Literal["season"]
+    value: str = Field(max_length=7)
+
+    @model_validator(mode="after")
+    def validate_season(self) -> "SeasonAdmissionSubject":
+        if not _is_canonical_season(self.value):
+            raise ValueError("season admission subject must use consecutive YYYY-YY format")
+        return self
+
+
+class RequirementAdmissionSubject(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    kind: Literal["requirement"]
+    requirement_kind: RequirementKind
+    requirement_id: str = Field(min_length=1, max_length=64,
+                                pattern=r"^[a-z][a-z0-9_]*$")
+
+
+class OutputAdmissionSubject(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    kind: Literal["output"]
+    owner_kind: Literal["task", "evidence", "calculation"]
+    requirement_id: str = Field(min_length=1, max_length=64,
+                                pattern=r"^[a-z][a-z0-9_]*$")
+    output_id: CanonicalDimensionId
+
+
+AdmissionSubject = Annotated[
+    TaskAdmissionSubject | EntityAdmissionSubject | MetricAdmissionSubject | SeasonAdmissionSubject |
+    RequirementAdmissionSubject | OutputAdmissionSubject,
+    Field(discriminator="kind"),
+]
+
+
+class AdmissionBinding(BaseModel):
+    """One canonical expected subject bound to one exact source location."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    subject: AdmissionSubject
+    locator: SourceLocator
+
+
+class UnresolvedReference(BaseModel):
+    """A source-bound reference the intake could not safely resolve."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Literal["entity", "player", "team", "game", "league", "unknown"]
+    locator: SourceLocator
+
+
+class AdmissionFinding(BaseModel):
+    """Typed mismatch in the proposed intake; prose is diagnostic only."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    code: Literal[
+        "missing_binding", "extraneous_subject", "subject_mismatch",
+        "invalid_locator",
+    ]
+    affected_subjects: tuple[AdmissionSubject, ...] = Field(
+        default_factory=tuple, max_length=32)
+    explanation: str | None = Field(default=None, min_length=1, max_length=1000)
+
+    @model_validator(mode="after")
+    def validate_finding(self) -> "AdmissionFinding":
+        identities = [item.model_dump_json() for item in self.affected_subjects]
+        if len(identities) != len(set(identities)):
+            raise ValueError("admission finding subjects must not contain duplicates")
+        if not self.affected_subjects:
+            raise ValueError("admission finding requires an affected subject")
+        return self
+
+
+class IntakeAdmissionReview(BaseModel):
+    """Frozen independent decision over one exact source/task target."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    target: AdmissionReviewTarget
+    decision: Literal["admit", "block"]
+    expected_subjects: tuple[AdmissionSubject, ...] = Field(min_length=1, max_length=128)
+    bindings: tuple[AdmissionBinding, ...] = Field(default_factory=tuple, max_length=128)
+    unresolved_references: tuple[UnresolvedReference, ...] = Field(
+        default_factory=tuple, max_length=32)
+    findings: tuple[AdmissionFinding, ...] = Field(default_factory=tuple, max_length=32)
+
+    @model_validator(mode="after")
+    def validate_review(self) -> "IntakeAdmissionReview":
+        expected = [item.model_dump_json() for item in self.expected_subjects]
+        if len(expected) != len(set(expected)):
+            raise ValueError("expected admission subjects must not contain duplicates")
+        bound = [item.subject.model_dump_json() for item in self.bindings]
+        if len(bound) != len(set(bound)):
+            raise ValueError("admission review must not duplicate subject bindings")
+        unresolved = [
+            (item.kind, item.locator.source, item.locator.context_turn,
+             item.locator.start, item.locator.end)
+            for item in self.unresolved_references
+        ]
+        if len(unresolved) != len(set(unresolved)):
+            raise ValueError("admission review must not duplicate unresolved references")
+        if self.decision == "admit":
+            if self.unresolved_references or self.findings:
+                raise ValueError("admitted intake cannot retain blockers")
+            if set(bound) != set(expected) or len(bound) != len(expected):
+                raise ValueError("admitted intake must bind every expected subject exactly once")
+        elif not (self.unresolved_references or self.findings):
+            raise ValueError("blocked intake requires a typed blocker or finding")
+        return self
+
+    def require_target(self, target: AdmissionReviewTarget) -> None:
+        """Reject a well-formed review replayed beside another source/task."""
+        if self.target != target:
+            raise ValueError("intake admission review target does not match")
 
 
 class EntityRef(BaseModel):
@@ -101,6 +288,16 @@ class CalculationRequirement(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str = Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9_]*$")
     description: str = Field(min_length=1, max_length=1000)
+    metric_ids: list[CanonicalDimensionId] = Field(default_factory=list, max_length=16)
+    requested_outputs: list[CanonicalDimensionId] = Field(default_factory=list, max_length=16)
+
+    @model_validator(mode="after")
+    def validate_dimensions(self) -> "CalculationRequirement":
+        for field_name in ("metric_ids", "requested_outputs"):
+            values = getattr(self, field_name)
+            if len(values) != len(set(values)):
+                raise ValueError(f"{field_name} must not contain duplicates")
+        return self
 
 
 class EvidenceRequirement(BaseModel):
@@ -115,6 +312,9 @@ class EvidenceRequirement(BaseModel):
     # review and planning. A planner cannot claim coverage with a nearby metric,
     # population, or vintage merely because the capability name matches.
     capability_arguments: dict[str, Any] = Field(default_factory=dict, max_length=32)
+    capability_argument_sets: list[CapabilityArgumentSet] = Field(default_factory=list, max_length=8)
+    metric_ids: list[CanonicalDimensionId] = Field(default_factory=list, max_length=16)
+    requested_outputs: list[CanonicalDimensionId] = Field(default_factory=list, max_length=16)
 
     @model_validator(mode="after")
     def validate_requirement(self) -> "EvidenceRequirement":
@@ -124,6 +324,15 @@ class EvidenceRequirement(BaseModel):
             raise ValueError("requirement capabilities must be non-empty")
         if len(self.capability_options) != len(set(self.capability_options)):
             raise ValueError("requirement capabilities must not contain duplicates")
+        if self.capability_argument_sets:
+            ids = [item.capability_id for item in self.capability_argument_sets]
+            if len(ids) != len(set(ids)) or set(ids) != set(self.capability_options):
+                raise ValueError("capability argument sets must uniquely cover options")
+            self.capability_argument_sets.sort(key=lambda item: item.capability_id)
+        for field_name in ("metric_ids", "requested_outputs"):
+            values = getattr(self, field_name)
+            if len(values) != len(set(values)):
+                raise ValueError(f"{field_name} must not contain duplicates")
         return self
 
 
@@ -133,6 +342,8 @@ class TaskSpec(BaseModel):
     goal: str = Field(max_length=2000)
     mode: RunMode
     deliverable: str = Field(max_length=1000)
+    metric_ids: list[CanonicalDimensionId] = Field(default_factory=list, max_length=32)
+    requested_outputs: list[CanonicalDimensionId] = Field(default_factory=list, max_length=32)
     entities: list[EntityRef] = Field(default_factory=list, max_length=64)
     season: SeasonRef | None = None
     as_of: date | None = None
@@ -151,7 +362,7 @@ class TaskSpec(BaseModel):
         if not self.goal.strip() or not self.deliverable.strip():
             raise ValueError("task goal and deliverable must be non-empty")
         for field_name in ("subquestions", "required_evidence", "assumptions",
-                           "open_questions", "skills"):
+                           "open_questions", "skills", "metric_ids", "requested_outputs"):
             values = getattr(self, field_name)
             if any(not value.strip() for value in values):
                 raise ValueError(f"{field_name} must not contain empty values")
@@ -163,6 +374,9 @@ class TaskSpec(BaseModel):
         calculation_ids = [item.id for item in self.calculation_requirements]
         if len(calculation_ids) != len(set(calculation_ids)):
             raise ValueError("calculation requirements must not contain duplicate ids")
+        overlap = set(requirement_ids) & set(calculation_ids)
+        if overlap:
+            raise ValueError(f"evidence and calculation requirement ids overlap: {sorted(overlap)}")
         entity_keys = [(item.type, item.id) for item in self.entities]
         if len(entity_keys) != len(set(entity_keys)):
             raise ValueError("entities must not contain duplicate identities")
@@ -293,7 +507,25 @@ class LiveSourceIdentity(BaseModel):
     source: Literal["nba_api", "basketball_reference", "espn", "fixture"]
 
 
-SourceIdentity = Annotated[WarehouseSourceIdentity | LiveSourceIdentity, Field(discriminator="kind")]
+class CompositeSourceIdentity(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    kind: Literal["composite"] = "composite"
+    warehouse_id: Literal["frozen-eval", "configured-runtime"]
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    live_sources: list[Literal["nba_api", "basketball_reference", "espn"]] = Field(
+        min_length=1, max_length=8)
+
+    @model_validator(mode="after")
+    def validate_sources(self):
+        if len(self.live_sources) != len(set(self.live_sources)):
+            raise ValueError("composite live sources must be unique")
+        return self
+
+
+SourceIdentity = Annotated[
+    WarehouseSourceIdentity | LiveSourceIdentity | CompositeSourceIdentity,
+    Field(discriminator="kind"),
+]
 
 
 class EvidenceEnvelope(BaseModel):
@@ -377,6 +609,137 @@ class EvidenceEnvelope(BaseModel):
         return self
 
 
+class BooleanOutputValue(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    kind: Literal["boolean"] = "boolean"
+    value: StrictBool
+
+
+class IntegerOutputValue(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    kind: Literal["integer"] = "integer"
+    value: StrictInt
+
+    @model_validator(mode="before")
+    @classmethod
+    def exact_integer_type(cls, value: Any) -> Any:
+        raw = value.get("value") if isinstance(value, dict) else None
+        if isinstance(raw, bool) or not isinstance(raw, int):
+            raise ValueError("integer output value requires an integer input")
+        return value
+
+
+class FloatOutputValue(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    kind: Literal["float"] = "float"
+    value: StrictFloat
+
+    @model_validator(mode="before")
+    @classmethod
+    def exact_float_type(cls, value: Any) -> Any:
+        raw = value.get("value") if isinstance(value, dict) else None
+        if not isinstance(raw, float):
+            raise ValueError("float output value requires a float input")
+        return value
+
+    @model_validator(mode="after")
+    def finite(self) -> "FloatOutputValue":
+        if not math.isfinite(self.value):
+            raise ValueError("float output value must be finite")
+        return self
+
+
+class DecimalOutputValue(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    kind: Literal["decimal"] = "decimal"
+    value: str = Field(min_length=1, max_length=1000,
+                       pattern=r"^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$")
+
+    @model_validator(mode="after")
+    def finite(self) -> "DecimalOutputValue":
+        if not Decimal(self.value).is_finite():
+            raise ValueError("decimal output value must be finite")
+        return self
+
+
+class StringOutputValue(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    kind: Literal["string"] = "string"
+    value: str = Field(max_length=200000)
+
+
+AdmittedOutputValue = Annotated[
+    BooleanOutputValue | IntegerOutputValue | FloatOutputValue |
+    DecimalOutputValue | StringOutputValue,
+    Field(discriminator="kind"),
+]
+
+
+class DeclaredOutputUnit(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    kind: Literal["declared"] = "declared"
+    value: str = Field(min_length=1, max_length=256)
+
+
+class UnitlessOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    kind: Literal["unitless"] = "unitless"
+
+
+OutputUnitAuthority = Annotated[
+    DeclaredOutputUnit | UnitlessOutput, Field(discriminator="kind")]
+
+
+class EvidenceOutputBinding(BaseModel):
+    """Immutable claim-local authority for one admitted evidence output."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    requirement_kind: Literal["evidence", "task"] = "evidence"
+    requirement_id: str | None = Field(default=None, min_length=1, max_length=64)
+    output_id: CanonicalDimensionId
+    node_id: str = Field(min_length=1, max_length=256)
+    evidence_id: str = Field(min_length=1, max_length=256)
+    selector: str = Field(min_length=1, max_length=1000)
+    row_selector: str | None = Field(default=None, min_length=1, max_length=1000)
+    value: AdmittedOutputValue
+    subject_entity_type: str | None = Field(default=None, min_length=1, max_length=64)
+    subject_entity_id: str | None = Field(default=None, min_length=1, max_length=256)
+    subject_selector: str | None = Field(default=None, min_length=1, max_length=1000)
+    unit: OutputUnitAuthority
+    domain: str = Field(min_length=1, max_length=256)
+
+    @model_validator(mode="after")
+    def validate_scope(self) -> "EvidenceOutputBinding":
+        if self.requirement_kind == "evidence" and self.requirement_id is None:
+            raise ValueError("evidence binding requires requirement id")
+        if self.requirement_kind == "task" and self.requirement_id is not None:
+            raise ValueError("task binding cannot name requirement id")
+        subject_fields = (self.subject_entity_type, self.subject_entity_id,
+                          self.subject_selector, self.row_selector)
+        if any(value is None for value in subject_fields) and any(
+                value is not None for value in subject_fields):
+            raise ValueError("binding subject type, id, and selector must be supplied together")
+        return self
+
+
+class CalculationOutputBinding(BaseModel):
+    """Immutable claim-local authority for one verified calculation output."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    requirement_kind: Literal["calculation"] = "calculation"
+    requirement_id: str = Field(min_length=1, max_length=64)
+    output_id: CanonicalDimensionId
+    calculation_id: str = Field(min_length=1, max_length=256)
+
+
+ClaimOutputBinding = Annotated[
+    EvidenceOutputBinding | CalculationOutputBinding,
+    Field(discriminator="requirement_kind"),
+]
+
+
 class Claim(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -385,6 +748,7 @@ class Claim(BaseModel):
     evidence_ids: list[str] = Field(default_factory=list, max_length=32)
     calculation_id: str | None = Field(default=None, max_length=256)
     confidence: StrictFloat | None = Field(default=None, ge=0, le=1)
+    output_bindings: list[ClaimOutputBinding] = Field(default_factory=list, max_length=64)
 
     @model_validator(mode="after")
     def validate_support(self) -> Claim:
@@ -394,6 +758,20 @@ class Claim(BaseModel):
             raise ValueError("claim evidence_ids must not contain empty values")
         if len(self.evidence_ids) != len(set(self.evidence_ids)):
             raise ValueError("claim evidence_ids must not contain duplicates")
+        binding_ids = [
+            (item.requirement_kind, item.requirement_id, item.output_id)
+            for item in self.output_bindings
+        ]
+        if len(binding_ids) != len(set(binding_ids)):
+            raise ValueError("claim output bindings must be unique")
+        if any(isinstance(item, EvidenceOutputBinding)
+               and item.evidence_id not in self.evidence_ids
+               for item in self.output_bindings):
+            raise ValueError("claim output binding must cite claim evidence")
+        if any(isinstance(item, CalculationOutputBinding)
+               and item.calculation_id != self.calculation_id
+               for item in self.output_bindings):
+            raise ValueError("claim calculation binding must cite claim calculation")
         if self.kind in (ClaimKind.OBSERVED, ClaimKind.DERIVED):
             if not self.evidence_ids:
                 raise ValueError("observed and derived claims require evidence")
@@ -481,6 +859,31 @@ class Gap(BaseModel):
         return self
 
 
+class OutputFinalStatus(BaseModel):
+    """Deterministic publication status for one typed requested output."""
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    requirement_kind: RequirementKind
+    requirement_id: str | None = Field(default=None, max_length=64)
+    output_id: CanonicalDimensionId
+    status: Literal["complete", "missing", "rejected"]
+    claim_index: StrictInt | None = Field(default=None, ge=0)
+    binding: ClaimOutputBinding | None = None
+
+    @model_validator(mode="after")
+    def validate_status(self) -> "OutputFinalStatus":
+        if self.status == "complete":
+            if self.binding is None or self.claim_index is None:
+                raise ValueError("complete output requires admitted binding and claim")
+        elif self.binding is not None or self.claim_index is not None:
+            raise ValueError("incomplete output cannot carry publication authority")
+        if self.binding is not None:
+            if (self.binding.requirement_kind != self.requirement_kind
+                    or self.binding.requirement_id != self.requirement_id
+                    or self.binding.output_id != self.output_id):
+                raise ValueError("output status identity must match admitted binding")
+        return self
+
+
 class ClaimSource(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -512,6 +915,7 @@ class VerifiedClaim(BaseModel):
     claim: Claim
     evidence_ids: list[str] = Field(default_factory=list, max_length=32)
     sources: list[ClaimSource] = Field(default_factory=list, max_length=32)
+    output_bindings: list[ClaimOutputBinding] = Field(default_factory=list, max_length=64)
 
     @model_validator(mode="after")
     def validate_references(self) -> "VerifiedClaim":
@@ -524,6 +928,20 @@ class VerifiedClaim(BaseModel):
             raise ValueError("verified claim evidence must match the claim")
         if not set(source_ids) <= set(self.evidence_ids):
             raise ValueError("verified claim sources must belong to its evidence")
+        identities = [
+            (item.requirement_kind, item.requirement_id, item.output_id)
+            for item in self.output_bindings
+        ]
+        if len(identities) != len(set(identities)):
+            raise ValueError("verified claim output bindings must be unique")
+        if any(isinstance(item, EvidenceOutputBinding)
+               and item.evidence_id not in self.evidence_ids
+               for item in self.output_bindings):
+            raise ValueError("verified claim binding must cite claim evidence")
+        if any(isinstance(item, CalculationOutputBinding)
+               and item.calculation_id != self.claim.calculation_id
+               for item in self.output_bindings):
+            raise ValueError("verified calculation binding must cite claim calculation")
         return self
 
 

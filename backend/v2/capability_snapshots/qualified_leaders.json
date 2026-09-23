@@ -1,0 +1,109 @@
+{
+  "capability_id": "qualified_leaders",
+  "dependent_entity_arguments": {},
+  "properties": [
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "int"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "43ada6d096e175dffe62431620c2def1ccba3b44a0853c0de9167d0fa0a912d6"
+        }
+      ],
+      "compiled_kinds": [
+        "int"
+      ],
+      "default": 0,
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "min_attempts",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "43ada6d096e175dffe62431620c2def1ccba3b44a0853c0de9167d0fa0a912d6"
+    },
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "string"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "3a8a2bb5dafc5522e18e280fd97a0683a7f5b9944a1f7560f4e09ae6a7b7604a"
+        }
+      ],
+      "compiled_kinds": [
+        "string"
+      ],
+      "default": "desc",
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "ranking_direction",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "3a8a2bb5dafc5522e18e280fd97a0683a7f5b9944a1f7560f4e09ae6a7b7604a"
+    },
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "string"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "b6f8359b507cc999385a29f3a5a8567183f33e990e14326d61f9808796cc29c4"
+        }
+      ],
+      "compiled_kinds": [
+        "string"
+      ],
+      "default": "2025-26",
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "season",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "b6f8359b507cc999385a29f3a5a8567183f33e990e14326d61f9808796cc29c4"
+    },
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "string"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "1f801a0223ababd221c9deb992217ac5a6d8b8ca267154090a4ba802d39e7d2f"
+        }
+      ],
+      "compiled_kinds": [
+        "string"
+      ],
+      "default": "PTS",
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "stat_category",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "1f801a0223ababd221c9deb992217ac5a6d8b8ca267154090a4ba802d39e7d2f"
+    }
+  ],
+  "reasons": [],
+  "schema_sha256": "17eace34262acd863f83d6ef795feeef158887fa1745a6079edc5668d5bb0663",
+  "status": "REPRESENTABLE"
+}

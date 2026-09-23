@@ -1,0 +1,309 @@
+{
+  "capability_id": "shots",
+  "dependent_entity_arguments": {},
+  "properties": [
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "bool"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "b687a199017fbc10b291decd7716070a4483f9a198d5240b5dddf50c424b79d8"
+        }
+      ],
+      "compiled_kinds": [
+        "bool"
+      ],
+      "default": true,
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "exclude_heaves",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "b687a199017fbc10b291decd7716070a4483f9a198d5240b5dddf50c424b79d8"
+    },
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "string"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "709300bf34f89b7ec383b3333d501da187ed2fb156ff6c750f1b30fd261c9171"
+        }
+      ],
+      "compiled_kinds": [
+        "string"
+      ],
+      "default": "",
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "group_by",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "709300bf34f89b7ec383b3333d501da187ed2fb156ff6c750f1b30fd261c9171"
+    },
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "string"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "d756fdc63bdc566ac66035a2c6dc2acbfd26c79dd702693e0a9475b77c91a067"
+        }
+      ],
+      "compiled_kinds": [
+        "string"
+      ],
+      "default": "auto",
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "include_ot",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "d756fdc63bdc566ac66035a2c6dc2acbfd26c79dd702693e0a9475b77c91a067"
+    },
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "string"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "709300bf34f89b7ec383b3333d501da187ed2fb156ff6c750f1b30fd261c9171"
+        }
+      ],
+      "compiled_kinds": [
+        "string"
+      ],
+      "default": "",
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "late_clock",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "709300bf34f89b7ec383b3333d501da187ed2fb156ff6c750f1b30fd261c9171"
+    },
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "int"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "eeef0f645163404409a778065e8d1ae3599e1245b41cb21e56fdb73cdb911002"
+        }
+      ],
+      "compiled_kinds": [
+        "int"
+      ],
+      "default": 25,
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "limit",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "eeef0f645163404409a778065e8d1ae3599e1245b41cb21e56fdb73cdb911002"
+    },
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "string"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "f1f3fccd52967cb66e4780e6c676a5823c2dd2b441e886d862254d28b7ffd8a0"
+        }
+      ],
+      "compiled_kinds": [
+        "string"
+      ],
+      "default": "any",
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "made",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "f1f3fccd52967cb66e4780e6c676a5823c2dd2b441e886d862254d28b7ffd8a0"
+    },
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "string"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "709300bf34f89b7ec383b3333d501da187ed2fb156ff6c750f1b30fd261c9171"
+        }
+      ],
+      "compiled_kinds": [
+        "string"
+      ],
+      "default": "",
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "periods",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "709300bf34f89b7ec383b3333d501da187ed2fb156ff6c750f1b30fd261c9171"
+    },
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "string"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "709300bf34f89b7ec383b3333d501da187ed2fb156ff6c750f1b30fd261c9171"
+        }
+      ],
+      "compiled_kinds": [
+        "string"
+      ],
+      "default": "",
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "player",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "709300bf34f89b7ec383b3333d501da187ed2fb156ff6c750f1b30fd261c9171"
+    },
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "string"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "b6f8359b507cc999385a29f3a5a8567183f33e990e14326d61f9808796cc29c4"
+        }
+      ],
+      "compiled_kinds": [
+        "string"
+      ],
+      "default": "2025-26",
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "season",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "b6f8359b507cc999385a29f3a5a8567183f33e990e14326d61f9808796cc29c4"
+    },
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "string"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "709300bf34f89b7ec383b3333d501da187ed2fb156ff6c750f1b30fd261c9171"
+        }
+      ],
+      "compiled_kinds": [
+        "string"
+      ],
+      "default": "",
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "team",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "709300bf34f89b7ec383b3333d501da187ed2fb156ff6c750f1b30fd261c9171"
+    },
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "bool"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "f56777819c8be28f711bc04bdfdb5fb6a82bdaf4109198c616273cb0003e4137"
+        }
+      ],
+      "compiled_kinds": [
+        "bool"
+      ],
+      "default": false,
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "three_only",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "f56777819c8be28f711bc04bdfdb5fb6a82bdaf4109198c616273cb0003e4137"
+    },
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "string"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "709300bf34f89b7ec383b3333d501da187ed2fb156ff6c750f1b30fd261c9171"
+        }
+      ],
+      "compiled_kinds": [
+        "string"
+      ],
+      "default": "",
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "zones",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "709300bf34f89b7ec383b3333d501da187ed2fb156ff6c750f1b30fd261c9171"
+    }
+  ],
+  "reasons": [],
+  "schema_sha256": "4a307bceba67f1aaeda8ba8079aaf590180c5e1edec86b9e95cad6d943d02379",
+  "status": "REPRESENTABLE"
+}

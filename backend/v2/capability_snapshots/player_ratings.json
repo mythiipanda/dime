@@ -1,0 +1,109 @@
+{
+  "capability_id": "player_ratings",
+  "dependent_entity_arguments": {},
+  "properties": [
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "int"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "56b50f3a057429011142546d9fd2f6ba66b4d843cb860ed4a9201b1c135189eb"
+        }
+      ],
+      "compiled_kinds": [
+        "int"
+      ],
+      "default": 10,
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "limit",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "56b50f3a057429011142546d9fd2f6ba66b4d843cb860ed4a9201b1c135189eb"
+    },
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "string"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "c1a771580bb706701707ed80e7f58d24927fd6a34691e2d1d673c874859fdb44"
+        }
+      ],
+      "compiled_kinds": [
+        "string"
+      ],
+      "default": "offense",
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "metric",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "c1a771580bb706701707ed80e7f58d24927fd6a34691e2d1d673c874859fdb44"
+    },
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "int"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "bc09d8530bb78540c6271a05f48fae3cfcc31e3a043e8798129bb768f512b3d0"
+        }
+      ],
+      "compiled_kinds": [
+        "int"
+      ],
+      "default": 1000,
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "min_minutes",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "bc09d8530bb78540c6271a05f48fae3cfcc31e3a043e8798129bb768f512b3d0"
+    },
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "string"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "b6f8359b507cc999385a29f3a5a8567183f33e990e14326d61f9808796cc29c4"
+        }
+      ],
+      "compiled_kinds": [
+        "string"
+      ],
+      "default": "2025-26",
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "season",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "b6f8359b507cc999385a29f3a5a8567183f33e990e14326d61f9808796cc29c4"
+    }
+  ],
+  "reasons": [],
+  "schema_sha256": "e674c73d5373aac445d197926610c10dc5af5b00e8a362a442769b60aeb40f91",
+  "status": "REPRESENTABLE"
+}

@@ -6,13 +6,15 @@ from pydantic import BaseModel
 from app.config import settings
 
 from v2.adapters.models import (
+    PlannerArgumentError,
     ModelIntake,
     ModelPlanner,
     ModelRepairer,
     ModelSemanticVerifier,
     ModelSynthesizer,
 )
-from v2.contracts import EvidenceEnvelope, TaskSpec
+from v2.contracts import EvidenceEnvelope, TaskSpec, PlanNode
+from v2.arguments import PlannerOutputWire, RequirementReviewWire, SLOTS
 
 
 class StubModel:
@@ -20,14 +22,50 @@ class StubModel:
         self.values = iter(values)
         self.calls = []
 
+    @staticmethod
+    def _wire_entry(key, value):
+        if value is None: kind,slot='null','value'
+        elif type(value) is bool: kind,slot='bool','bool_value'
+        elif type(value) is int: kind,slot='int','int_value'
+        elif type(value) is float: kind,slot='number','number_value'
+        elif type(value) is str: kind,slot='string','string_value'
+        elif type(value) is list and (not value or all(type(x) is str for x in value)): kind,slot='string_list','string_list_value'
+        else: raise ValueError(f'fixture cannot encode {key}')
+        slots={name:None for name in SLOTS.values()};slots[slot]=value
+        return {'key':key,'kind':kind,**slots}
+    @classmethod
+    def _migrate_fixture(cls, schema, value):
+        if schema is PlannerOutputWire:
+            for n in value.get('nodes',[]):
+                if len(n.get('capability_hints') or []) > 1:
+                    raise ValueError(f"fixture node {n['id']!r} has several capability_hints; the wire takes one capability")
+            return {'nodes':[{'id':n['id'],'description':n['description'],'depends_on':n.get('depends_on'),
+             'capability':(n.get('capability_hints') or [n.get('capability')])[0],
+             'covers_requirement_ids':n.get('covers_requirement_ids'),'arguments':{'entries':[cls._wire_entry(k,v) for k,v in n.get('arguments',{}).items()]},
+             'max_attempts':n.get('max_attempts'),'status':n.get('status')} for n in value.get('nodes',[])]}
+        if schema is RequirementReviewWire:
+            rows=[]
+            for r in value.get('requirements',[]):
+                options=r['capability_options'];shared=r.get('capability_arguments',{})
+                sets=r.get('capability_argument_sets') or [{'capability_id':c,'arguments':shared} for c in options]
+                rows.append({'id':r['id'],'description':r['description'],'capability_options':options,
+                 'capability_argument_sets':[{'capability_id':x['capability_id'],'arguments':{'entries':[cls._wire_entry(k,v) for k,v in x.get('arguments',{}).items()]}} for x in sets],
+                 'metric_ids':r.get('metric_ids'),'requested_outputs':r.get('requested_outputs')})
+            return {'requirements':rows,'calculation_requirements':value.get('calculation_requirements'),
+             'missing_subquestions':value.get('missing_subquestions'),'missing_skills':value.get('missing_skills')}
+        return value
     async def generate(self, **call):
-        self.calls.append(call)
-        return call["schema"].model_validate(next(self.values))
+        self.calls.append(call);value=next(self.values)
+        return call["schema"].model_validate(self._migrate_fixture(call['schema'],value))
 
+
+def fixture_result(call, value):
+    raw=value.model_dump(mode="json") if isinstance(value,BaseModel) else value
+    return call["schema"].model_validate(StubModel._migrate_fixture(call["schema"],raw))
 
 def stage_kwargs():
     return {"provider": "stub", "model_name": "stub-model",
-            "capability_catalog": {"standings": "team standings"}}
+            "capability_catalog": {"standings": {}}}
 
 
 @pytest.mark.anyio
@@ -631,7 +669,7 @@ async def test_model_repair_preserves_previously_supported_claims() -> None:
 @pytest.mark.anyio
 async def test_tool_capability_binds_dependency_lineage() -> None:
     from v2.adapters import ToolCapability
-    from v2.contracts import EvidenceEnvelope, TaskSpec, PlanNode, TaskSpec
+    from v2.contracts import EvidenceEnvelope, TaskSpec, PlanNode
 
     class Args(BaseModel):
         a: str
@@ -821,10 +859,7 @@ async def test_trade_skill_baseline_does_not_expand_one_player_question() -> Non
 
 @pytest.mark.anyio
 async def test_requirement_review_repairs_omitted_compound_branches():
-    catalog = {
-        "team_ratings": "team ratings", "player_ratings": "player ratings",
-        "playoff_team_ratings": "playoff ratings", "playoffs": "results",
-    }
+    catalog = {name:{} for name in ("team_ratings","player_ratings","playoff_team_ratings","playoffs")}
     stub = StubModel([{
         "goal": "rank last season offense and defense", "mode": "deep_dive",
         "deliverable": "rankings", "season": {
@@ -963,7 +998,7 @@ async def test_external_discovery_requirement_accepts_fetched_evidence():
         capability_catalog={"web_search": {}, "web_fetch": {}},
         requirement_review=True,
     ).understand("What is the current status?")
-    assert task.requirements[0].capability_options == ["web_search", "web_fetch"]
+    assert task.requirements[0].capability_options == ["web_search"]  # BL-001 fail-closed exact sets
 
 
 @pytest.mark.anyio
@@ -1241,7 +1276,7 @@ async def test_synthesizer_does_not_retry_unrelated_runtime_error() -> None:
 @pytest.mark.anyio
 async def test_synthesizer_requires_every_independent_calculation_or_named_block():
     from datetime import UTC, datetime
-    from v2.contracts import EvidenceEnvelope, TaskSpec
+    from v2.contracts import EvidenceEnvelope, TaskSpec, PlanNode
 
     task = TaskSpec(
         goal="compare regular season and playoffs", mode="deep_dive",
@@ -1276,7 +1311,7 @@ async def test_synthesizer_requires_every_independent_calculation_or_named_block
 @pytest.mark.anyio
 async def test_synthesizer_accepts_declared_or_blocked_calculation_ledger():
     from datetime import UTC, datetime
-    from v2.contracts import EvidenceEnvelope, TaskSpec
+    from v2.contracts import EvidenceEnvelope, TaskSpec, PlanNode
 
     task = TaskSpec(
         goal="compare regular season and playoffs", mode="deep_dive",
@@ -1542,12 +1577,46 @@ async def test_planner_replans_call_missing_catalog_required_arguments():
         stub, provider="stub", model_name="stub", capability_catalog=catalog,
     ).plan(task)
     assert plan.nodes[0].arguments["team_id"] == 1610612760
+    assert len(stub.calls) == 2
+    assert "coverage_feedback" not in stub.calls[0]["payload"]
     assert stub.calls[1]["payload"]["coverage_feedback"] == {
-        "missing_required_evidence": ["roster"],
-        "missing_requirement_ids": ["team_roster"],
         "missing_required_arguments": {"team_roster": ["team_id"]},
         "instruction": "Return a complete replacement plan.",
     }
+
+
+@pytest.mark.anyio
+async def test_planner_fails_closed_when_replan_still_misses_required_argument():
+    task = TaskSpec(
+        goal="current roster", mode="quick", deliverable="answer",
+        required_evidence=["roster"],
+        requirements=[{
+            "id": "team_roster", "description": "team roster",
+            "capability_options": ["roster"],
+        }],
+    )
+    catalog = {"roster": {
+        "description": "Team roster",
+        "arguments": {
+            "type": "object", "properties": {
+                "team_id": {"type": "integer"},
+                "season": {"type": "string"},
+            }, "required": ["team_id"],
+        },
+    }}
+    missing = {"nodes": [{
+        "id": "team_roster", "description": "roster",
+        "capability_hints": ["roster"],
+        "covers_requirement_ids": ["team_roster"],
+        "arguments": {"season": "2025-26"},
+    }]}
+    stub = StubModel([missing, missing])
+    with pytest.raises(PlannerArgumentError, match="'team_id' is a required property") as caught:
+        await ModelPlanner(
+            stub, provider="stub", model_name="stub", capability_catalog=catalog,
+        ).plan(task)
+    assert caught.value.missing_required == ["team_id"]
+    assert len(stub.calls) == 2
 
 @pytest.mark.anyio
 async def test_requirement_review_retries_one_provider_exhaustion() -> None:
@@ -1587,8 +1656,47 @@ async def test_requirement_review_closes_narrow_option_over_broader_capability()
         stub, provider="stub", model_name="stub", requirement_review=True,
         capability_catalog={"player_report": {}, "shooting_efficiency": {}},
     ).understand("Luka's 2022-23 line")
-    assert task.requirements[0].capability_options == [
-        "shooting_efficiency", "player_report"]
+    assert task.requirements[0].capability_options == ["shooting_efficiency"]  # BL-001
+
+@pytest.mark.anyio
+async def test_requirement_metric_and_output_ids_survive_typed_intake():
+    stub = StubModel([{
+        "goal": "best defense", "mode": "quick", "deliverable": "team",
+        "required_evidence": ["team_ratings"],
+    }, {
+        "requirements": [{
+            "id": "defense", "description": "lowest defensive rating",
+            "capability_options": ["team_ratings"],
+            "capability_arguments": {"season": "2025-26"},
+            "metric_ids": ["DEF_RATING"],
+            "requested_outputs": ["DEF_RATING", "TEAM_NAME"],
+        }],
+    }])
+    task = await ModelIntake(
+        stub, provider="stub", model_name="stub", requirement_review=True,
+        capability_catalog={"team_ratings": {}},
+    ).understand("Which team had the lowest defensive rating in 2025-26?")
+    wire = stub.calls[1]["schema"]
+    assert wire is RequirementReviewWire
+    requirement = next(item for item in task.requirements if item.id == "defense")
+    assert requirement.metric_ids == ["DEF_RATING"]
+    assert requirement.requested_outputs == ["DEF_RATING", "TEAM_NAME"]
+
+
+@pytest.mark.parametrize("field", ["metric_ids", "requested_outputs"])
+@pytest.mark.parametrize("bad", ["def_rating", "", "1PTS", "A" * 129])
+def test_requirement_wire_rejects_malformed_dimension_ids(field, bad):
+    from pydantic import ValidationError
+    from v2.arguments import CalculationRequirementWire, RequirementWire
+    base = {"id": "r", "description": "d", "metric_ids": None, "requested_outputs": None}
+    evidence = {**base, "capability_options": ["team_ratings"],
+                "capability_argument_sets": [{"capability_id": "team_ratings",
+                                              "arguments": {"entries": []}}]}
+    for model, row in ((RequirementWire, evidence), (CalculationRequirementWire, base)):
+        model.model_validate({**row, field: ["DEF_RATING"]})
+        with pytest.raises(ValidationError):
+            model.model_validate({**row, field: [bad]})
+
 
 @pytest.mark.anyio
 async def test_planner_subsumes_report_and_shooting_split_requirements():
@@ -1670,8 +1778,8 @@ async def test_planner_rejects_invalid_replacement_plan_arguments():
     }]}
     planner = ModelPlanner(StubModel([invalid, invalid]), provider="stub",
                            model_name="stub", capability_catalog=catalog)
-    result = await planner.plan(task)
-    assert result.nodes[0].id == "primary"
+    with pytest.raises(ValueError,match="required property"):
+        await planner.plan(task)
 
 @pytest.mark.anyio
 async def test_implicit_relative_season_is_pinned_for_non_prediction_capability():
@@ -2047,7 +2155,7 @@ async def test_intake_primary_exhausted_then_secondary_success(monkeypatch):
     e=RequestEnvelope.freeze(provider="inception",model="primary",route="intake",prompt="p",context={},tool_schemas={},planner_version="v2")
     await m.generate(schema=TaskSpec,prompt="p",payload={"same":"input"},envelope=e)
     assert [x[0] for x in calls]==["primary","primary","secondary"]
-    assert m.last_provider=="mistral" and m.last_model=="secondary"
+    assert m.last_provider=="mistral" and m.last_model=="mistral_free_limit:secondary"
 
 
 @pytest.mark.anyio
@@ -2227,20 +2335,6 @@ def test_calculation_validation_accepts_ordinary_rate_rounding_but_not_wrong_val
     assert "does not recompute" in validate_calculation(wrong,index)
 
 @pytest.mark.anyio
-async def test_followup_does_not_invent_referent_after_content_free_prior_turn():
-    from v2.contracts import ConversationTurn
-    value={"goal":"compare Oklahoma City defense","mode":"quick","deliverable":"answer",
-        "entities":[{"id":"1610612760","type":"team","display_name":"Oklahoma City Thunder"}],
-        "required_evidence":[]}
-    stub=StubModel([value,value])
-    intake=ModelIntake(stub,**stage_kwargs())
-    task=await intake.understand("How does that player compare with that team?",context=(
-        ConversationTurn(role="user",content="Tell me more about that player."),
-        ConversationTurn(role="assistant",content="Some supporting data was unavailable."),))
-    assert task.entities==[]
-    assert "Which player and team do you mean?" in task.open_questions
-
-@pytest.mark.anyio
 async def test_followup_accepts_only_explicit_verified_antecedent_types():
     from v2.contracts import ConversationTurn
     stub=StubModel([{"goal":"compare Victor Wembanyama with San Antonio Spurs","mode":"quick","deliverable":"answer",
@@ -2251,98 +2345,139 @@ async def test_followup_accepts_only_explicit_verified_antecedent_types():
     assert task.open_questions==[]
     assert {e.type for e in task.entities}=={"player","team"}
 
-@pytest.mark.anyio
-async def test_schema_valid_conversational_taskspec_gets_bounded_semantic_repair():
-    stub=StubModel([
-        {"goal":"answer","mode":"quick","deliverable":"Sure, what's your question?"},
-        {"goal":"rank NBA blocks per game this season","mode":"quick","deliverable":"top five blocks-per-game leaders with games played","season":{"value":"2025-26","source":"default","confidence":1.0}},
-    ])
-    intake=ModelIntake(stub,**stage_kwargs())
-    task=await intake.understand("Who leads the NBA in blocks per game this season? Give the top five with games played.")
-    assert len(stub.calls)==2
-    assert "blocks" in task.goal and "games played" in task.deliverable
-    assert stub.calls[1]["payload"]["prior_intake"]["deliverable"].startswith("Sure")
+class AdmissionModel:
+    def __init__(self, task, review_factory):
+        self.task = task
+        self.review_factory = review_factory
+        self.calls = []
+
+    async def generate(self, **call):
+        self.calls.append(call)
+        if call["envelope"].route == "intake":
+            return call["schema"].model_validate(self.task)
+        if call["envelope"].route == "intake_admission":
+            return call["schema"].model_validate(
+                self.review_factory(call["payload"]))
+        raise AssertionError(call["envelope"].route)
+
+
+def admission_stage_kwargs():
+    return {**stage_kwargs(), "intake_admission": True}
+
+
+def blocked_reference(payload, text, kind="unknown", *, source="request", turn=None):
+    body = (payload["question"] if source == "request" else
+            payload["conversation_context"][turn]["content"])
+    start = body.index(text)
+    return {"target": payload["target"], "decision": "block",
+            "expected_subjects": payload["expected_subjects"],
+            "unresolved_references": [{"kind": kind, "locator": {
+                "source": source, "context_turn": turn, "start": start,
+                "end": start + len(text), "text": text}}]}
+
+
+def blocked_subject(payload, index=0):
+    return {"target": payload["target"], "decision": "block",
+            "expected_subjects": payload["expected_subjects"],
+            "findings": [{"code": "subject_mismatch",
+                "affected_subjects": [payload["expected_subjects"][index]]}]}
+
+
+def admitted(payload, spans):
+    bindings=[]
+    for subject, span in zip(payload["expected_subjects"], spans, strict=True):
+        source, turn, text = span
+        body = (payload["question"] if source == "request" else
+                payload["conversation_context"][turn]["content"])
+        start=body.index(text)
+        bindings.append({"subject":subject,"locator":{"source":source,
+            "context_turn":turn,"start":start,"end":start+len(text),"text":text}})
+    return {"target":payload["target"],"decision":"admit",
+            "expected_subjects":payload["expected_subjects"],"bindings":bindings}
+
 
 @pytest.mark.anyio
-async def test_repeated_schema_valid_semantic_mismatch_is_rejected_before_planning():
-    stub=StubModel([
-        {"goal":"weather","mode":"quick","deliverable":"forecast"},
-        {"goal":"baseball standings","mode":"quick","deliverable":"rank teams"},
-    ])
-    intake=ModelIntake(stub,**stage_kwargs())
-    task=await intake.understand("Who leads the NBA in blocks per game this season?")
-    assert len(stub.calls)==2
-    assert task.required_evidence==[] and task.entities==[]
-    assert any("could not preserve" in q for q in task.open_questions)
+@pytest.mark.parametrize("user_text", ["How did he do?", "How did they compare?"])
+async def test_pronoun_only_empty_context_returns_typed_unresolved_reference(user_text):
+    model=AdmissionModel({"goal":"performance","mode":"quick","deliverable":"answer",
+        "entities":[{"id":"unresolved","type":"league","display_name":"Unresolved subject"}]},
+        lambda payload: blocked_reference(payload, "he" if "he" in user_text else "they"))
+    task=await ModelIntake(model,**admission_stage_kwargs()).understand(user_text)
+    assert task.entities==[] and task.required_evidence==[]
+    assert task.open_questions and "unresolved reference" in task.open_questions[-1]
+    assert [call["envelope"].route for call in model.calls]==["intake","intake_admission"]
 
-@pytest.mark.anyio
-@pytest.mark.parametrize(("user_text","expected"),[
-    ("How did he do?","Which player do you mean?"),
-    ("How did they compare?","Which team do you mean?"),
-])
-async def test_pronoun_only_empty_context_blocks_invented_referent(user_text,expected):
-    stub=StubModel([{"goal":"player team performance","mode":"quick","deliverable":"compare performance",
-        "entities":[{"id":"p","type":"player","display_name":"Invented Player"},
-                    {"id":"t","type":"team","display_name":"Invented Team"}]}])
-    intake=ModelIntake(stub,**stage_kwargs())
-    task=await intake.understand(user_text,context=())
-    assert not any(e.type in ({"player"} if "player" in expected else {"team"}) for e in task.entities)
-    assert expected in task.open_questions
-    assert len(stub.calls)==1
-
-@pytest.mark.anyio
-async def test_empty_context_strips_invented_player_and_team_before_requirement_review():
-    class CountReview(ModelIntake):
-        review_calls=0
-        async def _review_requirements(self,*a,**k):
-            self.review_calls+=1;raise AssertionError("review must not run")
-    stub=StubModel([{"goal":"player team compare","mode":"quick","deliverable":"compare player team",
-        "entities":[{"id":"p","type":"player","display_name":"Invented Player"},
-                    {"id":"t","type":"team","display_name":"Invented Team"}]}])
-    intake=CountReview(stub,**stage_kwargs(),requirement_review=True)
-    task=await intake.understand("How does that player compare with that team?",context=())
-    assert task.entities==[]
-    assert "Which player and team do you mean?" in task.open_questions
-    assert intake.review_calls==0
 
 @pytest.mark.anyio
 async def test_explicit_player_context_does_not_license_invented_team():
     from v2.contracts import ConversationTurn
-    stub=StubModel([{"goal":"compare Victor Wembanyama to invented team","mode":"quick","deliverable":"answer",
+    model=AdmissionModel({"goal":"compare","mode":"quick","deliverable":"answer",
         "entities":[{"id":"w","type":"player","display_name":"Victor Wembanyama"},
-                    {"id":"t","type":"team","display_name":"Invented Team"}]}])
-    task=await ModelIntake(stub,**stage_kwargs()).understand(
-        "How does that player compare with that team?",context=(ConversationTurn(role="assistant",content="Victor Wembanyama led the board."),))
-    assert [(e.type,e.display_name) for e in task.entities]==[("player","Victor Wembanyama")]
-    assert "Which team do you mean?" in task.open_questions
+                    {"id":"t","type":"team","display_name":"Invented Team"}]},
+        lambda payload: blocked_subject(payload,2))
+    task=await ModelIntake(model,**admission_stage_kwargs()).understand(
+        "Compare that player with that team.",context=(
+            ConversationTurn(role="assistant",content="Victor Wembanyama led the board."),))
+    assert task.entities==[] and "subject_mismatch" in task.open_questions
+
 
 @pytest.mark.anyio
-@pytest.mark.parametrize(("question","bad"),[
- ("Who leads the NBA in blocks per game this season? Give the top five with games played.",{"goal":"NBA assists leaders this season","mode":"quick","deliverable":"top five assists with games played"}),
- ("Compare Myles Turner and Luka Doncic on PPG and true shooting this season.",{"goal":"compare Curry and Durant points this season","mode":"quick","deliverable":"player comparison"}),
- ("Who led blocks in 2025-26?",{"goal":"blocks leaders in 2026-27","mode":"quick","deliverable":"rank blocks","season":{"value":"2026-27","source":"default","confidence":1.0}}),
+@pytest.mark.parametrize("bad", [
+ {"goal":"NBA assists leaders","mode":"quick","deliverable":"top assists",
+  "entities":[{"id":"assists","type":"league","display_name":"NBA assists"}]},
+ {"goal":"compare Curry and Durant","mode":"quick","deliverable":"comparison",
+  "entities":[{"id":"curry","type":"player","display_name":"Curry"}]},
+ {"goal":"blocks leaders","mode":"quick","deliverable":"rank blocks",
+  "season":{"value":"2026-27","source":"default","confidence":1.0}},
 ])
-async def test_intake_semantic_anchor_mismatch_cannot_pass_on_generic_words(question,bad):
-    stub=StubModel([bad,bad])
-    task=await ModelIntake(stub,**stage_kwargs()).understand(question)
-    assert len(stub.calls)==2
+async def test_intake_semantic_anchor_mismatch_is_blocked_by_typed_review(bad):
+    model=AdmissionModel(bad,blocked_subject)
+    task=await ModelIntake(model,**admission_stage_kwargs()).understand(
+        "Who led blocks in 2025-26?")
     assert task.entities==[] and task.required_evidence==[]
-    assert any("could not preserve" in q for q in task.open_questions)
+    assert "subject_mismatch" in task.open_questions
+
 
 @pytest.mark.anyio
-async def test_referential_context_still_rejects_conversational_filler_then_blocks():
-    from v2.contracts import ConversationTurn
-    bad={"goal":"Victor Wembanyama performance","mode":"quick","deliverable":"Sure, what's your question?","entities":[{"id":"w","type":"player","display_name":"Victor Wembanyama"}]}
-    stub=StubModel([bad,bad]);task=await ModelIntake(stub,**stage_kwargs()).understand("How did he do?",context=(ConversationTurn(role="assistant",content="Victor Wembanyama led the board."),))
-    assert len(stub.calls)==2 and task.required_evidence==[] and task.entities==[]
-    assert any("could not preserve" in q for q in task.open_questions)
+async def test_explicit_lebron_possessive_is_admitted_without_referent_false_positive():
+    request="Analyze LeBron James and his fit."
+    model=AdmissionModel({"goal":"analyze LeBron fit","mode":"quick","deliverable":"fit",
+        "entities":[{"id":"2544","type":"player","display_name":"LeBron James"}],
+        "requirements":[{"id":"fit","description":"fit","capability_options":["standings"],
+                         "requested_outputs":["FIT_ASSESSMENT"]}]},
+        lambda payload: admitted(payload,[("request",None,"Analyze LeBron James and his fit."),
+                                          ("request",None,"LeBron James"),
+                                          ("request",None,"fit"),
+                                          ("request",None,"fit")]))
+    task=await ModelIntake(model,**admission_stage_kwargs()).understand(request)
+    assert [(e.id,e.display_name) for e in task.entities]==[("2544","LeBron James")]
+    assert task.open_questions==[]
+
 
 @pytest.mark.anyio
-async def test_referential_current_metric_must_survive_semantic_intake():
+async def test_unicode_paraphrase_and_context_locator_are_admitted():
     from v2.contracts import ConversationTurn
-    bad={"goal":"Victor Wembanyama defense","mode":"quick","deliverable":"defensive summary","entities":[{"id":"w","type":"player","display_name":"Victor Wembanyama"}]}
-    stub=StubModel([bad,bad]);task=await ModelIntake(stub,**stage_kwargs()).understand("How did he shoot?",context=(ConversationTurn(role="assistant",content="Victor Wembanyama led the board."),))
-    assert len(stub.calls)==2 and any("could not preserve" in q for q in task.open_questions)
+    context=(ConversationTurn(role="assistant",content="Nikola Jokić led Denver."),)
+    model=AdmissionModel({"goal":"summarize center impact","mode":"quick","deliverable":"impact",
+        "entities":[{"id":"203999","type":"player","display_name":"Nikola Jokić"}]},
+        lambda payload: admitted(payload,[("request",None,"What about the center’s impact?"),
+                                          ("context",0,"Nikola Jokić")]))
+    task=await ModelIntake(model,**admission_stage_kwargs()).understand(
+        "What about the center’s impact?",context=context)
+    assert task.entities[0].display_name=="Nikola Jokić" and not task.open_questions
+
+
+@pytest.mark.anyio
+async def test_copied_goal_cannot_mask_wrong_typed_requirement():
+    task={"goal":"Show LeBron James points","mode":"quick","deliverable":"points",
+          "entities":[{"id":"2544","type":"player","display_name":"LeBron James"}],
+          "metric_ids":["AST"], "requested_outputs":["AST"],
+          "requirements":[{"id":"wrong","description":"assists","capability_options":["standings"],
+                           "metric_ids":["AST"],"requested_outputs":["AST"]}]}
+    model=AdmissionModel(task,lambda payload: blocked_subject(payload,2))
+    result=await ModelIntake(model,**admission_stage_kwargs()).understand(
+        "Show LeBron James points.")
+    assert result.requirements==[] and "subject_mismatch" in result.open_questions
 
 @pytest.mark.anyio
 async def test_explicit_context_entity_performance_summary_passes():
@@ -2500,8 +2635,6 @@ async def test_review_outage_conflicting_extremum_fails_closed():
     class M:
         calls=0
         async def generate(self,**call):
-            self.calls+=1
-            if self.calls==1:return TaskSpec(goal='rank',mode='quick',deliverable='team',season={'value':'2025-26','source':'user','confidence':1},required_evidence=['team_ratings'],skills=['league-ratings'])
             raise RuntimeError('all structured-output providers failed [timeout]')
     task=TaskSpec(goal='rank',mode='quick',deliverable='team',season={'value':'2025-26','source':'user','confidence':1},required_evidence=['team_ratings'])
     task=await ModelIntake(M(),provider='stub',model_name='stub',capability_catalog={'team_ratings':{}},requirement_review=True)._review_requirements('highest and lowest pace',task)
@@ -2530,11 +2663,14 @@ async def test_semantic_verifier_projection_does_not_send_source_identity():
     assert 'source_identity' not in projected and 'a'*64 not in repr(projected)
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("anyio_backend", ["asyncio"])
 @pytest.mark.parametrize(('kind','phase'),[
     ('unknown','json_or_schema_validation'),('malformed','json_or_schema_validation'),
     ('empty','no_tool_or_empty'),('refusal','content_filter'),
 ])
-async def test_safe_failure_taxonomy_exact_native_openai_path(kind,phase):
+async def test_safe_failure_taxonomy_exact_native_openai_path(anyio_backend,kind,phase):
+    # Native SDK path is validated on Dime's supported asyncio runtime; Trio is upstream, not a production contract.
+    assert anyio_backend == "asyncio"
     import httpx,json
     from openai import AsyncOpenAI
     from pydantic_ai import Agent,NativeOutput
@@ -2661,6 +2797,7 @@ async def test_actual_attempt_redacts_dynamic_exception_type_and_ledger_serializ
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("anyio_backend", ["asyncio"])
 @pytest.mark.parametrize(('content','subtype'),[
     ({'status':'repair','claim_results':[{'claim_index':0,'supported':False}]},'unsupported_claim_missing_reason'),
     ({'status':'pass','claim_results':[{'claim_index':0,'supported':True,'reasons':['bounded']}]},'supported_claim_has_reasons'),
@@ -2669,7 +2806,9 @@ async def test_actual_attempt_redacts_dynamic_exception_type_and_ledger_serializ
     ({'status':'partial','claim_results':[{'claim_index':0,'supported':True},{'claim_index':0,'supported':True}]},'duplicate_claim_index'),
     ({'status':'partial','missing_branches':['bounded','bounded']},'duplicate_or_empty_finding'),
 ])
-async def test_safe_failure_validation_subtype_exact_native_openai_path(content,subtype):
+async def test_safe_failure_validation_subtype_exact_native_openai_path(anyio_backend,content,subtype):
+    # Native SDK path is validated on Dime's supported asyncio runtime; Trio is upstream, not a production contract.
+    assert anyio_backend == "asyncio"
     import httpx,json
     from openai import AsyncOpenAI
     from pydantic_ai import Agent,NativeOutput
@@ -2969,9 +3108,9 @@ async def test_successful_review_conflict_falls_back_without_uncaught_exception(
                 return TaskSpec(goal="lowest defensive rating",mode="quick",deliverable="team/value",
                   season={"value":"2025-26","source":"user","confidence":1},
                   required_evidence=["team_ratings"])
-            return RequirementReview(requirements=[{
+            return fixture_result(call,RequirementReview(requirements=[{
               "id":"bad_review","description":"lower-authority review",
-              "capability_options":["team_ratings"],"capability_arguments":review_arguments}])
+              "capability_options":["team_ratings"],"capability_arguments":review_arguments}]))
     task=await ModelIntake(M(),provider="stub",model_name="stub",
       capability_catalog={"team_ratings":{}},requirement_review=True).understand(
         "Which team has the lowest defensive rating in 2025-26?")
@@ -2990,9 +3129,9 @@ async def test_ambiguous_trusted_ranked_intent_yields_typed_uncovered_gap_not_ex
             if self.calls==1:
                 return TaskSpec(goal="highest and lowest pace",mode="quick",deliverable="teams",
                   required_evidence=["team_ratings"])
-            return RequirementReview(requirements=[{
+            return fixture_result(call,RequirementReview(requirements=[{
               "id":"pace","description":"pace extrema","capability_options":["team_ratings"],
-              "capability_arguments":{"requested_metric":"PACE"}}])
+              "capability_arguments":{"requested_metric":"PACE"}}]))
     task=await ModelIntake(M(),provider="stub",model_name="stub",
       capability_catalog={"team_ratings":{}},requirement_review=True).understand(
         "Which teams have the highest and lowest pace?")
@@ -3015,9 +3154,9 @@ async def test_unknown_typed_alias_end_to_end_yields_uncovered_gap_not_exception
                   required_evidence=["team_ratings"],requirements=[{
                     "id":"typed","description":"typed","capability_options":["team_ratings"],
                     "capability_arguments":typed_arguments}])
-            return RequirementReview(requirements=[{
+            return fixture_result(call,RequirementReview(requirements=[{
               "id":"review","description":"review","capability_options":["team_ratings"],
-              "capability_arguments":{}}])
+              "capability_arguments":{}}]))
     from v2.runtime.assembly import capability_catalog
     task=await ModelIntake(M(),provider="stub",model_name="stub",
       capability_catalog=capability_catalog(),requirement_review=True).understand("Rank teams")
@@ -3087,9 +3226,9 @@ async def test_mixed_ranked_conflict_e2e_preserves_alternative_and_one_trusted_b
       async def generate(self,**call):
         self.calls+=1
         if self.calls==1:return _ranked_multi_clause_task()
-        return RequirementReview(requirements=[{
+        return fixture_result(call,RequirementReview(requirements=[{
           "id":"mixed","description":"mixed","capability_options":["team_ratings","standings"],
-          "capability_arguments":{"requested_metric":"OFF_RATING"}}])
+          "capability_arguments":{"requested_metric":"OFF_RATING"}}]))
     task=await ModelIntake(M(),provider="stub",model_name="stub",
       capability_catalog={"team_ratings":{},"standings":{}},requirement_review=True).understand(
        "Which team has the lowest defensive rating?")
@@ -3216,3 +3355,164 @@ def test_unranked_mixed_requirement_projects_to_contract_intersection(review_arg
       for option in requirement.capability_options:
         properties=catalog[option]["arguments"].get("properties",{})
         assert set(requirement.capability_arguments)<=set(properties)
+
+
+def test_intake_admission_rejects_replay_omission_and_length_correct_wrong_text():
+    from v2.contracts import (AdmissionBinding, IntakeAdmissionReview,
+        SourceLocator, TaskSpec)
+    task=TaskSpec(goal="LeBron",mode="quick",deliverable="answer",
+        entities=[{"id":"2544","type":"player","display_name":"LeBron James"}])
+    request="Ask LeBron James."
+    target=ModelIntake._review_target(request,(),task)
+    subjects=ModelIntake._expected_admission_subjects(task)
+    valid=IntakeAdmissionReview(target=target,decision="admit",
+        expected_subjects=subjects,bindings=[
+            AdmissionBinding(subject=subjects[0], locator=SourceLocator(
+                source="request",start=0,end=len(request),text=request)),
+            AdmissionBinding(subject=subjects[1], locator=SourceLocator(
+                source="request",start=4,end=16,text="LeBron James"))])
+    assert ModelIntake._validate_review(valid,request,(),task)==[]
+    replay=valid.model_copy(update={"target":target.model_copy(update={"task_sha256":"d"*64})})
+    assert any("target does not match" in item for item in ModelIntake._validate_review(replay,request,(),task))
+    omitted=valid.model_copy(update={"expected_subjects":(),"bindings":()})
+    assert any("expected subjects" in item for item in ModelIntake._validate_review(omitted,request,(),task))
+    wrong=valid.model_copy(update={"bindings": (
+        valid.bindings[0], AdmissionBinding(subject=subjects[1],
+        locator=SourceLocator(source="request",start=4,end=16,text="Another Name")))})
+    assert any("frozen source" in item for item in ModelIntake._validate_review(wrong,request,(),task))
+
+
+def test_intake_admission_context_digest_binds_role_order_and_exact_unicode_text():
+    from v2.contracts import ConversationTurn, TaskSpec
+    task=TaskSpec(goal="impact",mode="quick",deliverable="answer")
+    a=(ConversationTurn(role="user",content="Nikola Jokić?"),
+       ConversationTurn(role="assistant",content="Denver’s center."))
+    b=tuple(reversed(a))
+    c=(ConversationTurn(role="assistant",content="Nikola Jokić?"),
+       ConversationTurn(role="user",content="Denver’s center."))
+    assert ModelIntake._review_target("x",a,task).context_sha256 != ModelIntake._review_target("x",b,task).context_sha256
+    assert ModelIntake._review_target("x",a,task).context_sha256 != ModelIntake._review_target("x",c,task).context_sha256
+
+
+def test_intake_admission_manifest_covers_zero_entity_task_metrics_outputs_and_calculations():
+    task=TaskSpec(goal="calculate pace change",mode="quick",deliverable="delta",
+        metric_ids=["PACE"],requested_outputs=["PACE_DELTA"],
+        calculation_requirements=[{"id":"pace_delta","description":"pace change",
+            "metric_ids":["PACE"],"requested_outputs":["PACE_DELTA"]}])
+    subjects=ModelIntake._expected_admission_subjects(task)
+    dumped=[item.model_dump(mode="json") for item in subjects]
+    assert dumped[0]=={"kind":"task","task_id":"request"}
+    assert {item.get("metric_id") for item in dumped if item["kind"]=="metric"}=={"PACE"}
+    assert {(item.get("owner_kind"),item.get("requirement_id"),item.get("output_id")) for item in dumped
+            if item["kind"]=="output"}=={("task","request","PACE_DELTA"),("calculation","pace_delta","PACE_DELTA")}
+    assert any(item.get("requirement_id")=="pace_delta" for item in dumped)
+
+
+def test_block_clears_every_action_driving_task_field_before_skill_activation():
+    from datetime import date
+    from v2.contracts import (AdmissionFinding, IntakeAdmissionReview,
+                              TaskAdmissionSubject)
+    task=TaskSpec(goal="x",mode="quick",deliverable="x",season={"value":"2025-26","source":"user","confidence":1.0},
+        as_of=date(2026,1,1),subquestions=["q"],required_evidence=["standings"],
+        assumptions=["a"],skills=["trade-analysis"],metric_ids=["PACE"],requested_outputs=["PACE"])
+    subject=TaskAdmissionSubject(kind="task")
+    review=IntakeAdmissionReview(target=ModelIntake._review_target("x",(),task),decision="block",
+        expected_subjects=ModelIntake._expected_admission_subjects(task),findings=[AdmissionFinding(
+            code="subject_mismatch",affected_subjects=[subject])])
+    blocked=ModelIntake._apply_review(review,"x",(),task)
+    assert blocked.season is None and blocked.as_of is None
+    assert blocked.subquestions==[] and blocked.assumptions==[] and blocked.skills==[]
+    assert blocked.required_evidence==[] and blocked.metric_ids==[] and blocked.requested_outputs==[]
+
+
+def test_admission_dimension_ids_reject_noncanonical_values_at_task_boundary():
+    from pydantic import ValidationError
+    for value in ("!!!", "A B", "ÉFG", "lower"):
+        with pytest.raises(ValidationError):
+            TaskSpec(goal="x",mode="quick",deliverable="x",metric_ids=[value])
+        with pytest.raises(ValidationError):
+            TaskSpec(goal="x",mode="quick",deliverable="x",requested_outputs=[value])
+
+
+def test_admission_manifest_preserves_same_metric_under_distinct_requirement_scopes():
+    task=TaskSpec(goal="compare",mode="quick",deliverable="answer",requirements=[
+        {"id":"first","description":"first","capability_options":["standings"],"metric_ids":["PACE"]},
+        {"id":"second","description":"second","capability_options":["standings"],"metric_ids":["PACE"]},
+    ])
+    metrics=[item.model_dump(mode="json") for item in ModelIntake._expected_admission_subjects(task)
+             if item.kind=="metric"]
+    assert metrics==[
+        {"kind":"metric","owner_kind":"evidence","owner_id":"first","metric_id":"PACE"},
+        {"kind":"metric","owner_kind":"evidence","owner_id":"second","metric_id":"PACE"},
+    ]
+
+
+def test_evidence_and_calculation_requirement_ids_cannot_collide():
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError,match="ids overlap"):
+        TaskSpec(goal="x",mode="quick",deliverable="x",
+            requirements=[{"id":"same","description":"e","capability_options":["standings"]}],
+            calculation_requirements=[{"id":"same","description":"c"}])
+
+
+class StagedAdmissionModel:
+    def __init__(self, intake, requirement_review, admission_factory):
+        self.intake=intake;self.requirement_review=requirement_review
+        self.admission_factory=admission_factory;self.calls=[]
+    async def generate(self,**call):
+        self.calls.append(call);route=call["envelope"].route
+        value=(self.intake if route=="intake" else self.requirement_review
+               if route=="requirement_review" else self.admission_factory(call["payload"])
+               if route=="intake_admission" else None)
+        if value is None:raise AssertionError(route)
+        return fixture_result(call,value)
+
+
+def _staged_admission(payload, spans, *, decision="admit", block_index=0):
+    if decision=="block": return blocked_subject(payload,block_index)
+    return admitted(payload,spans)
+
+
+@pytest.mark.anyio
+async def test_final_admission_blocks_requirement_review_metric_substitution_before_planning():
+    intake={"goal":"LeBron points","mode":"quick","deliverable":"points",
+            "entities":[{"id":"2544","type":"player","display_name":"LeBron James"}]}
+    wrong={"requirements":[{"id":"scoring","description":"wrong assists",
+        "capability_options":["standings"],"metric_ids":["AST"],"requested_outputs":["AST"]}]}
+    model=StagedAdmissionModel(intake,wrong,lambda payload:blocked_subject(payload,3))
+    task=await ModelIntake(model,**stage_kwargs(),intake_admission=True,
+                          requirement_review=True).understand("Show LeBron James PTS.")
+    assert task.requirements==[] and task.metric_ids==[] and task.skills==[]
+    assert [call["envelope"].route for call in model.calls]==[
+        "intake","requirement_review","intake_admission"]
+
+
+@pytest.mark.anyio
+async def test_final_admission_binds_post_review_evidence_and_calculation_scopes():
+    request="Show LeBron James PTS and PTS change."
+    intake={"goal":"LeBron scoring","mode":"quick","deliverable":"points change",
+            "entities":[{"id":"2544","type":"player","display_name":"LeBron James"}]}
+    reviewed={"requirements":[{"id":"scoring","description":"points",
+        "capability_options":["standings"],"metric_ids":["PTS"],"requested_outputs":["PTS"]}],
+        "calculation_requirements":[{"id":"change","description":"change",
+        "metric_ids":["PTS"],"requested_outputs":["PTS_DELTA"]}]}
+    def approve(payload):
+        spans=[]
+        for item in payload["expected_subjects"]:
+            if item["kind"]=="entity":text="LeBron James"
+            elif item["kind"]=="metric":text="PTS"
+            elif item["kind"]=="output" and item["output_id"]=="PTS_DELTA":text="PTS change"
+            elif item["kind"]=="output":text="PTS"
+            elif item["kind"]=="requirement" and item["requirement_kind"]=="calculation":text="change"
+            elif item["kind"]=="requirement":text="PTS"
+            else:text=request
+            spans.append(("request",None,text))
+        return admitted(payload,spans)
+    model=StagedAdmissionModel(intake,reviewed,approve)
+    task=await ModelIntake(model,**stage_kwargs(),intake_admission=True,
+                          requirement_review=True).understand(request)
+    assert task.requirements[0].metric_ids==["PTS"]
+    assert task.calculation_requirements[0].requested_outputs==["PTS_DELTA"]
+    admission_call=model.calls[-1]
+    assert admission_call["envelope"].route=="intake_admission"
+    assert admission_call["payload"]["target"]["task_sha256"]==ModelIntake._review_target(request,(),task).task_sha256

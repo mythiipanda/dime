@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "losses": [
+    {
+      "id": "BL-001",
+      "scope": "requirement_option_closure",
+      "status": "temporary_fail_closed",
+      "applies_to": "v3 requirements with capability_argument_sets",
+      "behavior": "Do not add web_fetch, broader/subsuming capabilities, or player_report unless an authoritative capability-local argument set exists.",
+      "reason": "Adding an option without a matching local set violates the exact-set invariant.",
+      "restoration_condition": "Implement schema-aware local-set derivation and validate every added set against the added capability schema.",
+      "test": "test_v3_intake_closure_is_fail_closed_and_bound_to_behavior_loss"
+    }
+  ]
+}

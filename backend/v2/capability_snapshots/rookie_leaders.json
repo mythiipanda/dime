@@ -1,0 +1,134 @@
+{
+  "capability_id": "rookie_leaders",
+  "dependent_entity_arguments": {},
+  "properties": [
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "int"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "c3b6795563d69afd90a04e75b8fba4338947a5664974aa28bd244b747b802e81"
+        }
+      ],
+      "compiled_kinds": [
+        "int"
+      ],
+      "default": 15,
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "limit",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "c3b6795563d69afd90a04e75b8fba4338947a5664974aa28bd244b747b802e81"
+    },
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "int"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "56b50f3a057429011142546d9fd2f6ba66b4d843cb860ed4a9201b1c135189eb"
+        }
+      ],
+      "compiled_kinds": [
+        "int"
+      ],
+      "default": 10,
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "min_gp",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "56b50f3a057429011142546d9fd2f6ba66b4d843cb860ed4a9201b1c135189eb"
+    },
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "number"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "af2057802d25243889a1c8d45fb782c7a575e4160a3dab851eae1ad7d6dcb2d6"
+        }
+      ],
+      "compiled_kinds": [
+        "number"
+      ],
+      "default": 0,
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "min_value",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "af2057802d25243889a1c8d45fb782c7a575e4160a3dab851eae1ad7d6dcb2d6"
+    },
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "string"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "b6f8359b507cc999385a29f3a5a8567183f33e990e14326d61f9808796cc29c4"
+        }
+      ],
+      "compiled_kinds": [
+        "string"
+      ],
+      "default": "2025-26",
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "season",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "b6f8359b507cc999385a29f3a5a8567183f33e990e14326d61f9808796cc29c4"
+    },
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "string"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "dd4b9aa96cda4103951173f643e3d3d91725eb2d93c69892c11d49f65237e035"
+        }
+      ],
+      "compiled_kinds": [
+        "string"
+      ],
+      "default": "ppg",
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "stat",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "dd4b9aa96cda4103951173f643e3d3d91725eb2d93c69892c11d49f65237e035"
+    }
+  ],
+  "reasons": [],
+  "schema_sha256": "a2c2f9c29c9f89c3c8779a9c9d85f98adcc20708e9a2aa599188ac9e1e6c512f",
+  "status": "REPRESENTABLE"
+}

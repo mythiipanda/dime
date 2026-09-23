@@ -1,0 +1,134 @@
+{
+  "capability_id": "competitive_ratings",
+  "dependent_entity_arguments": {},
+  "properties": [
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "number"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "1141380dbd74c7c30fc698a96bf09a8b0862a8ec8cb1bbef877c4eed28d75dee"
+        }
+      ],
+      "compiled_kinds": [
+        "number"
+      ],
+      "default": 20,
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "blowout_margin",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "1141380dbd74c7c30fc698a96bf09a8b0862a8ec8cb1bbef877c4eed28d75dee"
+    },
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "int"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "56b50f3a057429011142546d9fd2f6ba66b4d843cb860ed4a9201b1c135189eb"
+        }
+      ],
+      "compiled_kinds": [
+        "int"
+      ],
+      "default": 10,
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "min_games",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "56b50f3a057429011142546d9fd2f6ba66b4d843cb860ed4a9201b1c135189eb"
+    },
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "string"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "b6f8359b507cc999385a29f3a5a8567183f33e990e14326d61f9808796cc29c4"
+        }
+      ],
+      "compiled_kinds": [
+        "string"
+      ],
+      "default": "2025-26",
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "season",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "b6f8359b507cc999385a29f3a5a8567183f33e990e14326d61f9808796cc29c4"
+    },
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "string"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "1b7eb1c13ef54b900a2d2646c7908356d1d9b0da9cfc3b86f7e76358906ae9df"
+        }
+      ],
+      "compiled_kinds": [
+        "string"
+      ],
+      "default": "regular",
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "season_type",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "1b7eb1c13ef54b900a2d2646c7908356d1d9b0da9cfc3b86f7e76358906ae9df"
+    },
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "string"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "8ce862a39cc3b6064a306771a80a833affdaafcd8cc809e842204a15945f782b"
+        }
+      ],
+      "compiled_kinds": [
+        "string"
+      ],
+      "default": "league",
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "team",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "8ce862a39cc3b6064a306771a80a833affdaafcd8cc809e842204a15945f782b"
+    }
+  ],
+  "reasons": [],
+  "schema_sha256": "2bc512f456764d5ef4bfa11eef4af166498346de8c0e4b0f77970241302913ed",
+  "status": "REPRESENTABLE"
+}

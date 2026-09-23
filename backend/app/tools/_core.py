@@ -333,6 +333,22 @@ def _resolve_player_id_uncached(key: str) -> int:
 _coerce_player_id_cached = lru_cache(maxsize=2048)(_resolve_player_id_uncached)
 
 
+class PlayerNameResolutionUnavailable(ValueError):
+    """Typed unresolved-subject signal; optional profile data stays optional."""
+
+    gap_kind = "profile/name_resolution_unavailable"
+
+    def __init__(self, subject: object, detail: str = "") -> None:
+        self.subject = str(subject)
+        message = (f"unknown player: {self.subject}; "
+                   f"profile/name_resolution unavailable for {self.subject!r}")
+        if detail:
+            message += f": {detail}"
+        super().__init__(message)
+
+
+
+
 def coerce_player_id(value: object) -> int:
     """Accept an id or a name. Names resolve through scored static matching.
 
@@ -384,8 +400,9 @@ def coerce_player_id(value: object) -> int:
         msg = str(exc)
         prefix = f"unknown player: {key}"
         if msg.startswith(prefix):
-            msg = f"unknown player: {value}" + msg[len(prefix):]
-        raise ValueError(msg) from None
+            detail = msg[len(prefix):].lstrip()
+            raise PlayerNameResolutionUnavailable(value, detail) from None
+        raise
 
 
 coerce_player_id.cache_info = _coerce_player_id_cached.cache_info  # type: ignore[attr-defined]

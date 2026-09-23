@@ -1,0 +1,59 @@
+{
+  "capability_id": "playoff_team_ratings",
+  "dependent_entity_arguments": {},
+  "properties": [
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "int"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "ab5f4ecaba78031f4b06aaca5a9f508fd1fa36e86ade1c58d7de973c2127c321"
+        }
+      ],
+      "compiled_kinds": [
+        "int"
+      ],
+      "default": 30,
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "limit",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "ab5f4ecaba78031f4b06aaca5a9f508fd1fa36e86ade1c58d7de973c2127c321"
+    },
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "string"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "b6f8359b507cc999385a29f3a5a8567183f33e990e14326d61f9808796cc29c4"
+        }
+      ],
+      "compiled_kinds": [
+        "string"
+      ],
+      "default": "2025-26",
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "season",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "b6f8359b507cc999385a29f3a5a8567183f33e990e14326d61f9808796cc29c4"
+    }
+  ],
+  "reasons": [],
+  "schema_sha256": "206bed36225b19e6785cbd914ebd4acaf88e62dc0882a8ed462c3a1c25cbe0b8",
+  "status": "REPRESENTABLE"
+}

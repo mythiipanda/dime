@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import asyncio
+import anyio
 import json
 import hashlib
 import random
@@ -34,13 +34,22 @@ from app.providers import (
     OPENROUTER_DEFAULT,
     ProviderName,
     fallback_order,
-    _mistral_free_model,
+    _groq_free_model, _mistral_free_model,
     _nvidia_nim_model,
     _openrouter_free_model,
     is_free_model,
 )
 from v2.contracts import (
     ConversationTurn,
+    AdmissionBinding,
+    AdmissionReviewTarget,
+    EntityAdmissionSubject,
+    IntakeAdmissionReview,
+    OutputAdmissionSubject,
+    MetricAdmissionSubject,
+    TaskAdmissionSubject,
+    RequirementAdmissionSubject,
+    SeasonAdmissionSubject,
     Claim,
     DraftReport,
     EvidenceEnvelope,
@@ -54,6 +63,7 @@ from v2.prompts import load_prompt
 from v2.runtime.ledger import RequestEnvelope, exception_text
 from v2.runtime.budget import RUN_MODEL_DEADLINE
 from v2.skills import SkillLibrary, skill_hashes
+from v2.arguments import RequirementReviewWire, PlannerOutputWire, provider_to_source
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -84,6 +94,9 @@ ROUTE_POLICIES: dict[str, dict[str, Any]] = {
                "total_budget_s": 18.0, "secondary_limit": 1,
                "transient_classes": frozenset({"timeout", "rate_limit", "network", "server_error", "provider_error"}),
                "deterministic_fallback": False},
+    "intake_admission": {"primary_attempts": 1, "attempt_timeout_s": 6.0,
+               "total_budget_s": 6.0, "secondary_limit": 0,
+               "transient_classes": frozenset(), "deterministic_fallback": False},
     "requirement_review": {"primary_attempts": 2, "attempt_timeout_s": 8.0,
                "total_budget_s": 12.0, "secondary_limit": 1,
                "transient_classes": frozenset({"timeout", "rate_limit", "network", "server_error", "provider_error"}),
@@ -150,6 +163,17 @@ def _safe_exception_name(value: type[BaseException] | str) -> str:
 def _safe_pydantic_error_type(value: object) -> str:
     name = str(value)
     return name if name in SAFE_PYDANTIC_ERROR_TYPES else "<unknown-error-type>"
+
+
+class DimeOpenAIChatModel(OpenAIChatModel):
+    """Normalize the exact schema at the last OpenAI request mapping boundary."""
+    def _map_json_schema(self, output_object):
+        from dataclasses import replace
+        from v2.argument_schemas import normalize_provider_wire_schema
+        if output_object.name not in {"RequirementReviewWire", "PlannerOutputWire"}:
+            return super()._map_json_schema(output_object)
+        candidate, _ = normalize_provider_wire_schema(output_object.json_schema)
+        return super()._map_json_schema(replace(output_object, json_schema=candidate))
 
 
 class ProviderStructuredModel:
@@ -311,12 +335,14 @@ class ProviderStructuredModel:
                 accepted_model = _openrouter_free_model(requested)
             elif provider == "mistral":
                 accepted_model = _mistral_free_model()
+            elif provider == "groq":
+                accepted_model = _groq_free_model()
             else:
                 accepted_model = settings.inception_model or INCEPTION_DEFAULT
             if (provider != "inception"
                     and not is_free_model(provider, accepted_model)):
                 continue
-            models.append((provider, OpenAIChatModel(
+            models.append((provider, DimeOpenAIChatModel(
                 accepted_model,
                 provider=OpenAIProvider(openai_client=client),
             )))
@@ -345,7 +371,8 @@ class ProviderStructuredModel:
         budget_exhausted = False
         candidates = models[:1 + int(policy["secondary_limit"])]
         for model_index, (provider, model) in enumerate(candidates):
-            max_attempts = int(policy["primary_attempts"]) if model_index == 0 else 1
+            max_attempts = (1 if provider == "groq" else
+                int(policy["primary_attempts"]) if model_index == 0 else 1)
             for attempt_number in range(1, max_attempts + 1):
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
@@ -359,11 +386,13 @@ class ProviderStructuredModel:
                         output_type=NativeOutput(schema, strict=True),
                         # PydanticAI owns one bounded schema-repair pass. Outer
                         # retries below are reserved for transient transport.
-                        retries=settings.llm_max_retries,
+                        retries=(0 if provider == "groq" else settings.llm_max_retries),
                     )
                     run = agent.run(user_prompt)
-                    result = await asyncio.wait_for(
-                        run, timeout=min(float(policy["attempt_timeout_s"]), remaining))
+                    with anyio.fail_after(
+                        min(float(policy["attempt_timeout_s"]), remaining)
+                    ):
+                        result = await run
                     self.last_provider = provider
                     self.last_model = (
                         f"mistral_free_limit:{model.model_name}"
@@ -387,7 +416,7 @@ class ProviderStructuredModel:
                     })
                     transient = failure_class in policy["transient_classes"]
                     if (attempt_number < max_attempts and transient):
-                        await asyncio.sleep(random.uniform(0.04, 0.12))
+                        await anyio.sleep(random.uniform(0.04, 0.12))
                         continue
                     break
             if budget_exhausted:
@@ -415,8 +444,9 @@ class ProviderStructuredModel:
 
 _PROVIDER_ROUTE_PROMPT_NAMES = {
     "intake": "intake",
-    "requirement_review": "requirement_review",
-    "planner": "planner",
+    "intake_admission": "intake_admission",
+    "requirement_review": "requirement_review_v3",
+    "planner": "planner_v3",
     "synthesizer": "synthesizer",
     "repair": "repair_answer",
     "semantic_verifier": "verifier",
@@ -498,139 +528,211 @@ class ModelStage:
         )
 
 
+def capability_arguments_for(requirement, capability_id: str) -> dict[str, Any]:
+    """Selected capability read; shared map is exclusively a v2 fallback."""
+    if requirement.capability_argument_sets:
+        match = next((item for item in requirement.capability_argument_sets
+                      if item.capability_id == capability_id), None)
+        if match is None:
+            raise ValueError(f"requirement {requirement.id} has no arguments for {capability_id}")
+        return dict(match.arguments)
+    return dict(requirement.capability_arguments)
+
+def _sets_projection(sets) -> dict[str, Any]:
+    maps = [dict(item.arguments) for item in sets]
+    return maps[0] if maps and all(item == maps[0] for item in maps) else {}
+
+def update_capability_arguments(requirement, capability_id: str,
+                                updates: Mapping[str, Any]):
+    """Update one local set and recompute the compatibility projection."""
+    if not requirement.capability_argument_sets:
+        if capability_id not in requirement.capability_options:
+            raise ValueError(f"requirement {requirement.id} disallows {capability_id}")
+        return requirement.model_copy(update={"capability_arguments": {
+            **requirement.capability_arguments, **updates}})
+    sets = list(requirement.capability_argument_sets)
+    from v2.arguments import RequirementArguments, encode_argument
+    rebuilt=[]
+    for item in sets:
+        if item.capability_id != capability_id:
+            rebuilt.append(item); continue
+        values={**dict(item.arguments),**updates}
+        rebuilt.append(item.model_copy(update={"arguments":RequirementArguments.model_validate(
+            {"entries":[encode_argument(k,v) for k,v in values.items()]})}))
+    return requirement.model_copy(update={"capability_argument_sets":rebuilt,
+        "capability_arguments":_sets_projection(rebuilt)})
+
+def _update_all_existing_argument(requirement, key: str, value: Any):
+    targets = [item.capability_id for item in requirement.capability_argument_sets
+               if key in item.arguments]
+    if not targets and key in requirement.capability_arguments:
+        targets = list(requirement.capability_options)
+    for capability_id in targets:
+        requirement = update_capability_arguments(requirement, capability_id, {key:value})
+    return requirement
+
+def narrow_requirement(requirement, capabilities: Sequence[str]):
+    capabilities=list(dict.fromkeys(capabilities))
+    sets=[item for item in requirement.capability_argument_sets
+          if item.capability_id in capabilities]
+    return requirement.model_copy(update={"capability_options":capabilities,
+        "capability_argument_sets":sets,
+        "capability_arguments":(_sets_projection(sets) if sets else
+            dict(requirement.capability_arguments))})
+
 class ModelIntake(ModelStage):
     prompt_name = "intake"
     route = "intake"
     schema = TaskSpec
 
-    def __init__(self, *args: Any, capability_catalog: Mapping[str, str], **kwargs: Any) -> None:
+    def __init__(self, *args: Any, capability_catalog: Mapping[str, str],
+                 intake_admission: bool = False, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._catalog = dict(capability_catalog)
+        self._intake_admission = intake_admission
+
+    @staticmethod
+    def _bounded_context(context: Sequence[ConversationTurn]) -> tuple[ConversationTurn, ...]:
+        from v2.contracts import MAX_INTAKE_CONTEXT_TURNS
+        return tuple(context[-MAX_INTAKE_CONTEXT_TURNS:])
+
+    @staticmethod
+    def _canonical_json(value: Any) -> bytes:
+        return json.dumps(value, sort_keys=True, separators=(",", ":"),
+                          ensure_ascii=False).encode("utf-8")
+
+    @classmethod
+    def _review_target(cls, request: str, context: Sequence[ConversationTurn],
+                       task: TaskSpec) -> AdmissionReviewTarget:
+        bounded = cls._bounded_context(context)
+        context_value = [{"index": index, "role": turn.role,
+                          "content": turn.content}
+                         for index, turn in enumerate(bounded)]
+        return AdmissionReviewTarget(
+            request_sha256=hashlib.sha256(request.encode("utf-8")).hexdigest(),
+            context_sha256=hashlib.sha256(
+                cls._canonical_json(context_value)).hexdigest(),
+            task_sha256=hashlib.sha256(cls._canonical_json(
+                task.model_dump(mode="json"))).hexdigest())
+
+    @staticmethod
+    def _expected_admission_subjects(task: TaskSpec) -> tuple[Any, ...]:
+        subjects: list[Any] = [TaskAdmissionSubject(kind="task")]
+        subjects.extend(EntityAdmissionSubject(
+            kind="entity", entity_id=entity.id, entity_type=entity.type)
+            for entity in task.entities)
+        if task.season is not None:
+            subjects.append(SeasonAdmissionSubject(
+                kind="season", value=task.season.value))
+        subjects.extend(MetricAdmissionSubject(
+            kind="metric", owner_kind="task", owner_id="request", metric_id=metric)
+            for metric in task.metric_ids)
+        subjects.extend(OutputAdmissionSubject(
+            kind="output", owner_kind="task", requirement_id="request", output_id=output)
+            for output in task.requested_outputs)
+        for owner_kind, requirements in (("evidence", task.requirements),
+                                         ("calculation", task.calculation_requirements)):
+            for requirement in requirements:
+                subjects.append(RequirementAdmissionSubject(
+                    kind="requirement", requirement_kind=owner_kind,
+                    requirement_id=requirement.id))
+                subjects.extend(MetricAdmissionSubject(
+                    kind="metric", owner_kind=owner_kind,
+                    owner_id=requirement.id, metric_id=metric)
+                    for metric in requirement.metric_ids)
+                subjects.extend(OutputAdmissionSubject(
+                    kind="output", owner_kind=owner_kind,
+                    requirement_id=requirement.id, output_id=output)
+                    for output in requirement.requested_outputs)
+        return tuple(subjects)
+
+    @classmethod
+    def _source_for_locator(cls, locator: Any, request: str,
+                            context: Sequence[ConversationTurn]) -> str | None:
+        if locator.source == "request":
+            return request
+        bounded = cls._bounded_context(context)
+        if locator.context_turn is None or locator.context_turn >= len(bounded):
+            return None
+        return bounded[locator.context_turn].content
+
+    @classmethod
+    def _validate_review(cls, review: IntakeAdmissionReview, request: str,
+                         context: Sequence[ConversationTurn], task: TaskSpec) -> list[str]:
+        target = cls._review_target(request, context, task)
+        errors: list[str] = []
+        try:
+            review.require_target(target)
+        except ValueError as exc:
+            errors.append(str(exc))
+        expected = cls._expected_admission_subjects(task)
+        expected_ids = {item.model_dump_json() for item in expected}
+        review_ids = {item.model_dump_json() for item in review.expected_subjects}
+        if review_ids != expected_ids or len(review.expected_subjects) != len(expected):
+            errors.append("review expected subjects do not match proposed task")
+        for item in (*review.bindings, *review.unresolved_references):
+            source = cls._source_for_locator(item.locator, request, context)
+            locator = item.locator
+            if (source is None or locator.end > len(source)
+                    or source[locator.start:locator.end] != locator.text):
+                errors.append("review locator does not match frozen source")
+        return list(dict.fromkeys(errors))
+
+    async def _review_admission(self, request: str,
+                                context: Sequence[ConversationTurn],
+                                task: TaskSpec) -> IntakeAdmissionReview:
+        bounded = self._bounded_context(context)
+        expected = self._expected_admission_subjects(task)
+        target = self._review_target(request, bounded, task)
+        return await self._generate_as(
+            prompt_name="intake_admission", route="intake_admission",
+            schema=IntakeAdmissionReview,
+            payload={
+                "target": target.model_dump(mode="json"),
+                "expected_subjects": [item.model_dump(mode="json")
+                                      for item in expected],
+                "question": request,
+                "conversation_context": [
+                    {"index": index, **turn.model_dump(mode="json")}
+                    for index, turn in enumerate(bounded)],
+                "proposed_task": task.model_dump(mode="json"),
+            })
+
+    @classmethod
+    def _apply_review(cls, review: IntakeAdmissionReview, request: str,
+                      context: Sequence[ConversationTurn],
+                      task: TaskSpec) -> TaskSpec:
+        errors = cls._validate_review(review, request, context, task)
+        if review.decision == "admit" and not errors:
+            return task
+        blockers = [finding.code for finding in review.findings]
+        if review.unresolved_references:
+            blockers.append("The request contains an unresolved reference.")
+        blockers.extend(errors)
+        return task.model_copy(update={
+            "entities": [], "season": None, "as_of": None,
+            "subquestions": [], "required_evidence": [], "requirements": [],
+            "calculation_requirements": [], "assumptions": [], "skills": [],
+            "metric_ids": [], "requested_outputs": [],
+            "open_questions": list(dict.fromkeys([
+                *task.open_questions,
+                *(blockers or ["The request could not be admitted safely."]),
+            ])),
+        })
 
     async def understand(
         self, request: str, context: Sequence[ConversationTurn] = ()
     ) -> TaskSpec:
+        bounded = self._bounded_context(context)
         payload = {
             "question": request,
             "current_date": datetime.now(UTC).date().isoformat(),
-            "conversation_context": [
-                turn.model_dump(mode="json") for turn in context[-8:]
-            ],
+            "conversation_context": [turn.model_dump(mode="json")
+                                     for turn in bounded],
             "capability_catalog": self._catalog,
             "skill_catalog": self._skills.catalog(),
         }
         task = await self._generate(payload)
-        def semantic_intake_ok(candidate: TaskSpec) -> bool:
-            source = request.casefold()
-            referential = bool(re.search(
-                r"\b(that player|that team|he|him|his|they|their)\b", source))
-            context_source = " ".join(turn.content.casefold() for turn in context)
-            semantic = " ".join([candidate.goal, candidate.deliverable,
-                *(entity.display_name for entity in candidate.entities),
-                candidate.season.value if candidate.season else ""]).casefold()
-            metric_aliases = {
-                "shooting": ("shoot", "shooting", "field goal", "fg%", "true shooting", "ts%"),
-                "blocks": ("block", "blocks", "bpg", "rim protection"),
-                "assists": ("assist", "assists", "apg", "dimes"),
-                "points": ("point", "points", "ppg", "scoring"),
-                "rebounds": ("rebound", "rebounds", "rpg", "boards"),
-                "steals": ("steal", "steals", "spg"),
-                "true shooting": ("true shooting", "ts%", "ts pct"),
-                "turnovers": ("turnover", "turnovers", "tov"),
-            }
-            requested_metrics = [aliases for aliases in metric_aliases.values()
-                if any(re.search(rf"(?<![a-z0-9]){re.escape(alias)}(?![a-z0-9])", source)
-                       for alias in aliases)]
-            if any(not any(alias in semantic for alias in aliases)
-                   for aliases in requested_metrics):
-                return False
-            source_seasons = set(re.findall(r"\b20\d{2}-\d{2}\b", source))
-            if source_seasons and not source_seasons <= set(re.findall(r"\b20\d{2}-\d{2}\b", semantic)):
-                return False
-            # Preserve explicit operation and output shape, including N.
-            number_words = {"one":"1","two":"2","three":"3","four":"4","five":"5",
-                            "six":"6","seven":"7","eight":"8","nine":"9","ten":"10"}
-            top = re.search(r"\btop\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b", source)
-            if top:
-                n = number_words.get(top.group(1), top.group(1))
-                if not (re.search(rf"\btop\s+(?:{n}|" + "|".join(k for k,v in number_words.items() if v==n) + r")\b", semantic)):
-                    return False
-            for patterns in (("compare", "comparison", "versus", " vs "),
-                             ("home and away", "home-away", "home versus away"),
-                             ("last ", "recent ")):
-                if any(token in source for token in patterns) and not any(token in semantic for token in patterns):
-                    return False
-            # Capitalized multi-token names are explicit entity anchors.
-            names = re.findall(r"\b(?:[A-Z][A-Za-zÀ-ž'’-]+\s+){1,3}[A-Z][A-Za-zÀ-ž'’-]+\b", request)
-            prefixes = ("Summarize ", "Compare ", "Explain ", "Assess ", "Evaluate ")
-            names = [next((name[len(prefix):] for prefix in prefixes
-                          if name.startswith(prefix)), name) for name in names]
-            names = [name for name in names if name.casefold() not in {
-                "which players", "who leads", "give the", "compare the", "national basketball association"}]
-            if names and candidate.entities:
-                if not any(entity.display_name.casefold() in source
-                           for entity in candidate.entities) and any(
-                    not any(all(part.casefold() in entity.display_name.casefold()
-                                for part in name.split())
-                            for entity in candidate.entities) for name in names):
-                    return False
-            elif any(not all(part.casefold() in semantic for part in name.split()) for name in names):
-                return False
-            conversational = bool(re.search(
-                r"(?:sure|happy to|what(?:'s| is) your question|please (?:ask|provide)|how can i help)",
-                candidate.deliverable, re.IGNORECASE))
-            if conversational:
-                return False
-            if referential:
-                # Empty context and per-type mismatches are handled by the
-                # dedicated referent guard below. With context, at least one
-                # candidate entity must name an antecedent; an additional
-                # invented type is stripped by that guard without a model retry.
-                if not context_source:
-                    return True
-                if not candidate.entities:
-                    return True
-                grounded = any(
-                    entity.display_name.casefold() in context_source
-                    or (len(entity.id.strip()) >= 3 and re.search(
-                        rf"(?<![a-z0-9]){re.escape(entity.id.casefold())}(?![a-z0-9])",
-                        context_source))
-                    for entity in candidate.entities)
-                # A generic failed/empty prior assistant answer establishes no
-                # antecedent even if the earlier user repeated the pronoun.
-                return grounded or not re.search(
-                    r"unavailable|could not|failed|error", context_source)
-            if requested_metrics or source_seasons or top or names:
-                return True
-            # Anchor-free requests need meaningful phrase similarity; pure
-            # referential turns are handled by the dedicated guard below.
-            stop = {"the","and","that","this","with","from","have","what","which",
-                    "who","give","tell","please","nba","season","player","team","game",
-                    "leaders","leader","top","rate","compare","points","how","did"}
-            a={t for t in re.findall(r"[a-z0-9]+",source) if len(t)>2 and t not in stop}
-            b={t for t in re.findall(r"[a-z0-9]+",semantic) if len(t)>2 and t not in stop}
-            return not a or len(a & b) / len(a) >= Decimal("0.5")
-        if not semantic_intake_ok(task):
-            task = await self._generate({
-                **payload,
-                "prior_intake": task.model_dump(mode="json"),
-                "resolution_feedback": {
-                    "instruction": (
-                        "The prior TaskSpec was schema-valid but did not preserve "
-                        "the source request. Return a replacement whose goal, "
-                        "entities, season, and deliverable describe the actual "
-                        "request. Never return conversational filler or a question."
-                    ),
-                },
-            })
-            if not semantic_intake_ok(task):
-                task = task.model_copy(update={
-                    "entities": [], "required_evidence": [], "requirements": [],
-                    "calculation_requirements": [],
-                    "open_questions": list(dict.fromkeys([*task.open_questions,
-                        "I could not preserve the requested entities, metric, season, and output shape. Could you restate the request?",
-                    ])),
-                })
         # Follow-up turns get one bounded typed resolution pass before the
         # runtime treats open_questions as user blockers. The first intake can
         # notice a pronoun or elliptical reference yet still fail to bind it
@@ -638,8 +740,7 @@ class ModelIntake(ModelStage):
         # with the unresolved questions made explicit lets the intake resolve
         # from conversation evidence without weakening schema validation or
         # teaching the runtime query-specific names.
-        if (context and task.open_questions
-                and not any("could not preserve" in q for q in task.open_questions)):
+        if (context and task.open_questions and not self._intake_admission):
             task = await self._generate({
                 **payload,
                 "prior_intake": task.model_dump(mode="json"),
@@ -663,7 +764,6 @@ class ModelIntake(ModelStage):
             "skills": [name for name in task.skills
                        if name in self._skills.skills],
         })
-        self._skills.activate(task.skills)
         if (task.season is not None and task.season.source == "default"
                 and "trade-analysis" in task.skills):
             context_seasons = [
@@ -717,32 +817,6 @@ class ModelIntake(ModelStage):
                 if name not in set(task.skills)
             ],
         })
-        # A referential follow-up may proceed only from an antecedent named in
-        # bounded conversation text. This is reference grounding, not factual
-        # verification; evidence verification remains downstream. Structured
-        # validity cannot license an invented entity when context is absent.
-        folded_request = request.casefold()
-        referent_types = {kind for kind, patterns in {
-            "player": (r"\bthat player\b", r"\bhe\b", r"\bhim\b", r"\bhis\b", r"\bdid he\b"),
-            "team": (r"\bthat team\b", r"\bthey\b", r"\btheir\b", r"\bdid they\b"),
-        }.items() if any(re.search(pattern, folded_request) for pattern in patterns)}
-        if referent_types:
-            context_text = " ".join(turn.content.casefold() for turn in context)
-            grounded_types = {entity.type for entity in task.entities
-                if (entity.display_name.casefold() in context_text
-                    or (len(entity.id.strip()) >= 3 and re.search(
-                        rf"(?<![a-z0-9]){re.escape(entity.id.casefold())}(?![a-z0-9])",
-                        context_text)))}
-            missing_types = sorted(referent_types - grounded_types)
-            if missing_types:
-                labels = " and ".join(missing_types)
-                task = task.model_copy(update={
-                    "entities": [entity for entity in task.entities
-                                 if entity.type not in missing_types],
-                    "open_questions": list(dict.fromkeys([
-                        *task.open_questions, f"Which {labels} do you mean?",
-                    ])),
-                })
         if self._requirement_review and not task.open_questions:
             review = await self._review_requirements(request, task)
             task = task.model_copy(update={
@@ -760,7 +834,6 @@ class ModelIntake(ModelStage):
                 "skills": [name for name in task.skills
                            if name in self._skills.skills],
             })
-            self._skills.activate(task.skills)
         player_count = sum(entity.type == "player" for entity in task.entities)
         optional_evidence = set()
         if player_count < 2:
@@ -834,21 +907,19 @@ class ModelIntake(ModelStage):
         if task.season is not None:
             task = task.model_copy(update={
                 "requirements": [
-                    requirement.model_copy(update={
-                        "capability_arguments": {
-                            **requirement.capability_arguments,
-                            "season": task.season.value,
-                        },
-                    })
-                    if "season" in requirement.capability_arguments
-                    else requirement
+                    _update_all_existing_argument(requirement, "season", task.season.value)
                     for requirement in task.requirements
                 ],
             })
         unknown = sorted(set(task.required_evidence) - self._catalog.keys())
         if unknown:
             raise ValueError(f"intake selected unknown capabilities: {unknown}")
-        return _canonicalize_calculation_requirements(task)
+        task = _canonicalize_calculation_requirements(task)
+        if self._intake_admission:
+            review = await self._review_admission(request, bounded, task)
+            task = self._apply_review(review, request, bounded, task)
+        self._skills.activate(task.skills)
+        return task
 
     def _capability_argument_names(self, capabilities: Sequence[str]) -> set[str] | None:
         """Return arguments accepted by every option, or None if unproven."""
@@ -871,15 +942,26 @@ class ModelIntake(ModelStage):
             return {}
         return {key: value for key, value in arguments.items() if key in names}
 
+    def _project_legacy_requirement(self, requirement, capabilities: Sequence[str]):
+        """Narrow a requirement to capabilities through the one audited rewrite.
+
+        Typed argument sets go through narrow_requirement. Legacy shared maps
+        keep only arguments valid for every remaining capability.
+        """
+        if requirement.capability_argument_sets:
+            return narrow_requirement(requirement, capabilities)
+        capabilities = list(dict.fromkeys(capabilities))
+        return requirement.model_copy(update={
+            "capability_options": capabilities,
+            "capability_arguments": self._project_capability_arguments(
+                requirement.capability_arguments, capabilities)})
+
     def _project_mixed_requirement_arguments(
         self, review: RequirementReview,
     ) -> RequirementReview:
         """Enforce that every emitted argument is valid for every option."""
         return review.model_copy(update={"requirements": [
-            item.model_copy(update={
-                "capability_arguments": self._project_capability_arguments(
-                    item.capability_arguments, item.capability_options),
-            }) if len(item.capability_options) > 1 else item
+            self._project_legacy_requirement(item, item.capability_options)
             for item in review.requirements
         ]})
 
@@ -895,11 +977,7 @@ class ModelIntake(ModelStage):
             remaining = [name for name in item.capability_options
                          if name != "team_ratings"]
             if remaining:
-                requirements.append(item.model_copy(update={
-                    "capability_options": remaining,
-                    "capability_arguments": self._project_capability_arguments(
-                        item.capability_arguments, remaining),
-                }))
+                requirements.append(self._project_legacy_requirement(item, remaining))
         return review.model_copy(update={"requirements": requirements})
 
     def _rebuild_ranked_team_branch(
@@ -912,11 +990,7 @@ class ModelIntake(ModelStage):
                  if "team_ratings" in item.capability_options]
         if typed:
             source = typed[0]
-            ranked = source.model_copy(update={
-                "capability_options": ["team_ratings"],
-                "capability_arguments": self._project_capability_arguments(
-                    source.capability_arguments, ["team_ratings"]),
-            })
+            ranked = self._project_legacy_requirement(source, ["team_ratings"])
         elif "team_ratings" in task.required_evidence:
             ranked = EvidenceRequirement(
                 id="required_team_ratings",
@@ -959,8 +1033,7 @@ class ModelIntake(ModelStage):
         for requirement in task.requirements:
             if "team_ratings" not in requirement.capability_options:
                 continue
-            trusted_source = self._project_capability_arguments(
-                requirement.capability_arguments, ["team_ratings"])
+            trusted_source = capability_arguments_for(requirement, "team_ratings")
             for key, value in trusted_source.items():
                 canonical = value
                 if key == "requested_metric":
@@ -1012,7 +1085,7 @@ class ModelIntake(ModelStage):
             if "team_ratings" not in requirement.capability_options:
                 reconciled.append(requirement)
                 continue
-            arguments = dict(requirement.capability_arguments)
+            arguments = capability_arguments_for(requirement, "team_ratings")
             raw_metric = arguments.get("requested_metric")
             if raw_metric is not None:
                 metric = canonical_team_rating_metric(raw_metric)
@@ -1041,10 +1114,62 @@ class ModelIntake(ModelStage):
                     raise RankedTeamConstraintError(
                         f"review {key} conflicts with trusted typed scope")
             arguments.update(established)
-            reconciled.append(requirement.model_copy(update={
-                "capability_arguments": arguments,
-            }))
+            reconciled.append(update_capability_arguments(
+                requirement, "team_ratings", arguments))
         return review.model_copy(update={"requirements": reconciled})
+
+    def _validate_requirement_wire(self, wire: RequirementReviewWire) -> None:
+        from jsonschema import Draft202012Validator
+        if wire.requirements is None:
+            raise ValueError("requirement review requirements may not be null")
+        for requirement in wire.requirements:
+            if set(requirement.capability_options) != {x.capability_id for x in requirement.capability_argument_sets}:
+                raise ValueError("capability argument sets must cover options")
+            for option in requirement.capability_argument_sets:
+                entry = self._catalog.get(option.capability_id)
+                if not isinstance(entry, Mapping): raise ValueError("unknown capability")
+                schema = dict(entry.get("arguments", {})); schema.pop("required", None)
+                arguments = dict(provider_to_source(option.arguments, "requirement"))
+                errors = list(Draft202012Validator(schema).iter_errors(arguments))
+                if errors: raise ValueError(f"invalid {option.capability_id} requirement arguments: {errors[0].message}")
+                injected = set(entry.get("dependent_entity_arguments", {}))
+                if injected & set(arguments):
+                    raise ValueError("provider may not author dependent injected arguments")
+
+    def _expand_home_away_requirements(self, review, scope: str):
+        expanded = []
+        for requirement in review.requirements:
+            args = (capability_arguments_for(requirement, "game_logs")
+                    if "game_logs" in requirement.capability_options else {})
+            if ("game_logs" in requirement.capability_options
+                    and "home" in scope and "away" in scope
+                    and args.get("home_away") not in {"home", "away"}):
+                for split in ("home", "away"):
+                    expanded.append(update_capability_arguments(
+                        requirement.model_copy(update={
+                            "id": f"{requirement.id}_{split}",
+                            "description": f"{split.title()} split: {requirement.description}"}),
+                        "game_logs", {"home_away": split}))
+            else:
+                expanded.append(requirement)
+        return review.model_copy(update={"requirements": expanded})
+
+    def _close_requirement_options(self, requirement):
+        """Legacy closure; v3 exact sets fail closed per behavior loss BL-001."""
+        if requirement.capability_argument_sets:
+            return requirement
+        from v2.runtime.subsumption import capability_subsumes
+        return requirement.model_copy(update={"capability_options": list(dict.fromkeys([
+            *requirement.capability_options,
+            *(["web_fetch"] if "web_search" in requirement.capability_options else []),
+            *(candidate for candidate in self._catalog
+              if any(capability_subsumes(candidate, narrower)
+                     for narrower in requirement.capability_options)),
+            *(["player_report"] if "game_logs" in requirement.capability_options
+              and requirement.capability_arguments.get("playoffs") is False
+              and "player" in requirement.capability_arguments
+              and "player_report" in self._catalog else []),
+        ]))})
 
     async def _review_requirements(
         self, request: str, task: TaskSpec,
@@ -1056,10 +1181,32 @@ class ModelIntake(ModelStage):
             "skill_catalog": self._skills.catalog(),
         }
         try:
-            review = await self._generate_as(
-                prompt_name="requirement_review", route="requirement_review",
-                schema=RequirementReview, payload=payload,
+            wire = await self._generate_as(
+                prompt_name="requirement_review_v3", route="requirement_review",
+                schema=RequirementReviewWire, payload=payload,
             )
+            self._validate_requirement_wire(wire)
+            requirements = []
+            for item in (wire.requirements or []):
+                sets = [{"capability_id": option.capability_id,
+                         "arguments": provider_to_source(option.arguments, "requirement")}
+                        for option in item.capability_argument_sets]
+                maps = [dict(option["arguments"]) for option in sets]
+                shared = maps[0] if maps and all(value == maps[0] for value in maps) else {}
+                requirements.append({"id": item.id, "description": item.description,
+                    "capability_options": item.capability_options,
+                    "capability_argument_sets": sets,
+                    "capability_arguments": shared,
+                    "metric_ids": item.metric_ids or [],
+                    "requested_outputs": item.requested_outputs or []})
+            review = RequirementReview.model_validate({
+                "requirements": requirements,
+                "calculation_requirements": [{**item.model_dump(),
+                    "metric_ids": item.metric_ids or [],
+                    "requested_outputs": item.requested_outputs or []}
+                    for item in (wire.calculation_requirements or [])],
+                "missing_subquestions": wire.missing_subquestions or [],
+                "missing_skills": wire.missing_skills or []})
         except RuntimeError as exc:
             if not str(exc).startswith("all structured-output providers failed"):
                 raise
@@ -1123,46 +1270,55 @@ class ModelIntake(ModelStage):
         # preserve split populations. Expand it into two typed requirements
         # before planning so execution never dispatches home_away=None.
         scope = " ".join([request, task.goal, task.deliverable, *task.subquestions]).casefold()
-        expanded = []
-        for requirement in review.requirements:
-            args = requirement.capability_arguments
-            if ("game_logs" in requirement.capability_options
-                    and "home" in scope and "away" in scope
-                    and args.get("home_away") not in {"home", "away"}):
-                for split in ("home", "away"):
-                    expanded.append(requirement.model_copy(update={
-                        "id": f"{requirement.id}_{split}",
-                        "description": f"{split.title()} split: {requirement.description}",
-                        "capability_arguments": {**args, "home_away": split},
-                    }))
-            else:
-                expanded.append(requirement)
-        review = review.model_copy(update={"requirements": expanded})
-        requirements = [
-            requirement.model_copy(update={
-                "capability_options": list(dict.fromkeys([
-                    *requirement.capability_options,
-                    *(["web_fetch"] if "web_search" in requirement.capability_options
-                      else []),
-                    *(candidate for candidate in self._catalog
-                      if any(capability_subsumes(candidate, narrower)
-                             for narrower in requirement.capability_options)),
-                    *(["player_report"]
-                      if "game_logs" in requirement.capability_options
-                      and requirement.capability_arguments.get("playoffs") is False
-                      and "player" in requirement.capability_arguments
-                      and "player_report" in self._catalog else []),
-                ])),
-            })
-            for requirement in review.requirements
-        ]
+        review = self._expand_home_away_requirements(review, scope)
+        requirements = [self._close_requirement_options(requirement)
+                        for requirement in review.requirements]
         return review.model_copy(update={"requirements": requirements})
 
 
+class PlannerArgumentError(ValueError):
+    """Provider-authored planner arguments failed the capability schema."""
+
+    def __init__(self, message: str, *, node_id: str, missing_required: list[str]) -> None:
+        super().__init__(message)
+        self.node_id = node_id
+        self.missing_required = missing_required
+
+
 class ModelPlanner(ModelStage):
-    prompt_name = "planner"
+    prompt_name = "planner_v3"
     route = "planner"
-    schema = Plan
+    schema = PlannerOutputWire
+
+    async def _generate_plan(self, payload):
+        wire = await self._generate(payload)
+        from jsonschema import Draft202012Validator
+        decoded = []
+        for node in (wire.nodes or []):
+            arguments = provider_to_source(node.arguments, "planner")
+            entry = self._catalog.get(node.capability)
+            if not isinstance(entry, Mapping): raise ValueError("planner selected unknown capability")
+            schema = dict(entry.get("arguments", {}))
+            injected = set(entry.get("dependent_entity_arguments", {}))
+            if injected and isinstance(schema.get("required"), list):
+                schema["required"] = [name for name in schema["required"] if name not in injected]
+            errors = list(Draft202012Validator(schema).iter_errors(dict(arguments)))
+            if errors:
+                missing = sorted(
+                    name for error in errors if error.validator == "required"
+                    for name in error.validator_value if name not in arguments)
+                raise PlannerArgumentError(
+                    f"invalid {node.capability} planner arguments: {errors[0].message}",
+                    node_id=node.id, missing_required=missing)
+            if set(entry.get("dependent_entity_arguments", {})) & set(arguments):
+                raise ValueError("provider may not author dependent injected arguments")
+            decoded.append((node, arguments))
+        return Plan.model_validate({"nodes": [{
+            "id": node.id, "description": node.description,
+            "depends_on": node.depends_on or [], "capability_hints": [node.capability],
+            "covers_requirement_ids": node.covers_requirement_ids or [],
+            "arguments": dict(arguments), "max_attempts": node.max_attempts or 1,
+            "status": node.status or "pending"} for node, arguments in decoded]})
 
     def __init__(self, *args: Any, capability_catalog: Mapping[str, str], **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
@@ -1174,13 +1330,26 @@ class ModelPlanner(ModelStage):
             "capability_catalog": self._catalog,
             "skills": self._skills.activate(task.skills),
         }
-        plan = await self._generate(payload)
+        try:
+            plan = await self._generate_plan(payload)
+        except PlannerArgumentError as exc:
+            if not exc.missing_required:
+                raise
+            # A missing catalog-required argument gets one replan with the
+            # exact names; a second invalid plan fails closed.
+            plan = await self._generate_plan({
+                **payload,
+                "coverage_feedback": {
+                    "missing_required_arguments": {exc.node_id: exc.missing_required},
+                    "instruction": "Return a complete replacement plan.",
+                },
+            })
         plan = self._normalize_plan(
             task, self._normalize_requirement_coverage(task, plan))
         feedback = self._coverage_feedback(task, plan)
         if not feedback:
             return plan
-        replacement = await self._generate({
+        replacement = await self._generate_plan({
             **payload,
             "coverage_feedback": {
                 **feedback, "instruction": "Return a complete replacement plan.",
@@ -1289,8 +1458,9 @@ class ModelPlanner(ModelStage):
                 continue
             args = dict(node.arguments)
             requirement_args = [
-                requirements[rid].capability_arguments
+                capability_arguments_for(requirements[rid], "team_ratings")
                 for rid in node.covers_requirement_ids if rid in requirements
+                and "team_ratings" in requirements[rid].capability_options
             ]
             requirement_metric = next((item.get("requested_metric")
                                        for item in requirement_args
@@ -1454,13 +1624,15 @@ class ModelPlanner(ModelStage):
         requirements = {item.id: item for item in task.requirements}
         nodes = []
         for node in plan.nodes:
-            selected = set(node.capability_hints) & self._catalog.keys()
+            selected = [name for name in node.capability_hints if name in self._catalog]
+            capability = selected[0] if len(selected) == 1 else None
             valid = [
                 requirement_id for requirement_id in node.covers_requirement_ids
-                if requirement_id in requirements
-                and selected & set(requirements[requirement_id].capability_options)
+                if requirement_id in requirements and capability is not None
+                and capability in requirements[requirement_id].capability_options
                 and self._arguments_cover(
-                    requirements[requirement_id].capability_arguments, node.arguments)
+                    capability_arguments_for(requirements[requirement_id], capability),
+                    node.arguments)
             ]
             nodes.append(node.model_copy(update={"covers_requirement_ids": valid}))
         return plan.model_copy(update={"nodes": nodes})
@@ -1864,10 +2036,10 @@ def _deterministic_rank_draft(
             continue
         owner = next((requirement for requirement in task.requirements
                       if "team_ratings" in requirement.capability_options
-                      and requirement.capability_arguments.get("requested_metric") == metric), None)
+                      and capability_arguments_for(requirement, "team_ratings").get("requested_metric") == metric), None)
         if owner is None:
             continue
-        direction = owner.capability_arguments.get("ranking_direction")
+        direction = capability_arguments_for(owner, "team_ratings").get("ranking_direction")
         direction = direction if direction in directions else (
             "asc" if metric in {"DEF_RATING", "TM_TOV_PCT"} else "desc")
         numeric = []

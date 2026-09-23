@@ -1,0 +1,399 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "calculation_requirements": {
+      "anyOf": [
+        {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "type": "string"
+              },
+              "metric_ids": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "maxLength": 128,
+                      "minLength": 1,
+                      "pattern": "^[A-Z][A-Z0-9_]*$",
+                      "type": "string"
+                    },
+                    "maxItems": 16,
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "requested_outputs": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "maxLength": 128,
+                      "minLength": 1,
+                      "pattern": "^[A-Z][A-Z0-9_]*$",
+                      "type": "string"
+                    },
+                    "maxItems": 16,
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "metric_ids",
+              "requested_outputs"
+            ],
+            "type": "object"
+          },
+          "maxItems": 32,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "missing_skills": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 16,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "missing_subquestions": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 32,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "requirements": {
+      "anyOf": [
+        {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "capability_argument_sets": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "arguments": {
+                      "anyOf": [
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "entries": {
+                              "anyOf": [
+                                {
+                                  "items": {
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "bool_list_value": {
+                                        "anyOf": [
+                                          {
+                                            "items": {
+                                              "type": "boolean"
+                                            },
+                                            "maxItems": 32,
+                                            "type": "array"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "bool_value": {
+                                        "anyOf": [
+                                          {
+                                            "type": "boolean"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "decimal_list_value": {
+                                        "anyOf": [
+                                          {
+                                            "items": {
+                                              "maxLength": 128,
+                                              "minLength": 1,
+                                              "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+                                              "type": "string"
+                                            },
+                                            "maxItems": 32,
+                                            "type": "array"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "decimal_value": {
+                                        "anyOf": [
+                                          {
+                                            "maxLength": 128,
+                                            "minLength": 1,
+                                            "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "int_list_value": {
+                                        "anyOf": [
+                                          {
+                                            "items": {
+                                              "type": "integer"
+                                            },
+                                            "maxItems": 32,
+                                            "type": "array"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "int_value": {
+                                        "anyOf": [
+                                          {
+                                            "type": "integer"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "key": {
+                                        "maxLength": 128,
+                                        "minLength": 1,
+                                        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                                        "type": "string"
+                                      },
+                                      "kind": {
+                                        "enum": [
+                                          "null",
+                                          "bool",
+                                          "int",
+                                          "number",
+                                          "decimal",
+                                          "string",
+                                          "bool_list",
+                                          "int_list",
+                                          "number_list",
+                                          "decimal_list",
+                                          "string_list"
+                                        ],
+                                        "type": "string"
+                                      },
+                                      "number_list_value": {
+                                        "anyOf": [
+                                          {
+                                            "items": {
+                                              "type": "number"
+                                            },
+                                            "maxItems": 32,
+                                            "type": "array"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "number_value": {
+                                        "anyOf": [
+                                          {
+                                            "type": "number"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "string_list_value": {
+                                        "anyOf": [
+                                          {
+                                            "items": {
+                                              "maxLength": 2048,
+                                              "type": "string"
+                                            },
+                                            "maxItems": 32,
+                                            "type": "array"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "string_value": {
+                                        "anyOf": [
+                                          {
+                                            "maxLength": 2048,
+                                            "type": "string"
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "value": {
+                                        "type": "null"
+                                      }
+                                    },
+                                    "required": [
+                                      "bool_list_value",
+                                      "bool_value",
+                                      "decimal_list_value",
+                                      "decimal_value",
+                                      "int_list_value",
+                                      "int_value",
+                                      "key",
+                                      "kind",
+                                      "number_list_value",
+                                      "number_value",
+                                      "string_list_value",
+                                      "string_value",
+                                      "value"
+                                    ],
+                                    "type": "object"
+                                  },
+                                  "maxItems": 64,
+                                  "type": "array"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "entries"
+                          ],
+                          "type": "object"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "capability_id": {
+                      "maxLength": 64,
+                      "minLength": 1,
+                      "pattern": "^[a-z][a-z0-9_]*$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "arguments",
+                    "capability_id"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 8,
+                "minItems": 1,
+                "type": "array"
+              },
+              "capability_options": {
+                "items": {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "pattern": "^[a-z][a-z0-9_]*$",
+                  "type": "string"
+                },
+                "maxItems": 8,
+                "minItems": 1,
+                "type": "array"
+              },
+              "id": {
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "type": "string"
+              },
+              "metric_ids": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "maxLength": 128,
+                      "minLength": 1,
+                      "pattern": "^[A-Z][A-Z0-9_]*$",
+                      "type": "string"
+                    },
+                    "maxItems": 16,
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "requested_outputs": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "maxLength": 128,
+                      "minLength": 1,
+                      "pattern": "^[A-Z][A-Z0-9_]*$",
+                      "type": "string"
+                    },
+                    "maxItems": 16,
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "capability_argument_sets",
+              "capability_options",
+              "id",
+              "metric_ids",
+              "requested_outputs"
+            ],
+            "type": "object"
+          },
+          "maxItems": 32,
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "calculation_requirements",
+    "missing_skills",
+    "missing_subquestions",
+    "requirements"
+  ],
+  "type": "object"
+}

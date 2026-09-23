@@ -495,3 +495,163 @@ def test_bare_display_source_is_not_inferred_as_live_provenance():
     from v2.adapters.core import build_envelope
     item=build_envelope(CAPABILITIES['team_ratings'],{}, {'ok':True,'rows':[],'meta':{'source':'nba_api'}})
     assert item.source=='v1:get_ratings:nba_api' and item.source_identity is None
+
+
+
+def _admission_target(seed: str = "a"):
+    from v2.contracts import AdmissionReviewTarget
+    return AdmissionReviewTarget(
+        request_sha256=seed * 64, context_sha256="b" * 64,
+        task_sha256="c" * 64)
+
+
+def _entity_subject(entity_id: str = "2544", entity_type: str = "player"):
+    from v2.contracts import EntityAdmissionSubject
+    return EntityAdmissionSubject(
+        kind="entity", entity_id=entity_id, entity_type=entity_type)
+
+
+def _locator(text: str = "LeBron James", start: int = 8):
+    from v2.contracts import SourceLocator
+    return SourceLocator(source="request", start=start,
+                         end=start + len(text), text=text)
+
+
+def test_source_locator_is_exact_frozen_and_source_typed():
+    from v2.contracts import SourceLocator
+    request = _locator()
+    with pytest.raises(ValidationError, match="frozen"):
+        request.start = 0
+    with pytest.raises(ValidationError, match="context turn"):
+        SourceLocator(source="request", context_turn=0, start=0, end=1, text="x")
+    with pytest.raises(ValidationError, match="requires a context turn"):
+        SourceLocator(source="context", start=0, end=1, text="x")
+    with pytest.raises(ValidationError, match="offsets must match"):
+        SourceLocator(source="request", start=0, end=2, text="x")
+
+
+def test_review_target_is_frozen_and_rejects_noncanonical_digests():
+    target = _admission_target()
+    with pytest.raises(ValidationError, match="frozen"):
+        target.task_sha256 = "d" * 64
+    with pytest.raises(ValidationError):
+        _admission_target("A")
+
+
+def test_intake_admission_review_rejects_empty_or_incomplete_admit():
+    from v2.contracts import AdmissionBinding, IntakeAdmissionReview
+    subject = _entity_subject()
+    with pytest.raises(ValidationError, match="at least 1 item"):
+        IntakeAdmissionReview(target=_admission_target(), decision="admit",
+                              expected_subjects=[])
+    with pytest.raises(ValidationError, match="bind every expected subject"):
+        IntakeAdmissionReview(target=_admission_target(), decision="admit",
+                              expected_subjects=[subject])
+    admitted = IntakeAdmissionReview(
+        target=_admission_target(), decision="admit",
+        expected_subjects=[subject],
+        bindings=[AdmissionBinding(subject=subject, locator=_locator())])
+    assert admitted.decision == "admit"
+
+
+def test_admission_review_cannot_be_replayed_for_another_target():
+    from v2.contracts import AdmissionBinding, IntakeAdmissionReview
+    subject = _entity_subject()
+    review = IntakeAdmissionReview(
+        target=_admission_target("a"), decision="admit",
+        expected_subjects=[subject],
+        bindings=[AdmissionBinding(subject=subject, locator=_locator())])
+    review.require_target(_admission_target("a"))
+    with pytest.raises(ValueError, match="target does not match"):
+        review.require_target(_admission_target("d"))
+
+
+def test_block_requires_typed_finding_or_unresolved_reference():
+    from v2.contracts import AdmissionFinding, IntakeAdmissionReview
+    subject = _entity_subject()
+    with pytest.raises(ValidationError, match="typed blocker"):
+        IntakeAdmissionReview(target=_admission_target(), decision="block",
+                              expected_subjects=[subject])
+    with pytest.raises(ValidationError, match="affected subject"):
+        AdmissionFinding(code="subject_mismatch")
+    blocked = IntakeAdmissionReview(
+        target=_admission_target(), decision="block",
+        expected_subjects=[subject], findings=[AdmissionFinding(
+            code="subject_mismatch", affected_subjects=[subject])])
+    assert blocked.findings[0].code == "subject_mismatch"
+
+
+
+def test_season_admission_subject_reuses_canonical_season_invariant():
+    from v2.contracts import SeasonAdmissionSubject
+    assert SeasonAdmissionSubject(kind="season", value="2025-26").value == "2025-26"
+    for value in ("2025-24", "2025-99", "2025-27", "25-26"):
+        with pytest.raises(ValidationError, match="consecutive YYYY-YY"):
+            SeasonAdmissionSubject(kind="season", value=value)
+
+
+def test_unresolved_block_requires_source_bound_unresolved_reference():
+    from v2.contracts import (IntakeAdmissionReview, SourceLocator,
+                              UnresolvedReference)
+    subject = _entity_subject()
+    with pytest.raises(ValidationError):
+        # `unresolved_reference` is intentionally not a finding code: a code
+        # without a source locator cannot establish an unresolved referent.
+        IntakeAdmissionReview(
+            target=_admission_target(), decision="block",
+            expected_subjects=[subject],
+            findings=[{"code": "unresolved_reference"}])
+    locator = SourceLocator(source="request", start=0, end=2, text="he")
+    blocked = IntakeAdmissionReview(
+        target=_admission_target(), decision="block",
+        expected_subjects=[subject], unresolved_references=[
+            UnresolvedReference(kind="player", locator=locator)])
+    assert blocked.unresolved_references[0].locator == locator
+
+def test_explicit_lebron_fixture_binds_complete_typed_subject_manifest():
+    from v2.contracts import (AdmissionBinding, EntityAdmissionSubject,
+        IntakeAdmissionReview, OutputAdmissionSubject,
+        RequirementAdmissionSubject, SourceLocator)
+    request = "Analyze LeBron James with the Philadelphia 76ers for fit."
+    subjects = [
+        EntityAdmissionSubject(kind="entity", entity_id="2544", entity_type="player"),
+        EntityAdmissionSubject(kind="entity", entity_id="1610612755", entity_type="team"),
+        RequirementAdmissionSubject(kind="requirement", requirement_kind="evidence", requirement_id="fit"),
+        OutputAdmissionSubject(kind="output", owner_kind="evidence", requirement_id="fit", output_id="FIT_ASSESSMENT"),
+    ]
+    texts = ["LeBron James", "Philadelphia 76ers", "fit", "fit"]
+    bindings = []
+    for subject, text in zip(subjects, texts, strict=True):
+        start = request.index(text)
+        bindings.append(AdmissionBinding(
+            subject=subject, locator=SourceLocator(
+                source="request", start=start, end=start + len(text), text=text)))
+    review = IntakeAdmissionReview(
+        target=_admission_target(), decision="admit",
+        expected_subjects=subjects, bindings=bindings)
+    assert review.unresolved_references == ()
+    assert len(review.bindings) == len(review.expected_subjects) == 4
+
+
+def test_unicode_and_punctuation_remain_verbatim_in_source_locator():
+    from v2.contracts import SourceLocator
+    request = "Compare Nikola Jokić’s impact."
+    text = "Nikola Jokić’s"
+    start = request.index(text)
+    locator = SourceLocator(source="request", start=start,
+                            end=start + len(text), text=text)
+    assert locator.text == request[locator.start:locator.end]
+
+
+def test_composite_warehouse_identity_is_typed_and_complete():
+    from datetime import UTC, datetime
+    from v2.adapters.capabilities import CAPABILITIES
+    from v2.adapters.core import build_envelope
+    item = build_envelope(CAPABILITIES["injury_impact"], {"season": "2025-26"}, {
+        "ok": True, "rows": {"impact": "unknown"},
+        "meta": {"source": "espn+nba_api+warehouse", "season": "2025-26",
+                 "warehouse_id": "configured-runtime", "warehouse_sha256": "a" * 64}},
+        observed_at=datetime.now(UTC))
+    assert item.source_identity.model_dump() == {
+        "kind": "composite", "warehouse_id": "configured-runtime",
+        "sha256": "a" * 64, "live_sources": ["espn", "nba_api"]}

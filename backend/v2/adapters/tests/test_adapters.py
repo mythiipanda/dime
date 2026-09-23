@@ -969,3 +969,22 @@ async def test_dependent_player_argument_is_bound_from_parent_evidence():
                  capability_hints=["player_evaluation"],arguments={"season":"2025-26"}),
         TaskSpec(goal="profile",mode="quick",deliverable="answer"),[parent])
     assert result.entities[0].display_name == "Shai Gilgeous-Alexander"
+
+
+def test_warehouse_game_logs_and_composed_injury_evidence_keep_identity(monkeypatch, tmp_path):
+    from app import store
+    from v2.adapters.core import call_capability
+    warehouse = tmp_path / "warehouse.duckdb"
+    warehouse.write_bytes(b"identity bytes")
+    monkeypatch.setattr(store, "DB_PATH", warehouse)
+    expected = "a83dbed6639d9eabd9d769c986d5a0a6b36fed3be1da7e06d3a3ea7447df9265"
+    game = {"tool":"search_game_logs","ok":True,"rows":{"returned":3,"total":68,"matches":[]},"meta":{"source":"warehouse","season":"2025-26"}}
+    injury = {"tool":"get_injury_impact","ok":True,"rows":{"availability_known":False,"impact":"unknown"},"meta":{"source":"espn+nba_api+warehouse","season":"2025-26"}}
+    class Tool:
+        args_schema = None
+        def __init__(self, value): self.value=value
+        async def ainvoke(self, arguments): return self.value
+    game_env=call_capability("game_logs",{"season":"2025-26","player":"1"},tools={"search_game_logs":Tool(game)})
+    injury_env=call_capability("injury_impact",{"season":"2025-26","team":"SEA"},tools={"get_injury_impact":Tool(injury)})
+    assert game_env.source_identity.model_dump()=={"kind":"warehouse","warehouse_id":"configured-runtime","sha256":expected}
+    assert injury_env.source_identity.model_dump()=={"kind":"composite","warehouse_id":"configured-runtime","sha256":expected,"live_sources":["espn","nba_api"]}

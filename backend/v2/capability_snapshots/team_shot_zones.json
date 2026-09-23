@@ -1,0 +1,59 @@
+{
+  "capability_id": "team_shot_zones",
+  "dependent_entity_arguments": {},
+  "properties": [
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "string"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "b6f8359b507cc999385a29f3a5a8567183f33e990e14326d61f9808796cc29c4"
+        }
+      ],
+      "compiled_kinds": [
+        "string"
+      ],
+      "default": "2025-26",
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "season",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "b6f8359b507cc999385a29f3a5a8567183f33e990e14326d61f9808796cc29c4"
+    },
+    {
+      "branches": [
+        {
+          "compiled_kinds": [
+            "string"
+          ],
+          "constraints": {},
+          "item_constraints": {},
+          "list_item_exact_decimal": false,
+          "scalar_exact_decimal": false,
+          "schema_sha256": "8ce862a39cc3b6064a306771a80a833affdaafcd8cc809e842204a15945f782b"
+        }
+      ],
+      "compiled_kinds": [
+        "string"
+      ],
+      "default": "league",
+      "default_present": true,
+      "list_item_exact_decimal": false,
+      "nullable": false,
+      "property": "teams",
+      "required": false,
+      "scalar_exact_decimal": false,
+      "schema_sha256": "8ce862a39cc3b6064a306771a80a833affdaafcd8cc809e842204a15945f782b"
+    }
+  ],
+  "reasons": [],
+  "schema_sha256": "cff94415f685ef4c404597ccc5b7eb26350bdf487adc805b130056462c0b2b39",
+  "status": "REPRESENTABLE"
+}

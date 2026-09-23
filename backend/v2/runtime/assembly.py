@@ -158,7 +158,7 @@ def build_runtime(
     runtime = Runtime(
         intake=ModelIntake(model, provider=provider, model_name=model_name,
                           capability_catalog=catalog, skill_library=skills,
-                          requirement_review=True),
+                          requirement_review=True, intake_admission=True),
         planner=ModelPlanner(model, provider=provider, model_name=model_name,
                              capability_catalog=catalog, skill_library=skills),
         executor=PlanExecutor(

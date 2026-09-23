@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     jina_api_key: str = ""
     inception_model: str = "mercury-2.5"
     groq_api_key: str = ""
+    dime_enable_groq: bool = False
     groq_model: str = "openai/gpt-oss-20b"
     cors_allowed_origins: str = "http://localhost:3000"
     llm_timeout_s: int = 60

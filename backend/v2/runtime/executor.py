@@ -6,7 +6,7 @@ from collections.abc import Mapping, Sequence
 from v2.contracts import EvidenceEnvelope, Plan, PlanNode, PlanStatus, TaskSpec
 from v2.runtime.checkpoints import CheckpointStore, ExecutionCheckpoint
 from v2.runtime.interfaces import Capability
-from v2.runtime.models import ExecutionResult
+from v2.runtime.models import ExecutionErrorCode, ExecutionResult
 from v2.runtime.ledger import exception_text
 from v2.domain.evidence import admit_evidence
 
@@ -83,11 +83,13 @@ class PlanExecutor:
                 node_id: checkpoint.attempts.get(node_id, 0) for node_id in nodes
             }
             errors = {key: list(value) for key, value in checkpoint.errors.items()}
+            error_codes = {key: list(value) for key, value in checkpoint.error_codes.items()}
         else:
             nodes = {node.id: node.model_copy(deep=True) for node in plan.nodes}
             evidence_by_node: dict[str, EvidenceEnvelope] = {}
             attempts = {node_id: 0 for node_id in nodes}
             errors: dict[str, list[str]] = {}
+            error_codes: dict[str, list[ExecutionErrorCode]] = {}
         failures = sum(
             node.status == PlanStatus.FAILED for node in nodes.values()
         )
@@ -98,7 +100,7 @@ class PlanExecutor:
                     if node.status == PlanStatus.PENDING:
                         node.status = PlanStatus.SKIPPED
                 self._save_checkpoint(
-                    run_id, task, plan, nodes, evidence_by_node, attempts, errors
+                    run_id, task, plan, nodes, evidence_by_node, attempts, errors, error_codes
                 )
                 break
             progressed = False
@@ -114,7 +116,7 @@ class PlanExecutor:
                     progressed = True
 
             self._save_checkpoint(
-                run_id, task, plan, nodes, evidence_by_node, attempts, errors
+                run_id, task, plan, nodes, evidence_by_node, attempts, errors, error_codes
             )
             ready = [
                 node
@@ -131,11 +133,11 @@ class PlanExecutor:
                 for node in batch:
                     node.status = PlanStatus.RUNNING
                 self._save_checkpoint(
-                    run_id, task, plan, nodes, evidence_by_node, attempts, errors
+                    run_id, task, plan, nodes, evidence_by_node, attempts, errors, error_codes
                 )
                 tasks = [
                     asyncio.create_task(
-                        self._run_node(node, task, evidence_by_node, attempts, errors)
+                        self._run_node(node, task, evidence_by_node, attempts, errors, error_codes)
                     )
                     for node in batch
                 ]
@@ -162,7 +164,7 @@ class PlanExecutor:
                                 node.status = PlanStatus.COMPLETE
                                 evidence_by_node[node.id] = envelope
                         self._save_checkpoint(
-                            run_id, task, plan, nodes, evidence_by_node, attempts, errors
+                            run_id, task, plan, nodes, evidence_by_node, attempts, errors, error_codes
                         )
                 finally:
                     for task_handle in tasks:
@@ -176,13 +178,13 @@ class PlanExecutor:
         completed_plan = Plan(nodes=[nodes[node.id] for node in plan.nodes])
         result = ExecutionResult(
             plan=completed_plan,
-            evidence=[
-                evidence_by_node[node.id]
-                for node in plan.nodes
-                if node.id in evidence_by_node
-            ],
+            evidence_by_node={
+                node.id: evidence_by_node[node.id]
+                for node in plan.nodes if node.id in evidence_by_node
+            },
             attempts=attempts,
             errors=errors,
+            error_codes=error_codes,
         )
         if (self._checkpoint_store is not None and run_id is not None
                 and all(node.status == PlanStatus.COMPLETE
@@ -341,17 +343,20 @@ class PlanExecutor:
         evidence_by_node: Mapping[str, EvidenceEnvelope],
         attempts: Mapping[str, int],
         errors: Mapping[str, list[str]],
+        error_codes: Mapping[str, list[ExecutionErrorCode]],
     ) -> None:
         if self._checkpoint_store is None or run_id is None:
             return
         self._checkpoint_store.save(
             ExecutionCheckpoint(
+                version=2,
                 run_id=run_id,
                 task=task,
                 plan=Plan(nodes=[nodes[node.id] for node in original_plan.nodes]),
                 evidence_by_node=dict(evidence_by_node),
                 attempts=dict(attempts),
                 errors={key: list(value) for key, value in errors.items()},
+                error_codes={key: list(value) for key, value in error_codes.items()},
             )
         )
 
@@ -362,6 +367,7 @@ class PlanExecutor:
         evidence_by_node: Mapping[str, EvidenceEnvelope],
         attempts: dict[str, int],
         errors: dict[str, list[str]],
+        error_codes: dict[str, list[ExecutionErrorCode]],
     ) -> tuple[PlanNode, EvidenceEnvelope | None]:
         capability = self._select_capability(node)
         if capability is None:
@@ -412,6 +418,12 @@ class PlanExecutor:
                 node_errors = errors.setdefault(node.id, [])
                 if message not in node_errors:
                     node_errors.append(message)
+                code = getattr(exc, "gap_kind", None)
+                if code == ExecutionErrorCode.PROFILE_NAME_RESOLUTION_UNAVAILABLE:
+                    codes = error_codes.setdefault(node.id, [])
+                    typed = ExecutionErrorCode.PROFILE_NAME_RESOLUTION_UNAVAILABLE
+                    if typed not in codes:
+                        codes.append(typed)
         return node, None
 
     @staticmethod

@@ -22,7 +22,8 @@ from v2.contracts import (
 from v2.runtime.executor import PlanExecutor
 from v2.runtime.interfaces import Intake, Planner, Repairer, Synthesizer, Verifier
 from v2.runtime.ledger import LedgerKind, RunLedger, TerminalReason, exception_text
-from v2.runtime.models import ExecutionResult, RuntimeResult
+from v2.runtime.models import (ExecutionResult, RuntimeResult,
+                               admit_verified_claim_bindings)
 from v2.domain.evidence import iter_values
 from v2.runtime.budget import RUN_MODEL_DEADLINE
 
@@ -278,15 +279,22 @@ class Runtime:
             verification = verification.model_copy(
                 update={"status": VerificationStatus.PARTIAL}
             )
-        verified_claims = _verified_claims(draft, verification, evidence)
+        verified_claims, binding_gaps = _verified_claims(
+            task, execution, draft, verification, evidence)
+        if binding_gaps and verification.status == VerificationStatus.PASS:
+            verification = verification.model_copy(
+                update={"status": VerificationStatus.PARTIAL})
         gaps = [
             *_verification_gaps(
-                draft, verification, unresolved_errors, evidence_ids=set(evidence),
+                draft, verification, unresolved_errors,
+                execution_error_codes=execution.error_codes,
+                evidence_ids=set(evidence),
                 satisfied_requirement_ids={
                     requirement_id for node in execution.plan.nodes
                     if node.status.value == "complete"
                     for requirement_id in node.covers_requirement_ids
                 }),
+            *binding_gaps,
             *empty_evidence_gaps,
             *uncovered_requirement_gaps,
             *empty_draft_gaps,
@@ -588,27 +596,41 @@ def _unique(values: Iterable[str], *, limit: int | None = None) -> list[str]:
     return unique if limit is None else unique[:limit]
 
 
-def _verified_claims(draft, verification, evidence=None) -> list[VerifiedClaim]:
-    supported = {
-        result.claim_index for result in verification.claim_results
-        if result.supported
-    }
-    return [
-        VerifiedClaim(
+def _verified_claims(task, execution, draft, verification, evidence=None):
+    supported = {result.claim_index for result in verification.claim_results
+                 if result.supported}
+    admitted: list[VerifiedClaim] = []
+    rejected: list[Gap] = []
+    for index, claim in enumerate(draft.claims):
+        if index not in supported:
+            continue
+        candidate = VerifiedClaim(
             claim_index=index, claim=claim,
             evidence_ids=list(claim.evidence_ids),
             sources=[ClaimSource(
-                evidence_id=evidence_id,
-                source=evidence[evidence_id].source,
+                evidence_id=evidence_id, source=evidence[evidence_id].source,
                 capability=evidence[evidence_id].capability,
                 observed_at=evidence[evidence_id].observed_at,
                 as_of=evidence[evidence_id].as_of,
                 vintages=dict(evidence[evidence_id].vintages))
                 for evidence_id in claim.evidence_ids
-                if evidence and evidence_id in evidence])
-        for index, claim in enumerate(draft.claims)
-        if index in supported
-    ]
+                if evidence and evidence_id in evidence],
+            output_bindings=list(claim.output_bindings))
+        try:
+            admitted.append(admit_verified_claim_bindings(
+                task, execution, draft, candidate))
+        except ValueError as exc:
+            # Atomic claim behavior: one invalid proposal rejects all authority.
+            admitted.append(VerifiedClaim(
+                claim_index=index, claim=claim,
+                evidence_ids=list(claim.evidence_ids),
+                sources=list(candidate.sources), output_bindings=[]))
+            rejected.append(Gap(
+                kind=GapKind.SYNTHESIS_INCOMPLETE,
+                message=f"claim output binding rejected: {exc}",
+                evidence_ids=list(claim.evidence_ids),
+                blocks=[f"claim:{index}"]))
+    return admitted, rejected
 
 
 def _failures_represented_by_precise_gaps(
@@ -716,7 +738,8 @@ def _empty_evidence_gaps(evidence) -> list[Gap]:
 
 
 def _verification_gaps(draft, verification, execution_errors=None,
-                       evidence_ids=None, satisfied_requirement_ids=None) -> list[Gap]:
+                       execution_error_codes=None, evidence_ids=None,
+                       satisfied_requirement_ids=None) -> list[Gap]:
     missing_messages = [*draft.gaps]
     def message_terms(message: str) -> set[str]:
         return {
@@ -745,9 +768,16 @@ def _verification_gaps(draft, verification, execution_errors=None,
                 for message in verification.contradictions)
     for node_id, errors in (execution_errors or {}).items():
         if errors:
+            name_resolution = (
+                "profile/name_resolution_unavailable"
+                in {str(code) for code in (execution_error_codes or {}).get(node_id, [])}
+            )
             gaps.append(Gap(
-                kind=GapKind.EXECUTION_FAILURE,
-                message=f"execution failed for {node_id}",
+                kind=(GapKind.PROFILE_NAME_RESOLUTION_UNAVAILABLE
+                      if name_resolution else GapKind.EXECUTION_FAILURE),
+                message=("profile/name_resolution unavailable"
+                         if name_resolution
+                         else f"execution failed for {node_id}"),
                 blocks=[f"node:{node_id}"],
             ))
     for result in verification.claim_results:

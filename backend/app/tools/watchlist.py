@@ -153,9 +153,9 @@ def add_watchlist_item(entity_type: str, entity_id: str) -> dict[str, Any]:
         return {"tool": "add_watchlist_item", "ok": False,
                 "error": "entity_id is empty"}
     now = datetime.now(timezone.utc).isoformat()
-    con = store.connect()
+    con = store.state_connect()
     try:
-        with store.write_guard():
+        with store.state_write_guard():
             _ensure_table(con)
             hit = con.execute(
                 """SELECT added_at FROM watchlists
@@ -190,9 +190,9 @@ def remove_watchlist_item(entity_type: str, entity_id: str) -> dict[str, Any]:
     if not canonical:
         return {"tool": "remove_watchlist_item", "ok": False,
                 "error": "entity_id is empty"}
-    con = store.connect()
+    con = store.state_connect()
     try:
-        with store.write_guard():
+        with store.state_write_guard():
             _ensure_table(con)
             hit = con.execute(
                 """SELECT COUNT(*) FROM watchlists
@@ -223,7 +223,7 @@ def get_watchlist(season: str = SEASON) -> dict[str, Any]:
     Teams carry W/L from silver_standings.
     """
     season = str(season or SEASON).strip() or SEASON
-    con = store.connect()
+    con = store.state_connect()
     try:
         tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
         if "watchlists" not in tables:
