@@ -149,7 +149,6 @@ export default function Home() {
 
   return (
     <div style={{ display: "flex", height: "100vh", width: "100vw", overflow: "hidden", background: "var(--color-stone-canvas)" }}>
-      {/* Left Sidebar */}
       <aside className="sidebar-rail" style={{ width: 224, flexShrink: 0, height: "100vh" }}>
         <ThreadRail
           threads={threads}
@@ -161,9 +160,7 @@ export default function Home() {
         />
       </aside>
 
-      {/* Main Content Area */}
       <div style={{ flex: 1, minWidth: 0, height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        {/* Top Header (shadcn / Linear style) */}
         <header
           className="top-header"
           style={{
@@ -178,7 +175,6 @@ export default function Home() {
             zIndex: 10,
           }}
         >
-          {/* Left: Active session context & Home link */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, maxWidth: "45%" }}>
             <button
               type="button"
@@ -213,7 +209,6 @@ export default function Home() {
             </span>
           </div>
 
-          {/* Centered Segmented Control (shadcn Tabs style) */}
           <div
             ref={tabsRef}
             className="t-tabs"
@@ -280,7 +275,6 @@ export default function Home() {
             </button>
           </div>
 
-          {/* Right Status */}
           <div className="season-badge" style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <button
               type="button"
@@ -301,7 +295,6 @@ export default function Home() {
           </div>
         </header>
 
-        {/* Viewport Content */}
         <div style={{ flex: 1, minHeight: 0, overflow: "hidden", position: "relative" }}>
           <CommandPalette onAsk={(q) => setPreset(q)} onTab={selectTab} onDebate={() => setDebateOpen(true)} />
           {debateOpen && (
@@ -310,7 +303,6 @@ export default function Home() {
 
           {tab === "chat" ? (
             <div className="chat-split" style={{ height: "100%", display: "flex", overflow: "hidden" }}>
-              {/* Chat stream */}
               <div
                 className="chat-pane"
                 style={{
@@ -334,7 +326,6 @@ export default function Home() {
                 )}
               </div>
 
-              {/* Full dataset panel */}
               {activeArtifact && (
                 <div
                   className={artifactClosing ? "artifact-pane is-exit" : "artifact-pane"}
