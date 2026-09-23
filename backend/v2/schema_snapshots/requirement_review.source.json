@@ -19,6 +19,9 @@
           "anyOf": [
             {
               "items": {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[A-Z][A-Z0-9_]*$",
                 "type": "string"
               },
               "maxItems": 16,
@@ -34,6 +37,9 @@
           "anyOf": [
             {
               "items": {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[A-Z][A-Z0-9_]*$",
                 "type": "string"
               },
               "maxItems": 16,
@@ -336,6 +342,9 @@
           "anyOf": [
             {
               "items": {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[A-Z][A-Z0-9_]*$",
                 "type": "string"
               },
               "maxItems": 16,
@@ -351,6 +360,9 @@
           "anyOf": [
             {
               "items": {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[A-Z][A-Z0-9_]*$",
                 "type": "string"
               },
               "maxItems": 16,

@@ -42,8 +42,10 @@ def output_section(text: str) -> str:
 
 
 def test_prompt_files_match_expected_set():
-    stems = {p.stem for p in PROMPTS_DIR.glob("*.md")} - {"planner_v3", "requirement_review_v3"}
-    assert stems == set(PROMPT_NAMES)
+    from v2.adapters.models import _PROVIDER_ROUTE_PROMPT_NAMES
+    stems = {p.stem for p in PROMPTS_DIR.glob("*.md")}
+    assert stems == set(PROMPT_NAMES) | set(_PROVIDER_ROUTE_PROMPT_NAMES.values())
+    assert not any(PROMPTS_DIR.glob("*/*.md")), "nested prompt copies are not loaded"
 
 
 @pytest.mark.parametrize("name", PROMPT_NAMES)

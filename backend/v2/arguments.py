@@ -7,6 +7,7 @@ from typing import Annotated, Any, Literal, Union
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, StrictStr, model_validator
 KEY=Annotated[StrictStr,Field(min_length=1,max_length=128,pattern=r'^[A-Za-z_][A-Za-z0-9_]*$')]
 TEXT=Annotated[StrictStr,Field(max_length=2048)]
+DIMENSION_ID=Annotated[StrictStr,Field(min_length=1,max_length=128,pattern=r'^[A-Z][A-Z0-9_]*$')]
 DECIMAL_TEXT=Annotated[StrictStr,Field(min_length=1,max_length=128,pattern=r'^-?(0|[1-9][0-9]*)(\.[0-9]+)?$')]
 FINITE=Annotated[StrictFloat,Field(allow_inf_nan=False)]
 class Closed(BaseModel):model_config=ConfigDict(extra='forbid')
@@ -145,13 +146,13 @@ class RequirementWire(Closed):
  id:Annotated[StrictStr,Field(min_length=1,max_length=64,pattern=r'^[a-z][a-z0-9_]*$')]
  capability_options:list[CAPABILITY_ID]=Field(min_length=1,max_length=8)
  capability_argument_sets:list[CapabilityArgumentSetWire]=Field(min_length=1,max_length=8)
- metric_ids:list[str]|None=Field(max_length=16)
- requested_outputs:list[str]|None=Field(max_length=16)
+ metric_ids:list[DIMENSION_ID]|None=Field(max_length=16)
+ requested_outputs:list[DIMENSION_ID]|None=Field(max_length=16)
 class CalculationRequirementWire(Closed):
  id:Annotated[StrictStr,Field(min_length=1,max_length=64,pattern=r'^[a-z][a-z0-9_]*$')]
  description:TEXT
- metric_ids:list[str]|None=Field(max_length=16)
- requested_outputs:list[str]|None=Field(max_length=16)
+ metric_ids:list[DIMENSION_ID]|None=Field(max_length=16)
+ requested_outputs:list[DIMENSION_ID]|None=Field(max_length=16)
 class RequirementReviewWire(Closed):
  requirements:list[RequirementWire]|None=Field(max_length=32)
  calculation_requirements:list[CalculationRequirementWire]|None=Field(max_length=32)

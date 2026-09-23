@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from app.config import settings
 
 from v2.adapters.models import (
+    PlannerArgumentError,
     ModelIntake,
     ModelPlanner,
     ModelRepairer,
@@ -35,6 +36,9 @@ class StubModel:
     @classmethod
     def _migrate_fixture(cls, schema, value):
         if schema is PlannerOutputWire:
+            for n in value.get('nodes',[]):
+                if len(n.get('capability_hints') or []) > 1:
+                    raise ValueError(f"fixture node {n['id']!r} has several capability_hints; the wire takes one capability")
             return {'nodes':[{'id':n['id'],'description':n['description'],'depends_on':n.get('depends_on'),
              'capability':(n.get('capability_hints') or [n.get('capability')])[0],
              'covers_requirement_ids':n.get('covers_requirement_ids'),'arguments':{'entries':[cls._wire_entry(k,v) for k,v in n.get('arguments',{}).items()]},
@@ -1557,7 +1561,7 @@ async def test_planner_replans_call_missing_catalog_required_arguments():
             "id": "team_roster", "description": "roster",
             "capability_hints": ["roster"],
             "covers_requirement_ids": ["team_roster"],
-            "arguments": {"team_id": 1610612760, "season": "2025-26"},
+            "arguments": {"season": "2025-26"},
         }]},
         {"nodes": [{
             "id": "team_roster", "description": "roster",
@@ -1570,7 +1574,46 @@ async def test_planner_replans_call_missing_catalog_required_arguments():
         stub, provider="stub", model_name="stub", capability_catalog=catalog,
     ).plan(task)
     assert plan.nodes[0].arguments["team_id"] == 1610612760
-    assert len(stub.calls)==1  # provider-wire validation requires complete arguments before coverage
+    assert len(stub.calls) == 2
+    assert "coverage_feedback" not in stub.calls[0]["payload"]
+    assert stub.calls[1]["payload"]["coverage_feedback"] == {
+        "missing_required_arguments": {"team_roster": ["team_id"]},
+        "instruction": "Return a complete replacement plan.",
+    }
+
+
+@pytest.mark.anyio
+async def test_planner_fails_closed_when_replan_still_misses_required_argument():
+    task = TaskSpec(
+        goal="current roster", mode="quick", deliverable="answer",
+        required_evidence=["roster"],
+        requirements=[{
+            "id": "team_roster", "description": "team roster",
+            "capability_options": ["roster"],
+        }],
+    )
+    catalog = {"roster": {
+        "description": "Team roster",
+        "arguments": {
+            "type": "object", "properties": {
+                "team_id": {"type": "integer"},
+                "season": {"type": "string"},
+            }, "required": ["team_id"],
+        },
+    }}
+    missing = {"nodes": [{
+        "id": "team_roster", "description": "roster",
+        "capability_hints": ["roster"],
+        "covers_requirement_ids": ["team_roster"],
+        "arguments": {"season": "2025-26"},
+    }]}
+    stub = StubModel([missing, missing])
+    with pytest.raises(PlannerArgumentError, match="'team_id' is a required property") as caught:
+        await ModelPlanner(
+            stub, provider="stub", model_name="stub", capability_catalog=catalog,
+        ).plan(task)
+    assert caught.value.missing_required == ["team_id"]
+    assert len(stub.calls) == 2
 
 @pytest.mark.anyio
 async def test_requirement_review_retries_one_provider_exhaustion() -> None:
@@ -1611,6 +1654,46 @@ async def test_requirement_review_closes_narrow_option_over_broader_capability()
         capability_catalog={"player_report": {}, "shooting_efficiency": {}},
     ).understand("Luka's 2022-23 line")
     assert task.requirements[0].capability_options == ["shooting_efficiency"]  # BL-001
+
+@pytest.mark.anyio
+async def test_requirement_metric_and_output_ids_survive_typed_intake():
+    stub = StubModel([{
+        "goal": "best defense", "mode": "quick", "deliverable": "team",
+        "required_evidence": ["team_ratings"],
+    }, {
+        "requirements": [{
+            "id": "defense", "description": "lowest defensive rating",
+            "capability_options": ["team_ratings"],
+            "capability_arguments": {"season": "2025-26"},
+            "metric_ids": ["DEF_RATING"],
+            "requested_outputs": ["DEF_RATING", "TEAM_NAME"],
+        }],
+    }])
+    task = await ModelIntake(
+        stub, provider="stub", model_name="stub", requirement_review=True,
+        capability_catalog={"team_ratings": {}},
+    ).understand("Which team had the lowest defensive rating in 2025-26?")
+    wire = stub.calls[1]["schema"]
+    assert wire is RequirementReviewWire
+    requirement = next(item for item in task.requirements if item.id == "defense")
+    assert requirement.metric_ids == ["DEF_RATING"]
+    assert requirement.requested_outputs == ["DEF_RATING", "TEAM_NAME"]
+
+
+@pytest.mark.parametrize("field", ["metric_ids", "requested_outputs"])
+@pytest.mark.parametrize("bad", ["def_rating", "", "1PTS", "A" * 129])
+def test_requirement_wire_rejects_malformed_dimension_ids(field, bad):
+    from pydantic import ValidationError
+    from v2.arguments import CalculationRequirementWire, RequirementWire
+    base = {"id": "r", "description": "d", "metric_ids": None, "requested_outputs": None}
+    evidence = {**base, "capability_options": ["team_ratings"],
+                "capability_argument_sets": [{"capability_id": "team_ratings",
+                                              "arguments": {"entries": []}}]}
+    for model, row in ((RequirementWire, evidence), (CalculationRequirementWire, base)):
+        model.model_validate({**row, field: ["DEF_RATING"]})
+        with pytest.raises(ValidationError):
+            model.model_validate({**row, field: [bad]})
+
 
 @pytest.mark.anyio
 async def test_planner_subsumes_report_and_shooting_split_requirements():

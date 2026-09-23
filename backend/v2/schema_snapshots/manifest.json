@@ -15,18 +15,18 @@
     "file_sha256": "451f98756f14d6280b59d30ab81af44fca02ca283a2c4951ce423d7cc757e2bc"
   },
   "requirement_review.candidate.json": {
-    "canonical_json_sha256": "20d6ea481655c88701fb92af065f6ecb3c9f15b8e66d930eac03b1e9f169f853",
-    "file_sha256": "20bd1ec360ad02a7b12174f772d3dc4d0f7eace9a4c694fa9df8da5ab1ab1476"
+    "canonical_json_sha256": "592513abe154dc510afd40c69cd38cd95b3828e791b032b8e78ac7f7e34b0afb",
+    "file_sha256": "1c4dc754f4661234900ee09fb38e6fccbed7cc31f4702582c2a258b091741f31"
   },
   "requirement_review.loss.json": {
-    "canonical_json_sha256": "131789f6e4d657e7dc5ab095a4c6a237da084372bdd531c7de61e166821a816f",
-    "file_sha256": "c12d4f1f414a1cf3e0eb58f5011082ee27913786bb4744e7944b8d7dd5d4781d"
+    "canonical_json_sha256": "0129377d5ed46b59d6106d2a02cf51ae9f4e1ca4eecea7fed2c534565cb36c55",
+    "file_sha256": "3e7f5cec1e9ac0d0083e04521e3eb64fc5f90f799b9c8043bb4882155bc554a5"
   },
   "requirement_review.prompt": {
     "sha256": "dcb92288bc32d619019b5a49360532ed026559a942b4b65fe85b4a4c8eb65d0f"
   },
   "requirement_review.source.json": {
-    "canonical_json_sha256": "f150f14ef6f350b9bbd794356aabfbbb2befc57250c2b6a579f9f305b0c0524f",
-    "file_sha256": "2472f88836e90c6b520617ad826ad276b5d8c5a65a9e2eeaaad67053789fe61f"
+    "canonical_json_sha256": "cc6f171a19342185a1c0f4513931dcda61edb80164f450216c6e580f74c9025d",
+    "file_sha256": "d1be91764b99c639a025d78b92e225f6d0d0e3abe8d987526dc7118a6df8ce04"
   }
 }

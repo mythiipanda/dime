@@ -40,8 +40,10 @@ async def test_requirement_wire_rejects_constraint_and_dependent_injection():
  with pytest.raises(ValueError):intake._validate_requirement_wire(bad)
 @pytest.mark.anyio
 async def test_planner_requires_complete_capability_schema():
- model=Capture([{'nodes':[{'id':'n','description':'x','capability':'standings','arguments':{'entries':[]},'depends_on':None,'covers_requirement_ids':None,'max_attempts':None,'status':None}]}])
+ incomplete={'nodes':[{'id':'n','description':'x','capability':'standings','arguments':{'entries':[]},'depends_on':None,'covers_requirement_ids':None,'max_attempts':None,'status':None}]}
+ model=Capture([incomplete,incomplete])
  planner=ModelPlanner(model,provider='stub',model_name='stub',capability_catalog=catalog())
+ # One replan names the missing argument; a second incomplete plan fails closed.
  with pytest.raises(ValueError,match='invalid standings'):await planner.plan(TaskSpec(goal='x',mode='quick',deliverable='x'))
 
 
@@ -161,7 +163,7 @@ def test_direct_selected_capability_reads_inventory_is_closed():
    owner=node
    while owner in parents and not isinstance(owner,(ast.FunctionDef,ast.AsyncFunctionDef)): owner=parents[owner]
    found.append((node.lineno,getattr(owner,'name','module')))
- assert {name for _,name in found} <= {'capability_arguments_for','update_capability_arguments','_update_all_existing_argument','narrow_requirement','_close_requirement_options','_strip_ranked_team_branches','_project_mixed_requirement_arguments','_rebuild_ranked_team_branch'}
+ assert {name for _,name in found} <= {'capability_arguments_for','update_capability_arguments','_update_all_existing_argument','narrow_requirement','_close_requirement_options','_project_legacy_requirement'}
 
 def test_final_admission_rejects_wrong_selected_local_scope_end_to_end():
  from datetime import datetime,timezone

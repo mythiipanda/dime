@@ -935,16 +935,26 @@ class ModelIntake(ModelStage):
             return {}
         return {key: value for key, value in arguments.items() if key in names}
 
+    def _project_legacy_requirement(self, requirement, capabilities: Sequence[str]):
+        """Narrow a requirement to capabilities through the one audited rewrite.
+
+        Typed argument sets go through narrow_requirement. Legacy shared maps
+        keep only arguments valid for every remaining capability.
+        """
+        if requirement.capability_argument_sets:
+            return narrow_requirement(requirement, capabilities)
+        capabilities = list(dict.fromkeys(capabilities))
+        return requirement.model_copy(update={
+            "capability_options": capabilities,
+            "capability_arguments": self._project_capability_arguments(
+                requirement.capability_arguments, capabilities)})
+
     def _project_mixed_requirement_arguments(
         self, review: RequirementReview,
     ) -> RequirementReview:
         """Enforce that every emitted argument is valid for every option."""
         return review.model_copy(update={"requirements": [
-            item.model_copy(update={"capability_arguments":
-                _sets_projection(item.capability_argument_sets)})
-            if item.capability_argument_sets else item.model_copy(update={
-                "capability_arguments": self._project_capability_arguments(
-                    item.capability_arguments, item.capability_options)})
+            self._project_legacy_requirement(item, item.capability_options)
             for item in review.requirements
         ]})
 
@@ -960,11 +970,7 @@ class ModelIntake(ModelStage):
             remaining = [name for name in item.capability_options
                          if name != "team_ratings"]
             if remaining:
-                requirements.append(narrow_requirement(item, remaining)
-                    if item.capability_argument_sets else item.model_copy(update={
-                        "capability_options": remaining,
-                        "capability_arguments": self._project_capability_arguments(
-                            item.capability_arguments, remaining)}))
+                requirements.append(self._project_legacy_requirement(item, remaining))
         return review.model_copy(update={"requirements": requirements})
 
     def _rebuild_ranked_team_branch(
@@ -977,11 +983,7 @@ class ModelIntake(ModelStage):
                  if "team_ratings" in item.capability_options]
         if typed:
             source = typed[0]
-            ranked = (narrow_requirement(source, ["team_ratings"])
-                if source.capability_argument_sets else source.model_copy(update={
-                    "capability_options": ["team_ratings"],
-                    "capability_arguments": self._project_capability_arguments(
-                        source.capability_arguments, ["team_ratings"])}))
+            ranked = self._project_legacy_requirement(source, ["team_ratings"])
         elif "team_ratings" in task.required_evidence:
             ranked = EvidenceRequirement(
                 id="required_team_ratings",
@@ -1267,6 +1269,15 @@ class ModelIntake(ModelStage):
         return review.model_copy(update={"requirements": requirements})
 
 
+class PlannerArgumentError(ValueError):
+    """Provider-authored planner arguments failed the capability schema."""
+
+    def __init__(self, message: str, *, node_id: str, missing_required: list[str]) -> None:
+        super().__init__(message)
+        self.node_id = node_id
+        self.missing_required = missing_required
+
+
 class ModelPlanner(ModelStage):
     prompt_name = "planner_v3"
     route = "planner"
@@ -1285,7 +1296,13 @@ class ModelPlanner(ModelStage):
             if injected and isinstance(schema.get("required"), list):
                 schema["required"] = [name for name in schema["required"] if name not in injected]
             errors = list(Draft202012Validator(schema).iter_errors(dict(arguments)))
-            if errors: raise ValueError(f"invalid {node.capability} planner arguments: {errors[0].message}")
+            if errors:
+                missing = sorted(
+                    name for error in errors if error.validator == "required"
+                    for name in error.validator_value if name not in arguments)
+                raise PlannerArgumentError(
+                    f"invalid {node.capability} planner arguments: {errors[0].message}",
+                    node_id=node.id, missing_required=missing)
             if set(entry.get("dependent_entity_arguments", {})) & set(arguments):
                 raise ValueError("provider may not author dependent injected arguments")
             decoded.append((node, arguments))
@@ -1306,7 +1323,20 @@ class ModelPlanner(ModelStage):
             "capability_catalog": self._catalog,
             "skills": self._skills.activate(task.skills),
         }
-        plan = await self._generate_plan(payload)
+        try:
+            plan = await self._generate_plan(payload)
+        except PlannerArgumentError as exc:
+            if not exc.missing_required:
+                raise
+            # A missing catalog-required argument gets one replan with the
+            # exact names; a second invalid plan fails closed.
+            plan = await self._generate_plan({
+                **payload,
+                "coverage_feedback": {
+                    "missing_required_arguments": {exc.node_id: exc.missing_required},
+                    "instruction": "Return a complete replacement plan.",
+                },
+            })
         plan = self._normalize_plan(
             task, self._normalize_requirement_coverage(task, plan))
         feedback = self._coverage_feedback(task, plan)
