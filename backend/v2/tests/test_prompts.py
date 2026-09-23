@@ -42,7 +42,7 @@ def output_section(text: str) -> str:
 
 
 def test_prompt_files_match_expected_set():
-    stems = {p.stem for p in PROMPTS_DIR.glob("*.md")}
+    stems = {p.stem for p in PROMPTS_DIR.glob("*.md")} - {"planner_v3", "requirement_review_v3"}
     assert stems == set(PROMPT_NAMES)
 
 

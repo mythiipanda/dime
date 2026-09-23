@@ -13,7 +13,7 @@ def catalog():
  return {'standings':{'arguments':{'type':'object','additionalProperties':False,'properties':{'season':{'type':'string'}},'required':['season']},'description':'standings'}}
 @pytest.mark.anyio
 async def test_requirement_review_uses_exact_wire_schema_and_v3_prompt():
- model=Capture([{'requirements':[{'id':'r','description':'record','capability_options':['standings'],'capability_argument_sets':[{'capability_id':'standings','arguments':{'entries':[wire('season','string','2025-26')]}}]}],'calculation_requirements':None,'missing_subquestions':None,'missing_skills':None}])
+ model=Capture([{'requirements':[{'id':'r','description':'record','capability_options':['standings'],'capability_argument_sets':[{'capability_id':'standings','arguments':{'entries':[wire('season','string','2025-26')]}}],'metric_ids':None,'requested_outputs':None}],'calculation_requirements':None,'missing_subquestions':None,'missing_skills':None}])
  intake=ModelIntake(model,provider='stub',model_name='stub',capability_catalog=catalog(),requirement_review=True)
  task=TaskSpec(goal='record',mode='quick',deliverable='text',requirements=[])
  review=await intake._review_requirements('record',task)
@@ -36,7 +36,7 @@ def test_provider_schema_snapshots_and_prompt_hashes(tmp_path):
 async def test_requirement_wire_rejects_constraint_and_dependent_injection():
  cat={'cap':{'arguments':{'type':'object','additionalProperties':False,'properties':{'x':{'type':'integer','minimum':1}}},'dependent_entity_arguments':{'player':'player'}}}
  intake=ModelIntake(Capture([]),provider='stub',model_name='stub',capability_catalog=cat)
- bad=RequirementReviewWire.model_validate({'requirements':[{'id':'r','description':'r','capability_options':['cap'],'capability_argument_sets':[{'capability_id':'cap','arguments':{'entries':[wire('x','int',0)]}}]}],'calculation_requirements':None,'missing_subquestions':None,'missing_skills':None})
+ bad=RequirementReviewWire.model_validate({'requirements':[{'id':'r','description':'r','capability_options':['cap'],'capability_argument_sets':[{'capability_id':'cap','arguments':{'entries':[wire('x','int',0)]}}],'metric_ids':None,'requested_outputs':None}],'calculation_requirements':None,'missing_subquestions':None,'missing_skills':None})
  with pytest.raises(ValueError):intake._validate_requirement_wire(bad)
 @pytest.mark.anyio
 async def test_planner_requires_complete_capability_schema():
@@ -161,7 +161,7 @@ def test_direct_selected_capability_reads_inventory_is_closed():
    owner=node
    while owner in parents and not isinstance(owner,(ast.FunctionDef,ast.AsyncFunctionDef)): owner=parents[owner]
    found.append((node.lineno,getattr(owner,'name','module')))
- assert {name for _,name in found} <= {'capability_arguments_for','update_capability_arguments','_update_all_existing_argument','narrow_requirement','_close_requirement_options'}
+ assert {name for _,name in found} <= {'capability_arguments_for','update_capability_arguments','_update_all_existing_argument','narrow_requirement','_close_requirement_options','_strip_ranked_team_branches','_project_mixed_requirement_arguments','_rebuild_ranked_team_branch'}
 
 def test_final_admission_rejects_wrong_selected_local_scope_end_to_end():
  from datetime import datetime,timezone

@@ -329,12 +329,42 @@
                 "minLength": 1,
                 "pattern": "^[a-z][a-z0-9_]*$",
                 "type": "string"
+              },
+              "metric_ids": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "type": "string"
+                    },
+                    "maxItems": 16,
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "requested_outputs": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "type": "string"
+                    },
+                    "maxItems": 16,
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [
               "capability_argument_sets",
               "capability_options",
-              "id"
+              "id",
+              "metric_ids",
+              "requested_outputs"
             ],
             "type": "object"
           },

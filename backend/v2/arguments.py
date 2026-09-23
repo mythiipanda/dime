@@ -145,6 +145,8 @@ class RequirementWire(Closed):
  id:Annotated[StrictStr,Field(min_length=1,max_length=64,pattern=r'^[a-z][a-z0-9_]*$')]
  capability_options:list[CAPABILITY_ID]=Field(min_length=1,max_length=8)
  capability_argument_sets:list[CapabilityArgumentSetWire]=Field(min_length=1,max_length=8)
+ metric_ids:list[str]|None=Field(max_length=16)
+ requested_outputs:list[str]|None=Field(max_length=16)
 class CalculationRequirementWire(Closed):
  id:Annotated[StrictStr,Field(min_length=1,max_length=64,pattern=r'^[a-z][a-z0-9_]*$')]
  description:TEXT

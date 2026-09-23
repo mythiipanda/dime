@@ -1504,8 +1504,11 @@ def test_runtime_asset_manifest_is_deeply_immutable(monkeypatch):
     with pytest.raises(TypeError):manifest.warehouse['sha256']='x'
     with pytest.raises(TypeError):manifest.semantic_baseline['baseline_id']='x'
     with pytest.raises(TypeError):manifest.module_sha256['routes']='x'
+    with pytest.raises(TypeError):manifest.typed_argument_assets['capability_manifest']='x'
     copied=manifest.as_dict();copied['prompt_sha256']['semantic_verifier']='x'
+    copied['typed_argument_assets']['capability_manifest']='x'
     assert manifest.prompt_sha256['semantic_verifier']!='x'
+    assert manifest.typed_argument_assets['capability_manifest']!='x'
 
 
 def test_preflight_exact_match_and_each_mismatch(monkeypatch,tmp_path):

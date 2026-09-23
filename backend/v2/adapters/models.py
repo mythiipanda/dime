@@ -942,7 +942,9 @@ class ModelIntake(ModelStage):
         return review.model_copy(update={"requirements": [
             item.model_copy(update={"capability_arguments":
                 _sets_projection(item.capability_argument_sets)})
-            if item.capability_argument_sets else item
+            if item.capability_argument_sets else item.model_copy(update={
+                "capability_arguments": self._project_capability_arguments(
+                    item.capability_arguments, item.capability_options)})
             for item in review.requirements
         ]})
 
@@ -958,7 +960,11 @@ class ModelIntake(ModelStage):
             remaining = [name for name in item.capability_options
                          if name != "team_ratings"]
             if remaining:
-                requirements.append(narrow_requirement(item, remaining))
+                requirements.append(narrow_requirement(item, remaining)
+                    if item.capability_argument_sets else item.model_copy(update={
+                        "capability_options": remaining,
+                        "capability_arguments": self._project_capability_arguments(
+                            item.capability_arguments, remaining)}))
         return review.model_copy(update={"requirements": requirements})
 
     def _rebuild_ranked_team_branch(
@@ -971,7 +977,11 @@ class ModelIntake(ModelStage):
                  if "team_ratings" in item.capability_options]
         if typed:
             source = typed[0]
-            ranked = narrow_requirement(source, ["team_ratings"])
+            ranked = (narrow_requirement(source, ["team_ratings"])
+                if source.capability_argument_sets else source.model_copy(update={
+                    "capability_options": ["team_ratings"],
+                    "capability_arguments": self._project_capability_arguments(
+                        source.capability_arguments, ["team_ratings"])}))
         elif "team_ratings" in task.required_evidence:
             ranked = EvidenceRequirement(
                 id="required_team_ratings",
@@ -1177,7 +1187,9 @@ class ModelIntake(ModelStage):
                 requirements.append({"id": item.id, "description": item.description,
                     "capability_options": item.capability_options,
                     "capability_argument_sets": sets,
-                    "capability_arguments": shared})
+                    "capability_arguments": shared,
+                    "metric_ids": item.metric_ids or [],
+                    "requested_outputs": item.requested_outputs or []})
             review = RequirementReview.model_validate({
                 "requirements": requirements,
                 "calculation_requirements": [{**item.model_dump(),
@@ -1268,7 +1280,10 @@ class ModelPlanner(ModelStage):
             arguments = provider_to_source(node.arguments, "planner")
             entry = self._catalog.get(node.capability)
             if not isinstance(entry, Mapping): raise ValueError("planner selected unknown capability")
-            schema = entry.get("arguments", {})
+            schema = dict(entry.get("arguments", {}))
+            injected = set(entry.get("dependent_entity_arguments", {}))
+            if injected and isinstance(schema.get("required"), list):
+                schema["required"] = [name for name in schema["required"] if name not in injected]
             errors = list(Draft202012Validator(schema).iter_errors(dict(arguments)))
             if errors: raise ValueError(f"invalid {node.capability} planner arguments: {errors[0].message}")
             if set(entry.get("dependent_entity_arguments", {})) & set(arguments):

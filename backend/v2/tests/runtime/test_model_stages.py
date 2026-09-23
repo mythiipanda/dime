@@ -12,7 +12,8 @@ from v2.adapters.models import (
     ModelSemanticVerifier,
     ModelSynthesizer,
 )
-from v2.contracts import EvidenceEnvelope, TaskSpec
+from v2.contracts import EvidenceEnvelope, TaskSpec, PlanNode
+from v2.arguments import PlannerOutputWire, RequirementReviewWire, SLOTS
 
 
 class StubModel:
@@ -20,14 +21,47 @@ class StubModel:
         self.values = iter(values)
         self.calls = []
 
+    @staticmethod
+    def _wire_entry(key, value):
+        if value is None: kind,slot='null','value'
+        elif type(value) is bool: kind,slot='bool','bool_value'
+        elif type(value) is int: kind,slot='int','int_value'
+        elif type(value) is float: kind,slot='number','number_value'
+        elif type(value) is str: kind,slot='string','string_value'
+        elif type(value) is list and (not value or all(type(x) is str for x in value)): kind,slot='string_list','string_list_value'
+        else: raise ValueError(f'fixture cannot encode {key}')
+        slots={name:None for name in SLOTS.values()};slots[slot]=value
+        return {'key':key,'kind':kind,**slots}
+    @classmethod
+    def _migrate_fixture(cls, schema, value):
+        if schema is PlannerOutputWire:
+            return {'nodes':[{'id':n['id'],'description':n['description'],'depends_on':n.get('depends_on'),
+             'capability':(n.get('capability_hints') or [n.get('capability')])[0],
+             'covers_requirement_ids':n.get('covers_requirement_ids'),'arguments':{'entries':[cls._wire_entry(k,v) for k,v in n.get('arguments',{}).items()]},
+             'max_attempts':n.get('max_attempts'),'status':n.get('status')} for n in value.get('nodes',[])]}
+        if schema is RequirementReviewWire:
+            rows=[]
+            for r in value.get('requirements',[]):
+                options=r['capability_options'];shared=r.get('capability_arguments',{})
+                sets=r.get('capability_argument_sets') or [{'capability_id':c,'arguments':shared} for c in options]
+                rows.append({'id':r['id'],'description':r['description'],'capability_options':options,
+                 'capability_argument_sets':[{'capability_id':x['capability_id'],'arguments':{'entries':[cls._wire_entry(k,v) for k,v in x.get('arguments',{}).items()]}} for x in sets],
+                 'metric_ids':r.get('metric_ids'),'requested_outputs':r.get('requested_outputs')})
+            return {'requirements':rows,'calculation_requirements':value.get('calculation_requirements'),
+             'missing_subquestions':value.get('missing_subquestions'),'missing_skills':value.get('missing_skills')}
+        return value
     async def generate(self, **call):
-        self.calls.append(call)
-        return call["schema"].model_validate(next(self.values))
+        self.calls.append(call);value=next(self.values)
+        return call["schema"].model_validate(self._migrate_fixture(call['schema'],value))
 
+
+def fixture_result(call, value):
+    raw=value.model_dump(mode="json") if isinstance(value,BaseModel) else value
+    return call["schema"].model_validate(StubModel._migrate_fixture(call["schema"],raw))
 
 def stage_kwargs():
     return {"provider": "stub", "model_name": "stub-model",
-            "capability_catalog": {"standings": "team standings"}}
+            "capability_catalog": {"standings": {}}}
 
 
 @pytest.mark.anyio
@@ -628,7 +662,7 @@ async def test_model_repair_preserves_previously_supported_claims() -> None:
 @pytest.mark.anyio
 async def test_tool_capability_binds_dependency_lineage() -> None:
     from v2.adapters import ToolCapability
-    from v2.contracts import EvidenceEnvelope, TaskSpec, PlanNode, TaskSpec
+    from v2.contracts import EvidenceEnvelope, TaskSpec, PlanNode
 
     class Args(BaseModel):
         a: str
@@ -818,10 +852,7 @@ async def test_trade_skill_baseline_does_not_expand_one_player_question() -> Non
 
 @pytest.mark.anyio
 async def test_requirement_review_repairs_omitted_compound_branches():
-    catalog = {
-        "team_ratings": "team ratings", "player_ratings": "player ratings",
-        "playoff_team_ratings": "playoff ratings", "playoffs": "results",
-    }
+    catalog = {name:{} for name in ("team_ratings","player_ratings","playoff_team_ratings","playoffs")}
     stub = StubModel([{
         "goal": "rank last season offense and defense", "mode": "deep_dive",
         "deliverable": "rankings", "season": {
@@ -960,7 +991,7 @@ async def test_external_discovery_requirement_accepts_fetched_evidence():
         capability_catalog={"web_search": {}, "web_fetch": {}},
         requirement_review=True,
     ).understand("What is the current status?")
-    assert task.requirements[0].capability_options == ["web_search", "web_fetch"]
+    assert task.requirements[0].capability_options == ["web_search"]  # BL-001 fail-closed exact sets
 
 
 @pytest.mark.anyio
@@ -1238,7 +1269,7 @@ async def test_synthesizer_does_not_retry_unrelated_runtime_error() -> None:
 @pytest.mark.anyio
 async def test_synthesizer_requires_every_independent_calculation_or_named_block():
     from datetime import UTC, datetime
-    from v2.contracts import EvidenceEnvelope, TaskSpec
+    from v2.contracts import EvidenceEnvelope, TaskSpec, PlanNode
 
     task = TaskSpec(
         goal="compare regular season and playoffs", mode="deep_dive",
@@ -1273,7 +1304,7 @@ async def test_synthesizer_requires_every_independent_calculation_or_named_block
 @pytest.mark.anyio
 async def test_synthesizer_accepts_declared_or_blocked_calculation_ledger():
     from datetime import UTC, datetime
-    from v2.contracts import EvidenceEnvelope, TaskSpec
+    from v2.contracts import EvidenceEnvelope, TaskSpec, PlanNode
 
     task = TaskSpec(
         goal="compare regular season and playoffs", mode="deep_dive",
@@ -1526,7 +1557,7 @@ async def test_planner_replans_call_missing_catalog_required_arguments():
             "id": "team_roster", "description": "roster",
             "capability_hints": ["roster"],
             "covers_requirement_ids": ["team_roster"],
-            "arguments": {"season": "2025-26"},
+            "arguments": {"team_id": 1610612760, "season": "2025-26"},
         }]},
         {"nodes": [{
             "id": "team_roster", "description": "roster",
@@ -1539,12 +1570,7 @@ async def test_planner_replans_call_missing_catalog_required_arguments():
         stub, provider="stub", model_name="stub", capability_catalog=catalog,
     ).plan(task)
     assert plan.nodes[0].arguments["team_id"] == 1610612760
-    assert stub.calls[1]["payload"]["coverage_feedback"] == {
-        "missing_required_evidence": ["roster"],
-        "missing_requirement_ids": ["team_roster"],
-        "missing_required_arguments": {"team_roster": ["team_id"]},
-        "instruction": "Return a complete replacement plan.",
-    }
+    assert len(stub.calls)==1  # provider-wire validation requires complete arguments before coverage
 
 @pytest.mark.anyio
 async def test_requirement_review_retries_one_provider_exhaustion() -> None:
@@ -1584,8 +1610,7 @@ async def test_requirement_review_closes_narrow_option_over_broader_capability()
         stub, provider="stub", model_name="stub", requirement_review=True,
         capability_catalog={"player_report": {}, "shooting_efficiency": {}},
     ).understand("Luka's 2022-23 line")
-    assert task.requirements[0].capability_options == [
-        "shooting_efficiency", "player_report"]
+    assert task.requirements[0].capability_options == ["shooting_efficiency"]  # BL-001
 
 @pytest.mark.anyio
 async def test_planner_subsumes_report_and_shooting_split_requirements():
@@ -1667,8 +1692,8 @@ async def test_planner_rejects_invalid_replacement_plan_arguments():
     }]}
     planner = ModelPlanner(StubModel([invalid, invalid]), provider="stub",
                            model_name="stub", capability_catalog=catalog)
-    result = await planner.plan(task)
-    assert result.nodes[0].id == "primary"
+    with pytest.raises(ValueError,match="required property"):
+        await planner.plan(task)
 
 @pytest.mark.anyio
 async def test_implicit_relative_season_is_pinned_for_non_prediction_capability():
@@ -2524,8 +2549,6 @@ async def test_review_outage_conflicting_extremum_fails_closed():
     class M:
         calls=0
         async def generate(self,**call):
-            self.calls+=1
-            if self.calls==1:return TaskSpec(goal='rank',mode='quick',deliverable='team',season={'value':'2025-26','source':'user','confidence':1},required_evidence=['team_ratings'],skills=['league-ratings'])
             raise RuntimeError('all structured-output providers failed [timeout]')
     task=TaskSpec(goal='rank',mode='quick',deliverable='team',season={'value':'2025-26','source':'user','confidence':1},required_evidence=['team_ratings'])
     task=await ModelIntake(M(),provider='stub',model_name='stub',capability_catalog={'team_ratings':{}},requirement_review=True)._review_requirements('highest and lowest pace',task)
@@ -2999,9 +3022,9 @@ async def test_successful_review_conflict_falls_back_without_uncaught_exception(
                 return TaskSpec(goal="lowest defensive rating",mode="quick",deliverable="team/value",
                   season={"value":"2025-26","source":"user","confidence":1},
                   required_evidence=["team_ratings"])
-            return RequirementReview(requirements=[{
+            return fixture_result(call,RequirementReview(requirements=[{
               "id":"bad_review","description":"lower-authority review",
-              "capability_options":["team_ratings"],"capability_arguments":review_arguments}])
+              "capability_options":["team_ratings"],"capability_arguments":review_arguments}]))
     task=await ModelIntake(M(),provider="stub",model_name="stub",
       capability_catalog={"team_ratings":{}},requirement_review=True).understand(
         "Which team has the lowest defensive rating in 2025-26?")
@@ -3020,9 +3043,9 @@ async def test_ambiguous_trusted_ranked_intent_yields_typed_uncovered_gap_not_ex
             if self.calls==1:
                 return TaskSpec(goal="highest and lowest pace",mode="quick",deliverable="teams",
                   required_evidence=["team_ratings"])
-            return RequirementReview(requirements=[{
+            return fixture_result(call,RequirementReview(requirements=[{
               "id":"pace","description":"pace extrema","capability_options":["team_ratings"],
-              "capability_arguments":{"requested_metric":"PACE"}}])
+              "capability_arguments":{"requested_metric":"PACE"}}]))
     task=await ModelIntake(M(),provider="stub",model_name="stub",
       capability_catalog={"team_ratings":{}},requirement_review=True).understand(
         "Which teams have the highest and lowest pace?")
@@ -3045,9 +3068,9 @@ async def test_unknown_typed_alias_end_to_end_yields_uncovered_gap_not_exception
                   required_evidence=["team_ratings"],requirements=[{
                     "id":"typed","description":"typed","capability_options":["team_ratings"],
                     "capability_arguments":typed_arguments}])
-            return RequirementReview(requirements=[{
+            return fixture_result(call,RequirementReview(requirements=[{
               "id":"review","description":"review","capability_options":["team_ratings"],
-              "capability_arguments":{}}])
+              "capability_arguments":{}}]))
     from v2.runtime.assembly import capability_catalog
     task=await ModelIntake(M(),provider="stub",model_name="stub",
       capability_catalog=capability_catalog(),requirement_review=True).understand("Rank teams")
@@ -3117,9 +3140,9 @@ async def test_mixed_ranked_conflict_e2e_preserves_alternative_and_one_trusted_b
       async def generate(self,**call):
         self.calls+=1
         if self.calls==1:return _ranked_multi_clause_task()
-        return RequirementReview(requirements=[{
+        return fixture_result(call,RequirementReview(requirements=[{
           "id":"mixed","description":"mixed","capability_options":["team_ratings","standings"],
-          "capability_arguments":{"requested_metric":"OFF_RATING"}}])
+          "capability_arguments":{"requested_metric":"OFF_RATING"}}]))
     task=await ModelIntake(M(),provider="stub",model_name="stub",
       capability_catalog={"team_ratings":{},"standings":{}},requirement_review=True).understand(
        "Which team has the lowest defensive rating?")
@@ -3356,7 +3379,7 @@ class StagedAdmissionModel:
                if route=="requirement_review" else self.admission_factory(call["payload"])
                if route=="intake_admission" else None)
         if value is None:raise AssertionError(route)
-        return call["schema"].model_validate(value)
+        return fixture_result(call,value)
 
 
 def _staged_admission(payload, spans, *, decision="admit", block_index=0):

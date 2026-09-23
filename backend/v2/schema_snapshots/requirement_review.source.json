@@ -331,13 +331,45 @@
           "pattern": "^[a-z][a-z0-9_]*$",
           "title": "Id",
           "type": "string"
+        },
+        "metric_ids": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 16,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Metric Ids"
+        },
+        "requested_outputs": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 16,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Requested Outputs"
         }
       },
       "required": [
         "description",
         "id",
         "capability_options",
-        "capability_argument_sets"
+        "capability_argument_sets",
+        "metric_ids",
+        "requested_outputs"
       ],
       "title": "RequirementWire",
       "type": "object"
