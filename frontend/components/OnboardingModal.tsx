@@ -1,7 +1,5 @@
 "use client";
 
-import { useState } from "react";
-
 interface Props {
   onFinish: () => void;
   onSelectPrompt: (q: string) => void;
@@ -13,20 +11,13 @@ const PROMPTS = [
   "Show me rising stars",
 ];
 
-const CAPABILITIES = [
-  { title: "Ask", desc: "Chat with evidence, every number traced to its source." },
-  { title: "Track", desc: "Watchlists follow your players and teams daily." },
-  { title: "Debate", desc: "Shareable cards settle arguments with data." },
-];
-
 export default function OnboardingModal({ onFinish, onSelectPrompt }: Props) {
-  const [step, setStep] = useState(0);
-
   return (
     <div
       role="dialog"
       aria-modal="true"
       aria-label="Welcome to Dime"
+      className="onboard-backdrop"
       style={{
         position: "fixed",
         inset: 0,
@@ -40,24 +31,13 @@ export default function OnboardingModal({ onFinish, onSelectPrompt }: Props) {
       onClick={onFinish}
     >
       <div
-        className="card"
-        style={{ width: 520, maxWidth: "92vw", padding: 28 }}
+        className="card onboard-panel"
+        style={{ width: 460, maxWidth: "92vw", padding: 24 }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-          <div style={{ display: "flex", gap: 6 }} aria-label={`Step ${step + 1} of 3`}>
-            {[0, 1, 2].map((i) => (
-              <span
-                key={i}
-                style={{
-                  width: i === step ? 20 : 8,
-                  height: 8,
-                  borderRadius: 9999,
-                  background: i === step ? "var(--color-ink-black)" : "var(--color-stone-muted)",
-                  transition: "width 160ms ease",
-                }}
-              />
-            ))}
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 4 }}>
+          <div className="display" style={{ fontSize: 24, color: "var(--color-ink-black)" }}>
+            Meet Dime
           </div>
           <button
             type="button"
@@ -67,110 +47,21 @@ export default function OnboardingModal({ onFinish, onSelectPrompt }: Props) {
             Skip
           </button>
         </div>
-
-        {step === 0 && (
-          <div>
-            <div className="display" style={{ fontSize: 28, color: "var(--color-ink-black)", marginBottom: 6 }}>
-              Meet Dime
-            </div>
-            <div style={{ fontSize: 14, color: "var(--color-warm-gray)", marginBottom: 18 }}>
-              NBA analytics that shows its work.
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
-              {CAPABILITIES.map((c) => (
-                <div
-                  key={c.title}
-                  style={{
-                    border: "1px solid var(--color-stone-border)",
-                    borderRadius: 10,
-                    padding: "14px 12px",
-                    background: "var(--color-pure-white)",
-                  }}
-                >
-                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--color-ink-black)", marginBottom: 2 }}>
-                    {c.title}
-                  </div>
-                  <div style={{ fontSize: 12, color: "var(--color-warm-gray)", lineHeight: 1.5 }}>
-                    {c.desc}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {step === 1 && (
-          <div>
-            <div className="display" style={{ fontSize: 28, color: "var(--color-ink-black)", marginBottom: 6 }}>
-              Try it
-            </div>
-            <div style={{ fontSize: 14, color: "var(--color-warm-gray)", marginBottom: 18 }}>
-              Pick a question to start the conversation.
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {PROMPTS.map((p) => (
-                <button
-                  key={p}
-                  type="button"
-                  className="pill-ghost"
-                  style={{ textAlign: "left", fontSize: 13, padding: "10px 16px", cursor: "pointer" }}
-                  onClick={() => onSelectPrompt(p)}
-                >
-                  {p}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {step === 2 && (
-          <div>
-            <div className="display" style={{ fontSize: 28, color: "var(--color-ink-black)", marginBottom: 6 }}>
-              Stay in the loop
-            </div>
-            <div style={{ fontSize: 14, color: "var(--color-warm-gray)", marginBottom: 18, lineHeight: 1.6 }}>
-              The Today tab shows last night&apos;s scores, tonight&apos;s slate, and leaderboard movers.
-              Add players to your watchlist and Dime tracks them for you.
-            </div>
+        <div style={{ fontSize: 13, color: "var(--color-warm-gray)", marginBottom: 14 }}>
+          Ask a hard basketball question. Every number traces back to the data.
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {PROMPTS.map((p) => (
             <button
+              key={p}
               type="button"
-              className="pill-cta"
-              style={{ fontSize: 13, padding: "10px 24px", cursor: "pointer" }}
-              onClick={onFinish}
+              className="pill-ghost interactive-tactile"
+              style={{ textAlign: "left", fontSize: 13, padding: "10px 16px", cursor: "pointer" }}
+              onClick={() => onSelectPrompt(p)}
             >
-              Get it
+              {p}
             </button>
-          </div>
-        )}
-
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 24 }}>
-          <button
-            type="button"
-            className="pill-ghost"
-            style={{
-              fontSize: 12,
-              cursor: step === 0 ? "default" : "pointer",
-              opacity: step === 0 ? 0.4 : 1,
-            }}
-            onClick={() => setStep((s) => Math.max(0, s - 1))}
-            disabled={step === 0}
-          >
-            Back
-          </button>
-          {step < 2 ? (
-            <button
-              type="button"
-              className="pill-cta"
-              style={{ fontSize: 12, cursor: "pointer" }}
-              onClick={() => setStep((s) => Math.min(2, s + 1))}
-            >
-              Next
-            </button>
-          ) : (
-            <span style={{ fontSize: 12, color: "var(--color-ash-gray)" }}>
-              You&apos;re all set
-            </span>
-          )}
+          ))}
         </div>
       </div>
     </div>

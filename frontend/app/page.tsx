@@ -25,6 +25,7 @@ export default function Home() {
   const [active, setActive] = useState<string | null>(null);
   const [debateOpen, setDebateOpen] = useState(false);
   const [activeArtifact, setActiveArtifact] = useState<ArtifactItem | null>(null);
+  const [artifactClosing, setArtifactClosing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [preset, setPreset] = useState<string | null>(null);
   const [exploreKey, setExploreKey] = useState(0);
@@ -103,6 +104,15 @@ export default function Home() {
   const selectTab = (t: Tab) => {
     setTab(t);
     setQueryParam("tab", t, true);
+  };
+
+  const closeArtifact = () => {
+    // Keep the pane mounted for a short symmetric exit, then unmount.
+    setArtifactClosing(true);
+    window.setTimeout(() => {
+      setActiveArtifact(null);
+      setArtifactClosing(false);
+    }, 200);
   };
 
   const selectThread = (id: string) => {
@@ -288,18 +298,6 @@ export default function Home() {
             >
               {themeDark ? "\u263E Dark" : "\u2600 Light"}
             </button>
-            <span
-              style={{
-                fontSize: 11,
-                color: "var(--color-warm-gray)",
-                background: "var(--color-pure-white)",
-                border: "1px solid var(--color-stone-border)",
-                padding: "3px 8px",
-                borderRadius: 6,
-              }}
-            >
-              2025-26 season
-            </span>
           </div>
         </header>
 
@@ -339,7 +337,7 @@ export default function Home() {
               {/* Full dataset panel */}
               {activeArtifact && (
                 <div
-                  className="artifact-pane"
+                  className={artifactClosing ? "artifact-pane is-exit" : "artifact-pane"}
                   style={{
                     flex: "0 0 48%",
                     height: "100%",
@@ -350,7 +348,7 @@ export default function Home() {
                 >
                   <ArtifactCanvas
                     artifact={activeArtifact}
-                    onClose={() => setActiveArtifact(null)}
+                    onClose={closeArtifact}
                     onAsk={(q) => setPreset(q)}
                   />
                 </div>

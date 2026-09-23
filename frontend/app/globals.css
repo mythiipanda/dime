@@ -331,21 +331,6 @@ body {
   box-shadow: var(--shadow-focus);
 }
 
-@keyframes dime-rise {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.card {
-  animation: dime-rise 220ms ease;
-}
-
 @keyframes dime-caret {
   0%,
   100% {
@@ -513,7 +498,7 @@ body {
 /* Explore workspace: compact, utility-first analysis index. */
 .explore-scroll { height: 100%; overflow-y: auto; overflow-x: hidden; scroll-behavior: smooth; }
 .explore-shell { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 26px 0 88px; }
-.status-mark { display: inline-block; width: 7px; height: 7px; border-radius: 999px; background: var(--color-cyan-signal); box-shadow: 0 0 0 4px color-mix(in oklab, var(--color-cyan-signal) 15%, transparent); animation: explore-status 2.2s ease-in-out infinite; }
+.status-mark { display: inline-block; width: 7px; height: 7px; border-radius: 999px; background: var(--color-cyan-signal); }
 .explore-overview { border-top: 1px solid var(--color-stone-border); animation: explore-enter 340ms both cubic-bezier(.16,1,.3,1); }
 .explore-overview-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; padding: 24px 2px 18px; }
 .explore-kicker { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; color: var(--color-ash-gray); font-size: 9px; font-weight: 650; letter-spacing: .09em; text-transform: uppercase; }
@@ -545,13 +530,13 @@ body {
 .explore-nav-status { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; padding: 0 10px; color: var(--color-ash-gray); font-size: 10px; }
 .explore-content { display: flex; flex-direction: column; gap: 22px; }.explore-content .card { border-radius: 12px; transition: border-color 180ms ease, box-shadow 180ms ease; }.explore-content .card:hover { border-color: color-mix(in oklab, var(--color-cyan-edge) 24%, var(--color-stone-border)); box-shadow: 0 12px 34px color-mix(in oklab, var(--color-ink-black) 7%, transparent); }
 .explore-section-anchor, #explore-leaders, #explore-shots { scroll-margin-top: 64px !important; }
-@keyframes explore-enter { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: translateY(0); } } @keyframes explore-status { 0%,100% { opacity: 1; } 50% { opacity: .55; } }
+@keyframes explore-enter { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: translateY(0); } }
 @media (max-width: 800px) { .explore-index { grid-template-columns: repeat(2,1fr); }.explore-index button { border-bottom: 1px solid var(--color-stone-border); }.explore-index button:nth-child(2n) { border-right: 0; }.explore-index button:last-child { grid-column: 1 / -1; }.explore-quick-ask { grid-template-columns: 1fr; gap: 10px; } }
 @media (max-width: 600px) { .explore-shell { width: min(100% - 24px, 1180px); padding-top: 14px; }.explore-overview-head { align-items: center; }.explore-index button { min-height: 90px; padding: 12px; }.explore-quick-ask button { grid-template-columns: 52px 1fr auto; }.explore-nav { margin-inline: -12px; }.explore-nav-track { display: flex; overflow-x: auto; border-radius: 0; border-inline: 0; }.explore-nav-indicator { display: none; }.explore-nav button.is-active { background: var(--color-field); }.explore-nav-status { display: none; }.explore-nav button { flex: 0 0 auto; } }
-@media (prefers-reduced-motion: reduce) { .explore-scroll { scroll-behavior: auto; }.status-mark,.explore-overview { animation: none; }.explore-ask,.explore-index button,.explore-index-arrow,.explore-quick-ask button,.explore-nav button,.explore-nav-indicator { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .explore-scroll { scroll-behavior: auto; }.explore-overview { animation: none; }.explore-ask,.explore-index button,.explore-index-arrow,.explore-quick-ask button,.explore-nav button,.explore-nav-indicator { transition: none; } }
 
 /* Analyst chat: focused, evidence-first workspace with low-amplitude motion. */
-.chat-workspace { display: flex; flex-direction: column; height: 100%; position: relative; background: radial-gradient(circle at 50% 16%, color-mix(in oklab, var(--color-cyan-edge) 5%, transparent), transparent 28%); }
+.chat-workspace { display: flex; flex-direction: column; height: 100%; position: relative; }
 .chat-welcome { flex: 1; width: min(780px, 100%); margin: 0 auto; padding: 64px 24px 88px; display: flex; flex-direction: column; justify-content: center; box-sizing: border-box; }
 .chat-welcome-heading { margin-bottom: 24px; animation: chat-enter 440ms both cubic-bezier(.16,1,.3,1); }
 .chat-eyebrow { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; color: var(--color-ash-gray); font-size: 10px; font-weight: 650; letter-spacing: .09em; text-transform: uppercase; }
@@ -601,15 +586,13 @@ body {
 @media (max-width: 600px) { .leader-summary-item { padding: 10px 8px; }.leader-summary-item strong { font-size: 18px; }.leader-summary-rank { display: none; } }
 
 /* shadcn Command information architecture, kept dependency-free. */
-.command-backdrop { position: fixed; inset: 0; z-index: 50; display: flex; justify-content: center; padding-top: min(15vh,120px); background: color-mix(in oklab,var(--color-ink-black) 28%,transparent); backdrop-filter: blur(3px); animation: command-backdrop-in 140ms ease-out both; }
-.command-panel { width: min(560px,calc(100vw - 28px)); max-height: min(620px,70vh); overflow: hidden; border: 1px solid var(--color-stone-border); border-radius: 14px; background: var(--color-pure-white); box-shadow: 0 24px 80px color-mix(in oklab,var(--color-ink-black) 20%,transparent); animation: command-panel-in 180ms cubic-bezier(.16,1,.3,1) both; }
+.command-backdrop { position: fixed; inset: 0; z-index: 50; display: flex; justify-content: center; padding-top: min(15vh,120px); background: color-mix(in oklab,var(--color-ink-black) 28%,transparent); backdrop-filter: blur(3px); }
+.command-panel { width: min(560px,calc(100vw - 28px)); max-height: min(620px,70vh); overflow: hidden; border: 1px solid var(--color-stone-border); border-radius: 14px; background: var(--color-pure-white); box-shadow: 0 24px 80px color-mix(in oklab,var(--color-ink-black) 20%,transparent); }
 .command-search { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; padding: 13px 14px; border-bottom: 1px solid var(--color-stone-border); color: var(--color-ash-gray); }
 .command-search input { min-width: 0; border: 0; outline: 0; color: var(--color-ink-black); background: transparent; font: inherit; font-size: 13px; }.command-search kbd { padding: 2px 6px; border: 1px solid var(--color-stone-border); border-radius: 5px; background: var(--color-field); font-size: 9px; }
 .command-results { max-height: calc(min(620px,70vh) - 92px); overflow-y: auto; padding: 7px; }.command-results section+section { margin-top: 5px; padding-top: 5px; border-top: 1px solid var(--color-stone-border); }.command-results h2 { margin: 0; padding: 7px 9px 4px; color: var(--color-ash-gray); font-size: 9px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; }
 .command-results button { width: 100%; min-height: 36px; display: grid; grid-template-columns: minmax(0,1fr) auto auto; align-items: center; gap: 9px; padding: 0 9px; border: 0; border-radius: 7px; color: var(--color-warm-gray); background: transparent; text-align: left; cursor: pointer; }.command-results button.is-active { color: var(--color-ink-black); background: var(--color-field); }.command-results button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }.command-results button small { color: var(--color-ash-gray); font-size: 9px; }.command-results button b { color: var(--color-cyan-edge); font-size: 10px; font-weight: 550; }
 .command-empty { padding: 28px 14px; color: var(--color-ash-gray); text-align: center; font-size: 11px; }.command-panel footer { display: flex; gap: 13px; padding: 8px 14px; border-top: 1px solid var(--color-stone-border); color: var(--color-ash-gray); font-size: 9px; }
-@keyframes command-backdrop-in { from { opacity: 0; } } @keyframes command-panel-in { from { opacity: 0; transform: translateY(-5px) scale(.99); } }
-@media (prefers-reduced-motion: reduce) { .command-backdrop,.command-panel { animation: none; } }
 
 
 /* transitions.dev panel reveal + beUI state contrast, adapted in place. */
@@ -618,3 +601,29 @@ body {
 .chat-send:not(:disabled):hover { transform: translateY(-1px); box-shadow: 0 6px 18px color-mix(in oklab,var(--color-ink-black) 18%,transparent); }.chat-send:not(:disabled):active { transform: scale(.92); }.chat-send:focus-visible { outline: 2px solid var(--color-cyan-edge); outline-offset: 3px; }
 @keyframes answer-panel-reveal { from { opacity: 0; transform: translateY(7px); } }
 @media (prefers-reduced-motion: reduce) { .chat-answer-reveal { animation: none; }.chat-send { transition: none!important; } }
+
+/* Press feedback utility (was applied as a dead class across components;
+   now real). Near-imperceptible: correct for the tens/day frequency tier. */
+.interactive-tactile {
+  transition: transform 120ms cubic-bezier(.16,1,.3,1),
+              background 140ms ease,
+              color 140ms ease,
+              border-color 140ms ease,
+              box-shadow 140ms ease;
+}
+.interactive-tactile:active { transform: scale(.97); }
+@media (prefers-reduced-motion: reduce) { .interactive-tactile { transition: none; } }
+
+/* Artifact data panel: spatial continuity with the chat pane's 240ms flex
+   resize. Entry animates on mount; exit runs via .is-exit before unmount. */
+.artifact-pane { animation: artifact-pane-in 240ms cubic-bezier(.16,1,.3,1) both; }
+@keyframes artifact-pane-in { from { opacity: 0; transform: translateX(12px); } }
+.artifact-pane.is-exit { opacity: 0; transform: translateX(12px); transition: opacity 200ms ease, transform 200ms ease; }
+@media (prefers-reduced-motion: reduce) { .artifact-pane { animation: none; } .artifact-pane.is-exit { transition: none; } }
+
+/* Onboarding: rare/first-time tier - the one place a slower beat is allowed. */
+.onboard-backdrop { animation: onboard-backdrop-in 140ms ease-out both; }
+.onboard-panel { animation: onboard-panel-in 250ms cubic-bezier(.16,1,.3,1) both; }
+@keyframes onboard-backdrop-in { from { opacity: 0; } }
+@keyframes onboard-panel-in { from { opacity: 0; transform: translateY(8px) scale(.97); } }
+@media (prefers-reduced-motion: reduce) { .onboard-backdrop, .onboard-panel { animation: none; } }
