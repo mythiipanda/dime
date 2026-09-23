@@ -3,7 +3,7 @@ from app import providers
 from v2.adapters.models import ProviderStructuredModel
 
 
-def test_structured_chain_clamps_groq_and_keeps_inception_first(monkeypatch):
+def test_structured_chain_clamps_groq_and_keeps_inception_last_under_global_priority(monkeypatch):
     monkeypatch.setattr(settings, "dime_enable_inception", True)
     monkeypatch.setattr(settings, "dime_enable_groq", True)
     monkeypatch.setattr(settings, "inception_api_key", "inception")
@@ -13,9 +13,31 @@ def test_structured_chain_clamps_groq_and_keeps_inception_first(monkeypatch):
     monkeypatch.setattr(settings, "groq_model", "paid-or-unlisted")
     models = ProviderStructuredModel("inception", "mercury-2.5")._models()
     assert [provider for provider, _ in models] == [
-        "inception", "groq", "openrouter", "mistral"]
+        "nvidia", "groq", "openrouter", "mistral", "inception"]
     assert models[1][1].model_name == providers.GROQ_DEFAULT
     assert providers.is_free_model("groq", models[1][1].model_name)
+
+
+def test_explicit_inception_request_records_actual_serving_provider():
+    import asyncio
+    from pydantic import BaseModel
+    from v2.adapters import RecordedStructuredModel
+    from v2.runtime import RequestEnvelope, RunLedger
+    class Out(BaseModel):
+        value: str
+    class Inner:
+        last_provider = "nvidia"
+        last_model = providers.NVIDIA_NIM_DEFAULT
+        last_failures = []
+        async def generate(self, **call): return Out(value="ok")
+    env = RequestEnvelope.freeze(provider="inception", model="mercury-2.5",
+        route="intake", prompt="p", context={}, tool_schemas={}, planner_version="v2")
+    ledger = RunLedger("run")
+    asyncio.run(RecordedStructuredModel(Inner(), ledger, turn_id="run").generate(
+        schema=Out, prompt="p", payload={}, envelope=env))
+    attempt = [e for e in ledger.entries if e.kind == "assistant/attempt"][0]
+    assert attempt.data["provider"] == "nvidia"
+    assert attempt.data["model"] == providers.NVIDIA_NIM_DEFAULT
 
 
 def test_one_logical_boundary_has_one_request_and_transparent_groq_fallback(monkeypatch):
@@ -79,8 +101,9 @@ def test_structured_groq_client_is_fixed_one_attempt_and_activation_gated(monkey
     assert "groq" not in providers.fallback_order("openrouter")
     monkeypatch.setattr(settings,"dime_enable_groq",True)
     got=ProviderStructuredModel("groq","openai/gpt-oss-20b")._models()
-    assert got[0][0] == "groq" and got[0][1].model_name == "openai/gpt-oss-20b"
-    client=got[0][1]._provider.client
+    groq=next(m for p, m in got if p == "groq")
+    assert groq.model_name == "openai/gpt-oss-20b"
+    client=groq._provider.client
     assert str(client.base_url).rstrip("/") == "https://api.groq.com/openai/v1"
     assert client.max_retries == 0
 
