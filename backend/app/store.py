@@ -35,7 +35,7 @@ def warehouse_identity() -> dict[str, str]:
 _PLAYED_GAME_TABLE = "silver_boxscores"
 
 # NBA game-id prefixes: 001 = preseason, 002 = regular season,
-# 004 = playoffs, 009 = play-in.
+# 004 = playoffs, 005 = play-in.
 _PRESEASON_GAME_ID_PREFIX = "001"
 
 

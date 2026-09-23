@@ -162,7 +162,6 @@ async def _run_desk(
     if client is None:
         return {"agent": desk, "ok": False, "error": f"no key for {provider}",
                 "tool_trace": []}
-    # Resolve the season once per desk run and feed it to the brief.
     season = data_season()
     brief = brief.replace("{DATA_SEASON}", season)
     calls_made = 0
