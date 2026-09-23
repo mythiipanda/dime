@@ -32,6 +32,41 @@ def warehouse_identity() -> dict[str, str]:
             "warehouse_sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
 
 
+PINNED_WAREHOUSE_SHA256 = (
+    "4099efbefe5c3ba6e0026b837d95cfd421f6844f75a3516e51d00976bfbbe183"
+)
+"""SHA-256 of the pinned benchmark warehouse (dime-warehouse-2025-26-finals-v1)."""
+
+_PLAYED_GAME_TABLE = "silver_boxscores"
+
+
+def seasons_with_data(table: str = _PLAYED_GAME_TABLE) -> list[str]:
+    """Distinct seasons with played-game rows in the warehouse, ascending.
+
+    Derived from the warehouse itself - never a hardcoded season.
+    """
+    con = duckdb.connect(str(DB_PATH), read_only=True)
+    try:
+        rows = con.execute(
+            f"SELECT DISTINCT _season FROM {table} ORDER BY _season"
+        ).fetchall()
+    finally:
+        con.close()
+    return [r[0] for r in rows if r and r[0]]
+
+
+def latest_data_season(table: str = _PLAYED_GAME_TABLE) -> str:
+    """Latest season with played-game data in the warehouse.
+
+    Raises ValueError when the warehouse has no played-game rows rather
+    than falling back to a hardcoded season.
+    """
+    seasons = seasons_with_data(table)
+    if not seasons:
+        raise ValueError(f"no played-game rows in warehouse table {table}")
+    return seasons[-1]
+
+
 
 @contextmanager
 def write_guard(timeout_s: float = 60.0):

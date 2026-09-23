@@ -213,14 +213,29 @@ _PLANNER_PREFIX = (
     "Never repeat a call with the same args. "
     "Batch independent calls together. "
     "Call search_nba first when you lack an id. "
-    "The current season is 2025-26. Pass season 2025-26 always, "
-    "unless the user names a different season explicitly. "
-    "Season-boundary rule: it is the 2026 offseason. 'This season', "
-    "'current season', and 'last season' all mean 2025-26 (the most "
-    "recently completed season) until 2026-27 tips off in late October "
-    "2026. Do not map 'last season' to 2024-25 during the offseason."
-    "\n\nAnalyst skills. Match the question to one skill and follow it:\n"
 )
+
+
+def _planner_season_context() -> str:
+    """Season guidance for the planner, derived from the warehouse.
+
+    The planner still owns the season arg; this is context/default only -
+    never question-text regex or keyword routing.
+    """
+    try:
+        from .subagents import data_season
+        season = data_season()
+    except Exception:
+        season = "2025-26"
+    return (
+        f"The current season is {season}. Pass season {season} always, "
+        "unless the user names a different season explicitly. "
+        f"'This season', 'current season', and 'last season' all mean {season} "
+        "(the latest season with played-game data in the warehouse). "
+    )
+
+
+_PLANNER_SKILLS_TAIL = "\n\nAnalyst skills. Match the question to one skill and follow it:\n"
 
 
 SKILL_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
@@ -275,7 +290,7 @@ def match_skills(question: str,
 
 
 def build_planner_prompt(question: str) -> str:
-    prompt = _PLANNER_PREFIX + skills_catalog()
+    prompt = _PLANNER_PREFIX + _planner_season_context() + _PLANNER_SKILLS_TAIL + skills_catalog()
     for name in match_skills(question):
         try:
             body = skills_load_skill(name) or ""
@@ -288,6 +303,8 @@ def build_planner_prompt(question: str) -> str:
 
 PLANNER_SYSTEM = (
     _PLANNER_PREFIX
+    + _planner_season_context()
+    + _PLANNER_SKILLS_TAIL
     + skills_catalog()
 )
 

@@ -15,7 +15,26 @@ from langchain_core.tools import tool
 from .providers import (ProviderName, get_llm, astream_chunks_with_fallback,
                        accumulate_tool_calls, fallback_order)
 
-SEASON = "2025-26"
+SEASON = "2025-26"  # fallback only; desk prompts resolve via data_season()
+
+_SEASON_CACHE: dict[str, str] = {}
+
+
+def data_season() -> str:
+    """Latest season with played-game data in the warehouse.
+
+    Cached per process. Falls back to SEASON when the warehouse is
+    unreadable, so desk prompts always carry a season value.
+    """
+    cached = _SEASON_CACHE.get("season")
+    if cached is None:
+        try:
+            from .store import latest_data_season
+            cached = latest_data_season()
+        except Exception:
+            cached = SEASON
+        _SEASON_CACHE["season"] = cached
+    return cached
 WORKER_BUDGET = 3
 TOOL_TIMEOUT_S = 75   # hard cap per tool call inside a desk
 LLM_ROUND_TIMEOUT_S = 100  # hard cap per streamed LLM round
@@ -138,6 +157,10 @@ async def _run_desk(
     if client is None:
         return {"agent": desk, "ok": False, "error": f"no key for {provider}",
                 "tool_trace": []}
+    # Latest season with played-game data, through the same prompt channel
+    # the desks always used - never a hardcoded season.
+    season = data_season()
+    brief = brief.replace("{DATA_SEASON}", season)
     calls_made = 0
     _desk_t0 = _time.time()
     collected: list[dict[str, Any]] = []
@@ -170,9 +193,9 @@ async def _run_desk(
             calls_made += 1
     attempts = [
         [SystemMessage(content=brief),
-         HumanMessage(content=f"Season {SEASON}. Task: {task}")],
+         HumanMessage(content=f"Season {season}. Task: {task}")],
         [SystemMessage(content=brief + " Call exactly one tool now. No prose."),
-         HumanMessage(content=f"Season {SEASON}. Task: {task}")],
+         HumanMessage(content=f"Season {season}. Task: {task}")],
     ]
     tool_calls: list[dict] = []
     _force_ready = bool(collected) and any(_is_answer(c)
@@ -248,7 +271,7 @@ async def _run_desk(
                                    "these ids verbatim. "
                                    f"Call exactly one of these now: "
                                    f"{', '.join(data_names)}. No prose."),
-                     HumanMessage(content=f"Season {SEASON}. Task: {task}. "
+                     HumanMessage(content=f"Season {season}. Task: {task}. "
                                   f"Resolved: {str(collected)[:600]}")],
                     data_tools, on_token),
                 timeout=LLM_ROUND_TIMEOUT_S)
@@ -406,7 +429,7 @@ SCOUT_BRIEF = (
     "no filters; read rows.record (wins/losses over ALL matches, not "
     "the capped list) and report it verbatim. "
     "Resolve names with resolve_entity first. Use returned ids verbatim. "
-    "Never invent ids. Season 2025-26 unless told otherwise."
+    "Never invent ids. Season {DATA_SEASON} unless told otherwise."
 )
 
 TEAM_BRIEF = (
@@ -437,11 +460,11 @@ TEAM_BRIEF = (
     "warehouse gamelog MATCHUP or get_advanced first. Never trust a team "
     "from memory. "
     "Resolve names with resolve_entity first. Use returned ids verbatim. "
-    "Never invent ids. Season 2025-26 unless told otherwise."
+    "Never invent ids. Season {DATA_SEASON} unless told otherwise."
 )
 
 LEAGUE_BRIEF = (
-    "You are the league desk. Season 2025-26 unless told otherwise. "
+    "You are the league desk. Season {DATA_SEASON} unless told otherwise. "
     "IF the task mentions playoffs, champion, finals, or rings, "
     "AND names a player, THEN call get_playoff_intel with that player "
     "name first and nothing else. "
