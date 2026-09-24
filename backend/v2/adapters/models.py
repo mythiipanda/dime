@@ -417,7 +417,7 @@ class ProviderStructuredModel:
                 timeout=settings.llm_timeout_s,
                 max_retries=0,
                 default_headers=headers,
-                thinking_off=(provider == "nvidia"),  # Uniform thinking-off across every NIM model; no model-name branching.
+                thinking_off=(provider == "nvidia"),
             )
             requested = self.model if provider == self.provider else fallback_model
             if provider == "nvidia":

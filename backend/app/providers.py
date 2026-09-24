@@ -147,7 +147,6 @@ def get_llm(name: ProviderName, model: str | None = None) -> ChatOpenAI | None:
             api_key=settings.nvidia_nim_api_key,
             timeout=settings.llm_timeout_s,
             max_retries=settings.llm_max_retries,
-            # Uniform thinking-off across every NIM model; no model-name branching.
             extra_body={"chat_template_kwargs": {"enable_thinking": False}},
         )
     if name == "mistral":
