@@ -86,3 +86,18 @@ def test_team_ratings_rows_preserve_ts_and_turnover_values():
         out = get_ratings.invoke({"season":"2025-26"})
     assert out["rows"][0]["TS_PCT"] == .612
     assert out["rows"][0]["TM_TOV_PCT"] == 11.4
+
+def test_get_ratings_formats_percentages_from_metric_source():
+    from unittest.mock import patch
+    from app.tools.league import get_ratings
+    rows = [{"TEAM_ID": 1, "TEAM_NAME": "A", "OFF_RATING": 118.246,
+             "TS_PCT": .612, "TM_TOV_PCT": 11.4}]
+    with patch("app.tools.league._warehouse_or_live",
+               side_effect=lambda *a, **k: (rows, {"source": "fixture"})):
+        pct = get_ratings.invoke({"season": "2025-26", "requested_metric": "TS_PCT",
+                                  "ranking_direction": "desc"})
+        rating = get_ratings.invoke({"season": "2025-26", "requested_metric": "OFF_RATING",
+                                     "ranking_direction": "desc"})
+    assert pct["meta"]["deterministic_answer"].endswith("0.612.")
+    assert rating["meta"]["deterministic_answer"].endswith("118.246.")
+    assert "true shooting percentage" in pct["meta"]["deterministic_answer"]

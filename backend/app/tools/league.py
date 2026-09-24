@@ -11,8 +11,7 @@ from ..sources import nba_stats
 from ._core import SEASON, TTL_LEADERS, TTL_SCOREBOARD_PAST, clamp_stat, _warehouse_or_live, is_past_game_date
 from .rating_metrics import RANKING_DIRECTIONS, TEAM_RATING_METRICS
 
-# Closed ranked-team enums, sourced from rating_metrics so the tool schema, the
-# v2 capability catalog, and the deterministic verifiers all share one origin.
+# Closed enums shared by the tool schema, the v2 catalog, and the verifiers.
 _RequestedMetric = Literal.__getitem__(tuple(["", *TEAM_RATING_METRICS]))
 _RankingDirection = Literal.__getitem__(tuple(["", *RANKING_DIRECTIONS]))
 
@@ -359,16 +358,9 @@ def get_ratings(
 ) -> dict[str, Any]:
     """Team ratings, optionally bound to one requested ranked metric.
 
-    ``requested_metric`` is a closed enum id (OFF_RATING, DEF_RATING,
-    NET_RATING, PACE, TS_PCT, TM_TOV_PCT) carried from a ranked-team plan.
-    With ``ranking_direction`` (``asc`` or ``desc``), rows are ordered
-    by that exact field and the payload owns the leader claim. This prevents
-    unrelated numerals in the same expanded row from competing during claim
-    admission. ``team`` still narrows a direct team-ratings question.
-
-    The metric id and direction are model-authored typed values; nothing in
-    this tool derives them from request text. The enum spells the id, the
-    human label is only rendered in the deterministic answer text.
+    When ``requested_metric`` and ``ranking_direction`` are set, rows are
+    ordered by that metric field and the payload owns the leader claim.
+    ``team`` narrows a direct team-ratings question.
     """
     from nba_api.stats.static import teams as _teams
 
@@ -410,8 +402,9 @@ def get_ratings(
         if slim:
             leader = slim[0]
             raw = float(leader[metric])
-            label = allowed_metrics[metric]
-            value = f"{raw:.3f}" if "percentage" in label else f"{raw:g}"
+            label = TEAM_RATING_METRICS[metric]["label"]
+            value = (f"{raw:.3f}" if TEAM_RATING_METRICS[metric]["format"] == "decimal3"
+                     else f"{raw:g}")
             meta["deterministic_answer"] = (
                 f"{leader.get('TEAM_NAME') or leader.get('TEAM')} had the "
                 f"{'lowest' if direction == 'asc' else 'highest'} "

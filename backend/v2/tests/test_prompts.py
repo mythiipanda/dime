@@ -41,6 +41,42 @@ def output_section(text: str) -> str:
     return match.group(1)
 
 
+def test_manifest_prompt_hashes_match_live_files():
+    """The snapshot manifest pins the exact prompt bytes reviewers saw.
+
+    If a prompt is edited, the manifest hash must be regenerated alongside,
+    so the binding can never silently drift.
+    """
+    import hashlib, json
+    manifest = json.loads(
+        (PROMPTS_DIR.parent / "schema_snapshots" / "manifest.json").read_text())
+    for route, filename in (("planner", "planner_v3.md"),
+                            ("requirement_review", "requirement_review_v3.md")):
+        live = hashlib.sha256(
+            (PROMPTS_DIR / filename).read_bytes()).hexdigest()
+        assert manifest[f"{route}.prompt"]["sha256"] == live, (
+            f"{filename} changed without a manifest hash regeneration")
+
+
+def test_ranked_metric_ids_in_prompts_match_source():
+    """Ranked metric IDs listed in the prompts must equal the source keys.
+
+    The prompts hardcode the vocabulary in a "one of ..." enum line; if
+    TEAM_RATING_METRICS gains or loses a metric, the prompts must be
+    updated in the same change.
+    """
+    from v2.adapters.models import TEAM_RATING_METRICS
+    for filename in ("planner_v3.md", "requirement_review_v3.md"):
+        text = (PROMPTS_DIR / filename).read_text()
+        match = re.search(
+            r"`requested_metric`: one of ([A-Z_, ]+)\.", text)
+        assert match, f"{filename} no longer lists the ranked enum line"
+        listed = [token.strip(" `") for token in match.group(1).split(",")]
+        assert set(listed) == set(TEAM_RATING_METRICS), (
+            f"{filename} lists {sorted(listed)}, source has "
+            f"{sorted(TEAM_RATING_METRICS)}")
+
+
 def test_prompt_files_match_expected_set():
     from v2.adapters.models import _PROVIDER_ROUTE_PROMPT_NAMES
     stems = {p.stem for p in PROMPTS_DIR.glob("*.md")}

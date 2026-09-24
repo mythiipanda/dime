@@ -3209,6 +3209,37 @@ async def test_ranked_review_carries_omission_single_shot():
     assert arguments["ranking_direction"] == "asc"
 
 @pytest.mark.anyio
+async def test_ranked_ledger_metadata_matches_applied_carries_end_to_end():
+    from v2.adapters.models import RecordedStructuredModel
+    from v2.runtime.ledger import RunLedger
+    model = StubModel([{
+        "requirements": [{
+            "id": "rank", "description": "best defense",
+            "capability_options": ["team_ratings"],
+            "capability_argument_sets": [{
+                "capability_id": "team_ratings",
+                "arguments": {"requested_metric": "DEF_RATING",
+                              "ranking_direction": "", "team": "",
+                              "season": "2025-26"}}],
+            "metric_ids": None, "requested_outputs": None}],
+        "calculation_requirements": None,
+        "missing_subquestions": None, "missing_skills": None}])
+    ledger = RunLedger("run")
+    recorded = RecordedStructuredModel(model, ledger, turn_id="t")
+    intake = ModelIntake(recorded, provider="stub", model_name="stub",
+                         capability_catalog=_typed_catalog())
+    task = _typed_ranked_task(metric="DEF_RATING", direction="asc")
+    review = await intake._review_requirements("who has the best defense", task)
+    applied = capability_arguments_for(review.requirements[0], "team_ratings")
+    assert applied["ranking_direction"] == "asc"
+    attempts = [entry for entry in ledger.entries
+                if entry.kind == "assistant/attempt"]
+    assert len(attempts) == 1
+    assert attempts[0].data["carried_from_intake"] == [
+        {"route": "requirement_review", "capability_id": "team_ratings",
+         "key": "ranking_direction", "rule": "carried-from-intake"}]
+
+@pytest.mark.anyio
 async def test_ranked_prose_does_not_change_reconciliation():
     intake = _review_intake(None)
     task = _typed_ranked_task(metric="DEF_RATING", direction="asc")
@@ -3226,6 +3257,42 @@ async def test_ranked_prose_does_not_change_reconciliation():
     assert first_rows == second_rows
     assert (capability_arguments_for(first.requirements[0], "team_ratings")
             == capability_arguments_for(second.requirements[0], "team_ratings"))
+
+@pytest.mark.anyio
+async def test_review_outage_with_typed_intake_carries_typed_arguments():
+    class ReviewDown:
+        async def generate(self, **call):
+            raise RuntimeError("all structured-output providers failed [x]")
+    intake = ModelIntake(ReviewDown(), provider="stub", model_name="stub",
+                         capability_catalog=_typed_catalog())
+    task = _typed_ranked_task(metric="DEF_RATING", direction="asc")
+    review = await intake._review_requirements("best defense", task)
+    assert len(review.requirements) == 1
+    arguments = capability_arguments_for(review.requirements[0], "team_ratings")
+    assert arguments["requested_metric"] == "DEF_RATING"
+    assert arguments["ranking_direction"] == "asc"
+    assert arguments["season"] == "2025-26"
+    assert review.missing_subquestions == []
+
+@pytest.mark.anyio
+async def test_review_outage_without_typed_intake_leaves_gap_not_inference():
+    class ReviewDown:
+        async def generate(self, **call):
+            raise RuntimeError("all structured-output providers failed [x]")
+    intake = ModelIntake(ReviewDown(), provider="stub", model_name="stub",
+                         capability_catalog=_typed_catalog())
+    task = TaskSpec(goal="rank", mode="quick", deliverable="team",
+                    season={"value": "2025-26", "source": "user", "confidence": 1},
+                    required_evidence=["team_ratings"], requirements=[])
+    review = await intake._review_requirements("best defense", task)
+    assert len(review.requirements) == 1
+    arguments = capability_arguments_for(review.requirements[0], "team_ratings")
+    assert "requested_metric" not in arguments
+    assert arguments["season"] == "2025-26"
+    assert review.missing_subquestions == [
+        "RANKED_TYPED_ARGUMENTS_UNAVAILABLE: review providers exhausted and "
+        "intake requirement 'required_team_ratings' carries no typed "
+        "requested_metric; no metric inferred"]
 
 def test_ranked_verifier_needs_no_provider():
     class ExplodingModel:
@@ -3273,6 +3340,45 @@ def test_ranked_deterministic_draft_uses_typed_metric_ids_not_prose():
     assert "DEF_RATING" not in draft.claims[0].text
 
 @pytest.mark.anyio
+async def test_ranked_intake_internal_disagreement_is_typed_gap_not_override():
+    from v2.arguments import CapabilityArgumentSet, RequirementArguments, encode_argument
+    from v2.contracts import EvidenceRequirement
+    def req(req_id, direction):
+        args = {"requested_metric": "DEF_RATING", "ranking_direction": direction,
+                "team": "", "season": "2025-26"}
+        return EvidenceRequirement(
+            id=req_id, description="ranked team ratings",
+            capability_options=["team_ratings"],
+            capability_argument_sets=[CapabilityArgumentSet(
+                capability_id="team_ratings",
+                arguments=RequirementArguments.model_validate(
+                    {"entries": [encode_argument(k, v) for k, v in args.items()]}))])
+    intake = _review_intake(None)
+    task = TaskSpec(goal="rank", mode="quick", deliverable="team",
+                    season={"value": "2025-26", "source": "user", "confidence": 1},
+                    required_evidence=["team_ratings"],
+                    requirements=[req("a", "asc"), req("b", "desc")])
+    assert intake._intake_ranked_typed_conflicts(task) == ["ranking_direction"]
+    review = RequirementReview.model_validate({"requirements": [{
+        "id": "rank", "description": "ranked team ratings",
+        "capability_options": ["team_ratings"],
+        "capability_arguments": {"requested_metric": "DEF_RATING",
+                                 "ranking_direction": "",
+                                 "team": "", "season": "2025-26"}}]})
+    reconciled, rows = intake._reconcile_typed_ranked_arguments(task, review)
+    assert reconciled.requirements == []
+    assert rows == []
+    assert reconciled.missing_subquestions == [
+        "RANKED_ARGUMENT_CONFLICT: intake team_ratings requirements disagree "
+        "on ranking_direction; requirement 'rank' dropped, no typed source wins"]
+    wire = RequirementReviewWire.model_validate(_ranked_wire_entries(
+        {"requested_metric": "DEF_RATING", "ranking_direction": "",
+         "team": "", "season": "2025-26"}))
+    carried = intake._apply_ranked_carries_to_wire(task, wire)
+    assert carried.requirements[0].capability_argument_sets[0].arguments \
+        == wire.requirements[0].capability_argument_sets[0].arguments
+
+@pytest.mark.anyio
 async def test_ranked_agreement_survives_when_review_matches_intake():
     intake = _review_intake(None)
     task = _typed_ranked_task(metric="DEF_RATING", direction="asc")
@@ -3288,21 +3394,32 @@ async def test_ranked_agreement_survives_when_review_matches_intake():
 
 @pytest.mark.anyio
 async def test_ranked_request_text_independence():
+    def review_model():
+        return StubModel([{
+            "requirements": [{
+                "id": "rank", "description": "ranked team ratings",
+                "capability_options": ["team_ratings"],
+                "capability_argument_sets": [{
+                    "capability_id": "team_ratings",
+                    "arguments": {"requested_metric": "DEF_RATING",
+                                  "ranking_direction": "asc",
+                                  "team": "", "season": "2025-26"}}],
+                "metric_ids": None, "requested_outputs": None}],
+            "calculation_requirements": None,
+            "missing_subquestions": None, "missing_skills": None}])
     task = _typed_ranked_task(metric="DEF_RATING", direction="asc")
-    intake = _review_intake(None)
-    review = RequirementReview.model_validate({"requirements": [{
-        "id": "rank", "description": "ranked team ratings",
-        "capability_options": ["team_ratings"],
-        "capability_arguments": {"requested_metric": "DEF_RATING",
-                                 "ranking_direction": "asc",
-                                 "team": "", "season": "2025-26"}}]})
-    first, _ = intake._reconcile_typed_ranked_arguments(task, review)
-    second, _ = intake._reconcile_typed_ranked_arguments(task, review)
-    # The request text is never consulted: identical typed inputs always give
-    # identical typed outputs, regardless of phrasing.
-    assert (first.model_dump(mode="json") == second.model_dump(mode="json"))
+    reviews = []
+    for request in ("lowest defensive rating",
+                    "which team defends best???! show me #1 D"):
+        intake = ModelIntake(review_model(), provider="stub", model_name="stub",
+                             capability_catalog=_typed_catalog())
+        reviews.append(await intake._review_requirements(request, task))
+    # The request text is never consulted: identical stubbed model outputs
+    # give identical reviews regardless of phrasing.
+    assert (reviews[0].model_dump(mode="json")
+            == reviews[1].model_dump(mode="json"))
     assert capability_arguments_for(
-        first.requirements[0], "team_ratings")["requested_metric"] == "DEF_RATING"
+        reviews[0].requirements[0], "team_ratings")["requested_metric"] == "DEF_RATING"
 
 def _planner_node(node_id, capability, arguments, covers=("rank",)):
     full = {"team": "", "season": "2025-26"}
@@ -3386,18 +3503,62 @@ def test_no_ranked_text_derivation_symbols_remain():
 def test_ranked_metric_vocabulary_is_label_map_from_single_source():
     from app.tools.rating_metrics import RANKING_DIRECTIONS, TEAM_RATING_METRICS
     assert TEAM_RATING_METRICS == {
-        "OFF_RATING": "offensive rating",
-        "DEF_RATING": "defensive rating",
-        "NET_RATING": "net rating",
-        "PACE": "pace",
-        "TS_PCT": "true shooting percentage",
-        "TM_TOV_PCT": "turnover percentage",
+        "OFF_RATING": {"label": "offensive rating", "format": "general"},
+        "DEF_RATING": {"label": "defensive rating", "format": "general"},
+        "NET_RATING": {"label": "net rating", "format": "general"},
+        "PACE": {"label": "pace", "format": "general"},
+        "TS_PCT": {"label": "true shooting percentage", "format": "decimal3"},
+        "TM_TOV_PCT": {"label": "turnover percentage", "format": "decimal3"},
     }
     assert tuple(RANKING_DIRECTIONS) == ("asc", "desc")
     catalog = _typed_catalog()
     props = catalog["team_ratings"]["arguments"]["properties"]
     assert props["requested_metric"]["enum"] == ["", *TEAM_RATING_METRICS]
     assert props["ranking_direction"]["enum"] == ["", *RANKING_DIRECTIONS]
+
+def test_ranked_typed_functions_never_read_request_text_or_use_regex():
+    import ast, pathlib
+    root = pathlib.Path(__file__).parents[3]
+    tree = ast.parse((root / "v2" / "adapters" / "models.py").read_text())
+    targets = {"_intake_typed_ranked_arguments", "_intake_ranked_typed_conflicts",
+               "_ranked_typed_carries", "_ranked_typed_conflicts",
+               "_decode_review_ranked_arguments", "_ranked_review_typed_decisions",
+               "_apply_ranked_carries_to_wire", "_reconcile_typed_ranked_arguments",
+               "ranked_team_arguments_error", "_validate_requirement_wire",
+               "_deterministic_rank_draft"}
+    by_name = {node.name: node for node in ast.walk(tree)
+               if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    assert not (targets - set(by_name)), targets - set(by_name)
+
+    def check_ranked_function(name: str, node: ast.AST, path: str) -> None:
+        for child in ast.walk(node):
+            if isinstance(child, ast.Attribute) and child.attr in {
+                    "goal", "description", "request", "subquestions"}:
+                raise AssertionError(f"{path}:{name} reads .{child.attr} text")
+            if isinstance(child, ast.Attribute) and isinstance(
+                    child.value, ast.Name) and child.value.id == "re":
+                raise AssertionError(f"{path}:{name} uses the re module")
+            if isinstance(child, (ast.Import, ast.ImportFrom)):
+                imported = [alias.name for alias in child.names]
+                if isinstance(child, ast.ImportFrom) and child.module:
+                    imported.append(child.module)
+                assert "re" not in imported, f"{path}:{name} imports re"
+            if isinstance(child, ast.Compare) and any(
+                    isinstance(op, (ast.In, ast.NotIn)) for op in child.ops):
+                for comparator in child.comparators:
+                    if (isinstance(child.left, ast.Constant)
+                            and isinstance(child.left.value, str)
+                            and isinstance(comparator, ast.Name)):
+                        raise AssertionError(
+                            f"{path}:{name} does substring matching on text")
+
+    for name in sorted(targets):
+        check_ranked_function(name, by_name[name], "v2/adapters/models.py")
+    league = ast.parse((root / "app" / "tools" / "league.py").read_text())
+    get_ratings = next(node for node in ast.walk(league)
+                       if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                       and node.name == "get_ratings")
+    check_ranked_function("get_ratings", get_ratings, "app/tools/league.py")
 
 def test_no_request_text_regex_routes_ranked_arguments():
     import ast, pathlib

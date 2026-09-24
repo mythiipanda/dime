@@ -1,19 +1,16 @@
-"""Closed team-rating metric vocabulary shared by planning and execution.
+"""Closed team-rating metric vocabulary; the single source of truth.
 
-The metric and direction enums below are the single source of truth for ranked
-team rating arguments. The tool schema (backend/app/tools/league.py), the v2
-capability catalog (derived from the same schema), the prompts, and the
-deterministic verifiers all consume these values. Nothing may infer a ranking
-direction or metric from request text; both are model-authored typed values.
+Each entry carries the display label and the deterministic-answer number
+format, so no second metric-ID collection is needed anywhere.
 """
 
 TEAM_RATING_METRICS = {
-    "OFF_RATING": "offensive rating",
-    "DEF_RATING": "defensive rating",
-    "NET_RATING": "net rating",
-    "PACE": "pace",
-    "TS_PCT": "true shooting percentage",
-    "TM_TOV_PCT": "turnover percentage",
+    "OFF_RATING": {"label": "offensive rating", "format": "general"},
+    "DEF_RATING": {"label": "defensive rating", "format": "general"},
+    "NET_RATING": {"label": "net rating", "format": "general"},
+    "PACE": {"label": "pace", "format": "general"},
+    "TS_PCT": {"label": "true shooting percentage", "format": "decimal3"},
+    "TM_TOV_PCT": {"label": "turnover percentage", "format": "decimal3"},
 }
 
 RANKING_DIRECTIONS = ("asc", "desc")
