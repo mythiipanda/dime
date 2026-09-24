@@ -97,7 +97,10 @@ def test_output_section_covers_contract_fields(name):
     text = load_prompt(name)
     for model in OUTPUT_CONTRACTS[name]:
         assert model.__name__ in text
-        for field in model.model_fields:
+        # Provider-facing schema properties only: code-side fields excluded
+        # from the model JSON schema (e.g. ranked_argument_conflicts) are
+        # never model-authored and must not appear in prompts.
+        for field in model.model_json_schema().get("properties", {}):
             assert field in section, f"{name}.md Output omits {model.__name__}.{field}"
 
 
