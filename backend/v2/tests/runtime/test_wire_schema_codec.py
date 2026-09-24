@@ -159,15 +159,15 @@ async def test_accepted_attempt_records_model_requests_and_repaired():
  from v2.contracts import TaskSpec
  from v2.runtime import RequestEnvelope,RunLedger
  class M:
-  last_provider='p';last_model='m';last_failures=[]
+  last_provider='p';last_model='m';last_failures=[];last_request_count=None
   async def generate(self,**call):return TaskSpec(goal='ok',mode='quick',deliverable='x')
  ledger=RunLedger('run');model=RecordedStructuredModel(M(),ledger,turn_id='t')
- def envelope(route):
-  return RequestEnvelope.freeze(provider='p',model='m',route=route,prompt='p',
-   context={},tool_schemas={},planner_version='v2')
- await model.generate(schema=TaskSpec,prompt='p',payload={},envelope=envelope('intake'))
+ envelope=RequestEnvelope.freeze(provider='p',model='m',route='intake',prompt='p',
+  context={},tool_schemas={},planner_version='v2')
+ await model.generate(schema=TaskSpec,prompt='p',payload={},envelope=envelope)
  first=ledger.entries[-1].data
  assert first['model_requests']==1 and first['repaired'] is False
- await model.generate(schema=TaskSpec,prompt='p',payload={},envelope=envelope('repair'))
+ model._model.last_request_count=3
+ await model.generate(schema=TaskSpec,prompt='p',payload={},envelope=envelope)
  second=ledger.entries[-1].data
- assert second['model_requests']==2 and second['repaired'] is True
+ assert second['model_requests']==3 and second['repaired'] is True

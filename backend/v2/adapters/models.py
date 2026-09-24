@@ -183,6 +183,7 @@ class ProviderStructuredModel:
         self.last_provider: ProviderName | None = None
         self.last_model: str | None = None
         self.last_failures: list[dict[str, str]] = []
+        self.last_request_count: int | None = None
 
     @staticmethod
     def _failure_class(exc: BaseException) -> str:
@@ -398,6 +399,10 @@ class ProviderStructuredModel:
                         f"mistral_free_limit:{model.model_name}"
                         if provider == "mistral" else model.model_name
                     )
+                    try:
+                        self.last_request_count = int(result.usage().requests)
+                    except Exception:
+                        self.last_request_count = 1
                     return result.output
                 except Exception as exc:
                     failure_class = self._failure_class(exc)
@@ -2395,8 +2400,6 @@ class RecordedStructuredModel:
         self._ledger = ledger
         self._turn_id = turn_id
         self._sequence = 0
-        self._request_count = 0
-        self._saw_repair = False
 
     async def generate(
         self,
@@ -2410,9 +2413,6 @@ class RecordedStructuredModel:
         from v2.runtime.ledger import LedgerKind
 
         self._sequence += 1
-        self._request_count += 1
-        if envelope.route == "repair":
-            self._saw_repair = True
         call_id = f"model:{self._turn_id}:{self._sequence}"
         self._ledger.append(
             LedgerKind.MODEL_REQUEST,
@@ -2444,6 +2444,7 @@ class RecordedStructuredModel:
         actual_provider = getattr(self._model, "last_provider", None)
         actual_model = getattr(self._model, "last_model", None)
         extra = decode(result) if decode is not None else None
+        request_count = getattr(self._model, "last_request_count", None) or 1
         data = {
                 "status": "accepted",
                 "output": result.model_dump(mode="json"),
@@ -2455,8 +2456,8 @@ class RecordedStructuredModel:
                 ),
                 "provider_attempts": list(getattr(
                     self._model, "last_failures", [])),
-                "model_requests": self._request_count,
-                "repaired": self._saw_repair,
+                "model_requests": request_count,
+                "repaired": request_count > 1,
             }
         if extra:
             data.update(extra)
