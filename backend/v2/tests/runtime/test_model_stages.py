@@ -3148,8 +3148,13 @@ async def test_ranked_conflict_stays_out_of_subquestions_reaches_ledger_and_gaps
         {"route": "requirement_review", "capability_id": "team_ratings",
          "key": "requested_metric", "rule": "ranked-argument-conflict"}]
     assert "carried_from_intake" not in attempts[0].data
+    assert review.ranked_argument_conflicts == [
+        {"route": "requirement_review", "capability_id": "team_ratings",
+         "key": "requested_metric", "rule": "ranked-argument-conflict"}]
     draft = _deterministic_rank_draft(
-        task.model_copy(update={"requirements": review.requirements}), [])
+        task.model_copy(update={
+            "requirements": review.requirements,
+            "ranked_argument_conflicts": review.ranked_argument_conflicts}), [])
     assert draft is not None
     assert draft.claims == []
     assert draft.gaps == [
@@ -3353,7 +3358,7 @@ async def test_review_outage_with_typed_intake_carries_typed_arguments():
     assert review.missing_subquestions == []
 
 @pytest.mark.anyio
-async def test_review_outage_without_typed_intake_leaves_gap_not_inference():
+async def test_review_outage_without_typed_intake_reaches_synthesizer():
     from v2.adapters.models import _deterministic_rank_draft
     class ReviewDown:
         async def generate(self, **call):
@@ -3369,8 +3374,32 @@ async def test_review_outage_without_typed_intake_leaves_gap_not_inference():
     assert "requested_metric" not in arguments
     assert arguments["season"] == "2025-26"
     assert review.missing_subquestions == []
+    assert review.ranked_argument_conflicts == []
+    # No typed conflict was recorded, so the deterministic draft must not
+    # block: the question reaches the synthesizer instead of a typed gap.
     draft = _deterministic_rank_draft(task.model_copy(update={
-        "requirements": review.requirements}), [])
+        "requirements": review.requirements,
+        "ranked_argument_conflicts": review.ranked_argument_conflicts}), [])
+    assert draft is None
+
+def test_plain_team_ratings_question_without_conflict_reaches_synthesizer():
+    # Regression: "Celtics net rating?" must not hit the "could not be
+    # published" gap. Only a recorded typed conflict blocks the draft.
+    from v2.adapters.models import _deterministic_rank_draft
+    task = TaskSpec(goal="net rating", mode="quick", deliverable="team",
+                    required_evidence=["team_ratings"], requirements=[])
+    assert task.ranked_argument_conflicts == []
+    assert _deterministic_rank_draft(task, []) is None
+
+def test_plain_team_ratings_with_conflict_still_gaps():
+    from v2.adapters.models import _deterministic_rank_draft
+    task = TaskSpec(
+        goal="net rating", mode="quick", deliverable="team",
+        required_evidence=["team_ratings"], requirements=[],
+        ranked_argument_conflicts=[{
+            "route": "requirement_review", "capability_id": "team_ratings",
+            "key": "ranking_direction", "rule": "ranked-argument-conflict"}])
+    draft = _deterministic_rank_draft(task, [])
     assert draft is not None
     assert draft.claims == []
     assert draft.gaps == [

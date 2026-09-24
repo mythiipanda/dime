@@ -953,6 +953,7 @@ class ModelIntake(ModelStage):
                 ])),
                 "required_evidence": task.required_evidence,
                 "requirements": review.requirements,
+                "ranked_argument_conflicts": list(review.ranked_argument_conflicts),
                 "calculation_requirements": review.calculation_requirements,
                 "skills": list(dict.fromkeys([
                     *task.skills, *review.missing_skills,
@@ -1505,7 +1506,7 @@ class ModelIntake(ModelStage):
         # conflict is recorded as typed ledger rows, never as a subquestion.
         # A field intake set but review omitted is carried forward with
         # carried-from-intake metadata.
-        review, _carried_rows, _conflict_rows = (
+        review, _carried_rows, conflict_rows = (
             self._reconcile_typed_ranked_arguments(task, review))
         unknown_evidence = sorted(
             {capability for requirement in review.requirements
@@ -1529,7 +1530,12 @@ class ModelIntake(ModelStage):
         review = self._expand_home_away_requirements(review, scope)
         requirements = [self._close_requirement_options(requirement)
                         for requirement in review.requirements]
-        return review.model_copy(update={"requirements": requirements})
+        # The conflict rows travel on the review so the intake can copy them
+        # onto the task; the deterministic draft only gaps when a ranked
+        # branch was actually dropped for disagreement.
+        return review.model_copy(update={
+            "requirements": requirements,
+            "ranked_argument_conflicts": conflict_rows})
 
 
 class PlannerArgumentError(ValueError):
@@ -2297,6 +2303,12 @@ def _deterministic_rank_draft(
     single source of truth. A calculation requirement is eligible only when
     it declares the requested metric in its typed ``metric_ids``; prose
     descriptions are never parsed and no direction is guessed from a metric.
+
+    The "could not be published" gap fires only when requirement review
+    actually dropped a ranked branch for a typed argument conflict
+    (``task.ranked_argument_conflicts`` non-empty). A plain team_ratings
+    question with no typed ranking arguments and no conflict reaches the
+    synthesizer instead of being blocked.
     """
     from v2.domain.evidence import decimal_value
     from app.tools.rating_metrics import RANKING_DIRECTIONS, TEAM_RATING_METRICS
@@ -2309,6 +2321,7 @@ def _deterministic_rank_draft(
             return False
         return bool(arguments.get("requested_metric"))
     if ("team_ratings" in task.required_evidence
+            and task.ranked_argument_conflicts
             and not any(map(_has_typed_ranked_arguments, task.requirements))):
         return DraftReport(
             sections=["Team rating leader"], claims=[], calculations=[],

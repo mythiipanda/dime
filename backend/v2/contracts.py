@@ -6,7 +6,8 @@ from enum import StrEnum
 import math
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictFloat, StrictInt, model_validator
+from pydantic import (BaseModel, ConfigDict, Field, StrictBool, StrictFloat,
+                    StrictInt, field_validator, model_validator)
 from pydantic_core import PydanticCustomError
 from typing import Annotated
 from v2.arguments import CapabilityArgumentSet
@@ -356,6 +357,29 @@ class TaskSpec(BaseModel):
     assumptions: list[str] = Field(default_factory=list, max_length=32)
     open_questions: list[str] = Field(default_factory=list, max_length=32)
     skills: list[str] = Field(default_factory=list, max_length=16)
+    # Typed rows recorded when intake and requirement review disagreed on
+    # ranked team-rating arguments. The deterministic synthesizer draft only
+    # reports a typed gap for dropped ranked arguments when this is non-empty;
+    # a plain team_ratings question with no typed arguments reaches the
+    # synthesizer instead of being blocked.
+    ranked_argument_conflicts: list[dict[str, str]] = Field(
+        default_factory=list, max_length=32)
+
+    @field_validator("ranked_argument_conflicts")
+    @classmethod
+    def _validate_ranked_argument_conflicts(
+        cls, rows: list[dict[str, str]],
+    ) -> list[dict[str, str]]:
+        for row in rows:
+            if (set(row) != {"route", "capability_id", "key", "rule"}
+                    or row["rule"] != "ranked-argument-conflict"
+                    or not row["capability_id"].strip()
+                    or not row["key"].strip()):
+                raise ValueError(
+                    "ranked_argument_conflicts rows must carry exact "
+                    "{route, capability_id, key, rule} keys with rule "
+                    "'ranked-argument-conflict'")
+        return rows
 
     @model_validator(mode="after")
     def validate_scope(self) -> "TaskSpec":
@@ -394,6 +418,11 @@ class RequirementReview(BaseModel):
         default_factory=list, max_length=32)
     missing_subquestions: list[str] = Field(default_factory=list, max_length=32)
     missing_skills: list[str] = Field(default_factory=list, max_length=16)
+    # Typed ranked-argument conflict rows from reconciliation; the intake
+    # copies these onto the task so the deterministic draft only gaps when
+    # a ranked branch was actually dropped for disagreement.
+    ranked_argument_conflicts: list[dict[str, str]] = Field(
+        default_factory=list, max_length=32)
 
     @model_validator(mode="after")
     def validate_review(self) -> "RequirementReview":
