@@ -1,10 +1,10 @@
 {
-  "catalog_canonical_sha256": "8c8354ba3724ea8710a3feb1d8636ae9f9f58bc74abe1dff80815dcbf673fe31",
-  "compiled_canonical_sha256": "373ae0775b20161b3ba0365b8062d663b98a50e92cdad9c13512dcf126cac5cf",
+  "catalog_canonical_sha256": "9b93b8407fffdb2760b3311550ac8447a2d0b38f572057a738f6afb0cc5fd8d8",
+  "compiled_canonical_sha256": "912a1487b13edd752905abd579d814ed4eac10be417dc19c49eecbd9e01eeab6",
   "count": 39,
   "files": {
-    "catalog.compiled.json": "bdfadbcd039933425732c403220f08ff0ec6cc72158c9e8c2d6ae02908ebe5f0",
-    "catalog.source.json": "1af687e7790e926f4ec1ad66ab5f03bd4c85543a88c0099cc8316fd96ef4dfcf",
+    "catalog.compiled.json": "f5945a0b440189a9a0080f981b7ef66bd37b7f6ab5dae509307f537b1d6eba09",
+    "catalog.source.json": "a159778ce4e2fad47b31e18f6a585514040bdbb2eec095355865d74febce90cd",
     "clutch.json": "d22a2513b97caac87a85c792ba3d9b0c82bacb5af97fccdaf005935990102494",
     "competitive_ratings.json": "a1d287b2d36d69eeee78b384d3cd7cee23391738bf77617ed8c564d7bafe04fe",
     "contracts.json": "7c36293493ec0780c9671cdf0376d9a886ba34c55a56d05a935b48a3a828b4c7",
@@ -34,7 +34,7 @@
     "shots.json": "11c0201b6c26d657acf3557363692a1cd04adbbabe343726cb7c01d6d7e97c64",
     "standings.json": "1d0971888f3ab0d6d2e5684d2f830435c373a33267e9fa1d8a2f57c4992d2ce6",
     "team_four_factors.json": "97d062007644a7bef9951a5270d8e1525bf853378d020e1ecffcb75803d5eec7",
-    "team_ratings.json": "61811559ecf44c6890723b11fb47850836aa791a36f07b14dae126ab11a0f5c4",
+    "team_ratings.json": "efe59e038a9f857f573494003bfe5761d2ffe8a3c02acd653b1a8d07135da2c9",
     "team_shot_zones.json": "0d85756303fe8fbf4a88795447ce423b6d11bfd7219c8b131e557783aefd135c",
     "team_splits.json": "245d173fb2af71b0e32dc6e37cc3f0585179010a91c60832607d4833cfb49557",
     "team_totals.json": "6bf68411d2b8cb29062623d54fcdd1a0061dbed1dfce72a3f42fbb7a55e14582",

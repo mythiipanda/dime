@@ -23,3 +23,17 @@ Stop after every evidence clause in the original request has exactly one require
 
 ## V3 typed capability-local output amendment
 For every capability option, emit exactly one capability_argument_set keyed by that capability ID. Each set contains `arguments.entries` in the provider wire all-slots shape: key, kind, and every value slot; exactly the active slot is non-null (the null kind uses value:null) and all inactive slots are null. Use null for `arguments` or `entries` only to mean an empty set. Never intersect or merge alternatives. Do not emit the legacy shared capability_arguments map.
+
+## Ranked team ratings: typed enum arguments
+For a `team_ratings` requirement, the ranked form is two closed enums, both model-authored:
+- `requested_metric`: one of OFF_RATING, DEF_RATING, NET_RATING, PACE, TS_PCT, TM_TOV_PCT. Emit the enum ID, never a synonym or display label.
+- `ranking_direction`: `asc` or `desc`, the direction the request asks to rank. Emit it explicitly; never omit it on a ranked request.
+
+Map the request's ranking intent to the enum pair deterministically from the words the user used, for example:
+- "best defense" or "lowest defensive rating" → DEF_RATING, asc
+- "worst offense" → OFF_RATING, asc
+- "best net rating" → NET_RATING, desc
+- "highest pace" → PACE, desc
+- "fewest turnovers" → TM_TOV_PCT, asc
+
+A ranked request without a stated ranking direction is incomplete: leave `ranking_direction` empty rather than guessing. A direct team question (a named team, no ranking) leaves both enums empty. The direction is never inferred from request text by anything downstream.

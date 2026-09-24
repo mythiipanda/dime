@@ -147,16 +147,15 @@ def test_blocks_per_game_uses_full_blocks_totals_and_unrounded_sort():
 
 
 def test_team_rating_tool_enum_and_planner_vocabulary_stay_aligned():
-    from app.tools.rating_metrics import (
-        TEAM_RATING_METRICS, canonical_team_rating_metric,
-    )
-    assert set(TEAM_RATING_METRICS) == {
-        "OFF_RATING", "DEF_RATING", "NET_RATING", "PACE", "TS_PCT", "TM_TOV_PCT",
+    from app.tools.rating_metrics import TEAM_RATING_METRICS
+    assert TEAM_RATING_METRICS == {
+        "OFF_RATING": "offensive rating",
+        "DEF_RATING": "defensive rating",
+        "NET_RATING": "net rating",
+        "PACE": "pace",
+        "TS_PCT": "true shooting percentage",
+        "TM_TOV_PCT": "turnover percentage",
     }
-    for metric, aliases in TEAM_RATING_METRICS.items():
-        assert canonical_team_rating_metric(metric) == metric
-        for alias in aliases:
-            assert canonical_team_rating_metric(alias) == metric
 
 def test_bound_warehouse_read_paths_and_lineage(monkeypatch,tmp_path):
     import hashlib
@@ -202,3 +201,26 @@ def test_stale_fallback_binds_fallback_read_and_legitimate_writer_is_serialized(
     rows,meta=_core._warehouse_or_live('t','x=?',[1],lambda:empty('live','2026-27','down'),'2026-27',live_first=True)
     assert meta['stale'] is True and meta['warehouse_sha256']==store.warehouse_identity()['warehouse_sha256']
     assert calls[:2]==['lock','read']
+
+
+def test_ranked_team_answer_uses_label_not_enum_or_aliases(monkeypatch):
+    from app.tools import get_ratings
+    rows = [
+        {"TEAM_ID": 1, "TEAM_NAME": "Boston Celtics", "GP": 82, "W": 60, "L": 22,
+         "DEF_RATING": 104.3, "OFF_RATING": 118.1},
+        {"TEAM_ID": 2, "TEAM_NAME": "Oklahoma City Thunder", "GP": 82, "W": 57, "L": 25,
+         "DEF_RATING": 106.9, "OFF_RATING": 117.2},
+    ]
+    monkeypatch.setattr(
+        "app.tools.league._warehouse_or_live",
+        lambda *args, **kwargs: (rows, {"source": "fixture"}),
+    )
+    out = get_ratings.invoke({
+        "requested_metric": "DEF_RATING", "ranking_direction": "asc",
+        "season": "2025-26",
+    })
+    answer = out["meta"]["deterministic_answer"]
+    assert "defensive rating" in answer
+    assert "Boston Celtics" in answer and "lowest" in answer
+    assert "{" not in answer and "}" not in answer
+    assert "DEF_RATING" not in answer

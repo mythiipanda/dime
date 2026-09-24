@@ -120,20 +120,3 @@ async def test_fast_primary_failures_still_allow_secondary_within_budget(monkeyp
     assert calls == ["primary", "primary", "secondary"]
     assert timeouts == [8.0, 8.0, 8.0] and clock.value == 0.75
     assert len(model.last_failures) == 2
-
-
-@pytest.mark.anyio
-async def test_total_review_outage_materializes_existing_typed_fallback():
-    class Outage:
-        async def generate(self, **call):
-            raise RuntimeError("all structured-output providers failed [timeout]")
-
-    task = TaskSpec(goal="lowest pace", mode="quick", deliverable="team",
-        season={"value":"2025-26", "source":"user", "confidence":1},
-        required_evidence=["team_ratings"])
-    review = await ModelIntake(Outage(), provider="stub", model_name="stub",
-        capability_catalog={"team_ratings": {}}, requirement_review=True,
-    )._review_requirements("Which team has the lowest pace?", task)
-    assert len(review.requirements) == 1
-    assert review.requirements[0].capability_arguments == {
-        "season":"2025-26", "requested_metric":"PACE", "ranking_direction":"asc"}

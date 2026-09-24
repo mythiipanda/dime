@@ -8,11 +8,17 @@
           "compiled_kinds": [
             "string"
           ],
-          "constraints": {},
+          "constraints": {
+            "enum": [
+              "",
+              "asc",
+              "desc"
+            ]
+          },
           "item_constraints": {},
           "list_item_exact_decimal": false,
           "scalar_exact_decimal": false,
-          "schema_sha256": "709300bf34f89b7ec383b3333d501da187ed2fb156ff6c750f1b30fd261c9171"
+          "schema_sha256": "696c6acbee73601b03375b1e6ffcb7a382570523e7669f0335ed32f95bb8fc3f"
         }
       ],
       "compiled_kinds": [
@@ -25,7 +31,7 @@
       "property": "ranking_direction",
       "required": false,
       "scalar_exact_decimal": false,
-      "schema_sha256": "709300bf34f89b7ec383b3333d501da187ed2fb156ff6c750f1b30fd261c9171"
+      "schema_sha256": "696c6acbee73601b03375b1e6ffcb7a382570523e7669f0335ed32f95bb8fc3f"
     },
     {
       "branches": [
@@ -33,11 +39,21 @@
           "compiled_kinds": [
             "string"
           ],
-          "constraints": {},
+          "constraints": {
+            "enum": [
+              "",
+              "OFF_RATING",
+              "DEF_RATING",
+              "NET_RATING",
+              "PACE",
+              "TS_PCT",
+              "TM_TOV_PCT"
+            ]
+          },
           "item_constraints": {},
           "list_item_exact_decimal": false,
           "scalar_exact_decimal": false,
-          "schema_sha256": "709300bf34f89b7ec383b3333d501da187ed2fb156ff6c750f1b30fd261c9171"
+          "schema_sha256": "b15cee4565001eaad139ab1c18801423b30b563aeac3a8e83cff9f4b8153b2ed"
         }
       ],
       "compiled_kinds": [
@@ -50,7 +66,7 @@
       "property": "requested_metric",
       "required": false,
       "scalar_exact_decimal": false,
-      "schema_sha256": "709300bf34f89b7ec383b3333d501da187ed2fb156ff6c750f1b30fd261c9171"
+      "schema_sha256": "b15cee4565001eaad139ab1c18801423b30b563aeac3a8e83cff9f4b8153b2ed"
     },
     {
       "branches": [
@@ -104,6 +120,6 @@
     }
   ],
   "reasons": [],
-  "schema_sha256": "ea4b33128d47223bbef2359150256881307763039c29228303be53e2916cf1be",
+  "schema_sha256": "3df7baea9f7659d1fd3ecf02c0df3790b7046c5dec8a5f1edd959c15a33f4f4d",
   "status": "REPRESENTABLE"
 }

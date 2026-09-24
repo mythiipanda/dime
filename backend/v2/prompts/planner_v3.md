@@ -61,3 +61,10 @@ fact. Do not add duplicate, filler, or unrelated nodes.
 
 ## V3 typed selected-capability output amendment
 Replace capability_hints with exactly one `capability` from the supplied catalog. Emit `arguments.entries` in the provider wire all-slots shape: key, kind, and every value slot; exactly the active slot is non-null (the null kind uses value:null) and all inactive slots are null. Null arguments or entries means empty. For each covered requirement, copy and satisfy the selected capability's capability-local argument set. Never infer coverage from a shared legacy map when capability-local sets are present.
+
+## Ranked team ratings: copy the typed enum arguments
+For a `team_ratings` node, `requested_metric` and `ranking_direction` are closed enums copied exactly from the covered requirement's capability-local argument set:
+- `requested_metric`: one of OFF_RATING, DEF_RATING, NET_RATING, PACE, TS_PCT, TM_TOV_PCT. Emit the enum ID, never a synonym or display label.
+- `ranking_direction`: `asc` or `desc`, exactly as the requirement states it.
+
+Copy both values verbatim; never re-derive them from the request text, never widen them, and never invent a direction the requirement does not state. A ranked requirement always states both: if the requirement's direction is empty, leave the node's direction empty rather than guessing (the deterministic verifier rejects the node and the branch becomes a typed gap). A direct team question (named team, no ranking) leaves both enums empty on the node.

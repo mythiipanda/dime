@@ -3,13 +3,18 @@
 import ast
 import json
 import re
-from typing import Any
+from typing import Any, Literal
 from langchain_core.tools import tool
 
 from .. import store
 from ..sources import nba_stats
 from ._core import SEASON, TTL_LEADERS, TTL_SCOREBOARD_PAST, clamp_stat, _warehouse_or_live, is_past_game_date
-from .rating_metrics import TEAM_RATING_METRICS
+from .rating_metrics import RANKING_DIRECTIONS, TEAM_RATING_METRICS
+
+# Closed ranked-team enums, sourced from rating_metrics so the tool schema, the
+# v2 capability catalog, and the deterministic verifiers all share one origin.
+_RequestedMetric = Literal.__getitem__(tuple(["", *TEAM_RATING_METRICS]))
+_RankingDirection = Literal.__getitem__(tuple(["", *RANKING_DIRECTIONS]))
 
 
 @tool
@@ -349,16 +354,21 @@ def get_standings_deep(season: str = SEASON, top: int = 5) -> dict[str, Any]:
 def get_ratings(
     season: str = SEASON,
     team: str = "",
-    requested_metric: str = "",
-    ranking_direction: str = "",
+    requested_metric: _RequestedMetric = "",
+    ranking_direction: _RankingDirection = "",
 ) -> dict[str, Any]:
     """Team ratings, optionally bound to one requested ranked metric.
 
-    ``requested_metric`` is the evidence identity carried from a ranked-team
-    plan. With ``ranking_direction`` (``asc`` or ``desc``), rows are ordered
+    ``requested_metric`` is a closed enum id (OFF_RATING, DEF_RATING,
+    NET_RATING, PACE, TS_PCT, TM_TOV_PCT) carried from a ranked-team plan.
+    With ``ranking_direction`` (``asc`` or ``desc``), rows are ordered
     by that exact field and the payload owns the leader claim. This prevents
     unrelated numerals in the same expanded row from competing during claim
     admission. ``team`` still narrows a direct team-ratings question.
+
+    The metric id and direction are model-authored typed values; nothing in
+    this tool derives them from request text. The enum spells the id, the
+    human label is only rendered in the deterministic answer text.
     """
     from nba_api.stats.static import teams as _teams
 
@@ -385,7 +395,7 @@ def get_ratings(
         if metric not in allowed_metrics:
             return {"tool": "get_ratings", "ok": False,
                     "error": f"unsupported requested_metric: {metric}"}
-        if direction not in {"asc", "desc"}:
+        if direction not in RANKING_DIRECTIONS:
             return {"tool": "get_ratings", "ok": False,
                     "error": "ranking_direction must be 'asc' or 'desc'"}
         present = [r for r in slim if r.get(metric) is not None]
@@ -400,11 +410,12 @@ def get_ratings(
         if slim:
             leader = slim[0]
             raw = float(leader[metric])
-            value = f"{raw:.3f}" if metric in {"TS_PCT", "TM_TOV_PCT"} else f"{raw:g}"
+            label = allowed_metrics[metric]
+            value = f"{raw:.3f}" if "percentage" in label else f"{raw:g}"
             meta["deterministic_answer"] = (
                 f"{leader.get('TEAM_NAME') or leader.get('TEAM')} had the "
                 f"{'lowest' if direction == 'asc' else 'highest'} "
-                f"{allowed_metrics[metric]} in {season}: {value}.")
+                f"{label} in {season}: {value}.")
     if team:
         want = str(team).strip().lower()
         slim = [r for r in slim if (

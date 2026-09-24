@@ -138,21 +138,6 @@ def test_home_away_transform_preserves_differing_alternative_sets_end_to_end():
   assert capability_arguments_for(item,'player_report')=={'player':'p','season':'2025-26'}
   assert item.capability_arguments=={}
 
-def test_ranked_reconciliation_uses_and_updates_local_team_set_end_to_end():
- from v2.contracts import EvidenceRequirement,RequirementReview
- from v2.arguments import CapabilityArgumentSet
- cat={'team_ratings':{'arguments':{'type':'object','additionalProperties':False,'properties':{'requested_metric':{'type':'string'},'ranking_direction':{'type':'string'},'season':{'type':'string'}}}},'standings':{'arguments':{'type':'object','additionalProperties':False,'properties':{'season':{'type':'string'}}}}}
- intake=ModelIntake(Capture([]),provider='stub',model_name='stub',capability_catalog=cat)
- sets=[CapabilityArgumentSet(capability_id='team_ratings',arguments=_req_args({'requested_metric':'DEF_RATING','ranking_direction':'asc'})),CapabilityArgumentSet(capability_id='standings',arguments=_req_args({'season':'2025-26'}))]
- req=EvidenceRequirement(id='rank',description='rank',capability_options=['team_ratings','standings'],capability_argument_sets=sets)
- task=TaskSpec(goal='lowest defensive rating',mode='quick',deliverable='answer',required_evidence=['team_ratings'],requirements=[req])
- out=intake._reconcile_ranked_team_review('Which team has the lowest defensive rating?',task,RequirementReview(requirements=[req]))
- ranked=next(x for x in out.requirements if 'team_ratings' in x.capability_options)
- assert ranked.capability_options==['team_ratings']
- assert capability_arguments_for(ranked,'team_ratings')['requested_metric']=='DEF_RATING'
- assert [x.capability_id for x in ranked.capability_argument_sets]==['team_ratings']
- assert ranked.capability_arguments==capability_arguments_for(ranked,'team_ratings')
-
 def test_direct_selected_capability_reads_inventory_is_closed():
  import ast,pathlib
  tree=ast.parse((pathlib.Path(__file__).parents[2]/'adapters'/'models.py').read_text())
