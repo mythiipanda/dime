@@ -38,7 +38,12 @@ def normalize_provider_wire_schema(source):
  def walk(v,path='$'):
   if isinstance(v,list):return [walk(x,path+'[]') for x in v]
   if not isinstance(v,dict):return v
-  out={k:walk(x,f'{path}.{k}') for k,x in v.items() if k not in {'title','description'}}
+  out={}
+  for k,x in v.items():
+   if k=='properties' and isinstance(x,dict):
+    out[k]={pk:walk(pv,f'{path}.properties.{pk}') for pk,pv in x.items()};continue
+   if k in {'title','description'}:continue
+   out[k]=walk(x,f'{path}.{k}')
   if out.get('type')=='object':
    if out.get('additionalProperties',False) is not False:raise ValueError(f'free-form object at {path}')
    props=out.get('properties',{});original=set(out.get('required',[]))

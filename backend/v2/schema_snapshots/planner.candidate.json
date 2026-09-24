@@ -7,6 +7,47 @@
           "items": {
             "additionalProperties": false,
             "properties": {
+              "id": {
+                "type": "string"
+              },
+              "description": {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              "depends_on": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "type": "string"
+                    },
+                    "maxItems": 32,
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "capability": {
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "type": "string"
+              },
+              "covers_requirement_ids": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "type": "string"
+                    },
+                    "maxItems": 32,
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "arguments": {
                 "anyOf": [
                   {
@@ -18,6 +59,85 @@
                             "items": {
                               "additionalProperties": false,
                               "properties": {
+                                "key": {
+                                  "maxLength": 128,
+                                  "minLength": 1,
+                                  "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "enum": [
+                                    "null",
+                                    "bool",
+                                    "int",
+                                    "number",
+                                    "decimal",
+                                    "string",
+                                    "bool_list",
+                                    "int_list",
+                                    "number_list",
+                                    "decimal_list",
+                                    "string_list"
+                                  ],
+                                  "type": "string"
+                                },
+                                "value": {
+                                  "type": "null"
+                                },
+                                "bool_value": {
+                                  "anyOf": [
+                                    {
+                                      "type": "boolean"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "int_value": {
+                                  "anyOf": [
+                                    {
+                                      "type": "integer"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "number_value": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "decimal_value": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 128,
+                                      "minLength": 1,
+                                      "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "string_value": {
+                                  "anyOf": [
+                                    {
+                                      "maxLength": 2048,
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
                                 "bool_list_value": {
                                   "anyOf": [
                                     {
@@ -32,10 +152,28 @@
                                     }
                                   ]
                                 },
-                                "bool_value": {
+                                "int_list_value": {
                                   "anyOf": [
                                     {
-                                      "type": "boolean"
+                                      "items": {
+                                        "type": "integer"
+                                      },
+                                      "maxItems": 32,
+                                      "type": "array"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "number_list_value": {
+                                  "anyOf": [
+                                    {
+                                      "items": {
+                                        "type": "number"
+                                      },
+                                      "maxItems": 32,
+                                      "type": "array"
                                     },
                                     {
                                       "type": "null"
@@ -59,89 +197,6 @@
                                     }
                                   ]
                                 },
-                                "decimal_value": {
-                                  "anyOf": [
-                                    {
-                                      "maxLength": 128,
-                                      "minLength": 1,
-                                      "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$",
-                                      "type": "string"
-                                    },
-                                    {
-                                      "type": "null"
-                                    }
-                                  ]
-                                },
-                                "int_list_value": {
-                                  "anyOf": [
-                                    {
-                                      "items": {
-                                        "type": "integer"
-                                      },
-                                      "maxItems": 32,
-                                      "type": "array"
-                                    },
-                                    {
-                                      "type": "null"
-                                    }
-                                  ]
-                                },
-                                "int_value": {
-                                  "anyOf": [
-                                    {
-                                      "type": "integer"
-                                    },
-                                    {
-                                      "type": "null"
-                                    }
-                                  ]
-                                },
-                                "key": {
-                                  "maxLength": 128,
-                                  "minLength": 1,
-                                  "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
-                                  "type": "string"
-                                },
-                                "kind": {
-                                  "enum": [
-                                    "null",
-                                    "bool",
-                                    "int",
-                                    "number",
-                                    "decimal",
-                                    "string",
-                                    "bool_list",
-                                    "int_list",
-                                    "number_list",
-                                    "decimal_list",
-                                    "string_list"
-                                  ],
-                                  "type": "string"
-                                },
-                                "number_list_value": {
-                                  "anyOf": [
-                                    {
-                                      "items": {
-                                        "type": "number"
-                                      },
-                                      "maxItems": 32,
-                                      "type": "array"
-                                    },
-                                    {
-                                      "type": "null"
-                                    }
-                                  ]
-                                },
-                                "number_value": {
-                                  "anyOf": [
-                                    {
-                                      "type": "number"
-                                    },
-                                    {
-                                      "type": "null"
-                                    }
-                                  ]
-                                },
                                 "string_list_value": {
                                   "anyOf": [
                                     {
@@ -156,20 +211,6 @@
                                       "type": "null"
                                     }
                                   ]
-                                },
-                                "string_value": {
-                                  "anyOf": [
-                                    {
-                                      "maxLength": 2048,
-                                      "type": "string"
-                                    },
-                                    {
-                                      "type": "null"
-                                    }
-                                  ]
-                                },
-                                "value": {
-                                  "type": "null"
                                 }
                               },
                               "required": [
@@ -208,43 +249,6 @@
                   }
                 ]
               },
-              "capability": {
-                "maxLength": 64,
-                "minLength": 1,
-                "pattern": "^[a-z][a-z0-9_]*$",
-                "type": "string"
-              },
-              "covers_requirement_ids": {
-                "anyOf": [
-                  {
-                    "items": {
-                      "type": "string"
-                    },
-                    "maxItems": 32,
-                    "type": "array"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "depends_on": {
-                "anyOf": [
-                  {
-                    "items": {
-                      "type": "string"
-                    },
-                    "maxItems": 32,
-                    "type": "array"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "id": {
-                "type": "string"
-              },
               "max_attempts": {
                 "anyOf": [
                   {
@@ -280,6 +284,7 @@
               "capability",
               "covers_requirement_ids",
               "depends_on",
+              "description",
               "id",
               "max_attempts",
               "status"

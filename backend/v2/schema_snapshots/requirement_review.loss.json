@@ -1,6 +1,6 @@
 {
-  "candidate_schema_sha256": "592513abe154dc510afd40c69cd38cd95b3828e791b032b8e78ac7f7e34b0afb",
+  "candidate_schema_sha256": "be74b2888b86c0355573575bd5a3c126f3fe6183e86ac1a97c68b53a0effba94",
   "hash_canonicalization": "UTF-8 sorted-key compact JSON",
   "losses": [],
-  "source_schema_sha256": "cc6f171a19342185a1c0f4513931dcda61edb80164f450216c6e580f74c9025d"
+  "source_schema_sha256": "2f102b8dbacd8cf6b34606115e350e91642154002273299006127edaa9612351"
 }
