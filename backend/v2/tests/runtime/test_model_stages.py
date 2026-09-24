@@ -3107,12 +3107,86 @@ async def test_ranked_intake_review_conflict_is_typed_gap():
         "capability_arguments": {"requested_metric": "OFF_RATING",
                                  "ranking_direction": "desc",
                                  "team": "", "season": "2025-26"}}]})
-    reconciled, _ = intake._reconcile_typed_ranked_arguments(task, review)
+    reconciled, carried, conflicts = intake._reconcile_typed_ranked_arguments(task, review)
     assert reconciled.requirements == []
-    assert reconciled.missing_subquestions == [
-        "RANKED_ARGUMENT_CONFLICT: team_ratings requirement 'rank' disagrees "
-        "with intake on requested_metric, ranking_direction; requirement "
-        "dropped, no side wins"]
+    assert carried == []
+    assert reconciled.missing_subquestions == []
+    assert conflicts == [
+        {"route": "requirement_review", "capability_id": "team_ratings",
+         "key": "requested_metric", "rule": "ranked-argument-conflict"},
+        {"route": "requirement_review", "capability_id": "team_ratings",
+         "key": "ranking_direction", "rule": "ranked-argument-conflict"}]
+
+@pytest.mark.anyio
+async def test_ranked_conflict_stays_out_of_subquestions_reaches_ledger_and_gaps():
+    from v2.adapters.models import RecordedStructuredModel, _deterministic_rank_draft
+    from v2.runtime.ledger import RunLedger
+    model = StubModel([{
+        "requirements": [{
+            "id": "rank", "description": "ranked team ratings",
+            "capability_options": ["team_ratings"],
+            "capability_argument_sets": [{
+                "capability_id": "team_ratings",
+                "arguments": {"requested_metric": "OFF_RATING",
+                              "ranking_direction": "asc", "team": "",
+                              "season": "2025-26"}}],
+            "metric_ids": None, "requested_outputs": None}],
+        "calculation_requirements": None,
+        "missing_subquestions": None, "missing_skills": None}])
+    ledger = RunLedger("run")
+    recorded = RecordedStructuredModel(model, ledger, turn_id="t")
+    intake = ModelIntake(recorded, provider="stub", model_name="stub",
+                         capability_catalog=_typed_catalog())
+    task = _typed_ranked_task(metric="DEF_RATING", direction="asc")
+    review = await intake._review_requirements("who has the best defense", task)
+    assert review.requirements == []
+    assert review.missing_subquestions == []
+    attempts = [entry for entry in ledger.entries
+                if entry.kind == "assistant/attempt"]
+    assert len(attempts) == 1
+    assert attempts[0].data["ranked_argument_conflicts"] == [
+        {"route": "requirement_review", "capability_id": "team_ratings",
+         "key": "requested_metric", "rule": "ranked-argument-conflict"}]
+    assert "carried_from_intake" not in attempts[0].data
+    draft = _deterministic_rank_draft(
+        task.model_copy(update={"requirements": review.requirements}), [])
+    assert draft is not None
+    assert draft.claims == []
+    assert draft.gaps == [
+        "Ranked team ratings could not be published: intake required "
+        "team_ratings evidence but no requirement carries typed "
+        "ranking arguments."]
+
+@pytest.mark.anyio
+async def test_ranked_conflict_with_empty_direction_fails_closed_at_wire_validation():
+    from v2.adapters.models import RecordedStructuredModel
+    from v2.runtime.ledger import RunLedger
+    model = StubModel([{
+        "requirements": [{
+            "id": "rank", "description": "ranked team ratings",
+            "capability_options": ["team_ratings"],
+            "capability_argument_sets": [{
+                "capability_id": "team_ratings",
+                "arguments": {"requested_metric": "OFF_RATING",
+                              "ranking_direction": "", "team": "",
+                              "season": "2025-26"}}],
+            "metric_ids": None, "requested_outputs": None}],
+        "calculation_requirements": None,
+        "missing_subquestions": None, "missing_skills": None}])
+    ledger = RunLedger("run")
+    recorded = RecordedStructuredModel(model, ledger, turn_id="t")
+    intake = ModelIntake(recorded, provider="stub", model_name="stub",
+                         capability_catalog=_typed_catalog())
+    task = _typed_ranked_task(metric="DEF_RATING", direction="asc")
+    with pytest.raises(ValueError, match="RANKED_DIRECTION_UNSPECIFIED"):
+        await intake._review_requirements("who has the best defense", task)
+    attempts = [entry for entry in ledger.entries
+                if entry.kind == "assistant/attempt"]
+    assert len(attempts) == 1
+    assert attempts[0].data["ranked_argument_conflicts"] == [
+        {"route": "requirement_review", "capability_id": "team_ratings",
+         "key": "requested_metric", "rule": "ranked-argument-conflict"}]
+    assert "carried_from_intake" not in attempts[0].data
 
 @pytest.mark.anyio
 async def test_ranked_intake_review_season_conflict_is_typed_gap():
@@ -3124,11 +3198,13 @@ async def test_ranked_intake_review_season_conflict_is_typed_gap():
         "capability_arguments": {"requested_metric": "DEF_RATING",
                                  "ranking_direction": "asc",
                                  "team": "", "season": "2024-25"}}]})
-    reconciled, _ = intake._reconcile_typed_ranked_arguments(task, review)
+    reconciled, carried, conflicts = intake._reconcile_typed_ranked_arguments(task, review)
     assert reconciled.requirements == []
-    assert reconciled.missing_subquestions == [
-        "RANKED_ARGUMENT_CONFLICT: team_ratings requirement 'rank' disagrees "
-        "with intake on season; requirement dropped, no side wins"]
+    assert carried == []
+    assert reconciled.missing_subquestions == []
+    assert conflicts == [
+        {"route": "requirement_review", "capability_id": "team_ratings",
+         "key": "season", "rule": "ranked-argument-conflict"}]
 
 @pytest.mark.anyio
 async def test_ranked_carried_from_intake_applies_and_logs_metadata():
@@ -3140,7 +3216,7 @@ async def test_ranked_carried_from_intake_applies_and_logs_metadata():
         "capability_arguments": {"requested_metric": "",
                                  "ranking_direction": "",
                                  "team": "", "season": "2025-26"}}]})
-    reconciled, rows = intake._reconcile_typed_ranked_arguments(task, review)
+    reconciled, rows, conflicts = intake._reconcile_typed_ranked_arguments(task, review)
     assert len(reconciled.requirements) == 1
     carried = capability_arguments_for(reconciled.requirements[0], "team_ratings")
     assert carried["requested_metric"] == "DEF_RATING"
@@ -3149,6 +3225,7 @@ async def test_ranked_carried_from_intake_applies_and_logs_metadata():
     assert all(r["rule"] == "carried-from-intake" and
                r["route"] == "requirement_review" and
                r["capability_id"] == "team_ratings" for r in rows)
+    assert conflicts == []
 
 @pytest.mark.anyio
 async def test_ranked_carries_apply_before_wire_validation():
@@ -3252,9 +3329,10 @@ async def test_ranked_prose_does_not_change_reconciliation():
             "capability_arguments": {"requested_metric": "DEF_RATING",
                                      "ranking_direction": "asc",
                                      "team": "", "season": "2025-26"}}]}))
-    first, first_rows = intake._reconcile_typed_ranked_arguments(task, reviews[0])
-    second, second_rows = intake._reconcile_typed_ranked_arguments(task, reviews[1])
+    first, first_rows, first_conflicts = intake._reconcile_typed_ranked_arguments(task, reviews[0])
+    second, second_rows, second_conflicts = intake._reconcile_typed_ranked_arguments(task, reviews[1])
     assert first_rows == second_rows
+    assert first_conflicts == second_conflicts == []
     assert (capability_arguments_for(first.requirements[0], "team_ratings")
             == capability_arguments_for(second.requirements[0], "team_ratings"))
 
@@ -3276,6 +3354,7 @@ async def test_review_outage_with_typed_intake_carries_typed_arguments():
 
 @pytest.mark.anyio
 async def test_review_outage_without_typed_intake_leaves_gap_not_inference():
+    from v2.adapters.models import _deterministic_rank_draft
     class ReviewDown:
         async def generate(self, **call):
             raise RuntimeError("all structured-output providers failed [x]")
@@ -3289,10 +3368,15 @@ async def test_review_outage_without_typed_intake_leaves_gap_not_inference():
     arguments = capability_arguments_for(review.requirements[0], "team_ratings")
     assert "requested_metric" not in arguments
     assert arguments["season"] == "2025-26"
-    assert review.missing_subquestions == [
-        "RANKED_TYPED_ARGUMENTS_UNAVAILABLE: review providers exhausted and "
-        "intake requirement 'required_team_ratings' carries no typed "
-        "requested_metric; no metric inferred"]
+    assert review.missing_subquestions == []
+    draft = _deterministic_rank_draft(task.model_copy(update={
+        "requirements": review.requirements}), [])
+    assert draft is not None
+    assert draft.claims == []
+    assert draft.gaps == [
+        "Ranked team ratings could not be published: intake required "
+        "team_ratings evidence but no requirement carries typed "
+        "ranking arguments."]
 
 def test_ranked_verifier_needs_no_provider():
     class ExplodingModel:
@@ -3365,12 +3449,13 @@ async def test_ranked_intake_internal_disagreement_is_typed_gap_not_override():
         "capability_arguments": {"requested_metric": "DEF_RATING",
                                  "ranking_direction": "",
                                  "team": "", "season": "2025-26"}}]})
-    reconciled, rows = intake._reconcile_typed_ranked_arguments(task, review)
+    reconciled, rows, conflicts = intake._reconcile_typed_ranked_arguments(task, review)
     assert reconciled.requirements == []
     assert rows == []
-    assert reconciled.missing_subquestions == [
-        "RANKED_ARGUMENT_CONFLICT: intake team_ratings requirements disagree "
-        "on ranking_direction; requirement 'rank' dropped, no typed source wins"]
+    assert reconciled.missing_subquestions == []
+    assert conflicts == [
+        {"route": "requirement_review", "capability_id": "team_ratings",
+         "key": "ranking_direction", "rule": "ranked-argument-conflict"}]
     wire = RequirementReviewWire.model_validate(_ranked_wire_entries(
         {"requested_metric": "DEF_RATING", "ranking_direction": "",
          "team": "", "season": "2025-26"}))
@@ -3388,9 +3473,10 @@ async def test_ranked_agreement_survives_when_review_matches_intake():
         "capability_arguments": {"requested_metric": "DEF_RATING",
                                  "ranking_direction": "asc",
                                  "team": "", "season": "2025-26"}}]})
-    reconciled, rows = intake._reconcile_typed_ranked_arguments(task, review)
+    reconciled, rows, conflicts = intake._reconcile_typed_ranked_arguments(task, review)
     assert len(reconciled.requirements) == 1
     assert rows == []
+    assert conflicts == []
 
 @pytest.mark.anyio
 async def test_ranked_request_text_independence():

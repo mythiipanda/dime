@@ -51,4 +51,4 @@ def test_source_file_sha_pin():
  # Evidence records the implemented file hash and the clean-source hash separately.
  clean='8bbfc5ee3ce1eeb8fb89e73fa192c9cfa29646c612a09846cacc36ba9ac3fb93'
  assert len(clean)==64
- current=hashlib.sha256((root/'v2/runtime/ledger.py').read_bytes()).hexdigest();assert current=='6e4831c9d2348fa45abba7cd744bc93d2725a079149ff79965b58b2e6ed15c23'
+ current=hashlib.sha256((root/'v2/runtime/ledger.py').read_bytes()).hexdigest();assert current=='efcb0b48092dd645ca83f89afb1e54a0f03c69b3c3d052b9c388e68aa2edebc8'

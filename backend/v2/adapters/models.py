@@ -1144,7 +1144,7 @@ class ModelIntake(ModelStage):
     def _ranked_typed_carries(
         review_arguments: Mapping[str, Any], intake_typed: Mapping[str, Any],
     ) -> dict[str, Any]:
-        """Keys intake set but review omitted: carried forward, never inferred."""
+        """Keys intake set but review omitted: carried forward."""
         carried: dict[str, Any] = {}
         for key in ("requested_metric", "ranking_direction", "team"):
             review_value = review_arguments.get(key)
@@ -1200,7 +1200,8 @@ class ModelIntake(ModelStage):
         carried-from-intake metadata always matches what was applied.
         ``intake_conflicts`` are keys where intake's own requirements
         disagree; ``review_conflicts`` are review-vs-intake disagreements.
-        Either suppresses carries: neither side overrides the other.
+        Either suppresses carries: neither side overrides the other, and
+        nothing is ever inferred from request text.
         """
         intake_typed = self._intake_typed_ranked_arguments(task)
         task_season = task.season.value if task.season else None
@@ -1210,13 +1211,24 @@ class ModelIntake(ModelStage):
             if intake_conflicts:
                 decisions[requirement_id] = {
                     "intake_conflicts": intake_conflicts,
-                    "review_conflicts": [], "carries": {}}
+                    "review_conflicts": [],
+                    "conflict_rows": [
+                        {"route": "requirement_review",
+                         "capability_id": "team_ratings", "key": key,
+                         "rule": "ranked-argument-conflict"}
+                        for key in intake_conflicts],
+                    "carries": {}}
                 continue
             review_conflicts = self._ranked_typed_conflicts(
                 review_arguments, intake_typed, task_season)
             decisions[requirement_id] = {
                 "intake_conflicts": [],
                 "review_conflicts": review_conflicts,
+                "conflict_rows": [
+                    {"route": "requirement_review",
+                     "capability_id": "team_ratings", "key": key,
+                     "rule": "ranked-argument-conflict"}
+                    for key in review_conflicts],
                 "carries": ({}
                             if review_conflicts
                             else self._ranked_typed_carries(
@@ -1274,19 +1286,20 @@ class ModelIntake(ModelStage):
 
     def _reconcile_typed_ranked_arguments(
         self, task: TaskSpec, review: RequirementReview,
-    ) -> tuple[RequirementReview, list[dict[str, str]]]:
+    ) -> tuple[RequirementReview, list[dict[str, str]], list[dict[str, str]]]:
         """Compare model-authored typed ranked arguments between intake and review.
 
         Returns the reconciled review plus bounded ``carried-from-intake``
-        metadata rows. A review requirement whose typed ``team_ratings``
-        arguments disagree with intake on ``requested_metric``,
-        ``ranking_direction``, ``team``, or ``season`` is dropped with a
-        typed ``RANKED_ARGUMENT_CONFLICT`` gap; intake's own disagreement on
-        a key is the same kind of gap. Conflicts suppress carries, and
-        nothing is ever inferred from request text.
+        metadata rows and typed ``ranked-argument-conflict`` rows. A review
+        requirement whose typed ``team_ratings`` arguments disagree with
+        intake on ``requested_metric``, ``ranking_direction``, ``team``, or
+        ``season`` is dropped; intake's own disagreement on a key drops it
+        the same way. Conflicts suppress carries. Conflict rows go to the
+        ledger only -- never to ``missing_subquestions``, which the intake
+        merge feeds to the planner and synthesizer as questions.
         """
         if "team_ratings" not in task.required_evidence:
-            return review, []
+            return review, [], []
         arguments_by_id = {
             requirement.id: capability_arguments_for(requirement, "team_ratings")
             for requirement in review.requirements
@@ -1294,24 +1307,14 @@ class ModelIntake(ModelStage):
         decisions = self._ranked_review_typed_decisions(task, arguments_by_id)
         reconciled: list[EvidenceRequirement] = []
         carried_rows: list[dict[str, str]] = []
-        gaps: list[str] = []
+        conflict_rows: list[dict[str, str]] = []
         for requirement in review.requirements:
             if "team_ratings" not in requirement.capability_options:
                 reconciled.append(requirement)
                 continue
             decision = decisions[requirement.id]
-            if decision["intake_conflicts"]:
-                gaps.append(
-                    "RANKED_ARGUMENT_CONFLICT: intake team_ratings requirements "
-                    f"disagree on {', '.join(decision['intake_conflicts'])}; "
-                    f"requirement '{requirement.id}' dropped, no typed source wins")
-                continue
-            if decision["review_conflicts"]:
-                gaps.append(
-                    "RANKED_ARGUMENT_CONFLICT: team_ratings requirement "
-                    f"'{requirement.id}' disagrees with intake on "
-                    f"{', '.join(decision['review_conflicts'])}; requirement "
-                    "dropped, no side wins")
+            conflict_rows.extend(decision["conflict_rows"])
+            if decision["intake_conflicts"] or decision["review_conflicts"]:
                 continue
             if decision["carries"]:
                 requirement = update_capability_arguments(
@@ -1321,9 +1324,7 @@ class ModelIntake(ModelStage):
                      "key": key, "rule": "carried-from-intake"}
                     for key in decision["carries"])
             reconciled.append(requirement)
-        missing = list(dict.fromkeys([*review.missing_subquestions, *gaps]))
-        return review.model_copy(update={
-            "requirements": reconciled, "missing_subquestions": missing}), carried_rows
+        return review.model_copy(update={"requirements": reconciled}), carried_rows, conflict_rows
 
     def _review_argument_schema(self, capability_id: str) -> dict:
         entry = self._catalog.get(capability_id)
@@ -1413,7 +1414,7 @@ class ModelIntake(ModelStage):
         ranked_arguments: dict[str, dict[str, Any]] = {}
 
         def _collect_review_metadata(wire: RequirementReviewWire) -> dict | None:
-            """Null-as-omitted drops plus carried-from-intake rows for the ledger."""
+            """Null-as-omitted drops plus ranked typed rows for the ledger."""
             nonlocal ranked_arguments
             base = self._collect_review_drops(wire)
             drops = base["null_as_omitted_drops"] if base else []
@@ -1424,10 +1425,15 @@ class ModelIntake(ModelStage):
                  "key": key, "rule": "carried-from-intake"}
                 for decision in decisions.values()
                 for key in decision["carries"]]
+            conflict_rows = [
+                row for decision in decisions.values()
+                for row in decision["conflict_rows"]]
             metadata = {"null_as_omitted_drops": drops}
             if carried_rows:
                 metadata["carried_from_intake"] = carried_rows
-            return metadata if (drops or carried_rows) else None
+            if conflict_rows:
+                metadata["ranked_argument_conflicts"] = conflict_rows
+            return metadata if (drops or carried_rows or conflict_rows) else None
 
         try:
             wire = await self._generate_as(
@@ -1489,30 +1495,18 @@ class ModelIntake(ModelStage):
                     description=f"Required intake evidence: {capability}",
                     capability_options=[capability],
                     capability_arguments=arguments))
-            typed_gaps = []
-            for requirement in requirements:
-                if "team_ratings" not in requirement.capability_options:
-                    continue
-                try:
-                    typed_arguments = capability_arguments_for(
-                        requirement, "team_ratings")
-                except ValueError:
-                    typed_arguments = {}
-                if typed_arguments.get("requested_metric") in (None, ""):
-                    typed_gaps.append(
-                        "RANKED_TYPED_ARGUMENTS_UNAVAILABLE: review providers "
-                        f"exhausted and intake requirement '{requirement.id}' "
-                        "carries no typed requested_metric; no metric inferred")
             review = RequirementReview(
                 requirements=requirements,
                 calculation_requirements=list(task.calculation_requirements),
-                missing_subquestions=typed_gaps, missing_skills=[])
+                missing_subquestions=[], missing_skills=[])
         # Typed ranked reconciliation: intake and review are both model-authored
         # typed output. A disagreement on requested_metric, ranking_direction,
-        # team, or season is a typed conflict gap (neither side overrides);
-        # a field intake set but review omitted is carried forward with
-        # carried-from-intake metadata. Nothing is inferred from request text.
-        review, _carried_rows = self._reconcile_typed_ranked_arguments(task, review)
+        # team, or season drops the requirement (neither side overrides); the
+        # conflict is recorded as typed ledger rows, never as a subquestion.
+        # A field intake set but review omitted is carried forward with
+        # carried-from-intake metadata.
+        review, _carried_rows, _conflict_rows = (
+            self._reconcile_typed_ranked_arguments(task, review))
         unknown_evidence = sorted(
             {capability for requirement in review.requirements
              for capability in requirement.capability_options}
@@ -2306,6 +2300,23 @@ def _deterministic_rank_draft(
     """
     from v2.domain.evidence import decimal_value
     from app.tools.rating_metrics import RANKING_DIRECTIONS, TEAM_RATING_METRICS
+    def _has_typed_ranked_arguments(requirement) -> bool:
+        if "team_ratings" not in requirement.capability_options:
+            return False
+        try:
+            arguments = capability_arguments_for(requirement, "team_ratings")
+        except ValueError:
+            return False
+        return bool(arguments.get("requested_metric"))
+    if ("team_ratings" in task.required_evidence
+            and not any(map(_has_typed_ranked_arguments, task.requirements))):
+        return DraftReport(
+            sections=["Team rating leader"], claims=[], calculations=[],
+            blocked_calculation_requirement_ids=[
+                item.id for item in task.calculation_requirements],
+            gaps=["Ranked team ratings could not be published: intake required "
+                  "team_ratings evidence but no requirement carries typed "
+                  "ranking arguments."])
     direction_words = {"asc": "lowest", "desc": "highest"}
     for item in evidence:
         if item.capability != "team_ratings" or not isinstance(item.rows, list) or not item.rows:
