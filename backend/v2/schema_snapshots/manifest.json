@@ -4,8 +4,8 @@
     "file_sha256": "86433786afd5223a3860d2cc84ee87650a96f16cc5f010ae76423e7243532377"
   },
   "planner.loss.json": {
-    "canonical_json_sha256": "de6602f31834fcfceccbc6cb421dc7cbded64afd0c7158b43c469dfc0f265847",
-    "file_sha256": "084638462dd60eaeb01d660001aef2d636edce1827e2fc83cb8671717491295a"
+    "canonical_json_sha256": "8dff9f113b642d3d376e3ee2c690965e91b98b6c0c5ee1e93069cad8347779b1",
+    "file_sha256": "454209c7febeecd2bd6cb8408a0947eff05a2397b268b839314c5b1379a2785b"
   },
   "planner.prompt": {
     "sha256": "0fa56d3ffc25913af940808eb67260cd548c138a6a73a2d15ce4402003a976b2"
@@ -19,8 +19,8 @@
     "file_sha256": "96bc39e61f7ab0a153b723bf1acc346595661704bf0b5443db5b4a9262f5aad7"
   },
   "requirement_review.loss.json": {
-    "canonical_json_sha256": "62f3e86c0efffdf7b21eb02fdf2bbe2d2334a9612e91b92a20bf52fb644cf3db",
-    "file_sha256": "9bb91cc7d63b4cc53a84bf435bedac6fe8f9f8346ba316756deacfd943498080"
+    "canonical_json_sha256": "a88c6943eaa27b6a9ba0dbdb6991779e4b372fb76acf901dfb88147174361fd1",
+    "file_sha256": "a08bdf1d05c524f3f4ec6fc629d1ccc2c9d282cd89e347e410349aefed33639f"
   },
   "requirement_review.prompt": {
     "sha256": "dcb92288bc32d619019b5a49360532ed026559a942b4b65fe85b4a4c8eb65d0f"

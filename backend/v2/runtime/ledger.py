@@ -170,7 +170,8 @@ def _validate_terminal_data(kind: LedgerKind, data: dict[str, Any]) -> None:
 
 def _validate_assistant_attempt(data: dict[str, Any]) -> None:
     status = data.get("status")
-    attempt_keys = {"provider_attempts"}
+    attempt_keys = {"provider_attempts", "model_requests", "repaired",
+                    "null_as_omitted_drops"}
     provider_attempts = data.get("provider_attempts", [])
     safe_attempt_keys = {"route", "provider", "model", "attempt_number",
                          "exception_type", "message_class", "latency_ms",
@@ -240,19 +241,37 @@ def _validate_assistant_attempt(data: dict[str, Any]) -> None:
         and safe_taxonomy(item)
         for item in provider_attempts)
     if status == "failed":
-        valid = (set(data) in ({"status", "error"}, {"status", "error", *attempt_keys})
+        valid = ({"status", "error"} <= set(data) <= {"status", "error", *attempt_keys}
                  and isinstance(data.get("error"), str)
                  and bool(data["error"].strip()) and attempts_valid)
     elif status == "accepted":
-        valid = (set(data) in ({"status", "output", "provider", "model", "used_fallback"},
-                              {"status", "output", "provider", "model", "used_fallback", *attempt_keys})
+        requests = data.get("model_requests")
+        requests_valid = ("model_requests" not in data or (
+            isinstance(requests, int) and not isinstance(requests, bool)
+            and requests >= 1))
+        repaired_valid = ("repaired" not in data
+                          or isinstance(data["repaired"], bool))
+        drops = data.get("null_as_omitted_drops", [])
+        drops_valid = (
+            isinstance(drops, list)
+            and all(isinstance(item, dict)
+                    and set(item) == {"route", "capability_id", "key", "rule"}
+                    and item["route"] in MODEL_ROUTES
+                    and safe_string(item["capability_id"], 64)
+                    and safe_string(item["key"], 64)
+                    and item["rule"] == "null-as-omitted"
+                    for item in drops))
+        valid = ({"status", "output", "provider", "model", "used_fallback"}
+                 <= set(data) <=
+                 {"status", "output", "provider", "model", "used_fallback", *attempt_keys}
                  and attempts_valid
                  and isinstance(data.get("output"), dict)
                  and isinstance(data.get("provider"), str)
                  and bool(data["provider"].strip())
                  and isinstance(data.get("model"), str)
                  and bool(data["model"].strip())
-                 and isinstance(data.get("used_fallback"), bool))
+                 and isinstance(data.get("used_fallback"), bool)
+                 and requests_valid and repaired_valid and drops_valid)
     else:
         raise ValueError("assistant attempt status must be accepted or failed")
     if not valid:

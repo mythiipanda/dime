@@ -106,12 +106,31 @@ class ProviderWireEntry(Closed):
  string_list_value:list[TEXT]|None=Field(max_length=32)
 class ProviderWireArguments(Closed):
  entries:list[ProviderWireEntry]|None=Field(max_length=64)
-def provider_to_source(value:ProviderWireArguments|None,target:Literal['requirement','planner']):
+def _wire_prop_nullable(prop:dict[str,Any])->bool:
+ t=prop.get('type')
+ if t=='null' or (isinstance(t,list) and 'null' in t):return True
+ for branch in prop.get('anyOf') or []:
+  if not isinstance(branch,dict):continue
+  bt=branch.get('type')
+  if bt=='null' or (isinstance(bt,list) and 'null' in bt):return True
+ return False
+def _null_is_omitted(key:str,schema:dict[str,Any])->bool:
+ prop=(schema.get('properties') or {}).get(key)
+ if not isinstance(prop,dict):return False
+ if _wire_prop_nullable(prop):return False
+ if key in (schema.get('required') or []):return False
+ return 'default' in prop
+NULL_AS_OMITTED='null-as-omitted'
+def provider_to_source(value:ProviderWireArguments|None,target:Literal['requirement','planner'],*,route:str|None=None,capability_id:str|None=None,argument_schema:dict[str,Any]|None=None,drops:list[dict[str,Any]]|None=None):
  rows=[]
  for item in (value.entries if value is not None and value.entries is not None else []):
   raw=item.model_dump();active=SLOTS[item.kind]
   if item.kind!='null' and raw[active] is None:raise ValueError('kind payload mismatch')
   if any(raw[x] is not None for x in set(SLOTS.values())-{active}):raise ValueError('inactive payload non-null')
+  if item.kind=='null' and argument_schema is not None and _null_is_omitted(item.key,argument_schema):
+   if drops is not None and route is not None and capability_id is not None:
+    drops.append({'route':route,'capability_id':capability_id,'key':item.key,'rule':NULL_AS_OMITTED})
+   continue
   rows.append({'key':item.key,'kind':item.kind,active:raw[active]})
  return (RequirementArguments if target=='requirement' else PlannerArguments).model_validate({'entries':rows})
 

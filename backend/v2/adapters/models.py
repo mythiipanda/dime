@@ -504,15 +504,15 @@ class ModelStage:
         self._requirement_review = requirement_review
         self.last_envelope: RequestEnvelope | None = None
 
-    async def _generate(self, payload: Mapping[str, Any]) -> Any:
+    async def _generate(self, payload: Mapping[str, Any], decode=None) -> Any:
         return await self._generate_as(
             prompt_name=self.prompt_name, route=self.route,
-            schema=self.schema, payload=payload,
+            schema=self.schema, payload=payload, decode=decode,
         )
 
     async def _generate_as(
         self, *, prompt_name: str, route: str, schema: type[BaseModel],
-        payload: Mapping[str, Any],
+        payload: Mapping[str, Any], decode=None,
     ) -> Any:
         prompt = provider_route_prompt(route, prompt_name)
         envelope = RequestEnvelope.freeze(
@@ -523,9 +523,11 @@ class ModelStage:
             skill_hashes=skill_hashes(list(payload.get("skills", []))),
         )
         self.last_envelope = envelope
-        return await self._model.generate(
-            schema=schema, prompt=prompt, payload=payload, envelope=envelope,
-        )
+        call = dict(schema=schema, prompt=prompt, payload=payload,
+                    envelope=envelope)
+        if decode is not None:
+            call["decode"] = decode
+        return await self._model.generate(**call)
 
 
 def capability_arguments_for(requirement, capability_id: str) -> dict[str, Any]:
@@ -1118,6 +1120,24 @@ class ModelIntake(ModelStage):
                 requirement, "team_ratings", arguments))
         return review.model_copy(update={"requirements": reconciled})
 
+    def _review_argument_schema(self, capability_id: str) -> dict:
+        entry = self._catalog.get(capability_id)
+        if not isinstance(entry, Mapping): raise ValueError("unknown capability")
+        schema = dict(entry.get("arguments", {})); schema.pop("required", None)
+        return schema
+
+    def _collect_review_drops(self, wire: RequirementReviewWire) -> dict | None:
+        drops: list[dict] = []
+        for requirement in wire.requirements or []:
+            for option in requirement.capability_argument_sets:
+                entry = self._catalog.get(option.capability_id)
+                if not isinstance(entry, Mapping): continue
+                provider_to_source(option.arguments, "requirement",
+                    route="requirement_review", capability_id=option.capability_id,
+                    argument_schema=self._review_argument_schema(option.capability_id),
+                    drops=drops)
+        return {"null_as_omitted_drops": drops} if drops else None
+
     def _validate_requirement_wire(self, wire: RequirementReviewWire) -> None:
         from jsonschema import Draft202012Validator
         if wire.requirements is None:
@@ -1126,12 +1146,13 @@ class ModelIntake(ModelStage):
             if set(requirement.capability_options) != {x.capability_id for x in requirement.capability_argument_sets}:
                 raise ValueError("capability argument sets must cover options")
             for option in requirement.capability_argument_sets:
-                entry = self._catalog.get(option.capability_id)
-                if not isinstance(entry, Mapping): raise ValueError("unknown capability")
-                schema = dict(entry.get("arguments", {})); schema.pop("required", None)
-                arguments = dict(provider_to_source(option.arguments, "requirement"))
+                schema = self._review_argument_schema(option.capability_id)
+                arguments = dict(provider_to_source(option.arguments, "requirement",
+                    route="requirement_review", capability_id=option.capability_id,
+                    argument_schema=schema))
                 errors = list(Draft202012Validator(schema).iter_errors(arguments))
                 if errors: raise ValueError(f"invalid {option.capability_id} requirement arguments: {errors[0].message}")
+                entry = self._catalog.get(option.capability_id)
                 injected = set(entry.get("dependent_entity_arguments", {}))
                 if injected & set(arguments):
                     raise ValueError("provider may not author dependent injected arguments")
@@ -1184,12 +1205,15 @@ class ModelIntake(ModelStage):
             wire = await self._generate_as(
                 prompt_name="requirement_review_v3", route="requirement_review",
                 schema=RequirementReviewWire, payload=payload,
+                decode=self._collect_review_drops,
             )
             self._validate_requirement_wire(wire)
             requirements = []
             for item in (wire.requirements or []):
                 sets = [{"capability_id": option.capability_id,
-                         "arguments": provider_to_source(option.arguments, "requirement")}
+                         "arguments": provider_to_source(option.arguments, "requirement",
+                            route="requirement_review", capability_id=option.capability_id,
+                            argument_schema=self._review_argument_schema(option.capability_id))}
                         for option in item.capability_argument_sets]
                 maps = [dict(option["arguments"]) for option in sets]
                 shared = maps[0] if maps and all(value == maps[0] for value in maps) else {}
@@ -1290,18 +1314,35 @@ class ModelPlanner(ModelStage):
     route = "planner"
     schema = PlannerOutputWire
 
+    def _planner_argument_schema(self, capability: str) -> dict:
+        entry = self._catalog.get(capability)
+        if not isinstance(entry, Mapping): raise ValueError("planner selected unknown capability")
+        schema = dict(entry.get("arguments", {}))
+        injected = set(entry.get("dependent_entity_arguments", {}))
+        if injected and isinstance(schema.get("required"), list):
+            schema["required"] = [name for name in schema["required"] if name not in injected]
+        return schema
+
+    def _collect_planner_drops(self, wire: PlannerOutputWire) -> dict | None:
+        drops: list[dict] = []
+        for node in (wire.nodes or []):
+            entry = self._catalog.get(node.capability)
+            if not isinstance(entry, Mapping): continue
+            provider_to_source(node.arguments, "planner",
+                route="planner", capability_id=node.capability,
+                argument_schema=self._planner_argument_schema(node.capability),
+                drops=drops)
+        return {"null_as_omitted_drops": drops} if drops else None
+
     async def _generate_plan(self, payload):
-        wire = await self._generate(payload)
+        wire = await self._generate(payload, decode=self._collect_planner_drops)
         from jsonschema import Draft202012Validator
         decoded = []
         for node in (wire.nodes or []):
-            arguments = provider_to_source(node.arguments, "planner")
-            entry = self._catalog.get(node.capability)
-            if not isinstance(entry, Mapping): raise ValueError("planner selected unknown capability")
-            schema = dict(entry.get("arguments", {}))
-            injected = set(entry.get("dependent_entity_arguments", {}))
-            if injected and isinstance(schema.get("required"), list):
-                schema["required"] = [name for name in schema["required"] if name not in injected]
+            schema = self._planner_argument_schema(node.capability)
+            arguments = provider_to_source(node.arguments, "planner",
+                route="planner", capability_id=node.capability,
+                argument_schema=schema)
             errors = list(Draft202012Validator(schema).iter_errors(dict(arguments)))
             if errors:
                 missing = sorted(
@@ -1310,7 +1351,7 @@ class ModelPlanner(ModelStage):
                 raise PlannerArgumentError(
                     f"invalid {node.capability} planner arguments: {errors[0].message}",
                     node_id=node.id, missing_required=missing)
-            if set(entry.get("dependent_entity_arguments", {})) & set(arguments):
+            if set(self._catalog.get(node.capability).get("dependent_entity_arguments", {})) & set(arguments):
                 raise ValueError("provider may not author dependent injected arguments")
             decoded.append((node, arguments))
         return Plan.model_validate({"nodes": [{
@@ -2354,6 +2395,8 @@ class RecordedStructuredModel:
         self._ledger = ledger
         self._turn_id = turn_id
         self._sequence = 0
+        self._request_count = 0
+        self._saw_repair = False
 
     async def generate(
         self,
@@ -2362,10 +2405,14 @@ class RecordedStructuredModel:
         prompt: str,
         payload: Mapping[str, Any],
         envelope: RequestEnvelope,
+        decode=None,
     ) -> T:
         from v2.runtime.ledger import LedgerKind
 
         self._sequence += 1
+        self._request_count += 1
+        if envelope.route == "repair":
+            self._saw_repair = True
         call_id = f"model:{self._turn_id}:{self._sequence}"
         self._ledger.append(
             LedgerKind.MODEL_REQUEST,
@@ -2396,11 +2443,8 @@ class RecordedStructuredModel:
             raise
         actual_provider = getattr(self._model, "last_provider", None)
         actual_model = getattr(self._model, "last_model", None)
-        self._ledger.append(
-            LedgerKind.ASSISTANT_ATTEMPT,
-            turn_id=self._turn_id,
-            call_id=call_id,
-            data={
+        extra = decode(result) if decode is not None else None
+        data = {
                 "status": "accepted",
                 "output": result.model_dump(mode="json"),
                 "provider": actual_provider or envelope.provider,
@@ -2411,6 +2455,15 @@ class RecordedStructuredModel:
                 ),
                 "provider_attempts": list(getattr(
                     self._model, "last_failures", [])),
-            },
+                "model_requests": self._request_count,
+                "repaired": self._saw_repair,
+            }
+        if extra:
+            data.update(extra)
+        self._ledger.append(
+            LedgerKind.ASSISTANT_ATTEMPT,
+            turn_id=self._turn_id,
+            call_id=call_id,
+            data=data,
         )
         return result
