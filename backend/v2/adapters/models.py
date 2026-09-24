@@ -493,7 +493,7 @@ class ProviderStructuredModel:
                     try:
                         self.last_request_count = int(result.usage().requests)
                     except Exception:
-                        self.last_request_count = 1
+                        self.last_request_count = None
                     self.last_promotions = self._reasoning_content_promotions(models)
                     return result.output
                 except Exception as exc:
