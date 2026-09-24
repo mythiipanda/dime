@@ -82,23 +82,30 @@ def _imported_module_code_sha256() -> str:
 _LOADED_MODULE_CODE_SHA256 = _imported_module_code_sha256()
 
 
-def _promote_reasoning_content(response: ChatCompletion) -> ChatCompletion:
-    """Normalize reasoning-first provider response shapes.
+def _promote_reasoning_content(
+    response: ChatCompletion,
+) -> tuple[ChatCompletion, list[dict[str, Any]]]:
+    """Promote reasoning_content to content when finish_reason is "stop".
 
-    Some OpenAI-compatible providers return the model's answer in
-    `reasoning_content` with an empty or missing `content` field on the
-    assistant message. Structured-output parsing only reads `content`,
-    so without normalization those responses always fail as empty output.
-    When `content` is empty/missing and `reasoning_content` is populated,
-    promote `reasoning_content` to `content` before the response is parsed.
-    Applies to every provider and every model uniformly; nothing here
-    branches on model or provider names.
+    Some OpenAI-compatible providers put the answer in `reasoning_content`
+    with empty `content`. Promotion applies only on `finish_reason ==
+    "stop"`: truncated ("length") or filtered ("content_filter") responses
+    keep their empty content so the real provider signal is preserved.
+    Generic across providers and models. Returns the response plus one
+    bounded metadata record per promoted choice (no payloads).
     """
-    for choice in response.choices:
+    promotions: list[dict[str, Any]] = []
+    for index, choice in enumerate(response.choices):
         message = choice.message
-        if not message.content and getattr(message, "reasoning_content", None):
+        if (choice.finish_reason == "stop" and not message.content
+                and getattr(message, "reasoning_content", None)):
             message.content = message.reasoning_content
-    return response
+            promotions.append({
+                "choice_index": index,
+                "finish_reason": choice.finish_reason,
+                "reasoning_content_chars": len(message.reasoning_content),
+            })
+    return response, promotions
 
 
 class _ReasoningContentCompletions(AsyncCompletions):
@@ -107,7 +114,9 @@ class _ReasoningContentCompletions(AsyncCompletions):
     async def create(self, *args: Any, **kwargs: Any) -> Any:
         response = await super().create(*args, **kwargs)
         if isinstance(response, ChatCompletion):
-            return _promote_reasoning_content(response)
+            promoted, promotions = _promote_reasoning_content(response)
+            self._client.reasoning_content_promotions.extend(promotions)
+            return promoted
         # Streaming chunks are returned untouched: reassembling a streamed
         # reasoning transcript is out of scope for the structured path.
         return response
@@ -122,12 +131,15 @@ class _ReasoningContentChat(AsyncChat):
 class ReasoningContentFallbackClient(AsyncOpenAI):
     """AsyncOpenAI that normalizes reasoning-first response shapes.
 
-    Drop-in replacement for AsyncOpenAI used by the structured-output
-    provider boundary. Every non-streaming chat completion is passed
-    through _promote_reasoning_content so an empty `content` field falls
-    back to `reasoning_content` before pydantic-ai parses the response.
-    Generic: no model-name or provider-name branching anywhere.
+    Non-streaming chat completions pass through _promote_reasoning_content
+    before pydantic-ai parses them. Promotions are recorded on
+    `reasoning_content_promotions` as bounded metadata. No model-name or
+    provider-name branching.
     """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.reasoning_content_promotions: list[dict[str, Any]] = []
 
     @cached_property
     def chat(self) -> _ReasoningContentChat:
@@ -240,6 +252,24 @@ class ProviderStructuredModel:
         self.last_model: str | None = None
         self.last_failures: list[dict[str, str]] = []
         self.last_request_count: int | None = None
+        self.last_promotions: list[dict[str, Any]] = []
+
+    @staticmethod
+    def _reasoning_content_promotions(
+        models: Sequence[tuple[ProviderName, Any]],
+    ) -> list[dict[str, Any]]:
+        """Collect promotion records from each model's fallback client.
+
+        Models without a ReasoningContentFallbackClient contribute nothing.
+        Records carry bounded metadata only, never message payloads.
+        """
+        records: list[dict[str, Any]] = []
+        for provider, model in models:
+            client = getattr(model, "client", None)
+            events = getattr(client, "reasoning_content_promotions", None) or []
+            for event in events:
+                records.append({"provider": provider, **event})
+        return records
 
     @staticmethod
     def _failure_class(exc: BaseException) -> str:
@@ -419,6 +449,7 @@ class ProviderStructuredModel:
         self.last_provider = None
         self.last_model = None
         self.last_failures = []
+        self.last_promotions = []
         user_prompt = json.dumps(payload, sort_keys=True, default=str)
         policy = ROUTE_POLICIES.get(envelope.route, _DEFAULT_ROUTE_POLICY)
         now = time.monotonic()
@@ -459,6 +490,7 @@ class ProviderStructuredModel:
                         self.last_request_count = int(result.usage().requests)
                     except Exception:
                         self.last_request_count = 1
+                    self.last_promotions = self._reasoning_content_promotions(models)
                     return result.output
                 except Exception as exc:
                     failure_class = self._failure_class(exc)
@@ -494,6 +526,7 @@ class ProviderStructuredModel:
                 "message_class": f"{envelope.route}_deadline",
                 "latency_ms": 0,
             })
+        self.last_promotions = self._reasoning_content_promotions(models)
         summary = ", ".join(
             f"{item['provider']}:{item['exception_type']}:{item['message_class']}"
             for item in self.last_failures
@@ -2496,7 +2529,9 @@ class RecordedStructuredModel:
                 call_id=call_id,
                 data={"status": "failed", "error": exception_text(exc),
                       "provider_attempts": list(getattr(
-                          self._model, "last_failures", []))},
+                          self._model, "last_failures", [])),
+                      "reasoning_content_promotions": list(getattr(
+                          self._model, "last_promotions", []))},
             )
             raise
         actual_provider = getattr(self._model, "last_provider", None)
@@ -2514,6 +2549,8 @@ class RecordedStructuredModel:
                 ),
                 "provider_attempts": list(getattr(
                     self._model, "last_failures", [])),
+                "reasoning_content_promotions": list(getattr(
+                    self._model, "last_promotions", [])),
             }
         if request_count is not None:
             data["model_requests"] = request_count

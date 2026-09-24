@@ -171,8 +171,9 @@ def _validate_terminal_data(kind: LedgerKind, data: dict[str, Any]) -> None:
 def _validate_assistant_attempt(data: dict[str, Any]) -> None:
     status = data.get("status")
     attempt_keys = {"provider_attempts", "model_requests", "repaired",
-                    "null_as_omitted_drops"}
+                    "null_as_omitted_drops", "reasoning_content_promotions"}
     provider_attempts = data.get("provider_attempts", [])
+    promotions = data.get("reasoning_content_promotions", [])
     safe_attempt_keys = {"route", "provider", "model", "attempt_number",
                          "exception_type", "message_class", "latency_ms",
                          "failure_top_class", "failure_class_chain",
@@ -240,10 +241,27 @@ def _validate_assistant_attempt(data: dict[str, Any]) -> None:
         and item["latency_ms"] >= 0
         and safe_taxonomy(item)
         for item in provider_attempts)
+    safe_promotion_keys = {"provider", "choice_index", "finish_reason",
+                           "reasoning_content_chars"}
+    promotions_valid = isinstance(promotions, list) and all(
+        isinstance(item, dict)
+        and set(item) <= safe_promotion_keys
+        and safe_string(item.get("provider"))
+        and isinstance(item.get("choice_index"), int)
+        and not isinstance(item.get("choice_index"), bool)
+        and item["choice_index"] >= 0
+        and item.get("finish_reason") == "stop"
+        and isinstance(item.get("reasoning_content_chars"), int)
+        and not isinstance(item.get("reasoning_content_chars"), bool)
+        and item["reasoning_content_chars"] >= 0
+        for item in promotions)
+    required_failed = {"status", "error"}
+    required_accepted = {"status", "output", "provider", "model", "used_fallback"}
     if status == "failed":
-        valid = ({"status", "error"} <= set(data) <= {"status", "error", *attempt_keys}
+        valid = (required_failed <= set(data) <= {*required_failed, *attempt_keys}
                  and isinstance(data.get("error"), str)
-                 and bool(data["error"].strip()) and attempts_valid)
+                 and bool(data["error"].strip()) and attempts_valid
+                 and promotions_valid)
     elif status == "accepted":
         requests = data.get("model_requests")
         requests_valid = ("model_requests" not in data or (
@@ -261,10 +279,8 @@ def _validate_assistant_attempt(data: dict[str, Any]) -> None:
                     and safe_string(item["key"], 64)
                     and item["rule"] == "null-as-omitted"
                     for item in drops))
-        valid = ({"status", "output", "provider", "model", "used_fallback"}
-                 <= set(data) <=
-                 {"status", "output", "provider", "model", "used_fallback", *attempt_keys}
-                 and attempts_valid
+        valid = (required_accepted <= set(data) <= {*required_accepted, *attempt_keys}
+                 and attempts_valid and promotions_valid
                  and isinstance(data.get("output"), dict)
                  and isinstance(data.get("provider"), str)
                  and bool(data["provider"].strip())
