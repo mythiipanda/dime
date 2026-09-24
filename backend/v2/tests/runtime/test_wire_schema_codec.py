@@ -131,7 +131,7 @@ async def test_planner_null_drop_lands_in_accepted_attempt_metadata():
  assert attempt['status']=='accepted'
  assert attempt['null_as_omitted_drops']==[
   {'route':'planner','capability_id':'cap','key':'opt_default','rule':'null-as-omitted'}]
- assert attempt['model_requests']==1 and attempt['repaired'] is False
+ assert 'model_requests' not in attempt and 'repaired' not in attempt
 
 @pytest.mark.anyio
 async def test_review_null_drop_lands_in_accepted_attempt_metadata():
@@ -161,13 +161,32 @@ async def test_accepted_attempt_records_model_requests_and_repaired():
  class M:
   last_provider='p';last_model='m';last_failures=[];last_request_count=None
   async def generate(self,**call):return TaskSpec(goal='ok',mode='quick',deliverable='x')
+ class M2(M):
+  async def generate(self,**call):
+   self.last_request_count=3
+   return await super().generate(**call)
  ledger=RunLedger('run');model=RecordedStructuredModel(M(),ledger,turn_id='t')
  envelope=RequestEnvelope.freeze(provider='p',model='m',route='intake',prompt='p',
   context={},tool_schemas={},planner_version='v2')
  await model.generate(schema=TaskSpec,prompt='p',payload={},envelope=envelope)
  first=ledger.entries[-1].data
- assert first['model_requests']==1 and first['repaired'] is False
- model._model.last_request_count=3
- await model.generate(schema=TaskSpec,prompt='p',payload={},envelope=envelope)
+ assert 'model_requests' not in first and 'repaired' not in first
+ model2=RecordedStructuredModel(M2(),ledger,turn_id='t2')
+ await model2.generate(schema=TaskSpec,prompt='p',payload={},envelope=envelope)
  second=ledger.entries[-1].data
  assert second['model_requests']==3 and second['repaired'] is True
+
+@pytest.mark.anyio
+async def test_generate_resets_request_count_and_omits_when_no_usage():
+ from v2.adapters.models import RecordedStructuredModel
+ from v2.contracts import TaskSpec
+ from v2.runtime import RequestEnvelope,RunLedger
+ class M:
+  last_provider='p';last_model='m';last_failures=[];last_request_count=5
+  async def generate(self,**call):return TaskSpec(goal='ok',mode='quick',deliverable='x')
+ ledger=RunLedger('run');model=RecordedStructuredModel(M(),ledger,turn_id='t')
+ envelope=RequestEnvelope.freeze(provider='p',model='m',route='intake',prompt='p',
+  context={},tool_schemas={},planner_version='v2')
+ await model.generate(schema=TaskSpec,prompt='p',payload={},envelope=envelope)
+ attempt=ledger.entries[-1].data
+ assert 'model_requests' not in attempt and 'repaired' not in attempt

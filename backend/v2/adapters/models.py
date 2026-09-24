@@ -2414,6 +2414,8 @@ class RecordedStructuredModel:
 
         self._sequence += 1
         call_id = f"model:{self._turn_id}:{self._sequence}"
+        if hasattr(self._model, "last_request_count"):
+            self._model.last_request_count = None
         self._ledger.append(
             LedgerKind.MODEL_REQUEST,
             turn_id=self._turn_id,
@@ -2444,7 +2446,7 @@ class RecordedStructuredModel:
         actual_provider = getattr(self._model, "last_provider", None)
         actual_model = getattr(self._model, "last_model", None)
         extra = decode(result) if decode is not None else None
-        request_count = getattr(self._model, "last_request_count", None) or 1
+        request_count = getattr(self._model, "last_request_count", None)
         data = {
                 "status": "accepted",
                 "output": result.model_dump(mode="json"),
@@ -2456,9 +2458,10 @@ class RecordedStructuredModel:
                 ),
                 "provider_attempts": list(getattr(
                     self._model, "last_failures", [])),
-                "model_requests": request_count,
-                "repaired": request_count > 1,
             }
+        if request_count is not None:
+            data["model_requests"] = request_count
+            data["repaired"] = request_count > 1
         if extra:
             data.update(extra)
         self._ledger.append(
