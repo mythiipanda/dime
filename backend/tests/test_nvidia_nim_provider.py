@@ -34,3 +34,10 @@ def test_nvidia_client_uses_nim_endpoint(monkeypatch):
     assert client is not None
     assert client.model_name == NVIDIA_NIM_DEFAULT
     assert str(client.openai_api_base).rstrip("/") == NVIDIA_NIM_BASE_URL
+
+
+def test_deepseek_flash_is_routable_on_nim(monkeypatch):
+    monkeypatch.setattr(settings, "nvidia_nim_api_key", "key")
+    from app.providers import is_free_model
+    assert resolve_model_id("nvidia:deepseek-ai/deepseek-v4.1-flash") == ("nvidia", "deepseek-ai/deepseek-v4.1-flash")
+    assert is_free_model("nvidia", "deepseek-ai/deepseek-v4.1-flash") is True

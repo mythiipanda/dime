@@ -10,9 +10,13 @@ import marshal
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from decimal import Decimal
+from functools import cached_property
 from typing import Any, Protocol, TypeVar
 
 from openai import AsyncOpenAI, APITimeoutError, APIConnectionError, RateLimitError
+from openai.resources.chat import AsyncChat
+from openai.resources.chat.completions import AsyncCompletions
+from openai.types.chat import ChatCompletion
 from pydantic import BaseModel, ValidationError
 from pydantic_ai import Agent, NativeOutput
 from pydantic_ai.exceptions import ContentFilterError, ModelHTTPError, UnexpectedModelBehavior
@@ -76,6 +80,58 @@ def _imported_module_code_sha256() -> str:
 
 
 _LOADED_MODULE_CODE_SHA256 = _imported_module_code_sha256()
+
+
+def _promote_reasoning_content(response: ChatCompletion) -> ChatCompletion:
+    """Normalize reasoning-first provider response shapes.
+
+    Some OpenAI-compatible providers return the model's answer in
+    `reasoning_content` with an empty or missing `content` field on the
+    assistant message. Structured-output parsing only reads `content`,
+    so without normalization those responses always fail as empty output.
+    When `content` is empty/missing and `reasoning_content` is populated,
+    promote `reasoning_content` to `content` before the response is parsed.
+    Applies to every provider and every model uniformly; nothing here
+    branches on model or provider names.
+    """
+    for choice in response.choices:
+        message = choice.message
+        if not message.content and getattr(message, "reasoning_content", None):
+            message.content = message.reasoning_content
+    return response
+
+
+class _ReasoningContentCompletions(AsyncCompletions):
+    """chat.completions resource with the reasoning_content fallback."""
+
+    async def create(self, *args: Any, **kwargs: Any) -> Any:
+        response = await super().create(*args, **kwargs)
+        if isinstance(response, ChatCompletion):
+            return _promote_reasoning_content(response)
+        # Streaming chunks are returned untouched: reassembling a streamed
+        # reasoning transcript is out of scope for the structured path.
+        return response
+
+
+class _ReasoningContentChat(AsyncChat):
+    @cached_property
+    def completions(self) -> _ReasoningContentCompletions:
+        return _ReasoningContentCompletions(self._client)
+
+
+class ReasoningContentFallbackClient(AsyncOpenAI):
+    """AsyncOpenAI that normalizes reasoning-first response shapes.
+
+    Drop-in replacement for AsyncOpenAI used by the structured-output
+    provider boundary. Every non-streaming chat completion is passed
+    through _promote_reasoning_content so an empty `content` field falls
+    back to `reasoning_content` before pydantic-ai parses the response.
+    Generic: no model-name or provider-name branching anywhere.
+    """
+
+    @cached_property
+    def chat(self) -> _ReasoningContentChat:
+        return _ReasoningContentChat(self)
 
 
 class StructuredModel(Protocol):
@@ -322,7 +378,7 @@ class ProviderStructuredModel:
                 "HTTP-Referer": "https://github.com/mythiipanda/dime",
                 "X-Title": "Dime NBA Analyst",
             } if provider == "openrouter" else None)
-            client = AsyncOpenAI(
+            client = ReasoningContentFallbackClient(
                 base_url=base_url,
                 api_key=api_key,
                 timeout=settings.llm_timeout_s,
