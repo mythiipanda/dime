@@ -1143,6 +1143,65 @@ class ModelIntake(ModelStage):
             conflicts.append("season")
         return conflicts
 
+    def _apply_ranked_carries_to_wire(
+        self, task: TaskSpec, wire: RequirementReviewWire,
+    ) -> RequirementReviewWire:
+        """Apply carried-from-intake keys onto the provider wire before validation.
+
+        Wire validation runs on the wire, so a review omission that intake
+        typed must be filled before the deterministic verifier rejects it
+        with RANKED_DIRECTION_UNSPECIFIED. Requirements in typed conflict
+        are left untouched; they become typed gaps at reconciliation.
+        """
+        from v2.arguments import ProviderWireArguments, encode_argument, SLOTS
+        if wire.requirements is None or "team_ratings" not in self._catalog:
+            return wire
+        intake_typed = self._intake_typed_ranked_arguments(task)
+        if not intake_typed:
+            return wire
+        task_season = task.season.value if task.season else None
+        schema = self._review_argument_schema("team_ratings")
+        properties = schema.get("properties", {})
+        slot_names = list(dict.fromkeys(SLOTS.values()))
+
+        def wire_entry(key: str, value: Any) -> dict[str, Any]:
+            row = encode_argument(key, value, properties.get(key, {}))
+            active = "value" if row["kind"] == "null" else f"{row['kind']}_value"
+            slots = {name: None for name in slot_names}
+            slots[active] = row[active]
+            return {"key": key, "kind": row["kind"], **slots}
+
+        carried_requirements = []
+        for requirement in wire.requirements:
+            if "team_ratings" not in requirement.capability_options:
+                carried_requirements.append(requirement)
+                continue
+            carried_sets = []
+            for option in requirement.capability_argument_sets:
+                if option.capability_id != "team_ratings":
+                    carried_sets.append(option)
+                    continue
+                review_arguments = dict(provider_to_source(
+                    option.arguments, "requirement",
+                    route="requirement_review", capability_id="team_ratings",
+                    argument_schema=schema))
+                carried = {}
+                if not self._ranked_typed_conflicts(
+                        review_arguments, intake_typed, task_season):
+                    carried = self._ranked_typed_carries(
+                        review_arguments, intake_typed)
+                if not carried:
+                    carried_sets.append(option)
+                    continue
+                values = {**review_arguments, **carried}
+                carried_sets.append(option.model_copy(update={
+                    "arguments": ProviderWireArguments.model_validate({
+                        "entries": [wire_entry(key, value)
+                                    for key, value in values.items()]})}))
+            carried_requirements.append(requirement.model_copy(
+                update={"capability_argument_sets": carried_sets}))
+        return wire.model_copy(update={"requirements": carried_requirements})
+
     def _reconcile_typed_ranked_arguments(
         self, task: TaskSpec, review: RequirementReview,
     ) -> tuple[RequirementReview, list[dict[str, str]]]:
@@ -1151,11 +1210,11 @@ class ModelIntake(ModelStage):
         Returns the reconciled review plus bounded ``carried-from-intake``
         metadata rows. A review requirement whose typed ``team_ratings``
         arguments disagree with intake on ``requested_metric``,
-        ``ranking_direction``, ``team``, or ``season`` is dropped as a typed
-        conflict gap: neither side overrides the other. A field intake set
-        but review omitted is carried forward and logged as
-        ``{route, capability_id, key, rule: "carried-from-intake"}``. Nothing
-        is ever inferred from request text.
+        ``ranking_direction``, ``team``, or ``season`` is dropped and a typed
+        ``RANKED_ARGUMENT_CONFLICT`` gap is recorded: neither side overrides
+        the other. A field intake set but review omitted is carried forward
+        and logged as ``{route, capability_id, key, rule: "carried-from-intake"}``.
+        Nothing is ever inferred from request text.
         """
         if "team_ratings" not in task.required_evidence:
             return review, []
@@ -1163,15 +1222,19 @@ class ModelIntake(ModelStage):
         task_season = task.season.value if task.season else None
         reconciled: list[EvidenceRequirement] = []
         carried_rows: list[dict[str, str]] = []
+        gaps: list[str] = []
         for requirement in review.requirements:
             if "team_ratings" not in requirement.capability_options:
                 reconciled.append(requirement)
                 continue
             review_arguments = capability_arguments_for(requirement, "team_ratings")
-            if self._ranked_typed_conflicts(
-                    review_arguments, intake_typed, task_season):
-                # Typed conflict gap: drop the requirement; required_evidence
-                # keeps team_ratings so the gap is visible downstream.
+            conflicts = self._ranked_typed_conflicts(
+                review_arguments, intake_typed, task_season)
+            if conflicts:
+                gaps.append(
+                    "RANKED_ARGUMENT_CONFLICT: team_ratings requirement "
+                    f"'{requirement.id}' disagrees with intake on "
+                    f"{', '.join(conflicts)}; requirement dropped, no side wins")
                 continue
             carried_keys = self._ranked_typed_carries(review_arguments, intake_typed)
             if carried_keys:
@@ -1182,7 +1245,9 @@ class ModelIntake(ModelStage):
                      "key": key, "rule": "carried-from-intake"}
                     for key in carried_keys)
             reconciled.append(requirement)
-        return review.model_copy(update={"requirements": reconciled}), carried_rows
+        missing = list(dict.fromkeys([*review.missing_subquestions, *gaps]))
+        return review.model_copy(update={
+            "requirements": reconciled, "missing_subquestions": missing}), carried_rows
 
     def _review_argument_schema(self, capability_id: str) -> dict:
         entry = self._catalog.get(capability_id)
@@ -1313,6 +1378,9 @@ class ModelIntake(ModelStage):
                 schema=RequirementReviewWire, payload=payload,
                 decode=_collect_review_metadata,
             )
+            # Carries apply before wire validation: a review omission that
+            # intake typed must not fail the deterministic verifier.
+            wire = self._apply_ranked_carries_to_wire(task, wire)
             self._validate_requirement_wire(wire)
             requirements = []
             for item in (wire.requirements or []):
@@ -2158,31 +2226,31 @@ def _deterministic_player_comparison_draft(
 def _deterministic_rank_draft(
     task: TaskSpec, evidence: Sequence[EvidenceEnvelope],
 ) -> DraftReport | None:
-    """Project one typed team-rating extremum from the requested metric only."""
+    """Project one typed team-rating extremum from the requested metric only.
+
+    Metric labels and ranking directions come from rating_metrics, the
+    single source of truth. A calculation requirement is eligible only when
+    it declares the requested metric in its typed ``metric_ids``; prose
+    descriptions are never parsed and no direction is guessed from a metric.
+    """
     from v2.domain.evidence import decimal_value
-    labels = {"DEF_RATING": "defensive rating",
-              "TS_PCT": "true shooting percentage",
-              "TM_TOV_PCT": "turnover percentage"}
-    metric_terms = {
-        "DEF_RATING": ("defensive rating", "def rating", "def_rating"),
-        "TS_PCT": ("true shooting percentage", "true shooting", "ts%", "ts_pct"),
-        "TM_TOV_PCT": ("turnover percentage", "turnover rate", "tm_tov_pct"),
-    }
-    directions = {"asc": "lowest", "desc": "highest"}
+    from app.tools.rating_metrics import RANKING_DIRECTIONS, TEAM_RATING_METRICS
+    direction_words = {"asc": "lowest", "desc": "highest"}
     for item in evidence:
         if item.capability != "team_ratings" or not isinstance(item.rows, list) or not item.rows:
             continue
         metric = item.metric_definitions.get("__requested_metric__")
-        if metric not in labels:
+        if metric not in TEAM_RATING_METRICS:
             continue
+        label = TEAM_RATING_METRICS[metric]
         owner = next((requirement for requirement in task.requirements
                       if "team_ratings" in requirement.capability_options
                       and capability_arguments_for(requirement, "team_ratings").get("requested_metric") == metric), None)
         if owner is None:
             continue
         direction = capability_arguments_for(owner, "team_ratings").get("ranking_direction")
-        direction = direction if direction in directions else (
-            "asc" if metric in {"DEF_RATING", "TM_TOV_PCT"} else "desc")
+        if direction not in RANKING_DIRECTIONS:
+            continue
         numeric = []
         for row_index, candidate in enumerate(item.rows):
             value = decimal_value(candidate.get(metric))
@@ -2196,25 +2264,12 @@ def _deterministic_rank_draft(
         winners = [(index, value, team) for index, value, team in numeric if value == extreme]
 
         # Calculation requirements are not typed to a subject. If the task
-        # carries any team entity, fail closed: prose cannot prove that an
+        # carries any team entity, fail closed: nothing typed proves the
         # extremum request is global rather than scoped to that team.
         has_team_subject = any(entity.type == "team" for entity in task.entities)
         eligible, blocked = [], []
         for requirement in task.calculation_requirements:
-            text = " ".join(requirement.description.casefold().split())
-            names_different_metric = any(
-                any(term in text for term in terms)
-                for other, terms in metric_terms.items() if other != metric)
-            names_metric = any(term in text for term in metric_terms[metric])
-            asks_low = any(token in text for token in ("lowest", "minimum", " min "))
-            asks_high = any(token in text for token in ("highest", "maximum", " max "))
-            asks_leader = ("leader" in text or "rank first" in text or "rank #1" in text)
-            conflicting = asks_low and asks_high
-            agrees = ((direction == "asc" and asks_low and not asks_high)
-                      or (direction == "desc" and asks_high and not asks_low)
-                      or (asks_leader and not asks_low and not asks_high))
-            if (not has_team_subject and names_metric and agrees
-                    and not conflicting and not names_different_metric):
+            if not has_team_subject and metric in set(requirement.metric_ids or []):
                 eligible.append(requirement)
             else:
                 blocked.append(requirement.id)
@@ -2225,7 +2280,7 @@ def _deterministic_rank_draft(
             return DraftReport(
                 sections=["Team rating leader"], claims=[], calculations=[],
                 blocked_calculation_requirement_ids=[item.id for item in task.calculation_requirements],
-                gaps=[f"The requested {labels[metric]} extremum is tied across {len(winners)} teams."])
+                gaps=[f"The requested {label} extremum is tied across {len(winners)} teams."])
 
         winner_index, value, team = winners[0]
         inputs = [{"evidence_id": item.evidence_id, "path": f"rows[{row_index}].{metric}"}
@@ -2242,13 +2297,13 @@ def _deterministic_rank_draft(
         return DraftReport(
             sections=["Team rating leader"],
             claims=[Claim(
-                text=(f"{team} had the {directions[direction]} {labels[metric]} "
+                text=(f"{team} had the {direction_words[direction]} {label} "
                       f"in {item.season or 'the selected season'}: {value}."),
                 kind="derived" if calculation_id else "observed",
                 evidence_ids=[item.evidence_id], calculation_id=calculation_id)],
             calculations=calculations,
             blocked_calculation_requirement_ids=blocked,
-            gaps=(["Some requested calculations do not match the admitted metric and direction."]
+            gaps=(["Some requested calculations do not declare the requested metric in their metric_ids."]
                   if blocked else []))
     return None
 

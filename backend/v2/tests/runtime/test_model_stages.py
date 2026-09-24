@@ -13,6 +13,7 @@ from v2.adapters.models import (
     ModelSemanticVerifier,
     ModelSynthesizer,
     capability_arguments_for,
+    provider_to_source,
 )
 from v2.contracts import EvidenceEnvelope, TaskSpec, PlanNode, RequirementReview
 from v2.arguments import PlannerOutputWire, RequirementReviewWire, SLOTS
@@ -2447,7 +2448,8 @@ async def test_team_rank_deterministic_draft_satisfies_rank_calculation_requirem
         requirements=[{"id":"metric","description":"def rating", "capability_options":["team_ratings"],
             "capability_arguments":{"requested_metric":"DEF_RATING","ranking_direction":"asc"}}],
         calculation_requirements=[{"id":"lowest_def_rating_lookup",
-            "description":"Identify the team with the minimum defensive rating and extract its value."}])
+            "description":"Identify the team with the minimum defensive rating and extract its value.",
+            "metric_ids":["DEF_RATING"]}])
     ev = EvidenceEnvelope(evidence_id="ratings", capability="team_ratings", source="fixture",
         observed_at=datetime.now(UTC), season="2025-26", rows=[
             {"TEAM_NAME":"Oklahoma City Thunder","DEF_RATING":106.5},
@@ -2466,22 +2468,22 @@ async def test_team_rank_deterministic_draft_satisfies_rank_calculation_requirem
     assert draft.blocked_calculation_requirement_ids == []
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("rows,direction,description,expected_team,expected_subject,blocked", [
-    ([{"TEAM_NAME":"Detroit Pistons","DEF_RATING":108.9}, {"TEAM_NAME":"Oklahoma City Thunder","DEF_RATING":106.5}], "asc", "Identify the team with the minimum defensive rating.", "Oklahoma City Thunder", 1, False),
-    ([{"TEAM_NAME":"Null Team","DEF_RATING":None}, {"TEAM_NAME":"Oklahoma City Thunder","DEF_RATING":106.5}, {"TEAM_NAME":"Detroit Pistons","DEF_RATING":108.9}], "asc", "Identify the team with the lowest defensive rating.", "Oklahoma City Thunder", 0, False),
-    ([{"TEAM_NAME":"Low","TS_PCT":.55}, {"TEAM_NAME":"High","TS_PCT":.61}], "desc", "Identify the true shooting percentage leader.", "High", 1, False),
-    ([{"TEAM_NAME":"Low","DEF_RATING":106.5}, {"TEAM_NAME":"High","DEF_RATING":108.9}], "asc", "Identify the team with the maximum defensive rating.", "Low", None, True),
-    ([{"TEAM_NAME":"Low","DEF_RATING":106.5}, {"TEAM_NAME":"High","DEF_RATING":108.9}], "asc", "Identify the team average salary.", "Low", None, True),
-    ([{"TEAM_NAME":"Low","DEF_RATING":106.5}, {"TEAM_NAME":"Detroit Pistons","DEF_RATING":108.9}], "asc", "What rank is Detroit by defensive rating?", "Low", None, True),
+@pytest.mark.parametrize("rows,direction,description,metric_ids,expected_team,expected_subject,blocked", [
+    ([{"TEAM_NAME":"Detroit Pistons","DEF_RATING":108.9}, {"TEAM_NAME":"Oklahoma City Thunder","DEF_RATING":106.5}], "asc", "Identify the team with the minimum defensive rating.", ["DEF_RATING"], "Oklahoma City Thunder", 1, False),
+    ([{"TEAM_NAME":"Null Team","DEF_RATING":None}, {"TEAM_NAME":"Oklahoma City Thunder","DEF_RATING":106.5}, {"TEAM_NAME":"Detroit Pistons","DEF_RATING":108.9}], "asc", "Identify the team with the lowest defensive rating.", ["DEF_RATING"], "Oklahoma City Thunder", 0, False),
+    ([{"TEAM_NAME":"Low","TS_PCT":.55}, {"TEAM_NAME":"High","TS_PCT":.61}], "desc", "Identify the true shooting percentage leader.", ["TS_PCT"], "High", 1, False),
+    ([{"TEAM_NAME":"Low","DEF_RATING":106.5}, {"TEAM_NAME":"High","DEF_RATING":108.9}], "asc", "Identify the team with the maximum defensive rating.", ["OFF_RATING"], "Low", None, True),
+    ([{"TEAM_NAME":"Low","DEF_RATING":106.5}, {"TEAM_NAME":"High","DEF_RATING":108.9}], "asc", "Identify the team average salary.", [], "Low", None, True),
+    ([{"TEAM_NAME":"Low","DEF_RATING":106.5}, {"TEAM_NAME":"Detroit Pistons","DEF_RATING":108.9}], "asc", "What rank is Detroit by defensive rating?", [], "Low", None, True),
 ])
-async def test_team_rank_calculation_adversarial(rows,direction,description,expected_team,expected_subject,blocked):
+async def test_team_rank_calculation_adversarial(rows,direction,description,metric_ids,expected_team,expected_subject,blocked):
     from v2.adapters.models import ModelSynthesizer
     from v2.contracts import EvidenceEnvelope
     metric = "TS_PCT" if any("TS_PCT" in row for row in rows) else "DEF_RATING"
     task = TaskSpec(goal="rating leader", mode="quick", deliverable="team and value",
         requirements=[{"id":"metric","description":"rating", "capability_options":["team_ratings"],
             "capability_arguments":{"requested_metric":metric,"ranking_direction":direction}}],
-        calculation_requirements=[{"id":"calc", "description":description}])
+        calculation_requirements=[{"id":"calc", "description":description, "metric_ids":metric_ids}])
     ev = EvidenceEnvelope(evidence_id="ratings", capability="team_ratings", source="fixture",
         observed_at=datetime.now(UTC), season="2025-26", rows=rows,
         metric_definitions={"__requested_metric__":metric})
@@ -2496,16 +2498,16 @@ async def test_team_rank_calculation_adversarial(rows,direction,description,expe
         assert draft.claims[0].calculation_id == draft.calculations[0].calculation_id
 
 @pytest.mark.anyio
-async def test_team_rank_conflicting_requirements_only_matching_direction_is_owned():
+async def test_team_rank_typed_metric_ids_own_ranked_calculations():
     from v2.adapters.models import ModelSynthesizer
     from v2.contracts import EvidenceEnvelope
     task=TaskSpec(goal="lowest defense",mode="quick",deliverable="team",
         requirements=[{"id":"metric","description":"defense","capability_options":["team_ratings"],"capability_arguments":{"requested_metric":"DEF_RATING","ranking_direction":"asc"}}],
-        calculation_requirements=[{"id":"low","description":"minimum defensive rating"},{"id":"high","description":"maximum defensive rating"}])
+        calculation_requirements=[{"id":"low","description":"minimum defensive rating","metric_ids":["DEF_RATING"]},
+                                  {"id":"high","description":"maximum defensive rating","metric_ids":["DEF_RATING"]}])
     ev=EvidenceEnvelope(evidence_id="r",capability="team_ratings",source="fixture",observed_at=datetime.now(UTC),season="2025-26",rows=[{"TEAM_NAME":"High","DEF_RATING":110},{"TEAM_NAME":"Low","DEF_RATING":100}],metric_definitions={"__requested_metric__":"DEF_RATING"})
     draft=await ModelSynthesizer(StubModel([]),provider="stub",model_name="stub").synthesize(task,[ev])
-    assert [c.requirement_id for c in draft.calculations]==["low"]
-    assert draft.blocked_calculation_requirement_ids==["high"]
+    assert [c.requirement_id for c in draft.calculations]==["low","high"]
     assert draft.calculations[0].subject_input==1
 
 @pytest.mark.anyio
@@ -2549,7 +2551,7 @@ async def test_team_rank_eligible_unsorted_draft_passes_mechanical_verifier():
     from v2.runtime.verifier import verify_mechanical
     task=TaskSpec(goal="lowest defense",mode="quick",deliverable="team and value",
         requirements=[{"id":"metric","description":"full defensive rating board","capability_options":["team_ratings"],"capability_arguments":{"requested_metric":"DEF_RATING","ranking_direction":"asc"}}],
-        calculation_requirements=[{"id":"low","description":"minimum defensive rating"}])
+        calculation_requirements=[{"id":"low","description":"minimum defensive rating","metric_ids":["DEF_RATING"]}])
     ev=EvidenceEnvelope(evidence_id="r",capability="team_ratings",source="fixture",observed_at=datetime.now(UTC),season="2025-26",qualification="all teams",coverage="full board",rows=[{"TEAM_NAME":"Detroit Pistons","DEF_RATING":108.9},{"TEAM_NAME":"Oklahoma City Thunder","DEF_RATING":106.5},{"TEAM_NAME":"San Antonio Spurs","DEF_RATING":110.4}],metric_definitions={"__requested_metric__":"DEF_RATING"})
     draft=await ModelSynthesizer(StubModel([]),provider="stub",model_name="stub").synthesize(task,[ev])
     calculations=[Calculation.model_validate({k:v for k,v in item.model_dump().items() if k!="requirement_id"}) for item in draft.calculations]
@@ -3107,6 +3109,10 @@ async def test_ranked_intake_review_conflict_is_typed_gap():
                                  "team": "", "season": "2025-26"}}]})
     reconciled, _ = intake._reconcile_typed_ranked_arguments(task, review)
     assert reconciled.requirements == []
+    assert reconciled.missing_subquestions == [
+        "RANKED_ARGUMENT_CONFLICT: team_ratings requirement 'rank' disagrees "
+        "with intake on requested_metric, ranking_direction; requirement "
+        "dropped, no side wins"]
 
 @pytest.mark.anyio
 async def test_ranked_intake_review_season_conflict_is_typed_gap():
@@ -3120,6 +3126,9 @@ async def test_ranked_intake_review_season_conflict_is_typed_gap():
                                  "team": "", "season": "2024-25"}}]})
     reconciled, _ = intake._reconcile_typed_ranked_arguments(task, review)
     assert reconciled.requirements == []
+    assert reconciled.missing_subquestions == [
+        "RANKED_ARGUMENT_CONFLICT: team_ratings requirement 'rank' disagrees "
+        "with intake on season; requirement dropped, no side wins"]
 
 @pytest.mark.anyio
 async def test_ranked_carried_from_intake_applies_and_logs_metadata():
@@ -3140,6 +3149,128 @@ async def test_ranked_carried_from_intake_applies_and_logs_metadata():
     assert all(r["rule"] == "carried-from-intake" and
                r["route"] == "requirement_review" and
                r["capability_id"] == "team_ratings" for r in rows)
+
+@pytest.mark.anyio
+async def test_ranked_carries_apply_before_wire_validation():
+    intake = _review_intake(None)
+    task = _typed_ranked_task(metric="DEF_RATING", direction="asc")
+    wire = RequirementReviewWire.model_validate(_ranked_wire_entries(
+        {"requested_metric": "DEF_RATING", "ranking_direction": "",
+         "team": "", "season": "2025-26"}))
+    with pytest.raises(ValueError, match="RANKED_DIRECTION_UNSPECIFIED"):
+        intake._validate_requirement_wire(wire)
+    carried = intake._apply_ranked_carries_to_wire(task, wire)
+    option = carried.requirements[0].capability_argument_sets[0]
+    arguments = dict(provider_to_source(
+        option.arguments, "requirement",
+        route="requirement_review", capability_id="team_ratings",
+        argument_schema=intake._review_argument_schema("team_ratings")))
+    assert arguments["requested_metric"] == "DEF_RATING"
+    assert arguments["ranking_direction"] == "asc"
+    intake._validate_requirement_wire(carried)
+
+@pytest.mark.anyio
+async def test_ranked_carries_do_not_apply_on_typed_conflict():
+    intake = _review_intake(None)
+    task = _typed_ranked_task(metric="DEF_RATING", direction="asc")
+    wire = RequirementReviewWire.model_validate(_ranked_wire_entries(
+        {"requested_metric": "OFF_RATING", "ranking_direction": "",
+         "team": "", "season": "2025-26"}))
+    carried = intake._apply_ranked_carries_to_wire(task, wire)
+    option = carried.requirements[0].capability_argument_sets[0]
+    arguments = dict(provider_to_source(
+        option.arguments, "requirement",
+        route="requirement_review", capability_id="team_ratings",
+        argument_schema=intake._review_argument_schema("team_ratings")))
+    assert arguments["requested_metric"] == "OFF_RATING"
+    assert arguments["ranking_direction"] == ""
+
+@pytest.mark.anyio
+async def test_ranked_review_carries_omission_single_shot():
+    model = StubModel([{
+        "requirements": [{
+            "id": "rank", "description": "best defense",
+            "capability_options": ["team_ratings"],
+            "capability_argument_sets": [{
+                "capability_id": "team_ratings",
+                "arguments": {"requested_metric": "DEF_RATING",
+                              "ranking_direction": "", "team": "",
+                              "season": "2025-26"}}],
+            "metric_ids": None, "requested_outputs": None}],
+        "calculation_requirements": None,
+        "missing_subquestions": None, "missing_skills": None}])
+    intake = ModelIntake(model, provider="stub", model_name="stub",
+                         capability_catalog=_typed_catalog())
+    task = _typed_ranked_task(metric="DEF_RATING", direction="asc")
+    review = await intake._review_requirements("who has the best defense", task)
+    assert len(model.calls) == 1
+    arguments = capability_arguments_for(review.requirements[0], "team_ratings")
+    assert arguments["requested_metric"] == "DEF_RATING"
+    assert arguments["ranking_direction"] == "asc"
+
+@pytest.mark.anyio
+async def test_ranked_prose_does_not_change_reconciliation():
+    intake = _review_intake(None)
+    task = _typed_ranked_task(metric="DEF_RATING", direction="asc")
+    reviews = []
+    for description in ("lowest defensive rating!!! which team is the best?!",
+                        "ranked team ratings"):
+        reviews.append(RequirementReview.model_validate({"requirements": [{
+            "id": "rank", "description": description,
+            "capability_options": ["team_ratings"],
+            "capability_arguments": {"requested_metric": "DEF_RATING",
+                                     "ranking_direction": "asc",
+                                     "team": "", "season": "2025-26"}}]}))
+    first, first_rows = intake._reconcile_typed_ranked_arguments(task, reviews[0])
+    second, second_rows = intake._reconcile_typed_ranked_arguments(task, reviews[1])
+    assert first_rows == second_rows
+    assert (capability_arguments_for(first.requirements[0], "team_ratings")
+            == capability_arguments_for(second.requirements[0], "team_ratings"))
+
+def test_ranked_verifier_needs_no_provider():
+    class ExplodingModel:
+        async def generate(self, **call):
+            raise AssertionError("the deterministic verifier must not consult a provider")
+    from v2.adapters.models import ranked_team_arguments_error
+    intake = ModelIntake(ExplodingModel(), provider="stub", model_name="stub",
+                         capability_catalog=_typed_catalog())
+    assert ranked_team_arguments_error("team_ratings", {
+        "requested_metric": "DEF_RATING", "ranking_direction": "",
+        "team": "", "season": "2025-26"}) is not None
+    assert ranked_team_arguments_error("team_ratings", {
+        "requested_metric": "DEF_RATING", "ranking_direction": "asc",
+        "team": "", "season": "2025-26"}) is None
+    wire = RequirementReviewWire.model_validate(_ranked_wire_entries(
+        {"requested_metric": "DEF_RATING", "ranking_direction": "asc",
+         "team": "", "season": "2025-26"}))
+    intake._validate_requirement_wire(wire)
+
+def test_ranked_deterministic_draft_uses_typed_metric_ids_not_prose():
+    from datetime import datetime, UTC
+    from v2.adapters.models import _deterministic_rank_draft
+    from v2.contracts import CalculationRequirement, EvidenceEnvelope
+    task = _typed_ranked_task(metric="DEF_RATING", direction="asc")
+    typed_calc = CalculationRequirement(
+        id="calc_rank", description="which team is the best defense",
+        metric_ids=["DEF_RATING"])
+    prose_calc = CalculationRequirement(
+        id="calc_prose",
+        description="lowest defensive rating leader with the best defense numbers",
+        metric_ids=[])
+    task = task.model_copy(update={
+        "calculation_requirements": [typed_calc, prose_calc]})
+    evidence = [EvidenceEnvelope(
+        evidence_id="r", capability="team_ratings", source="fixture",
+        observed_at=datetime.now(UTC), season="2025-26",
+        rows=[{"TEAM_NAME": "High", "DEF_RATING": 110},
+              {"TEAM_NAME": "Low", "DEF_RATING": 100}],
+        metric_definitions={"__requested_metric__": "DEF_RATING"})]
+    draft = _deterministic_rank_draft(task, evidence)
+    assert draft is not None
+    assert [c.requirement_id for c in draft.calculations] == ["calc_rank"]
+    assert draft.blocked_calculation_requirement_ids == ["calc_prose"]
+    assert "defensive rating" in draft.claims[0].text
+    assert "DEF_RATING" not in draft.claims[0].text
 
 @pytest.mark.anyio
 async def test_ranked_agreement_survives_when_review_matches_intake():

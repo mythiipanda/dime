@@ -692,3 +692,74 @@ def test_assistant_attempt_accepts_validation_other_contract_subtype():
     attempt={'route':'semantic_verifier','provider':'inception','model':'mercury-2.5','attempt_number':1,'exception_type':'UnexpectedModelBehavior','message_class':'structured_output','latency_ms':1,'failure_top_class':'UnexpectedModelBehavior','failure_class_chain':['UnexpectedModelBehavior'],'failure_phase':'json_or_schema_validation','failure_validation_errors':[],'failure_validation_subtype':'other_contract_invariant','failure_schema_sha256':'a'*64,'failure_route':'semantic_verifier'}
     ledger=RunLedger('run');ledger.append('model/request',turn_id='run',call_id='model:1',data={'provider':'inception','model':'mercury-2.5','route':'semantic_verifier','prompt_hash':'a'*64,'context_hash':'b'*64,'tool_schema_hash':'c'*64,'planner_version':'v2','budgets':{},'skill_hashes':{}})
     ledger.append('assistant/attempt',turn_id='run',call_id='model:1',data={'status':'failed','error':'bounded','provider_attempts':[attempt]})
+
+
+def _carried_row(**overrides):
+    row = {"route": "requirement_review", "capability_id": "team_ratings",
+           "key": "ranking_direction", "rule": "carried-from-intake"}
+    row.update(overrides)
+    return row
+
+
+def _append_model_request(ledger):
+    envelope = RequestEnvelope.freeze(
+        provider="p", model="m", route="answer", prompt="p", context={},
+        tool_schemas={}, planner_version="v2")
+    ledger.append(LedgerKind.MODEL_REQUEST, turn_id="t", call_id="c",
+                  data=envelope.model_dump(mode="json"))
+
+
+def test_ledger_accepts_carried_from_intake_shape():
+    ledger = RunLedger("run")
+    _append_model_request(ledger)
+    row = _carried_row()
+    ledger.append(LedgerKind.ASSISTANT_ATTEMPT, turn_id="t", call_id="c", data={
+        "status": "accepted", "output": {"requirements": []},
+        "provider": "p", "model": "m", "used_fallback": False,
+        "carried_from_intake": [row]})
+    assert ledger.entries[-1].data["carried_from_intake"] == [row]
+
+
+@pytest.mark.parametrize("row", [
+    _carried_row(rule="other-rule"),
+    _carried_row(route="team_ratings"),
+    _carried_row(key="x" * 65),
+    {k: v for k, v in _carried_row().items() if k != "rule"},
+    {**_carried_row(), "extra": 1},
+    "not-a-dict",
+])
+def test_ledger_rejects_malformed_carried_from_intake(row):
+    ledger = RunLedger("run")
+    _append_model_request(ledger)
+    with pytest.raises(ValueError):
+        ledger.append(LedgerKind.ASSISTANT_ATTEMPT, turn_id="t", call_id="c", data={
+            "status": "accepted", "output": {}, "provider": "p", "model": "m",
+            "used_fallback": False, "carried_from_intake": [row]})
+
+
+@pytest.mark.anyio
+async def test_recorded_model_ledger_accepts_carried_from_intake_end_to_end():
+    from v2.adapters.models import RecordedStructuredModel
+    from v2.contracts import RequirementReview
+
+    class FakeModel:
+        def __init__(self, result):
+            self._result = result
+
+        async def generate(self, **call):
+            return self._result
+
+    ledger = RunLedger("run")
+    review = RequirementReview()
+    model = RecordedStructuredModel(FakeModel(review), ledger, turn_id="t")
+    envelope = RequestEnvelope.freeze(
+        provider="p", model="m", route="requirement_review", prompt="p",
+        context={}, tool_schemas={}, planner_version="v2")
+    row = _carried_row()
+    returned = await model.generate(
+        schema=RequirementReview, prompt="p", payload={}, envelope=envelope,
+        decode=lambda result: {"carried_from_intake": [row]})
+    assert returned == review
+    last = ledger.entries[-1]
+    assert last.kind == LedgerKind.ASSISTANT_ATTEMPT
+    assert last.data["carried_from_intake"] == [row]

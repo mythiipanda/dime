@@ -171,7 +171,8 @@ def _validate_terminal_data(kind: LedgerKind, data: dict[str, Any]) -> None:
 def _validate_assistant_attempt(data: dict[str, Any]) -> None:
     status = data.get("status")
     attempt_keys = {"provider_attempts", "model_requests", "repaired",
-                    "null_as_omitted_drops", "reasoning_content_promotions"}
+                    "null_as_omitted_drops", "carried_from_intake",
+                    "reasoning_content_promotions"}
     provider_attempts = data.get("provider_attempts", [])
     promotions = data.get("reasoning_content_promotions", [])
     safe_attempt_keys = {"route", "provider", "model", "attempt_number",
@@ -279,6 +280,16 @@ def _validate_assistant_attempt(data: dict[str, Any]) -> None:
                     and safe_string(item["key"], 64)
                     and item["rule"] == "null-as-omitted"
                     for item in drops))
+        carries = data.get("carried_from_intake", [])
+        carries_valid = (
+            isinstance(carries, list)
+            and all(isinstance(item, dict)
+                    and set(item) == {"route", "capability_id", "key", "rule"}
+                    and item["route"] in MODEL_ROUTES
+                    and safe_string(item["capability_id"], 64)
+                    and safe_string(item["key"], 64)
+                    and item["rule"] == "carried-from-intake"
+                    for item in carries))
         valid = (required_accepted <= set(data) <= {*required_accepted, *attempt_keys}
                  and attempts_valid and promotions_valid
                  and isinstance(data.get("output"), dict)
@@ -287,7 +298,8 @@ def _validate_assistant_attempt(data: dict[str, Any]) -> None:
                  and isinstance(data.get("model"), str)
                  and bool(data["model"].strip())
                  and isinstance(data.get("used_fallback"), bool)
-                 and requests_valid and repaired_valid and drops_valid)
+                 and requests_valid and repaired_valid and drops_valid
+                 and carries_valid)
     else:
         raise ValueError("assistant attempt status must be accepted or failed")
     if not valid:
