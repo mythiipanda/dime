@@ -236,6 +236,35 @@ def _safe_pydantic_error_type(value: object) -> str:
     return name if name in SAFE_PYDANTIC_ERROR_TYPES else "<unknown-error-type>"
 
 
+# Typed reason vocabulary for a request count that could not be read from a
+# provider result. Recorded on the ledger instead of silently dropping the
+# failure, so production gaps in `model_requests` stay diagnosable.
+USAGE_UNKNOWN_REASON = "usage_unknown"
+USAGE_UNKNOWN_REASONS = frozenset({USAGE_UNKNOWN_REASON})
+
+
+def _read_usage_requests(result: Any) -> tuple[int | None, str | None]:
+    """Read ``usage.requests`` from a provider result, handling both shapes.
+
+    pydantic-ai 2.43.0 exposes ``usage`` as a property; older call sites may
+    still see it as a method. Returns ``(count, None)`` on success and
+    ``(None, USAGE_UNKNOWN_REASON)`` when the count cannot be determined.
+    """
+    usage = getattr(result, "usage", None)
+    if callable(usage):
+        try:
+            usage = usage()
+        except Exception:
+            return None, USAGE_UNKNOWN_REASON
+    requests = getattr(usage, "requests", None)
+    if requests is None:
+        return None, USAGE_UNKNOWN_REASON
+    try:
+        return int(requests), None
+    except (TypeError, ValueError):
+        return None, USAGE_UNKNOWN_REASON
+
+
 class DimeOpenAIChatModel(OpenAIChatModel):
     """Normalize the exact schema at the last OpenAI request mapping boundary."""
     def _map_json_schema(self, output_object):
@@ -255,6 +284,7 @@ class ProviderStructuredModel:
         self.last_model: str | None = None
         self.last_failures: list[dict[str, str]] = []
         self.last_request_count: int | None = None
+        self.last_usage_unknown: str | None = None
         self.last_promotions: list[dict[str, Any]] = []
 
     @staticmethod
@@ -486,10 +516,9 @@ class ProviderStructuredModel:
                         f"mistral_free_limit:{model.model_name}"
                         if provider == "mistral" else model.model_name
                     )
-                    try:
-                        self.last_request_count = int(result.usage().requests)
-                    except Exception:
-                        self.last_request_count = None
+                    request_count, usage_unknown = _read_usage_requests(result)
+                    self.last_request_count = request_count
+                    self.last_usage_unknown = usage_unknown
                     self.last_promotions = self._reasoning_content_promotions(models)
                     return result.output
                 except Exception as exc:
@@ -2661,6 +2690,8 @@ class RecordedStructuredModel:
         call_id = f"model:{self._turn_id}:{self._sequence}"
         if hasattr(self._model, "last_request_count"):
             self._model.last_request_count = None
+        if hasattr(self._model, "last_usage_unknown"):
+            self._model.last_usage_unknown = None
         self._ledger.append(
             LedgerKind.MODEL_REQUEST,
             turn_id=self._turn_id,
@@ -2700,6 +2731,7 @@ class RecordedStructuredModel:
         actual_model = getattr(self._model, "last_model", None)
         extra = decode(result) if decode is not None else None
         request_count = getattr(self._model, "last_request_count", None)
+        usage_unknown = getattr(self._model, "last_usage_unknown", None)
         data = {
                 "status": "accepted",
                 "output": result.model_dump(mode="json"),
@@ -2717,6 +2749,8 @@ class RecordedStructuredModel:
         if request_count is not None:
             data["model_requests"] = request_count
             data["repaired"] = request_count > 1
+        elif usage_unknown is not None:
+            data["usage_unknown"] = usage_unknown
         if extra:
             data.update(extra)
         self._ledger.append(

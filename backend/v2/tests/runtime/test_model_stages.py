@@ -128,6 +128,103 @@ async def test_recorded_model_keeps_success_and_failure_attempts():
 
 
 @pytest.mark.anyio
+async def test_recorded_model_logs_request_count_in_ledger():
+    from v2.adapters import RecordedStructuredModel
+    from v2.contracts import TaskSpec
+    from v2.runtime import LedgerKind, RequestEnvelope, RunLedger
+
+    class Counting:
+        def __init__(self):
+            self.last_request_count = None
+            self.last_usage_unknown = None
+            self.last_provider = "p"
+            self.last_model = "m"
+            self.last_failures = []
+            self.last_promotions = []
+
+        async def generate(self, **call):
+            self.last_request_count = 1
+            return TaskSpec(goal="g", mode="quick", deliverable="d")
+
+    envelope = RequestEnvelope.freeze(provider="p", model="m", route="intake",
+        prompt="prompt", context={}, tool_schemas={}, planner_version="v2")
+    ledger = RunLedger("run")
+    recorded = RecordedStructuredModel(Counting(), ledger, turn_id="turn")
+    result = await recorded.generate(schema=TaskSpec, prompt="prompt",
+        payload={}, envelope=envelope)
+
+    assert isinstance(result, TaskSpec)
+    attempt = ledger.entries[-1]
+    assert attempt.kind == LedgerKind.ASSISTANT_ATTEMPT
+    assert attempt.data["status"] == "accepted"
+    assert attempt.data["model_requests"] == 1
+    assert attempt.data["repaired"] is False
+    assert "usage_unknown" not in attempt.data
+
+
+@pytest.mark.anyio
+async def test_recorded_model_logs_typed_unknown_reason_when_usage_unreadable():
+    from v2.adapters import RecordedStructuredModel
+    from v2.adapters.models import USAGE_UNKNOWN_REASON
+    from v2.contracts import TaskSpec
+    from v2.runtime import LedgerKind, RequestEnvelope, RunLedger
+
+    class UnknownUsage:
+        def __init__(self):
+            self.last_request_count = None
+            self.last_usage_unknown = USAGE_UNKNOWN_REASON
+            self.last_provider = "p"
+            self.last_model = "m"
+            self.last_failures = []
+            self.last_promotions = []
+
+        async def generate(self, **call):
+            # mirrors ProviderStructuredModel: the unknown reason is set
+            # during generate, after the pre-call reset
+            self.last_usage_unknown = USAGE_UNKNOWN_REASON
+            return TaskSpec(goal="g", mode="quick", deliverable="d")
+
+    envelope = RequestEnvelope.freeze(provider="p", model="m", route="intake",
+        prompt="prompt", context={}, tool_schemas={}, planner_version="v2")
+    ledger = RunLedger("run")
+    recorded = RecordedStructuredModel(UnknownUsage(), ledger, turn_id="turn")
+    await recorded.generate(schema=TaskSpec, prompt="prompt",
+        payload={}, envelope=envelope)
+
+    attempt = ledger.entries[-1]
+    assert attempt.data["status"] == "accepted"
+    assert "model_requests" not in attempt.data
+    assert attempt.data["usage_unknown"] == "usage_unknown"
+
+
+def test_read_usage_requests_handles_property_and_callable_shapes():
+    from v2.adapters.models import _read_usage_requests, USAGE_UNKNOWN_REASON
+
+    class Usage:
+        requests = 3
+
+    class PropertyResult:
+        usage = Usage()
+
+    class MethodResult:
+        def usage(self):
+            return Usage()
+
+    class OldStyleFailure:
+        # reproduces the production bug shape: `result.usage()` raises
+        # TypeError on pydantic-ai 2.43.0, which the old code swallowed
+        def usage(self):
+            raise TypeError("'Usage' object is not callable")
+
+    assert _read_usage_requests(PropertyResult()) == (3, None)
+    assert _read_usage_requests(MethodResult()) == (3, None)
+    # the TypeError from calling usage as a method becomes a typed unknown
+    # reason, never an unhandled exception or silent drop
+    assert _read_usage_requests(OldStyleFailure()) == (None, USAGE_UNKNOWN_REASON)
+    assert _read_usage_requests(object()) == (None, USAGE_UNKNOWN_REASON)
+
+
+@pytest.mark.anyio
 async def test_model_repair_receives_only_typed_admitted_context():
     from v2.contracts import Claim, DraftReport, TaskSpec, VerificationReport
 

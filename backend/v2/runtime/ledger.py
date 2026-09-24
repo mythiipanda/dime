@@ -172,7 +172,7 @@ def _validate_assistant_attempt(data: dict[str, Any]) -> None:
     status = data.get("status")
     attempt_keys = {"provider_attempts", "model_requests", "repaired",
                     "null_as_omitted_drops", "carried_from_intake",
-                    "ranked_argument_conflicts",
+                    "ranked_argument_conflicts", "usage_unknown",
                     "reasoning_content_promotions"}
     provider_attempts = data.get("provider_attempts", [])
     promotions = data.get("reasoning_content_promotions", [])
@@ -185,6 +185,7 @@ def _validate_assistant_attempt(data: dict[str, Any]) -> None:
     from v2.adapters.models import (
         MODEL_ROUTES, SAFE_FAILURE_EXCEPTION_CLASSES, SAFE_FAILURE_PHASES,
         SAFE_PYDANTIC_ERROR_TYPES, SAFE_FAILURE_VALIDATION_SUBTYPES,
+        USAGE_UNKNOWN_REASONS,
     )
     safe_exception_names = {*SAFE_FAILURE_EXCEPTION_CLASSES, "<unknown-exception>"}
     safe_error_types = {*SAFE_PYDANTIC_ERROR_TYPES, "<unknown-error-type>"}
@@ -271,6 +272,9 @@ def _validate_assistant_attempt(data: dict[str, Any]) -> None:
             and requests >= 1))
         repaired_valid = ("repaired" not in data
                           or isinstance(data["repaired"], bool))
+        unknown_reason = data.get("usage_unknown")
+        usage_unknown_valid = ("usage_unknown" not in data
+                               or unknown_reason in USAGE_UNKNOWN_REASONS)
         drops = data.get("null_as_omitted_drops", [])
         drops_valid = (
             isinstance(drops, list)
@@ -310,7 +314,8 @@ def _validate_assistant_attempt(data: dict[str, Any]) -> None:
                  and bool(data["model"].strip())
                  and isinstance(data.get("used_fallback"), bool)
                  and requests_valid and repaired_valid and drops_valid
-                 and carries_valid and conflicts_valid)
+                 and carries_valid and conflicts_valid
+                 and usage_unknown_valid)
     else:
         raise ValueError("assistant attempt status must be accepted or failed")
     if not valid:
