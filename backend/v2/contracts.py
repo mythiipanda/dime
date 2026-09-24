@@ -337,6 +337,22 @@ class EvidenceRequirement(BaseModel):
         return self
 
 
+def _drop_ranked_argument_conflicts_from_schema(schema: dict) -> dict:
+    """Keep model output schemas free of the code-side conflict channel.
+
+    ``ranked_argument_conflicts`` is populated only by reconciliation code
+    (ledger rows), never by the model. Excluding it from the JSON schema
+    stops the model from writing rows that could survive intake.
+    """
+    properties = schema.get("properties")
+    if isinstance(properties, dict):
+        properties.pop("ranked_argument_conflicts", None)
+    required = schema.get("required")
+    if isinstance(required, list) and "ranked_argument_conflicts" in required:
+        required.remove("ranked_argument_conflicts")
+    return schema
+
+
 class TaskSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -364,6 +380,10 @@ class TaskSpec(BaseModel):
     # synthesizer instead of being blocked.
     ranked_argument_conflicts: list[dict[str, str]] = Field(
         default_factory=list, max_length=32)
+
+    @classmethod
+    def __get_pydantic_json_schema__(cls, core_schema, handler):
+        return _drop_ranked_argument_conflicts_from_schema(handler(core_schema))
 
     @field_validator("ranked_argument_conflicts")
     @classmethod
@@ -423,6 +443,10 @@ class RequirementReview(BaseModel):
     # a ranked branch was actually dropped for disagreement.
     ranked_argument_conflicts: list[dict[str, str]] = Field(
         default_factory=list, max_length=32)
+
+    @classmethod
+    def __get_pydantic_json_schema__(cls, core_schema, handler):
+        return _drop_ranked_argument_conflicts_from_schema(handler(core_schema))
 
     @model_validator(mode="after")
     def validate_review(self) -> "RequirementReview":

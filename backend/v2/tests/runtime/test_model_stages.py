@@ -3407,6 +3407,39 @@ def test_plain_team_ratings_with_conflict_still_gaps():
         "team_ratings evidence but no requirement carries typed "
         "ranking arguments."]
 
+def test_ranked_conflict_field_excluded_from_model_output_schemas():
+    # The conflict channel is code-side only: the model must never see
+    # ranked_argument_conflicts in the intake or review JSON schemas.
+    from v2.contracts import RequirementReview, TaskSpec
+    for model in (TaskSpec, RequirementReview):
+        assert "ranked_argument_conflicts" not in model.model_json_schema()["properties"]
+
+@pytest.mark.anyio
+async def test_decode_drops_model_written_ranked_conflicts():
+    # Even if a model wrote conflict rows, intake decode resets the field:
+    # model-written rows can never survive intake and block answers.
+    from v2.adapters import RecordedStructuredModel
+    from v2.contracts import TaskSpec
+    from v2.runtime import RequestEnvelope, RunLedger
+
+    row = {"route": "intake", "capability_id": "team_ratings",
+           "key": "ranking_direction", "rule": "ranked-argument-conflict"}
+
+    class WritingModel:
+        async def generate(self, **call):
+            schema = call["schema"]
+            return schema(goal="g", mode="quick", deliverable="d",
+                          ranked_argument_conflicts=[row])
+
+    envelope = RequestEnvelope.freeze(provider="p", model="m", route="intake",
+        prompt="prompt", context={}, tool_schemas={}, planner_version="v2")
+    ledger = RunLedger("run")
+    recorded = RecordedStructuredModel(WritingModel(), ledger, turn_id="turn")
+    result = await recorded.generate(schema=TaskSpec, prompt="prompt",
+                                     payload={}, envelope=envelope)
+    assert isinstance(result, TaskSpec)
+    assert result.ranked_argument_conflicts == []
+
 def test_ranked_verifier_needs_no_provider():
     class ExplodingModel:
         async def generate(self, **call):

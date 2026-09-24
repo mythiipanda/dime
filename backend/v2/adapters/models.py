@@ -2678,6 +2678,12 @@ class RecordedStructuredModel:
                 raise TypeError(
                     f"structured model must return {schema.__name__}")
             result = schema.model_validate(result.model_dump())
+            # Model output must never carry ranked-argument conflict rows:
+            # the field is excluded from the intake/review JSON schemas and
+            # any model-written rows are dropped on decode. Only
+            # reconciliation code populates it.
+            if isinstance(result, (TaskSpec, RequirementReview)):
+                result = result.model_copy(update={"ranked_argument_conflicts": []})
         except BaseException as exc:
             self._ledger.append(
                 LedgerKind.ASSISTANT_ATTEMPT,
