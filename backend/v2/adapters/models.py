@@ -82,26 +82,18 @@ def _imported_module_code_sha256() -> str:
 _LOADED_MODULE_CODE_SHA256 = _imported_module_code_sha256()
 
 
-# Exact wire shape NIM needs to disable reasoning on a request. With
-# reasoning off, NIM enforces strict json_schema in the content field
-# (verified by the crew's probe, even on nested schemas). This is set in
-# the NVIDIA provider's transport config for EVERY NIM model, identical
-# for all of them -- never branched by model name.
+# Exact wire shape that disables reasoning on a NIM structured request.
 NIM_THINKING_OFF_EXTRA_BODY: dict[str, Any] = {
     "chat_template_kwargs": {"enable_thinking": False},
 }
 
 
 def _with_thinking_off(kwargs: dict[str, Any]) -> dict[str, Any]:
-    """Merge the NIM thinking-off body into a completions.create call.
-
-    Caller-supplied extra_body keys are preserved; enable_thinking is
-    forced off so the setting is uniform on every NIM structured request.
-    """
+    """Merge NIM_THINKING_OFF_EXTRA_BODY into a completions.create call."""
     merged = dict(kwargs)
     extra_body = dict(merged.get("extra_body") or {})
     template = dict(extra_body.get("chat_template_kwargs") or {})
-    template["enable_thinking"] = False
+    template.update(NIM_THINKING_OFF_EXTRA_BODY["chat_template_kwargs"])
     extra_body["chat_template_kwargs"] = template
     merged["extra_body"] = extra_body
     return merged
@@ -110,15 +102,7 @@ def _with_thinking_off(kwargs: dict[str, Any]) -> dict[str, Any]:
 def _promote_reasoning_content(
     response: ChatCompletion,
 ) -> tuple[ChatCompletion, list[dict[str, Any]]]:
-    """Promote reasoning_content to content when finish_reason is "stop".
-
-    Some OpenAI-compatible providers put the answer in `reasoning_content`
-    with empty `content`. Promotion applies only on `finish_reason ==
-    "stop"`: truncated ("length") or filtered ("content_filter") responses
-    keep their empty content so the real provider signal is preserved.
-    Generic across providers and models. Returns the response plus one
-    bounded metadata record per promoted choice (no payloads).
-    """
+    """Promote reasoning_content to content when finish_reason is "stop"."""
     promotions: list[dict[str, Any]] = []
     for index, choice in enumerate(response.choices):
         message = choice.message
@@ -144,8 +128,7 @@ class _ReasoningContentCompletions(AsyncCompletions):
             promoted, promotions = _promote_reasoning_content(response)
             self._client.reasoning_content_promotions.extend(promotions)
             return promoted
-        # Streaming chunks are returned untouched: reassembling a streamed
-        # reasoning transcript is out of scope for the structured path.
+        # Streaming chunks are returned untouched: reassembling streamed reasoning is out of scope here.
         return response
 
 
@@ -156,17 +139,7 @@ class _ReasoningContentChat(AsyncChat):
 
 
 class ReasoningContentFallbackClient(AsyncOpenAI):
-    """AsyncOpenAI that normalizes reasoning-first response shapes.
-
-    Non-streaming chat completions pass through _promote_reasoning_content
-    before pydantic-ai parses them. Promotions are recorded on
-    `reasoning_content_promotions` as bounded metadata. No model-name or
-    provider-name branching.
-
-    `thinking_off=True` injects the NIM thinking-off body on every
-    completions.create call. It is a transport-level flag set by the
-    provider config (NVIDIA provider only), identical for every NIM model.
-    """
+    """AsyncOpenAI that normalizes reasoning-first responses and injects NIM thinking-off when flagged."""
 
     def __init__(
         self, *args: Any, thinking_off: bool = False, **kwargs: Any
@@ -292,11 +265,7 @@ class ProviderStructuredModel:
     def _reasoning_content_promotions(
         models: Sequence[tuple[ProviderName, Any]],
     ) -> list[dict[str, Any]]:
-        """Collect promotion records from each model's fallback client.
-
-        Models without a ReasoningContentFallbackClient contribute nothing.
-        Records carry bounded metadata only, never message payloads.
-        """
+        """Collect bounded-metadata promotion records from each model's fallback client."""
         records: list[dict[str, Any]] = []
         for provider, model in models:
             client = getattr(model, "client", None)
@@ -448,10 +417,7 @@ class ProviderStructuredModel:
                 timeout=settings.llm_timeout_s,
                 max_retries=0,
                 default_headers=headers,
-                # NVIDIA provider transport config: thinking-off is uniform
-                # across every NIM model. Provider-level only -- no model
-                # name appears here or anywhere in this wiring.
-                thinking_off=(provider == "nvidia"),
+                thinking_off=(provider == "nvidia"),  # Uniform thinking-off across every NIM model; no model-name branching.
             )
             requested = self.model if provider == self.provider else fallback_model
             if provider == "nvidia":
