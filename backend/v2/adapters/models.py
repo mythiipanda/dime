@@ -82,6 +82,31 @@ def _imported_module_code_sha256() -> str:
 _LOADED_MODULE_CODE_SHA256 = _imported_module_code_sha256()
 
 
+# Exact wire shape NIM needs to disable reasoning on a request. With
+# reasoning off, NIM enforces strict json_schema in the content field
+# (verified by the crew's probe, even on nested schemas). This is set in
+# the NVIDIA provider's transport config for EVERY NIM model, identical
+# for all of them -- never branched by model name.
+NIM_THINKING_OFF_EXTRA_BODY: dict[str, Any] = {
+    "chat_template_kwargs": {"enable_thinking": False},
+}
+
+
+def _with_thinking_off(kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Merge the NIM thinking-off body into a completions.create call.
+
+    Caller-supplied extra_body keys are preserved; enable_thinking is
+    forced off so the setting is uniform on every NIM structured request.
+    """
+    merged = dict(kwargs)
+    extra_body = dict(merged.get("extra_body") or {})
+    template = dict(extra_body.get("chat_template_kwargs") or {})
+    template["enable_thinking"] = False
+    extra_body["chat_template_kwargs"] = template
+    merged["extra_body"] = extra_body
+    return merged
+
+
 def _promote_reasoning_content(
     response: ChatCompletion,
 ) -> tuple[ChatCompletion, list[dict[str, Any]]]:
@@ -112,6 +137,8 @@ class _ReasoningContentCompletions(AsyncCompletions):
     """chat.completions resource with the reasoning_content fallback."""
 
     async def create(self, *args: Any, **kwargs: Any) -> Any:
+        if getattr(self._client, "thinking_off", False):
+            kwargs = _with_thinking_off(kwargs)
         response = await super().create(*args, **kwargs)
         if isinstance(response, ChatCompletion):
             promoted, promotions = _promote_reasoning_content(response)
@@ -135,11 +162,18 @@ class ReasoningContentFallbackClient(AsyncOpenAI):
     before pydantic-ai parses them. Promotions are recorded on
     `reasoning_content_promotions` as bounded metadata. No model-name or
     provider-name branching.
+
+    `thinking_off=True` injects the NIM thinking-off body on every
+    completions.create call. It is a transport-level flag set by the
+    provider config (NVIDIA provider only), identical for every NIM model.
     """
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
+    def __init__(
+        self, *args: Any, thinking_off: bool = False, **kwargs: Any
+    ) -> None:
         super().__init__(*args, **kwargs)
         self.reasoning_content_promotions: list[dict[str, Any]] = []
+        self.thinking_off = thinking_off
 
     @cached_property
     def chat(self) -> _ReasoningContentChat:
@@ -414,6 +448,10 @@ class ProviderStructuredModel:
                 timeout=settings.llm_timeout_s,
                 max_retries=0,
                 default_headers=headers,
+                # NVIDIA provider transport config: thinking-off is uniform
+                # across every NIM model. Provider-level only -- no model
+                # name appears here or anywhere in this wiring.
+                thinking_off=(provider == "nvidia"),
             )
             requested = self.model if provider == self.provider else fallback_model
             if provider == "nvidia":
