@@ -54,7 +54,8 @@ ORDER BY EFG_PCT DESC
 
 def main() -> None:
     season = "2025-26"
-    con = store.connect()
+    # Build script: needs a write connection to CREATE the derived table.
+    con = store.connect(read_only=False)
     try:
         cur = con.execute(SQL, [season])
         cols = [d[0] for d in con.description]
