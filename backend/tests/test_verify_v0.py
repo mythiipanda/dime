@@ -86,6 +86,9 @@ def test_numeral_provenance_accepts_percent_scaling_and_rounding():
 
 
 def test_presentation_does_not_ship_unverified_figures_clean():
+    # Claim-level (2026-09-26): only the failing sentence is dropped -
+    # never the whole answer. Here the single sentence fails, so the
+    # honest figure-free fallback ships instead.
     async def _go():
         state = {"question": "rank them", "analysis": "Wrong has 99.9 points.",
                  "tool_results": [{"tool": "x", "ok": True,
@@ -97,7 +100,7 @@ def test_presentation_does_not_ship_unverified_figures_clean():
 
     answer = asyncio.run(_go())
     assert "99.9" not in answer
-    assert "could not verify every figure" in answer
+    assert "could not verify the figures" in answer
 
 
 def test_game_prediction_publishes_verified_deterministic_summary():

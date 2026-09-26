@@ -5623,48 +5623,134 @@ def _extract_ledger_facts(state: dict) -> list[str]:
     return out[:_LEDGER_MAX]
 
 
+# Typed/inline derivation syntax for claim-level numeral verification: a
+# numeral that is not literally in this turn's evidence must carry its
+# operands in the same sentence, either as `N (a op b ...)` or
+# `N = a op b ...`. The operands must be evidence numerals and the
+# arithmetic must recompute to N.
+_DERIVED_EXPR_RX = re.compile(
+    r"(\d+(?:\.\d+)?)\s*(?:\(\s*|=\s*)"
+    r"(\d+(?:\.\d+)?(?:\s*[+\-*/]\s*\d+(?:\.\d+)?)+)\s*\)?"
+)
+_SENT_SPLIT_RX = re.compile(r"(?<=[.!?])\s+")
+
+
+def _norm_num(n: str) -> str:
+    return n[:-2] if n.endswith(".0") else n
+
+
+def _safe_arith(expr: str) -> float | None:
+    """Safely evaluate a + - * / arithmetic expression; None on failure."""
+    if not re.fullmatch(r"[\d.\s+\-*/()]+", expr):
+        return None
+    try:
+        node = ast.parse(expr, mode="eval")
+    except Exception:
+        return None
+    for n in ast.walk(node):
+        if isinstance(n, ast.Constant):
+            if not isinstance(n.value, (int, float)):
+                return None
+        elif not isinstance(n, (ast.Expression, ast.BinOp, ast.UnaryOp,
+                                ast.Load, ast.Add, ast.Sub, ast.Mult,
+                                ast.Div, ast.USub, ast.UAdd)):
+            return None
+    try:
+        return float(eval(compile(node, "<derived>", "eval"),
+                          {"__builtins__": {}}, {}))
+    except Exception:
+        return None
+
+
+def _claim_operands_ok(num_norm: str, sentence: str,
+                       allowed_norm: set[str]) -> bool:
+    """True when the sentence carries evidence operands that recompute to num."""
+    try:
+        target = float(num_norm)
+    except ValueError:
+        return False
+    for m in _DERIVED_EXPR_RX.finditer(sentence):
+        if _norm_num(m.group(1)) != num_norm:
+            continue
+        expr = m.group(2)
+        ops = re.findall(r"\d+(?:\.\d+)?", expr)
+        if not ops or any(_norm_num(o) not in allowed_norm for o in ops):
+            continue
+        val = _safe_arith(expr)
+        if (val is not None
+                and math.isclose(val, target, rel_tol=1e-9, abs_tol=1e-9)):
+            return True
+    return False
+
+
+def _numeral_allowed(state: dict) -> set[str]:
+    """Numerals allowed in the answer: this turn's payloads + season line."""
+    import json as _json
+    raw = _json.dumps(state.get("tool_results") or [])
+    raw += _json.dumps(state.get("ledger") or [])
+    allowed: set[str] = set()
+    for token in re.findall(r"\d+(?:\.\d+)?", raw):
+        allowed.add(_norm_num(token))
+        try:
+            value = float(token)
+            for variant in (value * 100, round(value, 1), round(value, 2)):
+                allowed.add(_norm_num(f"{variant:g}"))
+        except ValueError:
+            pass
+    try:
+        from .tools._core import SEASON as _S
+        allowed |= set(re.findall(r"\d+", _S))
+    except Exception:
+        allowed |= {"2025", "26"}
+    return allowed
+
+
+def _verify_numeral_claims(state: dict, text: str) -> list[tuple[str, str]]:
+    """Claim-level numeral verification.
+
+    Returns (sentence, numeral) pairs that fail: numerals neither in this
+    turn's evidence nor derived from evidence-carried operands that
+    recompute to the numeral.
+    """
+    if not state.get("tool_results") and not state.get("ledger"):
+        return []
+    try:
+        allowed = _numeral_allowed(state)
+        claims: list[tuple[str, str]] = []
+        for sent in _SENT_SPLIT_RX.split(text or ""):
+            if not sent.strip():
+                continue
+            for n in re.findall(r"\d+(?:\.\d+)?", sent):
+                nn = _norm_num(n)
+                if nn in allowed:
+                    continue
+                if _claim_operands_ok(nn, sent, allowed):
+                    continue
+                if not any(s == sent and m == n for s, m in claims):
+                    claims.append((sent, n))
+        return claims
+    except Exception:
+        return []
+
+
 def _verify_draft_numerals(state: dict, text: str) -> list[str]:
     """Verify node v0: numeral provenance (telemetry only).
 
     Every number in the shipped answer must trace to this turn's tool
     payloads or the season line - the v67 lesson generalized (LLM-
-    composed numerals are untrusted). Violations land on
+    composed numerals are untrusted). Claim-level: a derived number may
+    instead carry its operands (typed calculation or inline evidence
+    refs) and must recompute from them. Violations land on
     state['_verify'] for the eval harness/reviewer; the re-route that
-    acts on them ships with the full verify node.
+    acts on them drops only the failing sentence(s).
     """
-    import json as _json
-
-    def _norm(n: str) -> str:
-        return n[:-2] if n.endswith(".0") else n
-
-    if not state.get("tool_results") and not state.get("ledger"):
-        state["_verify"] = {"numeral_violations": []}
-        return []
-    try:
-        raw = _json.dumps(state.get("tool_results") or [])
-        raw += _json.dumps(state.get("ledger") or [])
-        allowed: set[str] = set()
-        for token in re.findall(r"\d+(?:\.\d+)?", raw):
-            allowed.add(_norm(token))
-            try:
-                value = float(token)
-                for variant in (value * 100, round(value, 1), round(value, 2)):
-                    allowed.add(_norm(f"{variant:g}"))
-            except ValueError:
-                pass
-        try:
-            from .tools._core import SEASON as _S
-            allowed |= set(re.findall(r"\d+", _S))
-        except Exception:
-            allowed |= {"2025", "26"}
-        violations: list[str] = []
-        for n in re.findall(r"\d+(?:\.\d+)?", text or ""):
-            if _norm(n) not in allowed and n not in violations:
-                violations.append(n)
-        state["_verify"] = {"numeral_violations": violations}
-        return violations
-    except Exception:
-        return []
+    claims = _verify_numeral_claims(state, text)
+    violations: list[str] = []
+    for _, n in claims:
+        if n not in violations:
+            violations.append(n)
+    state["_verify"] = {"numeral_violations": violations}
+    return violations
 
 # QA #65 known-gap taxonomy: what the dataset provably does NOT have.
 # When an answer comes back content-thin, the honest fallback names
@@ -6055,12 +6141,20 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
     if state.get("_watchdog_tripped") and not _evidenced and not _delegate_ok:
         _scrubbed = _gap or _COMPUTE_FALLBACK
     _scrubbed = _renumber_lists(_scrubbed)
-    _violations = _verify_draft_numerals(state, _scrubbed)
-    if _violations:
-        _scrubbed = (
-            "I pulled the relevant data but could not verify every figure in "
-            "the summary. The evidence panel below has the sourced results."
-        )
+    # Claim-level: a derived number must carry its operands and recompute;
+    # on mismatch drop ONLY the failing sentence(s), never the whole answer.
+    _viol_pairs = _verify_numeral_claims(state, _scrubbed)
+    if _viol_pairs:
+        _bad_sents = {s for s, _ in _viol_pairs}
+        _scrubbed = " ".join(
+            s for s in _SENT_SPLIT_RX.split(_scrubbed)
+            if s.strip() and s not in _bad_sents).strip()
+        if not _scrubbed:
+            _scrubbed = _gap or (
+                "I pulled the relevant data but could not verify the "
+                "figures in the summary. The evidence panel below has the "
+                "sourced results."
+            )
     _new_facts = _extract_ledger_facts(state)
     if _new_facts:
         yield _event("ledger_facts", {"facts": _new_facts})
