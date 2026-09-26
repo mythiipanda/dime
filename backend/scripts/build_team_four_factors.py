@@ -69,7 +69,8 @@ def main() -> None:
     import polars as pl
 
     frame = pl.DataFrame(rows)
-    con = store.connect()
+    # Write connection: the derived table goes into the build-time database.
+    con = store.connect(read_only=False)
     try:
         con.execute(
             "CREATE TABLE IF NOT EXISTS silver_four_factors_team AS "

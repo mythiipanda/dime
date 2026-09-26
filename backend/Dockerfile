@@ -8,7 +8,12 @@ COPY app ./app
 COPY v2 ./v2
 COPY scripts/build_team_four_factors.py ./scripts/build_team_four_factors.py
 COPY data ./data
-RUN python scripts/build_team_four_factors.py
+# The canonical warehouse is immutable through store.connect(), so build the
+# derived table into a scratch copy (via DIME_WAREHOUSE) and bake the result
+# into the image's warehouse file.
+RUN cp data/warehouse.duckdb data/_build.duckdb && \
+    DIME_WAREHOUSE=/srv/data/_build.duckdb python scripts/build_team_four_factors.py && \
+    mv data/_build.duckdb data/warehouse.duckdb
 ENV PORT=8000
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
