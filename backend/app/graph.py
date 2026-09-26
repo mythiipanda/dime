@@ -5,7 +5,9 @@ thought_stream, message, final_answer, suggestions, graph_end, error.
 """
 
 import asyncio
+import ast
 import json
+import math
 import re
 import time
 import unicodedata
@@ -311,7 +313,12 @@ MAX_TOOL_ROUNDS = 3
 # circuit breaker; the turn budget forces the coverage-named honest
 # end (_COMPUTE_FALLBACK); heartbeats at the SSE layer already ping.
 TOOL_CALL_TIMEOUT_S = 25.0
-DESK_CALL_TIMEOUT_S = 75.0
+# Sizing note: the outer desk-call cap must sit AT OR ABOVE the desk's
+# inner per-round budget (subagents.LLM_ROUND_TIMEOUT_S=100) - an outer
+# cap under it (the old 75.0) lets a single slow NIM round kill the whole
+# desk call. It stays bounded under the overall desk wall-clock budget
+# (subagents.DESK_DEADLINE_S=170) so the turn budget still binds.
+DESK_CALL_TIMEOUT_S = 120.0
 TURN_WARN_S = 40.0
 TURN_BUDGET_S = 90.0
 DEEP_TURN_BUDGET_S = 180.0
