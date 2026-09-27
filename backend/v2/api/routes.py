@@ -533,6 +533,14 @@ def dataset(
                 if "_d" in frame.columns:
                     frame = frame.drop("_d")
                 continue
+    if name in ("player_gamelogs", "team_games", "playoff_gamelogs") and frame.height > 0:
+        # The warehouse is append-seeded and different seeds use
+        # different Game_ID formats for the same game; collapse
+        # duplicates at read time or the panels render the identical
+        # row N times (QA: the same stat row showed 5x).
+        from shared.tools.gamelog import dedupe_game_log_frame
+
+        frame = dedupe_game_log_frame(frame)
     if fmt == "csv":
         return Response(frame.write_csv(), media_type="text/csv")
     if fmt == "parquet":

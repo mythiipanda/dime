@@ -281,25 +281,74 @@ def _matches(g: dict[str, Any], f: dict[str, Any]) -> bool:
     return True
 
 
+def _game_signature(g: dict[str, Any]) -> tuple:
+    """Identity of a game beyond its source-specific Game_ID.
+
+    Different seeds write different Game_ID formats for the same game
+    (NBA "0022500087" vs bbref "202511180LAL"), so Game_ID alone cannot
+    collapse cross-seed duplicates. An entity (player or team) plays at
+    most one game per day: an exact match on entity + date + every stat
+    column can only be a re-seed duplicate of the same game.
+    """
+    date = g.get("date")
+    return (
+        g.get("player_id"),
+        date.isoformat() if isinstance(date, _dt.date) else date,
+        g.get("matchup"),
+        g.get("wl"),
+        g.get("min"),
+        g.get("pts"), g.get("reb"), g.get("ast"),
+        g.get("stl"), g.get("blk"), g.get("tov"), g.get("pf"),
+        g.get("fgm"), g.get("fga"), g.get("fg3m"), g.get("fg3a"),
+        g.get("ftm"), g.get("fta"), g.get("plus_minus"),
+    )
+
+
 def _dedupe_games(games: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Collapse duplicate Game_ID rows, keeping the first occurrence.
+    """Collapse duplicate game rows, keeping the first occurrence.
 
     The warehouse is append-seeded, so a re-seed can store one game
-    twice. The record must count distinct games, not rows. Rows with
-    no Game_ID are kept as-is.
+    twice. Game_ID collapses same-source re-seeds; the full stat
+    signature additionally collapses cross-seed duplicates whose
+    Game_ID formats differ, and rows with no Game_ID at all.
     """
-    seen: set = set()
+    seen_ids: set = set()
+    seen_sigs: set = set()
     unique: list[dict[str, Any]] = []
     for g in games:
         gid = g.get("game_id")
-        if gid is None or gid == "":
-            unique.append(g)
+        sig = _game_signature(g)
+        # Game_IDs are per-game, not per-player: in league-wide loads two
+        # players' rows for the same game share one Game_ID, so the id key
+        # is scoped to the entity.
+        id_key = (g.get("player_id"), gid)
+        if (gid is not None and gid != "" and id_key in seen_ids) or sig in seen_sigs:
             continue
-        if gid in seen:
-            continue
-        seen.add(gid)
+        if gid is not None and gid != "":
+            seen_ids.add(id_key)
+        seen_sigs.add(sig)
         unique.append(g)
     return unique
+
+
+def dedupe_game_log_frame(frame):
+    """Read-time dedupe for game-log warehouse frames (polars).
+
+    The warehouse is append-seeded and different seeds use different
+    Game_ID formats for the same game, so Game_ID alone can't collapse
+    duplicates. Two rows are the same game when the entity (Player_ID
+    or Team_ID), the game date, and every stat column match exactly —
+    an entity plays at most one game per day, so an exact full-stat
+    match can only be a re-seed duplicate. Keeps the first occurrence
+    and preserves row order. Frames without game-log columns are
+    returned unchanged.
+    """
+    cols = frame.columns
+    if "GAME_DATE" not in cols or ("Player_ID" not in cols and "Team_ID" not in cols):
+        return frame
+    sig = [c for c in cols
+           if c not in ("Game_ID", "_source", "_season", "_fetched_at", "_entity")]
+    return frame.unique(subset=sig, keep="first", maintain_order=True)
 
 
 def _record_for_scope(games: list[dict[str, Any]], scope: str) -> dict[str, Any]:
@@ -523,6 +572,10 @@ def search_game_logs(
             err += f"; {note}" if note else f"; {_playoff_coverage(season)}"
         return {"tool": "search_game_logs", "ok": False, "error": err}
     matched = [g for g in games if _matches(g, filters)]
+    # Dedupe before every branch: the warehouse is append-seeded and
+    # different seeds use different Game_ID formats for the same game,
+    # so counts and rows must collapse duplicates first.
+    matched = _dedupe_games(matched)
     lim = _clamp_limit(limit)
     if league_wide:
         counts: dict[int, int] = {}
@@ -598,7 +651,6 @@ def search_game_logs(
     supplied_name = str(player).strip() if player is not None else ""
     name = (supplied_name if supplied_name and not supplied_name.isdigit()
             else _resolve_name(pid, supplied_name or str(pid)))
-    matched = _dedupe_games(matched)
     if best_game:
         # "best game" / "career high": the single max-points game.
         matched = sorted(matched, key=lambda g: g["pts"], reverse=True)[:1]

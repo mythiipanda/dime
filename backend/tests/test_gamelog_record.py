@@ -10,6 +10,7 @@ Pure-helper tests are hermetic. Two integration tests run the real
 tool read-only against the local warehouse. No LLM, no network.
 """
 
+import datetime as _dt
 import sys
 from pathlib import Path
 
@@ -27,6 +28,18 @@ def _row(gid, wl, pts=20.0):
     return {"game_id": gid, "wl": wl, "pts": pts}
 
 
+def _full_row(gid, wl, date, pts=20.0, pid=2544, matchup="LAL vs. UTA"):
+    """A _load_games-shaped row: entity + date + full stat columns."""
+    d = _dt.date.fromisoformat(date)
+    return {
+        "player_id": pid, "game_id": gid, "date": d, "matchup": matchup,
+        "opponent": "UTA", "home": True, "wl": wl, "min": 36.0,
+        "pts": float(pts), "reb": 5.0, "ast": 5.0, "stl": 1.0, "blk": 1.0,
+        "tov": 2.0, "pf": 2.0, "fgm": 8.0, "fga": 16.0, "fg3m": 2.0,
+        "fg3a": 6.0, "ftm": 2.0, "fta": 2.0, "plus_minus": 4.0,
+    }
+
+
 def test_dedupe_collapses_duplicate_game_id():
     rows = [_row("0022500001", "W"), _row("0022500001", "W"),
             _row("0022500002", "L")]
@@ -36,9 +49,64 @@ def test_dedupe_collapses_duplicate_game_id():
         "w": 1, "l": 1, "games": 2, "scope": "regular"}
 
 
-def test_dedupe_keeps_rows_without_game_id():
-    rows = [_row(None, "W"), _row("", "L"), _row("0022500001", "W")]
-    assert len(_dedupe_games(rows)) == 3
+def test_dedupe_keeps_distinct_rows_without_game_id():
+    # Distinct games (different dates) with no Game_ID are kept.
+    rows = [_full_row(None, "W", "2026-03-01"),
+            _full_row(None, "W", "2026-03-02")]
+    assert len(_dedupe_games(rows)) == 2
+
+
+def test_dedupe_collapses_identical_rows_without_game_id():
+    # Re-seed duplicate with no Game_ID collapses on the stat signature.
+    rows = [_full_row(None, "W", "2026-03-01"),
+            _full_row("", "W", "2026-03-01")]
+    assert len(_dedupe_games(rows)) == 1
+
+
+def test_dedupe_collapses_cross_seed_game_id_formats():
+    # Same game seeded twice by different sources: NBA id "0022500001"
+    # vs bbref id "202603010LAL". Identical stat signature -> one row.
+    rows = [_full_row("0022500001", "W", "2026-03-01"),
+            _full_row("202603010LAL", "W", "2026-03-01")]
+    assert len(_dedupe_games(rows)) == 1
+
+
+def test_dedupe_keeps_same_statline_different_players():
+    # League-wide loads every player; two players' rows for the SAME game
+    # share one Game_ID, so the id key is entity-scoped and the stat
+    # signature carries player_id too. Nothing merges across players.
+    rows = [_full_row("g1", "W", "2026-03-01", pid=2544),
+            _full_row("g1", "W", "2026-03-01", pid=201939)]
+    assert len(_dedupe_games(rows)) == 2
+
+
+def test_dedupe_frame_collapses_cross_seed_duplicates():
+    # Frame-level read-time dedupe for the datasets endpoints: 5
+    # identical rows with different Game_ID formats collapse to one,
+    # a genuinely different game is kept, and row order is preserved.
+    try:
+        import polars as pl
+    except ImportError:
+        return
+    from shared.tools.gamelog import dedupe_game_log_frame
+
+    def r(gid, date, pts):
+        return {"Player_ID": 2544, "Game_ID": gid, "GAME_DATE": date,
+                "MATCHUP": "LAL vs. UTA", "WL": "W", "PTS": pts, "REB": 5,
+                "AST": 5, "_source": "bbref", "_season": "2025-26",
+                "_fetched_at": "2026-09-27", "_entity": "player:2544"}
+
+    rows = [r("0022500001", "Mar 1, 2026", 30),
+            r("202603010LAL", "Mar 1, 2026", 30),   # cross-seed dupe
+            r(None, "Mar 1, 2026", 30),              # no-id dupe
+            r("0022500002", "Mar 3, 2026", 30),      # distinct game
+            r("0022500002", "Mar 3, 2026", 30)]      # same-id dupe
+    out = dedupe_game_log_frame(pl.DataFrame(rows))
+    assert out.height == 2
+    assert out["GAME_DATE"].to_list() == ["Mar 1, 2026", "Mar 3, 2026"]
+    # Non game-log frames pass through untouched.
+    other = pl.DataFrame({"a": [1, 1, 2]})
+    assert dedupe_game_log_frame(other).height == 3
 
 
 def test_record_carries_scope_label():
