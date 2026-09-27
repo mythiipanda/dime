@@ -6,17 +6,20 @@ import os
 import subprocess
 import inspect
 import marshal
+import time
+from collections import defaultdict
 from pathlib import Path
 from functools import lru_cache
 from dataclasses import dataclass
 from types import MappingProxyType, ModuleType
 from typing import Mapping
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from v2.projects.service import ProjectStore
 from v2.conversations import ConversationStore
+from v2.api.sse import encode_raw, with_heartbeat
 
 router = APIRouter()
 _BACKEND = Path(__file__).resolve().parents[2]
@@ -474,6 +477,74 @@ def _safe_buffered_event(event):
 
 
 @router.post("/v2/chat/stream")
+async def chat_stream_post(request: Request, body: QuickAnswerBody):
+    return await _guarded_chat_stream(request, body)
+
+
+@router.get("/v2/chat/stream")
+async def chat_stream_get(
+    request: Request,
+    q: str = Query(""),
+    model: str | None = Query(None),
+    thread: str | None = Query(None),
+    client: str | None = Query(None),
+):
+    # GET mirrors the v1 chat stream: no request body, history comes from
+    # the conversation store via thread+client (same together-constraint
+    # as the POST body).
+    return await _guarded_chat_stream(
+        request,
+        QuickAnswerBody(
+            q=q,
+            model=model,
+            thread=thread,
+            client=client or request.headers.get("x-dime-client") or None,
+        ),
+    )
+
+
+async def _guarded_chat_stream(request: Request, body: QuickAnswerBody):
+    if not _chat_allowed(_client_ip(request)):
+        return _rate_limited_stream()
+    response = await quick_answer_stream(body)
+    response.body_iterator = with_heartbeat(response.body_iterator)
+    return response
+
+
+_CHAT_HITS: dict[str, list[float]] = defaultdict(list)
+
+
+def _chat_allowed(ip: str) -> bool:
+    """Sliding-window per-IP chat rate limit (v1 parity).
+
+    Deferred settings import keeps v2.main importable in minimal envs,
+    same as the /models port.
+    """
+    from shared.config import settings
+
+    now = time.time()
+    window = [t for t in _CHAT_HITS[ip] if now - t < 60]
+    _CHAT_HITS[ip] = window
+    if len(window) >= settings.chat_rate_per_minute:
+        return False
+    window.append(now)
+    return True
+
+
+def _client_ip(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
+def _rate_limited_stream():
+    from fastapi.responses import StreamingResponse
+
+    async def limited():
+        yield encode_raw("error", {"message": "rate limited, retry soon"})
+        yield encode_raw("graph_end", {})
+
+    return StreamingResponse(limited(), media_type="text/event-stream")
+
+
 async def quick_answer_stream(body: QuickAnswerBody):
     _require_projects()
     import asyncio

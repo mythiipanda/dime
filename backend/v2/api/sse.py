@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import math
 from collections.abc import AsyncIterable, AsyncIterator, Iterable
@@ -71,3 +72,50 @@ def encode_events(events: Iterable[InternalEvent]) -> Iterable[str]:
 async def stream_events(events: AsyncIterable[InternalEvent]) -> AsyncIterator[str]:
     async for event in events:
         yield encode_event(event)
+
+
+def encode_raw(event_type: str, data: object) -> str:
+    """Frame an untyped SSE event (pings, transport-level errors)."""
+    return (f"event: {event_type}\ndata: "
+            f"{json.dumps(data, separators=(',', ':'), allow_nan=False)}\n\n")
+
+
+async def with_heartbeat(
+    inner: AsyncIterator[str], interval_s: float = 15.0
+) -> AsyncIterator[str]:
+    """Yield inner SSE chunks, emitting a ping frame on idle stretches.
+
+    Long buffered runs (model calls, tool loops) can go silent for minutes;
+    proxies and browsers drop idle SSE connections. Same contract as the
+    v1 chat stream: a ping frame at most every interval_s of silence.
+    """
+    queue: asyncio.Queue[str | None] = asyncio.Queue(maxsize=64)
+
+    async def drain() -> None:
+        try:
+            async for chunk in inner:
+                await queue.put(chunk)
+        except asyncio.CancelledError:
+            raise
+        except BaseException:
+            await queue.put(None)
+            raise
+        else:
+            await queue.put(None)
+
+    task = asyncio.create_task(drain())
+    try:
+        while True:
+            try:
+                item = await asyncio.wait_for(queue.get(), timeout=interval_s)
+            except asyncio.TimeoutError:
+                yield encode_raw("ping", {"ok": True})
+                continue
+            if item is None:
+                await task
+                return
+            yield item
+    finally:
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
