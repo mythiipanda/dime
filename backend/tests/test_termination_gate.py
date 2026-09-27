@@ -206,3 +206,15 @@ def test_minutes_qual_ignores_plain_numbers():
 def test_minutes_qual_flags_percent_first_format():
     assert len(verify_minutes_qual("He shoots 61.6% TS.", [])) == 1
     assert verify_minutes_qual("He shoots 61.6% TS (32.1 MPG).", []) == []
+
+
+def test_minutes_qual_separate_sentence_saves_claim():
+    assert verify_minutes_qual(
+        "He shoots 61.6% TS. Minimum 500 minutes played.", []) == []
+
+
+def test_minutes_qual_table_qual_saves_claim():
+    assert verify_minutes_qual(
+        "He shoots 61.6% TS.",
+        [{"rows": [{"PLAYER": "X", "MPG": 32.1}],
+          "meta": {"qualification": "500+ total minutes"}}]) == []
