@@ -251,8 +251,16 @@ _PLANNER_SKILLS_TAIL = "\n\nAnalyst skills. Match the question to one skill and 
 MAX_SKILLS_PER_TURN = 2
 
 
-async def select_skills(question: str, llm) -> list[str]:
-    """Ask the LLM to pick 0-2 relevant skills. Falls back to [] on failure."""
+_VALID_ENTITY_LEVELS = ("player", "team", "mixed", "unknown")
+
+
+async def _select_skills_intent(question: str, llm) -> tuple[list[str], str | None]:
+    """Ask the LLM for skills plus the entity level the answer should be at.
+
+    Returns (skills, entity_level). entity_level is one of
+    _VALID_ENTITY_LEVELS (lowercased) or None when undetermined.
+    Never raises; on any failure returns ([], None).
+    """
     try:
         catalog_text = skills_catalog()
         known = set()
@@ -262,18 +270,49 @@ async def select_skills(question: str, llm) -> list[str]:
                 known.add(s[2:].split(":")[0].strip())
         prompt = (
             "Given this basketball question and the skill catalog below, "
-            "return the 0-2 most relevant skill names as a JSON list. "
+            'return a JSON object {"skills": [...0-2 skill names...], '
+            '"entity_level": "player"|"team"|"mixed"|"unknown"} where '
+            "entity_level is the entity level the answer should be at. "
             f"Question: {question}\nCatalog:\n{catalog_text}"
         )
         resp = await llm.ainvoke([HumanMessage(content=prompt)])
-        text = resp.content if hasattr(resp, "content") else str(resp)
-        m = re.search(r"\[.*?\]", str(text or ""), re.DOTALL)
-        names = json.loads(m.group(0) if m else str(text or ""))
-        if not isinstance(names, list):
-            return []
-        return [n for n in names if isinstance(n, str) and n in known][:2]
+        text = str(resp.content if hasattr(resp, "content") else resp or "")
+        m = re.search(r"\{.*?\}", text, re.DOTALL)
+        if m:
+            try:
+                obj = json.loads(m.group(0))
+            except Exception:
+                obj = None
+            if isinstance(obj, dict):
+                raw_skills = obj.get("skills")
+                skills = [n for n in raw_skills
+                          if isinstance(n, str) and n in known][:2] \
+                    if isinstance(raw_skills, list) else []
+                raw_level = obj.get("entity_level")
+                level = str(raw_level).lower() \
+                    if isinstance(raw_level, str) else None
+                if level not in _VALID_ENTITY_LEVELS:
+                    level = None
+                return skills, level
+        m2 = re.search(r"\[.*?\]", text, re.DOTALL)
+        if m2:
+            try:
+                names = json.loads(m2.group(0))
+            except Exception:
+                return [], None
+            if not isinstance(names, list):
+                return [], None
+            return [n for n in names
+                    if isinstance(n, str) and n in known][:2], None
+        return [], None
     except Exception:
-        return []
+        return [], None
+
+
+async def select_skills(question: str, llm) -> list[str]:
+    """Ask the LLM to pick 0-2 relevant skills. Falls back to [] on failure."""
+    skills, _ = await _select_skills_intent(question, llm)
+    return skills
 
 
 def build_planner_prompt(question: str, selected_skills: list[str]) -> str:
@@ -4288,6 +4327,8 @@ class DimeState(TypedDict):
     ledger: NotRequired[list[str]]
     # entity_cache: normalized query -> resolve_entity result.
     entity_cache: NotRequired[dict[str, dict[str, Any]]]
+    selected_skills: NotRequired[list[str]]
+    answer_entity_level: NotRequired[str | None]
 
 
 def _call_key(name: str, args: dict[str, Any]) -> str:
@@ -4610,14 +4651,19 @@ def _gate_table_level(table: dict) -> str:
     return "unknown"
 
 
-def verify_table_kind(question: str, table: dict) -> bool:
+def verify_table_kind(question: str, table: dict,
+                      question_kind: str | None = None) -> bool:
     """Termination gate: table entity level must match the question kind.
 
-    Returns False on a mismatch in EITHER direction (player question +
-    team-level table, or team question + player-level table).
+    question_kind is the LLM-determined intent (from
+    state["answer_entity_level"]); it wins over entity detection when
+    provided ("player"/"team"). It is never derived from question-text
+    keywords. Returns False on a mismatch in EITHER direction (player
+    question + team-level table, or team question + player-level table).
     "mixed"/"other"/unknown kinds never reject.
     """
-    kind = _gate_question_kind(question)
+    kind = question_kind if question_kind in ("player", "team") \
+        else _gate_question_kind(question)
     if kind not in ("player", "team"):
         return True
     try:
@@ -4630,10 +4676,12 @@ def verify_table_kind(question: str, table: dict) -> bool:
 
 
 def _gate_tables(question: str,
-                 tables: list) -> tuple[list, dict]:
+                 tables: list,
+                 question_kind: str | None = None) -> tuple[list, dict]:
     """Drop empty views and tables whose entity level mismatches the
     question kind. Returns (kept_tables, report)."""
-    kind = _gate_question_kind(question)
+    kind = question_kind if question_kind in ("player", "team") \
+        else _gate_question_kind(question)
     kept: list = []
     dropped: list = []
     for t in tables:
@@ -4643,7 +4691,7 @@ def _gate_tables(question: str,
         if rows is None or (isinstance(rows, (list, dict)) and not rows):
             dropped.append((t.get("title", "?"), "empty"))
             continue
-        if not verify_table_kind(question, t):
+        if not verify_table_kind(question, t, question_kind=question_kind):
             dropped.append((t.get("title", "?"), "kind-mismatch"))
             continue
         kept.append(t)
@@ -4657,6 +4705,7 @@ def _gated_tables(state: dict) -> list:
     tables, report = _gate_tables(
         state.get("question", "") or "",
         _flatten_tables(state.get("tool_results") or []),
+        question_kind=state.get("answer_entity_level"),
     )
     try:
         state["_gate_report"] = report  # type: ignore[typeddict-unknown-key]
@@ -4872,9 +4921,12 @@ async def data_retrieval_agent(
         _pholder: dict[str, Any] = {}
         try:
             llm = get_llm(state["primary"], state["model"])  # type: ignore[arg-type]
-            sel = await select_skills(question_for_planner, llm)
+            sel, entity_level = await _select_skills_intent(question_for_planner, llm)
         except Exception:
             sel = []
+            entity_level = None
+        state["selected_skills"] = sel
+        state["answer_entity_level"] = entity_level
         async for _pe in _stream_planner(
                 tooled,
                 [SystemMessage(content=build_planner_prompt(question_for_planner, sel) + prior),

@@ -2,11 +2,12 @@
 Phase 4 eval: 20 real prompts from Tony's usage, structural validation.
 
 Each case: prompt + expected question type + expected v2 skills + expected entities.
-Structural checks (no live LLM calls):
-  1. Expected skills exist in backend/v2/skills/
-  2. Prompt builds a valid planner prompt (v1) / TaskSpec (v2) without crashing
-  3. Termination gate functions accept/reject synthetic outputs correctly
-  4. No keyword routing in codebase (static check, one test)
+
+What this file measures:
+  (a) metadata/schema checks (wellformed, skills-exist, no-keyword-routing),
+  (b) synthetic gate-behavior checks (hand-built tables, no LLM),
+  (c) NOT measured here: response quality (correct numbers, real tables) --
+      needs a live LLM + warehouse, out of scope for this file.
 
 Run in CI with pytest. In sandbox (no deps), use the standalone runner:
   python3 backend/tests/run_eval_standalone.py
@@ -222,13 +223,22 @@ def test_eval_expected_skills_exist(prompt, qtype, expected_skills,
 def test_eval_no_keyword_routing():
     """Structural (static): no exact-substring keyword routing on question text.
 
-    Flags real code (SKILL_KEYWORDS assignment, def/call of match_skills),
-    not tests asserting their absence.
+    Tokenize-aware: stdlib `tokenize` skips COMMENT and STRING tokens
+    entirely, so docstrings/comments mentioning match_skills never trip it.
+    Flags only real code tokens:
+      (a) NAME SKILL_KEYWORDS followed by OP "=" or OP ":",
+      (b) NAME match_skills preceded by NAME "def",
+      (c) NAME match_skills followed by OP "(" not preceded by OP ".".
     """
     import os
-    import re
+    import tokenize
     backend = os.path.join(os.path.dirname(__file__), "..")
     offenders = []
+    _SKIP = {
+        tokenize.COMMENT, tokenize.STRING, tokenize.NL,
+        tokenize.NEWLINE, tokenize.INDENT, tokenize.DEDENT,
+        tokenize.ENDMARKER, tokenize.ENCODING,
+    }
     for root, _, files in os.walk(backend):
         if "node_modules" in root or "__pycache__" in root:
             continue
@@ -240,20 +250,29 @@ def test_eval_no_keyword_routing():
                 continue
             try:
                 with open(p, encoding="utf-8") as f:
-                    lines = f.readlines()
-            except OSError:
+                    toks = [t for t in tokenize.generate_tokens(f.readline)
+                            if t.type not in _SKIP]
+            except Exception:
                 continue
-            for i, line in enumerate(lines, 1):
-                s = line.strip()
-                if s.startswith("#") and ("gone" in s.lower() or "remov" in s.lower()):
+            for i, tok in enumerate(toks):
+                if tok.type != tokenize.NAME:
                     continue
-                if re.search(r"\bSKILL_KEYWORDS\s*=", line):
-                    offenders.append(f"{p}:{i}")
-                elif re.search(r"def\s+match_skills\s*\(", line):
-                    offenders.append(f"{p}:{i}")
-                elif re.search(r"(?<![\w.])match_skills\s*\(", line):
-                    if "not hasattr" not in line and "gone" not in line.lower():
-                        offenders.append(f"{p}:{i}")
+                prev = toks[i - 1] if i > 0 else None
+                nxt = toks[i + 1] if i + 1 < len(toks) else None
+                if tok.string == "SKILL_KEYWORDS":
+                    if nxt is not None and nxt.type == tokenize.OP \
+                            and nxt.string in ("=", ":"):
+                        offenders.append(f"{p}:{tok.start[0]}")
+                elif tok.string == "match_skills":
+                    if prev is not None and prev.type == tokenize.NAME \
+                            and prev.string == "def":
+                        offenders.append(f"{p}:{tok.start[0]}")
+                    elif nxt is not None and nxt.type == tokenize.OP \
+                            and nxt.string == "(":
+                        if not (prev is not None
+                                and prev.type == tokenize.OP
+                                and prev.string == "."):
+                            offenders.append(f"{p}:{tok.start[0]}")
     assert not offenders, f"keyword routing found in: {offenders}"
 
 
@@ -276,6 +295,10 @@ except Exception:
 pytestmark_gates = pytest.mark.skipif(
     not _GATES_IMPORTABLE, reason="backend.app.graph not importable (no deps)")
 
+# Production contract: the LLM's intent (state["answer_entity_level"]),
+# not question-text keywords or entity stubbing, drives the gate.
+# The tests below pass that intent explicitly via question_kind=.
+
 
 @pytest.mark.parametrize("prompt,qtype,expected_skills,expected_players,expected_teams",
                          [c for c in EVAL_CASES if c[1] in ("player_compare", "defensive_player")],
@@ -286,7 +309,7 @@ def test_eval_player_question_rejects_team_table(prompt, qtype, expected_skills,
                                                  expected_players, expected_teams):
     """Gate: player question + team-kind table -> reject (False)."""
     team_table = {"kind": "team", "rows": [{"TEAM": "BOS", "ORTG": 120.5}]}
-    assert verify_table_kind(prompt, team_table) is False
+    assert verify_table_kind(prompt, team_table, question_kind="player") is False
 
 
 @pytest.mark.parametrize("prompt,qtype,expected_skills,expected_players,expected_teams",
@@ -298,7 +321,7 @@ def test_eval_team_question_rejects_player_table(prompt, qtype, expected_skills,
                                                  expected_players, expected_teams):
     """Gate: team question + player-kind table -> reject (False)."""
     player_table = {"kind": "player", "rows": [{"PLAYER": "Jayson Tatum", "PPG": 30.1}]}
-    assert verify_table_kind(prompt, player_table) is False
+    assert verify_table_kind(prompt, player_table, question_kind="team") is False
 
 
 @pytest.mark.parametrize("prompt,qtype,expected_skills,expected_players,expected_teams",
