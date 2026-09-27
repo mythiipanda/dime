@@ -279,6 +279,14 @@ SKILL_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
                             "career leaders", "season leaders",
                             "multi-season", "per season", "by season",
                             "decade", "best single", "greatest season")),
+    ("defensive_analysis", ("defensive", "defense", "defender", "dpoy",
+                          "defensive player", "best defender", "steals",
+                          "blocks", "drtg", "defensive rating")),
+    ("player_comparison", ("efficiency", "volume", "head-to-head")),
+    ("team_offense", ("offense", "offensive", "ortg", "offensive rating",
+                    "pace", "best offense")),
+    ("leaderboard", ("leaderboard", "leaders", "top 10", "top 5",
+                    "rank", "ranking")),
 ]
 
 MAX_SKILLS_PER_TURN = 2
@@ -306,6 +314,118 @@ def build_planner_prompt(question: str) -> str:
         if body.strip():
             prompt += "\n\n" + body.strip()
     return prompt
+
+
+REACT_MAX_STEPS = 15
+
+_REACT_ACTION_PROMPT = (
+    "You are the planner in a bounded ReAct loop for an NBA analytics "
+    "assistant. Pick exactly ONE next step per turn.\n"
+    "Reply with a single JSON object and nothing else:\n"
+    '  {"action": "call_tool", "name": "<tool_name>", "args": {<args>}}\n'
+    '  {"action": "finish", "summary": "<one line on what the evidence shows>"}\n'
+    "Rules: choose one precise tool call over speculation; never repeat a "
+    "call that already returned usable data; when the evidence answers the "
+    "question, finish.")
+
+
+def _react_parse_action(text: str) -> dict[str, Any]:
+    """Parse the planner's JSON action. Non-JSON text ends the loop."""
+    try:
+        m = re.search(r"\{.*\}", text or "", re.DOTALL)
+        if m:
+            obj = json.loads(m.group(0))
+            if isinstance(obj, dict):
+                return obj
+    except Exception:
+        pass
+    return {"action": "finish", "summary": (text or "")[:200]}
+
+
+def _react_call_key(name: str, args: dict[str, Any]) -> str:
+    return name + ":" + json.dumps(args or {}, sort_keys=True, default=str)
+
+
+async def react_loop(
+    question: str,
+    state: dict[str, Any],
+    max_steps: int = REACT_MAX_STEPS,
+) -> AsyncGenerator[dict[str, Any], None]:
+    """Bounded ReAct loop over v1 tools, replacing the fixed desk pipeline.
+
+    The planner LLM picks one tool per step; two dict ledgers track the
+    task (question/entities/plan) and progress (fetched/verified/open).
+    Stops on a finish action, max_steps, or the stuck detector firing
+    (same tool + same args + same error twice in a row).
+    """
+    yield _event("node_update", {"node": "react_loop", "status": "running"})
+    state.setdefault("tool_results", [])
+    state.setdefault("calls_made", [])
+    qp, qt = _detect_entities(question)
+    task_ledger = {"question": question,
+                   "entities": {"players": qp[:6], "teams": qt[:6]},
+                   "plan": ""}
+    progress_ledger: dict[str, list] = {
+        "fetched": [], "verified": [], "open": []}
+    llm = get_llm(state.get("primary"), state.get("model"))  # type: ignore[arg-type]
+    if llm is None:
+        yield _event("error", {"node": "react_loop", "message": "no key"})
+        return
+    system = (build_planner_prompt(question) + "\n\n"
+              + _planner_season_context() + "\n\n" + _REACT_ACTION_PROMPT)
+    recent: list[tuple[str, str]] = []
+    for _step in range(max_steps):
+        ledger = ("Task ledger: "
+                  + json.dumps(task_ledger, default=str)
+                  + "\nProgress ledger: "
+                  + json.dumps(progress_ledger, default=str)
+                  + "\nEvidence so far: "
+                  + (str(state["tool_results"])[:3000] or "none yet"))
+        try:
+            resp = await llm.ainvoke([
+                SystemMessage(content=system),
+                HumanMessage(content=ledger
+                             + "\n\nWhat is the ONE next step?"),
+            ])
+            text = resp.content if hasattr(resp, "content") else str(resp)
+        except Exception as exc:
+            yield _event("error", {"node": "react_loop",
+                                  "message": str(exc)[:160]})
+            break
+        action = _react_parse_action(str(text or ""))
+        if action.get("action") == "finish":
+            task_ledger["plan"] = str(action.get("summary", ""))[:300]
+            yield _event("thought_stream", {"node": "react_loop",
+                                           "text": "Evidence complete. "
+                                                   + task_ledger["plan"][:160]})
+            break
+        name = str(action.get("name", ""))
+        args = action.get("args", {}) or {}
+        if not name or not isinstance(args, dict):
+            break
+        holder: dict[str, Any] = {}
+        async for ev in _triage_tool(name, args, state, holder):
+            yield ev
+        out = holder.get("out") or {}
+        rows = out.get("rows") or []
+        ok = bool(out.get("ok", bool(rows)))
+        err = "" if ok else str(out.get("error", "tool failed"))[:160]
+        progress_ledger["fetched"].append(name)
+        if ok and rows:
+            progress_ledger["verified"].append(name)
+        elif not ok:
+            progress_ledger["open"].append(f"{name}: {err}")
+        recent.append((_react_call_key(name, args), err))
+        # Stuck detector: same tool + same args + same error twice in a
+        # row -> recovery is unlikely, stop instead of looping.
+        if (len(recent) >= 2 and recent[-1][1]
+                and recent[-1] == recent[-2]):
+            yield _event("thought_stream",
+                         {"node": "react_loop",
+                          "text": f"{name} failed twice the same way. "
+                                  "Stopping with what we have."})
+            break
+    yield _event("node_update", {"node": "react_loop", "status": "complete"})
 
 
 PLANNER_SYSTEM = (
@@ -1974,57 +2094,6 @@ async def _triage_seed(question: str, primary: str, model: str,
     # payload). Burn-down: stat-qualified top-N asks keep get_leaders;
     # team top-N keeps the F66 pin above.
     #
-    # Defensive leaderboard pin (2026-09-27): "best defensive players?"
-    # was falling through all pins to the planner LLM, which mis-routed
-    # to scout/team desks (they expect one specific player/team) and
-    # failed with "data unavailable". This pin catches entity-less
-    # defensive player questions and routes to get_leaders with SPG
-    # (steals per game, 500-min floor). Uses the same _rk_m structural
-    # pattern plus defensive context.
-    _def_m = re.search(
-        r"\btop\s*(\d+)\s+(?:best\s+)?defen[cs]\w*\s+players?\b|"
-        r"\bbest\s+defen[cs]\w*\s+players?\b|"
-        r"\bdefen[cs]\w*\s+players?\b.*\bbest\b|"
-        r"\bbest\b.*\bdefen[cs]\w*\s+players?\b|"
-        r"\bbest\s+defen[cs]\w*\s+players?\s+in\s+the\s+(?:league|nba)\b",
-        question, re.IGNORECASE)
-    if (_def_m and not found_p and not found_t
-            and not is_trade and not is_cast):
-        _def_n = int(next((g for g in _def_m.groups() if g), "15"))
-        _defseason = "2025-26"
-        _defm = re.search(r"(20\d\d)\s*-\s*(\d\d)", question)
-        if _defm:
-            _defseason = f"{_defm.group(1)}-{_defm.group(2)}"
-        _defh: dict[str, Any] = {}
-        async for _e in _triage_tool(
-                "get_leaders", {"stat_category": "SPG", "n": _def_n,
-                               "season": _defseason},
-                state, _defh):
-            yield _e
-        _defout = _defh.get("out") or {}
-        if _result_status(_defout) == "ok" and _defout.get("rows"):
-            _defdet = (f"Top {len(_defout['rows'])} defensive players, "
-                       f"{_defseason} season. Ranked by steals per game "
-                       f"(500+ minute qualification):\n" +
-                       "\n".join(
-                           f"{r['RANK']}. {r['PLAYER']} ({r['TEAM']}) - "
-                           f"{r['SPG']:.2f} steals/game, {r['GP']} games"
-                           for r in _defout["rows"][:_def_n]))
-            _defout.setdefault("meta", {})["deterministic_answer"] = _defdet
-            # Caveat: steals are one defensive signal, not overall defense.
-            _defout["meta"]["caveat"] = (
-                "Ranked by steals per game; blocks and on-court defensive "
-                "rating are separate signals. On-court rating is context, "
-                "not individual defensive value.")
-            async for _e in _triage_terminal(question, state):
-                yield _e
-        else:
-            _deferr = (_defout.get("error") or
-                       "No defensive leaderboard data for that season.")
-            state["analysis"] = str(_deferr)
-            async for _e in _triage_terminal(question, state):
-                yield _e
-        return
     _rk_m = re.search(
         r"\btop\s*(\d+)\s+(?:best\s+)?players?\b|"
         r"\bbest\s+(\d+)\s+players?\b|"
