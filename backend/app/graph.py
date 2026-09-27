@@ -4541,15 +4541,6 @@ def _flatten_tables(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
 # for "best defensive players?" - team-level views for player-kind
 # questions. A gate catches all of that centrally instead of one more
 # regex per incident.
-_GATE_PLAYER_Q_RX = re.compile(
-    r"\bplayers?\b|\bbest\b|\bworst\b|\bleaders?\b|\brank(?:ing|ed|s)?\b|"
-    r"\bmvp\b|\bdpoy\b|\brookie\b|\ball[-\s]?star\b|\bcompare\b|\bvs\.?\b",
-    re.IGNORECASE,
-)
-_GATE_TEAM_Q_RX = re.compile(
-    r"\bteams?\b|\bstandings\b|\bplayoff race\b",
-    re.IGNORECASE,
-)
 _GATE_TEAM_TABLE_RX = re.compile(
     r"team splits|team totals|standings|four factors|matchup splits",
     re.IGNORECASE,
@@ -4561,7 +4552,13 @@ _GATE_SUPERLATIVE_RX = re.compile(
 
 
 def _gate_question_kind(question: str) -> str:
-    """Classify the question's entity kind for table matching."""
+    """Classify the question's entity kind for table matching.
+
+    Uses only structural entity detection (_detect_entities). No
+    keyword/regex heuristics — phrasing like "best offense" must not
+    change which tables are kept. If no entities are found, returns
+    "other" (no kind-based table dropping).
+    """
     try:
         found_p, found_t = _detect_entities(question or "")
     except Exception:
@@ -4572,13 +4569,6 @@ def _gate_question_kind(question: str) -> str:
         return "team"
     if found_p and found_t:
         return "mixed"
-    q = question or ""
-    playerish = bool(_GATE_PLAYER_Q_RX.search(q))
-    teamish = bool(_GATE_TEAM_Q_RX.search(q))
-    if playerish and not teamish:
-        return "player"
-    if teamish and not playerish:
-        return "team"
     return "other"
 
 
