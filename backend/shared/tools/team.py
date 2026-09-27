@@ -546,7 +546,7 @@ def get_lineups(team_id: str | int, season: str = SEASON) -> dict[str, Any]:
         r["SAMPLE_TIER"] = tier
         r["EST_POSS"] = est
         if tier == "small":
-            r["SAMPLE"] = "small: under ~100 possessions, do not trust"
+            r["SAMPLE"] = "small: under ~100 possessions"
     rows = sorted(rows, key=lambda r: float(r.get("MIN") or 0), reverse=True)
     try:
         comp = _competitive_lineup_nets(team_id, season)
