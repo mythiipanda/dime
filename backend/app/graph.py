@@ -1481,14 +1481,43 @@ async def _triage_terminal(question: str,
     yield _event("node_update", {"node": "data_retrieval", "status": "complete"})
 
 
+# Conversational correction/clarification openers ("no i mean ...",
+# "actually ..."). A correction follow-up carries no pronouns, so the
+# pronoun-carry gate never fires; strip the opener once and, when the
+# stripped question names nobody, inherit history entities through the
+# same carry mechanism. Conversation-state carry only: no evidence is
+# dropped and no question-kind routing changes here.
+_CORRECTION_OPENERS = ("no i mean", "i meant", "actually", "sorry",
+                       "correction:")
+
+
+def _strip_correction_opener(question: str) -> str | None:
+    """Return the question minus one leading correction opener, or None."""
+    _q = (question or "").lstrip()
+    _low = _q.lower()
+    for _op in _CORRECTION_OPENERS:
+        if _low.startswith(_op):
+            return _q[len(_op):].lstrip(" ,:;-")
+    return None
+
+
 async def _triage_seed(question: str, primary: str, model: str,
                        state: dict) -> AsyncGenerator[dict[str, Any], None]:
     found_p, found_t = _detect_entities(question)
     _orig_p, _orig_t = list(found_p), list(found_t)
-    if state.get("history") and re.search(
-            r"\b(him|her|them|they|his|hers|their|theirs|it|he|she|"
-            r"that team|that player)\b",
-            question, re.IGNORECASE):
+    # Correction follow-up: opener stripped once; carry only when the
+    # stripped question names nobody of its own and history exists.
+    _corr_stripped = _strip_correction_opener(question)
+    _corr_p, _corr_t = (_detect_entities(_corr_stripped)
+                        if _corr_stripped is not None else ([], []))
+    _is_correction_carry = (
+        _corr_stripped is not None and not _corr_p and not _corr_t)
+    if (state.get("history") and (
+            re.search(
+                r"\b(him|her|them|they|his|hers|their|theirs|it|he|she|"
+                r"that team|that player)\b",
+                question, re.IGNORECASE)
+            or _is_correction_carry)):
         # Player carry prefers the SUBJECT of prior asks (user turns);
         # answer mentions follow only when no ask named anyone - the
         # F64 flake: a playoff-avg answer that happened to name a
@@ -1944,6 +1973,58 @@ async def _triage_seed(question: str, primary: str, model: str,
     # metric basis (v67 law: "in your view" still answers from the
     # payload). Burn-down: stat-qualified top-N asks keep get_leaders;
     # team top-N keeps the F66 pin above.
+    #
+    # Defensive leaderboard pin (2026-09-27): "best defensive players?"
+    # was falling through all pins to the planner LLM, which mis-routed
+    # to scout/team desks (they expect one specific player/team) and
+    # failed with "data unavailable". This pin catches entity-less
+    # defensive player questions and routes to get_leaders with SPG
+    # (steals per game, 500-min floor). Uses the same _rk_m structural
+    # pattern plus defensive context.
+    _def_m = re.search(
+        r"\btop\s*(\d+)\s+(?:best\s+)?defen[cs]\w*\s+players?\b|"
+        r"\bbest\s+defen[cs]\w*\s+players?\b|"
+        r"\bdefen[cs]\w*\s+players?\b.*\bbest\b|"
+        r"\bbest\b.*\bdefen[cs]\w*\s+players?\b|"
+        r"\bbest\s+defen[cs]\w*\s+players?\s+in\s+the\s+(?:league|nba)\b",
+        question, re.IGNORECASE)
+    if (_def_m and not found_p and not found_t
+            and not is_trade and not is_cast):
+        _def_n = int(next((g for g in _def_m.groups() if g), "15"))
+        _defseason = "2025-26"
+        _defm = re.search(r"(20\d\d)\s*-\s*(\d\d)", question)
+        if _defm:
+            _defseason = f"{_defm.group(1)}-{_defm.group(2)}"
+        _defh: dict[str, Any] = {}
+        async for _e in _triage_tool(
+                "get_leaders", {"stat_category": "SPG", "n": _def_n,
+                               "season": _defseason},
+                state, _defh):
+            yield _e
+        _defout = _defh.get("out") or {}
+        if _result_status(_defout) == "ok" and _defout.get("rows"):
+            _defdet = (f"Top {len(_defout['rows'])} defensive players, "
+                       f"{_defseason} season. Ranked by steals per game "
+                       f"(500+ minute qualification):\n" +
+                       "\n".join(
+                           f"{r['RANK']}. {r['PLAYER']} ({r['TEAM']}) - "
+                           f"{r['SPG']:.2f} steals/game, {r['GP']} games"
+                           for r in _defout["rows"][:_def_n]))
+            _defout.setdefault("meta", {})["deterministic_answer"] = _defdet
+            # Caveat: steals are one defensive signal, not overall defense.
+            _defout["meta"]["caveat"] = (
+                "Ranked by steals per game; blocks and on-court defensive "
+                "rating are separate signals. On-court rating is context, "
+                "not individual defensive value.")
+            async for _e in _triage_terminal(question, state):
+                yield _e
+        else:
+            _deferr = (_defout.get("error") or
+                       "No defensive leaderboard data for that season.")
+            state["analysis"] = str(_deferr)
+            async for _e in _triage_terminal(question, state):
+                yield _e
+        return
     _rk_m = re.search(
         r"\btop\s*(\d+)\s+(?:best\s+)?players?\b|"
         r"\bbest\s+(\d+)\s+players?\b|"
