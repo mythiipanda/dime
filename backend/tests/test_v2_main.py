@@ -43,6 +43,10 @@ def test_v2_entrypoint_routes():
     assert "/api/trade/check" in paths
     assert "/api/debate-card" in paths
     assert "/api/debate-card/file" in paths
+    assert "/api/today" in paths
+    assert "/api/watchlist" in paths
+    assert "/api/movers" in paths
+    assert "/api/briefing" in paths
     assert not any(p.startswith("/api/v1") for p in paths), \
         sorted(p for p in paths if p.startswith("/api/v1"))
 
@@ -636,3 +640,117 @@ def test_v2_debate_card_file_serves(monkeypatch, tmp_path):
     assert resp.media_type == "text/html"
     assert resp.headers["Cache-Control"] == "public, max-age=3600"
     assert str(resp.path) == str(card)
+
+
+# --- /today /watchlist /movers /briefing (v1-removal step 3) ---
+
+
+def _stub_tool_module(monkeypatch, submodule, **fns):
+    """Stub shared.tools.<submodule> with plain callables."""
+    import types
+
+    class FakeTool:
+        def __init__(self, fn):
+            self._fn = fn
+
+        def invoke(self, payload):
+            return self._fn(payload)
+
+    mod = types.ModuleType(f"shared.tools.{submodule}")
+    for name, fn in fns.items():
+        setattr(mod, name, FakeTool(fn))
+    tools_mod = types.ModuleType("shared.tools")
+    _stub_shared(monkeypatch, **{"tools": tools_mod,
+                                 f"tools.{submodule}": mod})
+    return mod
+
+
+def test_v2_today_parses_json_string(monkeypatch):
+    """GET /api/today parses tool JSON strings, passes dicts through."""
+    import asyncio
+
+    _stub_tool_module(monkeypatch, "today",
+                      get_today=lambda p: '{"games": 3}' if p == {"season": "2024-25"} else {"x": 1})
+    from v2.api.routes import today as today_view
+
+    assert asyncio.run(today_view(season="2024-25")) == {"games": 3}
+    assert asyncio.run(today_view(season="2025-26")) == {"x": 1}
+
+
+def test_v2_watchlist_crud(monkeypatch):
+    """Watchlist GET/POST/DELETE forward season/entity args (v1 parity)."""
+    import asyncio
+
+    calls = []
+    _stub_tool_module(
+        monkeypatch, "watchlist",
+        get_watchlist=lambda p: calls.append(("get", p)) or '{"items": []}',
+        add_watchlist_item=lambda p: calls.append(("add", p)) or '{"ok": True}',
+        remove_watchlist_item=lambda p: calls.append(("remove", p)) or '{"ok": True}',
+    )
+    from v2.api.routes import (watchlist as wl_view,
+                               watchlist_add as wl_add,
+                               watchlist_remove as wl_remove,
+                               WatchlistBody)
+
+    assert asyncio.run(wl_view(season="2024-25")) == {"items": []}
+    out = asyncio.run(wl_add(WatchlistBody(
+        entity_type="player", entity_id="lebron", season="2024-25")))
+    assert out == {"ok": True}
+    assert asyncio.run(wl_remove(entity_type="player", entity_id="lebron")) == \
+        {"ok": True}
+    assert calls == [
+        ("get", {"season": "2024-25"}),
+        ("add", {"entity_type": "player", "entity_id": "lebron",
+                 "season": "2024-25"}),
+        ("remove", {"entity_type": "player", "entity_id": "lebron"}),
+    ]
+
+
+def test_v2_movers_normalizes(monkeypatch):
+    """GET /api/movers parses deltas then normalizes with season."""
+    import asyncio
+    import types
+
+    seen = {}
+
+    def fake_deltas(payload):
+        seen["league"] = payload
+        return '{"deltas": []}'
+
+    def fake_norm(out, season):
+        seen["norm"] = (out, season)
+        return {"movers": []}
+
+    class FakeTool:
+        def __init__(self, fn):
+            self._fn = fn
+
+        def invoke(self, payload):
+            return self._fn(payload)
+
+    tools_mod = types.ModuleType("shared.tools")
+    league_mod = types.ModuleType("shared.tools.league")
+    league_mod.get_leaderboard_deltas = FakeTool(fake_deltas)
+    today_mod = types.ModuleType("shared.tools.today")
+    today_mod.normalize_movers = fake_norm
+    _stub_shared(monkeypatch, **{"tools": tools_mod,
+                                 "tools.league": league_mod,
+                                 "tools.today": today_mod})
+
+    from v2.api.routes import movers as movers_view
+
+    assert asyncio.run(movers_view(season="2024-25", days=14)) == {"movers": []}
+    assert seen["league"] == {"season": "2024-25", "days": 14}
+    assert seen["norm"] == ({"deltas": []}, "2024-25")
+
+
+def test_v2_briefing_passthrough(monkeypatch):
+    """GET /api/briefing parses the briefing JSON (v1 parity)."""
+    import asyncio
+
+    _stub_tool_module(monkeypatch, "today",
+                      get_morning_briefing=lambda p: '{"brief": "ok"}')
+    from v2.api.routes import briefing as briefing_view
+
+    assert asyncio.run(briefing_view(season="2025-26")) == {"brief": "ok"}

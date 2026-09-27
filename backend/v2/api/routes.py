@@ -731,6 +731,81 @@ def debate_card_file(name: str = Query("")) -> FileResponse:
     )
 
 
+@router.get("/today")
+async def today(season: str = Query("2025-26")):
+    """Today's games slate (v1 parity)."""
+    from shared.tools.today import get_today
+
+    res = get_today.invoke({"season": season})
+    return json.loads(res) if isinstance(res, str) else res
+
+
+@router.get("/watchlist")
+async def watchlist(season: str = Query("2025-26")):
+    """Watchlist read (v1 parity)."""
+    from shared.tools.watchlist import get_watchlist
+
+    res = get_watchlist.invoke({"season": season})
+    return json.loads(res) if isinstance(res, str) else res
+
+
+class WatchlistBody(BaseModel):
+    entity_type: str
+    entity_id: str
+    season: str = "2025-26"
+
+
+@router.post("/watchlist")
+async def watchlist_add(body: WatchlistBody):
+    """Watchlist add (v1 parity)."""
+    from shared.tools.watchlist import add_watchlist_item
+
+    res = add_watchlist_item.invoke({
+        "entity_type": body.entity_type,
+        "entity_id": body.entity_id,
+        "season": body.season,
+    })
+    return json.loads(res) if isinstance(res, str) else res
+
+
+@router.delete("/watchlist")
+async def watchlist_remove(
+    entity_type: str = Query(...),
+    entity_id: str = Query(...),
+):
+    """Watchlist remove (v1 parity)."""
+    from shared.tools.watchlist import remove_watchlist_item
+
+    res = remove_watchlist_item.invoke({
+        "entity_type": entity_type,
+        "entity_id": entity_id,
+    })
+    return json.loads(res) if isinstance(res, str) else res
+
+
+@router.get("/movers")
+async def movers(
+    season: str = Query("2025-26"),
+    days: int = Query(7, ge=1, le=30),
+):
+    """Leaderboard movers (v1 parity)."""
+    from shared.tools.league import get_leaderboard_deltas
+    from shared.tools.today import normalize_movers
+
+    res = get_leaderboard_deltas.invoke({"season": season, "days": days})
+    out = json.loads(res) if isinstance(res, str) else res
+    return normalize_movers(out, season)
+
+
+@router.get("/briefing")
+async def briefing(season: str = Query("2025-26")):
+    """Morning briefing (v1 parity)."""
+    from shared.tools.today import get_morning_briefing
+
+    res = get_morning_briefing.invoke({"season": season})
+    return json.loads(res) if isinstance(res, str) else res
+
+
 def public_evidence_table(item):
     """Bounded public projection; internal provenance never crosses SSE."""
     return {"tool": item.capability, "rows": item.rows, "meta": {
