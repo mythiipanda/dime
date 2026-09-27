@@ -92,16 +92,16 @@ def test_resolve_entity_static():
     assert 2544 in ids
 
 
-def test_trust_tier_thresholds():
-    from shared.tools._core import trust_tier
+def test_sample_tier_thresholds():
+    from shared.tools._core import sample_tier
 
-    assert trust_tier(120) == ("TRUSTED", 240)
-    assert trust_tier(100)[0] == "TRUSTED"
-    assert trust_tier(99.9)[0] == "FRAGILE"
-    assert trust_tier(50)[0] == "FRAGILE"
-    assert trust_tier(49.9)[0] == "SMALL"
-    assert trust_tier(None) == ("SMALL", 0)
-    assert trust_tier("bad") == ("SMALL", 0)
+    assert sample_tier(120) == ("large", 240)
+    assert sample_tier(100)[0] == "large"
+    assert sample_tier(99.9)[0] == "medium"
+    assert sample_tier(50)[0] == "medium"
+    assert sample_tier(49.9)[0] == "small"
+    assert sample_tier(None) == ("small", 0)
+    assert sample_tier("bad") == ("small", 0)
 
 
 def test_zone_diet_sums_three_zones():

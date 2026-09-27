@@ -115,14 +115,14 @@ def _envelope(table: str, season: str, frame: object, cached: bool) -> dict:
             pinned.append(keyed)
         rows = pinned
     if table == "silver_lineups":
-        from shared.tools._core import trust_tier
+        from shared.tools._core import sample_tier
 
         for r in rows:
-            tier, est = trust_tier(r.get("MIN"))
-            r["TRUST"] = tier
+            tier, est = sample_tier(r.get("MIN"))
+            r["SAMPLE_TIER"] = tier
             r["EST_POSS"] = est
-            if tier == "SMALL" and not r.get("SAMPLE"):
-                r["SAMPLE"] = "small: under ~100 possessions, do not trust"
+            if tier == "small" and not r.get("SAMPLE"):
+                r["SAMPLE"] = "small: under ~100 possessions"
     return {"data": rows, "meta": meta}
 
 

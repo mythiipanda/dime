@@ -5,7 +5,7 @@ import asyncio as _asyncio
 from langchain_core.tools import tool
 
 from ..sources import nba_stats
-from ._core import SEASON, TTL_BOX, TTL_GAMELOG, TTL_PBPSTATS, TTL_ROSTER, TTL_SCOREBOARD_PAST, _warehouse_or_live, coerce_team_id, is_past_game_date, trust_tier
+from ._core import SEASON, TTL_BOX, TTL_GAMELOG, TTL_PBPSTATS, TTL_ROSTER, TTL_SCOREBOARD_PAST, _warehouse_or_live, coerce_team_id, is_past_game_date, sample_tier
 
 
 def _abbrev(who: str) -> str:
@@ -457,8 +457,8 @@ def get_boxscore(game_id: str, season: str = SEASON) -> dict[str, Any]:
             "meta": {**meta, "links": game_links(game_id)}}
 
 
-def _trust_tier(minutes: object) -> tuple[str, int]:
-    return trust_tier(minutes)
+def _sample_tier(minutes: object) -> tuple[str, int]:
+    return sample_tier(minutes)
 
 
 def _competitive_lineup_nets(
@@ -542,10 +542,10 @@ def get_lineups(team_id: str | int, season: str = SEASON) -> dict[str, Any]:
         entity=f"team:{team_id}", ttl_s=TTL_PBPSTATS,
     )
     for r in rows:
-        tier, est = _trust_tier(r.get("MIN"))
-        r["TRUST"] = tier
+        tier, est = _sample_tier(r.get("MIN"))
+        r["SAMPLE_TIER"] = tier
         r["EST_POSS"] = est
-        if tier == "SMALL":
+        if tier == "small":
             r["SAMPLE"] = "small: under ~100 possessions, do not trust"
     rows = sorted(rows, key=lambda r: float(r.get("MIN") or 0), reverse=True)
     try:
@@ -675,7 +675,7 @@ async def get_scout_pack(team: str = "", opponent: str = "", season: str = SEASO
             rr = next((r for r in rat.get("rows", []) if str(r.get("TEAM", "")).upper() == abbr.upper()), {})
             lin = await get_lineups.ainvoke({"team_id": tid, "season": season})
             top = [{"GROUP_NAME": r.get("GROUP_NAME"), "MIN": r.get("MIN"),
-                    "PLUS_MINUS": r.get("PLUS_MINUS"), "TRUST": r.get("TRUST")}
+                    "PLUS_MINUS": r.get("PLUS_MINUS"), "SAMPLE_TIER": r.get("SAMPLE_TIER")}
                    for r in lin.get("rows", []) if "SAMPLE" not in r][:3]
             inj = await get_injuries.ainvoke({"team": abbr, "season": season})
             irows = inj.get("rows", []) or []
@@ -694,10 +694,10 @@ async def get_scout_pack(team: str = "", opponent: str = "", season: str = SEASO
         edge = (f"{t.get('abbrev', team)} ({t.get('record')}, net {tn:+.1f}) vs "
                 f"{o.get('abbrev', opponent)} ({o.get('record')}, net {on_:+.1f}): "
                 f"net gap {tn - on_:+.1f}, top-unit {tp} vs {op}.")
-        fragile = [s.get("abbrev", "") for s in (t, o)
-                   if (s.get("top_lineups") or [{}])[0].get("TRUST") == "FRAGILE"]
-        if fragile:
-            edge += f" Caution: {', '.join(fragile)} top unit is FRAGILE (50-100 minutes)."
+        thin = [s.get("abbrev", "") for s in (t, o)
+                if (s.get("top_lineups") or [{}])[0].get("SAMPLE_TIER") == "medium"]
+        if thin:
+            edge += f" Note: {', '.join(thin)} top unit has only 50-100 minutes together."
     except Exception:
         edge = f"{team} vs {opponent}: data incomplete, check records and health."
     return {"tool": "get_scout_pack", "ok": True, "rows": {"team": t, "opponent": o, "edge": edge},

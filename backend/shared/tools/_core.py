@@ -107,17 +107,17 @@ def clamp_scope(scope: str) -> str:
     return lower if lower in ("player", "team") else "player"
 
 
-def trust_tier(minutes: object) -> tuple[str, int]:
+def sample_tier(minutes: object) -> tuple[str, int]:
     try:
         mins = float(minutes or 0)
     except (TypeError, ValueError):
-        return "SMALL", 0
+        return "small", 0
     est = int(round(mins * 2))
     if mins >= 100:
-        return "TRUSTED", est
+        return "large", est
     if mins >= 50:
-        return "FRAGILE", est
-    return "SMALL", est
+        return "medium", est
+    return "small", est
 
 
 NICKNAMES = {
