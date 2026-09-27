@@ -4610,6 +4610,25 @@ def _gate_table_level(table: dict) -> str:
     return "unknown"
 
 
+def verify_table_kind(question: str, table: dict) -> bool:
+    """Termination gate: table entity level must match the question kind.
+
+    Returns False on a mismatch in EITHER direction (player question +
+    team-level table, or team question + player-level table).
+    "mixed"/"other"/unknown kinds never reject.
+    """
+    kind = _gate_question_kind(question)
+    if kind not in ("player", "team"):
+        return True
+    try:
+        level = _gate_table_level(table)
+    except Exception:
+        return True
+    if level not in ("player", "team"):
+        return True
+    return kind == level
+
+
 def _gate_tables(question: str,
                  tables: list) -> tuple[list, dict]:
     """Drop empty views and tables whose entity level mismatches the
@@ -4624,7 +4643,7 @@ def _gate_tables(question: str,
         if rows is None or (isinstance(rows, (list, dict)) and not rows):
             dropped.append((t.get("title", "?"), "empty"))
             continue
-        if kind == "player" and _gate_table_level(t) == "team":
+        if not verify_table_kind(question, t):
             dropped.append((t.get("title", "?"), "kind-mismatch"))
             continue
         kept.append(t)
@@ -4682,6 +4701,46 @@ def _gate_qualifications(text: str,
             text = (text or "").rstrip() + " " + coverages[0]
             applied.append("coverage")
     return text, {"applied": applied}
+
+
+_MINUTES_RATE_CLAIM_RX = re.compile(
+    r"\d+\.?\d*\s*(?:SPG|BPG|PPG|RPG|APG|TS ?%|3P ?%|FG ?%|eFG ?%)"
+    r"|\d+\.?\d*\s*%\s*(?:TS|3P|FG|eFG)\b",
+    re.IGNORECASE,
+)
+_MINUTES_LEAD_RX = re.compile(
+    r"leads?( the)? league in \w+",
+    re.IGNORECASE,
+)
+_MINUTES_QUAL_RX = re.compile(
+    r"\bminutes?\b|\bmin\b|\bmpg\b",
+    re.IGNORECASE,
+)
+
+
+def verify_minutes_qual(answer_text: str, tables: list) -> list[str]:
+    """Termination gate (REJECT check): rate-stat claims must carry a
+    minutes qualification in the same sentence.
+
+    Returns the violating sentences (empty = pass). This is a reject
+    check - callers drop the returned sentences. _gate_qualifications
+    stays as-is (append repair) and is untouched by this function.
+    """
+    _ = tables
+    violations: list[str] = []
+    try:
+        units = list(_iter_units(answer_text or ""))
+    except Exception:
+        return []
+    for _sent, _ in units:
+        _s = (_sent or "").strip()
+        if not _s:
+            continue
+        if (_MINUTES_RATE_CLAIM_RX.search(_s)
+                or _MINUTES_LEAD_RX.search(_s)):
+            if not _MINUTES_QUAL_RX.search(_s):
+                violations.append(_s)
+    return violations
 
 
 def _numbers(text: str) -> list[str]:
@@ -5900,6 +5959,9 @@ def _canonical_team_full_name(token: str) -> str | None:
     return None
 
 
+_TEAM_IDENTITY_KEYS = {"TEAM", "TEAM_NAME", "TEAM_ABBREVIATION", "ABBREVIATION", "ABBR", "CITY", "FULL_NAME", "NICKNAME"}
+
+
 def _team_row(rows: list, token: str) -> dict | None:
     """Bind a team token to its payload row by canonical team entity.
 
@@ -5917,7 +5979,7 @@ def _team_row(rows: list, token: str) -> dict | None:
     for r in rows:
         if not isinstance(r, dict):
             continue
-        cells = [v for v in r.values() if isinstance(v, str)]
+        cells = [v for k, v in r.items() if isinstance(v, str) and str(k).upper() in _TEAM_IDENTITY_KEYS]
         if canon is not None:
             for v in cells:
                 if _canonical_team_full_name(v) == canon:
@@ -6105,6 +6167,18 @@ def _verify_draft_numerals(state: dict, text: str) -> list[str]:
         if n not in violations:
             violations.append(n)
     state["_verify"] = {"numeral_violations": violations}
+    return violations
+
+
+def verify_numbers_traced(state: dict, text: str) -> list[str]:
+    """Termination gate: numerals in the answer must trace to this
+    turn's evidence. Thin wrapper over _verify_numeral_claims returning
+    just the numeral strings; unlike _verify_draft_numerals it never
+    writes state["_verify"]. Non-empty = reject."""
+    violations: list[str] = []
+    for _, _n in _verify_numeral_claims(state, text):
+        if _n not in violations:
+            violations.append(_n)
     return violations
 
 # QA #65 known-gap taxonomy: what the dataset provably does NOT have.
@@ -6553,6 +6627,26 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
             _kept.append(_unit + _sep)
         _scrubbed = "".join(_kept).strip()
         # A dropped unit can leave doubled blank lines behind.
+        _scrubbed = re.sub(r"\n{3,}", "\n\n", _scrubbed)
+        if not _scrubbed:
+            _scrubbed = _gap or (
+                "I pulled the relevant data but could not verify the "
+                "figures in the summary. The evidence panel below has the "
+                "sourced results."
+            )
+    # Termination gate, minutes side (REJECT): rate-stat claims without
+    # a same-sentence minutes qualification are dropped the same way as
+    # untraced numerals - never silently rendered. Empty-after-drop
+    # keeps the honest fallback above.
+    _min_viol = verify_minutes_qual(_scrubbed, _gated_tables(state))
+    if _min_viol:
+        _min_bad = set(_min_viol)
+        _kept_m: list[str] = []
+        for _unit, _sep in _iter_units(_scrubbed):
+            if _unit.strip() and _unit.strip() in _min_bad:
+                continue
+            _kept_m.append(_unit + _sep)
+        _scrubbed = "".join(_kept_m).strip()
         _scrubbed = re.sub(r"\n{3,}", "\n\n", _scrubbed)
         if not _scrubbed:
             _scrubbed = _gap or (

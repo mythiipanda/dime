@@ -70,3 +70,16 @@ def test_abbreviation_guard_stays_case_sensitive():
         "What is the bos record?")[1]
     assert _team_row(ABBR_ROWS, "bos") is None
     assert _team_row(ABBR_ROWS, "was") is None
+
+
+def test_team_row_ignores_opponent_column():
+    rows = [
+        {"TEAM": "LAC", "OPPONENT": "BOS", "net": 1.0},
+        {"TEAM": "BOS", "OPPONENT": "LAC", "net": 2.0},
+    ]
+    assert _team_row(rows, "BOS") is rows[1]
+
+
+def test_team_row_opponent_only_match_does_not_bind():
+    rows = [{"TEAM": "LAC", "OPPONENT": "BOS"}]
+    assert _team_row(rows, "BOS") is None

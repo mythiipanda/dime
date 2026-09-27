@@ -13,6 +13,9 @@ from app.graph import (  # noqa: E402
     _gate_question_kind,
     _gate_table_level,
     _gate_tables,
+    verify_minutes_qual,
+    verify_numbers_traced,
+    verify_table_kind,
 )
 
 
@@ -130,3 +133,76 @@ def test_no_entity_question_keeps_team_table():
     assert kept[0]["title"] == "Team splits"
     assert report["question_kind"] == "other"
     assert report["dropped"] == []
+
+
+def _traced_state():
+    return {
+        "tool_results": [{"title": "Leaders",
+                          "rows": [{"PLAYER": "Luka Doncic", "SPG": 2.1,
+                                    "MINUTES": 2400}]}],
+        "ledger": [],
+    }
+
+
+def test_verify_numbers_traced_flags_untraced():
+    state = _traced_state()
+    assert verify_numbers_traced(state, "Luka Doncic averages 99.9 points.") == ["99.9"]
+    # thin wrapper only: never writes state["_verify"]
+    assert "_verify" not in state
+
+
+def test_verify_numbers_traced_passes_traced():
+    assert verify_numbers_traced(_traced_state(), "Luka Doncic averages 2.1 steals.") == []
+
+
+def test_empty_team_table_dropped():
+    kept, report = _gate_tables("boston celtics stats",
+                                [{"title": "Team splits", "kind": "dataset", "rows": []}])
+    assert kept == []
+    assert report["dropped"] == [("Team splits", "empty")]
+
+
+def test_verify_table_kind_both_directions():
+    pq = "Compare Luka Doncic and Shai Gilgeous-Alexander"
+    tq = "boston celtics stats"
+    assert verify_table_kind(pq, _team_splits_table()) is False
+    assert verify_table_kind(tq, _player_table()) is False
+    assert verify_table_kind(pq, _player_table()) is True
+    assert verify_table_kind(tq, _team_splits_table()) is True
+
+
+def test_verify_table_kind_mixed_other_unknown_never_reject():
+    assert verify_table_kind("Luka Doncic vs Boston Celtics", _team_splits_table()) is True
+    assert verify_table_kind("best offense this season?", _team_splits_table()) is True
+    unknown = {"title": "Dataset", "rows": [{"a": 1}]}
+    assert verify_table_kind("boston celtics stats", unknown) is True
+
+
+def test_team_question_drops_player_table():
+    kept, report = _gate_tables("boston celtics stats",
+                                [_player_table(), _team_splits_table()])
+    titles = [t["title"] for t in kept]
+    assert "Player ratings · DEF_RATING" not in titles
+    assert "Team splits" in titles
+    assert ("Player ratings · DEF_RATING", "kind-mismatch") in report["dropped"]
+
+
+def test_minutes_qual_flags_unqualified_rate_claim():
+    text = "Luka Doncic leads the league in steals (2.1 SPG)."
+    viols = verify_minutes_qual(text, [])
+    assert len(viols) == 1
+    assert "2.1 SPG" in viols[0]
+
+
+def test_minutes_qual_passes_with_floor():
+    text = "Luka Doncic leads the league in steals (2.1 SPG, min 500 minutes)."
+    assert verify_minutes_qual(text, []) == []
+
+
+def test_minutes_qual_ignores_plain_numbers():
+    assert verify_minutes_qual("Boston won 56 games.", []) == []
+
+
+def test_minutes_qual_flags_percent_first_format():
+    assert len(verify_minutes_qual("He shoots 61.6% TS.", [])) == 1
+    assert verify_minutes_qual("He shoots 61.6% TS (32.1 MPG).", []) == []
