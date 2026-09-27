@@ -1088,6 +1088,12 @@ async def quick_answer_stream(body: QuickAnswerBody):
         }
 
     async def generate():
+        # v1 parity: the human turn lands in the shared thread log so the
+        # chat is visible in /api/threads even if the run fails midway.
+        if body.thread is not None and body.client is not None:
+            from shared import store
+            store.save_chat(body.thread, "human", body.q[:2000],
+                            owner=body.client[:80])
         task = asyncio.create_task(runtime.run(
             body.q, run_id=run_id, context=context))
         try:
@@ -1153,6 +1159,16 @@ async def quick_answer_stream(body: QuickAnswerBody):
                 if body.thread is not None and body.client is not None:
                     _CONVERSATIONS.append_exchange(
                         body.client, body.thread, body.q, answer)
+                    if answer:
+                        # v1 parity: persist the exchange to the shared
+                        # thread log so v2 chats appear in /api/threads,
+                        # /api/threads/{thread_id}/runs and .../export.
+                        from shared import store
+                        store.save_chat(body.thread, "ai", answer,
+                                        owner=body.client[:80])
+                        store.save_run(body.thread, body.q[:2000], answer,
+                                       public_tables, [],
+                                       owner=body.client[:80])
             yield encode_event(GraphEnd())
         finally:
             if not task.done():

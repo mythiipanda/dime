@@ -311,3 +311,143 @@ def test_v2_sql_rerun_ok(monkeypatch):
     out = asyncio.run(sql_rerun(SqlRerunBody(sql="SELECT 1")))
     assert out == {"ok": True, "rows": {
         "columns": ["a"], "rows": [[1]], "ms": 5, "capped": False}}
+
+
+# --- v2 chat -> shared thread log (Instinct QA 2026-09-27: no history loss) ---
+
+
+def test_v2_chat_persists_to_shared_thread_log(monkeypatch, tmp_path):
+    """A real v2 chat turn lands in the REAL shared.store thread log.
+
+    Drives quick_answer_stream end-to-end (runtime/result seams stubbed;
+    the store is NOT stubbed) and asserts the exchange is visible via the
+    v1-parity /api/threads, /runs and /export views.
+    """
+    import asyncio
+    import sys
+    import types
+
+    monkeypatch.setenv("DIME_RUNTIME_V2", "on")
+    monkeypatch.setenv("DIME_V2_ACTIVITY_DIR", str(tmp_path / "activity"))
+    monkeypatch.setenv("DIME_CONVERSATION_STORE",
+                       str(tmp_path / "conversations.sqlite3"))
+
+    # Real shared.store, pointed at a throwaway DuckDB.
+    import shared.store as real_store
+    monkeypatch.setattr(real_store, "STATE_PATH",
+                        tmp_path / "state.duckdb")
+    monkeypatch.setattr(real_store, "STATE_LOCK_PATH",
+                        tmp_path / ".state-write.lock")
+
+    # Hermetic ConversationStore (module-level singleton is env-bound at
+    # import time, so swap it for the test).
+    from v2.api import routes
+    from v2.conversations import ConversationStore
+    monkeypatch.setattr(routes, "_CONVERSATIONS",
+                        ConversationStore(tmp_path / "conv.sqlite3"))
+
+    # Stub the heavy seams only: provider resolution, runtime assembly,
+    # policy, ledger. The answer/evidence projections are module-level
+    # helpers, monkeypatched to fixed values.
+    providers_mod = types.ModuleType("shared.providers")
+    providers_mod.resolve_model_id = lambda model: ("fake", "fake-model")
+    monkeypatch.setitem(sys.modules, "shared.providers", providers_mod)
+
+    class _FakePolicy:
+        publish = True
+
+        def model_dump(self):
+            return {}
+
+    policy_mod = types.ModuleType("v2.runtime.policy")
+
+    class _FakeExecutionPolicy:
+        @staticmethod
+        def live(**kwargs):
+            return _FakePolicy()
+
+        @staticmethod
+        def shadow(**kwargs):
+            return _FakePolicy()
+
+        @staticmethod
+        def model_validate(data):
+            return _FakePolicy()
+
+    policy_mod.ExecutionPolicy = _FakeExecutionPolicy
+    monkeypatch.setitem(sys.modules, "v2.runtime.policy", policy_mod)
+
+    fake_result = types.SimpleNamespace(
+        verification=types.SimpleNamespace(
+            status=types.SimpleNamespace(value="pass")),
+        verified_claims=[],
+        output_statuses=[],
+        gaps=[],
+    )
+
+    class _FakeRuntime:
+        async def run(self, q, run_id=None, context=None):
+            assert q == "Who leads the league in TS%?"
+            return fake_result
+
+    assembly_mod = types.ModuleType("v2.runtime.assembly")
+    assembly_mod.build_runtime = lambda **kwargs: (
+        _FakeRuntime(), types.SimpleNamespace(entries=[]))
+    monkeypatch.setitem(sys.modules, "v2.runtime.assembly", assembly_mod)
+
+    ledger_mod = types.ModuleType("v2.runtime.ledger")
+
+    class _FakeLedgerKind:
+        TOOL_CALL = "tool_call"
+        TOOL_RESULT = "tool_result"
+
+    ledger_mod.LedgerKind = _FakeLedgerKind
+    monkeypatch.setitem(sys.modules, "v2.runtime.ledger", ledger_mod)
+
+    adapters_mod = types.ModuleType("v2.adapters")
+    adapters_mod.CAPABILITIES = set()
+    monkeypatch.setitem(sys.modules, "v2.adapters", adapters_mod)
+
+    import shared.config as real_config
+    monkeypatch.setattr(real_config, "settings", types.SimpleNamespace(
+        dime_v2_pre_tool_timeout_s=5.0))
+
+    answer_text = "The Celtics lead the league in TS%."
+    evidence_tables = [{"tool": "get_leaders",
+                        "meta": {"source": "nba", "season": "2025-26"}}]
+    monkeypatch.setattr(routes, "_answer_text", lambda result: answer_text)
+    monkeypatch.setattr(routes, "_public_evidence_tables",
+                        lambda result: evidence_tables)
+
+    body = routes.QuickAnswerBody(q="Who leads the league in TS%?",
+                                  thread="t-hist", client="c-hist")
+
+    async def drive():
+        resp = await routes.quick_answer_stream(body)
+        return [chunk async for chunk in resp.body_iterator]
+
+    chunks = asyncio.run(drive())
+    assert any("final_answer" in c for c in chunks), chunks
+
+    # The exchange must be visible through the v1-parity thread views,
+    # backed by the real shared.store.
+    threads_out = routes.threads(client="c-hist")
+    thread_ids = [t["id"] for t in threads_out["threads"]]
+    assert "t-hist" in thread_ids, threads_out
+
+    runs_out = routes.thread_runs("t-hist", client="c-hist")
+    assert runs_out["runs"], runs_out
+    run = runs_out["runs"][0]
+    assert run["question"] == "Who leads the league in TS%?"
+    assert run["answer"] == answer_text
+    assert run["tables"] == evidence_tables
+
+    export_resp = routes.thread_export("t-hist", client="c-hist")
+    export_body = export_resp.body.decode()
+    assert "Who leads the league in TS%?" in export_body
+    assert answer_text in export_body
+
+    # Both turns (human + ai) are in the shared chat history.
+    history = real_store.chat_history("t-hist")
+    assert [m["role"] for m in history] == ["human", "ai"]
+    assert history[0]["text"] == "Who leads the league in TS%?"
