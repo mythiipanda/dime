@@ -121,3 +121,33 @@ export const BACKEND =
 export function emptyNode(): NodeState {
   return { status: "running", thoughts: [], toolCalls: [], toolResults: [], tables: [] };
 }
+
+// True when a final_answer event is a failure/fallback message, not a
+// recovered answer. The error banner must stay up for these; clearing it
+// would hide a genuine failure behind a "successful" final event.
+// Signals (from backend):
+// - v2 exception path: carry.verification="partial", carry.verified_claims=0,
+//   carry.gaps=[{kind:"execution_failure"}],
+//   text="I could not verify a publishable answer from the available data."
+// - v1 scrub-everything path: text="I pulled the relevant data but could not
+//   verify the figures in the summary. ..."
+// A genuine answer has verified_claims > 0 (or no carry at all from older
+// backends, in which case non-empty text counts as recovered).
+export function isFailureFinal(text: string, carry: unknown): boolean {
+  const t = text.trim();
+  if (!t) return true; // empty final = nothing recovered
+  // Known failure copy from both runtimes.
+  if (
+    t.startsWith("I could not verify a publishable answer") ||
+    t.startsWith("I pulled the relevant data but could not verify")
+  ) {
+    return true;
+  }
+  // Structured signal: zero verified claims means the run produced no
+  // verifiable answer, even if it emitted a non-empty final event.
+  if (carry && typeof carry === "object") {
+    const c = carry as Record<string, unknown>;
+    if (c.verified_claims === 0) return true;
+  }
+  return false;
+}
