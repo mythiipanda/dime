@@ -181,14 +181,31 @@ def preflight_runtime_assets(expected_path: str | Path | None = None) -> Runtime
     if set(expected) != required:
         raise RuntimeError("expected asset manifest has wrong fields")
     observed = runtime_asset_manifest()
-    if expected != observed.as_dict():
-        # Warn instead of failing: strict equality on the revision pin blocks
-        # legitimate deploys when the image tag moves under a pinned revision.
-        # Substantive drift (code/data hashes) is still visible in this log.
+    observed_dict = observed.as_dict()
+    if expected != observed_dict:
         import logging
-        logging.getLogger(__name__).warning(
-            "startup asset manifest mismatch: expected revision %s, observed %s",
-            expected.get("revision"), observed.as_dict().get("revision"),
+        _log = logging.getLogger(__name__)
+        # Fail closed on substantive drift (code, data, prompts) — this is the
+        # safety invariant: never serve unapproved artifacts. The revision
+        # label alone is not substantive; :latest moves under pinned revisions
+        # during normal deploys, so label mismatch is warn-only.
+        substantive_keys = {"executable_sha256", "module_sha256", "warehouse",
+                           "semantic_baseline", "prompt_sha256",
+                           "typed_argument_assets"}
+        substantive_drift = {
+            k: {"expected": expected.get(k), "observed": observed_dict.get(k)}
+            for k in substantive_keys
+            if expected.get(k) != observed_dict.get(k)
+        }
+        if substantive_drift:
+            _log.error("startup asset SUBSTANTIVE mismatch: %s", substantive_drift)
+            raise RuntimeError(
+                "startup asset manifest substantive mismatch: "
+                f"{sorted(substantive_drift)}")
+        # Revision-label-only mismatch: warn, don't block deploy.
+        _log.warning(
+            "startup asset revision label mismatch: expected %s, observed %s",
+            expected.get("revision"), observed_dict.get("revision"),
         )
     return observed
 
