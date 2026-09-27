@@ -1,14 +1,11 @@
-"""Skill-file architecture: defensive routing regression tests.
+"""Phase 2: LLM-based skill selection replaces keyword routing.
 
-1. The keyword table routes defensive questions to the defensive_analysis
-   skill (no hardcoded per-question pins).
-2. The bounded ReAct loop exposes (question, state, max_steps).
-3. The "Defensive leaderboard pin" hardcoded routing anti-pattern is gone
-   from app/graph.py.
-4. The termination gate (guard) machinery is still intact — we removed
-   routing, not guards.
+- select_skills asks the LLM to pick 0-2 skills, [] on failure.
+- SKILL_KEYWORDS / match_skills are gone.
+- build_planner_prompt(question, selected_skills) appends bodies for selection.
 """
 
+import asyncio
 import inspect
 import sys
 from pathlib import Path
@@ -16,31 +13,68 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app import graph as graph_module  # noqa: E402
-from app.graph import match_skills, react_loop  # noqa: E402
+from app.graph import build_planner_prompt, select_skills  # noqa: E402
+from app.skills import catalog, load_skill  # noqa: E402
 
 
-def test_defensive_skill_loaded():
-    assert "defensive_analysis" in match_skills("best defensive players?")
+class _FakeLLM:
+    def __init__(self, text):
+        self._text = text
+        self.seen = None
+
+    async def ainvoke(self, msgs):
+        self.seen = msgs
+        class _R:
+            pass
+        r = _R()
+        r.content = self._text
+        return r
 
 
-def test_react_loop_exists():
-    assert callable(react_loop)
-    sig = inspect.signature(react_loop)
-    params = list(sig.parameters)
-    assert params[:3] == ["question", "state", "max_steps"]
+class _FailingLLM:
+    async def ainvoke(self, msgs):
+        raise RuntimeError("llm down")
 
 
-def test_no_hardcoded_defensive_pin():
-    source = inspect.getsource(graph_module)
-    assert "Defensive leaderboard pin" not in source
+def test_select_skills_returns_expected():
+    llm = _FakeLLM('["leaders_read", "compare_players"]')
+    out = asyncio.run(select_skills("Who leads the league in scoring?", llm))
+    assert out == ["leaders_read", "compare_players"]
 
 
-def test_termination_gate_intact():
-    source = inspect.getsource(graph_module)
-    verify_fns = [
-        name for name in dir(graph_module)
-        if (("termination" in name) or ("_verify" in name))
-        and callable(getattr(graph_module, name))
-    ]
-    assert verify_fns, "expected at least one termination/_verify function"
-    assert "termination" in source or "_verify" in source
+def test_select_skills_filters_unknown_names():
+    llm = _FakeLLM('["leaders_read", "not_a_skill"]')
+    out = asyncio.run(select_skills("Who leads the league?", llm))
+    assert out == ["leaders_read"]
+
+
+def test_select_skills_returns_empty_on_failure():
+    assert asyncio.run(select_skills("anything", _FailingLLM())) == []
+
+
+def test_select_skills_returns_empty_on_bad_json():
+    llm = _FakeLLM("no json here")
+    assert asyncio.run(select_skills("anything", llm)) == []
+
+
+def test_no_keyword_routing():
+    assert not hasattr(graph_module, "SKILL_KEYWORDS")
+    assert not hasattr(graph_module, "match_skills")
+
+
+def test_build_planner_prompt_accepts_selected_skills():
+    sig = inspect.signature(build_planner_prompt)
+    assert "selected_skills" in sig.parameters
+    prompt = build_planner_prompt("Who leads the league in scoring?",
+                                  ["leaders_read"])
+    assert "never multiply a per-game average" in prompt.lower()
+    assert "rows.record over ALL matches" not in prompt
+
+
+def test_build_planner_prompt_empty_selection_carries_no_bodies():
+    prompt = build_planner_prompt("How tall is Victor Wembanyama?", [])
+    assert "Pitfalls" not in catalog()
+    assert "Pitfalls" not in prompt
+    for name in ("compare_players", "leaders_read", "record_when_plays",
+                 "historical_leaders", "impact_check"):
+        assert load_skill(name) not in prompt

@@ -224,6 +224,9 @@ _PLANNER_PREFIX = (
     "Never repeat a call with the same args. "
     "Batch independent calls together. "
     "Call search_nba first when you lack an id. "
+    "Track what you have tried. If a tool returns empty or fails, try a "
+    "different approach or different arguments. Do not call the same tool "
+    "with identical arguments more than twice."
 )
 
 
@@ -245,68 +248,37 @@ def _planner_season_context() -> str:
 _PLANNER_SKILLS_TAIL = "\n\nAnalyst skills. Match the question to one skill and follow it:\n"
 
 
-SKILL_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
-    ("compare_players", ("compare", "comparing", "comparison", "versus",
-                         " vs ", " vs.", "better than", "who is better",
-                         "which is better", "rank them", "head-to-head",
-                         "head to head")),
-    ("form_check", ("slump", "hot streak", "cold streak", "recent form",
-                    "last 10", "last ten", "heating up", "in form",
-                    "out of form")),
-    ("game_preview", ("preview", "matchup", "tonight",
-                      "projected score", "projected total")),
-    ("impact_check", ("impact", "on-off", "on/off", "carrying",
-                      "how good has", "how good is", "career arc",
-                      "raptor", "lebron", "estimated per-100",
-                      "per-100 impact")),
-    ("lineup_wowy", ("wowy", "plays well together", "play well together",
-                     "best lineup", "lineup")),
-    ("morning_briefing", ("briefing", "recap", "last night", "standouts")),
-    ("shot_profile", ("shot chart", "shot zones", "shot profile", "shooting",
-                      "shot diet", "zones", "corner three", "true shooting")),
-    ("standings_read", ("standings", "playoff race", "clinch", "magic number",
-                        "lottery", "tanking", "seed")),
-    ("leaders_read", ("scoring title", "leads the league", "who leads",
-                      "league leaders", "leaders", "leading scorer",
-                      "points leader", "leads in")),
-    ("record_when_plays", ("record when", "when he plays", "when she plays",
-                           "when they play", "when plays", "record with",
-                           "record without", "with and without", "when sits",
-                           "when he sits", "sits", "without him", "without her",
-                           "with him")),
-    ("historical_leaders", ("each season", "every season", "all-time",
-                            "all time", "single-season", "single season",
-                            "career leaders", "season leaders",
-                            "multi-season", "per season", "by season",
-                            "decade", "best single", "greatest season")),
-    ("defensive_analysis", ("defensive", "defense", "defender", "dpoy",
-                          "defensive player", "best defender", "steals",
-                          "blocks", "drtg", "defensive rating")),
-    ("player_comparison", ("efficiency", "volume", "head-to-head")),
-    ("team_offense", ("offense", "offensive", "ortg", "offensive rating",
-                    "pace", "best offense")),
-    ("leaderboard", ("leaderboard", "leaders", "top 10", "top 5",
-                    "rank", "ranking")),
-]
-
 MAX_SKILLS_PER_TURN = 2
 
 
-def match_skills(question: str,
-                 limit: int = MAX_SKILLS_PER_TURN) -> list[str]:
-    q = (question or "").lower()
-    matched: list[str] = []
-    for name, keywords in SKILL_KEYWORDS:
-        if any(kw in q for kw in keywords):
-            matched.append(name)
-            if len(matched) >= limit:
-                break
-    return matched
+async def select_skills(question: str, llm) -> list[str]:
+    """Ask the LLM to pick 0-2 relevant skills. Falls back to [] on failure."""
+    try:
+        catalog_text = skills_catalog()
+        known = set()
+        for line in catalog_text.splitlines():
+            s = line.strip()
+            if s.startswith("- "):
+                known.add(s[2:].split(":")[0].strip())
+        prompt = (
+            "Given this basketball question and the skill catalog below, "
+            "return the 0-2 most relevant skill names as a JSON list. "
+            f"Question: {question}\nCatalog:\n{catalog_text}"
+        )
+        resp = await llm.ainvoke([HumanMessage(content=prompt)])
+        text = resp.content if hasattr(resp, "content") else str(resp)
+        m = re.search(r"\[.*?\]", str(text or ""), re.DOTALL)
+        names = json.loads(m.group(0) if m else str(text or ""))
+        if not isinstance(names, list):
+            return []
+        return [n for n in names if isinstance(n, str) and n in known][:2]
+    except Exception:
+        return []
 
 
-def build_planner_prompt(question: str) -> str:
+def build_planner_prompt(question: str, selected_skills: list[str]) -> str:
     prompt = _PLANNER_PREFIX + _planner_season_context() + _PLANNER_SKILLS_TAIL + skills_catalog()
-    for name in match_skills(question):
+    for name in (selected_skills or [])[:MAX_SKILLS_PER_TURN]:
         try:
             body = skills_load_skill(name) or ""
         except Exception:
@@ -314,118 +286,6 @@ def build_planner_prompt(question: str) -> str:
         if body.strip():
             prompt += "\n\n" + body.strip()
     return prompt
-
-
-REACT_MAX_STEPS = 15
-
-_REACT_ACTION_PROMPT = (
-    "You are the planner in a bounded ReAct loop for an NBA analytics "
-    "assistant. Pick exactly ONE next step per turn.\n"
-    "Reply with a single JSON object and nothing else:\n"
-    '  {"action": "call_tool", "name": "<tool_name>", "args": {<args>}}\n'
-    '  {"action": "finish", "summary": "<one line on what the evidence shows>"}\n'
-    "Rules: choose one precise tool call over speculation; never repeat a "
-    "call that already returned usable data; when the evidence answers the "
-    "question, finish.")
-
-
-def _react_parse_action(text: str) -> dict[str, Any]:
-    """Parse the planner's JSON action. Non-JSON text ends the loop."""
-    try:
-        m = re.search(r"\{.*\}", text or "", re.DOTALL)
-        if m:
-            obj = json.loads(m.group(0))
-            if isinstance(obj, dict):
-                return obj
-    except Exception:
-        pass
-    return {"action": "finish", "summary": (text or "")[:200]}
-
-
-def _react_call_key(name: str, args: dict[str, Any]) -> str:
-    return name + ":" + json.dumps(args or {}, sort_keys=True, default=str)
-
-
-async def react_loop(
-    question: str,
-    state: dict[str, Any],
-    max_steps: int = REACT_MAX_STEPS,
-) -> AsyncGenerator[dict[str, Any], None]:
-    """Bounded ReAct loop over v1 tools, replacing the fixed desk pipeline.
-
-    The planner LLM picks one tool per step; two dict ledgers track the
-    task (question/entities/plan) and progress (fetched/verified/open).
-    Stops on a finish action, max_steps, or the stuck detector firing
-    (same tool + same args + same error twice in a row).
-    """
-    yield _event("node_update", {"node": "react_loop", "status": "running"})
-    state.setdefault("tool_results", [])
-    state.setdefault("calls_made", [])
-    qp, qt = _detect_entities(question)
-    task_ledger = {"question": question,
-                   "entities": {"players": qp[:6], "teams": qt[:6]},
-                   "plan": ""}
-    progress_ledger: dict[str, list] = {
-        "fetched": [], "verified": [], "open": []}
-    llm = get_llm(state.get("primary"), state.get("model"))  # type: ignore[arg-type]
-    if llm is None:
-        yield _event("error", {"node": "react_loop", "message": "no key"})
-        return
-    system = (build_planner_prompt(question) + "\n\n"
-              + _planner_season_context() + "\n\n" + _REACT_ACTION_PROMPT)
-    recent: list[tuple[str, str]] = []
-    for _step in range(max_steps):
-        ledger = ("Task ledger: "
-                  + json.dumps(task_ledger, default=str)
-                  + "\nProgress ledger: "
-                  + json.dumps(progress_ledger, default=str)
-                  + "\nEvidence so far: "
-                  + (str(state["tool_results"])[:3000] or "none yet"))
-        try:
-            resp = await llm.ainvoke([
-                SystemMessage(content=system),
-                HumanMessage(content=ledger
-                             + "\n\nWhat is the ONE next step?"),
-            ])
-            text = resp.content if hasattr(resp, "content") else str(resp)
-        except Exception as exc:
-            yield _event("error", {"node": "react_loop",
-                                  "message": str(exc)[:160]})
-            break
-        action = _react_parse_action(str(text or ""))
-        if action.get("action") == "finish":
-            task_ledger["plan"] = str(action.get("summary", ""))[:300]
-            yield _event("thought_stream", {"node": "react_loop",
-                                           "text": "Evidence complete. "
-                                                   + task_ledger["plan"][:160]})
-            break
-        name = str(action.get("name", ""))
-        args = action.get("args", {}) or {}
-        if not name or not isinstance(args, dict):
-            break
-        holder: dict[str, Any] = {}
-        async for ev in _triage_tool(name, args, state, holder):
-            yield ev
-        out = holder.get("out") or {}
-        rows = out.get("rows") or []
-        ok = bool(out.get("ok", bool(rows)))
-        err = "" if ok else str(out.get("error", "tool failed"))[:160]
-        progress_ledger["fetched"].append(name)
-        if ok and rows:
-            progress_ledger["verified"].append(name)
-        elif not ok:
-            progress_ledger["open"].append(f"{name}: {err}")
-        recent.append((_react_call_key(name, args), err))
-        # Stuck detector: same tool + same args + same error twice in a
-        # row -> recovery is unlikely, stop instead of looping.
-        if (len(recent) >= 2 and recent[-1][1]
-                and recent[-1] == recent[-2]):
-            yield _event("thought_stream",
-                         {"node": "react_loop",
-                          "text": f"{name} failed twice the same way. "
-                                  "Stopping with what we have."})
-            break
-    yield _event("node_update", {"node": "react_loop", "status": "complete"})
 
 
 PLANNER_SYSTEM = (
@@ -4914,9 +4774,14 @@ async def data_retrieval_agent(
             question_for_planner = (
                 f"About {', '.join(carry)}: {question_for_planner}")
         _pholder: dict[str, Any] = {}
+        try:
+            llm = get_llm(state["primary"], state["model"])  # type: ignore[arg-type]
+            sel = await select_skills(question_for_planner, llm)
+        except Exception:
+            sel = []
         async for _pe in _stream_planner(
                 tooled,
-                [SystemMessage(content=build_planner_prompt(question_for_planner) + prior),
+                [SystemMessage(content=build_planner_prompt(question_for_planner, sel) + prior),
                  HumanMessage(content=question_for_planner)],
                 _pholder):
             yield _pe
