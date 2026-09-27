@@ -39,6 +39,8 @@ def test_v2_entrypoint_routes():
     assert "/api/threads/{thread_id}/runs" in paths
     assert "/api/threads/{thread_id}/export" in paths
     assert "/api/sql/rerun" in paths
+    assert "/api/resolve" in paths
+    assert "/api/trade/check" in paths
     assert not any(p.startswith("/api/v1") for p in paths), \
         sorted(p for p in paths if p.startswith("/api/v1"))
 
@@ -451,3 +453,64 @@ def test_v2_chat_persists_to_shared_thread_log(monkeypatch, tmp_path):
     history = real_store.chat_history("t-hist")
     assert [m["role"] for m in history] == ["human", "ai"]
     assert history[0]["text"] == "Who leads the league in TS%?"
+
+
+# --- /resolve + /trade/check (v1-removal step 3) ---
+
+
+def test_v2_resolve_clamps_query(monkeypatch):
+    """GET /api/resolve clamps the query to 80 chars (v1 parity)."""
+    import types
+
+    seen = {}
+
+    class FakeTool:
+        def invoke(self, payload):
+            seen.update(payload)
+            return {"ok": True, "entity": "LAL"}
+
+    tools_mod = types.ModuleType("shared.tools")
+    tools_mod.resolve_entity = FakeTool()
+    _stub_shared(monkeypatch, **{"tools": tools_mod})
+
+    from v2.api.routes import resolve as resolve_view
+
+    assert resolve_view(q="x" * 120) == {"ok": True, "entity": "LAL"}
+    assert seen == {"query": "x" * 80}
+
+
+def test_v2_trade_check_passthrough(monkeypatch):
+    """POST /api/trade/check forwards the clamped body verbatim (v1 parity)."""
+    import types
+
+    seen = {}
+
+    class FakeTool:
+        def invoke(self, payload):
+            seen.update(payload)
+            return {"ok": True, "legal": True}
+
+    tools_mod = types.ModuleType("shared.tools")
+    tools_mod.get_trade_check = FakeTool()
+    _stub_shared(monkeypatch, **{"tools": tools_mod})
+
+    from v2.api.routes import trade_check as trade_view, TradeBody
+
+    out = trade_view(TradeBody(
+        team_a="LAL", players_a=["LeBron James ", "", "  AD"],
+        team_b="BOS", players_b="Tatum", season="2024-25"))
+    assert out == {"ok": True, "legal": True}
+    assert seen == {
+        "team_a": "LAL", "players_a": "LeBron James, AD",
+        "team_b": "BOS", "players_b": "Tatum",
+        "season": "2024-25",
+    }
+
+
+def test_v2_trade_body_list_normalization():
+    """Player lists normalize to comma-joined strings (v1 parity)."""
+    from v2.api.routes import TradeBody
+
+    body = TradeBody(players_a=["a", "", " b "], players_b="c")
+    assert body.players_a == "a, b"
+    assert body.players_b == "c"

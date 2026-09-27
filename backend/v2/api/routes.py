@@ -634,6 +634,43 @@ async def sql_rerun(body: SqlRerunBody) -> dict:
     }}
 
 
+@router.get("/resolve")
+def resolve(q: str = Query("")) -> dict:
+    """Entity resolution passthrough (v1 parity: clamps query to 80 chars)."""
+    from shared.tools import resolve_entity
+
+    return resolve_entity.invoke({"query": q[:80]})
+
+
+class TradeBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    team_a: str = ""
+    players_a: str | list[str] = ""
+    team_b: str = ""
+    players_b: str | list[str] = ""
+    season: str = "2025-26"
+
+    @field_validator("players_a", "players_b")
+    @classmethod
+    def normalize_players(cls, value: str | list[str]) -> str:
+        if isinstance(value, list):
+            return ", ".join(item.strip() for item in value if item.strip())
+        return value
+
+
+@router.post("/trade/check")
+def trade_check(body: TradeBody) -> dict:
+    """Trade legality check passthrough (v1 parity)."""
+    from shared.tools import get_trade_check
+
+    return get_trade_check.invoke({
+        "team_a": body.team_a, "players_a": body.players_a,
+        "team_b": body.team_b, "players_b": body.players_b,
+        "season": body.season,
+    })
+
+
 def public_evidence_table(item):
     """Bounded public projection; internal provenance never crosses SSE."""
     return {"tool": item.capability, "rows": item.rows, "meta": {
