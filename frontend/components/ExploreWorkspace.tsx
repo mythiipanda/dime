@@ -3,10 +3,10 @@
 import { useEffect, useRef, type CSSProperties } from "react";
 import DatasetPanel from "./DatasetPanel";
 import DraftPanel from "./DraftPanel";
-import FreshnessPanel from "./FreshnessPanel";
 import LineupPanel from "./LineupPanel";
 import PlayoffPanel from "./PlayoffPanel";
 import ScoreStrip from "./ScoreStrip";
+import SystemStatus from "./SystemStatus";
 import TradePanel from "./TradePanel";
 
 interface ExploreWorkspaceProps {
@@ -20,6 +20,7 @@ const sections = [
   { id: "leaders", label: "Leaders" },
   { id: "shots", label: "Shots" },
   { id: "trade", label: "Trade" },
+  { id: "draft", label: "Draft" },
   { id: "lineups", label: "Lineups" },
   { id: "playoffs", label: "Playoffs" },
 ];
@@ -138,7 +139,7 @@ export default function ExploreWorkspace({
           <section id="explore-trade" className="explore-section-anchor">
             <TradePanel onAskValue={onAsk} />
           </section>
-          <section className="explore-section-anchor">
+          <section id="explore-draft" className="explore-section-anchor">
             <DraftPanel />
           </section>
           <section id="explore-lineups" className="explore-section-anchor">
@@ -147,7 +148,7 @@ export default function ExploreWorkspace({
           <section id="explore-playoffs" className="explore-section-anchor">
             <PlayoffPanel />
           </section>
-          <FreshnessPanel />
+          <SystemStatus />
         </div>
       </main>
     </div>
