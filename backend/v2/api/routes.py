@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import io
 import json
@@ -1051,6 +1052,33 @@ def _safe_buffered_event(event):
     return None
 
 
+async def _drain_run(
+    task: "asyncio.Task",
+    queue: "asyncio.Queue",
+    timeout_s: float,
+    drain_tick_s: float = 0.1,
+) -> list:
+    """Drain runtime events until the run task finishes, bounded by timeout_s.
+
+    Returns the drained event list. Raises asyncio.TimeoutError if the run
+    does not finish within timeout_s -- the caller cancels the hung task.
+    Extracted for unit tests: a hung runtime.run() must not spin the queue
+    loop forever past the run timeout.
+    """
+    buffered: list = []
+
+    async def _drain_until_done():
+        while not task.done() or not queue.empty():
+            try:
+                buffered.append(
+                    await asyncio.wait_for(queue.get(), timeout=drain_tick_s))
+            except TimeoutError:
+                continue
+
+    await asyncio.wait_for(_drain_until_done(), timeout=timeout_s)
+    return buffered
+
+
 @router.post("/v2/chat/stream")
 async def chat_stream_post(request: Request, body: QuickAnswerBody):
     return await _guarded_chat_stream(request, body)
@@ -1277,22 +1305,11 @@ async def quick_answer_stream(body: QuickAnswerBody):
         task = asyncio.create_task(runtime.run(
             body.q, run_id=run_id, context=context))
         try:
-            buffered_events = []
-
-            async def _drain_until_done():
-                while not task.done() or not queue.empty():
-                    try:
-                        buffered_events.append(
-                            await asyncio.wait_for(queue.get(), timeout=0.1))
-                    except TimeoutError:
-                        continue
-
             try:
                 # Bound the whole drain: a hung runtime.run() must not spin
                 # the queue loop forever past the run timeout.
-                await asyncio.wait_for(
-                    _drain_until_done(),
-                    timeout=settings.dime_v2_run_timeout_s)
+                buffered_events = await _drain_run(
+                    task, queue, settings.dime_v2_run_timeout_s)
                 result = task.result()
                 while not queue.empty():
                     buffered_events.append(queue.get_nowait())

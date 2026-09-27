@@ -202,3 +202,238 @@ test("getRuns dedupes a server run already in the local cache", async () => {
     delete (globalThis as Record<string, unknown>).fetch;
   }
 });
+
+// --- Client-side watchdogs on postChatStream ---
+// The 2026-09-27 P0 fix added three watchdogs: 90s dead connection (no bytes
+// at all), 3-min no-PROGRESS (v1 only -- pings flow but no real events), and
+// an 8-min absolute ceiling. These fake-timer tests pin that behavior.
+
+import { postChatStream } from "./api";
+
+const CHAT_RUNTIME_KEY = "NEXT_PUBLIC_CHAT_RUNTIME";
+
+type SseMock = {
+  emit: (event: string) => void;
+  end: () => void;
+};
+
+// A controllable SSE stream: emit() delivers one event chunk, end()
+// terminates the stream. Reads pending on abort reject with AbortError,
+// like a real cancelled fetch body.
+function installSseMock(): SseMock {
+  const encoder = new TextEncoder();
+  const queue: Uint8Array[] = [];
+  const pending: ((r: { done: boolean; value?: Uint8Array }) => void)[] = [];
+  const rejectors: ((e: Error) => void)[] = [];
+  const reader = {
+    read(): Promise<{ done: boolean; value?: Uint8Array }> {
+      const next = queue.shift();
+      if (next) return Promise.resolve({ done: false, value: next });
+      return new Promise((resolve, reject) => {
+        pending.push(resolve);
+        rejectors.push(reject);
+      });
+    },
+  };
+  const api: SseMock = {
+    emit(event: string) {
+      const chunk = encoder.encode(
+        `event: ${event}\ndata: ${JSON.stringify({})}\n\n`,
+      );
+      const resolve = pending.shift();
+      if (resolve) {
+        rejectors.shift();
+        resolve({ done: false, value: chunk });
+      } else {
+        queue.push(chunk);
+      }
+    },
+    end() {
+      let resolve = pending.shift();
+      while (resolve) {
+        rejectors.shift();
+        resolve({ done: true });
+        resolve = pending.shift();
+      }
+    },
+  };
+  (globalThis as Record<string, unknown>).fetch = async (
+    _url: string,
+    init?: { signal?: AbortSignal },
+  ) => {
+    init?.signal?.addEventListener(
+      "abort",
+      () => {
+        const err = new DOMException("The operation was aborted.", "AbortError");
+        let reject = rejectors.shift();
+        while (reject) {
+          reject(err);
+          reject = rejectors.shift();
+        }
+      },
+      { once: true },
+    );
+    return {
+      ok: true,
+      headers: { get: () => "text/event-stream" },
+      body: { getReader: () => reader },
+    };
+  };
+  return api;
+}
+
+function streamHandlers() {  const events: string[] = [];
+  const errors: string[] = [];
+  let done = false;
+  return {
+    events,
+    errors,
+    handlers: {
+      onEvent: (type: string) => {
+        events.push(type);
+      },
+      onDone: () => {
+        done = true;
+      },
+      onError: (message: string) => {
+        errors.push(message);
+      },
+    },
+    wasDone: () => done,
+  };
+}
+
+function setChatRuntime(v: string | undefined) {
+  if (v === undefined) delete process.env[CHAT_RUNTIME_KEY];
+  else process.env[CHAT_RUNTIME_KEY] = v;
+}
+
+// Drain pending microtasks so the stream loop reaches its parked
+// reader.read() before time advances. Without this the watchdog's abort
+// fires while no read is pending (tick runs before the fetch promise
+// resolves), and the loop then parks forever on a read nobody rejects --
+// which hangs the runner with "event loop has already resolved".
+async function settle(rounds = 25) {
+  for (let i = 0; i < rounds; i++) await Promise.resolve();
+}
+
+// Advance mocked time by ms, letting the stream loop's microtasks run so
+// emitted events are consumed (lastByte/lastProgress update) before the
+// next window. This MockTimers build has no tickAsync, so settle + tick +
+// settle.
+async function advance(t: { mock: { timers: { tick: (ms: number) => void } } }, ms: number) {
+  await settle(); // stream loop parks on reader.read()
+  t.mock.timers.tick(ms); // fire the watchdogs
+  await settle(); // abort + rejection propagate, handlers run
+}
+
+test("watchdog: no bytes for 90s aborts with an idle error (v1)", async (t) => {
+  t.mock.timers.enable({ apis: ["setInterval", "Date"] });
+  setChatRuntime(undefined);
+  installSseMock();
+  const s = streamHandlers();
+  try {
+    const p = postChatStream("q", null, s.handlers);
+    await advance(t, 95_000);
+    await p;
+    assert.deepEqual(s.errors, [
+      "No response from the server for 90s. The backend may be down - try again in a moment.",
+    ]);
+    assert.equal(s.wasDone(), false);
+  } finally {
+    setChatRuntime(undefined);
+    delete (globalThis as Record<string, unknown>).fetch;
+  }
+});
+
+test("watchdog: v1 pings-only stream aborts after 3 min with a progress error", async (t) => {
+  t.mock.timers.enable({ apis: ["setInterval", "Date"] });
+  setChatRuntime(undefined); // v1
+  const sse = installSseMock();
+  const s = streamHandlers();
+  try {
+    const p = postChatStream("q", null, s.handlers);
+    // 15s heartbeat pings keep the connection alive (no idle abort) but are
+    // not progress: after 3 min of pings-only the run must be stopped.
+    for (let i = 0; i < 13; i++) {
+      sse.emit("ping");
+      await advance(t, 15_000);
+    }
+    await p;
+    assert.ok(s.events.every((e) => e === "ping"), "only pings were seen");
+    assert.deepEqual(s.errors, [
+      "The model stopped making progress for 3 minutes. The run was stopped - try again.",
+    ]);
+  } finally {
+    setChatRuntime(undefined);
+    delete (globalThis as Record<string, unknown>).fetch;
+  }
+});
+
+test("watchdog: v2 pings-only stream does NOT abort on progress (gating)", async (t) => {
+  t.mock.timers.enable({ apis: ["setInterval", "Date"] });
+  setChatRuntime("v2");
+  const sse = installSseMock();
+  const s = streamHandlers();
+  try {
+    const p = postChatStream("q", null, s.handlers);
+    // v2 buffers every event until run end, so pings-only is the expected
+    // shape; the 3-min progress watchdog must not fire for v2.
+    for (let i = 0; i < 13; i++) {
+      sse.emit("ping");
+      await advance(t, 15_000);
+    }
+    assert.deepEqual(s.errors, []);
+    // The buffered events then land and the stream ends normally.
+    sse.emit("graph_end");
+    await Promise.resolve(); // let the loop consume graph_end and re-pend
+    sse.end();
+    await p;
+    assert.equal(s.wasDone(), true);
+    assert.deepEqual(s.errors, []);
+  } finally {
+    setChatRuntime(undefined);
+    delete (globalThis as Record<string, unknown>).fetch;
+  }
+});
+
+test("watchdog: v2 dead connection still aborts on idle after 90s", async (t) => {
+  t.mock.timers.enable({ apis: ["setInterval", "Date"] });
+  setChatRuntime("v2");
+  installSseMock(); // no bytes ever
+  const s = streamHandlers();
+  try {
+    const p = postChatStream("q", null, s.handlers);
+    await advance(t, 95_000);
+    await p;
+    assert.deepEqual(s.errors, [
+      "No response from the server for 90s. The backend may be down - try again in a moment.",
+    ]);
+  } finally {
+    setChatRuntime(undefined);
+    delete (globalThis as Record<string, unknown>).fetch;
+  }
+});
+
+test("watchdog: 8-min absolute ceiling fires even with real events flowing (v1)", async (t) => {
+  t.mock.timers.enable({ apis: ["setInterval", "Date"] });
+  setChatRuntime(undefined); // v1
+  const sse = installSseMock();
+  const s = streamHandlers();
+  try {
+    const p = postChatStream("q", null, s.handlers);
+    // Real events every 30s keep both the idle and progress watchdogs
+    // satisfied; only the 8-min ceiling may fire.
+    for (let i = 0; i < 17; i++) {
+      sse.emit("message");
+      await advance(t, 30_000);
+    }
+    await p;
+    assert.deepEqual(s.errors, [
+      "The request timed out after 8 minutes. Try a simpler question or try again.",
+    ]);
+  } finally {
+    setChatRuntime(undefined);
+    delete (globalThis as Record<string, unknown>).fetch;
+  }
+});
