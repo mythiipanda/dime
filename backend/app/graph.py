@@ -5976,11 +5976,12 @@ def _verify_numeral_claims(state: dict, text: str) -> list[tuple[str, str]]:
             margin_nums = {num for _, _, _, num in _margin_matches}
             for n in re.findall(r"\d+(?:\.\d+)?", sent):
                 nn = _norm_num(n)
-                if nn in allowed and nn not in margin_nums:
-                    continue
-                if _claim_operands_ok(nn, sent, allowed):
-                    continue
                 if nn in margin_nums:
+                    # Directional margin claim: passes ONLY when the
+                    # direction-bound check ties it to the named teams'
+                    # shared metric. The generic operand check must NOT
+                    # rescue a claim whose direction fails (a wrong-way
+                    # "trails" with recomputing operands is still wrong).
                     try:
                         _bound = any(
                             _margin_directed_ok(state, s, v, o, float(nn))
@@ -5989,6 +5990,11 @@ def _verify_numeral_claims(state: dict, text: str) -> list[tuple[str, str]]:
                     except ValueError:
                         _bound = False
                     if _bound:
+                        continue
+                else:
+                    if nn in allowed:
+                        continue
+                    if _claim_operands_ok(nn, sent, allowed):
                         continue
                 if not any(s == sent and m == n for s, m in claims):
                     claims.append((sent, n))

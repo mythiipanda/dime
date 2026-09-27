@@ -204,9 +204,11 @@ def test_margin_pair_bound_to_teams_metric_direction():
     # honest directed margin on the shared metric passes
     assert v(state, "DET leads SAS by 2.4.") == [], \
         "honest OFF margin flagged"
-    # explicit operands still win over binding
-    assert v(state, "DET trails SAS by 1.3 (2.4 - 1.1 = 1.3).") == [], \
-        "operand-carrying margin flagged"
+    # explicit operands must NOT rescue a direction-failing margin:
+    # DET leads (OFF 4.8 vs 2.4), so "trails" is wrong even when the
+    # operands recompute - direction binds first, fail closed otherwise.
+    assert [n for _, n in v(state, "DET trails SAS by 1.3 (2.4 - 1.1 = 1.3).")] == ["1.3"], \
+        "operand check rescued a direction-failing margin claim"
 
 
 def test_bad_bullet_does_not_kill_good_bullet():

@@ -1516,12 +1516,15 @@ def test_preflight_exact_match_and_each_mismatch(monkeypatch,tmp_path):
     from v2.api import routes
     observed=routes.runtime_asset_manifest();exact=_write_expected_manifest(tmp_path/'exact.json',observed)
     assert routes.preflight_runtime_assets(exact) is observed
-    for field in ('revision','executable_sha256','module_sha256','warehouse','semantic_baseline','prompt_sha256','typed_argument_assets'):
+    for field in ('executable_sha256','module_sha256','warehouse','semantic_baseline','prompt_sha256','typed_argument_assets'):
         candidate=observed.as_dict()
         if isinstance(candidate[field],dict):candidate[field][next(iter(candidate[field]))]='wrong'
         else:candidate[field]='wrong'
         path=tmp_path/f'{field}.json';path.write_text(json.dumps(candidate))
-        with pytest.raises(RuntimeError,match='does not match'):routes.preflight_runtime_assets(path)
+        with pytest.raises(RuntimeError,match='substantive mismatch'):routes.preflight_runtime_assets(path)
+    revision_only=observed.as_dict();revision_only['revision']='wrong-label-only'
+    revision_path=tmp_path/'revision.json';revision_path.write_text(json.dumps(revision_only))
+    assert routes.preflight_runtime_assets(revision_path) is observed
 
 
 def test_registry_completeness_rejects_missing_and_extra(monkeypatch):
@@ -1541,7 +1544,7 @@ def test_loaded_module_hash_detects_old_import_against_new_expected(monkeypatch,
     from v2.api import routes
     old=routes.runtime_asset_manifest();expected=old.as_dict();expected['module_sha256']['routes']='new-loaded-code-hash'
     path=tmp_path/'new.json';path.write_text(json.dumps(expected))
-    with pytest.raises(RuntimeError,match='does not match'):routes.preflight_runtime_assets(path)
+    with pytest.raises(RuntimeError,match='substantive mismatch'):routes.preflight_runtime_assets(path)
 
 
 def test_real_lifespan_freezes_manifest_and_runtime_prompts(monkeypatch,tmp_path):
@@ -1566,10 +1569,20 @@ def test_lifespan_fails_before_serving_on_expected_mismatch(monkeypatch,tmp_path
     import json
     from app import main
     from v2.api import routes
-    expected=routes.runtime_asset_manifest().as_dict();expected['revision']='wrong'
+    expected=routes.runtime_asset_manifest().as_dict();expected['warehouse']={**expected['warehouse'],'sha256':'wrong'}
     path=tmp_path/'wrong.json';path.write_text(json.dumps(expected));monkeypatch.setenv('DIME_EXPECTED_ASSET_MANIFEST',str(path))
-    with pytest.raises(RuntimeError,match='does not match'):
+    with pytest.raises(RuntimeError,match='substantive mismatch'):
         with TestClient(main.app):pass
+
+
+def test_lifespan_starts_on_revision_only_mismatch(monkeypatch,tmp_path):
+    import json
+    from app import main
+    from v2.api import routes
+    expected=routes.runtime_asset_manifest().as_dict();expected['revision']='wrong-label-only'
+    path=tmp_path/'revision-only.json';path.write_text(json.dumps(expected));monkeypatch.setenv('DIME_EXPECTED_ASSET_MANIFEST',str(path))
+    with TestClient(main.app) as client:
+        assert client.get('/api/revision').status_code==200
 
 
 def test_loaded_behavior_fingerprint_changes_on_import_time_registry_binding(monkeypatch):

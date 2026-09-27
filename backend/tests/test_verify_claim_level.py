@@ -13,6 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.graph import (  # noqa: E402
+    _team_row,
     _verify_draft_numerals,
     _verify_numeral_claims,
     presentation_agent,
@@ -69,3 +70,23 @@ def test_presentation_drops_only_failing_sentence():
     assert "18 points" in answer
     assert "30 (18 + 11)" not in answer
     assert "30" not in answer
+
+
+def test_reversed_direction_margin_flagged_despite_operands():
+    # Direction-operand bypass: a directional margin claim passes ONLY
+    # when _margin_directed_ok binds it. The generic operand check must
+    # NOT rescue a claim whose direction fails. DET leads SAS on NET
+    # (2.4 vs 1.1), so "trails" is wrong even with recomputing operands.
+    state = _state(tool_results=[{"tool": "x", "rows": [
+        {"TEAM": "DET", "NET": 2.4}, {"TEAM": "SAS", "NET": 1.1}]}])
+    rows = state["tool_results"][0]["rows"]
+    assert _team_row(rows, "DET") == {"TEAM": "DET", "NET": 2.4}
+    assert _team_row(rows, "SAS") == {"TEAM": "SAS", "NET": 1.1}
+    assert [n for _, n in _verify_numeral_claims(
+        state, "DET trails SAS by 1.3")] == ["1.3"]
+    assert _verify_numeral_claims(state, "DET leads SAS by 1.3") == []
+    assert [n for _, n in _verify_numeral_claims(
+        state, "DET trails SAS by 1.3 (2.4 - 1.1 = 1.3).")] == ["1.3"], \
+        "operand check rescued a direction-failing margin claim"
+    assert _verify_numeral_claims(
+        state, "DET leads SAS by 1.3 (2.4 - 1.1 = 1.3).") == []
