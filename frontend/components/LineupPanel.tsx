@@ -111,9 +111,9 @@ export default function LineupPanel() {
     <div className="card">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
         <div>
-          <div className="display" style={{ fontSize: 20 }}>Lineup Intelligence</div>
+          <div className="display" style={{ fontSize: 20 }}>Lineups</div>
           <div style={{ fontSize: 12, color: "var(--color-warm-gray)", marginTop: 2 }}>
-            {tab === "5man" ? "Five-man units by minutes" : "Two-player combination on/off net ratings"}
+            {tab === "5man" ? "Five-man units by minutes" : "With/without you net ratings"}
           </div>
         </div>
 
@@ -123,7 +123,7 @@ export default function LineupPanel() {
             style={{ fontSize: 11, padding: "3px 12px", border: "none" }}
             onClick={() => setTab("5man")}
           >
-            5-Man Units
+            5-Man
           </button>
           <button
             className={tab === "wowy" ? "tab-active" : "pill-ghost"}
@@ -133,7 +133,7 @@ export default function LineupPanel() {
               if (!wowyRows.length) runWowy();
             }}
           >
-            Two-Player WOWY
+            WOWY
           </button>
         </div>
       </div>
@@ -148,8 +148,8 @@ export default function LineupPanel() {
           {error && <div style={{ color: "var(--color-warm-gray)", marginTop: 8 }}>{error}</div>}
           {!busy && !error && rows.length === 0 && (
             <EmptyState
-              title="No lineup data for this team"
-              description="Five-man units appear once the season sample is large enough to trust."
+              title="No lineup data yet"
+              description="Lineups show up once the season is far enough along."
             />
           )}
           {rows.length > 0 && (
@@ -193,7 +193,7 @@ export default function LineupPanel() {
               disabled={wowyBusy}
               onClick={runWowy}
             >
-              {wowyBusy ? "Calculating..." : "Analyze WOWY"}
+              {wowyBusy ? "Calculating..." : "Compare"}
             </button>
           </div>
           {error && <div style={{ color: "var(--color-warm-gray)", marginBottom: 8 }}>{error}</div>}

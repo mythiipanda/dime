@@ -29,8 +29,8 @@ export default function FreshnessPanel() {
       {err && <div style={{ fontSize: 12, color: "var(--color-warm-gray)" }}>{err}</div>}
       {!err && rows.length === 0 && (
         <EmptyState
-          title="No freshness data"
-          description="Warehouse tables report their last fetch here once seeded."
+          title="No data yet"
+          description="Each table's last update shows up here."
         />
       )}
       {rows.length > 0 && (
