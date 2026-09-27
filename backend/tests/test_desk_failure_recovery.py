@@ -185,22 +185,28 @@ def test_desk_retry_bounded_within_wall_budget(monkeypatch):
     assert total < 0.8 + 0.5, f"retry blew the budget: {total:.2f}s"
 
 
-def test_margin_claim_must_carry_operands():
-    # "DET trails SAS by 2.4" is fake even though 2.4 appears in the
-    # payload (as DET's own rating, not the margin).
+def test_margin_pair_bound_to_teams_metric_direction():
+    # Instinct's exact repro: the old unbound pair search accepted
+    # "DET trails SAS by 2.4" via the unrelated OFF-vs-NET pair
+    # (4.8 - 2.4) and accepted "by 1.3" despite reversed direction.
     state = {"tool_results": [{"tool": "get_team_compare", "ok": True,
-              "rows": [{"TEAM": "DET", "NET": 2.4},
-                       {"TEAM": "SAS", "NET": 1.1}]}],
+              "rows": [{"TEAM": "DET", "NET": 2.4, "OFF": 4.8},
+                       {"TEAM": "SAS", "NET": 1.1, "OFF": 2.4}]}],
              "ledger": []}
-    claims = g._verify_numeral_claims(state, "DET trails SAS by 2.4.")
-    assert [n for _, n in claims] == ["2.4"], f"fake margin passed: {claims}"
-    # the true margin with operands recomputes and survives
-    ok = g._verify_numeral_claims(
-        state, "DET trails SAS by 1.3 (2.4 - 1.1 = 1.3).")
-    assert ok == [], f"honest margin flagged: {ok}"
-    # a plain payload restatement still passes without operands
-    plain = g._verify_numeral_claims(state, "DET's net rating is 2.4.")
-    assert plain == [], f"plain restatement flagged: {plain}"
+    v = g._verify_numeral_claims
+    assert [n for _, n in v(state, "DET trails SAS by 2.4.")] == ["2.4"], \
+        "cross-metric pair leak: fake margin passed"
+    assert [n for _, n in v(state, "DET trails SAS by 1.3.")] == ["1.3"], \
+        "reversed direction passed"
+    # unbound team fails closed
+    assert [n for _, n in v(state, "DET trails NYK by 2.4.")] == ["2.4"], \
+        "unknown team passed"
+    # honest directed margin on the shared metric passes
+    assert v(state, "DET leads SAS by 2.4.") == [], \
+        "honest OFF margin flagged"
+    # explicit operands still win over binding
+    assert v(state, "DET trails SAS by 1.3 (2.4 - 1.1 = 1.3).") == [], \
+        "operand-carrying margin flagged"
 
 
 def test_bad_bullet_does_not_kill_good_bullet():

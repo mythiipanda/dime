@@ -5684,43 +5684,62 @@ _UNIT_SPLIT_RX = re.compile(r"((?<=[.!?])\s+|\n+)")
 # A numeral asserted as a margin BETWEEN two named entities ("DET
 # trails SAS by 2.4") is a derived claim even when the digits appear
 # somewhere in the payload (2.4 was DET's own rating, not the margin).
-# Vaguer phrasings ("favored by 2 points", "2.0-point edge") stay on the
-# lenient path - only the two-entity construction is strict.
+# The pair must bind to the NAMED teams, a SHARED metric, and the
+# DIRECTION of the verb - any unbound numeral pair (cross-metric,
+# cross-team, reversed direction) fails closed. Vaguer phrasings
+# ("favored by 2 points", "2.0-point edge") stay on the lenient path -
+# only the two-entity construction is strict.
+_TEAM_RX = r"[A-Z0-9][\w&.'-]*(?:\s+[A-Z0-9][\w&.'-]*)*"
 _MARGIN_CLAIM_RX = re.compile(
-    r"\b(?:trails?|leads?|beats?|edges?|tops?)\s+"
-    r"[A-Z0-9][\w&.'-]*(?:\s+[A-Z0-9][\w&.'-]*)*\s+by\s+"
+    r"\b(" + _TEAM_RX + r")\s+"
+    r"(trails?|leads?|beats?|edges?|tops?)\s+"
+    r"(" + _TEAM_RX + r")\s+by\s+"
     r"(\d+(?:\.\d+)?)",
     re.IGNORECASE)
 
 
-def _raw_payload_numbers(state: dict) -> list[float]:
-    """Raw numerals from this turn's payloads (no rounding variants)."""
-    import json as _json
-    raw = _json.dumps(state.get("tool_results") or [])
-    raw += _json.dumps(state.get("ledger") or [])
-    out: list[float] = []
-    for token in re.findall(r"\d+(?:\.\d+)?", raw):
-        try:
-            out.append(float(token))
-        except ValueError:
-            pass
-    return out
+def _team_row(rows: list, token: str) -> dict | None:
+    """Bind a team token to its payload row (exact or abbreviation)."""
+    tok = token.casefold()
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        for v in r.values():
+            if not isinstance(v, str):
+                continue
+            if v.casefold() == tok:
+                return r
+            if len(tok) <= 4:
+                initials = "".join(w[0] for w in v.split() if w)
+                if initials.casefold() == tok:
+                    return r
+    return None
 
 
-def _margin_pair_ok(state: dict, target: float) -> bool:
-    """True when some pair of payload numerals differs by ~target.
-
-    Catches honest margins stated without inline operands ("Celtics
-    beat Knicks by 12" with 118/106 in the payload) while rejecting
-    fabricated ones ("trails SAS by 2.4" when the payload pair gives
-    1.3). Rounding tolerance covers "by 2" for a 1.98 payload margin.
-    """
-    nums = _raw_payload_numbers(state)
-    for i, a in enumerate(nums):
-        for b in nums[i + 1:]:
-            if math.isclose(abs(a - b), target,
-                            rel_tol=1e-9, abs_tol=0.051):
-                return True
+def _margin_directed_ok(state: dict, subj: str, verb: str, obj: str,
+                        target: float) -> bool:
+    """True when the named teams' rows share a metric whose directed
+    difference equals the target: trails -> obj - subj, otherwise
+    subj - obj. Unbindable teams/metrics fail closed (False)."""
+    rows: list = []
+    for tr in state.get("tool_results") or []:
+        r = tr.get("rows") if isinstance(tr, dict) else None
+        if isinstance(r, list):
+            rows.extend(r)
+    rs, ro = _team_row(rows, subj), _team_row(rows, obj)
+    if rs is None or ro is None:
+        return False
+    for k, vs in rs.items():
+        if k not in ro:
+            continue
+        vo = ro[k]
+        if isinstance(vs, bool) or isinstance(vo, bool):
+            continue
+        if not isinstance(vs, (int, float)) or not isinstance(vo, (int, float)):
+            continue
+        diff = (vo - vs) if verb.lower().startswith("trail") else (vs - vo)
+        if math.isclose(diff, target, rel_tol=1e-9, abs_tol=0.051):
+            return True
     return False
 
 
@@ -5817,8 +5836,10 @@ def _verify_numeral_claims(state: dict, text: str) -> list[tuple[str, str]]:
         for sent, _ in _iter_units(text):
             if not sent.strip():
                 continue
-            margin_nums = {_norm_num(g) for m in _MARGIN_CLAIM_RX.finditer(sent)
-                           for g in m.groups() if g}
+            _margin_matches = [
+                (m.group(1), m.group(2), m.group(3), _norm_num(m.group(4)))
+                for m in _MARGIN_CLAIM_RX.finditer(sent)]
+            margin_nums = {num for _, _, _, num in _margin_matches}
             for n in re.findall(r"\d+(?:\.\d+)?", sent):
                 nn = _norm_num(n)
                 if nn in allowed and nn not in margin_nums:
@@ -5827,10 +5848,14 @@ def _verify_numeral_claims(state: dict, text: str) -> list[tuple[str, str]]:
                     continue
                 if nn in margin_nums:
                     try:
-                        if _margin_pair_ok(state, float(nn)):
-                            continue
+                        _bound = any(
+                            _margin_directed_ok(state, s, v, o, float(nn))
+                            for s, v, o, num in _margin_matches
+                            if num == nn)
                     except ValueError:
-                        pass
+                        _bound = False
+                    if _bound:
+                        continue
                 if not any(s == sent and m == n for s, m in claims):
                     claims.append((sent, n))
         return claims
