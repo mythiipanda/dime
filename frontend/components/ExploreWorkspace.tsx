@@ -17,12 +17,31 @@ interface ExploreWorkspaceProps {
 }
 
 const sections = [
-  { id: "leaders", label: "Leaders", glyph: "↗" },
-  { id: "shots", label: "Shots", glyph: "◎" },
-  { id: "trade", label: "Trade", glyph: "⇄" },
-  { id: "lineups", label: "Lineups", glyph: "⌁" },
-  { id: "playoffs", label: "Playoffs", glyph: "◇" },
+  { id: "leaders", label: "Leaders" },
+  { id: "shots", label: "Shots" },
+  { id: "trade", label: "Trade" },
+  { id: "lineups", label: "Lineups" },
+  { id: "playoffs", label: "Playoffs" },
 ];
+
+function ArrowUpRight({ size = 12 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <line x1="7" y1="17" x2="17" y2="7" />
+      <polyline points="7 7 17 7 17 17" />
+    </svg>
+  );
+}
 
 const quickQuestions = [
   ["Player", "Compare Luka Dončić and Shai Gilgeous-Alexander this season"],
@@ -72,16 +91,14 @@ export default function ExploreWorkspace({
         <section className="explore-overview" aria-labelledby="explore-title">
           <div className="explore-overview-head">
             <h1 id="explore-title">Explore</h1>
-            <button className="explore-ask" onClick={() => onAsk("What is the most important NBA trend in the data right now?")}>Ask Dime <span>↗</span></button>
+            <button className="explore-ask" onClick={() => onAsk("What is the most important NBA trend in the data right now?")}>Ask Dime <ArrowUpRight /></button>
           </div>
 
           <div className="explore-index" aria-label="Available analysis">
-            {sections.map(({ id, label, glyph }, index) => (
+            {sections.map(({ id, label }, index) => (
               <button key={id} onClick={() => jumpTo(id)}>
                 <span className="explore-index-number">0{index + 1}</span>
-                <span className="explore-index-glyph">{glyph}</span>
                 <strong>{label}</strong>
-                <span className="explore-index-arrow">↘</span>
               </button>
             ))}
           </div>
@@ -90,7 +107,7 @@ export default function ExploreWorkspace({
             <span className="explore-quick-label">Start with a question</span>
             <div>
               {quickQuestions.map(([label, question]) => (
-                <button key={label} onClick={() => onAsk(question)}><span>{label}</span>{question}<b>↗</b></button>
+                <button key={label} onClick={() => onAsk(question)}><span>{label}</span>{question}<span className="explore-quick-go"><ArrowUpRight /></span></button>
               ))}
             </div>
           </div>
@@ -101,7 +118,7 @@ export default function ExploreWorkspace({
         <nav className="explore-nav" aria-label="Explore sections">
           <div className="explore-nav-track" style={{ "--active-index": sections.findIndex(({ id }) => id === activeSection) } as CSSProperties}>
             <span className="explore-nav-indicator" aria-hidden="true" />
-            {sections.map(({ id, label, glyph }) => (
+            {sections.map(({ id, label }) => (
               <button
                 key={id}
                 type="button"
@@ -109,7 +126,7 @@ export default function ExploreWorkspace({
                 aria-current={activeSection === id ? "page" : undefined}
                 onClick={() => jumpTo(id)}
               >
-                <span>{glyph}</span>{label}
+                {label}
               </button>
             ))}
             <span className="explore-nav-status"><span className="status-mark" /> 2025-26</span>
