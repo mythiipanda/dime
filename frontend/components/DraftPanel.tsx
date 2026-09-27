@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import EmptyState from "./EmptyState";
 import DataTable from "./DataTable";
 import { BACKEND } from "../lib/chat";
+import { apiPath } from "../lib/api";
 
 export default function DraftPanel() {
   const [year, setYear] = useState("2025");
@@ -16,7 +17,7 @@ export default function DraftPanel() {
     setBusy(true);
     try {
       const res = await fetch(
-        `${BACKEND}/api/v1/datasets/combine?season=${encodeURIComponent(year)}`,
+        `${BACKEND}${apiPath("/datasets/combine?season=${encodeURIComponent(year)}")}`,
       );
       const data = await res.json();
       if (!data.ok) {

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import EmptyState from "./EmptyState";
 import { BACKEND } from "../lib/chat";
 import WowyCard from "./WowyCard";
+import { apiPath } from "../lib/api";
 
 const TEAMS: Record<string, number> = {
   ATL: 1610612737,
@@ -72,7 +73,7 @@ export default function LineupPanel() {
         live = false;
       };
     }
-    fetch(`${BACKEND}/api/v1/datasets/lineups?team_id=${id}`)
+    fetch(`${BACKEND}${apiPath("/datasets/lineups?team_id=${id}")}`)
       .then((r) => r.json())
       .then((d) => {
         if (!live) return;
@@ -94,7 +95,7 @@ export default function LineupPanel() {
     if (!playerA || !playerB) return;
     setWowyBusy(true);
     setError("");
-    fetch(`${BACKEND}/api/v1/datasets/wowy?player_a=${encodeURIComponent(playerA)}&player_b=${encodeURIComponent(playerB)}`)
+    fetch(`${BACKEND}${apiPath("/datasets/wowy?player_a=${encodeURIComponent(playerA)}&player_b=${encodeURIComponent(playerB)}")}`)
       .then((r) => r.json())
       .then((d) => {
         if (!d.ok) setError(String(d.error || "Failed to calculate WOWY splits"));

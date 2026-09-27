@@ -2,6 +2,15 @@ import { BACKEND, ModelsResponse } from "./chat";
 
 export const SEASON = "2025-26";
 
+// v1-removal Step 4 (frontend cutover): the v2 router serves the same
+// endpoints without the /v1 prefix (except chat, which has its own
+// NEXT_PUBLIC_CHAT_RUNTIME toggle). Setting NEXT_PUBLIC_API_RUNTIME="v2"
+// points every apiPath() call at the v2 router; the default stays v1 so
+// this wiring is a no-op until the flag is flipped.
+export function apiPath(p: string): string {
+  return process.env.NEXT_PUBLIC_API_RUNTIME === "v2" ? `/api${p}` : `/api/v1${p}`;
+}
+
 export interface GameRow {
   HOME_TEAM_ABBREVIATION?: string;
   VISITOR_TEAM_ABBREVIATION?: string;
@@ -98,13 +107,13 @@ async function getEnvelope<T>(path: string): Promise<T> {
 
 export function getToday(season = SEASON): Promise<TodayRows> {
   return getEnvelope<TodayRows>(
-    `/api/v1/today?season=${encodeURIComponent(season)}`,
+    apiPath(`/today?season=${encodeURIComponent(season)}`),
   );
 }
 
 export function getWatchlist(season = SEASON): Promise<WatchItem[]> {
   return getEnvelope<WatchItem[]>(
-    `/api/v1/watchlist?season=${encodeURIComponent(season)}`,
+    apiPath(`/watchlist?season=${encodeURIComponent(season)}`),
   );
 }
 
@@ -113,7 +122,7 @@ export async function addWatchlist(
   entity_id: string,
   season = SEASON,
 ): Promise<boolean> {
-  const res = await fetch(`${BACKEND}/api/v1/watchlist`, {
+  const res = await fetch(`${BACKEND}${apiPath("/watchlist")}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ entity_type, entity_id, season }),
@@ -133,7 +142,7 @@ export async function removeWatchlist(
   entity_id: string,
 ): Promise<boolean> {
   const q = new URLSearchParams({ entity_type, entity_id });
-  const res = await fetch(`${BACKEND}/api/v1/watchlist?${q.toString()}`, {
+  const res = await fetch(`${BACKEND}${apiPath("/watchlist?${q.toString()}")}`, {
     method: "DELETE",
   });
   if (!res.ok) throw new Error(`remove failed: ${res.status}`);
@@ -148,18 +157,18 @@ export async function removeWatchlist(
 
 export function getMovers(season = SEASON, days = 7): Promise<MoversRows> {
   return getEnvelope<MoversRows>(
-    `/api/v1/movers?season=${encodeURIComponent(season)}&days=${days}`,
+    apiPath(`/movers?season=${encodeURIComponent(season)}&days=${days}`),
   );
 }
 
 export function getBriefing(season = SEASON): Promise<BriefingRows> {
   return getEnvelope<BriefingRows>(
-    `/api/v1/briefing?season=${encodeURIComponent(season)}`,
+    apiPath(`/briefing?season=${encodeURIComponent(season)}`),
   );
 }
 
 export async function getModels(): Promise<ModelsResponse> {
-  const res = await fetch(`${BACKEND}/api/v1/models`);
+  const res = await fetch(`${BACKEND}${apiPath("/models")}`);
   if (!res.ok) throw new Error(`models failed: ${res.status}`);
   return res.json();
 }
@@ -172,7 +181,7 @@ export interface SqlRerunRows {
 }
 
 export async function rerunSql(sql: string): Promise<SqlRerunRows> {
-  const res = await fetch(`${BACKEND}/api/v1/sql/rerun`, {
+  const res = await fetch(`${BACKEND}${apiPath("/sql/rerun")}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ sql }),
@@ -318,7 +327,7 @@ export function datasetUrl(
   fmt: string,
 ): string {
   const q = new URLSearchParams({ ...params, fmt });
-  return `${BACKEND}/api/v1/datasets/${name}?${q.toString()}`;
+  return `${BACKEND}${apiPath("/datasets/${name}?${q.toString()}")}`;
 }
 
 export async function getDatasetJson(
@@ -395,7 +404,7 @@ export function loadCachedRuns(thread: string): RunInfo[] {
 
 export async function getThreads(): Promise<ThreadInfo[]> {
   try {
-    const res = await fetch(`${BACKEND}/api/v1/threads?client=${encodeURIComponent(getClientId())}`);
+    const res = await fetch(`${BACKEND}${apiPath("/threads?client=${encodeURIComponent(getClientId())}")}`);
     if (!res.ok) return loadCachedThreads();
     const server = ((await res.json()).threads || []) as ThreadInfo[];
     return mergeThreads(server);
@@ -415,7 +424,7 @@ export interface RunInfo {
 export async function getRuns(thread: string): Promise<RunInfo[]> {
   try {
     const res = await fetch(
-      `${BACKEND}/api/v1/threads/${thread}/runs?client=${encodeURIComponent(getClientId())}`,
+      `${BACKEND}${apiPath("/threads/${thread}/runs?client=${encodeURIComponent(getClientId())}")}`,
     );
     if (!res.ok) return loadCachedRuns(thread);
     const runs = ((await res.json()).runs || []) as RunInfo[];
@@ -431,7 +440,7 @@ export async function getRuns(thread: string): Promise<RunInfo[]> {
 }
 
 export function exportUrl(thread: string): string {
-  return `${BACKEND}/api/v1/threads/${thread}/export?client=${encodeURIComponent(getClientId())}`;
+  return `${BACKEND}${apiPath("/threads/${thread}/export?client=${encodeURIComponent(getClientId())}")}`;
 }
 
 export interface PlayerHit {
@@ -453,7 +462,7 @@ export async function getDebateCard(
 ): Promise<DebateCardRows> {
   const q = new URLSearchParams({ a, b, season });
   if (topic) q.set("topic", topic);
-  const res = await fetch(`${BACKEND}/api/v1/debate-card?${q.toString()}`);
+  const res = await fetch(`${BACKEND}${apiPath("/debate-card?${q.toString()}")}`);
   if (!res.ok) throw new Error(`debate card failed: ${res.status}`);
   const data = (await res.json()) as {
     ok?: boolean;
@@ -468,12 +477,12 @@ export async function getDebateCard(
 export function debateFileUrl(pathOrUrl: string): string {
   if (pathOrUrl.startsWith("http")) return pathOrUrl;
   if (pathOrUrl.startsWith("/")) return `${BACKEND}${pathOrUrl}`;
-  return `${BACKEND}/api/v1/debate-card/file?name=${encodeURIComponent(pathOrUrl)}`;
+  return `${BACKEND}${apiPath("/debate-card/file?name=${encodeURIComponent(pathOrUrl)}")}`;
 }
 
 export async function resolvePlayers(q: string, limit = 4): Promise<PlayerHit[]> {
   try {
-    const res = await fetch(`${BACKEND}/api/v1/resolve?q=${encodeURIComponent(q)}`);
+    const res = await fetch(`${BACKEND}${apiPath("/resolve?q=${encodeURIComponent(q)}")}`);
     const data = (await res.json()) as unknown;
     if (typeof data !== "object" || data === null || !("rows" in data)) return [];
     const players = (data as { rows: { players?: { id: number; full_name: string }[] } }).rows.players;

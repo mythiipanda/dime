@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import EmptyState from "./EmptyState";
 import { BACKEND } from "../lib/chat";
+import { apiPath } from "../lib/api";
 
 type PlayoffRow = {
   TEAM_ABBREVIATION?: string;
@@ -69,7 +70,7 @@ export default function PlayoffPanel() {
 
   useEffect(() => {
     let live = true;
-    fetch(`${BACKEND}/api/v1/datasets/playoffs?season=2025-26`)
+    fetch(`${BACKEND}${apiPath("/datasets/playoffs?season=2025-26")}`)
       .then((r) => r.json())
       .then((data) => {
         if (!live) return;

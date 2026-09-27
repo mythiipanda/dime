@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import EmptyState from "./EmptyState";
 import { BACKEND } from "../lib/chat";
+import { apiPath } from "../lib/api";
 
 interface FreshRow {
   table: string;
@@ -15,7 +16,7 @@ export default function FreshnessPanel() {
   const [err, setErr] = useState("");
 
   useEffect(() => {
-    fetch(`${BACKEND}/api/v1/datasets/freshness`)
+    fetch(`${BACKEND}${apiPath("/datasets/freshness")}`)
       .then((r) => r.json())
       .then((d) => setRows(d.rows || []))
       .catch(() => setErr("freshness unavailable"));

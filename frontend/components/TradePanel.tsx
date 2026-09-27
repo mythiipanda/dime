@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { BACKEND } from "../lib/chat";
+import { apiPath } from "../lib/api";
 
 interface Verdict {
   team_a: { team: string; out: number; players: string[]; payroll: number; allowed_in?: number; match_rule?: string; over_apron1?: boolean; over_apron2?: boolean };
@@ -30,7 +31,7 @@ export default function TradePanel({ onAskValue }: { onAskValue?: (q: string) =>
     setError("");
     setBusy(true);
     try {
-      const res = await fetch(`${BACKEND}/api/v1/trade/check`, {
+      const res = await fetch(`${BACKEND}${apiPath("/trade/check")}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ team_a: a, players_a: pa, team_b: b, players_b: pb }),
