@@ -38,8 +38,11 @@ def _team_leaders_table():
             "meta": {}}
 
 
-def test_question_kind_player():
-    assert _gate_question_kind("best defensive players in the league") == "player"
+def test_question_kind_generic_no_entities():
+    # No keyword/regex guessing: a generic question with no named entities
+    # returns "other" so phrasing never drops tables (Instinct QA 2026-09-27).
+    assert _gate_question_kind("best defensive players in the league") == "other"
+    assert _gate_question_kind("best offense this season?") == "other"
 
 
 def test_question_kind_named_players():
@@ -59,7 +62,7 @@ def test_question_kind_mixed_keeps_everything():
 
 def test_player_question_drops_team_splits():
     tables = [_player_table(), _team_splits_table()]
-    kept, report = _gate_tables("best defensive players in the league", tables)
+    kept, report = _gate_tables("Compare Luka Doncic and Shai Gilgeous-Alexander", tables)
     titles = [t["title"] for t in kept]
     assert "Team splits" not in titles
     assert "Player ratings · DEF_RATING" in titles
@@ -67,7 +70,8 @@ def test_player_question_drops_team_splits():
 
 
 def test_player_question_drops_team_leaders():
-    kept, _ = _gate_tables("best defensive players?", [_team_leaders_table()])
+    kept, _ = _gate_tables("Compare Luka Doncic and Shai Gilgeous-Alexander",
+                           [_team_leaders_table()])
     assert kept == []
 
 
@@ -115,3 +119,14 @@ def test_coverage_not_appended_without_superlative():
     text = "The top five by defensive rating are listed below."
     out, report = _gate_qualifications(text, [_player_table()])
     assert "does not isolate individual" not in out
+
+def test_no_entity_question_keeps_team_table():
+    # Instinct QA repro (2026-09-27): "best offense this season?" was
+    # classified as PLAYER by keyword regex ("best") and silently dropped
+    # a legit TEAM splits table (BOS 56 wins). With structural-only
+    # classification, no-entity questions keep all non-empty tables.
+    kept, report = _gate_tables("best offense this season?", [_team_splits_table()])
+    assert len(kept) == 1
+    assert kept[0]["title"] == "Team splits"
+    assert report["question_kind"] == "other"
+    assert report["dropped"] == []
