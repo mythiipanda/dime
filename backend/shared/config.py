@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     llm_timeout_s: int = 60
     llm_max_retries: int = 1
     dime_v2_pre_tool_timeout_s: float = Field(default=45.0, gt=0)
+    # Overall ceiling for a single v2 chat-stream run. Individual model
+    # calls have llm_timeout_s, but a run with many stages, retries, and
+    # tool loops can still hang for minutes -- bound the whole thing so a
+    # stuck model call ends the stream with a clean failure event instead
+    # of heartbeats forever.
+    dime_v2_run_timeout_s: float = Field(default=360.0, gt=0)
     chat_rate_per_minute: int = 20
     default_timeout_seconds: int = 10
 

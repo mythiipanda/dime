@@ -1277,7 +1277,8 @@ async def quick_answer_stream(body: QuickAnswerBody):
                             await asyncio.wait_for(queue.get(), timeout=0.1))
                     except TimeoutError:
                         continue
-                result = await task
+                result = await asyncio.wait_for(
+                    task, timeout=settings.dime_v2_run_timeout_s)
                 while not queue.empty():
                     buffered_events.append(queue.get_nowait())
                 # Validate every public projection before emitting buffered SSE.
@@ -1286,6 +1287,7 @@ async def quick_answer_stream(body: QuickAnswerBody):
                                    for item in result.output_statuses]
                 answer = _answer_text(result)
             except Exception as exc:
+                timed_out = isinstance(exc, asyncio.TimeoutError)
                 if policy.publish:
                     for event in missing_tool_events():
                         safe_event = _safe_buffered_event(event)
@@ -1293,10 +1295,11 @@ async def quick_answer_stream(body: QuickAnswerBody):
                             yield encode_event(safe_event)
                     yield encode_event(WorkLog(run_id=run_id, status="partial"))
                     yield encode_event(FinalAnswer(
-                        text="I could not verify a publishable answer from the available data.",
+                        text=("I could not verify a publishable answer from the available data. "
+                              + ("The run timed out before finishing." if timed_out else "")),
                         carry={"run_id": run_id, "verification": "partial",
                                "verified_claims": 0, "structural_flags": [],
-                               "gaps": [{"kind": "execution_failure"}],
+                               "gaps": [{"kind": "run_timeout" if timed_out else "execution_failure"}],
                                "stage_latencies_ms": stage_latencies_ms()}))
                 yield encode_event(GraphEnd())
                 return

@@ -219,21 +219,52 @@ export async function postChatStream(
   signal?: AbortSignal,
   thread?: string | null,
 ): Promise<void> {
-  // Stall watchdog: if the stream goes silent for 90s (or the request
-  // itself never starts), surface an error instead of spinning forever.
+  // Client-side watchdogs: a stuck run must surface an error, not spin
+  // "Thinking..." forever.
+  //
+  // - STALL_MS: no bytes at all (not even heartbeat pings) for 90s means
+  //   the connection itself is dead.
+  // - PROGRESS_MS: only pings and no real events for 3 minutes means the
+  //   backend is alive (heartbeats flow every 15s) but the run is stuck --
+  //   this is the case the old bytes-based watchdog could never catch.
+  // - MAX_RUN_MS: absolute ceiling on a single chat request.
   const STALL_MS = 90_000;
+  const PROGRESS_MS = 180_000;
+  const MAX_RUN_MS = 480_000;
   const ctrl = new AbortController();
-  let lastActivity = Date.now();
-  let stalled = false;
+  const startedAt = Date.now();
+  let lastByte = startedAt;
+  let lastProgress = startedAt;
+  type AbortCause = "idle" | "progress" | "ceiling" | null;
+  let cause: AbortCause = null;
   const watchdog = setInterval(() => {
-    if (Date.now() - lastActivity > STALL_MS) {
-      stalled = true;
+    const now = Date.now();
+    if (now - lastByte > STALL_MS) {
+      cause = "idle";
+      ctrl.abort();
+    } else if (now - lastProgress > PROGRESS_MS) {
+      cause = "progress";
+      ctrl.abort();
+    } else if (now - startedAt > MAX_RUN_MS) {
+      cause = "ceiling";
       ctrl.abort();
     }
   }, 5_000);
   if (signal) {
     if (signal.aborted) ctrl.abort();
     else signal.addEventListener("abort", () => ctrl.abort(), { once: true });
+  }
+  function timeoutError(): string {
+    if (cause === "idle") {
+      return "No response from the server for 90s. The backend may be down - try again in a moment.";
+    }
+    if (cause === "progress") {
+      return "The model stopped making progress for 3 minutes. The run was stopped - try again.";
+    }
+    if (cause === "ceiling") {
+      return "The request timed out after 8 minutes. Try a simpler question or try again.";
+    }
+    return "Request cancelled.";
   }
   let res: Response;
   try {
@@ -247,10 +278,8 @@ export async function postChatStream(
     });
   } catch (e) {
     clearInterval(watchdog);
-    if (stalled) {
-      handlers.onError("No response from the server for 90s. The backend may be down - try again in a moment.");
-    } else if ((e as Error)?.name === "AbortError") {
-      handlers.onError("Request cancelled.");
+    if (cause || (e as Error)?.name === "AbortError") {
+      handlers.onError(timeoutError());
     } else {
       handlers.onError("Could not reach the Dime backend. Check your connection and try again.");
     }
@@ -277,8 +306,12 @@ export async function postChatStream(
       read = await reader.read();
     } catch (e) {
       clearInterval(watchdog);
-      if (stalled) {
-        handlers.onError("The stream went quiet for 90s - the backend may be stuck. Try again.");
+      if (cause === "idle") {
+        handlers.onError("No response from the server for 90s. The backend may be down - try again in a moment.");
+      } else if (cause === "progress") {
+        handlers.onError("The model stopped making progress for 3 minutes. The run was stopped - try again.");
+      } else if (cause === "ceiling") {
+        handlers.onError("The request timed out after 8 minutes. Try a simpler question or try again.");
       } else if ((e as Error)?.name !== "AbortError") {
         handlers.onError("Connection to the backend dropped. Try again.");
       }
@@ -286,7 +319,7 @@ export async function postChatStream(
     }
     const { done, value } = read;
     if (done) break;
-    lastActivity = Date.now();
+    lastByte = Date.now();
     buf += decoder.decode(value, { stream: true });
     const parts = buf.split("\n\n");
     buf = parts.pop() || "";
@@ -300,6 +333,9 @@ export async function postChatStream(
       try {
         const eventType = typeLine.slice(6).trim();
         if (eventType === "graph_end") terminal = true;
+        // Heartbeat pings keep the connection alive but are not progress:
+        // only real events reset the progress watchdog.
+        if (eventType !== "ping") lastProgress = Date.now();
         handlers.onEvent(
           eventType,
           JSON.parse(dataLines.join("\n")),
