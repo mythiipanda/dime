@@ -144,3 +144,61 @@ test("getRuns falls back to the local cache after a deploy wipe", async () => {
     delete (globalThis as Record<string, unknown>).fetch;
   }
 });
+
+test("getRuns merges a partial post-wipe server instead of clobbering local runs", async () => {
+  // Deploy wiped the server after q1+q2 were asked; q2 was re-asked on the
+  // fresh store, so the server only knows q2. The merge must keep q1.
+  installLocalStorage();
+  appendCachedRun("t-4", run("q1", "2026-09-27T20:00:00Z"));
+  appendCachedRun("t-4", run("q2", "2026-09-27T20:01:00Z"));
+  (globalThis as Record<string, unknown>).fetch = async () => ({
+    ok: true,
+    json: async () => ({
+      runs: [run("q2", "2026-09-27T20:01:00Z")], // newest-first
+    }),
+  });
+  try {
+    const runs = await getRuns("t-4");
+    assert.deepEqual(runs.map((r) => r.question), ["q1", "q2"]);
+    // The longer local history survives in the cache, not the short server copy.
+    assert.deepEqual(loadCachedRuns("t-4").map((r) => r.question), ["q1", "q2"]);
+  } finally {
+    delete (globalThis as Record<string, unknown>).fetch;
+  }
+});
+
+test("getRuns picks up server-only runs this browser never cached", async () => {
+  installLocalStorage();
+  appendCachedRun("t-5", run("q1", "2026-09-27T20:00:00Z"));
+  (globalThis as Record<string, unknown>).fetch = async () => ({
+    ok: true,
+    json: async () => ({
+      runs: [
+        run("q3", "2026-09-27T20:02:00Z"),
+        run("q2", "2026-09-27T20:01:00Z"),
+      ], // newest-first
+    }),
+  });
+  try {
+    const runs = await getRuns("t-5");
+    assert.deepEqual(runs.map((r) => r.question), ["q1", "q2", "q3"]);
+    assert.deepEqual(loadCachedRuns("t-5").map((r) => r.question), ["q1", "q2", "q3"]);
+  } finally {
+    delete (globalThis as Record<string, unknown>).fetch;
+  }
+});
+
+test("getRuns dedupes a server run already in the local cache", async () => {
+  installLocalStorage();
+  appendCachedRun("t-6", run("q1", "2026-09-27T20:00:00Z"));
+  (globalThis as Record<string, unknown>).fetch = async () => ({
+    ok: true,
+    json: async () => ({ runs: [run("q1", "2026-09-27T20:00:00Z")] }),
+  });
+  try {
+    const runs = await getRuns("t-6");
+    assert.deepEqual(runs.map((r) => r.question), ["q1"]);
+  } finally {
+    delete (globalThis as Record<string, unknown>).fetch;
+  }
+});

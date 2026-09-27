@@ -432,8 +432,28 @@ function mergeThreads(server: ThreadInfo[]): ThreadInfo[] {
   return merged;
 }
 
-function cacheRuns(thread: string, runs: RunInfo[]): void {
-  if (runs.length) lsSet(RUNS_KEY(thread), runs.slice(-MAX_CACHED_RUNS));
+// Union the server's runs with the local cache instead of replacing it.
+// The server store is wiped on every deploy, so the local cache can hold
+// runs the server has never seen (appended after a wipe), and the server
+// can hold runs this browser hasn't cached yet. Replacing the cache with
+// the server's copy would silently drop whichever side is longer.
+function mergeRuns(thread: string, serverOldestFirst: RunInfo[]): RunInfo[] {
+  const seen = new Set<string>();
+  const merged: RunInfo[] = [];
+  const push = (r: RunInfo) => {
+    const key = `${r.question}\n${r.answer}\n${r.created_at}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    merged.push(r);
+  };
+  for (const r of loadCachedRuns(thread)) push(r);
+  for (const r of serverOldestFirst) push(r);
+  merged.sort((a, b) =>
+    String(a.created_at).localeCompare(String(b.created_at)),
+  );
+  const out = merged.slice(-MAX_CACHED_RUNS);
+  lsSet(RUNS_KEY(thread), out);
+  return out;
 }
 
 export function loadCachedRuns(thread: string): RunInfo[] {
@@ -491,15 +511,13 @@ export async function getRuns(thread: string): Promise<RunInfo[]> {
     );
     if (!res.ok) return loadCachedRuns(thread);
     const server = ((await res.json()).runs || []) as RunInfo[];
-    if (server.length) {
-      // The server returns newest-first; the conversation load path and
-      // the local cache are oldest-first, so normalize once at the edge.
-      const runs = [...server].reverse();
-      cacheRuns(thread, runs);
-      return runs;
-    }
-    // Server has no rows for a thread this browser knows: deploy wipe.
-    return loadCachedRuns(thread);
+    // The server returns newest-first; the conversation load path and
+    // the local cache are oldest-first, so normalize once at the edge.
+    // Merge, don't replace: an empty server (deploy wipe) leaves the
+    // local cache intact, and a partial server (post-wipe) can't drop
+    // runs the server never saw.
+    const runs = [...server].reverse();
+    return mergeRuns(thread, runs);
   } catch {
     return loadCachedRuns(thread);
   }
