@@ -216,6 +216,26 @@ def revision() -> dict:
     return runtime_asset_manifest().as_dict()
 
 
+def _models_catalog() -> dict:
+    # Deferred: shared.providers pulls heavyweight provider SDKs
+    # (langchain_*); keep v2.main importable in minimal envs.
+    # Same source as the v1 /api/v1/models + /api/v1/health endpoints.
+    from shared.providers import models_catalog
+
+    return models_catalog()
+
+
+@router.get("/models")
+def models() -> dict:
+    return _models_catalog()
+
+
+@router.get("/health")
+def health() -> dict:
+    catalog = _models_catalog()
+    return {"ok": True, "providers": catalog["available"]}
+
+
 def public_evidence_table(item):
     """Bounded public projection; internal provenance never crosses SSE."""
     return {"tool": item.capability, "rows": item.rows, "meta": {
