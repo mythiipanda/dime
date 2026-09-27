@@ -1,6 +1,7 @@
 """Dataset boundary. Warehouse first, live on miss, provenance always."""
 
 import io
+import time
 
 import polars as pl
 from fastapi import APIRouter, Query
@@ -11,6 +12,36 @@ from .sources import espn, nba_stats
 from .sources.base import FetchResult
 
 router = APIRouter()
+
+# In-memory cache for the freshness endpoint. The warehouse only changes
+# when a fetch/seed run writes new rows, so a short TTL is safe; each
+# cached row already carries its own last_fetch, so the payload is
+# self-describing and never presents stale data as fresh. Per-worker
+# (uvicorn) cache is fine: every worker just warms its own copy once.
+_FRESHNESS_TTL_S = 300
+_FRESHNESS_CACHE = {"at": 0.0, "payload": None}
+
+
+def _freshness_payload() -> dict:
+    con = store.connect()
+    try:
+        tables = [r[0] for r in
+                  con.execute("SHOW TABLES").fetchall()]
+        rows = []
+        for t in sorted(tables):
+            if not t.startswith("silver_"):
+                continue
+            cols = [r[1] for r in
+                    con.execute(f"PRAGMA table_info({t})").fetchall()]
+            n = con.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
+            last = None
+            if "_fetched_at" in cols:
+                last = con.execute(
+                    f"SELECT MAX(_fetched_at) FROM {t}").fetchone()[0]
+            rows.append({"table": t, "rows": n, "last_fetch": last})
+    finally:
+        con.close()
+    return {"ok": True, "rows": rows}
 
 TABLES = {
     "standings": "silver_standings",
@@ -37,25 +68,14 @@ TABLES = {
 
 @router.get("/datasets/freshness")
 def freshness() -> dict:
-    con = store.connect()
-    try:
-        tables = [r[0] for r in
-                  con.execute("SHOW TABLES").fetchall()]
-        rows = []
-        for t in sorted(tables):
-            if not t.startswith("silver_"):
-                continue
-            cols = [r[1] for r in
-                    con.execute(f"PRAGMA table_info({t})").fetchall()]
-            n = con.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
-            last = None
-            if "_fetched_at" in cols:
-                last = con.execute(
-                    f"SELECT MAX(_fetched_at) FROM {t}").fetchone()[0]
-            rows.append({"table": t, "rows": n, "last_fetch": last})
-    finally:
-        con.close()
-    return {"ok": True, "rows": rows}
+    now = time.monotonic()
+    cached = _FRESHNESS_CACHE
+    if cached["payload"] is not None and now - cached["at"] < _FRESHNESS_TTL_S:
+        return cached["payload"]
+    payload = _freshness_payload()
+    cached["payload"] = payload
+    cached["at"] = now
+    return payload
 
 
 def _envelope(table: str, season: str, frame: object, cached: bool) -> dict:
