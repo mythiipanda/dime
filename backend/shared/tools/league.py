@@ -130,7 +130,7 @@ def _hist_standings_rows(season: str) -> list[dict[str, Any]]:
     try:
         from .. import store as _store
     except Exception:
-        from app import store as _store
+        from shared import store as _store
     try:
         frame = _store.read_frame(
             "silver_hist_standings", "_season = ?", [season])

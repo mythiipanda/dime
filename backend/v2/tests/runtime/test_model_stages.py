@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import BaseModel
 
-from app.config import settings
+from shared.config import settings
 
 from v2.adapters.models import (
     PlannerArgumentError,
@@ -1211,7 +1211,7 @@ async def test_two_team_winner_request_requires_prediction_even_if_intake_choose
 
 @pytest.mark.anyio
 async def test_implicit_matchup_season_is_pinned_to_prediction_data_vintage():
-    from app.tools._core import SEASON
+    from shared.tools._core import SEASON
     stub = StubModel([{
         "goal": "predict Celtics vs Knicks", "mode": "quick",
         "deliverable": "winner", "entities": [
@@ -1617,7 +1617,7 @@ async def test_provider_structured_failure_preserves_sanitized_diagnostics(monke
     assert model.last_failures[0]["latency_ms"] >= 0
 @pytest.mark.anyio
 async def test_intake_season_normalization_propagates_to_requirement_arguments():
-    from app.tools._core import SEASON
+    from shared.tools._core import SEASON
 
     stub = StubModel([
         {
@@ -1882,7 +1882,7 @@ async def test_planner_rejects_invalid_replacement_plan_arguments():
 
 @pytest.mark.anyio
 async def test_implicit_relative_season_is_pinned_for_non_prediction_capability():
-    from app.tools._core import SEASON
+    from shared.tools._core import SEASON
     stub = StubModel([{
         "goal": "three point leaders this season", "mode": "quick",
         "deliverable": "leaders", "season": {
@@ -3746,7 +3746,7 @@ def test_no_ranked_text_derivation_symbols_remain():
     assert "RankedTeamConstraintError" not in rating
 
 def test_ranked_metric_vocabulary_is_label_map_from_single_source():
-    from app.tools.rating_metrics import RANKING_DIRECTIONS, TEAM_RATING_METRICS
+    from shared.tools.rating_metrics import RANKING_DIRECTIONS, TEAM_RATING_METRICS
     assert TEAM_RATING_METRICS == {
         "OFF_RATING": {"label": "offensive rating", "format": "general"},
         "DEF_RATING": {"label": "defensive rating", "format": "general"},

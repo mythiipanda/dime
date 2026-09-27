@@ -80,7 +80,7 @@ def _executable_sha256() -> str:
 @lru_cache(maxsize=1)
 def runtime_warehouse_identity() -> dict[str, str]:
     """Safe identity of the warehouse bound to this server process."""
-    from app import store
+    from shared import store
     identity = store.warehouse_identity()
     return {"warehouse_id": identity["warehouse_id"],
             "sha256": identity["warehouse_sha256"]}
@@ -460,8 +460,8 @@ async def quick_answer_stream(body: QuickAnswerBody):
     import uuid
 
     from fastapi.responses import StreamingResponse
-    from app.providers import resolve_model_id
-    from app.config import settings
+    from shared.providers import resolve_model_id
+    from shared.config import settings
     from v2.api.events import (
         CustomData, FinalAnswer, GraphEnd, NodeUpdate, ToolCall, ToolResult, WorkLog,
     )

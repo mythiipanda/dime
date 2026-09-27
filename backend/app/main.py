@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from v2.api.routes import router as v2_router, preflight_runtime_assets
 
 from . import datasets, routes
-from .config import settings
+from shared.config import settings
 
 
 @asynccontextmanager

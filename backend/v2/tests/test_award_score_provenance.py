@@ -1,6 +1,6 @@
 
 def test_existing_award_output_declares_score_provenance(monkeypatch):
-    from app.tools import awards
+    from shared.tools import awards
 
     monkeypatch.setattr(awards, "_missing_table", lambda: None)
     monkeypatch.setattr(awards, "_pool", lambda season: [
@@ -23,7 +23,7 @@ def test_existing_award_output_declares_score_provenance(monkeypatch):
 def test_rookie_leader_surface_declares_source_method_and_stat_unit(monkeypatch):
     import sys
     from unittest.mock import MagicMock
-    from app.tools import league
+    from shared.tools import league
 
     connection = MagicMock()
     connection.execute.side_effect = [

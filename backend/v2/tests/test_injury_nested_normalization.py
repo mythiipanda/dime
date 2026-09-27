@@ -12,7 +12,7 @@ class _FakeCore:
 
 
 def test_named_player_filter_reads_nested_warehouse_injuries(monkeypatch):
-    from app.tools import league
+    from shared.tools import league
 
     monkeypatch.setattr(
         league, "_warehouse_or_live",
@@ -35,7 +35,7 @@ def test_named_player_filter_reads_nested_warehouse_injuries(monkeypatch):
 
 
 def test_nested_json_injuries_are_exported_as_structured_values(monkeypatch):
-    from app.tools import league
+    from shared.tools import league
 
     monkeypatch.setattr(
         league, "_warehouse_or_live",

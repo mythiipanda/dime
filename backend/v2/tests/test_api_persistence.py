@@ -1414,7 +1414,7 @@ def test_public_sse_projection_omits_real_envelope_source_identity():
 
 
 def test_revision_warehouse_identity_is_safe_and_startup_bound(monkeypatch, tmp_path):
-    from app import store
+    from shared import store
     from v2.api import routes
     warehouse = tmp_path / "configured.duckdb"
     warehouse.write_bytes(b"startup bytes")
@@ -1433,7 +1433,8 @@ def test_revision_warehouse_identity_is_safe_and_startup_bound(monkeypatch, tmp_
 
 
 def test_real_lifespan_freezes_revision_warehouse_endpoint(monkeypatch, tmp_path):
-    from app import main, store
+    from app import main
+    from shared import store
     from v2.api import routes
     warehouse = tmp_path / "startup.duckdb"
     startup = b"startup warehouse bytes"

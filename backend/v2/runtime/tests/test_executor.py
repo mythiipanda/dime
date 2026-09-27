@@ -1100,7 +1100,7 @@ def test_broad_row_selector_cannot_join_sibling_subject_and_metric():
 
 @pytest.mark.anyio
 async def test_structured_name_resolution_error_code_survives_checkpoint_replay(tmp_path):
-    from app.tools._core import PlayerNameResolutionUnavailable
+    from shared.tools._core import PlayerNameResolutionUnavailable
     from v2.runtime.checkpoints import FileCheckpointStore
     from v2.runtime.models import ExecutionErrorCode
     class MissingProfile:

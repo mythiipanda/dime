@@ -126,8 +126,8 @@ def _claim_seasons_supported(claim: Claim,
 
 def _canonical_entity(entity) -> tuple[str, str]:
     try:
-        from app.tools._core import coerce_team_id
-        from app.tools.player import coerce_player_id
+        from shared.tools._core import coerce_team_id
+        from shared.tools.player import coerce_player_id
         resolver = {"team": coerce_team_id, "player": coerce_player_id}.get(entity.type)
         if resolver is not None:
             for candidate in (entity.id, entity.display_name):

@@ -126,7 +126,7 @@ async def test_jina_reader_sends_optional_free_key(monkeypatch):
 
 def test_jina_key_is_optional_config(monkeypatch):
     monkeypatch.setenv("JINA_API_KEY", "jina-configured")
-    from app.config import Settings
+    from shared.config import Settings
     assert Settings().jina_api_key == "jina-configured"
 
 

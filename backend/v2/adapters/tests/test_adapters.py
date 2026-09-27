@@ -972,7 +972,7 @@ async def test_dependent_player_argument_is_bound_from_parent_evidence():
 
 
 def test_warehouse_game_logs_and_composed_injury_evidence_keep_identity(monkeypatch, tmp_path):
-    from app import store
+    from shared import store
     from v2.adapters.core import call_capability
     warehouse = tmp_path / "warehouse.duckdb"
     warehouse.write_bytes(b"identity bytes")

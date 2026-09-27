@@ -12,10 +12,10 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from .graph import run_chat
-from .providers import models_catalog
-from . import store
+from shared.providers import models_catalog
+from shared import store
 from .sse import emit_sse, with_heartbeat
-from .config import settings
+from shared.config import settings
 
 router = APIRouter()
 
@@ -149,7 +149,7 @@ async def _record_v2_shadow(
     import asyncio
     import uuid
 
-    from .providers import resolve_model_id
+    from shared.providers import resolve_model_id
     from v2.contracts import ConversationTurn
     from v2.runtime.assembly import build_runtime
     from v2.runtime.policy import ExecutionPolicy
@@ -269,7 +269,7 @@ def models() -> dict:
 
 @router.get("/resolve")
 def resolve(q: str = Query("")) -> dict:
-    from .tools import resolve_entity
+    from shared.tools import resolve_entity
 
     return resolve_entity.invoke({"query": q[:80]})
 
@@ -386,7 +386,7 @@ class TradeBody(BaseModel):
 
 @router.post("/trade/check")
 def trade_check(body: TradeBody) -> dict:
-    from .tools import get_trade_check
+    from shared.tools import get_trade_check
 
     return get_trade_check.invoke({
         "team_a": body.team_a, "players_a": body.players_a,
@@ -406,7 +406,7 @@ async def api_sql_rerun(body: SqlRerunBody) -> dict:
     Boundary: parse and clamp here; read-only validation lives in the
     shared league._validate_readonly_sql used by text_to_sql.
     """
-    from .tools.league import rerun_sql
+    from shared.tools.league import rerun_sql
 
     sql = (body.sql or "").strip()
     if not sql:
@@ -500,7 +500,7 @@ async def chat_stream_post(request: Request, body: ChatBody):
 
 @router.get("/today")
 async def api_today(season: str = Query("2025-26")):
-    from .tools.today import get_today
+    from shared.tools.today import get_today
     import json
     res = get_today.invoke({"season": season})
     return json.loads(res) if isinstance(res, str) else res
@@ -508,7 +508,7 @@ async def api_today(season: str = Query("2025-26")):
 
 @router.get("/watchlist")
 async def api_watchlist(season: str = Query("2025-26")):
-    from .tools.watchlist import get_watchlist
+    from shared.tools.watchlist import get_watchlist
     import json
     res = get_watchlist.invoke({"season": season})
     return json.loads(res) if isinstance(res, str) else res
@@ -522,7 +522,7 @@ class WatchlistBody(BaseModel):
 
 @router.post("/watchlist")
 async def api_watchlist_add(body: WatchlistBody):
-    from .tools.watchlist import add_watchlist_item
+    from shared.tools.watchlist import add_watchlist_item
     import json
     res = add_watchlist_item.invoke({
         "entity_type": body.entity_type,
@@ -537,7 +537,7 @@ async def api_watchlist_remove(
     entity_type: str = Query(...),
     entity_id: str = Query(...),
 ):
-    from .tools.watchlist import remove_watchlist_item
+    from shared.tools.watchlist import remove_watchlist_item
     import json
     res = remove_watchlist_item.invoke({
         "entity_type": entity_type,
@@ -551,8 +551,8 @@ async def api_movers(
     season: str = Query("2025-26"),
     days: int = Query(7, ge=1, le=30),
 ):
-    from .tools.league import get_leaderboard_deltas
-    from .tools.today import normalize_movers
+    from shared.tools.league import get_leaderboard_deltas
+    from shared.tools.today import normalize_movers
     import json
     res = get_leaderboard_deltas.invoke({"season": season, "days": days})
     out = json.loads(res) if isinstance(res, str) else res
@@ -561,7 +561,7 @@ async def api_movers(
 
 @router.get("/briefing")
 async def api_briefing(season: str = Query("2025-26")):
-    from .tools.today import get_morning_briefing
+    from shared.tools.today import get_morning_briefing
     import json
     res = get_morning_briefing.invoke({"season": season})
     return json.loads(res) if isinstance(res, str) else res
@@ -573,8 +573,8 @@ def api_debate_card(
     b: str = Query(""),
     season: str = Query("2025-26"),
 ) -> dict:
-    from .tools import get_debate_card
-    from .tools._core import clamp_season
+    from shared.tools import get_debate_card
+    from shared.tools._core import clamp_season
 
     qa = (a or "").strip()[:80]
     qb = (b or "").strip()[:80]

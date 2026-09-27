@@ -1,4 +1,4 @@
-from app.tools.league import get_player_ratings, get_playoff_team_ratings
+from shared.tools.league import get_player_ratings, get_playoff_team_ratings
 from v2.adapters import call_capability
 
 
@@ -61,7 +61,7 @@ def test_rookie_capability_declares_first_season_qualification():
 
 
 def test_warehouse_freshness_declares_authoritative_source_and_generation_time():
-    from app.tools.league import get_warehouse_freshness
+    from shared.tools.league import get_warehouse_freshness
     result = get_warehouse_freshness.invoke({})
     assert result["ok"] is True
     assert result["meta"]["source"] == "warehouse"
@@ -79,7 +79,7 @@ def test_team_ratings_exposes_rankable_ts_and_turnover_metrics():
 
 def test_team_ratings_rows_preserve_ts_and_turnover_values():
     from unittest.mock import patch
-    from app.tools.league import get_ratings
+    from shared.tools.league import get_ratings
     rows = [{"TEAM_ID": 1, "TEAM_NAME": "A", "TS_PCT": .612,
              "TM_TOV_PCT": 11.4, "TS_PCT_RANK": 1, "TM_TOV_PCT_RANK": 2}]
     with patch("app.tools.league._warehouse_or_live", return_value=(rows, {"source":"fixture"})):
@@ -89,7 +89,7 @@ def test_team_ratings_rows_preserve_ts_and_turnover_values():
 
 def test_get_ratings_formats_percentages_from_metric_source():
     from unittest.mock import patch
-    from app.tools.league import get_ratings
+    from shared.tools.league import get_ratings
     rows = [{"TEAM_ID": 1, "TEAM_NAME": "A", "OFF_RATING": 118.246,
              "TS_PCT": .612, "TM_TOV_PCT": 11.4}]
     with patch("app.tools.league._warehouse_or_live",

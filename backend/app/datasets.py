@@ -7,9 +7,9 @@ import polars as pl
 from fastapi import APIRouter, Query
 from fastapi.responses import Response
 
-from . import store
-from .sources import espn, nba_stats
-from .sources.base import FetchResult
+from shared import store
+from shared.sources import espn, nba_stats
+from shared.sources.base import FetchResult
 
 router = APIRouter()
 
@@ -115,7 +115,7 @@ def _envelope(table: str, season: str, frame: object, cached: bool) -> dict:
             pinned.append(keyed)
         rows = pinned
     if table == "silver_lineups":
-        from .tools._core import trust_tier
+        from shared.tools._core import trust_tier
 
         for r in rows:
             tier, est = trust_tier(r.get("MIN"))
@@ -133,7 +133,7 @@ def _fetch_live(
     if name == "standings":
         return nba_stats.standings(season)
     if name == "leaders":
-        from .tools import clamp_stat
+        from shared.tools import clamp_stat
 
         return nba_stats.leaders(clamp_stat(stat), season)
     if name == "injuries":
@@ -149,7 +149,7 @@ def _fetch_live(
     if name == "lineups" and team_id:
         return nba_stats.lineups(team_id, season)
     if name in ("on_off", "four_factors") and player_id and team_id:
-        from .sources import pbpstats
+        from shared.sources import pbpstats
 
         if name == "on_off":
             return pbpstats.on_off(player_id, team_id, season)
@@ -161,7 +161,7 @@ def _fetch_live(
     if name == "playoffs":
         return nba_stats.playoff_results(season)
     if name == "wowy" and team_id and ids:
-        from .sources import pbpstats
+        from shared.sources import pbpstats
 
         parsed = [int(x) for x in ids.split(",") if x.strip().isdigit()]
         return pbpstats.wowy(parsed, team_id, season)
@@ -185,7 +185,7 @@ def dataset(
     fmt: str = Query("json"),
 ):
     if name == "wowy" and (player_a or ids):
-        from .tools.player import get_wowy
+        from shared.tools.player import get_wowy
 
         res = get_wowy.invoke(
             {"player_a": player_a or ids, "player_b": player_b, "team_id": team_id, "season": season}
@@ -202,7 +202,7 @@ def dataset(
         return {"ok": False, "error": f"unknown dataset, pick one of {sorted(TABLES)}"}
     table = TABLES[name]
     if name == "leaders":
-        from .tools import clamp_stat
+        from shared.tools import clamp_stat
 
         table = f"silver_leaders_{clamp_stat(stat).lower()}"
     entity_scoped = name in ("player_gamelogs", "team_games", "shots", "scoreboard", "lineups", "on_off", "wowy", "four_factors")

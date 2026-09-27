@@ -11,8 +11,8 @@ from pydantic import BaseModel
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
-from app.config import settings
-from app.providers import NVIDIA_NIM_MODELS
+from shared.config import settings
+from shared.providers import NVIDIA_NIM_MODELS
 
 from v2.adapters.models import (
     NIM_THINKING_OFF_EXTRA_BODY,

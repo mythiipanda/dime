@@ -115,7 +115,7 @@ def build_envelope(
     }
     if "warehouse" in declared_sources and not (
             "warehouse_id" in meta or "warehouse_sha256" in meta):
-        from app import store as _store
+        from shared import store as _store
         bound_identity = _store.warehouse_identity()
         meta = {**meta, **bound_identity}
     has_warehouse_id = "warehouse_id" in meta
@@ -271,7 +271,7 @@ def _row_values(rows: Any):
 
 
 def _default_tools() -> dict[str, Any]:
-    from app.tools import v1_tools
+    from shared.tools import v1_tools
 
     from . import coverage
 

@@ -15,8 +15,8 @@ def _canonical_entity_value(entity_type: str, value: object) -> str:
     """Canonicalize a provider-facing entity selector when a resolver exists."""
     text = str(value).strip()
     try:
-        from app.tools._core import coerce_team_id
-        from app.tools.player import coerce_player_id
+        from shared.tools._core import coerce_team_id
+        from shared.tools.player import coerce_player_id
         resolver = {"team": coerce_team_id, "player": coerce_player_id}.get(
             entity_type)
         if resolver is not None:

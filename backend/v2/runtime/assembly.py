@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-from app.providers import ProviderName
+from shared.providers import ProviderName
 from v2.adapters import (
     CAPABILITIES,
     ModelIntake,
@@ -88,7 +88,7 @@ def _structural_schema(value):
 
 def capability_catalog() -> dict[str, dict]:
     """Provider-neutral descriptions plus accepted argument schemas."""
-    from app.tools import v1_tools
+    from shared.tools import v1_tools
 
     by_tool = {tool.name: tool for tool in v1_tools}
     catalog: dict[str, dict] = {}

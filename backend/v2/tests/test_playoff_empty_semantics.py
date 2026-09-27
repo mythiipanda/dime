@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 
 def test_playoffs_does_not_convert_missing_source_to_zero(monkeypatch):
-    from app.tools import league
+    from shared.tools import league
 
     monkeypatch.setattr(
         league, "_warehouse_or_live",
@@ -15,7 +15,7 @@ def test_playoffs_does_not_convert_missing_source_to_zero(monkeypatch):
 
 
 def test_playoffs_preserves_verified_empty_population(monkeypatch):
-    from app.tools import league
+    from shared.tools import league
 
     monkeypatch.setattr(
         league, "_warehouse_or_live",

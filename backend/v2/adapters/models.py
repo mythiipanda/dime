@@ -23,9 +23,9 @@ from pydantic_ai.exceptions import ContentFilterError, ModelHTTPError, Unexpecte
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
-from app.config import settings
-from app.tools.rating_metrics import RANKING_DIRECTIONS, TEAM_RATING_METRICS
-from app.providers import (
+from shared.config import settings
+from shared.tools.rating_metrics import RANKING_DIRECTIONS, TEAM_RATING_METRICS
+from shared.providers import (
     GROQ_DEFAULT,
     NVIDIA_NIM_BASE_URL,
     NVIDIA_NIM_DEFAULT,
@@ -1055,7 +1055,7 @@ class ModelIntake(ModelStage):
         # not only prediction asks, before requirement arguments are rewritten.
         # Explicit user/context seasons remain untouched.
         if task.season is not None and task.season.source == "default":
-            from app.tools._core import SEASON
+            from shared.tools._core import SEASON
             task = task.model_copy(update={
                 "season": task.season.model_copy(update={"value": SEASON}),
             })
@@ -2340,7 +2340,7 @@ def _deterministic_rank_draft(
     synthesizer instead of being blocked.
     """
     from v2.domain.evidence import decimal_value
-    from app.tools.rating_metrics import RANKING_DIRECTIONS, TEAM_RATING_METRICS
+    from shared.tools.rating_metrics import RANKING_DIRECTIONS, TEAM_RATING_METRICS
     def _has_typed_ranked_arguments(requirement) -> bool:
         if "team_ratings" not in requirement.capability_options:
             return False

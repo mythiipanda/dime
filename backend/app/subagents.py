@@ -13,7 +13,7 @@ import time as _time
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.tools import tool
 
-from .providers import (ProviderName, get_llm, astream_chunks_with_fallback,
+from shared.providers import (ProviderName, get_llm, astream_chunks_with_fallback,
                        accumulate_tool_calls, fallback_order)
 
 logger = logging.getLogger(__name__)
@@ -32,7 +32,7 @@ def data_season() -> str:
     cached = _SEASON_CACHE.get("season")
     if cached is None:
         try:
-            from .store import latest_data_season
+            from shared.store import latest_data_season
             cached = latest_data_season()
         except Exception as exc:
             logger.warning("data_season(): warehouse unreadable (%s); "
@@ -57,7 +57,7 @@ async def _invoke_capped(fn, args: dict, name: str) -> Any:
 
 
 def _desk_tool_label(name: str) -> str:
-    from .tools._core import tool_label as _tl
+    from shared.tools._core import tool_label as _tl
     return _tl(name, desk=True)
 
 
@@ -154,7 +154,7 @@ async def _run_desk(
 ) -> dict[str, Any]:
     """Run one desk. on_token, if given, is an async callable receiving each
     LLM text chunk as it streams, so callers can pipe live tokens to SSE."""
-    from . import tools as _tools
+    from shared import tools as _tools
 
     by_name = {t.name: t for t in _tools.v1_tools}
     subset = [by_name[n] for n in tool_names if n in by_name]
