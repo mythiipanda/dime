@@ -6,6 +6,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY app ./app
 COPY v2 ./v2
+COPY shared ./shared
 COPY scripts/build_team_four_factors.py scripts/generate_asset_manifest.py ./scripts/
 COPY data ./data
 # The canonical warehouse is immutable through store.connect(), so build the
