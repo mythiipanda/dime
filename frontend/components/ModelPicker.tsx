@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ModelOption } from "../lib/chat";
 
 interface ModelPickerProps {
@@ -11,20 +12,52 @@ interface ModelPickerProps {
   onRetry?: () => void;
 }
 
+const MENU_MAX_H = 340;
+
 export default function ModelPicker({ models, value, onChange, status = "ready", onRetry }: ModelPickerProps) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuStyle, setMenuStyle] = useState<React.CSSProperties>({});
 
   const selectedModel = models.find((m) => m.id === value) || models[0];
 
+  // Position the menu in a portal: flip above/below the trigger based on
+  // available viewport space, and never let it run off-screen.
+  useLayoutEffect(() => {
+    if (!open || !triggerRef.current) return;
+    const r = triggerRef.current.getBoundingClientRect();
+    const menuH = Math.min(MENU_MAX_H, window.innerHeight - 24);
+    const aboveH = r.top - 8;
+    const belowH = window.innerHeight - r.bottom - 8;
+    const openAbove = aboveH >= Math.min(menuH, 200) || aboveH >= belowH;
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - 328));
+    setMenuStyle(
+      openAbove
+        ? { left, bottom: Math.max(8, window.innerHeight - r.top + 6), maxHeight: Math.min(menuH, aboveH) }
+        : { left, top: Math.min(r.bottom + 6, window.innerHeight - 120), maxHeight: Math.min(menuH, belowH) }
+    );
+  }, [open ]);
+
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      if (
+        containerRef.current && !containerRef.current.contains(e.target as Node) &&
+        menuRef.current && !menuRef.current.contains(e.target as Node)
+      ) {
         setOpen(false);
       }
     };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
     document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKey);
+    };
   }, []);
 
   const exactName = (id?: string) => {
@@ -60,6 +93,7 @@ export default function ModelPicker({ models, value, onChange, status = "ready",
 
       {/* Custom Bespoke Trigger Button */}
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => {
           if (status === "error" && !models.length) onRetry?.();
@@ -99,21 +133,19 @@ export default function ModelPicker({ models, value, onChange, status = "ready",
         </svg>
       </button>
 
-      {/* Floating Menu Popover */}
-      {open && (
+      {/* Floating Menu Popover (portal: immune to ancestor overflow clipping) */}
+      {open && createPortal(
         <div
+          ref={menuRef}
           style={{
-            position: "absolute",
-            bottom: "calc(100% + 6px)",
-            left: 0,
+            position: "fixed",
+            ...menuStyle,
             background: "var(--color-pure-white)",
             border: "1px solid var(--color-stone-border)",
             borderRadius: 12,
             boxShadow: "var(--shadow-focus)",
             padding: "6px",
-            minWidth: 200,
-            maxWidth: 320,
-            maxHeight: "min(340px, calc(100vh - 140px))",
+            width: 320,
             overflowY: "auto",
             zIndex: 100,
             display: "flex",
@@ -202,7 +234,8 @@ export default function ModelPicker({ models, value, onChange, status = "ready",
               </button>
             );
           })}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
