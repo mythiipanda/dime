@@ -100,6 +100,15 @@ function applyEvent(ai: AiMessage, type: string, data: unknown): AiMessage {
   } else if (type === "final_answer") {
     next.text = String(d.text || "");
     next.streaming = false;
+    if (next.text.trim()) {
+      // A mid-run "error" event means one node hit a snag, but if the graph
+      // recovered and produced a real answer, the run did not fail. Clear
+      // the sticky banner so it doesn't sit over a rendered answer (QA
+      // round 2d: "Error:Something went wrong" on a completed COMPARE run).
+      // A run that truly failed never emits a non-empty final_answer, so
+      // its banner survives through graph_end.
+      next.error = undefined;
+    }
     if (d.carry && typeof d.carry === "object") {
       next.carry = d.carry as AiMessage["carry"];
     }
