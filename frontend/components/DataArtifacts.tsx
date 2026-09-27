@@ -164,44 +164,78 @@ export default function DataArtifacts({
   const toolOf = (t: { tool?: string; title?: string }) =>
     resolveToolName(t) ?? t.tool;
 
-  const preferred = tables.findIndex((t) => {
-    const name = toolOf(t);
-    return (
-      name === "get_shot_compare" ||
-      name === "get_shot_zones" ||
-      name === "get_team_shot_zones" ||
-      name === "get_wowy" ||
-      name === "get_compare" ||
-      name === "get_preview" ||
-      name === "get_rapm" ||
-      name === "get_finder" ||
-      name === "get_comps" ||
-      name === "get_award_race" ||
-      name === "get_trade_value" ||
-      name === "get_matchup_splits" ||
-      name === "get_regression_check" ||
-      name === "get_matchup_preview" ||
-      name === "get_streaks" ||
-      name === "get_game_prediction" ||
-      name === "search_game_logs" ||
-      name === "get_rotation_check" ||
-      name === "get_lineup_stats" ||
-      name === "get_rest_advantage" ||
-      name === "get_lineup_matchup_matrix" ||
-      name === "get_head_to_head" ||
-      name === "get_impact_estimate"
+  // A table "has content" when selecting it renders something meaningful:
+  // a non-empty row array, a non-empty structured payload (compare {a, b}),
+  // or a verdict / deterministic-answer carrier kept by the backend.
+  // Tables with nothing to show are never the default view and never
+  // appear in the pager - no "No rows returned for this view", ever.
+  const tableHasContent = (t: {
+    rows?: unknown;
+    verdict?: string;
+    meta?: Record<string, unknown>;
+  }) => {
+    const rows = (t.rows as { rows?: unknown } | undefined)?.rows ?? t.rows;
+    if (Array.isArray(rows))
+      return (
+        rows.length > 0 && typeof rows[0] === "object" && rows[0] !== null
+      );
+    if (rows && typeof rows === "object") return Object.keys(rows).length > 0;
+    return Boolean(
+      t.verdict ||
+        (t.meta as { deterministic_answer?: string } | undefined)
+          ?.deterministic_answer,
     );
-  });
-  const fallback = preferred >= 0 ? preferred : tables.length - 1;
-  const table = tables[Math.min(pageState ?? fallback, Math.max(tables.length - 1, 0))];
-  // F27 empty-chrome fix: when a tool returns zero (or unparseable) rows,
-  // render an honest empty state instead of a blank panel body.
-  const bodyRows = (table?.rows as { rows?: unknown } | undefined)?.rows ?? table?.rows;
-  const hasRenderableRows =
-    Array.isArray(bodyRows) &&
-    bodyRows.length > 0 &&
-    typeof bodyRows[0] === "object" &&
-    bodyRows[0] !== null;
+  };
+  const contentIdx = tables
+    .map((t, i) => (tableHasContent(t) ? i : -1))
+    .filter((i) => i >= 0);
+  // Curated views, in priority order: the answering tool's table wins the
+  // default slot. Player leaderboards are listed explicitly so a
+  // player-scoped question (e.g. best defensive players) defaults to the
+  // player table, never a trailing team-scope table like TEAM SPLITS.
+  const PREFERRED_TOOLS = new Set([
+    "get_shot_compare",
+    "get_shot_zones",
+    "get_team_shot_zones",
+    "get_wowy",
+    "get_compare",
+    "get_preview",
+    "get_rapm",
+    "get_finder",
+    "get_comps",
+    "get_award_race",
+    "get_trade_value",
+    "get_matchup_splits",
+    "get_regression_check",
+    "get_matchup_preview",
+    "get_streaks",
+    "get_game_prediction",
+    "search_game_logs",
+    "get_rotation_check",
+    "get_lineup_stats",
+    "get_rest_advantage",
+    "get_lineup_matchup_matrix",
+    "get_head_to_head",
+    "get_impact_estimate",
+    "get_player_ratings",
+    "get_leaders",
+    "get_clutch",
+    "get_hustle",
+    "get_rookie_leaders",
+    "get_lineup_leaders",
+  ]);
+  const preferredPos = contentIdx.findIndex((i) =>
+    PREFERRED_TOOLS.has(toolOf(tables[i]) ?? ""),
+  );
+  const defaultPos =
+    preferredPos >= 0 ? preferredPos : contentIdx.length - 1;
+  const pos =
+    pageState === null
+      ? defaultPos
+      : Math.max(0, Math.min(pageState, contentIdx.length - 1));
+  const table = pos >= 0 ? tables[contentIdx[pos]] : undefined;
+  // Unreachable by construction (selection and pager only see tables with
+  // content); kept as a safety net so a view can never go blank.
   const emptyState = (
     <div
       style={{
@@ -214,8 +248,9 @@ export default function DataArtifacts({
       broader question.
     </div>
   );
-  const page = Math.min(pageState ?? fallback, Math.max(tables.length - 1, 0));
-  const setPage = (n: number) => setPageState(Math.max(0, Math.min(n, tables.length - 1)));
+  const page = pos;
+  const setPage = (n: number) =>
+    setPageState(Math.max(0, Math.min(n, contentIdx.length - 1)));
 
   const toolName = toolOf(table ?? {});
   const isShotTool = toolName === "get_shot_zones" || toolName === "get_shot_compare" || toolName === "get_team_shot_zones";
@@ -530,7 +565,7 @@ export default function DataArtifacts({
               Minimize
             </button>
           )}
-          {tables.length > 1 && (
+          {contentIdx.length > 1 && (
             <div style={{ display: "flex", gap: 4, marginLeft: 6 }}>
               <button
                 className="pill-ghost"
@@ -548,12 +583,12 @@ export default function DataArtifacts({
                   alignItems: "center",
                 }}
               >
-                {page + 1}/{tables.length}
+                {page + 1}/{contentIdx.length}
               </span>
               <button
                 className="pill-ghost"
                 style={{ fontSize: 11, padding: "3px 8px" }}
-                disabled={page >= tables.length - 1}
+                disabled={page >= contentIdx.length - 1}
                 onClick={() => setPage(page + 1)}
               >
                 Next ›
@@ -563,15 +598,16 @@ export default function DataArtifacts({
         </div>
       </div>
 
-      {tables.length > 1 && (
+      {contentIdx.length > 1 && (
         <div style={{ marginBottom: 12 }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: "var(--color-warm-gray)", marginBottom: 6 }}>
-            Fetched datasets ({tables.length})
+            Fetched datasets ({contentIdx.length})
           </div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {tables.map((item, index) => {
+            {contentIdx.map((index, p) => {
+              const item = tables[index];
               const name = toolOf(item);
-              const label = (name || item.tool || `dataset ${index + 1}`)
+              const label = (name || item.tool || `dataset ${p + 1}`)
                 .replace("get_", "").replace(/_/g, " ");
               const count = (() => {
                 const rows = (item.rows as { rows?: unknown } | undefined)?.rows ?? item.rows;
@@ -579,10 +615,10 @@ export default function DataArtifacts({
               })();
               return (
                 <button key={`${name}-${index}`} type="button"
-                  className={page === index ? "tab-active" : "pill-ghost"}
+                  className={page === p ? "tab-active" : "pill-ghost"}
                   style={{ fontSize: 11, padding: "3px 9px" }}
-                  onClick={() => setPage(index)}>
-                  {index + 1}. {label}{count !== null ? ` (${count})` : ""}
+                  onClick={() => setPage(p)}>
+                  {p + 1}. {label}{count !== null ? ` (${count})` : ""}
                 </button>
               );
             })}
@@ -616,10 +652,7 @@ export default function DataArtifacts({
         </details>
       )}
 
-      {!hasRenderableRows &&
-      toolName !== "run_python" &&
-      toolName !== "get_game_prediction" &&
-      toolName !== "get_impact_estimate" ? (
+      {!tableHasContent(table) ? (
         emptyState
       ) : toolName === "get_compare" || toolName === "get_preview" ? (
         <CompareView rows={table.rows} />

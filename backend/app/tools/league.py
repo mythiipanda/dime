@@ -434,14 +434,19 @@ def get_player_ratings(
     """Qualified player on-court offensive or defensive rating leaderboard.
 
     These are lineup results while the player was on court, not an individual
-    defensive-value metric. Total minutes set the sample floor.
+    defensive-value metric. A hard 500-total-minute floor is ALWAYS enforced:
+    the caller cannot undercut it, so garbage-time players can never top the
+    board (a 0-minute floor once crowned a 53.3 on-court DEF_RATING from
+    ~15 total minutes as the "best defensive player").
     """
     from ._core import clamp_season
 
     season = clamp_season(season)
     metric = "defense" if str(metric).casefold().startswith("def") else "offense"
     limit = max(1, min(int(limit), 50))
-    min_minutes = max(0, min(int(min_minutes), 4000))
+    # Hard qualification floor: max() not min() - the caller may raise the
+    # floor but never lower it below 500 total minutes.
+    min_minutes = max(500, min(int(min_minutes), 4000))
     column = "DEF_RATING" if metric == "defense" else "OFF_RATING"
     direction = "ASC" if metric == "defense" else "DESC"
     con = store.connect(read_only=True)
@@ -838,7 +843,11 @@ def get_leaders(
                 table = f"silver_leaders_{total_stat.lower()}"
                 raw = con.execute(
                     f"SELECT PLAYER, TEAM, GP, {total_stat} / CAST(GP AS DOUBLE) AS RATE "
-                    f"FROM {table} WHERE _season = ? AND GP > 0 "
+                    # Hard 500-total-minute floor the caller cannot undercut:
+                    # per-game rate boards with no sample floor crown
+                    # garbage-time players (same bug class as the
+                    # get_player_ratings 0-minute floor).
+                    f"FROM {table} WHERE _season = ? AND GP > 0 AND MIN >= 500 "
                     f"ORDER BY RATE {order}, GP DESC, PLAYER",
                     [season],
                 ).fetchall()
@@ -847,7 +856,7 @@ def get_leaders(
                      "GP": row[2], stat_category: float(row[3])}
                     for index, row in enumerate(raw, 1)
                 ]
-                qualification = "games played shown; no implicit GP floor"
+                qualification = "500+ total minutes"
                 label = {"PPG": "points", "RPG": "rebounds",
                          "APG": "assists", "SPG": "steals",
                          "BPG": "blocks"}[stat_category]
@@ -951,9 +960,11 @@ def get_young_player_usage(max_age: int = 22, min_minutes: int = 1000,
 
     Uses total minutes (GP * per-game MIN) as the sample floor. The default
     means age 22 or younger with at least 1,000 minutes in the asked season.
+    A hard 500-total-minute floor is ALWAYS enforced: the caller may raise
+    it but never undercut it.
     """
     max_age = max(18, min(int(max_age), 25))
-    min_minutes = max(0, min(int(min_minutes), 3000))
+    min_minutes = max(500, min(int(min_minutes), 3000))
     con = store.connect(read_only=True)
     try:
         raw = con.execute(
@@ -2814,6 +2825,9 @@ def get_rookie_leaders(stat: str = "ppg", min_value: float = 0,
     if col not in allowed:
         return {"tool": "get_rookie_leaders", "ok": False,
                 "error": f"stat must be one of {sorted(allowed)}"}
+    # Hard GP floor the caller cannot undercut: GP >= 0 would rank 1-game
+    # rookies atop per-game boards. Default 10 stays.
+    min_gp = max(5, min(int(min_gp), 82))
     sql = f"""
         SELECT PLAYER_ID, PLAYER, TEAM, AGE, GP, MPG, PPG, RPG, APG,
                SPG, BPG, FG_PCT, FG3_PCT, FT_PCT
@@ -2887,6 +2901,12 @@ def get_lineup_leaders(min_minutes: int = 100, limit: int = 10,
     from .. import store as _store
 
     import duckdb
+
+    # Hard floor the caller cannot undercut: min_minutes was previously
+    # passed straight through, so a 0-minute floor let junk slices
+    # (a +3 in 4 minutes = 300.0 "net rating") top the board. Default
+    # 100 stays; callers may raise the floor, never drop it below 25.
+    min_minutes = max(25, min(float(min_minutes), 5000))
 
     sql = """
         SELECT TEAM_ABBREVIATION, GROUP_NAME, GP,
@@ -3547,7 +3567,8 @@ def get_contract_value(season: str = "2025-26", min_gp: int = 20,
 
     season = str(season or "2025-26").strip() or "2025-26"
     try:
-        min_gp = max(0, min(int(min_gp), 82))
+        # Hard floor the caller cannot undercut (default 20 stays).
+        min_gp = max(10, min(int(min_gp), 82))
     except (TypeError, ValueError):
         min_gp = 20
     # The cap-ledger loop below reuses the name `team` - capture the
