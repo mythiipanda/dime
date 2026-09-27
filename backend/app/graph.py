@@ -877,12 +877,16 @@ def _direct_named_teams(question: str, found_t: list[str]) -> list[str]:
     out = []
     for full in found_t:
         nick = full.split()[-1].lower()
-        abbr = (abbr_of.get(full) or "").lower()
+        # F68/F69: abbreviations match case-SENSITIVELY, mirroring
+        # _detect_entities - case-insensitive matching read the word
+        # "was" as WAS (Washington Wizards). Real abbreviations arrive
+        # uppercase; full-name and nickname branches stay insensitive.
+        abbr = abbr_of.get(full) or ""
         if (full.lower() in q.lower()
                 or re.search(r"\b" + re.escape(nick) + r"\b", q,
                              re.IGNORECASE)
                 or (abbr and re.search(r"\b" + re.escape(abbr) + r"\b",
-                                       q, re.IGNORECASE))):
+                                       q))):
             out.append(full)
     return out
 
@@ -1627,11 +1631,21 @@ async def _triage_seed(question: str, primary: str, model: str,
     _orig_p, _orig_t = list(found_p), list(found_t)
     # Correction follow-up: opener stripped once; carry only when the
     # stripped question names nobody of its own and history exists.
+    # League-leader asks are complete standalone queries ("best
+    # defensive players in the league"): a correction opener in front
+    # of one starts a new topic, so it must not inherit prior-turn
+    # entities (Instinct QA 2026-09-27: carried Wembanyama suppressed
+    # the league pin and steered to scout).
     _corr_stripped = _strip_correction_opener(question)
     _corr_p, _corr_t = (_detect_entities(_corr_stripped)
                         if _corr_stripped is not None else ([], []))
+    _is_league_leader_ask = (
+        _corr_stripped is not None and bool(re.search(
+            r"\bleaders?\b|(?:\bbest\b|\btop\b|\bmost\b).*?\bplayers?\b",
+            _corr_stripped, re.IGNORECASE)))
     _is_correction_carry = (
-        _corr_stripped is not None and not _corr_p and not _corr_t)
+        _corr_stripped is not None and not _corr_p and not _corr_t
+        and not _is_league_leader_ask)
     if (state.get("history") and (
             re.search(
                 r"\b(him|her|them|they|his|hers|their|theirs|it|he|she|"
@@ -5982,21 +5996,77 @@ _MARGIN_CLAIM_RX = re.compile(
     re.IGNORECASE)
 
 
+def _canonical_team_full_name(token: str) -> str | None:
+    """Canonical full team name for a token, or None.
+
+    Deterministic static-table lookup: full name (case-insensitive),
+    nickname (case-insensitive), city (case-insensitive, only when
+    unique league-wide - Los Angeles and New York split two teams), or
+    abbreviation (case-SENSITIVE exact, the F68/F69 guard: lowercase
+    "was"/"bos" must never bind Washington/Boston). No
+    question-wording branches.
+    """
+    from nba_api.stats.static import teams as _static_teams
+
+    tok = (token or "").strip()
+    if not tok:
+        return None
+    lowered = tok.lower()
+    all_t = _static_teams.get_teams()
+    for t in all_t:
+        if (t.get("full_name") or "").lower() == lowered:
+            return t["full_name"]
+    for t in all_t:
+        if tok and tok == (t.get("abbreviation") or ""):
+            return t["full_name"]
+    for t in all_t:
+        nick = (t.get("nickname") or "").lower() or None
+        if nick is None:
+            full = t.get("full_name") or ""
+            nick = full.split()[-1].lower() if full else ""
+        if nick and nick == lowered:
+            return t["full_name"]
+    cities = [(t.get("city") or "") for t in all_t]
+    for t in all_t:
+        city = (t.get("city") or "")
+        if (city and city.lower() == lowered
+                and sum(1 for c in cities if c.lower() == lowered) == 1):
+            return t["full_name"]
+    return None
+
+
 def _team_row(rows: list, token: str) -> dict | None:
-    """Bind a team token to its payload row (exact or abbreviation)."""
-    tok = token.casefold()
+    """Bind a team token to its payload row by canonical team entity.
+
+    The token and each string cell map through the static team table,
+    so 'Celtics', 'BOS', 'Boston', and 'Boston Celtics' all bind the
+    same row whether the payload carries full names, abbreviations, or
+    both. Abbreviation matching stays case-sensitive (F68/F69).
+    Tokens with no team meaning keep the legacy exact/initials
+    fallback (short tokens also case-sensitive).
+    """
+    tok = (token or "").strip()
+    if not tok:
+        return None
+    canon = _canonical_team_full_name(tok)
     for r in rows:
         if not isinstance(r, dict):
             continue
-        for v in r.values():
-            if not isinstance(v, str):
-                continue
-            if v.casefold() == tok:
-                return r
-            if len(tok) <= 4:
-                initials = "".join(w[0] for w in v.split() if w)
-                if initials.casefold() == tok:
+        cells = [v for v in r.values() if isinstance(v, str)]
+        if canon is not None:
+            for v in cells:
+                if _canonical_team_full_name(v) == canon:
                     return r
+            continue
+        for v in cells:
+            if len(tok) <= 4:
+                if v == tok:
+                    return r
+                initials = "".join(w[0] for w in v.split() if w)
+                if initials and initials == tok:
+                    return r
+            elif v.casefold() == tok.casefold():
+                return r
     return None
 
 
