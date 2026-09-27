@@ -30,6 +30,37 @@ test("partial answer with some verified claims is not a failure", () => {
   );
 });
 
+test("verification=failed is a failure even with non-empty text", () => {
+  assert.equal(
+    isFailureFinal("Some text.", { verification: "failed", verified_claims: 0 }),
+    true,
+  );
+});
+
+test("verification=verified is not a failure", () => {
+  assert.equal(
+    isFailureFinal("Answer.", { verification: "verified", verified_claims: 1 }),
+    false,
+  );
+});
+
+test("verification=pass wins over missing claims count", () => {
+  assert.equal(isFailureFinal("Answer.", { verification: "pass" }), false);
+});
+
+test("partial without claims count falls back to prose matching", () => {
+  assert.equal(
+    isFailureFinal("I could not verify a publishable answer.", {
+      verification: "partial",
+    }),
+    true,
+  );
+  assert.equal(
+    isFailureFinal("A real answer.", { verification: "partial" }),
+    false,
+  );
+});
+
 test("non-empty text with no carry counts as recovered (older backends)", () => {
   assert.equal(isFailureFinal("An answer.", undefined), false);
   assert.equal(isFailureFinal("An answer.", null), false);

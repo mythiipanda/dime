@@ -125,29 +125,43 @@ export function emptyNode(): NodeState {
 // True when a final_answer event is a failure/fallback message, not a
 // recovered answer. The error banner must stay up for these; clearing it
 // would hide a genuine failure behind a "successful" final event.
-// Signals (from backend):
-// - v2 exception path: carry.verification="partial", carry.verified_claims=0,
-//   carry.gaps=[{kind:"execution_failure"}],
-//   text="I could not verify a publishable answer from the available data."
-// - v1 scrub-everything path: text="I pulled the relevant data but could not
-//   verify the figures in the summary. ..."
-// A genuine answer has verified_claims > 0 (or no carry at all from older
-// backends, in which case non-empty text counts as recovered).
-export function isFailureFinal(text: string, carry: unknown): boolean {
+//
+// Detection priority (structured signals first, prose only as last resort):
+// 1. PRIMARY: carry.verification — "failed" is a failure; "pass"/"verified"
+//    is recovered. "partial" is ambiguous and falls through.
+// 2. SECONDARY: carry.verified_claims — 0 means the run produced no
+//    verifiable answer (failure); >0 means recovered.
+//    Known failure shape from backends:
+//    - v2 exception path: verification="partial", verified_claims=0,
+//      gaps=[{kind:"execution_failure"}],
+//      text="I could not verify a publishable answer from the available data."
+//    - v1 scrub-everything path: verification="partial", verified_claims=0,
+//      text="I pulled the relevant data but could not verify the figures..."
+// 3. TERTIARY (fallback only, for backends without structured carry):
+//    known failure copy prefixes from both runtimes.
+// Empty text is always a failure. Non-empty text with no carry counts as
+// recovered (older backends).
+export function isFailureFinal(text: string, carry?: unknown): boolean {
   const t = text.trim();
   if (!t) return true; // empty final = nothing recovered
-  // Known failure copy from both runtimes.
+  if (carry && typeof carry === "object") {
+    const c = carry as Record<string, unknown>;
+    // Primary: explicit verification status from the backend.
+    if (c.verification === "failed") return true;
+    if (c.verification === "pass" || c.verification === "verified") return false;
+    // Secondary: zero verified claims = no verifiable answer.
+    if (typeof c.verified_claims === "number") {
+      return c.verified_claims === 0;
+    }
+    // "partial" without a claims count, or unrecognized carry shapes:
+    // fall through to the prose fallback below.
+  }
+  // Tertiary: prose prefixes for backends that don't send structured carry.
   if (
     t.startsWith("I could not verify a publishable answer") ||
     t.startsWith("I pulled the relevant data but could not verify")
   ) {
     return true;
-  }
-  // Structured signal: zero verified claims means the run produced no
-  // verifiable answer, even if it emitted a non-empty final event.
-  if (carry && typeof carry === "object") {
-    const c = carry as Record<string, unknown>;
-    if (c.verified_claims === 0) return true;
   }
   return false;
 }
