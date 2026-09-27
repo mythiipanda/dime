@@ -54,3 +54,93 @@ test("preserves query strings through the mapping", () => {
     setRuntime(undefined);
   }
 });
+
+// --- Thread-history load path: local runs cache + oldest-first order ---
+// The server session store is wiped on every deploy; the local cache is
+// the durable source of truth, and getRuns must return oldest-first
+// (the server sends newest-first).
+import {
+  appendCachedRun,
+  getRuns,
+  loadCachedRuns,
+  type RunInfo,
+} from "./api";
+
+function installLocalStorage() {
+  const store = new Map<string, string>();
+  const shim = {
+    getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+    setItem: (k: string, v: string) => { store.set(k, String(v)); },
+    removeItem: (k: string) => { store.delete(k); },
+    clear: () => store.clear(),
+  };
+  (globalThis as Record<string, unknown>).localStorage = shim;
+  return store;
+}
+
+function run(question: string, created_at: string): RunInfo {
+  return { question, answer: `a:${question}`, tables: [], suggestions: [], created_at };
+}
+
+test("appendCachedRun persists runs oldest-first and dedupes repeats", () => {
+  installLocalStorage();
+  appendCachedRun("t-1", run("q1", "2026-09-27T20:00:00Z"));
+  appendCachedRun("t-1", run("q2", "2026-09-27T20:01:00Z"));
+  appendCachedRun("t-1", run("q2", "2026-09-27T20:01:00Z")); // duplicate - dropped
+  const cached = loadCachedRuns("t-1");
+  assert.deepEqual(cached.map((r) => r.question), ["q1", "q2"]);
+});
+
+test("loadCachedRuns self-heals a stale newest-first cache", () => {
+  const store = installLocalStorage();
+  const key = "dime_runs__t-9"; // getClientId() is "" under node
+  store.set(key, JSON.stringify([
+    run("q2", "2026-09-27T20:01:00Z"),
+    run("q1", "2026-09-27T20:00:00Z"),
+  ]));
+  const cached = loadCachedRuns("t-9");
+  assert.deepEqual(cached.map((r) => r.question), ["q1", "q2"]);
+});
+
+test("getRuns returns oldest-first when the server sends newest-first", async () => {
+  installLocalStorage();
+  const seen: string[] = [];
+  (globalThis as Record<string, unknown>).fetch = async (url: string) => {
+    seen.push(String(url));
+    return {
+      ok: true,
+      json: async () => ({
+        runs: [
+          run("q2", "2026-09-27T20:01:00Z"),
+          run("q1", "2026-09-27T20:00:00Z"),
+        ],
+      }),
+    };
+  };
+  try {
+    const runs = await getRuns("t-2");
+    assert.deepEqual(runs.map((r) => r.question), ["q1", "q2"]);
+    // Thread id and client id are interpolated, not sent as literals.
+    assert.match(seen[0], /\/threads\/t-2\/runs\?client=/);
+    assert.doesNotMatch(seen[0], /\$\{/);
+    // The normalized order is what lands in the cache.
+    assert.deepEqual(loadCachedRuns("t-2").map((r) => r.question), ["q1", "q2"]);
+  } finally {
+    delete (globalThis as Record<string, unknown>).fetch;
+  }
+});
+
+test("getRuns falls back to the local cache after a deploy wipe", async () => {
+  installLocalStorage();
+  appendCachedRun("t-3", run("q1", "2026-09-27T20:00:00Z"));
+  (globalThis as Record<string, unknown>).fetch = async () => ({
+    ok: true,
+    json: async () => ({ runs: [] }), // wiped server
+  });
+  try {
+    const runs = await getRuns("t-3");
+    assert.deepEqual(runs.map((r) => r.question), ["q1"]);
+  } finally {
+    delete (globalThis as Record<string, unknown>).fetch;
+  }
+});

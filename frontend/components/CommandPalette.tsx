@@ -18,7 +18,7 @@ export default function CommandPalette({onAsk,onTab,onDebate,openKey=0}:{onAsk:(
   useEffect(()=>{if(openKey>0)setOpen(true)},[openKey]);
   useEffect(()=>{const fn=(e:KeyboardEvent)=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==="k"){e.preventDefault();setOpen(o=>!o)}if(e.key==="Escape")setOpen(false)};window.addEventListener("keydown",fn);return()=>window.removeEventListener("keydown",fn)},[]);
   useEffect(()=>{if(open)setTimeout(()=>input.current?.focus(),30);else{setQ("");setActive(0)}},[open]);
-  useEffect(()=>{if(!open||q.trim().length<2){setHits([]);return}const t=setTimeout(async()=>{try{const res=await fetch(`${BACKEND}${apiPath("/resolve?q=${encodeURIComponent(q.trim())}")}`),data=await res.json() as {rows?:{players?:{id:number;full_name:string}[];teams?:{id:number;full_name:string}[]}};setHits([...(data.rows?.players||[]).slice(0,4).map(p=>({kind:"player",id:p.id,name:p.full_name})),...(data.rows?.teams||[]).slice(0,4).map(x=>({kind:"team",id:x.id,name:x.full_name}))])}catch{setHits([])}},250);return()=>clearTimeout(t)},[q,open]);
+  useEffect(()=>{if(!open||q.trim().length<2){setHits([]);return}const t=setTimeout(async()=>{try{const res=await fetch(`${BACKEND}${apiPath(`/resolve?q=${encodeURIComponent(q.trim())}`)}`),data=await res.json() as {rows?:{players?:{id:number;full_name:string}[];teams?:{id:number;full_name:string}[]}};setHits([...(data.rows?.players||[]).slice(0,4).map(p=>({kind:"player",id:p.id,name:p.full_name})),...(data.rows?.teams||[]).slice(0,4).map(x=>({kind:"team",id:x.id,name:x.full_name}))])}catch{setHits([])}},250);return()=>clearTimeout(t)},[q,open]);
   const close=()=>setOpen(false),needle=q.trim().toLowerCase(),tray=readTray();
   const items=useMemo<PaletteItem[]>(()=>{
     const out:PaletteItem[]=[

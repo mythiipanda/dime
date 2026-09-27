@@ -142,7 +142,7 @@ export async function removeWatchlist(
   entity_id: string,
 ): Promise<boolean> {
   const q = new URLSearchParams({ entity_type, entity_id });
-  const res = await fetch(`${BACKEND}${apiPath("/watchlist?${q.toString()}")}`, {
+  const res = await fetch(`${BACKEND}${apiPath(`/watchlist?${q.toString()}`)}`, {
     method: "DELETE",
   });
   if (!res.ok) throw new Error(`remove failed: ${res.status}`);
@@ -366,7 +366,7 @@ export function datasetUrl(
   fmt: string,
 ): string {
   const q = new URLSearchParams({ ...params, fmt });
-  return `${BACKEND}${apiPath("/datasets/${name}?${q.toString()}")}`;
+  return `${BACKEND}${apiPath(`/datasets/${name}?${q.toString()}`)}`;
 }
 
 export async function getDatasetJson(
@@ -438,12 +438,36 @@ function cacheRuns(thread: string, runs: RunInfo[]): void {
 
 export function loadCachedRuns(thread: string): RunInfo[] {
   const v = lsGet(RUNS_KEY(thread));
-  return Array.isArray(v) ? (v as RunInfo[]) : [];
+  const runs = Array.isArray(v) ? (v as RunInfo[]) : [];
+  // Older builds cached the server's newest-first order; the load path
+  // expects oldest-first. Self-heal once on read.
+  if (runs.length > 1) {
+    const first = runs[0]?.created_at;
+    const last = runs[runs.length - 1]?.created_at;
+    if (typeof first === "string" && typeof last === "string" && first > last) {
+      return [...runs].reverse();
+    }
+  }
+  return runs;
+}
+
+// Record a finished exchange locally the moment it completes. The server
+// session store is ephemeral container state (every deploy wipes it), so
+// without this the runs cache stays empty and a wiped server means the
+// thread rail lists sessions whose clicks render an empty welcome state.
+export function appendCachedRun(thread: string, run: RunInfo): void {
+  const cached = loadCachedRuns(thread);
+  const last = cached[cached.length - 1];
+  if (last && last.question === run.question && last.answer === run.answer) {
+    return; // already recorded - don't double-append on re-renders
+  }
+  cached.push(run);
+  lsSet(RUNS_KEY(thread), cached.slice(-MAX_CACHED_RUNS));
 }
 
 export async function getThreads(): Promise<ThreadInfo[]> {
   try {
-    const res = await fetch(`${BACKEND}${apiPath("/threads?client=${encodeURIComponent(getClientId())}")}`);
+    const res = await fetch(`${BACKEND}${apiPath(`/threads?client=${encodeURIComponent(getClientId())}`)}`);
     if (!res.ok) return loadCachedThreads();
     const server = ((await res.json()).threads || []) as ThreadInfo[];
     return mergeThreads(server);
@@ -463,11 +487,14 @@ export interface RunInfo {
 export async function getRuns(thread: string): Promise<RunInfo[]> {
   try {
     const res = await fetch(
-      `${BACKEND}${apiPath("/threads/${thread}/runs?client=${encodeURIComponent(getClientId())}")}`,
+      `${BACKEND}${apiPath(`/threads/${thread}/runs?client=${encodeURIComponent(getClientId())}`)}`,
     );
     if (!res.ok) return loadCachedRuns(thread);
-    const runs = ((await res.json()).runs || []) as RunInfo[];
-    if (runs.length) {
+    const server = ((await res.json()).runs || []) as RunInfo[];
+    if (server.length) {
+      // The server returns newest-first; the conversation load path and
+      // the local cache are oldest-first, so normalize once at the edge.
+      const runs = [...server].reverse();
       cacheRuns(thread, runs);
       return runs;
     }
@@ -479,7 +506,7 @@ export async function getRuns(thread: string): Promise<RunInfo[]> {
 }
 
 export function exportUrl(thread: string): string {
-  return `${BACKEND}${apiPath("/threads/${thread}/export?client=${encodeURIComponent(getClientId())}")}`;
+  return `${BACKEND}${apiPath(`/threads/${thread}/export?client=${encodeURIComponent(getClientId())}`)}`;
 }
 
 export interface PlayerHit {
@@ -501,7 +528,7 @@ export async function getDebateCard(
 ): Promise<DebateCardRows> {
   const q = new URLSearchParams({ a, b, season });
   if (topic) q.set("topic", topic);
-  const res = await fetch(`${BACKEND}${apiPath("/debate-card?${q.toString()}")}`);
+  const res = await fetch(`${BACKEND}${apiPath(`/debate-card?${q.toString()}`)}`);
   if (!res.ok) throw new Error(`debate card failed: ${res.status}`);
   const data = (await res.json()) as {
     ok?: boolean;
@@ -516,12 +543,12 @@ export async function getDebateCard(
 export function debateFileUrl(pathOrUrl: string): string {
   if (pathOrUrl.startsWith("http")) return pathOrUrl;
   if (pathOrUrl.startsWith("/")) return `${BACKEND}${pathOrUrl}`;
-  return `${BACKEND}${apiPath("/debate-card/file?name=${encodeURIComponent(pathOrUrl)}")}`;
+  return `${BACKEND}${apiPath(`/debate-card/file?name=${encodeURIComponent(pathOrUrl)}`)}`;
 }
 
 export async function resolvePlayers(q: string, limit = 4): Promise<PlayerHit[]> {
   try {
-    const res = await fetch(`${BACKEND}${apiPath("/resolve?q=${encodeURIComponent(q)}")}`);
+    const res = await fetch(`${BACKEND}${apiPath(`/resolve?q=${encodeURIComponent(q)}`)}`);
     const data = (await res.json()) as unknown;
     if (typeof data !== "object" || data === null || !("rows" in data)) return [];
     const players = (data as { rows: { players?: { id: number; full_name: string }[] } }).rows.players;

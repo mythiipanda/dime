@@ -10,7 +10,7 @@ import {
   emptyNode,
   isFailureFinal,
 } from "../lib/chat";
-import { RunInfo, buildCitation, getModels, getRuns, postChatStream } from "../lib/api";
+import { RunInfo, appendCachedRun, buildCitation, getModels, getRuns, postChatStream } from "../lib/api";
 import { activityRecordFromEvent, mergeActivityRecord } from "../lib/activity";
 import AnswerText from "./AnswerText";
 import { StreamText } from "./StreamText";
@@ -460,6 +460,16 @@ export default function ChatPanel({ thread, onRunDone, preset, onOpenArtifact, a
         onDone: () => {
           setBusy(false);
           stopTimer();
+          // Persist the finished exchange locally: the server session
+          // store is wiped on every deploy, so this is what makes a
+          // clicked recent session actually reload its conversation.
+          appendCachedRun(thread, {
+            question: q,
+            answer: ai.text || "",
+            tables: Object.values(ai.nodes).flatMap((n) => n.tables ?? []),
+            suggestions: ai.suggestions ?? [],
+            created_at: new Date().toISOString(),
+          });
           onRunDone();
         },
         onError: (message) => {

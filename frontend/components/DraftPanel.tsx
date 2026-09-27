@@ -17,7 +17,7 @@ export default function DraftPanel() {
     setBusy(true);
     try {
       const res = await fetch(
-        `${BACKEND}${apiPath("/datasets/combine?season=${encodeURIComponent(year)}")}`,
+        `${BACKEND}${apiPath(`/datasets/combine?season=${encodeURIComponent(year)}`)}`,
       );
       const data = await res.json();
       if (!data.ok) {
