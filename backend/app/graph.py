@@ -4694,13 +4694,45 @@ async def actual_tool_node(state: DimeState) -> AsyncGenerator[dict[str, Any], N
                         return {**desk_cache[dkey], "deduped": True}
                     async def _on_tok(t: str) -> None:
                         await _tok_q.put((name, t))
-                    out = await asyncio.wait_for(
-                        run_desk_streaming(
-                            name,
-                            args.get("task", "") if isinstance(args, dict) else "",
-                            state["primary"], state["model"],  # type: ignore[arg-type]
-                            on_token=_on_tok),
-                        timeout=DESK_CALL_TIMEOUT_S)
+
+                    async def _desk_attempt(task_str: str) -> dict:
+                        try:
+                            res = await asyncio.wait_for(
+                                run_desk_streaming(
+                                    name, task_str,
+                                    state["primary"],  # type: ignore[arg-type]
+                                    state["model"],  # type: ignore[arg-type]
+                                    on_token=_on_tok),
+                                timeout=DESK_CALL_TIMEOUT_S)
+                            return res if isinstance(res, dict) else {
+                                "tool": name, "ok": False,
+                                "error": "desk returned a non-dict result"}
+                        except TimeoutError:
+                            return {"tool": name, "ok": False,
+                                    "error": f"timed out after "
+                                             f"{DESK_CALL_TIMEOUT_S:g}s"}
+                        except Exception as exc:
+                            return {"tool": name, "ok": False,
+                                    "error": str(exc)[:200]}
+
+                    _task0 = (args.get("task", "")
+                              if isinstance(args, dict) else "")
+                    out = await _desk_attempt(_task0)
+                    # Desk recovery: one retry with a simpler, more
+                    # direct formulation instead of surfacing a dead-end
+                    # error straight to the user.
+                    if _result_status(out) != "ok" and _task0:
+                        _first_err = out.get("error", "unknown error")
+                        out = await _desk_attempt(
+                            "The previous attempt failed "
+                            f"({_first_err}). Retry with the simplest "
+                            "direct approach: use the single most "
+                            "relevant warehouse tool for this exact "
+                            "request and return a compact result. "
+                            f"Request: {_task0}")
+                        if isinstance(out, dict):
+                            out["desk_retried"] = True
+                            out.setdefault("first_error", _first_err)
                     if (isinstance(out, dict) and dkey is not None
                             and _result_status(out) == "ok"):
                         desk_cache[dkey] = out
@@ -5880,6 +5912,30 @@ def _strip_false_absence(text: str, tool_results: list) -> str:
     return out or text
 
 
+def _desk_failure_note(state: dict) -> str | None:
+    """Name a failed desk instead of the generic dataset fallback.
+
+    When a delegate_* desk errored (timeout or crash, even after the
+    one automatic retry), the honest message names the desk and what
+    went wrong - the canned "could not find that in the dataset" is
+    what makes the product feel hardcoded."""
+    failed = [tr for tr in state.get("tool_results") or []
+              if isinstance(tr, dict)
+              and str(tr.get("tool", "")).startswith("delegate_")
+              and tr.get("ok") is False]
+    if not failed:
+        return None
+    tr = failed[0]
+    desk = str(tr.get("tool", "")).replace("delegate_", "")
+    err = str(tr.get("error", "") or "did not return")[:160]
+    retried = " even after a retry" if tr.get("desk_retried") else ""
+    q = (state.get("question") or "").strip()
+    return (f"Couldn't pull that together - the {desk} desk {err}"
+            f"{retried}."
+            + (f' Your question was "{q}".' if q else "")
+            + " Try asking again in a moment; the underlying data is there.")
+
+
 async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any], None]:
     yield _event("node_update", {"node": "presentation", "status": "running"})
     text = state.get("analysis", "") or "No data came back. Try a player or team name."
@@ -5921,6 +5977,15 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
                      "game logs, standings, playoffs and the "
                      "Finals - try one of those."))
     _scrubbed = _scrub_final_text(text)
+    # Desk-failure honesty: if the turn collapsed to the canned
+    # fallback while a delegate desk actually failed, name the desk
+    # and the error instead. Applied post-scrub so P3's
+    # orchestration-anonymizing rewrites ("the team desk" -> "the
+    # data") don't mangle the honest message.
+    _desk_note = _desk_failure_note(state)
+    if _desk_note and _scrubbed.strip().startswith(
+            "I could not find that in the dataset"):
+        _scrubbed = _desk_note
     _scrubbed = _strip_false_absence(_scrubbed,
                                  state.get("tool_results") or [])
     # F66: multi-metric team compare ships deterministic - the payload
@@ -6132,10 +6197,11 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
                     _scrubbed, flags=re.IGNORECASE)
     _words2 = re.findall(r"[A-Za-z]+", _core2)
     if len(_words2) < 5 and not re.search(r"\d", _core2):
-        _scrubbed = _gap or ("I could not find that in the dataset. "
+        _scrubbed = (_gap or _desk_failure_note(state) or
+                     ("I could not find that in the dataset. "
                              "It covers 2025-26 player and team stats, "
                              "game logs, standings, playoffs and the "
-                             "Finals - try one of those.")
+                             "Finals - try one of those."))
     # Watchdog: a turn that blew its wall-clock budget with no usable
     # evidence ends with coverage named - never a hang, never the old
     # "try a narrower ask" (F61/v70).
