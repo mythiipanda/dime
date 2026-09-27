@@ -25,6 +25,7 @@ from .providers import (
 )
 from .skills import catalog as skills_catalog, load_skill as skills_load_skill
 from .subagents import delegate_tools, run_desk_streaming, _SHOT_ZONE_RX, _HISTORICAL_RX
+from .subagents import DESK_DEADLINE_S as _DESK_WALL_BUDGET_S
 from .tools import v1_tools
 from .tools._core import tool_label
 
@@ -4695,7 +4696,8 @@ async def actual_tool_node(state: DimeState) -> AsyncGenerator[dict[str, Any], N
                     async def _on_tok(t: str) -> None:
                         await _tok_q.put((name, t))
 
-                    async def _desk_attempt(task_str: str) -> dict:
+                    async def _desk_attempt(task_str: str,
+                                            timeout_s: float) -> dict:
                         try:
                             res = await asyncio.wait_for(
                                 run_desk_streaming(
@@ -4703,33 +4705,42 @@ async def actual_tool_node(state: DimeState) -> AsyncGenerator[dict[str, Any], N
                                     state["primary"],  # type: ignore[arg-type]
                                     state["model"],  # type: ignore[arg-type]
                                     on_token=_on_tok),
-                                timeout=DESK_CALL_TIMEOUT_S)
+                                timeout=timeout_s)
                             return res if isinstance(res, dict) else {
                                 "tool": name, "ok": False,
                                 "error": "desk returned a non-dict result"}
                         except TimeoutError:
                             return {"tool": name, "ok": False,
                                     "error": f"timed out after "
-                                             f"{DESK_CALL_TIMEOUT_S:g}s"}
+                                             f"{timeout_s:g}s"}
                         except Exception as exc:
                             return {"tool": name, "ok": False,
                                     "error": str(exc)[:200]}
 
                     _task0 = (args.get("task", "")
                               if isinstance(args, dict) else "")
-                    out = await _desk_attempt(_task0)
+                    _t0 = time.time()
+                    out = await _desk_attempt(_task0, DESK_CALL_TIMEOUT_S)
                     # Desk recovery: one retry with a simpler, more
                     # direct formulation instead of surfacing a dead-end
-                    # error straight to the user.
+                    # error straight to the user. The retry gets only
+                    # the time left under the desk wall-clock budget so
+                    # the two attempts together stay within
+                    # DESK_DEADLINE_S (170s), never 2x the call cap.
                     if _result_status(out) != "ok" and _task0:
                         _first_err = out.get("error", "unknown error")
+                        _retry_timeout = min(
+                            DESK_CALL_TIMEOUT_S,
+                            max(25.0, _DESK_WALL_BUDGET_S
+                                - (time.time() - _t0)))
                         out = await _desk_attempt(
                             "The previous attempt failed "
                             f"({_first_err}). Retry with the simplest "
                             "direct approach: use the single most "
                             "relevant warehouse tool for this exact "
                             "request and return a compact result. "
-                            f"Request: {_task0}")
+                            f"Request: {_task0}",
+                            _retry_timeout)
                         if isinstance(out, dict):
                             out["desk_retried"] = True
                             out.setdefault("first_error", _first_err)
@@ -5666,6 +5677,59 @@ _DERIVED_EXPR_RX = re.compile(
     r"(\d+(?:\.\d+)?(?:\s*[+\-*/]\s*\d+(?:\.\d+)?)+)\s*\)?"
 )
 _SENT_SPLIT_RX = re.compile(r"(?<=[.!?])\s+")
+# Claim-level filtering must treat each newline bullet as its own unit:
+# a bad bullet's fake numeral must not kill the good bullet on the
+# next line (the sentence splitter never saw the newline boundary).
+_UNIT_SPLIT_RX = re.compile(r"((?<=[.!?])\s+|\n+)")
+# A numeral asserted as a margin BETWEEN two named entities ("DET
+# trails SAS by 2.4") is a derived claim even when the digits appear
+# somewhere in the payload (2.4 was DET's own rating, not the margin).
+# Vaguer phrasings ("favored by 2 points", "2.0-point edge") stay on the
+# lenient path - only the two-entity construction is strict.
+_MARGIN_CLAIM_RX = re.compile(
+    r"\b(?:trails?|leads?|beats?|edges?|tops?)\s+"
+    r"[A-Z0-9][\w&.'-]*(?:\s+[A-Z0-9][\w&.'-]*)*\s+by\s+"
+    r"(\d+(?:\.\d+)?)",
+    re.IGNORECASE)
+
+
+def _raw_payload_numbers(state: dict) -> list[float]:
+    """Raw numerals from this turn's payloads (no rounding variants)."""
+    import json as _json
+    raw = _json.dumps(state.get("tool_results") or [])
+    raw += _json.dumps(state.get("ledger") or [])
+    out: list[float] = []
+    for token in re.findall(r"\d+(?:\.\d+)?", raw):
+        try:
+            out.append(float(token))
+        except ValueError:
+            pass
+    return out
+
+
+def _margin_pair_ok(state: dict, target: float) -> bool:
+    """True when some pair of payload numerals differs by ~target.
+
+    Catches honest margins stated without inline operands ("Celtics
+    beat Knicks by 12" with 118/106 in the payload) while rejecting
+    fabricated ones ("trails SAS by 2.4" when the payload pair gives
+    1.3). Rounding tolerance covers "by 2" for a 1.98 payload margin.
+    """
+    nums = _raw_payload_numbers(state)
+    for i, a in enumerate(nums):
+        for b in nums[i + 1:]:
+            if math.isclose(abs(a - b), target,
+                            rel_tol=1e-9, abs_tol=0.051):
+                return True
+    return False
+
+
+def _iter_units(text: str):
+    """Yield (unit, separator) pairs, preserving original separators so
+    filtering can drop a bad unit without reformatting the rest."""
+    parts = _UNIT_SPLIT_RX.split(text or "")
+    for i in range(0, len(parts), 2):
+        yield parts[i], (parts[i + 1] if i + 1 < len(parts) else "")
 
 
 def _norm_num(n: str) -> str:
@@ -5750,15 +5814,23 @@ def _verify_numeral_claims(state: dict, text: str) -> list[tuple[str, str]]:
     try:
         allowed = _numeral_allowed(state)
         claims: list[tuple[str, str]] = []
-        for sent in _SENT_SPLIT_RX.split(text or ""):
+        for sent, _ in _iter_units(text):
             if not sent.strip():
                 continue
+            margin_nums = {_norm_num(g) for m in _MARGIN_CLAIM_RX.finditer(sent)
+                           for g in m.groups() if g}
             for n in re.findall(r"\d+(?:\.\d+)?", sent):
                 nn = _norm_num(n)
-                if nn in allowed:
+                if nn in allowed and nn not in margin_nums:
                     continue
                 if _claim_operands_ok(nn, sent, allowed):
                     continue
+                if nn in margin_nums:
+                    try:
+                        if _margin_pair_ok(state, float(nn)):
+                            continue
+                    except ValueError:
+                        pass
                 if not any(s == sent and m == n for s, m in claims):
                     claims.append((sent, n))
         return claims
@@ -5916,9 +5988,12 @@ def _desk_failure_note(state: dict) -> str | None:
     """Name a failed desk instead of the generic dataset fallback.
 
     When a delegate_* desk errored (timeout or crash, even after the
-    one automatic retry), the honest message names the desk and what
-    went wrong - the canned "could not find that in the dataset" is
-    what makes the product feel hardcoded."""
+    one automatic retry), the honest message names the desk and says
+    what happened in plain words. It never leaks raw exception text,
+    internal paths, or the user's question verbatim, and it only
+    mentions recovered evidence when some actually came back - the
+    canned "could not find that in the dataset" is what makes the
+    product feel hardcoded."""
     failed = [tr for tr in state.get("tool_results") or []
               if isinstance(tr, dict)
               and str(tr.get("tool", "")).startswith("delegate_")
@@ -5927,13 +6002,19 @@ def _desk_failure_note(state: dict) -> str | None:
         return None
     tr = failed[0]
     desk = str(tr.get("tool", "")).replace("delegate_", "")
-    err = str(tr.get("error", "") or "did not return")[:160]
+    _err = str(tr.get("error", "") or "").lower()
+    why = ("didn't respond in time"
+           if ("timed out" in _err or "timeout" in _err)
+           else "ran into a problem")
     retried = " even after a retry" if tr.get("desk_retried") else ""
-    q = (state.get("question") or "").strip()
-    return (f"Couldn't pull that together - the {desk} desk {err}"
-            f"{retried}."
-            + (f' Your question was "{q}".' if q else "")
-            + " Try asking again in a moment; the underlying data is there.")
+    note = (f"Couldn't pull that together - the {desk} desk {why}"
+            f"{retried}. Try asking again in a moment.")
+    _has_rows = any(
+        isinstance(r, dict) and r.get("rows")
+        for r in state.get("tool_results") or [])
+    if _has_rows:
+        note += " What did come back is shown in the evidence panel below."
+    return note
 
 
 async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any], None]:
@@ -6213,9 +6294,16 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
     _viol_pairs = _verify_numeral_claims(state, _scrubbed)
     if _viol_pairs:
         _bad_sents = {s for s, _ in _viol_pairs}
-        _scrubbed = " ".join(
-            s for s in _SENT_SPLIT_RX.split(_scrubbed)
-            if s.strip() and s not in _bad_sents).strip()
+        # Drop only the failing unit(s) - separators are preserved so a
+        # bad newline bullet never takes the good bullet next to it down.
+        _kept: list[str] = []
+        for _unit, _sep in _iter_units(_scrubbed):
+            if _unit.strip() and _unit in _bad_sents:
+                continue
+            _kept.append(_unit + _sep)
+        _scrubbed = "".join(_kept).strip()
+        # A dropped unit can leave doubled blank lines behind.
+        _scrubbed = re.sub(r"\n{3,}", "\n\n", _scrubbed)
         if not _scrubbed:
             _scrubbed = _gap or (
                 "I pulled the relevant data but could not verify the "

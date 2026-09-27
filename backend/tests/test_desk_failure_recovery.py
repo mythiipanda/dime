@@ -51,7 +51,12 @@ def test_team_desk_timeout_no_canned_fallback():
     text = _final_text(state)
     assert CANNED not in text, f"canned fallback leaked: {text!r}"
     assert "team desk" in text
-    assert "timed out" in text
+    assert "didn't respond in time" in text
+    # sanitized: no raw error text, no internal detail, no question echo
+    assert "120s" not in text
+    assert "boston celtics" not in text.lower()
+    # "underlying data is there" is only claimed when rows came back
+    assert "underlying data" not in text.lower()
 
 
 def test_team_desk_error_no_canned_fallback():
@@ -60,7 +65,7 @@ def test_team_desk_error_no_canned_fallback():
         "analysis": "",
         "tool_results": [
             {"tool": "delegate_team", "ok": False,
-             "error": "provider 500 from NIM"},
+             "error": "Traceback: /srv/app/desks.py line 42 boom"},
         ],
         "calls_made": [], "history": [],
         "primary": "p", "model": "m",
@@ -68,6 +73,21 @@ def test_team_desk_error_no_canned_fallback():
     text = _final_text(state)
     assert CANNED not in text, f"canned fallback leaked: {text!r}"
     assert "team desk" in text
+    assert "ran into a problem" in text
+    assert "Traceback" not in text and "/srv/app" not in text
+    assert "boston celtics" not in text.lower()
+
+
+def test_desk_note_mentions_evidence_only_when_present():
+    base = {"question": "q", "analysis": "", "calls_made": [], "history": [],
+            "primary": "p", "model": "m"}
+    failed = {"tool": "delegate_team", "ok": False, "error": "boom"}
+    t1 = _final_text({**base, "tool_results": [failed]})
+    assert "evidence panel" not in t1
+    t2 = _final_text({**base, "tool_results": [
+        failed, {"tool": "get_leaders", "ok": True,
+                 "rows": [{"PLAYER": "X"}]}]})
+    assert "evidence panel" in t2
 
 
 class _DelegateStub:
@@ -133,3 +153,64 @@ def test_desk_retry_success_uses_second_result(monkeypatch):
     res = state["tool_results"][-1]
     assert res.get("ok") is True
     assert res["rows"] == [{"TEAM": "Celtics"}]
+
+
+def test_desk_retry_bounded_within_wall_budget(monkeypatch):
+    import time as _time
+
+    async def _slow_desk(name, task, primary, model, on_token=None):
+        await asyncio.sleep(30)
+        return {"tool": name, "ok": True, "rows": []}
+
+    monkeypatch.setattr(g, "run_desk_streaming", _slow_desk)
+    monkeypatch.setattr(g, "_supervisor_tools", lambda s: [_DelegateStub()])
+    monkeypatch.setattr(g, "DESK_CALL_TIMEOUT_S", 0.3)
+    monkeypatch.setattr(g, "_DESK_WALL_BUDGET_S", 0.8)
+
+    async def _go(state):
+        async for _e in g.actual_tool_node(state):
+            pass
+        return state
+
+    state = {"question": "q", "primary": "p", "model": "m",
+             "round": 0, "tool_results": [], "calls_made": [], "history": [],
+             "_pending_calls": [{"name": "delegate_team",
+                                "args": {"task": "slow task"}}]}
+    t0 = _time.time()
+    state = asyncio.run(_go(state))
+    total = _time.time() - t0
+    res = state["tool_results"][-1]
+    assert res.get("desk_retried") is True
+    # first attempt 0.3s + retry capped so the pair stays in budget
+    assert total < 0.8 + 0.5, f"retry blew the budget: {total:.2f}s"
+
+
+def test_margin_claim_must_carry_operands():
+    # "DET trails SAS by 2.4" is fake even though 2.4 appears in the
+    # payload (as DET's own rating, not the margin).
+    state = {"tool_results": [{"tool": "get_team_compare", "ok": True,
+              "rows": [{"TEAM": "DET", "NET": 2.4},
+                       {"TEAM": "SAS", "NET": 1.1}]}],
+             "ledger": []}
+    claims = g._verify_numeral_claims(state, "DET trails SAS by 2.4.")
+    assert [n for _, n in claims] == ["2.4"], f"fake margin passed: {claims}"
+    # the true margin with operands recomputes and survives
+    ok = g._verify_numeral_claims(
+        state, "DET trails SAS by 1.3 (2.4 - 1.1 = 1.3).")
+    assert ok == [], f"honest margin flagged: {ok}"
+    # a plain payload restatement still passes without operands
+    plain = g._verify_numeral_claims(state, "DET's net rating is 2.4.")
+    assert plain == [], f"plain restatement flagged: {plain}"
+
+
+def test_bad_bullet_does_not_kill_good_bullet():
+    state = {"tool_results": [{"tool": "x", "ok": True,
+                               "rows": [{"a": 8.5}]}],
+             "ledger": []}
+    text = "- DET's net rating is 8.5\n- SAS scores 999.9 per game"
+    claims = g._verify_numeral_claims(state, text)
+    assert [n for _, n in claims] == ["999.9"]
+    bad = {s for s, _ in claims}
+    kept = "".join(u + sep for u, sep in g._iter_units(text)
+                   if not (u.strip() and u in bad)).strip()
+    assert "8.5" in kept and "999.9" not in kept
