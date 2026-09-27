@@ -39,7 +39,7 @@ const TEAMS: Record<string, number> = {
   CHA: 1610612766,
 };
 
-type Row = { GROUP_NAME: string; MIN: number; PLUS_MINUS: number; SAMPLE?: string; SAMPLE_TIER?: string; EST_POSS?: number };
+type Row = { GROUP_NAME: string; MIN: number; PLUS_MINUS: number };
 
 function short(full: string) {
   const p = full.trim().split(/\s+/);
@@ -155,14 +155,13 @@ export default function LineupPanel() {
           )}
           {rows.length > 0 && (
           <table style={{ width: "100%", marginTop: 8, fontSize: 12 }}>
-            <thead><tr><th style={{ textAlign: "left" }}>Unit</th><th>MIN</th><th>+/-</th><th>Sample</th></tr></thead>
+            <thead><tr><th style={{ textAlign: "left" }}>Unit</th><th>MIN</th><th>+/-</th></tr></thead>
             <tbody>
               {rows.map((r, i) => (
-                <tr key={i} style={r.SAMPLE_TIER === "small" ? { opacity: 0.55 } : undefined}>
+                <tr key={i}>
                   <td>{String(r.GROUP_NAME || "").split(" - ").map(short).join(", ")}</td>
                   <td style={{ textAlign: "right" }}>{Number(r.MIN).toFixed(1)}</td>
                   <td style={{ textAlign: "right" }}>{r.PLUS_MINUS}</td>
-                  <td style={{ textAlign: "right", color: "var(--color-warm-gray)", fontSize: 11 }}>{r.SAMPLE_TIER || ""}</td>
                 </tr>
               ))}
             </tbody>
