@@ -7,7 +7,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import tools
+from shared import tools
 
 WH = Path(__file__).resolve().parent.parent / "data" / "warehouse.duckdb"
 

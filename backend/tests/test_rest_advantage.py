@@ -12,9 +12,9 @@ import duckdb
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import app.tools.rest as rest_mod
-from app.tools import get_rest_advantage
-from app.tools.rest import (
+import shared.tools.rest as rest_mod
+from shared.tools import get_rest_advantage
+from shared.tools.rest import (
     TeamGame,
     _classify_scoreboard_rows,
     build_schedule,
@@ -31,7 +31,7 @@ def _connect_retry(tries=10, sleep_s=10):
     last: Exception | None = None
     for _ in range(tries):
         try:
-            from app import store as _store
+            from shared import store as _store
 
             return _store.connect(read_only=True)
         except (duckdb.IOException, duckdb.ConnectionException) as exc:

@@ -33,7 +33,7 @@ from app.graph import (
 
 
 def _needs_warehouse():
-    from app import store
+    from shared import store
 
     try:
         con = store.connect()
@@ -62,7 +62,7 @@ def test_trade_value_single_connection():
 
     store.connect = counting
     try:
-        from app.tools.league import get_trade_value
+        from shared.tools.league import get_trade_value
 
         res = get_trade_value.invoke(
             {"team_a": "MIN", "players_a": "Anthony Edwards",
@@ -97,7 +97,7 @@ def test_trade_check_single_connection():
 
     store.connect = counting
     try:
-        from app.tools.league import get_trade_check
+        from shared.tools.league import get_trade_check
 
         res = get_trade_check.invoke(
             {"team_a": "MIN", "players_a": "Anthony Edwards",
@@ -111,7 +111,7 @@ def test_trade_check_single_connection():
 def test_trade_value_side_totals_internally_consistent():
     """Refactor guard: side totals still equal player + pick values."""
     _needs_warehouse()
-    from app.tools.league import get_trade_value
+    from shared.tools.league import get_trade_value
 
     try:
         res = get_trade_value.invoke(

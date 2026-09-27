@@ -11,9 +11,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import concurrent.futures
 
-from app import store
-from app.sources import nba_stats
-from app.sources.base import FetchResult
+from shared import store
+from shared.sources import nba_stats
+from shared.sources.base import FetchResult
 
 SEASON = "2025-26"
 TIMEOUT = 30
@@ -103,7 +103,7 @@ def main() -> None:
     seeded = _seeded_entities("silver_on_off")
     print(f"already seeded: {len(seeded)}", flush=True)
     try:
-        from app.sources import pbpstats
+        from shared.sources import pbpstats
     except ImportError:
         print("pbpstats not available, skipping", flush=True)
         return

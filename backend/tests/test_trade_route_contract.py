@@ -9,7 +9,7 @@ client.app.include_router(router, prefix="/api/v1")
 
 
 def test_trade_body_accepts_player_arrays(monkeypatch):
-    from app import tools
+    from shared import tools
 
     seen = {}
 

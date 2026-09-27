@@ -5,7 +5,7 @@ import uuid
 
 import pytest
 
-from app.config import settings
+from shared.config import settings
 from app.graph import run_chat
 
 HAS_KEY = bool(

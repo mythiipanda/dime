@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import polars as pl
 
-from app import store
+from shared import store
 
 BASE = "https://github.com/sportsdataverse/sportsdataverse-data/releases/download"
 DATA = Path(__file__).resolve().parent.parent / "data" / "history"
@@ -119,7 +119,7 @@ def main() -> None:
     years = parse_years(ns.seasons)
     DATA.mkdir(parents=True, exist_ok=True)
 
-    from app.sources.base import FetchMeta, FetchResult
+    from shared.sources.base import FetchMeta, FetchResult
 
     staged: list[tuple] = []
     coverage: dict[int, dict[str, int]] = {}

@@ -7,8 +7,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.tools import get_streaks
-from app.tools.streaks import _cond_for, _value_for, compute_streaks
+from shared.tools import get_streaks
+from shared.tools.streaks import _cond_for, _value_for, compute_streaks
 
 
 def _game(holder, holder_id, day, **stats):

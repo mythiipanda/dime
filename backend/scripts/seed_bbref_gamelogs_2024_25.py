@@ -56,8 +56,8 @@ from seed_bbref_gamelogs import (  # noqa: E402
     parse_minutes,
 )
 
-from app import store  # noqa: E402
-from app.sources.base import FetchMeta, FetchResult  # noqa: E402
+from shared import store  # noqa: E402
+from shared.sources.base import FetchMeta, FetchResult  # noqa: E402
 
 IDS_FILE = HERE / "seed_bbref_gamelogs_player_ids.txt"
 PROGRESS_FILE = HERE / "seed_bbref_gamelogs_2024_25_progress.json"

@@ -27,8 +27,8 @@ from lxml import html
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import store
-from app.sources.base import FetchMeta, FetchResult
+from shared import store
+from shared.sources.base import FetchMeta, FetchResult
 
 HERE = Path(__file__).resolve().parent
 IDS_FILE = HERE / "seed_bbref_gamelogs_player_ids.txt"
@@ -331,8 +331,8 @@ def save_inactive(rows: list, nba_id: int) -> int:
     if not rows:
         return 0
     import duckdb
-    from app import store as _store
-    from app.store import DB_PATH as _DB
+    from shared import store as _store
+    from shared.store import DB_PATH as _DB
     con = duckdb.connect(str(_DB))
     try:
         con.execute(

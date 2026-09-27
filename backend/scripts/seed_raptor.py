@@ -14,8 +14,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import polars as pl
 
-from app import store
-from app.sources.base import FetchMeta, FetchResult
+from shared import store
+from shared.sources.base import FetchMeta, FetchResult
 
 BASE = "https://raw.githubusercontent.com/fivethirtyeight/data/master/nba-raptor"
 TABLES = {

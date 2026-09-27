@@ -10,9 +10,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import tools
-from app import providers
-from app import store
+from shared import tools
+from shared import providers
+from shared import store
 from app.graph import _tool_result_payload, _trace_replay_events
 from app.subagents import _trace_sql
 

@@ -13,7 +13,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.tools.shots import (ZONE_KEYS, ZONE_LABEL_MAP, disambiguate_last_name,
+from shared.tools.shots import (ZONE_KEYS, ZONE_LABEL_MAP, disambiguate_last_name,
                              efficiency, fold_ot, format_clock, group_row,
                              is_heave, parse_group_by, parse_include_ot,
                              parse_made, parse_late_clock, parse_periods,
@@ -23,7 +23,7 @@ from app.tools.shots import (ZONE_KEYS, ZONE_LABEL_MAP, disambiguate_last_name,
 
 
 def _require_full_shot_pack():
-    from app import store
+    from shared import store
     con = store.connect()
     try:
         count, teams, players = con.execute(
@@ -361,7 +361,7 @@ def test_tool_performance_smoke():
 # ---------------------------------------------------------------------------
 # Appended tests for the rewritten shots.py. Existing tests above are untouched.
 
-from app.tools.shots import (SMALL_SAMPLE_MIN, _AGG_SELECT, _three_sql,
+from shared.tools.shots import (SMALL_SAMPLE_MIN, _AGG_SELECT, _three_sql,
                              _where_sql, _zone_case_sql)
 
 

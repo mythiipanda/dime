@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
 def _tables() -> set:
-    from app import store
+    from shared import store
 
     con = store.connect()
     try:
@@ -39,7 +39,7 @@ def test_season_label_rejects_live_season():
 
 
 def test_clamp_prior_seasons():
-    from app.tools.priors import clamp_prior_seasons
+    from shared.tools.priors import clamp_prior_seasons
 
     assert clamp_prior_seasons(None) == [2022, 2023, 2024, 2025]
     assert clamp_prior_seasons([2020, 2027]) == [2022, 2025]
@@ -48,7 +48,7 @@ def test_clamp_prior_seasons():
 
 
 def test_blend_weighted_mean():
-    from app.tools.priors import blend_estimate
+    from shared.tools.priors import blend_estimate
 
     out = blend_estimate({"rapm": 2.0, "possessions": 1000},
                          [{"rapm": 4.0, "possessions": 1000}])
@@ -56,7 +56,7 @@ def test_blend_weighted_mean():
 
 
 def test_blend_empty_is_none():
-    from app.tools.priors import blend_estimate
+    from shared.tools.priors import blend_estimate
 
     assert blend_estimate(None, []) is None
     assert blend_estimate({"rapm": None, "possessions": 0}, []) is None
@@ -80,7 +80,7 @@ def test_compute_ranks_efficient_side_first():
 
 
 def test_silver_rapm_holds_current_season():
-    from app import store
+    from shared import store
 
     try:
         n = store._read_df("SELECT COUNT(*) AS n FROM silver_rapm WHERE _season = ?",
@@ -91,7 +91,7 @@ def test_silver_rapm_holds_current_season():
 
 
 def test_get_rapm_prior_missing_player_is_honest():
-    from app.tools.priors import get_rapm_prior
+    from shared.tools.priors import get_rapm_prior
 
     res = get_rapm_prior.invoke({"player": "Zzz No Such Player", "seasons": [2024]})
     assert res["ok"] is False
@@ -99,7 +99,7 @@ def test_get_rapm_prior_missing_player_is_honest():
 
 
 def test_get_rapm_prior_registered():
-    from app import tools
+    from shared import tools
 
     assert "get_rapm_prior" in tools.TOOL_NAMES
 
@@ -108,7 +108,7 @@ def test_get_rapm_prior_single_identity_no_blend():
     tables = _tables()
     if "silver_rapm_prior" not in tables or "silver_rapm" not in tables:
         return
-    from app.tools.priors import get_rapm_prior
+    from shared.tools.priors import get_rapm_prior
 
     res = get_rapm_prior.invoke({"player": "bron"})
     assert res["ok"] is True

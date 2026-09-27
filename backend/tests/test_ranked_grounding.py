@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.graph import _triage_seed
-from app.tools import get_leaders
+from shared.tools import get_leaders
 
 
 def _drain(q):
@@ -147,7 +147,7 @@ def test_blocks_per_game_uses_full_blocks_totals_and_unrounded_sort():
 
 
 def test_team_rating_tool_enum_and_planner_vocabulary_stay_aligned():
-    from app.tools.rating_metrics import TEAM_RATING_METRICS
+    from shared.tools.rating_metrics import TEAM_RATING_METRICS
     assert TEAM_RATING_METRICS == {
         "OFF_RATING": "offensive rating",
         "DEF_RATING": "defensive rating",
@@ -159,9 +159,9 @@ def test_team_rating_tool_enum_and_planner_vocabulary_stay_aligned():
 
 def test_bound_warehouse_read_paths_and_lineage(monkeypatch,tmp_path):
     import hashlib
-    from app import store
-    from app.tools import _core
-    from app.sources.base import FetchResult, FetchMeta
+    from shared import store
+    from shared.tools import _core
+    from shared.sources.base import FetchResult, FetchMeta
     import polars as pl
     db=tmp_path/'warehouse.duckdb';db.write_bytes(b'initial');monkeypatch.setattr(store,'DB_PATH',db)
     class F:
@@ -185,9 +185,9 @@ def test_bound_warehouse_read_paths_and_lineage(monkeypatch,tmp_path):
 
 def test_stale_fallback_binds_fallback_read_and_legitimate_writer_is_serialized(monkeypatch,tmp_path):
     from contextlib import contextmanager
-    from app import store
-    from app.tools import _core
-    from app.sources.base import empty
+    from shared import store
+    from shared.tools import _core
+    from shared.sources.base import empty
     db=tmp_path/'warehouse.duckdb';db.write_bytes(b'stable');monkeypatch.setattr(store,'DB_PATH',db)
     class F:
         height=1;columns=[]
@@ -204,7 +204,7 @@ def test_stale_fallback_binds_fallback_read_and_legitimate_writer_is_serialized(
 
 
 def test_ranked_team_answer_uses_label_not_enum_or_aliases(monkeypatch):
-    from app.tools import get_ratings
+    from shared.tools import get_ratings
     rows = [
         {"TEAM_ID": 1, "TEAM_NAME": "Boston Celtics", "GP": 82, "W": 60, "L": 22,
          "DEF_RATING": 104.3, "OFF_RATING": 118.1},

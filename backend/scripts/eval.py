@@ -9,7 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import tools
+from shared import tools
 
 PASS = 0
 FAIL = 0
@@ -137,7 +137,7 @@ def main() -> None:
     check("intel accepts names",
           len(rows(res)) > 0, str(res)[:200])
 
-    from app.tools._core import coerce_player_id
+    from shared.tools._core import coerce_player_id
     check("nicknames resolve",
           coerce_player_id("SGA") == 1628983, "")
 

@@ -13,10 +13,10 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import store
+from shared import store
 from app.routes import SqlRerunBody, api_sql_rerun
-from app.tools import league
-from app.tools.league import (
+from shared.tools import league
+from shared.tools.league import (
     RERUN_ROW_CAP,
     RERUN_TIMEOUT_S,
     _execute_with_timeout,

@@ -7,9 +7,9 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import tools
-from app.config import settings
-from app.tools.league import _describe_warehouse_schema
+from shared import tools
+from shared.config import settings
+from shared.tools.league import _describe_warehouse_schema
 
 WH = Path(__file__).resolve().parent.parent / "data" / "warehouse.duckdb"
 

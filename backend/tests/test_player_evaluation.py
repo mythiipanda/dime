@@ -7,7 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app import graph
-from app.tools import TOOL_NAMES, get_contract_value, get_player_evaluation
+from shared.tools import TOOL_NAMES, get_contract_value, get_player_evaluation
 
 
 def _drain(question: str):
@@ -65,7 +65,7 @@ def test_plain_comps_question_stays_on_comps_lane():
 
 
 def test_contract_ledger_accepts_canonical_team_slug(monkeypatch):
-    from app.tools import league
+    from shared.tools import league
 
     monkeypatch.setattr(league, "_payroll", lambda team, con: (
         57078728, [{"player": "Jaylen Brown", "salary": 57078728}]))

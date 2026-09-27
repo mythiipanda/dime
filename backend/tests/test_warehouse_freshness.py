@@ -7,8 +7,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.tools import get_warehouse_freshness
-from app.tools.league import FRESHNESS_RULES, _freshness_row
+from shared.tools import get_warehouse_freshness
+from shared.tools.league import FRESHNESS_RULES, _freshness_row
 
 NOW = datetime(2026, 9, 10, 15, 30, tzinfo=timezone.utc)  # September: offseason
 SEASON_NOW = datetime(2026, 1, 15, 15, 30, tzinfo=timezone.utc)  # January: in season
@@ -78,7 +78,7 @@ def test_table_outside_registry_gets_unknown_rule():
 
 def test_registry_covers_every_silver_table_in_warehouse():
     import duckdb
-    from app import store
+    from shared import store
 
     con = duckdb.connect(str(store.DB_PATH), read_only=True)
     try:

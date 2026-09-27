@@ -308,7 +308,7 @@ async def test_stream_cancellation_stops_detached_runtime(anyio_backend, monkeyp
                 cancelled.set()
 
     monkeypatch.setattr(
-        "app.providers.resolve_model_id", lambda value: ("openrouter", "fixture"))
+        "shared.providers.resolve_model_id", lambda value: ("openrouter", "fixture"))
     monkeypatch.setattr(
         "v2.runtime.assembly.build_runtime",
         lambda **kwargs: (WaitingRuntime(), RunLedger(kwargs["run_id"])),
@@ -335,7 +335,7 @@ async def test_stream_cancellation_stops_detached_runtime(anyio_backend, monkeyp
 def test_v2_uses_one_configured_model_policy(monkeypatch):
     monkeypatch.setenv("DIME_V2_MODEL", "openrouter:openrouter/free")
     seen = []
-    monkeypatch.setattr("app.providers.resolve_model_id",
+    monkeypatch.setattr("shared.providers.resolve_model_id",
                         lambda value: seen.append(value) or ("openrouter", "openrouter/free"))
     from v2.api.routes import QuickAnswerBody
     import inspect
@@ -1274,7 +1274,7 @@ def test_shadow_stream_failure_stays_silent(monkeypatch):
 
     monkeypatch.setenv("DIME_RUNTIME_V2", "shadow")
     monkeypatch.setattr(
-        "app.providers.resolve_model_id", lambda value: ("openrouter", "fixture"))
+        "shared.providers.resolve_model_id", lambda value: ("openrouter", "fixture"))
     monkeypatch.setattr("v2.runtime.assembly.build_runtime", build)
     app = FastAPI()
     app.include_router(routes.router, prefix="/api")
@@ -1343,7 +1343,7 @@ def test_live_route_reports_model_resolution_failure_as_sse(monkeypatch):
 
     monkeypatch.setenv("DIME_RUNTIME_V2", "on")
     monkeypatch.setattr(
-        "app.providers.resolve_model_id",
+        "shared.providers.resolve_model_id",
         lambda *_: (_ for _ in ()).throw(ValueError("private model detail")),
     )
     app = FastAPI()
@@ -1387,7 +1387,7 @@ def test_intake_provider_failure_yields_typed_partial_final_without_error(monkey
         ledger = RunLedger(kwargs["run_id"]); ledgers[kwargs["run_id"]] = ledger
         return BrokenIntakeRuntime(), ledger
     monkeypatch.setenv("DIME_RUNTIME_V2", "on")
-    monkeypatch.setattr("app.providers.resolve_model_id",
+    monkeypatch.setattr("shared.providers.resolve_model_id",
                         lambda value:("openrouter","fixture"))
     monkeypatch.setattr("v2.runtime.assembly.build_runtime", build)
     app = FastAPI(); app.include_router(routes.router, prefix="/api")
@@ -1479,7 +1479,7 @@ def test_full_http_sse_and_activity_omit_private_failure_taxonomy(monkeypatch,tm
             return RuntimeResult(task=TaskSpec(goal='g',mode='quick',deliverable='d'),execution=ExecutionResult(plan=Plan(nodes=[]),errors={}),draft=DraftReport(sections=[],claims=[]),verification=VerificationReport(status='pass'))
     def build(**kwargs):
         ledger=RunLedger(kwargs['run_id']);ledger.append('model/request',turn_id=kwargs['run_id'],call_id='model:1',data={'provider':'inception','model':'mercury-2.5','route':'semantic_verifier','prompt_hash':'a'*64,'context_hash':'b'*64,'tool_schema_hash':'c'*64,'planner_version':'v2','budgets':{},'skill_hashes':{}});ledger.append('assistant/attempt',turn_id=kwargs['run_id'],call_id='model:1',data={'status':'failed','error':sentinel,'provider_attempts':[{'route':'semantic_verifier','provider':'inception','model':'mercury-2.5','attempt_number':1,'exception_type':'UnexpectedModelBehavior','message_class':'structured_output','latency_ms':1,'failure_top_class':'UnexpectedModelBehavior','failure_class_chain':['UnexpectedModelBehavior'],'failure_phase':'no_tool_or_empty','failure_validation_errors':[],'failure_validation_subtype':'not_applicable','failure_schema_sha256':'a'*64,'failure_route':'semantic_verifier'}]});return Runtime(),ledger
-    monkeypatch.setenv('DIME_RUNTIME_V2','on');monkeypatch.setenv('DIME_V2_ACTIVITY_DIR',str(tmp_path/'activity'));monkeypatch.setattr('app.providers.resolve_model_id',lambda value:('inception','mercury-2.5'));monkeypatch.setattr('v2.runtime.assembly.build_runtime',build)
+    monkeypatch.setenv('DIME_RUNTIME_V2','on');monkeypatch.setenv('DIME_V2_ACTIVITY_DIR',str(tmp_path/'activity'));monkeypatch.setattr('shared.providers.resolve_model_id',lambda value:('inception','mercury-2.5'));monkeypatch.setattr('v2.runtime.assembly.build_runtime',build)
     app=FastAPI();app.include_router(routes.router,prefix='/api');response=TestClient(app).post('/api/v2/chat/stream',json={'q':'x'});text=response.text;run_id=response.headers['x-dime-run-id'];activity=[x.model_dump(mode='json') for x in ActivityJournal(tmp_path/'activity'/f'{run_id}.jsonl',run_id).read()];combined=text+json.dumps(activity)
     for key in ('failure_top_class','failure_class_chain','failure_phase','failure_validation_errors','failure_validation_subtype','failure_schema_sha256','provider_attempts','exception_type'):
         assert key not in combined
@@ -1645,7 +1645,7 @@ def test_typed_public_stream_sanitizes_all_events_and_preserves_lifecycle(monkey
         holder["progress"]=kwargs["progress"]
         return Runtime(),RunLedger(kwargs["run_id"])
     monkeypatch.setenv("DIME_RUNTIME_V2","on");monkeypatch.setenv("DIME_PROJECT_STORE",str(tmp_path/"p.sqlite"))
-    monkeypatch.setattr("app.providers.resolve_model_id",lambda value:("openrouter","fixture"))
+    monkeypatch.setattr("shared.providers.resolve_model_id",lambda value:("openrouter","fixture"))
     monkeypatch.setattr("v2.runtime.assembly.build_runtime",build)
     monkeypatch.setattr(routes,"_PROJECTS",ProjectStore(tmp_path/"p.sqlite"))
     app=FastAPI();app.include_router(routes.router,prefix="/api")
@@ -1688,7 +1688,7 @@ def test_public_stream_projection_failure_abstains_and_terminates(monkeypatch,tm
     class Runtime:
         async def run(self,*a,**k):holder["progress"]("verify","running");return result
     def build(**kwargs):holder["progress"]=kwargs["progress"];return Runtime(),RunLedger(kwargs["run_id"])
-    monkeypatch.setenv("DIME_RUNTIME_V2","on");monkeypatch.setattr("app.providers.resolve_model_id",lambda value:("openrouter","fixture"));monkeypatch.setattr("v2.runtime.assembly.build_runtime",build);monkeypatch.setattr(routes,"_PROJECTS",ProjectStore(tmp_path/"p.sqlite"))
+    monkeypatch.setenv("DIME_RUNTIME_V2","on");monkeypatch.setattr("shared.providers.resolve_model_id",lambda value:("openrouter","fixture"));monkeypatch.setattr("v2.runtime.assembly.build_runtime",build);monkeypatch.setattr(routes,"_PROJECTS",ProjectStore(tmp_path/"p.sqlite"))
     app=FastAPI();app.include_router(routes.router,prefix="/api")
     response=TestClient(app).post("/api/v2/chat/stream",json={"q":"x"});text=response.text
     assert secret not in text and '"node":"analytics"' not in text
@@ -1725,7 +1725,7 @@ def test_typed_terminal_contract_replaces_legacy_failure_and_metadata_cases(monk
     secret="EXCEPTION_SECRET"
     class Runtime:
         async def run(self,*a,**k): raise RuntimeError(secret)
-    monkeypatch.setenv("DIME_RUNTIME_V2","on");monkeypatch.setattr("app.providers.resolve_model_id",lambda value:("openrouter","fixture"));monkeypatch.setattr("v2.runtime.assembly.build_runtime",lambda **k:(Runtime(),RunLedger(k["run_id"])));monkeypatch.setattr(routes,"_PROJECTS",ProjectStore(tmp_path/"p.sqlite"))
+    monkeypatch.setenv("DIME_RUNTIME_V2","on");monkeypatch.setattr("shared.providers.resolve_model_id",lambda value:("openrouter","fixture"));monkeypatch.setattr("v2.runtime.assembly.build_runtime",lambda **k:(Runtime(),RunLedger(k["run_id"])));monkeypatch.setattr(routes,"_PROJECTS",ProjectStore(tmp_path/"p.sqlite"))
     app=FastAPI();app.include_router(routes.router,prefix="/api");r=TestClient(app).post("/api/v2/chat/stream",json={"q":"x"});text=r.text
     assert secret not in text and "event: error" not in text
     assert text.count("event: work_log")==text.count("event: final_answer")==text.count("event: graph_end")==1
@@ -1767,7 +1767,7 @@ def test_journal_setup_and_append_failures_keep_generic_fallback_once(monkeypatc
         def __init__(self,*a,**k):pass
         def append(self,*a,**k):raise OSError("SECRET")
     for journal in [lambda *a,**k:(_ for _ in ()).throw(PermissionError("SECRET")),BadJournal]:
-        monkeypatch.setattr("v2.api.activity.ActivityJournal",journal);monkeypatch.setenv("DIME_RUNTIME_V2","on");monkeypatch.setattr("app.providers.resolve_model_id",lambda value:("openrouter","fixture"));monkeypatch.setattr(routes,"_PROJECTS",ProjectStore(tmp_path/"p.sqlite"))
+        monkeypatch.setattr("v2.api.activity.ActivityJournal",journal);monkeypatch.setenv("DIME_RUNTIME_V2","on");monkeypatch.setattr("shared.providers.resolve_model_id",lambda value:("openrouter","fixture"));monkeypatch.setattr(routes,"_PROJECTS",ProjectStore(tmp_path/"p.sqlite"))
         def build(**k):l=RunLedger(k["run_id"]);ledgers[k["run_id"]]=l;return Broken(),l
         monkeypatch.setattr("v2.runtime.assembly.build_runtime",build);app=FastAPI();app.include_router(routes.router,prefix="/api");text=TestClient(app).post("/api/v2/chat/stream",json={"q":"x"}).text
         assert text.count("event: tool_call")==1 and text.count("event: tool_result")==1
@@ -1785,7 +1785,7 @@ def test_pretool_timeout_safe_terminal_carries_latency(monkeypatch,tmp_path):
         async def run(self,*a,run_id=None,**k):
             l=ledgers[run_id];l.append(LedgerKind.STEP_START,turn_id=run_id,step_id="understand");l.append(LedgerKind.STEP_END,turn_id=run_id,step_id="understand",data={"reason":"timeout","duration_ms":12,"error":"SECRET"});raise PreToolTimeoutError("SECRET")
     def build(**k):l=RunLedger(k["run_id"]);ledgers[k["run_id"]]=l;return Timeout(),l
-    monkeypatch.setenv("DIME_RUNTIME_V2","on");monkeypatch.setattr("app.providers.resolve_model_id",lambda value:("openrouter","fixture"));monkeypatch.setattr("v2.runtime.assembly.build_runtime",build);monkeypatch.setattr(routes,"_PROJECTS",ProjectStore(tmp_path/"p.sqlite"));app=FastAPI();app.include_router(routes.router,prefix="/api");response=TestClient(app).post("/api/v2/chat/stream",json={"q":"x"});text=response.text
+    monkeypatch.setenv("DIME_RUNTIME_V2","on");monkeypatch.setattr("shared.providers.resolve_model_id",lambda value:("openrouter","fixture"));monkeypatch.setattr("v2.runtime.assembly.build_runtime",build);monkeypatch.setattr(routes,"_PROJECTS",ProjectStore(tmp_path/"p.sqlite"));app=FastAPI();app.include_router(routes.router,prefix="/api");response=TestClient(app).post("/api/v2/chat/stream",json={"q":"x"});text=response.text
     assert "SECRET" not in text and '"stage_latencies_ms":{"understand":12}' in text
     assert '"status":"partial"' in text
     assert text.count("event: work_log")==text.count("event: final_answer")==text.count("event: graph_end")==1
@@ -1807,7 +1807,7 @@ def test_pass_result_final_carry_contract(monkeypatch,tmp_path):
     result=RuntimeResult(task=contracts.TaskSpec(goal="x",mode="quick",deliverable="x",requested_outputs=["WINS"]),execution=ExecutionResult(plan=contracts.Plan(nodes=[contracts.PlanNode(id="n",description="n",capability_hints=["standings"],status="complete")]),evidence_by_node={"n":ev},attempts={"n":1}),draft=contracts.DraftReport(sections=[],claims=[c]),verification=contracts.VerificationReport(status="pass",claim_results=[{"claim_index":0,"supported":True}]),verified_claims=[contracts.VerifiedClaim(claim_index=0,claim=c,evidence_ids=["e"],sources=[contracts.ClaimSource(evidence_id="e",source="private",capability="standings")],output_bindings=[b])])
     class Runtime:
         async def run(self,*a,**k):return result
-    monkeypatch.setenv("DIME_RUNTIME_V2","on");monkeypatch.setattr("app.providers.resolve_model_id",lambda value:("openrouter","fixture"));monkeypatch.setattr("v2.runtime.assembly.build_runtime",lambda **k:(Runtime(),RunLedger(k["run_id"])));monkeypatch.setattr(routes,"_PROJECTS",ProjectStore(tmp_path/"p.sqlite"));app=FastAPI();app.include_router(routes.router,prefix="/api");r=TestClient(app).post("/api/v2/chat/stream",json={"q":"x"});payload=__import__("json").loads(r.text.split("event: final_answer\ndata: ",1)[1].split("\n\n",1)[0]);carry=payload["carry"]
+    monkeypatch.setenv("DIME_RUNTIME_V2","on");monkeypatch.setattr("shared.providers.resolve_model_id",lambda value:("openrouter","fixture"));monkeypatch.setattr("v2.runtime.assembly.build_runtime",lambda **k:(Runtime(),RunLedger(k["run_id"])));monkeypatch.setattr(routes,"_PROJECTS",ProjectStore(tmp_path/"p.sqlite"));app=FastAPI();app.include_router(routes.router,prefix="/api");r=TestClient(app).post("/api/v2/chat/stream",json={"q":"x"});payload=__import__("json").loads(r.text.split("event: final_answer\ndata: ",1)[1].split("\n\n",1)[0]);carry=payload["carry"]
     assert carry["run_id"]==r.headers["x-dime-run-id"] and carry["verification"]=="pass"
     assert carry["verified_claims"]==1 and carry["gaps"]==[] and len(carry["output_statuses"])==1
 
@@ -1822,7 +1822,7 @@ def test_no_authority_internal_gap_route_is_nonblank_and_terminal(monkeypatch,tm
     result=RuntimeResult(task=contracts.TaskSpec(goal="x",mode="quick",deliverable="x"),execution=ExecutionResult(plan=contracts.Plan(nodes=[])),draft=contracts.DraftReport(sections=[],claims=[]),verification=contracts.VerificationReport(status="partial"),gaps=[contracts.Gap(kind="execution_failure",message="SECRET")])
     class Runtime:
         async def run(self,*a,**k):return result
-    monkeypatch.setenv("DIME_RUNTIME_V2","on");monkeypatch.setattr("app.providers.resolve_model_id",lambda value:("openrouter","fixture"));monkeypatch.setattr("v2.runtime.assembly.build_runtime",lambda **k:(Runtime(),RunLedger(k["run_id"])));monkeypatch.setattr(routes,"_PROJECTS",ProjectStore(tmp_path/"p.sqlite"));app=FastAPI();app.include_router(routes.router,prefix="/api");text=TestClient(app).post("/api/v2/chat/stream",json={"q":"x"}).text
+    monkeypatch.setenv("DIME_RUNTIME_V2","on");monkeypatch.setattr("shared.providers.resolve_model_id",lambda value:("openrouter","fixture"));monkeypatch.setattr("v2.runtime.assembly.build_runtime",lambda **k:(Runtime(),RunLedger(k["run_id"])));monkeypatch.setattr(routes,"_PROJECTS",ProjectStore(tmp_path/"p.sqlite"));app=FastAPI();app.include_router(routes.router,prefix="/api");text=TestClient(app).post("/api/v2/chat/stream",json={"q":"x"}).text
     assert "SECRET" not in text and text.count("event: work_log")==text.count("event: final_answer")==text.count("event: graph_end")==1
     payload=__import__("json").loads(text.split("event: final_answer\ndata: ",1)[1].split("\n\n",1)[0]);assert payload["text"].strip()
 

@@ -8,8 +8,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.tools import search_game_logs
-from app.tools.gamelog import (
+from shared.tools import search_game_logs
+from shared.tools.gamelog import (
     _describe_filters,
     _matches,
     _parse_month,
@@ -210,9 +210,9 @@ def _rs_only_player():
     resolved via the static player list and verified to coerce back to
     the same warehouse id.
     """
-    from app import store as _store
-    from app.tools._core import coerce_player_id as _coerce
-    from app.tools.splits import _resolve_name as _rname
+    from shared import store as _store
+    from shared.tools._core import coerce_player_id as _coerce
+    from shared.tools.splits import _resolve_name as _rname
     con = _store.connect(read_only=True)
     try:
         rows = con.execute(
@@ -239,9 +239,9 @@ def _playoff_player():
     be hardcoded, so the test picks whoever has rows right now. The name
     is resolved via the static player list and verified to coerce back.
     """
-    from app import store as _store
-    from app.tools._core import coerce_player_id as _coerce
-    from app.tools.splits import _resolve_name as _rname
+    from shared import store as _store
+    from shared.tools._core import coerce_player_id as _coerce
+    from shared.tools.splits import _resolve_name as _rname
     con = _store.connect(read_only=True)
     try:
         rows = con.execute(
@@ -280,8 +280,8 @@ def test_integration_playoffs_reads_playoff_table():
     # over silver_playoff_gamelogs to prove the playoff scope is honored.
     # The player is picked dynamically because the in-flight scrape
     # decides who has playoff rows right now.
-    from app import store as _store
-    from app.tools.gamelog import _f as _ff
+    from shared import store as _store
+    from shared.tools.gamelog import _f as _ff
 
     found = _playoff_player()
     if found is None:
@@ -336,7 +336,7 @@ def test_integration_league_wide_50pt_leaders():
     assert counts == sorted(counts, reverse=True)
     assert all(c >= 1 for c in counts)
     assert all(l["player"] and l["player_id"] for l in leaders)
-    from app import store as _store
+    from shared import store as _store
     con = _store.connect(read_only=True)
     try:
         total50 = con.execute(

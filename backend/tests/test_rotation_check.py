@@ -11,8 +11,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import asyncio as _asyncio
 
-from app import tools
-from app.tools.team import (
+from shared import tools
+from shared.tools.team import (
     _assemble_rotation_report,
     _closing_candidates,
     _thin_rotation_flags,

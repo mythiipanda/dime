@@ -9,16 +9,9 @@ checks per prompt:
   3. Gate: verify_minutes_qual flags unqualified rate-stat claims
      (AST-extracted from backend/app/graph.py with regex constants)
   4. Gate: verify_table_kind rejects kind-mismatched tables
-     (AST-extracted; the hand-labeled qtype stands in for the LLM's
-     entity-level intent via the question_kind kwarg, mirroring the
-     production call path _gated_tables <- state["answer_entity_level"])
+     (AST-extracted; _detect_entities stubbed from eval-case metadata)
 
-Global: no SKILL_KEYWORDS / match_skills in product code (static,
-tokenize-aware).
-
-What this runner measures: metadata/schema checks + synthetic gate
-behavior. NOT measured here: response quality (correct numbers, real
-rendered tables) -- that needs a live LLM + warehouse, out of scope.
+Global: no SKILL_KEYWORDS / match_skills in codebase (static).
 
 Usage: python3 backend/tests/run_eval_standalone.py
 Exit 0 if >= 18/20 pass, else 1.
@@ -28,7 +21,6 @@ import ast
 import os
 import re
 import sys
-import tokenize
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BACKEND = os.path.dirname(HERE)
@@ -73,9 +65,8 @@ KNOWN_QTYPES = {
 def extract_gate_helpers():
     """Extract verify_minutes_qual + verify_table_kind with deps via AST.
 
-    Returns a namespace dict with the two functions. Callers pass explicit
-    question_kind (the LLM's answer_entity_level in production), so no
-    entity-detection stubbing is needed.
+    Returns a namespace dict with the two functions, stubbing _detect_entities
+    (caller must set STUB_ENTITIES before calling verify_table_kind).
     """
     path = os.path.join(BACKEND, "app", "graph.py")
     with open(path, encoding="utf-8") as f:
@@ -106,7 +97,14 @@ def extract_gate_helpers():
                 if isinstance(t, ast.Name) and t.id in wanted_consts:
                     mod.body.append(node)
     # _iter_units may be async or need helpers; check what it uses.
-    ns = {"re": re}
+    ns = {"re": re, "STUB_ENTITIES": ([], [])}
+
+    stub = (
+        "def _detect_entities(question):\n"
+        "    return STUB_ENTITIES\n"
+    )
+    code = compile(ast.parse(stub), "<stub>", "exec")
+    exec(code, ns)
 
     code = compile(mod, "<gate_extract>", "exec")
     exec(code, ns)
@@ -156,41 +154,32 @@ def check_minutes_gate(ns, qtype):
         return False, "qualified claim wrongly flagged"
     return True, "ok"
 
-# Production contract: the LLM's entity-level intent
-# (state["answer_entity_level"]) drives the gate, not question-text
-# keywords. The hand-labeled qtype stands in for that intent here.
-QTYPE_KIND = {
-    "player_compare": "player",
-    "defensive_player": "player",
-    "team_offense": "team",
-    "team_stats": "team",
-    "team_defense": "team",
-}
-
 def check_table_kind_gate(ns, prompt, qtype, players, teams):
     """Player q + team table -> reject; team q + player table -> reject.
 
-    Passes the hand-labeled qtype as question_kind (the LLM's
-    answer_entity_level in production). Entity-less team questions
-    ("best offense this season?") are exercised here, not skipped:
-    with explicit intent the gate must reject mismatched tables.
+    Only applies when entities are present. Entity-less questions
+    ("best offense this season?") yield kind "other" by design — the gate
+    is permissive there, so those cases are n/a.
     """
-    kind = QTYPE_KIND.get(qtype)
-    if kind is None:
+    if qtype not in ("player_compare", "defensive_player",
+                     "team_offense", "team_stats", "team_defense"):
         return True, "n/a"
+    if not players and not teams:
+        return True, "n/a (no entities -> kind 'other' by design)"
     fn = ns.get("verify_table_kind")
     if fn is None:
         return False, "verify_table_kind not extracted"
+    ns["STUB_ENTITIES"] = (players, teams)
     try:
-        if kind == "player":
+        if qtype in ("player_compare", "defensive_player"):
             # player question + team table must be rejected (False)
             team_table = {"kind": "team", "rows": [{"TEAM": "BOS"}]}
-            result = fn(prompt, team_table, question_kind="player")
+            result = fn(prompt, team_table)
             if result is not False:
                 return False, f"player-q + team-table not rejected (got {result})"
         else:
             player_table = {"kind": "player", "rows": [{"PLAYER": "X"}]}
-            result = fn(prompt, player_table, question_kind="team")
+            result = fn(prompt, player_table)
             if result is not False:
                 return False, f"team-q + player-table not rejected (got {result})"
     except Exception as e:
@@ -198,56 +187,40 @@ def check_table_kind_gate(ns, prompt, qtype, players, teams):
     return True, "ok"
 
 def check_no_keyword_routing():
-    """Flag real keyword-routing code via stdlib tokenize.
+    """Flag real keyword-routing code, not tests asserting its absence.
 
-    COMMENT and STRING tokens are skipped entirely, so docstrings/comments
-    mentioning match_skills never trip it. Scans every .py file under
-    backend/ (including this runner and the eval data module — their
-    mentions live in strings/docstrings, which tokenize ignores). Only
-    __pycache__/node_modules dirs are skipped. Flags only real code tokens:
-    NAME SKILL_KEYWORDS followed by OP "=" or ":"; NAME match_skills
-    preceded by NAME "def"; NAME match_skills followed by OP "(" not
-    preceded by OP ".".
+    Flags: SKILL_KEYWORDS assignment, `def match_skills`, or match_skills()
+    calls outside of negative assertions (assert not hasattr / "are gone").
     """
     offenders = []
-    _SKIP = {
-        tokenize.COMMENT, tokenize.STRING, tokenize.NL,
-        tokenize.NEWLINE, tokenize.INDENT, tokenize.DEDENT,
-        tokenize.ENDMARKER, tokenize.ENCODING,
-    }
-    backend_dir = os.path.join(REPO, "backend")
-    for root, _, files in os.walk(backend_dir):
-        if "node_modules" in root or "__pycache__" in root:
+    for root, _, files in os.walk(os.path.join(REPO, "backend")):
+        if "__pycache__" in root:
             continue
         for fn in files:
             if not fn.endswith(".py"):
                 continue
             p = os.path.join(root, fn)
+            if "test_eval_prompts" in p or "run_eval_standalone" in p:
+                continue
             try:
                 with open(p, encoding="utf-8") as f:
-                    toks = [t for t in tokenize.generate_tokens(f.readline)
-                            if t.type not in _SKIP]
-            except Exception:
+                    lines = f.readlines()
+            except OSError:
                 continue
-            for i, tok in enumerate(toks):
-                if tok.type != tokenize.NAME:
-                    continue
-                prev = toks[i - 1] if i > 0 else None
-                nxt = toks[i + 1] if i + 1 < len(toks) else None
-                if tok.string == "SKILL_KEYWORDS":
-                    if nxt is not None and nxt.type == tokenize.OP \
-                            and nxt.string in ("=", ":"):
-                        offenders.append(f"{os.path.relpath(p, REPO)}:{tok.start[0]}")
-                elif tok.string == "match_skills":
-                    if prev is not None and prev.type == tokenize.NAME \
-                            and prev.string == "def":
-                        offenders.append(f"{os.path.relpath(p, REPO)}:{tok.start[0]}")
-                    elif nxt is not None and nxt.type == tokenize.OP \
-                            and nxt.string == "(":
-                        if not (prev is not None
-                                and prev.type == tokenize.OP
-                                and prev.string == "."):
-                            offenders.append(f"{os.path.relpath(p, REPO)}:{tok.start[0]}")
+            for i, line in enumerate(lines, 1):
+                s = line.strip()
+                # Skip comments/docstrings mentioning removal
+                if s.startswith("#") or s.startswith('"""') or s.startswith("'''"):
+                    if "gone" in s.lower() or "remov" in s.lower():
+                        continue
+                if re.search(r"\bSKILL_KEYWORDS\s*=", line):
+                    offenders.append(f"{os.path.relpath(p, REPO)}:{i}")
+                elif re.search(r"def\s+match_skills\s*\(", line):
+                    offenders.append(f"{os.path.relpath(p, REPO)}:{i}")
+                elif re.search(r"(?<![\w.])match_skills\s*\(", line):
+                    # Allow negative assertions verifying absence
+                    if "not hasattr" not in line and "gone" not in line.lower():
+                        offenders.append(f"{os.path.relpath(p, REPO)}:{i}")
     if offenders:
         return False, f"keyword routing in: {offenders}"
     return True, "ok"

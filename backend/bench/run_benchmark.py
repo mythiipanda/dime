@@ -11,7 +11,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from app import store as _store
+from shared import store as _store
 
 from .driver import run_all, summarize
 from .ground import GENERATORS, SkipTask

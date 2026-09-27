@@ -1,4 +1,4 @@
-from app.tools import get_trade_check
+from shared.tools import get_trade_check
 
 
 def test_trade_check_fails_closed_on_salary_vintage_mismatch():

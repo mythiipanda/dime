@@ -8,8 +8,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.tools import TOOL_NAMES, get_impact_estimate
-from app.tools.player import (
+from shared.tools import TOOL_NAMES, get_impact_estimate
+from shared.tools.player import (
     IMPACT_RAPTOR_ONOFF_W,
     _fit_box_prior,
     _solve_linear,

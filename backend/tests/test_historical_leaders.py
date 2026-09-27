@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 def _warehouse_has_history() -> bool:
     try:
-        from app import store
+        from shared import store
 
         con = store.connect()
         try:
@@ -28,7 +28,7 @@ def _warehouse_has_history() -> bool:
 def test_per_season_leaders_shape_and_order():
     if not _warehouse_has_history():
         return
-    from app.tools.history import get_historical_leaders
+    from shared.tools.history import get_historical_leaders
 
     res = get_historical_leaders.invoke({
         "category": "pts", "start_season": 2023,
@@ -49,7 +49,7 @@ def test_per_season_leaders_shape_and_order():
 def test_single_season_best_has_known_campaign():
     if not _warehouse_has_history():
         return
-    from app.tools.history import get_historical_leaders
+    from shared.tools.history import get_historical_leaders
 
     res = get_historical_leaders.invoke({
         "category": "pts", "start_season": 2015,
@@ -65,7 +65,7 @@ def test_single_season_best_has_known_campaign():
 
 
 def test_invalid_category_rejected():
-    from app.tools.history import get_historical_leaders
+    from shared.tools.history import get_historical_leaders
 
     res = get_historical_leaders.invoke({"category": "dunks"})
     assert res["ok"] is False
@@ -75,7 +75,7 @@ def test_invalid_category_rejected():
 def test_season_clamp_never_2026():
     if not _warehouse_has_history():
         return
-    from app.tools.history import get_historical_leaders
+    from shared.tools.history import get_historical_leaders
 
     res = get_historical_leaders.invoke({
         "category": "pts", "start_season": 1990,
@@ -90,7 +90,7 @@ def test_season_clamp_never_2026():
 def test_empty_range_honest():
     if not _warehouse_has_history():
         return
-    from app.tools.history import get_historical_leaders
+    from shared.tools.history import get_historical_leaders
 
     res = get_historical_leaders.invoke({
         "category": "raptor", "start_season": 2024,
@@ -103,7 +103,7 @@ def test_empty_range_honest():
 def test_limit_clamp():
     if not _warehouse_has_history():
         return
-    from app.tools.history import get_historical_leaders
+    from shared.tools.history import get_historical_leaders
 
     res = get_historical_leaders.invoke({
         "category": "reb", "start_season": 2024,
@@ -120,13 +120,13 @@ def test_limit_clamp():
 
 
 def test_registered():
-    from app import tools
+    from shared import tools
 
     assert "get_historical_leaders" in tools.TOOL_NAMES
 
 
 def test_future_range_outside_coverage_is_honest():
-    from app.tools.history import get_historical_leaders
+    from shared.tools.history import get_historical_leaders
 
     res = get_historical_leaders.invoke({
         "category": "pts", "start_season": 2030,
@@ -139,7 +139,7 @@ def test_future_range_outside_coverage_is_honest():
 def test_partial_overlap_clamps_with_warning():
     if not _warehouse_has_history():
         return
-    from app.tools.history import get_historical_leaders
+    from shared.tools.history import get_historical_leaders
 
     res = get_historical_leaders.invoke({
         "category": "pts", "start_season": 2024,
@@ -153,7 +153,7 @@ def test_partial_overlap_clamps_with_warning():
 def test_reversed_range_swaps_with_warning():
     if not _warehouse_has_history():
         return
-    from app.tools.history import get_historical_leaders
+    from shared.tools.history import get_historical_leaders
 
     res = get_historical_leaders.invoke({
         "category": "pts", "start_season": 2025,
@@ -165,7 +165,7 @@ def test_reversed_range_swaps_with_warning():
 
 
 def test_string_inputs_never_traceback():
-    from app.tools.history import get_historical_leaders
+    from shared.tools.history import get_historical_leaders
 
     res = get_historical_leaders.invoke({
         "category": "pts", "start_season": "banana",
@@ -178,7 +178,7 @@ def test_string_inputs_never_traceback():
 def test_category_aliases_resolve():
     if not _warehouse_has_history():
         return
-    from app.tools.history import get_historical_leaders
+    from shared.tools.history import get_historical_leaders
 
     for alias, canon in [("scoring", "pts"), ("dimes", "ast"),
                          ("boards", "reb"), ("threes", "fg3m"),
@@ -192,7 +192,7 @@ def test_category_aliases_resolve():
 
 
 def test_unknown_category_hint():
-    from app.tools.history import get_historical_leaders
+    from shared.tools.history import get_historical_leaders
 
     res = get_historical_leaders.invoke({"category": "asists"})
     assert res["ok"] is False
@@ -202,7 +202,7 @@ def test_unknown_category_hint():
 def test_rows_carry_season_label_and_display():
     if not _warehouse_has_history():
         return
-    from app.tools.history import get_historical_leaders
+    from shared.tools.history import get_historical_leaders
 
     res = get_historical_leaders.invoke({
         "category": "fg_pct", "start_season": 2024,

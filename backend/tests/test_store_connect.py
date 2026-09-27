@@ -13,7 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import store  # noqa: E402
+from shared import store  # noqa: E402
 
 
 def test_concurrent_reads_all_succeed():

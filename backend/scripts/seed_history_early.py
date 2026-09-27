@@ -36,7 +36,7 @@ except ImportError:  # pragma: no cover
 
 import polars as pl
 
-from app import store
+from shared import store
 
 
 def unify(frames: list) -> list:
@@ -179,7 +179,7 @@ def main() -> None:
     years = parse_seasons(ns.seasons)
     DATA.mkdir(parents=True, exist_ok=True)
 
-    from app.sources.base import FetchMeta, FetchResult
+    from shared.sources.base import FetchMeta, FetchResult
 
     counts: dict[tuple[str, str], int] = {}
     problems: list[str] = []

@@ -15,7 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.tools.gamelog import (  # noqa: E402
+from shared.tools.gamelog import (  # noqa: E402
     _dedupe_games,
     _record_for_scope,
     _record_note,
@@ -74,9 +74,9 @@ def test_jokic_record_43_22_live_read_only():
 
 
 def test_playoff_record_scope_label_live_read_only():
-    from app import store as _store
-    from app.tools._core import coerce_player_id as _coerce
-    from app.tools.splits import _resolve_name as _rname
+    from shared import store as _store
+    from shared.tools._core import coerce_player_id as _coerce
+    from shared.tools.splits import _resolve_name as _rname
     con = _store.connect(read_only=True)
     try:
         found = con.execute(

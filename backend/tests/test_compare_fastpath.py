@@ -98,7 +98,7 @@ def test_fastpath_compare_output_matches_slow_path(monkeypatch):
     monkeypatch.setattr(graph_mod, "_run_delegate_live", _fake_delegate)
     st = _drain(Q2)
     args = _compare_args(st)
-    from app.tools import player as pm
+    from shared.tools import player as pm
 
     try:
         direct = asyncio.run(pm.get_compare.ainvoke(dict(args)))
@@ -183,7 +183,7 @@ def _patch_desk(monkeypatch, force_out, tooled_calls):
 
     monkeypatch.setattr(subagents_mod, "_stream_tooled", _count_tooled)
     monkeypatch.setattr(subagents_mod, "_stream_text", _canned_text)
-    import app.tools as tools_mod
+    import shared.tools as tools_mod
 
     fake = _FakeTool("text_to_sql", force_out)
     monkeypatch.setattr(tools_mod, "v1_tools", [fake])

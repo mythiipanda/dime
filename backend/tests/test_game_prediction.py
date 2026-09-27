@@ -6,8 +6,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.tools import get_game_prediction
-from app.tools.prediction import (
+from shared.tools import get_game_prediction
+from shared.tools.prediction import (
     STATUS_PENALTY,
     _injury_penalty,
     _simulate,
@@ -113,7 +113,7 @@ def test_tool_same_team_errors():
 
 
 def test_tool_missing_ratings_degrades(monkeypatch):
-    import app.tools.prediction as pred
+    import shared.tools.prediction as pred
     monkeypatch.setattr(pred, "_rating_row", lambda con, tid, season: None)
     out = get_game_prediction.invoke({"a": "BOS", "b": "NYK", "n_sims": 1_000})
     assert out["ok"] is False

@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import app.graph as graph_mod
 from app.graph import _trade_sides
-from app.tools import _core as core_mod
+from shared.tools import _core as core_mod
 
 _PID = {"Anthony Edwards": 101, "Luka Dončić": 102, "Nikola Jokic": 103}
 _TEAM_OF = {101: "MIN", 102: "LAL", 103: "DEN"}

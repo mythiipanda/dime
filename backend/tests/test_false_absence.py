@@ -96,7 +96,7 @@ def test_text_to_sql_attaches_player_names():
     # F63: a team-wide playoff gamelog pull returns Player_ID but no
     # name column, and compose dead-ended on "no individual player
     # statistics by name". Names must be attached from the static list.
-    from app.tools.league import _attach_player_names
+    from shared.tools.league import _attach_player_names
     rows = [{"Player_ID": 1629638, "PTS": 35, "MATCHUP": "SAS @ DEN"}]
     _attach_player_names(rows)
     assert rows[0]["PLAYER"] == "Nickeil Alexander-Walker"

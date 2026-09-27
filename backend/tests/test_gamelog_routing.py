@@ -181,9 +181,9 @@ def _rs_only_player():
     resolved via the static player list and verified to coerce back to
     the same warehouse id.
     """
-    from app import store as _store
-    from app.tools._core import coerce_player_id as _coerce
-    from app.tools.splits import _resolve_name as _rname
+    from shared import store as _store
+    from shared.tools._core import coerce_player_id as _coerce
+    from shared.tools.splits import _resolve_name as _rname
     con = _store.connect(read_only=True)
     try:
         rows = con.execute(
@@ -330,7 +330,7 @@ def test_hyphenated_point_threshold_still_routes():
 
 
 def test_best_game_tool_returns_max_pts_row():
-    from app.tools.gamelog import _load_player_games, search_game_logs
+    from shared.tools.gamelog import _load_player_games, search_game_logs
 
     out = search_game_logs.invoke({"player": "Anthony Edwards",
                                    "best_game": True})
@@ -407,7 +407,7 @@ def test_under_rebounds_and_assists():
 
 
 def test_max_points_predicate_and_description():
-    from app.tools.gamelog import _matches, _describe_filters
+    from shared.tools.gamelog import _matches, _describe_filters
     game = {"pts": 19, "reb": 8, "ast": 7, "dd_count": 0,
             "opponent": None, "date": None, "home": True}
     f = {"min_points": None, "min_rebounds": None, "min_assists": None,

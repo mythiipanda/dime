@@ -10,7 +10,7 @@ AWARD_TABLES = {"silver_leaders_pts", "silver_advanced", "silver_standings"}
 
 def _warehouse_has_awards() -> bool:
     try:
-        from app import store
+        from shared import store
 
         con = store.connect()
         try:
@@ -38,7 +38,7 @@ KNOWN_STARS = {
 def test_award_race_mvp_shape_and_formula():
     if not _warehouse_has_awards():
         return
-    from app.tools.awards import get_award_race
+    from shared.tools.awards import get_award_race
 
     res = get_award_race.invoke({"award": "MVP", "season": "2025-26"})
     assert res["ok"] is True
@@ -65,7 +65,7 @@ def test_award_race_mvp_shape_and_formula():
 def test_award_race_alias_normalization():
     if not _warehouse_has_awards():
         return
-    from app.tools.awards import get_award_race
+    from shared.tools.awards import get_award_race
 
     assert get_award_race.invoke({"award": "mvp"})["meta"]["award"] == "MVP"
     assert get_award_race.invoke(
@@ -77,7 +77,7 @@ def test_award_race_alias_normalization():
 
 
 def test_award_race_unknown_award():
-    from app.tools.awards import get_award_race
+    from shared.tools.awards import get_award_race
 
     res = get_award_race.invoke({"award": "coach of the year"})
     assert res["ok"] is False
@@ -87,7 +87,7 @@ def test_award_race_unknown_award():
 def test_award_race_mip_degrades_honestly():
     if not _warehouse_has_awards():
         return
-    from app.tools.awards import get_award_race
+    from shared.tools.awards import get_award_race
 
     res = get_award_race.invoke({"award": "MIP", "season": "2025-26"})
     assert res["ok"] is False
@@ -95,7 +95,7 @@ def test_award_race_mip_degrades_honestly():
 
 
 def test_award_race_registered_and_labeled():
-    from app import tools
+    from shared import tools
     from app.graph import tool_label
     from app.subagents import _desk_tool_label
 

@@ -1,7 +1,7 @@
 """Player-named opponents in get_head_to_head resolve to their team."""
 import asyncio
 
-from app.tools.headtohead import get_head_to_head
+from shared.tools.headtohead import get_head_to_head
 
 
 def _run(args):
@@ -30,7 +30,7 @@ def test_unknown_opponent_still_errors():
 
 
 def test_compare_different_teams_reports_meetings():
-    from app.tools.player import get_compare
+    from shared.tools.player import get_compare
     r = asyncio.run(get_compare.ainvoke(
         {"a": "Luka Dončić", "b": "Shai Gilgeous-Alexander",
          "season": "2025-26"}))
@@ -44,7 +44,7 @@ def test_compare_different_teams_reports_meetings():
 
 
 def test_compare_no_meetings_says_teams_did_not_meet():
-    from app.tools.player import _different_teams_pair
+    from shared.tools.player import _different_teams_pair
     pair = _different_teams_pair(
         {"player_id": 1629029, "team": "LAL", "name": "Luka Dončić"},
         {"player_id": 201939, "team": "GSW", "name": "Stephen Curry"},

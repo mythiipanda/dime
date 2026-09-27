@@ -1,7 +1,7 @@
 
 
 def test_missing_player_playoff_rows_name_player_gap_and_team_slice(monkeypatch):
-    from app.tools import gamelog
+    from shared.tools import gamelog
 
     class Result:
         def __init__(self, rows):
@@ -42,7 +42,7 @@ def test_missing_player_playoff_rows_name_player_gap_and_team_slice(monkeypatch)
     assert "team playoff game slice exists for 2023-24 (164 team-game rows)" in out["error"]
 
 def test_suffix_name_keeps_bound_identity_label():
-    from app.tools import gamelog
+    from shared.tools import gamelog
     out = gamelog.search_game_logs.invoke({"player": "Tim Hardaway Jr.", "season": "2025-26"})
     assert out["ok"]
     assert out["rows"]["player_id"] == 896
@@ -50,7 +50,7 @@ def test_suffix_name_keeps_bound_identity_label():
     assert out["rows"]["total"] == 80
 
 def test_filtered_population_carries_full_precision_aggregate_inputs():
-    from app.tools import gamelog
+    from shared.tools import gamelog
     out = gamelog.search_game_logs.invoke({"player":"Stephen Curry", "home_away":"home"})
     rows = out["rows"]
     assert rows["total"] == 23

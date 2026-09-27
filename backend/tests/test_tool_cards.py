@@ -5,8 +5,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.tools import TOOL_NAMES
-from app.tools.cards import build_cards, describe, rank_tools
+from shared.tools import TOOL_NAMES
+from shared.tools.cards import build_cards, describe, rank_tools
 
 
 def test_every_tool_has_card_with_purpose():

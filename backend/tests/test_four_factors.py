@@ -16,11 +16,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.tools import get_team_four_factors, v1_tools  # noqa: E402
+from shared.tools import get_team_four_factors, v1_tools  # noqa: E402
 
 
 def _require_team_four_factors_pack():
-    from app import store
+    from shared import store
     con = store.connect()
     try:
         tables = {row[0] for row in con.execute("SHOW TABLES").fetchall()}

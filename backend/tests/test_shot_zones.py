@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.tools.zone import (ZONE_KEYS, aggregate_zones, build_rows,
+from shared.tools.zone import (ZONE_KEYS, aggregate_zones, build_rows,
                             get_team_shot_zones, league_baselines,
                             season_year, zone_of, _zone_leaders)
 

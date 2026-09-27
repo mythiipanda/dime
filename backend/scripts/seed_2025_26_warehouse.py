@@ -20,7 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import store
+from shared import store
 
 SEASON = "2025-26"
 END_YEAR = 2026

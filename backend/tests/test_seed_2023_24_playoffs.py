@@ -9,7 +9,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 import seed_2023_24_playoffs as seed
-from app import store
+from shared import store
 
 
 def _hist_frame():

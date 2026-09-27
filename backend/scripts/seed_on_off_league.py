@@ -13,8 +13,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import store
-from app.sources import pbpstats
+from shared import store
+from shared.sources import pbpstats
 
 SEASON = "2025-26"
 MIN_MINUTES = 900

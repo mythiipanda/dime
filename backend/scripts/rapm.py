@@ -17,7 +17,7 @@ import polars as pl
 from scipy.sparse import csr_matrix
 from sklearn.linear_model import RidgeCV
 
-from app import store
+from shared import store
 
 OFF = [f"off_player_{i}" for i in range(1, 6)]
 DEF = [f"def_player_{i}" for i in range(1, 6)]
@@ -82,7 +82,7 @@ def main() -> None:
     print("top 10:", [(r["name"], r["rapm"]) for r in out[:10]])
     print("bottom 5:", [(r["name"], r["rapm"]) for r in out[-5:]])
 
-    from app.sources.base import FetchMeta, FetchResult
+    from shared.sources.base import FetchMeta, FetchResult
 
     frame = pl.DataFrame(out)
     res = FetchResult(frame=frame, meta=FetchMeta(source="rapm-lite", season=ns.season))

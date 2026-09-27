@@ -12,8 +12,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import tools  # noqa: E402
-from app.tools import preview as preview_mod  # noqa: E402
+from shared import tools  # noqa: E402
+from shared.tools import preview as preview_mod  # noqa: E402
 
 PAST_DATE = "04/12/2026"  # regular-season finale, cached in the warehouse
 FUTURE_DATE = "10/21/2026"  # opening week, cached in the warehouse
@@ -181,7 +181,7 @@ def _standings_rows():
 
 
 def test_marquee_pick_prefers_combined_win_pct(monkeypatch):
-    import app.tools.league as league_mod
+    import shared.tools.league as league_mod
 
     monkeypatch.setattr(league_mod, "get_standings",
                         _standings_stub(_standings_rows()))
@@ -195,7 +195,7 @@ def test_marquee_pick_prefers_combined_win_pct(monkeypatch):
 
 
 def test_marquee_pick_tv_breaks_pct_tie(monkeypatch):
-    import app.tools.league as league_mod
+    import shared.tools.league as league_mod
 
     monkeypatch.setattr(league_mod, "get_standings",
                         _standings_stub(_standings_rows()))
@@ -216,7 +216,7 @@ def test_registered_and_labeled():
 
 
 def test_abbrev_resolution_prefers_exact_abbrev():
-    from app.tools._core import coerce_team_id
+    from shared.tools._core import coerce_team_id
 
     assert coerce_team_id("ORL") == 1610612753
     assert coerce_team_id("NOP") == 1610612740

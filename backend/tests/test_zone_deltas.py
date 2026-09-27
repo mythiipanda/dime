@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.tools.zonedelta import (build_deltas, clamp_floor,
+from shared.tools.zonedelta import (build_deltas, clamp_floor,
                                  clamp_season_year, fold_zones,
                                  get_zone_deltas)
 
@@ -84,7 +84,7 @@ def test_floor_clamp_bounds():
 
 
 def test_league_average_sanity_vs_raw_sql():
-    from app import store
+    from shared import store
 
     con = store.connect(read_only=True)
     try:

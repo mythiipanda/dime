@@ -943,7 +943,7 @@ def get_leaders(
     pin = ["RANK", "PLAYER", "TEAM", stat_category]
     if stat_category == "FG3_PCT":
         pin.extend(["FG3M", "FG3A"])
-    pin.extend(["GP", "MIN", "PERCENTILE"])
+    pin.extend(["GP", "MIN", "MPG", "PERCENTILE"])
     pinned = []
     for r in rows:
         if not isinstance(r, dict):

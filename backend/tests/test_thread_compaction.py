@@ -5,8 +5,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import providers as providers_mod
-from app import store
+from shared import providers as providers_mod
+from shared import store
 
 
 class _FakeLLM:

@@ -17,8 +17,8 @@ import polars as pl
 import requests
 
 sys.path.insert(0, str(__file__).rsplit("/scripts/", 1)[0])
-from app import store  # noqa: E402
-from app.sources.base import FetchMeta, FetchResult  # noqa: E402
+from shared import store  # noqa: E402
+from shared.sources.base import FetchMeta, FetchResult  # noqa: E402
 
 SEASON = "2025-26"
 BBREF_YEAR = 2026

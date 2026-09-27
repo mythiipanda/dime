@@ -11,8 +11,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import tools
-from app.tools.lineup import (
+from shared import tools
+from shared.tools.lineup import (
     _apply_sample_floor,
     _best_net_unit,
     _dedupe_lineup_rows,

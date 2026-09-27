@@ -112,8 +112,8 @@ def fetch_stints(con, season: str) -> pl.DataFrame:
 
 
 def seed_season(season: str, min_poss: int = MIN_POSS) -> int:
-    from app import store
-    from app.sources.base import FetchMeta, FetchResult
+    from shared import store
+    from shared.sources.base import FetchMeta, FetchResult
 
     con = store.connect()
     try:

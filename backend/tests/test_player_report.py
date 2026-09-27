@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app import graph
-from app.tools import TOOL_NAMES, get_player_report
+from shared.tools import TOOL_NAMES, get_player_report
 
 
 def _drain(q):
@@ -36,7 +36,7 @@ def test_simple_average_stays_simple():
     assert [x.split(":",1)[0] for x in st["calls_made"]] == ["get_season_averages"]
 
 def test_historical_report_stays_warehouse_bounded(monkeypatch):
-    from app.tools import player as module
+    from shared.tools import player as module
     line = {"PLAYER_ID": 1, "PLAYER": "Test Player", "GP": 70,
             "PPG": 20.0, "RPG": 5.0, "APG": 6.0, "TS_PCT": .617}
     class Fake:
@@ -49,7 +49,7 @@ def test_historical_report_stays_warehouse_bounded(monkeypatch):
                         Fake({"ok": True, "rows": [line]}))
     monkeypatch.setattr(module, "get_advanced", Fake())
     monkeypatch.setattr(module, "get_shot_zones", Fake())
-    import app.tools.league as league
+    import shared.tools.league as league
     monkeypatch.setattr(league, "get_clutch", Fake())
     out = module.get_player_report.invoke({"player": "Test Player", "season": "2023-24"})
     assert out["ok"]

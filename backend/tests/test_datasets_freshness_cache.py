@@ -11,7 +11,8 @@ from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import datasets, store
+from app import datasets
+from shared import store
 
 
 @pytest.fixture()

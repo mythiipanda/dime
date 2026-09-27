@@ -9,7 +9,7 @@ import sys
 
 sys.path.insert(0, ".")
 
-from app import store
+from shared import store
 
 from .ground import SEASON, _impact_estimate
 
@@ -36,7 +36,7 @@ def _sample(seed: int, n: int) -> list[tuple]:
 
 
 def main() -> None:
-    from app.tools.player import get_impact_estimate
+    from shared.tools.player import get_impact_estimate
 
     sample = _sample(seed=1234, n=21)
     mismatches = 0

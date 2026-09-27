@@ -7,9 +7,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import app.tools.headtohead as h2h
-from app.tools import get_head_to_head
-from app.tools.headtohead import deltas, summarize, vs_opponent
+import shared.tools.headtohead as h2h
+from shared.tools import get_head_to_head
+from shared.tools.headtohead import deltas, summarize, vs_opponent
 
 
 def _row(matchup, date, wl="W", pts=20, reb=10, ast=5,

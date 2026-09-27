@@ -5,8 +5,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import datasets, graph, tools
-from app.providers import resolve_model_id
+from app import datasets, graph
+from shared import tools
+from shared.providers import resolve_model_id
 
 
 def test_clamp_stat_rejects_injection():
@@ -19,7 +20,7 @@ def test_clamp_stat_normalizes_case():
 
 
 def test_resolve_model_defaults_mistral():
-    from app.providers import _default_provider
+    from shared.providers import _default_provider
 
     assert resolve_model_id(None) == _default_provider()
 
@@ -30,14 +31,14 @@ def test_resolve_model_clamps_unknown_openrouter():
 
 
 def test_resolve_model_inception(monkeypatch):
-    from app.config import settings
+    from shared.config import settings
     monkeypatch.setattr(settings, "dime_enable_inception", True)
     monkeypatch.setattr(settings, "inception_api_key", "test-key")
     assert resolve_model_id("inception:mercury-2.5") == ("inception", "mercury-2.5")
 
 
 def test_clamp_season_rejects_garbage():
-    from app.tools._core import clamp_season
+    from shared.tools._core import clamp_season
 
     assert clamp_season("22025") == "2025-26"
     assert clamp_season("2025-26") == "2025-26"
@@ -45,7 +46,7 @@ def test_clamp_season_rejects_garbage():
 
 
 def test_resolve_model_rejects_bare_names():
-    from app.providers import _default_provider
+    from shared.providers import _default_provider
 
     assert resolve_model_id("LeBron James") == _default_provider()
 
@@ -92,7 +93,7 @@ def test_resolve_entity_static():
 
 
 def test_trust_tier_thresholds():
-    from app.tools._core import trust_tier
+    from shared.tools._core import trust_tier
 
     assert trust_tier(120) == ("TRUSTED", 240)
     assert trust_tier(100)[0] == "TRUSTED"
@@ -104,7 +105,7 @@ def test_trust_tier_thresholds():
 
 
 def test_zone_diet_sums_three_zones():
-    from app.tools.player import zone_diet
+    from shared.tools.player import zone_diet
 
     rows = [
         {"zone": "Restricted Area", "SHARE": 0.35},
@@ -119,7 +120,7 @@ def test_zone_diet_sums_three_zones():
 
 
 def test_portability_fit_branches():
-    from app.tools.player import portability_fit
+    from shared.tools.player import portability_fit
 
     risk = portability_fit(
         {"name": "A", "usg_pct": 33, "net_onoff": 6},
@@ -142,7 +143,7 @@ def test_portability_fit_branches():
 
 
 def test_apron_matching_rules():
-    from app.tools.league import CAP, _allowed_incoming, _apron_state
+    from shared.tools.league import CAP, _allowed_incoming, _apron_state
 
     assert _allowed_incoming(20_000_000, True) == (
         20_000_000, "100% (above the first apron)")
@@ -155,7 +156,7 @@ def test_apron_matching_rules():
 
 
 def test_pair_history_slim_both_on():
-    from app.tools.player import pair_history
+    from shared.tools.player import pair_history
 
     wowy = {"ok": True, "rows": [
         {"split": "Both ON", "minutes": 812.4, "net_rating": 6.26},
@@ -183,7 +184,7 @@ def _splits_fixture():
 
 
 def test_splits_aggregate_math():
-    from app.tools.splits import aggregate, ts_of
+    from shared.tools.splits import aggregate, ts_of
 
     rows = _splits_fixture()
     assert aggregate(rows) == {
@@ -195,7 +196,7 @@ def test_splits_aggregate_math():
 
 
 def test_splits_rest_days():
-    from app.tools.splits import rest_days
+    from shared.tools.splits import rest_days
 
     rows = _splits_fixture()
     buckets = rest_days(rows)
@@ -206,7 +207,7 @@ def test_splits_rest_days():
 
 
 def test_splits_defense_rank():
-    from app.tools.splits import defense_rank
+    from shared.tools.splits import defense_rank
 
     rows = [{"TEAM_ID": 1, "DEF_RATING": 115.0},
             {"TEAM_ID": 2, "DEF_RATING": 108.0},
@@ -215,7 +216,7 @@ def test_splits_defense_rank():
 
 
 def test_splits_verdict_branches():
-    from app.tools.splits import verdict_for
+    from shared.tools.splits import verdict_for
 
     v, _ = verdict_for(5.0, 0.0, 0.0, 0.0, 3, 2.0)
     assert v == "too early"
@@ -230,7 +231,7 @@ def test_splits_verdict_branches():
 
 
 def test_splits_unknown_player():
-    from app.tools.splits import get_matchup_splits, get_regression_check
+    from shared.tools.splits import get_matchup_splits, get_regression_check
 
     res = get_matchup_splits.invoke(
         {"player": "Zzz Quux Nonexistent", "n": 5})
@@ -240,13 +241,13 @@ def test_splits_unknown_player():
         {"player": "Zzz Quux Nonexistent", "stat": "xyz", "n": 5})
     assert res["ok"] is False
     assert "unknown player" in res["error"]
-    from app.tools import clamp_stat
+    from shared.tools import clamp_stat
 
     assert clamp_stat("xyz") == "PTS"
 
 
 def _warehouse_has_durant():
-    from app import store
+    from shared import store
 
     con = store.connect()
     try:
@@ -269,7 +270,7 @@ def test_splits_matchup_smoke():
     except Exception:
         return
     try:
-        from app.tools.splits import get_matchup_splits
+        from shared.tools.splits import get_matchup_splits
 
         res = get_matchup_splits.invoke(
             {"player": "Kevin Durant", "n": 15, "season": "2025-26"})
@@ -287,7 +288,7 @@ def test_splits_regression_smoke():
     except Exception:
         return
     try:
-        from app.tools.splits import get_regression_check
+        from shared.tools.splits import get_regression_check
 
         res = get_regression_check.invoke(
             {"player": "Kevin Durant", "stat": "xyz", "n": 10,
@@ -303,7 +304,7 @@ def test_splits_regression_smoke():
 
 
 def _warehouse_has_hist_durant():
-    from app import store
+    from shared import store
 
     con = store.connect()
     try:
@@ -325,7 +326,7 @@ def test_splits_career_baseline_hits_seeded_warehouse():
             return
     except Exception:
         return
-    from app.tools.splits import _career_baseline
+    from shared.tools.splits import _career_baseline
 
     res = _career_baseline(201142, "PTS")
     assert res["available"] is True
@@ -339,7 +340,7 @@ def test_splits_career_baseline_hits_seeded_warehouse():
 
 
 def test_splits_sort_null_dates_last():
-    from app.tools.splits import _sort_by_date
+    from shared.tools.splits import _sort_by_date
 
     rows = [
         {"GAME_DATE": "not a date", "PTS": 1},
@@ -353,7 +354,7 @@ def test_splits_sort_null_dates_last():
 
 
 def test_trade_value_unknown_player():
-    from app.tools.league import get_trade_value
+    from shared.tools.league import get_trade_value
 
     res = get_trade_value.invoke({"team_a": "LAL", "players_a": "Austin Reaves",
                                   "team_b": "BKN",
@@ -363,14 +364,14 @@ def test_trade_value_unknown_player():
 
 
 def test_trade_value_empty_teams():
-    from app.tools.league import get_trade_value
+    from shared.tools.league import get_trade_value
 
     res = get_trade_value.invoke({})
     assert res["ok"] is False
 
 
 def test_trade_value_reaves_porter():
-    from app.tools.league import get_trade_value
+    from shared.tools.league import get_trade_value
 
     try:
         res = get_trade_value.invoke(
@@ -399,14 +400,14 @@ def test_trade_value_reaves_porter():
 
 
 def test_registry_has_trade_value():
-    from app import tools as _tools
+    from shared import tools as _tools
 
     assert "get_trade_value" in _tools.TOOL_NAMES
     assert graph.tool_label("get_trade_value") == "Grading trade value"
 
 
 def test_compare_metrics_adjudicates():
-    from app.tools.player import compare_metrics
+    from shared.tools.player import compare_metrics
 
     res = compare_metrics.invoke(
         {"a": "Luka Doncic", "b": "Shai Gilgeous-Alexander",
@@ -421,7 +422,7 @@ def test_compare_metrics_adjudicates():
 
 
 def test_text_to_sql_allowlist_covers_current_analysis_tables():
-    from app.tools.league import _SQL_TABLES
+    from shared.tools.league import _SQL_TABLES
 
     assert {
         "silver_advanced", "silver_player_season", "silver_on_off",
@@ -430,7 +431,7 @@ def test_text_to_sql_allowlist_covers_current_analysis_tables():
 
 
 def test_compare_metrics_stale_raptor_is_context_not_four_votes(monkeypatch):
-    from app.tools import player
+    from shared.tools import player
 
     rows = {
         "silver_raptor_player": {
@@ -467,7 +468,7 @@ def test_compare_metrics_stale_raptor_is_context_not_four_votes(monkeypatch):
     assert "2021-22 vintage" in out["rows"]["verdict"]
 
 def test_clamp_stat_normalizes_three_point_percentage_aliases():
-    from app.tools import clamp_stat
+    from shared.tools import clamp_stat
     for value in ("3P", "3P%", "3PT", "3PT%", "three-point-percentage"):
         assert clamp_stat(value) == "FG3_PCT"
 

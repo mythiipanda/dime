@@ -24,9 +24,9 @@ import polars as pl
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import store
-from app.sources import nba_stats
-from app.sources.base import FetchMeta, FetchResult
+from shared import store
+from shared.sources import nba_stats
+from shared.sources.base import FetchMeta, FetchResult
 
 SEASON = "2023-24"
 END_YEAR = 2024

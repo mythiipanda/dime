@@ -10,7 +10,7 @@ wrappers.
 from datetime import datetime, timezone
 import math
 
-from app import store
+from shared import store
 
 from .schemas import GroundTruth, Task
 

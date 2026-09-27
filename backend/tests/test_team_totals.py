@@ -14,7 +14,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.graph import _triage_seed  # noqa: E402
-from app.tools import get_team_leaders  # noqa: E402
+from shared.tools import get_team_leaders  # noqa: E402
 
 
 def _drain(question, history=None):

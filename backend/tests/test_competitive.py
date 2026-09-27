@@ -11,9 +11,9 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.tools import get_competitive_ratings
-from app.tools._core import SEASON
-from app.tools.competitive import (
+from shared.tools import get_competitive_ratings
+from shared.tools._core import SEASON
+from shared.tools.competitive import (
     clamp_blowout_margin,
     map_season_type,
     summarize_team,
@@ -31,7 +31,7 @@ def _connect_retry(tries=6, sleep_s=2):
     last: Exception | None = None
     for _ in range(tries):
         try:
-            from app import store as _store
+            from shared import store as _store
 
             return _store.connect(read_only=True)
         except (duckdb.IOException, duckdb.ConnectionException) as exc:

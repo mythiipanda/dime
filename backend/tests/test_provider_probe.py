@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import app.providers as prov  # noqa: E402
+import shared.providers as prov  # noqa: E402
 
 
 class _FakeClient:

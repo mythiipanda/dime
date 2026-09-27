@@ -1,7 +1,7 @@
 """Finals game rows carry explicit home team and scores (sweep3)."""
 import asyncio
 
-from app.tools.league import get_playoffs
+from shared.tools.league import get_playoffs
 
 
 def _finals():
@@ -29,7 +29,7 @@ def test_finals_game3_home_is_explicit():
 
 
 def test_contract_value_team_scope():
-    from app.tools.league import get_contract_value
+    from shared.tools.league import get_contract_value
     r = asyncio.run(get_contract_value.ainvoke(
         {"season": "2025-26", "team": "Spurs"}))
     assert r["ok"] and r["meta"]["team_scope"] == "SAS"

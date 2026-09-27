@@ -13,7 +13,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.tools.wpamodel import (  # noqa: E402
+from shared.tools.wpamodel import (  # noqa: E402
     B0,
     B1,
     SMOOTH,
@@ -100,7 +100,7 @@ FROM f JOIN g USING (game_id) WHERE f.h IS NOT NULL
 
 
 def test_holdout_calibration():
-    from app import store
+    from shared import store
 
     con = store.connect(read_only=True)
     try:

@@ -10,8 +10,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import store
-from app.sources import espn, nba_stats
+from shared import store
+from shared.sources import espn, nba_stats
 
 
 def main() -> None:

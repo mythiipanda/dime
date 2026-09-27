@@ -20,7 +20,7 @@ import duckdb
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import store
+from shared import store
 
 
 def _hold_write_conn(path: str, hold_s: float):

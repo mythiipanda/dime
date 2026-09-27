@@ -6,7 +6,7 @@ import re
 import time
 
 from app.graph import run_chat, tool_label
-from app.tools import TOOL_NAMES
+from shared.tools import TOOL_NAMES
 
 from . import ground
 from .schemas import GroundTruth, RunResult, Task

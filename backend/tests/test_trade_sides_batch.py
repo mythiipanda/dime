@@ -20,7 +20,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.graph import _player_team_abbr, _trade_sides
-from app.tools._core import coerce_player_id
+from shared.tools._core import coerce_player_id
 
 CASES = [
     ("Who wins this trade: Anthony Edwards (MIN) for Luka Doncic (LAL)?",
@@ -40,7 +40,7 @@ CASES = [
 
 
 def _needs_gamelogs():
-    from app import store
+    from shared import store
 
     try:
         con = store.connect()
@@ -134,7 +134,7 @@ def test_batch_matches_per_player_output():
 
 def test_batch_uses_single_connection():
     _needs_gamelogs()
-    from app import store
+    from shared import store
 
     real_connect = store.connect
     calls = []

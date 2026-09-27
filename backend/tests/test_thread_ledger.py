@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.graph import (_extract_ledger_facts, _verify_draft_numerals,  # noqa: E402
                        presentation_agent)
-from app import store  # noqa: E402
+from shared import store  # noqa: E402
 
 PLAYOFFS = {"tool": "get_playoffs", "ok": True,
             "rows": {"champion": "NYK",

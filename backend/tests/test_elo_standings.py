@@ -9,7 +9,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.tools.league import (  # noqa: E402
+from shared.tools.league import (  # noqa: E402
     _build_elo,
     _elo_expected,
     _elo_game_shift,

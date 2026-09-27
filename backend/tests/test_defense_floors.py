@@ -27,8 +27,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import store as _store  # noqa: E402
-from app.tools import league as _league  # noqa: E402
+from shared import store as _store  # noqa: E402
+from shared.tools import league as _league  # noqa: E402
 
 SEASON = "2025-26"
 

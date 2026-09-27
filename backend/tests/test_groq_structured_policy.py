@@ -1,5 +1,5 @@
-from app.config import settings
-from app import providers
+from shared.config import settings
+from shared import providers
 from v2.adapters.models import ProviderStructuredModel
 
 

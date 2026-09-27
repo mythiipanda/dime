@@ -71,7 +71,7 @@ def test_v2_shadow_failure_is_recorded_as_failed_comparison(monkeypatch, tmp_pat
             raise RuntimeError("v2 failed")
 
     monkeypatch.setattr(
-        "app.providers.resolve_model_id", lambda model: ("inception", "model"))
+        "shared.providers.resolve_model_id", lambda model: ("inception", "model"))
     monkeypatch.setattr(
         "v2.runtime.assembly.build_runtime", lambda **kwargs: (FailedRuntime(), object()))
     store_path = tmp_path / "shadow.jsonl"
@@ -101,7 +101,7 @@ def test_v2_shadow_cancellation_is_recorded_as_cancelled(monkeypatch, tmp_path):
             raise asyncio.CancelledError()
 
     monkeypatch.setattr(
-        "app.providers.resolve_model_id", lambda model: ("inception", "model"))
+        "shared.providers.resolve_model_id", lambda model: ("inception", "model"))
     monkeypatch.setattr(
         "v2.runtime.assembly.build_runtime", lambda **kwargs: (CancelledRuntime(), object()))
     store_path = tmp_path / "shadow.jsonl"
@@ -201,7 +201,7 @@ def test_v2_shadow_runtime_has_bounded_wall_clock(monkeypatch, tmp_path):
                 raise
 
     monkeypatch.setattr(
-        "app.providers.resolve_model_id", lambda model: ("inception", "model"))
+        "shared.providers.resolve_model_id", lambda model: ("inception", "model"))
     monkeypatch.setattr(
         "v2.runtime.assembly.build_runtime", lambda **kwargs: (HangingRuntime(), object()))
     store_path = tmp_path / "shadow.jsonl"
@@ -228,7 +228,7 @@ def test_whole_shadow_task_does_not_wait_forever_for_primary(monkeypatch, tmp_pa
             raise RuntimeError("stop before projection")
 
     monkeypatch.setattr(
-        "app.providers.resolve_model_id", lambda model: ("inception", "model"))
+        "shared.providers.resolve_model_id", lambda model: ("inception", "model"))
     monkeypatch.setattr(
         "v2.runtime.assembly.build_runtime", lambda **kwargs: (QuickRuntime(), object()))
     store_path = tmp_path / "shadow.jsonl"

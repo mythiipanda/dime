@@ -13,7 +13,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.tools.lineup_matrix import (  # noqa: E402
+from shared.tools.lineup_matrix import (  # noqa: E402
     SMALL_PAIR_POSS,
     _accumulate_pairs,
     _build_matrix,

@@ -14,8 +14,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import store
-from app.sources import nba_stats
+from shared import store
+from shared.sources import nba_stats
 
 SEASON = "2025-26"
 SLEEP = 0.8

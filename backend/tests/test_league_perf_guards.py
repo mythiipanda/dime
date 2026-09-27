@@ -10,8 +10,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import store
-from app.tools import league
+from shared import store
+from shared.tools import league
 
 
 @pytest.fixture()

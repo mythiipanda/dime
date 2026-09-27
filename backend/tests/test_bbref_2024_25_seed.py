@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 import seed_bbref_gamelogs_2024_25 as seed
 from seed_bbref_gamelogs import parse_minutes
-from app import store
+from shared import store
 
 
 def _table(rows_html: str):

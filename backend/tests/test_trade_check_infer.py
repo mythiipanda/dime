@@ -6,7 +6,7 @@ false absence over a full salary sheet. The sheet resolves each player's
 current team, so a missing team arg is recoverable.
 """
 
-from app.tools import get_trade_check
+from shared.tools import get_trade_check
 
 
 def test_teams_inferred_from_player_names():

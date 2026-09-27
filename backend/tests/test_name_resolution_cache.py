@@ -1,7 +1,7 @@
 import pytest
 
-from app.tools import _core as core_mod
-from app.tools._core import coerce_player_id, score_player_candidates
+from shared.tools import _core as core_mod
+from shared.tools._core import coerce_player_id, score_player_candidates
 
 EXPECTED = {
     "LeBron James": 2544,

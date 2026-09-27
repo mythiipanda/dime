@@ -16,8 +16,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import store
-from app.sources.salaries import get_contracts
+from shared import store
+from shared.sources.salaries import get_contracts
 
 
 def main() -> None:

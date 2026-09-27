@@ -15,7 +15,7 @@ from collections.abc import AsyncGenerator
 from typing import Any, NotRequired, TypedDict
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from .providers import (
+from shared.providers import (
     accumulate_tool_calls,
     astream_with_fallback,
     get_llm,
@@ -26,8 +26,8 @@ from .providers import (
 from .skills import catalog as skills_catalog, load_skill as skills_load_skill
 from .subagents import delegate_tools, run_desk_streaming, _SHOT_ZONE_RX, _HISTORICAL_RX
 from .subagents import DESK_DEADLINE_S as _DESK_WALL_BUDGET_S
-from .tools import v1_tools
-from .tools._core import tool_label
+from shared.tools import v1_tools
+from shared.tools._core import tool_label
 
 ANALYST_SYSTEM = (
     "You are Dime, an NBA data analyst assistant. "
@@ -251,16 +251,8 @@ _PLANNER_SKILLS_TAIL = "\n\nAnalyst skills. Match the question to one skill and 
 MAX_SKILLS_PER_TURN = 2
 
 
-_VALID_ENTITY_LEVELS = ("player", "team", "mixed", "unknown")
-
-
-async def _select_skills_intent(question: str, llm) -> tuple[list[str], str | None]:
-    """Ask the LLM for skills plus the entity level the answer should be at.
-
-    Returns (skills, entity_level). entity_level is one of
-    _VALID_ENTITY_LEVELS (lowercased) or None when undetermined.
-    Never raises; on any failure returns ([], None).
-    """
+async def select_skills(question: str, llm) -> list[str]:
+    """Ask the LLM to pick 0-2 relevant skills. Falls back to [] on failure."""
     try:
         catalog_text = skills_catalog()
         known = set()
@@ -270,49 +262,18 @@ async def _select_skills_intent(question: str, llm) -> tuple[list[str], str | No
                 known.add(s[2:].split(":")[0].strip())
         prompt = (
             "Given this basketball question and the skill catalog below, "
-            'return a JSON object {"skills": [...0-2 skill names...], '
-            '"entity_level": "player"|"team"|"mixed"|"unknown"} where '
-            "entity_level is the entity level the answer should be at. "
+            "return the 0-2 most relevant skill names as a JSON list. "
             f"Question: {question}\nCatalog:\n{catalog_text}"
         )
         resp = await llm.ainvoke([HumanMessage(content=prompt)])
-        text = str(resp.content if hasattr(resp, "content") else resp or "")
-        m = re.search(r"\{.*?\}", text, re.DOTALL)
-        if m:
-            try:
-                obj = json.loads(m.group(0))
-            except Exception:
-                obj = None
-            if isinstance(obj, dict):
-                raw_skills = obj.get("skills")
-                skills = [n for n in raw_skills
-                          if isinstance(n, str) and n in known][:2] \
-                    if isinstance(raw_skills, list) else []
-                raw_level = obj.get("entity_level")
-                level = str(raw_level).lower() \
-                    if isinstance(raw_level, str) else None
-                if level not in _VALID_ENTITY_LEVELS:
-                    level = None
-                return skills, level
-        m2 = re.search(r"\[.*?\]", text, re.DOTALL)
-        if m2:
-            try:
-                names = json.loads(m2.group(0))
-            except Exception:
-                return [], None
-            if not isinstance(names, list):
-                return [], None
-            return [n for n in names
-                    if isinstance(n, str) and n in known][:2], None
-        return [], None
+        text = resp.content if hasattr(resp, "content") else str(resp)
+        m = re.search(r"\[.*?\]", str(text or ""), re.DOTALL)
+        names = json.loads(m.group(0) if m else str(text or ""))
+        if not isinstance(names, list):
+            return []
+        return [n for n in names if isinstance(n, str) and n in known][:2]
     except Exception:
-        return [], None
-
-
-async def select_skills(question: str, llm) -> list[str]:
-    """Ask the LLM to pick 0-2 relevant skills. Falls back to [] on failure."""
-    skills, _ = await _select_skills_intent(question, llm)
-    return skills
+        return []
 
 
 def build_planner_prompt(question: str, selected_skills: list[str]) -> str:
@@ -646,7 +607,7 @@ def _entity_lists() -> tuple[list[dict], list[dict]]:
 def _detect_entities(question: str) -> tuple[list[str], list[str]]:
     import unicodedata as _ud
 
-    from .tools._core import NICKNAMES
+    from shared.tools._core import NICKNAMES
 
     def _norm(s: str) -> str:
         return "".join(c for c in _ud.normalize("NFKD", s or "")
@@ -741,7 +702,7 @@ def _detect_entities(question: str) -> tuple[list[str], list[str]]:
 
 
 def _expand_nicknames(question: str) -> str:
-    from .tools._core import NICKNAMES
+    from shared.tools._core import NICKNAMES
 
     out = question
     lowered = out.lower()
@@ -841,7 +802,7 @@ def _direct_named_players(question: str, found_p: list[str]) -> list[str]:
     re-match full names (or known nicknames) against the raw question,
     mirroring what _direct_named_teams does for teams.
     """
-    from .tools._core import NICKNAMES
+    from shared.tools._core import NICKNAMES
 
     def _norm(s: str) -> str:
         import unicodedata as _ud
@@ -875,7 +836,7 @@ def _gamelog_args(question: str, player: str | None,
     over raw text extraction. player None means league-wide mode: the
     caller sets league_wide=True.
     """
-    from .tools.gamelog import MONTH_NAMES
+    from shared.tools.gamelog import MONTH_NAMES
 
     args: dict[str, Any] = {}
     if player is not None:
@@ -973,7 +934,7 @@ def _player_team_abbr(pid: int, season: str) -> str:
     """Current team abbrev for a player from warehouse gamelog MATCHUP."""
     import time as _time
 
-    from . import store
+    from shared import store
 
     for _ in range(3):
         try:
@@ -1081,7 +1042,7 @@ def _trade_sides(question: str, found_p: list[str], found_t: list[str],
     """Deterministic trade sides: players grouped by current team abbrev."""
     from nba_api.stats.static import teams as _static
 
-    from .tools._core import _coerce_player_id_cached
+    from shared.tools._core import _coerce_player_id_cached
 
     def _fold(s: str) -> str:
         return "".join(c for c in unicodedata.normalize("NFKD", s or "")
@@ -1128,7 +1089,7 @@ def _trade_sides(question: str, found_p: list[str], found_t: list[str],
 
         from collections import Counter as _Counter
 
-        from . import store
+        from shared import store
 
         entities = [f"player:{pid}" for _, pid in resolved]
         placeholders = ", ".join(["?"] * len(entities))
@@ -1462,7 +1423,7 @@ async def _triage_tool(name: str, args: dict[str, Any], state: dict,
     Appends the result to state and stashes it in holder["out"]. Every
     status is grounded in the real tool result; nothing is canned.
     """
-    from .tools import v1_tools
+    from shared.tools import v1_tools
 
     fn = next((t for t in v1_tools if t.name == name), None)
     label = tool_label(name)
@@ -2561,10 +2522,10 @@ async def _triage_seed(question: str, primary: str, model: str,
         _oteam: Any = found_t[0] if found_t else ""
         if not _oteam:
             try:
-                from . import store as _ostore
+                from shared import store as _ostore
                 _opid = int(str(found_p[0])) if str(found_p[0]).isdigit() else 0
                 if not _opid:
-                    from .tools._core import coerce_player_id as _cpid
+                    from shared.tools._core import coerce_player_id as _cpid
                     _opid = int(_cpid(found_p[0]))
                 _ohit = _ostore.read_frame(
                     "silver_hist_player_seasons",
@@ -2776,14 +2737,14 @@ async def _triage_seed(question: str, primary: str, model: str,
                     break
         if _gnum:
             try:
-                from .tools._core import coerce_player_id as _gcp
+                from shared.tools._core import coerce_player_id as _gcp
                 _gpid = _gcp(found_p[0])
             except Exception:
                 _gpid = None
             if _gpid:
                 import time as _gtime
 
-                from . import store as _gstore
+                from shared import store as _gstore
                 _grow: dict[str, Any] | None = None
                 for _try in range(3):
                     try:
@@ -2818,7 +2779,7 @@ async def _triage_seed(question: str, primary: str, model: str,
                     except Exception:
                         _gtime.sleep(0.2)
                 if _grow:
-                    from .tools.splits import _resolve_name as _grname
+                    from shared.tools.splits import _resolve_name as _grname
                     _gdisp = _grname(_gpid, str(found_p[0]))
                     _gstat = "PTS"
                     if re.search(r"\brebounds?\b", question,
@@ -2888,7 +2849,7 @@ async def _triage_seed(question: str, primary: str, model: str,
             and not is_compare and not is_trade and not is_cast):
         import time as _rtime
 
-        from . import store as _rstore
+        from shared import store as _rstore
         _rrows: list[dict[str, Any]] = []
         for _try in range(3):
             try:
@@ -2907,8 +2868,8 @@ async def _triage_seed(question: str, primary: str, model: str,
             except Exception:
                 _rtime.sleep(0.2)
         if _rrows:
-            from .tools._core import SEASON as _RCUR
-            from .tools._core import HIST_SEASON_START as _RHIST
+            from shared.tools._core import SEASON as _RCUR
+            from shared.tools._core import HIST_SEASON_START as _RHIST
             _rtop = _rrows[0]
             _rnxt = "; ".join(
                 f"{r['team_name']} {r['pts']} ({r['game_date']})"
@@ -2963,7 +2924,7 @@ async def _triage_seed(question: str, primary: str, model: str,
     if (re.search(r"\bfour[\s-]*factors?\b", question, re.IGNORECASE)
             and not found_p
             and not is_trade and not is_cast):
-        from .tools._core import SEASON as _FFCUR
+        from shared.tools._core import SEASON as _FFCUR
 
         def _ffpct(v: object) -> str:
             # QA hammer P3: table values are raw fractions (0.5613);
@@ -3104,7 +3065,7 @@ async def _triage_seed(question: str, primary: str, model: str,
                 _rwpname = str(_rwrows.get("player") or found_p[0])
                 _rwabbr = str(_rwrows.get("player_team") or "")
                 try:
-                    from .tools.headtohead import _team_abbr as _rwta
+                    from shared.tools.headtohead import _team_abbr as _rwta
                     _rwfull = _rwta(_rwabbr)[1] if _rwabbr else ""
                 except Exception:
                     _rwfull = _rwabbr
@@ -3255,7 +3216,7 @@ async def _triage_seed(question: str, primary: str, model: str,
                            question)))
             and not is_trade and not is_cast and not is_compare):
         try:
-            from .tools.gamelog import _team_abbr as _tabbr
+            from shared.tools.gamelog import _team_abbr as _tabbr
             _babbr, _bfull = _tabbr(_bteam)
         except Exception:
             _babbr, _bfull = "", _bteam
@@ -3264,7 +3225,7 @@ async def _triage_seed(question: str, primary: str, model: str,
         if _babbr:
             import time as _btime
 
-            from . import store as _bstore
+            from shared import store as _bstore
             for _try in range(3):
                 try:
                     _bcon = _bstore.connect()
@@ -3392,7 +3353,7 @@ async def _triage_seed(question: str, primary: str, model: str,
         # its offseason note makes "no games until preseason" explicit.
         _rest_args: dict[str, Any] = {"season": "2025-26"}
         if found_t:
-            from .tools._core import coerce_team_id as _ctid
+            from shared.tools._core import coerce_team_id as _ctid
             from nba_api.stats.static import teams as _tteams
             try:
                 _tid = _ctid(found_t[0])
@@ -3693,7 +3654,7 @@ async def _triage_seed(question: str, primary: str, model: str,
             season = f"{m.group(1)}-{m.group(2)}"
         sides = _trade_sides(question, found_p, found_t, season)
         if sides:
-            from .tools import v1_tools
+            from shared.tools import v1_tools
 
             sides["season"] = season
             fn = next((t for t in v1_tools if t.name == "get_trade_check"),
@@ -3757,7 +3718,7 @@ async def _triage_seed(question: str, primary: str, model: str,
             "summary": _args_summary("run_python", _tp_args),
         })
         try:
-            from .tools import v1_tools as _vt
+            from shared.tools import v1_tools as _vt
 
             fn = next((t for t in _vt if t.name == "run_python"), None)
             out = await fn.ainvoke({"code": code}) if fn is not None else {
@@ -3782,7 +3743,7 @@ async def _triage_seed(question: str, primary: str, model: str,
             r"around (him|her|them)|help (does|do|has|have)\b|"
             r"better team\b|deeper team\b",
             question, re.IGNORECASE):
-        from .tools._core import coerce_player_id as _cp2
+        from shared.tools._core import coerce_player_id as _cp2
 
         sides = []
         for p in found_p[:2]:
@@ -3799,7 +3760,7 @@ async def _triage_seed(question: str, primary: str, model: str,
             # Structured rows, not print-only text: the evidence card and
             # the narrative both get real player names sorted by PPG
             # (QA F34 follow-up: no more "Mate 1/2/3/4" placeholders).
-            from . import store as _store3
+            from shared import store as _store3
 
             try:
                 _con3 = _store3.connect()
@@ -3885,7 +3846,7 @@ async def _triage_seed(question: str, primary: str, model: str,
             r"\btrajectory\b|\barc\b|over time|aging|development curve",
             question, re.IGNORECASE):
         try:
-            from .tools import v1_tools as _vt3
+            from shared.tools import v1_tools as _vt3
 
             fn3 = next((t for t in _vt3 if t.name == "get_raptor_history"),
                        None)
@@ -4035,7 +3996,7 @@ async def _triage_seed(question: str, primary: str, model: str,
             "out = rows"
         )
         try:
-            from .tools import v1_tools as _vtsq
+            from shared.tools import v1_tools as _vtsq
 
             _fn = next((t for t in _vtsq if t.name == "run_python"), None)
             out = await _fn.ainvoke({"code": _code}) if _fn is not None else {
@@ -4106,7 +4067,7 @@ async def _triage_seed(question: str, primary: str, model: str,
                 r"salary vs production|value (for|of the)|worth the (money|contract)",
                 question, re.IGNORECASE)):
         try:
-            from .tools import v1_tools as _vtcv
+            from shared.tools import v1_tools as _vtcv
 
             fncv = next((t for t in _vtcv if t.name == "get_contract_value"),
                         None)
@@ -4158,7 +4119,7 @@ async def _triage_seed(question: str, primary: str, model: str,
             for p in seed_p:
                 team_hint = ""
                 try:
-                    from .tools._core import coerce_player_id as _cp
+                    from shared.tools._core import coerce_player_id as _cp
 
                     _pid = _cp(p)
                     if _pid:
@@ -4327,8 +4288,6 @@ class DimeState(TypedDict):
     ledger: NotRequired[list[str]]
     # entity_cache: normalized query -> resolve_entity result.
     entity_cache: NotRequired[dict[str, dict[str, Any]]]
-    selected_skills: NotRequired[list[str]]
-    answer_entity_level: NotRequired[str | None]
 
 
 def _call_key(name: str, args: dict[str, Any]) -> str:
@@ -4526,7 +4485,7 @@ def _flatten_tables(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
         # otherwise the id strip below leaves the model with "one
         # player" and no name to cite.
         try:
-            from .tools._core import attach_names as _attach_names
+            from shared.tools._core import attach_names as _attach_names
             out["rows"] = _attach_names(out.get("rows"))
         except Exception:
             pass
@@ -4651,19 +4610,14 @@ def _gate_table_level(table: dict) -> str:
     return "unknown"
 
 
-def verify_table_kind(question: str, table: dict,
-                      question_kind: str | None = None) -> bool:
+def verify_table_kind(question: str, table: dict) -> bool:
     """Termination gate: table entity level must match the question kind.
 
-    question_kind is the LLM-determined intent (from
-    state["answer_entity_level"]); it wins over entity detection when
-    provided ("player"/"team"). It is never derived from question-text
-    keywords. Returns False on a mismatch in EITHER direction (player
-    question + team-level table, or team question + player-level table).
+    Returns False on a mismatch in EITHER direction (player question +
+    team-level table, or team question + player-level table).
     "mixed"/"other"/unknown kinds never reject.
     """
-    kind = question_kind if question_kind in ("player", "team") \
-        else _gate_question_kind(question)
+    kind = _gate_question_kind(question)
     if kind not in ("player", "team"):
         return True
     try:
@@ -4676,12 +4630,10 @@ def verify_table_kind(question: str, table: dict,
 
 
 def _gate_tables(question: str,
-                 tables: list,
-                 question_kind: str | None = None) -> tuple[list, dict]:
+                 tables: list) -> tuple[list, dict]:
     """Drop empty views and tables whose entity level mismatches the
     question kind. Returns (kept_tables, report)."""
-    kind = question_kind if question_kind in ("player", "team") \
-        else _gate_question_kind(question)
+    kind = _gate_question_kind(question)
     kept: list = []
     dropped: list = []
     for t in tables:
@@ -4691,7 +4643,7 @@ def _gate_tables(question: str,
         if rows is None or (isinstance(rows, (list, dict)) and not rows):
             dropped.append((t.get("title", "?"), "empty"))
             continue
-        if not verify_table_kind(question, t, question_kind=question_kind):
+        if not verify_table_kind(question, t):
             dropped.append((t.get("title", "?"), "kind-mismatch"))
             continue
         kept.append(t)
@@ -4705,7 +4657,6 @@ def _gated_tables(state: dict) -> list:
     tables, report = _gate_tables(
         state.get("question", "") or "",
         _flatten_tables(state.get("tool_results") or []),
-        question_kind=state.get("answer_entity_level"),
     )
     try:
         state["_gate_report"] = report  # type: ignore[typeddict-unknown-key]
@@ -4868,7 +4819,7 @@ async def data_retrieval_agent(
     team_facts = []
     if qp or qt:
         try:
-            from .tools._core import coerce_player_id as _cp
+            from shared.tools._core import coerce_player_id as _cp
 
             for p in qp[:4]:
                 _pid = _cp(p)
@@ -4921,12 +4872,9 @@ async def data_retrieval_agent(
         _pholder: dict[str, Any] = {}
         try:
             llm = get_llm(state["primary"], state["model"])  # type: ignore[arg-type]
-            sel, entity_level = await _select_skills_intent(question_for_planner, llm)
+            sel = await select_skills(question_for_planner, llm)
         except Exception:
             sel = []
-            entity_level = None
-        state["selected_skills"] = sel
-        state["answer_entity_level"] = entity_level
         async for _pe in _stream_planner(
                 tooled,
                 [SystemMessage(content=build_planner_prompt(question_for_planner, sel) + prior),
@@ -4989,7 +4937,7 @@ async def actual_tool_node(state: DimeState) -> AsyncGenerator[dict[str, Any], N
             await _tok_q.put(None)
             return {"tool": name, "ok": False, "error": "unknown tool"}
         if isinstance(args, dict) and "season" in args:
-            from .tools._core import clamp_season
+            from shared.tools._core import clamp_season
 
             args = {**args, "season": clamp_season(args.get("season"))}
         try:
@@ -5354,7 +5302,7 @@ async def analytics_agent(state: DimeState) -> AsyncGenerator[dict[str, Any], No
         # provenance-valid; answer from it instead of false no-data.
         _led = [f for f in (state.get("ledger") or []) if isinstance(f, str)]
         if _led:
-            from .tools._core import SEASON as _CUR_SEASON
+            from shared.tools._core import SEASON as _CUR_SEASON
             state["analysis"] = (
                 f"This data covers the {_CUR_SEASON} season.\n"
                 "From earlier in this conversation: "
@@ -6184,7 +6132,7 @@ def _numeral_allowed(state: dict) -> set[str]:
         except ValueError:
             pass
     try:
-        from .tools._core import SEASON as _S
+        from shared.tools._core import SEASON as _S
         allowed |= set(re.findall(r"\d+", _S))
     except Exception:
         allowed |= {"2025", "26"}
@@ -6506,7 +6454,7 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
                 if _candidate.get("tool") not in (
                         "get_trade_check", "pin_team_scoring_record",
                         "get_team_four_factors"):
-                    from .tools._core import SEASON as _CUR_SEASON
+                    from shared.tools._core import SEASON as _CUR_SEASON
                     _det_season = _meta.get("season") or _CUR_SEASON
                     _scrubbed = (f"This data covers the {_det_season} season.\n"
                                  + _authoritative)
@@ -6545,7 +6493,7 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
                     _det += (f" Next in total {_stat_word}: "
                              f"{_runners}.")
                 try:
-                    from .tools._core import SEASON as _CUR_SEASON
+                    from shared.tools._core import SEASON as _CUR_SEASON
                     _det = (f"This data covers the {_CUR_SEASON} "
                             f"season.\n" + _det)
                 except Exception:
@@ -6559,7 +6507,7 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
                      r"all[\s-]*time|histor", state.get("question", "")
                      or "", re.IGNORECASE):
         try:
-            from .tools._core import SEASON as _CUR_SEASON
+            from shared.tools._core import SEASON as _CUR_SEASON
             _scrubbed = re.sub(
                 r"This data covers the \d{4}-\d{2} season",
                 f"This data covers the {_CUR_SEASON} season",
@@ -6613,8 +6561,8 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
         _qtxt, re.IGNORECASE) and not re.search(r"20\d\d-\d\d", _qtxt)
     if _hist_q:
         try:
-            from .tools._core import SEASON as _CUR_SEASON
-            from .tools._core import HIST_SEASON_START as _HIST_START
+            from shared.tools._core import SEASON as _CUR_SEASON
+            from shared.tools._core import HIST_SEASON_START as _HIST_START
             _hist_line = (f"This data covers the {_HIST_START} through "
                           f"{_CUR_SEASON} seasons.")
             _new, _n = re.subn(
@@ -6805,7 +6753,7 @@ async def run_chat(
 ) -> AsyncGenerator[dict[str, Any], None]:
     if thread:
         try:
-            from . import store as _store
+            from shared import store as _store
 
             _store.compact_thread(thread)
         except Exception:
@@ -6820,7 +6768,7 @@ async def run_chat(
     )
     if thread:
         try:
-            from . import store as _store2
+            from shared import store as _store2
 
             state["ledger"] = _store2.thread_facts(thread)
         except Exception:

@@ -10,8 +10,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app import store
-from app.tools import player as pm
+from shared import store
+from shared.tools import player as pm
 
 SEASON = "2025-26"
 EDWARDS = 1630162
@@ -248,7 +248,7 @@ def test_warehouse_team_ids_match_live_path(monkeypatch):
     import pandas as pd
 
     import nba_api.stats.endpoints as _ep
-    from app.tools import _core as _core
+    from shared.tools import _core as _core
 
     monkeypatch.setattr(pm, "get_shot_zones", _ZoneStub())
     monkeypatch.setattr(pm, "get_last_x", _EmptyStub())

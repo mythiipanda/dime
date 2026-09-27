@@ -1,8 +1,8 @@
-from app.providers import (
+from shared.providers import (
     OPENROUTER_AUTO, fallback_order, is_free_model, models_catalog,
     resolve_model_id,
 )
-from app.config import settings
+from shared.config import settings
 
 
 def test_every_runtime_fallback_chain_is_free_only():
@@ -54,7 +54,7 @@ def test_structured_models_clamp_configured_paid_openrouter(monkeypatch):
 
 
 def test_direct_get_llm_never_constructs_paused_providers(monkeypatch):
-    import app.providers as providers
+    import shared.providers as providers
     constructed = []
     monkeypatch.setattr(settings, "inception_api_key", "retained-key")
     monkeypatch.setattr(settings, "groq_api_key", "retained-key")
@@ -88,7 +88,7 @@ def test_structured_mistral_success_ledger_identity_is_free_limit(monkeypatch):
 
 
 def test_groq_free_tier_activation_is_exact_and_ordered(monkeypatch):
-    import app.providers as providers
+    import shared.providers as providers
     monkeypatch.setattr(settings, "openrouter_api_key", "free")
     monkeypatch.setattr(settings, "mistral_api_key", "free")
     monkeypatch.setattr(settings, "inception_api_key", "inception")
@@ -107,7 +107,7 @@ def test_groq_free_tier_activation_is_exact_and_ordered(monkeypatch):
 
 
 def test_groq_key_is_inert_without_explicit_activation(monkeypatch):
-    import app.providers as providers
+    import shared.providers as providers
     monkeypatch.setattr(settings, "dime_enable_groq", False)
     monkeypatch.setattr(settings, "groq_api_key", "retained")
     assert "groq" not in providers.active_provider_order()
@@ -118,7 +118,7 @@ def test_groq_key_is_inert_without_explicit_activation(monkeypatch):
     "openai/gpt-oss-120b", "groq/compound", "", "openai/gpt-oss-20B",
     "openai/gpt-oss-20b ", "openai/gpt-oss-20b-extra"])
 def test_explicit_unlisted_groq_slugs_fail_closed_before_client(monkeypatch, slug):
-    import app.providers as providers
+    import shared.providers as providers
     monkeypatch.setattr(settings, "dime_enable_groq", True)
     monkeypatch.setattr(settings, "groq_api_key", "free")
     with __import__("pytest").raises(providers.ProviderPolicyError):

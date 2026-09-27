@@ -9,7 +9,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.tools.wpa import (  # noqa: E402
+from shared.tools.wpa import (  # noqa: E402
     clamp_limit,
     clamp_min_events,
     clamp_season_year,
@@ -17,7 +17,7 @@ from app.tools.wpa import (  # noqa: E402
     score_events,
     season_label,
 )
-from app.tools.wpamodel import (  # noqa: E402
+from shared.tools.wpamodel import (  # noqa: E402
     TIPOFF_SEC,
     seconds_remaining,
     win_probability,
@@ -27,7 +27,7 @@ GAME = "0022500001"
 
 
 def _game_rows(game_id: str = GAME) -> list:
-    from app import store
+    from shared import store
 
     con = store.connect(read_only=True)
     try:
@@ -182,13 +182,13 @@ def test_full_names_on_james_rows():
 
 
 def test_tool_registered():
-    from app import tools
+    from shared import tools
 
     assert "get_wpa_leaders" in tools.TOOL_NAMES
 
 
 def test_display_name_builds_static_index_once(monkeypatch):
-    import app.tools.wpa as wpa
+    import shared.tools.wpa as wpa
     calls = 0
 
     def players():

@@ -1,5 +1,5 @@
-from app.config import settings
-from app.providers import (
+from shared.config import settings
+from shared.providers import (
     NVIDIA_NIM_ALLOWLIST,
     NVIDIA_NIM_BASE_URL,
     NVIDIA_NIM_DEFAULT,
@@ -39,7 +39,7 @@ def test_nvidia_client_uses_nim_endpoint(monkeypatch):
 
 def test_nvidia_llm_sends_thinking_off_on_every_nim_model(monkeypatch):
     monkeypatch.setattr(settings, "nvidia_nim_api_key", "fake-nim-key")
-    from app import providers
+    from shared import providers
 
     class RecordingChatOpenAI:
         def __init__(self, **kwargs):
@@ -55,6 +55,6 @@ def test_nvidia_llm_sends_thinking_off_on_every_nim_model(monkeypatch):
 
 def test_deepseek_flash_is_routable_on_nim(monkeypatch):
     monkeypatch.setattr(settings, "nvidia_nim_api_key", "key")
-    from app.providers import is_free_model
+    from shared.providers import is_free_model
     assert resolve_model_id("nvidia:deepseek-ai/deepseek-v4.1-flash") == ("nvidia", "deepseek-ai/deepseek-v4.1-flash")
     assert is_free_model("nvidia", "deepseek-ai/deepseek-v4.1-flash") is True

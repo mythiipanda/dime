@@ -1,4 +1,4 @@
-from app.tools.league import get_team_trajectory
+from shared.tools.league import get_team_trajectory
 
 
 class FakeResult:

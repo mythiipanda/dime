@@ -22,8 +22,8 @@ def _static():
 
 
 def main() -> None:
-    from app.tools.gamelog import search_game_logs
-    from app import store
+    from shared.tools.gamelog import search_game_logs
+    from shared import store
 
     con = store.connect(read_only=True)
     try:
