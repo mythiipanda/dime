@@ -227,10 +227,14 @@ export async function postChatStream(
   // - PROGRESS_MS: only pings and no real events for 3 minutes means the
   //   backend is alive (heartbeats flow every 15s) but the run is stuck --
   //   this is the case the old bytes-based watchdog could never catch.
+  //   v1 only: v2 buffers every event until run end, so pings-only is the
+  //   expected shape there and the backend's 6-minute run timeout already
+  //   bounds a stuck v2 run.
   // - MAX_RUN_MS: absolute ceiling on a single chat request.
   const STALL_MS = 90_000;
   const PROGRESS_MS = 180_000;
   const MAX_RUN_MS = 480_000;
+  const runtime = process.env.NEXT_PUBLIC_CHAT_RUNTIME === "v2" ? "v2" : "v1";
   const ctrl = new AbortController();
   const startedAt = Date.now();
   let lastByte = startedAt;
@@ -242,7 +246,7 @@ export async function postChatStream(
     if (now - lastByte > STALL_MS) {
       cause = "idle";
       ctrl.abort();
-    } else if (now - lastProgress > PROGRESS_MS) {
+    } else if (runtime === "v1" && now - lastProgress > PROGRESS_MS) {
       cause = "progress";
       ctrl.abort();
     } else if (now - startedAt > MAX_RUN_MS) {
@@ -268,7 +272,6 @@ export async function postChatStream(
   }
   let res: Response;
   try {
-    const runtime = process.env.NEXT_PUBLIC_CHAT_RUNTIME === "v2" ? "v2" : "v1";
     const endpoint = runtime === "v2" ? "/api/v2/chat/stream" : "/api/v1/chat/stream";
     res = await fetch(`${BACKEND}${endpoint}`, {
       method: "POST",

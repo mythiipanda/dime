@@ -1270,15 +1270,22 @@ async def quick_answer_stream(body: QuickAnswerBody):
             body.q, run_id=run_id, context=context))
         try:
             buffered_events = []
-            try:
+
+            async def _drain_until_done():
                 while not task.done() or not queue.empty():
                     try:
                         buffered_events.append(
                             await asyncio.wait_for(queue.get(), timeout=0.1))
                     except TimeoutError:
                         continue
-                result = await asyncio.wait_for(
-                    task, timeout=settings.dime_v2_run_timeout_s)
+
+            try:
+                # Bound the whole drain: a hung runtime.run() must not spin
+                # the queue loop forever past the run timeout.
+                await asyncio.wait_for(
+                    _drain_until_done(),
+                    timeout=settings.dime_v2_run_timeout_s)
+                result = task.result()
                 while not queue.empty():
                     buffered_events.append(queue.get_nowait())
                 # Validate every public projection before emitting buffered SSE.
@@ -1288,6 +1295,8 @@ async def quick_answer_stream(body: QuickAnswerBody):
                 answer = _answer_text(result)
             except Exception as exc:
                 timed_out = isinstance(exc, asyncio.TimeoutError)
+                if timed_out and not task.done():
+                    task.cancel()
                 if policy.publish:
                     for event in missing_tool_events():
                         safe_event = _safe_buffered_event(event)
