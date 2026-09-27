@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ModelOption } from "../lib/chat";
+import { modelDisplayName, providerDisplayName } from "../lib/modelNames";
 
 interface ModelPickerProps {
   models: ModelOption[];
@@ -71,10 +72,9 @@ export default function ModelPicker({ models, value, onChange, status = "ready",
     };
   }, []);
 
-  const exactName = (id?: string) => {
+  const displayName = (id?: string) => {
     if (!id) return status === "loading" ? "Loading models..." : "Models unavailable";
-    const i = id.indexOf(":");
-    return i >= 0 ? id.slice(i + 1) : id;
+    return modelDisplayName(id);
   };
 
   return (
@@ -97,7 +97,7 @@ export default function ModelPicker({ models, value, onChange, status = "ready",
         {!models.length && <option value="">{status === "loading" ? "Loading models..." : "Models unavailable"}</option>}
         {models.map((m) => (
           <option key={m.id} value={m.id}>
-            {m.id}
+            {modelDisplayName(m.id)}
           </option>
         ))}
       </select>
@@ -126,7 +126,7 @@ export default function ModelPicker({ models, value, onChange, status = "ready",
         }}
         title={status === "error" && !models.length ? "Retry loading models" : "Switch AI reasoning model"}
       >
-        <span>{exactName(selectedModel?.id)}</span>
+        <span>{displayName(selectedModel?.id)}</span>
         <svg
           width="10"
           height="10"
@@ -221,10 +221,12 @@ export default function ModelPicker({ models, value, onChange, status = "ready",
                       color: "var(--color-ink-black)",
                     }}
                   >
-                    {exactName(m.id)}
+                    {displayName(m.id)}
                   </div>
                   <div style={{ fontSize: 11, color: "var(--color-warm-gray)" }}>
-                    {isUnavailable ? `${m.engine || ""} · unavailable` : (m.engine || "live")}
+                    {isUnavailable
+                      ? `${providerDisplayName(m.engine) || m.engine} · unavailable`
+                      : (providerDisplayName(m.engine) || m.engine || "live")}
                   </div>
                 </div>
 
