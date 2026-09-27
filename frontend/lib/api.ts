@@ -437,13 +437,32 @@ function mergeThreads(server: ThreadInfo[]): ThreadInfo[] {
 // runs the server has never seen (appended after a wipe), and the server
 // can hold runs this browser hasn't cached yet. Replacing the cache with
 // the server's copy would silently drop whichever side is longer.
+// Two copies of the same turn can carry different created_at stamps (the
+// local write and the server write happen seconds apart), so dedupe can't
+// key on the raw timestamp. Prefer a stable run id when both sides have one;
+// otherwise treat same question+answer with a small timestamp skew as one
+// turn. Tolerance is minutes, so a genuinely repeated question an hour later
+// still renders as its own turn.
+const RUN_DEDUPE_SKEW_MS = 10 * 60 * 1000;
+
+function createdMs(v: unknown): number | null {
+  const t = Date.parse(String(v));
+  return Number.isFinite(t) ? t : null;
+}
+
+function isSameTurn(a: RunInfo, b: RunInfo): boolean {
+  if (a.id && b.id) return a.id === b.id;
+  if (a.question !== b.question || a.answer !== b.answer) return false;
+  const ta = createdMs(a.created_at);
+  const tb = createdMs(b.created_at);
+  if (ta === null || tb === null) return a.created_at === b.created_at;
+  return Math.abs(ta - tb) <= RUN_DEDUPE_SKEW_MS;
+}
+
 function mergeRuns(thread: string, serverOldestFirst: RunInfo[]): RunInfo[] {
-  const seen = new Set<string>();
   const merged: RunInfo[] = [];
   const push = (r: RunInfo) => {
-    const key = `${r.question}\n${r.answer}\n${r.created_at}`;
-    if (seen.has(key)) return;
-    seen.add(key);
+    if (merged.some((m) => isSameTurn(m, r))) return;
     merged.push(r);
   };
   for (const r of loadCachedRuns(thread)) push(r);
@@ -497,6 +516,8 @@ export async function getThreads(): Promise<ThreadInfo[]> {
 }
 
 export interface RunInfo {
+  /** Server-assigned run id, when the backend provides one. Preferred for dedupe. */
+  id?: string;
   question: string;
   answer: string;
   tables: unknown[];

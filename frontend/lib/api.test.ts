@@ -78,8 +78,8 @@ function installLocalStorage() {
   return store;
 }
 
-function run(question: string, created_at: string): RunInfo {
-  return { question, answer: `a:${question}`, tables: [], suggestions: [], created_at };
+function run(question: string, created_at: string, id?: string): RunInfo {
+  return { id, question, answer: `a:${question}`, tables: [], suggestions: [], created_at };
 }
 
 test("appendCachedRun persists runs oldest-first and dedupes repeats", () => {
@@ -198,6 +198,55 @@ test("getRuns dedupes a server run already in the local cache", async () => {
   try {
     const runs = await getRuns("t-6");
     assert.deepEqual(runs.map((r) => r.question), ["q1"]);
+  } finally {
+    delete (globalThis as Record<string, unknown>).fetch;
+  }
+});
+
+test("getRuns dedupes a server run whose created_at is skewed vs the local copy", async () => {
+  // Instinct QA 2026-09-27: the local write and the server write stamp the
+  // same turn seconds apart, so the exact-timestamp dedupe kept both and the
+  // exchange rendered twice.
+  installLocalStorage();
+  appendCachedRun("t-7", run("q1", "2026-09-27T20:00:12Z"));
+  (globalThis as Record<string, unknown>).fetch = async () => ({
+    ok: true,
+    json: async () => ({ runs: [run("q1", "2026-09-27T20:00:03Z")] }), // same turn, 9s skew
+  });
+  try {
+    const runs = await getRuns("t-7");
+    assert.deepEqual(runs.map((r) => r.question), ["q1"]);
+  } finally {
+    delete (globalThis as Record<string, unknown>).fetch;
+  }
+});
+
+test("getRuns dedupes on run id even when the server timestamp drifts far", async () => {
+  installLocalStorage();
+  appendCachedRun("t-10", run("q1", "2026-09-27T20:00:00Z", "run-abc"));
+  (globalThis as Record<string, unknown>).fetch = async () => ({
+    ok: true,
+    json: async () => ({ runs: [run("q1", "2026-09-27T20:42:00Z", "run-abc")] }),
+  });
+  try {
+    const runs = await getRuns("t-10");
+    assert.deepEqual(runs.map((r) => r.question), ["q1"]);
+  } finally {
+    delete (globalThis as Record<string, unknown>).fetch;
+  }
+});
+
+test("getRuns keeps a genuinely repeated question outside the skew window", async () => {
+  // Same q/a asked again 30 minutes later is a separate turn, not a dupe.
+  installLocalStorage();
+  appendCachedRun("t-11", run("q1", "2026-09-27T20:00:00Z"));
+  (globalThis as Record<string, unknown>).fetch = async () => ({
+    ok: true,
+    json: async () => ({ runs: [run("q1", "2026-09-27T20:30:00Z")] }),
+  });
+  try {
+    const runs = await getRuns("t-11");
+    assert.deepEqual(runs.map((r) => r.question), ["q1", "q1"]);
   } finally {
     delete (globalThis as Record<string, unknown>).fetch;
   }
