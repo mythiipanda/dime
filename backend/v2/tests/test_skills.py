@@ -11,9 +11,44 @@ def test_builtin_catalog_is_agent_skills_metadata_only():
     assert {item["name"] for item in catalog} == {
         "trade-analysis", "injury-impact", "player-comparison",
         "league-ratings", "playoff-translation",
+        "defensive-analysis", "team-offense", "leaderboard",
+        "followup-correction",
     }
     assert all(set(item) == {"name", "description"} for item in catalog)
     assert all("# " not in item["description"] for item in catalog)
+
+
+@pytest.mark.parametrize("skill_name", [
+    "defensive-analysis",
+    "team-offense",
+    "leaderboard",
+    "followup-correction",
+    "player-comparison",
+])
+def test_phase1_skills_load_with_name_description_and_body(skill_name):
+    library = SkillLibrary()
+    skill = library.skills[skill_name]
+    assert skill.name == skill_name
+    assert skill.description and len(skill.description) > 10
+    assert skill.body and len(skill.body) > 100
+    assert "## When to use" in skill.body or "## " in skill.body
+    activated = library.activate([skill_name])
+    assert len(activated) == 1
+    assert activated[0]["name"] == skill_name
+    assert len(activated[0]["content_hash"]) == 64
+
+
+def test_defensive_analysis_skill_has_key_guidance():
+    body = SkillLibrary().skills["defensive-analysis"].body
+    assert "multi-dimensional" in body
+    assert "500+" in body
+    assert "What NOT to do" in body
+
+
+def test_followup_correction_skill_has_entity_reset_rule():
+    body = SkillLibrary().skills["followup-correction"].body
+    assert "league-wide" in body
+    assert "reset" in body.lower() or "DROP" in body
 
 
 def test_activation_progressively_discloses_selected_skill_and_hash():
