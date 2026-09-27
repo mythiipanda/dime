@@ -21,7 +21,8 @@ Questions about a player's defense, best defenders, DPOY-type questions, or defe
 - Steal and block rate leaders with a 500+ minute floor.
 - Defensive rating leaders with a 500+ minute floor.
 - On/off defensive splits for context when available.
-- Always apply a 500+ minute floor before evaluating anyone. Small samples produce noisy extremes and reward players who haven't been exposed.
+- Rate-stat leaderboards need a minutes floor: the data layer enforces MIN >= 500 on per-game rate boards (state the floor in every output). Do not impose a blanket floor elsewhere — on totals boards, totals need no floor beyond availability (note games played), and on individual player evaluations report the sample size and qualify instead of excluding.
+- Small samples produce noisy extremes: a two-way player's 2-game steal burst is not a signal, so always pair small-sample numbers with their sample size.
 
 ## Caveats to apply
 

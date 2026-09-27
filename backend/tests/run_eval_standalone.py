@@ -267,51 +267,66 @@ def main():
         print(f"Gate extraction FAILED: {e}")
         ns = {}
 
+    # The eval is honest only when these stay separate:
+    #   A. metadata/schema — "is the eval valid and the code the right shape?"
+    #      (wellformed eval data, skill catalog integrity, no-keyword-routing
+    #      static code identity)
+    #   B. response-quality proxies — "do the guards behave on representative
+    #      answers?" (minutes-qual gate, table-kind gate)
+    # Section B passing says nothing about section A, and vice versa.
     results = []
     for i, (prompt, qtype, skills, players, teams) in enumerate(cases):
         pid = f"p{i+1:02d}"
-        checks = []
+        meta = []
         ok1, m1 = check_wellformed(prompt, qtype, skills, players, teams, known_skills)
-        checks.append(("wellformed", ok1, m1))
+        meta.append(("wellformed", ok1, m1))
         ok2, m2 = check_skills_exist(skills)
-        checks.append(("skills-exist", ok2, m2))
+        meta.append(("skills-exist", ok2, m2))
+        quality = []
         ok3, m3 = check_minutes_gate(ns, qtype)
-        checks.append(("minutes-gate", ok3, m3))
+        quality.append(("minutes-gate", ok3, m3))
         ok4, m4 = check_table_kind_gate(ns, prompt, qtype, players, teams)
-        checks.append(("table-kind-gate", ok4, m4))
-        passed = all(ok for _, ok, _ in checks)
-        results.append((pid, prompt, qtype, passed, checks))
+        quality.append(("table-kind-gate", ok4, m4))
+        results.append((pid, prompt, qtype, meta, quality))
 
     ok_kw, m_kw = check_no_keyword_routing()
-    print(f"\nGlobal static check (no keyword routing): {'PASS' if ok_kw else 'FAIL'} {m_kw}")
+    meta_pass = sum(1 for _, _, _, m, _ in results if all(ok for _, ok, _ in m))
+    qual_pass = sum(1 for _, _, _, _, q in results if all(ok for _, ok, _ in q))
 
-    npass = sum(1 for _, _, _, p, _ in results if p)
-    print(f"\n{'ID':<5} {'QTYPE':<16} {'PASS':<6} PROMPT")
-    for pid, prompt, qtype, passed, checks in results:
-        mark = "PASS" if passed else "FAIL"
-        short = (prompt[:52] + "..") if len(prompt) > 54 else prompt
-        print(f"{pid:<5} {qtype:<16} {mark:<6} {short}")
-        if not passed:
-            for name, ok, msg in checks:
+    print(f"\n== A. metadata/schema (target: {len(results)}/{len(results)} "
+          f"+ global static check) ==")
+    print(f"Global static check (no keyword routing): {'PASS' if ok_kw else 'FAIL'} {m_kw}")
+    print(f"Per-case metadata checks: {meta_pass}/{len(results)} pass")
+    for pid, prompt, qtype, meta, _ in results:
+        if not all(ok for _, ok, _ in meta):
+            short = (prompt[:52] + "..") if len(prompt) > 54 else prompt
+            print(f"  {pid} [{qtype}] FAIL {short}")
+            for name, ok, msg in meta:
                 if not ok:
-                    print(f"       - [{name}] {msg}")
-                    # classify
-                    if name == "skills-exist":
-                        print("         classification: data issue (missing skill file)")
-                    elif name == "minutes-gate":
-                        print("         classification: guard issue (minutes-qual gate)")
-                    elif name == "table-kind-gate":
-                        print("         classification: guard issue (table-kind gate)")
-                    elif name == "wellformed":
-                        print("         classification: eval-data issue")
+                    cls = ("eval-data issue" if name == "wellformed"
+                           else "data issue (missing skill file)")
+                    print(f"    - [{name}] {msg} — classification: {cls}")
 
-    print(f"\n==== RESULT: {npass}/{len(results)} pass "
-          f"({100.0*npass/len(results):.0f}%) ====")
-    if not ok_kw:
-        print("NOTE: global keyword-routing check FAILED (counts separately).")
-    target = 18
-    print(f"Target: {target}/20 (90%). {'MET' if npass >= target and ok_kw else 'NOT MET'}")
-    return 0 if (npass >= target and ok_kw) else 1
+    print(f"\n== B. response-quality proxies (target: 18/20 = 90%) ==")
+    print(f"{'ID':<5} {'QTYPE':<16} {'PASS':<6} PROMPT")
+    for pid, prompt, qtype, _, quality in results:
+        passed = all(ok for _, ok, _ in quality)
+        short = (prompt[:52] + "..") if len(prompt) > 54 else prompt
+        print(f"{pid:<5} {qtype:<16} {'PASS' if passed else 'FAIL':<6} {short}")
+        if not passed:
+            for name, ok, msg in quality:
+                if not ok:
+                    cls = ("guard issue (minutes-qual gate)" if name == "minutes-gate"
+                           else "guard issue (table-kind gate)")
+                    print(f"       - [{name}] {msg}")
+                    print(f"         classification: {cls}")
+
+    print(f"\n==== RESULT A (metadata): {meta_pass}/{len(results)} "
+          f"({'PASS' if meta_pass == len(results) and ok_kw else 'FAIL'}) ====")
+    print(f"==== RESULT B (response quality): {qual_pass}/{len(results)} "
+          f"({100.0*qual_pass/len(results):.0f}%) "
+          f"{'TARGET MET' if qual_pass >= 18 else 'TARGET NOT MET'} ====")
+    return 0 if (meta_pass == len(results) and ok_kw and qual_pass >= 18) else 1
 
 if __name__ == "__main__":
     sys.exit(main())
