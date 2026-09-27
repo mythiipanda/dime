@@ -4526,6 +4526,143 @@ def _flatten_tables(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out_flat
 
 
+# Termination gate (SmolAgents final_answer_checks, adapted for Dime).
+# Runs BEFORE anything renders. Every embedded table must match the
+# question kind and carry rows; rate-stat claims must name their
+# minutes floor. The Colby Jones episode shipped a TEAM SPLITS table
+# for "best defensive players in the league" and a LEADERS PTS table
+# for "best defensive players?" - team-level views for player-kind
+# questions. A gate catches all of that centrally instead of one more
+# regex per incident.
+_GATE_PLAYER_Q_RX = re.compile(
+    r"\bplayers?\b|\bbest\b|\bworst\b|\bleaders?\b|\brank(?:ing|ed|s)?\b|"
+    r"\bmvp\b|\bdpoy\b|\brookie\b|\ball[-\s]?star\b|\bcompare\b|\bvs\.?\b",
+    re.IGNORECASE,
+)
+_GATE_TEAM_Q_RX = re.compile(
+    r"\bteams?\b|\bstandings\b|\bplayoff race\b",
+    re.IGNORECASE,
+)
+_GATE_TEAM_TABLE_RX = re.compile(
+    r"team splits|team totals|standings|four factors|matchup splits",
+    re.IGNORECASE,
+)
+_GATE_SUPERLATIVE_RX = re.compile(
+    r"\bbest\b|\bworst\b|\b#1\b|\bnumber one\b|\bleague[-\s]?best\b",
+    re.IGNORECASE,
+)
+
+
+def _gate_question_kind(question: str) -> str:
+    """Classify the question's entity kind for table matching."""
+    try:
+        found_p, found_t = _detect_entities(question or "")
+    except Exception:
+        found_p, found_t = [], []
+    if found_p and not found_t:
+        return "player"
+    if found_t and not found_p:
+        return "team"
+    if found_p and found_t:
+        return "mixed"
+    q = question or ""
+    playerish = bool(_GATE_PLAYER_Q_RX.search(q))
+    teamish = bool(_GATE_TEAM_Q_RX.search(q))
+    if playerish and not teamish:
+        return "player"
+    if teamish and not playerish:
+        return "team"
+    return "other"
+
+
+def _gate_table_level(table: dict) -> str:
+    """Player-level, team-level, or unknown - from row keys, then title."""
+    rows = table.get("rows")
+    if isinstance(rows, list) and rows and isinstance(rows[0], dict):
+        keys = {str(k).upper() for k in rows[0].keys()}
+        if "PLAYER" in keys or "PLAYER_NAME" in keys:
+            return "player"
+        if "TEAM" in keys:
+            return "team"
+    if _GATE_TEAM_TABLE_RX.search(str(table.get("title") or "")):
+        return "team"
+    return "unknown"
+
+
+def _gate_tables(question: str,
+                 tables: list) -> tuple[list, dict]:
+    """Drop empty views and tables whose entity level mismatches the
+    question kind. Returns (kept_tables, report)."""
+    kind = _gate_question_kind(question)
+    kept: list = []
+    dropped: list = []
+    for t in tables:
+        if not isinstance(t, dict):
+            continue
+        rows = t.get("rows")
+        if rows is None or (isinstance(rows, (list, dict)) and not rows):
+            dropped.append((t.get("title", "?"), "empty"))
+            continue
+        if kind == "player" and _gate_table_level(t) == "team":
+            dropped.append((t.get("title", "?"), "kind-mismatch"))
+            continue
+        kept.append(t)
+    return kept, {"question_kind": kind, "dropped": dropped,
+                  "kept": [t.get("title") for t in kept]}
+
+
+def _gated_tables(state: dict) -> list:
+    """_flatten_tables plus the termination gate - the single emit point
+    for rendered artifact tables."""
+    tables, report = _gate_tables(
+        state.get("question", "") or "",
+        _flatten_tables(state.get("tool_results") or []),
+    )
+    try:
+        state["_gate_report"] = report  # type: ignore[typeddict-unknown-key]
+    except Exception:
+        pass
+    return tables
+
+
+def _gate_qualifications(text: str,
+                         tables: list) -> tuple[str, dict]:
+    """Rate-stat claims must name their minutes floor. When a rendered
+    leaderboard table carries meta.qualification and the answer cites
+    numbers without naming the floor, append it - never ship it silent."""
+    applied: list = []
+    quals: list = []
+    for t in tables:
+        meta = t.get("meta")
+        if not isinstance(meta, dict):
+            continue
+        q = meta.get("qualification")
+        if q and str(q) not in quals:
+            quals.append(str(q))
+    if quals and re.search(r"\d", text or ""):
+        low = (text or "").lower()
+        if "minute" not in low and not re.search(r"\bmin\b", low):
+            text = ((text or "").rstrip() + "\n\nQualification: "
+                    + "; ".join(quals) + ".")
+            applied.append("qualification")
+    # On-court ratings are lineup context, not isolated individual
+    # value: when the answer makes a superlative claim off one, name
+    # the caveat the tool itself carries.
+    coverages: list = []
+    for t in tables:
+        meta = t.get("meta")
+        if isinstance(meta, dict) and meta.get("coverage"):
+            c = str(meta["coverage"]).strip()
+            if c and c not in coverages:
+                coverages.append(c)
+    if coverages and _GATE_SUPERLATIVE_RX.search(text or ""):
+        low = (text or "").lower()
+        if not any(c[:24].lower() in low for c in coverages):
+            text = (text or "").rstrip() + " " + coverages[0]
+            applied.append("coverage")
+    return text, {"applied": applied}
+
+
 def _numbers(text: str) -> list[str]:
     return re.findall(r"\d+(?:\.\d+)?(?:-\d+)?%?", text)
 
@@ -5051,7 +5188,7 @@ async def analytics_agent(state: DimeState) -> AsyncGenerator[dict[str, Any], No
             yield _event(
                 "custom_data",
                 {"node": "analytics",
-                 "tables": _flatten_tables(state["tool_results"])})
+                 "tables": _gated_tables(state)})
             yield _event("node_update",
                          {"node": "analytics", "status": "complete"})
             return
@@ -5100,7 +5237,7 @@ async def analytics_agent(state: DimeState) -> AsyncGenerator[dict[str, Any], No
                 base += f"; warehouse covers {', '.join(seasons)}"
         state["analysis"] = base + "."
         yield _event(
-            "custom_data", {"node": "analytics", "tables": _flatten_tables(state["tool_results"])}
+            "custom_data", {"node": "analytics", "tables": _gated_tables(state)}
         )
         yield _event("node_update", {"node": "analytics", "status": "complete"})
         return
@@ -5141,7 +5278,7 @@ async def analytics_agent(state: DimeState) -> AsyncGenerator[dict[str, Any], No
         yield _event("custom_data", {"node": "analytics",
                                      "unverified_numbers": unverified})
     yield _event(
-        "custom_data", {"node": "analytics", "tables": _flatten_tables(state["tool_results"])}
+        "custom_data", {"node": "analytics", "tables": _gated_tables(state)}
     )
     yield _event("node_update", {"node": "analytics", "status": "complete"})
 
@@ -6338,6 +6475,17 @@ async def presentation_agent(state: DimeState) -> AsyncGenerator[dict[str, Any],
     _new_facts = _extract_ledger_facts(state)
     if _new_facts:
         yield _event("ledger_facts", {"facts": _new_facts})
+    # Termination gate, text side: rate-stat claims name their minutes
+    # floor, superlatives off on-court ratings name the caveat. Runs on
+    # the final scrubbed text - the last thing before render.
+    _scrubbed, _qrep = _gate_qualifications(_scrubbed, _gated_tables(state))
+    if _qrep.get("applied"):
+        try:
+            _gr = state.get("_gate_report") or {}
+            _gr["text_applied"] = _qrep["applied"]
+            state["_gate_report"] = _gr  # type: ignore[typeddict-unknown-key]
+        except Exception:
+            pass
     _fa: dict[str, Any] = {"text": _scrubbed}
     if state.get("carry_note"):
         _fa["carry"] = state["carry_note"]
