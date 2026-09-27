@@ -443,6 +443,19 @@ def accumulate_tool_calls(tc_chunks: list[dict]) -> list[dict]:
     return out
 
 
+def resolve_available_model(model_id: str | None) -> tuple[ProviderName, str]:
+    """Clamp a requested model to a provider that is actually usable.
+
+    If the resolved provider has no usable credentials, fall back to the
+    default provider instead of letting the chat graph fail with a generic
+    error.
+    """
+    primary, model = resolve_model_id(model_id)
+    if get_llm(primary, model) is None:
+        primary, model = _default_provider()
+    return primary, model
+
+
 def models_catalog() -> dict[str, Any]:
     """Expose only model options accepted by the same free-model predicate."""
     default_id = f"{_default_provider()[0]}:{_default_provider()[1]}"
@@ -482,4 +495,6 @@ def models_catalog() -> dict[str, Any]:
         available["groq"] = True
     if settings.dime_enable_inception and settings.inception_api_key:
         available["inception"] = True
+    for option in options:
+        option["available"] = bool(available.get(option["engine"], False))
     return {"models": options, "available": available}

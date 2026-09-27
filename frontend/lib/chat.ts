@@ -107,6 +107,7 @@ export interface ModelOption {
   id: string;
   engine: string;
   default?: boolean;
+  available?: boolean;
 }
 
 export interface ModelsResponse {

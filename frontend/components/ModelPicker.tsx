@@ -27,21 +27,10 @@ export default function ModelPicker({ models, value, onChange, status = "ready",
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const formatName = (id?: string) => {
+  const exactName = (id?: string) => {
     if (!id) return status === "loading" ? "Loading models..." : "Models unavailable";
-    if (id.includes("mercury")) return "Mercury 2.5";
-    if (id.includes("ministral")) return "Ministral 8B";
-    if (id.includes("gpt-oss")) return "GPT-OSS 20B";
-    if (id.includes("gemma")) return "Gemma 31B";
-    if (id.includes("nemotron")) return "Nemotron 120B";
-    let base = id.replace(/:free$/i, "").replace(/-free$/i, "");
-    const segments = base.split(/[/:]/).filter(Boolean);
-    const last = (segments.length ? segments[segments.length - 1] : base).replace(/:free$/i, "").replace(/-free$/i, "");
-    const tokens = last.split(/[-_]+/).filter(Boolean);
-    const filtered = tokens.filter((w) => !/^v\d+(\.\d+)*$/i.test(w) && !/^\d+\.\d+(\.\d+)*$/.test(w));
-    const kept = filtered.length ? filtered : tokens;
-    const pretty = kept.map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(" ");
-    return pretty || id;
+    const i = id.indexOf(":");
+    return i >= 0 ? id.slice(i + 1) : id;
   };
 
   return (
@@ -92,7 +81,7 @@ export default function ModelPicker({ models, value, onChange, status = "ready",
         }}
         title={status === "error" && !models.length ? "Retry loading models" : "Switch AI reasoning model"}
       >
-        <span>{formatName(selectedModel?.id)}</span>
+        <span>{exactName(selectedModel?.id)}</span>
         <svg
           width="10"
           height="10"
@@ -153,10 +142,12 @@ export default function ModelPicker({ models, value, onChange, status = "ready",
           )}
           {models.map((m) => {
             const isSelected = (value || models[0]?.id) === m.id;
+            const isUnavailable = m.available === false;
             return (
               <button
                 key={m.id}
                 type="button"
+                disabled={isUnavailable}
                 onClick={() => {
                   onChange(m.id);
                   setOpen(false);
@@ -170,9 +161,10 @@ export default function ModelPicker({ models, value, onChange, status = "ready",
                   borderRadius: 8,
                   border: "none",
                   background: isSelected ? "var(--color-stone-canvas)" : "transparent",
-                  cursor: "pointer",
+                  cursor: isUnavailable ? "not-allowed" : "pointer",
                   textAlign: "left",
                   width: "100%",
+                  opacity: isUnavailable ? 0.45 : 1,
                 }}
               >
                 <div>
@@ -183,10 +175,10 @@ export default function ModelPicker({ models, value, onChange, status = "ready",
                       color: "var(--color-ink-black)",
                     }}
                   >
-                    {formatName(m.id)}
+                    {exactName(m.id)}
                   </div>
                   <div style={{ fontSize: 11, color: "var(--color-warm-gray)" }}>
-                    {m.engine || "live"}
+                    {isUnavailable ? `${m.engine || ""} · unavailable` : (m.engine || "live")}
                   </div>
                 </div>
 
