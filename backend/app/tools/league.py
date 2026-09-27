@@ -830,7 +830,7 @@ def get_leaders(
                 ).fetchall()
                 rows = [
                     {"RANK": index, "PLAYER": row[0], "TEAM": row[1],
-                     "GP": row[2], "MIN": row[3],
+                     "GP": row[2], "MPG": row[3],
                      "TS_PCT": round(float(row[4]) * 100, 1)}
                     for index, row in enumerate(raw, 1)
                 ]
@@ -902,7 +902,7 @@ def get_leaders(
                 con.close()
             rows = [
                 {"RANK": i, "PLAYER": r[0], "TEAM": r[1], "GP": r[2],
-                 "MIN": r[3], "FG3M": r[4], "FG3A": r[5],
+                 "MPG": r[3], "FG3M": r[4], "FG3A": r[5],
                  "FG3_PCT": r[6]}
                 for i, r in enumerate(raw, 1)
             ]
